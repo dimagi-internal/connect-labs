@@ -387,11 +387,15 @@ describe('sumUSDInWeek', () => {
 // activeFLWs()
 // ---------------------------------------------------------------------------
 describe('activeFLWs', () => {
+  // `status: 'approved'` is required, not decoration: both functions below
+  // count APPROVED visits only. The filter landed two weeks after these tests
+  // were written and they were never updated, because nothing ran them — so
+  // every fixture here scored 0 and said nothing for months.
   const visits = [
-    { username: 'alice', visit_date: '2025-03-20' },
-    { username: 'bob', visit_date: '2025-03-15' },
-    { username: 'alice', visit_date: '2025-03-18' },
-    { username: 'carol', visit_date: '2025-03-01' },
+    { username: 'alice', visit_date: '2025-03-20', status: 'approved' },
+    { username: 'bob', visit_date: '2025-03-15', status: 'approved' },
+    { username: 'alice', visit_date: '2025-03-18', status: 'approved' },
+    { username: 'carol', visit_date: '2025-03-01', status: 'approved' },
   ];
 
   it('counts distinct usernames within the last N days', () => {
@@ -413,6 +417,17 @@ describe('activeFLWs', () => {
   it('returns 0 when no visits fall in the window', () => {
     expect(activeFLWs(visits, '2025-03-20', 0)).toBe(1); // only exact match Mar 20
   });
+
+  it('counts only APPROVED visits', () => {
+    // The rule the stale fixtures hid. Without this, adding `status` above
+    // would just be making the tests pass rather than pinning the behaviour.
+    const pending = [
+      { username: 'dave', visit_date: '2025-03-20', status: 'pending' },
+      { username: 'erin', visit_date: '2025-03-20' },
+    ];
+    expect(activeFLWs(pending, '2025-03-20', 7)).toBe(0);
+    expect(activeFLWs([...pending, ...visits], '2025-03-20', 7)).toBe(2);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -421,11 +436,19 @@ describe('activeFLWs', () => {
 describe('maxVisitDate', () => {
   it('returns the latest visit_date', () => {
     const visits = [
-      { visit_date: '2025-03-10' },
-      { visit_date: '2025-03-20' },
-      { visit_date: '2025-03-15' },
+      { visit_date: '2025-03-10', status: 'approved' },
+      { visit_date: '2025-03-20', status: 'approved' },
+      { visit_date: '2025-03-15', status: 'approved' },
     ];
     expect(maxVisitDate(visits)).toBe('2025-03-20');
+  });
+
+  it('ignores a later visit that is not approved', () => {
+    const visits = [
+      { visit_date: '2025-03-10', status: 'approved' },
+      { visit_date: '2025-03-31', status: 'rejected' },
+    ];
+    expect(maxVisitDate(visits)).toBe('2025-03-10');
   });
 
   it('returns null for empty array', () => {
@@ -433,7 +456,10 @@ describe('maxVisitDate', () => {
   });
 
   it('skips entries without visit_date', () => {
-    const visits = [{ username: 'alice' }, { visit_date: '2025-03-05' }];
+    const visits = [
+      { username: 'alice', status: 'approved' },
+      { visit_date: '2025-03-05', status: 'approved' },
+    ];
     expect(maxVisitDate(visits)).toBe('2025-03-05');
   });
 });

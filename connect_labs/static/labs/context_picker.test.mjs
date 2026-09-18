@@ -45,10 +45,14 @@ ok(
   s.showOrgs && s.showPrograms && s.showOpps,
   'overview shows all columns (pathFilters)',
 );
+// Every page offers all three columns. It used to offer opps only here, and
+// #907 changed that deliberately: an opp-scoped page that hid 'programs'
+// silently DROPPED a program click once an opportunity was selected, with no
+// error. This assertion is the fix, not a description of the old shape.
 s.currentPath = '/labs/workflow/123';
 ok(
-  !s.showOrgs && !s.showPrograms && s.showOpps,
-  'workflow shows opps only (pathFilters)',
+  s.showOrgs && s.showPrograms && s.showOpps,
+  'workflow offers orgs + programs + opps, so a program click is never dropped',
 );
 s.selectOrg({ slug: 'acme', name: 'Acme' });
 ok(
