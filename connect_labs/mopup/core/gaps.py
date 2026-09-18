@@ -107,17 +107,28 @@ def buildings_within_ward(
     return buildings[pd.Series(inside, index=buildings.index)]
 
 
-def _exclude_covered(buildings: pd.DataFrame, existing_wa_boundaries: list[dict]) -> pd.DataFrame:
-    """`buildings` minus whichever rows fall inside the union of
-    `existing_wa_boundaries` — the "never covered by any existing work
+def _prepared_coverage(existing_wa_boundaries: list[dict]):
+    """Prepared union of every existing work area boundary in the ward, for
+    fast repeated `.contains()`/`.intersects()` checks — `None` if there's
+    nothing to exclude against. Shared by `_exclude_covered` (per-building
+    point check) and `planning_gap_features` (per-gap-cell polygon check,
+    see that function's docstring for why both are needed), computed once
+    per ward instead of once per check."""
+    if not existing_wa_boundaries:
+        return None
+    return prep(unary_union([shape(g) for g in existing_wa_boundaries]))
+
+
+def _exclude_covered(buildings: pd.DataFrame, coverage) -> pd.DataFrame:
+    """`buildings` minus whichever rows fall inside `coverage` (a
+    `_prepared_coverage` result) — the "never covered by any existing work
     area" step of `buildings_not_covered`, split out so `planning_gap_features`
     can apply it AFTER already keeping every within-ward building for the
     map (see `buildings_within_ward`), rather than only the ones that
     survive both filters."""
-    if not existing_wa_boundaries or buildings.empty:
+    if coverage is None or buildings.empty:
         return buildings
-    covered = prep(unary_union([shape(g) for g in existing_wa_boundaries]))
-    keep = [not covered.contains(Point(lon, lat)) for lon, lat in zip(buildings["lon"], buildings["lat"])]
+    keep = [not coverage.contains(Point(lon, lat)) for lon, lat in zip(buildings["lon"], buildings["lat"])]
     return buildings[pd.Series(keep, index=buildings.index)]
 
 
@@ -149,7 +160,7 @@ def buildings_not_covered(
     keep the ward-clipped-but-not-yet-excluded set for the map too.
     """
     within_ward = buildings_within_ward(ward_boundary, buildings, min_confidence=min_confidence, sources=sources)
-    return _exclude_covered(within_ward, existing_wa_boundaries)
+    return _exclude_covered(within_ward, _prepared_coverage(existing_wa_boundaries))
 
 
 def _normalize_name(s: str | None) -> str:
@@ -312,6 +323,23 @@ def planning_gap_features(
     "isolated single detection is noise" heuristic doesn't apply to them;
     they correctly keep no `roof_area_m2`/`dist_to_multi_m` and stay outside
     both filters' reach.
+
+    A gap cell whose SQUARE boundary intersects `existing_wa_boundaries` is
+    dropped, even though every building used to build it individually
+    cleared `_exclude_covered`'s point-in-polygon check. Real bug, caught
+    live: `grid_clusters` tiles the surviving (uncovered) buildings into a
+    uniform `cell_size_m` grid anchored on their own bounding box, entirely
+    independent of existing work area geometry -- two buildings that
+    survive exclusion on OPPOSITE sides of a nearby existing WA can still
+    land in the same cell, whose square then visually overlaps that WA on
+    the map. Point-level exclusion alone can't catch this; only checking
+    the cell's own polygon can. Denser raw building sets (Google Open
+    Buildings' direct fetch, un-conflated and un-deduplicated, typically
+    has far more points near a ward's covered areas than Overture's
+    blended/deduplicated set) make this far more likely to actually
+    produce a visible overlap, but the underlying gap is mode-agnostic --
+    Overture mode was checked and has the exact same unguarded
+    grid_clusters call, just less likely to trip it in practice.
     """
     from connect_labs.microplans.core import clustering
     from connect_labs.microplans.core.filters import annotate_cell_metrics
@@ -321,13 +349,17 @@ def planning_gap_features(
         {"lon": float(lon), "lat": float(lat)} for lon, lat in zip(within_ward["lon"], within_ward["lat"])
     ]
 
-    remainder = _exclude_covered(within_ward, existing_wa_boundaries)
+    coverage = _prepared_coverage(existing_wa_boundaries)
+    remainder = _exclude_covered(within_ward, coverage)
     out = clustering.grid_clusters(remainder, cell_size_m=cell_size_m)
     annotated = annotate_cell_metrics(out.buildings, out.psu_frame)
     features = []
     for _, row in annotated.iterrows():
         n_b = int(row["n_buildings"])
         if n_b < min_buildings_per_cell:
+            continue
+        cell_geom = shape({"type": "Polygon", "coordinates": [row["cell_polygon"]]})
+        if coverage is not None and coverage.intersects(cell_geom):
             continue
         expected_visit_count = round(visits_per_building * n_b) if visits_per_building is not None else n_b
         features.append(
