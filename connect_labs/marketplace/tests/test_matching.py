@@ -86,3 +86,74 @@ class TestNotAnLloVerdict:
         assert got is None
         assert state == SolicitationResponse.MATCH_NOT_LLO
         assert "individual" in basis
+
+
+class TestTrailingAcronymAndSpacing:
+    @pytest.mark.parametrize(
+        "submitted,directory",
+        [
+            ("Friends of the Community Organization FOCO", "Friends Of The Community Organization"),
+            ("Community Health Alliance Uganda - CHAU", "Community Health Alliance Uganda"),
+            ('Afghan Social Marketing Organization "ASMO"', "Afghan Social Marketing Organization"),
+            ("RESILIENT ACTION ORGANISATION- RAO", "RESILIENT ACTION ORGANISATION"),
+            ("Save Mothers and Children Initiative SMACI", "Save Mothers and Children Initiative"),
+            # The directory's own spelling of one organisation.
+            (
+                "Kyetume Community Based Heath care Programme-KCBHCP",
+                "Kyetume Community Based Heath Care Programme-Kcbhcp",
+            ),
+        ],
+    )
+    def test_a_trailing_acronym_restating_the_name_is_dropped(self, submitted, directory):
+        assert normalise(submitted) == normalise(directory)
+
+    @pytest.mark.parametrize("name", ["Tearfund UK", "Health Access Initiative HAI Kenya", "Plan International USA"])
+    def test_a_final_word_that_is_not_the_initials_stays(self, name):
+        assert normalise(name).split()[-1] == name.split()[-1].lower()
+
+
+@pytest.mark.django_db
+class TestLooserButStillCertain:
+    def test_spacing_is_folded_when_it_names_exactly_one_organisation(self):
+        org = LabsOrg.objects.create(slug="nd", name="N'Domakeh Federation")
+        got, state, _ = match_submission(
+            Sub(org_name="Ndomakeh Federation"), by_email={}, by_name={normalise(org.name): org}
+        )
+        assert got == org
+        assert state == SolicitationResponse.MATCH_NAME
+
+    def test_an_earlier_submissions_email_matches_when_the_name_agrees(self):
+        org = LabsOrg.objects.create(slug="eha", name="EHA Clinics (REACH Program)")
+        got, state, basis = match_submission(
+            Sub(org_name="EHA CLINIC REACH PROGRAM", emails=["x@eha.invalid"]),
+            by_email={},
+            by_name={},
+            by_earlier_email={"x@eha.invalid": org},
+        )
+        assert got == org
+        assert state == SolicitationResponse.MATCH_EMAIL
+        assert "earlier matched submission" in basis
+
+    def test_an_earlier_submissions_email_is_not_trusted_under_a_different_name(self):
+        """Same inbox, different organisation name: possibly a sister
+        organisation, and that is a person's call."""
+        org = LabsOrg.objects.create(slug="nama", name="Nama Wellness Community Centre")
+        got, state, _ = match_submission(
+            Sub(org_name="Nama Health Impact", emails=["x@nama.invalid"]),
+            by_email={},
+            by_name={},
+            by_earlier_email={"x@nama.invalid": org},
+        )
+        assert got is None
+        assert state == SolicitationResponse.MATCH_UNMATCHED
+
+    def test_a_blank_name_is_matched_on_the_earlier_email(self):
+        """The RUTF RFP form never asks for the organisation's name."""
+        org = LabsOrg.objects.create(slug="cbi", name="Care Best Initiative (CBI)")
+        got, _, _ = match_submission(
+            Sub(org_name="", emails=["x@cbi.invalid"]),
+            by_email={},
+            by_name={},
+            by_earlier_email={"x@cbi.invalid": org},
+        )
+        assert got == org

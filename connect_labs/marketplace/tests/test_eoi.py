@@ -192,6 +192,66 @@ class TestIngestRound:
 
 
 @pytest.mark.django_db
+class TestEarlierRoundsAreEvidence:
+    """An inbox that was matched in one round identifies the same organisation
+    in the next, provided the name it gives still agrees."""
+
+    LATER = [
+        ["Timestamp", "Organization name", "Valid email address"],
+        ["4/1/2026 09:00:00", "EHA CLINIC REACH PROGRAM", "eha@example.invalid"],
+    ]
+
+    @pytest.fixture
+    def earlier(self, round_):
+        org = LabsOrg.objects.create(slug="eha", name="EHA Clinics (REACH Program)")
+        old = Solicitation.objects.create(slug="old-2025", title="Old round", status="closed")
+        SolicitationResponse.objects.create(
+            solicitation=old,
+            llo_entity=org,
+            source_row=2,
+            org_name="EHA Clinics",
+            submitted_by_email="eha@example.invalid",
+            match_state=SolicitationResponse.MATCH_HUMAN,
+        )
+        return org
+
+    def test_a_submission_is_matched_on_an_email_from_another_round(self, round_, earlier):
+        ingest_round(round_, self.LATER)
+        got = round_.responses.get(source_row=2)
+        assert got.llo_entity == earlier
+        assert got.match_state == SolicitationResponse.MATCH_EMAIL
+
+    def test_a_round_is_never_its_own_evidence(self, round_):
+        """Otherwise a match, once made, would re-confirm itself on every
+        re-import however it was first reached."""
+        org = LabsOrg.objects.create(slug="eha", name="EHA Clinics (REACH Program)")
+        SolicitationResponse.objects.create(
+            solicitation=round_,
+            llo_entity=org,
+            source_row=2,
+            org_name="EHA CLINIC REACH PROGRAM",
+            submitted_by_email="eha@example.invalid",
+            match_state=SolicitationResponse.MATCH_EMAIL,
+        )
+        ingest_round(round_, self.LATER)
+        assert round_.responses.get(source_row=2).llo_entity is None
+
+    def test_an_inbox_that_applied_for_two_organisations_matches_neither(self, round_, earlier):
+        other = LabsOrg.objects.create(slug="eha2", name="EHA Clinic Reach Programme Kano")
+        old = Solicitation.objects.create(slug="old-2024", title="Older round", status="closed")
+        SolicitationResponse.objects.create(
+            solicitation=old,
+            llo_entity=other,
+            source_row=5,
+            org_name="EHA Kano",
+            submitted_by_email="eha@example.invalid",
+            match_state=SolicitationResponse.MATCH_HUMAN,
+        )
+        ingest_round(round_, self.LATER)
+        assert round_.responses.get(source_row=2).llo_entity is None
+
+
+@pytest.mark.django_db
 class TestHumanVerdictsCloseTheLoop:
     """Without a way to record a verdict the review queue is decorative: the
     same submissions sit in it after every future import."""
