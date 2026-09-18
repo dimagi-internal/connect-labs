@@ -142,6 +142,8 @@ def explain(
                         "type": p.get("type"),
                         "sql": _subst_constants(p["sql"], {**constants, "as_of": as_of}).strip(),
                         "notes": p.get("notes"),
+                        "label": p.get("label"),
+                        "means": p.get("means"),
                     }
                 )
 
@@ -248,9 +250,144 @@ def _component_words(m: dict[str, Any]) -> str:
     return f"{_words(inner)}{scope}"
 
 
+# ── How it is counted ──────────────────────────────────────────────────────
+# The same measure, as the two or three facts a reader actually needs: which
+# babies it is OUT OF, what it COUNTS among them, and when it is shown. Built
+# from the measures' own filters and the registry's `label` on each property and
+# aggregate, so it cannot drift from the SQL. A condition this cannot phrase is
+# returned in words rather than dropped.
+
+_TOP_AND = re.compile(r"\s+AND\s+", re.I)
+
+
+def _labels(props_doc: dict[str, Any]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for item in list(props_doc.get("aggregates") or []) + list(props_doc.get("properties") or []):
+        if item.get("label"):
+            out[item["name"]] = str(item["label"])
+    return out
+
+
+def _label(name: str, labels: dict[str, str]) -> str:
+    return labels.get(name) or name.replace("_", " ").capitalize()
+
+
+def _lower_first(text: str) -> str:
+    return text[:1].lower() + text[1:] if text[:2] != text[:2].upper() else text
+
+
+def _split_and(sql: str) -> list[str]:
+    """Top-level AND terms; an AND inside parentheses stays with its term."""
+    terms, depth, last = [], 0, 0
+    for m in re.finditer(r"[()]|\bAND\b", sql, re.I):
+        tok = m.group(0)
+        if tok == "(":
+            depth += 1
+        elif tok == ")":
+            depth -= 1
+        elif depth == 0:
+            terms.append(sql[last : m.start()])
+            last = m.end()
+    terms.append(sql[last:])
+    return [t.strip() for t in terms if t.strip()]
+
+
+def _strip_parens(sql: str) -> str:
+    sql = sql.strip()
+    while sql.startswith("(") and sql.endswith(")") and _split_and(sql[1:-1]) == [sql[1:-1].strip()]:
+        sql = sql[1:-1].strip()
+    return sql
+
+
+def _condition(sql: str, labels: dict[str, str]) -> str:
+    term = _strip_parens(re.sub(r"\{CUBE\}\.", "", sql))
+    ident = r"([a-z_][a-z0-9_]*)"
+    if m := re.fullmatch(ident, term):
+        return _label(m.group(1), labels)
+    if m := re.fullmatch(r"NOT\s+" + ident, term, re.I):
+        return f"{_label(m.group(1), labels)}: no"
+    if m := re.fullmatch(ident + r"\s*=\s*'([^']*)'", term):
+        return f"{_label(m.group(1), labels)}: {m.group(2)}"
+    if m := re.fullmatch(ident + r"\s+IS\s+NOT\s+NULL", term, re.I):
+        return f"{_label(m.group(1), labels)}: recorded"
+    if m := re.fullmatch(ident + r"\s+IS\s+NULL", term, re.I):
+        return f"{_label(m.group(1), labels)}: blank"
+    named = re.sub(
+        r"\b" + ident + r"\b", lambda mm: _label(mm.group(1), labels) if mm.group(1) in labels else mm.group(1), term
+    )
+    return _words(named)
+
+
+def _conditions(sqls: list[str], labels: dict[str, str]) -> list[str]:
+    out: list[str] = []
+    for sql in sqls:
+        for term in _split_and(sql):
+            text = _condition(term, labels)
+            if text not in out:
+                out.append(text)
+    return out
+
+
+def _quantity(m: dict[str, Any], labels: dict[str, str]) -> tuple[str, list[str]]:
+    """(what is aggregated, extra conditions it carries) for one component measure."""
+    mtype = m.get("type")
+    inner = re.sub(r"\{CUBE\}\.", "", m.get("sql") or "").strip()
+    if mtype == "count":
+        return "babies", []
+    if mtype == "sum":
+        guarded = re.fullmatch(r"CASE WHEN (.+?) THEN ([a-z_][a-z0-9_]*) ELSE 0 END", inner, re.S)
+        if guarded:
+            return f"total {_lower_first(_label(guarded.group(2), labels))}", [guarded.group(1)]
+        return f"total {_lower_first(_label(inner, labels))}", []
+    if mtype == "avg":
+        if per100 := re.fullmatch(r"([a-z_][a-z0-9_]*)\s*\*\s*100", inner):
+            return f"{_lower_first(_label(per100.group(1), labels))} per 100 babies", []
+        return f"average {_lower_first(_label(inner, labels))} per baby", []
+    if "PERCENTILE_CONT(0.5)" in inner:
+        col = re.search(r"ORDER BY ([a-z_][a-z0-9_]*)", inner)
+        return f"median {_lower_first(_label(col.group(1), labels)) if col else 'value'}", []
+    return _words(inner), []
+
+
+def _how(top: dict[str, Any], by_name: dict[str, dict[str, Any]], labels: dict[str, str]) -> dict[str, Any] | None:
+    """{kind, base, counts|value, shown_when}, or None for an expression it cannot read."""
+    expr = top.get("sql") or ""
+    refs = [r for r in re.findall(r"\{([a-z0-9_]+)\}", expr) if r in by_name]
+    meta = top.get("meta") or {}
+
+    def side(name):
+        m = by_name[name]
+        what, extra = _quantity(m, labels)
+        return what, _conditions([f["sql"] for f in (m.get("filters") or [])] + extra, labels)
+
+    shown_when = None
+    if meta.get("min_denominator"):
+        shown_when = f"at least {meta['min_denominator']} in the base"
+    if len(refs) == 2 and "NULLIF" in expr:
+        num_what, num_where = side(refs[0])
+        den_what, den_where = side(refs[1])
+        extra = [c for c in num_where if c not in den_where]
+        return {
+            "kind": "percent" if expr.strip().startswith("100.0 *") else "ratio",
+            "base": {"what": den_what, "where": den_where},
+            "counts": {"what": num_what, "where": extra},
+            "shown_when": shown_when,
+        }
+    if len(refs) == 1 and expr.strip() == "{" + refs[0] + "}":
+        what, where = side(refs[0])
+        if shown_when:
+            shown_when = f"at least {meta['min_denominator']} babies"
+        return {"kind": "value", "base": {"what": "babies", "where": where}, "value": what, "shown_when": shown_when}
+    return None
+
+
 def english(registry: dict[str, Any], props_doc: dict[str, Any], indicator: str) -> dict[str, Any]:
-    """{plain, definition, reads}: the authored sentence if any, the mechanical one
-    always, and one line per property the definition leans on."""
+    """{plain, definition, how, reads}: the authored sentence if any, the mechanical
+    one always, the base/counts breakdown, and one line per property it leans on.
+
+    `reads[].means` is the property's plain `means`, never its `notes`: notes are
+    the developers' rationale (history, partner-specific figures) and belong with
+    the SQL, not in a definition read by a programme manager."""
     top = _resolve_indicator(registry, indicator)
     by_name = _measure_index(registry)
     meta = top.get("meta") or {}
@@ -258,6 +395,7 @@ def english(registry: dict[str, Any], props_doc: dict[str, Any], indicator: str)
     expr = top.get("sql") or ""
     refs = [r for r in re.findall(r"\{([a-z0-9_]+)\}", expr) if r in by_name]
     parts = {r: _component_words(by_name[r]) for r in refs}
+    labels = _labels(props_doc)
 
     if len(refs) == 2 and expr.startswith("100.0 *"):
         definition = f"{parts[refs[0]]}, as a percentage of {parts[refs[1]]}."
@@ -276,21 +414,30 @@ def english(registry: dict[str, Any], props_doc: dict[str, Any], indicator: str)
         definition += f" Shown only when the denominator is at least {meta['min_denominator']}."
 
     props = {p["name"]: p for p in props_doc.get("properties") or []}
+    aggs = {a["name"]: a for a in props_doc.get("aggregates") or []}
     constants = props_doc.get("constants") or {}
     reads = []
     for name in sorted(_cube_refs([top] + _referenced_measures(top, by_name))):
         if name in props:
             p = props[name]
-            reads.append(
-                {
-                    "name": name,
-                    "means": (p.get("notes") or "").strip() or None,
-                    "sql": _subst_constants(p["sql"], {**constants, "as_of": "CURRENT_DATE"}).strip(),
-                }
-            )
+            sql = _subst_constants(p["sql"], {**constants, "as_of": "CURRENT_DATE"}).strip()
+        elif name in aggs:
+            p = aggs[name]
+            sql = _subst_constants(p["sql"], constants).strip()
+        else:
+            continue
+        reads.append(
+            {
+                "name": name,
+                "label": _label(name, labels),
+                "means": (p.get("means") or "").strip() or None,
+                "sql": sql,
+            }
+        )
     return {
         "plain": meta.get("plain"),
         "definition": definition,
+        "how": _how(top, by_name, labels),
         "reads": reads,
     }
 
