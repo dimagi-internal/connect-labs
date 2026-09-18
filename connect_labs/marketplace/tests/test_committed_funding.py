@@ -162,34 +162,34 @@ class TestFxRates:
 
 @pytest.mark.django_db
 class TestOnlyRealWorkCounts:
-    def test_a_test_programme_is_in_deployed_but_not_in_remaining(self):
-        """Two different rules for two different reasons.
-
-        Its $25 was really paid and Pulse counts it, so DEPLOYED includes it —
-        leaving it out would make this figure disagree with the Pulse wall.
-        Its $312,500 budget is a placeholder, so REMAINING excludes it — counted,
-        one test row would dwarf every real programme's."""
-        from connect_labs.pulse.models import PulseProgram
-
-        PulseProgram.objects.create(program_id=7, name="Founders Pledge Test Program", is_test=True)
-        _opp(1, "chc", budget=312_500, program_id=7, **LIVE)
+    def test_a_test_opportunity_is_in_neither_figure(self):
+        """Pulse drops scaffolding from every figure it shows, so both halves
+        leave it out: its $25 is not delivery, and its $312,500 budget is a
+        placeholder that would dwarf every real programme's."""
+        _opp(1, "chc", budget=312_500, is_test=True, **LIVE)
         _paid(1, 25)
-        got = queries.committed_by_programme()["chc"]
-        assert got["deployed"] == 25
+        got = queries.committed_by_programme().get("chc", {"deployed": 0, "remaining": 0})
+        assert got["deployed"] == 0
         assert got["remaining"] == 0
 
-    def test_a_real_programme_beside_it_still_counts(self):
-        from connect_labs.pulse.models import PulseProgram
-
-        PulseProgram.objects.create(program_id=7, name="Founders Pledge Test Program", is_test=True)
-        PulseProgram.objects.create(program_id=8, name="CHC Nigeria", is_test=False)
-        _opp(1, "chc", budget=312_500, program_id=7, **LIVE)
-        _opp(2, "chc", budget=10_000, program_id=8, **LIVE)
+    def test_a_real_opportunity_beside_it_still_counts(self):
+        _opp(1, "chc", budget=312_500, is_test=True, **LIVE)
+        _opp(2, "chc", budget=10_000, **LIVE)
         _paid(1, 25)
         _paid(2, 4_000)
         got = queries.committed_by_programme()["chc"]
-        assert got["deployed"] == 4_025
+        assert got["deployed"] == 4_000
         assert got["remaining"] == 6_000
+
+    def test_ace_demo_runs_under_a_real_delivery_type_count_for_nothing(self):
+        """ACE's automated runs land in `ai-demo-space` carrying real delivery
+        types. They were the whole of Nutrition's figures and 31 of Malaria's
+        live opportunities until pulse flagged them."""
+        _opp(1, "nutrition", budget=5_000, is_test=True, slug="ai-demo-space", visits=6, **LIVE)
+        _paid(1, 8)
+        assert queries.committed_by_programme().get("nutrition", {}).get("deployed", 0) == 0
+        assert queries.committed_by_programme().get("nutrition", {}).get("remaining", 0) == 0
+        assert queries.services_by_programme().get("nutrition", 0) == 0
 
     def test_ace_is_not_a_programme(self):
         """Dimagi's own tooling: real rows, nothing a partner delivered and

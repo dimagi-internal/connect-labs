@@ -249,10 +249,15 @@ def _program_scope(request):
     if window_to is not None:
         window_to = window_to + timedelta(days=1)
 
-    events = PulseEvent.objects.all()
-    works = PulseWork.objects.all()
-    opps = PulseOpportunity.objects.all()
-    rollups = PulseRollup.objects.all()
+    # Scaffolding never reaches a figure: ACE's demo runs, sandbox orgs and
+    # opportunities named as tests are dropped here, at the one place every card
+    # is scoped, so no card can count what another leaves out. Events and works
+    # carry no flag of their own, so they are excluded by opportunity.
+    test_opps = list(PulseOpportunity.objects.filter(is_test=True).values_list("opportunity_id", flat=True))
+    events = PulseEvent.objects.exclude(opportunity_id__in=test_opps)
+    works = PulseWork.objects.exclude(opportunity_id__in=test_opps)
+    opps = PulseOpportunity.objects.filter(is_test=False)
+    rollups = PulseRollup.objects.exclude(opportunity_id__in=test_opps)
     grid_service = None
 
     if window_from is not None:
@@ -503,8 +508,7 @@ def _org_menu(request):
     # now counts real delivery only, so a test programme's 9,035 visits cannot
     # inflate it, and an org whose only work is a test falls out for free by
     # summing to zero.
-    test_pids = set(PulseProgram.objects.filter(is_test=True).values_list("program_id", flat=True))
-    real_opps = PulseOpportunity.objects.exclude(org_slug="").exclude(program_id__in=test_pids)
+    real_opps = PulseOpportunity.objects.exclude(org_slug="").filter(is_test=False)
 
     rows = (
         real_opps.values("org_slug")
@@ -530,6 +534,7 @@ def _org_menu(request):
     money_of = {
         r["org_slug"]: r
         for r in PulseWork.objects.exclude(org_slug="")
+        .exclude(opportunity_id__in=PulseOpportunity.objects.filter(is_test=True).values("opportunity_id"))
         .values("org_slug")
         .annotate(
             works=Count("id"),
@@ -721,6 +726,7 @@ def _service_menu():
     """
     rows = (
         PulseOpportunity.objects.exclude(service_slug="")
+        .filter(is_test=False)
         .values("service_slug")
         .annotate(visits=Sum("lifetime_visit_count"), opps=Count("id"))
         .filter(visits__gt=0)
@@ -754,6 +760,7 @@ def _program_menu():
     """
     rows = (
         PulseOpportunity.objects.exclude(program_id=None)
+        .filter(is_test=False)
         .values("program_id")
         .annotate(visits=Sum("lifetime_visit_count"), opps=Count("id"))
         .filter(visits__gt=0)

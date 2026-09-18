@@ -168,8 +168,10 @@ class PulseIndexView(LoginRequiredMixin, View):
         test_pids = set(PulseProgram.objects.filter(is_test=True).values_list("program_id", flat=True))
         partner_of: dict = {}
         rows = []
-        for o in PulseOpportunity.objects.order_by("-is_active", "-lifetime_visit_count").values(
-            "opportunity_id", "name", "is_active", "lifetime_visit_count", "program_id", "org_slug"
+        for o in (
+            PulseOpportunity.objects.filter(is_test=False)
+            .order_by("-is_active", "-lifetime_visit_count")
+            .values("opportunity_id", "name", "is_active", "lifetime_visit_count", "program_id", "org_slug")
         ):
             if o["program_id"] in test_pids or looks_like_test(o["name"]):
                 continue
