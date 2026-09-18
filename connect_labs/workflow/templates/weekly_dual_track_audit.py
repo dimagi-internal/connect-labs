@@ -26,19 +26,49 @@ MUAC_OVERZOOM_REVIEWER = {
 # Manually-entered MUAC reading (cm) that accompanies the tape photo —
 # confirmed against the real CommCare form JSON. soliciter_muac (a
 # hidden DataBindOnly field elsewhere in the form) is just a calculated
-# alias of this same value.
+# alias of this same value. This is the LEGACY MUAC app's field path (used
+# by Program 217/CHC and any other opp that never overrides it) — kept as
+# the default so every pre-existing per_opp config keeps behaving exactly
+# as before.
+#
+# This template audits more than one app, though, and different apps put
+# the manually-entered reading at a different path relative to their own
+# muac_photo question -- there is no way to derive one from the other. RUTF
+# (Program 263)'s Screening form, for example, has the reading as a direct
+# sibling of the photo (anthropometric_appetite/muac_measurement/muac_cm),
+# a completely different shape from this legacy path. Using this constant
+# unconditionally for every opp (2026-09-17 and earlier) meant muac_match
+# silently never ran for any app but the legacy one: AuditDataAccess can't
+# find this field in a RUTF visit's form_json, requires_reading=True then
+# drops the reviewer from that image's runnable list entirely (see
+# connect_labs/audit/tasks.py) -- hyperzoom (requires_reading=False) kept
+# working, which is exactly why only "Not Hyperzoomed" ever showed up in
+# review, never a MUAC Mismatch verdict, on RUTF audits. Fixed by letting
+# each opportunity override the reading field via
+# DEFINITION.config.audit_batch.per_opp[<opp_id>].muac_reading_field (see
+# _muac_match_reviewer / build_track_audit_calls below) instead of adding
+# more apps to this one hardcoded constant.
 MUAC_READING_FIELD = "muac_group/muac_display_group_2/muac_colour_display/soliciter_muac_cm"
 
-MUAC_MATCH_REVIEWER = {
-    "agent_id": "muac_match",
-    # "label" names the related-fields display for this comparison_field —
-    # without it the box falls back to the raw field path (see
-    # ai_review_config.build_review_config / AuditDataAccess's related_fields
-    # rule builder), which is what the review UI's "MUAC Reading" box used to
-    # show verbatim.
-    "config": {"comparison_field": MUAC_READING_FIELD, "label": "MUAC Reading"},
-    "auto_apply_actions": ["fail_unmatched"],
-}
+
+def _muac_match_reviewer(reading_field=None):
+    """Build the muac_match reviewer spec for one opportunity's reading
+    field, defaulting to the legacy MUAC_READING_FIELD when the opp has no
+    override (see MUAC_READING_FIELD's comment). "label" names the
+    related-fields display for this comparison_field — without it the box
+    falls back to the raw field path (see ai_review_config.build_review_config
+    / AuditDataAccess's related_fields rule builder), which is what the
+    review UI's "MUAC Reading" box used to show verbatim."""
+    return {
+        "agent_id": "muac_match",
+        "config": {"comparison_field": reading_field or MUAC_READING_FIELD, "label": "MUAC Reading"},
+        "auto_apply_actions": ["fail_unmatched"],
+    }
+
+
+# Static default, still exported for backward compatibility (existing
+# imports/tests) — equivalent to _muac_match_reviewer() with no override.
+MUAC_MATCH_REVIEWER = _muac_match_reviewer()
 
 # Verbatim from audit_with_ai_review.py's (the "Weekly KMC Audit with AI
 # Review" template) legacy relatedFields wiring — the scale_validation agent
@@ -89,7 +119,7 @@ def _default_classifiers_for_path(path):
     return ["hyperzoom", "muac_mismatch"] if "muac" in (path or "").lower() else []
 
 
-def _reviewers_for_path(path, classifiers=None):
+def _reviewers_for_path(path, classifiers=None, muac_reading_field=None):
     """Reviewer specs for one image path, resolved from its saved classifier
     selection (DEFINITION.config.audit_batch.per_opp[<opp_id>].classifiers)
     — independent of which track (A/B) the path is pinned under. A path
@@ -98,16 +128,27 @@ def _reviewers_for_path(path, classifiers=None):
     keep behaving exactly as before checkboxes existed. Every selected key
     is re-validated against _classifier_applies here regardless of what was
     saved — this is the actual enforcement point, not just the UI's greyed-
-    out checkboxes."""
+    out checkboxes.
+
+    ``muac_reading_field``, when given, overrides MUAC_READING_FIELD for the
+    muac_match reviewer only (see that constant's comment) — the opp's own
+    DEFINITION.config.audit_batch.per_opp[<opp_id>].muac_reading_field."""
     keys = (classifiers or {}).get(path, _default_classifiers_for_path(path))
-    return [CLASSIFIER_SPECS[k] for k in keys if k in CLASSIFIER_SPECS and _classifier_applies(k, path)]
+    reviewers = []
+    for k in keys:
+        if k not in CLASSIFIER_SPECS or not _classifier_applies(k, path):
+            continue
+        reviewers.append(_muac_match_reviewer(muac_reading_field) if k == "muac_mismatch" else CLASSIFIER_SPECS[k])
+    return reviewers
 
 
-def _image_audits(paths, classifiers=None):
+def _image_audits(paths, classifiers=None, muac_reading_field=None):
     """One image_audits entry per pinned image path, each with its own
     per-path reviewer(s) (see _reviewers_for_path) — the PR #771 per-image-type
     model. See connect_labs/audit/ai_review_config.build_review_config."""
-    return [{"image_path": p, "reviewers": _reviewers_for_path(p, classifiers)} for p in paths or []]
+    return [
+        {"image_path": p, "reviewers": _reviewers_for_path(p, classifiers, muac_reading_field)} for p in paths or []
+    ]
 
 
 def build_track_audit_calls(
@@ -136,6 +177,9 @@ def build_track_audit_calls(
     Returns a flat list of kwargs dicts. A track is skipped when its per-opp
     image-path list is empty. JSON-coerced string keys are used to look up
     per_opp / opp_names, so callers may pass either int or str opp ids.
+    ``per_opp[<id>].muac_reading_field``, when present, overrides
+    MUAC_READING_FIELD for that opp's muac_match reviewer only — see that
+    constant's comment for why this is per-opp rather than one global path.
 
     ``pass_threshold``/``deliver_unit_types``/``visit_statuses`` (PR #884) are
     applied identically to every track's criteria when provided — they scope
@@ -160,11 +204,12 @@ def build_track_audit_calls(
         cfg = per_opp.get(key, {})
         name = opp_names.get(key, "")
         classifiers = cfg.get("classifiers")
+        muac_reading_field = cfg.get("muac_reading_field")
         for track, paths in (
             (track_a, cfg.get("muac_image_paths")),
             (track_b, cfg.get("rest_image_paths")),
         ):
-            image_audits = _image_audits(paths, classifiers)
+            image_audits = _image_audits(paths, classifiers, muac_reading_field)
             if not image_audits:
                 continue
             criteria = {
@@ -295,7 +340,7 @@ DEFINITION = {
             # AI-reviewed.
             "track_a": {"tag": "muac", "sample_percentage": 100, "name": "MUAC"},
             "track_b": {"tag": "rest", "sample_percentage": 10, "name": "Other"},
-            "per_opp": {},  # { "<opp_id>": {"muac_image_paths": [...], "rest_image_paths": [...], "classifiers": {"<path>": ["hyperzoom", ...]}} }
+            "per_opp": {},  # { "<opp_id>": {"muac_image_paths": [...], "rest_image_paths": [...], "classifiers": {"<path>": ["hyperzoom", ...]}, "muac_reading_field": "<optional override, see MUAC_READING_FIELD>"} }
             "opp_names": {},  # { "<opp_id>": "Opp display name" }
             "visit_clustering": {
                 "enable_time_gap": False,
