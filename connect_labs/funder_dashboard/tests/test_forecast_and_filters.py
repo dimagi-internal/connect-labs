@@ -4,10 +4,18 @@ Tests the Python-side components. JS-side (funder-charts.js) functions are teste
 via E2E tests.
 """
 
+import asyncio
 import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+
+async def _drain(response):
+    """Read a streaming body, whichever shape it is."""
+    if hasattr(response.streaming_content, "__aiter__"):
+        return b"".join([chunk async for chunk in response.streaming_content])
+    return b"".join(response.streaming_content)
 
 
 class TestSolicitationCrossLink:
@@ -164,7 +172,11 @@ class TestAIStreamViewAgentTypes:
         with patch.object(AIStreamView, "_run_streaming_agent", return_value=iter(())) as run:
             response = AIStreamView().post(request)
             assert response.status_code == 200, f"{agent_type} was rejected by the allow-list"
-            b"".join(response.streaming_content)  # the generator is lazy
+            # Drained because the generator is lazy — the agent is not called
+            # until something reads the body. It is an ASYNC iterator now
+            # (AIStreamView streams rather than buffering), so it cannot be
+            # joined directly.
+            asyncio.run(_drain(response))
 
         assert run.call_args.kwargs["agent_type"] == agent_type
 
