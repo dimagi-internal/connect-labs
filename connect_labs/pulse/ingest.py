@@ -505,6 +505,13 @@ def refresh_rate(client, opp: PulseOpportunity, sample: int = 1000) -> Decimal |
     endpoint = f"/export/opportunity/{opp.opportunity_id}/completed_works/"
     total = Decimal(0)
     count = 0
+    # The same pass also recovers the exchange rate. Each work carries what it
+    # accrued in local currency AND what Connect converted that to, so their
+    # ratio is the rate prod itself applied — no FX table, no inference. It is
+    # accumulated rather than averaged per row so that large works dominate,
+    # which is what makes it a rate rather than a mean of rounding errors.
+    local_sum = Decimal(0)
+    usd_sum = Decimal(0)
     for page in client.paginate(endpoint, params={"cursor_order": "reverse", "page_size": PAGE_SIZE}, partial_ok=True):
         for row in page:
             if row.get("status") != "approved":
@@ -514,6 +521,10 @@ def refresh_rate(client, opp: PulseOpportunity, sample: int = 1000) -> Decimal |
                 continue
             total += usd
             count += 1
+            local = _to_decimal(row.get("saved_payment_accrued"))
+            if local and local > 0 and usd > 0:
+                local_sum += local
+                usd_sum += usd
         if count >= sample:
             break  # declared via partial_ok — a deliberate stop, not a failure
 
@@ -521,7 +532,11 @@ def refresh_rate(client, opp: PulseOpportunity, sample: int = 1000) -> Decimal |
         return None
     rate = (total / count).quantize(Decimal("0.0001"))
     opp.usd_per_service = rate
-    opp.save(update_fields=["usd_per_service", "updated_at"])
+    fields = ["usd_per_service", "updated_at"]
+    if local_sum > 0:
+        opp.usd_rate = (usd_sum / local_sum).quantize(Decimal("0.000000000001"))
+        fields.insert(1, "usd_rate")
+    opp.save(update_fields=fields)
     return rate
 
 
