@@ -105,9 +105,11 @@ def poll_slow_maintenance(rate_sample_limit: int = 25) -> dict:
                     logger.warning("[pulse] budget refresh failed for opp %s: %s", opp.opportunity_id, exc)
 
         countries = ingest.refresh_opportunity_countries()
+        reclassified = ingest.reclassify_opportunities()
         services = ingest.resync_service_slugs()
         return {
             "rates_refreshed": rated,
+            "reclassified": reclassified,
             "budgets_refreshed": budgeted,
             "countries_set": countries,
             "services_resynced": services,
