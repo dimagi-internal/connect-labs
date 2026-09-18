@@ -27,16 +27,18 @@ from connect_labs.labs.analysis.backends.sql.models import (
 )
 
 
-def _make_manager(opportunity_id=42, pipeline_id=1001):
+def _make_manager(opportunity_id=42, pipeline_id=1001, data_source=None):
     """Cache manager with config_hash + pipeline_id set so writes are scoped properly.
 
     Real production callers always have a pipeline_id (the workflow definition id).
     Tests pass an explicit one so unique constraints fire — Postgres treats NULLs
     as distinct, so the constraint doesn't catch in-batch dups when pipeline_id is None.
     """
-    from connect_labs.labs.analysis.config import AnalysisPipelineConfig
+    from connect_labs.labs.analysis.config import AnalysisPipelineConfig, DataSourceConfig
 
-    config = AnalysisPipelineConfig(grouping_key="username", pipeline_id=pipeline_id)
+    config = AnalysisPipelineConfig(
+        grouping_key="username", pipeline_id=pipeline_id, data_source=data_source or DataSourceConfig()
+    )
     m = SQLCacheManager(opportunity_id=opportunity_id, config=config)
     m.config_hash = "deadbeefcafe1234deadbeefcafe1234"
     return m
@@ -102,14 +104,21 @@ class TestRawVisitCacheConcurrency:
         assert RawVisitCache.objects.filter(opportunity_id=42, visit_count=1).count() == 1
 
     def test_different_pipelines_dont_clobber_each_other(self):
-        """Two pipelines for the same opp keep separate raw caches (#116).
+        """Two pipelines on DIFFERENT sources for the same opp keep separate raw caches (#116).
 
         This is the core regression that produced empty per-mother metrics
         on V2: each pipeline used to wholesale DELETE+INSERT for the opp,
         so the last pipeline to run was the only one with raw rows visible.
+        (Two pipelines on the SAME user_visits export share a slot on purpose,
+        #1921 -- see test_shared_visits_slot.py.)
         """
+        from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT, DataSourceConfig
+
         visits_pipeline = _make_manager(pipeline_id=2718)
-        regs_pipeline = _make_manager(pipeline_id=2719)
+        regs_pipeline = _make_manager(
+            pipeline_id=2719,
+            data_source=DataSourceConfig(type="cchq_forms", form_name="Register Mother", app_id="app"),
+        )
 
         visits_pipeline.store_raw_visits(
             visit_dicts=[{"id": "v1", "username": "alice"}, {"id": "v2", "username": "bob"}],
@@ -122,14 +131,17 @@ class TestRawVisitCacheConcurrency:
         )
 
         # Each pipeline reads only its own slot
-        assert RawVisitCache.objects.filter(opportunity_id=42, pipeline_id=2718).count() == 2
+        assert RawVisitCache.objects.filter(opportunity_id=42, pipeline_id=USER_VISITS_RAW_SLOT).count() == 2
         assert RawVisitCache.objects.filter(opportunity_id=42, pipeline_id=2719).count() == 1
         # Total across pipelines
         assert RawVisitCache.objects.filter(opportunity_id=42).count() == 3
 
         # Same visit_id can exist in both pipelines without conflict
         # (separate slots, separate unique keys)
-        regs_pipeline2 = _make_manager(pipeline_id=2719)
+        regs_pipeline2 = _make_manager(
+            pipeline_id=2719,
+            data_source=DataSourceConfig(type="cchq_forms", form_name="Register Mother", app_id="app"),
+        )
         regs_pipeline2.store_raw_visits(
             visit_dicts=[{"id": "v1", "username": "alice"}],  # same visit_id as visits pipeline
             visit_count=1,

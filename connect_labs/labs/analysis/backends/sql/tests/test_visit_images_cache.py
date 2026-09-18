@@ -55,10 +55,14 @@ class TestTheSlotRemembersHowItWasFilled:
         cm.store_raw_visits_finalize(actual_count=2)
         assert SQLCacheManager(OPP).slot_has_image_data() is True
 
-    def test_slots_are_per_pipeline(self):
+    def test_the_flag_is_per_opportunity_not_per_pipeline(self):
+        # Every visits pipeline reads the same export, so they share one slot and
+        # one images_fetched flag (#1921): an image walk under one pipeline answers
+        # the photo question for all of them.
         SQLCacheManager(OPP, pipeline_id=7).store_raw_visits([_visit(1)], 1, images_fetched=True)
         assert SQLCacheManager(OPP, pipeline_id=7).slot_has_image_data() is True
-        assert SQLCacheManager(OPP, pipeline_id=8).slot_has_image_data() is False
+        assert SQLCacheManager(OPP, pipeline_id=8).slot_has_image_data() is True
+        assert SQLCacheManager(OPP + 1, pipeline_id=7).slot_has_image_data() is False
 
 
 @pytest.mark.django_db

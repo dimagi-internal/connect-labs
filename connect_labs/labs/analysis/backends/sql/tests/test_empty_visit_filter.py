@@ -21,6 +21,7 @@ from django.utils import timezone
 from connect_labs.labs.analysis.backends.sql.backend import SQLBackend
 from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
 
 OPP = 990001
 
@@ -30,6 +31,7 @@ def _seed(n: int) -> None:
     for i in range(n):
         RawVisitCache.objects.create(
             opportunity_id=OPP,
+            pipeline_id=USER_VISITS_RAW_SLOT,
             visit_count=n,
             expires_at=future,
             visit_id=str(70000 + i),

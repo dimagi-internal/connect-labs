@@ -19,7 +19,12 @@ from django.utils import timezone
 
 from connect_labs.labs.analysis.backends.sql.models import ComputedVisitCache, RawVisitCache
 from connect_labs.labs.analysis.backends.sql.query_builder import build_flw_aggregation_query
-from connect_labs.labs.analysis.config import AnalysisPipelineConfig, FieldComputation, JoinConfig
+from connect_labs.labs.analysis.config import (
+    USER_VISITS_RAW_SLOT,
+    AnalysisPipelineConfig,
+    FieldComputation,
+    JoinConfig,
+)
 
 
 @pytest.mark.django_db
@@ -32,6 +37,7 @@ class TestCrossPipelineJoins:
         for i, (username, mother_id) in enumerate(rows):
             RawVisitCache.objects.create(
                 opportunity_id=opp_id,
+                pipeline_id=USER_VISITS_RAW_SLOT,
                 visit_count=len(rows),
                 expires_at=future,
                 visit_id=str(30000 + i),
@@ -198,6 +204,7 @@ class TestCrossPipelineJoins:
         ):
             RawVisitCache.objects.create(
                 opportunity_id=opp_id,
+                pipeline_id=USER_VISITS_RAW_SLOT,
                 visit_count=3,
                 expires_at=future,
                 visit_id=f"{40000 + i}",
@@ -323,6 +330,7 @@ class TestCrossPipelineJoins:
         for username, mid, form_name, parity, vid in rows:
             RawVisitCache.objects.create(
                 opportunity_id=opp_id,
+                pipeline_id=USER_VISITS_RAW_SLOT,
                 visit_count=len(rows),
                 expires_at=future,
                 visit_id=str(vid),

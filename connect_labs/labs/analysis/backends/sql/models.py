@@ -29,9 +29,12 @@ class RawVisitCache(models.Model):
     # (e.g. visits + registrations + gs_forms in MBW V2) used to share this
     # table — each pipeline's wholesale DELETE+INSERT clobbered the previous
     # pipeline's rows, leaving only the last writer's data (issue #116).
-    # With pipeline_id set, every pipeline owns its own slot. Nullable so
-    # callers without a workflow definition id (legacy / ad-hoc analyses)
-    # still work; in that case the cache behaves as it did before #116.
+    # With pipeline_id set, every pipeline on a non-visits source owns its own
+    # slot. Pipelines on the user_visits export all read the identical export,
+    # so they share ONE slot per opportunity, tagged USER_VISITS_RAW_SLOT (-1)
+    # -- see analysis.config.raw_cache_slot (#1921). Nullable so callers
+    # without a workflow definition id (legacy / ad-hoc analyses) still work;
+    # in that case the cache behaves as it did before #116.
     pipeline_id = models.IntegerField(null=True, blank=True, db_index=True)
     visit_count = models.IntegerField(help_text="Visit count when cached, for invalidation")
     expires_at = models.DateTimeField(db_index=True)

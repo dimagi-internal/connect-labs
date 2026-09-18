@@ -8,7 +8,7 @@ dashboard, and none of them is keyed on fixture *content*:
 |---|---|---|
 | registry (is this opp synthetic, which folder) | `opp_id` | `registry.invalidate_cache` |
 | FixtureStore (parsed fixture JSON) | `(opp_id, folder_id, endpoint_key)` | `fixture_store.reload` |
-| RawVisitCache | `(opportunity_id, pipeline_id)` | `SQLCacheManager.delete_all_cache` |
+| RawVisitCache | `(opportunity_id, raw slot)` | `SQLCacheManager.delete_all_cache` |
 | Computed visit/FLW/entity rows | `(opportunity_id, config_hash, …)` | same |
 
 `synthetic_register` used to clear only the first, so replacing fixture bytes at

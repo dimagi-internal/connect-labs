@@ -25,6 +25,7 @@ from django.utils import timezone
 from connect_labs.labs.analysis.backends.sql.backend import RAW_CACHE_DELTA_MAX_ROWS, SQLBackend
 from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
 
 pytestmark = pytest.mark.django_db
 
@@ -40,7 +41,8 @@ def _seed(count, *, first_id=1000, expires_in_hours=6, visit_count=None):
         [
             RawVisitCache(
                 opportunity_id=OPP,
-                pipeline_id=PIPELINE,
+                # A visits pipeline reads the opportunity's shared slot (#1921).
+                pipeline_id=USER_VISITS_RAW_SLOT,
                 visit_count=stamped,
                 expires_at=expires_at,
                 visit_id=str(first_id + i),

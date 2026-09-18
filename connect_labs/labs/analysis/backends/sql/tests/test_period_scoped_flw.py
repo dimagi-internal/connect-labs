@@ -15,7 +15,12 @@ from django.utils import timezone
 
 from connect_labs.labs.analysis.backends.sql.backend import SQLBackend
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
-from connect_labs.labs.analysis.config import AnalysisPipelineConfig, CacheStage, FieldComputation
+from connect_labs.labs.analysis.config import (
+    USER_VISITS_RAW_SLOT,
+    AnalysisPipelineConfig,
+    CacheStage,
+    FieldComputation,
+)
 
 PIPELINE_ID = 7001
 OPP_ID = 8642
@@ -42,7 +47,8 @@ def _seed(opp_id: int, rows: list[tuple[str, str]]) -> None:
     for i, (username, vdate) in enumerate(rows):
         RawVisitCache.objects.create(
             opportunity_id=opp_id,
-            pipeline_id=PIPELINE_ID,
+            # A visits pipeline reads the opportunity's shared slot (#1921).
+            pipeline_id=USER_VISITS_RAW_SLOT,
             visit_count=len(rows),
             expires_at=future,
             visit_id=str(30000 + i),

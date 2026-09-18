@@ -173,6 +173,37 @@ class CacheStage(Enum):
     ENTITY = "entity"
 
 
+# The data source whose rows are the Connect `user_visits` export. The token name
+# predates the v2 JSON migration (see DataSourceConfig.type).
+USER_VISITS_SOURCE = "connect_csv"
+
+# The raw-cache slot (`RawVisitCache.pipeline_id`) shared by EVERY reader of an
+# opportunity's user_visits export (#1921). Pipeline ids are positive record ids, so
+# a negative constant cannot collide with one, and it is not None, which stays the
+# slot of configless non-visits callers.
+USER_VISITS_RAW_SLOT = -1
+
+
+def raw_cache_slot(pipeline_id: int | None, source_type: str = USER_VISITS_SOURCE) -> int | None:
+    """The `RawVisitCache.pipeline_id` a raw read or write for this source lands in.
+
+    The raw cache is keyed by (opportunity, pipeline) because of #116: pipelines on
+    DIFFERENT sources (visits, CommCare registrations, Connect work areas) wrote over
+    one another. That reason does not reach two pipelines on the SAME source. Every
+    visits pipeline walks the identical `/user_visits/` export, so keying those per
+    pipeline stored one identical copy per pipeline and made each new pipeline pay a
+    full walk into a cold slot -- five ~55k-row copies of opp 2154 inside three hours,
+    which pinned a web task and OOM-killed a worker (#1921).
+
+    So the user_visits export has one slot per opportunity, and every other source
+    keeps its per-pipeline slot. Reads and writes must both resolve through here, or
+    an extraction would scope to a slot nothing writes.
+    """
+    if source_type == USER_VISITS_SOURCE:
+        return USER_VISITS_RAW_SLOT
+    return pipeline_id
+
+
 @dataclass
 class DataSourceConfig:
     """
@@ -771,7 +802,9 @@ class AnalysisPipelineConfig:
     # isolated raw caches — without this, each pipeline's `store_raw_visits`
     # used to wholesale DELETE+INSERT for the opp and clobber the previous
     # pipeline's rows. See incident on opp 765 (issue #116). The SQL backend
-    # uses this to scope every raw-cache read and write.
+    # uses this to scope every raw-cache read and write of a NON-visits
+    # source. Pipelines reading the user_visits export share one slot per
+    # opportunity instead (#1921) -- see `raw_slot_id`.
     # Optional: legacy callers without a workflow definition id (one-off
     # tests, ad-hoc analyses) can leave it None — the cache then behaves
     # as it did before #116, namely shared across all such callers for
@@ -823,6 +856,15 @@ class AnalysisPipelineConfig:
                         f"WindowFieldComputation {wf.name!r} references "
                         f"{ref_name}={ref_value!r}, but no extracted field or base column has that name."
                     )
+
+    @property
+    def raw_slot_id(self) -> int | None:
+        """The raw-cache slot this pipeline's rows live in. See `raw_cache_slot`.
+
+        Use this -- never `pipeline_id` -- to scope a `labs_raw_visit_cache` read.
+        `pipeline_id` still keys the computed caches, which really are per pipeline.
+        """
+        return raw_cache_slot(self.pipeline_id, self.data_source.type)
 
     def add_field(self, field_comp: FieldComputation) -> None:
         """Add a field computation to the config."""
