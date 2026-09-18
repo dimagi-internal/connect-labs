@@ -19,6 +19,7 @@ from django.utils import timezone
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
 from connect_labs.labs.analysis.backends.sql.query_builder import build_visit_extraction_query
 from connect_labs.labs.analysis.config import (
+    USER_VISITS_RAW_SLOT,
     AnalysisPipelineConfig,
     CacheStage,
     FieldComputation,
@@ -46,6 +47,7 @@ class TestLagHaversineWindow:
         for i, (vid, mid, lat, lon, dt) in enumerate(rows):
             RawVisitCache.objects.create(
                 opportunity_id=opp_id,
+                pipeline_id=USER_VISITS_RAW_SLOT,
                 visit_count=len(rows),
                 expires_at=future,
                 visit_id=str(vid),
@@ -202,15 +204,14 @@ class TestGpsTransformsExecuteEndToEnd:
     """
 
     def _seed_packed_gps(self, opp_id: int, rows: list[tuple]) -> None:
-        # pipeline_id matches what `_schema_to_config(..., definition_id=opp_id)`
-        # produces below — required after RawVisitCache became
-        # pipeline-discriminated (#116). Without this, the extraction
-        # query filters by pipeline_id=opp_id and finds nothing.
+        # A visits pipeline reads the opportunity's shared user_visits slot
+        # (#1921), whatever `_schema_to_config(..., definition_id=opp_id)` names
+        # its pipeline id. Seeding any other slot, the extraction finds nothing.
         future = timezone.now() + timezone.timedelta(days=1)
         for i, (vid, mid, gps_str, dt) in enumerate(rows):
             RawVisitCache.objects.create(
                 opportunity_id=opp_id,
-                pipeline_id=opp_id,
+                pipeline_id=USER_VISITS_RAW_SLOT,
                 visit_count=len(rows),
                 expires_at=future,
                 visit_id=str(vid),

@@ -47,6 +47,7 @@ class _RecordingCache:
     def __init__(self, opportunity_id, pipeline_id=None):
         self.opportunity_id = opportunity_id
         self.pipeline_id = pipeline_id
+        self.raw_slot_id = pipeline_id
         self.write_sizes: list[int] = []
         self.rows: list[dict] = []
         self.images_fetched = None

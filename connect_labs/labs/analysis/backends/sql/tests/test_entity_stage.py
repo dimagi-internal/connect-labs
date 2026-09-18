@@ -23,6 +23,7 @@ from connect_labs.labs.analysis.backends.sql.query_builder import (
     build_entity_aggregation_query,
 )
 from connect_labs.labs.analysis.config import (
+    USER_VISITS_RAW_SLOT,
     AnalysisPipelineConfig,
     CacheStage,
     FieldComputation,
@@ -197,7 +198,7 @@ class TestBuildEntityAggregationQuery:
         fragment itself now excludes in-progress sentinel generations
         (visit_count > 0); that is the slot filter, not a schema filter."""
         query = build_entity_aggregation_query(self._config(), opportunity_id=999)
-        assert "WHERE opportunity_id = 999 AND pipeline_id IS NULL AND visit_count > 0\n" in query
+        assert "WHERE opportunity_id = 999 AND pipeline_id = -1 AND visit_count > 0\n" in query
 
     def test_status_filter_restricts_row_set(self):
         """Entity-stage aggregation previously ignored config.filters entirely,
@@ -261,6 +262,7 @@ def raw_visits_factory(db):
         rows = [
             RawVisitCache(
                 opportunity_id=opp_id,
+                pipeline_id=USER_VISITS_RAW_SLOT,
                 visit_count=len(visits),
                 expires_at=expires_at,
                 visit_id=str(v["visit_id"]),
