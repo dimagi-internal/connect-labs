@@ -294,6 +294,27 @@ class TestPlanningGapFeatures:
         assert lons[0] == pytest.approx(0.001)
         assert lons[1] == pytest.approx(0.008)
 
+    def test_gap_cell_overlapping_an_existing_wa_is_dropped(self, monkeypatch):
+        # Building A survives point-level exclusion (it sits just southwest
+        # of the existing WA, not inside it) -- but the 100m cell
+        # grid_clusters builds around it (anchored on the surviving
+        # building's own position, with no awareness of existing WA
+        # geometry) extends northeast far enough to fully cover the
+        # existing WA anyway. Before this fix, that cell became a gap-fill
+        # work area that visually overlapped the existing WA on the map,
+        # even though point-level exclusion "worked" for the one building
+        # that produced it.
+        buildings = _buildings_df([(0.0044, 0.0044)])
+        monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: buildings)
+        existing = [_square(0.0048, 0.0048, 0.0052, 0.0052)]
+        features, points = gaps.planning_gap_features(
+            "Sabon Gari", "Rano", "Kano", "mopup-kano-rano-sabon-gari", object(), existing
+        )
+        assert features == []
+        # building_points (the map's raw dot layer) is unaffected -- it's
+        # not gridded, so this drop doesn't touch it.
+        assert len(points) == 1
+
     def test_no_remainder_returns_empty(self, monkeypatch):
         monkeypatch.setattr(gaps, "fetch_buildings", lambda area, **kw: _buildings_df([]))
         features, points = gaps.planning_gap_features(
