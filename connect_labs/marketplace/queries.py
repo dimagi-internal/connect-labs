@@ -195,67 +195,94 @@ def fx_rates() -> dict[str, decimal.Decimal]:
 
 
 def committed_by_programme() -> dict[str, dict]:
-    """Per programme: what has been funded, and how much of it is still to come.
+    """Per programme: what has been deployed, and what live work is still funded.
 
-    The marketplace could say what a programme had DELIVERED and never what had
-    been committed to it, which is the difference between a track record and a
-    pipeline. An organisation reading only the first cannot tell a programme
-    winding down from one just funded.
+    Two numbers, deliberately built from different things:
 
-    Every figure is USD, converted at the rate Connect itself applied to that
-    opportunity's payments — so these are comparable across programmes, which
-    the local-currency totals never were: Kangaroo Mother Care's budget spans
-    rupees, shillings and naira, and their sum meant nothing.
+    * DEPLOYED is money Connect actually paid — the USD accrued on every
+      completed work, to workers and to organisations. It is not estimated
+      from visits: a payment unit can cover several visits, so multiplying
+      visits by a per-visit budget overstated delivery wherever it did.
 
-    `delivered` values the work at the same per-visit budget the total is built
-    from, so the two are subtractable. Two kinds of opportunity are excluded
-    rather than guessed at, and counted so the caller can say how complete the
-    answer is: one whose budget has never been read, and one whose currency no
-    payment has ever established a rate for.
+    * REMAINING is budget still available on opportunities that are LIVE —
+      active and not past their end date — net of what each has already paid.
+      An ended opportunity contributes nothing, however much of its budget went
+      unspent: that money expired, it is not waiting to be spent.
+
+      It is an UPPER BOUND, and should be presented as "up to". Real budgets
+      are not uniformly spent: across 193 finished real opportunities the
+      median paid 40% of its budget and a quarter paid 1% or less. Most of the
+      gap is one programme — KMC Uganda Roll-out's five opportunities held
+      $2.5M between them and paid about $95k — and that programme's live
+      opportunity is the majority of today's KMC figure. Forecasting a spend
+      rate onto it would be inventing a number; saying "up to" is not.
+
+    The second rule is most of the correction. `total_budget` on Connect is a
+    ceiling set generously, not a commitment — one Kangaroo Mother Care
+    opportunity carried $1.48M of budget and paid $4,722 before it closed — so
+    counting ended opportunities put $5M of lapsed allowance into a figure
+    that should have been about $1M, and made "remaining" read as twice what
+    had ever been spent.
+
+    Figures are USD at the rate Connect applied (see `fx_rates`). Opportunities
+    whose budget has not been read, or whose currency has no rate, are left out
+    of REMAINING and counted in `unconvertible`, never guessed at.
     """
-    from connect_labs.pulse.models import PulseOpportunity
+    from django.db.models import Sum
+    from django.utils import timezone
+
+    from connect_labs.pulse.models import PulseOpportunity, PulseProgram, PulseWork
 
     if _fresh() and _cache["committed"] is not None:
         return _cache["committed"]
 
+    today = timezone.now().date()
     rates = fx_rates()
+    # Test programmes are excluded from both figures. Connect has a real
+    # `Opportunity.is_test`, but no export carries it, so this is labs' own
+    # programme-name heuristic (`PulseProgram.is_test`) — it catches "CHC Test
+    # Opportunity" under "Founders Pledge Test Program", and would miss a test
+    # programme named like a real one. It matters here more than anywhere:
+    # that one test opportunity alone carried $312,500 of budget.
+    test_programmes = set(PulseProgram.objects.filter(is_test=True).values_list("program_id", flat=True))
+
+    paid = {
+        row["opportunity_id"]: (row["worker"] or 0) + (row["org"] or 0)
+        for row in PulseWork.objects.values("opportunity_id").annotate(
+            worker=Sum("usd_to_worker"), org=Sum("usd_to_org")
+        )
+    }
+
     out: dict[str, dict] = {}
-    rows = PulseOpportunity.objects.exclude(service_slug="").exclude(total_budget=None)
-    for opp in rows.only(
-        "service_slug", "total_budget", "budget_per_visit", "lifetime_visit_count", "currency", "usd_rate"
+    for opp in PulseOpportunity.objects.exclude(service_slug="").only(
+        "opportunity_id", "program_id", "service_slug", "total_budget", "currency", "usd_rate", "is_active", "end_date"
     ):
-        if not programmes.is_programme(opp.service_slug):
+        if not programmes.is_programme(opp.service_slug) or opp.program_id in test_programmes:
             continue
         entry = out.setdefault(
             opp.service_slug,
-            {"funded": 0, "delivered": 0, "opportunities": 0, "unconvertible": 0, "currencies": set()},
+            {"deployed": 0, "remaining": 0, "live_opportunities": 0, "unconvertible": 0, "currencies": set()},
         )
-        # This opportunity's own rate first, its currency's pooled rate second,
-        # and otherwise it is left out entirely. Converting at a rate nobody
-        # measured would put a dollar figure on a page that no payment supports.
+        spent = decimal.Decimal(paid.get(opp.opportunity_id, 0) or 0)
+        entry["deployed"] += int(spent)
+
+        live = opp.is_active and (opp.end_date is None or opp.end_date >= today)
+        if not live:
+            continue
+        entry["live_opportunities"] += 1
+
         rate = opp.usd_rate or rates.get(opp.currency)
-        if not rate or rate <= 0:
+        if opp.total_budget is None or not rate or rate <= 0:
             entry["unconvertible"] += 1
             continue
-
-        entry["funded"] += int(decimal.Decimal(opp.total_budget or 0) * rate)
-        # Valued at the opportunity's own per-visit budget, which is the rate
-        # its total is built from. Without one the visits cannot be priced, so
-        # they contribute nothing rather than a guess.
-        if opp.budget_per_visit:
-            delivered_local = decimal.Decimal((opp.lifetime_visit_count or 0) * opp.budget_per_visit)
-            entry["delivered"] += int(delivered_local * rate)
-        entry["opportunities"] += 1
+        budget_usd = decimal.Decimal(opp.total_budget) * rate
+        # Never below zero: an opportunity can pay out beyond its budget, and
+        # "minus $4,000 still available" is not something anyone can act on.
+        entry["remaining"] += int(max(budget_usd - spent, 0))
         if opp.currency:
             entry["currencies"].add(opp.currency)
 
     for entry in out.values():
-        # Never below zero: an opportunity can over-deliver against its budget,
-        # and "minus $4,000 outstanding" is not a thing anyone can act on.
-        entry["outstanding"] = max(entry["funded"] - entry["delivered"], 0)
-        # Kept for provenance now that the figures are all USD — which local
-        # currencies a total was built from is the thing to look at when one
-        # of them turns out to be wrong.
         entry["currencies"] = sorted(entry["currencies"])
 
     _cache["committed"] = out
