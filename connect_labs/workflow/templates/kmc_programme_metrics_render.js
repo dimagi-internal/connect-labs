@@ -962,11 +962,6 @@ function WorkflowUI({
         });
       });
   }
-  function copyText(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text);
-    }
-  }
   React.useEffect(
     function () {
       // The definition prop has not always carried `id`; the run knows its
@@ -1223,32 +1218,194 @@ function WorkflowUI({
     });
   }
 
+  // The definitions come from the workflow that computes the figures: this one.
+  function explainDefId() {
+    return definitionId();
+  }
+  // ══ Column headers: sort, and the definition behind each number ════════════
+  // Clicking an indicator column's NAME opens its definition: the plain-English
+  // meaning and the SQL that recomputes it, read from the same reader as the
+  // MCP tool semantic_registry_explain (api/<id>/indicator-definitions/), one
+  // indicator at a time and cached. Nothing is derived here. The arrow beside
+  // the name sorts; a column that is not an indicator sorts from its name too.
+  //
+  // All of it is WorkflowUI state, never a table's own: every table here is a
+  // function defined inside WorkflowUI, so each state change remounts it and
+  // anything it held itself would be thrown away.
+  var sColSort = React.useState({});
+  var colSort = sColSort[0],
+    setColSort = sColSort[1];
+  var sColDef = React.useState(null);
+  var colDef = sColDef[0],
+    setColDef = sColDef[1];
+  var sDefCache = React.useState({});
+  var defCache = sDefCache[0],
+    setDefCache = sDefCache[1];
+  var sDefFull = React.useState(false);
+  var defFull = sDefFull[0],
+    setDefFull = sDefFull[1];
+  React.useEffect(
+    function () {
+      if (!colDef) return;
+      function onKey(ev) {
+        if (ev.key === 'Escape') setColDef(null);
+      }
+      window.addEventListener('keydown', onKey);
+      return function () {
+        window.removeEventListener('keydown', onKey);
+      };
+    },
+    [colDef],
+  );
+  function sortOf(table) {
+    return colSort[table] || null;
+  }
+  function setSortFor(table, key, dir) {
+    setColSort(function (prev) {
+      var next = Object.assign({}, prev);
+      next[table] = { key: key, dir: dir };
+      return next;
+    });
+  }
+  function toggleSort(table, key) {
+    var cur = sortOf(table);
+    setSortFor(
+      table,
+      key,
+      cur && cur.key === key && cur.dir === 'desc' ? 'asc' : 'desc',
+    );
+  }
+  function blankSortValue(v) {
+    return (
+      v === null ||
+      v === undefined ||
+      v === '' ||
+      (typeof v === 'number' && isNaN(v))
+    );
+  }
+  // Stable. A row with no value sits at the bottom in BOTH directions: "no
+  // data" is not a low score.
+  function sortRows(table, rows, valueOf) {
+    var s = sortOf(table);
+    if (!s) return rows;
+    var dir = s.dir === 'asc' ? 1 : -1;
+    return rows
+      .map(function (r, i) {
+        return { r: r, i: i, v: valueOf(r, s.key) };
+      })
+      .sort(function (a, b) {
+        var an = blankSortValue(a.v),
+          bn = blankSortValue(b.v);
+        if (an && bn) return a.i - b.i;
+        if (an) return 1;
+        if (bn) return -1;
+        if (a.v === b.v) return a.i - b.i;
+        return a.v < b.v ? -dir : dir;
+      })
+      .map(function (x) {
+        return x.r;
+      });
+  }
+  var DEF_SCOPE_LABEL = {
+    programme: 'the programme',
+    llo: 'organisation',
+    opportunity: 'opportunity',
+    flw: 'worker',
+  };
+  function explainColUrl(id, scope, fmt, download) {
+    var sp = scopeParams();
+    return (
+      '/labs/workflow/api/' +
+      explainDefId() +
+      '/indicator-definitions/' +
+      sp +
+      (sp ? '&' : '?') +
+      'indicators=' +
+      encodeURIComponent(id) +
+      '&scope=' +
+      scope +
+      '&format=' +
+      fmt +
+      (download ? '&download=1' : '')
+    );
+  }
+  function openColDef(d) {
+    setColDef(d);
+    setDefFull(false);
+    var k = d.scope + '|' + d.id;
+    var have = defCache[k];
+    if (have && have.status !== 'error') return;
+    if (!explainDefId()) {
+      setDefCache(function (prev) {
+        var next = Object.assign({}, prev);
+        next[k] = {
+          status: 'error',
+          error:
+            'this page does not know which workflow computes its figures, so it cannot read their definitions',
+        };
+        return next;
+      });
+      return;
+    }
+    function put(v) {
+      setDefCache(function (prev) {
+        var next = Object.assign({}, prev);
+        next[k] = v;
+        return next;
+      });
+    }
+    put({ status: 'loading' });
+    fetch(explainColUrl(d.id, d.scope, 'json', false), {
+      credentials: 'same-origin',
+    })
+      .then(function (r) {
+        return r.json().catch(function () {
+          return { error: 'the server answered HTTP ' + r.status };
+        });
+      })
+      .then(function (j) {
+        if (j.error) throw new Error(j.error);
+        var e = (j.indicators || [])[0];
+        if (!e) throw new Error('no definition came back for ' + d.id);
+        put({ status: 'ready', e: e });
+      })
+      .catch(function (err) {
+        put({ status: 'error', error: String((err && err.message) || err) });
+      });
+  }
+  function copyDefText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text);
+    }
+  }
+  function defBlock(title, text) {
+    return (
+      <div className="mt-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+            {title}
+          </span>
+          <button
+            type="button"
+            className="text-xs text-indigo-600 hover:underline"
+            onClick={function () {
+              copyDefText(text);
+            }}
+          >
+            Copy
+          </button>
+        </div>
+        <pre className="mt-1 text-xs bg-gray-50 border border-gray-200 rounded-md p-2 overflow-x-auto whitespace-pre max-h-72">
+          {text}
+        </pre>
+      </div>
+    );
+  }
   // One indicator's definition: the authored sentence, the sentence rendered
-  // from its SQL, the properties it reads, and the compiled measure -- each
-  // block copyable. Read from the explain endpoint; nothing derived here.
-  function DefinitionRow(props) {
-    var i = props.ind;
-    var e = explainData.by[i.id];
-    var en = (e && e.english) || null;
-    if (
-      explainData.status === 'loading' ||
-      (!e && explainData.status !== 'error')
-    )
-      return (
-        <tr className="bg-gray-50">
-          <td colSpan={6} className="px-4 py-2 text-xs text-gray-400">
-            Loading the definition…
-          </td>
-        </tr>
-      );
-    if (!e)
-      return (
-        <tr className="bg-gray-50">
-          <td colSpan={6} className="px-4 py-2 text-xs text-red-700">
-            {explainData.error || 'No definition for ' + i.id + '.'}
-          </td>
-        </tr>
-      );
+  // from its SQL, what each property it reads means, then the SQL chain -- the
+  // compiled measure, the per-baby properties under it -- each block copyable.
+  function definitionBody(e) {
+    var en = e.english || {};
     var measureSql = [
       '-- ' + e.measure,
       (e.expression && e.expression.compiled) || '',
@@ -1279,46 +1436,270 @@ function WorkflowUI({
         return k + ' = ' + e.constants[k];
       })
       .join(', ');
-    function block(title, text) {
-      return (
-        <div className="mt-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
-              {title}
-            </span>
+    var reads = (en.reads || []).filter(function (r) {
+      return r.means;
+    });
+    return (
+      <div>
+        {en.plain ? <p className="text-gray-900">{en.plain}</p> : null}
+        {en.definition ? (
+          <p className="text-gray-600 text-xs mt-1">
+            <span className="font-semibold text-gray-500">From the SQL: </span>
+            {en.definition}
+            {consts ? ' Constants: ' + consts + '.' : ''}
+          </p>
+        ) : null}
+        {reads.length ? (
+          <ul className="mt-2 text-xs text-gray-600 space-y-0.5">
+            {reads.map(function (r) {
+              return (
+                <li key={r.name}>
+                  <span className="font-mono text-gray-500">{r.name}</span>
+                  {' — ' + r.means}
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+        {defBlock('Measure', measureSql)}
+        {propSql
+          ? defBlock('Properties and window derivations it reads', propSql)
+          : null}
+      </div>
+    );
+  }
+  // One header cell. `def` is the indicator whose definition the name opens;
+  // `table` is the sort space (omit it on a table whose rows have a fixed
+  // order, like a scorecard of scopes).
+  function headCell(o) {
+    var s = o.table ? sortOf(o.table) : null;
+    var on = !!(s && s.key === o.sortKey);
+    function sort() {
+      toggleSort(o.table, o.sortKey);
+    }
+    var onName = o.def
+      ? function () {
+          openColDef({
+            id: o.def,
+            title: o.title,
+            label: o.label,
+            scope: o.scope,
+            table: o.table || null,
+            sortKey: o.sortKey,
+          });
+        }
+      : o.table
+        ? sort
+        : null;
+    return (
+      <th
+        key={o.key}
+        title={
+          o.def ? (o.title || o.def) + ' — click for the definition' : o.title
+        }
+        className={
+          (o.className || '') +
+          (on
+            ? ' bg-indigo-100 text-indigo-900 border-b-2 border-indigo-600'
+            : '')
+        }
+      >
+        <span
+          className={
+            'inline-flex items-center gap-1' +
+            (o.align === 'left' ? '' : ' justify-end')
+          }
+        >
+          {onName ? (
             <button
               type="button"
-              className="text-xs text-indigo-600 hover:underline"
-              onClick={function () {
-                copyText(text);
-              }}
+              onClick={onName}
+              className={
+                'font-semibold hover:text-indigo-700 ' +
+                (o.def
+                  ? 'underline decoration-dotted decoration-gray-300 underline-offset-2'
+                  : '')
+              }
             >
-              Copy
+              {o.label}
             </button>
+          ) : (
+            o.label
+          )}
+          {o.table ? (
+            <button
+              type="button"
+              onClick={sort}
+              aria-label={'Sort by ' + (o.title || o.label)}
+              title="Sort"
+              className={
+                'text-[10px] ' +
+                (on ? 'text-indigo-600' : 'text-gray-300 hover:text-indigo-600')
+              }
+            >
+              {on ? (s.dir === 'asc' ? '▲' : '▼') : '↕'}
+            </button>
+          ) : null}
+        </span>
+        {o.sub ? (
+          <div className="font-mono text-[10px] font-normal text-gray-300">
+            {o.sub}
           </div>
-          <pre className="mt-1 text-xs bg-white border border-gray-200 rounded-md p-2 overflow-x-auto whitespace-pre">
-            {text}
-          </pre>
-        </div>
+        ) : null}
+      </th>
+    );
+  }
+  function colDefModal() {
+    if (!colDef) return null;
+    var st = defCache[colDef.scope + '|' + colDef.id] || { status: 'loading' };
+    var e = st.e;
+    var s = colDef.table ? sortOf(colDef.table) : null;
+    function close() {
+      setColDef(null);
+    }
+    function sortBtn(dir, label) {
+      var on = !!(s && s.key === colDef.sortKey && s.dir === dir);
+      return (
+        <button
+          type="button"
+          className={
+            'px-2.5 py-1 rounded-md text-xs font-medium border ' +
+            (on
+              ? 'bg-indigo-600 border-indigo-600 text-white'
+              : 'bg-white border-gray-200 text-gray-700 hover:bg-indigo-50')
+          }
+          onClick={function () {
+            setSortFor(colDef.table, colDef.sortKey, dir);
+            close();
+          }}
+        >
+          {label}
+        </button>
       );
     }
     return (
+      <div
+        className="fixed inset-0 z-50 flex items-start justify-center bg-gray-900/40 p-4 overflow-y-auto"
+        onClick={close}
+      >
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="bg-white rounded-xl shadow-xl w-full max-w-3xl mt-12 text-sm text-left"
+          onClick={function (ev) {
+            ev.stopPropagation();
+          }}
+        >
+          <div className="px-5 py-3 border-b border-gray-100 flex items-start justify-between gap-3">
+            <div>
+              <div className="font-mono text-xs text-gray-400">
+                {colDef.id}
+                {e && e.measure ? ' · ' + e.measure : ''}
+              </div>
+              <div className="text-base font-semibold text-gray-900">
+                {colDef.title || (e && e.title) || colDef.label}
+              </div>
+            </div>
+            <button
+              type="button"
+              aria-label="Close"
+              className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+              onClick={close}
+            >
+              {'×'}
+            </button>
+          </div>
+          <div className="px-5 py-4">
+            {st.status === 'loading' ? (
+              <div className="text-xs text-gray-400">
+                Reading the definition…
+              </div>
+            ) : st.status === 'error' ? (
+              <div className="text-xs text-red-700">
+                Could not read the definition: {st.error}
+              </div>
+            ) : (
+              <div>
+                {definitionBody(e)}
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    className="text-xs text-indigo-600 hover:underline"
+                    onClick={function () {
+                      setDefFull(!defFull);
+                    }}
+                  >
+                    {defFull
+                      ? 'Hide the full statement'
+                      : 'Show the full statement, grouped by ' +
+                        (DEF_SCOPE_LABEL[colDef.scope] || colDef.scope)}
+                  </button>
+                  {defFull
+                    ? defBlock(
+                        'Full statement · replace pipeline_visit_rows with the pipeline query',
+                        e.compiled_sql || '',
+                      )
+                    : null}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="px-5 py-3 border-t border-gray-100 flex items-center gap-2 flex-wrap text-xs">
+            {colDef.table ? (
+              <span className="flex items-center gap-2">
+                <span className="text-gray-500">Sort the table</span>
+                {sortBtn('desc', 'High → low')}
+                {sortBtn('asc', 'Low → high')}
+              </span>
+            ) : null}
+            <a
+              className="ml-auto text-indigo-600 hover:underline"
+              href={explainColUrl(colDef.id, colDef.scope, 'sql', true)}
+            >
+              Download SQL
+            </a>
+            <a
+              className="text-indigo-600 hover:underline"
+              href={explainColUrl(colDef.id, colDef.scope, 'md', false)}
+              target="_blank"
+              rel="noopener"
+            >
+              Open as text
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // One indicator's definition, expanded under its row. The body is the same
+  // one the column-header popup shows (definitionBody), from the same reader.
+  function DefinitionRow(props) {
+    var i = props.ind;
+    var e = explainData.by[i.id];
+    if (
+      explainData.status === 'loading' ||
+      (!e && explainData.status !== 'error')
+    )
+      return (
+        <tr className="bg-gray-50">
+          <td colSpan={6} className="px-4 py-2 text-xs text-gray-400">
+            Loading the definition…
+          </td>
+        </tr>
+      );
+    if (!e)
+      return (
+        <tr className="bg-gray-50">
+          <td colSpan={6} className="px-4 py-2 text-xs text-red-700">
+            {explainData.error || 'No definition for ' + i.id + '.'}
+          </td>
+        </tr>
+      );
+    return (
       <tr className="bg-gray-50">
         <td colSpan={6} className="px-4 py-3 text-sm">
-          {en && en.plain ? <p className="text-gray-900">{en.plain}</p> : null}
-          {en && en.definition ? (
-            <p className="text-gray-600 text-xs mt-1">
-              <span className="font-semibold text-gray-500">
-                From the SQL:{' '}
-              </span>
-              {en.definition}
-              {consts ? ' Constants: ' + consts + '.' : ''}
-            </p>
-          ) : null}
-          {block('Measure', measureSql)}
-          {propSql
-            ? block('Properties and window derivations it reads', propSql)
-            : null}
+          {definitionBody(e)}
         </td>
       </tr>
     );
@@ -2088,23 +2469,47 @@ function WorkflowUI({
     { label: 'Outcome', span: 1 },
     { label: 'Data quality', span: 2 },
   ];
-  function scorecardTh(c, i) {
-    return (
-      <th
-        key={i}
-        className="px-1.5 py-2 text-right whitespace-nowrap font-semibold text-gray-600"
-        title={c.title}
-      >
-        {c.label}
-        <div className="font-mono text-[10px] font-normal text-gray-300">
-          {c.id}
-        </div>
-      </th>
-    );
+  // A header's leading/trailing columns are labels, or {label, sortKey} when
+  // the table sorts on them. Scorecard columns sort by position (`col<i>`):
+  // N09 is two columns, its denominator and its rate.
+  function asHeadCol(l) {
+    return typeof l === 'string' ? { label: l } : l;
+  }
+  function scorecardTh(c, i, table, scope) {
+    return headCell({
+      key: i,
+      label: c.label,
+      sub: c.id,
+      title: c.title,
+      def: c.id,
+      scope: scope,
+      table: table,
+      sortKey: 'col' + i,
+      className:
+        'px-1.5 py-2 text-right whitespace-nowrap font-semibold text-gray-600',
+    });
+  }
+  // What a scorecard cell sorts on: what it shows. A withheld cell (n below
+  // the minimum, no data) has no value to rank, so it sorts to the bottom.
+  function scorecardSortValue(key, ind) {
+    var c = SCORECARD[Number(String(key).slice(3))];
+    var e = c && ind && ind[c.id];
+    if (!e) return null;
+    if (c.denOnly) return e.n || null;
+    if (
+      e.band === 'insufficient' ||
+      e.band === 'nodata' ||
+      e.band === 'notinapp' ||
+      e.band === 'unrecorded'
+    )
+      return null;
+    return e.value === null || e.value === undefined ? null : Number(e.value);
   }
   function ScorecardHead(props) {
-    var lead = props.lead || [];
-    var trail = props.trail || [];
+    var lead = (props.lead || []).map(asHeadCol);
+    var trail = (props.trail || []).map(asHeadCol);
+    var table = props.table || null;
+    var scope = props.scope || 'programme';
     return (
       <thead>
         <tr className="text-[10px] uppercase tracking-wide text-gray-400 border-b border-gray-200">
@@ -2128,28 +2533,28 @@ function WorkflowUI({
         </tr>
         <tr className="text-xs text-gray-500 border-b border-gray-100">
           {lead.map(function (l, i) {
-            return (
-              <th
-                key={'l' + i}
-                className={
-                  (i === 0 ? 'px-3' : 'px-1.5') +
-                  ' py-2 text-left font-semibold text-gray-600'
-                }
-              >
-                {l}
-              </th>
-            );
+            return headCell({
+              key: 'l' + i,
+              label: l.label,
+              align: 'left',
+              table: l.sortKey ? table : null,
+              sortKey: l.sortKey,
+              className:
+                (i === 0 ? 'px-3' : 'px-1.5') +
+                ' py-2 text-left font-semibold text-gray-600',
+            });
           })}
-          {SCORECARD.map(scorecardTh)}
+          {SCORECARD.map(function (c, i) {
+            return scorecardTh(c, i, table, scope);
+          })}
           {trail.map(function (l, i) {
-            return (
-              <th
-                key={'t' + i}
-                className="px-1.5 py-2 text-right font-semibold text-gray-600"
-              >
-                {l}
-              </th>
-            );
+            return headCell({
+              key: 't' + i,
+              label: l.label,
+              table: l.sortKey ? table : null,
+              sortKey: l.sortKey,
+              className: 'px-1.5 py-2 text-right font-semibold text-gray-600',
+            });
           })}
         </tr>
       </thead>
@@ -2209,13 +2614,23 @@ function WorkflowUI({
   // ── The organisations table: Neal's scorecard, plus last visit and attention ──
   function OrgTable() {
     if (!SC) return null;
-    var rows = byLLO.slice().sort(function (a, b) {
-      return (entryOf(b.ind, 'C01').n || 0) - (entryOf(a.ind, 'C01').n || 0);
-    });
     var nByLLO = {};
     (SC.byLLO || []).forEach(function (r) {
       nByLLO[r.llo] = r.ind;
     });
+    // Largest first until a column is picked; then by that column.
+    var rows = sortRows(
+      'org',
+      byLLO.slice().sort(function (a, b) {
+        return (entryOf(b.ind, 'C01').n || 0) - (entryOf(a.ind, 'C01').n || 0);
+      }),
+      function (l, key) {
+        if (key === 'name') return String(l.llo || '').toLowerCase();
+        if (key === 'last') return lastVisitByLLO[l.llo] || null;
+        if (key === 'attn') return (l.reds || 0) * 1000 + (l.yellows || 0);
+        return scorecardSortValue(key, nByLLO[l.llo]);
+      },
+    );
     return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="px-4 py-3 flex items-baseline justify-between gap-3 flex-wrap">
@@ -2228,8 +2643,13 @@ function WorkflowUI({
         <div className="overflow-x-auto">
           <table className="min-w-full text-xs">
             <ScorecardHead
-              lead={['Organisation']}
-              trail={['Last visit', 'Attention']}
+              lead={[{ label: 'Organisation', sortKey: 'name' }]}
+              trail={[
+                { label: 'Last visit', sortKey: 'last' },
+                { label: 'Attention', sortKey: 'attn' },
+              ]}
+              table="org"
+              scope="llo"
             />
             <tbody>
               {rows.map(function (l) {
@@ -2294,7 +2714,7 @@ function WorkflowUI({
             </tbody>
           </table>
         </div>
-        <ScorecardLegend right="Hover a column for its definition" />
+        <ScorecardLegend right="Click a column name for its definition · the arrow sorts" />
       </div>
     );
   }
@@ -2352,10 +2772,23 @@ function WorkflowUI({
     scopeLLO.opps.forEach(function (o) {
       oppSet[String(o.opp)] = true;
     });
-    var all = byFLW.filter(function (f) {
-      if (oppFilter) return String(f.opp) === String(oppFilter);
-      return oppSet[String(f.opp)];
-    });
+    // Sorted BEFORE the cap, so "sort by %slow" ranks every worker, not the
+    // busiest 25.
+    var flwSort = sortOf('flw');
+    var all = sortRows(
+      'flw',
+      byFLW.filter(function (f) {
+        if (oppFilter) return String(f.opp) === String(oppFilter);
+        return oppSet[String(f.opp)];
+      }),
+      function (f, key) {
+        if (key === 'name') return String(f.flw || '').toLowerCase();
+        if (key === 'opp') return String(oppLabel(f.opp)).toLowerCase();
+        if (key === 'attn') return (f.reds || 0) * 1000 + (f.yellows || 0);
+        var nf = nByFLW[f.key];
+        return scorecardSortValue(key, nf && nf.ind);
+      },
+    );
     var CAP = 25;
     var rows = showAllFLW ? all : all.slice(0, CAP);
     var sel = selFLW
@@ -2370,7 +2803,11 @@ function WorkflowUI({
           <div className="text-xs text-gray-400">
             {(showAllFLW || all.length <= CAP
               ? all.length + ' workers'
-              : 'busiest ' + rows.length + ' of ' + all.length + ' workers') +
+              : (flwSort ? 'first ' : 'busiest ') +
+                rows.length +
+                ' of ' +
+                all.length +
+                ' workers') +
               (oppFilter
                 ? ' in ' + oppLabel(oppFilter)
                 : ' across ' + scopeLLO.opps.length + ' opportunities') +
@@ -2380,8 +2817,13 @@ function WorkflowUI({
         <div className="overflow-x-auto">
           <table className="min-w-full text-xs">
             <ScorecardHead
-              lead={['Worker', 'Opportunity']}
-              trail={['Attention', '']}
+              lead={[
+                { label: 'Worker', sortKey: 'name' },
+                { label: 'Opportunity', sortKey: 'opp' },
+              ]}
+              trail={[{ label: 'Attention', sortKey: 'attn' }, '']}
+              table="flw"
+              scope="flw"
             />
             <tbody>
               {rows.map(function (f) {
@@ -2452,7 +2894,7 @@ function WorkflowUI({
               }}
             >
               {showAllFLW
-                ? 'Show the busiest ' + CAP
+                ? 'Show the ' + (flwSort ? 'first ' : 'busiest ') + CAP
                 : 'Show all ' + all.length + ' workers'}
             </button>
           </div>
@@ -3174,6 +3616,7 @@ function WorkflowUI({
 
   return (
     <div className="p-6 space-y-4">
+      {colDefModal()}
       <div className="flex items-center gap-2 text-sm">
         {crumb.map(function (c, i) {
           var last = i === crumb.length - 1;
