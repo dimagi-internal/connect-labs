@@ -9,6 +9,7 @@ token that doesn't surface makes the screen lie.
 from __future__ import annotations
 
 from datetime import timedelta
+from decimal import Decimal
 from io import StringIO
 
 import pytest
@@ -655,3 +656,100 @@ class TestBudgetComesFromThePerOpportunityEndpoint:
         opp.refresh_from_db()
         assert opp.currency == "USD"
         assert opp.total_budget == 2
+
+
+@pytest.mark.django_db
+class TestTheExchangeRateComesFromConnectsOwnConversion:
+    """A completed work carries what it accrued locally AND what Connect
+    converted that to. Their ratio is the rate Connect applied — there is no
+    need to look one up, and labs was throwing the local half away.
+    """
+
+    def _opp(self, **kwargs):
+        from connect_labs.pulse.models import PulseOpportunity
+
+        kwargs.setdefault("currency", "NGN")
+        return PulseOpportunity.objects.create(
+            opportunity_id=kwargs.pop("opportunity_id", 601), name="Op", org_slug="o", **kwargs
+        )
+
+    def _works(self, monkeypatch, rows):
+        class FakeClient:
+            def paginate(self, endpoint, params=None, partial_ok=False):
+                yield rows
+
+        return FakeClient()
+
+    def test_the_rate_is_recovered_from_the_two_halves_of_an_accrual(self, monkeypatch):
+        from connect_labs.pulse import ingest
+
+        opp = self._opp()
+        client = self._works(
+            monkeypatch,
+            [{"status": "approved", "saved_payment_accrued": "10000", "saved_payment_accrued_usd": "6.40"}],
+        )
+        ingest.refresh_rate(client, opp)
+
+        opp.refresh_from_db()
+        assert opp.usd_rate == Decimal("0.000640000000")
+
+    def test_larger_accruals_carry_more_weight_than_smaller_ones(self, monkeypatch):
+        """Accumulated, not averaged per row: a rate built from a mean of
+        rounding errors on tiny payments is not the rate anyone was paid."""
+        from connect_labs.pulse import ingest
+
+        opp = self._opp()
+        client = self._works(
+            monkeypatch,
+            [
+                {"status": "approved", "saved_payment_accrued": "1000000", "saved_payment_accrued_usd": "640"},
+                {"status": "approved", "saved_payment_accrued": "1", "saved_payment_accrued_usd": "1"},
+            ],
+        )
+        ingest.refresh_rate(client, opp)
+
+        opp.refresh_from_db()
+        assert Decimal("0.00063") < opp.usd_rate < Decimal("0.00065")
+
+    def test_a_work_with_no_local_amount_does_not_corrupt_the_rate(self, monkeypatch):
+        from connect_labs.pulse import ingest
+
+        opp = self._opp()
+        client = self._works(
+            monkeypatch,
+            [
+                {"status": "approved", "saved_payment_accrued": "10000", "saved_payment_accrued_usd": "6.40"},
+                {"status": "approved", "saved_payment_accrued": None, "saved_payment_accrued_usd": "99"},
+                {"status": "approved", "saved_payment_accrued": "0", "saved_payment_accrued_usd": "99"},
+            ],
+        )
+        ingest.refresh_rate(client, opp)
+
+        opp.refresh_from_db()
+        assert opp.usd_rate == Decimal("0.000640000000")
+
+    def test_a_dollar_opportunity_comes_out_at_one(self, monkeypatch):
+        """The sanity check the whole derivation has to pass."""
+        from connect_labs.pulse import ingest
+
+        opp = self._opp(currency="USD")
+        client = self._works(
+            monkeypatch,
+            [{"status": "approved", "saved_payment_accrued": "250", "saved_payment_accrued_usd": "250"}],
+        )
+        ingest.refresh_rate(client, opp)
+
+        opp.refresh_from_db()
+        assert opp.usd_rate == Decimal("1.000000000000")
+
+    def test_no_priceable_work_leaves_the_rate_alone(self, monkeypatch):
+        from connect_labs.pulse import ingest
+
+        opp = self._opp(usd_rate=Decimal("0.00064"))
+        client = self._works(
+            monkeypatch, [{"status": "approved", "saved_payment_accrued": "0", "saved_payment_accrued_usd": "5"}]
+        )
+        ingest.refresh_rate(client, opp)
+
+        opp.refresh_from_db()
+        assert opp.usd_rate == Decimal("0.000640000000")
