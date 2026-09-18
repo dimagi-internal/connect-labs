@@ -9,13 +9,15 @@ import inspect
 import json
 import logging
 import pathlib
+import time
 from collections.abc import Generator
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 import sentry_sdk
 from django.http import HttpRequest
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
@@ -63,6 +65,34 @@ RAW_CACHE_ANOMALY_TTL_MINUTES = 10
 # anomaly banner, because nothing is wrong: the data is one rebuild behind, the
 # rebuild is happening right now, and the next reader gets the fresh copy.
 RAW_CACHE_PEER_REBUILD_TTL_MINUTES = 5
+# What a FORCED refresh (?refresh=1) accepts as already fresh (#1926). A forced
+# read is satisfied by a copy of the export fetched at or after the forcing request
+# first asked (``force_refresh_since``), OR within this many minutes of now,
+# whichever reaches further back.
+#
+# The request half is what makes one forced page load cost one walk per
+# opportunity: the runner forwards ?refresh=1 to every pipeline in the stream, and
+# they run one after another over the same shared slot (#1921), so the first
+# pipeline walks and every later one finds rows fetched after the request began.
+# It has to be the request and not a window alone: the stream behind #1926 reached
+# its second pipeline's pass over opp 2154 nine minutes after its first, which no
+# short window covers.
+#
+# The window half covers separate requests of one intent -- EventSource's
+# automatic reconnect replays the same ?refresh=1 URL, and so does a double click
+# or a second tab -- and callers with no request at all. It is sized like
+# RAW_CACHE_PEER_REBUILD_TTL_MINUTES, for the same reason: data one walk old,
+# fetched moments ago, is what the person asking for fresh data would have got.
+FORCED_REFRESH_REUSE_MINUTES = 5
+# How long a forced read waits for a PEER's walk of the same slot to finish before
+# walking itself. Unforced losers are lent the existing rows instead (see
+# single_flight.py), but a forced reader was explicitly promised fresh data, so the
+# only way it can coalesce is to wait for the rows the peer is fetching. Bounded,
+# and it fails open into a walk of its own: a stampede is a cost failure, an
+# endless wait would be a correctness one. The ceiling covers the largest walk
+# measured in #1926 (~56k visits, ~2.5 min) with room to spare.
+FORCED_REFRESH_PEER_WAIT_SECONDS = 300
+FORCED_REFRESH_PEER_POLL_SECONDS = 2
 # Above this many missing visits, top up the cache incrementally instead of
 # repaginating the whole export (#1361). Below it the delta's own overhead --
 # an extra count query and a second finalize -- is not worth avoiding a small
@@ -260,6 +290,7 @@ class SQLBackend:
         pipeline_id: int | None = None,
         user=None,
         accept_low_count: bool = False,
+        force_refresh_since: datetime | None = None,
     ) -> list[dict]:
         """
         Fetch raw visit data from SQL cache or API.
@@ -277,6 +308,10 @@ class SQLBackend:
         Set this when a human has explicitly asked to see fresh data anyway
         (see `self.last_raw_fetch_anomaly`).
 
+        `force_refresh` / `force_refresh_since`: see ``_stream_forced_raw_visits``.
+        A forced read still reuses a copy fetched since the force began, so one
+        forced page load walks each opportunity once, not once per pipeline (#1926).
+
         Sets `self.last_raw_fetch_anomaly` (a dict, or None) as a side
         effect — callers that care (see AnalysisPipeline._consume_raw_visits_stream)
         read it back right after calling.
@@ -284,37 +319,50 @@ class SQLBackend:
         self.last_raw_fetch_anomaly = None
         cache_manager = SQLCacheManager(opportunity_id, pipeline_id=pipeline_id)
 
+        if force_refresh:
+            for _event in self._stream_forced_raw_visits(
+                opportunity_id,
+                access_token,
+                cache_manager,
+                force_refresh_since=force_refresh_since,
+                expected_visit_count=expected_visit_count,
+                user=user,
+                accept_low_count=accept_low_count,
+                pipeline_id=pipeline_id,
+                include_images=include_images,
+            ):
+                # No consumer for progress here; the rows are read back below.
+                pass
+            return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
+
         # Check if we have valid cached data in SQL.
         # When expected_visit_count is unknown (0/None from Celery MockRequest), accept any
         # non-expired cache rather than always re-downloading from the API.
-        if not force_refresh:
-            effective_count = expected_visit_count or 0
-            if cache_manager.has_valid_raw_cache(effective_count, tolerance_pct=tolerance_pct):
-                # If images requested, verify cache actually has image data.
-                # The initial pipeline run fetches without ?images=true, so cached
-                # visits may have empty images arrays. In that case, fall through
-                # to re-fetch from API with images included.
-                if include_images:
-                    # Whether the SLOT was fetched with images -- not whether these
-                    # particular visits carry one. A case whose visits have no photo
-                    # is an ANSWER ("no photo"); reading it as "the cache cannot
-                    # answer" re-downloaded the whole opportunity on every open.
-                    if not cache_manager.slot_has_image_data():
-                        logger.info(f"[SQL] Cache was fetched without images for opp {opportunity_id}, re-fetching")
-                    else:
-                        logger.info(f"[SQL] Raw cache HIT (with images) for opp {opportunity_id}")
-                        self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
-                        return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
+        effective_count = expected_visit_count or 0
+        if cache_manager.has_valid_raw_cache(effective_count, tolerance_pct=tolerance_pct):
+            # If images requested, verify cache actually has image data.
+            # The initial pipeline run fetches without ?images=true, so cached
+            # visits may have empty images arrays. In that case, fall through
+            # to re-fetch from API with images included.
+            if include_images:
+                # Whether the SLOT was fetched with images -- not whether these
+                # particular visits carry one. A case whose visits have no photo
+                # is an ANSWER ("no photo"); reading it as "the cache cannot
+                # answer" re-downloaded the whole opportunity on every open.
+                if not cache_manager.slot_has_image_data():
+                    logger.info(f"[SQL] Cache was fetched without images for opp {opportunity_id}, re-fetching")
                 else:
-                    logger.info(f"[SQL] Raw cache HIT for opp {opportunity_id} (tolerance={tolerance_pct}%)")
+                    logger.info(f"[SQL] Raw cache HIT (with images) for opp {opportunity_id}")
                     self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
                     return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
+            else:
+                logger.info(f"[SQL] Raw cache HIT for opp {opportunity_id} (tolerance={tolerance_pct}%)")
+                self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
 
-        # Cache miss or force refresh - fetch from API
         logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, fetching from API")
 
-        # One walk at a time per slot (#1361). force_refresh is an explicit
-        # "go and get it", so it is never handed stale rows.
+        # One walk at a time per slot (#1361).
         #
         # include_images used to be excluded here as well, on the reasoning that
         # the lendable rows may be the image-less variant this caller already
@@ -325,57 +373,43 @@ class SQLBackend:
         # payloads), which made the unguarded case the worst one. The lock is now
         # always taken; whether there is anything to lend is decided separately,
         # inside _lend_cache_during_peer_rebuild.
-        if not force_refresh:
-            with claim_raw_rebuild(opportunity_id, cache_manager.raw_slot_id) as is_leader:
-                if not is_leader:
-                    lent = self._lend_cache_during_peer_rebuild(
-                        cache_manager,
-                        opportunity_id,
-                        pipeline_id,
-                        skip_form_json=skip_form_json,
-                        require_images=include_images,
-                    )
-                    if lent is not None:
-                        self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
-                        return lent
-                # Still inside the `with`: the leader must hold the lock for the whole
-                # walk, or the guard buys nothing. A top-up is a rebuild too, so it
-                # runs under the same lock.
-                if self._try_delta_refresh(
+        with claim_raw_rebuild(opportunity_id, cache_manager.raw_slot_id) as is_leader:
+            if not is_leader:
+                lent = self._lend_cache_during_peer_rebuild(
                     cache_manager,
                     opportunity_id,
-                    access_token,
-                    expected_visit_count=expected_visit_count,
-                    pipeline_id=pipeline_id,
-                    user=user,
-                ):
-                    self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
-                    return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
-                return self._fetch_raw_visits_uncached(
-                    opportunity_id,
-                    access_token,
-                    cache_manager,
-                    include_images=include_images,
-                    user=user,
-                    accept_low_count=accept_low_count,
-                    pipeline_id=pipeline_id,
-                    filter_visit_ids=filter_visit_ids,
+                    pipeline_id,
                     skip_form_json=skip_form_json,
-                    expected_visit_count=expected_visit_count,
+                    require_images=include_images,
                 )
-
-        return self._fetch_raw_visits_uncached(
-            opportunity_id,
-            access_token,
-            cache_manager,
-            include_images=include_images,
-            user=user,
-            accept_low_count=accept_low_count,
-            pipeline_id=pipeline_id,
-            filter_visit_ids=filter_visit_ids,
-            skip_form_json=skip_form_json,
-            expected_visit_count=expected_visit_count,
-        )
+                if lent is not None:
+                    self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                    return lent
+            # Still inside the `with`: the leader must hold the lock for the whole
+            # walk, or the guard buys nothing. A top-up is a rebuild too, so it
+            # runs under the same lock.
+            if self._try_delta_refresh(
+                cache_manager,
+                opportunity_id,
+                access_token,
+                expected_visit_count=expected_visit_count,
+                pipeline_id=pipeline_id,
+                user=user,
+            ):
+                self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
+            return self._fetch_raw_visits_uncached(
+                opportunity_id,
+                access_token,
+                cache_manager,
+                include_images=include_images,
+                user=user,
+                accept_low_count=accept_low_count,
+                pipeline_id=pipeline_id,
+                filter_visit_ids=filter_visit_ids,
+                skip_form_json=skip_form_json,
+                expected_visit_count=expected_visit_count,
+            )
 
     def _fetch_raw_visits_uncached(
         self,
@@ -444,6 +478,7 @@ class SQLBackend:
         pipeline_id: int | None = None,
         user=None,
         accept_low_count: bool = False,
+        force_refresh_since: datetime | None = None,
     ) -> Generator[tuple[str, Any]]:
         """
         Stream raw visit data with progress events using v2 paginated JSON.
@@ -476,65 +511,155 @@ class SQLBackend:
 
         Memory note: each page is bounded at DEFAULT_PAGE_SIZE records,
         so we never need a temp file like the v1 streaming CSV path did.
+
+        A forced read (``force_refresh``) skips the validity check but NOT the
+        coalescing: see ``_stream_forced_raw_visits`` (#1926). It may also yield
+        ("waiting", seconds) while a peer's walk of the same slot finishes.
         """
         self.last_raw_fetch_anomaly = None
         cache_manager = SQLCacheManager(opportunity_id, pipeline_id=pipeline_id)
 
+        if force_refresh:
+            yield from self._stream_forced_raw_visits(
+                opportunity_id,
+                access_token,
+                cache_manager,
+                force_refresh_since=force_refresh_since,
+                expected_visit_count=expected_visit_count,
+                user=user,
+                accept_low_count=accept_low_count,
+                pipeline_id=pipeline_id,
+            )
+            return
+
         # Check SQL cache first
-        if not force_refresh:
-            effective_count = expected_visit_count or 0
-            if cache_manager.has_valid_raw_cache(effective_count, tolerance_pct=tolerance_pct):
-                logger.info(f"[SQL] Raw cache HIT for opp {opportunity_id}")
-                self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
-                yield ("cached", cache_manager.get_raw_visit_count())
-                return
+        effective_count = expected_visit_count or 0
+        if cache_manager.has_valid_raw_cache(effective_count, tolerance_pct=tolerance_pct):
+            logger.info(f"[SQL] Raw cache HIT for opp {opportunity_id}")
+            self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+            yield ("cached", cache_manager.get_raw_visit_count())
+            return
 
         logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, paginating export API")
 
-        # One walk at a time per slot (#1361). force_refresh is an explicit
-        # "go and get it", so it is never handed stale rows.
-        if not force_refresh:
-            with claim_raw_rebuild(opportunity_id, cache_manager.raw_slot_id) as is_leader:
-                if not is_leader:
-                    lent = self._lend_cache_during_peer_rebuild(
-                        cache_manager, opportunity_id, pipeline_id, skip_form_json=True, count_only=True
-                    )
-                    if lent is not None:
-                        self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
-                        yield ("cached", lent)
-                        return
-                # A top-up is a rebuild too, so it runs under the same lock.
-                if self._try_delta_refresh(
-                    cache_manager,
-                    opportunity_id,
-                    access_token,
-                    expected_visit_count=expected_visit_count,
-                    pipeline_id=pipeline_id,
-                    user=user,
-                ):
-                    self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
-                    yield ("cached", cache_manager.get_raw_visit_count())
-                    return
-                yield from self._stream_raw_visits_uncached(
-                    opportunity_id,
-                    access_token,
-                    cache_manager,
-                    expected_visit_count=expected_visit_count,
-                    user=user,
-                    accept_low_count=accept_low_count,
-                    pipeline_id=pipeline_id,
+        # One walk at a time per slot (#1361).
+        with claim_raw_rebuild(opportunity_id, cache_manager.raw_slot_id) as is_leader:
+            if not is_leader:
+                lent = self._lend_cache_during_peer_rebuild(
+                    cache_manager, opportunity_id, pipeline_id, skip_form_json=True, count_only=True
                 )
+                if lent is not None:
+                    self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                    yield ("cached", lent)
+                    return
+            # A top-up is a rebuild too, so it runs under the same lock.
+            if self._try_delta_refresh(
+                cache_manager,
+                opportunity_id,
+                access_token,
+                expected_visit_count=expected_visit_count,
+                pipeline_id=pipeline_id,
+                user=user,
+            ):
+                self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                yield ("cached", cache_manager.get_raw_visit_count())
                 return
+            yield from self._stream_raw_visits_uncached(
+                opportunity_id,
+                access_token,
+                cache_manager,
+                expected_visit_count=expected_visit_count,
+                user=user,
+                accept_low_count=accept_low_count,
+                pipeline_id=pipeline_id,
+            )
 
-        yield from self._stream_raw_visits_uncached(
-            opportunity_id,
-            access_token,
-            cache_manager,
-            expected_visit_count=expected_visit_count,
-            user=user,
-            accept_low_count=accept_low_count,
-            pipeline_id=pipeline_id,
-        )
+    def _stream_forced_raw_visits(
+        self,
+        opportunity_id: int,
+        access_token: str,
+        cache_manager,
+        *,
+        force_refresh_since: datetime | None,
+        expected_visit_count: int | None,
+        user,
+        accept_low_count: bool,
+        pipeline_id: int | None,
+        include_images: bool = False,
+    ) -> Generator[tuple[str, Any]]:
+        """A forced read: walk the export unless it was already walked since the force began.
+
+        ``force_refresh`` used to skip the validity check AND the rebuild lock, and
+        the runner forwards ?refresh=1 to every pipeline stream on the page -- so the
+        one shared user_visits slot per opportunity (#1921) saved nothing on a forced
+        run, and each pipeline repaginated the whole export for itself. On 2026-09-18
+        one forced open of workflow 20934 made nine full walks of 31-56k visits in 22
+        minutes (#1926).
+
+        Two things change, and "force means fresh" survives both:
+
+        * **Reuse.** A slot counts as fresh if every row in it was fetched at or
+          after the force floor -- ``force_refresh_since`` (when this request first
+          asked), or FORCED_REFRESH_REUSE_MINUTES ago, whichever is earlier. The
+          first pipeline walks; the rest read what it just fetched. Old rows kept
+          alive by the shrink guard or a delta top-up never pass (see
+          ``SQLCacheManager.slot_fetched_since``), and neither does any slot with a
+          pending shrink anomaly, so the banner's "Retry now" still retries.
+        * **Coalescing.** The walk runs under ``claim_raw_rebuild`` like any other.
+          A forced LOSER cannot be lent the existing rows the way an unforced one is
+          (they are what it was asked to replace), so it waits for the leader's
+          fresh copy instead -- re-checking every FORCED_REFRESH_PEER_POLL_SECONDS,
+          yielding ("waiting", seconds) so the page can say why, and giving up after
+          FORCED_REFRESH_PEER_WAIT_SECONDS to walk on its own.
+        """
+        now = timezone.now()
+        floor = now - timedelta(minutes=FORCED_REFRESH_REUSE_MINUTES)
+        if force_refresh_since is not None and force_refresh_since < floor:
+            floor = force_refresh_since
+        started = time.monotonic()
+
+        while True:
+            waited = time.monotonic() - started
+            with claim_raw_rebuild(opportunity_id, cache_manager.raw_slot_id) as is_leader:
+                # Checked under the lock, so a peer that finished between our last
+                # look and this claim is seen, not walked over. A slot with a pending
+                # shrink anomaly never counts: it is serving rows a fetch just
+                # rejected, and "Retry now" on that banner IS a forced read.
+                if cache_manager.get_pending_raw_fetch_anomaly() is None and cache_manager.slot_fetched_since(
+                    floor, require_images=include_images
+                ):
+                    fresh = cache_manager.get_raw_visit_count()
+                elif is_leader or waited >= FORCED_REFRESH_PEER_WAIT_SECONDS:
+                    if not is_leader:
+                        logger.warning(
+                            f"[SQL] Forced refresh for opp {opportunity_id} waited {waited:.0f}s for a peer's "
+                            f"walk that never landed -- walking unguarded"
+                        )
+                    logger.info(f"[SQL] Forced refresh for opp {opportunity_id}, paginating export API")
+                    yield from self._stream_raw_visits_uncached(
+                        opportunity_id,
+                        access_token,
+                        cache_manager,
+                        expected_visit_count=expected_visit_count,
+                        user=user,
+                        accept_low_count=accept_low_count,
+                        pipeline_id=pipeline_id,
+                        include_images=include_images,
+                    )
+                    return
+                else:
+                    fresh = None
+            if fresh is not None:
+                logger.info(
+                    f"[SQL] Forced refresh for opp {opportunity_id} satisfied by a copy fetched since "
+                    f"{floor.isoformat()} ({fresh} visits) -- not walking again"
+                )
+                self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                yield ("cached", fresh)
+                return
+            # A peer is walking this slot right now: wait for its rows.
+            yield ("waiting", int(waited))
+            time.sleep(FORCED_REFRESH_PEER_POLL_SECONDS)
 
     def _stream_raw_visits_uncached(
         self,

@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
+from django.db.models import Min
 from django.db.models.fields.json import KeyTextTransform
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
@@ -582,6 +583,24 @@ class SQLCacheManager:
         if not ignore_ttl:
             qs = qs.filter(expires_at__gt=timezone.now())
         return qs.exists()
+
+    def slot_fetched_since(self, since, *, require_images: bool = False) -> bool:
+        """Whether this slot holds a live, finalized copy fetched entirely at or after ``since``.
+
+        This answers a forced refresh (#1926): "has somebody already fetched this
+        export since I asked for fresh data?" It reads the OLDEST ``created_at`` in the
+        slot, which is the first page of the walk that wrote it, so a slot passes only
+        if every row in it came off the export after ``since``. Two consequences are
+        deliberate. A delta top-up does not count, because its base rows keep their
+        original fetch time. And ``extend_raw_cache_ttl`` does not count either,
+        because it moves ``expires_at`` and never ``created_at``: an old cache kept
+        alive by the shrink guard never passes for a fresh one.
+        """
+        qs = RawVisitCache.objects.filter(**self._raw_filter(), visit_count__gt=0, expires_at__gt=timezone.now())
+        if require_images and not qs.filter(images_fetched=True).exists():
+            return False
+        oldest = qs.aggregate(oldest=Min("created_at"))["oldest"]
+        return oldest is not None and oldest >= since
 
     def get_raw_visits_queryset(self):
         """Get queryset of cached raw visits (excludes in-progress sentinel rows)."""

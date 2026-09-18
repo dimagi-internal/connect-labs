@@ -31,11 +31,13 @@ Uses PostgreSQL table caching with SQL computation (SQLBackend).
 
 import logging
 from collections.abc import Generator
+from datetime import datetime
 from typing import Any
 
 import sentry_sdk
 from django.conf import settings
 from django.http import HttpRequest
+from django.utils import timezone
 
 from connect_labs.labs.analysis.config import AnalysisPipelineConfig, CacheStage
 from connect_labs.labs.analysis.models import EntityAnalysisResult, FLWAnalysisResult, VisitAnalysisResult
@@ -147,6 +149,22 @@ class AnalysisPipeline:
         """
         return self.visit_count if opp_id == self.opportunity_id else 0
 
+    def force_refresh_since(self) -> datetime:
+        """When this request first forced a raw read -- the floor a forced read's reuse is measured from.
+
+        Kept on the REQUEST, not the pipeline, because the runner's stream builds a
+        fresh ``AnalysisPipeline`` per pipeline while forwarding ?refresh=1 to all of
+        them. Every one of them must measure from the same moment, or each would
+        find its predecessors' walks "too old" and repeat them (#1926). A caller
+        with no request gets the floor for this pipeline instance.
+        """
+        holder = self.request if self.request is not None else self
+        since = getattr(holder, "_labs_force_refresh_since", None)
+        if since is None:
+            since = timezone.now()
+            holder._labs_force_refresh_since = since
+        return since
+
     @property
     def cache_tolerance_pct(self) -> int:
         """Cache tolerance percentage. Accept cache if it has >= N% of expected visits.
@@ -218,6 +236,7 @@ class AnalysisPipeline:
             include_images=include_images,
             user=getattr(self.request, "user", None),
             accept_low_count=accept_low_count,
+            force_refresh_since=self.force_refresh_since() if force_refresh else None,
         )
         self._raw_fetch_anomaly = getattr(self.backend, "last_raw_fetch_anomaly", None)
         return result
@@ -477,6 +496,7 @@ class AnalysisPipeline:
             pipeline_id=pipeline_id,
             user=getattr(self.request, "user", None),
             accept_low_count=accept_low_count,
+            force_refresh_since=self.force_refresh_since() if force_refresh else None,
         ):
             event_type = event[0]
             if event_type == "cached":
@@ -487,6 +507,9 @@ class AnalysisPipeline:
             elif event_type == "progress":
                 _, rows_so_far, expected_count = event
                 yield (EVENT_DOWNLOAD, {"rows": rows_so_far, "total": expected_count})
+            elif event_type == "waiting":
+                message = f"Another refresh of opportunity {opp_id} is downloading -- waiting for it ({event[1]}s)..."
+                yield (EVENT_STATUS, {"message": message})
             elif event_type == "complete":
                 self._visit_count = event[1]
                 self._raw_data_already_stored = True
