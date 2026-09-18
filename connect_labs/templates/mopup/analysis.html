@@ -207,7 +207,10 @@
       <h2 class="text-lg font-semibold text-gray-900">Step 2 — Planning gaps <span class="info-icon" tabindex="0" data-tip="For each locked ward, finds buildings never covered by any existing work area and grids them into new candidate work areas. Only fetches/reads building data the first time you hit Recompute below.">ⓘ</span></h2>
       <div class="flex items-center gap-2">
         <button type="button" id="erase-planning-gaps" class="button outline-style" disabled>Erase planning gaps</button>
-        <button type="button" id="planning-gaps-recompute" class="button outline-style">Recompute</button>
+        <button type="button" id="planning-gaps-recompute" class="button outline-style" {% if planning_gaps_locked %}disabled{% endif %}>Recompute</button>
+        <button type="button" id="lock-planning-gaps" class="button outline-style" {% if planning_gaps_locked %}disabled{% endif %}>
+          {% if planning_gaps_locked %}Locked{% else %}Lock in Step 2{% endif %}
+        </button>
       </div>
     </div>
 
@@ -268,8 +271,25 @@
     <p id="planning-gaps-status" class="text-xs text-gray-500"></p>
   </section>
 
+  <section id="isolation-filter-section" class="border border-gray-200 rounded p-4 space-y-3 {% if not planning_gaps_locked %}hidden{% endif %}">
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-gray-900">Step 3 — Remove isolated work areas <span class="info-icon" tabindex="0" data-tip="Finds every active work area (original candidates and Step 2's new ones alike) that has no other active work area within the given distance, so field staff are never routed somewhere for just one isolated work area. Nothing is removed until you hit Lock in Step 3 below.">ⓘ</span></h2>
+      <button type="button" id="lock-isolation-filter" class="button primary-dark" {% if isolation_filter_locked %}disabled{% endif %}>
+        {% if isolation_filter_locked %}Locked{% else %}Lock in Step 3{% endif %}
+      </button>
+    </div>
+
+    <label class="flex items-center gap-2 text-sm">
+      <span class="text-gray-600">Remove work areas more than</span>
+      <input type="number" id="isolation-distance-m" class="base-input" style="width:7rem" min="1" step="50" value="{{ isolation_threshold_m|default:1000 }}" {% if isolation_filter_locked %}disabled{% endif %}>
+      <span class="text-gray-600">meters from their nearest other active work area</span>
+    </label>
+
+    <p id="isolation-preview-status" class="text-sm text-gray-700"></p>
+  </section>
+
   <section>
-    <button type="button" id="create-plan" class="button primary-dark" {% if run.status != "locked" %}disabled{% endif %}>Create WA Revisit plan</button>
+    <button type="button" id="create-plan" class="button primary-dark" {% if run.status != "locked" or not isolation_filter_locked %}disabled{% endif %}>Create WA Revisit plan</button>
   </section>
 
   </div>
@@ -293,10 +313,15 @@
     createPlanUrl: "{{ create_plan_url }}",
     planningGapsUrl: "{{ planning_gaps_url }}",
     erasePlanningGapsUrl: "{{ erase_planning_gaps_url }}",
+    lockPlanningGapsUrl: "{{ lock_planning_gaps_url }}",
+    isolationPreviewUrl: "{{ isolation_preview_url }}",
+    lockIsolationFilterUrl: "{{ lock_isolation_filter_url }}",
     uploadBuildingsUrl: "{{ upload_buildings_url }}",
     excludeWorkAreaUrl: "{{ exclude_work_area_url }}",
     csrfToken: "{{ csrf_token }}",
     locked: "{{ run.status }}" === "locked",
+    planningGapsLocked: {{ planning_gaps_locked|yesno:"true,false" }},
+    isolationFilterLocked: {{ isolation_filter_locked|yesno:"true,false" }},
     mapboxToken: "{{ mapbox_token|escapejs }}",
   });
 })();
