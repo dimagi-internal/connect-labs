@@ -149,6 +149,27 @@ Two further improvements that you will notice on the Worker Review page:
 !!! note "Cases table and growth chart briefly unavailable after a recent update"
     A short-lived issue caused the Worker Review page to show **"Could not load this worker's cases"** in place of the cases table and growth chart — even for workers who had data. This affected both the table and the progress indicator that streams case rows as they load. Both have been corrected and the page displays case data as expected again.
 
+#### Sorting columns on the KMC reports
+
+Every column on the KMC Programme Report, the KMC Opportunity Report, and the KMC Worker Review can be sorted. Click the **↕** arrow beside any column name to sort that column:
+
+- **▼** sorts highest first
+- **▲** sorts lowest first
+
+This applies to all column types — worker name, organisation, opportunity, case, date, Attention, and indicator columns. Cells that are blank or withheld (for example, cells showing **n<20**) always appear at the bottom of the sorted list regardless of sort direction.
+
+On the programme report's worker table, sorting ranks **all** workers across the full dataset before the "first 25" display cut is applied. This means the top 25 you see after sorting are the true top 25 for that indicator across the whole programme, not just the top 25 among the busiest workers.
+
+#### Looking up what an indicator means
+
+Click any **indicator column heading** on the KMC Programme Report, KMC Opportunity Report, or KMC Worker Review to open a definition popup for that indicator. The popup shows:
+
+- A plain-English description of what the indicator measures
+- What each underlying field contributing to the indicator means
+- The calculation that produces the number, which you can copy to your clipboard or download as a file. You can also request the full statement for that table's level if you need complete detail.
+
+The popup also gives you the same sort controls as the column arrow — you can sort the table high-to-low or low-to-high directly from the popup without closing it first.
+
 #### Peer cohort benchmarking for individual workers
 
 When you drill into a worker from the programme report, each of that worker's indicators is now shown in context alongside comparable workers — not just as a raw number. The comparison panel expands directly under the worker's row in the table, so you can read how they compare without losing sight of their own figures.
@@ -166,15 +187,4 @@ A second dropdown controls how each indicator's peer distribution is displayed:
 
 Neither view substitutes for the other. With a large peer group, individual dots can overlap into an unreadable cluster, making the banded count more useful; with a small peer group, the counts can obscure who the individuals are, making the dots more useful.
 
-For each indicator, this worker's own value is marked and their position in the peer group is shown as an **exact rank** — for example, **"2nd of 24"**. Workers who share the same figure share the same place, and the next worker takes the place after the tie (so two joint-seconds are followed by a fourth, not a third). Where an indicator has a clearly better end, first place is the better end: for indicators where a higher value is better, the largest value ranks first; for indicators where a lower value is better, the smallest value ranks first. Indicators whose target is a middle value — where being at either extreme is worse — have no single better end, so they are described as **"4th highest of 24"**, indicating the ordering without implying it is a league table. The count shown may be lower than the total cohort size because it reflects only those peers who actually scored that indicator; a footnote on the page explains this.
-
-The rank column is always visible on screen — it stays pinned to the left of the peer panel as you scroll the workers table sideways, so the full row of indicator, value, distribution, and rank is always readable without needing to scroll back.
-
-The three cohort views are designed to give you different perspectives: a worker can look strong compared with their own team but below average compared with peers who started at the same time, and that disagreement is itself a meaningful finding.
-
-!!! note "Reading the rank figure"
-    "2nd of 24" means this worker's value placed them second among the 24 peers who recorded a result for that indicator. For indicators where a **lower** value is better — such as implausible weights — first place goes to the worker with the lowest figure, so ranking near the top is the favourable end.
-
-Where a comparison would not be meaningful, the report says so clearly rather than showing a potentially misleading figure:
-
-- A cohort with fewer than 8 workers shows **"too few to rank against"
+For each indicator, this worker's own value is marked and their position in the peer group is shown as an **exact rank** — for example, **"2nd of 24"**. Workers who share the same figure share the same place, and the next worker takes the place after the tie (so two joint-seconds are followed by a fourth
