@@ -181,6 +181,24 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
         # to either of them, so drop both rather than pick one.
         by_name[key] = None if key in by_name else org
 
+    # Emails from submissions already matched in OTHER rounds. This round's own
+    # rows are left out, so a match can never be its own evidence on re-import.
+    # An inbox that has applied for two different organisations resolves to
+    # neither, and a directory contact always wins.
+    by_earlier_email: dict = {}
+    for emails, org in (
+        SolicitationResponse.objects.exclude(llo_entity=None)
+        .exclude(solicitation=round_)
+        .select_related("llo_entity")
+        .values_list("submitted_by_email", "llo_entity")
+    ):
+        for email in (e.strip().lower() for e in (emails or "").split(",")):
+            if "@" not in email or email in by_email:
+                continue
+            by_earlier_email[email] = None if by_earlier_email.get(email, org) != org else org
+    orgs_by_id = LabsOrg.objects.in_bulk({v for v in by_earlier_email.values() if v})
+    by_earlier_email = {e: orgs_by_id[v] for e, v in by_earlier_email.items() if v in orgs_by_id}
+
     # The mapping tab names an organisation; the relation needs the row. Resolve
     # once here so the matcher only ever deals in objects, as it does for the
     # email and name indexes. A name that resolves to nothing is dropped rather
@@ -199,7 +217,11 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
         for sub in submissions:
             sub.round_slug = round_.slug
             org, state, basis = match_submission(
-                sub, by_email=by_email, by_name={k: v for k, v in by_name.items() if v}, human=resolved_verdicts
+                sub,
+                by_email=by_email,
+                by_name={k: v for k, v in by_name.items() if v},
+                human=resolved_verdicts,
+                by_earlier_email=by_earlier_email,
             )
             SolicitationResponse.objects.update_or_create(
                 solicitation=round_,

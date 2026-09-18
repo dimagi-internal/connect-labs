@@ -76,6 +76,12 @@ COUNTRY_NAMES = {
 # Opportunity name -> the service a funder would recognise. Opp names are
 # operational ("KMC - UG - PIPN - P1 - Apr 26"); these are not.
 _SERVICE_PATTERNS: list[tuple[re.Pattern, str, str]] = [
+    # The COWACDI and eHealth Africa interview cohorts ("[1PC1] COWACDI
+    # Interviews") run under no Connect programme, so they carry no
+    # delivery_type and only their name says what they are. Without this they
+    # fell into "other" and the Interviews programme showed $2 of ACE demo runs
+    # instead of ~$20k of real interviews.
+    (re.compile(r"\binterviews?\b", re.I), "interview", "Interviews"),
     (re.compile(r"^KMC\b|kangaroo|कंगारू", re.I), "kmc", "Kangaroo Mother Care"),
     (re.compile(r"mother baby wellness", re.I), "mbw", "Mother Baby Wellness"),
     (re.compile(r"\breaders\b", re.I), "readers", "Readers Distribution"),
@@ -219,6 +225,18 @@ def country_for(lat: float | None, lon: float | None) -> str:
 # of the real portfolio. Only explicit words count.
 _TEST_PROGRAM = re.compile(r"\b(test|demo|sandbox|dummy|trial|smoke|e2e)\b", re.I)
 
+# Words that mark one *opportunity* as scaffolding. Narrower than the programme
+# rule: "trial" and "demo" name real work often enough at this level that they
+# are left to the programme and the org.
+_TEST_OPPORTUNITY = re.compile(r"\b(test|sandbox|dummy|uat|e2e)\b", re.I)
+
+# Orgs whose every opportunity is scaffolding. `ai-demo-space` is where ACE's
+# automated runs land: 185 opportunities carrying real delivery types (malaria,
+# nutrition, interview) under programme names like "Malaria ITN FGD Pilot" that
+# no name rule can tell from real work. Left in, they were the *whole* of the
+# Nutrition and Interviews figures and 31 of Malaria's "live" opportunities.
+TEST_ORGS = frozenset({"ai-demo-space"})
+
 
 def looks_like_test(program_name: str | None) -> bool:
     """Whether a programme is internal scaffolding rather than delivery.
@@ -228,6 +246,21 @@ def looks_like_test(program_name: str | None) -> bool:
     "[TEST 02] Dimagi-GW CHC Program" out of a menu is a bad moment.
     """
     return bool(_TEST_PROGRAM.search(program_name or ""))
+
+
+def looks_like_test_org(org_slug: str | None) -> bool:
+    """Whether an org exists only to host scaffolding (a sandbox, a demo space)."""
+    slug = (org_slug or "").strip().lower()
+    return slug in TEST_ORGS or bool(_TEST_PROGRAM.search(re.sub(r"[-_]+", " ", slug)))
+
+
+def is_test_opportunity(*, name: str | None, org_slug: str | None, program_is_test: bool) -> bool:
+    """One place that decides whether an opportunity is real delivery.
+
+    Pulse excludes these from every figure it shows, and the marketplace reads
+    the same flag, so the two cannot disagree about what counts.
+    """
+    return program_is_test or looks_like_test_org(org_slug) or bool(_TEST_OPPORTUNITY.search(name or ""))
 
 
 def service_slug_for(opportunity_name: str | None) -> str:

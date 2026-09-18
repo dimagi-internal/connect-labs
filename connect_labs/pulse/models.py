@@ -182,6 +182,10 @@ class PulseOpportunity(models.Model):
     is_active = models.BooleanField(default=False)
     end_date = models.DateField(null=True, blank=True)
     lifetime_visit_count = models.IntegerField(default=0)
+    # Scaffolding rather than delivery: a test programme, a sandbox or demo
+    # org, or an opportunity named as a test. Every Pulse figure excludes these,
+    # and so does the marketplace. See `normalize.is_test_opportunity`.
+    is_test = models.BooleanField(default=False, db_index=True)
 
     currency = models.CharField(max_length=8, blank=True)
     # Filled from /export/opportunity/<id>/ on the slow tier. Null means the

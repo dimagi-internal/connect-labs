@@ -222,6 +222,8 @@ class TestOrgMenu:
             org_slug="sandbox-org",
             program_id=99,
             lifetime_visit_count=9035,
+            # What ingest stamps on every opportunity under a test programme.
+            is_test=True,
         )
         assert "sandbox-org" not in [o["slug"] for o in summary(viewer)["orgs"]]
 

@@ -137,7 +137,10 @@ def delivered_programmes_by_org_name() -> dict[str, set[str]]:
 
     by_slug: dict[str, set[str]] = {}
     for slug, service in (
-        PulseOpportunity.objects.exclude(org_slug="").exclude(service_slug="").values_list("org_slug", "service_slug")
+        PulseOpportunity.objects.exclude(org_slug="")
+        .exclude(service_slug="")
+        .filter(is_test=False)
+        .values_list("org_slug", "service_slug")
     ):
         # `other` is Connect's unclassified bucket, not a programme. Offering
         # it in the filter would put 264 opportunities behind a label that
@@ -231,20 +234,20 @@ def committed_by_programme() -> dict[str, dict]:
     from django.db.models import Sum
     from django.utils import timezone
 
-    from connect_labs.pulse.models import PulseOpportunity, PulseProgram, PulseWork
+    from connect_labs.pulse.models import PulseOpportunity, PulseWork
 
     if _fresh() and _cache["committed"] is not None:
         return _cache["committed"]
 
     today = timezone.now().date()
     rates = fx_rates()
-    # Test programmes are excluded from both figures. Connect has a real
-    # `Opportunity.is_test`, but no export carries it, so this is labs' own
-    # programme-name heuristic (`PulseProgram.is_test`) — it catches "CHC Test
-    # Opportunity" under "Founders Pledge Test Program", and would miss a test
-    # programme named like a real one. It matters here more than anywhere:
-    # that one test opportunity alone carried $312,500 of budget.
-    test_programmes = set(PulseProgram.objects.filter(is_test=True).values_list("program_id", flat=True))
+    # Scaffolding is excluded from both figures, by the flag pulse sets at
+    # ingest (`PulseOpportunity.is_test`: a test programme, a sandbox or demo
+    # org such as ACE's `ai-demo-space`, or an opportunity named as a test).
+    # Connect has a real `Opportunity.is_test`, but no export carries it. It
+    # matters here more than anywhere: one test opportunity alone carried
+    # $312,500 of budget, and ACE's runs were 31 of Malaria's live opportunities.
+    test_opps = PulseOpportunity.objects.filter(is_test=True).values("opportunity_id")
 
     paid = {
         row["opportunity_id"]: (row["worker"] or 0) + (row["org"] or 0)
@@ -259,27 +262,33 @@ def committed_by_programme() -> dict[str, dict]:
     out: dict[str, dict] = {}
 
     # DEPLOYED is pulse's own aggregation, verbatim: completed works grouped by
-    # the delivery type stamped on the WORK, test programmes included. That is
-    # what the Pulse wall's money-by-service shows, and two labs pages quoting
-    # different dollars for the same programme is worse than a few thousand of
-    # test work being in both. (Pulse is itself inconsistent here — its partner
-    # menu excludes test programmes and its money does not; fixing that belongs
-    # in pulse, where both surfaces would move together.)
+    # the delivery type stamped on the WORK, scaffolding excluded. That is what
+    # the Pulse wall's money-by-service shows, and two labs pages quoting
+    # different dollars for the same programme is how a dashboard loses trust.
     for row in (
         PulseWork.objects.exclude(service_slug="")
+        .exclude(opportunity_id__in=test_opps)
         .values("service_slug")
         .annotate(worker=Sum("usd_to_worker"), org=Sum("usd_to_org"))
     ):
         if programmes.is_programme(row["service_slug"]):
             out.setdefault(row["service_slug"], blank())["deployed"] = int((row["worker"] or 0) + (row["org"] or 0))
 
-    for opp in PulseOpportunity.objects.exclude(service_slug="").only(
-        "opportunity_id", "program_id", "service_slug", "total_budget", "currency", "usd_rate", "is_active", "end_date"
+    for opp in (
+        PulseOpportunity.objects.exclude(service_slug="")
+        .filter(is_test=False)
+        .only(
+            "opportunity_id",
+            "program_id",
+            "service_slug",
+            "total_budget",
+            "currency",
+            "usd_rate",
+            "is_active",
+            "end_date",
+        )
     ):
-        # REMAINING has no pulse equivalent to agree with, and test programmes'
-        # budgets are placeholders — one carried $312,500 and paid $25 — so they
-        # are left out of it.
-        if not programmes.is_programme(opp.service_slug) or opp.program_id in test_programmes:
+        if not programmes.is_programme(opp.service_slug):
             continue
         entry = out.setdefault(opp.service_slug, blank())
         spent = decimal.Decimal(paid.get(opp.opportunity_id, 0) or 0)
@@ -322,6 +331,7 @@ def services_by_programme() -> dict[str, int]:
     return {
         row["service_slug"]: int(row["visits"] or 0)
         for row in PulseOpportunity.objects.exclude(service_slug="")
+        .filter(is_test=False)
         .values("service_slug")
         .annotate(visits=Sum("lifetime_visit_count"))
         if programmes.is_programme(row["service_slug"])
@@ -536,7 +546,7 @@ def network_totals() -> dict:
     from connect_labs.pulse.models import PulseOpportunity
 
     profiles = OrgProfile.objects.exclude(country_iso3="")
-    services = sum(PulseOpportunity.objects.values_list("lifetime_visit_count", flat=True))
+    services = sum(PulseOpportunity.objects.filter(is_test=False).values_list("lifetime_visit_count", flat=True))
     return {
         "organisations": LabsOrg.objects.count(),
         "countries": len({p.country_iso3 for p in profiles}),

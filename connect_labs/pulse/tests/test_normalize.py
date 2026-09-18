@@ -16,6 +16,8 @@ from connect_labs.pulse.normalize import (
     country_for,
     flag_type_for,
     is_on_map,
+    is_test_opportunity,
+    looks_like_test_org,
     parse_location,
     service_slug_for,
     visit_to_event_fields,
@@ -148,6 +150,8 @@ class TestDerivations:
             ("EHA - Back To School", "b2s"),
             ("Malaria RDT - NG - DFHF - June 2026", "rdt"),
             ("ITN - DRC - CNRSC - P2 - Jun 26", "itn"),
+            ("[1PC1] COWACDI Interviews", "interview"),
+            ("[2ABT2EA3] EHA Interviews", "interview"),
             ("Some Unmapped Opportunity", "other"),
             (None, "other"),
         ],
@@ -245,3 +249,36 @@ class TestRateAttribution:
         assert fields["service_slug"] == "mbw"
         assert fields["org_slug"] == "connect-nigeria"
         assert fields["program_id"] == 42
+
+
+class TestScaffolding:
+    @pytest.mark.parametrize(
+        "slug,expected",
+        [
+            ("ai-demo-space", True),
+            ("ccc-delivery-sandbox", True),
+            ("test_nm_246", True),
+            ("march-demo", True),
+            ("cowacdi-interviews", False),
+            ("connect-nigeria", False),
+            ("", False),
+        ],
+    )
+    def test_looks_like_test_org(self, slug, expected):
+        assert looks_like_test_org(slug) is expected
+
+    @pytest.mark.parametrize(
+        "name,org,program_is_test,expected",
+        [
+            ("[1PC1] COWACDI Interviews", "cowacdi-interviews", False, False),
+            ("Connect Interviews UAT COWACDI", "dimagi-interviews", False, True),
+            ("[Test] Interviews (Dynamic Router)", "x", False, True),
+            ("CHC Test Opportunity", "x", False, True),
+            ("KMC - UG - P1", "x", True, True),
+            ("Malaria ITN FGD (run 20260515)", "ai-demo-space", False, True),
+            # "trial" and "demo" name real work at opportunity level.
+            ("KMC Trial Cohort", "x", False, False),
+        ],
+    )
+    def test_is_test_opportunity(self, name, org, program_is_test, expected):
+        assert is_test_opportunity(name=name, org_slug=org, program_is_test=program_is_test) is expected
