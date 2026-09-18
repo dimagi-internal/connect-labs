@@ -193,9 +193,9 @@ def _serialize_cohort(cohort: BenchmarkCohort) -> dict[str, Any]:
         "benchmarked against each other. Membership IS the grant: an opportunity "
         "sees benchmarks for the cohorts it belongs to and nothing else, so the "
         "caller must belong to the organisation the cohort is created under. "
-        f"min_peers must be >= {MIN_PEERS_FLOOR} (below that, the reader is one "
-        "of the contributors, so the one remaining bar is a named peer's exact "
-        "value)."
+        f"min_peers must be >= {MIN_PEERS_FLOOR}; 1 turns the peer floor off. Below 3 a "
+        "reader can see a named peer's exact value, so set 3 or more for a cohort that "
+        "needs that protection."
     ),
     input_schema={
         "type": "object",
@@ -267,8 +267,8 @@ def benchmarks_cohort_create(
     if min_peers < MIN_PEERS_FLOOR:
         raise MCPToolError(
             "INVALID_SCHEMA",
-            f"min_peers must be >= {MIN_PEERS_FLOOR}: at {min_peers} the reader is one of the "
-            "contributors, so the one remaining bar is a named peer's exact value.",
+            f"min_peers must be >= {MIN_PEERS_FLOOR}: at {min_peers} a figure could be published "
+            "that no opportunity contributed.",
         )
     _require_organization_access(user, organization_id, "you are creating this cohort under")
     cohort = BenchmarkCohort.objects.create(
@@ -413,6 +413,95 @@ def benchmarks_cohort_delete(user, *, cohort_id: int) -> dict[str, Any]:
         "publications_deleted": publications,
         "members_removed": members,
     }
+
+
+def _coerce_bool(name: str, value):
+    """A boolean that may arrive as the STRING "true"/"false" (MCP clients differ).
+    Anything else is refused: "false" is truthy, so a silent bool() would switch a
+    disclosure rule ON when the caller asked for it OFF."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in {"true", "false"}:
+        return value.strip().lower() == "true"
+    raise MCPToolError("INVALID_SCHEMA", f"{name} must be a boolean, got {value!r}.")
+
+
+def _coerce_int(name: str, value) -> int:
+    if isinstance(value, bool):
+        raise MCPToolError("INVALID_SCHEMA", f"{name} must be an integer, got {value!r}.")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise MCPToolError("INVALID_SCHEMA", f"{name} must be an integer, got {value!r}.") from exc
+
+
+@register(
+    name="benchmarks_cohort_update",
+    description=(
+        "Change a benchmark cohort's name, description or disclosure settings (min_peers, "
+        "min_denominator, require_complete_series). Pass only what should change. "
+        f"min_peers must be >= {MIN_PEERS_FLOOR}; min_peers=1 with min_denominator=0 and "
+        "require_complete_series=false publishes every figure the rules otherwise withhold "
+        "for being thin. Existing publications are NOT re-graded: the new settings apply to "
+        "the next benchmarks_publish, so republish to see them. Refuses a caller who does not "
+        "belong to the cohort's organisation."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "cohort_id": {"type": "integer"},
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+            "min_peers": {"type": "integer", "description": f"Must be >= {MIN_PEERS_FLOOR}."},
+            "min_denominator": {"type": "integer", "description": "Must be >= 0."},
+            "require_complete_series": {"type": "boolean"},
+        },
+        "required": ["cohort_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def benchmarks_cohort_update(
+    user,
+    *,
+    cohort_id: int,
+    name: str | None = None,
+    description: str | None = None,
+    min_peers: int | None = None,
+    min_denominator: int | None = None,
+    require_complete_series: bool | None = None,
+) -> dict[str, Any]:
+    try:
+        cohort = BenchmarkCohort.objects.get(pk=_coerce_int("cohort_id", cohort_id))
+    except BenchmarkCohort.DoesNotExist as exc:
+        raise MCPToolError("NOT_FOUND", f"Benchmark cohort {cohort_id} not found.") from exc
+    _require_organization_access(user, cohort.organization_id, f"owns cohort {cohort_id}")
+
+    changed: list[str] = []
+    if min_peers is not None:
+        min_peers = _coerce_int("min_peers", min_peers)
+        if min_peers < MIN_PEERS_FLOOR:
+            raise MCPToolError("INVALID_SCHEMA", f"min_peers must be >= {MIN_PEERS_FLOOR}, got {min_peers}.")
+        cohort.min_peers = min_peers
+        changed.append("min_peers")
+    if min_denominator is not None:
+        min_denominator = _coerce_int("min_denominator", min_denominator)
+        if min_denominator < 0:
+            raise MCPToolError("INVALID_SCHEMA", f"min_denominator must be >= 0, got {min_denominator}.")
+        cohort.min_denominator = min_denominator
+        changed.append("min_denominator")
+    if require_complete_series is not None:
+        cohort.require_complete_series = _coerce_bool("require_complete_series", require_complete_series)
+        changed.append("require_complete_series")
+    if name is not None:
+        cohort.name = name
+        changed.append("name")
+    if description is not None:
+        cohort.description = description
+        changed.append("description")
+    if changed:
+        cohort.save(update_fields=changed + ["updated_at"])
+    return {**_serialize_cohort(cohort), "changed": changed}
 
 
 @register(

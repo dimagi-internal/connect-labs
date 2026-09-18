@@ -61,8 +61,7 @@ def test_create_returns_the_cohort_and_persists_it(monkeypatch):
 
 
 def test_create_refuses_a_min_peers_below_the_floor():
-    """The floor exists because at 2 the reader is one of the two contributors,
-    so the other bar is a named peer's exact value.
+    """0 would publish a figure no opportunity contributed.
 
     Asserts the tool's own app-level validation (MCPToolError), not just "some
     exception" -- pytest.raises(Exception) would also catch the model's DB
@@ -73,10 +72,47 @@ def test_create_refuses_a_min_peers_below_the_floor():
     from connect_labs.mcp.tool_registry import MCPToolError
 
     with pytest.raises(MCPToolError) as exc_info:
-        benchmarks_cohort_create(user=_user(), name="Bad", organization_id="o", min_peers=2)
+        benchmarks_cohort_create(user=_user(), name="Bad", organization_id="o", min_peers=0)
     message = str(exc_info.value)
     assert "min_peers" in message
-    assert "3" in message
+    assert "1" in message
+
+
+def test_update_turns_every_floor_off_and_keeps_the_rest(monkeypatch):
+    from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_update
+
+    _grant(monkeypatch, organizations=("dimagi-kmc",))
+    cohort = BenchmarkCohort.objects.create(name="KMC", organization_id="dimagi-kmc")
+    out = benchmarks_cohort_update(
+        user=_user(), cohort_id=cohort.pk, min_peers=1, min_denominator=0, require_complete_series="false"
+    )
+    cohort.refresh_from_db()
+    assert (cohort.min_peers, cohort.min_denominator, cohort.require_complete_series) == (1, 0, False)
+    assert cohort.name == "KMC", "a field not passed must not change"
+    assert sorted(out["changed"]) == ["min_denominator", "min_peers", "require_complete_series"]
+
+
+def test_update_refuses_a_caller_outside_the_organisation(monkeypatch):
+    from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_update
+
+    _grant(monkeypatch, organizations=("someone-else",))
+    cohort = BenchmarkCohort.objects.create(name="KMC", organization_id="dimagi-kmc", min_peers=5)
+    with pytest.raises(MCPToolError):
+        benchmarks_cohort_update(user=_user(), cohort_id=cohort.pk, min_peers=1)
+    cohort.refresh_from_db()
+    assert cohort.min_peers == 5
+
+
+@pytest.mark.parametrize("bad", [{"min_peers": 0}, {"min_denominator": -1}, {"require_complete_series": "nope"}])
+def test_update_refuses_an_invalid_setting(monkeypatch, bad):
+    from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_update
+
+    _grant(monkeypatch, organizations=("dimagi-kmc",))
+    cohort = BenchmarkCohort.objects.create(name="KMC", organization_id="dimagi-kmc", min_peers=5, min_denominator=25)
+    with pytest.raises(MCPToolError):
+        benchmarks_cohort_update(user=_user(), cohort_id=cohort.pk, **bad)
+    cohort.refresh_from_db()
+    assert (cohort.min_peers, cohort.min_denominator, cohort.require_complete_series) == (5, 25, True)
 
 
 def test_add_opportunities_is_idempotent(monkeypatch):
@@ -319,6 +355,7 @@ def test_the_tools_are_registered_with_the_mcp_server():
         "benchmarks_cohort_add_opportunities",
         "benchmarks_cohort_list",
         "benchmarks_cohort_delete",
+        "benchmarks_cohort_update",
         "benchmarks_publish",
         "benchmarks_create_opp_reports",
     )

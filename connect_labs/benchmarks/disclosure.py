@@ -6,11 +6,13 @@ so everything downstream reads already-anonymous data.
 The rules, and what each defends against:
 
   R1  >= min_peers contributing OPPORTUNITIES (distinct ids, never rows), or
-      the indicator is withheld. Both public functions also refuse
-      min_peers < 3. Two is not a floor: the reader of a benchmark is one of
-      the two contributors, so the one remaining bar is a named peer's exact
-      value -- anonymous only to someone outside the cohort, and nobody
-      outside the cohort can read it.
+      the indicator is withheld. min_peers may be as low as 1, which turns R1
+      off. Jonathan, 2026-09-18: the KMC cohorts carry no competitive-leakage
+      concern and no PII, and the floors were withholding exactly the early and
+      late weeks the trends exist to show -- so "how many peers" is the
+      cohort's setting, not a constant here. At 1 or 2 a reader can see a named
+      peer's exact value; that is accepted for these cohorts, and a cohort that
+      needs the protection sets 3 or more.
   R2  a peer contributes only with denominator >= min_denominator; a rate over
       three babies is both noise and a fingerprint.
   R3  denominators are never returned. Opportunity sizes (100 .. 2,189 cases)
@@ -100,8 +102,8 @@ def anonymise_point(
     that peers tied on value -- common at this cohort size -- are not ordered
     the same way in every indicator. See R4.
     """
-    if min_peers < 3:
-        raise ValueError("min_peers must be at least 3")
+    if min_peers < 1:
+        raise ValueError("min_peers must be at least 1")
     if not tie_salt or not tie_salt.strip():
         raise ValueError("tie_salt must be a non-empty string that varies per indicator")
     eligible = _eligible(observations, min_denominator=min_denominator)
@@ -138,8 +140,8 @@ def anonymise_series(
     which is the whole point of a series. `tie_salt` must be unique per
     indicator, same contract as `anonymise_point`.
     """
-    if min_peers < 3:
-        raise ValueError("min_peers must be at least 3")
+    if min_peers < 1:
+        raise ValueError("min_peers must be at least 1")
     if not tie_salt or not tie_salt.strip():
         raise ValueError("tie_salt must be a non-empty string that varies per indicator")
     eligible_by_period = {
