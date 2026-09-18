@@ -571,3 +571,87 @@ class TestBackfillFoldFlag:
         out = StringIO()
         call_command("pulse_backfill", stdout=out)
         assert "Nothing to do" in out.getvalue()
+
+
+@pytest.mark.django_db
+class TestBudgetComesFromThePerOpportunityEndpoint:
+    """`opp_org_program_list` carries an opportunity's visit count and not a
+    penny of its budget, which is why these columns sat empty for so long. The
+    figure was on `/export/opportunity/<id>/` the whole time.
+    """
+
+    def _opp(self, **kwargs):
+        from connect_labs.pulse.models import PulseOpportunity
+
+        return PulseOpportunity.objects.create(
+            opportunity_id=kwargs.pop("opportunity_id", 501), name="Op", org_slug="o", **kwargs
+        )
+
+    def _client(self, monkeypatch, payload):
+        from connect_labs.pulse import client as pulse_client
+
+        seen = []
+
+        def fake(_client, path):
+            seen.append(path)
+            return payload
+
+        monkeypatch.setattr(pulse_client, "fetch_json", fake)
+        return seen
+
+    def test_it_reads_the_budget_off_the_single_opportunity_export(self, monkeypatch):
+        from connect_labs.pulse import ingest
+
+        opp = self._opp()
+        seen = self._client(
+            monkeypatch,
+            {
+                "total_budget": 750_000,
+                "budget_per_visit": 300,
+                "budget_per_user": 15_000,
+                "max_visits_per_user": 50,
+                "currency": "NGN",
+            },
+        )
+
+        assert ingest.refresh_budget(object(), opp) is True
+        assert seen == ["/export/opportunity/501/"]
+        opp.refresh_from_db()
+        assert (opp.total_budget, opp.budget_per_visit, opp.currency) == (750_000, 300, "NGN")
+        assert (opp.budget_per_user, opp.max_visits_per_user) == (15_000, 50)
+
+    def test_an_unset_budget_stays_null_rather_than_becoming_zero(self, monkeypatch):
+        """A budget nobody set is not a budget of zero, and collapsing the two
+        makes an unfunded opportunity look fully spent."""
+        from connect_labs.pulse import ingest
+
+        opp = self._opp()
+        self._client(monkeypatch, {"total_budget": None, "budget_per_visit": ""})
+        ingest.refresh_budget(object(), opp)
+
+        opp.refresh_from_db()
+        assert opp.total_budget is None
+        assert opp.budget_per_visit is None
+
+    def test_an_unchanged_budget_reports_no_work_done(self, monkeypatch):
+        """A budget is renegotiated, not streamed. The caller counts changes so
+        a quiet sweep reads as quiet rather than as 25 refreshes."""
+        from connect_labs.pulse import ingest
+
+        opp = self._opp(total_budget=750_000, budget_per_visit=300, currency="NGN")
+        self._client(monkeypatch, {"total_budget": 750_000, "budget_per_visit": 300, "currency": "NGN"})
+
+        assert ingest.refresh_budget(object(), opp) is False
+
+    def test_a_missing_currency_does_not_wipe_the_one_on_file(self, monkeypatch):
+        """The cheap tier sets currency from the programme; a sparse payload
+        must not undo that."""
+        from connect_labs.pulse import ingest
+
+        opp = self._opp(currency="USD", total_budget=1)
+        self._client(monkeypatch, {"total_budget": 2, "currency": ""})
+        ingest.refresh_budget(object(), opp)
+
+        opp.refresh_from_db()
+        assert opp.currency == "USD"
+        assert opp.total_budget == 2

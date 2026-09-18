@@ -434,6 +434,61 @@ def _to_decimal(raw) -> Decimal | None:
         return None
 
 
+def refresh_budget(client, opp: PulseOpportunity) -> bool:
+    """Fill an opportunity's budget from the per-opportunity export.
+
+    `opp_org_program_list`, which the cheap tier reads, carries an
+    opportunity's visit count and not a penny of its budget — so the columns
+    below existed for a long time with nothing ever written to them, and the
+    marketplace could say what had been delivered but never what had been
+    funded for it.
+
+    The figure was there all along on a different endpoint:
+    `/export/opportunity/<id>/` serialises `total_budget`, `budget_per_visit`,
+    `budget_per_user` and `max_visits_per_user`. It costs one request per
+    opportunity, which is why this runs on the slow tier over a bounded slice
+    rather than sweeping all of them — a budget is renegotiated, not streamed.
+
+    Returns whether anything actually changed, so the caller can report work
+    done rather than requests made.
+    """
+    from connect_labs.pulse.client import fetch_json
+
+    payload = fetch_json(client, f"/export/opportunity/{opp.opportunity_id}/")
+
+    fields = {
+        "total_budget": _to_int(payload.get("total_budget")),
+        "budget_per_visit": _to_int(payload.get("budget_per_visit")),
+        "budget_per_user": _to_int(payload.get("budget_per_user")),
+        "max_visits_per_user": _to_int(payload.get("max_visits_per_user")),
+    }
+    # Currency comes from the programme on the cheap tier, but an opportunity
+    # carries its own and that is the one its budget is denominated in.
+    currency = (payload.get("currency") or "").strip()
+    if currency:
+        fields["currency"] = currency[:8]
+
+    changed = [name for name, value in fields.items() if getattr(opp, name) != value]
+    if not changed:
+        return False
+
+    for name, value in fields.items():
+        setattr(opp, name, value)
+    opp.save(update_fields=[*fields, "updated_at"])
+    return True
+
+
+def _to_int(raw) -> int | None:
+    """None stays None. A budget nobody has set is not a budget of zero, and
+    collapsing the two makes an unfunded opportunity look fully spent."""
+    if raw in (None, "", "None"):
+        return None
+    try:
+        return int(Decimal(str(raw)))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
 def refresh_rate(client, opp: PulseOpportunity, sample: int = 1000) -> Decimal | None:
     """Measure USD actually accrued to the worker per approved unit of work.
 

@@ -43,7 +43,7 @@ SEGMENTS = [
 # poller ingests, not between two queries in one request.
 _CACHE_TTL_SECONDS = 60
 # Everything cached for the TTL, keyed by the function that fills it.
-_CACHED = ("delivering", "workspaces", "delivered", "first_service")
+_CACHED = ("delivering", "workspaces", "delivered", "first_service", "committed")
 _cache: dict = dict.fromkeys(_CACHED) | {"loaded_at": 0.0}
 
 
@@ -150,6 +150,58 @@ def delivered_programmes_by_org_name() -> dict[str, set[str]]:
         if services:
             out[name] = services
     _cache["delivered"] = out
+    _cache["loaded_at"] = _cache["loaded_at"] or time.monotonic()
+    return out
+
+
+def committed_by_programme() -> dict[str, dict]:
+    """Per programme: what has been funded, and how much of it is still to come.
+
+    The marketplace could say what a programme had DELIVERED and never what had
+    been committed to it, which is the difference between a track record and a
+    pipeline. An organisation reading only the first cannot tell a programme
+    winding down from one just funded.
+
+    `delivered` values the work at the same rate the budget is denominated in,
+    so the two are subtractable. Opportunities whose budget has not been read
+    yet are excluded entirely rather than counted as zero — a programme that
+    looks unfunded because nobody fetched its budget is worse than one that
+    says it does not know.
+    """
+    from connect_labs.pulse.models import PulseOpportunity
+
+    if _fresh() and _cache["committed"] is not None:
+        return _cache["committed"]
+
+    out: dict[str, dict] = {}
+    rows = PulseOpportunity.objects.exclude(service_slug="").exclude(total_budget=None)
+    for opp in rows.only("service_slug", "total_budget", "budget_per_visit", "lifetime_visit_count", "currency"):
+        if not programmes.is_programme(opp.service_slug):
+            continue
+        entry = out.setdefault(
+            opp.service_slug,
+            {"funded": 0, "delivered": 0, "opportunities": 0, "currencies": set()},
+        )
+        entry["funded"] += opp.total_budget or 0
+        # Valued at the opportunity's own per-visit budget, which is the rate
+        # its total is built from. Without one the visits cannot be priced, so
+        # they contribute nothing rather than a guess.
+        if opp.budget_per_visit:
+            entry["delivered"] += (opp.lifetime_visit_count or 0) * opp.budget_per_visit
+        entry["opportunities"] += 1
+        if opp.currency:
+            entry["currencies"].add(opp.currency)
+
+    for entry in out.values():
+        # Never below zero: an opportunity can over-deliver against its budget,
+        # and "minus $4,000 outstanding" is not a thing anyone can act on.
+        entry["outstanding"] = max(entry["funded"] - entry["delivered"], 0)
+        entry["currencies"] = sorted(entry["currencies"])
+        # One currency is comparable; several are a sum of unlike things, and
+        # the caller has to know which it is holding.
+        entry["mixed_currency"] = len(entry["currencies"]) > 1
+
+    _cache["committed"] = out
     _cache["loaded_at"] = _cache["loaded_at"] or time.monotonic()
     return out
 

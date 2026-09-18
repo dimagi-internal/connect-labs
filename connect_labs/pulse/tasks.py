@@ -81,6 +81,7 @@ def poll_slow_maintenance(rate_sample_limit: int = 25) -> dict:
     regardless of whether anything differs, so the cadence is what matters.
     """
     rated = 0
+    budgeted = 0
     try:
         with get_client() as client:
             active = PulseOpportunity.objects.filter(is_active=True).order_by("updated_at")[:rate_sample_limit]
@@ -91,9 +92,26 @@ def poll_slow_maintenance(rate_sample_limit: int = 25) -> dict:
                 except Exception as exc:  # one bad opp must not kill the sweep
                     logger.warning("[pulse] rate refresh failed for opp %s: %s", opp.opportunity_id, exc)
 
+            # Budgets come from a different endpoint and move even more slowly,
+            # so they ride the same bounded oldest-first slice rather than
+            # getting a sweep of their own. Opportunities never read carry a
+            # null total_budget, so those come first and the backlog drains.
+            unread = PulseOpportunity.objects.filter(total_budget=None).order_by("updated_at")
+            for opp in list(unread[:rate_sample_limit]) or list(active):
+                try:
+                    if ingest.refresh_budget(client, opp):
+                        budgeted += 1
+                except Exception as exc:  # noqa: BLE001 — one opp must not kill the sweep
+                    logger.warning("[pulse] budget refresh failed for opp %s: %s", opp.opportunity_id, exc)
+
         countries = ingest.refresh_opportunity_countries()
         services = ingest.resync_service_slugs()
-        return {"rates_refreshed": rated, "countries_set": countries, "services_resynced": services}
+        return {
+            "rates_refreshed": rated,
+            "budgets_refreshed": budgeted,
+            "countries_set": countries,
+            "services_resynced": services,
+        }
     except PulseAuthError as exc:
         ingest.record_failure(TIER_CHEAP, f"auth: {exc}")
         raise
