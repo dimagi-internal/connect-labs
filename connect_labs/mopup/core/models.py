@@ -181,5 +181,31 @@ class MopupRunRecord(LocalLabsRecord):
         return self.data.get("excluded_wa_ids", [])
 
     @property
+    def planning_gaps_locked(self) -> bool:
+        """Step 2's own lock-in (distinct from `status`/`STATUS_LOCKED`,
+        which is Step 1's) — once true, Step 2's mode/Recompute/Erase freeze
+        (mirrors `status` itself: "thresholds/settings stop mattering after
+        this") and Step 3 (isolation filter) becomes available. One-way, same
+        as Step 1's own lock — no unlock affordance."""
+        return bool(self.data.get("planning_gaps_locked", False))
+
+    @property
+    def isolation_filter_locked(self) -> bool:
+        """Step 3's own lock-in — once true, whatever work areas Step 3
+        flagged as isolated (further than `isolation_threshold_m` from every
+        other active work area) have already been folded into
+        `excluded_wa_ids`, and "Create WA Revisit plan" becomes clickable.
+        One-way, same as Step 1/Step 2's locks."""
+        return bool(self.data.get("isolation_filter_locked", False))
+
+    @property
+    def isolation_threshold_m(self) -> float | None:
+        """The last-used (previewed or locked-in) Step 3 distance threshold,
+        in meters — redisplays the form with whatever was last tried rather
+        than always resetting to a hardcoded default, same convention
+        `planning_gap_config` already follows for Step 2's own form."""
+        return self.data.get("isolation_threshold_m")
+
+    @property
     def created_at(self) -> str:
         return self.data.get("created_at", "")

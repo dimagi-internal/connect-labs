@@ -41,6 +41,11 @@ urlpatterns = [
         name="erase_planning_gaps",
     ),
     path(
+        "program/<int:program_id>/run/<int:run_id>/lock_planning_gaps/",
+        views.MopupLockPlanningGapsView.as_view(),
+        name="lock_planning_gaps",
+    ),
+    path(
         "program/<int:program_id>/run/<int:run_id>/upload_buildings/",
         views.MopupUploadBuildingsView.as_view(),
         name="upload_buildings",
@@ -49,5 +54,15 @@ urlpatterns = [
         "program/<int:program_id>/run/<int:run_id>/exclude_work_area/",
         views.MopupExcludeWorkAreaView.as_view(),
         name="exclude_work_area",
+    ),
+    path(
+        "program/<int:program_id>/run/<int:run_id>/isolation_preview/",
+        views.MopupIsolationPreviewView.as_view(),
+        name="isolation_preview",
+    ),
+    path(
+        "program/<int:program_id>/run/<int:run_id>/lock_isolation_filter/",
+        views.MopupLockIsolationFilterView.as_view(),
+        name="lock_isolation_filter",
     ),
 ]
