@@ -23,7 +23,7 @@ When editing a workflow or pipeline in the Workflow Engine, an AI assistant is a
 - _"Change the status labels from Active/Inactive to Enrolled/Graduated"_
 - _"Remove the RUTF field from the table — it's not relevant for this program"_
 
-The AI understands the current workflow's structure and makes targeted changes. After each change, you can preview the result and either keep it or ask for a revision. More advanced edits can be done using [Connect MCP & Safe Mode](connect-mcp-safe-mode.md) from the command line.
+The AI understands the current workflow's structure and makes targeted changes. Replies appear word-by-word as the AI writes them, so you can start reading immediately rather than waiting for the full response to arrive. After each change, you can preview the result and either keep it or ask for a revision. More advanced edits can be done using [Connect MCP & Safe Mode](connect-mcp-safe-mode.md) from the command line.
 
 ---
 
@@ -128,3 +128,6 @@ The AI used for workflow and pipeline editing does not have access to individual
 
 **Which AI is being used?**
 Connect Labs uses Claude (made by Anthropic) as the AI for workflow editing, pipeline assistance, solicitation criteria generation, and the Application Coach. Audit image review also uses Claude's vision capability.
+
+**Why does the AI reply appear word by word instead of all at once?**
+AI responses now stream in as they are written, so you see the answer building in real time rather than waiting for the full reply to arrive. This is normal — you do not need to wait for the response to finish before you start reading.
