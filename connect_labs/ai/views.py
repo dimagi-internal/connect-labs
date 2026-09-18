@@ -18,6 +18,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from connect_labs.ai.types import UserDependencies
+from connect_labs.labs.analysis.sse_streaming import stream_sse
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,11 @@ def send_sse_event(
         event["error"] = error
         event["complete"] = True
     return f"data: {json.dumps(event)}\n\n"
+
+
+# Seconds of silence before a keep-alive comment. A model that is thinking can
+# go quiet for a while, and an idle connection is what ALB drops.
+HEARTBEAT_INTERVAL = 20
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -170,8 +176,17 @@ class AIStreamView(LoginRequiredMixin, View):
                 extra_body=body,
             )
 
+        # Streamed, not buffered. Django's ASGI handler drains a SYNC iterator
+        # in full before sending any of it, so handing it `stream_generator()`
+        # directly meant the entire reply landed at once when the model had
+        # finished -- measured on prod: a complete answer in a single chunk.
+        # For chat that is the whole value proposition gone.
+        #
+        # chunk_size=1 because this stream is latency-bound, not volume-bound:
+        # a delta is a few tokens and the user is watching for it. The bulk row
+        # streams use 100 for the opposite reason.
         response = StreamingHttpResponse(
-            stream_generator(),
+            stream_sse(stream_generator(), interval=HEARTBEAT_INTERVAL, chunk_size=1),
             content_type="text/event-stream",
         )
         response["Cache-Control"] = "no-cache"
