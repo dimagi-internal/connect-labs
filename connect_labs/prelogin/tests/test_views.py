@@ -71,6 +71,31 @@ class TestContactPage:
         assert resp.context["app_login_url"] == "/accounts/login/"
 
 
+class TestExternalCoverageSection:
+    """ "In the news" cards (see external_coverage.py) render on /insights and
+    on the portfolio pages they're tagged for, and nowhere else."""
+
+    def test_insights_shows_the_news_section(self, client):
+        resp = client.get(reverse("prelogin:insights"))
+        assert b"In the news" in resp.content
+        assert b"Tech investment has a major blind spot" in resp.content
+
+    def test_tagged_portfolio_page_shows_the_card(self, client):
+        resp = client.get("/portfolio/reading-glasses")
+        assert b"Tech investment has a major blind spot" in resp.content
+
+    def test_untagged_portfolio_page_has_no_news_section(self, client):
+        resp = client.get("/portfolio/kangaroo-mother-care")
+        assert b"In the news" not in resp.content
+
+    def test_news_card_is_never_counted_as_an_insight(self, client):
+        """The /insights result count and Type/Program/Activity filters only
+        look at .blog-card and .insight-row (see app.js); the news card must
+        carry neither class or it would get hidden/counted as one of those."""
+        resp = client.get(reverse("prelogin:insights"))
+        assert b'class="os-press-card news-card"' in resp.content
+
+
 class TestRouteMeta:
     """The head is rendered server-side, per route.
 
