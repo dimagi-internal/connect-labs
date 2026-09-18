@@ -43,9 +43,18 @@ def label(slug: str | None) -> str:
     return service_label(slug)
 
 
+# Delivery types that are not field delivery. `other` is Connect's absence of a
+# type; `ace` is Dimagi's own tooling running programmes through Connect to test
+# itself — real rows, real visits, but nothing a partner delivered and nothing a
+# funder is buying. Its opportunities carry placeholder budgets (17 live ones
+# held $68k against $143 ever paid), so leaving it in inflated every figure it
+# touched.
+NOT_DELIVERY = frozenset({PROGRAMME_NONE, "other", "ace"})
+
+
 def is_programme(slug: str | None) -> bool:
     """Whether this tag names a delivery programme rather than its absence."""
-    return bool(slug) and slug not in (PROGRAMME_NONE, "other")
+    return bool(slug) and slug not in NOT_DELIVERY
 
 
 def known_slugs() -> set[str]:
