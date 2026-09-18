@@ -23,11 +23,11 @@ from django.db import models
 
 from connect_labs.audit_trail.service import record as audit_record
 
-# The floor disclosure.py enforces at publish time (R1). Repeated here because a
-# cohort configured below it is a misconfiguration to refuse at write time, not a
-# publication to fail later: at two contributors the reader is one of them, so the
-# single remaining bar is a named peer's exact value.
-MIN_PEERS_FLOOR = 3
+# The lowest min_peers a cohort may carry. 1 means "no peer floor": see R1 in
+# disclosure.py for why that is a cohort's choice (Jonathan, 2026-09-18). Kept as
+# a constant and a database constraint so 0 -- which would publish a figure no
+# opportunity contributed -- stays impossible.
+MIN_PEERS_FLOOR = 1
 
 
 class BenchmarkCohort(models.Model):
