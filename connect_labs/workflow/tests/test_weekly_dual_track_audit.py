@@ -1038,6 +1038,78 @@ def test_build_track_audit_calls_reads_per_opp_classifiers():
     ]
 
 
+class TestMuacReadingFieldOverride:
+    """Regression coverage for the 2026-09-17 fix: MUAC_READING_FIELD used to
+    be a single hardcoded path applied to every opp, so muac_match silently
+    never ran (and never showed a "MUAC Reading" box) for any app whose
+    manually-entered reading lives somewhere else, e.g. RUTF's
+    anthropometric_appetite/muac_measurement/muac_cm. Reviewers now take an
+    optional per-opp override instead."""
+
+    def test_reviewers_for_path_uses_override_reading_field(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import _reviewers_for_path
+
+        reviewers = _reviewers_for_path(
+            "anthropometric_appetite/muac_measurement/muac_photo",
+            muac_reading_field="anthropometric_appetite/muac_measurement/muac_cm",
+        )
+        match_reviewer = next(r for r in reviewers if r["agent_id"] == "muac_match")
+        assert match_reviewer["config"]["comparison_field"] == "anthropometric_appetite/muac_measurement/muac_cm"
+        assert match_reviewer["config"]["label"] == "MUAC Reading"
+
+    def test_reviewers_for_path_defaults_to_legacy_field_when_no_override(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import MUAC_READING_FIELD, _reviewers_for_path
+
+        reviewers = _reviewers_for_path("muac_group/muac_photo")
+        match_reviewer = next(r for r in reviewers if r["agent_id"] == "muac_match")
+        assert match_reviewer["config"]["comparison_field"] == MUAC_READING_FIELD
+
+    def test_image_audits_threads_muac_reading_field_override(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import _image_audits
+
+        result = _image_audits(
+            ["anthropometric_appetite/muac_measurement/muac_photo"],
+            muac_reading_field="anthropometric_appetite/muac_measurement/muac_cm",
+        )
+        reviewers = result[0]["reviewers"]
+        match_reviewer = next(r for r in reviewers if r["agent_id"] == "muac_match")
+        assert match_reviewer["config"]["comparison_field"] == "anthropometric_appetite/muac_measurement/muac_cm"
+
+    def test_build_track_audit_calls_reads_per_opp_muac_reading_field(self):
+        """Two opps, only one with an override -- proves the override is
+        genuinely per-opp, not a module-level mutation that would leak into
+        the other opp's calls."""
+        from connect_labs.workflow.templates.weekly_dual_track_audit import MUAC_READING_FIELD
+
+        calls = build_track_audit_calls(
+            opportunity_ids=[101, 202],
+            opp_names={"101": "RUTF Opp", "202": "CHC Opp"},
+            per_opp={
+                "101": {
+                    "muac_image_paths": ["anthropometric_appetite/muac_measurement/muac_photo"],
+                    "muac_reading_field": "anthropometric_appetite/muac_measurement/muac_cm",
+                },
+                "202": {
+                    "muac_image_paths": ["muac_group/muac_photo"],
+                },
+            },
+            track_a=TRACK_A,
+            track_b=TRACK_B,
+            window_start="2026-06-22",
+            window_end="2026-06-28",
+            username="nm1",
+            workflow_run_id=555,
+        )
+
+        rutf_call = next(c for c in calls if c["opportunities"][0]["id"] == 101)
+        rutf_match = next(r for r in rutf_call["image_audits"][0]["reviewers"] if r["agent_id"] == "muac_match")
+        assert rutf_match["config"]["comparison_field"] == "anthropometric_appetite/muac_measurement/muac_cm"
+
+        chc_call = next(c for c in calls if c["opportunities"][0]["id"] == 202)
+        chc_match = next(r for r in chc_call["image_audits"][0]["reviewers"] if r["agent_id"] == "muac_match")
+        assert chc_match["config"]["comparison_field"] == MUAC_READING_FIELD
+
+
 def test_build_track_audit_calls_threads_enable_duplicate_detection():
     calls = build_track_audit_calls(
         opportunity_ids=[101],
