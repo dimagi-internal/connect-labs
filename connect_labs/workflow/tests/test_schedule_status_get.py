@@ -105,12 +105,24 @@ def test_get_prefers_a_schedule_that_has_actually_run(client, logged_in):
     _session(client)
     ran_at = timezone.now() - timezone.timedelta(hours=1)
     WorkflowSchedule.objects.create(
-        definition_id=13005, program_id=217, owner=logged_in, definition_name="W",
-        cadence="interval", interval_hours=2, hour=0, last_run_at=ran_at, last_status="ok",
+        definition_id=13005,
+        program_id=217,
+        owner=logged_in,
+        definition_name="W",
+        cadence="interval",
+        interval_hours=2,
+        hour=0,
+        last_run_at=ran_at,
+        last_status="ok",
     )
     WorkflowSchedule.objects.create(
-        definition_id=13005, program_id=217, owner=User.objects.create(username="bob"),
-        definition_name="W", cadence="daily", hour=6, last_run_at=None,
+        definition_id=13005,
+        program_id=217,
+        owner=User.objects.create(username="bob"),
+        definition_name="W",
+        cadence="daily",
+        hour=6,
+        last_run_at=None,
     )
     with mock.patch("connect_labs.workflow.views._resolve_schedule_scope", return_value=(None, 217)):
         resp = client.get(reverse("labs:workflow:api_schedule_upsert", args=[13005]))
@@ -124,8 +136,15 @@ def test_get_does_not_leak_a_schedule_from_another_scope(client, logged_in):
     program must not be reported."""
     _session(client)
     WorkflowSchedule.objects.create(
-        definition_id=13005, program_id=999, owner=logged_in, definition_name="W",
-        cadence="interval", interval_hours=2, hour=0, last_run_at=timezone.now(), last_status="ok",
+        definition_id=13005,
+        program_id=999,
+        owner=logged_in,
+        definition_name="W",
+        cadence="interval",
+        interval_hours=2,
+        hour=0,
+        last_run_at=timezone.now(),
+        last_status="ok",
     )
     with mock.patch("connect_labs.workflow.views._resolve_schedule_scope", return_value=(None, 217)):
         resp = client.get(reverse("labs:workflow:api_schedule_upsert", args=[13005]))
