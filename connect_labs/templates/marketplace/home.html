@@ -44,10 +44,14 @@ brand-deep-purple #16006d, brand-indigo #3843d0, brand-sky #8ea1ff.
     </div>
 
     <div class="flex flex-wrap gap-3 mt-7">
-      <a href="{% url 'marketplace:network' %}"
+      <a href="{% url 'marketplace:programmes' %}"
          class="inline-flex items-center gap-2 px-4 py-2 bg-white text-brand-deep-purple text-sm font-semibold rounded-lg hover:bg-brand-sky/20 transition">
-        Browse the network
+        Browse by programme
         <i class="fa-solid fa-arrow-right text-xs"></i>
+      </a>
+      <a href="{% url 'marketplace:network' %}"
+         class="inline-flex items-center gap-2 px-4 py-2 border border-brand-sky/40 text-white text-sm font-medium rounded-lg hover:bg-white/5 transition">
+        Browse the network
       </a>
     </div>
   </div>

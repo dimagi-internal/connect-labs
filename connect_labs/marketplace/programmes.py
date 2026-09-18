@@ -71,3 +71,30 @@ def chips(slugs) -> list[dict]:
     """
     seen = {s for s in slugs if is_programme(s)}
     return sorted(({"slug": s, "label": label(s)} for s in seen), key=lambda c: c["label"])
+
+
+# One colour per programme, so the same programme reads as the same thing on
+# every page that shows it — the programme card, the chip on an organisation's
+# row, the round's tag. Picked to stay distinguishable from its neighbours and
+# legible as text on white; anything unlisted falls back to the brand indigo.
+_HUES = {
+    "chc": "#3843d0",
+    "kmc": "#cf4270",
+    "readers": "#c07a0a",
+    "malaria": "#0e8585",
+    "nutrition": "#3d8a52",
+    "water": "#1b8fc4",
+    "ecd": "#7b46c9",
+    "mbw": "#d0573f",
+    "cholera": "#a8412e",
+    "ivp": "#4a7fd6",
+    "wellme": "#8a4a9e",
+    "hhs": "#6f7f26",
+    "tms": "#a17a1c",
+    "conversation": "#b04f8a",
+    "interview": "#5d6678",
+}
+
+
+def hue(slug: str | None) -> str:
+    return _HUES.get(slug or "", "#3843d0")
