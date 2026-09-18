@@ -192,6 +192,13 @@ class PulseOpportunity(models.Model):
     budget_per_user = models.BigIntegerField(null=True, blank=True)
     max_visits_per_user = models.BigIntegerField(null=True, blank=True)
 
+    # USD per unit of this opportunity's own currency, taken from prod's own
+    # conversion rather than an FX table: a completed work carries both
+    # `saved_payment_accrued` and `saved_payment_accrued_usd`, and their ratio
+    # IS the rate Connect applied. Read from the newest works first, so it
+    # tracks the current rate rather than the one in force years ago.
+    usd_rate = models.DecimalField(max_digits=18, decimal_places=12, null=True, blank=True)
+
     # Measured USD actually accrued to the worker per approved unit of work.
     # Preferred over converting budget_per_visit, because it is what was really
     # paid; the two agree to within cents, which the ingest asserts.

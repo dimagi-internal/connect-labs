@@ -14,6 +14,7 @@ directory can never disagree with the wall display about who is live.
 from __future__ import annotations
 
 import datetime
+import decimal
 import time
 
 from django.db.models import Count, Max, Prefetch, Q
@@ -43,7 +44,7 @@ SEGMENTS = [
 # poller ingests, not between two queries in one request.
 _CACHE_TTL_SECONDS = 60
 # Everything cached for the TTL, keyed by the function that fills it.
-_CACHED = ("delivering", "workspaces", "delivered", "first_service", "committed")
+_CACHED = ("delivering", "workspaces", "delivered", "first_service", "committed", "fx")
 _cache: dict = dict.fromkeys(_CACHED) | {"loaded_at": 0.0}
 
 
@@ -154,6 +155,45 @@ def delivered_programmes_by_org_name() -> dict[str, set[str]]:
     return out
 
 
+def fx_rates() -> dict[str, decimal.Decimal]:
+    """USD per unit of each currency, from Connect's own conversions.
+
+    Every completed work records what it accrued locally and what Connect
+    converted that to, so each opportunity carries a rate Connect actually
+    applied. Pooling them per currency covers the opportunities whose own works
+    have not been sampled yet.
+
+    The MEDIAN, not the mean: a single opportunity with a malformed accrual
+    produced a rate of zero in the first sample of this data, and a mean would
+    have carried that into every figure the currency touches.
+    """
+    from statistics import median
+
+    from connect_labs.pulse.models import PulseOpportunity
+
+    if _fresh() and _cache["fx"] is not None:
+        return _cache["fx"]
+
+    seen: dict[str, list] = {}
+    for currency, rate in (
+        PulseOpportunity.objects.exclude(currency="")
+        .exclude(usd_rate=None)
+        .filter(usd_rate__gt=0)
+        .values_list("currency", "usd_rate")
+    ):
+        seen.setdefault(currency, []).append(rate)
+
+    out = {currency: median(rates) for currency, rates in seen.items()}
+    # A currency is its own unit. Asserting it rather than deriving it means a
+    # broken derivation shows up as USD figures that are wrong by a factor,
+    # which is visible, instead of quietly rescaling the one currency whose
+    # answer everybody knows.
+    out["USD"] = decimal.Decimal(1)
+    _cache["fx"] = out
+    _cache["loaded_at"] = _cache["loaded_at"] or time.monotonic()
+    return out
+
+
 def committed_by_programme() -> dict[str, dict]:
     """Per programme: what has been funded, and how much of it is still to come.
 
@@ -162,32 +202,49 @@ def committed_by_programme() -> dict[str, dict]:
     pipeline. An organisation reading only the first cannot tell a programme
     winding down from one just funded.
 
-    `delivered` values the work at the same rate the budget is denominated in,
-    so the two are subtractable. Opportunities whose budget has not been read
-    yet are excluded entirely rather than counted as zero — a programme that
-    looks unfunded because nobody fetched its budget is worse than one that
-    says it does not know.
+    Every figure is USD, converted at the rate Connect itself applied to that
+    opportunity's payments — so these are comparable across programmes, which
+    the local-currency totals never were: Kangaroo Mother Care's budget spans
+    rupees, shillings and naira, and their sum meant nothing.
+
+    `delivered` values the work at the same per-visit budget the total is built
+    from, so the two are subtractable. Two kinds of opportunity are excluded
+    rather than guessed at, and counted so the caller can say how complete the
+    answer is: one whose budget has never been read, and one whose currency no
+    payment has ever established a rate for.
     """
     from connect_labs.pulse.models import PulseOpportunity
 
     if _fresh() and _cache["committed"] is not None:
         return _cache["committed"]
 
+    rates = fx_rates()
     out: dict[str, dict] = {}
     rows = PulseOpportunity.objects.exclude(service_slug="").exclude(total_budget=None)
-    for opp in rows.only("service_slug", "total_budget", "budget_per_visit", "lifetime_visit_count", "currency"):
+    for opp in rows.only(
+        "service_slug", "total_budget", "budget_per_visit", "lifetime_visit_count", "currency", "usd_rate"
+    ):
         if not programmes.is_programme(opp.service_slug):
             continue
         entry = out.setdefault(
             opp.service_slug,
-            {"funded": 0, "delivered": 0, "opportunities": 0, "currencies": set()},
+            {"funded": 0, "delivered": 0, "opportunities": 0, "unconvertible": 0, "currencies": set()},
         )
-        entry["funded"] += opp.total_budget or 0
+        # This opportunity's own rate first, its currency's pooled rate second,
+        # and otherwise it is left out entirely. Converting at a rate nobody
+        # measured would put a dollar figure on a page that no payment supports.
+        rate = opp.usd_rate or rates.get(opp.currency)
+        if not rate or rate <= 0:
+            entry["unconvertible"] += 1
+            continue
+
+        entry["funded"] += int(decimal.Decimal(opp.total_budget or 0) * rate)
         # Valued at the opportunity's own per-visit budget, which is the rate
         # its total is built from. Without one the visits cannot be priced, so
         # they contribute nothing rather than a guess.
         if opp.budget_per_visit:
-            entry["delivered"] += (opp.lifetime_visit_count or 0) * opp.budget_per_visit
+            delivered_local = decimal.Decimal((opp.lifetime_visit_count or 0) * opp.budget_per_visit)
+            entry["delivered"] += int(delivered_local * rate)
         entry["opportunities"] += 1
         if opp.currency:
             entry["currencies"].add(opp.currency)
@@ -196,10 +253,10 @@ def committed_by_programme() -> dict[str, dict]:
         # Never below zero: an opportunity can over-deliver against its budget,
         # and "minus $4,000 outstanding" is not a thing anyone can act on.
         entry["outstanding"] = max(entry["funded"] - entry["delivered"], 0)
+        # Kept for provenance now that the figures are all USD — which local
+        # currencies a total was built from is the thing to look at when one
+        # of them turns out to be wrong.
         entry["currencies"] = sorted(entry["currencies"])
-        # One currency is comparable; several are a sum of unlike things, and
-        # the caller has to know which it is holding.
-        entry["mixed_currency"] = len(entry["currencies"]) > 1
 
     _cache["committed"] = out
     _cache["loaded_at"] = _cache["loaded_at"] or time.monotonic()
