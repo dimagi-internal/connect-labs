@@ -362,6 +362,44 @@ def refresh_opportunity_countries() -> int:
     return updated
 
 
+def reclassify_opportunities() -> int:
+    """Re-derive ``is_test`` and the name-fallback delivery type on EVERY row.
+
+    ``refresh_opportunities`` only rewrites the opportunities Connect currently
+    lists to the poller, and the list is not all of history: the COWACDI and
+    eHealth Africa interview cohorts (65 opportunities, ~7,000 interviews) and
+    a batch of older ACE runs no longer appear in it, yet their works are still
+    counted. A rule change that only reaches listed rows leaves exactly those
+    behind -- which is how the Interviews programme stayed at 1 opportunity
+    after the rule that should have moved 65 shipped.
+
+    The delivery type is only re-derived where Connect gives none: a programme
+    with a ``delivery_type`` always wins over the name, and a stored type is
+    only replaced when it is the fallback's "found nothing" (``other`` or
+    blank). An opportunity whose programme is no longer mirrored keeps the
+    type Connect gave it when it was.
+    """
+    programs = {p.program_id: p for p in PulseProgram.objects.all()}
+    changed = []
+    for opp in PulseOpportunity.objects.all():
+        program = programs.get(opp.program_id)
+        program_is_test = bool(program and (program.is_test or looks_like_test(program.name)))
+        is_test = is_test_opportunity(name=opp.name, org_slug=opp.org_slug, program_is_test=program_is_test)
+        if program and program.delivery_type:
+            service = program.delivery_type
+        elif opp.service_slug in ("", "other"):
+            service = service_slug_for(opp.name)
+        else:
+            service = opp.service_slug
+        if opp.is_test != is_test or opp.service_slug != service[:48]:
+            opp.is_test, opp.service_slug = is_test, service[:48]
+            changed.append(opp)
+    if changed:
+        PulseOpportunity.objects.bulk_update(changed, ["is_test", "service_slug"], batch_size=500)
+        logger.info("[pulse] reclassified %s opportunities", len(changed))
+    return len(changed)
+
+
 def resync_service_slugs() -> int:
     """Push each opportunity's delivery type onto the rows that denormalise it.
 
