@@ -33,7 +33,18 @@ def _work(opp_id, service, worker, org=0, *, program_id=None, org_slug="org", st
     )
 
 
-def _opp(opp_id, service, *, visits=0, budget=None, live=True, program_id=None, org_slug="org", currency="USD"):
+def _opp(
+    opp_id,
+    service,
+    *,
+    visits=0,
+    budget=None,
+    live=True,
+    program_id=None,
+    org_slug="org",
+    currency="USD",
+    is_test=False,
+):
     return PulseOpportunity.objects.create(
         opportunity_id=opp_id,
         name=f"Opp {opp_id}",
@@ -46,6 +57,7 @@ def _opp(opp_id, service, *, visits=0, budget=None, live=True, program_id=None, 
         usd_rate=Decimal("1") if currency == "USD" else None,
         is_active=live,
         end_date=None if live else dt.date(2025, 1, 1),
+        is_test=is_test,
     )
 
 
@@ -64,8 +76,13 @@ def market(db):
     make_partner("Lakeside Health", "LH", countries=["Nigeria"])
     _opp(1, "chc", visits=9_000, budget=100_000, program_id=1, org_slug="lakeside-health")
     _work(1, "chc", 30_000, 10_000, program_id=1, org_slug="lakeside-health")
-    _opp(2, "chc", visits=40, budget=312_500, program_id=2)  # test: budget must not reach "still funded"
+    # Ingest flags every opportunity under a test programme.
+    _opp(2, "chc", visits=40, budget=312_500, program_id=2, is_test=True)
     _work(2, "chc", 20, 5, program_id=2)
+    # An ACE demo run carrying a real delivery type: must not make Nutrition
+    # look delivered.
+    _opp(5, "nutrition", visits=6, budget=5_000, org_slug="ai-demo-space", is_test=True)
+    _work(5, "nutrition", 8, org_slug="ai-demo-space")
 
     _opp(3, "kmc", visits=500, budget=50_000, org_slug="lakeside-health")
     _work(3, "kmc", 8_000, 2_000, org_slug="lakeside-health")
@@ -109,10 +126,18 @@ class TestItTiesOutWithPulse:
             if card["services"]:
                 assert card["services"] == menu[slug], slug
 
-    def test_a_test_programmes_payment_is_in_paid_out_as_pulse_counts_it(self, market):
-        """$25 of test work was really paid, and Pulse counts it. Leaving it out
-        here would make CHC disagree with the wall by exactly that much."""
-        assert _cards()["chc"]["spent"] == 40_000 + 25
+    def test_test_work_is_in_neither_pulse_nor_the_card(self, client, user, market):
+        """Both leave scaffolding out, so they agree on the real figure."""
+        client.force_login(user)
+        pulse = client.get(reverse("pulse:api_summary")).json()
+        by_service = {row["service"]: row["usd_total"] for row in pulse["money"]["by_service"]}
+        assert by_service["chc"] == 40_000
+        assert _cards()["chc"]["spent"] == 40_000
+
+    def test_ace_demo_runs_do_not_count_as_delivery(self, market):
+        nutrition = _cards()["nutrition"]
+        assert nutrition["services"] == 0
+        assert nutrition["spent"] == 0
 
     def test_a_test_programmes_budget_is_not_still_funded(self, market):
         """Its $312,500 is a placeholder. Counted, one test row would dwarf the
@@ -138,7 +163,7 @@ class TestTheCards:
 
     def test_the_bar_is_paid_against_paid_plus_still_funded(self, market):
         chc = _cards()["chc"]
-        assert chc["spent_pct"] == round(40_025 * 100 / (40_025 + 59_975), 1)
+        assert chc["spent_pct"] == round(40_000 * 100 / (40_000 + 60_000), 1)
 
     def test_every_card_has_a_colour_of_its_own(self, market):
         hues = [c["hue"] for c in queries.programme_cards()]

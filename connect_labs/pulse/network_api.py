@@ -110,13 +110,22 @@ def countries_table(delivering: set[str]) -> list[dict]:
     # honest "services delivered here" figure -- works are a payment unit and
     # count differently per programme.
     for record in (
-        PulseOpportunity.objects.exclude(country="").values("country").annotate(visits=Sum("lifetime_visit_count"))
+        PulseOpportunity.objects.exclude(country="")
+        .filter(is_test=False)
+        .values("country")
+        .annotate(visits=Sum("lifetime_visit_count"))
     ):
         iso3 = iso_codes.to_alpha3(record["country"])
         if iso3:
             row(iso3)["services"] += record["visits"] or 0
 
-    for record in PulseWork.objects.exclude(country="").values("country").annotate(usd=Sum("usd_to_org")):
+    test_opps = PulseOpportunity.objects.filter(is_test=True).values("opportunity_id")
+    for record in (
+        PulseWork.objects.exclude(country="")
+        .exclude(opportunity_id__in=test_opps)
+        .values("country")
+        .annotate(usd=Sum("usd_to_org"))
+    ):
         iso3 = iso_codes.to_alpha3(record["country"])
         if iso3:
             row(iso3)["usd"] += float(record["usd"] or 0)

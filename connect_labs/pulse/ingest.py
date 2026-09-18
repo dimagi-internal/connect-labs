@@ -63,6 +63,7 @@ from connect_labs.pulse.models import (
 )
 from connect_labs.pulse.normalize import (
     is_on_map,
+    is_test_opportunity,
     looks_like_test,
     parse_location,
     service_slug_for,
@@ -164,6 +165,7 @@ def refresh_opportunities(client) -> dict:
     # for org slugs, and its `name` and `delivery_type` were dropped -- which is
     # why service categorisation was a regex over opportunity names.
     program_delivery: dict[int, str] = {}
+    program_test: dict[int, bool] = {}
     program_rows: list[dict] = []
     for p in programs:
         pid = p.get("id")
@@ -172,6 +174,7 @@ def refresh_opportunities(client) -> dict:
         delivery = (p.get("delivery_type") or "").strip()
         program_delivery[pid] = delivery
         pname = p.get("name") or ""
+        program_test[pid] = looks_like_test(pname)
         program_rows.append(
             {
                 "program_id": pid,
@@ -193,11 +196,15 @@ def refresh_opportunities(client) -> dict:
         # Connect's own delivery_type wins; the name regex is the fallback for
         # an opportunity whose programme has none set.
         delivery = program_delivery.get(row.get("program")) or ""
+        org_slug = (row.get("organization") or program_org.get(row.get("program"), ""))[:120]
         opp_rows.append(
             {
                 "opportunity_id": opp_id,
                 "name": name[:300],
-                "org_slug": (row.get("organization") or program_org.get(row.get("program"), ""))[:120],
+                "org_slug": org_slug,
+                "is_test": is_test_opportunity(
+                    name=name, org_slug=org_slug, program_is_test=program_test.get(row.get("program"), False)
+                ),
                 "program_id": row.get("program"),
                 "is_active": bool(row.get("is_active")),
                 "end_date": row.get("end_date") or None,
@@ -210,12 +217,17 @@ def refresh_opportunities(client) -> dict:
     _mirror(PulseProgram, "program_id", program_rows)
     _mirror(PulseOpportunity, "opportunity_id", opp_rows)
 
+    # The headline counts real delivery only, exactly as every scoped figure
+    # does (`api._program_scope`), so the unfiltered wall and a filtered one
+    # cannot disagree about whether a demo run is a service.
+    real = {r["opportunity_id"] for r in opp_rows if not r["is_test"]}
+    real_opps = [o for o in opps if o.get("id") in real]
     scope = {
         "orgs": len(orgs),
         "programs": len(programs),
-        "opportunities": len(opps),
-        "active_opportunities": sum(1 for o in opps if o.get("is_active")),
-        "lifetime_visits": sum(o.get("visit_count") or 0 for o in opps),
+        "opportunities": len(real_opps),
+        "active_opportunities": sum(1 for o in real_opps if o.get("is_active")),
+        "lifetime_visits": sum(o.get("visit_count") or 0 for o in real_opps),
     }
     # Same rule as the mirrored rows: only write when it actually moved.
     # `update_or_create` would rewrite this every five minutes, and PulseScalar

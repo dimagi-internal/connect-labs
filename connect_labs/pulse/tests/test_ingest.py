@@ -258,6 +258,60 @@ class TestCheapTier:
         assert PulseOpportunity.objects.get(opportunity_id=765).service_slug == "mbw"
         assert PulseScalar.objects.get(key=ingest.SCALAR_SCOPE).value["lifetime_visits"] == 131995
 
+    def test_scaffolding_is_flagged_and_left_out_of_the_headline(self):
+        """ACE's demo runs, sandbox orgs and opportunities named as tests are
+        flagged at ingest, and the headline counts real delivery only."""
+        client = FakeClient(
+            json_payload={
+                "organizations": [{"id": 1, "slug": "a", "name": "A"}],
+                "programs": [
+                    {"id": 9, "organization": "a", "name": "CHC Nigeria", "delivery_type": "chc"},
+                    {"id": 8, "organization": "a", "name": "Founders Pledge Test Program", "delivery_type": "chc"},
+                    {"id": 7, "organization": "a", "name": "Malaria ITN FGD Pilot", "delivery_type": "malaria"},
+                ],
+                "opportunities": [
+                    {"id": 1, "name": "CHC - NG - P1", "program": 9, "visit_count": 100, "organization": "a"},
+                    {"id": 2, "name": "CHC - NG - P2", "program": 8, "visit_count": 9035, "organization": "a"},
+                    {
+                        "id": 3,
+                        "name": "ITN FGD (run 1)",
+                        "program": 7,
+                        "visit_count": 7,
+                        "organization": "ai-demo-space",
+                    },
+                    {
+                        "id": 4,
+                        "name": "Connect Interviews UAT",
+                        "program": None,
+                        "visit_count": 3,
+                        "organization": "b",
+                    },
+                    {
+                        "id": 5,
+                        "name": "[1PC1] COWACDI Interviews",
+                        "program": None,
+                        "visit_count": 50,
+                        "organization": "c",
+                    },
+                ],
+            }
+        )
+        import connect_labs.pulse.client as pulse_client
+
+        original = pulse_client.fetch_json
+        pulse_client.fetch_json = lambda c, path: c.json_payload
+        try:
+            scope = ingest.refresh_opportunities(client)
+        finally:
+            pulse_client.fetch_json = original
+
+        flagged = dict(PulseOpportunity.objects.values_list("opportunity_id", "is_test"))
+        assert flagged == {1: False, 2: True, 3: True, 4: True, 5: False}
+        assert scope["lifetime_visits"] == 150
+        assert scope["opportunities"] == 2
+        # An interview cohort with no programme is still Interviews.
+        assert PulseOpportunity.objects.get(opportunity_id=5).service_slug == "interview"
+
     def test_refresh_rate_measures_usd_per_approved_work(self, opp):
         client = FakeClient(
             [
