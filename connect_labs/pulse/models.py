@@ -184,8 +184,13 @@ class PulseOpportunity(models.Model):
     lifetime_visit_count = models.IntegerField(default=0)
 
     currency = models.CharField(max_length=8, blank=True)
+    # Filled from /export/opportunity/<id>/ on the slow tier. Null means the
+    # budget has not been read yet or was never set on Connect — deliberately
+    # distinct from zero, which would read as "fully spent".
     budget_per_visit = models.BigIntegerField(null=True, blank=True)
     total_budget = models.BigIntegerField(null=True, blank=True)
+    budget_per_user = models.BigIntegerField(null=True, blank=True)
+    max_visits_per_user = models.BigIntegerField(null=True, blank=True)
 
     # Measured USD actually accrued to the worker per approved unit of work.
     # Preferred over converting budget_per_visit, because it is what was really
