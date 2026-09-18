@@ -947,20 +947,24 @@ function WorkflowRunner({
     // (?refresh=1 / ?accept_low_count=1 on the PAGE url) — AnalysisPipeline
     // reads these off the SSE endpoint's own request.GET, so without this
     // forward they'd have no effect no matter how the page got reloaded.
-    if (pageParams.get('refresh') === '1') {
-      url.searchParams.set('refresh', '1');
-    }
-    if (pageParams.get('accept_low_count') === '1') {
-      url.searchParams.set('accept_low_count', '1');
-      // Unlike ?refresh=1 (harmless to leave sticky — it just means "always
-      // pull fresh"), accept_low_count DISABLES the shrink-guard safety
-      // check for this request. Left in the address bar, a plain reload (F5)
-      // — or the URL getting bookmarked/shared — would keep bypassing the
-      // guard indefinitely, silently reopening the exact overwrite risk this
-      // guard exists to close. Strip it from the visible URL immediately
-      // after honoring it once; the in-flight `url` above still carries it.
+    //
+    // Both are honored ONCE, then stripped from the visible URL; the in-flight
+    // `url` still carries them. Neither is harmless to leave sticky:
+    // - accept_low_count DISABLES the shrink-guard safety check. Left in the
+    //   address bar, a plain reload (F5) — or the URL getting bookmarked/shared
+    //   — would keep bypassing the guard indefinitely, silently reopening the
+    //   exact overwrite risk this guard exists to close.
+    // - refresh=1 re-downloads every opportunity's whole visit export (tens of
+    //   thousands of visits, minutes each). It used to be left in place as
+    //   "just means always pull fresh", so every reload of a bookmarked or
+    //   shared ?refresh=1 link paid for a full forced refresh again (#1926).
+    const oneShotParams = ['refresh', 'accept_low_count'].filter(
+      (p) => pageParams.get(p) === '1',
+    );
+    oneShotParams.forEach((p) => url.searchParams.set(p, '1'));
+    if (oneShotParams.length) {
       const cleanUrl = new URL(window.location.href);
-      cleanUrl.searchParams.delete('accept_low_count');
+      oneShotParams.forEach((p) => cleanUrl.searchParams.delete(p));
       window.history.replaceState(
         null,
         '',
