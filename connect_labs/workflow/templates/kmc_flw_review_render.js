@@ -307,6 +307,461 @@ function WorkflowUI({
         })[0]
       : null;
 
+  // The figures here are the programme report's own rows, so their definitions
+  // are read from the programme workflow's bound registry, not from this one.
+  function explainDefId() {
+    return cfg.source_workflow_id || null;
+  }
+  // ══ Column headers: sort, and the definition behind each number ════════════
+  // Clicking an indicator column's NAME opens its definition: the plain-English
+  // meaning and the SQL that recomputes it, read from the same reader as the
+  // MCP tool semantic_registry_explain (api/<id>/indicator-definitions/), one
+  // indicator at a time and cached. Nothing is derived here. The arrow beside
+  // the name sorts; a column that is not an indicator sorts from its name too.
+  //
+  // All of it is WorkflowUI state, never a table's own: every table here is a
+  // function defined inside WorkflowUI, so each state change remounts it and
+  // anything it held itself would be thrown away.
+  var sColSort = React.useState({});
+  var colSort = sColSort[0],
+    setColSort = sColSort[1];
+  var sColDef = React.useState(null);
+  var colDef = sColDef[0],
+    setColDef = sColDef[1];
+  var sDefCache = React.useState({});
+  var defCache = sDefCache[0],
+    setDefCache = sDefCache[1];
+  var sDefFull = React.useState(false);
+  var defFull = sDefFull[0],
+    setDefFull = sDefFull[1];
+  React.useEffect(
+    function () {
+      if (!colDef) return;
+      function onKey(ev) {
+        if (ev.key === 'Escape') setColDef(null);
+      }
+      window.addEventListener('keydown', onKey);
+      return function () {
+        window.removeEventListener('keydown', onKey);
+      };
+    },
+    [colDef],
+  );
+  function sortOf(table) {
+    return colSort[table] || null;
+  }
+  function setSortFor(table, key, dir) {
+    setColSort(function (prev) {
+      var next = Object.assign({}, prev);
+      next[table] = { key: key, dir: dir };
+      return next;
+    });
+  }
+  function toggleSort(table, key) {
+    var cur = sortOf(table);
+    setSortFor(
+      table,
+      key,
+      cur && cur.key === key && cur.dir === 'desc' ? 'asc' : 'desc',
+    );
+  }
+  function blankSortValue(v) {
+    return (
+      v === null ||
+      v === undefined ||
+      v === '' ||
+      (typeof v === 'number' && isNaN(v))
+    );
+  }
+  // Stable. A row with no value sits at the bottom in BOTH directions: "no
+  // data" is not a low score.
+  function sortRows(table, rows, valueOf) {
+    var s = sortOf(table);
+    if (!s) return rows;
+    var dir = s.dir === 'asc' ? 1 : -1;
+    return rows
+      .map(function (r, i) {
+        return { r: r, i: i, v: valueOf(r, s.key) };
+      })
+      .sort(function (a, b) {
+        var an = blankSortValue(a.v),
+          bn = blankSortValue(b.v);
+        if (an && bn) return a.i - b.i;
+        if (an) return 1;
+        if (bn) return -1;
+        if (a.v === b.v) return a.i - b.i;
+        return a.v < b.v ? -dir : dir;
+      })
+      .map(function (x) {
+        return x.r;
+      });
+  }
+  var DEF_SCOPE_LABEL = {
+    programme: 'the programme',
+    llo: 'organisation',
+    opportunity: 'opportunity',
+    flw: 'worker',
+  };
+  function explainColUrl(id, scope, fmt, download) {
+    var sp = scopeParams();
+    return (
+      '/labs/workflow/api/' +
+      explainDefId() +
+      '/indicator-definitions/' +
+      sp +
+      (sp ? '&' : '?') +
+      'indicators=' +
+      encodeURIComponent(id) +
+      '&scope=' +
+      scope +
+      '&format=' +
+      fmt +
+      (download ? '&download=1' : '')
+    );
+  }
+  function openColDef(d) {
+    setColDef(d);
+    setDefFull(false);
+    var k = d.scope + '|' + d.id;
+    var have = defCache[k];
+    if (have && have.status !== 'error') return;
+    if (!explainDefId()) {
+      setDefCache(function (prev) {
+        var next = Object.assign({}, prev);
+        next[k] = {
+          status: 'error',
+          error:
+            'this page does not know which workflow computes its figures, so it cannot read their definitions',
+        };
+        return next;
+      });
+      return;
+    }
+    function put(v) {
+      setDefCache(function (prev) {
+        var next = Object.assign({}, prev);
+        next[k] = v;
+        return next;
+      });
+    }
+    put({ status: 'loading' });
+    fetch(explainColUrl(d.id, d.scope, 'json', false), {
+      credentials: 'same-origin',
+    })
+      .then(function (r) {
+        return r.json().catch(function () {
+          return { error: 'the server answered HTTP ' + r.status };
+        });
+      })
+      .then(function (j) {
+        if (j.error) throw new Error(j.error);
+        var e = (j.indicators || [])[0];
+        if (!e) throw new Error('no definition came back for ' + d.id);
+        put({ status: 'ready', e: e });
+      })
+      .catch(function (err) {
+        put({ status: 'error', error: String((err && err.message) || err) });
+      });
+  }
+  function copyDefText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text);
+    }
+  }
+  function defBlock(title, text) {
+    return (
+      <div className="mt-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+            {title}
+          </span>
+          <button
+            type="button"
+            className="text-xs text-indigo-600 hover:underline"
+            onClick={function () {
+              copyDefText(text);
+            }}
+          >
+            Copy
+          </button>
+        </div>
+        <pre className="mt-1 text-xs bg-gray-50 border border-gray-200 rounded-md p-2 overflow-x-auto whitespace-pre max-h-72">
+          {text}
+        </pre>
+      </div>
+    );
+  }
+  // One indicator's definition: the authored sentence, the sentence rendered
+  // from its SQL, what each property it reads means, then the SQL chain -- the
+  // compiled measure, the per-baby properties under it -- each block copyable.
+  function definitionBody(e) {
+    var en = e.english || {};
+    var measureSql = [
+      '-- ' + e.measure,
+      (e.expression && e.expression.compiled) || '',
+    ]
+      .concat(
+        (e.components || []).map(function (c) {
+          return '-- ' + c.name + '\n' + (c.compiled || c.sql || '');
+        }),
+      )
+      .join('\n');
+    var propSql = (e.properties || [])
+      .map(function (p) {
+        return (
+          (p.notes ? '-- ' + p.name + ': ' + p.notes + '\n' : '') +
+          p.name +
+          ' = ' +
+          p.sql
+        );
+      })
+      .concat(
+        ((e.weight_series && e.weight_series.derived) || []).map(function (d) {
+          return d.name + ' = ' + d.sql;
+        }),
+      )
+      .join('\n');
+    var consts = Object.keys(e.constants || {})
+      .map(function (k) {
+        return k + ' = ' + e.constants[k];
+      })
+      .join(', ');
+    var reads = (en.reads || []).filter(function (r) {
+      return r.means;
+    });
+    return (
+      <div>
+        {en.plain ? <p className="text-gray-900">{en.plain}</p> : null}
+        {en.definition ? (
+          <p className="text-gray-600 text-xs mt-1">
+            <span className="font-semibold text-gray-500">From the SQL: </span>
+            {en.definition}
+            {consts ? ' Constants: ' + consts + '.' : ''}
+          </p>
+        ) : null}
+        {reads.length ? (
+          <ul className="mt-2 text-xs text-gray-600 space-y-0.5">
+            {reads.map(function (r) {
+              return (
+                <li key={r.name}>
+                  <span className="font-mono text-gray-500">{r.name}</span>
+                  {' — ' + r.means}
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+        {defBlock('Measure', measureSql)}
+        {propSql
+          ? defBlock('Properties and window derivations it reads', propSql)
+          : null}
+      </div>
+    );
+  }
+  // One header cell. `def` is the indicator whose definition the name opens;
+  // `table` is the sort space (omit it on a table whose rows have a fixed
+  // order, like a scorecard of scopes).
+  function headCell(o) {
+    var s = o.table ? sortOf(o.table) : null;
+    var on = !!(s && s.key === o.sortKey);
+    function sort() {
+      toggleSort(o.table, o.sortKey);
+    }
+    var onName = o.def
+      ? function () {
+          openColDef({
+            id: o.def,
+            title: o.title,
+            label: o.label,
+            scope: o.scope,
+            table: o.table || null,
+            sortKey: o.sortKey,
+          });
+        }
+      : o.table
+        ? sort
+        : null;
+    return (
+      <th
+        key={o.key}
+        title={
+          o.def ? (o.title || o.def) + ' — click for the definition' : o.title
+        }
+        className={
+          (o.className || '') +
+          (on
+            ? ' bg-indigo-100 text-indigo-900 border-b-2 border-indigo-600'
+            : '')
+        }
+      >
+        <span
+          className={
+            'inline-flex items-center gap-1' +
+            (o.align === 'left' ? '' : ' justify-end')
+          }
+        >
+          {onName ? (
+            <button
+              type="button"
+              onClick={onName}
+              className={
+                'font-semibold hover:text-indigo-700 ' +
+                (o.def
+                  ? 'underline decoration-dotted decoration-gray-300 underline-offset-2'
+                  : '')
+              }
+            >
+              {o.label}
+            </button>
+          ) : (
+            o.label
+          )}
+          {o.table ? (
+            <button
+              type="button"
+              onClick={sort}
+              aria-label={'Sort by ' + (o.title || o.label)}
+              title="Sort"
+              className={
+                'text-[10px] ' +
+                (on ? 'text-indigo-600' : 'text-gray-300 hover:text-indigo-600')
+              }
+            >
+              {on ? (s.dir === 'asc' ? '▲' : '▼') : '↕'}
+            </button>
+          ) : null}
+        </span>
+        {o.sub ? (
+          <div className="font-mono text-[10px] font-normal text-gray-300">
+            {o.sub}
+          </div>
+        ) : null}
+      </th>
+    );
+  }
+  function colDefModal() {
+    if (!colDef) return null;
+    var st = defCache[colDef.scope + '|' + colDef.id] || { status: 'loading' };
+    var e = st.e;
+    var s = colDef.table ? sortOf(colDef.table) : null;
+    function close() {
+      setColDef(null);
+    }
+    function sortBtn(dir, label) {
+      var on = !!(s && s.key === colDef.sortKey && s.dir === dir);
+      return (
+        <button
+          type="button"
+          className={
+            'px-2.5 py-1 rounded-md text-xs font-medium border ' +
+            (on
+              ? 'bg-indigo-600 border-indigo-600 text-white'
+              : 'bg-white border-gray-200 text-gray-700 hover:bg-indigo-50')
+          }
+          onClick={function () {
+            setSortFor(colDef.table, colDef.sortKey, dir);
+            close();
+          }}
+        >
+          {label}
+        </button>
+      );
+    }
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-start justify-center bg-gray-900/40 p-4 overflow-y-auto"
+        onClick={close}
+      >
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="bg-white rounded-xl shadow-xl w-full max-w-3xl mt-12 text-sm text-left"
+          onClick={function (ev) {
+            ev.stopPropagation();
+          }}
+        >
+          <div className="px-5 py-3 border-b border-gray-100 flex items-start justify-between gap-3">
+            <div>
+              <div className="font-mono text-xs text-gray-400">
+                {colDef.id}
+                {e && e.measure ? ' · ' + e.measure : ''}
+              </div>
+              <div className="text-base font-semibold text-gray-900">
+                {colDef.title || (e && e.title) || colDef.label}
+              </div>
+            </div>
+            <button
+              type="button"
+              aria-label="Close"
+              className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+              onClick={close}
+            >
+              {'×'}
+            </button>
+          </div>
+          <div className="px-5 py-4">
+            {st.status === 'loading' ? (
+              <div className="text-xs text-gray-400">
+                Reading the definition…
+              </div>
+            ) : st.status === 'error' ? (
+              <div className="text-xs text-red-700">
+                Could not read the definition: {st.error}
+              </div>
+            ) : (
+              <div>
+                {definitionBody(e)}
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    className="text-xs text-indigo-600 hover:underline"
+                    onClick={function () {
+                      setDefFull(!defFull);
+                    }}
+                  >
+                    {defFull
+                      ? 'Hide the full statement'
+                      : 'Show the full statement, grouped by ' +
+                        (DEF_SCOPE_LABEL[colDef.scope] || colDef.scope)}
+                  </button>
+                  {defFull
+                    ? defBlock(
+                        'Full statement · replace pipeline_visit_rows with the pipeline query',
+                        e.compiled_sql || '',
+                      )
+                    : null}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="px-5 py-3 border-t border-gray-100 flex items-center gap-2 flex-wrap text-xs">
+            {colDef.table ? (
+              <span className="flex items-center gap-2">
+                <span className="text-gray-500">Sort the table</span>
+                {sortBtn('desc', 'High → low')}
+                {sortBtn('asc', 'Low → high')}
+              </span>
+            ) : null}
+            <a
+              className="ml-auto text-indigo-600 hover:underline"
+              href={explainColUrl(colDef.id, colDef.scope, 'sql', true)}
+            >
+              Download SQL
+            </a>
+            <a
+              className="text-indigo-600 hover:underline"
+              href={explainColUrl(colDef.id, colDef.scope, 'md', false)}
+              target="_blank"
+              rel="noopener"
+            >
+              Open as text
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Keep the address bar shareable: a picked worker is a link, not a click.
   function pickWorker(key) {
     setSelKey(key);
@@ -1097,9 +1552,14 @@ function WorkflowUI({
     if (c.id === 'N07') return v.toFixed(1);
     return nCount(v);
   }
+  // `table` makes the header sortable (the cases table); the scope scorecard
+  // passes none, because its rows are a fixed programme -> worker ladder. Every
+  // indicator's definition is compiled at worker scope: this page is a worker.
+  // Scorecard columns sort by position (`col<i>`): N09 is two columns.
   function ScorecardHead(props) {
     var lead = props.lead || [];
     var forCases = !!props.forCases;
+    var table = props.table || null;
     return (
       <thead>
         <tr className="text-[10px] uppercase tracking-wide text-gray-400 border-b border-gray-200">
@@ -1120,31 +1580,31 @@ function WorkflowUI({
         </tr>
         <tr className="text-xs text-gray-500 border-b border-gray-100">
           {lead.map(function (l, i) {
-            return (
-              <th
-                key={'l' + i}
-                className={
-                  (i === 0 ? 'px-3' : 'px-1.5') +
-                  ' py-2 text-left font-semibold text-gray-600'
-                }
-              >
-                {l}
-              </th>
-            );
+            var col = typeof l === 'string' ? { label: l } : l;
+            return headCell({
+              key: 'l' + i,
+              label: col.label,
+              align: 'left',
+              table: col.sortKey ? table : null,
+              sortKey: col.sortKey,
+              className:
+                (i === 0 ? 'px-3' : 'px-1.5') +
+                ' py-2 text-left font-semibold text-gray-600 whitespace-nowrap',
+            });
           })}
           {SCORECARD.map(function (c, i) {
-            return (
-              <th
-                key={i}
-                className="px-1.5 py-2 text-right whitespace-nowrap font-semibold text-gray-600"
-                title={c.title}
-              >
-                {forCases ? c.caseLabel : c.label}
-                <div className="font-mono text-[10px] font-normal text-gray-300">
-                  {c.id}
-                </div>
-              </th>
-            );
+            return headCell({
+              key: i,
+              label: forCases ? c.caseLabel : c.label,
+              sub: c.id,
+              title: c.title,
+              def: c.id,
+              scope: 'flw',
+              table: table,
+              sortKey: 'col' + i,
+              className:
+                'px-1.5 py-2 text-right whitespace-nowrap font-semibold text-gray-600',
+            });
           })}
         </tr>
       </thead>
@@ -1290,6 +1750,30 @@ function WorkflowUI({
   function caseScopeRow(c) {
     return caseRows.byCase[c.opportunity_id + '|' + c.entity_id] || null;
   }
+  // What a case cell sorts on: what `contrib` shows it as. A tick sorts above a
+  // cross; a case outside the denominator has nothing to rank and sorts last.
+  function caseSortValue(c, key) {
+    if (key === 'case') return String(c.entity_id || '');
+    if (key === 'reg')
+      return c.reg_date ? String(c.reg_date).slice(0, 10) : null;
+    if (key === 'last')
+      return c.last_visit_date ? String(c.last_visit_date).slice(0, 10) : null;
+    var col = SCORECARD[Number(String(key).slice(3))];
+    var row = caseScopeRow(c);
+    if (!col || !row) return null;
+    var m = col.id.toLowerCase();
+    var v = row[m];
+    var den = row[m + '_denominator'];
+    var has = den !== null && den !== undefined && Number(den) > 0;
+    if (col.denOnly) return has ? 1 : null;
+    if (col.id === 'N01') return 1;
+    if (col.id === 'N05' || col.id === 'N06')
+      return v === null || v === undefined ? null : Number(v);
+    if (col.id === 'N07')
+      return has ? Number(v) : Number(c.total_visits) || null;
+    if (col.id === 'N14') return has ? Number(v) : null;
+    return has ? (Number(v) > 0 ? 1 : 0) : null;
+  }
   var YES = <span className="text-green-700 font-semibold">✓</span>;
   var NO = <span className="text-red-700 font-semibold">✗</span>;
   var DASH = <span className="text-gray-300">—</span>;
@@ -1380,9 +1864,29 @@ function WorkflowUI({
     );
 
   function WorkerPicker() {
-    var rows = byFLW.slice().sort(function (a, b) {
-      return b.reds - a.reds || b.n - a.n;
-    });
+    var rows = sortRows(
+      'picker',
+      byFLW.slice().sort(function (a, b) {
+        return b.reds - a.reds || b.n - a.n;
+      }),
+      function (f, key) {
+        if (key === 'worker') return String(f.flw || '').toLowerCase();
+        if (key === 'org') return String(oppLabel(f.opp)).toLowerCase();
+        if (key === 'cases') return Number(f.n) || 0;
+        return Number(f.reds) || 0;
+      },
+    );
+    function pickerTh(label, key, align) {
+      return headCell({
+        key: key,
+        label: label,
+        align: align,
+        table: 'picker',
+        sortKey: key,
+        className:
+          'px-3 py-2 ' + (align === 'left' ? 'text-left' : 'text-right'),
+      });
+    }
     return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100">
@@ -1397,10 +1901,10 @@ function WorkflowUI({
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-gray-500">
               <tr>
-                <th className="px-3 py-2 text-left">Worker</th>
-                <th className="px-3 py-2 text-left">Organisation</th>
-                <th className="px-3 py-2 text-right">Cases</th>
-                <th className="px-3 py-2 text-right">Red</th>
+                {pickerTh('Worker', 'worker', 'left')}
+                {pickerTh('Organisation', 'org', 'left')}
+                {pickerTh('Cases', 'cases', 'right')}
+                {pickerTh('Red', 'reds', 'right')}
               </tr>
             </thead>
             <tbody>
@@ -1857,6 +2361,7 @@ function WorkflowUI({
           </div>
         ) : null}
         <WorkerPicker />
+        {colDefModal()}
       </div>
     );
 
@@ -1865,6 +2370,7 @@ function WorkflowUI({
 
   return (
     <div className="space-y-4">
+      {colDefModal()}
       <div className="bg-white border border-gray-200 rounded-xl p-4">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
@@ -1970,7 +2476,8 @@ function WorkflowUI({
           <span className="ml-2 text-xs font-normal text-gray-400">
             {cases.length} &middot; one row per case &middot; each cell is the
             case&rsquo;s contribution to the column above &middot; click a case
-            to open it
+            to open it &middot; click a column name for its definition, the
+            arrow to sort
           </span>
         </div>
         {caseRows.status === 'loading' && (
@@ -2000,11 +2507,16 @@ function WorkflowUI({
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <ScorecardHead
-              lead={['Case', 'Registered', 'Last visit']}
+              lead={[
+                { label: 'Case', sortKey: 'case' },
+                { label: 'Registered', sortKey: 'reg' },
+                { label: 'Last visit', sortKey: 'last' },
+              ]}
               forCases={true}
+              table="cases"
             />
             <tbody>
-              {cases.map(function (c) {
+              {sortRows('cases', cases, caseSortValue).map(function (c) {
                 var row = caseScopeRow(c);
                 // Match by key, not identity: the case index is rebuilt as the
                 // pipeline stream delivers rows (the page renders while it loads),
