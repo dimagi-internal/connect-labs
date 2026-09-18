@@ -68,10 +68,11 @@ def test_it_reads_the_benchmark_from_the_benchmarks_api():
 
 
 def _flw_rows_body():
-    """Just the `flwRows` memo, so an assertion about where the worker table's
-    data comes from cannot be satisfied by some unrelated part of the file."""
+    """Just the worker rows (the `gradedFlwRows` memo and the sort applied to
+    it), so an assertion about where the worker table's data comes from cannot
+    be satisfied by some unrelated part of the file."""
     src = RENDER.read_text()
-    start = src.index("var flwRows = React.useMemo(")
+    start = src.index("var gradedFlwRows = React.useMemo(")
     end = src.index("\n  // ══ 3", start)
     return src[start:end]
 
