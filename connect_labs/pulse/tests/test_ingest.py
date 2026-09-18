@@ -312,6 +312,37 @@ class TestCheapTier:
         # An interview cohort with no programme is still Interviews.
         assert PulseOpportunity.objects.get(opportunity_id=5).service_slug == "interview"
 
+    def test_reclassify_reaches_opportunities_connect_no_longer_lists(self):
+        """The interview cohorts dropped out of the poller's list but their
+        works still count, so a rule change has to reach every stored row."""
+        from connect_labs.pulse.models import PulseProgram, PulseWork
+
+        PulseProgram.objects.create(program_id=5, name="KMC Uganda", delivery_type="kmc")
+        PulseOpportunity.objects.create(
+            opportunity_id=1, name="[1PC1] COWACDI Interviews", org_slug="c", service_slug="other"
+        )
+        PulseOpportunity.objects.create(
+            opportunity_id=2, name="ITN FGD (run 1)", org_slug="ai-demo-space", service_slug="malaria"
+        )
+        # A programme's own delivery type beats the name, even one that says interviews.
+        PulseOpportunity.objects.create(opportunity_id=3, name="KMC exit interviews", program_id=5, service_slug="kmc")
+        PulseWork.objects.create(
+            work_key="w1",
+            opportunity_id=1,
+            org_slug="c",
+            worker_hash="w",
+            status="approved",
+            service_slug="other",
+            created_ts=timezone.now(),
+        )
+
+        assert ingest.reclassify_opportunities() == 2
+        got = {o.opportunity_id: (o.service_slug, o.is_test) for o in PulseOpportunity.objects.all()}
+        assert got == {1: ("interview", False), 2: ("malaria", True), 3: ("kmc", False)}
+        ingest.resync_service_slugs()
+        assert PulseWork.objects.get(work_key="w1").service_slug == "interview"
+        assert ingest.reclassify_opportunities() == 0  # steady state writes nothing
+
     def test_refresh_rate_measures_usd_per_approved_work(self, opp):
         client = FakeClient(
             [
