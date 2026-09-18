@@ -64,6 +64,66 @@ def _close_generator(generator):
         connections.close_all()
 
 
+async def stream_sse(generator, *, interval, chunk_size):
+    """Pull chunks from a SYNC generator in a worker thread; yield them as SSE.
+
+    Module-level so it is not the private property of one base class. Every SSE
+    view needs it -- `AIStreamView` builds its own `StreamingHttpResponse` and
+    so quietly kept the batch-at-the-end behaviour after `BaseSSEStreamView`
+    stopped having it.
+
+    `chunk_size` is the one knob, and the two callers want opposite ends of it:
+    a bulk row stream hands over 100 rows per loop callback because the volume
+    is what hurts, while a chat stream hands over 1 because the WAIT is what
+    hurts and there is no volume to speak of.
+    """
+    loop = asyncio.get_running_loop()
+    # Single worker: the generator is resumed on one thread for its whole
+    # life, as it was under the sync wrapper's dedicated producer thread.
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sse-stream")
+    iterator = iter(generator)
+    try:
+        while True:
+            chunk = loop.run_in_executor(executor, _drain, iterator, chunk_size)
+            while True:
+                try:
+                    # shield: a heartbeat timeout must not cancel the work
+                    # already in flight, only interrupt our wait for it.
+                    items, done, error = await asyncio.wait_for(asyncio.shield(chunk), interval)
+                    break
+                except TimeoutError:
+                    yield ": heartbeat\n\n"
+            for item in items:
+                yield item
+            if error is not None:
+                # Raised in the CONSUMER, as the sync wrapper did. Whatever
+                # the generator produced before failing was yielded above.
+                #
+                # Logged as well as raised: a stream that ends early is
+                # indistinguishable from one that ended normally from the
+                # outside, and "the error event never arrived" is what made
+                # #1888 take fifteen hours to diagnose.
+                logger.warning(
+                    "SSE stream ended early: %s(%s) after %d event(s)",
+                    type(error).__name__,
+                    error,
+                    len(items),
+                    exc_info=error if isinstance(error, Exception) else None,
+                )
+                raise error
+            if done:
+                return
+    finally:
+        # Close the generator on the thread that ran it, and release that
+        # thread's DB connections: this is not a request thread, so nothing
+        # else will (#667/#669 -- the leak that exhausted RDS's slots).
+        try:
+            await loop.run_in_executor(executor, _close_generator, generator)
+        except RuntimeError:  # loop already closing -- the client went away
+            _close_generator(generator)
+        executor.shutdown(wait=False)
+
+
 def build_task_progress(state: str, info: dict | None) -> dict:
     """Translate a Celery task ``(state, info)`` into the canonical flat progress
     dict consumed by the frontend (see ``TaskProgress`` in ``static/js/task-progress.ts``).
@@ -254,52 +314,9 @@ class BaseSSEStreamView(LoginRequiredMixin, View):
         return self._astream(generator, interval)
 
     async def _astream(self, generator, interval):
-        """Pull chunks from `generator` in a worker thread; yield them as SSE."""
-        loop = asyncio.get_running_loop()
-        # Single worker: the generator is resumed on one thread for its whole
-        # life, as it was under the sync wrapper's dedicated producer thread.
-        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sse-stream")
-        iterator = iter(generator)
-        try:
-            while True:
-                chunk = loop.run_in_executor(executor, _drain, iterator, self.chunk_size)
-                while True:
-                    try:
-                        # shield: a heartbeat timeout must not cancel the work
-                        # already in flight, only interrupt our wait for it.
-                        items, done, error = await asyncio.wait_for(asyncio.shield(chunk), interval)
-                        break
-                    except TimeoutError:
-                        yield ": heartbeat\n\n"
-                for item in items:
-                    yield item
-                if error is not None:
-                    # Raised in the CONSUMER, as the sync wrapper did. Whatever
-                    # the generator produced before failing was yielded above.
-                    #
-                    # Logged as well as raised: a stream that ends early is
-                    # indistinguishable from one that ended normally from the
-                    # outside, and "the error event never arrived" is what made
-                    # #1888 take fifteen hours to diagnose.
-                    logger.warning(
-                        "SSE stream ended early: %s(%s) after %d event(s)",
-                        type(error).__name__,
-                        error,
-                        len(items),
-                        exc_info=error if isinstance(error, Exception) else None,
-                    )
-                    raise error
-                if done:
-                    return
-        finally:
-            # Close the generator on the thread that ran it, and release that
-            # thread's DB connections: this is not a request thread, so nothing
-            # else will (#667/#669 -- the leak that exhausted RDS's slots).
-            try:
-                await loop.run_in_executor(executor, _close_generator, generator)
-            except RuntimeError:  # loop already closing -- the client went away
-                _close_generator(generator)
-            executor.shutdown(wait=False)
+        """This view's chunk size, through the shared implementation."""
+        async for item in stream_sse(generator, interval=interval, chunk_size=self.chunk_size):
+            yield item
 
     def _with_heartbeat_sync(self, generator, interval):
         """The pre-#1859 wrapper, kept as the `LABS_SSE_ASYNC_STREAMING=False` path.
