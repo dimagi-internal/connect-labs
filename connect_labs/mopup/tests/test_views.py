@@ -1637,10 +1637,21 @@ def _seed_locked_run(runs):
     return run
 
 
+def _seed_plan_ready_run(runs):
+    """A run locked all the way through Step 3 -- for tests of
+    MopupCreatePlanView, which (since Step 3 shipped) also requires
+    `isolation_filter_locked`, not just `status == STATUS_LOCKED`. Kept
+    separate from `_seed_locked_run` (Step 1 only) since Step 2/Step 3's own
+    view tests need a run that is NOT already isolation-filter-locked."""
+    run = _seed_locked_run(runs)
+    run.data["isolation_filter_locked"] = True
+    return run
+
+
 def test_create_plan_dispatches_a_task_when_none_exists(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
-    run = _seed_locked_run(runs)
+    run = _seed_plan_ready_run(runs)
     assert run.create_plan_task_id is None
 
     fake_async_result = mock.Mock(id="fresh-plan-task-id")
@@ -1660,7 +1671,7 @@ def test_create_plan_dispatches_a_task_when_none_exists(client, django_user_mode
 def test_create_plan_polls_a_running_task(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
-    run = _seed_locked_run(runs)
+    run = _seed_plan_ready_run(runs)
     run.data["create_plan_task_id"] = "plan-task-in-flight"
     mock_result = mock.Mock(state="PROGRESS", info={"message": "Creating the plan…"})
     monkeypatch.setattr("celery.result.AsyncResult", lambda task_id: mock_result)
@@ -1679,7 +1690,7 @@ def test_create_plan_polls_a_running_task(client, django_user_model, monkeypatch
 def test_create_plan_returns_the_completed_task_result_and_clears_the_task_id(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
-    run = _seed_locked_run(runs)
+    run = _seed_plan_ready_run(runs)
     run.data["create_plan_task_id"] = "plan-task-done"
     resp_payload = {
         "status": "ok",
@@ -1709,7 +1720,7 @@ def test_create_plan_surfaces_a_handoff_error_result_without_treating_it_as_a_ce
 ):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
-    run = _seed_locked_run(runs)
+    run = _seed_plan_ready_run(runs)
     run.data["create_plan_task_id"] = "plan-task-done"
     # create_mopup_plan catches HandoffError and returns it as a normal
     # SUCCESS-state result shaped {"status": "error", "detail": ...} — this
@@ -1729,7 +1740,7 @@ def test_create_plan_surfaces_a_handoff_error_result_without_treating_it_as_a_ce
 def test_create_plan_surfaces_a_failed_task_and_clears_it_for_retry(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
-    run = _seed_locked_run(runs)
+    run = _seed_plan_ready_run(runs)
     run.data["create_plan_task_id"] = "plan-task-in-flight"
     mock_result = mock.Mock(state="FAILURE", info=RuntimeError("Connect authorization needed"))
     monkeypatch.setattr("celery.result.AsyncResult", lambda task_id: mock_result)
@@ -2135,4 +2146,277 @@ def test_erase_planning_gaps_returns_404_for_missing_run(client, django_user_mod
     _login(client, django_user_model)
     _make_fake_run_da(monkeypatch)
     resp = client.post(reverse("mopup:erase_planning_gaps", kwargs={"program_id": 217, "run_id": 999}))
+    assert resp.status_code == 404
+
+
+def test_planning_gaps_rejects_recompute_once_step2_is_locked(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    run.data["planning_gaps_locked"] = True
+    resp = client.post(reverse("mopup:planning_gaps", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 400
+    assert "locked in" in resp.json()["detail"]
+
+
+def test_erase_planning_gaps_rejects_once_step2_is_locked(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_locked_run(runs)
+    run.data["planning_gaps_locked"] = True
+    resp = client.post(reverse("mopup:erase_planning_gaps", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 400
+    assert "locked in" in resp.json()["detail"]
+
+
+# --- MopupLockPlanningGapsView (Step 2's own lock-in) -----------------------
+
+
+def test_lock_planning_gaps_requires_login(client):
+    resp = client.post(reverse("mopup:lock_planning_gaps", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_lock_planning_gaps_requires_locked_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)  # status is STATUS_ANALYSIS, not locked
+    resp = client.post(reverse("mopup:lock_planning_gaps", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 400
+    assert "Lock the run" in resp.json()["detail"]
+
+
+def test_lock_planning_gaps_sets_the_flag(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_locked_run(runs)
+    resp = client.post(reverse("mopup:lock_planning_gaps", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["status"] == "ok"
+    assert runs[1].planning_gaps_locked is True
+
+
+def test_lock_planning_gaps_returns_404_for_missing_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_run_da(monkeypatch)
+    resp = client.post(reverse("mopup:lock_planning_gaps", kwargs={"program_id": 217, "run_id": 999}))
+    assert resp.status_code == 404
+
+
+# --- MopupCreatePlanView: new Step-3 gate ------------------------------------
+
+
+def test_create_plan_requires_isolation_filter_locked(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_locked_run(runs)  # Step 1 locked only -- Step 3 never locked
+    resp = client.post(reverse("mopup:create_plan", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 400
+    assert "Step 3" in resp.json()["detail"]
+
+
+# --- Step 3: isolation filter -----------------------------------------------
+
+
+def _square(x0, y0, x1, y1):
+    return {"type": "Polygon", "coordinates": [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]}
+
+
+def _seed_step3_ready_run(runs):
+    """Step 1 + Step 2 locked, with two nearby candidate work areas and one
+    far-apart one (isolated at a 1000m threshold) -- ready for Step 3 tests."""
+    run = _seed_locked_run(runs)
+    run.data["planning_gaps_locked"] = True
+    run.data["candidate_work_areas"] = [
+        {"wa_id": "wa-close-1", "boundary": _square(0.0, 0.0, 0.0002, 0.0002)},
+        {"wa_id": "wa-close-2", "boundary": _square(0.001, 0.001, 0.0012, 0.0012)},
+        {"wa_id": "wa-far", "boundary": _square(0.05, 0.05, 0.0502, 0.0502)},
+    ]
+    return run
+
+
+def test_isolation_preview_requires_login(client):
+    resp = client.post(reverse("mopup:isolation_preview", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_isolation_preview_requires_planning_gaps_locked(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_locked_run(runs)  # Step 2 not locked
+    resp = client.post(
+        reverse("mopup:isolation_preview", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"distance_m": 1000}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert "Step 2" in resp.json()["detail"]
+
+
+def test_isolation_preview_returns_isolated_ids_and_persists_threshold(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_step3_ready_run(runs)
+    resp = client.post(
+        reverse("mopup:isolation_preview", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"distance_m": 1000}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["isolated_wa_ids"] == ["wa-far"]
+    assert runs[1].isolation_threshold_m == 1000
+
+
+def test_isolation_preview_skips_the_write_when_threshold_is_unchanged(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_step3_ready_run(runs)
+    run.data["isolation_threshold_m"] = 1000
+    import connect_labs.mopup.views as views_module
+
+    calls = []
+    original_update_run = views_module.MopupRunDataAccess.update_run
+
+    def spy_update_run(self, run, **field_updates):
+        calls.append(field_updates)
+        return original_update_run(self, run, **field_updates)
+
+    monkeypatch.setattr(views_module.MopupRunDataAccess, "update_run", spy_update_run)
+
+    resp = client.post(
+        reverse("mopup:isolation_preview", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"distance_m": 1000}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    assert calls == []
+
+
+def test_isolation_preview_rejects_non_positive_distance(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_step3_ready_run(runs)
+    resp = client.post(
+        reverse("mopup:isolation_preview", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"distance_m": 0}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_isolation_preview_considers_gap_fill_cells_too(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_step3_ready_run(runs)
+    # A gap-fill feature far from everything else -- Step 3 treats it exactly
+    # like a real candidate, per the user's own requirement that isolation
+    # applies to both original AND newly-created (Step 2) work areas.
+    run.data["planning_gap_features"] = [
+        {
+            "type": "Feature",
+            "geometry": _square(0.09, 0.09, 0.0902, 0.0902),
+            "properties": {"cluster": "gap-1", "ward": "Sabon Gari"},
+        }
+    ]
+    resp = client.post(
+        reverse("mopup:isolation_preview", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"distance_m": 1000}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    assert set(resp.json()["isolated_wa_ids"]) == {"wa-far", "gap-1"}
+
+
+def test_lock_isolation_filter_requires_login(client):
+    resp = client.post(reverse("mopup:lock_isolation_filter", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_lock_isolation_filter_requires_planning_gaps_locked(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_locked_run(runs)
+    resp = client.post(
+        reverse("mopup:lock_isolation_filter", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"distance_m": 1000}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert "Step 2" in resp.json()["detail"]
+
+
+def test_lock_isolation_filter_recomputes_server_side_and_excludes_in_one_write(
+    client, django_user_model, monkeypatch
+):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_step3_ready_run(runs)
+    import connect_labs.mopup.views as views_module
+
+    calls = []
+    original_update_run = views_module.MopupRunDataAccess.update_run
+
+    def spy_update_run(self, run, **field_updates):
+        calls.append(field_updates)
+        return original_update_run(self, run, **field_updates)
+
+    monkeypatch.setattr(views_module.MopupRunDataAccess, "update_run", spy_update_run)
+
+    # The endpoint takes only distance_m -- there is no id list a client
+    # could pass at all, so the committed set can never drift from what the
+    # server itself computes.
+    resp = client.post(
+        reverse("mopup:lock_isolation_filter", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"distance_m": 1000}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["excluded_count"] == 1
+    assert runs[1].excluded_wa_ids == ["wa-far"]
+    assert runs[1].isolation_filter_locked is True
+    assert runs[1].isolation_threshold_m == 1000
+    assert len(calls) == 1  # excluded_wa_ids + isolation_filter_locked + isolation_threshold_m, one write
+
+
+def test_lock_isolation_filter_unions_with_existing_exclusions(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_step3_ready_run(runs)
+    # wa-close-1 already manually excluded (e.g. via the map's own "Exclude
+    # WAs") -- this also means wa-close-2 loses its only nearby neighbor and
+    # becomes newly isolated too, on top of wa-far.
+    run.data["excluded_wa_ids"] = ["wa-close-1"]
+    resp = client.post(
+        reverse("mopup:lock_isolation_filter", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"distance_m": 1000}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    assert sorted(runs[1].excluded_wa_ids) == ["wa-close-1", "wa-close-2", "wa-far"]
+
+
+def test_lock_isolation_filter_rejects_non_positive_distance(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_step3_ready_run(runs)
+    resp = client.post(
+        reverse("mopup:lock_isolation_filter", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps({"distance_m": -5}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_lock_isolation_filter_returns_404_for_missing_run(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_run_da(monkeypatch)
+    resp = client.post(
+        reverse("mopup:lock_isolation_filter", kwargs={"program_id": 217, "run_id": 999}),
+        data=json.dumps({"distance_m": 1000}),
+        content_type="application/json",
+    )
     assert resp.status_code == 404

@@ -37,6 +37,7 @@ from connect_labs.mopup.core.candidates import (
     summarize_candidates_by_ward,
 )
 from connect_labs.mopup.core.data_access import MopupRunDataAccess, MopupRunNotFoundError
+from connect_labs.mopup.core.isolation import isolated_work_area_ids
 from connect_labs.mopup.core.models import STATUS_LOCKED
 from connect_labs.mopup.core.work_areas import fetch_connect_implementation_areas, list_work_areas, summarize_wards
 
@@ -97,6 +98,21 @@ def _apply_exclusions(candidates: list[dict], run) -> list[dict]:
     if not excluded:
         return candidates
     return [c for c in candidates if c["wa_id"] not in excluded]
+
+
+def _active_combined_rows(run) -> list[dict]:
+    """Every work area currently shown in the candidate table AND the ward
+    summary — Step 1's locked candidates plus Step 2's gap-fill cells
+    (adapted to the same candidate-row shape via
+    `candidates.gap_feature_to_candidate_row`), both already stripped of
+    anything in `run.excluded_wa_ids`. This is Step 3's own input: the
+    isolation filter only ever considers work areas a reviewer would
+    actually see and could actually be sent to, same as the live view."""
+    existing = _apply_exclusions(run.candidate_work_areas, run)
+    gap_rows = [
+        gap_feature_to_candidate_row(f) for f in filter_gap_features(run.planning_gap_features, run.excluded_wa_ids)
+    ]
+    return existing + gap_rows
 
 
 def _rows_or_progress(da, run, request, program_id) -> tuple[list[dict] | None, dict | None]:
@@ -459,9 +475,15 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         context["create_plan_url"] = reverse("mopup:create_plan", args=[program_id, run_id])
         context["planning_gaps_url"] = reverse("mopup:planning_gaps", args=[program_id, run_id])
         context["erase_planning_gaps_url"] = reverse("mopup:erase_planning_gaps", args=[program_id, run_id])
+        context["lock_planning_gaps_url"] = reverse("mopup:lock_planning_gaps", args=[program_id, run_id])
+        context["isolation_preview_url"] = reverse("mopup:isolation_preview", args=[program_id, run_id])
+        context["lock_isolation_filter_url"] = reverse("mopup:lock_isolation_filter", args=[program_id, run_id])
         context["upload_buildings_url"] = reverse("mopup:upload_buildings", args=[program_id, run_id])
         context["exclude_work_area_url"] = reverse("mopup:exclude_work_area", args=[program_id, run_id])
         context["planning_gap_config"] = run.planning_gap_config
+        context["planning_gaps_locked"] = run.planning_gaps_locked
+        context["isolation_filter_locked"] = run.isolation_filter_locked
+        context["isolation_threshold_m"] = run.isolation_threshold_m
         context["uploaded_buildings_filename"] = run.uploaded_buildings_filename
         context["uploaded_buildings_row_count"] = run.uploaded_buildings_row_count
         # Merge, not replace: a run whose thresholds were saved before a
@@ -706,6 +728,11 @@ class MopupCreatePlanView(LoginRequiredMixin, View):
             return JsonResponse({"status": "error", "detail": "Run not found."}, status=404)
         if run.status != STATUS_LOCKED:
             return JsonResponse({"status": "error", "detail": "Lock the run before creating a plan."}, status=400)
+        if not run.isolation_filter_locked:
+            return JsonResponse(
+                {"status": "error", "detail": "Lock in Step 3 (remove isolated work areas) before creating a plan."},
+                status=400,
+            )
 
         try:
             payload = json.loads(request.body) if request.body else {}
@@ -735,6 +762,10 @@ class MopupPlanningGapsView(LoginRequiredMixin, View):
         if run.status != STATUS_LOCKED:
             return JsonResponse(
                 {"status": "error", "detail": "Lock the run before previewing planning gaps."}, status=400
+            )
+        if run.planning_gaps_locked:
+            return JsonResponse(
+                {"status": "error", "detail": "Step 2 is locked in — nothing left to recompute."}, status=400
             )
 
         try:
@@ -783,6 +814,10 @@ class MopupErasePlanningGapsView(LoginRequiredMixin, View):
             return JsonResponse(
                 {"status": "error", "detail": "Lock the run before erasing planning gaps."}, status=400
             )
+        if run.planning_gaps_locked:
+            return JsonResponse(
+                {"status": "error", "detail": "Step 2 is locked in — nothing left to erase."}, status=400
+            )
 
         da.update_run(
             run,
@@ -790,6 +825,31 @@ class MopupErasePlanningGapsView(LoginRequiredMixin, View):
             planning_gap_building_points=[],
             planning_gap_warnings={},
         )
+
+        return JsonResponse({"status": "ok"})
+
+
+class MopupLockPlanningGapsView(LoginRequiredMixin, View):
+    """Step 2's own "Lock in Step 2" action: freezes whatever
+    `planning_gap_features` the latest successful Recompute (or "skip")
+    produced, and unlocks Step 3 (the isolation filter, which needs a
+    stable combined candidate+gap-fill set to compute distances over — see
+    `core.isolation.isolated_work_area_ids`). Sets `planning_gaps_locked`
+    only; doesn't touch `planning_gap_features` itself (nothing to
+    recompute — the same "latest Recompute wins" data is what locks in).
+    One-way, same as Step 1's own `MopupLockView` — no unlock endpoint."""
+
+    def post(self, request, program_id, run_id):
+        da = MopupRunDataAccess(program_id, request=request)
+        run = da.get_run(run_id)
+        if run is None:
+            return JsonResponse({"status": "error", "detail": "Run not found."}, status=404)
+        if run.status != STATUS_LOCKED:
+            return JsonResponse(
+                {"status": "error", "detail": "Lock the run (Step 1) before locking Step 2."}, status=400
+            )
+
+        da.update_run(run, planning_gaps_locked=True)
 
         return JsonResponse({"status": "ok"})
 
@@ -940,3 +1000,92 @@ class MopupExcludeWorkAreaView(LoginRequiredMixin, View):
         da.update_run(run, excluded_wa_ids=sorted(current))
 
         return JsonResponse({"status": "ok", "excluded_wa_ids": sorted(current)})
+
+
+class MopupIsolationPreviewView(LoginRequiredMixin, View):
+    """Step 3's live preview (locked runs, Step 2 already locked in, only):
+    given a candidate distance, returns which currently-active work areas
+    (Step 1 candidates + Step 2 gap-fill cells, both already stripped of
+    anything in `excluded_wa_ids` — see `_active_combined_rows`) have no
+    OTHER active work area within that distance of their own centroid. Does
+    NOT exclude anything itself — purely a preview so the reviewer can tune
+    the threshold and see the effect (table highlighting, ward counts, map
+    hatch) before committing via `MopupLockIsolationFilterView`. Per-ward
+    counts/table highlighting are derived client-side from the returned id
+    list against the already-rendered candidate/gap rows, so this only ever
+    returns the ids themselves.
+
+    Persists `isolation_threshold_m` only when it actually changed (same
+    anti-pattern-avoidance `MopupCandidatesView` already uses for
+    `thresholds` — `update_run` re-uploads the run's entire JSON blob)."""
+
+    def post(self, request, program_id, run_id):
+        da = MopupRunDataAccess(program_id, request=request)
+        run = da.get_run(run_id)
+        if run is None:
+            return JsonResponse({"status": "error", "detail": "Run not found."}, status=404)
+        if run.status != STATUS_LOCKED or not run.planning_gaps_locked:
+            return JsonResponse({"status": "error", "detail": "Lock in Step 2 before previewing Step 3."}, status=400)
+
+        try:
+            payload = json.loads(request.body) if request.body else {}
+            distance_m = float(payload["distance_m"])
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+        if distance_m <= 0:
+            return JsonResponse({"status": "error", "detail": "distance_m must be positive."}, status=400)
+
+        if distance_m != run.isolation_threshold_m:
+            da.update_run(run, isolation_threshold_m=distance_m)
+
+        isolated = isolated_work_area_ids(_active_combined_rows(run), distance_m)
+
+        return JsonResponse({"status": "ok", "isolated_wa_ids": sorted(isolated)})
+
+
+class MopupLockIsolationFilterView(LoginRequiredMixin, View):
+    """Step 3's own "Lock in Step 3" action — the actual commit. Requires
+    Step 2 to already be locked in (same gate `MopupIsolationPreviewView`
+    uses). Re-computes the isolated set SERVER-SIDE from the given
+    `distance_m` (never trusts a client-supplied id list for a destructive
+    action — avoids staleness between what was last previewed and what
+    actually gets excluded), unions it into `run.excluded_wa_ids` — the
+    SAME field/mechanism the map's own "Exclude WAs" action already uses,
+    per product direction: a work area Step 3 removes is excluded exactly
+    like one a reviewer excludes by hand, so the candidate table/ward
+    summary/map already stop showing it for free, and Phase 3's hand-off
+    already honors `excluded_wa_ids` for both real and gap-fill work areas
+    (see `_apply_exclusions`/`candidates.filter_gap_features`) — and sets
+    `isolation_filter_locked=True` + the committed `isolation_threshold_m`,
+    all in ONE `update_run` call (same batching discipline
+    `MopupExcludeWorkAreaView` already uses for a multi-id exclude).
+    One-way, same as Step 1/Step 2's locks — no unlock endpoint."""
+
+    def post(self, request, program_id, run_id):
+        da = MopupRunDataAccess(program_id, request=request)
+        run = da.get_run(run_id)
+        if run is None:
+            return JsonResponse({"status": "error", "detail": "Run not found."}, status=404)
+        if run.status != STATUS_LOCKED or not run.planning_gaps_locked:
+            return JsonResponse({"status": "error", "detail": "Lock in Step 2 before locking Step 3."}, status=400)
+
+        try:
+            payload = json.loads(request.body) if request.body else {}
+            distance_m = float(payload["distance_m"])
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+        if distance_m <= 0:
+            return JsonResponse({"status": "error", "detail": "distance_m must be positive."}, status=400)
+
+        isolated = isolated_work_area_ids(_active_combined_rows(run), distance_m)
+        current_excluded = set(run.excluded_wa_ids)
+        current_excluded.update(isolated)
+
+        da.update_run(
+            run,
+            excluded_wa_ids=sorted(current_excluded),
+            isolation_filter_locked=True,
+            isolation_threshold_m=distance_m,
+        )
+
+        return JsonResponse({"status": "ok", "excluded_count": len(isolated)})
