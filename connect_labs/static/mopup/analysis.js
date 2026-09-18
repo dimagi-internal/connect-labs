@@ -45,6 +45,8 @@ window.MopupAnalysis = (function () {
   let globalConfig = {};
   let lastCandidates = [];
   let lastGapCandidates = [];
+  let lastWardSummaryRows = [];
+  let lastGapSummaryByWard = {};
   let severitySortDesc = true;
 
   // One flat table row per indicator (design mockup, 2026-09, refined per
@@ -384,11 +386,28 @@ window.MopupAnalysis = (function () {
     return `${r.state}|${r.lga}|${r.ward}`;
   }
 
+  // Step 3's live preview, grouped by ward -- cross-references the current
+  // isolatedWaIds against the already-rendered candidate/gap-fill rows
+  // (both carry ward/lga/state) rather than asking the server for a
+  // separate per-ward aggregate.
+  function isolatedCountByWard() {
+    if (!isolatedWaIds.size) return {};
+    const counts = {};
+    [...lastCandidates, ...lastGapCandidates].forEach((c) => {
+      if (!isolatedWaIds.has(c.wa_id)) return;
+      const key = wardRowKey(c);
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }
+
   function renderWardSummary(rows, gapSummaryByWard) {
     gapSummaryByWard = gapSummaryByWard || {};
+    const isolatedByWard = isolatedCountByWard();
     $('ward-summary-rows').innerHTML = rows
       .map((r) => {
         const gap = gapSummaryByWard[wardRowKey(r)];
+        const isolatedCount = isolatedByWard[wardRowKey(r)] || 0;
         const mainRow = `<tr class="border-b border-gray-50">
           <td class="p-2">${esc(r.ward)}</td><td class="p-2">${esc(
             r.lga,
@@ -409,18 +428,27 @@ window.MopupAnalysis = (function () {
           }</td><td class="p-2 ward-col-new">${r.candidate_evc}</td>
           <td class="p-2 ward-col-new">${r.flagged_by_2_plus}</td>
         </tr>`;
-        if (!gap) return mainRow;
-        // A distinct, muted sub-row directly under the ward's own row rather
+        // Distinct, muted sub-rows directly under the ward's own row rather
         // than more columns — Step 2's new work areas are additional to,
-        // not part of, the Connect-sourced totals above.
-        const gapRow = `<tr class="border-b border-gray-100 bg-emerald-50 text-emerald-800 text-xs">
+        // not part of, the Connect-sourced totals above; Step 3's preview
+        // count is a pending SUBTRACTION from whatever's shown above (not
+        // yet removed until Lock in Step 3 — see candidateRowHtml's own
+        // isolated tint for the matching per-row highlight).
+        const gapRow = gap
+          ? `<tr class="border-b border-gray-100 bg-emerald-50 text-emerald-800 text-xs">
           <td class="p-2 pl-2" colspan="8">+ Planning gaps (new)</td>
           <td class="p-2 ward-col-new ward-group-start">${gap.gap_wa_count}</td>
           <td class="p-2 ward-col-new">${gap.gap_buildings}</td>
           <td class="p-2 ward-col-new">${gap.gap_evc}</td>
           <td class="p-2 ward-col-new">—</td>
-        </tr>`;
-        return mainRow + gapRow;
+        </tr>`
+          : '';
+        const isolatedRow = isolatedCount
+          ? `<tr class="border-b border-gray-100 bg-amber-50 text-amber-800 text-xs">
+          <td class="p-2 pl-2" colspan="12">− Isolated (pending removal): ${isolatedCount}</td>
+        </tr>`
+          : '';
+        return mainRow + gapRow + isolatedRow;
       })
       .join('');
   }
@@ -453,9 +481,19 @@ window.MopupAnalysis = (function () {
   }
 
   function candidateRowHtml(c, extraClass) {
-    return `<tr class="border-b border-gray-50 ${
-      extraClass || ''
-    }" data-wa-id="${esc(c.wa_id)}">
+    const isolated = isolatedWaIds.has(c.wa_id);
+    // Step 3's preview tint takes priority over the gap-fill tint (both are
+    // background colors on the same <tr>) -- an isolated gap-fill cell is
+    // still worth flagging distinctly, since it's about to be removed.
+    const rowClass = isolated ? 'bg-amber-100' : extraClass || '';
+    const isolatedNote = isolated
+      ? ` <span class="text-amber-700 font-medium">· Isolated — will be removed${
+          isolationLastPreviewedDistanceM != null
+            ? ` (>${isolationLastPreviewedDistanceM}m from nearest)`
+            : ''
+        }</span>`
+      : '';
+    return `<tr class="border-b border-gray-50 ${rowClass}" data-wa-id="${esc(c.wa_id)}">
           <td class="p-2">${esc(c.ward)}</td>
           <td class="p-2">${esc(c.flw_name || c.flw_username)}</td>
           <td class="p-2">${esc(c.wa_name)}</td>
@@ -466,7 +504,7 @@ window.MopupAnalysis = (function () {
           <td class="p-2" title="${esc(SEVERITY_TOOLTIP)}">${
             c.severity_count
           }</td>
-          <td class="p-2">${triggeredIndicatorDisplay(c)}</td>
+          <td class="p-2">${triggeredIndicatorDisplay(c)}${isolatedNote}</td>
         </tr>`;
   }
 
@@ -719,6 +757,15 @@ window.MopupAnalysis = (function () {
   // inventing a different pattern for a second map in the same app.
   let selectedWaIds = new Set();
 
+  // Step 3's live preview: wa_ids the CURRENT distance threshold would
+  // remove (both real work areas and gap-fill cells) -- updated by
+  // previewIsolation(), never mutated directly. Empty once Step 3 is locked
+  // in (the flagged WAs are gone from every table/the map by then, via the
+  // normal excluded_wa_ids filtering every other exclusion already uses --
+  // nothing special needed there).
+  let isolatedWaIds = new Set();
+  let isolationLastPreviewedDistanceM = null;
+
   // Highlights the candidate/gap-fill table row for every id in `waIds` --
   // called both right after a map click and after every renderCandidates()
   // re-render, so the highlight survives an unrelated Recompute rather than
@@ -748,6 +795,22 @@ window.MopupAnalysis = (function () {
       map.setFeatureState(
         { source: 'wa', id: waId },
         { sel: selectedWaIds.has(waId) },
+      );
+    });
+  }
+
+  // Same defensive re-apply-after-render pattern as applySelectionFeatureState
+  // (feature-state isn't guaranteed to survive a source setData() refresh),
+  // for Step 3's own isolated-WA flag -- drives the hatch layer's opacity
+  // (see renderMap/registerIsolationHatchPattern).
+  function applyIsolationFeatureState(styledFeatureCollection) {
+    if (!map || !mapReady) return;
+    (styledFeatureCollection?.features || []).forEach((f) => {
+      const waId = f.properties.wa_id;
+      if (waId == null) return;
+      map.setFeatureState(
+        { source: 'wa', id: waId },
+        { isolated: isolatedWaIds.has(waId) },
       );
     });
   }
@@ -934,12 +997,68 @@ window.MopupAnalysis = (function () {
     }
   }
 
+  // A small 45°-diagonal dark-grey hatch, tiled — Step 3's "which WAs are
+  // about to be removed" map treatment, layered ON TOP OF a feature's own
+  // normal fill color (planning-gap green included) rather than replacing
+  // it, so its source is still visible underneath the hatch. Registered
+  // once per style document (map.setStyle wipes registered images along
+  // with everything else — see reapplyMapLayers), guarded by hasImage so a
+  // style swap or repeated init doesn't try to re-add it and throw.
+  function registerIsolationHatchPattern() {
+    if (!map || map.hasImage('isolation-hatch')) return;
+    const size = 12;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.strokeStyle = '#374151';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    // Two parallel diagonal strokes near opposite corners of the tile so
+    // the line continues seamlessly into the next tile in every direction.
+    ctx.moveTo(-2, size * 0.5 - 2);
+    ctx.lineTo(size * 0.5 + 2, -2);
+    ctx.moveTo(size * 0.5 - 2, size + 2);
+    ctx.lineTo(size + 2, size * 0.5 - 2);
+    ctx.stroke();
+    map.addImage('isolation-hatch', ctx.getImageData(0, 0, size, size));
+  }
+
+  // Reads the SAME shared 'wa' source PlanLayers.workAreas already sets up
+  // (plan_layers.js itself is not modified — mirrors this app's existing
+  // zero-footprint discipline toward shared map code) — a separate layer
+  // so the hatch composites on top of whatever color the normal fill/line
+  // layers already gave a feature, rather than replacing it. Invisible
+  // (opacity 0) unless feature-state.isolated is set; added once, the
+  // per-feature state is what actually turns it on/off (see
+  // applyIsolationFeatureState).
+  function addIsolationHatchLayer() {
+    if (map.getLayer('wa-isolated-hatch')) return;
+    map.addLayer({
+      id: 'wa-isolated-hatch',
+      type: 'fill',
+      source: 'wa',
+      paint: {
+        'fill-pattern': 'isolation-hatch',
+        'fill-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'isolated'], false],
+          0.85,
+          0,
+        ],
+      },
+    });
+  }
+
   function renderMap(rawMapFeatures) {
     lastMapFeatures = rawMapFeatures;
     if (!map || !mapReady) return;
     const styled = styleMapFeatures(rawMapFeatures);
     window.PlanLayers.workAreas(map, { data: styled, promoteId: 'wa_id' });
     applySelectionFeatureState(styled);
+    registerIsolationHatchPattern();
+    addIsolationHatchLayer();
+    applyIsolationFeatureState(styled);
     renderBuildingPoints(buildingPointFeatures(rawMapFeatures));
     renderMapLegend(rawMapFeatures);
     if (!mapBoundsFitted) {
@@ -1141,14 +1260,27 @@ window.MopupAnalysis = (function () {
       showReady();
       lastCandidates = data.candidates || [];
       lastGapCandidates = data.gap_candidates || [];
-      $('erase-planning-gaps').disabled = lastGapCandidates.length === 0;
+      lastWardSummaryRows = data.ward_summary || [];
+      lastGapSummaryByWard = data.gap_summary_by_ward;
+      // Once Step 2 is locked in, Erase/Recompute stay disabled regardless
+      // of whether there happen to be gap candidates -- nothing left to
+      // erase or recompute (see lockPlanningGaps()).
+      $('erase-planning-gaps').disabled =
+        CFG.planningGapsLocked || lastGapCandidates.length === 0;
       $('live-count').textContent = data.candidate_count;
-      renderWardSummary(data.ward_summary || [], data.gap_summary_by_ward);
+      renderWardSummary(lastWardSummaryRows, lastGapSummaryByWard);
       renderCandidates();
       renderIndicatorCounts(data.per_indicator_counts);
       renderMap(data.map_features);
       $('status').textContent =
         `${data.total_work_areas} work area(s) evaluated.`;
+      // Keep Step 3's preview in sync with whatever just changed the active
+      // WA set (a manual "Exclude WAs" click, an Erase, a threshold tweak)
+      // -- a neighbor being excluded can newly isolate another WA, or vice
+      // versa, so a stale preview would mislead right up to Lock in Step 3.
+      if (CFG.planningGapsLocked && !CFG.isolationFilterLocked) {
+        previewIsolation();
+      }
     } catch (e) {
       showLoadingError('Failed to load data.');
     }
@@ -1184,7 +1316,10 @@ window.MopupAnalysis = (function () {
         `Locked ${data.locked_count} candidate work area(s).`;
       $('lock-run').disabled = true;
       $('lock-run').textContent = `Locked (${data.locked_count} WAs)`;
-      $('create-plan').disabled = false;
+      // "Create WA Revisit plan" no longer unlocks here -- since Step 3
+      // (the isolation filter) shipped, it also requires
+      // isolation_filter_locked, set only by lockIsolationFilter()'s own
+      // success handler.
       $('planning-gaps-section').classList.remove('hidden');
     } catch (e) {
       $('status').textContent = 'Failed to lock.';
@@ -1452,6 +1587,142 @@ window.MopupAnalysis = (function () {
     }
   }
 
+  // Step 2's own "Lock in Step 2" action — freezes whatever
+  // planning_gap_features the latest successful Recompute (or "skip")
+  // produced (nothing recomputed here), freezes Step 2's own controls, and
+  // reveals Step 3 (the isolation filter needs a stable combined
+  // candidate+gap-fill set — see core.isolation.isolated_work_area_ids).
+  // One-way, same as Step 1's own lockRun() — no unlock.
+  async function lockPlanningGaps() {
+    $('lock-planning-gaps').disabled = true;
+    try {
+      const resp = await fetch(CFG.lockPlanningGapsUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': CFG.csrfToken,
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== 'ok') {
+        $('planning-gaps-status').textContent =
+          data.detail || 'Failed to lock Step 2.';
+        $('lock-planning-gaps').disabled = false;
+        return;
+      }
+      CFG.planningGapsLocked = true;
+      $('lock-planning-gaps').textContent = 'Locked';
+      $('erase-planning-gaps').disabled = true;
+      $('planning-gaps-recompute').disabled = true;
+      $('isolation-filter-section').classList.remove('hidden');
+      // Show Step 3's preview immediately with whatever distance is
+      // pre-filled, rather than leaving the newly-revealed section empty
+      // until the reviewer touches the input.
+      previewIsolation();
+    } catch (e) {
+      $('planning-gaps-status').textContent = 'Failed to lock Step 2.';
+      $('lock-planning-gaps').disabled = false;
+    }
+  }
+
+  let isolationDebounceTimer = null;
+
+  // Same debounce convention scheduleRecompute already uses for Step 1's
+  // thresholds — a rapid-fire burst on the distance input's spinner
+  // collapses into one preview request instead of one per keystroke.
+  function scheduleIsolationPreview() {
+    clearTimeout(isolationDebounceTimer);
+    isolationDebounceTimer = setTimeout(previewIsolation, 300);
+  }
+
+  // Live preview only — never removes anything itself (see
+  // lockIsolationFilter for the actual commit). Re-renders the candidate
+  // table/ward summary/map with whatever the server just flagged as
+  // isolated at the current distance.
+  async function previewIsolation() {
+    if (CFG.isolationFilterLocked) return;
+    const distanceM = parseFloat($('isolation-distance-m').value);
+    if (!distanceM || distanceM <= 0) {
+      $('isolation-preview-status').textContent = 'Enter a positive distance.';
+      return;
+    }
+    $('isolation-preview-status').textContent = 'Checking…';
+    try {
+      const resp = await fetch(CFG.isolationPreviewUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': CFG.csrfToken,
+        },
+        body: JSON.stringify({ distance_m: distanceM }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== 'ok') {
+        $('isolation-preview-status').textContent =
+          data.detail || 'Failed to preview.';
+        return;
+      }
+      isolatedWaIds = new Set(data.isolated_wa_ids);
+      isolationLastPreviewedDistanceM = distanceM;
+      $('isolation-preview-status').textContent = isolatedWaIds.size
+        ? `${isolatedWaIds.size} work area(s) would be removed — highlighted below and on the map.`
+        : 'No work areas are isolated at this distance.';
+      renderWardSummary(lastWardSummaryRows, lastGapSummaryByWard);
+      renderCandidates();
+      if (lastMapFeatures) {
+        applyIsolationFeatureState(styleMapFeatures(lastMapFeatures));
+      }
+    } catch (e) {
+      $('isolation-preview-status').textContent = 'Failed to preview.';
+    }
+  }
+
+  // Step 3's own "Lock in Step 3" action — the actual commit. The server
+  // recomputes the isolated set itself from distance_m (never trusts this
+  // page's own isolatedWaIds preview for a destructive action) and unions
+  // it into excluded_wa_ids -- the same field the map's own "Exclude WAs"
+  // action already uses, so the removed work areas vanish from every
+  // table/the map via the normal Recompute that follows, same as any other
+  // exclusion. One-way, same as Step 1/Step 2's locks.
+  async function lockIsolationFilter() {
+    const distanceM = parseFloat($('isolation-distance-m').value);
+    if (!distanceM || distanceM <= 0) {
+      $('isolation-preview-status').textContent = 'Enter a positive distance.';
+      return;
+    }
+    $('lock-isolation-filter').disabled = true;
+    $('isolation-preview-status').textContent = 'Locking in Step 3…';
+    try {
+      const resp = await fetch(CFG.lockIsolationFilterUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': CFG.csrfToken,
+        },
+        body: JSON.stringify({ distance_m: distanceM }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== 'ok') {
+        $('isolation-preview-status').textContent =
+          data.detail || 'Failed to lock Step 3.';
+        $('lock-isolation-filter').disabled = false;
+        return;
+      }
+      CFG.isolationFilterLocked = true;
+      isolatedWaIds = new Set();
+      $('lock-isolation-filter').textContent = 'Locked';
+      $('isolation-distance-m').disabled = true;
+      $('isolation-preview-status').textContent =
+        `${data.excluded_count} isolated work area(s) removed.`;
+      $('create-plan').disabled = false;
+      pollOrEvaluate();
+    } catch (e) {
+      $('isolation-preview-status').textContent = 'Failed to lock Step 3.';
+      $('lock-isolation-filter').disabled = false;
+    }
+  }
+
   function init(cfg) {
     CFG = cfg;
     indicatorDefs = JSON.parse($('indicator-defs-data').textContent);
@@ -1488,12 +1759,21 @@ window.MopupAnalysis = (function () {
     $('create-plan').addEventListener('click', createPlan);
     $('planning-gaps-recompute').addEventListener('click', previewPlanningGaps);
     $('erase-planning-gaps').addEventListener('click', erasePlanningGaps);
+    $('lock-planning-gaps').addEventListener('click', lockPlanningGaps);
     document
       .querySelectorAll('.gap-mode-radio')
       .forEach((r) => r.addEventListener('change', updateGapModeVisibility));
     updateGapModeVisibility();
     $('gap-upload-button').addEventListener('click', uploadBuildingsFile);
     $('map-exclude-button').addEventListener('click', excludeSelectedWorkAreas);
+    $('isolation-distance-m').addEventListener(
+      'input',
+      scheduleIsolationPreview,
+    );
+    $('lock-isolation-filter').addEventListener('click', lockIsolationFilter);
+    // pollOrEvaluate() (below) already triggers Step 3's own initial
+    // preview when Step 2 is locked but Step 3 isn't yet -- see its own
+    // success handler -- so there's nothing extra to kick off here.
     initTooltips();
     showLoadingPanel(
       'Loading work-area, visit, and geometry data for this opportunity…',
