@@ -39,6 +39,14 @@ When the audited window differs from the original creation-time range, the colum
 
 This means the PERIOD column is the authoritative record of what was actually covered by a run, not just what was intended when it was set up.
 
+### Data freshness on scheduled reports
+
+Scheduled reports can display when their data was actually last synced — and every reader sees the same figure regardless of which device they are on or when they last refreshed their browser.
+
+Previously, the only freshness signal a report could show came from the reader's own browser, so it described when *that browser* last pulled data rather than when the underlying data was refreshed. On a report like the Ward Progress Tracker, this meant a reader on a second device — or one who simply had not refreshed in a while — might see "18h 36m ago" even though the data had in fact been refreshed at 04:21 that morning.
+
+Scheduled reports that display a "last synced" or "last refreshed" time now draw that figure from the schedule itself, so it reflects the real sync time and is consistent across all readers.
+
 ### Run failure reasons
 
 If a scheduled or unattended run fails, the run now records the reason for the failure alongside the failed status. Previously, a failure was logged with no error message, making it impossible to diagnose the problem without accessing production logs. You can now see what went wrong directly on the run record, which makes it easier to decide whether to retry, adjust settings, or contact support.
@@ -169,13 +177,4 @@ The three cohort views are designed to give you different perspectives: a worker
 
 Where a comparison would not be meaningful, the report says so clearly rather than showing a potentially misleading figure:
 
-- A cohort with fewer than 8 workers shows **"too few to rank against"** instead of a position.
-- A worker with no dated case cannot be placed in a start-month cohort and is told so.
-- Reports that were saved before this feature was introduced carry no cohort information; those reports display an explanatory message rather than an empty panel that could be mistaken for "this worker has no peers".
-
-!!! note "Trend chart labels no longer cut off at the edges"
-    Previously, the label at the last point on a peer trend chart — for example, "week 42" — could be clipped by the edge of the card, showing only part of the text (such as "week 4"). Labels at both ends of the chart are now fully visible.
-
-### KMC Opportunity Report
-
-The **KMC Opportunity Report** gives a single delivery opportunity a three-part view of its own performance and how it compares with its
+- A cohort with fewer than 8 workers shows **"too few to rank against"
