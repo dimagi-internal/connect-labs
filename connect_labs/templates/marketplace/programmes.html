@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% comment %}
+The marketplace by programme. Tailwind, not Bootstrap, with brand values from
+tailwind/tailwind.css.
+
+Each programme carries its own colour through `--hue`, set inline per card from
+`programmes.hue()`. Custom properties are the one thing Tailwind's static
+classes cannot express per element, so the handful of hue-driven rules live in
+the style block below and everything else stays in utility classes.
+
+Spent and services are Pulse's own figures. Remaining is an upper bound and is
+always worded "up to" — see `queries.committed_by_programme`.
+{% endcomment %}
+{% load humanize %}
+{% block title %}Programmes · Connect Marketplace{% endblock %}
+
+{% block css %}
+  {{ block.super }}
+  <style>
+    .pg-card { --hue: #3843d0; position: relative; }
+    .pg-card::before {
+      content: ""; position: absolute; inset: 0 auto 0 0; width: 4px;
+      border-radius: 10px 0 0 10px; background: var(--hue);
+    }
+    .pg-card:hover { box-shadow: 0 6px 22px -12px color-mix(in srgb, var(--hue) 55%, transparent); }
+    .pg-hue { color: var(--hue); }
+    .pg-chip { background: color-mix(in srgb, var(--hue) 12%, white); color: var(--hue); }
+    .pg-spent { background: var(--hue); }
+    .pg-left { background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--hue) 26%, white) 0 5px,
+      color-mix(in srgb, var(--hue) 15%, white) 5px 10px); }
+    .pg-dot { background: var(--hue); }
+  </style>
+{% endblock %}
+
+{% block content %}
+
+<div class="bg-brand-deep-purple px-10 pt-8 pb-7 relative overflow-hidden">
+  <div class="absolute -right-24 -top-32 w-[440px] h-[440px] rounded-full"
+       style="background: radial-gradient(circle, rgba(142,161,255,0.18) 0%, rgba(22,0,109,0) 68%);"></div>
+  <div class="relative">
+    <div class="flex items-center gap-2 text-[12px] text-brand-sky/80 mb-3">
+      <a href="{% url 'marketplace:home' %}" class="hover:text-white">Marketplace</a>
+      <span>·</span><span class="text-white">Programmes</span>
+    </div>
+    <div class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky">BY PROGRAMME</div>
+    <div class="text-3xl font-semibold text-white mt-2 max-w-3xl leading-tight">
+      Every kind of work on Connect — what has been paid, what is still funded, and who is waiting to do it.
+    </div>
+
+    <div class="flex flex-wrap gap-x-12 gap-y-5 mt-7">
+      <div>
+        <div class="text-[29px] font-semibold text-white tabular-nums">{{ totals.spent }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">PAID OUT</div>
+      </div>
+      <div>
+        <div class="text-[29px] font-semibold text-brand-marigold tabular-nums">{{ totals.remaining }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">UP TO, STILL FUNDED</div>
+      </div>
+      <div>
+        <div class="text-[29px] font-semibold text-white tabular-nums">{{ totals.services|intcomma }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">SERVICES DELIVERED</div>
+      </div>
+      <div>
+        <div class="text-[29px] font-semibold text-white tabular-nums">{{ totals.applied }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">ORGANISATIONS HAVE APPLIED</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="max-w-screen-2xl mx-auto px-10 py-8">
+
+  {% for section in sections %}
+    <section class="{% if not forloop.first %}mt-12{% endif %}">
+      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-4">
+        <h2 class="text-lg font-semibold text-brand-deep-purple">{{ section.title }}</h2>
+        <span class="text-[13px] text-gray-500">{{ section.why }}</span>
+      </div>
+
+      <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+        {% for c in section.cards %}
+          <article class="pg-card bg-white border border-brand-border-light rounded-[10px] pl-6 pr-5 pt-5 pb-4 flex flex-col gap-4 transition"
+                   style="--hue: {{ c.hue }}">
+
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="text-[17px] font-semibold text-gray-900 leading-snug">{{ c.label }}</div>
+              </div>
+              {% if c.live %}
+                <span class="pg-chip shrink-0 inline-flex items-center gap-1.5 text-[10.5px] font-semibold tracking-wide px-2 py-1 rounded-md">
+                  <span class="pg-dot w-1.5 h-1.5 rounded-full"></span>{{ c.live }} LIVE
+                </span>
+              {% endif %}
+            </div>
+
+            <div>
+              {% if c.services %}
+                <div class="text-[30px] font-semibold text-gray-900 leading-none tabular-nums">{{ c.services|intcomma }}</div>
+                <div class="text-[12px] text-gray-500 mt-1">services delivered</div>
+              {% else %}
+                <div class="text-[19px] font-semibold text-gray-400 leading-none">No delivery yet</div>
+                <div class="text-[12px] text-gray-400 mt-1">nothing verified on Connect</div>
+              {% endif %}
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+              {% if c.spent or c.remaining %}
+                <div class="flex items-baseline justify-between text-[12.5px]">
+                  <span><span class="font-semibold text-gray-900 tabular-nums">{{ c.spent_fmt }}</span> <span class="text-gray-500">paid</span></span>
+                  {% if c.remaining %}
+                    <span class="text-gray-500">up to <span class="font-semibold pg-hue tabular-nums">{{ c.remaining_fmt }}</span> still funded</span>
+                  {% else %}
+                    <span class="text-gray-400">nothing live</span>
+                  {% endif %}
+                </div>
+                <div class="h-2 rounded-full bg-gray-100 overflow-hidden flex"
+                     title="{{ c.spent_fmt }} paid{% if c.remaining %}, up to {{ c.remaining_fmt }} still funded on live work{% endif %}">
+                  <span class="pg-spent h-full" style="width: {{ c.spent_pct }}%"></span>
+                  {% if c.remaining %}<span class="pg-left h-full flex-1"></span>{% endif %}
+                </div>
+              {% else %}
+                <div class="text-[12.5px] text-gray-400">No funding recorded</div>
+                <div class="h-2 rounded-full bg-gray-100"></div>
+              {% endif %}
+            </div>
+
+            <div class="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-gray-600">
+              <span><span class="font-semibold text-gray-900 tabular-nums">{{ c.delivering }}</span> delivering</span>
+              <span><span class="font-semibold text-gray-900 tabular-nums">{{ c.applied }}</span> applied</span>
+              <span><span class="font-semibold text-gray-900 tabular-nums">{{ c.rounds }}</span> round{{ c.rounds|pluralize }}</span>
+            </div>
+
+            <div class="border-t border-gray-100 pt-3 mt-auto flex flex-col gap-2.5">
+              <p class="text-[13px] text-gray-600 leading-relaxed">{{ c.note }}</p>
+              <div class="flex gap-4 text-[12px] font-medium">
+                {% if c.delivering %}
+                  <a href="{% url 'marketplace:network' %}?delivered={{ c.slug }}" class="pg-hue hover:underline">Who delivers it →</a>
+                {% endif %}
+                {% if c.applied %}
+                  <a href="{% url 'marketplace:network' %}?applied={{ c.slug }}" class="pg-hue hover:underline">Who has applied →</a>
+                {% endif %}
+              </div>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% empty %}
+    <div class="bg-white border border-brand-border-light rounded-lg px-6 py-14 text-center text-sm text-gray-500">
+      No programmes recorded yet.
+    </div>
+  {% endfor %}
+
+  <p class="mt-12 pt-5 border-t border-gray-200 text-[12.5px] text-gray-500 max-w-3xl leading-relaxed">
+    Paid out and services delivered are the same figures the Pulse wall shows. "Still funded" is budget
+    left on opportunities that are live today, converted to dollars at the rate Connect applied to their
+    payments — an upper bound, since programmes rarely spend their whole budget.
+  </p>
+</div>
+{% endblock %}

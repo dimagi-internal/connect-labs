@@ -32,10 +32,16 @@ def _opp(
 def _paid(opp_id, usd_worker, usd_org=0, n=[0]):
     import datetime as dt
 
+    # Ingest stamps every work with its opportunity's delivery type and
+    # programme, and "deployed" groups by that stamp exactly as Pulse does — so
+    # an unstamped work, which production never produces, would vanish.
+    opp = PulseOpportunity.objects.filter(opportunity_id=opp_id).first()
     n[0] += 1
     PulseWork.objects.create(
         work_key=f"w{opp_id}-{n[0]}",
         opportunity_id=opp_id,
+        service_slug=opp.service_slug if opp else "",
+        program_id=opp.program_id if opp else None,
         org_slug="org",
         worker_hash="w",
         status="approved",
@@ -156,15 +162,21 @@ class TestFxRates:
 
 @pytest.mark.django_db
 class TestOnlyRealWorkCounts:
-    def test_a_test_programmes_opportunity_is_excluded_from_both_figures(self):
-        """One "CHC Test Opportunity" carried $312,500 of budget. Counted, a
-        single test row would have been a fifth of all remaining funding."""
+    def test_a_test_programme_is_in_deployed_but_not_in_remaining(self):
+        """Two different rules for two different reasons.
+
+        Its $25 was really paid and Pulse counts it, so DEPLOYED includes it —
+        leaving it out would make this figure disagree with the Pulse wall.
+        Its $312,500 budget is a placeholder, so REMAINING excludes it — counted,
+        one test row would dwarf every real programme's."""
         from connect_labs.pulse.models import PulseProgram
 
         PulseProgram.objects.create(program_id=7, name="Founders Pledge Test Program", is_test=True)
         _opp(1, "chc", budget=312_500, program_id=7, **LIVE)
         _paid(1, 25)
-        assert "chc" not in queries.committed_by_programme()
+        got = queries.committed_by_programme()["chc"]
+        assert got["deployed"] == 25
+        assert got["remaining"] == 0
 
     def test_a_real_programme_beside_it_still_counts(self):
         from connect_labs.pulse.models import PulseProgram
@@ -173,9 +185,11 @@ class TestOnlyRealWorkCounts:
         PulseProgram.objects.create(program_id=8, name="CHC Nigeria", is_test=False)
         _opp(1, "chc", budget=312_500, program_id=7, **LIVE)
         _opp(2, "chc", budget=10_000, program_id=8, **LIVE)
+        _paid(1, 25)
         _paid(2, 4_000)
         got = queries.committed_by_programme()["chc"]
-        assert (got["deployed"], got["remaining"]) == (4_000, 6_000)
+        assert got["deployed"] == 4_025
+        assert got["remaining"] == 6_000
 
     def test_ace_is_not_a_programme(self):
         """Dimagi's own tooling: real rows, nothing a partner delivered and

@@ -253,18 +253,36 @@ def committed_by_programme() -> dict[str, dict]:
         )
     }
 
+    def blank():
+        return {"deployed": 0, "remaining": 0, "live_opportunities": 0, "unconvertible": 0, "currencies": set()}
+
     out: dict[str, dict] = {}
+
+    # DEPLOYED is pulse's own aggregation, verbatim: completed works grouped by
+    # the delivery type stamped on the WORK, test programmes included. That is
+    # what the Pulse wall's money-by-service shows, and two labs pages quoting
+    # different dollars for the same programme is worse than a few thousand of
+    # test work being in both. (Pulse is itself inconsistent here — its partner
+    # menu excludes test programmes and its money does not; fixing that belongs
+    # in pulse, where both surfaces would move together.)
+    for row in (
+        PulseWork.objects.exclude(service_slug="")
+        .values("service_slug")
+        .annotate(worker=Sum("usd_to_worker"), org=Sum("usd_to_org"))
+    ):
+        if programmes.is_programme(row["service_slug"]):
+            out.setdefault(row["service_slug"], blank())["deployed"] = int((row["worker"] or 0) + (row["org"] or 0))
+
     for opp in PulseOpportunity.objects.exclude(service_slug="").only(
         "opportunity_id", "program_id", "service_slug", "total_budget", "currency", "usd_rate", "is_active", "end_date"
     ):
+        # REMAINING has no pulse equivalent to agree with, and test programmes'
+        # budgets are placeholders — one carried $312,500 and paid $25 — so they
+        # are left out of it.
         if not programmes.is_programme(opp.service_slug) or opp.program_id in test_programmes:
             continue
-        entry = out.setdefault(
-            opp.service_slug,
-            {"deployed": 0, "remaining": 0, "live_opportunities": 0, "unconvertible": 0, "currencies": set()},
-        )
+        entry = out.setdefault(opp.service_slug, blank())
         spent = decimal.Decimal(paid.get(opp.opportunity_id, 0) or 0)
-        entry["deployed"] += int(spent)
 
         live = opp.is_active and (opp.end_date is None or opp.end_date >= today)
         if not live:
@@ -288,6 +306,144 @@ def committed_by_programme() -> dict[str, dict]:
     _cache["committed"] = out
     _cache["loaded_at"] = _cache["loaded_at"] or time.monotonic()
     return out
+
+
+def services_by_programme() -> dict[str, int]:
+    """Services delivered per delivery type — pulse's service menu, verbatim.
+
+    Lifetime visit counts off the opportunity mirror, summed by the
+    opportunity's delivery type, which is exactly what the Pulse wall's
+    programme picker reports.
+    """
+    from django.db.models import Sum
+
+    from connect_labs.pulse.models import PulseOpportunity
+
+    return {
+        row["service_slug"]: int(row["visits"] or 0)
+        for row in PulseOpportunity.objects.exclude(service_slug="")
+        .values("service_slug")
+        .annotate(visits=Sum("lifetime_visit_count"))
+        if programmes.is_programme(row["service_slug"])
+    }
+
+
+# The state of a programme's market, in the order the page presents them. Each
+# is a fact about the numbers, not a label someone chose — so a programme moves
+# between them on its own as the data does.
+STATES = (
+    (
+        "waiting",
+        "Asked for, not yet delivered",
+        "Organisations have put their names forward and nobody has been placed.",
+    ),
+    ("queue", "More want it than do it", "Established work with a queue of organisations behind it."),
+    ("direct", "Delivered without going to market", "Real delivery, sourced some other way — no round was ever run."),
+    ("running", "Running", "Delivery under way, with the network and the rounds broadly in balance."),
+)
+
+
+def _state(card: dict) -> str:
+    if card["applied"] and not card["delivering"]:
+        return "waiting"
+    if card["delivering"] and card["applied"] > card["delivering"]:
+        return "queue"
+    if card["delivering"] and not card["rounds"]:
+        return "direct"
+    return "running"
+
+
+def _money(n: int) -> str:
+    if n >= 1_000_000:
+        return f"${n / 1_000_000:.2f}M"
+    if n >= 10_000:
+        return f"${n / 1_000:.0f}k"
+    return f"${n:,}"
+
+
+def _note(card: dict) -> str:
+    """The one thing most worth knowing about this programme, from its figures.
+
+    Generated, never written: a hand-written line about a programme is true
+    the day it is written and quietly false thereafter, and this page is
+    meant to stay right as the data moves.
+    """
+    applied, delivering = card["applied"], card["delivering"]
+    if applied and not delivering:
+        return f"{applied} organisations have applied. None has delivered this programme on Connect yet."
+    if delivering and applied >= 3 * delivering:
+        return f"{applied // delivering} applicants for every organisation delivering it today."
+    if card["remaining"] and card["spent"] and card["remaining"] > card["spent"]:
+        return (
+            f"Up to {_money(card['remaining'])} still available on live work — more than the "
+            f"{_money(card['spent'])} paid out so far."
+        )
+    if delivering and not card["rounds"]:
+        orgs = "organisation" if delivering == 1 else "organisations"
+        return f"Delivered by {delivering} {orgs}, none of them found through a round."
+    if card["remaining"]:
+        opps = "opportunity" if card["live"] == 1 else "opportunities"
+        return f"Up to {_money(card['remaining'])} still available across {card['live']} live {opps}."
+    if card["spent"]:
+        return f"{_money(card['spent'])} paid out. No live work is funded right now."
+    return "No delivery recorded yet."
+
+
+def programme_cards() -> list[dict]:
+    """Everything the programme page shows, one card per delivery type.
+
+    SPENT and SERVICES are pulse's own figures, computed the way the Pulse wall
+    computes them, so the two surfaces agree to the dollar — a test pins that
+    against pulse's real endpoint. REMAINING is budget still available on live,
+    non-test work, an upper bound (see `committed_by_programme`).
+    """
+    committed = committed_by_programme()
+    services = services_by_programme()
+    delivered = delivered_programmes_by_org_name()
+
+    delivering: dict[str, int] = {}
+    for slugs in delivered.values():
+        for slug in slugs:
+            delivering[slug] = delivering.get(slug, 0) + 1
+
+    applied: dict[str, set] = {}
+    for response in SolicitationResponse.objects.exclude(llo_entity=None).select_related("solicitation"):
+        slug = response.solicitation.delivery_type
+        if programmes.is_programme(slug):
+            applied.setdefault(slug, set()).add(response.llo_entity_id)
+
+    rounds: dict[str, int] = {}
+    for slug in Solicitation.objects.values_list("delivery_type", flat=True):
+        if programmes.is_programme(slug):
+            rounds[slug] = rounds.get(slug, 0) + 1
+
+    slugs = set(committed) | set(services) | set(applied) | set(rounds)
+    cards = []
+    for slug in slugs:
+        money = committed.get(slug, {})
+        card = {
+            "slug": slug,
+            "label": programmes.label(slug),
+            "hue": programmes.hue(slug),
+            "services": services.get(slug, 0),
+            "spent": money.get("deployed", 0),
+            "remaining": money.get("remaining", 0),
+            "live": money.get("live_opportunities", 0),
+            "delivering": delivering.get(slug, 0),
+            "applied": len(applied.get(slug, ())),
+            "rounds": rounds.get(slug, 0),
+        }
+        total = card["spent"] + card["remaining"]
+        card["spent_pct"] = round(card["spent"] * 100 / total, 1) if total else 0
+        card["spent_fmt"] = _money(card["spent"])
+        card["remaining_fmt"] = _money(card["remaining"])
+        card["state"] = _state(card)
+        card["note"] = _note(card)
+        cards.append(card)
+
+    order = {key: i for i, (key, _, _) in enumerate(STATES)}
+    cards.sort(key=lambda c: (order[c["state"]], -c["spent"], -c["applied"], c["label"]))
+    return cards
 
 
 def in_segment(row, segment: str, delivering: set[str]) -> bool:

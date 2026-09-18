@@ -180,6 +180,45 @@ def network_points(request):
 
 
 @login_required
+def programmes_page(request):
+    """The marketplace by programme: what has been paid, what is still funded,
+    and who is waiting to do the work.
+
+    Spent and services are Pulse's own figures, so this page and the Pulse wall
+    cannot quote different numbers for the same programme.
+    """
+    cards = queries.programme_cards()
+    by_state = {key: [] for key, _, _ in queries.STATES}
+    for card in cards:
+        by_state[card["state"]].append(card)
+    sections = [
+        {"key": key, "title": title, "why": why, "cards": by_state[key]}
+        for key, title, why in queries.STATES
+        if by_state[key]
+    ]
+    return render(
+        request,
+        "marketplace/programmes.html",
+        {
+            "sections": sections,
+            "totals": {
+                "programmes": len(cards),
+                "spent": queries._money(sum(c["spent"] for c in cards)),
+                "remaining": queries._money(sum(c["remaining"] for c in cards)),
+                "services": sum(c["services"] for c in cards),
+                "applied": len(
+                    set(
+                        SolicitationResponse.objects.exclude(llo_entity=None)
+                        .exclude(solicitation__delivery_type="")
+                        .values_list("llo_entity_id", flat=True)
+                    )
+                ),
+            },
+        },
+    )
+
+
+@login_required
 def rounds(request):
     """Every round, open first."""
     return render(
