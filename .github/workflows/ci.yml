@@ -129,13 +129,15 @@ jobs:
           node-version: '20'
 
       # The whole dependency tree now, because this job runs the whole JS suite.
-      # It used to install just the JSX parser, on the grounds that
-      # package-lock.json was out of sync with package.json ("Missing:
-      # jiti@2.7.0"). That is no longer true -- `npm ci` resolves cleanly, jiti
-      # is in the lock -- and the workaround was costing far more than it saved:
-      # only 1 of the 10 JS test files ran, so the other 9 could fail
-      # indefinitely without anyone seeing it. Two of them were failing, one
-      # since April.
+      # It used to install just the JSX parser, because package-lock.json really
+      # was out of sync with package.json ("Missing: jiti@2.7.0") -- that note
+      # was accurate, and the lock is fixed in this same change rather than
+      # worked around again.
+      #
+      # REGENERATE THE LOCK UNDER NODE 20, which is what this job runs. npm 11
+      # (current on a dev Mac) accepts the old lock and writes a new one that
+      # npm 10 still rejects, so a local `npm ci` proves nothing about CI:
+      #   docker run --rm -v "$PWD:/w" -w /w node:20 npm install --package-lock-only
       - name: Cache node_modules
         uses: actions/cache@v4
         with:
