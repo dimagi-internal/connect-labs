@@ -566,6 +566,9 @@ function WorkflowUI({
   var sDefFull = React.useState(false);
   var defFull = sDefFull[0],
     setDefFull = sDefFull[1];
+  var sDefConsts = React.useState(false);
+  var defConsts = sDefConsts[0],
+    setDefConsts = sDefConsts[1];
   React.useEffect(
     function () {
       if (!colDef) return;
@@ -727,9 +730,98 @@ function WorkflowUI({
       </div>
     );
   }
-  // One indicator's definition: the authored sentence, the sentence rendered
-  // from its SQL, what each property it reads means, then the SQL chain -- the
-  // compiled measure, the per-baby properties under it -- each block copyable.
+  // One indicator's definition, top to bottom in the order a reader needs it:
+  // the authored sentence; how it is counted (which babies it is out of, what
+  // it counts among them, when it is shown); what each term means; the
+  // thresholds, folded away; then the SQL. All of it from the explain reader
+  // (semantic/explain.py), nothing derived here.
+  function conditionList(where) {
+    if (!where || !where.length)
+      return <span className="text-gray-500">all babies</span>;
+    return (
+      <ul className="space-y-0.5">
+        {where.map(function (c) {
+          return (
+            <li key={c} className="flex gap-1.5">
+              <span className="text-gray-400">•</span>
+              <span>{c}</span>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+  function howRow(label, body) {
+    return (
+      <div className="grid grid-cols-[6rem_1fr] gap-2 py-1.5 border-t border-gray-100 first:border-t-0">
+        <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold pt-0.5">
+          {label}
+        </div>
+        <div className="text-sm text-gray-800">{body}</div>
+      </div>
+    );
+  }
+  function howBlock(h) {
+    var cap = function (t) {
+      return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+    };
+    var rows = [];
+    if (h.kind === 'value') {
+      rows.push(
+        howRow(
+          'Value',
+          h.value === 'babies' ? 'Number of babies' : cap(h.value),
+        ),
+      );
+      rows.push(howRow('Over', conditionList(h.base.where)));
+    } else {
+      rows.push(
+        howRow(
+          'Out of',
+          <div>
+            <div className="text-gray-600 mb-0.5">{cap(h.base.what)} where</div>
+            {conditionList(h.base.where)}
+          </div>,
+        ),
+      );
+      rows.push(
+        howRow(
+          h.kind === 'percent' ? 'Counts' : 'Divides',
+          <div>
+            <div className="text-gray-600 mb-0.5">
+              {h.counts.where && h.counts.where.length
+                ? 'Those ' +
+                  (h.counts.what === 'babies' ? 'babies' : h.counts.what) +
+                  ' where'
+                : cap(h.counts.what)}
+            </div>
+            {h.counts.where && h.counts.where.length
+              ? conditionList(h.counts.where)
+              : null}
+          </div>,
+        ),
+      );
+    }
+    if (h.shown_when)
+      rows.push(
+        howRow(
+          'Shown',
+          h.kind === 'value'
+            ? 'Only when there are ' + h.shown_when + '.'
+            : 'Only when ' +
+                h.shown_when.replace(
+                  'in the base',
+                  'are in the “out of” group',
+                ) +
+                '.',
+        ),
+      );
+    return (
+      <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1">
+        {rows}
+      </div>
+    );
+  }
   function definitionBody(e) {
     var en = e.english || {};
     var measureSql = [
@@ -745,7 +837,7 @@ function WorkflowUI({
     var propSql = (e.properties || [])
       .map(function (p) {
         return (
-          (p.notes ? '-- ' + p.name + ': ' + p.notes + '\n' : '') +
+          (p.means ? '-- ' + p.name + ': ' + p.means + '\n' : '') +
           p.name +
           ' = ' +
           p.sql
@@ -767,25 +859,55 @@ function WorkflowUI({
     });
     return (
       <div>
-        {en.plain ? <p className="text-gray-900">{en.plain}</p> : null}
-        {en.definition ? (
-          <p className="text-gray-600 text-xs mt-1">
-            <span className="font-semibold text-gray-500">From the SQL: </span>
-            {en.definition}
-            {consts ? ' Constants: ' + consts + '.' : ''}
-          </p>
+        {en.plain ? (
+          <p className="text-base text-gray-900 leading-snug">{en.plain}</p>
+        ) : null}
+        {en.how ? (
+          howBlock(en.how)
+        ) : en.definition ? (
+          <p className="text-gray-600 text-sm mt-2">{en.definition}</p>
         ) : null}
         {reads.length ? (
-          <ul className="mt-2 text-xs text-gray-600 space-y-0.5">
-            {reads.map(function (r) {
-              return (
-                <li key={r.name}>
-                  <span className="font-mono text-gray-500">{r.name}</span>
-                  {' — ' + r.means}
-                </li>
-              );
-            })}
-          </ul>
+          <div className="mt-3">
+            <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-1">
+              Terms
+            </div>
+            <dl className="text-sm space-y-1.5">
+              {reads.map(function (r) {
+                return (
+                  <div key={r.name}>
+                    <dt className="font-medium text-gray-900 inline">
+                      {r.label || r.name}
+                    </dt>
+                    <dd className="text-gray-600 inline">
+                      {' \u2014 ' + r.means}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </div>
+        ) : null}
+        {consts ? (
+          <div className="mt-3 text-xs">
+            <button
+              type="button"
+              className="text-indigo-600 hover:underline"
+              onClick={function () {
+                setDefConsts(!defConsts);
+              }}
+            >
+              {(defConsts ? 'Hide' : 'Show') +
+                ' the thresholds it uses (' +
+                Object.keys(e.constants || {}).length +
+                ')'}
+            </button>
+            {defConsts ? (
+              <div className="mt-1 font-mono text-gray-600 break-words">
+                {consts}
+              </div>
+            ) : null}
+          </div>
         ) : null}
         {defBlock('Measure', measureSql)}
         {propSql
