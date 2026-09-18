@@ -267,9 +267,10 @@ class SQLBackend:
         SQL backend stores visits in RawVisitCache table. If cache is valid,
         reads directly from PostgreSQL. Otherwise, fetches from API and stores.
 
-        `pipeline_id` scopes the raw cache slot per #116 — must match the value
-        the downstream extraction query filters on, or extraction returns 0
-        rows because the raw rows are tagged with a different pipeline_id.
+        `pipeline_id` is accepted for attribution but does NOT pick the slot: this
+        walks the user_visits export, whose rows every visits pipeline on the
+        opportunity shares (#1921), so the fill lands in the one slot their
+        extraction queries read (``AnalysisPipelineConfig.raw_slot_id``).
 
         `accept_low_count`: bypass the shrink guard below and trust whatever
         comes back, even if it's suspiciously smaller than what's cached.
@@ -325,7 +326,7 @@ class SQLBackend:
         # always taken; whether there is anything to lend is decided separately,
         # inside _lend_cache_during_peer_rebuild.
         if not force_refresh:
-            with claim_raw_rebuild(opportunity_id, pipeline_id) as is_leader:
+            with claim_raw_rebuild(opportunity_id, cache_manager.raw_slot_id) as is_leader:
                 if not is_leader:
                     lent = self._lend_cache_during_peer_rebuild(
                         cache_manager,
@@ -493,7 +494,7 @@ class SQLBackend:
         # One walk at a time per slot (#1361). force_refresh is an explicit
         # "go and get it", so it is never handed stale rows.
         if not force_refresh:
-            with claim_raw_rebuild(opportunity_id, pipeline_id) as is_leader:
+            with claim_raw_rebuild(opportunity_id, cache_manager.raw_slot_id) as is_leader:
                 if not is_leader:
                     lent = self._lend_cache_during_peer_rebuild(
                         cache_manager, opportunity_id, pipeline_id, skip_form_json=True, count_only=True
@@ -745,6 +746,13 @@ class SQLBackend:
 
         endpoint = f"/export/opportunity/{opportunity_id}/user_visits/"
         params = {"cursor_order": "forward", "last_id": max_visit_id}
+        # Image readers and pipelines share this slot (#1921), so a pipeline's
+        # top-up can land on rows fetched WITH images. Appending image-less rows
+        # there would answer "no photo" for every new visit until the next full
+        # rebuild, so the top-up matches what the slot already holds.
+        images_fetched = cache_manager.slot_has_image_data(ignore_ttl=True)
+        if images_fetched:
+            params["images"] = "true"
         new_dicts: list[dict] = []
         try:
             with get_export_client(
@@ -799,7 +807,7 @@ class SQLBackend:
             )
         new_dicts = list(deduped.values())
 
-        cache_manager.store_raw_visits_append_start(expires_at)
+        cache_manager.store_raw_visits_append_start(expires_at, images_fetched=images_fetched)
         cache_manager.store_raw_visits_batch(new_dicts)
         visible = cache_manager.store_raw_visits_append_finalize(prior_count, prior_count + len(new_dicts))
         return bool(visible)

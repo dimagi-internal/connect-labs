@@ -2,7 +2,8 @@
 
 A workflow's numbers come from two caches with DIFFERENT lifetimes:
 
-  raw      `labs_raw_visit_cache`, one copy per (opportunity, pipeline). Semantic
+  raw      `labs_raw_visit_cache`: one shared copy of the user_visits export per
+           opportunity, plus one per pipeline for other sources (#1921). Semantic
            Layer 1 -- every indicator -- reads it directly.
   computed the visit / entity / FLW caches a pipeline answers from, built FROM raw.
 
@@ -60,7 +61,8 @@ class VisitCacheError(Exception):
 
 
 def workflow_pipeline_ids(definition) -> list[int]:
-    """Every pipeline a workflow reads. Each has its own raw-cache slot (#116)."""
+    """Every pipeline a workflow reads. Non-visits sources each have their own raw slot
+    (#116); visits pipelines share the opportunity's one user_visits slot (#1921)."""
     out = []
     for source in (
         getattr(definition, "pipeline_sources", None) or (definition.data or {}).get("pipeline_sources") or []
@@ -83,10 +85,11 @@ def workflow_opportunity_ids(definition, owner_opportunity_id: int | None) -> li
 def warm_images(access_token: str | None, opportunity_id: int, hold_minutes: int) -> dict:
     """Fill the IMAGE slot for one opportunity, and hold it.
 
-    Photos live in their own raw-cache slot (no pipeline id) -- the one
-    `visit_images_api` reads -- so warming a workflow's pipelines leaves every
-    case's photos cold, and the first click on each opportunity pays a full
-    download with images. This warms that slot on request.
+    Photos live in the opportunity's shared user_visits slot, but only once it
+    has been filled WITH images; a pipeline's walk fills it without them, so
+    warming a workflow's pipelines leaves every case's photos cold and the first
+    click on each opportunity pays a full download with images. This warms that
+    slot, with images, on request.
     """
     from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline

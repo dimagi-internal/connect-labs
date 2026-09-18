@@ -26,9 +26,23 @@ from connect_labs.labs.analysis.backends.sql.backend import (
 )
 from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT, AnalysisPipelineConfig, DataSourceConfig
 
 OPP_ID = 42
 PIPELINE_ID = 1001
+# Every visits pipeline shares the opportunity's user_visits slot (#1921), so the
+# rows these tests seed and inspect live there, not under PIPELINE_ID.
+SLOT = USER_VISITS_RAW_SLOT
+
+
+def _forms_manager(pipeline_id: int) -> SQLCacheManager:
+    """A manager for a NON-visits source, which keeps a per-pipeline slot (#116)."""
+    config = AnalysisPipelineConfig(
+        grouping_key="username",
+        data_source=DataSourceConfig(type="cchq_forms", form_name="Register Mother", app_id="app"),
+    )
+    config.pipeline_id = pipeline_id
+    return SQLCacheManager(OPP_ID, config)
 
 
 @pytest.fixture(autouse=True)
@@ -49,7 +63,7 @@ def _seed_expired_cache(count: int, pipeline_id: int = PIPELINE_ID) -> SQLCacheM
         visit_dicts=[{"id": i, "username": f"user{i}"} for i in range(count)],
         visit_count=count,
     )
-    RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=pipeline_id).update(
+    RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=manager.raw_slot_id).update(
         expires_at=timezone.now() - timedelta(hours=1)
     )
     return manager
@@ -78,10 +92,14 @@ class TestGetRawVisitCountIgnoringTtl:
         # Not finalized -- still a negative-sentinel row, should not count.
         assert manager.get_raw_visit_count_ignoring_ttl() == 0
 
-    def test_scoped_to_opportunity_and_pipeline(self):
+    def test_scoped_to_opportunity_and_source(self):
         _seed_expired_cache(10, pipeline_id=PIPELINE_ID)
-        other = SQLCacheManager(opportunity_id=OPP_ID, pipeline_id=9999)
-        assert other.get_raw_visit_count_ignoring_ttl() == 0
+        # Another visits pipeline on the same opportunity reads the same export,
+        # so it sees the same rows (#1921)...
+        sibling = SQLCacheManager(opportunity_id=OPP_ID, pipeline_id=9999)
+        assert sibling.get_raw_visit_count_ignoring_ttl() == 10
+        # ...but a different source, or a different opportunity, does not (#116).
+        assert _forms_manager(9999).get_raw_visit_count_ignoring_ttl() == 0
         other_opp = SQLCacheManager(opportunity_id=43, pipeline_id=PIPELINE_ID)
         assert other_opp.get_raw_visit_count_ignoring_ttl() == 0
 
@@ -97,12 +115,15 @@ class TestPendingRawFetchAnomaly:
         manager.clear_pending_raw_fetch_anomaly()
         assert manager.get_pending_raw_fetch_anomaly() is None
 
-    def test_scoped_to_opportunity_and_pipeline(self):
+    def test_scoped_to_the_slot(self):
         manager = SQLCacheManager(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID)
         manager.set_pending_raw_fetch_anomaly({"previous_count": 10, "attempted_count": 2, "threshold_pct": 80}, 10)
         try:
-            other = SQLCacheManager(opportunity_id=OPP_ID, pipeline_id=9999)
-            assert other.get_pending_raw_fetch_anomaly() is None
+            # The anomaly describes the rows, so it follows the rows: every visits
+            # pipeline serves the shared slot and must see its flag (#1921).
+            sibling = SQLCacheManager(opportunity_id=OPP_ID, pipeline_id=9999)
+            assert sibling.get_pending_raw_fetch_anomaly() is not None
+            assert _forms_manager(9999).get_pending_raw_fetch_anomaly() is None
         finally:
             manager.clear_pending_raw_fetch_anomaly()
 
@@ -119,9 +140,9 @@ class TestExtendRawCacheTtl:
         manager = SQLCacheManager(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID)
         manager.store_raw_visits(visit_dicts=[{"id": 1, "username": "alice"}], visit_count=1)
         far_future = timezone.now() + timedelta(days=1)
-        RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID).update(expires_at=far_future)
+        RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=SLOT).update(expires_at=far_future)
         manager.extend_raw_cache_ttl(minutes=10)
-        row = RawVisitCache.objects.get(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID)
+        row = RawVisitCache.objects.get(opportunity_id=OPP_ID, pipeline_id=SLOT)
         assert row.expires_at == far_future
 
     def test_does_not_touch_sentinel_rows(self):
@@ -142,7 +163,7 @@ class TestFetchRawVisitsShrinkGuard:
         visits = backend.fetch_raw_visits(opportunity_id=OPP_ID, access_token="t", pipeline_id=PIPELINE_ID)
         assert len(visits) == 2
         assert backend.last_raw_fetch_anomaly is None
-        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID).count() == 2
+        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=SLOT).count() == 2
 
     def test_fetch_at_or_above_threshold_is_accepted_without_retry(self, httpx_mock):
         _seed_expired_cache(10)
@@ -155,7 +176,7 @@ class TestFetchRawVisitsShrinkGuard:
         assert len(visits) == int(threshold)
         assert backend.last_raw_fetch_anomaly is None
         assert RawVisitCache.objects.filter(
-            opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID, visit_count=int(threshold)
+            opportunity_id=OPP_ID, pipeline_id=SLOT, visit_count=int(threshold)
         ).count() == int(threshold)
 
     def test_retries_and_succeeds_on_a_later_attempt(self, httpx_mock):
@@ -167,10 +188,8 @@ class TestFetchRawVisitsShrinkGuard:
         assert len(visits) == 9
         assert backend.last_raw_fetch_anomaly is None
         # New count replaced the old cache entirely.
-        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID, visit_count=9).count() == 9
-        assert (
-            RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID, visit_count=10).count() == 0
-        )
+        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=SLOT, visit_count=9).count() == 9
+        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=SLOT, visit_count=10).count() == 0
 
     def test_falls_back_to_old_cache_after_exhausting_retries(self, httpx_mock):
         _seed_expired_cache(10)
@@ -188,9 +207,7 @@ class TestFetchRawVisitsShrinkGuard:
             "threshold_pct": RAW_CACHE_SHRINK_THRESHOLD_PCT,
         }
         # Old cache rows were never overwritten by the bad fetch.
-        assert (
-            RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID, visit_count=10).count() == 10
-        )
+        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=SLOT, visit_count=10).count() == 10
         # TTL was pushed out -- rows are readable again despite having
         # originally been expired to trigger this "miss" in the first place.
         manager = SQLCacheManager(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID)
@@ -205,7 +222,7 @@ class TestFetchRawVisitsShrinkGuard:
         )
         assert len(visits) == 2
         assert backend.last_raw_fetch_anomaly is None
-        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID, visit_count=2).count() == 2
+        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=SLOT, visit_count=2).count() == 2
 
     def test_anomaly_persists_on_a_later_cache_hit(self, httpx_mock):
         """The guard's extend_raw_cache_ttl() makes the old rows look like an
@@ -325,10 +342,8 @@ class TestStreamRawVisitsShrinkGuard:
         assert events[-1][0] == "complete"
         assert events[-1][1] == 9
         assert backend.last_raw_fetch_anomaly is None
-        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID, visit_count=9).count() == 9
-        assert (
-            RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID, visit_count=10).count() == 0
-        )
+        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=SLOT, visit_count=9).count() == 9
+        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=SLOT, visit_count=10).count() == 0
 
     def test_falls_back_to_old_cache_after_exhausting_retries(self, httpx_mock):
         _seed_expired_cache(10)
@@ -351,10 +366,8 @@ class TestStreamRawVisitsShrinkGuard:
         }
         # Old cache preserved -- no leftover sentinel/orphan rows from the
         # three failed+aborted attempts, and nothing was overwritten.
-        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID).count() == 10
-        assert (
-            RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID, visit_count=10).count() == 10
-        )
+        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=SLOT).count() == 10
+        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=SLOT, visit_count=10).count() == 10
 
     def test_accept_low_count_bypasses_the_guard(self, httpx_mock):
         _seed_expired_cache(10)
@@ -372,7 +385,7 @@ class TestStreamRawVisitsShrinkGuard:
         assert events[-1][0] == "complete"
         assert events[-1][1] == 2
         assert backend.last_raw_fetch_anomaly is None
-        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=PIPELINE_ID, visit_count=2).count() == 2
+        assert RawVisitCache.objects.filter(opportunity_id=OPP_ID, pipeline_id=SLOT, visit_count=2).count() == 2
 
     def test_anomaly_persists_on_a_later_cache_hit(self, httpx_mock):
         """Mirrors the fetch_raw_visits regression test: extend_raw_cache_ttl()

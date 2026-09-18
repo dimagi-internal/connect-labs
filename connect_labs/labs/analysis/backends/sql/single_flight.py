@@ -1,4 +1,4 @@
-"""One rebuild at a time per (opportunity, pipeline) — the RawVisitCache stampede guard.
+"""One rebuild at a time per raw-cache slot — the RawVisitCache stampede guard.
 
 A raw-cache MISS paginates an opportunity's ENTIRE ``user_visits`` export inside the
 request. That is expensive but survivable once. The failure mode is doing it N times
@@ -64,24 +64,25 @@ _LOCK_NAMESPACE = "connect_labs.raw_visit_cache.rebuild"
 _SIGNED_64_OFFSET = 1 << 63
 
 
-def raw_rebuild_lock_key(opportunity_id: int, pipeline_id: int | None) -> int:
-    """Stable signed-64-bit advisory-lock key for one (opportunity, pipeline) slot.
+def raw_rebuild_lock_key(opportunity_id: int, raw_slot_id: int | None) -> int:
+    """Stable signed-64-bit advisory-lock key for one (opportunity, raw slot).
 
-    Mirrors ``SQLCacheManager._raw_filter()``, which scopes the raw cache by exactly
-    this pair — the lock must partition the same way the cache does, or two pipelines
-    on one opportunity would serialise against each other for no reason.
+    Pass ``SQLCacheManager.raw_slot_id``, which ``_raw_filter()`` scopes the cache by —
+    the lock must partition the same way the cache does. Too fine and two walkers of
+    one slot both lead (keyed per pipeline, every visits pipeline on an opportunity
+    led its own walk of the same export, #1921); too coarse and unrelated slots
+    serialise for no reason.
 
-    ``pipeline_id`` is legitimately ``None`` for callers that know only the data source
-    (see ``SQLCacheManager.__init__``); those share a single None-tagged slot, and so
-    share a lock, which is correct.
+    The slot is legitimately ``None`` for configless callers of a non-visits source;
+    those share a single None-tagged slot, and so share a lock, which is correct.
     """
-    raw = f"{_LOCK_NAMESPACE}:{opportunity_id}:{pipeline_id}".encode()
+    raw = f"{_LOCK_NAMESPACE}:{opportunity_id}:{raw_slot_id}".encode()
     unsigned = int.from_bytes(hashlib.blake2b(raw, digest_size=8).digest(), "big")
     return unsigned - _SIGNED_64_OFFSET
 
 
 @contextmanager
-def claim_raw_rebuild(opportunity_id: int, pipeline_id: int | None, *, using: str = DEFAULT_DB_ALIAS):
+def claim_raw_rebuild(opportunity_id: int, raw_slot_id: int | None, *, using: str = DEFAULT_DB_ALIAS):
     """Yield True if this caller owns the rebuild for this slot, False if someone else does.
 
     Never blocks. A False means "another connection is rebuilding right now" and the
@@ -91,7 +92,7 @@ def claim_raw_rebuild(opportunity_id: int, pipeline_id: int | None, *, using: st
     and the caller behaves exactly as it did before this guard existed. A stampede is a
     performance failure; refusing to serve would be a correctness one.
     """
-    key = raw_rebuild_lock_key(opportunity_id, pipeline_id)
+    key = raw_rebuild_lock_key(opportunity_id, raw_slot_id)
     acquired = False
     try:
         with connections[using].cursor() as cursor:
@@ -99,9 +100,9 @@ def claim_raw_rebuild(opportunity_id: int, pipeline_id: int | None, *, using: st
             acquired = bool(cursor.fetchone()[0])
     except Exception:
         logger.exception(
-            "[SingleFlight] could not take the rebuild lock for opp %s pipeline %s — " "proceeding unguarded",
+            "[SingleFlight] could not take the rebuild lock for opp %s slot %s — " "proceeding unguarded",
             opportunity_id,
-            pipeline_id,
+            raw_slot_id,
         )
         yield True
         return
@@ -116,7 +117,7 @@ def claim_raw_rebuild(opportunity_id: int, pipeline_id: int | None, *, using: st
             except Exception:
                 # The connection is already gone, which released it anyway.
                 logger.warning(
-                    "[SingleFlight] could not release the rebuild lock for opp %s pipeline %s",
+                    "[SingleFlight] could not release the rebuild lock for opp %s slot %s",
                     opportunity_id,
-                    pipeline_id,
+                    raw_slot_id,
                 )

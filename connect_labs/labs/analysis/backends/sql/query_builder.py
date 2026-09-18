@@ -66,6 +66,10 @@ def _pipeline_scope_where(opportunity_id: int, pipeline_id: int | None, *, alias
     the outer query, or the alias name (e.g. "sub") for qualified refs
     inside correlated subqueries.
 
+    Pass the RAW SLOT (`config.raw_slot_id`), not `config.pipeline_id`: a
+    pipeline on the user_visits export reads the slot it shares with every
+    other visits pipeline on the opportunity (#1921).
+
     pipeline_id=None matches the legacy/ad-hoc-caller slot (rows written
     by callers without a workflow definition id, where the column is
     NULL). The check is `IS NULL` rather than `= NULL` because SQL.
@@ -292,7 +296,7 @@ def _visit_source_cte_body(config: AnalysisPipelineConfig, opportunity_id: int) 
     emit a `WITH _visits_with_joins AS MATERIALIZED (...)` prologue when
     joins are configured. None when there are no joins.
 
-    pipeline_id from `config.pipeline_id` scopes the inner read of
+    The raw slot from `config.raw_slot_id` scopes the inner read of
     labs_raw_visit_cache so the JOIN-extended view only includes rows
     from this pipeline's slot.
     """
@@ -300,7 +304,7 @@ def _visit_source_cte_body(config: AnalysisPipelineConfig, opportunity_id: int) 
         return None
     # `_build_join_subquery` wraps its SELECT in parens so it can be used as
     # a `FROM (subquery)` token. CTE bodies don't take outer parens — strip them.
-    body = _build_join_subquery(config.joins, opportunity_id, config.pipeline_id).strip()
+    body = _build_join_subquery(config.joins, opportunity_id, config.raw_slot_id).strip()
     if body.startswith("(") and body.endswith(")"):
         body = body[1:-1].strip()
     return body
@@ -1219,7 +1223,7 @@ def _collect_owner_ctes(config: AnalysisPipelineConfig, opportunity_id: int) -> 
         if f.pre_aggregate_attribute_to == "last_username" and f.pre_aggregate_by:
             alias = _owner_cte_name(f.pre_aggregate_by)
             if alias not in seen:
-                seen[alias] = _build_owner_attribution_cte(f.pre_aggregate_by, opportunity_id, config.pipeline_id)
+                seen[alias] = _build_owner_attribution_cte(f.pre_aggregate_by, opportunity_id, config.raw_slot_id)
     return seen
 
 
@@ -1362,7 +1366,7 @@ def _collect_per_mother_ctes(config: AnalysisPipelineConfig, opportunity_id: int
     out: dict[str, str] = {}
     for path, fields in by_path.items():
         alias = _per_mother_cte_name(path)
-        out[alias] = _build_per_mother_cte(path, fields, visit_source, config.pipeline_id)
+        out[alias] = _build_per_mother_cte(path, fields, visit_source, config.raw_slot_id)
     return out
 
 
@@ -1416,7 +1420,8 @@ def build_flw_aggregation_query(
     """
     Build SQL query to aggregate raw visits to FLW level.
     """
-    pipeline_id = config.pipeline_id
+    # The RAW slot, not the pipeline id: every read below is of labs_raw_visit_cache (#1921).
+    pipeline_id = config.raw_slot_id
     select_parts = [
         "username",
         "COUNT(*) as total_visits",
@@ -1618,7 +1623,8 @@ def build_entity_aggregation_query(
     if not config.linking_field:
         raise ValueError("config.linking_field must be set for entity-stage aggregation")
 
-    pipeline_id = config.pipeline_id
+    # The RAW slot, not the pipeline id: every read below is of labs_raw_visit_cache (#1921).
+    pipeline_id = config.raw_slot_id
     group_expr = _resolve_linking_field_outer_expr(config)
 
     # entity_id is the same expression as the GROUP BY — the row key.
@@ -1829,7 +1835,7 @@ def build_visit_extraction_query(
 
     # Build WHERE clause with filters. Pipeline-id scope is required so we
     # don't read another pipeline's rows for the same opp (#116).
-    where_clauses = [_pipeline_scope_where(opportunity_id, config.pipeline_id), *_visit_filter_predicates(config)]
+    where_clauses = [_pipeline_scope_where(opportunity_id, config.raw_slot_id), *_visit_filter_predicates(config)]
     where_clause = " AND ".join(where_clauses)
 
     # If joins are configured, swap in the join-extended source for both the

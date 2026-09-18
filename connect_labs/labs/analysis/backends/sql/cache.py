@@ -20,7 +20,7 @@ from connect_labs.labs.analysis.backends.sql.models import (
     ComputedVisitCache,
     RawVisitCache,
 )
-from connect_labs.labs.analysis.config import AnalysisPipelineConfig
+from connect_labs.labs.analysis.config import USER_VISITS_SOURCE, AnalysisPipelineConfig, raw_cache_slot
 from connect_labs.labs.analysis.utils import get_config_hash
 
 logger = logging.getLogger(__name__)
@@ -118,19 +118,26 @@ class SQLCacheManager:
             self.pipeline_id = pipeline_id
         else:
             self.pipeline_id = config.pipeline_id if config else None
+        # The RAW slot is not the pipeline id (#1921): every reader of the
+        # user_visits export shares one slot per opportunity, and only other
+        # sources keep a per-pipeline slot (#116). A manager built WITHOUT a
+        # config is the raw-fetch path, which only ever walks user_visits.
+        # `pipeline_id` above still keys the computed caches.
+        source_type = config.data_source.type if config else USER_VISITS_SOURCE
+        self.raw_slot_id = raw_cache_slot(self.pipeline_id, source_type)
         from django.conf import settings
 
         ttl_hours = getattr(settings, "PIPELINE_CACHE_TTL_HOURS", DEFAULT_TTL_HOURS)
         self.ttl = timedelta(hours=ttl_hours)
 
     def _raw_filter(self):
-        """Base filter for this pipeline's slot of RawVisitCache.
+        """Base filter for this manager's slot of RawVisitCache.
 
-        Always scopes by (opportunity_id, pipeline_id) so reads only see
-        rows written by this pipeline — visits pipeline never sees
-        registrations rows, etc.
+        Scopes by (opportunity_id, raw slot): the shared user_visits slot for a
+        visits reader, the pipeline's own slot for any other source -- so a visits
+        pipeline never sees registrations rows, etc. (#116, #1921).
         """
-        return {"opportunity_id": self.opportunity_id, "pipeline_id": self.pipeline_id}
+        return {"opportunity_id": self.opportunity_id, "pipeline_id": self.raw_slot_id}
 
     def _get_expires_at(self):
         return timezone.now() + self.ttl
@@ -179,7 +186,7 @@ class SQLCacheManager:
         ).count()
 
     def _raw_fetch_anomaly_cache_key(self) -> str:
-        return f"raw_fetch_anomaly:{self.opportunity_id}:{self.pipeline_id}"
+        return f"raw_fetch_anomaly:{self.opportunity_id}:{self.raw_slot_id}"
 
     def get_pending_raw_fetch_anomaly(self) -> dict | None:
         """Anomaly the shrink guard (see backend.py) recorded for THIS slot, if
@@ -274,7 +281,7 @@ class SQLCacheManager:
             rows.append(
                 RawVisitCache(
                     opportunity_id=self.opportunity_id,
-                    pipeline_id=self.pipeline_id,
+                    pipeline_id=self.raw_slot_id,
                     visit_count=visit_count,
                     expires_at=expires_at,
                     images_fetched=images_fetched,
@@ -367,7 +374,7 @@ class SQLCacheManager:
 
         return counts.pop(), max(numeric), max(r[2] for r in rows)
 
-    def store_raw_visits_append_start(self, expires_at):
+    def store_raw_visits_append_start(self, expires_at, images_fetched: bool = False):
         """Prepare to ADD rows to the existing cache rather than replace it.
 
         Same sentinel trick as ``store_raw_visits_start`` so the new rows stay
@@ -380,6 +387,7 @@ class SQLCacheManager:
         """
         self._pending_visit_count = -random.randint(1, 2**31 - 1)
         self._pending_expires_at = expires_at
+        self._pending_images_fetched = bool(images_fetched)
 
     def store_raw_visits_append_finalize(self, prior_count: int, new_total: int) -> int:
         """Make the appended rows visible and re-stamp the existing ones to match.
@@ -461,7 +469,7 @@ class SQLCacheManager:
             rows.append(
                 RawVisitCache(
                     opportunity_id=self.opportunity_id,
-                    pipeline_id=self.pipeline_id,
+                    pipeline_id=self.raw_slot_id,
                     visit_count=self._pending_visit_count,
                     expires_at=self._pending_expires_at,
                     images_fetched=getattr(self, "_pending_images_fetched", False),
@@ -561,7 +569,7 @@ class SQLCacheManager:
         )
         self._pending_visit_count = None
 
-    def slot_has_image_data(self) -> bool:
+    def slot_has_image_data(self, *, ignore_ttl: bool = False) -> bool:
         """Whether this slot was filled by a fetch that ASKED for images.
 
         The image reader's question is "does this visit have a photo", and only a
@@ -570,12 +578,10 @@ class SQLCacheManager:
         never fetched", so a case with no photos re-downloaded its whole
         opportunity every time it was opened.
         """
-        return RawVisitCache.objects.filter(
-            **self._raw_filter(),
-            visit_count__gt=0,
-            expires_at__gt=timezone.now(),
-            images_fetched=True,
-        ).exists()
+        qs = RawVisitCache.objects.filter(**self._raw_filter(), visit_count__gt=0, images_fetched=True)
+        if not ignore_ttl:
+            qs = qs.filter(expires_at__gt=timezone.now())
+        return qs.exists()
 
     def get_raw_visits_queryset(self):
         """Get queryset of cached raw visits (excludes in-progress sentinel rows)."""
