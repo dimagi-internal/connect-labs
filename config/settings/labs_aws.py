@@ -206,13 +206,14 @@ MIDDLEWARE.insert(_auth_idx + 3, "connect_labs.campaign.middleware.CampaignOAuth
 # fully-rendered body. Labs doesn't reflect secrets in response bodies, so
 # BREACH-class attacks aren't a concern here.
 #
-# NOT Django's own: an event stream must not be compressed, and Django's
-# compresses an ASYNC streaming body one gzip member PER CHUNK, which browsers
-# read as "the response ended after the first event". See the subclass.
+# NOT Django's own, for event streams: Django never flushes the compressor, so
+# a stream's events (and its keep-alive heartbeats) sit in zlib until ~180 KB
+# accumulates. The subclass compresses them and flushes on a time bound, which
+# keeps the 4.8x on a 30 MB pipeline read AND keeps the stream a stream.
 #
 # This is also the only place gzip is installed, so it is the only place that
 # behaviour exists: local and CI run without it.
-MIDDLEWARE.insert(0, "connect_labs.utils.gzip.GZipExceptEventStreamMiddleware")
+MIDDLEWARE.insert(0, "connect_labs.utils.gzip.StreamingAwareGZipMiddleware")
 
 # CommCare OAuth configuration
 COMMCARE_HQ_URL = env("COMMCARE_HQ_URL", default="https://www.commcarehq.org")
