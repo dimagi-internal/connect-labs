@@ -162,11 +162,15 @@ On the programme report's worker table, sorting ranks **all** workers across the
 
 #### Looking up what an indicator means
 
-Click any **indicator column heading** on the KMC Programme Report, KMC Opportunity Report, or KMC Worker Review to open a definition popup for that indicator. The popup shows:
+Click any **indicator column heading** on the KMC Programme Report, KMC Opportunity Report, or KMC Worker Review to open a definition popup for that indicator. The popup shows, in order from top to bottom:
 
-- A plain-English description of what the indicator measures
-- What each underlying field contributing to the indicator means
-- The calculation that produces the number, which you can copy to your clipboard or download as a file. You can also request the full statement for that table's level if you need complete detail.
+- A **plain-English sentence** describing what the indicator measures
+- **How it's counted** — which babies the indicator is *out of*, what it *counts* among them, and when it is shown (for example: out of babies who qualify for growth review, counts those whose growth class is fast, shown when at least 20 qualify)
+- **Terms** — each concept the indicator relies on, explained in plain words (for example: "Qualifies for growth review: followed 42+ days with 2+ visits, birthweight band known, and early weight gain computable")
+- The **thresholds**, folded away by default
+- The **underlying calculation**, which you can copy to your clipboard or download as a file. You can also request the full statement for that table's level if you need complete detail.
+
+Definitions do not include developer notes or partner-specific history — all descriptions apply to the indicator as it works for every programme.
 
 The popup also gives you the same sort controls as the column arrow — you can sort the table high-to-low or low-to-high directly from the popup without closing it first.
 
@@ -183,8 +187,4 @@ A dropdown lets you choose what "comparable" means:
 A second dropdown controls how each indicator's peer distribution is displayed:
 
 - **One dot per worker** — shows every individual peer as a dot, with this worker's own value marked. Use this when you want to see exactly where specific individuals sit relative to each other.
-- **How many workers sit in each band** — groups peers into bands and shows a count for each band, with taller bars for bands that contain more workers. Use this when you want a sense of how many people are performing at roughly the same level. Each bar is given enough height to show real differences in size, so the shape of the distribution is readable at a glance rather than every band appearing the same height. **Value labels along the bottom of the chart mark every third band edge plus the top of the range**, so you can see not only how many workers sit in a band but what scores that band actually covers.
-
-Neither view substitutes for the other. With a large peer group, individual dots can overlap into an unreadable cluster, making the banded count more useful; with a small peer group, the counts can obscure who the individuals are, making the dots more useful.
-
-For each indicator, this worker's own value is marked and their position in the peer group is shown as an **exact rank** — for example, **"2nd of 24"**. Workers who share the same figure share the same place, and the next worker takes the place after the tie (so two joint-seconds are followed by a fourth
+- **How many workers sit in each band** — groups peers into bands and shows a count for each band, with taller bars for bands that contain more workers. Use this when you want a sense of how many people are performing at roughly the same level. Each bar is given enough height to show real differences in size, so the shape of the distribution is readable at a glance rather than every band appearing the same height. **Value labels along the bottom of the chart mark every third band edge plus the top of the range**, so
