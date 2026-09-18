@@ -63,18 +63,22 @@ def test_an_opportunity_cannot_join_the_same_cohort_twice():
 
 
 def test_a_cohort_cannot_be_configured_below_the_min_peers_floor():
-    """Nothing stopped a cohort being set to 0 or 2, and at two contributors the
-    reader is one of them -- the one bar left is a named peer's exact value. The
-    DATABASE has to hold this: no code path here calls `full_clean()`."""
+    """0 would publish a figure no opportunity contributed. The DATABASE has to
+    hold this: no code path here calls `full_clean()`."""
     from django.db import IntegrityError
 
     with pytest.raises(IntegrityError):
-        _cohort(min_peers=2)
+        _cohort(min_peers=0)
+
+
+def test_a_cohort_may_turn_the_peer_floor_off():
+    """1 is allowed: the floor is the cohort's setting (Jonathan, 2026-09-18)."""
+    assert _cohort(min_peers=1, min_denominator=0).min_peers == 1
 
 
 def test_the_floor_is_also_a_validator_so_a_form_says_so():
     from django.core.exceptions import ValidationError
 
-    cohort = BenchmarkCohort(name="KMC", organization_id="dimagi-kmc", min_peers=2)
+    cohort = BenchmarkCohort(name="KMC", organization_id="dimagi-kmc", min_peers=0)
     with pytest.raises(ValidationError):
         cohort.full_clean()

@@ -214,23 +214,33 @@ def test_f3_eligible_accepts_a_generator_not_just_a_list():
     assert len(out) == 6
 
 
-@pytest.mark.parametrize("below_the_floor", [0, 1, 2])
-def test_i1_min_peers_below_three_raises_for_point(below_the_floor):
-    """Three, not two. At two the reader is one of the two contributors, so the
-    one bar left is a named peer's exact value."""
+@pytest.mark.parametrize("below_the_floor", [0, -1])
+def test_i1_min_peers_below_one_raises_for_point(below_the_floor):
+    """0 would publish a figure no opportunity contributed."""
     with pytest.raises(ValueError):
         anonymise_point(_six(), min_peers=below_the_floor, min_denominator=25, tie_salt="floor")
 
 
-@pytest.mark.parametrize("below_the_floor", [0, 1, 2])
-def test_i1_min_peers_below_three_raises_for_series(below_the_floor):
+@pytest.mark.parametrize("below_the_floor", [0, -1])
+def test_i1_min_peers_below_one_raises_for_series(below_the_floor):
     with pytest.raises(ValueError):
         anonymise_series({"2026-01": _six()}, min_peers=below_the_floor, min_denominator=25, tie_salt="floor")
 
 
-def test_i1_min_peers_of_exactly_three_is_accepted():
-    """The floor is a floor, not a ban: a cohort may legitimately sit on it."""
-    assert len(anonymise_point(_six()[:3], min_peers=3, min_denominator=25, tie_salt="floor")) == 3
+def test_i1_min_peers_of_one_publishes_a_lone_peer():
+    """1 turns the peer floor off (Jonathan, 2026-09-18): a single contributor is
+    published, where the old floor of 3 withheld it."""
+    assert len(anonymise_point(_six()[:1], min_peers=1, min_denominator=25, tie_salt="floor")) == 1
+    assert anonymise_point(_six()[:1], min_peers=3, min_denominator=25, tie_salt="floor") == []
+
+
+def test_i1_no_floors_publishes_a_thin_early_week():
+    """The case the floors were hiding: an early tenure week with two peers and
+    tiny denominators. With every floor off it is a point on the line."""
+    thin = [PeerObservation(opportunity_id=o.opportunity_id, value=o.value, denominator=3) for o in _six()[:2]]
+    out = anonymise_series({"W1": thin}, min_peers=1, min_denominator=0, tie_salt="floor", require_complete=False)
+    assert len(out["W1"]) == 2
+    assert anonymise_series({"W1": thin}, min_peers=5, min_denominator=25, tie_salt="floor") == {}
 
 
 def test_r1_boundary_exactly_min_peers_publishes():
