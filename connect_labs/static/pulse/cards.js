@@ -209,10 +209,12 @@
       if (money.fixed_costs) {
         subs.paid.textContent +=
           money.costs_view === 'spread'
-            ? ' · incl. ' + usdCompact(money.fixed_costs) + ' fixed costs'
+            ? ' · incl. ' +
+              usdCompact(money.fixed_costs) +
+              ' startup and supplies'
             : ' · + ' +
               usdCompact(money.fixed_costs) +
-              ' fixed costs not included';
+              ' startup and supplies not included';
       }
       // Blended over BOTH streams — what one verified service actually costs
       // the funder, not just the worker's share of it.
@@ -474,12 +476,12 @@
         // when the viewer has chosen to spread fixed costs into services.
         if (m.fixed_costs) {
           steps.push([
-            'Fixed costs to delivery organisations',
+            'Startup and supplies to delivery organisations',
             m.fixed_costs,
             'var(--c-3)',
             m.costs_view === 'spread'
-              ? 'start-up and other invoiced costs, spread into the figures above'
-              : 'start-up and other invoiced costs, not in the total above',
+              ? 'invoiced outside any unit of work, spread into the figures above'
+              : 'invoiced outside any unit of work, not in the total above',
           ]);
         }
         const max = Math.max(toWorkers, toOrgs, m.fixed_costs || 0, 1);

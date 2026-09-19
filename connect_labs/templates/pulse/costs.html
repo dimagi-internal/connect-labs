@@ -6,7 +6,7 @@
 <div class="max-w-screen-xl mx-auto px-4 py-8">
   <h1 class="text-2xl font-semibold text-brand-deep-purple">Cost data</h1>
   <p class="text-sm text-gray-500 mt-1 mb-6 max-w-3xl">
-    What every service cost: pay accrued per service (worker and organisation), plus fixed costs from
+    What every service cost: pay accrued per service (worker and organisation), plus startup and supplies from
     Connect's custom invoices and costs entered in labs. Currency problems are corrected automatically;
     everything under <b>Needs a person</b> needs an answer only someone outside labs has.
   </p>
@@ -17,7 +17,7 @@
       <div class="text-2xl font-semibold tabular-nums mt-1">${{ totals.per_service|floatformat:0|intcomma }}</div>
     </div>
     <div class="bg-white rounded-lg shadow-sm p-4">
-      <div class="text-xs text-gray-500 uppercase tracking-wider">Fixed costs</div>
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Startup and supplies</div>
       <div class="text-2xl font-semibold tabular-nums mt-1">${{ totals.fixed|floatformat:0|intcomma }}</div>
       <div class="text-xs text-gray-500 mt-1">on {{ totals.fixed_opps }} opportunities · ${{ totals.unallocated|floatformat:0|intcomma }} with no work to spread over</div>
     </div>

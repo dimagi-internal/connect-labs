@@ -254,7 +254,7 @@ class TestFixedCostsInBothViews:
     def test_the_page_offers_both_and_says_which(self, client, user, with_fixed):
         client.force_login(user)
         body = client.get(reverse("marketplace:programs") + "?costs=spread").content.decode()
-        assert "PAID OUT, INCL. FIXED COSTS" in body
-        assert "incl. $4,000 fixed" in body
+        assert "PAID OUT, INCL. STARTUP AND SUPPLIES" in body
+        assert "incl. $4,000 startup and supplies" in body
         body = client.get(reverse("marketplace:programs")).content.decode()
-        assert "FIXED COSTS" in body and "$4,000" in body
+        assert "STARTUP AND SUPPLIES" in body and "$4,000" in body
