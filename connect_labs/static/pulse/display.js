@@ -661,13 +661,10 @@
           opt.textContent = o.recent_events
             ? base
             : `${base} — no recent delivery`;
-          // One entry per organisation: every Connect workspace it runs is
-          // listed, so a search for either workspace still finds it.
-          opt.dataset.sub = [
-            o.partner && o.partner !== base ? o.partner : null,
-            o.name && o.name !== base && o.name !== o.partner ? o.name : null,
-            ...(o.workspaces || [o.slug]),
-          ]
+          // One entry per organisation, however many Connect orgs its
+          // opportunities sit under. The full name rides underneath; Connect's
+          // internal identifiers are not something a viewer knows or needs.
+          opt.dataset.sub = [o.partner && o.partner !== base ? o.partner : null]
             .filter(Boolean)
             .join(' · ');
           opt.title = `${nf.format(o.visits)} services all-time · ${nf.format(
@@ -848,9 +845,8 @@
         store.org === r.slug &&
         store.lastGrid &&
         store.lastGrid.exact === false;
-      // The real partner leads when we know it; the Connect workspace it came
-      // from stays visible underneath, because several workspaces can be the
-      // same partner and hiding that would make one of them look like the whole.
+      // The real partner leads when we know it. The card summarises the
+      // organisation's opportunities as a whole.
       const title = r.partner || r.name;
       const isSlug = !r.partner && r.named === false;
       return (
@@ -861,12 +857,6 @@
            ${where ? `<span class="pulse-partner-where">${where}</span>` : ''}
          </div>` +
         `<div class="pulse-partner-funder">${
-          (r.workspaces || []).length > 1
-            ? `${r.workspaces.length} workspaces · `
-            : r.partner && r.partner !== r.name
-              ? `workspace <b>${r.name}</b> · `
-              : ''
-        }${
           r.funder
             ? `funded by <b>${r.funder}</b>`
             : `${nf.format(r.opportunities)} opportunit${
