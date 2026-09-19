@@ -336,3 +336,26 @@ class TestTheTwoViews:
         assert "Cost per verified delivery, before startup and supplies" in body
         body = text(reverse("pulse:report", args=["r1"]) + "?costs=spread")
         assert "Cost per verified delivery, startup and supplies included" in body
+
+
+@pytest.mark.django_db
+class TestDuplicateInvoices:
+    def test_the_same_bill_entered_twice_is_raised(self):
+        _opp(1)
+        _inv(1, "CWD/NG/25/007", 16_000_000, None)
+        _inv(1, "CWD/NG/25/007.", 16_000_000, None)
+        rows = [r for r in costs.cost_issues() if r["kind"] == "possible_duplicate"]
+        assert len(rows) == 1 and rows[0]["who"] == costs.WHO_PERSON
+
+    def test_different_amounts_are_not_duplicates(self):
+        _opp(1)
+        _inv(1, "A-1", 100, None)
+        _inv(1, "A1", 200, None)
+        assert not [r for r in costs.cost_issues() if r["kind"] == "possible_duplicate"]
+
+    def test_excluding_one_answers_it(self):
+        _opp(1)
+        _inv(1, "X", 100, None)
+        _inv(1, "X.", 100, None)
+        PulseInvoiceReview.objects.create(opportunity_id=1, invoice_number="X.", exclude=True, reason="duplicate")
+        assert not [r for r in costs.cost_issues() if r["kind"] == "possible_duplicate"]
