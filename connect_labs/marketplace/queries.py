@@ -20,7 +20,7 @@ import time
 from django.db.models import Count, Max, Prefetch, Q
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.marketplace import programmes
+from connect_labs.marketplace import programs
 from connect_labs.marketplace.models import OrgProfile
 from connect_labs.solicitations.local_models import ACCESS_OK, Solicitation, SolicitationResponse
 
@@ -123,11 +123,11 @@ def workspace_slugs_by_org_name() -> dict[str, set[str]]:
     return out
 
 
-def delivered_programmes_by_org_name() -> dict[str, set[str]]:
+def delivered_programs_by_org_name() -> dict[str, set[str]]:
     """Organisation name -> the Connect delivery types it has actually run.
 
     Read off the pulse spine, which carries Connect's own `delivery_type` on
-    every opportunity. This is the honest half of the programme filter: not
+    every opportunity. This is the honest half of the program filter: not
     what an organisation says it does, but what it has been paid to do.
     """
     from connect_labs.pulse.models import PulseOpportunity
@@ -142,10 +142,10 @@ def delivered_programmes_by_org_name() -> dict[str, set[str]]:
         .filter(is_test=False)
         .values_list("org_slug", "service_slug")
     ):
-        # `other` is Connect's unclassified bucket, not a programme. Offering
+        # `other` is Connect's unclassified bucket, not a program. Offering
         # it in the filter would put 264 opportunities behind a label that
         # means "we do not know what this is".
-        if programmes.is_programme(service):
+        if programs.is_program(service):
             by_slug.setdefault(slug, set()).add(service)
 
     out: dict[str, set[str]] = {}
@@ -197,8 +197,8 @@ def fx_rates() -> dict[str, decimal.Decimal]:
     return out
 
 
-def committed_by_programme() -> dict[str, dict]:
-    """Per programme: what has been deployed, and what live work is still funded.
+def committed_by_program() -> dict[str, dict]:
+    """Per program: what has been deployed, and what live work is still funded.
 
     Two numbers, deliberately built from different things:
 
@@ -215,8 +215,8 @@ def committed_by_programme() -> dict[str, dict]:
       It is an UPPER BOUND, and should be presented as "up to". Real budgets
       are not uniformly spent: across 193 finished real opportunities the
       median paid 40% of its budget and a quarter paid 1% or less. Most of the
-      gap is one programme — KMC Uganda Roll-out's five opportunities held
-      $2.5M between them and paid about $95k — and that programme's live
+      gap is one program — KMC Uganda Roll-out's five opportunities held
+      $2.5M between them and paid about $95k — and that program's live
       opportunity is the majority of today's KMC figure. Forecasting a spend
       rate onto it would be inventing a number; saying "up to" is not.
 
@@ -242,7 +242,7 @@ def committed_by_programme() -> dict[str, dict]:
     today = timezone.now().date()
     rates = fx_rates()
     # Scaffolding is excluded from both figures, by the flag pulse sets at
-    # ingest (`PulseOpportunity.is_test`: a test programme, a sandbox or demo
+    # ingest (`PulseOpportunity.is_test`: a test program, a sandbox or demo
     # org such as ACE's `ai-demo-space`, or an opportunity named as a test).
     # Connect has a real `Opportunity.is_test`, but no export carries it. It
     # matters here more than anywhere: one test opportunity alone carried
@@ -264,14 +264,14 @@ def committed_by_programme() -> dict[str, dict]:
     # DEPLOYED is pulse's own aggregation, verbatim: completed works grouped by
     # the delivery type stamped on the WORK, scaffolding excluded. That is what
     # the Pulse wall's money-by-service shows, and two labs pages quoting
-    # different dollars for the same programme is how a dashboard loses trust.
+    # different dollars for the same program is how a dashboard loses trust.
     for row in (
         PulseWork.objects.exclude(service_slug="")
         .exclude(opportunity_id__in=test_opps)
         .values("service_slug")
         .annotate(worker=Sum("usd_to_worker"), org=Sum("usd_to_org"))
     ):
-        if programmes.is_programme(row["service_slug"]):
+        if programs.is_program(row["service_slug"]):
             out.setdefault(row["service_slug"], blank())["deployed"] = int((row["worker"] or 0) + (row["org"] or 0))
 
     for opp in (
@@ -288,7 +288,7 @@ def committed_by_programme() -> dict[str, dict]:
             "end_date",
         )
     ):
-        if not programmes.is_programme(opp.service_slug):
+        if not programs.is_program(opp.service_slug):
             continue
         entry = out.setdefault(opp.service_slug, blank())
         spent = decimal.Decimal(paid.get(opp.opportunity_id, 0) or 0)
@@ -317,12 +317,12 @@ def committed_by_programme() -> dict[str, dict]:
     return out
 
 
-def services_by_programme() -> dict[str, int]:
+def services_by_program() -> dict[str, int]:
     """Services delivered per delivery type — pulse's service menu, verbatim.
 
     Lifetime visit counts off the opportunity mirror, summed by the
     opportunity's delivery type, which is exactly what the Pulse wall's
-    programme picker reports.
+    program picker reports.
     """
     from django.db.models import Sum
 
@@ -334,12 +334,12 @@ def services_by_programme() -> dict[str, int]:
         .filter(is_test=False)
         .values("service_slug")
         .annotate(visits=Sum("lifetime_visit_count"))
-        if programmes.is_programme(row["service_slug"])
+        if programs.is_program(row["service_slug"])
     }
 
 
-# The state of a programme's market, in the order the page presents them. Each
-# is a fact about the numbers, not a label someone chose — so a programme moves
+# The state of a program's market, in the order the page presents them. Each
+# is a fact about the numbers, not a label someone chose — so a program moves
 # between them on its own as the data does.
 STATES = (
     (
@@ -372,15 +372,15 @@ def _money(n: int) -> str:
 
 
 def _note(card: dict) -> str:
-    """The one thing most worth knowing about this programme, from its figures.
+    """The one thing most worth knowing about this program, from its figures.
 
-    Generated, never written: a hand-written line about a programme is true
+    Generated, never written: a hand-written line about a program is true
     the day it is written and quietly false thereafter, and this page is
     meant to stay right as the data moves.
     """
     applied, delivering = card["applied"], card["delivering"]
     if applied and not delivering:
-        return f"{applied} organisations have applied. None has delivered this programme on Connect yet."
+        return f"{applied} organisations have applied. None has delivered this program on Connect yet."
     if delivering and applied >= 3 * delivering:
         return f"{applied // delivering} applicants for every organisation delivering it today."
     if card["remaining"] and card["spent"] and card["remaining"] > card["spent"]:
@@ -399,17 +399,17 @@ def _note(card: dict) -> str:
     return "No delivery recorded yet."
 
 
-def programme_cards() -> list[dict]:
-    """Everything the programme page shows, one card per delivery type.
+def program_cards() -> list[dict]:
+    """Everything the program page shows, one card per delivery type.
 
     SPENT and SERVICES are pulse's own figures, computed the way the Pulse wall
     computes them, so the two surfaces agree to the dollar — a test pins that
     against pulse's real endpoint. REMAINING is budget still available on live,
-    non-test work, an upper bound (see `committed_by_programme`).
+    non-test work, an upper bound (see `committed_by_program`).
     """
-    committed = committed_by_programme()
-    services = services_by_programme()
-    delivered = delivered_programmes_by_org_name()
+    committed = committed_by_program()
+    services = services_by_program()
+    delivered = delivered_programs_by_org_name()
 
     delivering: dict[str, int] = {}
     for slugs in delivered.values():
@@ -419,12 +419,12 @@ def programme_cards() -> list[dict]:
     applied: dict[str, set] = {}
     for response in SolicitationResponse.objects.exclude(llo_entity=None).select_related("solicitation"):
         slug = response.solicitation.delivery_type
-        if programmes.is_programme(slug):
+        if programs.is_program(slug):
             applied.setdefault(slug, set()).add(response.llo_entity_id)
 
     rounds: dict[str, int] = {}
     for slug in Solicitation.objects.values_list("delivery_type", flat=True):
-        if programmes.is_programme(slug):
+        if programs.is_program(slug):
             rounds[slug] = rounds.get(slug, 0) + 1
 
     slugs = set(committed) | set(services) | set(applied) | set(rounds)
@@ -433,8 +433,8 @@ def programme_cards() -> list[dict]:
         money = committed.get(slug, {})
         card = {
             "slug": slug,
-            "label": programmes.label(slug),
-            "hue": programmes.hue(slug),
+            "label": programs.label(slug),
+            "hue": programs.hue(slug),
             "services": services.get(slug, 0),
             "spent": money.get("deployed", 0),
             "remaining": money.get("remaining", 0),
@@ -480,14 +480,14 @@ def segment_counts(rows, delivering: set[str]) -> dict[str, int]:
 
 
 def facet_counts(rows, delivering: set[str]) -> dict[str, list[dict]]:
-    """Countries, programmes and rounds with the number of organisations in each.
+    """Countries, programs and rounds with the number of organisations in each.
 
     The point of a facet count is that you see the size of a filter before you
     spend a click on it, so these are computed over the rows currently in
     scope rather than over the whole registry.
     """
     rows = list(rows)
-    delivered_by_name = delivered_programmes_by_org_name()
+    delivered_by_name = delivered_programs_by_org_name()
     countries: dict[str, int] = {}
     delivered: dict[str, int] = {}
     applied: dict[str, int] = {}
@@ -497,7 +497,7 @@ def facet_counts(rows, delivering: set[str]) -> dict[str, list[dict]]:
             countries[country] = countries.get(country, 0) + 1
         for slug in delivered_by_name.get(row.name, ()):  # noqa: SIM118
             delivered[slug] = delivered.get(slug, 0) + 1
-        for slug in applied_programmes_of(row):
+        for slug in applied_programs_of(row):
             applied[slug] = applied.get(slug, 0) + 1
 
     # From the prefetch rather than a fresh aggregate: the caller has already
@@ -519,19 +519,19 @@ def facet_counts(rows, delivering: set[str]) -> dict[str, list[dict]]:
             {"value": value, "count": count} for value, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
         ]
 
-    def ranked_programmes(counts: dict[str, int]) -> list[dict]:
+    def ranked_programs(counts: dict[str, int]) -> list[dict]:
         # Labelled here rather than in the template: the slug is what the URL
         # carries and the label is what a person reads, and only this module
-        # knows that `programmes.label` is where the second comes from.
+        # knows that `programs.label` is where the second comes from.
         return [
-            {"value": slug, "label": programmes.label(slug), "count": count}
-            for slug, count in sorted(counts.items(), key=lambda kv: (-kv[1], programmes.label(kv[0])))
+            {"value": slug, "label": programs.label(slug), "count": count}
+            for slug, count in sorted(counts.items(), key=lambda kv: (-kv[1], programs.label(kv[0])))
         ]
 
     return {
         "countries": ranked(countries),
-        "delivered": ranked_programmes(delivered),
-        "applied": ranked_programmes(applied),
+        "delivered": ranked_programs(delivered),
+        "applied": ranked_programs(applied),
         "rounds": [{"value": r["slug"], "label": r["title"], "count": r["orgs"]} for r in rounds],
     }
 
@@ -749,9 +749,9 @@ def facet_rail(facets: dict, selected: dict, querydict) -> list[dict]:
     because a checked value's link must REMOVE it, which is not something a
     template can express.
     """
-    # Two programme dimensions rather than one, because they answer different
+    # Two program dimensions rather than one, because they answer different
     # questions and the gap between them is the interesting one: an
-    # organisation that has APPLIED to a programme it has never DELIVERED is
+    # organisation that has APPLIED to a program it has never DELIVERED is
     # exactly who a round is looking for.
     sections = [
         ("country", "Country", facets["countries"], selected["countries"], None),
@@ -812,17 +812,17 @@ def all_rows_with_rounds():
     )
 
 
-def applied_programmes_of(org) -> set[str]:
+def applied_programs_of(org) -> set[str]:
     """The delivery types this organisation has applied to work on.
 
     Reads the prefetch. An untagged round contributes nothing rather than an
-    empty-string facet — "we have not decided what programme this round is" is
-    not a programme anybody can filter on.
+    empty-string facet — "we have not decided what program this round is" is
+    not a program anybody can filter on.
     """
     return {
         r.solicitation.delivery_type
         for r in org.solicitation_responses.all()
-        if programmes.is_programme(r.solicitation.delivery_type)
+        if programs.is_program(r.solicitation.delivery_type)
     }
 
 
@@ -834,7 +834,7 @@ def matches(org, *, query="", countries=(), delivered=(), applied=(), delivered_
     them.
 
     Country stays a substring match because the sheet's country cell is free
-    text ("Congo, the Democratic Republic of the"). Programmes are matched
+    text ("Congo, the Democratic Republic of the"). Programs are matched
     exactly: they are Connect's own slugs, not prose, and a substring rule over
     a controlled vocabulary only invents false positives.
     """
@@ -849,9 +849,9 @@ def matches(org, *, query="", countries=(), delivered=(), applied=(), delivered_
         if not any(any(v.lower() in c for c in have) for v in countries):
             return False
     if delivered:
-        by_name = delivered_programmes_by_org_name() if delivered_by_name is None else delivered_by_name
+        by_name = delivered_programs_by_org_name() if delivered_by_name is None else delivered_by_name
         if not (by_name.get(org.name, set()) & set(delivered)):
             return False
-    if applied and not (applied_programmes_of(org) & set(applied)):
+    if applied and not (applied_programs_of(org) & set(applied)):
         return False
     return True

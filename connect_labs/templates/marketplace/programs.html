@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 {% comment %}
-The marketplace by programme. Tailwind, not Bootstrap, with brand values from
+The marketplace by program. Tailwind, not Bootstrap, with brand values from
 tailwind/tailwind.css.
 
-Each programme carries its own colour through `--hue`, set inline per card from
-`programmes.hue()`. Custom properties are the one thing Tailwind's static
+Each program carries its own colour through `--hue`, set inline per card from
+`programs.hue()`. Custom properties are the one thing Tailwind's static
 classes cannot express per element, so the handful of hue-driven rules live in
 the style block below and everything else stays in utility classes.
 
 Spent and services are Pulse's own figures. Remaining is an upper bound and is
-always worded "up to" — see `queries.committed_by_programme`.
+always worded "up to" — see `queries.committed_by_program`.
 {% endcomment %}
 {% load humanize %}
-{% block title %}Programmes · Connect Marketplace{% endblock %}
+{% block title %}Programs · Connect Marketplace{% endblock %}
 
 {% block css %}
   {{ block.super }}
@@ -41,9 +41,9 @@ always worded "up to" — see `queries.committed_by_programme`.
   <div class="relative">
     <div class="flex items-center gap-2 text-[12px] text-brand-sky/80 mb-3">
       <a href="{% url 'marketplace:home' %}" class="hover:text-white">Marketplace</a>
-      <span>·</span><span class="text-white">Programmes</span>
+      <span>·</span><span class="text-white">Programs</span>
     </div>
-    <div class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky">BY PROGRAMME</div>
+    <div class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky">BY PROGRAM</div>
     <div class="text-3xl font-semibold text-white mt-2 max-w-3xl leading-tight">
       Every kind of work on Connect — what has been paid, what is still funded, and who is waiting to do it.
     </div>
@@ -148,14 +148,14 @@ always worded "up to" — see `queries.committed_by_programme`.
     </section>
   {% empty %}
     <div class="bg-white border border-brand-border-light rounded-lg px-6 py-14 text-center text-sm text-gray-500">
-      No programmes recorded yet.
+      No programs recorded yet.
     </div>
   {% endfor %}
 
   <p class="mt-12 pt-5 border-t border-gray-200 text-[12.5px] text-gray-500 max-w-3xl leading-relaxed">
     Paid out and services delivered are the same figures the Pulse wall shows. "Still funded" is budget
     left on opportunities that are live today, converted to dollars at the rate Connect applied to their
-    payments — an upper bound, since programmes rarely spend their whole budget.
+    payments — an upper bound, since programs rarely spend their whole budget.
   </p>
 </div>
 {% endblock %}

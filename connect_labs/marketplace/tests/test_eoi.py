@@ -370,7 +370,7 @@ class TestTheNextStepColumnSaysWhoseTurnItIs:
         step = eoi.next_step_for(self._round(sa_access_state=ACCESS_DENIED))
         assert "connect-labs-sa@connect-labs.iam.gserviceaccount.com" in step
 
-    def test_a_readable_but_untagged_round_asks_for_the_programme(self):
+    def test_a_readable_but_untagged_round_asks_for_the_program(self):
         step = eoi.next_step_for(self._round(delivery_type=""))
         assert "Connect Programme" in step
 

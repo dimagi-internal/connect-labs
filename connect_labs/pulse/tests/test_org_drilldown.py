@@ -150,8 +150,8 @@ class TestOrgScoping:
         assert scoped["lifetime_visits"] == 1500
         assert scoped["orgs"] == 1
 
-    def test_a_partner_running_several_programmes_reports_all_of_them(self, viewer, portfolio):
-        """`programs: 1` is only true under a programme filter. A partner filter
+    def test_a_partner_running_several_programs_reports_all_of_them(self, viewer, portfolio):
+        """`programs: 1` is only true under a program filter. A partner filter
         has to count what is actually in scope."""
         PulseOpportunity.objects.create(
             opportunity_id=4,
@@ -163,7 +163,7 @@ class TestOrgScoping:
         )
         assert summary(viewer, org="connect-nigeria")["scope"]["programs"] == 2
 
-    def test_org_and_programme_compose_rather_than_override(self, viewer, portfolio):
+    def test_org_and_program_compose_rather_than_override(self, viewer, portfolio):
         """Selecting both must mean the intersection. If one silently cleared the
         other the two controls would disagree about what is on screen."""
         both = summary(viewer, org="connect-nigeria", program="20")
@@ -207,7 +207,7 @@ class TestOrgMenu:
         PulseOrganization.objects.create(slug="empty-org", name="Empty Org")
         assert "empty-org" not in [o["slug"] for o in summary(viewer)["orgs"]]
 
-    def test_a_partner_whose_only_work_is_a_test_programme_is_not_offered(self, viewer, portfolio):
+    def test_a_partner_whose_only_work_is_a_test_program_is_not_offered(self, viewer, portfolio):
         PulseOrganization.objects.create(slug="sandbox-org", name="Sandbox Org")
         PulseProgram.objects.create(
             program_id=99,
@@ -222,7 +222,7 @@ class TestOrgMenu:
             org_slug="sandbox-org",
             program_id=99,
             lifetime_visit_count=9035,
-            # What ingest stamps on every opportunity under a test programme.
+            # What ingest stamps on every opportunity under a test program.
             is_test=True,
         )
         assert "sandbox-org" not in [o["slug"] for o in summary(viewer)["orgs"]]
@@ -233,7 +233,7 @@ class TestPartnersConnectWillNotName:
     """Most delivery partners have no name available, and must still work.
 
     ``opp_org_program_list`` scopes its ``organizations`` list to the orgs the
-    poller is a *member* of, while returning every opportunity under a programme
+    poller is a *member* of, while returning every opportunity under a program
     those orgs *manage* — delivered by other partners entirely. Measured on labs
     prod: 74 partners deliver, 10 are named, and the other 64 carry **92.2% of
     all services**. No export endpoint will give up those names.
@@ -482,9 +482,9 @@ class TestWeeklySeries:
 class TestOrgGridNarrowing:
     """Selecting a partner must narrow the accumulated geography too.
 
-    The programme filter shipped without this and a Nigeria-only programme lit
+    The program filter shipped without this and a Nigeria-only program lit
     up Cameroon and DR Congo beside a header reading "COUNTRIES 1". Cells carry
-    no org, but orgs own programmes and cells carry programme.
+    no org, but orgs own programs and cells carry program.
     """
 
     def _cell(self, lat_q, lon_q, program_id, service="chc"):
@@ -492,15 +492,15 @@ class TestOrgGridNarrowing:
             lat_q=lat_q, lon_q=lon_q, service_slug=service, program_id=program_id, n=10, country="NG"
         )
 
-    def test_cells_narrow_to_the_partners_programmes(self, viewer, portfolio):
+    def test_cells_narrow_to_the_partners_programs(self, viewer, portfolio):
         self._cell(1100, 760, 10)
         self._cell(-100, 3000, 20, service="kmc")
 
         cells = viewer.get(reverse("pulse:api_grid"), {"org": "connect-nigeria"}).json()
         assert len(cells["cells"]) == 1
 
-    def test_an_opportunity_with_no_programme_makes_the_match_inexact(self, viewer, portfolio):
-        """Its folded cells carry a null programme and cannot be attributed back
+    def test_an_opportunity_with_no_program_makes_the_match_inexact(self, viewer, portfolio):
+        """Its folded cells carry a null program and cannot be attributed back
         to a partner, so the response says the geography is partial rather than
         quietly under-drawing it."""
         self._cell(1100, 760, 10)
@@ -508,7 +508,7 @@ class TestOrgGridNarrowing:
 
         PulseOpportunity.objects.create(
             opportunity_id=77,
-            name="Unprogrammed",
+            name="Unprogramd",
             org_slug="connect-nigeria",
             program_id=None,
             country="NG",
@@ -521,9 +521,9 @@ class TestOrgGridNarrowing:
 class TestServiceFilter:
     """Filtering by delivery type — Connect's own service taxonomy.
 
-    A different axis from ``program``: a programme is one funder's engagement,
+    A different axis from ``program``: a program is one funder's engagement,
     a delivery type is the kind of work. "All the Kangaroo Mother Care on the
-    platform" spans many programmes and many partners, and before this was only
+    platform" spans many programs and many partners, and before this was only
     answerable by reading a breakdown rather than by narrowing to it.
     """
 
@@ -541,7 +541,7 @@ class TestServiceFilter:
         assert summary(viewer)["scope"]["opportunities"] == 501
         assert summary(viewer, service="kmc")["scope"]["opportunities"] == 1
 
-    def test_composes_with_partner_and_programme(self, viewer, portfolio):
+    def test_composes_with_partner_and_program(self, viewer, portfolio):
         """Three filters, one intersection. If any silently cleared another the
         controls would disagree about what is on screen."""
         both = summary(viewer, service="kmc", org="connect-nigeria")

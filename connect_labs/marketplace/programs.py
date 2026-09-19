@@ -25,35 +25,38 @@ from __future__ import annotations
 
 from connect_labs.pulse.normalize import SERVICE_LABELS, service_label
 
-# A round that is genuinely not a delivery programme. A matching grant is a
+# A round that is genuinely not a delivery program. A matching grant is a
 # funding instrument and Learning Partners is a capability partnership; both
-# cut across programmes rather than being one. Recorded explicitly so that
+# cut across programs rather than being one. Recorded explicitly so that
 # "nobody has tagged this yet" (blank) stays distinguishable from "somebody
-# looked and it is not a programme", which is the difference between work to do
+# looked and it is not a program", which is the difference between work to do
 # and work that is done.
-PROGRAMME_NONE = "not-a-programme"
+# Stored data, not display text: people type this value into the directory
+# sheet's program column and it is saved on rounds, so it keeps its original
+# spelling even though every label now says "program".
+PROGRAM_NONE = "not-a-programme"
 
-PROGRAMME_NONE_LABEL = "Cross-programme"
+PROGRAM_NONE_LABEL = "Cross-program"
 
 
 def label(slug: str | None) -> str:
-    """Display text for one programme tag."""
-    if slug == PROGRAMME_NONE:
-        return PROGRAMME_NONE_LABEL
+    """Display text for one program tag."""
+    if slug == PROGRAM_NONE:
+        return PROGRAM_NONE_LABEL
     return service_label(slug)
 
 
 # Delivery types that are not field delivery. `other` is Connect's absence of a
-# type; `ace` is Dimagi's own tooling running programmes through Connect to test
+# type; `ace` is Dimagi's own tooling running programs through Connect to test
 # itself — real rows, real visits, but nothing a partner delivered and nothing a
 # funder is buying. Its opportunities carry placeholder budgets (17 live ones
 # held $68k against $143 ever paid), so leaving it in inflated every figure it
 # touched.
-NOT_DELIVERY = frozenset({PROGRAMME_NONE, "other", "ace"})
+NOT_DELIVERY = frozenset({PROGRAM_NONE, "other", "ace"})
 
 
-def is_programme(slug: str | None) -> bool:
-    """Whether this tag names a delivery programme rather than its absence."""
+def is_program(slug: str | None) -> bool:
+    """Whether this tag names a delivery program rather than its absence."""
     return bool(slug) and slug not in NOT_DELIVERY
 
 
@@ -63,18 +66,18 @@ def known_slugs() -> set[str]:
 
 
 def chips(slugs) -> list[dict]:
-    """Programme tags ready to render, deduplicated and ordered by name.
+    """Program tags ready to render, deduplicated and ordered by name.
 
     Drops `other`, Connect's unclassified bucket, which 264 opportunities sit
     in. Rendering "Unclassified" as a tag would put a label on the absence of
     one, which is the failure this whole vocabulary exists to avoid.
     """
-    seen = {s for s in slugs if is_programme(s)}
+    seen = {s for s in slugs if is_program(s)}
     return sorted(({"slug": s, "label": label(s)} for s in seen), key=lambda c: c["label"])
 
 
-# One colour per programme, so the same programme reads as the same thing on
-# every page that shows it — the programme card, the chip on an organisation's
+# One colour per program, so the same program reads as the same thing on
+# every page that shows it — the program card, the chip on an organisation's
 # row, the round's tag. Picked to stay distinguishable from its neighbours and
 # legible as text on white; anything unlisted falls back to the brand indigo.
 _HUES = {

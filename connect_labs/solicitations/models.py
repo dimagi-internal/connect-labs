@@ -4,11 +4,11 @@ Solicitation models — two stores, one vocabulary.
 
 The proxy models below extend LocalLabsRecord with typed @property access to
 JSON stored via the production LabsRecord API. They cannot be .save()d locally,
-and they keep serving live programme solicitations unchanged.
+and they keep serving live program solicitations unchanged.
 
 The marketplace's own rounds are different: historical EOIs imported from Google
 Forms, whose applicants mostly have no Connect organisation and whose rounds have
-no programme to scope a prod write by. Those are real local tables in
+no program to scope a prod write by. Those are real local tables in
 ``local_models.py``, re-exported here so Django registers them. Their field names
 are deliberately identical to the proxies', so this codebase has one EOI
 vocabulary rather than two.

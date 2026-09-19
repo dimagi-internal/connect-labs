@@ -176,7 +176,7 @@ class TestJoinDateStamping:
 class TestTheBeatPullsEverythingTheSheetOwns:
     def test_the_daily_import_includes_the_rounds(self, monkeypatch):
         """The rounds tab carries decisions only the directory team can make —
-        a round's Connect programme, its response sheet link. Pulling
+        a round's Connect program, its response sheet link. Pulling
         organisations daily but leaving rounds behind a flag meant either
         correction could sit unread in the sheet indefinitely.
         """

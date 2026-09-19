@@ -94,7 +94,7 @@ class TestConnectNameWins:
     than a slug does. It is what links some workspaces to their partner at all."""
 
     def test_connect_name_resolves_a_slug_that_alone_would_not(self):
-        got = resolve("programme-workspace-04", connect_name="Silverbrook Health Partners ECD")
+        got = resolve("program-workspace-04", connect_name="Silverbrook Health Partners ECD")
         assert got["parent"] == "Silverbrook Health Partners"
         assert "via connect name" in got["why"]
 

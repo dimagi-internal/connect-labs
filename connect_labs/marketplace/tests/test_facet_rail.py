@@ -47,7 +47,7 @@ class TestTheRail:
         countries = {r["label"]: r["count"] for r in rail["country"]["rows"]}
         assert countries == {"Uganda": 1, "Malawi": 1, "Kenya": 1}
 
-    def test_a_programme_facet_is_labelled_not_slugged(self, client, user, network):
+    def test_a_program_facet_is_labelled_not_slugged(self, client, user, network):
         """The URL carries Connect's slug; the person reads Connect's name for it."""
         client.force_login(user)
         rail = {s["param"]: s for s in client.get(reverse("marketplace:network")).context["rail"]}
