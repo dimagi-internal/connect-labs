@@ -1,5 +1,7 @@
 # FLW cohort benchmarking — multi-dimensional buckets
 
+**Update (2026-09-18):** the opportunity-level disclosure floors this document reasons about are now **per-cohort settings that can be turned off**, and both KMC cohorts run with them off (`min_peers=1`, `min_denominator=0`, `require_complete_series=false`): no competitive-leakage concern and no PII, and the floors were withholding the trends' early and late weeks. Cohorts also republish themselves when their source report saves a run. Current behaviour: [`connect_labs/benchmarks/README.md`](../../../connect_labs/benchmarks/README.md).
+
 **Status (2026-09-16): partly built — steps 2, 3 and part of 4 shipped; the
 published `BenchmarkDistribution` object (steps 1, 5, 6) did not.** What ships
 today is object **C** only: cohorting computed inside one opportunity's own
