@@ -18,6 +18,7 @@ urlpatterns = [
     # Authenticated views.
     path("", views.PulseIndexView.as_view(), name="index"),
     path("network/", views.PulseNetworkView.as_view(), name="network"),
+    path("costs/", views.PulseCostsView.as_view(), name="costs"),
     path("v/<slug:layout>/", views.PulseDisplayView.as_view(), name="display"),
     path("opp/<int:opp_id>/", views.PulseOppView.as_view(), name="opp"),
     # Donor reports: authenticated authoring, public rendering.

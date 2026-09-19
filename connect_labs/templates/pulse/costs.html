@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Cost data · Pulse{% endblock %}
+
+{% block content %}
+<div class="max-w-screen-xl mx-auto px-4 py-8">
+  <h1 class="text-2xl font-semibold text-brand-deep-purple">Cost data</h1>
+  <p class="text-sm text-gray-500 mt-1 mb-6 max-w-3xl">
+    What every service cost: pay accrued per service (worker and organisation), plus fixed costs from
+    Connect's custom invoices and costs entered in labs. Currency problems are corrected automatically;
+    everything under <b>Needs a person</b> needs an answer only someone outside labs has.
+  </p>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Paid per service</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">${{ totals.per_service|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Fixed costs</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">${{ totals.fixed|floatformat:0|intcomma }}</div>
+      <div class="text-xs text-gray-500 mt-1">on {{ totals.fixed_opps }} opportunities · ${{ totals.unallocated|floatformat:0|intcomma }} with no work to spread over</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Needs a person</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1 text-brand-sunset">{{ totals.person }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Corrected automatically</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">{{ totals.auto }}</div>
+    </div>
+  </div>
+
+  <div class="flex justify-end mb-3">
+    <a href="?format=csv" class="text-sm px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50">Download as CSV</a>
+  </div>
+
+  {% for g in groups %}
+    <details class="bg-white rounded-lg shadow-sm mb-4" {% if g.who == "needs a person" %}open{% endif %}>
+      <summary class="cursor-pointer px-4 py-3 flex flex-wrap items-baseline gap-x-3">
+        <span class="text-xs font-semibold uppercase tracking-wider {% if g.who == 'needs a person' %}text-brand-sunset{% else %}text-gray-400{% endif %}">{{ g.who }}</span>
+        <span class="font-semibold text-gray-900">{{ g.title }}</span>
+        <span class="text-sm text-gray-500">{{ g.rows|length }} · ${{ g.usd|floatformat:0|intcomma }}</span>
+      </summary>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="text-xs text-gray-500 uppercase tracking-wider border-t border-gray-100">
+            <tr><th class="text-left px-4 py-2">Opportunity</th><th class="text-left px-4 py-2">Organisation</th><th class="text-left px-4 py-2">Invoice</th><th class="text-right px-4 py-2">USD</th><th class="text-left px-4 py-2">Detail</th></tr>
+          </thead>
+          <tbody>
+            {% for r in g.rows %}
+              <tr class="border-t border-gray-100 align-top">
+                <td class="px-4 py-2"><span class="text-gray-400 tabular-nums">{{ r.opportunity_id }}</span> {{ r.opportunity }}</td>
+                <td class="px-4 py-2 text-gray-600">{{ r.org_slug }}</td>
+                <td class="px-4 py-2 text-gray-600">{{ r.invoice }}</td>
+                <td class="px-4 py-2 text-right tabular-nums">{% if r.amount_usd is not None %}${{ r.amount_usd|floatformat:0|intcomma }}{% endif %}</td>
+                <td class="px-4 py-2 text-gray-600">{{ r.detail }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  {% empty %}
+    <p class="text-sm text-gray-500">Nothing to review.</p>
+  {% endfor %}
+</div>
+{% endblock %}
