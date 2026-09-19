@@ -253,3 +253,86 @@ class TestCostsPage:
 
     def test_needs_a_login(self, client):
         assert client.get(reverse("pulse:costs")).status_code == 302
+
+
+@pytest.mark.django_db
+class TestTheTwoViews:
+    """Every money figure: fixed costs alongside per-service pay, or spread in."""
+
+    @pytest.fixture
+    def portfolio(self, django_user_model):
+        from django.core.cache import cache
+
+        cache.clear()
+        opp = _opp(1, currency="USD", rate="1", active=True)
+        opp.service_slug, opp.org_slug = "chc", "lakeside"
+        opp.save()
+        for month in (3, 4):
+            _seq[0] += 1
+            PulseWork.objects.create(
+                work_key=f"v{_seq[0]}",
+                opportunity_id=1,
+                org_slug="lakeside",
+                service_slug="chc",
+                country="NG",
+                worker_hash="w",
+                status="approved",
+                approved_count=2,
+                created_ts=dt.datetime(2026, month, 1, tzinfo=dt.timezone.utc),
+                usd_to_worker=D("30"),
+                usd_to_org=D("20"),
+            )
+        _inv(1, "START", 400, 400, service=False)  # $400 fixed over 4 units = $100/unit
+        return django_user_model.objects.create_user(username="staff", password="x")
+
+    def _summary(self, client, view=""):
+        return client.get(reverse("pulse:api_summary") + (f"?costs={view}" if view else "")).json()["money"]
+
+    def test_separate_keeps_per_service_pay_and_calls_out_fixed_costs(self, client, portfolio):
+        m = self._summary(client)
+        assert m["costs_view"] == "separate"
+        assert m["total_paid"] == 100
+        assert m["fixed_costs"] == 400
+        chc = next(r for r in m["by_service"] if r["service"] == "chc")
+        assert chc["usd_total"] == 100 and chc["fixed_usd"] == 400
+
+    def test_spread_folds_fixed_costs_into_totals_and_rates(self, client, portfolio):
+        m = self._summary(client, "spread")
+        assert m["total_paid"] == 500
+        assert m["per_service_paid"] == 100
+        chc = next(r for r in m["by_service"] if r["service"] == "chc")
+        assert chc["usd_total"] == 500
+        assert chc["total_rate"] == pytest.approx(500 / 2)  # two approved works
+
+    def test_a_window_carries_only_its_share(self, client, portfolio):
+        m = client.get(reverse("pulse:api_summary") + "?costs=spread&from=2026-04-01&to=2026-04-30").json()["money"]
+        assert m["per_service_paid"] == 50
+        assert m["fixed_costs"] == 200  # April's 2 units of 4
+        assert m["total_paid"] == 250
+
+    def test_the_partner_window_and_dossier_follow_the_view(self, client, portfolio, settings):
+        client.force_login(portfolio)
+        partner = client.get(reverse("pulse:api_partner") + "?org=lakeside&costs=spread").json()
+        assert partner["money"]["total_paid"] == 500
+        assert partner["money"]["fixed_usd"] == 400
+        assert partner["opportunities"][0]["usd_total"] == 500
+        dossier = client.get(reverse("pulse:api_opp") + "?id=1&costs=spread").json()
+        assert dossier["money"]["usd_total"] == 500
+        assert dossier["money"]["fixed_usd"] == 400
+        assert dossier["invoices"][0]["kind"] == "fixed cost"
+        assert dossier["invoices"][0]["basis"] == costs.BASIS_CONNECT
+
+    def test_a_donor_report_names_fixed_costs_in_either_view(self, client, portfolio):
+        import re
+
+        from connect_labs.pulse.models import PulseReport
+
+        PulseReport.objects.create(slug="r1", title="Report", org_slug="lakeside")
+
+        def text(url):
+            return re.sub(r"\s+", " ", client.get(url).content.decode())
+
+        body = text(reverse("pulse:report", args=["r1"]))
+        assert "Cost per verified delivery, before startup and supplies" in body
+        body = text(reverse("pulse:report", args=["r1"]) + "?costs=spread")
+        assert "Cost per verified delivery, startup and supplies included" in body

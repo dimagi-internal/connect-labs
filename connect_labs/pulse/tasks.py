@@ -117,6 +117,10 @@ def poll_slow_maintenance(rate_sample_limit: int = 25) -> dict:
                     invoiced += 1
                 except Exception as exc:  # noqa: BLE001 — one opp must not kill the sweep
                     logger.warning("[pulse] invoice refresh failed for opp %s: %s", opp.opportunity_id, exc)
+            if invoiced:
+                from connect_labs.pulse import costs
+
+                costs.invalidate()
 
         countries = ingest.refresh_opportunity_countries()
         reclassified = ingest.reclassify_opportunities()
@@ -507,14 +511,16 @@ def warm_summary_cache() -> int:
         is_authenticated = False
 
     class _Req:
-        def __init__(self, user):
-            self.GET = QueryDict("")
+        def __init__(self, user, query=""):
+            self.GET = QueryDict(query)
             self.user = user
 
     warmed = 0
+    # Both views of fixed costs: the wall opens in either, per the viewer's toggle.
     for user in (_User(), _Anon()):
-        SummaryView().get(_Req(user), refresh=True)
-        warmed += 1
+        for query in ("", "costs=spread"):
+            SummaryView().get(_Req(user, query), refresh=True)
+            warmed += 1
     return warmed
 
 

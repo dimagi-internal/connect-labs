@@ -209,3 +209,52 @@ def test_nutrition_is_named_for_what_is_delivered():
     from connect_labs.marketplace import programs
 
     assert programs.label("nutrition") == "Ready-to-Use Therapeutic Food (RUTF)"
+
+
+@pytest.mark.django_db
+class TestFixedCostsInBothViews:
+    """Fixed costs: beside per-service pay, or spread into it -- and in either
+    view the cards and the Pulse wall agree."""
+
+    @pytest.fixture
+    def with_fixed(self, market):
+        from django.core.cache import cache
+
+        from connect_labs.pulse.models import PulseInvoice
+
+        cache.clear()
+        PulseWork.objects.filter(opportunity_id=1).update(approved_count=1)
+        PulseInvoice.objects.create(
+            opportunity_id=1,
+            invoice_number="START",
+            amount=Decimal("4000"),
+            amount_usd=Decimal("4000"),
+            service_delivery=False,
+        )
+        queries.invalidate()
+
+    def test_separate_keeps_fixed_costs_beside_pay(self, with_fixed):
+        chc = {c["slug"]: c for c in queries.program_cards("separate")}["chc"]
+        assert chc["spent"] == 40_000
+        assert chc["fixed"] == 4_000
+
+    def test_spread_folds_them_in(self, with_fixed):
+        chc = {c["slug"]: c for c in queries.program_cards("spread")}["chc"]
+        assert chc["spent"] == 44_000
+        assert chc["per_service_spent"] == 40_000
+
+    @pytest.mark.parametrize("view", ["separate", "spread"])
+    def test_agrees_with_pulse_in_either_view(self, client, user, with_fixed, view):
+        client.force_login(user)
+        pulse = client.get(reverse("pulse:api_summary") + f"?costs={view}").json()
+        by_service = {row["service"]: row["usd_total"] for row in pulse["money"]["by_service"]}
+        cards = {c["slug"]: c for c in queries.program_cards(view)}
+        assert cards["chc"]["spent"] == int(by_service["chc"])
+
+    def test_the_page_offers_both_and_says_which(self, client, user, with_fixed):
+        client.force_login(user)
+        body = client.get(reverse("marketplace:programs") + "?costs=spread").content.decode()
+        assert "PAID OUT, INCL. STARTUP AND SUPPLIES" in body
+        assert "incl. $4,000 startup and supplies" in body
+        body = client.get(reverse("marketplace:programs")).content.decode()
+        assert "STARTUP AND SUPPLIES" in body and "$4,000" in body

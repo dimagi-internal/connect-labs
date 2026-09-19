@@ -242,7 +242,7 @@
     <div class="kpi">
       {% if metrics.cost_per_service %}
         <div class="kpi-value">${{ metrics.cost_per_service|floatformat:2 }}</div>
-        <div class="kpi-label">Cost per verified delivery</div>
+        <div class="kpi-label">Cost per verified delivery{% if metrics.fixed_usd %}{% if metrics.costs_view == "spread" %}, startup and supplies included{% else %}, before startup and supplies{% endif %}{% endif %}</div>
       {% else %}
         <div class="kpi-value muted">&mdash;</div>
         <div class="kpi-label">Cost per verified delivery</div>
@@ -387,7 +387,9 @@
           through Dimagi&rsquo;s Connect platform.
           {% if metrics.total_paid %}
             ${{ metrics.total_paid|floatformat:0|intcomma }} was disbursed for verified delivery
-            over this period.
+            over this period{% if metrics.fixed_usd %}{% if metrics.costs_view == "spread" %}, including
+            ${{ metrics.fixed_usd|floatformat:0|intcomma }} of startup and supplies{% else %}, plus
+            ${{ metrics.fixed_usd|floatformat:0|intcomma }} of startup and supplies{% endif %}{% endif %}.
           {% endif %}
         {% endif %}
       </p>
