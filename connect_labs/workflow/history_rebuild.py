@@ -432,6 +432,14 @@ def rebuild_history(
             }
         )
 
+    # The history is the peer TREND, so a finished rebuild republishes every cohort
+    # that follows this workflow -- from its newest run, once, not once per period.
+    # Publishing before rebuilding is what left an older opportunity with no line.
+    if report["done"] and not dry_run:
+        from connect_labs.benchmarks.tasks import queue_auto_publish
+
+        report["auto_publish_queued"] = queue_auto_publish(data_access, workflow_id=definition_id)
+
     return report
 
 

@@ -924,3 +924,41 @@ class TestPruneNamedRuns:
     def test_an_empty_list_is_refused(self):
         with pytest.raises(hr.HistoryRebuildError):
             hr.prune_history(_DAO(_Definition(), runs=self._history()), 1, run_ids=[], dry_run=False)
+
+
+class TestARebuildRepublishesFollowingCohorts:
+    """A rebuild rewrites the history the peer trend is drawn from, so a finished one
+    republishes every cohort that follows the workflow -- once, from the newest run.
+    Publishing BEFORE rebuilding left an older opportunity with no line (2026-09-18)."""
+
+    def _queued(self, monkeypatch):
+        calls = []
+        from connect_labs.benchmarks import tasks
+
+        monkeypatch.setattr(tasks, "queue_auto_publish", lambda dao, **kw: calls.append(kw) or True)
+        return calls
+
+    def test_the_last_batch_queues_one_republish(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+        calls = self._queued(monkeypatch)
+
+        report = hr.rebuild_history(
+            dao, 1, cadence="weekly", start=date(2026, 8, 31), end=date(2026, 9, 20), opportunity_id=10
+        )
+
+        assert calls == [{"workflow_id": 1}], "one republish for the whole rebuild, from the newest run"
+        assert report["auto_publish_queued"] is True
+
+    def test_an_unfinished_batch_and_a_dry_run_queue_nothing(self, monkeypatch):
+        dao = _DAO(_Definition())
+        _stub_build(monkeypatch)
+        calls = self._queued(monkeypatch)
+
+        hr.rebuild_history(
+            dao, 1, cadence="weekly", start=date(2026, 8, 3), end=date(2026, 9, 6), opportunity_id=10, limit=2
+        )
+        hr.rebuild_history(
+            dao, 1, cadence="weekly", start=date(2026, 8, 3), end=date(2026, 9, 6), opportunity_id=10, dry_run=True
+        )
+        assert calls == []
