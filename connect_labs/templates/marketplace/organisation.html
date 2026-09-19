@@ -40,14 +40,14 @@ refuses to open. <details> needs no JavaScript at all.
         <div class="px-6 py-4">
           {% if profile %}
             <dl class="space-y-3 text-sm">
-              {% if delivered_programmes or applied_programmes %}
+              {% if delivered_programs or applied_programs %}
                 <div>
-                  <dt class="text-gray-500">Programmes</dt>
+                  <dt class="text-gray-500">Programs</dt>
                   <dd class="flex flex-wrap gap-1.5 mt-1">
-                    {% for p in delivered_programmes %}
+                    {% for p in delivered_programs %}
                       <span class="text-[11.5px] font-medium px-2 py-0.5 rounded bg-green-100 text-green-800" title="Delivered on Connect">{{ p.label }}</span>
                     {% endfor %}
-                    {% for p in applied_programmes %}
+                    {% for p in applied_programs %}
                       <span class="text-[11.5px] font-medium px-2 py-0.5 rounded border border-brand-border-light text-gray-500" title="Applied for, not yet delivered">{{ p.label }}</span>
                     {% endfor %}
                   </dd>

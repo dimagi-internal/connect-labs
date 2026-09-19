@@ -8,7 +8,7 @@ The waste was not the HTTP fetch. It was that a steady state still did the full
 amount of database work:
 
 * ``update_or_create`` writes unconditionally, and every mirrored model carries
-  ``updated_at = auto_now``, so all ~690 orgs, programmes and opportunities were
+  ``updated_at = auto_now``, so all ~690 orgs, programs and opportunities were
   rewritten every five minutes — ~199,000 row writes a day to change nothing;
 * the country and delivery-type backfills issue one UPDATE per opportunity
   against ``PulseWork`` (1M rows) whether or not any row disagrees — ~438,000

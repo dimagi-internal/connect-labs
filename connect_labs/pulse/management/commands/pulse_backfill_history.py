@@ -12,7 +12,7 @@ everything, politely, in slices, and be safe to interrupt and re-run.
 **Resumability is per page, not per opportunity.** Each opportunity has its own
 cursor recording how far back it has been walked, and that cursor is committed
 after every page — so an interrupted run continues from where it stopped rather
-than restarting the opportunity. On the largest programme (~1.25M visits) that
+than restarting the opportunity. On the largest program (~1.25M visits) that
 distinction is the difference between a run that finishes and one that cannot.
 
 **Pacing is the default, not an option.** A full walk is ~1.6M rows off a

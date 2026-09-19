@@ -77,9 +77,9 @@ COUNTRY_NAMES = {
 # operational ("KMC - UG - PIPN - P1 - Apr 26"); these are not.
 _SERVICE_PATTERNS: list[tuple[re.Pattern, str, str]] = [
     # The COWACDI and eHealth Africa interview cohorts ("[1PC1] COWACDI
-    # Interviews") run under no Connect programme, so they carry no
+    # Interviews") run under no Connect program, so they carry no
     # delivery_type and only their name says what they are. Without this they
-    # fell into "other" and the Interviews programme showed $2 of ACE demo runs
+    # fell into "other" and the Interviews program showed $2 of ACE demo runs
     # instead of ~$20k of real interviews.
     (re.compile(r"\binterviews?\b", re.I), "interview", "Interviews"),
     (re.compile(r"^KMC\b|kangaroo|कंगारू", re.I), "kmc", "Kangaroo Mother Care"),
@@ -105,7 +105,7 @@ SERVICE_LABELS = {slug: label for _, slug, label in _SERVICE_PATTERNS}
 # invented label: it does not look uncertain.
 #
 # So names here are only the ones confirmed by someone who knows the
-# programmes. Everything else falls through to the slug in caps, which is
+# programs. Everything else falls through to the slug in caps, which is
 # visibly a code and cannot be mistaken for a considered label.
 SERVICE_LABELS.update(
     {
@@ -118,10 +118,12 @@ SERVICE_LABELS.update(
         "malaria": "Malaria",
         "hhs": "Household Safety Check",
         "wellme": "Worker Wellbeing",
-        "nutrition": "Nutrition",
+        # The nutrition work on Connect is RUTF treatment, and "Nutrition" named
+        # a category rather than the thing an organisation applies to deliver.
+        "nutrition": "Ready-to-Use Therapeutic Food (RUTF)",
         "interview": "Interviews",
         # Chlorine dispensers and the rest of safe-water delivery. Confirmed by
-        # Jonathan 2026-09-17 when the 2025 Chlorine EOI needed a programme:
+        # Jonathan 2026-09-17 when the 2025 Chlorine EOI needed a program:
         # this is a NEW type, so it may carry no Connect opportunities yet and
         # show only on the "applied for" side until it does.
         "water": "Water",
@@ -136,14 +138,14 @@ SERVICE_LABELS.update(
         # `conversation` collects speech in languages with little written data.
         "conversation": "Low-resource languages",
         "cholera": "Cholera",
-        # Our own tooling's programmes rather than field delivery. Named as it
+        # Our own tooling's programs rather than field delivery. Named as it
         # is because that is what it is called; it should stop appearing here
-        # once those programmes are cleaned up on the Connect side.
+        # once those programs are cleaned up on the Connect side.
         "ace": "ACE",
     }
 )
 
-# No delivery_type on the programme at all -- 168 opportunities, ~46k units of
+# No delivery_type on the program at all -- 168 opportunities, ~46k units of
 # work. Connect does not say what they are, so neither do we: "Service
 # delivery" read like a category rather than the absence of one.
 SERVICE_LABELS["other"] = "Unclassified"
@@ -219,29 +221,29 @@ def country_for(lat: float | None, lon: float | None) -> str:
     return ""
 
 
-# Programmes whose name says they are not real delivery. Kept deliberately
+# Programs whose name says they are not real delivery. Kept deliberately
 # narrow: a "[PARTNER]" bracket prefix is a naming convention across genuine
-# programmes ("[RUWOYD] CHC Mapping"), so matching on brackets would hide 2/3
+# programs ("[RUWOYD] CHC Mapping"), so matching on brackets would hide 2/3
 # of the real portfolio. Only explicit words count.
 _TEST_PROGRAM = re.compile(r"\b(test|demo|sandbox|dummy|trial|smoke|e2e)\b", re.I)
 
-# Words that mark one *opportunity* as scaffolding. Narrower than the programme
+# Words that mark one *opportunity* as scaffolding. Narrower than the program
 # rule: "trial" and "demo" name real work often enough at this level that they
-# are left to the programme and the org.
+# are left to the program and the org.
 _TEST_OPPORTUNITY = re.compile(r"\b(test|sandbox|dummy|uat|e2e)\b", re.I)
 
 # Orgs whose every opportunity is scaffolding. `ai-demo-space` is where ACE's
 # automated runs land: 185 opportunities carrying real delivery types (malaria,
-# nutrition, interview) under programme names like "Malaria ITN FGD Pilot" that
+# nutrition, interview) under program names like "Malaria ITN FGD Pilot" that
 # no name rule can tell from real work. Left in, they were the *whole* of the
 # Nutrition and Interviews figures and 31 of Malaria's "live" opportunities.
 TEST_ORGS = frozenset({"ai-demo-space"})
 
 
 def looks_like_test(program_name: str | None) -> bool:
-    """Whether a programme is internal scaffolding rather than delivery.
+    """Whether a program is internal scaffolding rather than delivery.
 
-    Used to keep the programme filter honest: these carry real visit counts
+    Used to keep the program filter honest: these carry real visit counts
     (one has 9,035) so they cannot be spotted by volume, and a funder picking
     "[TEST 02] Dimagi-GW CHC Program" out of a menu is a bad moment.
     """

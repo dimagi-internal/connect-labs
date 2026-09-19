@@ -31,7 +31,7 @@ describe('usdCompact', () => {
   it('keeps sub-$1k totals at the same scale as the rest of a ranked list', () => {
     // India's real by-country total was $196.24 against Nigeria's $460k. Cents
     // in one cell of a ranked list read as a rendering fault, not as a small
-    // programme.
+    // program.
     expect(usdCompact(196.24)).toBe('$196');
     expect(usdCompact(999.7)).toBe('$1,000');
   });

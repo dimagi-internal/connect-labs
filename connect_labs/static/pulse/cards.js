@@ -23,7 +23,7 @@
   /* Compact money, for aggregate TOTALS only — never a per-unit rate, which
      needs its cents and uses `usd`. Sub-$1k totals round to whole dollars so a
      ranked list cannot mix scales: India's $196.24 beside Nigeria's $460k read
-     as a broken cell on the wall display, not as a small programme. */
+     as a broken cell on the wall display, not as a small program. */
   const usdCompact = (v) => {
     const n = Number(v || 0);
     if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
@@ -133,7 +133,7 @@
       {
         key: 'services',
         label: 'Services delivered',
-        sub: 'all-time, every programme',
+        sub: 'all-time, every program',
         gold: true,
       },
       {
@@ -409,7 +409,7 @@
     root.innerHTML = `
       <p class="act-lede"><b data-x="totalpaid">—</b> has gone out through verified service
         delivery — to the worker who delivered it and the local organisation running the
-        programme. No sub-grantee chain, no per-diem: <b data-x="approved">—</b> approved
+        program. No sub-grantee chain, no per-diem: <b data-x="approved">—</b> approved
         units of work, each paying both sides of delivery.</p>
       <div class="sect">
         <span class="pulse-lbl">Where the money went</span>
@@ -452,7 +452,7 @@
             'Accrued to delivery organisations',
             toOrgs,
             'var(--c-2)',
-            "the org's share for running the programme",
+            "the org's share for running the program",
           ],
         ];
         const max = Math.max(toWorkers, toOrgs, 1);
@@ -539,7 +539,7 @@
       </div>
       <div class="sect">
         <div class="pairs">
-          <div><span class="pulse-lbl">Programmes</span><div class="pv num" data-x="progs">—</div></div>
+          <div><span class="pulse-lbl">Programs</span><div class="pv num" data-x="progs">—</div></div>
           <div><span class="pulse-lbl">Grid cells mapped</span><div class="pv num" data-x="cells">—</div></div>
         </div>
       </div>`;
@@ -626,7 +626,7 @@
       </div>
       <div class="sect">
         <p class="act-lede" style="margin:0">These are measured payouts, not budgets. They
-          cross-check against each programme's budgeted rate at market FX to within a few
+          cross-check against each program's budgeted rate at market FX to within a few
           cents — two independent fields agreeing.</p>
       </div>`;
     const $ = (n) => root.querySelector(`[data-x="${n}"]`);
@@ -643,7 +643,7 @@
 
         // Volume-weighted, straight from money accrued over approved work --
         // NOT the mean of each opportunity's rate. Averaging per opportunity
-        // lets a two-row test opp count as much as a 106,719-work programme,
+        // lets a two-row test opp count as much as a 106,719-work program,
         // which reported "Malaria rapid test" at $17.03 against a real $1.08.
         const rows = (m.by_service || [])
           .filter((r) => r.rate != null && r.approved >= 20)

@@ -70,7 +70,7 @@ def poll_slow_maintenance(rate_sample_limit: int = 25) -> dict:
     Split off the cheap tier, which runs every five minutes. None of this is
     time-critical:
 
-    * per-service rates are measured payouts that change when a programme
+    * per-service rates are measured payouts that change when a program
       renegotiates, not between polls;
     * an opportunity's country is derived from the modal country of its visits,
       so it only moves when a genuinely new opportunity starts delivering;
@@ -227,7 +227,7 @@ def backfill_visits(
     Three properties make that survivable, and all three are deliberate:
 
     * **Per opportunity.** Each opportunity has its own cursor, so the unit of
-      work is small and a failure is contained to one programme.
+      work is small and a failure is contained to one program.
     * **Resumable at page granularity.** ``_backfill_one`` commits its cursor
       after every page, so an interrupted run resumes where it stopped rather
       than restarting the opportunity.
@@ -266,7 +266,7 @@ def backfill_visits(
     stopped_early = False
 
     with get_client(timeout=300.0) as client:
-        # Ordered oldest-activity-last so the programmes a funder is most
+        # Ordered oldest-activity-last so the programs a funder is most
         # likely to ask about are filled in first, and a bounded slice is still
         # useful rather than arbitrary.
         for cursor in qs.order_by("-newest_sync_ts"):
@@ -318,7 +318,7 @@ def _backfill_one(
     version saved once the whole opportunity was done, which meant a task killed
     mid-opportunity -- a deploy, an OOM, a lost token -- threw away everything it
     had pulled for that opportunity and restarted from the same place next time.
-    On the largest programme (chc, ~1.25M visits) that is not a slow recovery,
+    On the largest program (chc, ~1.25M visits) that is not a slow recovery,
     it is a run that can never finish. Saving per page makes the walk genuinely
     resumable: re-running continues from the oldest id already seen.
 
@@ -517,7 +517,7 @@ def import_partner_directory():
     looks broken. On beat, it heals itself.
 
     `eoi=True` because the rounds tab is edited by the same people and carries
-    decisions only they can make — which Connect programme a round is for, and
+    decisions only they can make — which Connect program a round is for, and
     the response sheet's link. Pulling organisations daily but leaving rounds
     to whoever remembers a flag meant a correction to either could sit in the
     sheet indefinitely. It also keeps the access and next-step columns, which

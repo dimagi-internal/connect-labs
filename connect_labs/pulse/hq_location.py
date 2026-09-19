@@ -117,8 +117,8 @@ def country_to_iso3(name: str) -> str | None:
 
 
 # Countries the boundary tables do not carry. ``labs.admin_boundaries`` is
-# loaded per-country as programmes need it, so a partner in a country nobody has
-# run a programme in yet has no polygon to take a centroid from -- and the whole
+# loaded per-country as programs need it, so a partner in a country nobody has
+# run a program in yet has no polygon to take a centroid from -- and the whole
 # row then fails, even though we know perfectly well which country it is.
 #
 # A country centroid is stable reference data, not a measurement, so a literal

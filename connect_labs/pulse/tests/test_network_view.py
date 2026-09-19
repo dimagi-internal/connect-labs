@@ -213,8 +213,8 @@ class TestImportSideEffects:
 
 class TestCountryFallback:
     def test_a_country_with_no_boundary_data_is_still_placed(self):
-        """admin_boundaries is loaded per-country as programmes need it, so a
-        partner in a country nobody has run a programme in has no polygon. We
+        """admin_boundaries is loaded per-country as programs need it, so a
+        partner in a country nobody has run a program in has no polygon. We
         still know which country it is, and a country centroid is enough."""
         got = hq_location.resolve("Afghanistan", "", "House 8, 3rd Street")
         assert got is not None
@@ -238,7 +238,7 @@ class TestCountriesTable:
         assert rows["MWI"]["services"] == 0
 
     def test_a_country_with_delivery_but_no_partner_headquartered_there(self):
-        """A partner in one country running a programme across the border. The
+        """A partner in one country running a program across the border. The
         country is real and the work is real; nobody is based there."""
         PulseOpportunity.objects.create(
             opportunity_id=90, name="Cross-border", org_slug="x", country="NE", lifetime_visit_count=500

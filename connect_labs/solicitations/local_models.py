@@ -8,9 +8,9 @@ Connect row at all. Making that a foreign key is what turns application history
 into something a directory can join on.
 
 **Two stores, one vocabulary.** ``models.py`` holds proxy models over the prod
-LabsRecord API and keeps serving live programme solicitations, unchanged. These
+LabsRecord API and keeps serving live program solicitations, unchanged. These
 are local tables for the rounds the marketplace owns: historical EOIs imported
-from Google Forms, where there is no programme and no Connect membership to
+from Google Forms, where there is no program and no Connect membership to
 scope a prod write by. The *field names are deliberately identical*, so there is
 one EOI vocabulary in this codebase rather than two, and so a round can migrate
 between stores without anything downstream being rewritten.
@@ -66,8 +66,8 @@ class Solicitation(models.Model):
     # Connect's own `delivery_type` — the same vocabulary the pulse spine tags
     # every opportunity with, so "applied to a malaria round" and "delivered
     # malaria" are the same word and can be compared. Blank means nobody has
-    # decided yet; `PROGRAMME_NONE` means a human decided it is not a delivery
-    # programme at all (a matching grant is a funding instrument, not a service).
+    # decided yet; `PROGRAM_NONE` means a human decided it is not a delivery
+    # program at all (a matching grant is a funding instrument, not a service).
     delivery_type = models.CharField(max_length=48, blank=True, default="")
 
     # --- provenance: alongside, never inside ---
@@ -95,14 +95,14 @@ class Solicitation(models.Model):
         ordering = ["-published_on", "title"]
 
     @property
-    def programme_label(self) -> str:
-        """Connect's name for the programme this round is for, or "" if untagged.
+    def program_label(self) -> str:
+        """Connect's name for the program this round is for, or "" if untagged.
 
         A property rather than a stored string: the tag is the slug, and the
         name for a slug is one decision held in one place. Imported lazily so
         that solicitations keeps no import-time dependency on marketplace.
         """
-        from connect_labs.marketplace.programmes import label
+        from connect_labs.marketplace.programs import label
 
         return label(self.delivery_type) if self.delivery_type else ""
 

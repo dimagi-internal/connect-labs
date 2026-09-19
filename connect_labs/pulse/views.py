@@ -152,7 +152,7 @@ class PulseIndexView(LoginRequiredMixin, View):
                 # Every real engagement, ordered the way the display menus
                 # order things: running first, then by lifetime volume. Test
                 # scaffolding is excluded by the same two rules the partner
-                # menu uses -- drop opportunities under a test programme, and
+                # menu uses -- drop opportunities under a test program, and
                 # drop ones whose own name is scaffolding -- because a funder
                 # picking "[TEST 02] ..." out of this list is a bad moment.
                 "dossier_opps": self._dossier_opps(),
@@ -253,7 +253,7 @@ def _report_scope(report: PulseReport):
     """Resolve a report's stored scope through the live API's own resolver.
 
     Deliberately routed through ``_program_scope`` rather than reimplemented:
-    the report and the dashboard must agree about what "this programme, this
+    the report and the dashboard must agree about what "this program, this
     window" selects, and the only way to guarantee that is one resolver.
     """
     from connect_labs.pulse.api import _program_scope

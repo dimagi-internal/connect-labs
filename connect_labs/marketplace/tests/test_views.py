@@ -78,7 +78,7 @@ class TestDirectory:
         assert "Harbourside" in body
         assert "Fenwick Trust</a>" not in body
 
-    def test_filters_by_the_programme_an_organisation_applied_for(self, client, user, registry):
+    def test_filters_by_the_program_an_organisation_applied_for(self, client, user, registry):
         client.force_login(user)
         body = client.get(reverse("marketplace:network"), {"applied": "chc"}).content.decode()
         assert "Fenwick Trust" in body

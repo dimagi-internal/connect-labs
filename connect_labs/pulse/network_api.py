@@ -81,7 +81,7 @@ def countries_table(delivering: set[str]) -> list[dict]:
     question, and the difference is the point of the table: the network reaches
     countries Connect has not started delivering in, and delivery reaches
     countries no partner is headquartered in — a partner in one country running
-    a programme across the border.
+    a program across the border.
 
     Taking only one side would hide whichever countries sit on the other.
     """
@@ -108,7 +108,7 @@ def countries_table(delivering: set[str]) -> list[dict]:
 
     # Opportunities carry alpha-2 and the lifetime visit count, which is the
     # honest "services delivered here" figure -- works are a payment unit and
-    # count differently per programme.
+    # count differently per program.
     for record in (
         PulseOpportunity.objects.exclude(country="")
         .filter(is_test=False)

@@ -120,7 +120,7 @@
     }
 
     /* Every read has to carry the filter. A single endpoint that forgot it
-       would mix another programme's services into a filtered view, which is
+       would mix another program's services into a filtered view, which is
        worse than not filtering at all.
      *
        The token rides along too. Partner names are decided server-side and
@@ -141,9 +141,9 @@
 
     /* Re-fetch EVERYTHING. The headline figures are server-side aggregates, so
        a filter that only redrew the map would leave whole-estate totals above
-       one programme's points.
+       one program's points.
      *
-       Programme and partner share this path rather than each owning a copy:
+       Program and partner share this path rather than each owning a copy:
        they compose server-side, and two near-identical reset routines would
        drift until one of them forgot to clear the cursor. */
     async _applyFilter() {

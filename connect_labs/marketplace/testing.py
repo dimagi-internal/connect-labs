@@ -29,7 +29,7 @@ def make_partner(name: str, short: str = "", *, delivers=(), **profile_fields) -
     ``delivers`` names Connect delivery types this organisation has run, and
     builds the pulse opportunity that makes that true. Saying it in one word
     keeps the test about the behaviour rather than about the three rows the
-    programme filter reads.
+    program filter reads.
     """
     org = ensure_org(name, short_name=short)
     OrgProfile.objects.update_or_create(org=org, defaults=profile_fields)

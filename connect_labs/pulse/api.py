@@ -185,16 +185,16 @@ def _program_scope(request):
     Filtering has to happen HERE rather than in the page: the headline figures
     are server-side aggregates over the whole estate, so a client that hid rows
     would leave "1.6M services" sitting above a filtered map. Every count on
-    screen has to be recomputed for the selected programme or none of them can
+    screen has to be recomputed for the selected program or none of them can
     be trusted.
 
     ``PulseEvent``, ``PulseWork`` and ``PulseOpportunity`` all carry an indexed
     ``program_id``. ``PulseRollup`` keys on opportunity, so it filters through
     one. ``PulseGridCell`` carries neither -- see ``grid_service`` below.
 
-    Org and programme compose rather than override: an org filter narrows to
-    that partner, and a programme filter on top narrows to their work on that
-    programme. Making one silently clear the other would let the two controls
+    Org and program compose rather than override: an org filter narrows to
+    that partner, and a program filter on top narrows to their work on that
+    program. Making one silently clear the other would let the two controls
     disagree about what the screen is showing.
 
     ``?from=`` / ``?to=`` (ISO dates) narrow to a reporting window and compose
@@ -223,9 +223,9 @@ def _program_scope(request):
     org = _resolve_org(org_raw) if org_raw and _partner_names_allowed(request) else None
 
     # Delivery type -- Connect's own service taxonomy (chc, ecd, kmc, ...), which
-    # is a different axis from `program`: a programme is one funder's engagement,
+    # is a different axis from `program`: a program is one funder's engagement,
     # a delivery type is the kind of work. "All the Kangaroo Mother Care on the
-    # platform" spans many programmes and many partners, and was previously only
+    # platform" spans many programs and many partners, and was previously only
     # answerable by reading a breakdown rather than by narrowing to it.
     #
     # Not gated: a delivery type is a category, not a partner identity, so an
@@ -272,7 +272,7 @@ def _program_scope(request):
     if org is not None:
         # org_slug is denormalised onto all three spines at ingest, so the
         # partner filter needs no join. Rollups key on opportunity, same as the
-        # programme path.
+        # program path.
         events = events.filter(org_slug=org.slug)
         works = works.filter(org_slug=org.slug)
         opps = opps.filter(org_slug=org.slug)
@@ -342,11 +342,11 @@ def _parse_window_date(raw) -> datetime | None:
 
 
 def _scope_for(sc):
-    """Headline scale — recomputed when a programme is selected.
+    """Headline scale — recomputed when a program is selected.
 
     Unfiltered this is the stored cheap-tier scalar, which counts the whole
     estate for free. Filtered it MUST be recomputed: leaving "498 opportunities
-    / 1.65M services" above a single programme's map is the same defect as the
+    / 1.65M services" above a single program's map is the same defect as the
     inferred poller and the head-sliced replay -- a true number answering a
     question nobody asked.
     """
@@ -360,8 +360,8 @@ def _scope_for(sc):
         "opportunities": agg["n"] or 0,
         "active_opportunities": opps.filter(is_active=True).count(),
         "lifetime_visits": agg["visits"] or 0,
-        # A programme is one programme; a partner may run several. Counting the
-        # distinct programmes in scope keeps the header honest under either
+        # A program is one program; a partner may run several. Counting the
+        # distinct programs in scope keeps the header honest under either
         # filter and under both at once.
         "programs": (
             1 if sc["program"] is not None else opps.exclude(program_id=None).values("program_id").distinct().count()
@@ -375,7 +375,7 @@ class _UnnamedOrg:
 
     ``opp_org_program_list`` scopes its ``organizations`` list to the orgs the
     poller is a **member** of, while returning every opportunity under a
-    programme those orgs *manage* -- which is delivered by other partners
+    program those orgs *manage* -- which is delivered by other partners
     entirely. Measured on labs prod: 74 distinct partners deliver the work, 10
     of them are named, and the other 64 carry **92.2% of all services**.
 
@@ -488,24 +488,24 @@ def _org_menu(request):
     Mirrors ``_program_menu``'s hygiene, because the same two traps apply: an
     org with no ingested delivery resolves to a blank screen, and an org whose
     only work is internal scaffolding should not be offered to a funder. The
-    latter is judged by the org's programmes rather than by its own name --
-    Connect marks test *programmes*, not test orgs.
+    latter is judged by the org's programs rather than by its own name --
+    Connect marks test *programs*, not test orgs.
     """
     if not _partner_names_allowed(request):
         return []
 
     # Scaffolding is excluded by dropping test *opportunities* at the source,
-    # rather than by asking whether the org owns a non-test programme.
+    # rather than by asking whether the org owns a non-test program.
     #
     # Those are not the same question, and the difference matters: under
-    # Connect's managed model a programme belongs to the *managing* org while the
+    # Connect's managed model a program belongs to the *managing* org while the
     # opportunities under it belong to the *delivering* partners. So
     # `PulseProgram.org_slug` is the manager, `PulseOpportunity.org_slug` is who
-    # actually did the work, and judging a partner by the programmes it owns
+    # actually did the work, and judging a partner by the programs it owns
     # would have hidden almost every real delivery partner -- they own none.
     #
     # Filtering the opportunities also fixes the volume: a partner's menu entry
-    # now counts real delivery only, so a test programme's 9,035 visits cannot
+    # now counts real delivery only, so a test program's 9,035 visits cannot
     # inflate it, and an org whose only work is a test falls out for free by
     # summing to zero.
     real_opps = PulseOpportunity.objects.exclude(org_slug="").filter(is_test=False)
@@ -721,7 +721,7 @@ def _service_menu():
     against them.
 
     Counts come from opportunities (lifetime, free) and events (recent), the
-    same pair the programme menu uses, so "no recent delivery" means the same
+    same pair the program menu uses, so "no recent delivery" means the same
     thing in both menus.
     """
     rows = (
@@ -750,10 +750,10 @@ def _service_menu():
 
 
 def _program_menu():
-    """Programmes offered in the filter.
+    """Programs offered in the filter.
 
     Excludes internal scaffolding by name (``is_test``) and anything that has
-    never received a visit. Both matter: the test programmes carry real volume
+    never received a visit. Both matter: the test programs carry real volume
     -- one has 9,035 visits -- so they cannot be filtered out by size, and the
     empty ones would pad the menu with dozens of entries that resolve to a
     blank screen.
@@ -767,7 +767,7 @@ def _program_menu():
     )
     by_id = {r["program_id"]: r for r in rows}
     # Stored events are the retention window, not all history. Most of the
-    # largest programmes by lifetime volume finished months ago, so ordering on
+    # largest programs by lifetime volume finished months ago, so ordering on
     # lifetime alone puts a blank map at the top of the menu -- picking "[Batch
     # 04] Dimagi-GiveWell CHC Program", 547,474 services, currently yields no
     # points at all because none of them are recent.
@@ -779,18 +779,18 @@ def _program_menu():
     menu = [
         {
             "id": p.program_id,
-            "name": p.name or f"Programme {p.program_id}",
+            "name": p.name or f"Program {p.program_id}",
             "delivery_type": p.delivery_type,
             "service_label": service_label(p.delivery_type),
             "opportunities": by_id[p.program_id]["opps"],
             "visits": by_id[p.program_id]["visits"],
-            # Lets the menu say which programmes are currently delivering
+            # Lets the menu say which programs are currently delivering
             # rather than letting someone discover it by selecting one.
             "recent_events": recent.get(p.program_id, 0),
         }
         for p in programs
     ]
-    # Currently-delivering programmes first, each group by lifetime volume.
+    # Currently-delivering programs first, each group by lifetime volume.
     menu.sort(key=lambda m: (-(1 if m["recent_events"] else 0), -m["visits"]))
     return menu
 
@@ -1028,8 +1028,8 @@ class SummaryView(View):
         # Rate per service is VOLUME-WEIGHTED, computed from money actually
         # accrued over approved work. Averaging each opportunity's own rate
         # instead lets a two-row test opportunity count as much as a
-        # 106,719-work programme -- which put "Malaria rapid test" at $17.03
-        # when the real programme pays $1.08.
+        # 106,719-work program -- which put "Malaria rapid test" at $17.03
+        # when the real program pays $1.08.
         money_by_service = [
             {
                 "service": row["service_slug"],
@@ -1134,10 +1134,10 @@ class SummaryView(View):
 def _grid_for(sc):
     """Density cells for the current scope, and whether the match is exact.
 
-    Cells key on programme now, so a filtered map narrows its accumulated
+    Cells key on program now, so a filtered map narrows its accumulated
     geography the same way its points do. Cells folded before that carry a null
-    programme and can only be matched on delivery type -- which is why a
-    Nigeria-only programme could light up Cameroon and DR Congo beside a header
+    program and can only be matched on delivery type -- which is why a
+    Nigeria-only program could light up Cameroon and DR Congo beside a header
     reading "COUNTRIES 1".
 
     Those legacy cells are re-derivable rather than lost: the events they came
@@ -1153,12 +1153,12 @@ def _grid_for(sc):
     if sc["service"]:
         cells = cells.filter(service_slug=sc["service"])
 
-    # A partner has no column on the cell, but it owns programmes and cells key
-    # on programme -- so the accumulated geography narrows through that. It is
-    # only as complete as the org's programme coverage: an opportunity with no
-    # programme folded a null-programme cell, which cannot be attributed back to
+    # A partner has no column on the cell, but it owns programs and cells key
+    # on program -- so the accumulated geography narrows through that. It is
+    # only as complete as the org's program coverage: an opportunity with no
+    # program folded a null-program cell, which cannot be attributed back to
     # a partner. Declared as inexact rather than quietly under-drawn, the same
-    # way the programme path declares its legacy cells.
+    # way the program path declares its legacy cells.
     if sc["org"] is not None:
         pids = list(sc["opps"].exclude(program_id=None).values_list("program_id", flat=True).distinct())
         cells = cells.filter(program_id__in=pids) if pids else cells.none()
@@ -1205,9 +1205,9 @@ class GridView(View):
                 "cells": rows,
                 "total_points": sum(r[2] for r in rows),
                 "truncated": len(rows) >= limit,
-                # Whether the density shown is this programme's own history or
+                # Whether the density shown is this program's own history or
                 # a delivery-type approximation standing in for cells folded
-                # before programme attribution existed.
+                # before program attribution existed.
                 "filtered_by": (sc["program"].program_id if exact and sc["program"] else sc["grid_service"]),
                 "exact": exact,
             }
@@ -1285,7 +1285,7 @@ class ReplayView(View):
         # ordered queryset returns the chronologically first `limit` rows, which
         # makes a longer window show *less*: asking for 336h returned 2000 rows
         # spanning 12.8h -- 3.8% of what was requested -- and 94% of them
-        # Nigeria, because whichever programme submitted first monopolises the
+        # Nigeria, because whichever program submitted first monopolises the
         # head. Four of the eight countries with delivery never appeared at all,
         # so the map read as one country however wide the window.
         #
@@ -1300,7 +1300,7 @@ class ReplayView(View):
         stride = max(1, math.ceil(total / limit)) if total > limit else 1
         if stride > 1:
             # Rank inside the SAME filtered set, or the stride would skip over
-            # rows excluded by the programme filter and return far fewer than
+            # rows excluded by the program filter and return far fewer than
             # the budget.
             table = PulseEvent._meta.db_table
             where = "field_ts >= %s AND field_ts <= %s"
@@ -1506,7 +1506,7 @@ def _opportunity_roster(sc) -> list:
             }
         )
     # Delivering now first, then by lifetime volume -- the same ordering rule
-    # the partner and programme menus use, so "recent" means one thing.
+    # the partner and program menus use, so "recent" means one thing.
     rows.sort(key=lambda r: (-(1 if r["last_ts"] else 0), -r["visits"]))
     return rows
 
