@@ -447,3 +447,56 @@ class PulseNetworkView(LoginRequiredMixin, View):
             "pulse/network.html",
             {"mapbox_token": getattr(settings, "MAPBOX_TOKEN", "") or ""},
         )
+
+
+class PulseCostsView(LoginRequiredMixin, View):
+    """Cost data worth fixing: what labs corrected, and what needs a person.
+
+    ``?format=csv`` downloads the same list, for sending to whoever holds the
+    answers.
+    """
+
+    def get(self, request):
+        import csv
+        from collections import OrderedDict
+
+        from django.http import HttpResponse
+
+        from connect_labs.pulse import costs
+
+        issues = costs.cost_issues()
+        if request.GET.get("format") == "csv":
+            response = HttpResponse(content_type="text/csv")
+            response["Content-Disposition"] = 'attachment; filename="pulse-cost-issues.csv"'
+            writer = csv.writer(response)
+            cols = [
+                "who",
+                "title",
+                "opportunity_id",
+                "opportunity",
+                "org_slug",
+                "service",
+                "invoice",
+                "amount_usd",
+                "detail",
+            ]
+            writer.writerow(cols)
+            for row in issues:
+                writer.writerow([row[c] if row[c] is not None else "" for c in cols])
+            return response
+
+        by_opp = costs.opportunity_costs()
+        groups: OrderedDict[str, dict] = OrderedDict()
+        for row in issues:
+            g = groups.setdefault(row["kind"], {"title": row["title"], "who": row["who"], "rows": [], "usd": 0})
+            g["rows"].append(row)
+            g["usd"] += row["amount_usd"] or 0
+        totals = {
+            "per_service": sum((c.per_service_usd for c in by_opp.values()), costs.ZERO),
+            "fixed": sum((c.fixed_usd for c in by_opp.values()), costs.ZERO),
+            "unallocated": costs.unallocated(by_opp),
+            "fixed_opps": sum(1 for c in by_opp.values() if c.fixed_usd),
+            "person": sum(1 for r in issues if r["who"] == costs.WHO_PERSON),
+            "auto": sum(1 for r in issues if r["who"] == costs.WHO_AUTO),
+        }
+        return render(request, "pulse/costs.html", {"groups": groups.values(), "totals": totals})

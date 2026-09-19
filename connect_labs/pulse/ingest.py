@@ -55,6 +55,7 @@ from connect_labs.pulse.models import (
     PulseEvent,
     PulseGridCell,
     PulseIngestHealth,
+    PulseInvoice,
     PulseOpportunity,
     PulseOrganization,
     PulseProgram,
@@ -526,6 +527,37 @@ def refresh_budget(client, opp: PulseOpportunity) -> bool:
         setattr(opp, name, value)
     opp.save(update_fields=[*fields, "updated_at"])
     return True
+
+
+def refresh_invoices(client, opp: PulseOpportunity) -> int:
+    """Mirror one opportunity's invoices, as Connect exports them.
+
+    As-is and complete: every invoice Connect returns is written, and any this
+    mirror holds that Connect no longer returns is removed, so the table is
+    always exactly Connect's view. Decisions labs makes about an invoice live
+    on `PulseInvoiceReview`, which this never touches.
+    """
+    rows = client.fetch_all(f"/export/opportunity/{opp.opportunity_id}/invoice/")
+    seen = []
+    for row in rows:
+        number = str(row.get("invoice_number") or "").strip()[:50]
+        if not number:
+            continue
+        seen.append(number)
+        PulseInvoice.objects.update_or_create(
+            opportunity_id=opp.opportunity_id,
+            invoice_number=number,
+            defaults={
+                "amount": _to_decimal(row.get("amount")),
+                "amount_usd": _to_decimal(row.get("amount_usd")),
+                "date": row.get("date") or None,
+                "service_delivery": bool(row.get("service_delivery")),
+                "exchange_rate_id": _to_int(row.get("exchange_rate")),
+            },
+        )
+    PulseInvoice.objects.filter(opportunity_id=opp.opportunity_id).exclude(invoice_number__in=seen).delete()
+    PulseOpportunity.objects.filter(pk=opp.pk).update(invoices_synced_at=timezone.now())
+    return len(seen)
 
 
 def _to_int(raw) -> int | None:
