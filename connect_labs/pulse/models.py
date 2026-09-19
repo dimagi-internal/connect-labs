@@ -208,6 +208,10 @@ class PulseOpportunity(models.Model):
     # paid; the two agree to within cents, which the ingest asserts.
     usd_per_service = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
 
+    # When this opportunity's invoices were last read (`PulseInvoice`). Null
+    # until the first read, so a sweep can drain the unread ones first.
+    invoices_synced_at = models.DateTimeField(null=True, blank=True)
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -711,3 +715,92 @@ class PulsePublicToken(models.Model):
     @property
     def is_usable(self) -> bool:
         return not self.revoked
+
+
+class PulseInvoice(models.Model):
+    """An invoice exactly as Connect exports it (`/export/opportunity/<id>/invoice/`).
+
+    Mirrored as-is and rewritten on every sync, so nothing labs decides may be
+    stored here -- that lives on `PulseInvoiceReview` and `PulseCostEntry`,
+    which the sync never touches.
+
+    Connect raises two kinds of invoice, and they mean different things for
+    what a service cost:
+
+    * **Service delivery** (`service_delivery=True`) bills the per-service pay
+      that already accrued on completed works (worker + org). Counting it again
+      would double the money, so it is used to *reconcile*, not to add.
+    * **Custom** (`service_delivery=False`) is everything else an organisation
+      is paid for: start-up and other fixed costs. None of it is visible on a
+      completed work, which is why the portfolio's figures left out $241k of
+      it until this model existed.
+    """
+
+    opportunity_id = models.IntegerField(db_index=True)
+    invoice_number = models.CharField(max_length=50)
+    amount = models.DecimalField(max_digits=16, decimal_places=2, null=True, blank=True)  # local currency
+    amount_usd = models.DecimalField(max_digits=16, decimal_places=2, null=True, blank=True)
+    date = models.DateField(null=True, blank=True)
+    service_delivery = models.BooleanField(default=True)
+    # Connect exports only the ExchangeRate row's id, not the rate.
+    exchange_rate_id = models.IntegerField(null=True, blank=True)
+
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("opportunity_id", "invoice_number")
+
+    def __str__(self) -> str:
+        kind = "service delivery" if self.service_delivery else "fixed"
+        return f"{self.opportunity_id} · {self.invoice_number} ({kind})"
+
+
+class PulseInvoiceReview(models.Model):
+    """A person's decision about one invoice. Labs-only; Connect never sees it.
+
+    Keyed by the invoice's natural key rather than a foreign key, so it
+    survives the mirror being rewritten and applies to an invoice before it has
+    even been synced. A decision without a reason is not accepted -- the same
+    rule as the directory's mapping tabs.
+    """
+
+    opportunity_id = models.IntegerField(db_index=True)
+    invoice_number = models.CharField(max_length=50)
+    usd_override = models.DecimalField(max_digits=16, decimal_places=2, null=True, blank=True)
+    exclude = models.BooleanField(default=False, help_text="Leave this invoice out of every cost figure.")
+    reason = models.TextField()
+    decided_by = models.CharField(max_length=200, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("opportunity_id", "invoice_number")
+
+
+class PulseCostEntry(models.Model):
+    """A cost Connect does not hold, entered in labs.
+
+    For money that really went to an organisation but never passed through
+    Connect -- the interview cohorts' org fees are the first case: 72
+    opportunities with worker pay and neither org pay nor a single invoice.
+    """
+
+    KIND_FIXED = "fixed"
+    KIND_ORG_FEE = "org_fee"
+    KIND_CHOICES = [
+        (KIND_FIXED, "Fixed cost (start-up, equipment, other)"),
+        (KIND_ORG_FEE, "Organisation's per-service fee paid outside Connect"),
+    ]
+
+    opportunity_id = models.IntegerField(db_index=True)
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    usd = models.DecimalField(max_digits=16, decimal_places=2)
+    date = models.DateField(null=True, blank=True)
+    reason = models.TextField()
+    source = models.CharField(
+        max_length=300, blank=True, help_text="Where the figure came from: contract, ledger, email."
+    )
+    entered_by = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "pulse cost entries"

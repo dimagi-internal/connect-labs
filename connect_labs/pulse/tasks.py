@@ -17,6 +17,7 @@ import time
 from datetime import datetime
 from datetime import timezone as dt_timezone
 
+from django.db.models import F
 from django.utils import timezone
 
 from config import celery_app
@@ -104,6 +105,19 @@ def poll_slow_maintenance(rate_sample_limit: int = 25) -> dict:
                 except Exception as exc:  # noqa: BLE001 — one opp must not kill the sweep
                     logger.warning("[pulse] budget refresh failed for opp %s: %s", opp.opportunity_id, exc)
 
+            # Invoices: unread first, then the oldest-read, so every
+            # opportunity is re-read on a rolling basis and a new invoice
+            # reaches the cost figures within a few sweeps.
+            invoiced = 0
+            for opp in PulseOpportunity.objects.filter(is_test=False).order_by(
+                F("invoices_synced_at").asc(nulls_first=True)
+            )[:rate_sample_limit]:
+                try:
+                    ingest.refresh_invoices(client, opp)
+                    invoiced += 1
+                except Exception as exc:  # noqa: BLE001 — one opp must not kill the sweep
+                    logger.warning("[pulse] invoice refresh failed for opp %s: %s", opp.opportunity_id, exc)
+
         countries = ingest.refresh_opportunity_countries()
         reclassified = ingest.reclassify_opportunities()
         services = ingest.resync_service_slugs()
@@ -111,6 +125,7 @@ def poll_slow_maintenance(rate_sample_limit: int = 25) -> dict:
             "rates_refreshed": rated,
             "reclassified": reclassified,
             "budgets_refreshed": budgeted,
+            "invoices_refreshed": invoiced,
             "countries_set": countries,
             "services_resynced": services,
         }
