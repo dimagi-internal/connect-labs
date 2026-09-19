@@ -143,6 +143,10 @@ class Metrics:
     # meaningful where payment_date is populated, so coverage rides along.
     paid_out_usd: float = 0.0
     paid_out_coverage: float = 0.0
+    # Start-up and other fixed costs carried by this scope's work (see
+    # pulse/costs.py), and whether total_paid includes them.
+    fixed_usd: float = 0.0
+    costs_view: str = "separate"
 
 
 @dataclass
@@ -229,6 +233,13 @@ def _metrics(sc) -> Metrics:
     m.total_paid = m.usd_to_workers + m.usd_to_orgs
     m.first_delivery = agg["first"]
     m.last_delivery = agg["last"]
+
+    from connect_labs.pulse import costs
+
+    m.costs_view = sc.get("costs_view", costs.VIEW_SEPARATE)
+    m.fixed_usd = costs.fixed_for(sc["works"])
+    if m.costs_view == costs.VIEW_SPREAD:
+        m.total_paid += m.fixed_usd
 
     if m.services:
         m.cost_per_service = m.total_paid / m.services

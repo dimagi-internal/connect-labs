@@ -237,6 +237,87 @@ def unallocated(costs: dict[int, OppCosts]) -> Decimal:
 
 
 # ---------------------------------------------------------------------------
+# Fixed costs for any slice of work -- what every money figure reads
+# ---------------------------------------------------------------------------
+
+_RATE_CACHE_KEY = "pulse:costs:fixed_per_unit:v1"
+_RATE_CACHE_SECONDS = 600
+
+
+def fixed_rates() -> dict:
+    """{opportunity_id: fixed USD per approved unit, unallocated: USD}.
+
+    Only the ~25 opportunities that carry fixed costs are ever read, and the
+    answer is cached for ten minutes: every money figure on every screen reads
+    this, and invoices move on the slow tier's cadence, not per request.
+    """
+    from django.core.cache import cache
+
+    from connect_labs.pulse.models import PulseCostEntry, PulseInvoice
+
+    hit = cache.get(_RATE_CACHE_KEY)
+    if hit is not None:
+        return hit
+    with_fixed = set(PulseInvoice.objects.filter(service_delivery=False).values_list("opportunity_id", flat=True))
+    with_fixed |= set(PulseCostEntry.objects.values_list("opportunity_id", flat=True))
+    by = opportunity_costs(with_fixed) if with_fixed else {}
+    out = {
+        "per_unit": {oid: c.fixed_per_unit for oid, c in by.items() if c.spreadable and c.fixed_usd},
+        "unallocated": unallocated(by),
+    }
+    cache.set(_RATE_CACHE_KEY, out, _RATE_CACHE_SECONDS)
+    return out
+
+
+def invalidate() -> None:
+    from django.core.cache import cache
+
+    cache.delete(_RATE_CACHE_KEY)
+
+
+def fixed_for(works, key: str | None = None):
+    """The fixed costs a slice of work carries, by its share of approved units.
+
+    ``works`` is any `PulseWork` queryset already narrowed to the slice (a
+    program, a partner, a week). With ``key`` the answer is a dict keyed by
+    that column (``service_slug``, ``country``, ``org_slug``,
+    ``opportunity_id``); without, a single total.
+
+    The same share is used in both views. What differs is only whether a
+    figure presents it alongside per-service pay (``separate``) or inside it
+    (``spread``) -- see `apply_view`.
+    """
+    per_unit = fixed_rates()["per_unit"]
+    if not per_unit:
+        return {} if key else 0.0
+    qs = works.filter(status="approved", opportunity_id__in=list(per_unit))
+    if key is None:
+        rows = qs.values("opportunity_id").annotate(u=Sum("approved_count"))
+        return float(sum(per_unit[r["opportunity_id"]] * (r["u"] or 0) for r in rows))
+    out: dict = {}
+    fields = [key] if key == "opportunity_id" else [key, "opportunity_id"]
+    for r in qs.values(*fields).annotate(u=Sum("approved_count")):
+        out[r[key]] = out.get(r[key], 0.0) + float(per_unit[r["opportunity_id"]] * (r["u"] or 0))
+    return out
+
+
+def apply_view(row: dict, fixed: float, view: str, *, total="usd_total", rate=None, units=None) -> dict:
+    """Stamp one money object with its fixed costs, in the chosen view.
+
+    Always adds ``fixed_usd`` (and ``per_service_usd``, the figure before any
+    fixed cost), so either view can say what the other would. In ``spread``
+    the total -- and the per-unit rate, when named -- include the fixed share.
+    """
+    row["fixed_usd"] = round(fixed, 2)
+    row["per_service_usd"] = row.get(total, 0) or 0
+    if view == VIEW_SPREAD and fixed:
+        row[total] = (row.get(total) or 0) + fixed
+        if rate and units:
+            row[rate] = row[total] / units
+    return row
+
+
+# ---------------------------------------------------------------------------
 # Issues
 # ---------------------------------------------------------------------------
 
@@ -257,7 +338,7 @@ ISSUE_TYPES = {
     ),
     "fixed_cost_without_work": (
         WHO_PERSON,
-        "Fixed-cost invoices on an opportunity with no approved work — which work do they belong to?",
+        "Startup and supplies invoiced on an opportunity with no approved work — which work do they belong to?",
     ),
     "accrued_not_invoiced": (
         WHO_PERSON,
@@ -367,7 +448,7 @@ def cost_issues(today: dt.date | None = None) -> list[dict]:
                 "fixed_cost_without_work",
                 opp,
                 c.fixed_usd,
-                f"${c.fixed_usd:,.0f} of fixed costs and no approved work to spread them over",
+                f"${c.fixed_usd:,.0f} of startup and supplies and no approved work to spread them over",
             )
         ended = not opp.is_active or (opp.end_date is not None and opp.end_date < today)
         if ended and c.per_service_usd > 1000 and c.service_invoiced_usd == 0:

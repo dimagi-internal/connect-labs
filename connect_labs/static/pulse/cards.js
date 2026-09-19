@@ -203,6 +203,19 @@
           usdCompact(money.to_orgs) +
           ' delivery orgs';
       }
+      // Fixed costs (start-up and other invoiced costs) are named in both
+      // views: beside the figure when separate, as its included part when
+      // spread -- so neither view can be misread as the other.
+      if (money.fixed_costs) {
+        subs.paid.textContent +=
+          money.costs_view === 'spread'
+            ? ' · incl. ' +
+              usdCompact(money.fixed_costs) +
+              ' startup and supplies'
+            : ' · + ' +
+              usdCompact(money.fixed_costs) +
+              ' startup and supplies not included';
+      }
       // Blended over BOTH streams — what one verified service actually costs
       // the funder, not just the worker's share of it.
       nodes.cps.innerHTML =
@@ -458,7 +471,20 @@
             "the org's share for running the program",
           ],
         ];
-        const max = Math.max(toWorkers, toOrgs, 1);
+        // Start-up and other fixed costs, invoiced outside any unit of work.
+        // A separate line in both views; the total above includes it only
+        // when the viewer has chosen to spread fixed costs into services.
+        if (m.fixed_costs) {
+          steps.push([
+            'Startup and supplies to delivery organisations',
+            m.fixed_costs,
+            'var(--c-3)',
+            m.costs_view === 'spread'
+              ? 'invoiced outside any unit of work, spread into the figures above'
+              : 'invoiced outside any unit of work, not in the total above',
+          ]);
+        }
+        const max = Math.max(toWorkers, toOrgs, m.fixed_costs || 0, 1);
         $('flow').innerHTML = steps
           .map(
             ([name, v, c, note]) => `

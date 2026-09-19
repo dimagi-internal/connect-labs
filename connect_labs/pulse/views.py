@@ -249,7 +249,7 @@ class PulsePublicView(View):
         return response
 
 
-def _report_scope(report: PulseReport):
+def _report_scope(report: PulseReport, costs_view: str | None = None):
     """Resolve a report's stored scope through the live API's own resolver.
 
     Deliberately routed through ``_program_scope`` rather than reimplemented:
@@ -266,7 +266,9 @@ def _report_scope(report: PulseReport):
         pulse_partner_names_allowed = True
 
     req = _Req()
-    req.GET = report.scope_params()
+    req.GET = dict(report.scope_params())
+    if costs_view == "spread":
+        req.GET["costs"] = "spread"
     req.pulse_partner_names_allowed = report.show_partner_names
     return _program_scope(req)
 
@@ -414,7 +416,9 @@ class PulseReportView(View):
         if report is None or not report.is_usable:
             raise Http404("No such report")
 
-        context = reports_module.compute(report, _report_scope(report))
+        # Fixed costs are shown beside per-service pay unless the link asks for
+        # them to be spread in (`?costs=spread`) -- the same choice as the wall.
+        context = reports_module.compute(report, _report_scope(report, request.GET.get("costs")))
         context["is_print_surface"] = True
         response = render(request, "pulse/report.html", context)
         response["X-Robots-Tag"] = "noindex, nofollow"

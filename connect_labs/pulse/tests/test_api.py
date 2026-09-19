@@ -930,11 +930,13 @@ class TestSummaryCache:
 
         settings.PULSE_SUMMARY_CACHE_SECONDS = 60
         cache.clear()
-        assert tasks.warm_summary_cache() == 2
+        # Names on/off x fixed costs separate/spread.
+        assert tasks.warm_summary_cache() == 4
 
         calls = self._spy(monkeypatch)
         client.get(reverse("pulse:api_summary"))
-        assert calls == [], "a warmed cache means the first viewer never computes"
+        client.get(reverse("pulse:api_summary") + "?costs=spread")
+        assert calls == [], "a warmed cache means the first viewer never computes, in either view"
 
 
 @pytest.mark.django_db

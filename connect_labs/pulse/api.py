@@ -22,6 +22,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views import View
 
+from connect_labs.pulse import costs
 from connect_labs.pulse.client import PulseAuthError, get_poller_user
 from connect_labs.pulse.ingest import SCALAR_SCOPE_DRIFT
 from connect_labs.pulse.models import (
@@ -323,6 +324,8 @@ def _program_scope(request):
         "grid_service": grid_service,
         "window_from": window_from,
         "window_to": window_to,
+        # How fixed costs are shown: alongside per-service pay, or spread into it.
+        "costs_view": costs.parse_view(request.GET.get("costs")),
     }
 
 
@@ -608,6 +611,13 @@ def _org_menu(request):
         )
     }
     spark_of = _weekly_spark_by()
+    view = costs.parse_view(request.GET.get("costs"))
+    fixed_of = costs.fixed_for(
+        PulseWork.objects.exclude(org_slug="").exclude(
+            opportunity_id__in=PulseOpportunity.objects.filter(is_test=True).values("opportunity_id")
+        ),
+        "org_slug",
+    )
 
     # Built from who actually DELIVERS, with names joined on where Connect gave
     # us one. Iterating PulseOrganization instead would list only the 10
@@ -659,12 +669,26 @@ def _org_menu(request):
                 "spark": spark_of.get(org.slug, []),
             }
         )
+        costs.apply_view(menu[-1], fixed_of.get(org.slug, 0.0), view, rate="rate", units=approved)
     menu = _one_row_per_partner(menu)
     menu.sort(key=lambda m: (-(1 if m["recent_events"] else 0), -m["visits"]))
     return menu
 
 
-_SUMMED = ("opportunities", "visits", "recent_events", "works", "approved", "usd", "usd_org", "usd_total")
+_SUMMED = (
+    "opportunities",
+    "visits",
+    "recent_events",
+    "works",
+    "approved",
+    "usd",
+    "usd_org",
+    "usd_total",
+    # Fixed costs travel with the workspace they were invoiced to, so an
+    # organisation's row carries all of them -- see pulse/costs.py.
+    "fixed_usd",
+    "per_service_usd",
+)
 
 
 def _one_row_per_partner(rows: list) -> list:
@@ -948,6 +972,9 @@ def _weekly_series(sc):
         )
         .order_by("bucket")
     )
+    fixed_by_week = costs.fixed_for(
+        sc["works"].filter(created_ts__gte=since).annotate(bucket=TruncWeek("created_ts")), "bucket"
+    )
     out = []
     for r in rows:
         if r["bucket"] is None:
@@ -955,14 +982,18 @@ def _weekly_series(sc):
         worker = float(r["usd"] or 0)
         org = float(r["usd_org"] or 0)
         out.append(
-            {
-                "t": int(r["bucket"].timestamp()),
-                "works": r["works"],
-                "approved": r["approved"],
-                "usd": worker,
-                "usd_org": org,
-                "usd_total": worker + org,
-            }
+            costs.apply_view(
+                {
+                    "t": int(r["bucket"].timestamp()),
+                    "works": r["works"],
+                    "approved": r["approved"],
+                    "usd": worker,
+                    "usd_org": org,
+                    "usd_total": worker + org,
+                },
+                fixed_by_week.get(r["bucket"], 0.0),
+                sc["costs_view"],
+            )
         )
     # Flag the trailing partial week rather than letting it read as a collapse.
     if out:
@@ -1156,8 +1187,24 @@ class SummaryView(View):
                 usd_org=Sum("usd_to_org"),
             )
         ]
+        # Fixed costs (custom invoices, costs entered in labs): the slice's
+        # share by approved units, shown alongside per-service pay or spread
+        # into it, per `?costs=`. See pulse/costs.py.
+        view = sc["costs_view"]
+        fixed_total = costs.fixed_for(sc["works"])
+        fixed_by_service = costs.fixed_for(sc["works"], "service_slug")
+        for row in money_by_service:
+            costs.apply_view(
+                row, fixed_by_service.get(row["service"], 0.0), view, rate="total_rate", units=row["approved"]
+            )
+        fixed_by_country = costs.fixed_for(sc["works"], "country")
+        for row in money_by_country:
+            costs.apply_view(row, fixed_by_country.get(row["country"], 0.0), view)
         money_by_service.sort(key=lambda r: -r["usd_total"])
         money_by_service = money_by_service[:12]
+        per_service_paid = total_paid
+        if view == costs.VIEW_SPREAD:
+            total_paid += fixed_total
 
         return JsonResponse(
             {
@@ -1202,6 +1249,21 @@ class SummaryView(View):
                         float(money["to_workers"] or 0) / approved_works if approved_works else 0
                     ),
                     "total_per_approved_work": (total_paid / approved_works if approved_works else 0),
+                    # Which view the totals above are in, and the parts either
+                    # view needs to say what the other would.
+                    "costs_view": view,
+                    "per_service_paid": per_service_paid,
+                    "fixed_costs": fixed_total,
+                    # Fixed costs on opportunities with no approved work have
+                    # nothing to spread over; only the unscoped view reports them.
+                    "fixed_unallocated": (
+                        float(costs.fixed_rates()["unallocated"])
+                        if sc["program"] is None
+                        and sc["org"] is None
+                        and not sc["service"]
+                        and sc["opportunity"] is None
+                        else 0.0
+                    ),
                     "by_work_status": by_work_status,
                     "by_country": money_by_country,
                     "by_country_unattributed": money_country_unattributed,
@@ -1566,6 +1628,7 @@ def _opportunity_roster(sc) -> list:
         )
     }
     spark_of = _weekly_spark_by("opportunity_id", qs=sc["works"])
+    fixed_of = costs.fixed_for(sc["works"], "opportunity_id")
 
     rows = []
     for opp in sc["opps"]:
@@ -1602,6 +1665,9 @@ def _opportunity_roster(sc) -> list:
                 "last_ts": int(e["last_ts"].timestamp()) if e.get("last_ts") else None,
                 "spark": spark_of.get(opp.opportunity_id, []),
             }
+        )
+        costs.apply_view(
+            rows[-1], fixed_of.get(opp.opportunity_id, 0.0), sc["costs_view"], rate="rate", units=approved
         )
     # Delivering now first, then by lifetime volume -- the same ordering rule
     # the partner and program menus use, so "recent" means one thing.
@@ -1678,14 +1744,22 @@ class PartnerView(View):
                     "evidence": partner["why"],
                 },
                 "scope": _scope_for(sc),
-                "money": {
-                    "to_workers": worker,
-                    "to_orgs": org_share,
-                    "total_paid": worker + org_share,
-                    "works": agg["works"] or 0,
-                    "approved_works": approved,
-                    "rate": ((worker + org_share) / approved) if approved else None,
-                },
+                "money": costs.apply_view(
+                    {
+                        "to_workers": worker,
+                        "to_orgs": org_share,
+                        "total_paid": worker + org_share,
+                        "works": agg["works"] or 0,
+                        "approved_works": approved,
+                        "rate": ((worker + org_share) / approved) if approved else None,
+                        "costs_view": sc["costs_view"],
+                    },
+                    costs.fixed_for(works),
+                    sc["costs_view"],
+                    total="total_paid",
+                    rate="rate",
+                    units=approved,
+                ),
                 "by_status": {
                     r["status"]: r["n"] for r in works.values("status").annotate(n=Count("id")).order_by("-n")
                 },
@@ -1942,14 +2016,38 @@ class OpportunityView(View):
                     "first_ts": int(ev["first_ts"].timestamp()) if ev["first_ts"] else None,
                     "last_ts": int(ev["last_ts"].timestamp()) if ev["last_ts"] else None,
                 },
-                "money": {
-                    "works": money["works"] or 0,
-                    "approved": approved_works,
-                    "usd_workers": round(usd_workers, 2),
-                    "usd_org": round(usd_org, 2),
-                    "usd_total": round(usd_workers + usd_org, 2),
-                    "rate": ((usd_workers + usd_org) / approved_works) if approved_works else None,
-                },
+                "money": costs.apply_view(
+                    {
+                        "works": money["works"] or 0,
+                        "approved": approved_works,
+                        "usd_workers": round(usd_workers, 2),
+                        "usd_org": round(usd_org, 2),
+                        "usd_total": round(usd_workers + usd_org, 2),
+                        "rate": ((usd_workers + usd_org) / approved_works) if approved_works else None,
+                        "costs_view": costs.parse_view(request.GET.get("costs")),
+                    },
+                    costs.fixed_for(works),
+                    costs.parse_view(request.GET.get("costs")),
+                    rate="rate",
+                    units=approved_works,
+                ),
+                # Every invoice Connect holds for this opportunity, with the USD
+                # figure labs uses and on what basis (see pulse/costs.py).
+                "invoices": [
+                    {
+                        "number": i.invoice_number,
+                        "kind": "service delivery" if i.service_delivery else "fixed cost",
+                        "date": i.date.isoformat() if i.date else None,
+                        "amount": float(i.amount) if i.amount is not None else None,
+                        "currency": opp.currency,
+                        "usd": float(i.usd) if i.usd is not None else None,
+                        "basis": i.basis,
+                    }
+                    for i in sorted(
+                        (costs.opportunity_costs([opp_id]).get(opp_id) or costs.OppCosts(opp_id)).invoices,
+                        key=lambda i: (i.date or datetime.min.date()),
+                    )
+                ],
                 "statuses": statuses,
                 "flags": {k: {"n": v, "label": FLAG_LABELS.get(k, k)} for k, v in flags.items()},
                 "weekly": weekly,

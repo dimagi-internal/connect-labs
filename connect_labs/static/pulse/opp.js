@@ -328,17 +328,70 @@
         money0.format(m.usd_org),
       ),
     );
+    // Start-up and other fixed costs, invoiced outside any unit of work.
+    // Named in both views; only the spread view folds them into the total
+    // and the per-service rate.
+    if (m.fixed_usd) {
+      root.appendChild(
+        bar(
+          m.costs_view === 'spread'
+            ? 'Startup and supplies, spread into the figures'
+            : 'Startup and supplies, not in the per-service figures',
+          m.fixed_usd,
+          Math.max(m.usd_total, m.fixed_usd),
+          'f-c3',
+          money0.format(m.fixed_usd),
+        ),
+      );
+    }
     const note = el('p', 'opp-money-note');
     note.textContent =
       `${nf.format(m.approved)} of ${nf.format(
         m.works,
       )} claimed units approved` +
       (m.rate != null
-        ? ` · ${
-            '$' + m.rate.toFixed(2)
-          } per verified service, both sides included`
+        ? ` · ${'$' + m.rate.toFixed(2)} per verified service, ${
+            m.costs_view === 'spread' && m.fixed_usd
+              ? 'startup and supplies included'
+              : 'both sides included'
+          }`
         : '');
     root.appendChild(note);
+
+    // Every invoice Connect holds, with the USD figure labs uses and why.
+    const invoices = d.invoices || [];
+    if (invoices.length) {
+      const table = el('table', 'opp-invoices');
+      const head = el('tr');
+      ['Invoice', 'Kind', 'Date', 'Local amount', 'USD', 'Basis'].forEach((h) =>
+        head.appendChild(el('th', '', h)),
+      );
+      table.appendChild(head);
+      invoices.forEach((i) => {
+        const tr = el('tr');
+        tr.appendChild(el('td', '', i.number));
+        tr.appendChild(el('td', '', i.kind));
+        tr.appendChild(el('td', '', i.date || '—'));
+        tr.appendChild(
+          el(
+            'td',
+            'num',
+            i.amount == null
+              ? '—'
+              : nf.format(Math.round(i.amount)) + ' ' + (i.currency || ''),
+          ),
+        );
+        tr.appendChild(
+          el('td', 'num', i.usd == null ? '—' : money0.format(i.usd)),
+        );
+        tr.appendChild(el('td', 'opp-basis', i.basis));
+        table.appendChild(tr);
+      });
+      const wrap = el('div', 'opp-invoices-wrap');
+      wrap.appendChild(el('p', 'opp-money-note', 'Invoices in Connect'));
+      wrap.appendChild(table);
+      root.appendChild(wrap);
+    }
   }
 
   /* ── workers ────────────────────────────────────────────────────── */
@@ -475,7 +528,18 @@
   async function boot() {
     let data;
     try {
-      const res = await fetch(`${CFG.base}/api/opp/?id=${CFG.oppId}`, {
+      // Same fixed-cost view as the wall: the link wins, else the viewer's
+      // last choice on any Pulse page.
+      let view = new URLSearchParams(location.search).get('costs');
+      if (!view) {
+        try {
+          view = localStorage.getItem('pulse.costs');
+        } catch (e) {
+          view = null;
+        }
+      }
+      const costs = view === 'spread' ? '&costs=spread' : '';
+      const res = await fetch(`${CFG.base}/api/opp/?id=${CFG.oppId}${costs}`, {
         headers: { Accept: 'application/json' },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
