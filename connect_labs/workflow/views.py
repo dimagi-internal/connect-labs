@@ -5318,6 +5318,78 @@ def open_tasks_api(request):
 
 @login_required
 @require_GET
+def worker_tasks_api(request):
+    """
+    Return EVERY task for the current opportunity, grouped by lowercase username.
+
+    The difference from ``open_tasks_api`` is the whole point of this endpoint, and it is
+    not cosmetic:
+
+      * ``open_tasks_api`` drops closed tasks and keeps only the most recent one per
+        worker, so a dashboard reading it cannot show task history or a closed task's
+        verdict.
+      * ``view.tasksFor`` is built from ``get_tasks_for_run``, so it only ever sees the
+        run currently being viewed.
+
+    Neither can answer "every task this worker has, across every run". Tasks are stored
+    per OPPORTUNITY (``TaskDataAccess.get_tasks``); only ``data.workflow_run_id`` records
+    which run created one, and nothing filters reads by it. So a single opportunity-scoped
+    read is both correct and cheap, and every workflow on that opportunity — the audit
+    dashboard, the control room, the tasking dashboard — sees the same answer.
+
+    Each task carries its ``review`` verdict, which lives on the task rather than in
+    workflow run state precisely so it is the same verdict in every run.
+    """
+    from connect_labs.tasks.data_access import TaskDataAccess
+
+    try:
+        task_access = TaskDataAccess(request=request)
+        all_tasks = task_access.get_tasks()
+        task_access.close()
+
+        by_username: dict = {}
+        for task in all_tasks:
+            username = (task.data.get("username") or "").lower()
+            if not username:
+                continue
+
+            created_at = ""
+            session_ids = []
+            for event in task.data.get("events", []):
+                event_type = event.get("event_type")
+                if event_type == "created" and not created_at:
+                    created_at = event.get("timestamp") or ""
+                elif event_type == "ai_session":
+                    session_id = event.get("session_id")
+                    if session_id and session_id not in session_ids:
+                        session_ids.append(session_id)
+
+            by_username.setdefault(username, []).append(
+                {
+                    "task_id": task.id,
+                    "status": task.data.get("status", "investigating"),
+                    "title": task.data.get("title", ""),
+                    "created_at": created_at,
+                    "review": task.data.get("review"),
+                    "session_ids": session_ids,
+                    "workflow_run_id": task.data.get("workflow_run_id"),
+                }
+            )
+
+        # Newest first, by task id. Creation timestamps are only present when a "created"
+        # event was recorded, so sorting on them would put undated tasks in an arbitrary
+        # place; ids are monotonic and always there.
+        for tasks in by_username.values():
+            tasks.sort(key=lambda t: t["task_id"], reverse=True)
+
+        return JsonResponse({"tasks": by_username, "total_fetched": len(all_tasks)})
+    except Exception:
+        logger.exception("Failed to fetch worker tasks for opportunity")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+@login_required
+@require_GET
 def prev_categories_api(request):
     """
     Return worker_results from the most recent run (any workflow version) that

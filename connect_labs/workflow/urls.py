@@ -161,6 +161,10 @@ urlpatterns = [
     path("api/run/<int:run_id>/delete/", views.delete_run_api, name="api_delete_run"),
     path("api/run/<int:run_id>/rename/", views.rename_run_api, name="api_rename_run"),
     path("api/open-tasks/", views.open_tasks_api, name="api_open_tasks"),
+    # Every task per worker, across every run. open-tasks/ answers a narrower question
+    # (does this worker have an OPEN one?) and cannot show history or a closed task's
+    # verdict, which is what the KMC coaching dashboards need.
+    path("api/worker-tasks/", views.worker_tasks_api, name="api_worker_tasks"),
     path("api/prev-categories/", views.prev_categories_api, name="api_prev_categories"),
     path("api/open-run-state/", views.open_run_state_api, name="api_open_run_state"),
     path("api/run-category-history/", views.run_category_history_api, name="api_run_category_history"),

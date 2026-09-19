@@ -10,6 +10,14 @@ from datetime import datetime
 
 from connect_labs.labs.models import LocalLabsRecord
 
+#: The reviewer's verdict on a coaching task, set from the KMC audit dashboards.
+#:
+#: Distinct from ``status``, which tracks the task's own lifecycle. This is the human
+#: judgement on the conversation that came out of it. Three of the four SETTLE a task and
+#: free the worker for a new one; ``needs_verification`` deliberately does not, because it
+#: means the reviewer is not finished with it.
+TASK_REVIEW_VALUES = ("satisfied", "needs_verification", "unsatisfactory", "closed")
+
 
 class TaskRecord(LocalLabsRecord):
     """Proxy model for Task-type LocalLabsRecords."""
@@ -48,6 +56,11 @@ class TaskRecord(LocalLabsRecord):
     def assigned_to_name(self):
         """Display name of assignee."""
         return self.data.get("assigned_to_name", "")
+
+    @property
+    def review(self):
+        """Reviewer's verdict, or None. See TASK_REVIEW_VALUES."""
+        return self.data.get("review")
 
     @property
     def resolution_details(self):

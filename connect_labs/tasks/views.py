@@ -20,7 +20,7 @@ from django.views.generic import ListView, TemplateView
 from connect_labs.labs.context import get_org_data
 from connect_labs.labs.integrations.ocs.api_client import OCSAPIError, OCSDataAccess
 from connect_labs.tasks.data_access import TaskDataAccess
-from connect_labs.tasks.models import TaskRecord
+from connect_labs.tasks.models import TASK_REVIEW_VALUES, TaskRecord
 from connect_labs.utils.json_safe import safe_json_for_script
 
 logger = logging.getLogger(__name__)
@@ -623,6 +623,29 @@ def task_update(request, task_id):
             old_status = task.status
             task.data["status"] = body["status"]
             changes.append(f"status from {old_status} to {body['status']}")
+
+        # The reviewer's verdict on a coaching task, set from the KMC audit dashboards.
+        #
+        # It lives HERE, on the task, and deliberately not in workflow run state. A task is
+        # fetched by opportunity (TaskDataAccess.get_tasks), never by run — so a verdict
+        # stored on it is the same verdict in every run and in every workflow reading that
+        # opportunity. Stored in run state it would be per-run, and three dashboards on the
+        # same opportunity would each hold a different answer.
+        if "review" in body and body["review"] != task.data.get("review"):
+            review = body["review"]
+            if review is not None and review not in TASK_REVIEW_VALUES:
+                return JsonResponse(
+                    {"success": False, "error": f"Invalid review value: {review}"},
+                    status=400,
+                )
+            old_review = task.data.get("review")
+            # None clears the verdict; the key is dropped rather than set to null so a task
+            # that never had one and a task whose verdict was cleared read identically.
+            if review is None:
+                task.data.pop("review", None)
+            else:
+                task.data["review"] = review
+            changes.append(f"review from {old_review or 'none'} to {review or 'none'}")
 
         if "assigned_to_type" in body and body["assigned_to_type"] != task.assigned_to_type:
             task.data["assigned_to_type"] = body["assigned_to_type"]
