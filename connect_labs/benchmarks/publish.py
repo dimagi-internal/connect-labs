@@ -6,11 +6,10 @@ What is passed in is the GRADED PAYLOAD (`connect_labs.semantic.snapshot.build`'
 return value), which a saved run stores one level down, under
 `snapshot["state"][<state_key>]` (see `workflow/snapshot_builders.wrap_for_runner`).
 
-NOT IMPLEMENTED HERE, and deliberately: there is no completion hook and no way to
-create or administer a cohort. `BenchmarkCohort.auto_publish_on_completion` is a
-column nothing reads yet, and `publish_benchmark` has no caller outside tests.
-Both are Plan 2's scope. Publication today is something a human (or a future
-caller) does explicitly, by calling this function.
+Callers live in `benchmarks/auto_publish.py` (`publish_run`): the
+`benchmarks_publish` MCP tool, and -- for a cohort with a `source_workflow_id` and
+`auto_publish_on_completion` on -- a run of that workflow being saved, or a history
+rebuild of it finishing (queued via `benchmarks/tasks.py`).
 
 WHAT MAY BE PUBLISHED AT ALL. Only rate-shaped indicators. R3 withholds the
 denominator COLUMN, which is no defence when the size IS the value: C01
