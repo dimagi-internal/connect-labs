@@ -1721,3 +1721,37 @@ Any workflow whose template supports a **default run** (`TEMPLATE["supports_defa
 - **Identity / auth:** a schedule stores only its **owner**, never a token. At fire time the run mints a fresh Connect access token from the owner's persisted `UserConnectToken` via `connect_labs.labs.connect_tokens.get_valid_access_token(owner)`. If auth is permanently dead — any `ConnectTokenError` (no stored `UserConnectToken`, expired with no refresh token, or a dead refresh token / `ConnectReLoginRequired`) — the schedule is auto-disabled and marked `auth_expired` ("Needs re-login" in the UI). Transient network errors leave it enabled to retry next cadence.
 - **Execution:** a single seeded `PeriodicTask` (django-celery-beat, every 15 min) runs `connect_labs.workflow.tasks.run_due_workflow_schedules`. For each enabled, due row it **claims** the row by advancing `next_run_at` to the next window **before** dispatch, via an optimistic conditional update (`.filter(pk=..., next_run_at=<current>).update(next_run_at=<next>)`), and only dispatches `run_scheduled_workflow.delay(schedule_id)` if the claim won (matched 1 row). This gives **at-most-once-per-window** dispatch even if a prior beat crashed after enqueueing or two ticks overlap — the loser's update matches 0 rows and skips. (Missing a run on a worker crash is acceptable; double-firing a non-idempotent hook is not.) `run_scheduled_workflow` then resolves the token, loads the definition, and calls `run_default_for_definition`; `run_default` hooks are additionally expected to be idempotent per window, but the claim is the primary guard against double-creation.
 - **UIs:** enable/edit a schedule per-row from the **workflow list screen** (owner-scoped, self-service); manage/disable/delete **all** schedules from **Labs Admin → Scheduled Workflows** (`labs_admin:schedules`, Dimagi-gated, acts on any owner's schedule).
+
+---
+
+## 12. Reports that stay in step (followed templates, fan-out, warm-on-read)
+
+When many workflows are meant to be **the same report over different scopes** — one KMC Opportunity Report per opportunity, say — every per-instance copy is something to keep in step. These mechanisms make an instance own as little as possible.
+
+### Following the deployed template (`render_source`)
+
+`render_source: {"template": "<key>"}` on a definition makes the page render the **deployed** template's code instead of its stored copy (`connect_labs/workflow/render_source.py`). A deploy reaches every following instance at once, and there is nothing to sync. Edits to a following instance's stored render are **refused (409)**, not silently ignored. Setting `render_source` to `null` forks: the template's current code becomes the stored copy. Only a null/absent `render_source` drifts from the repo, so check it before reaching for `workflow_sync_from_deployed_template` or `workflow_patch_render_code`. The only allowed value is the workflow's **own** template (`config.templateType`).
+
+### Config resolved from the template on read
+
+`templates.with_inherited_config_flags` fills in, at read time, every config key the template declares that the instance lacks. So a key added to a template later (`noPipelineStream`, `renderWhileLoading`, `warm_cache_on_read`) reaches instances created before it, with no migration. **Limit:** a key the instance already carries keeps the instance's value. That is deliberate (a per-instance override must survive), so changing the **value** of an existing key in the template does not reach existing instances; patch them with `workflow_update_definition`.
+
+### Fan-out: one report per cohort member (`benchmarks_create_opp_reports`)
+
+Creates one instance of a template (default `kmc_opp_report`) in each opportunity of a benchmark cohort that lacks one. It is idempotent, so re-running it after adding an opportunity to the cohort creates only the new one. Every instance:
+
+- follows the deployed template (`render_source`);
+- references the **source** report's pipeline records via `home_scope` rather than copying them — one pipeline read, one cache;
+- binds the source report's **registry record**, so an indicator edit (`semantic_registry_update`) reaches all of them with no deploy.
+
+Pass `source_workflow_id` (+ its scope) to get that sharing; without it each instance makes its own pipelines and registry, and the result says `shared: false`. A new instance has no run, and the page needs one: `workflow_create_run` per instance.
+
+### Warm-on-read (`warm_cache_on_read`)
+
+A report that fetches its figures from the semantic endpoint and never streams its pipelines (`noPipelineStream`) would otherwise depend on someone else filling the visit cache, which is held for 90 minutes. With `config.warm_cache_on_read: true`, the semantic endpoint (`api/<id>/semantic/`) fills any of the workflow's opportunities that have no live cached visits before evaluating, using the same `ensure_visit_cache` as the `workflow_ensure_visit_cache` MCP tool. It is best effort: a failure falls back to the `cold_cache` / `partial_cache` flags. It is opt-in, so a multi-opportunity report never turns a page load into a download of every opportunity. `kmc_opp_report` sets it.
+
+### What still needs a person
+
+- A **new opportunity** in the programme: add it to the cohort (`benchmarks_cohort_add_opportunities`), then re-run `benchmarks_create_opp_reports`.
+- A **changed config value** in the template: patch existing instances (see the limit above).
+- Benchmarks: see `connect_labs/benchmarks/README.md`. Publication follows the source report automatically once the cohort's `source_workflow_id` and `auto_publish_on_completion` are set.
