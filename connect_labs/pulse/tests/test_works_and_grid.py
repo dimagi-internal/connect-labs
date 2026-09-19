@@ -251,7 +251,7 @@ class TestGridFold:
         """The whole point: a cell cannot be resolved back to a household.
 
         `program_id` was added deliberately so a filtered map narrows its
-        density as well as its points. It does not weaken this: a programme
+        density as well as its points. It does not weaken this: a program
         spans dozens of opportunities and hundreds of thousands of services, so
         knowing "these 412 services in this ~1.1 km cell belonged to ECD
         Nigeria 2025" is coarser than the delivery type already stored, not

@@ -279,7 +279,7 @@ class TestOpportunityBreakdown:
         assert data["money"]["works"] == 7
 
     def test_currently_delivering_opportunities_come_first(self, viewer, second_opp):
-        """Same ordering rule as the partner and programme menus, so "recent"
+        """Same ordering rule as the partner and program menus, so "recent"
         means one thing across the app."""
         rows = viewer.get(reverse("pulse:api_partner"), {"org": second_opp}).json()["opportunities"]
         assert rows[0]["last_ts"] is not None

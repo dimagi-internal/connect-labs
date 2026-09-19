@@ -199,7 +199,7 @@ class TestTiering:
 
     def test_tail_retiers_a_waking_opportunity(self, opp, cursor):
         """An opp that starts producing work must escalate to hot on its own,
-        or a newly-launched programme would poll once a week forever."""
+        or a newly-launched program would poll once a week forever."""
         cursor.tier = TIER_DORMANT
         cursor.save()
         ingest.tail_visits(FakeClient([visit(1)]), cursor)
@@ -309,7 +309,7 @@ class TestCheapTier:
         assert flagged == {1: False, 2: True, 3: True, 4: True, 5: False}
         assert scope["lifetime_visits"] == 150
         assert scope["opportunities"] == 2
-        # An interview cohort with no programme is still Interviews.
+        # An interview cohort with no program is still Interviews.
         assert PulseOpportunity.objects.get(opportunity_id=5).service_slug == "interview"
 
     def test_reclassify_reaches_opportunities_connect_no_longer_lists(self):
@@ -324,7 +324,7 @@ class TestCheapTier:
         PulseOpportunity.objects.create(
             opportunity_id=2, name="ITN FGD (run 1)", org_slug="ai-demo-space", service_slug="malaria"
         )
-        # A programme's own delivery type beats the name, even one that says interviews.
+        # A program's own delivery type beats the name, even one that says interviews.
         PulseOpportunity.objects.create(opportunity_id=3, name="KMC exit interviews", program_id=5, service_slug="kmc")
         PulseWork.objects.create(
             work_key="w1",
@@ -730,7 +730,7 @@ class TestBudgetComesFromThePerOpportunityEndpoint:
         assert ingest.refresh_budget(object(), opp) is False
 
     def test_a_missing_currency_does_not_wipe_the_one_on_file(self, monkeypatch):
-        """The cheap tier sets currency from the programme; a sparse payload
+        """The cheap tier sets currency from the program; a sparse payload
         must not undo that."""
         from connect_labs.pulse import ingest
 

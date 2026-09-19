@@ -1,9 +1,9 @@
-"""Re-derive the density layer so its cells carry a programme.
+"""Re-derive the density layer so its cells carry a program.
 
 Cells used to key on ``(lat_q, lon_q, service_slug)``. The events they were
 folded from always carried ``program_id`` — the fold simply never selected it —
-so a map filtered to one programme fell back to matching on delivery type and
-lit up every country that type operates in. A Nigeria-only programme glowed
+so a map filtered to one program fell back to matching on delivery type and
+lit up every country that type operates in. A Nigeria-only program glowed
 across Cameroon and DR Congo beside a header reading "COUNTRIES 1".
 
 The fix is to re-fold, which needs the visits back. They are re-fetchable:
@@ -35,7 +35,7 @@ from connect_labs.pulse.models import PulseCursor, PulseEvent, PulseGridCell
 
 
 class Command(BaseCommand):
-    help = "Purge and rebuild the grid so density cells carry a programme."
+    help = "Purge and rebuild the grid so density cells carry a program."
 
     def add_arguments(self, parser):
         parser.add_argument("--days", type=int, default=400, help="Visit history depth to re-fetch (default 400).")
@@ -52,7 +52,7 @@ class Command(BaseCommand):
             unattributed=Count("id", filter=Q(program_id=None)),
         )
         self.stdout.write(
-            self.style.MIGRATE_HEADING(f"grid cells: {stats['total']:,} ({stats['unattributed']:,} with no programme)")
+            self.style.MIGRATE_HEADING(f"grid cells: {stats['total']:,} ({stats['unattributed']:,} with no program)")
         )
         self.stdout.write(f"stored events: {PulseEvent.objects.count():,}")
 
@@ -65,7 +65,7 @@ class Command(BaseCommand):
             )
             return
 
-        # Purge only the cells that lack a programme. Ones already folded with
+        # Purge only the cells that lack a program. Ones already folded with
         # attribution are correct, and re-folding them from re-fetched visits is
         # what would double-count.
         deleted, _ = PulseGridCell.objects.filter(program_id=None).delete()
@@ -82,7 +82,7 @@ class Command(BaseCommand):
             self.stdout.write("re-fetching visits (the slow part) …")
             # Delegate rather than reimplement: this is the same path that
             # populated the map in the first place, and --fold now keys on
-            # programme.
+            # program.
             call_command("pulse_backfill", "--visits", "--fold", days=options["days"])
         else:
             result = ingest.fold_events_to_grid()

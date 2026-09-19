@@ -302,7 +302,7 @@ def parse_rounds(rows: list[list[str]]) -> tuple[list[DirectoryRound], list[str]
                 notes=cell(row, 17),
                 # Column S. Connect's own delivery_type, decided by a human —
                 # the sheet is the master, so labs reads this rather than
-                # guessing a programme from the round's title.
+                # guessing a program from the round's title.
                 delivery_type=cell(row, 18).strip().lower(),
                 source_row=index,
             )

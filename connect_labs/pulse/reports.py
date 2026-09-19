@@ -86,7 +86,7 @@ class Verification:
     be windowed for any period Pulse has ever rolled up.
 
     **Work level** (from ``PulseWork``) counts payment units. For a simple
-    programme the two coincide; for a longitudinal one they diverge sharply --
+    program the two coincide; for a longitudinal one they diverge sharply --
     measured on prod, KMC runs 8,844 works against 34,676 visits, so quoting
     works to a KMC funder understates delivery about fourfold.
 
@@ -126,7 +126,7 @@ class Metrics:
     # Verified service contacts — the headline. Visit-level where available.
     services: int = 0
     services_are_visits: bool = False
-    # Payment units approved — "care episodes" on a longitudinal programme.
+    # Payment units approved — "care episodes" on a longitudinal program.
     episodes: int = 0
     works: int = 0
     workers: int = 0
@@ -202,7 +202,7 @@ def _metrics(sc) -> Metrics:
     m.works = agg["works"] or 0
 
     # Payment units approved -- "care episodes completed" in a longitudinal
-    # programme. `approved_count` is Connect's own figure and is the minimum
+    # program. `approved_count` is Connect's own figure and is the minimum
     # across required deliver units (see completed_work.py), i.e. complete sets
     # of required forms, NOT visits. It is not universally populated, so fall
     # back to counting the approved records themselves, which is the same thing
@@ -364,7 +364,7 @@ def resolve_deliverables(rows: list, metrics: Metrics) -> list[Deliverable]:
 
     A line names a quantity a funder cares about ("ORS co-packs distributed")
     and ties it to a verified basis and a ratio. ``ORS co-packs, services x 2``
-    is a claim the platform can stand behind *given* the programme's protocol;
+    is a claim the platform can stand behind *given* the program's protocol;
     the protocol itself is the author's knowledge, not Connect's, which is why
     the multiplier is declared rather than inferred.
     """
@@ -424,7 +424,7 @@ def default_deliverables() -> list[dict]:
     """The starting line-items for a new report.
 
     One-to-one with verified delivery, which is the only ratio Pulse can assert
-    without knowing the programme's protocol. The author edits from here.
+    without knowing the program's protocol. The author edits from here.
     """
     return [
         {
@@ -520,8 +520,8 @@ def _engagements(sc) -> list[dict]:
 
 
 def programs_for_picker() -> list[dict]:
-    """Programmes a report can be scoped to, test programmes excluded."""
+    """Programs a report can be scoped to, test programs excluded."""
     return [
-        {"id": p.program_id, "name": p.name or f"Programme {p.program_id}", "delivery_type": p.delivery_type}
+        {"id": p.program_id, "name": p.name or f"Program {p.program_id}", "delivery_type": p.delivery_type}
         for p in PulseProgram.objects.filter(is_test=False).order_by("name")
     ]

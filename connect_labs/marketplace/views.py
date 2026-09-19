@@ -24,7 +24,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.marketplace import programmes, queries
+from connect_labs.marketplace import programs, queries
 from connect_labs.solicitations.local_models import SolicitationResponse
 
 
@@ -56,7 +56,7 @@ def _population(request) -> dict:
     selected = _controls(request)
     everyone = queries.all_rows_with_rounds()
     delivering = queries.delivering_names()
-    delivered_by_name = queries.delivered_programmes_by_org_name()
+    delivered_by_name = queries.delivered_programs_by_org_name()
 
     def scope_excluding(dimension=None):
         return [
@@ -123,8 +123,8 @@ def network(request):
             # and written as "20-100 FLWs", "Medium" and "50-80 sampling sites
             # capacity" as often as a number, so it could be displayed but
             # never compared or sorted.
-            "delivered": programmes.chips(delivered_by_name.get(org.name, ())),
-            "applied": programmes.chips(queries.applied_programmes_of(org)),
+            "delivered": programs.chips(delivered_by_name.get(org.name, ())),
+            "applied": programs.chips(queries.applied_programs_of(org)),
         }
         for org in rows
     ]
@@ -180,14 +180,14 @@ def network_points(request):
 
 
 @login_required
-def programmes_page(request):
-    """The marketplace by programme: what has been paid, what is still funded,
+def programs_page(request):
+    """The marketplace by program: what has been paid, what is still funded,
     and who is waiting to do the work.
 
     Spent and services are Pulse's own figures, so this page and the Pulse wall
-    cannot quote different numbers for the same programme.
+    cannot quote different numbers for the same program.
     """
-    cards = queries.programme_cards()
+    cards = queries.program_cards()
     by_state = {key: [] for key, _, _ in queries.STATES}
     for card in cards:
         by_state[card["state"]].append(card)
@@ -198,11 +198,11 @@ def programmes_page(request):
     ]
     return render(
         request,
-        "marketplace/programmes.html",
+        "marketplace/programs.html",
         {
             "sections": sections,
             "totals": {
-                "programmes": len(cards),
+                "programs": len(cards),
                 "spent": queries._money(sum(c["spent"] for c in cards)),
                 "remaining": queries._money(sum(c["remaining"] for c in cards)),
                 "services": sum(c["services"] for c in cards),
@@ -307,11 +307,9 @@ def organisation(request, slug):
             # Delivered comes off the opportunities already fetched above, so
             # the panel and the badge cannot disagree about what this
             # organisation runs.
-            "delivered_programmes": programmes.chips(o.service_slug for o in opportunities),
-            "applied_programmes": programmes.chips(
-                r.solicitation.delivery_type
-                for r in responses
-                if programmes.is_programme(r.solicitation.delivery_type)
+            "delivered_programs": programs.chips(o.service_slug for o in opportunities),
+            "applied_programs": programs.chips(
+                r.solicitation.delivery_type for r in responses if programs.is_program(r.solicitation.delivery_type)
             ),
             "visits": sum(o.lifetime_visit_count for o in opportunities),
         },

@@ -300,14 +300,14 @@
         eyebrow: 'The cost',
         title:
           'The money reaches both sides of delivery — the worker and the local organisation.',
-        note: "Measured from approved work, not budgeted — paid to a worker's phone and to the organisation running the programme, with no sub-grantee chain in between.",
+        note: "Measured from approved work, not budgeted — paid to a worker's phone and to the organisation running the program, with no sub-grantee chain in between.",
         focus: 'ng',
       },
       {
         card: 'reach',
         eyebrow: 'The scale',
         title:
-          'Local organisations, running their own programmes on shared rails.',
+          'Local organisations, running their own programs on shared rails.',
         note: 'Dimagi operates none of these. Every one is delivered by a local partner.',
         focus: 'world',
       },
@@ -412,14 +412,14 @@
         card: 'unitecon',
         eyebrow: 'Unit economics',
         title: 'What a verified service costs.',
-        note: 'Per programme, measured — not a blended headline.',
+        note: 'Per program, measured — not a blended headline.',
         focus: 'ng',
       },
       {
         card: 'reach',
         eyebrow: 'Reach',
         title: 'Where the work is.',
-        note: 'Opportunities, programmes and countries currently on the platform.',
+        note: 'Opportunities, programs and countries currently on the platform.',
         focus: 'world',
       },
       {
@@ -595,8 +595,8 @@
       for (const p of s.programs) {
         const o = document.createElement('option');
         o.value = String(p.id);
-        // Connect's own programme name, verbatim. Nothing invented in labs.
-        // Say which programmes are dormant in the menu, rather than letting
+        // Connect's own program name, verbatim. Nothing invented in labs.
+        // Say which programs are dormant in the menu, rather than letting
         // someone select one and be shown an empty map with no stated reason.
         o.textContent = p.recent_events
           ? p.name
@@ -706,7 +706,7 @@
       // Built by the store, not by hand: this fetch has to carry whatever the
       // store is filtered to. A local copy of the query string silently missed
       // the partner filter and left the whole estate's geography under one
-      // partner's points -- the same defect the programme filter already fixed.
+      // partner's points -- the same defect the program filter already fixed.
       const res = await fetch(store._url('/api/grid/', { limit: '40000' }));
       if (!res.ok) throw new Error(res.status);
       const payload = await res.json();
@@ -888,7 +888,7 @@
           : '') +
         (inexact
           ? `<div class="pulse-partner-note">Some of this partner's work sits
-               outside a programme, so the lit geography under this card is
+               outside a program, so the lit geography under this card is
                partial.</div>`
           : '')
       );
@@ -1228,7 +1228,7 @@
 
        Registered here, once. It previously sat inside setFocus(), which runs on
        every focus change and every filter change -- so the handlers accumulated,
-       and by the fourth programme switch a single mouse move was doing the
+       and by the fourth program switch a single mouse move was doing the
        cell-walk four times. */
     const mapBox = $('.pulse-map');
     if (mapBox) {
@@ -1295,11 +1295,11 @@
           Url.write();
           // The density layer is a separate fetch and has to follow the filter
           // too, or the map keeps the whole estate's geography under one
-          // programme's points.
+          // program's points.
           await loadGrid();
           setFocus(focus, true);
         } catch (err) {
-          console.error('[pulse] programme filter failed', err);
+          console.error('[pulse] program filter failed', err);
         } finally {
           sel.disabled = false;
           paintTransport();
@@ -1517,7 +1517,7 @@
     const menu = document.createElement('div');
     menu.className = 'pulse-dd-menu';
     menu.hidden = true;
-    // Search sits inside the menu: with ninety programmes, finding one by
+    // Search sits inside the menu: with ninety programs, finding one by
     // scrolling is a chore. Focus lands here on open, so the interaction is
     // click-type-Enter.
     const search = document.createElement('input');

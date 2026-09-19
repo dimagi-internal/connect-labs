@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic import RedirectView
 
 from connect_labs.marketplace import views
 
@@ -6,7 +7,9 @@ app_name = "marketplace"
 
 urlpatterns = [
     path("", views.home, name="home"),
-    path("programmes/", views.programmes_page, name="programmes"),
+    path("programs/", views.programs_page, name="programs"),
+    # The page's first address, already shared before the rename.
+    path("programmes/", RedirectView.as_view(pattern_name="marketplace:programs", permanent=True)),
     path("network/", views.network, name="network"),
     path("network/points/", views.network_points, name="network_points"),
     path("rounds/", views.rounds, name="rounds"),

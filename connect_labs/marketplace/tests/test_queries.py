@@ -101,7 +101,7 @@ class TestFacets:
         assert {f["value"] for f in facets["countries"]} == {"Uganda", "Malawi"}
 
     def test_delivered_and_applied_are_counted_separately(self, network):
-        """The two programme facets answer different questions. One organisation
+        """The two program facets answer different questions. One organisation
         has delivered KMC; both applied to a CHC round; nobody has delivered CHC.
         Collapsing them would claim two CHC deliverers that do not exist.
         """
@@ -109,7 +109,7 @@ class TestFacets:
         assert facets["delivered"] == [{"value": "kmc", "label": "Kangaroo Mother Care", "count": 1}]
         assert facets["applied"] == [{"value": "chc", "label": "Child Health Campaign", "count": 2}]
 
-    def test_an_untagged_round_contributes_no_programme(self, network):
+    def test_an_untagged_round_contributes_no_program(self, network):
         """A round nobody has tagged yet must not become a blank facet row."""
         Solicitation.objects.filter(slug="chc-2025").update(delivery_type="")
         facets = queries.facet_counts(queries.all_rows_with_rounds(), queries.delivering_names())

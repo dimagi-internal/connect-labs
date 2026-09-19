@@ -1,7 +1,7 @@
 """Two-speed ingest from Connect's export API.
 
 The two speeds are forced by measured cost, not taste. Measured across six
-programmes (1,200 sampled rows), per ``user_visits`` row:
+programs (1,200 sampled rows), per ``user_visits`` row:
 
     uncompressed        25,153 bytes   (94-103% of it form_json, discarded)
     gzipped on the wire  4,578 bytes   (form JSON is repetitive: 5.5x)
@@ -16,7 +16,7 @@ answer, then keep the timestamp, the point and the status. Across all 1.65M
 visits that is ~41 GB uncompressed / **~7.5 GB actually transferred**, to store
 ~0.63 GB.
 
-Cost varies ~10x by programme — Back-to-School is 6.5 KB/row raw, Readers is
+Cost varies ~10x by program — Back-to-School is 6.5 KB/row raw, Readers is
 62 KB/row — and the expensive ones also compress worst (4.5x vs 12.9x), because
 their bulk is unique content rather than boilerplate.
 
@@ -99,7 +99,7 @@ def _mirror(model, key: str, rows: list) -> int:
 
     ``update_or_create`` writes unconditionally, and every mirrored model here
     carries ``updated_at = auto_now``, so a steady state still rewrote all ~690
-    orgs, programmes and opportunities every five minutes -- ~199,000 row
+    orgs, programs and opportunities every five minutes -- ~199,000 row
     writes a day to change nothing, plus the dead-tuple and autovacuum churn
     behind them.
 
@@ -132,7 +132,7 @@ def _mirror(model, key: str, rows: list) -> int:
 def refresh_opportunities(client) -> dict:
     """Sync every visible opportunity from ``opp_org_program_list``.
 
-    One request returns orgs, programmes and opps *including* each opp's
+    One request returns orgs, programs and opps *including* each opp's
     lifetime ``visit_count`` — so the headline scale figures cost nothing.
     """
     from connect_labs.pulse.client import fetch_json
@@ -161,7 +161,7 @@ def refresh_opportunities(client) -> dict:
         ],
     )
 
-    # Mirror the programmes themselves. Previously this payload was read only
+    # Mirror the programs themselves. Previously this payload was read only
     # for org slugs, and its `name` and `delivery_type` were dropped -- which is
     # why service categorisation was a regex over opportunity names.
     program_delivery: dict[int, str] = {}
@@ -194,7 +194,7 @@ def refresh_opportunities(client) -> dict:
             continue
         name = row.get("name") or ""
         # Connect's own delivery_type wins; the name regex is the fallback for
-        # an opportunity whose programme has none set.
+        # an opportunity whose program has none set.
         delivery = program_delivery.get(row.get("program")) or ""
         org_slug = (row.get("organization") or program_org.get(row.get("program"), ""))[:120]
         opp_rows.append(
@@ -370,13 +370,13 @@ def reclassify_opportunities() -> int:
     eHealth Africa interview cohorts (65 opportunities, ~7,000 interviews) and
     a batch of older ACE runs no longer appear in it, yet their works are still
     counted. A rule change that only reaches listed rows leaves exactly those
-    behind -- which is how the Interviews programme stayed at 1 opportunity
+    behind -- which is how the Interviews program stayed at 1 opportunity
     after the rule that should have moved 65 shipped.
 
-    The delivery type is only re-derived where Connect gives none: a programme
+    The delivery type is only re-derived where Connect gives none: a program
     with a ``delivery_type`` always wins over the name, and a stored type is
     only replaced when it is the fallback's "found nothing" (``other`` or
-    blank). An opportunity whose programme is no longer mirrored keeps the
+    blank). An opportunity whose program is no longer mirrored keeps the
     type Connect gave it when it was.
     """
     programs = {p.program_id: p for p in PulseProgram.objects.all()}
@@ -512,7 +512,7 @@ def refresh_budget(client, opp: PulseOpportunity) -> bool:
         "budget_per_user": _to_int(payload.get("budget_per_user")),
         "max_visits_per_user": _to_int(payload.get("max_visits_per_user")),
     }
-    # Currency comes from the programme on the cheap tier, but an opportunity
+    # Currency comes from the program on the cheap tier, but an opportunity
     # carries its own and that is the one its budget is denominated in.
     currency = (payload.get("currency") or "").strip()
     if currency:
