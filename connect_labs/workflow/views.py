@@ -3307,6 +3307,47 @@ def _deployment_facts_for_render(deployment: dict | None) -> dict:
     }
 
 
+def _cached_opportunities(opportunity_ids) -> tuple[list[int], list[int]]:
+    """(opportunities with live cached visits, opportunities without), in request order."""
+    from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+
+    requested = [int(o) for o in opportunity_ids]
+    present = set(
+        RawVisitCache.objects.filter(
+            opportunity_id__in=requested,
+            visit_count__gt=0,
+            expires_at__gt=dj_timezone.now(),
+        ).values_list("opportunity_id", flat=True)
+    )
+    return [o for o in requested if o in present], [o for o in requested if o not in present]
+
+
+def _warm_cache_on_read(definition) -> bool:
+    """The template's `warm_cache_on_read`, resolved the way the run page resolves
+    config -- so an instance created before the flag existed still gets it."""
+    data = with_inherited_config_flags(
+        getattr(definition, "data", None) or {}, getattr(definition, "template_type", None)
+    )
+    return bool((data.get("config") or {}).get("warm_cache_on_read"))
+
+
+def _warm_visit_cache(data_access, definition, opportunity_ids) -> None:
+    """Fill (and hold) the visit cache for this workflow's opportunities. Best effort:
+    a failure here is logged and the endpoint answers as before, with its cold/partial
+    cache flags telling the page what is missing."""
+    from connect_labs.workflow.visit_cache import ensure_visit_cache
+
+    owner = getattr(definition, "opportunity_id", None) or (opportunity_ids[0] if opportunity_ids else None)
+    try:
+        report = ensure_visit_cache(data_access, definition.id, opportunity_id=int(owner))
+        if report.get("failed"):
+            logger.warning(
+                "warm-on-read left opportunities uncached for workflow %s: %s", definition.id, report["failed"]
+            )
+    except Exception:
+        logger.warning("warm-on-read failed for workflow %s", definition.id, exc_info=True)
+
+
 @login_required
 @require_GET
 def semantic_explain_api(request, definition_id):
@@ -3562,6 +3603,15 @@ def semantic_indicators_api(request, definition_id):
                 return JsonResponse({"error": "opportunity_id required"}, status=400)
             opportunity_ids = [opp]
 
+        # A workflow that reads ONE opportunity's figures on demand (the opportunity
+        # report) fills its own cache when it finds it cold, instead of rendering
+        # "no cached visits" until someone opens the programme report. Opt-in via
+        # the template's config: a multi-opportunity report would turn one page load
+        # into a download of every opportunity it spans.
+        warm_cache = _warm_cache_on_read(definition)
+        if warm_cache and _cached_opportunities(opportunity_ids)[1]:
+            _warm_visit_cache(data_access, definition, opportunity_ids)
+
         rows = evaluate(
             pipeline_config,
             [int(o) for o in opportunity_ids],
@@ -3596,18 +3646,8 @@ def semantic_indicators_api(request, definition_id):
         # cohort of 8,718, with nothing saying ten opportunities were missing. An
         # all-zeros check cannot catch it -- the number is not zero, it is wrong.
         # A number that is quietly 7% of the truth is worse than an obvious zero.
-        from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
-
         requested = [int(o) for o in opportunity_ids]
-        present = set(
-            RawVisitCache.objects.filter(
-                opportunity_id__in=requested,
-                visit_count__gt=0,
-                expires_at__gt=dj_timezone.now(),
-            ).values_list("opportunity_id", flat=True)
-        )
-        with_data = [o for o in requested if o in present]
-        missing = [o for o in requested if o not in present]
+        with_data, missing = _cached_opportunities(requested)
         cold = not with_data
         partial = bool(with_data) and bool(missing)
 
