@@ -338,7 +338,7 @@ ISSUE_TYPES = {
     ),
     "fixed_cost_without_work": (
         WHO_PERSON,
-        "Fixed-cost invoices on an opportunity with no approved work — which work do they belong to?",
+        "Startup and supplies invoiced on an opportunity with no approved work — which work do they belong to?",
     ),
     "accrued_not_invoiced": (
         WHO_PERSON,
@@ -448,7 +448,7 @@ def cost_issues(today: dt.date | None = None) -> list[dict]:
                 "fixed_cost_without_work",
                 opp,
                 c.fixed_usd,
-                f"${c.fixed_usd:,.0f} of fixed costs and no approved work to spread them over",
+                f"${c.fixed_usd:,.0f} of startup and supplies and no approved work to spread them over",
             )
         ended = not opp.is_active or (opp.end_date is not None and opp.end_date < today)
         if ended and c.per_service_usd > 1000 and c.service_invoiced_usd == 0:

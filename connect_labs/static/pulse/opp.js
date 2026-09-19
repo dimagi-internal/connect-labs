@@ -335,8 +335,8 @@
       root.appendChild(
         bar(
           m.costs_view === 'spread'
-            ? 'Fixed costs, spread into the figures'
-            : 'Fixed costs, not in the per-service figures',
+            ? 'Startup and supplies, spread into the figures'
+            : 'Startup and supplies, not in the per-service figures',
           m.fixed_usd,
           Math.max(m.usd_total, m.fixed_usd),
           'f-c3',
@@ -352,7 +352,7 @@
       (m.rate != null
         ? ` · ${'$' + m.rate.toFixed(2)} per verified service, ${
             m.costs_view === 'spread' && m.fixed_usd
-              ? 'fixed costs included'
+              ? 'startup and supplies included'
               : 'both sides included'
           }`
         : '');

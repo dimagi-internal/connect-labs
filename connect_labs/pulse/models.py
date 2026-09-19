@@ -800,7 +800,7 @@ class PulseCostEntry(models.Model):
     KIND_FIXED = "fixed"
     KIND_ORG_FEE = "org_fee"
     KIND_CHOICES = [
-        (KIND_FIXED, "Fixed cost (start-up, equipment, other)"),
+        (KIND_FIXED, "Startup and supplies"),
         (KIND_ORG_FEE, "Organisation's per-service fee paid outside Connect"),
     ]
 

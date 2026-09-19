@@ -333,6 +333,6 @@ class TestTheTwoViews:
             return re.sub(r"\s+", " ", client.get(url).content.decode())
 
         body = text(reverse("pulse:report", args=["r1"]))
-        assert "Cost per verified delivery, before fixed costs" in body
+        assert "Cost per verified delivery, before startup and supplies" in body
         body = text(reverse("pulse:report", args=["r1"]) + "?costs=spread")
-        assert "Cost per verified delivery, fixed costs included" in body
+        assert "Cost per verified delivery, startup and supplies included" in body
