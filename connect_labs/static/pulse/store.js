@@ -113,6 +113,11 @@
       });
       if (!res.ok) throw new Error(`summary ${res.status}`);
       this.summary = await res.json();
+      // A partner can be asked for by any of its workspaces; the server answers
+      // with the organisation's key, which is what the menu is keyed on.
+      if (this.org && this.summary.org && this.summary.org.slug) {
+        this.org = this.summary.org.slug;
+      }
       this.ingest = this.summary.ingest || {};
       this.emit('summary', this.summary);
       this.emit('ingest', this.ingest);

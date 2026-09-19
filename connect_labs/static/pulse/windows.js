@@ -343,9 +343,6 @@
       win.el.querySelector('h2').textContent = p.name || p.slug;
       win.el.querySelector('h2').toggleAttribute('data-slug', !p.named);
       win.el.querySelector('.pulse-win-sub').innerHTML =
-        (p.workspace && p.workspace !== p.name
-          ? `workspace <b>${esc(p.workspace)}</b> · `
-          : '') +
         (p.funder ? `funded by <b>${esc(p.funder)}</b> · ` : '') +
         `${nf.format(sc.opportunities || 0)} opportunities · ` +
         `${nf.format(sc.programs || 0)} programs`;
