@@ -139,6 +139,9 @@ def workflow_save_snapshot(
                 "UPSTREAM_ERROR",
                 f"failed to persist completion of run {run_id}",
             )
+        from connect_labs.benchmarks.tasks import queue_auto_publish
+
+        queue_auto_publish(wda, workflow_id=run.definition_id, run_id=run_id)
     finally:
         wda.close()
 

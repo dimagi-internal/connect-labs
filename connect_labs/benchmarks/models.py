@@ -46,6 +46,12 @@ class BenchmarkCohort(models.Model):
     # Publishing to delivery partners is a different decision from completing a
     # run for internal review, so it is off until deliberately turned on.
     auto_publish_on_completion = models.BooleanField(default=False)
+    # The report whose saved runs this cohort is published from. With
+    # `auto_publish_on_completion`, saving a run of this workflow (or finishing a
+    # history rebuild of it) republishes the cohort, so the peer figures follow
+    # the report instead of freezing at whichever run someone last published by
+    # hand. See benchmarks/auto_publish.py.
+    source_workflow_id = models.IntegerField(null=True, blank=True, db_index=True)
 
     # Disclosure thresholds live on the cohort so they are tunable without a
     # deploy. See disclosure.py for what each one defends against.

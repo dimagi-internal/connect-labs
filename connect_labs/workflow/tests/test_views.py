@@ -675,6 +675,35 @@ class TestCompleteRunTemplateFallback:
         finally:
             TEMPLATES.pop(self.TEMPLATE_KEY, None)
 
+    def test_saving_a_run_queues_the_benchmark_republish(self, dimagi_user, rf: RequestFactory):
+        """A cohort following this workflow republishes from the run just saved --
+        queued, so the save does not wait 30-60s for a publication. And only once
+        the save has actually succeeded: a refused save queues nothing."""
+        from connect_labs.workflow.templates import TEMPLATES
+
+        TEMPLATES[self.TEMPLATE_KEY] = {
+            "key": self.TEMPLATE_KEY,
+            "name": "TV Saved Runs",
+            "description": "d",
+            "supports_saved_runs": True,
+            "snapshot_inputs": {},
+            "definition": {"name": "TV Saved Runs", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+        }
+        try:
+            with patch("connect_labs.benchmarks.tasks.queue_auto_publish") as queue:
+                definition, run = self._records("TV Saved Runs")
+                response, mock_wda = self._call(rf, dimagi_user, definition, run)
+                assert response.status_code == 200, response.content
+                assert queue.call_count == 1
+                assert queue.call_args.kwargs == {"workflow_id": 10, "run_id": 55}
+
+                refused_def, refused_run = self._records("Some Bespoke Workflow")
+                self._call(rf, dimagi_user, refused_def, refused_run)
+                assert queue.call_count == 1, "a refused save must not publish anything"
+        finally:
+            TEMPLATES.pop(self.TEMPLATE_KEY, None)
+
     def test_no_name_match_returns_actionable_400(self, dimagi_user, rf: RequestFactory):
         import json as _json
 
