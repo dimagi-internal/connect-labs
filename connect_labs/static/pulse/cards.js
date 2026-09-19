@@ -289,13 +289,16 @@
          partner window, and it is the one place you see a partner change from
          row to row -- the map only shows where, not who. */
       const orgs = store.summary?.orgs || [];
-      const o = orgs.find((x) => x.slug === ev.org_slug);
+      // A partner row is an organisation and can cover several Connect orgs,
+      // so match on any of them, not only the one that keys the row.
+      const o = orgs.find(
+        (x) =>
+          x.slug === ev.org_slug || (x.workspaces || []).includes(ev.org_slug),
+      );
       const orgSlug = o ? o.slug : '';
       const orgLabel = o ? o.partner || o.name : '—';
       const orgTitle = o
-        ? `${o.partner || o.name}${
-            o.partner && o.partner !== o.name ? ' · workspace ' + o.name : ''
-          } — click to open`
+        ? `${o.partner || o.name} — click to open`
         : 'Partner not available on this link';
 
       const node = el('div', 'trow');

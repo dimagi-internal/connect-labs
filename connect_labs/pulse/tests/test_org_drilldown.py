@@ -351,6 +351,85 @@ class TestPartnersConnectWillNotName:
 
 
 @pytest.mark.django_db
+class TestAPartnerIsAnOrganisationNotAWorkspace:
+    """One organisation can run several Connect workspaces — a main one and,
+    say, a separate one for Connect Interviews. The picker names organisations,
+    so it lists each once, and selecting one covers every workspace it runs.
+    Listing workspaces put the same partner in the menu twice under one name."""
+
+    @pytest.fixture
+    def two_workspaces(self, portfolio):
+        make_partner(name="Foreland Rural Health Trust", short="FRHT")
+        now = timezone.now()
+        for opp, slug, visits in ((60, "foreland-rural-health-trust", 7000), (61, "frht-interviews", 500)):
+            PulseOpportunity.objects.create(
+                opportunity_id=opp,
+                name=f"work {opp}",
+                org_slug=slug,
+                program_id=10,
+                country="NG",
+                lifetime_visit_count=visits,
+                is_active=True,
+            )
+            PulseEvent.objects.create(
+                connect_visit_id=opp,
+                opportunity_id=opp,
+                program_id=10,
+                org_slug=slug,
+                field_ts=now,
+                sync_ts=now,
+                lat=11.0,
+                lon=7.6,
+                country="NG",
+                status="approved",
+                service_slug="chc",
+            )
+            PulseWork.objects.create(
+                work_key=f"{opp:0>64}",
+                opportunity_id=opp,
+                program_id=10,
+                org_slug=slug,
+                status="approved",
+                created_ts=now,
+                service_slug="chc",
+                country="NG",
+                usd_to_worker="2.00",
+                usd_to_org="1.00",
+            )
+
+    def test_the_menu_lists_the_organisation_once(self, viewer, two_workspaces):
+        rows = [o for o in summary(viewer)["orgs"] if o["partner"] == "Foreland Rural Health Trust"]
+        assert len(rows) == 1
+        (row,) = rows
+        # The busier workspace leads and is the key; both are carried.
+        assert row["slug"] == "foreland-rural-health-trust"
+        assert row["workspaces"] == ["foreland-rural-health-trust", "frht-interviews"]
+        assert row["visits"] == 7500
+        assert row["opportunities"] == 2
+        assert row["usd_total"] == pytest.approx(6.0)
+
+    @pytest.mark.parametrize("asked_for", ["foreland-rural-health-trust", "frht-interviews"])
+    def test_either_workspace_scopes_to_the_whole_organisation(self, viewer, two_workspaces, asked_for):
+        data = summary(viewer, org=asked_for)
+        assert data["org"]["slug"] == "foreland-rural-health-trust"
+        assert data["scope"]["opportunities"] == 2
+        assert data["scope"]["lifetime_visits"] == 7500
+        assert data["scope"]["orgs"] == 1
+        assert data["stored"]["events"] == 2
+        assert data["money"]["works"] == 2
+
+    def test_the_partner_window_covers_every_workspace(self, viewer, two_workspaces):
+        data = viewer.get(reverse("pulse:api_partner"), {"org": "frht-interviews"}).json()
+        assert data["partner"]["workspaces"] == ["foreland-rural-health-trust", "frht-interviews"]
+        assert data["money"]["works"] == 2
+
+    def test_unrelated_partners_are_not_folded_together(self, viewer, two_workspaces):
+        slugs = [o["slug"] for o in summary(viewer)["orgs"]]
+        assert "connect-nigeria" in slugs and "living-goods" in slugs
+        assert summary(viewer, org="connect-nigeria")["scope"]["opportunities"] == 2
+
+
+@pytest.mark.django_db
 class TestPartnerNamesFailClosed:
     """The API is unauthenticated, so the default has to be deny.
 
