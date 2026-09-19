@@ -960,7 +960,11 @@ def _publish_capturing(monkeypatch, **extra):
         _Pub.cohort = cohort_arg
         return _Pub
 
-    monkeypatch.setattr(mcp_tools, "publish_benchmark", _fake_publish)
+    from connect_labs.benchmarks import auto_publish
+
+    # The publisher is reached through auto_publish.publish_run, the one path the
+    # MCP tool, the on-save hook and the rebuild hook all share.
+    monkeypatch.setattr(auto_publish, "publish_benchmark", _fake_publish)
     monkeypatch.setattr(
         WorkflowDataAccess,
         "get_run",
@@ -1026,3 +1030,27 @@ class TestAStringifiedAllowListIsCoercedNotIterated:
     def test_empty_means_no_override_not_an_empty_allow_list(self, monkeypatch):
         seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids="")
         assert seen["benchmarkable_indicator_ids"] is None
+
+
+def test_update_turns_on_auto_publish_for_a_source_workflow(monkeypatch):
+    from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_update
+
+    _grant(monkeypatch, organizations=("dimagi-kmc",))
+    cohort = BenchmarkCohort.objects.create(name="KMC", organization_id="dimagi-kmc")
+    out = benchmarks_cohort_update(
+        user=_user(), cohort_id=cohort.pk, source_workflow_id="19778", auto_publish_on_completion="true"
+    )
+    cohort.refresh_from_db()
+    assert (cohort.source_workflow_id, cohort.auto_publish_on_completion) == (19778, True)
+    assert out["source_workflow_id"] == 19778
+
+
+def test_auto_publish_without_a_source_workflow_is_refused(monkeypatch):
+    from connect_labs.benchmarks.mcp_tools import benchmarks_cohort_update
+
+    _grant(monkeypatch, organizations=("dimagi-kmc",))
+    cohort = BenchmarkCohort.objects.create(name="KMC", organization_id="dimagi-kmc")
+    with pytest.raises(MCPToolError):
+        benchmarks_cohort_update(user=_user(), cohort_id=cohort.pk, auto_publish_on_completion=True)
+    cohort.refresh_from_db()
+    assert cohort.auto_publish_on_completion is False

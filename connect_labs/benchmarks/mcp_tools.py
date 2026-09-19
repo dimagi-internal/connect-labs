@@ -24,14 +24,15 @@ import json
 import logging
 from typing import Any, NoReturn
 
+from connect_labs.benchmarks.auto_publish import PublishRefused, publish_run
+from connect_labs.benchmarks.auto_publish import run_history as _run_history  # noqa: F401 -- tests and callers
 from connect_labs.benchmarks.models import MIN_PEERS_FLOOR, BenchmarkCohort, BenchmarkCohortMember
-from connect_labs.benchmarks.publish import publish_benchmark
 from connect_labs.labs.access import scopes
 from connect_labs.labs.access.scopes import Caller, may_use
 from connect_labs.mcp.connect_token import require_connect_token
 from connect_labs.mcp.tool_registry import MCPToolError, register
 from connect_labs.workflow.data_access import WorkflowDataAccess
-from connect_labs.workflow.templates import create_workflow_from_template, get_template, resolve_snapshot_contract
+from connect_labs.workflow.templates import create_workflow_from_template, get_template
 
 logger = logging.getLogger(__name__)
 
@@ -126,52 +127,6 @@ def _as_id_list(value, argument: str) -> list[str] | None:
     return [str(v) for v in value]
 
 
-def _run_history(wda, workflow_id: int, state_key: str) -> list[dict]:
-    """Every completed run of `workflow_id`, oldest first, projected to `byOpp`.
-
-    A failure here costs the SERIES and nothing else, so it is logged and
-    swallowed rather than taking the publication down with it: the point values
-    are the publication's substance and they come from the snapshot already in
-    hand. A publication with no series is a visible, recoverable state; a
-    refused publication because a history read timed out is not.
-    """
-    # ONE POINT PER PERIOD, not per run. A period can hold several completed
-    # runs -- a hand-saved one and the one `workflow_rebuild_history` generated
-    # for the same week, or seven re-runs of the same week while something was
-    # being fixed -- and they do not agree, because each was computed from what
-    # was cached when it ran. Taking all of them made consecutive points
-    # alternate between two unrelated figures for the whole length of the
-    # series, which renders as a violently oscillating indicator rather than as
-    # the duplication it is. The LATEST completion of a period wins: a
-    # recomputation supersedes what it recomputed.
-    latest: dict[str, tuple] = {}
-    try:
-        # The iteration is inside the guard, not just the call: `list_runs`
-        # resolves lazily, so the upstream failure surfaces on the first `for`.
-        for run in wda.list_runs(definition_id=workflow_id):
-            if not getattr(run, "is_completed", False):
-                continue
-            payload = ((run.snapshot or {}).get("state") or {}).get(state_key) or {}
-            by_opp = {}
-            for name, block in [("C", payload)] + sorted((payload.get("series") or {}).items()):
-                cells = {}
-                for entry in (block or {}).get("byOpp") or []:
-                    if entry.get("opp") is not None:
-                        cells[int(entry["opp"])] = entry.get("ind") or {}
-                if cells:
-                    by_opp[name] = cells
-            if not by_opp:
-                continue
-            period = str(run.period_end or run.completed_at or "")[:10]
-            stamp = str(run.completed_at or "")
-            if period not in latest or stamp >= latest[period][0]:
-                latest[period] = (stamp, {"date": period, "byOpp": by_opp})
-    except Exception:
-        logger.warning("benchmark publication could not read run history for workflow %s", workflow_id, exc_info=True)
-        return []
-    return [entry for _, entry in sorted((p, e) for p, (_, e) in latest.items())]
-
-
 def _serialize_cohort(cohort: BenchmarkCohort) -> dict[str, Any]:
     return {
         "id": cohort.pk,
@@ -179,6 +134,7 @@ def _serialize_cohort(cohort: BenchmarkCohort) -> dict[str, Any]:
         "organization_id": cohort.organization_id,
         "description": cohort.description,
         "auto_publish_on_completion": cohort.auto_publish_on_completion,
+        "source_workflow_id": cohort.source_workflow_id,
         "min_peers": cohort.min_peers,
         "require_complete_series": cohort.require_complete_series,
         "min_denominator": cohort.min_denominator,
@@ -438,8 +394,10 @@ def _coerce_int(name: str, value) -> int:
 @register(
     name="benchmarks_cohort_update",
     description=(
-        "Change a benchmark cohort's name, description or disclosure settings (min_peers, "
-        "min_denominator, require_complete_series). Pass only what should change. "
+        "Change a benchmark cohort's name, description, disclosure settings (min_peers, "
+        "min_denominator, require_complete_series) or automatic publishing "
+        "(source_workflow_id + auto_publish_on_completion: saving a run of that workflow, or "
+        "finishing a history rebuild of it, republishes the cohort). Pass only what should change. "
         f"min_peers must be >= {MIN_PEERS_FLOOR}; min_peers=1 with min_denominator=0 and "
         "require_complete_series=false publishes every figure the rules otherwise withhold "
         "for being thin. Existing publications are NOT re-graded: the new settings apply to "
@@ -455,6 +413,14 @@ def _coerce_int(name: str, value) -> int:
             "min_peers": {"type": "integer", "description": f"Must be >= {MIN_PEERS_FLOOR}."},
             "min_denominator": {"type": "integer", "description": "Must be >= 0."},
             "require_complete_series": {"type": "boolean"},
+            "source_workflow_id": {
+                "type": "integer",
+                "description": "The report this cohort is published from. 0 clears it.",
+            },
+            "auto_publish_on_completion": {
+                "type": "boolean",
+                "description": "Republish automatically when source_workflow_id saves a run or finishes a rebuild.",
+            },
         },
         "required": ["cohort_id"],
         "additionalProperties": False,
@@ -470,6 +436,8 @@ def benchmarks_cohort_update(
     min_peers: int | None = None,
     min_denominator: int | None = None,
     require_complete_series: bool | None = None,
+    source_workflow_id: int | None = None,
+    auto_publish_on_completion: bool | None = None,
 ) -> dict[str, Any]:
     try:
         cohort = BenchmarkCohort.objects.get(pk=_coerce_int("cohort_id", cohort_id))
@@ -493,6 +461,18 @@ def benchmarks_cohort_update(
     if require_complete_series is not None:
         cohort.require_complete_series = _coerce_bool("require_complete_series", require_complete_series)
         changed.append("require_complete_series")
+    if source_workflow_id is not None:
+        source_workflow_id = _coerce_int("source_workflow_id", source_workflow_id)
+        cohort.source_workflow_id = source_workflow_id or None
+        changed.append("source_workflow_id")
+    if auto_publish_on_completion is not None:
+        cohort.auto_publish_on_completion = _coerce_bool("auto_publish_on_completion", auto_publish_on_completion)
+        changed.append("auto_publish_on_completion")
+    if cohort.auto_publish_on_completion and not cohort.source_workflow_id:
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            "auto_publish_on_completion needs a source_workflow_id: without one no save can trigger it.",
+        )
     if name is not None:
         cohort.name = name
         changed.append("name")
@@ -577,78 +557,18 @@ def benchmarks_publish(
         run = wda.get_run(run_id)
         if run is None:
             raise MCPToolError("NOT_FOUND", f"Run {run_id} not found.")
-        # A run loads fine under a workflow_id that is not its own, and the
-        # mismatch would be invisible: the state_key would be resolved from a
-        # FOREIGN definition's contract and `source_workflow_id` -- the
-        # provenance an anonymised figure's defensibility rests on -- would be
-        # written false.
-        if run.definition_id and int(run.definition_id) != int(workflow_id):
-            raise MCPToolError(
-                "INVALID_SCHEMA",
-                f"Run {run_id} belongs to workflow {int(run.definition_id)}, not {workflow_id}. "
-                "Publishing it under the wrong workflow would record false provenance.",
+        try:
+            publication = publish_run(
+                cohort,
+                wda,
+                workflow_id,
+                run,
+                run_id=run_id,
+                published_by=getattr(user, "username", "") or "",
+                benchmarkable_indicator_ids=(set(explicit_ids) if explicit_ids else None),
             )
-        if not run.is_completed:
-            raise MCPToolError(
-                "INVALID_SCHEMA",
-                f"Run {run_id} is not completed -- its figures are still moving and cannot be published.",
-            )
-
-        # The graded payload a saved run stores is one level down from
-        # `run.snapshot`, under `["state"][<state_key>]` --
-        # `workflow/snapshot_builders.wrap_for_runner` wraps it there so the
-        # runner's `view.state.<key>` contract resolves, and `state_key`
-        # defaults to "snapshot" but is spec-driven per workflow (see
-        # `workflow/history_rebuild.py`'s identical resolution). Verified
-        # against `connect_labs/semantic/snapshot.py::build` and
-        # `connect_labs/benchmarks/publish.py`'s own docstring, both of which
-        # name this exact path.
-        definition = wda.get_definition(workflow_id)
-        state_key = "snapshot"
-        if definition is not None:
-            contract = resolve_snapshot_contract(definition)
-            if contract.get("ok"):
-                state_key = (contract.get("snapshot_inputs") or {}).get("state_key") or "snapshot"
-
-        state = (run.snapshot or {}).get("state") or {}
-        graded_payload = state.get(state_key) or {}
-
-        meta = graded_payload.get("meta") or {}
-        registry_id = (meta.get("registry") or {}).get("registry_id")
-        as_of = (
-            meta.get("as_of")
-            or (str(run.period_end)[:10] if run.period_end else None)
-            or (str(run.completed_at)[:10] if run.completed_at else None)
-        )
-        if not as_of:
-            # `as_of` is NOT NULL on BenchmarkPublication, so without this the
-            # refusal is a raw psycopg IntegrityError naming a column, which
-            # tells a caller nothing about which of the three sources it should
-            # have populated.
-            raise MCPToolError(
-                "INVALID_SCHEMA",
-                f"Run {run_id} carries no as-of date: its snapshot has no meta.as_of, and the run "
-                "has neither a period_end nor a completed_at to fall back on. A publication must "
-                "be dated, so there is nothing to publish.",
-            )
-
-        # The SERIES comes from the workflow's completed runs, not from anything
-        # inside the one being published: a saved run is one point of a trend,
-        # each computed as of its own period end by the same builder, which is
-        # what the programme report's own trend charts are drawn from.
-        history = _run_history(wda, workflow_id, state_key)
-
-        publication = publish_benchmark(
-            cohort,
-            snapshot=graded_payload,
-            history=history,
-            source_workflow_id=workflow_id,
-            source_run_id=run_id,
-            registry_id=registry_id,
-            as_of=as_of,
-            published_by=getattr(user, "username", "") or "",
-            benchmarkable_indicator_ids=(set(explicit_ids) if explicit_ids else None),
-        )
+        except PublishRefused as exc:
+            raise MCPToolError("INVALID_SCHEMA", str(exc)) from exc
     finally:
         wda.close()
 

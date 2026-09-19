@@ -2650,6 +2650,12 @@ def complete_run_api(request, run_id):
                 status=500,
             )
 
+        # A cohort that follows this workflow republishes from the run just saved,
+        # off the request thread (benchmarks/auto_publish.py).
+        from connect_labs.benchmarks.tasks import queue_auto_publish
+
+        queue_auto_publish(data_access, workflow_id=run.definition_id, run_id=run_id)
+
         return JsonResponse(
             {
                 "success": True,
