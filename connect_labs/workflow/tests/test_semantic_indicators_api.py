@@ -459,3 +459,89 @@ def test_catalog_only_without_a_series_carries_both(client, django_user_model):
     inds = {m["indicator"] for m in resp.json()["measures"]}
     assert any(str(i).startswith("C") for i in inds)
     assert any(str(i).startswith("N") for i in inds)
+
+
+# --- warm on read -----------------------------------------------------------
+# The opportunity report fetches its figures from this endpoint and never streams
+# its pipelines, so nothing ever filled its cache: after the 90-minute hold lapsed
+# the page read "no cached visits" until someone opened the programme report
+# (seen live on prod opp 523, 2026-09-18). A workflow whose template sets
+# `warm_cache_on_read` fills its own cache here when it is cold.
+
+
+class _OppReportDef:
+    id = 21115
+    template_type = "kmc_opp_report"
+    data = {"config": {"templateType": "kmc_opp_report"}}  # stamped BEFORE the flag
+    opportunity_id = 523
+    opportunity_ids = []
+    pipeline_sources = [{"alias": "children", "pipeline_id": 5108}]
+
+
+class _ProgrammeDef(_OppReportDef):
+    template_type = "kmc_programme_metrics"
+    data = {"config": {"templateType": "kmc_programme_metrics"}}
+    opportunity_ids = [523, 524]
+
+
+def _call_semantic(client, definition, *, cache_fill=None):
+    class _Pipe:
+        schema = {"fields": [], "terminal_stage": "entity"}
+
+    with (
+        patch("connect_labs.workflow.views.WorkflowDataAccess") as wda,
+        patch("connect_labs.workflow.data_access.PipelineDataAccess") as pda,
+        patch("connect_labs.semantic.runtime.evaluate") as ev,
+        patch("connect_labs.workflow.visit_cache.ensure_visit_cache") as ensure,
+    ):
+        wda.return_value.get_definition.return_value = definition
+        pda.return_value.get_definition.return_value = _Pipe()
+        pda.return_value._schema_to_config.return_value = object()
+        ev.return_value = [{"scope": "opportunity", "n_cases": 5}]
+        ensure.side_effect = cache_fill or (lambda *a, **k: {"failed": []})
+        resp = client.get(_url(definition.id), {"series": "N", "opportunity_id": 523})
+    return resp, ensure
+
+
+def test_a_cold_opportunity_report_fills_its_own_cache_before_computing(client, django_user_model):
+    client.force_login(django_user_model.objects.create_user(username="w1", password="p"))
+
+    def fill(*args, **kwargs):
+        _cache_visits(523)
+        return {"failed": []}
+
+    resp, ensure = _call_semantic(client, _OppReportDef(), cache_fill=fill)
+    assert ensure.call_count == 1
+    assert ensure.call_args.args[1] == 21115
+    assert ensure.call_args.kwargs["opportunity_id"] == 523
+    body = resp.json()
+    assert body["cold_cache"] is False, "the page must answer from the cache it just filled"
+    assert body["opportunities_with_data"] == [523]
+
+
+def test_a_warm_opportunity_report_does_not_refetch(client, django_user_model):
+    client.force_login(django_user_model.objects.create_user(username="w2", password="p"))
+    _cache_visits(523)
+    _, ensure = _call_semantic(client, _OppReportDef())
+    assert ensure.call_count == 0
+
+
+def test_a_report_without_the_flag_never_downloads_on_read(client, django_user_model):
+    """The programme report spans every opportunity; a page load must not become
+    a download of all of them."""
+    client.force_login(django_user_model.objects.create_user(username="w3", password="p"))
+    resp, ensure = _call_semantic(client, _ProgrammeDef())
+    assert ensure.call_count == 0
+    assert resp.json()["cold_cache"] is True
+
+
+def test_a_failed_warm_still_answers_and_says_the_cache_is_cold(client, django_user_model):
+    client.force_login(django_user_model.objects.create_user(username="w4", password="p"))
+
+    def boom(*a, **k):
+        raise RuntimeError("Connect export timed out")
+
+    resp, ensure = _call_semantic(client, _OppReportDef(), cache_fill=boom)
+    assert ensure.call_count == 1
+    assert resp.status_code == 200
+    assert resp.json()["cold_cache"] is True

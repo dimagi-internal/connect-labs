@@ -78,6 +78,11 @@ DEFINITION = {
         # figure here is computed server-side by the semantic endpoint; the
         # pipelines exist to fill the visit cache it reads, not to be shipped.
         "noPipelineStream": True,
+        # ...so it fills the visit cache itself. The semantic endpoint only READS
+        # the cache, and the cache expires; without this the page reads "no cached
+        # visits" whenever nobody has opened the programme report lately. One
+        # opportunity, so a cold load costs one opportunity's download.
+        "warm_cache_on_read": True,
         # The render's fallback for a measure that declares no min_denominator
         # of its own, matching the programme report's `var MIN_DEN = 25`.
         "min_denominator_default": 25,
