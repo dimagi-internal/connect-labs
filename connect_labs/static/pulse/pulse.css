@@ -2081,7 +2081,9 @@
 
 .opp-kpis {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  /* Eight tiles, nine with startup and supplies: size to the count so they
+     share one row on a wide screen instead of wrapping unevenly. */
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
   gap: 1px;
   background: var(--rule-soft);
   border: 1px solid var(--rule-soft);

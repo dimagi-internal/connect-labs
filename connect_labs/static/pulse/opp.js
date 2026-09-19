@@ -86,47 +86,64 @@
   function renderKpis(d) {
     const t = d.totals;
     const m = d.money;
-    const root = $('#opp-kpis');
-    root.replaceChildren(
+    const perService = (usd) =>
+      m.approved > 0 ? '$' + (usd / m.approved).toFixed(2) : '—';
+    const tiles = [
       kpi('Services delivered', nf.format(t.events), 'full history'),
       kpi(
         'Verified',
         nf.format(m.approved),
         m.works ? pct(m.approved / m.works) + ' of work claimed' : '',
       ),
-      kpi('Paid to workers', money0.format(m.usd_workers), ''),
-      kpi(
-        'To the organisation',
-        money0.format(m.usd_org),
-        // Startup and supplies go to the organisation too, but on invoices
-        // rather than per service -- named here so the tile is not read as
-        // everything the organisation received.
-        m.fixed_usd
-          ? 'per service · + ' +
-              money0.format(m.fixed_usd) +
-              ' startup and supplies'
-          : '',
-      ),
       kpi('Workers', nf.format(t.workers), 'distinct, all-time'),
+      kpi('Paid to workers', money0.format(m.usd_workers), 'per service'),
+      kpi('Paid to the organisation', money0.format(m.usd_org), 'per service'),
+    ];
+    // Startup and supplies: paid to the organisation on invoices, outside any
+    // unit of work. Its own tile, and only when there is some, so it is never
+    // mistaken for per-service pay.
+    if (m.fixed_usd) {
+      tiles.push(
+        kpi(
+          'Startup and supplies',
+          money0.format(m.fixed_usd),
+          m.costs_view === 'spread'
+            ? 'invoiced · spread into cost per service'
+            : 'invoiced · not in cost per service',
+        ),
+      );
+    }
+    tiles.push(
       kpi(
-        'Cost per verified',
+        'Per verified service to workers',
+        perService(m.usd_workers),
+        'worker pay ÷ verified',
+      ),
+      kpi(
+        'Per verified service to organisation',
+        perService(m.usd_org),
+        'org pay ÷ verified',
+      ),
+      kpi(
+        'Cost per verified service',
         m.rate != null ? '$' + m.rate.toFixed(2) : '—',
         rateNote(m),
       ),
     );
+    $('#opp-kpis').replaceChildren(...tiles);
   }
 
   /* What the cost-per-verified figure includes, in the viewer's chosen view
      (startup and supplies spread in, or kept separate). */
   function rateNote(m) {
-    if (!m.fixed_usd) return 'workers + delivery org';
+    if (!m.fixed_usd) return 'workers + organisation';
     if (m.costs_view === 'spread') {
-      return 'workers + delivery org + startup and supplies';
+      return 'workers + organisation + startup and supplies';
     }
     const allIn =
       m.approved > 0 ? (m.usd_total + m.fixed_usd) / m.approved : null;
     return (
-      'workers + delivery org · ' +
+      'workers + organisation · ' +
       (allIn != null ? '$' + allIn.toFixed(2) : '—') +
       ' with startup and supplies'
     );
