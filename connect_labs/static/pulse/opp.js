@@ -95,13 +95,40 @@
         m.works ? pct(m.approved / m.works) + ' of work claimed' : '',
       ),
       kpi('Paid to workers', money0.format(m.usd_workers), ''),
-      kpi('To the organisation', money0.format(m.usd_org), ''),
+      kpi(
+        'To the organisation',
+        money0.format(m.usd_org),
+        // Startup and supplies go to the organisation too, but on invoices
+        // rather than per service -- named here so the tile is not read as
+        // everything the organisation received.
+        m.fixed_usd
+          ? 'per service · + ' +
+              money0.format(m.fixed_usd) +
+              ' startup and supplies'
+          : '',
+      ),
       kpi('Workers', nf.format(t.workers), 'distinct, all-time'),
       kpi(
         'Cost per verified',
         m.rate != null ? '$' + m.rate.toFixed(2) : '—',
-        'workers + delivery org',
+        rateNote(m),
       ),
+    );
+  }
+
+  /* What the cost-per-verified figure includes, in the viewer's chosen view
+     (startup and supplies spread in, or kept separate). */
+  function rateNote(m) {
+    if (!m.fixed_usd) return 'workers + delivery org';
+    if (m.costs_view === 'spread') {
+      return 'workers + delivery org + startup and supplies';
+    }
+    const allIn =
+      m.approved > 0 ? (m.usd_total + m.fixed_usd) / m.approved : null;
+    return (
+      'workers + delivery org · ' +
+      (allIn != null ? '$' + allIn.toFixed(2) : '—') +
+      ' with startup and supplies'
     );
   }
 
