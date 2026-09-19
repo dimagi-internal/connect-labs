@@ -34,6 +34,7 @@ person is listed by `cost_issues`.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from statistics import median
@@ -349,7 +350,15 @@ ISSUE_TYPES = {
         "Invoice's USD amount disagrees with the local amount at Connect's rate by 1.5x or more",
     ),
     "unresolvable": (WHO_PERSON, "Invoice with no USD amount and no exchange rate to convert it"),
-    "invoices_unread": (WHO_PERSON, "Invoices could not be read from Connect for this opportunity"),
+    "possible_duplicate": (
+        WHO_PERSON,
+        "Two invoices with the same number and amount — the same bill entered twice?",
+    ),
+    "invoices_unread": (
+        WHO_PERSON,
+        "Connect will not show labs this opportunity's invoices — the Pulse poller account needs access "
+        "to the workspace",
+    ),
 }
 
 
@@ -419,6 +428,24 @@ def cost_issues(today: dt.date | None = None) -> list[dict]:
                         f"({inv.disagreement:.1f}x the converted amount)",
                         inv.invoice_number,
                     )
+
+        # The same bill entered twice: numbers equal once punctuation and case
+        # are folded ("CWD/NG/25/007" and "CWD/NG/25/007."), and the same
+        # amount. Counted in every figure until a person excludes one, so it is
+        # raised rather than dropped -- two real invoices can share an amount.
+        seen: dict = {}
+        for inv in c.invoices:
+            key = (re.sub(r"[^a-z0-9]", "", inv.invoice_number.lower()), inv.amount, inv.service_delivery)
+            if key in seen and inv.basis != BASIS_EXCLUDED and seen[key].basis != BASIS_EXCLUDED:
+                add(
+                    "possible_duplicate",
+                    opp,
+                    inv.usd,
+                    f"{seen[key].invoice_number!r} and {inv.invoice_number!r}, both "
+                    f"{inv.amount:,.2f} {opp.currency}",
+                    inv.invoice_number,
+                )
+            seen.setdefault(key, inv)
 
         if opp.invoices_synced_at is None:
             add("invoices_unread", opp, None, "Not yet read, or Connect refused the read")
