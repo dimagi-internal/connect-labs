@@ -1,4 +1,4 @@
-"""The programme page — and that it agrees with Pulse to the dollar.
+"""The program page — and that it agrees with Pulse to the dollar.
 
 All data invented.
 """
@@ -68,15 +68,15 @@ def user(db, django_user_model):
 
 @pytest.fixture
 def market(db):
-    """A realistic mix: an established programme, one with a queue, one with
-    demand and no supply, and a test programme and ACE that must not leak."""
+    """A realistic mix: an established program, one with a queue, one with
+    demand and no supply, and a test program and ACE that must not leak."""
     PulseProgram.objects.create(program_id=1, name="CHC Nigeria", delivery_type="chc")
     PulseProgram.objects.create(program_id=2, name="Founders Pledge Test Program", delivery_type="chc", is_test=True)
 
     make_partner("Lakeside Health", "LH", countries=["Nigeria"])
     _opp(1, "chc", visits=9_000, budget=100_000, program_id=1, org_slug="lakeside-health")
     _work(1, "chc", 30_000, 10_000, program_id=1, org_slug="lakeside-health")
-    # Ingest flags every opportunity under a test programme.
+    # Ingest flags every opportunity under a test program.
     _opp(2, "chc", visits=40, budget=312_500, program_id=2, is_test=True)
     _work(2, "chc", 20, 5, program_id=2)
     # An ACE demo run carrying a real delivery type: must not make Nutrition
@@ -100,13 +100,13 @@ def market(db):
 
 
 def _cards():
-    return {c["slug"]: c for c in queries.programme_cards()}
+    return {c["slug"]: c for c in queries.program_cards()}
 
 
 @pytest.mark.django_db
 class TestItTiesOutWithPulse:
     """The requirement the page is built around: this page and the Pulse wall
-    must not quote different numbers for the same programme. Asserted against
+    must not quote different numbers for the same program. Asserted against
     Pulse's real endpoint, not against a copy of its logic.
     """
 
@@ -139,9 +139,9 @@ class TestItTiesOutWithPulse:
         assert nutrition["services"] == 0
         assert nutrition["spent"] == 0
 
-    def test_a_test_programmes_budget_is_not_still_funded(self, market):
+    def test_a_test_programs_budget_is_not_still_funded(self, market):
         """Its $312,500 is a placeholder. Counted, one test row would dwarf the
-        real programme's remaining budget."""
+        real program's remaining budget."""
         assert _cards()["chc"]["remaining"] == 100_000 - 40_000
 
 
@@ -166,7 +166,7 @@ class TestTheCards:
         assert chc["spent_pct"] == round(40_000 * 100 / (40_000 + 60_000), 1)
 
     def test_every_card_has_a_colour_of_its_own(self, market):
-        hues = [c["hue"] for c in queries.programme_cards()]
+        hues = [c["hue"] for c in queries.program_cards()]
         assert len(hues) == len(set(hues))
 
 
@@ -174,7 +174,7 @@ class TestTheCards:
 class TestThePage:
     def test_renders_the_sections_and_the_totals(self, client, user, market):
         client.force_login(user)
-        response = client.get(reverse("marketplace:programmes"))
+        response = client.get(reverse("marketplace:programs"))
         assert response.status_code == 200
         body = response.content.decode()
         assert "Asked for, not yet delivered" in body
@@ -185,13 +185,27 @@ class TestThePage:
         """It is headroom on live budgets, not money committed. The page must
         never present it as the second."""
         client.force_login(user)
-        body = client.get(reverse("marketplace:programmes")).content.decode()
+        body = client.get(reverse("marketplace:programs")).content.decode()
         assert "up to" in body.lower()
         assert "committed" not in body.lower()
 
     def test_requires_login(self, client, market):
-        assert client.get(reverse("marketplace:programmes")).status_code == 302
+        assert client.get(reverse("marketplace:programs")).status_code == 302
 
     def test_the_home_page_leads_to_it(self, client, user, market):
         client.force_login(user)
-        assert reverse("marketplace:programmes") in client.get(reverse("marketplace:home")).content.decode()
+        assert reverse("marketplace:programs") in client.get(reverse("marketplace:home")).content.decode()
+
+
+@pytest.mark.django_db
+def test_the_old_programmes_address_redirects(client, user):
+    client.force_login(user)
+    response = client.get("/labs/marketplace/programmes/")
+    assert response.status_code == 301
+    assert response["Location"] == reverse("marketplace:programs")
+
+
+def test_nutrition_is_named_for_what_is_delivered():
+    from connect_labs.marketplace import programs
+
+    assert programs.label("nutrition") == "Ready-to-Use Therapeutic Food (RUTF)"

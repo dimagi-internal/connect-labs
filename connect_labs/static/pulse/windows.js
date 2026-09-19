@@ -348,7 +348,7 @@
           : '') +
         (p.funder ? `funded by <b>${esc(p.funder)}</b> · ` : '') +
         `${nf.format(sc.opportunities || 0)} opportunities · ` +
-        `${nf.format(sc.programs || 0)} programmes`;
+        `${nf.format(sc.programs || 0)} programs`;
 
       const rows = (d.workers || []).slice().sort((a, b) => {
         const x = a[sort.key],

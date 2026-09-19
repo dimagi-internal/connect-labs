@@ -1,4 +1,4 @@
-"""Programme filtering.
+"""Program filtering.
 
 The rule the whole feature rests on: a filter must move EVERY figure on the
 screen. Leaving a server-side total unfiltered above a filtered map is the same
@@ -18,7 +18,7 @@ from connect_labs.pulse.models import PulseEvent, PulseGridCell, PulseOpportunit
 
 
 @pytest.fixture
-def two_programmes(db, settings, django_user_model):
+def two_programs(db, settings, django_user_model):
     django_user_model.objects.create(username="poller-account")
     settings.PULSE_POLLER_USERNAME = "poller-account"
 
@@ -76,13 +76,13 @@ def summary(client, **params):
 
 @pytest.mark.django_db
 class TestEveryFigureMoves:
-    def test_unfiltered_sees_everything(self, client, two_programmes):
+    def test_unfiltered_sees_everything(self, client, two_programs):
         d = summary(client)
         assert d["stored"]["events"] == 57
         assert d["money"]["works"] == 57
         assert d["program"] is None
 
-    def test_filtering_moves_events_money_and_scope_together(self, client, two_programmes):
+    def test_filtering_moves_events_money_and_scope_together(self, client, two_programs):
         d = summary(client, program=1)
         assert d["program"]["name"] == "ECD Nigeria 2025"
         assert d["stored"]["events"] == 40, "map/ticker not filtered"
@@ -92,13 +92,13 @@ class TestEveryFigureMoves:
         assert d["scope"]["lifetime_visits"] == 400
         assert len(d["opportunities"]) == 1
 
-    def test_a_second_programme_gives_its_own_numbers(self, client, two_programmes):
+    def test_a_second_program_gives_its_own_numbers(self, client, two_programs):
         d = summary(client, program=2)
         assert d["stored"]["events"] == 10
         assert d["money"]["works"] == 10
         assert d["scope"]["lifetime_visits"] == 100
 
-    def test_an_unknown_programme_falls_back_to_everything(self, client, two_programmes):
+    def test_an_unknown_program_falls_back_to_everything(self, client, two_programs):
         """Better to show the whole estate than an empty screen with no cause."""
         assert summary(client, program=9999)["stored"]["events"] == 57
         assert summary(client, program="not-a-number")["stored"]["events"] == 57
@@ -106,49 +106,49 @@ class TestEveryFigureMoves:
 
 @pytest.mark.django_db
 class TestMenu:
-    def test_offers_real_programmes_by_volume(self, client, two_programmes):
+    def test_offers_real_programs_by_volume(self, client, two_programs):
         menu = summary(client)["programs"]
         assert [m["name"] for m in menu] == ["ECD Nigeria 2025", "Readers - NG - Program 1"]
 
-    def test_excludes_test_programmes(self, client, two_programmes):
+    def test_excludes_test_programs(self, client, two_programs):
         """They carry real volume, so they cannot be spotted by size."""
         assert all("TEST" not in m["name"] for m in summary(client)["programs"])
 
-    def test_excludes_programmes_with_no_delivery(self, client, two_programmes):
+    def test_excludes_programs_with_no_delivery(self, client, two_programs):
         PulseProgram.objects.create(program_id=4, name="Never Ran", delivery_type="chc")
         assert all(m["name"] != "Never Ran" for m in summary(client)["programs"])
 
-    def test_carries_a_label_without_inventing_one(self, client, two_programmes):
+    def test_carries_a_label_without_inventing_one(self, client, two_programs):
         by_name = {m["name"]: m for m in summary(client)["programs"]}
         assert by_name["ECD Nigeria 2025"]["service_label"] == "Early childhood development"
 
 
 @pytest.mark.django_db
 class TestOtherEndpoints:
-    def test_events_endpoint_is_filtered(self, client, two_programmes):
+    def test_events_endpoint_is_filtered(self, client, two_programs):
         d = client.get(reverse("pulse:api_events"), {"program": 2}).json()
         assert {r[5] for r in d["events"]} == {200}
 
-    def test_replay_is_filtered_and_still_samples(self, client, two_programmes):
+    def test_replay_is_filtered_and_still_samples(self, client, two_programs):
         d = client.get(reverse("pulse:api_replay"), {"program": 1, "hours": 48, "limit": 10}).json()
         assert d["sampled"] is True
-        assert {r[5] for r in d["events"]} == {100}, "another programme leaked into a filtered replay"
+        assert {r[5] for r in d["events"]} == {100}, "another program leaked into a filtered replay"
         assert d["matched"] == 40
 
-    def test_grid_narrows_by_delivery_type(self, client, two_programmes):
-        """Cells predate programme attribution — their source rows are deleted —
+    def test_grid_narrows_by_delivery_type(self, client, two_programs):
+        """Cells predate program attribution — their source rows are deleted —
         so they filter by delivery type, and the response says so."""
         d = client.get(reverse("pulse:api_grid"), {"program": 1}).json()
         assert d["filtered_by"] == "ecd"
         assert [c[6] for c in d["cells"]] == ["ecd"]
 
-    def test_grid_unfiltered_reports_no_narrowing(self, client, two_programmes):
+    def test_grid_unfiltered_reports_no_narrowing(self, client, two_programs):
         assert client.get(reverse("pulse:api_grid")).json()["filtered_by"] is None
 
 
 @pytest.mark.django_db
 class TestEcdLabelling:
-    def test_ecd_is_named_not_dumped_in_service_delivery(self, client, two_programmes):
+    def test_ecd_is_named_not_dumped_in_service_delivery(self, client, two_programs):
         """163,473 ECD visits rendered as the generic bucket on prod because the
         name regex had no `ecd` pattern."""
         names = {s["name"] for s in summary(client)["money"]["by_service"]}
@@ -166,31 +166,31 @@ class TestEcdLabelling:
 class TestMenuOrdering:
     """Stored events are a 30-day window; lifetime volume is all history.
 
-    Ordering on lifetime alone put the largest DORMANT programme at the top of
+    Ordering on lifetime alone put the largest DORMANT program at the top of
     the menu — on prod, "[Batch 04] Dimagi-GiveWell CHC Program" with 547,474
     services and not one point on the map, because none of them are recent.
     """
 
-    def test_currently_delivering_programmes_come_first(self, client, two_programmes):
-        # A huge programme that finished: big lifetime, no events.
+    def test_currently_delivering_programs_come_first(self, client, two_programs):
+        # A huge program that finished: big lifetime, no events.
         PulseProgram.objects.create(program_id=5, name="Finished Big", delivery_type="chc")
         PulseOpportunity.objects.create(
             opportunity_id=500, name="old", program_id=5, service_slug="chc", lifetime_visit_count=999_999
         )
 
         menu = summary(client)["programs"]
-        assert menu[0]["name"] != "Finished Big", "a dormant programme leads the menu"
+        assert menu[0]["name"] != "Finished Big", "a dormant program leads the menu"
         assert menu[-1]["name"] == "Finished Big"
         assert menu[0]["recent_events"] > 0
 
-    def test_menu_reports_recent_volume_so_dormancy_is_visible(self, client, two_programmes):
+    def test_menu_reports_recent_volume_so_dormancy_is_visible(self, client, two_programs):
         by_name = {m["name"]: m for m in summary(client)["programs"]}
         assert by_name["ECD Nigeria 2025"]["recent_events"] == 40
 
 
 @pytest.mark.django_db
 class TestServiceResync:
-    def test_changing_derivation_pushes_onto_stored_rows(self, two_programmes):
+    def test_changing_derivation_pushes_onto_stored_rows(self, two_programs):
         """service_slug is denormalised onto every event and work at ingest, so
         deriving it differently fixes nothing on its own — 186,632 works stayed
         in the unclassified bucket on prod after the delivery-type change.
@@ -206,7 +206,7 @@ class TestServiceResync:
         assert not PulseEvent.objects.filter(opportunity_id=100, service_slug="other").exists()
         assert PulseWork.objects.filter(opportunity_id=100, service_slug="ecd").count() == 40
 
-    def test_is_a_no_op_once_everything_agrees(self, two_programmes):
+    def test_is_a_no_op_once_everything_agrees(self, two_programs):
         from connect_labs.pulse import ingest
 
         ingest.resync_service_slugs()
@@ -232,7 +232,7 @@ class TestServiceLabels:
         assert service_label("mbw") == "Mother Baby Wellness"
 
     def test_the_regex_fallback_agrees_with_the_delivery_type_labels(self):
-        """The name regex still labels the 168 opportunities whose programme has
+        """The name regex still labels the 168 opportunities whose program has
         no delivery type. If it disagrees, the same work is named two ways
         depending on which path found it."""
         from connect_labs.pulse.normalize import _SERVICE_PATTERNS, service_label
@@ -241,7 +241,7 @@ class TestServiceLabels:
             assert label == service_label(slug), f"{slug} is labelled two different ways"
 
     def test_an_absent_delivery_type_is_named_as_absent(self):
-        """`other` means Connect published no delivery type for the programme —
+        """`other` means Connect published no delivery type for the program —
         168 opportunities and ~46k units of work. "Service delivery" read like a
         category rather than the absence of one."""
         from connect_labs.pulse.normalize import service_label
@@ -266,7 +266,7 @@ class TestServiceLabels:
             "ivp": "Infant Vaccine Promotion",
             "hhs": "Household Safety Check",
             "wellme": "Worker Wellbeing",
-            "nutrition": "Nutrition",
+            "nutrition": "Ready-to-Use Therapeutic Food (RUTF)",
             "interview": "Interviews",
             "ace": "ACE",
         }
@@ -282,16 +282,16 @@ class TestServiceLabels:
 
 
 @pytest.mark.django_db
-class TestGridProgrammeAttribution:
+class TestGridProgramAttribution:
     """Density has to narrow with the filter, not just the points.
 
     Before this, cells keyed on (lat, lon, service_slug) only, so a map filtered
-    to a Nigeria programme still glowed across Cameroon and DR Congo — every
+    to a Nigeria program still glowed across Cameroon and DR Congo — every
     cell of that delivery type, anywhere — beside a header reading
     "COUNTRIES 1".
     """
 
-    def test_folding_records_the_programme(self, two_programmes):
+    def test_folding_records_the_program(self, two_programs):
         from connect_labs.pulse import ingest
         from connect_labs.pulse.models import PulseGridCell
 
@@ -300,11 +300,11 @@ class TestGridProgrammeAttribution:
         ingest.fold_events_to_grid()
 
         cells = PulseGridCell.objects.exclude(program_id=None)
-        assert cells.exists(), "fold dropped the programme it was given"
+        assert cells.exists(), "fold dropped the program it was given"
         assert set(cells.values_list("program_id", flat=True)) == {1}
 
-    def test_two_programmes_in_one_place_stay_separate(self, two_programmes):
-        """Same coordinates, different programmes — they must not merge into one
+    def test_two_programs_in_one_place_stay_separate(self, two_programs):
+        """Same coordinates, different programs — they must not merge into one
         cell, or filtering could never separate them again."""
         from connect_labs.pulse import ingest
         from connect_labs.pulse.models import PulseGridCell
@@ -317,7 +317,7 @@ class TestGridProgrammeAttribution:
         assert at_point.count() >= 2
         assert len(set(at_point.values_list("program_id", flat=True))) >= 2
 
-    def test_filtered_grid_prefers_exact_cells(self, client, two_programmes):
+    def test_filtered_grid_prefers_exact_cells(self, client, two_programs):
         from connect_labs.pulse import ingest
 
         old = timezone.now() - timedelta(days=400)
@@ -328,8 +328,8 @@ class TestGridProgrammeAttribution:
         assert d["exact"] is True
         assert {c[7] for c in d["cells"]} == {1}
 
-    def test_legacy_cells_fall_back_and_say_so(self, client, two_programmes):
-        """Cells folded before attribution existed carry a null programme. They
+    def test_legacy_cells_fall_back_and_say_so(self, client, two_programs):
+        """Cells folded before attribution existed carry a null program. They
         stand in until a regrid, and the response must not claim exactness."""
         from connect_labs.pulse.models import PulseGridCell
 
@@ -339,6 +339,6 @@ class TestGridProgrammeAttribution:
         assert d["filtered_by"] == "ecd"
         assert all(c[6] == "ecd" for c in d["cells"])
 
-    def test_unfiltered_grid_is_exact_by_definition(self, client, two_programmes):
+    def test_unfiltered_grid_is_exact_by_definition(self, client, two_programs):
         d = client.get(reverse("pulse:api_grid")).json()
         assert d["exact"] is True

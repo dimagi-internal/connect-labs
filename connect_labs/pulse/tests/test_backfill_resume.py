@@ -3,7 +3,7 @@
 The property under test is not "it pulls rows" but "an interrupted pull does not
 lose what it already pulled". That was the real defect: the cursor was committed
 only after an opportunity finished, so a task killed mid-opportunity restarted
-from the same place -- which on the largest programme means never finishing.
+from the same place -- which on the largest program means never finishing.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from connect_labs.pulse.models import PulseCursor, PulseEvent, PulseOpportunity
 
 @pytest.fixture
 def opp(db):
-    return PulseOpportunity.objects.create(opportunity_id=765, name="Programme", org_slug="pride", country="NG")
+    return PulseOpportunity.objects.create(opportunity_id=765, name="Program", org_slug="pride", country="NG")
 
 
 @pytest.fixture

@@ -148,8 +148,8 @@ class TestDossierPicker:
 
     Test scaffolding carries real visit counts, so it cannot be spotted by
     volume -- and a funder-facing picker offering "[TEST 02] ..." is exactly
-    the bad moment the programme menu already guards against. Same two rules,
-    applied at the same source: no opportunities under a test programme, none
+    the bad moment the program menu already guards against. Same two rules,
+    applied at the same source: no opportunities under a test program, none
     whose own name is scaffolding.
     """
 
@@ -159,7 +159,7 @@ class TestDossierPicker:
         PulseProgram.objects.create(program_id=90, name="[TEST 02] Dimagi-GW CHC Program", is_test=True)
         PulseOpportunity.objects.create(opportunity_id=1, name="Real Delivery", lifetime_visit_count=10)
         PulseOpportunity.objects.create(
-            opportunity_id=2, name="Scaffold under test programme", program_id=90, lifetime_visit_count=9035
+            opportunity_id=2, name="Scaffold under test program", program_id=90, lifetime_visit_count=9035
         )
         PulseOpportunity.objects.create(opportunity_id=3, name="ZZZ Test Opportunity", lifetime_visit_count=5)
 
@@ -167,5 +167,5 @@ class TestDossierPicker:
         body = client.get(reverse("pulse:index")).content.decode()
 
         assert "Real Delivery" in body
-        assert "Scaffold under test programme" not in body
+        assert "Scaffold under test program" not in body
         assert "ZZZ Test Opportunity" not in body

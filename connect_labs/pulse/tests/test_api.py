@@ -212,7 +212,7 @@ class TestMoneyTotals:
 
     def test_breakdowns_rank_on_the_total_not_the_worker_share(self, client, populated):
         """A service can be org-heavy (KMC's payment units span visits). Ranking
-        on the worker share alone would bury it below smaller programmes."""
+        on the worker share alone would bury it below smaller programs."""
         make_work(1, service="mbw", country="NG", worker="1.00", org="0.00")
         make_work(2, service="kmc", country="UG", worker="0.10", org="4.00")
 
@@ -280,7 +280,7 @@ class TestReplay:
         """Slicing an ordered queryset returns the window's *head*.
 
         On prod this made a longer window show less: 336h returned 2000 rows
-        spanning 12.8h, 94% from one country, because whichever programme
+        spanning 12.8h, 94% from one country, because whichever program
         submitted first monopolised the head. Four of the eight countries with
         delivery never appeared, so the map read as one country at any zoom.
         """
@@ -1013,7 +1013,7 @@ class TestTrendSeries:
 class TestLifeReplayScope:
     """The sampled replay must honour EVERY scope axis.
 
-    The strided ROW_NUMBER path restated only the programme filter, so a
+    The strided ROW_NUMBER path restated only the program filter, so a
     single-opportunity life replay whose history exceeded the point budget
     would have sampled the whole estate's time range and painted other
     partners' lights over one engagement's minute.

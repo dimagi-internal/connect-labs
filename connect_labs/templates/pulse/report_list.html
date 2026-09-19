@@ -6,7 +6,7 @@
   <h1 class="text-2xl font-semibold text-brand-deep-purple">Donor reports</h1>
   <p class="text-sm text-gray-500 mt-1 mb-6">
     One-page stewardship reports. Figures derive from verified, reimbursed delivery;
-    narrative and programme-specific quantities are yours to write.
+    narrative and program-specific quantities are yours to write.
   </p>
 
   {% if messages %}
@@ -25,9 +25,9 @@
                class="mt-1 w-full border rounded px-2 py-1.5">
       </label>
       <label class="flex-1 text-sm">
-        <span class="text-gray-600">Programme</span>
+        <span class="text-gray-600">Program</span>
         <select name="program" class="mt-1 w-full border rounded px-2 py-1.5">
-          <option value="">All programmes</option>
+          <option value="">All programs</option>
           {% for p in programs %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
         </select>
       </label>

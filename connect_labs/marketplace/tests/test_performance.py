@@ -99,15 +99,18 @@ class TestTheRowLoopDoesNotQueryPerRow:
             "something in the row loop is querying per organisation"
         )
 
-    def test_every_listed_organisation_still_carries_its_programmes(self, client, user, many):
-        """Batching must not cost the feature it was batching: the programme
+    def test_every_listed_organisation_still_carries_its_programs(self, client, user, many):
+        """Batching must not cost the feature it was batching: the program
         chips come off the same prefetch the query count depends on."""
         client.force_login(user)
         listed = client.get(reverse("marketplace:network")).context["listed"]
         first = next(row for row in listed if row["org"].name == "Organisation 000")
-        assert {p["label"] for p in first["applied"]} == {"Child Health Campaign", "Nutrition"}
+        assert {p["label"] for p in first["applied"]} == {
+            "Child Health Campaign",
+            "Ready-to-Use Therapeutic Food (RUTF)",
+        }
 
-    def test_a_programme_appears_once_however_many_rounds_carried_it(self, client, user, many):
+    def test_a_program_appears_once_however_many_rounds_carried_it(self, client, user, many):
         """Three KMC rounds are one KMC chip. Repeating the tag per round would
         make a prolific applicant look like it works on more than it does."""
         org = make_partner("Busy Organisation", "BO", countries=["Kenya"])

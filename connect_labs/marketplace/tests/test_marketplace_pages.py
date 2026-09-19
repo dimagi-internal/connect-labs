@@ -238,12 +238,12 @@ class TestNetworkFiltering:
         assert countries["Uganda"] == 1
         assert applied["Child Health Campaign"] == 2
 
-    def test_filtering_by_programme_narrows_the_list(self, client, user, marketplace):
+    def test_filtering_by_program_narrows_the_list(self, client, user, marketplace):
         client.force_login(user)
         response = client.get(reverse("marketplace:network"), {"applied": "kmc"})
         assert response.context["shown"] == 0
 
-    def test_each_row_carries_the_programmes_behind_its_applications(self, client, user, marketplace):
+    def test_each_row_carries_the_programs_behind_its_applications(self, client, user, marketplace):
         """The list answers "what does this organisation work on" in Connect's
         own vocabulary, rather than listing round titles a reader has to decode."""
         client.force_login(user)

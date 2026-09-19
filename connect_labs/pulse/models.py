@@ -77,13 +77,13 @@ TIER_INTERVALS_SECONDS = {
 
 
 class PulseProgram(models.Model):
-    """Connect's own programmes — the grouping a funder actually asks about.
+    """Connect's own programs — the grouping a funder actually asks about.
 
     Arrives in the same ``opp_org_program_list`` response as the opportunities,
     and was previously read only to derive an org slug. It carries two things
     worth keeping:
 
-    ``name`` is presentable as-is ("ECD Nigeria 2025"), so a programme filter
+    ``name`` is presentable as-is ("ECD Nigeria 2025"), so a program filter
     needs no labels invented in labs.
 
     ``delivery_type`` is Connect's service taxonomy — ``ecd``, ``chc``, ``mbw``,
@@ -100,7 +100,7 @@ class PulseProgram(models.Model):
     org_slug = models.CharField(max_length=120, blank=True)
     currency = models.CharField(max_length=8, blank=True)
 
-    # Programmes named as tests are excluded from the filter menu. Computed at
+    # Programs named as tests are excluded from the filter menu. Computed at
     # ingest rather than at query time so the rule is applied in one place and
     # is inspectable in the DB.
     is_test = models.BooleanField(default=False, db_index=True)
@@ -115,7 +115,7 @@ class PulseOrganization(models.Model):
     """The delivery partners — who actually runs the work.
 
     Arrives in the same ``opp_org_program_list`` response as the opportunities
-    and programmes, which published ``["id", "slug", "name", "funder"]`` per org
+    and programs, which published ``["id", "slug", "name", "funder"]`` per org
     all along. Pulse read ``len(organizations)`` for a headline count and threw
     the rows away, so the only org identity anywhere downstream was the
     ``org_slug`` denormalised onto events and works.
@@ -182,7 +182,7 @@ class PulseOpportunity(models.Model):
     is_active = models.BooleanField(default=False)
     end_date = models.DateField(null=True, blank=True)
     lifetime_visit_count = models.IntegerField(default=0)
-    # Scaffolding rather than delivery: a test programme, a sandbox or demo
+    # Scaffolding rather than delivery: a test program, a sandbox or demo
     # org, or an opportunity named as a test. Every Pulse figure excludes these,
     # and so does the marketplace. See `normalize.is_test_opportunity`.
     is_test = models.BooleanField(default=False, db_index=True)
@@ -288,7 +288,7 @@ class PulseWork(models.Model):
     deep history.
 
     It is *not* one row per visit. Measured ratios of works-to-visits: ~0.92 for
-    simple programmes (Malaria RDT, Sahaj), but ~0.23 for KMC, where one payment
+    simple programs (Malaria RDT, Sahaj), but ~0.23 for KMC, where one payment
     unit spans several follow-up visits. So this answers "how much work was done
     and paid for", never "how many visits happened" — that number comes free
     from ``PulseOpportunity.lifetime_visit_count``.
@@ -356,10 +356,10 @@ class PulseGridCell(models.Model):
     # and the type menu groups by it.
     service_slug = models.CharField(max_length=48, blank=True, db_index=True)
 
-    # Part of the cell key, so filtering the map by programme narrows the
+    # Part of the cell key, so filtering the map by program narrows the
     # accumulated geography as well as the live points. The events being folded
     # always carried this; the fold simply never selected it, which left the
-    # density layer showing every programme's history under one programme's
+    # density layer showing every program's history under one program's
     # header -- a map glowing across four countries beside "COUNTRIES 1".
     # Nullable for cells folded before this existed.
     program_id = models.IntegerField(null=True, blank=True, db_index=True)
@@ -578,7 +578,7 @@ class PulseReport(models.Model):
       silently report zero.
 
     Note that a work is *not* a visit: measured ratios run ~0.92 for simple
-    programmes and ~0.23 for KMC, where one payment unit spans several follow-up
+    programs and ~0.23 for KMC, where one payment unit spans several follow-up
     visits. So this reports units of service delivered and paid for, which is
     what a funder is being told about, and never claims to be a visit count.
     """

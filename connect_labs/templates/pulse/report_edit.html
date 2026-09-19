@@ -41,7 +41,7 @@
       <p class="font-medium text-amber-900">Counting payment units, not individual services.</p>
       <p class="text-amber-800 mt-1">
         Verified service counts come from visit rollups, which don't cover this window.
-        The report will count approved payment units instead &mdash; for a programme where one
+        The report will count approved payment units instead &mdash; for a program where one
         payment covers several visits, that is a lower number than the services actually delivered.
         Choose a more recent window to report service deliveries directly.
       </p>
@@ -175,9 +175,9 @@
         <section class="bg-white rounded-lg shadow-sm p-4">
           <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Scope &amp; window</h2>
           <label class="block text-sm mb-3">
-            <span class="text-gray-600">Programme</span>
+            <span class="text-gray-600">Program</span>
             <select name="program_id" class="mt-1 w-full border rounded px-2 py-1.5">
-              <option value="">All programmes</option>
+              <option value="">All programs</option>
               {% for p in programs %}
                 <option value="{{ p.id }}" {% if report.program_id == p.id %}selected{% endif %}>{{ p.name }}</option>
               {% endfor %}
