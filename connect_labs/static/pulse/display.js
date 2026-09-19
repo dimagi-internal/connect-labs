@@ -661,10 +661,12 @@
           opt.textContent = o.recent_events
             ? base
             : `${base} — no recent delivery`;
+          // One entry per organisation: every Connect workspace it runs is
+          // listed, so a search for either workspace still finds it.
           opt.dataset.sub = [
             o.partner && o.partner !== base ? o.partner : null,
             o.name && o.name !== base && o.name !== o.partner ? o.name : null,
-            o.slug,
+            ...(o.workspaces || [o.slug]),
           ]
             .filter(Boolean)
             .join(' · ');
@@ -744,7 +746,12 @@
     let cycleAt = 0;
 
     const rows = () => (store.summary && store.summary.orgs) || [];
-    const row = (slug) => rows().find((o) => o.slug === slug) || null;
+    // Points and the ticker carry the WORKSPACE that delivered; a menu row is
+    // an organisation that may span several, so match on any of them.
+    const row = (slug) =>
+      rows().find(
+        (o) => o.slug === slug || (o.workspaces || []).includes(slug),
+      ) || null;
 
     /* Where a partner is, in lat/lon.
      *
@@ -854,9 +861,11 @@
            ${where ? `<span class="pulse-partner-where">${where}</span>` : ''}
          </div>` +
         `<div class="pulse-partner-funder">${
-          r.partner && r.partner !== r.name
-            ? `workspace <b>${r.name}</b> · `
-            : ''
+          (r.workspaces || []).length > 1
+            ? `${r.workspaces.length} workspaces · `
+            : r.partner && r.partner !== r.name
+              ? `workspace <b>${r.name}</b> · `
+              : ''
         }${
           r.funder
             ? `funded by <b>${r.funder}</b>`

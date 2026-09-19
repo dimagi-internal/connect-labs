@@ -273,11 +273,13 @@ def _program_scope(request):
         # org_slug is denormalised onto all three spines at ingest, so the
         # partner filter needs no join. Rollups key on opportunity, same as the
         # program path.
-        events = events.filter(org_slug=org.slug)
-        works = works.filter(org_slug=org.slug)
-        opps = opps.filter(org_slug=org.slug)
+        # A partner is an organisation, and one organisation can run several
+        # Connect workspaces -- so the filter covers all of them.
+        events = events.filter(org_slug__in=org.workspaces)
+        works = works.filter(org_slug__in=org.workspaces)
+        opps = opps.filter(org_slug__in=org.workspaces)
         rollups = rollups.filter(
-            opportunity_id__in=PulseOpportunity.objects.filter(org_slug=org.slug).values("opportunity_id")
+            opportunity_id__in=PulseOpportunity.objects.filter(org_slug__in=org.workspaces).values("opportunity_id")
         )
 
     if opportunity is not None:
@@ -366,7 +368,11 @@ def _scope_for(sc):
         "programs": (
             1 if sc["program"] is not None else opps.exclude(program_id=None).values("program_id").distinct().count()
         ),
-        "orgs": opps.exclude(org_slug="").values("org_slug").distinct().count(),
+        # Organisations, not workspaces: a partner running two Connect
+        # workspaces is one partner.
+        "orgs": len(
+            set(_partner_keys(opps.exclude(org_slug="").values_list("org_slug", flat=True).distinct()).values())
+        ),
     }
 
 
@@ -414,18 +420,76 @@ def _delivery_partner_slugs() -> set:
     return set(PulseOpportunity.objects.exclude(org_slug="").values_list("org_slug", flat=True).distinct())
 
 
+class _Partner:
+    """A delivery partner: one organisation, however many Connect workspaces it runs.
+
+    Connect models an organisation's workspaces as unrelated orgs (the grouping
+    FK is not exported -- see ``partner_names``), so COWACDI's main workspace
+    and its Connect Interviews workspace arrive as two slugs. Filtering by one
+    of them showed half the partner under the whole partner's name.
+
+    ``slug`` is the lead workspace -- the one carrying the most delivery -- and
+    is the partner's key in the menu and in links. Any of its workspaces
+    resolves to the same partner, so a link to either keeps working.
+    """
+
+    def __init__(self, lead, workspaces):
+        self._lead = lead
+        self.slug = lead.slug
+        self.workspaces = tuple(workspaces)
+        self.named = bool(getattr(lead, "named", False))
+        self.funder_slug = lead.funder_slug
+
+    @property
+    def display_name(self) -> str:
+        return self._lead.display_name
+
+
+def _partner_keys(slugs) -> dict:
+    """workspace slug -> the organisation that runs it (its slug when unknown).
+
+    Only high-confidence directory matches group workspaces; anything else
+    stays its own partner, because folding two organisations together on a
+    guess files one's delivery under the other's name.
+    """
+    slugs = [s for s in slugs if s]
+    named = dict(PulseOrganization.objects.filter(slug__in=slugs).values_list("slug", "name"))
+    return {s: resolve_partner(s, named.get(s) or "")["parent"] or s for s in slugs}
+
+
+def _workspace_visits() -> dict:
+    """Real (non-test) lifetime delivery per workspace -- how a lead is chosen."""
+    return dict(
+        PulseOpportunity.objects.exclude(org_slug="")
+        .filter(is_test=False)
+        .values("org_slug")
+        .annotate(v=Sum("lifetime_visit_count"))
+        .values_list("org_slug", "v")
+    )
+
+
+def _lead_workspace(workspaces, visits) -> str:
+    """The workspace that carries the most delivery; ties broken by slug so it is stable."""
+    return min(workspaces, key=lambda s: (-(visits.get(s) or 0), s))
+
+
 def _resolve_org(slug: str):
-    """A partner by slug, named if Connect told us the name.
+    """The partner a workspace slug belongs to, spanning all its workspaces.
 
     Resolving only against ``PulseOrganization`` would silently ignore the
     filter for 64 of 74 partners -- selecting one would leave the whole
     portfolio on screen under that partner's name, which is the worst available
     outcome: a filter that appears to work and does not.
     """
-    row = PulseOrganization.objects.filter(slug=slug).first()
-    if row is not None:
-        return row
-    return _UnnamedOrg(slug) if slug in _delivery_partner_slugs() else None
+    delivering = _delivery_partner_slugs()
+    if slug not in delivering and not PulseOrganization.objects.filter(slug=slug).exists():
+        return None
+
+    keys = _partner_keys(delivering | {slug})
+    workspaces = sorted(s for s, key in keys.items() if key == keys[slug])
+    lead_slug = _lead_workspace(workspaces, _workspace_visits()) if len(workspaces) > 1 else slug
+    lead = PulseOrganization.objects.filter(slug=lead_slug).first() or _UnnamedOrg(lead_slug)
+    return _Partner(lead, workspaces)
 
 
 def _partner_names_allowed(request) -> bool:
@@ -595,8 +659,42 @@ def _org_menu(request):
                 "spark": spark_of.get(org.slug, []),
             }
         )
+    menu = _one_row_per_partner(menu)
     menu.sort(key=lambda m: (-(1 if m["recent_events"] else 0), -m["visits"]))
     return menu
+
+
+_SUMMED = ("opportunities", "visits", "recent_events", "works", "approved", "usd", "usd_org", "usd_total")
+
+
+def _one_row_per_partner(rows: list) -> list:
+    """Fold workspace rows into one row per organisation.
+
+    The picker names organisations, and an organisation can run several Connect
+    workspaces -- listing each one put COWACDI in the menu twice under the same
+    name. The lead workspace (most delivery) supplies the key, Connect's name
+    and the funder; figures are summed; ``workspaces`` lists them all, lead
+    first, so the menu can still say where the delivery came from.
+    """
+    groups: dict = {}
+    for row in rows:
+        groups.setdefault(row["partner"] or row["slug"], []).append(row)
+
+    out = []
+    for members in groups.values():
+        members.sort(key=lambda r: (-r["visits"], r["slug"]))
+        lead = dict(members[0])
+        if len(members) > 1:
+            for field in _SUMMED:
+                lead[field] = sum(r[field] for r in members)
+            lead["country"] = next((r["country"] for r in members if r["country"]), "")
+            sparks = [r["spark"] for r in members if r["spark"]]
+            lead["spark"] = [sum(week) for week in zip(*sparks)] if sparks else []
+            lead["approval_rate"] = (lead["approved"] / lead["works"]) if lead["works"] else None
+            lead["rate"] = (lead["usd_total"] / lead["approved"]) if lead["approved"] else None
+        lead["workspaces"] = [r["slug"] for r in members]
+        out.append(lead)
+    return out
 
 
 def _weekly_spark_by(field: str = "org_slug", qs=None) -> dict:
@@ -1316,8 +1414,8 @@ class ReplayView(View):
                 where += " AND opportunity_id = %s"
                 params.append(sc["opportunity"].opportunity_id)
             if sc["org"] is not None:
-                where += " AND org_slug = %s"
-                params.append(sc["org"].slug)
+                where += " AND org_slug = ANY(%s)"
+                params.append(list(sc["org"].workspaces))
             if sc["service"]:
                 where += " AND service_slug = %s"
                 params.append(sc["service"])
@@ -1573,6 +1671,7 @@ class PartnerView(View):
                 "partner": {
                     "slug": org.slug,
                     "workspace": org.display_name,
+                    "workspaces": list(org.workspaces),
                     "name": partner["parent"] or org.display_name,
                     "named": bool(partner["parent"]) or bool(getattr(org, "named", False)),
                     "funder": getattr(org, "funder_slug", ""),
