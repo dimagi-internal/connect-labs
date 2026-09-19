@@ -187,7 +187,10 @@ def programs_page(request):
     Spent and services are Pulse's own figures, so this page and the Pulse wall
     cannot quote different numbers for the same program.
     """
-    cards = queries.program_cards()
+    from connect_labs.pulse import costs
+
+    view = costs.parse_view(request.GET.get("costs"))
+    cards = queries.program_cards(view)
     by_state = {key: [] for key, _, _ in queries.STATES}
     for card in cards:
         by_state[card["state"]].append(card)
@@ -201,9 +204,12 @@ def programs_page(request):
         "marketplace/programs.html",
         {
             "sections": sections,
+            "costs_view": view,
             "totals": {
                 "programs": len(cards),
                 "spent": queries._money(sum(c["spent"] for c in cards)),
+                "fixed": queries._money(sum(c["fixed"] for c in cards)),
+                "fixed_raw": sum(c["fixed"] for c in cards),
                 "remaining": queries._money(sum(c["remaining"] for c in cards)),
                 "services": sum(c["services"] for c in cards),
                 "applied": len(

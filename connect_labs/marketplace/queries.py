@@ -399,15 +399,33 @@ def _note(card: dict) -> str:
     return "No delivery recorded yet."
 
 
-def program_cards() -> list[dict]:
+def fixed_costs_by_program() -> dict[str, int]:
+    """Start-up and other fixed costs per delivery type, each opportunity's
+    spread over its approved work -- `pulse.costs`, the same share the Pulse
+    wall uses, so the two agree in either view."""
+    from connect_labs.pulse import costs
+    from connect_labs.pulse.models import PulseOpportunity, PulseWork
+
+    real = PulseWork.objects.exclude(
+        opportunity_id__in=PulseOpportunity.objects.filter(is_test=True).values("opportunity_id")
+    )
+    return {k: int(v) for k, v in costs.fixed_for(real, "service_slug").items() if programs.is_program(k)}
+
+
+def program_cards(view: str = "separate") -> list[dict]:
     """Everything the program page shows, one card per delivery type.
 
     SPENT and SERVICES are pulse's own figures, computed the way the Pulse wall
     computes them, so the two surfaces agree to the dollar — a test pins that
     against pulse's real endpoint. REMAINING is budget still available on live,
     non-test work, an upper bound (see `committed_by_program`).
+
+    FIXED is start-up and other invoiced costs. ``view="spread"`` folds it into
+    SPENT, as the Pulse wall does under the same choice; ``separate`` keeps it
+    beside SPENT.
     """
     committed = committed_by_program()
+    fixed = fixed_costs_by_program()
     services = services_by_program()
     delivered = delivered_programs_by_org_name()
 
@@ -427,7 +445,7 @@ def program_cards() -> list[dict]:
         if programs.is_program(slug):
             rounds[slug] = rounds.get(slug, 0) + 1
 
-    slugs = set(committed) | set(services) | set(applied) | set(rounds)
+    slugs = set(committed) | set(services) | set(applied) | set(rounds) | set(fixed)
     cards = []
     for slug in slugs:
         money = committed.get(slug, {})
@@ -442,7 +460,13 @@ def program_cards() -> list[dict]:
             "delivering": delivering.get(slug, 0),
             "applied": len(applied.get(slug, ())),
             "rounds": rounds.get(slug, 0),
+            "fixed": fixed.get(slug, 0),
+            "view": view,
         }
+        card["per_service_spent"] = card["spent"]
+        if view == "spread":
+            card["spent"] += card["fixed"]
+        card["fixed_fmt"] = _money(card["fixed"])
         total = card["spent"] + card["remaining"]
         card["spent_pct"] = round(card["spent"] * 100 / total, 1) if total else 0
         card["spent_fmt"] = _money(card["spent"])

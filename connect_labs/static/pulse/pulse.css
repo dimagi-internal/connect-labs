@@ -2251,6 +2251,40 @@
 .f-c2 {
   background: var(--c-2);
 }
+.f-c3 {
+  background: var(--c-3);
+}
+.opp-invoices-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+.opp-invoices {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+}
+.opp-invoices th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--ink-3);
+  letter-spacing: 0.05em;
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+}
+.opp-invoices td {
+  padding: 4px 8px 4px 0;
+  white-space: nowrap;
+}
+.opp-invoices td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.opp-invoices td.opp-basis {
+  white-space: normal;
+  color: var(--ink-3);
+}
 .opp-flag-detail,
 .opp-money-note {
   font-family: var(--mono);

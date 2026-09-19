@@ -51,8 +51,14 @@ always worded "up to" — see `queries.committed_by_program`.
     <div class="flex flex-wrap gap-x-12 gap-y-5 mt-7">
       <div>
         <div class="text-[29px] font-semibold text-white tabular-nums">{{ totals.spent }}</div>
-        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">PAID OUT</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">{% if costs_view == "spread" %}PAID OUT, INCL. FIXED COSTS{% else %}PAID OUT PER SERVICE{% endif %}</div>
       </div>
+      {% if costs_view != "spread" and totals.fixed_raw %}
+      <div>
+        <div class="text-[29px] font-semibold text-white tabular-nums">+ {{ totals.fixed }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">FIXED COSTS</div>
+      </div>
+      {% endif %}
       <div>
         <div class="text-[29px] font-semibold text-brand-marigold tabular-nums">{{ totals.remaining }}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">UP TO, STILL FUNDED</div>
@@ -70,6 +76,16 @@ always worded "up to" — see `queries.committed_by_program`.
 </div>
 
 <div class="max-w-screen-2xl mx-auto px-10 py-8">
+
+  {# Start-up and other fixed costs: beside per-service pay, or spread into it. #}
+  {# The same choice as the Pulse wall's, remembered across both.            #}
+  <div class="flex flex-wrap items-center gap-2 mb-6 text-[12.5px]" id="costs-toggle">
+    <span class="text-gray-500">Fixed costs</span>
+    <a href="?costs=separate" data-costs="separate"
+       class="px-3 py-1 rounded-full border {% if costs_view != 'spread' %}bg-brand-deep-purple text-white border-brand-deep-purple{% else %}border-gray-300 text-gray-600 hover:bg-gray-50{% endif %}">shown separately</a>
+    <a href="?costs=spread" data-costs="spread"
+       class="px-3 py-1 rounded-full border {% if costs_view == 'spread' %}bg-brand-deep-purple text-white border-brand-deep-purple{% else %}border-gray-300 text-gray-600 hover:bg-gray-50{% endif %}">spread into services</a>
+  </div>
 
   {% for section in sections %}
     <section class="{% if not forloop.first %}mt-12{% endif %}">
@@ -107,7 +123,7 @@ always worded "up to" — see `queries.committed_by_program`.
             <div class="flex flex-col gap-1.5">
               {% if c.spent or c.remaining %}
                 <div class="flex items-baseline justify-between text-[12.5px]">
-                  <span><span class="font-semibold text-gray-900 tabular-nums">{{ c.spent_fmt }}</span> <span class="text-gray-500">paid</span></span>
+                  <span><span class="font-semibold text-gray-900 tabular-nums">{{ c.spent_fmt }}</span> <span class="text-gray-500">paid</span>{% if c.fixed %}<span class="text-gray-500">{% if c.view == "spread" %} incl. {{ c.fixed_fmt }} fixed{% else %} + <span class="font-semibold text-gray-900 tabular-nums">{{ c.fixed_fmt }}</span> fixed{% endif %}</span>{% endif %}</span>
                   {% if c.remaining %}
                     <span class="text-gray-500">up to <span class="font-semibold pg-hue tabular-nums">{{ c.remaining_fmt }}</span> still funded</span>
                   {% else %}
@@ -153,9 +169,30 @@ always worded "up to" — see `queries.committed_by_program`.
   {% endfor %}
 
   <p class="mt-12 pt-5 border-t border-gray-200 text-[12.5px] text-gray-500 max-w-3xl leading-relaxed">
-    Paid out and services delivered are the same figures the Pulse wall shows. "Still funded" is budget
+    Paid out and services delivered are the same figures the Pulse wall shows. Fixed costs are start-up and
+    other costs Connect invoiced outside any unit of work; "spread into services" shares each opportunity's
+    across its approved work. "Still funded" is budget
     left on opportunities that are live today, converted to dollars at the rate Connect applied to their
     payments — an upper bound, since programs rarely spend their whole budget.
   </p>
 </div>
+<script>
+  // Remember the choice, shared with the Pulse wall. The link always wins;
+  // with no ?costs= the viewer's last choice is restored.
+  (function () {
+    var q = new URLSearchParams(location.search);
+    try {
+      if (!q.get('costs') && localStorage.getItem('pulse.costs') === 'spread') {
+        q.set('costs', 'spread');
+        location.replace(location.pathname + '?' + q.toString());
+        return;
+      }
+    } catch (e) {}
+    document.querySelectorAll('#costs-toggle [data-costs]').forEach(function (a) {
+      a.addEventListener('click', function () {
+        try { localStorage.setItem('pulse.costs', a.dataset.costs); } catch (e) {}
+      });
+    });
+  })();
+</script>
 {% endblock %}

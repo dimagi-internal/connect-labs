@@ -1328,6 +1328,28 @@
       });
     }
 
+    const costsSel = $('#costs-filter');
+    if (costsSel) {
+      costsSel.value = store.costs;
+      costsSel.addEventListener('change', async () => {
+        costsSel.disabled = true;
+        try {
+          try {
+            localStorage.setItem('pulse.costs', costsSel.value);
+          } catch (e) {
+            /* storage blocked: the URL still carries the choice */
+          }
+          await store.setCosts(costsSel.value);
+          Url.write();
+        } catch (err) {
+          console.error('[pulse] costs view failed', err);
+        } finally {
+          costsSel.disabled = false;
+          paintStatus();
+        }
+      });
+    }
+
     const orgSel = $('#org-filter');
     if (orgSel) {
       orgSel.addEventListener('change', async () => {
@@ -1419,6 +1441,7 @@
       set('program', store.program);
       set('org', store.org);
       set('opportunity', store.opportunity);
+      set('costs', store.costs === 'spread' ? 'spread' : null);
       const open = window.PulseWindows && window.PulseWindows.state();
       set('partner', open && open.partner);
       set('opp', open && open.opportunity);
@@ -1433,14 +1456,27 @@
       const program = q.get('program');
       const org = q.get('org');
       const opportunity = q.get('opportunity');
+      // The link wins; otherwise the viewer's last choice on any Pulse page.
+      let costsView = q.get('costs');
+      if (!costsView) {
+        try {
+          costsView = localStorage.getItem('pulse.costs');
+        } catch (e) {
+          costsView = null;
+        }
+      }
+      const spread = costsView === 'spread';
 
       // Set them on the store directly and load ONCE, rather than calling
       // several setters that would each re-fetch everything in turn.
+      store.costs = spread ? 'spread' : 'separate';
+      const costsCtl = $('#costs-filter');
+      if (costsCtl) costsCtl.value = store.costs;
       store.service = service || null;
       store.program = program ? Number(program) : null;
       store.org = org || null;
       store.opportunity = opportunity ? Number(opportunity) : null;
-      if (service || program || org || opportunity) {
+      if (service || program || org || opportunity || spread) {
         await store.refreshSummary();
         await loadGrid();
         const svc = $('#svc-filter'),

@@ -30,4 +30,7 @@ class Command(BaseCommand):
                 except Exception as exc:  # noqa: BLE001 — report and carry on
                     failed += 1
                     self.stdout.write(f"  opp {opp.opportunity_id}: {exc}")
+        from connect_labs.pulse import costs
+
+        costs.invalidate()
         self.stdout.write(f"{read} opportunities read, {invoices} invoices mirrored, {failed} failed")

@@ -366,7 +366,16 @@
 
       win.body.innerHTML =
         kpis([
-          ['Paid out', usdCompact(m.total_paid || 0), true],
+          [
+            m.fixed_usd && m.costs_view === 'spread'
+              ? 'Paid out, incl. fixed'
+              : 'Paid out',
+            usdCompact(m.total_paid || 0),
+            true,
+          ],
+          ...(m.fixed_usd && m.costs_view !== 'spread'
+            ? [['Fixed costs', '+ ' + usdCompact(m.fixed_usd)]]
+            : []),
           ['Per service', m.rate == null ? '—' : usd(m.rate)],
           ['Services', nf.format(sc.lifetime_visits || 0)],
           ['Units of work', nf.format(m.works || 0)],
