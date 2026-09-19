@@ -43,6 +43,10 @@
       this.org = this.opts.org || null;
       this.service = this.opts.service || null;
       this.opportunity = this.opts.opportunity || null;
+      // How fixed costs (start-up and other invoiced costs) appear in money
+      // figures: 'separate' -- called out beside per-service pay -- or
+      // 'spread' -- apportioned into it. Server-side, like every filter.
+      this.costs = this.opts.costs === 'spread' ? 'spread' : 'separate';
       // [fromEpoch, toEpoch] when a range is pinned, else null.
       this.range = this.opts.range || null;
       this.speed = this.opts.speed;
@@ -139,6 +143,7 @@
       // redrew the menu and quietly scoped nothing server-side.
       if (this.service) u.set('service', this.service);
       if (this.opportunity) u.set('opportunity', this.opportunity);
+      if (this.costs === 'spread') u.set('costs', 'spread');
       if (this.opts.token) u.set('token', this.opts.token);
       const q = u.toString();
       return `${this.opts.base}${path}${q ? '?' + q : ''}`;
@@ -170,6 +175,13 @@
       const next = programId || null;
       if (next === this.program) return;
       this.program = next;
+      await this._applyFilter();
+    }
+
+    async setCosts(view) {
+      const next = view === 'spread' ? 'spread' : 'separate';
+      if (next === this.costs) return;
+      this.costs = next;
       await this._applyFilter();
     }
 

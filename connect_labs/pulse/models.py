@@ -772,6 +772,19 @@ class PulseInvoiceReview(models.Model):
     decided_by = models.CharField(max_length=200, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        from connect_labs.pulse import costs
+
+        costs.invalidate()
+
+    def delete(self, *args, **kwargs):
+        result = super().delete(*args, **kwargs)
+        from connect_labs.pulse import costs
+
+        costs.invalidate()
+        return result
+
     class Meta:
         unique_together = ("opportunity_id", "invoice_number")
 
@@ -801,6 +814,19 @@ class PulseCostEntry(models.Model):
     )
     entered_by = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        from connect_labs.pulse import costs
+
+        costs.invalidate()
+
+    def delete(self, *args, **kwargs):
+        result = super().delete(*args, **kwargs)
+        from connect_labs.pulse import costs
+
+        costs.invalidate()
+        return result
 
     class Meta:
         verbose_name_plural = "pulse cost entries"
