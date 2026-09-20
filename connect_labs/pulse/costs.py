@@ -42,6 +42,8 @@ from statistics import median
 from django.db.models import Q, Sum
 from django.utils import timezone
 
+from connect_labs.pulse import groups
+
 VIEW_SEPARATE = "separate"
 VIEW_SPREAD = "spread"
 VIEWS = (VIEW_SEPARATE, VIEW_SPREAD)
@@ -218,6 +220,32 @@ def opportunity_costs(opp_ids=None) -> dict[int, OppCosts]:
             c.org_fee_entered_usd += entry.usd
         else:
             c.fixed_entered_usd += entry.usd
+
+    # An engagement's own cost -- one fee for work Connect recorded as many
+    # opportunities. Apportioned over its cohorts by approved units, so the
+    # cost per unit is the same wherever a unit sits and every figure that
+    # reads `fixed_rates()` keeps working on opportunity ids. A cohort with no
+    # approved work carries none of it; an engagement with no approved work
+    # anywhere lands wholly on its lowest-numbered cohort, which keeps it in
+    # `unallocated()` rather than dropping it from every figure.
+    for entry in PulseCostEntry.objects.exclude(group=None).select_related("group"):
+        ids = [oid for oid in groups.members(entry.group.slug) if oid in out]
+        if not ids:
+            continue
+        units = {oid: out[oid].approved_units for oid in ids}
+        total_units = sum(units.values())
+        fallback = min(ids)
+        for oid in ids:
+            if total_units:
+                share = entry.usd * Decimal(units[oid]) / Decimal(total_units)
+            else:
+                share = entry.usd if oid == fallback else ZERO
+            if not share:
+                continue
+            if entry.kind == PulseCostEntry.KIND_ORG_FEE:
+                out[oid].org_fee_entered_usd += share
+            else:
+                out[oid].fixed_entered_usd += share
     return out
 
 
@@ -260,7 +288,11 @@ def fixed_rates() -> dict:
     if hit is not None:
         return hit
     with_fixed = set(PulseInvoice.objects.filter(service_delivery=False).values_list("opportunity_id", flat=True))
-    with_fixed |= set(PulseCostEntry.objects.values_list("opportunity_id", flat=True))
+    with_fixed |= {oid for oid in PulseCostEntry.objects.values_list("opportunity_id", flat=True) if oid is not None}
+    # An engagement's entry is carried by its cohorts, so they are the
+    # opportunities that have a fixed cost to spread.
+    for slug in PulseCostEntry.objects.exclude(group=None).values_list("group__slug", flat=True):
+        with_fixed |= set(groups.members(slug))
     by = opportunity_costs(with_fixed) if with_fixed else {}
     out = {
         "per_unit": {oid: c.fixed_per_unit for oid, c in by.items() if c.spreadable and c.fixed_usd},
@@ -362,48 +394,112 @@ ISSUE_TYPES = {
 }
 
 
+@dataclass
+class _Unit:
+    """What a cost question is asked about: an engagement, not a Connect row.
+
+    Usually the two are the same. Where they are not -- an engagement Connect
+    recorded as 37 opportunities -- asking per row gave 37 copies of one
+    question, and each cohort's share of the work fell under the thresholds
+    that decide whether a question is worth asking at all.
+    """
+
+    key: object
+    name: str
+    org_slug: str
+    service_slug: str
+    cohorts: int = 1
+    worker_usd: Decimal = ZERO
+    org_usd: Decimal = ZERO
+    approved_units: int = 0
+    fixed_usd: Decimal = ZERO
+    service_invoiced_usd: Decimal = ZERO
+    per_service_usd: Decimal = ZERO
+    spreadable: bool = False
+    unread: int = 0
+    ended: bool = True
+    # (the opportunity the invoice belongs to, the resolved invoice)
+    invoice_pairs: list = field(default_factory=list)
+
+
+def _units(opps: dict, costs: dict, today: dt.date) -> dict:
+    """Merge per-opportunity costs into the engagements they belong to."""
+    units: dict = {}
+    for oid, c in costs.items():
+        opp = opps[oid]
+        key = groups.key_for(oid)
+        unit = units.get(key)
+        if unit is None:
+            unit = _Unit(
+                key=key,
+                name=(groups.name_of(key) if isinstance(key, str) else "") or opp.name,
+                org_slug=opp.org_slug,
+                service_slug=opp.service_slug,
+                cohorts=0,
+            )
+            units[key] = unit
+        unit.cohorts += 1
+        unit.worker_usd += c.worker_usd
+        unit.org_usd += c.org_usd
+        unit.approved_units += c.approved_units
+        unit.fixed_usd += c.fixed_usd
+        unit.service_invoiced_usd += c.service_invoiced_usd
+        unit.per_service_usd += c.per_service_usd
+        unit.spreadable = unit.spreadable or c.spreadable
+        unit.unread += 1 if opp.invoices_synced_at is None else 0
+        unit.ended = unit.ended and (not opp.is_active or (opp.end_date is not None and opp.end_date < today))
+        unit.invoice_pairs.extend((opp, inv) for inv in c.invoices)
+    return units
+
+
 def cost_issues(today: dt.date | None = None) -> list[dict]:
     """Everything about cost data worth fixing, one row per finding.
 
     ``who`` separates what labs already corrected (currency) from what needs a
     person's answer. Test and demo opportunities are left out, as they are from
     every figure.
+
+    A finding is filed against an ENGAGEMENT. For all but a handful that is one
+    Connect opportunity; for the interview cohorts it is one question about 37
+    of them, which is the only way it is answerable -- the fee was agreed once.
     """
     from connect_labs.pulse.models import PulseCostEntry, PulseOpportunity
 
     today = today or timezone.now().date()
     opps = {o.opportunity_id: o for o in PulseOpportunity.objects.filter(is_test=False)}
     costs = opportunity_costs(opps)
-    entered = set(PulseCostEntry.objects.values_list("opportunity_id", flat=True))
+    entered = {groups.key_for(oid) for oid in PulseCostEntry.objects.values_list("opportunity_id", flat=True) if oid}
+    entered |= set(PulseCostEntry.objects.exclude(group=None).values_list("group__slug", flat=True))
     out: list[dict] = []
 
-    def add(kind, opp, amount, detail, invoice=""):
+    def add(kind, unit, amount, detail, invoice=""):
         who, title = ISSUE_TYPES[kind]
         out.append(
             dict(
                 kind=kind,
                 who=who,
                 title=title,
-                opportunity_id=opp.opportunity_id,
-                opportunity=opp.name,
-                org_slug=opp.org_slug,
-                service=opp.service_slug,
+                opportunity_id=unit.key,
+                opportunity=unit.name,
+                org_slug=unit.org_slug,
+                service=unit.service_slug,
+                # How many Connect opportunities this one question covers.
+                cohorts=unit.cohorts,
                 invoice=invoice,
                 amount_usd=amount,
                 detail=detail,
             )
         )
 
-    for oid, c in costs.items():
-        opp = opps[oid]
-        for inv in c.invoices:
+    for unit in _units(opps, costs, today).values():
+        for opp, inv in unit.invoice_pairs:
             local = f"{inv.amount:,.2f} {opp.currency}" if inv.amount is not None else "no amount"
             if inv.basis == BASIS_MISSING_USD:
-                add("missing_usd", opp, inv.usd, f"{local} → ${inv.usd:,.2f}", inv.invoice_number)
+                add("missing_usd", unit, inv.usd, f"{local} → ${inv.usd:,.2f}", inv.invoice_number)
             elif inv.basis == BASIS_USD_IS_LOCAL:
                 add(
                     "usd_is_local",
-                    opp,
+                    unit,
                     inv.usd,
                     f"Connect says ${inv.amount_usd_connect:,.2f} for {local}; converted ${inv.usd:,.2f}",
                     inv.invoice_number,
@@ -411,18 +507,18 @@ def cost_issues(today: dt.date | None = None) -> list[dict]:
             elif inv.basis == BASIS_USD_OFF:
                 add(
                     "usd_off",
-                    opp,
+                    unit,
                     inv.usd,
                     f"Connect says ${inv.amount_usd_connect:,.2f} for {local}; converted ${inv.usd:,.2f}",
                     inv.invoice_number,
                 )
             elif inv.basis == BASIS_UNRESOLVABLE:
-                add("unresolvable", opp, None, local, inv.invoice_number)
+                add("unresolvable", unit, None, local, inv.invoice_number)
             elif inv.basis == BASIS_CONNECT and inv.disagreement is not None:
                 if inv.disagreement > Decimal("1.5") or inv.disagreement < Decimal("0.67"):
                     add(
                         "usd_disagrees",
-                        opp,
+                        unit,
                         inv.usd,
                         f"Connect says ${inv.amount_usd_connect:,.2f} for {local} "
                         f"({inv.disagreement:.1f}x the converted amount)",
@@ -434,12 +530,12 @@ def cost_issues(today: dt.date | None = None) -> list[dict]:
         # amount. Counted in every figure until a person excludes one, so it is
         # raised rather than dropped -- two real invoices can share an amount.
         seen: dict = {}
-        for inv in c.invoices:
+        for opp, inv in unit.invoice_pairs:
             key = (re.sub(r"[^a-z0-9]", "", inv.invoice_number.lower()), inv.amount, inv.service_delivery)
             if key in seen and inv.basis != BASIS_EXCLUDED and seen[key].basis != BASIS_EXCLUDED:
                 add(
                     "possible_duplicate",
-                    opp,
+                    unit,
                     inv.usd,
                     f"{seen[key].invoice_number!r} and {inv.invoice_number!r}, both "
                     f"{inv.amount:,.2f} {opp.currency}",
@@ -447,43 +543,48 @@ def cost_issues(today: dt.date | None = None) -> list[dict]:
                 )
             seen.setdefault(key, inv)
 
-        if opp.invoices_synced_at is None:
-            add("invoices_unread", opp, None, "Not yet read, or Connect refused the read")
+        if unit.unread == unit.cohorts:
+            add(
+                "invoices_unread",
+                unit,
+                None,
+                "Not yet read, or Connect refused the read",
+            )
             continue
 
-        has_invoices = bool(c.invoices)
-        if c.worker_usd > 200 and c.org_usd == 0 and not has_invoices and oid not in entered:
+        has_invoices = bool(unit.invoice_pairs)
+        if unit.worker_usd > 200 and unit.org_usd == 0 and not has_invoices and unit.key not in entered:
             add(
                 "no_org_pay",
-                opp,
-                c.worker_usd,
-                f"${c.worker_usd:,.0f} paid to workers over {c.approved_units:,} approved units; "
+                unit,
+                unit.worker_usd,
+                f"${unit.worker_usd:,.0f} paid to workers over {unit.approved_units:,} approved units; "
                 "no org pay per service, no invoices, nothing entered in labs",
             )
-        if c.service_invoiced_usd > c.per_service_usd * Decimal("1.3") and (
-            c.service_invoiced_usd - c.per_service_usd > 2000
+        if unit.service_invoiced_usd > unit.per_service_usd * Decimal("1.3") and (
+            unit.service_invoiced_usd - unit.per_service_usd > 2000
         ):
             add(
                 "service_invoices_exceed_accrual",
-                opp,
-                c.service_invoiced_usd - c.per_service_usd,
-                f"invoiced ${c.service_invoiced_usd:,.0f} for service delivery; "
-                f"${c.per_service_usd:,.0f} accrued (worker ${c.worker_usd:,.0f} + org ${c.org_usd:,.0f})",
+                unit,
+                unit.service_invoiced_usd - unit.per_service_usd,
+                f"invoiced ${unit.service_invoiced_usd:,.0f} for service delivery; "
+                f"${unit.per_service_usd:,.0f} accrued "
+                f"(worker ${unit.worker_usd:,.0f} + org ${unit.org_usd:,.0f})",
             )
-        if c.fixed_usd > 0 and not c.spreadable:
+        if unit.fixed_usd > 0 and not unit.spreadable:
             add(
                 "fixed_cost_without_work",
-                opp,
-                c.fixed_usd,
-                f"${c.fixed_usd:,.0f} of startup and supplies and no approved work to spread them over",
+                unit,
+                unit.fixed_usd,
+                f"${unit.fixed_usd:,.0f} of startup and supplies and no approved work to spread them over",
             )
-        ended = not opp.is_active or (opp.end_date is not None and opp.end_date < today)
-        if ended and c.per_service_usd > 1000 and c.service_invoiced_usd == 0:
+        if unit.ended and unit.per_service_usd > 1000 and unit.service_invoiced_usd == 0:
             add(
                 "accrued_not_invoiced",
-                opp,
-                c.per_service_usd,
-                f"${c.per_service_usd:,.0f} accrued; no service-delivery invoice",
+                unit,
+                unit.per_service_usd,
+                f"${unit.per_service_usd:,.0f} accrued; no service-delivery invoice",
             )
 
     order = {k: i for i, k in enumerate(ISSUE_TYPES)}
