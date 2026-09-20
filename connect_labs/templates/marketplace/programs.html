@@ -122,14 +122,25 @@ always worded "up to" — see `queries.committed_by_program`.
 
             <div class="flex flex-col gap-1.5">
               {% if c.spent or c.remaining %}
-                <div class="flex items-baseline justify-between text-[12.5px]">
-                  <span><span class="font-semibold text-gray-900 tabular-nums">{{ c.spent_fmt }}</span> <span class="text-gray-500">paid</span>{% if c.fixed %}<span class="text-gray-500">{% if c.view == "spread" %} incl. {{ c.fixed_fmt }} startup and supplies{% else %} + <span class="font-semibold text-gray-900 tabular-nums">{{ c.fixed_fmt }}</span> startup and supplies{% endif %}</span>{% endif %}</span>
+                {# Paid and still-funded on one line; startup and supplies gets #}
+                {# its own, so a card with all three never wraps into a muddle.  #}
+                <div class="flex items-baseline justify-between gap-3 text-[12.5px]">
+                  <span class="whitespace-nowrap"><span class="font-semibold text-gray-900 tabular-nums">{{ c.spent_fmt }}</span> <span class="text-gray-500">paid</span></span>
                   {% if c.remaining %}
-                    <span class="text-gray-500">up to <span class="font-semibold pg-hue tabular-nums">{{ c.remaining_fmt }}</span> still funded</span>
+                    <span class="text-gray-500 whitespace-nowrap text-right">up to <span class="font-semibold pg-hue tabular-nums">{{ c.remaining_fmt }}</span> still funded</span>
                   {% else %}
-                    <span class="text-gray-400">nothing live</span>
+                    <span class="text-gray-400 whitespace-nowrap">nothing live</span>
                   {% endif %}
                 </div>
+                {% if c.fixed %}
+                  <div class="text-[12px] text-gray-500">
+                    {% if c.view == "spread" %}
+                      includes <span class="font-semibold text-gray-900 tabular-nums">{{ c.fixed_fmt }}</span> startup and supplies
+                    {% else %}
+                      plus <span class="font-semibold text-gray-900 tabular-nums">{{ c.fixed_fmt }}</span> startup and supplies
+                    {% endif %}
+                  </div>
+                {% endif %}
                 <div class="h-2 rounded-full bg-gray-100 overflow-hidden flex"
                      title="{{ c.spent_fmt }} paid{% if c.remaining %}, up to {{ c.remaining_fmt }} still funded on live work{% endif %}">
                   <span class="pg-spent h-full" style="width: {{ c.spent_pct }}%"></span>
