@@ -16,11 +16,18 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import Http404
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 
 from connect_labs.marketplace.directory import DIRECTORY_ID
-from connect_labs.pulse.models import PulseOpportunity, PulsePublicToken, PulseReport, PulseScalar
+from connect_labs.pulse.models import (
+    PulseOppGroup,
+    PulseOpportunity,
+    PulsePublicToken,
+    PulseReport,
+    PulseScalar,
+)
 
 # The LLO Directory, which the partner import reads. Linked from the index so
 # a partner showing as a slug can be fixed where its identity actually lives.
@@ -188,7 +195,47 @@ class PulseIndexView(LoginRequiredMixin, View):
                 filter(None, [o["name"], slug, partner["short"], partner["parent"], str(o["opportunity_id"])])
             ).lower()
             rows.append(o)
+        rows = _one_row_per_engagement(rows)
+        for row in rows:
+            key = row["opportunity_id"]
+            row["url"] = (
+                reverse("pulse:opp_group", args=[key]) if isinstance(key, str) else reverse("pulse:opp", args=[key])
+            )
         return rows
+
+
+def _one_row_per_engagement(rows: list) -> list:
+    """Offer an engagement once, not once per cohort Connect made for it.
+
+    The cohorts' own names and ids stay in ``search``, so someone who knows a
+    piece of work as "[14TRS]" still finds the engagement it belongs to --
+    which is the only place its figures are now reported.
+    """
+    from connect_labs.pulse import groups
+
+    if not groups.any_groups():
+        return rows
+
+    out: list = []
+    lead_of: dict = {}
+    for row in rows:
+        key = groups.key_for(row["opportunity_id"])
+        if key == row["opportunity_id"]:
+            out.append(row)
+            continue
+        lead = lead_of.get(key)
+        if lead is None:
+            lead = dict(row)
+            lead["opportunity_id"] = key
+            lead["name"] = groups.name_of(key) or str(key)
+            lead["search"] = f"{lead['name'].lower()} {row['search']}"
+            lead_of[key] = lead
+            out.append(lead)
+            continue
+        lead["lifetime_visit_count"] += row["lifetime_visit_count"] or 0
+        lead["is_active"] = bool(lead["is_active"]) or bool(row["is_active"])
+        lead["search"] = f"{lead['search']} {row['search']}"
+    return out
 
 
 class PulseDisplayView(LoginRequiredMixin, View):
@@ -196,6 +243,34 @@ class PulseDisplayView(LoginRequiredMixin, View):
         if layout not in LAYOUTS:
             raise Http404("Unknown layout")
         return render(request, "pulse/display.html", _display_context(layout, public=False))
+
+
+class PulseOppGroupView(LoginRequiredMixin, View):
+    """An engagement's page: the same dossier, over every cohort in it.
+
+    Renders the opportunity template -- everything quantitative arrives from
+    ``/api/opp/``, which takes the group's slug exactly where it takes an
+    opportunity id, so one page serves both and cannot drift.
+    """
+
+    def get(self, request, slug: str):
+        from django.conf import settings
+
+        group = PulseOppGroup.objects.filter(slug=slug).first()
+        if group is None:
+            raise Http404("No such engagement")
+        return render(
+            request,
+            "pulse/opp.html",
+            {
+                "opp_id": group.slug,
+                "opp_name": group.name,
+                # Not "Opportunity <id>": this engagement is several of them,
+                # and the cohorts are listed further down the page.
+                "opp_label": "Engagement",
+                "mapbox_token": getattr(settings, "MAPBOX_TOKEN", "") or "",
+            },
+        )
 
 
 class PulseOppView(LoginRequiredMixin, View):
@@ -213,6 +288,10 @@ class PulseOppView(LoginRequiredMixin, View):
         opp = PulseOpportunity.objects.filter(opportunity_id=opp_id).first()
         if opp is None:
             raise Http404("No such opportunity")
+        if opp.group_id is not None:
+            # This cohort's figures are reported as part of its engagement, so
+            # a bookmarked cohort lands where its work is actually counted.
+            return redirect("pulse:opp_group", slug=opp.group.slug)
         return render(
             request,
             "pulse/opp.html",
