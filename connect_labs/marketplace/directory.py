@@ -376,6 +376,82 @@ def parse_response_mapping(rows, known_names: set[str]) -> tuple[dict, list[str]
     return mapped, skipped
 
 
+# ======================================================================
+# Opportunities Connect recorded separately that were really one engagement.
+# ======================================================================
+
+OPPORTUNITY_GROUPS_TAB = "Connect Opportunity Groups"
+
+OPPORTUNITY_GROUPS_HEADER = [
+    "Group Slug",
+    "Group Name",
+    "Connect Org Slug",
+    "Opportunity ID",
+    "Opportunity Name (for the reader; labs uses the ID)",
+    "Why",
+    "Decided by",
+]
+
+
+@dataclass
+class DirectoryOppGroup:
+    slug: str
+    name: str
+    org_slug: str
+    why: str
+    members: list[int] = field(default_factory=list)
+
+
+def parse_opportunity_groups(rows) -> tuple[dict, list[str]]:
+    """group slug -> the engagement, plus the rows that could not be used.
+
+    One row per opportunity, like ``EOI Response Mapping`` is one row per
+    submission: membership has to be readable and correctable a line at a time,
+    and each line carries the reason it is there.
+
+    The same rule as every other verdict tab -- no stated reason, no row. A
+    grouping says several engagements were really one, and unexplained it is a
+    guess a later reader trusts. Labs never writes here: this is a decision
+    people make, and the sheet is where it lives.
+    """
+    groups: dict = {}
+    skipped: list[str] = []
+    for index, row in enumerate(rows[1:], start=2):
+        slug, name, org = cell(row, 0), cell(row, 1), cell(row, 2)
+        raw_id, why = cell(row, 3), cell(row, 5)
+        if not slug and not raw_id:
+            continue
+        # A '#' row is guidance for whoever maintains the tab, not a verdict.
+        if slug.startswith("#"):
+            continue
+        try:
+            opportunity_id = int(raw_id)
+        except (TypeError, ValueError):
+            skipped.append(f"{OPPORTUNITY_GROUPS_TAB} row {index}: {raw_id!r} is not an opportunity id")
+            continue
+        if not why:
+            skipped.append(f"{OPPORTUNITY_GROUPS_TAB} row {index}: {slug}:{opportunity_id} has no stated reason")
+            continue
+
+        group = groups.get(slug)
+        if group is None:
+            group = DirectoryOppGroup(slug=slug, name=name or slug, org_slug=org, why=why)
+            groups[slug] = group
+        elif org and group.org_slug and org != group.org_slug:
+            # An engagement belongs to one partner. Spanning two, it would have
+            # to appear under both or neither.
+            skipped.append(
+                f"{OPPORTUNITY_GROUPS_TAB} row {index}: {slug} already belongs to {group.org_slug!r}, "
+                f"so {org!r} cannot be added to it"
+            )
+            continue
+        if opportunity_id in group.members:
+            skipped.append(f"{OPPORTUNITY_GROUPS_TAB} row {index}: {opportunity_id} is already listed above")
+            continue
+        group.members.append(opportunity_id)
+    return groups, skipped
+
+
 def write_tab(spreadsheet_id: str, tab: str, values: list[list[str]]) -> None:
     """Replace a tab's contents, creating the tab if it does not exist.
 
