@@ -1142,6 +1142,66 @@ def test_candidates_skips_the_write_when_thresholds_are_unchanged(client, django
     assert calls == []  # no write at all -- thresholds matched what was already stored
 
 
+def test_candidates_ignores_payload_thresholds_once_locked(client, django_user_model, monkeypatch):
+    # "Thresholds stop mattering after [Step 1 lock]" (the page's own
+    # tooltip) has to hold here too, not just at MopupLockView's one-time
+    # freeze of candidate_work_areas -- otherwise a threshold tweak made
+    # after lock would silently drift the live "Candidate work areas" table
+    # away from run.candidate_work_areas, which Step 3's isolation filter
+    # (_active_combined_rows) depends on staying in lockstep with.
+    from connect_labs.mopup.core import indicators as ind
+    from connect_labs.mopup.core.models import STATUS_LOCKED
+
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    frozen_thresholds = {
+        "indicator_configs": {**ind.DEFAULT_INDICATOR_CONFIGS, ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.9}},
+        "global_config": {**ind.DEFAULT_GLOBAL_CONFIG, "cluster_aware_filter_enabled": False},
+    }
+    run = _seed_run(runs, thresholds=frozen_thresholds)
+    run.data["status"] = STATUS_LOCKED
+    run.data["candidate_work_areas"] = []
+    row = {
+        "wa_id": "wa-1",
+        "ward": "Sabon Gari",
+        "lga": "Rano",
+        "state": "Kano",
+        "flw_username": "flw-1",
+        "lat": 11.0,
+        "lon": 9.0,
+        "status": "VISITED",
+        "building_count": 10,
+        "expected_visit_count": 10,
+        "approved_hsd_count": 5,  # rate 0.5 -- flagged by the frozen threshold (0.9), NOT by the payload's (0.1)
+        "approved_ncf_count": 0,
+        "approved_inaccessible_count": 0,
+        "deworming_given": 0,
+        "muac_given": 0,
+        "vaccination_given": 0,
+    }
+    _mock_ready_data(monkeypatch, run, [row])
+
+    resp = client.post(
+        reverse("mopup:candidates", kwargs={"program_id": 217, "run_id": 1}),
+        data=json.dumps(
+            {
+                "indicator_configs": {ind.EVC_SHORTFALL: {"enabled": True, "threshold": 0.1}},
+                "global_config": {"cluster_aware_filter_enabled": False},
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    # 0.5 < 0.9 (frozen) -> flagged; 0.5 is not < 0.1 (payload) -> would not
+    # have been. Getting flagged proves the frozen value won, not a
+    # coincidence.
+    assert body["candidate_count"] == 1
+    assert body["candidates"][0]["wa_id"] == "wa-1"
+    # Never written back either -- a locked run's thresholds are immutable.
+    assert runs[1].thresholds == frozen_thresholds
+
+
 def test_candidates_dispatches_a_fetch_task_when_none_exists(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     runs = _make_fake_run_da(monkeypatch)
@@ -1289,6 +1349,59 @@ def test_analysis_view_falls_back_to_defaults_when_no_thresholds_saved(client, d
     from connect_labs.mopup.core import indicators as ind
 
     assert str(ind.DEFAULT_INDICATOR_CONFIGS[ind.EVC_SHORTFALL]["threshold"]).encode() in resp.content
+
+
+def test_analysis_view_planning_gaps_not_recomputed_for_a_fresh_run(client, django_user_model, monkeypatch):
+    # No planning_gap_config at all yet -- "Lock in Step 2" must stay
+    # disabled for any non-"skip" mode until a real Recompute happens (see
+    # analysis.js's updateLockPlanningGapsAvailability).
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    _seed_run(runs)
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200
+    assert b"planningGapsRecomputeDone: false" in resp.content
+
+
+def test_analysis_view_planning_gaps_recomputed_when_features_present(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    run.data["planning_gap_config"] = {"mode": "open_buildings"}
+    run.data["planning_gap_features"] = [{"type": "Feature", "properties": {"cluster": "x-gap-C0"}}]
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200
+    assert b"planningGapsRecomputeDone: true" in resp.content
+
+
+def test_analysis_view_planning_gaps_recomputed_when_only_warnings_present(client, django_user_model, monkeypatch):
+    # A real Recompute that legitimately found zero gap cells everywhere but
+    # still failed for at least one ward -- still counts as "computed", not
+    # "never run".
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    run.data["planning_gap_config"] = {"mode": "overture"}
+    run.data["planning_gap_warnings"] = {"Sabon Gari": "boundary lookup failed"}
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200
+    assert b"planningGapsRecomputeDone: true" in resp.content
+
+
+def test_analysis_view_planning_gaps_stale_after_erase(client, django_user_model, monkeypatch):
+    # Erase (MopupErasePlanningGapsView) deliberately leaves planning_gap_
+    # config alone (so Step 2's form isn't reset) but clears features AND
+    # warnings -- that combination must read back as "not recomputed" again,
+    # requiring a fresh Recompute before Lock in Step 2 is allowed.
+    _login(client, django_user_model)
+    runs = _make_fake_run_da(monkeypatch)
+    run = _seed_run(runs)
+    run.data["planning_gap_config"] = {"mode": "open_buildings"}
+    run.data["planning_gap_features"] = []
+    run.data["planning_gap_warnings"] = {}
+    resp = client.get(reverse("mopup:analysis", kwargs={"program_id": 217, "run_id": 1}))
+    assert resp.status_code == 200
+    assert b"planningGapsRecomputeDone: false" in resp.content
 
 
 def test_analysis_view_embeds_ward_boundaries_and_mapbox_token(client, django_user_model, monkeypatch, settings):
