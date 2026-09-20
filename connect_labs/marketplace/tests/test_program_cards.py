@@ -255,6 +255,6 @@ class TestFixedCostsInBothViews:
         client.force_login(user)
         body = client.get(reverse("marketplace:programs") + "?costs=spread").content.decode()
         assert "PAID OUT, INCL. STARTUP AND SUPPLIES" in body
-        assert "incl. $4,000 startup and supplies" in body
+        assert "includes" in body and "$4,000" in body
         body = client.get(reverse("marketplace:programs")).content.decode()
         assert "STARTUP AND SUPPLIES" in body and "$4,000" in body

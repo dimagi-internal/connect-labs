@@ -130,7 +130,21 @@
         rateNote(m),
       ),
     );
-    $('#opp-kpis').replaceChildren(...tiles);
+    // Delivery on the left, money on the right, each group its own block so
+    // the two never interleave when the row wraps.
+    const delivery = el('div', 'opp-kpi-group opp-kpi-delivery');
+    delivery.appendChild(el('span', 'pulse-lbl opp-kpi-grouplbl', 'Delivery'));
+    const deliveryRow = el('div', 'opp-kpi-row');
+    tiles.slice(0, 3).forEach((tile) => deliveryRow.appendChild(tile));
+    delivery.appendChild(deliveryRow);
+
+    const money = el('div', 'opp-kpi-group opp-kpi-money');
+    money.appendChild(el('span', 'pulse-lbl opp-kpi-grouplbl', 'Money'));
+    const moneyRow = el('div', 'opp-kpi-row');
+    tiles.slice(3).forEach((tile) => moneyRow.appendChild(tile));
+    money.appendChild(moneyRow);
+
+    $('#opp-kpis').replaceChildren(delivery, money);
   }
 
   /* What the cost-per-verified figure includes, in the viewer's chosen view
