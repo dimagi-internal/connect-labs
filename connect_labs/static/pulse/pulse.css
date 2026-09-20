@@ -2079,11 +2079,25 @@
   background: var(--panel);
 }
 
+/* Two blocks: what was delivered, then what it cost. Sized to their tile
+   counts (3 and 5-6), so the money tiles stay together on the right and the
+   groups stack rather than interleave when there is no room. */
 .opp-kpis {
   display: grid;
-  /* Eight tiles, nine with startup and supplies: size to the count so they
-     share one row on a wide screen instead of wrapping unevenly. */
-  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  grid-template-columns: 3fr 5fr;
+  gap: 18px;
+  align-items: start;
+}
+.opp-kpi-group {
+  min-width: 0;
+}
+.opp-kpi-grouplbl {
+  display: block;
+  margin-bottom: 6px;
+}
+.opp-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   gap: 1px;
   background: var(--rule-soft);
   border: 1px solid var(--rule-soft);
@@ -2358,7 +2372,7 @@
 
 @media (max-width: 1000px) {
   .opp-kpis {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: 1fr;
   }
   .opp-grid {
     grid-template-columns: 1fr;
@@ -2371,7 +2385,7 @@
   .opp-head {
     flex-wrap: wrap;
   }
-  .opp-kpis {
+  .opp-kpi-row {
     grid-template-columns: repeat(2, 1fr);
   }
 }
