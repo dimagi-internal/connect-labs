@@ -174,3 +174,60 @@ def _deliver(opp_id, *, org="frht", visits=1, usd="2.00", approved=1, when=None)
         usd_to_worker=usd,
         usd_to_org="0.00",
     )
+
+
+@pytest.fixture
+def viewer(client, django_user_model):
+    """Partner identity needs a session; these tests are about scoping."""
+    client.force_login(django_user_model.objects.create(username="viewer"))
+    return client
+
+
+@pytest.fixture
+def delivering(grouped):
+    """Each cohort delivers, so every spine has something to narrow."""
+    _deliver(11, visits=1, usd="8.00", approved=8)
+    _deliver(12, visits=1, usd="2.00", approved=2)
+    _deliver(20, visits=1, usd="1.00", approved=1)
+    return grouped
+
+
+def summary(client, **params):
+    from django.urls import reverse
+
+    return client.get(reverse("pulse:api_summary"), params).json()
+
+
+@pytest.mark.django_db
+class TestScopingToAnEngagement:
+    def test_the_engagement_covers_every_cohort(self, viewer, delivering):
+        data = summary(viewer, opportunity="frht-interviews")
+        assert data["scope"]["opportunities"] == 1
+        assert data["scope"]["lifetime_visits"] == 150
+        assert data["stored"]["events"] == 2
+        assert data["money"]["works"] == 2
+
+    def test_a_cohorts_own_id_gives_the_same_answer(self, viewer, delivering):
+        """A link to a cohort and a link to its engagement are the same work."""
+        assert summary(viewer, opportunity="11")["scope"] == summary(viewer, opportunity="frht-interviews")["scope"]
+
+    def test_an_ungrouped_opportunity_is_unchanged(self, viewer, delivering):
+        data = summary(viewer, opportunity="20")
+        assert data["scope"]["lifetime_visits"] == 5
+        assert data["stored"]["events"] == 1
+
+    def test_the_partners_count_counts_the_engagement_once(self, viewer, delivering):
+        """Two cohorts and one other opportunity is two engagements, not three."""
+        assert summary(viewer, org="frht")["scope"]["opportunities"] == 2
+
+    def test_an_unknown_key_is_ignored_not_an_error(self, viewer, delivering):
+        """A stale link degrades to the unfiltered display, not a 500."""
+        data = summary(viewer, opportunity="no-such-engagement")
+        assert data["stored"]["events"] == 3
+
+    def test_the_selection_is_reported_as_the_engagement(self, viewer, delivering):
+        """The page marks the selected row, and the row is the engagement."""
+        from django.urls import reverse
+
+        data = viewer.get(reverse("pulse:api_partner"), {"org": "frht", "opportunity": "11"}).json()
+        assert data["selected_opportunity"] == "frht-interviews"

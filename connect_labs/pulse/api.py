@@ -22,7 +22,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views import View
 
-from connect_labs.pulse import costs
+from connect_labs.pulse import costs, groups
 from connect_labs.pulse.client import PulseAuthError, get_poller_user
 from connect_labs.pulse.ingest import SCALAR_SCOPE_DRIFT
 from connect_labs.pulse.models import (
@@ -237,10 +237,12 @@ def _program_scope(request):
     # A single opportunity. Composes like the rest, and is what a partner
     # window uses when one of its engagements is selected -- a partner with 91
     # of them is not one thing, and the roster underneath has to follow.
-    opp_raw = (request.GET.get("opportunity") or "").strip()
-    opportunity = None
-    if opp_raw.isdigit():
-        opportunity = PulseOpportunity.objects.filter(opportunity_id=int(opp_raw)).first()
+    # `groups.resolve` is what lets several Connect opportunities that were
+    # really one engagement -- the interview cohorts -- answer as one: it takes
+    # a group's slug, and a cohort's own id resolves to its group, so two links
+    # to the same work cannot report different figures.
+    opportunity = groups.resolve(request.GET.get("opportunity"))
+    opportunity_ids = groups.members(groups.key_of(opportunity)) if opportunity is not None else []
 
     window_from = _parse_window_date(request.GET.get("from"))
     # An end date names a whole day, so it is exclusive of the following
@@ -284,11 +286,10 @@ def _program_scope(request):
         )
 
     if opportunity is not None:
-        oid = opportunity.opportunity_id
-        events = events.filter(opportunity_id=oid)
-        works = works.filter(opportunity_id=oid)
-        opps = opps.filter(opportunity_id=oid)
-        rollups = rollups.filter(opportunity_id=oid)
+        events = events.filter(opportunity_id__in=opportunity_ids)
+        works = works.filter(opportunity_id__in=opportunity_ids)
+        opps = opps.filter(opportunity_id__in=opportunity_ids)
+        rollups = rollups.filter(opportunity_id__in=opportunity_ids)
 
     if service:
         events = events.filter(service_slug=service)
@@ -317,6 +318,9 @@ def _program_scope(request):
         "org": org,
         "service": service,
         "opportunity": opportunity,
+        # Every opportunity id the selection covers: one, or a whole
+        # engagement's cohorts. Restated by anything that filters in raw SQL.
+        "opportunity_ids": opportunity_ids,
         "events": events,
         "works": works,
         "opps": opps,
@@ -362,7 +366,13 @@ def _scope_for(sc):
     opps = sc["opps"]
     agg = opps.aggregate(n=Count("id"), visits=Sum("lifetime_visit_count"))
     return {
-        "opportunities": agg["n"] or 0,
+        # Engagements, not Connect rows: a partner that ran one interview
+        # engagement as 37 cohorts ran one thing, and counting the rows said 37.
+        "opportunities": (
+            len({groups.key_for(oid) for oid in opps.values_list("opportunity_id", flat=True)})
+            if groups.any_groups()
+            else (agg["n"] or 0)
+        ),
         "active_opportunities": opps.filter(is_active=True).count(),
         "lifetime_visits": agg["visits"] or 0,
         # A program is one program; a partner may run several. Counting the
@@ -1473,8 +1483,8 @@ class ReplayView(View):
                 where += " AND program_id = %s"
                 params.append(sc["program"].program_id)
             if sc["opportunity"] is not None:
-                where += " AND opportunity_id = %s"
-                params.append(sc["opportunity"].opportunity_id)
+                where += " AND opportunity_id = ANY(%s)"
+                params.append(list(sc["opportunity_ids"]))
             if sc["org"] is not None:
                 where += " AND org_slug = ANY(%s)"
                 params.append(list(sc["org"].workspaces))
@@ -1777,7 +1787,7 @@ class PartnerView(View):
                 ],
                 "weekly": _weekly_series(sc),
                 "opportunities": _opportunity_roster(sc_all),
-                "selected_opportunity": (sc["opportunity"].opportunity_id if sc["opportunity"] is not None else None),
+                "selected_opportunity": groups.key_of(sc["opportunity"]),
                 "workers": roster,
                 "worker_count": len(roster),
                 "workers_truncated": len(roster) >= WORKER_ROSTER_LIMIT,
