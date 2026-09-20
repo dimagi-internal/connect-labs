@@ -31,6 +31,7 @@ from connect_labs.pulse.models import (
     PulseEvent,
     PulseGridCell,
     PulseIngestHealth,
+    PulseOppGroup,
     PulseOpportunity,
     PulseOrganization,
     PulseProgram,
@@ -1679,6 +1680,11 @@ def _opportunity_roster(sc) -> list:
         costs.apply_view(
             rows[-1], fixed_of.get(opp.opportunity_id, 0.0), sc["costs_view"], rate="rate", units=approved
         )
+    # Cohorts of one engagement report as one row. Sorted by volume first so
+    # the busiest cohort seeds the fold and lends it its delivery type and
+    # country; the display order is restored immediately below.
+    rows.sort(key=lambda r: -r["visits"])
+    rows = groups.collapse(rows)
     # Delivering now first, then by lifetime volume -- the same ordering rule
     # the partner and program menus use, so "recent" means one thing.
     rows.sort(key=lambda r: (-(1 if r["last_ts"] else 0), -r["visits"]))
@@ -1895,6 +1901,12 @@ class WorkerView(View):
         )
 
 
+def _last_end_date(cohorts) -> str | None:
+    """When the engagement ends: the last of its cohorts to finish."""
+    ends = [c.end_date for c in cohorts if c.end_date]
+    return max(ends).isoformat() if ends else None
+
+
 class OpportunityView(View):
     """Everything the opportunity dossier shows, for one engagement.
 
@@ -1907,18 +1919,25 @@ class OpportunityView(View):
     def get(self, request):
         if not request.user.is_authenticated:
             return JsonResponse({"error": "not_authorised"}, status=403)
-        try:
-            opp_id = int(request.GET.get("id", ""))
-        except (TypeError, ValueError):
-            return JsonResponse({"error": "bad_id"}, status=400)
-        opp = PulseOpportunity.objects.filter(opportunity_id=opp_id).first()
-        if opp is None:
+        # One id, or a group's slug for an engagement Connect recorded as
+        # several opportunities. The page is the same either way -- the
+        # cohorts are listed on it, and every figure covers all of them.
+        selected = groups.resolve(request.GET.get("id", ""))
+        if selected is None:
             return JsonResponse({"error": "unknown_opportunity"}, status=404)
+        group = selected if isinstance(selected, PulseOppGroup) else None
+        opp_ids = groups.members(groups.key_of(selected))
+        cohorts = list(PulseOpportunity.objects.filter(opportunity_id__in=opp_ids).order_by("-lifetime_visit_count"))
+        if not cohorts:
+            return JsonResponse({"error": "unknown_opportunity"}, status=404)
+        # Identity (delivery type, country, partner, program) comes from the
+        # busiest cohort; an engagement's cohorts share all of it.
+        opp = cohorts[0]
 
         from django.db.models.functions import Round, TruncWeek
 
-        events = PulseEvent.objects.filter(opportunity_id=opp_id)
-        works = PulseWork.objects.filter(opportunity_id=opp_id)
+        events = PulseEvent.objects.filter(opportunity_id__in=opp_ids)
+        works = PulseWork.objects.filter(opportunity_id__in=opp_ids)
 
         ev = events.aggregate(
             n=Count("id"),
@@ -2000,14 +2019,14 @@ class OpportunityView(View):
             {
                 "generated_at": timezone.now().isoformat(),
                 "opp": {
-                    "id": opp.opportunity_id,
-                    "name": opp.name or f"Opportunity {opp.opportunity_id}",
+                    "id": group.slug if group else opp.opportunity_id,
+                    "name": (group.name if group else opp.name) or f"Opportunity {opp.opportunity_id}",
                     "service": opp.service_slug,
                     "service_name": service_label(opp.service_slug),
                     "country": opp.country,
                     "country_name": COUNTRY_NAMES.get(opp.country, opp.country),
-                    "active": bool(opp.is_active),
-                    "end_date": opp.end_date.isoformat() if opp.end_date else None,
+                    "active": any(c.is_active for c in cohorts),
+                    "end_date": _last_end_date(cohorts),
                     # A resolved parent is a real name; otherwise the slug is
                     # shown verbatim (see _UnnamedOrg for why it is never
                     # title-cased into a plausible-looking wrong name).
@@ -2016,7 +2035,23 @@ class OpportunityView(View):
                     "partner_slug": opp.org_slug or None,
                     "program": program.name if program else None,
                     "program_id": opp.program_id,
-                    "lifetime_visits": opp.lifetime_visit_count or 0,
+                    "lifetime_visits": sum(c.lifetime_visit_count or 0 for c in cohorts),
+                    # What Connect actually holds, when an engagement is
+                    # several of its opportunities. Empty for an ordinary one.
+                    "cohorts": (
+                        [
+                            {
+                                "id": c.opportunity_id,
+                                "name": c.name or f"Opportunity {c.opportunity_id}",
+                                "visits": c.lifetime_visit_count or 0,
+                                "active": bool(c.is_active),
+                            }
+                            for c in cohorts
+                        ]
+                        if group
+                        else []
+                    ),
+                    "why_grouped": group.why if group else "",
                 },
                 "totals": {
                     "events": n,
@@ -2054,7 +2089,7 @@ class OpportunityView(View):
                         "basis": i.basis,
                     }
                     for i in sorted(
-                        (costs.opportunity_costs([opp_id]).get(opp_id) or costs.OppCosts(opp_id)).invoices,
+                        [inv for c in costs.opportunity_costs(opp_ids).values() for inv in c.invoices],
                         key=lambda i: (i.date or datetime.min.date()),
                     )
                 ],

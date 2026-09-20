@@ -21,6 +21,9 @@ urlpatterns = [
     path("costs/", views.PulseCostsView.as_view(), name="costs"),
     path("v/<slug:layout>/", views.PulseDisplayView.as_view(), name="display"),
     path("opp/<int:opp_id>/", views.PulseOppView.as_view(), name="opp"),
+    # An engagement several Connect opportunities belong to, addressed by slug.
+    # After the int route, so an opportunity id can never be read as a slug.
+    path("opp/<slug:slug>/", views.PulseOppGroupView.as_view(), name="opp_group"),
     # Donor reports: authenticated authoring, public rendering.
     path("reports/", views.PulseReportListView.as_view(), name="report_list"),
     path("reports/<str:slug>/edit/", views.PulseReportEditView.as_view(), name="report_edit"),

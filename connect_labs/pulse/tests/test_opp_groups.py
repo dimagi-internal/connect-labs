@@ -231,3 +231,63 @@ class TestScopingToAnEngagement:
 
         data = viewer.get(reverse("pulse:api_partner"), {"org": "frht", "opportunity": "11"}).json()
         assert data["selected_opportunity"] == "frht-interviews"
+
+
+@pytest.mark.django_db
+class TestTheRoster:
+    def test_lists_one_row_for_the_engagement(self, viewer, delivering):
+        from django.urls import reverse
+
+        data = viewer.get(reverse("pulse:api_partner"), {"org": "frht"}).json()
+        rows = {r["id"]: r for r in data["opportunities"]}
+        assert set(rows) == {"frht-interviews", 20}
+        assert rows["frht-interviews"]["name"] == "FRHT Interviews"
+        assert rows["frht-interviews"]["visits"] == 150
+        assert rows["frht-interviews"]["members"] == [11, 12]
+        assert rows["frht-interviews"]["usd_total"] == pytest.approx(10.0)
+
+    def test_the_dossier_index_offers_the_engagement_not_its_cohorts(self, viewer, delivering):
+        from django.urls import reverse
+
+        page = viewer.get(reverse("pulse:index")).content.decode()
+        assert "FRHT Interviews" in page
+        assert "[11] FRHT Interviews" not in page
+        # Someone who knows the work as "[11]" must still find it.
+        assert "[11] frht interviews" in page.lower()
+
+
+@pytest.mark.django_db
+class TestTheEngagementPage:
+    def test_a_cohorts_page_redirects_to_its_engagement(self, viewer, delivering):
+        from django.urls import reverse
+
+        res = viewer.get(reverse("pulse:opp", args=[11]))
+        assert res.status_code == 302
+        assert res["Location"] == reverse("pulse:opp_group", args=["frht-interviews"])
+
+    def test_an_ungrouped_opportunity_keeps_its_own_page(self, viewer, delivering):
+        from django.urls import reverse
+
+        assert viewer.get(reverse("pulse:opp", args=[20])).status_code == 200
+
+    def test_the_engagement_has_a_page(self, viewer, delivering):
+        from django.urls import reverse
+
+        page = viewer.get(reverse("pulse:opp_group", args=["frht-interviews"])).content.decode()
+        assert "FRHT Interviews" in page
+
+    def test_the_api_covers_every_cohort_and_lists_them(self, viewer, delivering):
+        from django.urls import reverse
+
+        data = viewer.get(reverse("pulse:api_opp"), {"id": "frht-interviews"}).json()
+        assert data["opp"]["name"] == "FRHT Interviews"
+        assert data["opp"]["lifetime_visits"] == 150
+        assert data["totals"]["events"] == 2
+        assert [c["id"] for c in data["opp"]["cohorts"]] == [11, 12]
+
+    def test_an_ordinary_opportunity_lists_no_cohorts(self, viewer, delivering):
+        from django.urls import reverse
+
+        data = viewer.get(reverse("pulse:api_opp"), {"id": "20"}).json()
+        assert data["opp"]["cohorts"] == []
+        assert data["opp"]["lifetime_visits"] == 5

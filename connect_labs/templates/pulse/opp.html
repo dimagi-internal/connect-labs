@@ -24,7 +24,7 @@ always authenticated (see PulseOppView).
     <header class="opp-head">
       <a class="opp-back" href="{% url 'pulse:index' %}">&larr; Pulse</a>
       <div class="opp-title">
-        <span class="pulse-lbl">Opportunity {{ opp_id }}</span>
+        <span class="pulse-lbl">{{ opp_label|default:"Opportunity" }} {{ opp_id }}</span>
         <h1 id="opp-name">{{ opp_name }}</h1>
         <div class="opp-chips" id="opp-chips"></div>
       </div>
@@ -82,13 +82,22 @@ always authenticated (see PulseOppView).
         </div>
         <div id="workers"></div>
       </section>
+
+      {# Only drawn when this engagement is several Connect opportunities. #}
+      <section class="opp-panel" id="cohorts-panel" hidden>
+        <div class="opp-panel-head">
+          <span class="pulse-lbl">In Connect</span>
+          <span class="opp-panel-note" id="cohorts-note"></span>
+        </div>
+        <div id="cohorts"></div>
+      </section>
     </div>
 
     <footer class="opp-foot" id="opp-foot"></footer>
   </div>
 
   <script>
-    window.PULSE_CONFIG = { base: "/labs/pulse", oppId: {{ opp_id }} };
+    window.PULSE_CONFIG = { base: "/labs/pulse", oppId: "{{ opp_id }}" };
     window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
   </script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
