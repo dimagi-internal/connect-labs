@@ -50,7 +50,7 @@
           <tbody>
             {% for r in g.rows %}
               <tr class="border-t border-gray-100 align-top">
-                <td class="px-4 py-2"><span class="text-gray-400 tabular-nums">{{ r.opportunity_id }}</span> {{ r.opportunity }}</td>
+                <td class="px-4 py-2"><span class="text-gray-400 tabular-nums">{{ r.opportunity_id }}</span> {{ r.opportunity }}{% if r.cohorts > 1 %} <span class="text-gray-400">&middot; {{ r.cohorts }} opportunities in Connect</span>{% endif %}</td>
                 <td class="px-4 py-2 text-gray-600">{{ r.org_slug }}</td>
                 <td class="px-4 py-2 text-gray-600">{{ r.invoice }}</td>
                 <td class="px-4 py-2 text-right tabular-nums">{% if r.amount_usd is not None %}${{ r.amount_usd|floatformat:0|intcomma }}{% endif %}</td>

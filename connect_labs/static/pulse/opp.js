@@ -564,6 +564,40 @@
     });
   }
 
+  /* ── what Connect holds ─────────────────────────────────────────── */
+
+  /* An engagement run as a series of cohorts is one piece of work, and every
+     figure on this page covers all of it. This panel is where the Connect
+     opportunities behind it stay visible, so nobody has to wonder which
+     rows a total came from. */
+  function renderCohorts(d) {
+    const rows = (d.opp && d.opp.cohorts) || [];
+    const panel = $('#cohorts-panel');
+    if (!panel || rows.length < 2) return;
+    panel.hidden = false;
+    $('#cohorts-note').textContent = `${nf.format(
+      rows.length,
+    )} opportunities · ${d.opp.why_grouped || ''}`;
+    // The invoice table's styling, because this is the same kind of thing:
+    // a plain list of what Connect holds, in reading order.
+    const table = el('table', 'opp-invoices');
+    const head = el('tr');
+    ['Opportunity', 'Connect id', 'Services'].forEach((h) =>
+      head.appendChild(el('th', '', h)),
+    );
+    table.appendChild(head);
+    for (const r of rows) {
+      const tr = el('tr');
+      tr.appendChild(el('td', '', r.name));
+      tr.appendChild(el('td', 'num', String(r.id)));
+      tr.appendChild(el('td', 'num', nf.format(r.visits)));
+      table.appendChild(tr);
+    }
+    const wrap = el('div', 'opp-invoices-wrap');
+    wrap.appendChild(table);
+    $('#cohorts').replaceChildren(wrap);
+  }
+
   /* ── footer ─────────────────────────────────────────────────────── */
 
   function renderFoot(d) {
@@ -620,6 +654,7 @@
     renderMoney(data);
     renderWorkers(data);
     renderMap(data);
+    renderCohorts(data);
     renderFoot(data);
   }
 

@@ -162,6 +162,48 @@ class PulseOrganization(models.Model):
         return self.name or self.slug
 
 
+class PulseOppGroup(models.Model):
+    """Several Connect opportunities that were really one engagement.
+
+    Connect creates an opportunity per cohort, and the Connect Interviews work
+    was run as one engagement per partner: 37 opportunities for one partner, 35
+    for another. Every Pulse surface repeated that split -- a partner reading
+    as 40 engagements when it ran four, and an organisation's fee that had to
+    be entered 37 times because a cost belongs to an opportunity.
+
+    A group is a READING of the data, never a rewrite. The cohorts keep their
+    own rows, their own services and their own invoices, because those are what
+    Connect's exports and bills key on; delete the group and they are exactly
+    as they were. That is also why membership is a nullable link rather than
+    anything the ingest maintains: Connect has no grouping to mirror.
+    """
+
+    slug = models.SlugField(max_length=120, unique=True)
+    name = models.CharField(max_length=300)
+    # The group's own partner. A group spanning two organisations would have to
+    # appear under both partners or neither, so the seeding command refuses one.
+    org_slug = models.CharField(max_length=120, blank=True)
+    why = models.TextField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "grouped opportunity"
+
+    def save(self, *args, **kwargs):
+        if not (self.why or "").strip():
+            raise ValueError(
+                f"PulseOppGroup({self.slug!r}) needs a stated reason: a grouping says several "
+                "engagements were really one, and unexplained it is a guess someone later trusts."
+            )
+        return super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class PulseOpportunity(models.Model):
     """Cheap-tier mirror of an opportunity's display + rate metadata.
 
@@ -186,6 +228,15 @@ class PulseOpportunity(models.Model):
     # org, or an opportunity named as a test. Every Pulse figure excludes these,
     # and so does the marketplace. See `normalize.is_test_opportunity`.
     is_test = models.BooleanField(default=False, db_index=True)
+
+    # The engagement this cohort belongs to, when several were really one.
+    # On the opportunity rather than as a list on the group, so the database
+    # guarantees one group per opportunity: a service counted under two groups
+    # would make a partner's total disagree with the estate's, and no care in
+    # application code enforces that as well as the column does.
+    group = models.ForeignKey(
+        "pulse.PulseOppGroup", null=True, blank=True, on_delete=models.SET_NULL, related_name="members"
+    )
 
     currency = models.CharField(max_length=8, blank=True)
     # Filled from /export/opportunity/<id>/ on the slow tier. Null means the
@@ -795,6 +846,13 @@ class PulseCostEntry(models.Model):
     For money that really went to an organisation but never passed through
     Connect -- the interview cohorts' org fees are the first case: 72
     opportunities with worker pay and neither org pay nor a single invoice.
+
+    An entry names an opportunity OR an engagement (`PulseOppGroup`), never
+    both and never neither. The interviews are why the second exists: one fee
+    was agreed for work Connect recorded as 37 opportunities, and entering a
+    thirty-seventh of it against each of them would be inventing a split
+    nobody agreed. A group's entry is apportioned over its cohorts' approved
+    units when costs are read, so every per-opportunity figure keeps working.
     """
 
     KIND_FIXED = "fixed"
@@ -804,7 +862,10 @@ class PulseCostEntry(models.Model):
         (KIND_ORG_FEE, "Organisation's per-service fee paid outside Connect"),
     ]
 
-    opportunity_id = models.IntegerField(db_index=True)
+    opportunity_id = models.IntegerField(null=True, blank=True, db_index=True)
+    group = models.ForeignKey(
+        "pulse.PulseOppGroup", null=True, blank=True, on_delete=models.CASCADE, related_name="cost_entries"
+    )
     kind = models.CharField(max_length=16, choices=KIND_CHOICES)
     usd = models.DecimalField(max_digits=16, decimal_places=2)
     date = models.DateField(null=True, blank=True)
@@ -816,6 +877,13 @@ class PulseCostEntry(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
+        named = [x for x in (self.opportunity_id, self.group_id) if x is not None]
+        if len(named) != 1:
+            raise ValueError(
+                "PulseCostEntry names an opportunity or an engagement, never both and never "
+                f"neither (opportunity_id={self.opportunity_id!r}, group_id={self.group_id!r}). "
+                "A cost with two owners is counted twice; a cost with none is counted nowhere."
+            )
         super().save(*args, **kwargs)
         from connect_labs.pulse import costs
 
