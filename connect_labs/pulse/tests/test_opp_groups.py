@@ -291,3 +291,81 @@ class TestTheEngagementPage:
         data = viewer.get(reverse("pulse:api_opp"), {"id": "20"}).json()
         assert data["opp"]["cohorts"] == []
         assert data["opp"]["lifetime_visits"] == 5
+
+
+@pytest.mark.django_db
+class TestCostsForAnEngagement:
+    def test_a_fee_entered_once_spreads_across_the_cohorts(self, delivering):
+        """The fee was agreed once; splitting it by hand would invent a split."""
+        from decimal import Decimal
+
+        from connect_labs.pulse import costs
+        from connect_labs.pulse.models import PulseCostEntry
+
+        group = PulseOppGroup.objects.get(slug="frht-interviews")
+        PulseCostEntry.objects.create(group=group, kind=PulseCostEntry.KIND_ORG_FEE, usd="100.00", reason="agreed fee")
+        by_opp = costs.opportunity_costs()
+        # 8 approved units on one cohort and 2 on the other: $10 a unit.
+        assert by_opp[11].fixed_usd == Decimal("80.00")
+        assert by_opp[12].fixed_usd == Decimal("20.00")
+        assert by_opp[20].fixed_usd == Decimal("0")
+
+    def test_an_entry_names_an_opportunity_or_an_engagement_not_both(self, delivering):
+        from connect_labs.pulse.models import PulseCostEntry
+
+        group = PulseOppGroup.objects.get(slug="frht-interviews")
+        with pytest.raises(ValueError):
+            PulseCostEntry.objects.create(opportunity_id=11, group=group, kind="fixed", usd="1.00", reason="x")
+        with pytest.raises(ValueError):
+            PulseCostEntry.objects.create(kind="fixed", usd="1.00", reason="x")
+
+    def test_one_question_about_the_engagement_not_one_per_cohort(self, db):
+        """Asked per cohort, the same question appeared 37 times -- and each
+        cohort's share fell under the threshold that decides it is worth
+        asking at all."""
+        from connect_labs.pulse import costs
+
+        group = PulseOppGroup.objects.create(
+            slug="frht-interviews", name="FRHT Interviews", org_slug="frht", why="one engagement"
+        )
+        for oid in (11, 12):
+            PulseOpportunity.objects.create(
+                opportunity_id=oid,
+                name=f"[{oid}] FRHT Interviews",
+                org_slug="frht",
+                service_slug="interview",
+                invoices_synced_at=timezone.now(),
+                group=group,
+            )
+        groups.invalidate()
+        # $150 each: under the $200 threshold alone, $300 together.
+        _deliver(11, usd="150.00", approved=50)
+        _deliver(12, usd="150.00", approved=50)
+
+        rows = [r for r in costs.cost_issues() if r["kind"] == "no_org_pay"]
+        assert [r["opportunity_id"] for r in rows] == ["frht-interviews"]
+        assert rows[0]["opportunity"] == "FRHT Interviews"
+        assert rows[0]["cohorts"] == 2
+        assert rows[0]["amount_usd"] == pytest.approx(300)
+
+    def test_an_entry_on_the_engagement_settles_the_question(self, db):
+        from connect_labs.pulse import costs
+        from connect_labs.pulse.models import PulseCostEntry
+
+        group = PulseOppGroup.objects.create(
+            slug="frht-interviews", name="FRHT Interviews", org_slug="frht", why="one engagement"
+        )
+        PulseOpportunity.objects.create(
+            opportunity_id=11,
+            name="[11] FRHT Interviews",
+            org_slug="frht",
+            service_slug="interview",
+            invoices_synced_at=timezone.now(),
+            group=group,
+        )
+        groups.invalidate()
+        _deliver(11, usd="300.00", approved=50)
+        assert [r["kind"] for r in costs.cost_issues()] == ["no_org_pay"]
+
+        PulseCostEntry.objects.create(group=group, kind=PulseCostEntry.KIND_ORG_FEE, usd="100.00", reason="agreed fee")
+        assert [r["kind"] for r in costs.cost_issues() if r["kind"] == "no_org_pay"] == []
