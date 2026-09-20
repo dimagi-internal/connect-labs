@@ -481,6 +481,17 @@ class MopupAnalysisView(LoginRequiredMixin, TemplateView):
         context["upload_buildings_url"] = reverse("mopup:upload_buildings", args=[program_id, run_id])
         context["exclude_work_area_url"] = reverse("mopup:exclude_work_area", args=[program_id, run_id])
         context["planning_gap_config"] = run.planning_gap_config
+        # A non-"skip" gap mode needs at least one real Recompute (fetches
+        # building data, computes gap cells) before "Lock in Step 2" is
+        # allowed -- see MopupAnalysis.updateLockPlanningGapsAvailability in
+        # analysis.js. `planning_gap_config` alone would stay truthy even
+        # after an Erase (MopupErasePlanningGapsView deliberately leaves it
+        # so Step 2's form isn't reset), so it's paired with
+        # features/warnings actually being present to also require a fresh
+        # Recompute after an erase, not just at all, ever.
+        context["planning_gap_recompute_done"] = bool(run.planning_gap_config) and bool(
+            run.planning_gap_features or run.planning_gap_warnings
+        )
         context["planning_gaps_locked"] = run.planning_gaps_locked
         context["isolation_filter_locked"] = run.isolation_filter_locked
         context["isolation_threshold_m"] = run.isolation_threshold_m
@@ -628,12 +639,26 @@ class MopupCandidatesView(LoginRequiredMixin, View):
         if rows is None:
             return JsonResponse(progress)
 
-        indicator_configs, global_config = _resolve_thresholds(run, payload)
+        if run.status == STATUS_LOCKED:
+            # "Thresholds stop mattering after [Step 1 lock]" (the page's own
+            # copy) has to be true here too, not just at MopupLockView's own
+            # one-time freeze -- a payload threshold change ignored here but
+            # not here previously could re-evaluate `rows` into a candidate
+            # set that no longer matches the frozen `run.candidate_work_areas`
+            # Step 3's isolation filter reads (`_active_combined_rows`),
+            # silently drifting the "Candidate work areas" table away from
+            # what Step 3 actually considers "included in the plan". Ignoring
+            # the payload (and never persisting) once locked keeps the two in
+            # lockstep, whatever the reviewer's browser still has cached.
+            indicator_configs = _merged_indicator_configs(run.thresholds.get("indicator_configs"))
+            global_config = {**ind.DEFAULT_GLOBAL_CONFIG, **(run.thresholds.get("global_config") or {})}
+        else:
+            indicator_configs, global_config = _resolve_thresholds(run, payload)
+            new_thresholds = {"indicator_configs": indicator_configs, "global_config": global_config}
+            if new_thresholds != run.thresholds:
+                da.update_run(run, thresholds=new_thresholds)
         candidates = _apply_exclusions(ind.evaluate_run(rows, indicator_configs, global_config), run)
         ward_summary = summarize_candidates_by_ward(candidates, rows)
-        new_thresholds = {"indicator_configs": indicator_configs, "global_config": global_config}
-        if new_thresholds != run.thresholds:
-            da.update_run(run, thresholds=new_thresholds)
 
         # Per-indicator breakdown of the union candidate count above — how
         # many work areas each individual indicator flagged, recomputed every
