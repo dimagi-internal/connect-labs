@@ -48,6 +48,15 @@ window.MopupAnalysis = (function () {
   let lastWardSummaryRows = [];
   let lastGapSummaryByWard = {};
   let severitySortDesc = true;
+  // Whether the CURRENTLY selected gap mode has a real Recompute behind it
+  // -- "skip" doesn't need one (nothing to compute); the other three modes
+  // do, so "Lock in Step 2" stays disabled until previewPlanningGaps()
+  // actually succeeds for whatever's currently selected. Reset to false on
+  // any mode-radio change or a successful Erase (both invalidate whatever
+  // was last computed), set true on a successful Recompute. Initialized
+  // from the server's own "has this already happened, and not since been
+  // erased" signal (planningGapsRecomputeDone) so a reload doesn't lose it.
+  let planningGapsRecomputed = false;
 
   // One flat table row per indicator (design mockup, 2026-09, refined per
   // follow-up feedback) — EVC shortfall gets its own Neighbor distance/Min
@@ -297,7 +306,24 @@ window.MopupAnalysis = (function () {
   // cells) regardless of individual row state. Re-run after any relevant
   // checkbox changes, never on a full re-render, so in-progress edits/focus
   // aren't lost.
+  // Once Step 1 is locked, every threshold/neighbor/gate input inside the
+  // indicator table stays disabled forever -- "thresholds stop mattering
+  // after this" (the page's own copy) needs to actually be true, not just
+  // true of MopupLockView's one-time freeze of `candidate_work_areas`.
+  // MopupCandidatesView now also ignores/never persists a payload threshold
+  // change once locked (server-side belt), but leaving these editable here
+  // would still mislead a reviewer into thinking a tweak did something.
+  // Bails out before any of the per-row enabled/filter-state logic below,
+  // which would otherwise re-enable a row's own inputs whenever it re-runs.
   function applyIndicatorRowStates() {
+    if (CFG.locked) {
+      document
+        .querySelectorAll('#indicator-rows input, #indicator-rows select')
+        .forEach((el) => {
+          el.disabled = true;
+        });
+      return;
+    }
     const filterInput = $('cfg-cluster-filter-enabled');
     const filterOn = filterInput ? filterInput.checked : true;
     document.querySelectorAll('#indicator-rows tr[data-key]').forEach((tr) => {
@@ -861,14 +887,22 @@ window.MopupAnalysis = (function () {
     refreshSelectionUI();
   }
 
-  // Excludes/re-includes are relative to EVC (expected visit count), not
-  // the underlying rate's own denominator -- e.g. deworming/MUAC/vaccination
-  // are normally rates OF actual HSD visits, but the hover tooltip
-  // deliberately shows them against EVC instead (a broader "how much of
-  // what we EXPECTED here got the service" view), per explicit design.
   function evcPercentText(numerator, evc) {
     if (!evc) return '—';
     return `${Math.round((numerator / evc) * 100)}%`;
+  }
+
+  // Deworming/MUAC/vaccination are rates OF actual HSD (Health Service
+  // Delivery) visits, not of EVC (expected visit count) -- same denominator
+  // core.indicators.wa_numerator_denominator uses server-side for these
+  // three (`approved_hsd_count`), which is what the candidate table's own
+  // "Triggered indicators" column already shows (own_numerator/
+  // own_denominator). The hover tooltip used to divide by EVC instead,
+  // which silently disagreed with that column whenever HSD visits and EVC
+  // differed.
+  function hsdPercentText(numerator, hsdCount) {
+    if (!hsdCount) return '—';
+    return `${Math.round((numerator / hsdCount) * 100)}%`;
   }
 
   function mapHoverHtml(props) {
@@ -894,11 +928,17 @@ window.MopupAnalysis = (function () {
         evc,
       )}</div>
       <div>Buildings: ${props.building_count}</div>
-      <div>Deworming / EVC: ${evcPercentText(props.deworming_given, evc)}</div>
-      <div>MUAC-recorded / EVC: ${evcPercentText(props.muac_given, evc)}</div>
-      <div>Vaccination-given / EVC: ${evcPercentText(
+      <div>Deworming / HSD visits: ${hsdPercentText(
+        props.deworming_given,
+        props.approved_hsd_count,
+      )}</div>
+      <div>MUAC-recorded / HSD visits: ${hsdPercentText(
+        props.muac_given,
+        props.approved_hsd_count,
+      )}</div>
+      <div>Vaccination-given / HSD visits: ${hsdPercentText(
         props.vaccination_given,
-        evc,
+        props.approved_hsd_count,
       )}</div>
     </div>`;
   }
@@ -1321,6 +1361,13 @@ window.MopupAnalysis = (function () {
       // isolation_filter_locked, set only by lockIsolationFilter()'s own
       // success handler.
       $('planning-gaps-section').classList.remove('hidden');
+      // Freeze thresholds for the rest of THIS session too, not just after
+      // a reload -- see applyIndicatorRowStates's own comment for why this
+      // has to be more than cosmetic.
+      CFG.locked = true;
+      $('cfg-cluster-filter-enabled').disabled = true;
+      $('recompute').disabled = true;
+      applyIndicatorRowStates();
     } catch (e) {
       $('status').textContent = 'Failed to lock.';
     }
@@ -1424,6 +1471,24 @@ window.MopupAnalysis = (function () {
       mode !== 'upload',
     );
     $('planning-gaps-recompute').classList.toggle('hidden', mode === 'skip');
+    updateLockPlanningGapsAvailability();
+  }
+
+  // "Skip" needs no Recompute (there's nothing to fetch/grid), so Lock in
+  // Step 2 is always available for it. Any of the other three modes needs a
+  // real Recompute -- pulling building data and computing gap cells --
+  // before locking in, so the reviewer can't lock in Step 2 having never
+  // actually generated the gap-fill work areas they picked a mode for. Once
+  // Step 2 is actually locked, this never runs again (planningGapsLocked
+  // short-circuits it) -- there's no unlock to reconsider.
+  function updateLockPlanningGapsAvailability() {
+    if (CFG.planningGapsLocked) return;
+    const ready = selectedGapMode() === 'skip' || planningGapsRecomputed;
+    const btn = $('lock-planning-gaps');
+    btn.disabled = !ready;
+    btn.title = ready
+      ? ''
+      : 'Click Recompute at least once for the selected building source before locking in Step 2.';
   }
 
   function collectPlanningGapsConfig() {
@@ -1510,6 +1575,8 @@ window.MopupAnalysis = (function () {
         }).`;
       }
       $('planning-gaps-status').textContent = msg;
+      planningGapsRecomputed = true;
+      updateLockPlanningGapsAvailability();
       pollOrEvaluate();
     } catch (e) {
       $('planning-gaps-status').textContent = 'Failed to check planning gaps.';
@@ -1543,6 +1610,11 @@ window.MopupAnalysis = (function () {
         return;
       }
       $('planning-gaps-status').textContent = 'Planning-gap work areas erased.';
+      // The erased result is exactly what a fresh Recompute would need to
+      // regenerate -- require one again before Lock in Step 2 is allowed,
+      // same as an unrecomputed mode change.
+      planningGapsRecomputed = false;
+      updateLockPlanningGapsAvailability();
       pollOrEvaluate();
     } catch (e) {
       $('planning-gaps-status').textContent = 'Failed to erase planning gaps.';
@@ -1725,6 +1797,7 @@ window.MopupAnalysis = (function () {
 
   function init(cfg) {
     CFG = cfg;
+    planningGapsRecomputed = !!cfg.planningGapsRecomputeDone;
     indicatorDefs = JSON.parse($('indicator-defs-data').textContent);
     indicatorConfigs = JSON.parse($('indicator-configs-data').textContent);
     globalConfig = JSON.parse($('global-config-data').textContent);
@@ -1738,6 +1811,10 @@ window.MopupAnalysis = (function () {
     renderIndicatorRows();
     renderGlobalConfig();
     applyIndicatorRowStates(); // re-apply now that the real filter state is loaded
+    if (CFG.locked) {
+      $('cfg-cluster-filter-enabled').disabled = true;
+      $('recompute').disabled = true;
+    }
     $('cfg-cluster-filter-enabled').addEventListener('change', () => {
       applyIndicatorRowStates();
       scheduleRecompute();
@@ -1760,9 +1837,15 @@ window.MopupAnalysis = (function () {
     $('planning-gaps-recompute').addEventListener('click', previewPlanningGaps);
     $('erase-planning-gaps').addEventListener('click', erasePlanningGaps);
     $('lock-planning-gaps').addEventListener('click', lockPlanningGaps);
-    document
-      .querySelectorAll('.gap-mode-radio')
-      .forEach((r) => r.addEventListener('change', updateGapModeVisibility));
+    document.querySelectorAll('.gap-mode-radio').forEach((r) =>
+      r.addEventListener('change', () => {
+        // A different mode's building source/settings need their own fresh
+        // Recompute before Lock in Step 2 is available again -- whatever
+        // was last computed no longer speaks for the newly-selected mode.
+        planningGapsRecomputed = false;
+        updateGapModeVisibility();
+      }),
+    );
     updateGapModeVisibility();
     $('gap-upload-button').addEventListener('click', uploadBuildingsFile);
     $('map-exclude-button').addEventListener('click', excludeSelectedWorkAreas);

@@ -322,6 +322,7 @@
     locked: "{{ run.status }}" === "locked",
     planningGapsLocked: {{ planning_gaps_locked|yesno:"true,false" }},
     isolationFilterLocked: {{ isolation_filter_locked|yesno:"true,false" }},
+    planningGapsRecomputeDone: {{ planning_gap_recompute_done|yesno:"true,false" }},
     mapboxToken: "{{ mapbox_token|escapejs }}",
   });
 })();
