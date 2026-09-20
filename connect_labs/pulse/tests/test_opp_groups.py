@@ -369,3 +369,98 @@ class TestCostsForAnEngagement:
 
         PulseCostEntry.objects.create(group=group, kind=PulseCostEntry.KIND_ORG_FEE, usd="100.00", reason="agreed fee")
         assert [r["kind"] for r in costs.cost_issues() if r["kind"] == "no_org_pay"] == []
+
+
+@pytest.mark.django_db
+class TestTheCommand:
+    @pytest.fixture
+    def to_group(self, db):
+        for oid, visits in ((11, 100), (12, 50)):
+            PulseOpportunity.objects.create(
+                opportunity_id=oid,
+                name=f"[{oid}] FRHT Interviews",
+                org_slug="frht",
+                service_slug="interview",
+                lifetime_visit_count=visits,
+            )
+        PulseOpportunity.objects.create(
+            opportunity_id=20, name="FRHT CHC", org_slug="frht", service_slug="chc", lifetime_visit_count=5
+        )
+        groups.invalidate()
+
+    def test_groups_one_organisations_cohorts_of_one_service(self, to_group):
+        from django.core.management import call_command
+
+        call_command("pulse_group_opps", org="frht", service="interview", name="FRHT Interviews", why="one engagement")
+        group = PulseOppGroup.objects.get(slug="frht-interviews")
+        assert sorted(group.members.values_list("opportunity_id", flat=True)) == [11, 12]
+        # The other delivery type is left where it is.
+        assert PulseOpportunity.objects.get(opportunity_id=20).group_id is None
+
+    def test_a_dry_run_writes_nothing(self, to_group):
+        from django.core.management import call_command
+
+        call_command(
+            "pulse_group_opps",
+            org="frht",
+            service="interview",
+            name="FRHT Interviews",
+            why="one engagement",
+            dry_run=True,
+        )
+        assert not PulseOppGroup.objects.exists()
+
+    def test_it_refuses_to_take_an_opportunity_from_another_engagement(self, to_group):
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+
+        call_command("pulse_group_opps", org="frht", service="interview", name="First", why="one engagement")
+        with pytest.raises(CommandError):
+            call_command("pulse_group_opps", org="frht", service="interview", name="Second", why="also one")
+
+    def test_a_match_that_finds_nothing_is_an_error_not_an_empty_group(self, to_group):
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+
+        with pytest.raises(CommandError):
+            call_command("pulse_group_opps", org="nobody", service="interview", name="X", why="y")
+
+
+@pytest.mark.django_db
+class TestTheIngestLeavesMembershipAlone:
+    """Connect has no grouping to mirror, so every sync could quietly undo one.
+
+    `refresh_opportunities` rewrites the opportunities Connect lists and
+    `reclassify_opportunities` rewrites every stored one; membership is labs'
+    own reading of the data and must survive both.
+    """
+
+    def test_a_refresh_leaves_membership_alone(self, grouped, monkeypatch):
+        from connect_labs.pulse import ingest
+
+        payload = {
+            "organizations": [{"id": 1, "slug": "frht", "name": "FRHT", "funder": ""}],
+            "programs": [{"id": 10, "name": "Interviews", "delivery_type": "interview", "organization": "frht"}],
+            "opportunities": [
+                {
+                    "id": 11,
+                    "name": "[11] FRHT Interviews — renamed upstream",
+                    "organization": "frht",
+                    "program": 10,
+                    "is_active": True,
+                    "visit_count": 120,
+                }
+            ],
+        }
+        monkeypatch.setattr("connect_labs.pulse.client.fetch_json", lambda *a, **k: payload)
+        ingest.refresh_opportunities(object())
+
+        opp = PulseOpportunity.objects.get(opportunity_id=11)
+        assert opp.name.endswith("renamed upstream")  # the sync did run
+        assert opp.group_id is not None
+
+    def test_a_reclassify_leaves_membership_alone(self, grouped):
+        from connect_labs.pulse import ingest
+
+        ingest.reclassify_opportunities()
+        assert PulseOpportunity.objects.get(opportunity_id=11).group_id is not None
