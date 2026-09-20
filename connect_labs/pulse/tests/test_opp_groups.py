@@ -17,7 +17,9 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
+from connect_labs.marketplace import directory
 from connect_labs.pulse import groups
+from connect_labs.pulse.management.commands.pulse_group_opps import apply_groups
 from connect_labs.pulse.models import PulseOppGroup, PulseOpportunity
 
 
@@ -372,58 +374,127 @@ class TestCostsForAnEngagement:
 
 
 @pytest.mark.django_db
-class TestTheCommand:
+class TestApplyingTheSheet:
+    """The groupings live on the LLO Directory, like every other verdict labs
+    cannot infer. This command only applies what the tab says."""
+
     @pytest.fixture
     def to_group(self, db):
-        for oid, visits in ((11, 100), (12, 50)):
+        for oid, visits, name in (
+            (11, 100, "[11] FRHT Interviews"),
+            (12, 50, "INT - NG - FRHT - Jul26"),
+            (13, 41, "Interviews UAT FRHT"),
+        ):
             PulseOpportunity.objects.create(
                 opportunity_id=oid,
-                name=f"[{oid}] FRHT Interviews",
+                name=name,
                 org_slug="frht",
                 service_slug="interview",
                 lifetime_visit_count=visits,
+                is_test=oid == 13,
             )
         PulseOpportunity.objects.create(
             opportunity_id=20, name="FRHT CHC", org_slug="frht", service_slug="chc", lifetime_visit_count=5
         )
         groups.invalidate()
 
-    def test_groups_one_organisations_cohorts_of_one_service(self, to_group):
-        from django.core.management import call_command
+    @staticmethod
+    def rows(*members):
+        head = [directory.OPPORTUNITY_GROUPS_HEADER]
+        return head + [list(m) for m in members]
 
-        call_command("pulse_group_opps", org="frht", service="interview", name="FRHT Interviews", why="one engagement")
+    def parsed(self, *members):
+        parsed, skipped = directory.parse_opportunity_groups(self.rows(*members))
+        return parsed, skipped
+
+    def test_applies_the_membership_the_tab_states(self, to_group):
+        parsed, _ = self.parsed(
+            ["frht-interviews", "FRHT Interviews", "frht", "11", "[11]", "one engagement", "Jonathan"],
+            ["frht-interviews", "FRHT Interviews", "frht", "12", "Jul26", "one engagement", "Jonathan"],
+        )
+        apply_groups(parsed)
         group = PulseOppGroup.objects.get(slug="frht-interviews")
         assert sorted(group.members.values_list("opportunity_id", flat=True)) == [11, 12]
-        # The other delivery type is left where it is.
+        assert group.why == "one engagement"
         assert PulseOpportunity.objects.get(opportunity_id=20).group_id is None
 
-    def test_a_dry_run_writes_nothing(self, to_group):
-        from django.core.management import call_command
-
-        call_command(
-            "pulse_group_opps",
-            org="frht",
-            service="interview",
-            name="FRHT Interviews",
-            why="one engagement",
-            dry_run=True,
+    def test_a_row_with_no_stated_reason_is_refused(self, to_group):
+        parsed, skipped = self.parsed(
+            ["frht-interviews", "FRHT Interviews", "frht", "11", "[11]", "", "Jonathan"],
         )
+        assert parsed == {}
+        assert "no stated reason" in skipped[0]
+
+    def test_a_test_opportunity_is_reported_not_grouped(self, to_group):
+        """A UAT run is out of every Pulse figure already; grouping it would put
+        scaffolding inside a real engagement's membership."""
+        parsed, _ = self.parsed(
+            ["frht-interviews", "FRHT Interviews", "frht", "11", "[11]", "one engagement", "Jonathan"],
+            ["frht-interviews", "FRHT Interviews", "frht", "13", "UAT", "one engagement", "Jonathan"],
+        )
+        report = apply_groups(parsed)
+        assert sorted(
+            PulseOppGroup.objects.get(slug="frht-interviews").members.values_list("opportunity_id", flat=True)
+        ) == [11]
+        assert any("is a test" in line for line in report["skipped"])
+
+    def test_an_opportunity_labs_has_never_seen_is_reported(self, to_group):
+        parsed, _ = self.parsed(
+            ["frht-interviews", "FRHT Interviews", "frht", "11", "[11]", "one engagement", "Jonathan"],
+            ["frht-interviews", "FRHT Interviews", "frht", "999", "ghost", "one engagement", "Jonathan"],
+        )
+        report = apply_groups(parsed)
+        assert any("999 is not in Pulse" in line for line in report["skipped"])
+
+    def test_an_opportunity_of_another_partner_is_refused(self, to_group):
+        parsed, _ = self.parsed(
+            ["other-interviews", "Other Interviews", "someone-else", "11", "[11]", "one engagement", "Jonathan"],
+        )
+        report = apply_groups(parsed)
+        assert any("belongs to 'frht'" in line for line in report["skipped"])
+        assert PulseOpportunity.objects.get(opportunity_id=11).group_id is None
+
+    def test_a_group_cannot_span_two_partners(self, to_group):
+        parsed, skipped = self.parsed(
+            ["frht-interviews", "FRHT Interviews", "frht", "11", "[11]", "one engagement", "Jonathan"],
+            ["frht-interviews", "FRHT Interviews", "someone-else", "12", "Jul26", "one engagement", "Jonathan"],
+        )
+        assert parsed["frht-interviews"].members == [11]
+        assert any("cannot be added" in line for line in skipped)
+
+    def test_an_opportunity_dropped_from_the_tab_leaves_the_group(self, to_group):
+        """The tab is authoritative in both directions, or a correction there
+        would never reach labs."""
+        both, _ = self.parsed(
+            ["frht-interviews", "FRHT Interviews", "frht", "11", "[11]", "one engagement", "Jonathan"],
+            ["frht-interviews", "FRHT Interviews", "frht", "12", "Jul26", "one engagement", "Jonathan"],
+        )
+        apply_groups(both)
+        fewer, _ = self.parsed(
+            ["frht-interviews", "FRHT Interviews", "frht", "11", "[11]", "one engagement", "Jonathan"],
+        )
+        report = apply_groups(fewer)
+        assert report["detached"] == 1
+        assert PulseOpportunity.objects.get(opportunity_id=12).group_id is None
+
+    def test_a_dry_run_writes_nothing(self, to_group):
+        parsed, _ = self.parsed(
+            ["frht-interviews", "FRHT Interviews", "frht", "11", "[11]", "one engagement", "Jonathan"],
+        )
+        apply_groups(parsed, dry_run=True)
         assert not PulseOppGroup.objects.exists()
 
-    def test_it_refuses_to_take_an_opportunity_from_another_engagement(self, to_group):
-        from django.core.management import call_command
-        from django.core.management.base import CommandError
+    def test_an_empty_read_is_a_failed_read(self, to_group):
+        with pytest.raises(ValueError):
+            apply_groups({})
 
-        call_command("pulse_group_opps", org="frht", service="interview", name="First", why="one engagement")
-        with pytest.raises(CommandError):
-            call_command("pulse_group_opps", org="frht", service="interview", name="Second", why="also one")
-
-    def test_a_match_that_finds_nothing_is_an_error_not_an_empty_group(self, to_group):
-        from django.core.management import call_command
-        from django.core.management.base import CommandError
-
-        with pytest.raises(CommandError):
-            call_command("pulse_group_opps", org="nobody", service="interview", name="X", why="y")
+    def test_a_guidance_row_is_not_a_verdict(self, to_group):
+        parsed, skipped = self.parsed(
+            ["# one row per opportunity", "", "", "", "", "", ""],
+            ["frht-interviews", "FRHT Interviews", "frht", "11", "[11]", "one engagement", "Jonathan"],
+        )
+        assert list(parsed) == ["frht-interviews"]
+        assert skipped == []
 
 
 @pytest.mark.django_db
