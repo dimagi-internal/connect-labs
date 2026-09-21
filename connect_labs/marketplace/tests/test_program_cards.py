@@ -150,16 +150,34 @@ class TestTheCards:
     def test_ace_has_no_card(self, market):
         assert "ace" not in _cards()
 
-    def test_demand_with_no_supply_is_its_own_section(self, market):
+    def test_demand_with_no_supply_is_in_design_and_development(self, market):
         nutrition = _cards()["nutrition"]
-        assert nutrition["state"] == "waiting"
+        assert nutrition["state"] == "design"
         assert nutrition["applied"] == 3
         assert nutrition["delivering"] == 0
+
+    def test_a_live_opportunity_puts_a_program_in_delivering(self, market):
+        """The Live tag decides it. Whatever else is true of a program, if
+        somebody is running it today it belongs in Delivering."""
+        chc = _cards()["chc"]
+        assert chc["live"]
+        assert chc["state"] == "delivering"
+
+    def test_past_delivery_with_nothing_live_is_awaiting_funding(self, market, db):
+        """Not "complete" — the section name has to leave room for the fact
+        that money is exactly what would restart it."""
+        from connect_labs.pulse.models import PulseOpportunity
+
+        PulseOpportunity.objects.filter(service_slug="kmc").update(end_date=dt.date(2025, 1, 1), is_active=False)
+        queries.invalidate()
+        kmc = _cards()["kmc"]
+        assert not kmc["live"]
+        assert kmc["state"] == "funding"
 
     def test_the_note_is_derived_from_the_figures(self, market):
         """Generated, never written: a hand-written line is true the day it is
         written and quietly false after."""
-        assert _cards()["nutrition"]["note"].startswith("3 organisations have applied")
+        assert _cards()["nutrition"]["note"].startswith("3 organizations have applied")
 
     def test_the_bar_is_paid_against_paid_plus_still_funded(self, market):
         chc = _cards()["chc"]
@@ -174,10 +192,10 @@ class TestTheCards:
 class TestThePage:
     def test_renders_the_sections_and_the_totals(self, client, user, market):
         client.force_login(user)
-        response = client.get(reverse("marketplace:programs"))
+        response = client.get(reverse("marketplace:home"))
         assert response.status_code == 200
         body = response.content.decode()
-        assert "Asked for, not yet delivered" in body
+        assert "In Design and Development" in body
         assert "Child Health Campaign" in body
         assert "ACE" not in body.split("<body")[1].split("Pulse wall")[0]
 
@@ -185,24 +203,26 @@ class TestThePage:
         """It is headroom on live budgets, not money committed. The page must
         never present it as the second."""
         client.force_login(user)
-        body = client.get(reverse("marketplace:programs")).content.decode()
+        body = client.get(reverse("marketplace:home")).content.decode()
         assert "up to" in body.lower()
         assert "committed" not in body.lower()
 
     def test_requires_login(self, client, market):
-        assert client.get(reverse("marketplace:programs")).status_code == 302
+        assert client.get(reverse("marketplace:home")).status_code == 302
 
-    def test_the_home_page_leads_to_it(self, client, user, market):
+    def test_it_leads_to_the_rounds_it_drills_into(self, client, user, market):
         client.force_login(user)
-        assert reverse("marketplace:programs") in client.get(reverse("marketplace:home")).content.decode()
+        assert reverse("marketplace:rounds") in client.get(reverse("marketplace:home")).content.decode()
 
 
 @pytest.mark.django_db
-def test_the_old_programmes_address_redirects(client, user):
+@pytest.mark.parametrize("old", ["/labs/marketplace/programmes/", "/labs/marketplace/programs/"])
+def test_the_former_programs_addresses_redirect_to_the_marketplace(client, user, old):
+    """Both were shared before the programs page became the landing page."""
     client.force_login(user)
-    response = client.get("/labs/marketplace/programmes/")
+    response = client.get(old)
     assert response.status_code == 301
-    assert response["Location"] == reverse("marketplace:programs")
+    assert response["Location"] == reverse("marketplace:home")
 
 
 def test_nutrition_is_named_for_what_is_delivered():
@@ -253,8 +273,8 @@ class TestFixedCostsInBothViews:
 
     def test_the_page_offers_both_and_says_which(self, client, user, with_fixed):
         client.force_login(user)
-        body = client.get(reverse("marketplace:programs") + "?costs=spread").content.decode()
+        body = client.get(reverse("marketplace:home") + "?costs=spread").content.decode()
         assert "PAID OUT, INCL. STARTUP AND SUPPLIES" in body
         assert "includes" in body and "$4,000" in body
-        body = client.get(reverse("marketplace:programs")).content.decode()
+        body = client.get(reverse("marketplace:home")).content.decode()
         assert "STARTUP AND SUPPLIES" in body and "$4,000" in body

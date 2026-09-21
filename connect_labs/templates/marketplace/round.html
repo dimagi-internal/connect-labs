@@ -3,16 +3,16 @@
 {% block title %}{{ round.title }}{% endblock %}
 
 {% block content %}
-<div class="max-w-screen-2xl mx-auto px-8 py-6">
+<div class="max-w-screen-2xl mx-auto px-0 sm:px-6 lg:px-8 py-5 sm:py-6">
 
   <div class="text-[12.5px] text-gray-500 mb-3.5">
     <a href="{% url 'marketplace:home' %}" class="hover:text-gray-700">Marketplace</a> ·
-    <a href="{% url 'marketplace:rounds' %}" class="hover:text-gray-700">Rounds</a> ·
+    <a href="{% url 'marketplace:rounds' %}" class="hover:text-gray-700">Expressions of interest</a> ·
     <span class="text-gray-900">{{ round.title }}</span>
   </div>
 
-  <div class="bg-white border border-brand-border-light rounded-lg px-6 py-[22px] mb-4.5">
-    <div class="flex flex-wrap items-start justify-between gap-7">
+  <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-5 sm:py-[22px] mb-4.5">
+    <div class="flex flex-wrap items-start justify-between gap-5 sm:gap-7">
       <div class="max-w-2xl">
         <div class="flex items-center gap-2.5 mb-2">
           <span class="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded {% if round.solicitation_type == 'rfp' %}bg-red-50 text-red-800{% else %}bg-indigo-50 text-brand-indigo{% endif %}">{{ round.solicitation_type|upper }}</span>
@@ -23,7 +23,7 @@
           {% endif %}
         </div>
         <div class="flex items-center gap-2.5 flex-wrap">
-          <span class="text-2xl font-semibold text-brand-deep-purple">{{ round.title }}</span>
+          <span class="text-xl sm:text-2xl font-semibold text-brand-deep-purple">{{ round.title }}</span>
           {% if round.program_label %}
             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo">{{ round.program_label }}</span>
           {% endif %}
@@ -33,13 +33,13 @@
         {% endif %}
       </div>
 
-      <div class="flex gap-8 shrink-0">
+      <div class="flex flex-wrap gap-x-7 gap-y-4 sm:gap-8 w-full xl:w-auto xl:shrink-0">
         <div>
-          <div class="text-[25px] font-semibold text-gray-900 tabular-nums">{{ round.organisations }}</div>
-          <div class="text-[11px] text-gray-400 tracking-wide">ORGANISATIONS</div>
+          <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ round.organisations }}</div>
+          <div class="text-[11px] text-gray-400 tracking-wide">ORGANIZATIONS</div>
           {% if round.applications != round.organisations %}
             {% comment %}
-            Shown only when the two differ. Some organisations sent the form
+            Shown only when the two differ. Some organizations sent the form
             more than once — counting submissions as applicants overstated this
             round by 14.
             {% endcomment %}
@@ -47,14 +47,14 @@
           {% endif %}
         </div>
         <div>
-          <div class="text-[25px] font-semibold text-green-700 tabular-nums">{{ after_count }}</div>
+          <div class="text-[22px] sm:text-[25px] font-semibold text-green-700 tabular-nums">{{ after_count }}</div>
           <div class="text-[11px] text-gray-400 tracking-wide">STARTED AFTER</div>
           {% if before_count %}
             <div class="text-[11px] text-gray-400 mt-0.5">{{ before_count }} already delivering</div>
           {% endif %}
         </div>
         <div>
-          <div class="text-[25px] font-semibold {% if unresolved_count %}text-brand-sunset{% else %}text-gray-300{% endif %} tabular-nums">{{ unresolved_count }}</div>
+          <div class="text-[22px] sm:text-[25px] font-semibold {% if unresolved_count %}text-brand-sunset{% else %}text-gray-300{% endif %} tabular-nums">{{ unresolved_count }}</div>
           <div class="text-[11px] text-gray-400 tracking-wide">NEED A VERDICT</div>
         </div>
       </div>
@@ -69,14 +69,14 @@
     are percentages of the busiest bucket, so the shape survives any column
     width.
     {% endcomment %}
-    <div class="bg-white border border-brand-border-light rounded-lg px-6 py-[18px] mb-4.5">
-      <div class="flex items-baseline justify-between mb-3">
+    <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-[18px] mb-4.5">
+      <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-3">
         <span class="text-sm font-semibold text-brand-deep-purple">When the submissions arrived</span>
         <span class="text-[11.5px] text-gray-400">
           {{ trend.0.start|date:"j M Y" }} – {{ span_end|date:"j M Y" }}
         </span>
       </div>
-      <div class="flex items-end gap-[3px]" style="height: 76px;">
+      <div class="flex items-end gap-px sm:gap-[3px] h-[60px] sm:h-[76px]">
         {% for bucket in trend %}
           <div class="flex-1 rounded-t-sm {% if bucket.count %}bg-brand-indigo/70{% else %}bg-gray-100{% endif %}"
                style="height: {% if bucket.count %}{{ bucket.pct }}%{% else %}2px{% endif %}; min-height: 2px;"
@@ -89,31 +89,33 @@
   <div class="grid grid-cols-1 xl:grid-cols-[1fr_296px] gap-4.5 items-start">
 
     <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
-      <div class="px-5 py-3.5 border-b border-brand-border-light">
+      <div class="px-4 sm:px-5 py-3.5 border-b border-brand-border-light">
         <span class="text-sm font-semibold text-brand-deep-purple">Who applied</span>
         <div class="text-[11.5px] text-gray-500 mt-1 leading-relaxed">
-          <strong class="font-medium">Delivery on Connect</strong> compares each organisation's first verified
+          <strong class="font-medium">Delivery on Connect</strong> compares each organization's first verified
           service with{% if since %} {{ since|date:"j M Y" }}, when this round closed{% else %} this round{% endif %} —
           it reports which came first, not that one caused the other.
           <strong class="font-medium">Needs a verdict</strong> means the submission could not be matched to any
-          organisation in the directory, so a person has to say who sent it.
+          organization in the directory, so a person has to say who sent it.
         </div>
       </div>
 
+      {# Organization and outcome are the row; country returns at sm. #}
+      <div class="overflow-x-auto">
       <table class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
           <tr>
-            <th class="px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organisation</th>
-            <th class="px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Country</th>
-            <th class="px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Delivery on Connect</th>
+            <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
+            <th class="hidden sm:table-cell px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Country</th>
+            <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Delivery on Connect</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
           {% for a in applicants %}
             <tr class="hover:bg-gray-50 transition">
-              <td class="px-5 py-3">
+              <td class="px-4 sm:px-5 py-3">
                 <div class="flex items-center gap-2.5">
-                  <span class="w-6.5 h-6.5 w-[26px] h-[26px] rounded-md inline-flex items-center justify-center text-[10px] font-semibold shrink-0
+                  <span class="w-[26px] h-[26px] rounded-md inline-flex items-center justify-center text-[10px] font-semibold shrink-0
                                {% if a.outcome == 'after' %}bg-green-100 text-green-800{% else %}bg-gray-100 text-gray-500{% endif %}">
                     {{ a.name|slice:":2"|upper }}
                   </span>
@@ -129,35 +131,36 @@
                   {% endif %}
                 </div>
               </td>
-              <td class="px-5 py-3 text-[12.5px] text-gray-600">{{ a.country|default:"—"|truncatechars:30 }}</td>
-              <td class="px-5 py-3 text-right">
+              <td class="hidden sm:table-cell px-4 sm:px-5 py-3 text-[12.5px] text-gray-600">{{ a.country|default:"—"|truncatechars:30 }}</td>
+              <td class="px-4 sm:px-5 py-3 text-right">
                 {% if a.outcome == 'after' %}
                   <span title="First verified service on Connect came after this round{% if since %}, which closed {{ since|date:'j M Y' }}{% endif %}"
-                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-green-100 text-green-800">
+                        class="inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-green-100 text-green-800">
                     <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>started after
                   </span>
                 {% elif a.outcome == 'before' %}
                   <span title="Already delivering on Connect before this round — it cannot have started because of it"
-                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-gray-100 text-gray-600">already delivering</span>
+                        class="inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-gray-100 text-gray-600">already delivering</span>
                 {% elif a.outcome == 'never' %}
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-amber-50 text-amber-800">never activated</span>
+                  <span class="inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-amber-50 text-amber-800">never activated</span>
                 {% else %}
-                  <a href="{% url 'marketplace:unmatched' %}" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-red-50 text-red-800 hover:bg-red-100">needs a verdict</a>
+                  <a href="{% url 'marketplace:unmatched' %}" class="inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-[11.5px] font-medium bg-red-50 text-red-800 hover:bg-red-100">needs a verdict</a>
                 {% endif %}
               </td>
             </tr>
           {% empty %}
-            <tr><td colspan="3" class="px-5 py-12 text-center text-sm text-gray-500">
+            <tr><td colspan="3" class="px-4 sm:px-5 py-12 text-center text-sm text-gray-500">
               {% if round.was_ingested %}No applications recorded for this round.{% else %}This round has never been read.{% endif %}
             </td></tr>
           {% endfor %}
         </tbody>
       </table>
+      </div>
     </div>
 
     <div class="flex flex-col gap-4">
       <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
-        <div class="px-4.5 px-[18px] py-3 border-b border-gray-100">
+        <div class="px-[18px] py-3 border-b border-gray-100">
           <span class="text-xs font-semibold text-brand-deep-purple tracking-wide">THE CALL</span>
         </div>
         <div class="px-[18px] py-3.5 flex flex-col gap-2.5">
