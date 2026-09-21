@@ -354,6 +354,46 @@ class OCSDataAccess:
         except httpx.HTTPError as e:
             raise OCSAPIError(f"Failed to fetch sessions: {e}") from e
 
+    def list_participants(self, experiment_id: str, max_pages: int = 20) -> list[dict]:
+        """
+        Every participant that holds data for one chatbot, with that data.
+
+        This is how a dashboard reads the chatbot's own status for a whole cohort. The
+        alternative — a session fetch per worker — is one HTTP round trip per row, and the
+        status does not live on the session anyway: ``update-user-data`` writes to
+        PARTICIPANT data, which is keyed by (participant, experiment) in OCS.
+
+        ``chatbot`` is the filter name OCS uses for the experiment's public id. Each result
+        carries ``identifier`` (for CommCare Connect, the ConnectID username) and a ``data``
+        list with one entry per chatbot the participant has talked to — already narrowed to
+        this one by the filter.
+
+        Paginated with a cursor; ``max_pages`` bounds it so a misconfigured filter cannot
+        walk an entire team's participants.
+        """
+        if not self.check_token_valid():
+            raise OCSAPIError("OCS OAuth not configured or expired.")
+
+        url = f"{self.base_url}/api/participants"
+        params: dict = {"chatbot": experiment_id}
+        out: list[dict] = []
+
+        try:
+            for _ in range(max_pages):
+                response = self.http_client.get(url, params=params)
+                response.raise_for_status()
+                data = response.json()
+                out.extend(data.get("results", []))
+                nxt = data.get("next")
+                if not nxt:
+                    break
+                # The cursor arrives as a full URL; follow it verbatim rather than
+                # rebuilding the query, which would drop the cursor.
+                url, params = nxt, {}
+            return out
+        except httpx.HTTPError as e:
+            raise OCSAPIError(f"Failed to fetch participants: {e}") from e
+
 
 def is_ocs_oauth_active(request: HttpRequest) -> bool:
     """Is the user's stored OCS OAuth session usable right now?

@@ -165,6 +165,9 @@ urlpatterns = [
     # (does this worker have an OPEN one?) and cannot show history or a closed task's
     # verdict, which is what the KMC coaching dashboards need.
     path("api/worker-tasks/", views.worker_tasks_api, name="api_worker_tasks"),
+    # The coaching bot's OWN status per worker, read from OCS participant data. Distinct
+    # from worker-tasks/, which is the reviewer's side of the same conversation.
+    path("api/chatbot-status/", views.chatbot_status_api, name="api_chatbot_status"),
     path("api/prev-categories/", views.prev_categories_api, name="api_prev_categories"),
     path("api/open-run-state/", views.open_run_state_api, name="api_open_run_state"),
     path("api/run-category-history/", views.run_category_history_api, name="api_run_category_history"),
