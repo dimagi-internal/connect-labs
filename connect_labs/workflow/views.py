@@ -5388,6 +5388,87 @@ def worker_tasks_api(request):
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
+#: What the coaching bot itself reports about a conversation, as opposed to the reviewer's
+#: verdict on it. The bot advances this; Labs only reads it.
+#:
+#: Ordered, and that order is load-bearing: the dashboard shows the FURTHEST state reached,
+#: so a stale value can never appear to move a conversation backwards.
+CHATBOT_STATUS_ORDER = ["not_started", "initiated", "in_progress", "completed"]
+
+
+@login_required
+@require_GET
+def chatbot_status_api(request):
+    """
+    The coaching bot's own status per field worker, for one chatbot.
+
+    Read from PARTICIPANT data, not from sessions. `update-user-data` in an OCS prompt, and
+    `set_participant_data` in a Python node, both write there — and OCS keys participant data
+    by (participant, experiment), so this is the only place that answers "what does THIS bot
+    think about this worker". Session state is a mirror the bot has to maintain by hand; the
+    participant record is the thing being mirrored.
+
+    One HTTP call for the whole cohort. The obvious alternative, fetching each worker's
+    session, is a round trip per row and reads the mirror rather than the original.
+
+    Requires the caller's OCS OAuth. Without it the dashboard should show nothing rather than
+    a wrong value, so an unauthorised caller gets `ocs_auth_required` and no data.
+    """
+    from connect_labs.labs.integrations.ocs.api_client import OCSAPIError, OCSDataAccess
+
+    experiment_id = (request.GET.get("experiment") or "").strip()
+    if not experiment_id:
+        return JsonResponse({"error": "experiment is required"}, status=400)
+
+    client = None
+    try:
+        client = OCSDataAccess(request=request)
+        if not client.check_token_valid():
+            return JsonResponse({"ocs_auth_required": True, "statuses": {}, "login_url": "/labs/ocs/initiate/"})
+
+        by_username: dict = {}
+        for participant in client.list_participants(experiment_id):
+            identifier = (participant.get("identifier") or "").lower()
+            if not identifier:
+                continue
+            # The filter already narrows `data` to this chatbot, but a participant who has
+            # talked to several still carries one entry each on some responses; match on the
+            # id rather than trusting position.
+            for entry in participant.get("data") or []:
+                if experiment_id not in (str(entry.get("chatbot_id") or ""), ""):
+                    continue
+                status = ((entry.get("data") or {}).get("chatbot_task_status") or "").strip()
+                if not status:
+                    continue
+                prior = by_username.get(identifier)
+                # Keep the furthest state reached. Two entries for one worker should not
+                # happen, but if they do, moving a conversation backwards is the worse error.
+                if prior is None or _chatbot_status_rank(status) > _chatbot_status_rank(prior):
+                    by_username[identifier] = status
+
+        return JsonResponse({"statuses": by_username, "experiment": experiment_id})
+    except OCSAPIError as e:
+        logger.warning("OCS refused the participant read for %s: %s", experiment_id, e)
+        return JsonResponse({"error": "Open Chat Studio could not be read.", "statuses": {}}, status=502)
+    except Exception:
+        logger.exception("Failed to fetch chatbot status for experiment %s", experiment_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+
+def _chatbot_status_rank(value: str) -> int:
+    """Position in CHATBOT_STATUS_ORDER, or -1 for anything the bot invented."""
+    try:
+        return CHATBOT_STATUS_ORDER.index(value)
+    except ValueError:
+        return -1
+
+
 @login_required
 @require_GET
 def prev_categories_api(request):
