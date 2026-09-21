@@ -28,10 +28,9 @@ from connect_labs.solicitations.local_models import ACCESS_OK, Solicitation, Sol
 # a real job — "who can I still activate", "who can I not even write to" — not a
 # permutation of the filter controls.
 SEGMENTS = [
-    ("all", "All", "Every organisation labs knows of, including those Connect has no row for."),
-    ("bench", "On the bench", "Answered a round, never activated. The largest untapped part of the network."),
+    ("all", "All", "Every organization labs knows of, including those Connect has no row for."),
     ("delivering", "Delivering", "Currently running at least one Connect opportunity."),
-    ("nocontact", "No contact on file", "Nobody to write to — the ceiling on any outreach until it is fixed."),
+    ("available", "Available", "Answered a round, not delivering today. The largest untapped part of the network."),
     ("repeat", "Applied more than once", "Came back for another round. Interest is already demonstrated."),
 ]
 
@@ -341,26 +340,46 @@ def services_by_program() -> dict[str, int]:
 # The state of a program's market, in the order the page presents them. Each
 # is a fact about the numbers, not a label someone chose — so a program moves
 # between them on its own as the data does.
+# Where a program is in its life, and nothing else. One axis, three stages,
+# read straight off whether work is live today and whether any ever was.
+#
+# This replaced a four-way split whose third section, "Delivered without going
+# to market", claimed a program had never been sourced through a round. It
+# could not: the only link between a round and a program is the delivery_type
+# tag somebody types onto the round in the directory sheet, and that tag is
+# blank on plenty of rounds — the rounds table renders them "untagged". An
+# untagged round that DID source the work was invisible to the rule, so the
+# program was labelled as never having gone to market when it had. Connect
+# records no placement from a round to an opportunity, so the claim was not
+# derivable from anything we hold; it is gone rather than softened.
+#
+# The old "more want it than do it" split is gone for a different reason: it
+# is a supply-and-demand observation, not a stage of life, and `_note` already
+# says it per card in the one place it means something.
 STATES = (
     (
-        "waiting",
-        "Asked for, not yet delivered",
-        "Organisations have put their names forward and nobody has been placed.",
+        "design",
+        "In Design and Development",
+        "Organizations have put their names forward. Nothing is live on Connect yet.",
     ),
-    ("queue", "More want it than do it", "Established work with a queue of organisations behind it."),
-    ("direct", "Delivered without going to market", "Real delivery, sourced some other way — no round was ever run."),
-    ("running", "Running", "Delivery under way, with the network and the rounds broadly in balance."),
+    ("delivering", "Delivering", "Live on Connect today."),
+    (
+        "funding",
+        "Delivered, awaiting funding",
+        "Proven on Connect. Nothing is live today — funding is what would restart it.",
+    ),
 )
 
 
 def _state(card: dict) -> str:
-    if card["applied"] and not card["delivering"]:
-        return "waiting"
-    if card["delivering"] and card["applied"] > card["delivering"]:
-        return "queue"
-    if card["delivering"] and not card["rounds"]:
-        return "direct"
-    return "running"
+    """Live work wins: a program with a live opportunity is delivering, whatever
+    else is true of it. Past delivery with nothing live is waiting on money,
+    not finished — which is why that section does not say "complete"."""
+    if card["live"]:
+        return "delivering"
+    if card["services"] or card["spent"] or card["delivering"]:
+        return "funding"
+    return "design"
 
 
 def _money(n: int) -> str:
@@ -380,22 +399,22 @@ def _note(card: dict) -> str:
     """
     applied, delivering = card["applied"], card["delivering"]
     if applied and not delivering:
-        return f"{applied} organisations have applied. None has delivered this program on Connect yet."
+        return f"{applied} organizations have applied. None has delivered this program on Connect yet."
     if delivering and applied >= 3 * delivering:
-        return f"{applied // delivering} applicants for every organisation delivering it today."
+        return f"{applied // delivering} applicants for every organization delivering it today."
     if card["remaining"] and card["spent"] and card["remaining"] > card["spent"]:
         return (
             f"Up to {_money(card['remaining'])} still available on live work — more than the "
             f"{_money(card['spent'])} paid out so far."
         )
-    if delivering and not card["rounds"]:
-        orgs = "organisation" if delivering == 1 else "organisations"
-        return f"Delivered by {delivering} {orgs}, none of them found through a round."
     if card["remaining"]:
         opps = "opportunity" if card["live"] == 1 else "opportunities"
         return f"Up to {_money(card['remaining'])} still available across {card['live']} live {opps}."
     if card["spent"]:
         return f"{_money(card['spent'])} paid out. No live work is funded right now."
+    if delivering:
+        orgs = "organization" if delivering == 1 else "organizations"
+        return f"Delivered by {delivering} {orgs}. Nothing is live right now."
     return "No delivery recorded yet."
 
 
@@ -484,10 +503,8 @@ def in_segment(row, segment: str, delivering: set[str]) -> bool:
     """Whether one annotated organisation belongs to a segment."""
     if segment == "delivering":
         return row.name in delivering
-    if segment == "bench":
+    if segment == "available":
         return row.name not in delivering
-    if segment == "nocontact":
-        return row.contact_count == 0
     if segment == "repeat":
         return row.rounds_applied > 1
     return True
@@ -603,14 +620,30 @@ def rounds_with_counts():
     ).order_by("-published_on", "title")
 
 
+# A round is open only if its own dates still say so. `status` is typed onto
+# the directory sheet by hand and goes stale the day a deadline passes: every
+# round this page called open carried an application deadline already in the
+# past, which is the one thing a visitor would act on. The stored status can
+# only close a round here, never hold one open past its own deadline or past
+# the day it was decided.
+def _still_open() -> Q:
+    today = datetime.date.today()
+    return (
+        Q(status="active")
+        & Q(decision_on__isnull=True)
+        & (Q(application_deadline__isnull=True) | Q(application_deadline__gte=today))
+    )
+
+
 def open_rounds():
-    """Rounds still taking applications."""
-    return rounds_with_counts().filter(status="active")
+    """Rounds still taking applications: said to be active, not yet decided,
+    and not past their own deadline."""
+    return rounds_with_counts().filter(_still_open())
 
 
 def closed_rounds():
-    """Rounds that have been decided, busiest first — the track record."""
-    return rounds_with_counts().exclude(status="active").order_by("-applications")
+    """Rounds no longer taking applications, busiest first — the track record."""
+    return rounds_with_counts().exclude(_still_open()).order_by("-applications")
 
 
 def round_since(round_: Solicitation):
@@ -667,7 +700,7 @@ def round_applicants(round_: Solicitation, first_service: dict):
         row = {
             "response": response,
             "org": org,
-            "name": (org.name if org else response.org_name) or "(organisation name not given)",
+            "name": (org.name if org else response.org_name) or "(organization name not given)",
             "country": (profile.countries[0] if profile and profile.countries else response.country_as_submitted),
             "outcome": outcome,
             "started": started,

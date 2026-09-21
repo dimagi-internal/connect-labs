@@ -74,15 +74,11 @@ def network(db):
 
 @pytest.mark.django_db
 class TestSegments:
-    def test_bench_and_delivering_partition_the_network(self, network):
+    def test_available_and_delivering_partition_the_network(self, network):
         rows = list(queries.all_rows_with_rounds())
         delivering = queries.delivering_names()
         counts = queries.segment_counts(rows, delivering)
-        assert counts["delivering"] + counts["bench"] == counts["all"] == 2
-
-    def test_no_contact_counts_only_the_unreachable(self, network):
-        counts = queries.segment_counts(queries.all_rows_with_rounds(), queries.delivering_names())
-        assert counts["nocontact"] == 1
+        assert counts["delivering"] + counts["available"] == counts["all"] == 2
 
     def test_a_count_never_promises_more_than_the_list_shows(self, network):
         """Counted over the same rows the list renders, so the two cannot drift."""
