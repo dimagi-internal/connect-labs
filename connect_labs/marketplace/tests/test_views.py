@@ -71,13 +71,6 @@ class TestDirectory:
         assert "Harbourside" in body
         assert "Fenwick Trust</a>" not in body
 
-    def test_filters_to_organisations_with_no_contact(self, client, user, registry):
-        """The segment that matters for outreach: nobody to write to."""
-        client.force_login(user)
-        body = client.get(reverse("marketplace:network"), {"segment": "nocontact"}).content.decode()
-        assert "Harbourside" in body
-        assert "Fenwick Trust</a>" not in body
-
     def test_filters_by_the_program_an_organisation_applied_for(self, client, user, registry):
         client.force_login(user)
         body = client.get(reverse("marketplace:network"), {"applied": "chc"}).content.decode()
@@ -102,10 +95,14 @@ class TestOrganisationPage:
         assert "a@example.invalid" in body
         assert "Demo round" in body
 
-    def test_says_plainly_when_there_is_nobody_to_write_to(self, client, user, registry):
+    def test_an_empty_contact_list_says_so_without_raising_its_voice(self, client, user, registry):
+        """Whether we hold a contact is our housekeeping, not a fact about this
+        organization. The empty state states it; the alarm belongs in the
+        import's data-quality report, where somebody can act on it."""
         client.force_login(user)
         body = client.get(reverse("marketplace:organisation", args=["harbourside"])).content.decode()
-        assert "nobody here to write to" in body
+        assert "No contact recorded." in body
+        assert "nobody here to write to" not in body
 
     def test_distinguishes_no_connect_delivery_from_no_attribution(self, client, user, registry):
         """An organisation with no workspace attributed has nothing to join on —

@@ -95,11 +95,17 @@ class TestFacetsCombine:
         assert _names(response) == {"Fenwick Community Trust"}
 
     def test_a_segment_still_applies_on_top_of_the_facets(self, client, user, network):
+        """Asserted both ways round: the same three countries in scope give
+        three rows under one segment and none under the other, which a facet
+        that silently ignored the segment could not do."""
         client.force_login(user)
-        response = client.get(
-            reverse("marketplace:network"), {"country": ["Uganda", "Malawi", "Kenya"], "segment": "nocontact"}
-        )
-        assert len(response.context["listed"]) == 3
+        countries = {"country": ["Uganda", "Malawi", "Kenya"]}
+
+        available = client.get(reverse("marketplace:network"), countries | {"segment": "available"})
+        assert len(available.context["listed"]) == 3
+
+        delivering = client.get(reverse("marketplace:network"), countries | {"segment": "delivering"})
+        assert delivering.context["listed"] == []
 
 
 @pytest.mark.django_db
@@ -127,11 +133,11 @@ class TestToggleLinks:
         be worse than no facet at all."""
         client.force_login(user)
         response = client.get(
-            reverse("marketplace:network"), {"segment": "bench", "delivered": "kmc", "country": "Kenya"}
+            reverse("marketplace:network"), {"segment": "available", "delivered": "kmc", "country": "Kenya"}
         )
         rail = {s["param"]: s for s in response.context["rail"]}
         row = next(r for r in rail["country"]["rows"] if r["label"] == "Uganda")
-        assert "segment=bench" in row["url"]
+        assert "segment=available" in row["url"]
         assert "delivered=kmc" in row["url"]
         assert "country=Kenya" in row["url"]  # the one already chosen survives
 

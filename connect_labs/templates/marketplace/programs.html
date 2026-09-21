@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% comment %}
-The marketplace by program. Tailwind, not Bootstrap, with brand values from
-tailwind/tailwind.css.
+The marketplace landing page: every kind of work on Connect, by program.
+Tailwind, not Bootstrap, with brand values from tailwind/tailwind.css.
 
 Each program carries its own colour through `--hue`, set inline per card from
 `programs.hue()`. Custom properties are the one thing Tailwind's static
@@ -12,7 +12,7 @@ Spent and services are Pulse's own figures. Remaining is an upper bound and is
 always worded "up to" — see `queries.committed_by_program`.
 {% endcomment %}
 {% load humanize %}
-{% block title %}Programs · Connect Marketplace{% endblock %}
+{% block title %}Connect Marketplace{% endblock %}
 
 {% block css %}
   {{ block.super }}
@@ -35,47 +35,59 @@ always worded "up to" — see `queries.committed_by_program`.
 
 {% block content %}
 
-<div class="bg-brand-deep-purple px-10 pt-8 pb-7 relative overflow-hidden">
+<div class="bg-brand-deep-purple -mx-4 px-4 sm:mx-0 sm:px-8 lg:px-10 pt-6 pb-6 sm:pt-8 sm:pb-7 relative overflow-hidden">
   <div class="absolute -right-24 -top-32 w-[440px] h-[440px] rounded-full"
        style="background: radial-gradient(circle, rgba(142,161,255,0.18) 0%, rgba(22,0,109,0) 68%);"></div>
   <div class="relative">
-    <div class="flex items-center gap-2 text-[12px] text-brand-sky/80 mb-3">
-      <a href="{% url 'marketplace:home' %}" class="hover:text-white">Marketplace</a>
-      <span>·</span><span class="text-white">Programs</span>
-    </div>
-    <div class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky">BY PROGRAM</div>
-    <div class="text-3xl font-semibold text-white mt-2 max-w-3xl leading-tight">
-      Every kind of work on Connect — what has been paid, what is still funded, and who is waiting to do it.
-    </div>
+    <div class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky">CONNECT</div>
+    <h1 class="text-[26px] sm:text-3xl lg:text-4xl font-semibold text-white mt-1 leading-tight">Marketplace</h1>
 
-    <div class="flex flex-wrap gap-x-12 gap-y-5 mt-7">
+    <div class="grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap sm:gap-x-12 sm:gap-y-5 mt-6 sm:mt-7">
       <div>
-        <div class="text-[29px] font-semibold text-white tabular-nums">{{ totals.spent }}</div>
+        <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ totals.spent }}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">{% if costs_view == "spread" %}PAID OUT, INCL. STARTUP AND SUPPLIES{% else %}PAID OUT PER SERVICE{% endif %}</div>
       </div>
       {% if costs_view != "spread" and totals.fixed_raw %}
       <div>
-        <div class="text-[29px] font-semibold text-white tabular-nums">+ {{ totals.fixed }}</div>
+        <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">+ {{ totals.fixed }}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">STARTUP AND SUPPLIES</div>
       </div>
       {% endif %}
       <div>
-        <div class="text-[29px] font-semibold text-brand-marigold tabular-nums">{{ totals.remaining }}</div>
+        <div class="text-[23px] sm:text-[29px] font-semibold text-brand-marigold tabular-nums">{{ totals.remaining }}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">UP TO, STILL FUNDED</div>
       </div>
       <div>
-        <div class="text-[29px] font-semibold text-white tabular-nums">{{ totals.services|intcomma }}</div>
+        <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ totals.services|intcomma }}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">SERVICES DELIVERED</div>
       </div>
       <div>
-        <div class="text-[29px] font-semibold text-white tabular-nums">{{ totals.applied }}</div>
-        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">ORGANISATIONS HAVE APPLIED</div>
+        <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ totals.applied }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">ORGANIZATIONS HAVE APPLIED</div>
       </div>
+    </div>
+
+    <div class="flex flex-col sm:flex-row sm:flex-wrap gap-3 mt-6 sm:mt-7">
+      <a href="{% url 'marketplace:rounds' %}"
+         class="inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 bg-white text-brand-deep-purple text-sm font-semibold rounded-lg hover:bg-brand-sky/20 transition">
+        Expressions of interest
+        {% if open_round_count %}
+          <span class="inline-flex items-center px-1.5 py-px rounded-full text-[10.5px] font-semibold tracking-wider bg-green-100 text-green-800">{{ open_round_count }} OPEN</span>
+        {% else %}
+          <span class="text-[11.5px] font-normal text-gray-500 tabular-nums">{{ network.rounds }} rounds</span>
+        {% endif %}
+        <i class="fa-solid fa-arrow-right text-xs"></i>
+      </a>
+      <a href="{% url 'marketplace:network' %}"
+         class="inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 border border-brand-sky/40 text-white text-sm font-medium rounded-lg hover:bg-white/5 transition">
+        The network
+        <span class="text-[11.5px] text-brand-sky tabular-nums">{{ network.organisations }} organizations</span>
+      </a>
     </div>
   </div>
 </div>
 
-<div class="max-w-screen-2xl mx-auto px-10 py-8">
+<div class="max-w-screen-2xl mx-auto px-0 sm:px-8 lg:px-10 py-6 sm:py-8">
 
   {# Start-up and other fixed costs: beside per-service pay, or spread into it. #}
   {# The same choice as the Pulse wall's, remembered across both.            #}
@@ -96,7 +108,7 @@ always worded "up to" — see `queries.committed_by_program`.
 
       <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
         {% for c in section.cards %}
-          <article class="pg-card bg-white border border-brand-border-light rounded-[10px] pl-6 pr-5 pt-5 pb-4 flex flex-col gap-4 transition"
+          <article class="pg-card bg-white border border-brand-border-light rounded-[10px] pl-5 pr-4 sm:pl-6 sm:pr-5 pt-5 pb-4 flex flex-col gap-4 transition"
                    style="--hue: {{ c.hue }}">
 
             <div class="flex items-start justify-between gap-3">
@@ -124,7 +136,7 @@ always worded "up to" — see `queries.committed_by_program`.
               {% if c.spent or c.remaining %}
                 {# Paid and still-funded on one line; startup and supplies gets #}
                 {# its own, so a card with all three never wraps into a muddle.  #}
-                <div class="flex items-baseline justify-between gap-3 text-[12.5px]">
+                <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[12.5px]">
                   <span class="whitespace-nowrap"><span class="font-semibold text-gray-900 tabular-nums">{{ c.spent_fmt }}</span> <span class="text-gray-500">paid</span></span>
                   {% if c.remaining %}
                     <span class="text-gray-500 whitespace-nowrap text-right">up to <span class="font-semibold pg-hue tabular-nums">{{ c.remaining_fmt }}</span> still funded</span>
@@ -179,7 +191,7 @@ always worded "up to" — see `queries.committed_by_program`.
     </div>
   {% endfor %}
 
-  <p class="mt-12 pt-5 border-t border-gray-200 text-[12.5px] text-gray-500 max-w-3xl leading-relaxed">
+  <p class="mt-10 sm:mt-12 pt-5 border-t border-gray-200 text-[12.5px] text-gray-500 max-w-3xl leading-relaxed">
     Paid out and services delivered are the same figures the Pulse wall shows. Startup and supplies are costs Connect
     invoiced outside any unit of work; "spread into services" shares each opportunity's across its approved
     work. "Still funded" is budget

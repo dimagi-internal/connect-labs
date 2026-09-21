@@ -8,15 +8,15 @@ refuses to open. <details> needs no JavaScript at all.
 {% block title %}{{ org.name }}{% endblock %}
 
 {% block content %}
-<div class="max-w-screen-2xl mx-auto px-4 py-6">
+<div class="max-w-screen-2xl mx-auto px-0 sm:px-4 py-5 sm:py-6">
 
   <a href="{% url 'marketplace:network' %}" class="text-sm text-gray-500 hover:text-gray-700">
     <i class="fa-solid fa-arrow-left mr-1"></i> Directory
   </a>
 
-  <div class="bg-white rounded-lg shadow-sm p-6 mt-2 mb-6">
+  <div class="bg-white rounded-lg shadow-sm p-4 sm:p-6 mt-2 mb-6">
     <div class="flex items-center gap-3 flex-wrap">
-      <h1 class="text-2xl font-semibold text-brand-deep-purple">{{ org.name }}</h1>
+      <h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple break-words">{{ org.name }}</h1>
       {% if delivering %}
         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
           <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>delivering
@@ -30,16 +30,16 @@ refuses to open. <details> needs no JavaScript at all.
     </div>
   </div>
 
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
 
-    <div class="lg:col-span-1 space-y-6">
+    <div class="lg:col-span-1 space-y-4 sm:space-y-6">
       <div class="bg-white rounded-lg shadow-sm overflow-hidden">
-        <div class="px-6 py-3 bg-gray-50 border-b border-gray-200">
+        <div class="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-200">
           <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Profile</h2>
         </div>
-        <div class="px-6 py-4">
+        <div class="px-4 sm:px-6 py-4">
           {% if profile %}
-            <dl class="space-y-3 text-sm">
+            <dl class="space-y-3 text-sm break-words">
               {% if delivered_programs or applied_programs %}
                 <div>
                   <dt class="text-gray-500">Programs</dt>
@@ -88,12 +88,12 @@ refuses to open. <details> needs no JavaScript at all.
       </div>
 
       <div class="bg-white rounded-lg shadow-sm overflow-hidden">
-        <div class="px-6 py-3 bg-gray-50 border-b border-gray-200">
+        <div class="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-200">
           <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Contacts</h2>
         </div>
         <ul class="divide-y divide-gray-100">
           {% for c in contacts %}
-            <li class="px-6 py-3 text-sm">
+            <li class="px-4 sm:px-6 py-3 text-sm">
               <div class="flex items-center gap-2">
                 <span class="font-medium text-gray-900">{{ c.full_name|default:"(unnamed)" }}</span>
                 {% if c.is_main_poc %}
@@ -105,46 +105,53 @@ refuses to open. <details> needs no JavaScript at all.
               {% if c.phone %}<div class="text-gray-500">{{ c.phone }}</div>{% endif %}
             </li>
           {% empty %}
-            <li class="px-6 py-4 text-sm text-red-600">
-              No contact on file — there is nobody here to write to.
+            <li class="px-4 sm:px-6 py-4 text-sm text-gray-500">
+              No contact recorded.
             </li>
           {% endfor %}
         </ul>
       </div>
     </div>
 
-    <div class="lg:col-span-2 space-y-6">
+    <div class="lg:col-span-2 space-y-4 sm:space-y-6">
       <div class="bg-white rounded-lg shadow-sm overflow-hidden">
-        <div class="px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+        <div class="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-200 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
           <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Service delivery on Connect</h2>
           {% if visits %}<span class="text-sm text-gray-500">{{ visits }} lifetime visits</span>{% endif %}
         </div>
         {% if opportunities %}
+          {% comment %}
+          The opportunity and its visit count are the row on a phone; country
+          and service return as the viewport earns them, and the table scrolls
+          sideways inside the card rather than being clipped.
+          {% endcomment %}
+          <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-white">
               <tr>
-                <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Opportunity</th>
-                <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Country</th>
-                <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Service</th>
-                <th class="px-6 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Visits</th>
+                <th class="px-4 sm:px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Opportunity</th>
+                <th class="hidden sm:table-cell px-4 sm:px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Country</th>
+                <th class="hidden md:table-cell px-4 sm:px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Service</th>
+                <th class="px-4 sm:px-6 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Visits</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
               {% for o in opportunities %}
                 <tr>
-                  <td class="px-6 py-3 text-sm text-gray-900">{{ o.name }}</td>
-                  <td class="px-6 py-3 text-sm text-gray-600">{{ o.country }}</td>
-                  <td class="px-6 py-3 text-sm text-gray-600">{{ o.service_slug }}</td>
-                  <td class="px-6 py-3 text-sm text-gray-900 text-right">{{ o.lifetime_visit_count }}</td>
+                  <td class="px-4 sm:px-6 py-3 text-sm text-gray-900">{{ o.name }}</td>
+                  <td class="hidden sm:table-cell px-4 sm:px-6 py-3 text-sm text-gray-600">{{ o.country }}</td>
+                  <td class="hidden md:table-cell px-4 sm:px-6 py-3 text-sm text-gray-600">{{ o.service_slug }}</td>
+                  <td class="px-4 sm:px-6 py-3 text-sm text-gray-900 text-right">{{ o.lifetime_visit_count }}</td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
+          </div>
         {% else %}
-          <div class="px-6 py-4 text-sm text-gray-500">
+          <div class="px-4 sm:px-6 py-4 text-sm text-gray-500">
             No Connect delivery recorded.
             {% if not connect_slugs %}
-              This organisation has no Connect workspace attributed to it, so there is
+              This organization has no Connect workspace attributed to it, so there is
               nothing to join on — not necessarily that they have never delivered.
             {% endif %}
           </div>
@@ -152,21 +159,21 @@ refuses to open. <details> needs no JavaScript at all.
       </div>
 
       <div class="bg-white rounded-lg shadow-sm overflow-hidden">
-        <div class="px-6 py-3 bg-gray-50 border-b border-gray-200">
+        <div class="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-200">
           <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Application history</h2>
         </div>
         {% if responses %}
           <div class="divide-y divide-gray-100">
             {% for r in responses %}
               <details class="group">
-                <summary class="px-6 py-3 cursor-pointer hover:bg-gray-50 transition list-none flex items-center gap-2 flex-wrap">
+                <summary class="px-4 sm:px-6 py-3 cursor-pointer hover:bg-gray-50 transition list-none flex items-center gap-x-2 gap-y-1 flex-wrap">
                   <i class="fa-solid fa-chevron-right text-xs text-gray-400 transition-transform group-open:rotate-90"></i>
                   <span class="text-sm font-medium text-gray-900">{{ r.solicitation.title }}</span>
                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">{{ r.solicitation.type_label }}</span>
                   {% if r.submission_date %}<span class="text-sm text-gray-500">{{ r.submission_date|date:"j M Y" }}</span>{% endif %}
-                  {% if r.match_basis %}<span class="text-xs text-gray-400 ml-auto">matched: {{ r.match_basis }}</span>{% endif %}
+                  {% if r.match_basis %}<span class="text-xs text-gray-400 w-full sm:w-auto sm:ml-auto">matched: {{ r.match_basis }}</span>{% endif %}
                 </summary>
-                <div class="px-6 pb-4 pt-1 bg-gray-50">
+                <div class="px-4 sm:px-6 pb-4 pt-1 bg-gray-50 break-words">
                   {% if r.source_url %}
                     <a href="{{ r.source_url }}" target="_blank" rel="noopener noreferrer"
                        class="inline-block mb-3 text-sm text-brand-indigo hover:text-brand-deep-purple">
@@ -189,7 +196,7 @@ refuses to open. <details> needs no JavaScript at all.
             {% endfor %}
           </div>
         {% else %}
-          <div class="px-6 py-4 text-sm text-gray-500">No applications recorded.</div>
+          <div class="px-4 sm:px-6 py-4 text-sm text-gray-500">No applications recorded.</div>
         {% endif %}
       </div>
     </div>

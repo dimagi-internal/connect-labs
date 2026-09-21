@@ -3,68 +3,74 @@
 {% block title %}Submissions awaiting a verdict{% endblock %}
 
 {% block content %}
-<div class="max-w-screen-2xl mx-auto px-4 py-6">
+<div class="max-w-screen-2xl mx-auto px-0 sm:px-4 py-5 sm:py-6">
 
   <a href="{% url 'marketplace:network' %}" class="text-sm text-gray-500 hover:text-gray-700">
     <i class="fa-solid fa-arrow-left mr-1"></i> Directory
   </a>
 
-  <div class="bg-white rounded-lg shadow-sm p-6 mt-2 mb-6">
-    <h1 class="text-2xl font-semibold text-brand-deep-purple mb-2">Submissions awaiting a verdict</h1>
+  <div class="bg-white rounded-lg shadow-sm p-4 sm:p-6 mt-2 mb-6">
+    <h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple mb-2">Submissions awaiting a verdict</h1>
     <p class="text-sm text-gray-600 max-w-3xl">
-      These applications could not be attributed to an organisation by an exact
+      These applications could not be attributed to an organization by an exact
       contact email or an exact name. They are listed rather than guessed at: a
-      misattributed submission puts one organisation's words on another
-      organisation's record, where they will be read as that organisation's own.
+      misattributed submission puts one organization's words on another
+      organization's record, where they will be read as that organization's own.
     </p>
     <div class="mt-4 pt-4 border-t border-gray-100 text-sm text-gray-700">
       <p class="mb-2">
         <strong>To resolve one:</strong> add a row to the
         <code class="px-1 py-0.5 bg-gray-100 rounded text-xs">{{ mapping_tab }}</code>
         tab of the LLO Directory with the round slug, the response row, the
-        organisation's exact name, and <em>why</em>. A verdict without a stated
+        organization's exact name, and <em>why</em>. A verdict without a stated
         reason is refused. Use <em>not an LLO</em> for a submission that is not
-        an organisation at all — otherwise it sits here for ever.
+        an organization at all — otherwise it sits here for ever.
         The next import applies it.
       </p>
       <a href="{{ directory_url }}" target="_blank" rel="noopener noreferrer"
-         class="inline-flex items-center px-3 py-1.5 bg-brand-indigo text-white text-sm font-medium rounded-lg hover:bg-brand-deep-purple transition">
+         class="inline-flex items-center justify-center px-3 py-1.5 bg-brand-indigo text-white text-sm font-medium rounded-lg hover:bg-brand-deep-purple transition">
         <i class="fa-solid fa-up-right-from-square mr-2"></i> Open the {{ mapping_tab }} tab
       </a>
       {% if decided_count %}
-        <span class="ml-3 text-gray-500">{{ decided_count }} already decided by a person.</span>
+        <span class="block sm:inline mt-2 sm:mt-0 sm:ml-3 text-gray-500">{{ decided_count }} already decided by a person.</span>
       {% endif %}
     </div>
   </div>
 
+  {% comment %}
+  The paste-ready identifiers and the organization as submitted are what a
+  person needs to act; the rest return as the viewport earns them and the
+  whole table scrolls sideways inside the card rather than being clipped.
+  {% endcomment %}
   <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
     <table class="min-w-full divide-y divide-gray-200">
       <thead class="bg-gray-50">
         <tr>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Round slug : row</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organisation as submitted</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email(s)</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Country</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+          <th class="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Round slug : row</th>
+          <th class="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organization as submitted</th>
+          <th class="hidden lg:table-cell px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email(s)</th>
+          <th class="hidden md:table-cell px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Country</th>
+          <th class="hidden sm:table-cell px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted</th>
+          <th class="hidden xl:table-cell px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
         </tr>
       </thead>
       <tbody class="bg-white divide-y divide-gray-200">
         {% for r in rows %}
           <tr class="hover:bg-gray-50 transition">
-            <td class="px-6 py-4 text-sm text-gray-600">
+            <td class="px-4 sm:px-6 py-4 text-sm text-gray-600">
               <div>{{ r.solicitation.title }}</div>
               {# paste-ready: exactly what the mapping tab's first two columns want #}
               <code class="text-xs bg-gray-100 rounded px-1 py-0.5">{{ r.solicitation.slug }}</code>
               <code class="text-xs bg-gray-100 rounded px-1 py-0.5">{{ r.source_row }}</code>
             </td>
-            <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ r.org_name|default:"(none given)" }}</td>
-            <td class="px-6 py-4 text-sm text-gray-600 break-all">{{ r.submitted_by_email|default:"—" }}</td>
-            <td class="px-6 py-4 text-sm text-gray-600">{{ r.country_as_submitted|truncatechars:34 }}</td>
-            <td class="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
+            <td class="px-4 sm:px-6 py-4 text-sm font-medium text-gray-900">{{ r.org_name|default:"(none given)" }}</td>
+            <td class="hidden lg:table-cell px-4 sm:px-6 py-4 text-sm text-gray-600 break-all">{{ r.submitted_by_email|default:"—" }}</td>
+            <td class="hidden md:table-cell px-4 sm:px-6 py-4 text-sm text-gray-600">{{ r.country_as_submitted|truncatechars:34 }}</td>
+            <td class="hidden sm:table-cell px-4 sm:px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
               {% if r.submission_date %}{{ r.submission_date|date:"j M Y" }}{% else %}—{% endif %}
             </td>
-            <td class="px-6 py-4 text-sm whitespace-nowrap">
+            <td class="hidden xl:table-cell px-4 sm:px-6 py-4 text-sm whitespace-nowrap">
               {% if r.source_url %}
                 <a href="{{ r.source_url }}" target="_blank" rel="noopener noreferrer"
                    class="text-brand-indigo hover:text-brand-deep-purple">row {{ r.source_row }}</a>
@@ -72,10 +78,11 @@
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="px-6 py-12 text-center text-sm text-gray-500">Nothing awaiting a verdict.</td></tr>
+          <tr><td colspan="6" class="px-4 sm:px-6 py-12 text-center text-sm text-gray-500">Nothing awaiting a verdict.</td></tr>
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 </div>
 {% endblock %}

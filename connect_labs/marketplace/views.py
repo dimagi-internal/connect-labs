@@ -88,25 +88,57 @@ def _population(request) -> dict:
 
 @login_required
 def home(request):
-    """The marketplace: what the network is, and what is open."""
+    """The marketplace: every kind of work on Connect, by program.
+
+    The landing page used to be a list of rounds, which answered a question
+    almost nobody arrives with. What the work IS comes first; the rounds are
+    the drill-down from it, one click away.
+
+    Spent and services are Pulse's own figures, so this page and the Pulse wall
+    cannot quote different numbers for the same program.
+    """
+    from connect_labs.pulse import costs
+
+    view = costs.parse_view(request.GET.get("costs"))
+    cards = queries.program_cards(view)
+    by_state = {key: [] for key, _, _ in queries.STATES}
+    for card in cards:
+        by_state[card["state"]].append(card)
+    sections = [
+        {"key": key, "title": title, "why": why, "cards": by_state[key]}
+        for key, title, why in queries.STATES
+        if by_state[key]
+    ]
     return render(
         request,
-        "marketplace/home.html",
+        "marketplace/programs.html",
         {
-            "totals": queries.network_totals(),
-            "open_rounds": queries.open_rounds(),
-            "closed_rounds": queries.closed_rounds(),
-            "unreadable": queries.unreadable_rounds(),
-            "unmatched_count": SolicitationResponse.objects.filter(
-                match_state=SolicitationResponse.MATCH_UNMATCHED
-            ).count(),
+            "sections": sections,
+            "costs_view": view,
+            "network": queries.network_totals(),
+            "open_round_count": queries.open_rounds().count(),
+            "totals": {
+                "programs": len(cards),
+                "spent": queries._money(sum(c["spent"] for c in cards)),
+                "fixed": queries._money(sum(c["fixed"] for c in cards)),
+                "fixed_raw": sum(c["fixed"] for c in cards),
+                "remaining": queries._money(sum(c["remaining"] for c in cards)),
+                "services": sum(c["services"] for c in cards),
+                "applied": len(
+                    set(
+                        SolicitationResponse.objects.exclude(llo_entity=None)
+                        .exclude(solicitation__delivery_type="")
+                        .values_list("llo_entity_id", flat=True)
+                    )
+                ),
+            },
         },
     )
 
 
 @login_required
 def network(request):
-    """The organisations, filterable, with the globe showing what is in scope."""
+    """The organizations, filterable, with the globe showing what is in scope."""
     state = _population(request)
     rows = state["rows"]
     delivering = state["delivering"]
@@ -180,61 +212,21 @@ def network_points(request):
 
 
 @login_required
-def programs_page(request):
-    """The marketplace by program: what has been paid, what is still funded,
-    and who is waiting to do the work.
-
-    Spent and services are Pulse's own figures, so this page and the Pulse wall
-    cannot quote different numbers for the same program.
-    """
-    from connect_labs.pulse import costs
-
-    view = costs.parse_view(request.GET.get("costs"))
-    cards = queries.program_cards(view)
-    by_state = {key: [] for key, _, _ in queries.STATES}
-    for card in cards:
-        by_state[card["state"]].append(card)
-    sections = [
-        {"key": key, "title": title, "why": why, "cards": by_state[key]}
-        for key, title, why in queries.STATES
-        if by_state[key]
-    ]
-    return render(
-        request,
-        "marketplace/programs.html",
-        {
-            "sections": sections,
-            "costs_view": view,
-            "totals": {
-                "programs": len(cards),
-                "spent": queries._money(sum(c["spent"] for c in cards)),
-                "fixed": queries._money(sum(c["fixed"] for c in cards)),
-                "fixed_raw": sum(c["fixed"] for c in cards),
-                "remaining": queries._money(sum(c["remaining"] for c in cards)),
-                "services": sum(c["services"] for c in cards),
-                "applied": len(
-                    set(
-                        SolicitationResponse.objects.exclude(llo_entity=None)
-                        .exclude(solicitation__delivery_type="")
-                        .values_list("llo_entity_id", flat=True)
-                    )
-                ),
-            },
-        },
-    )
-
-
-@login_required
 def rounds(request):
-    """Every round, open first."""
+    """Every expression of interest and request for proposals, open first.
+
+    The drill-down from the landing page: what the network has been asked, and
+    what it answered.
+    """
     return render(
         request,
         "marketplace/rounds.html",
         {
+            "network": queries.network_totals(),
             "groups": [
                 {"label": "Open now", "rounds": list(queries.open_rounds())},
                 {"label": "Closed", "rounds": list(queries.closed_rounds())},
-            ]
+            ],
         },
     )
 
