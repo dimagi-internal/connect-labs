@@ -116,20 +116,45 @@ class TestAccess:
 
 
 @pytest.mark.django_db
-class TestHome:
-    def test_states_the_network_in_figures(self, client, user, marketplace):
-        client.force_login(user)
-        body = client.get(reverse("marketplace:home")).content.decode()
-        assert "CONNECT MARKETPLACE" in body
-        assert "ORGANISATIONS" in body
-        assert "SERVICES DELIVERED" in body
+def test_no_page_leaks_a_template_comment(client, user, marketplace):
+    """Django's {# #} is single-line only; spread across lines it renders as
+    text. It has shipped onto a marketplace page before -- a paragraph of our
+    own notes printed on every organization's row."""
+    client.force_login(user)
+    for name, args in [
+        ("marketplace:home", []),
+        ("marketplace:network", []),
+        ("marketplace:rounds", []),
+        ("marketplace:round", ["chc-2025"]),
+        ("marketplace:organisation", [marketplace["live"].slug]),
+        ("marketplace:unmatched", []),
+    ]:
+        body = client.get(reverse(name, args=args)).content.decode()
+        assert "{#" not in body and "#}" not in body, name
 
-    def test_separates_open_rounds_from_closed_ones(self, client, user, marketplace):
+
+@pytest.mark.django_db
+class TestHome:
+    """The landing page is the programs page: what the work IS comes before
+    the rounds that sourced it, which are one click away."""
+
+    def test_is_titled_for_the_marketplace_and_nothing_longer(self, client, user, marketplace):
         client.force_login(user)
         body = client.get(reverse("marketplace:home")).content.decode()
-        assert "Open now" in body
-        assert "Matching Grant Pilot" in body
-        assert "Community Health Campaign" in body
+        assert ">Marketplace</h1>" in body
+        assert "SERVICES DELIVERED" in body
+        assert "every round they have answered" not in body
+
+    def test_leads_to_the_rounds_and_the_network(self, client, user, marketplace):
+        client.force_login(user)
+        body = client.get(reverse("marketplace:home")).content.decode()
+        assert reverse("marketplace:rounds") in body
+        assert reverse("marketplace:network") in body
+
+    def test_says_organizations_not_organisations(self, client, user, marketplace):
+        client.force_login(user)
+        body = client.get(reverse("marketplace:home")).content.decode()
+        assert "ORGANIZATIONS HAVE APPLIED" in body
 
     def test_the_home_page_carries_no_operational_warnings(self, client, user, marketplace):
         """This is the page the marketplace is shown from. Ingest state, the
@@ -143,6 +168,32 @@ class TestHome:
         body = client.get(reverse("marketplace:home")).content.decode()
         for noise in ("not ingested", "could not be read", "awaiting a verdict"):
             assert noise not in body, noise
+
+
+@pytest.mark.django_db
+class TestRoundsPage:
+    def test_separates_open_rounds_from_closed_ones(self, client, user, marketplace):
+        client.force_login(user)
+        body = client.get(reverse("marketplace:rounds")).content.decode()
+        assert "Open now" in body
+        assert "Matching Grant Pilot" in body
+        assert "Community Health Campaign" in body
+
+    def test_a_round_past_its_deadline_is_not_open_however_it_is_labelled(self, client, user, marketplace):
+        """`status` is typed onto the directory sheet by hand and goes stale
+        the day a deadline passes. The dates win."""
+        marketplace["open"].application_deadline = dt.date(2025, 4, 1)
+        marketplace["open"].save()
+        assert list(queries.open_rounds()) == []
+        assert marketplace["open"].slug in {r.slug for r in queries.closed_rounds()}
+
+    def test_a_decided_round_is_not_open_either(self, client, user, marketplace):
+        marketplace["open"].decision_on = dt.date(2026, 5, 1)
+        marketplace["open"].save()
+        assert list(queries.open_rounds()) == []
+
+    def test_a_rolling_round_with_no_deadline_stays_open(self, client, user, marketplace):
+        assert {r.slug for r in queries.open_rounds()} == {"matching-grant-2026"}
 
 
 @pytest.mark.django_db
@@ -206,7 +257,7 @@ class TestGlobePoints:
         assert len(data["points"]) == 2
 
     def test_the_globe_follows_the_filters(self, client, user, marketplace):
-        """The point of drawing the filtered set: 'on the bench in Malawi' is a
+        """The point of drawing the filtered set: 'available in Malawi' is a
         shape on the globe, not a number in a table."""
         client.force_login(user)
         data = client.get(reverse("marketplace:network_points"), {"segment": "delivering"}).json()
@@ -226,7 +277,7 @@ class TestNetworkFiltering:
         segments = {s["key"]: s["count"] for s in client.get(reverse("marketplace:network")).context["segments"]}
         assert segments["all"] == 2
         assert segments["delivering"] == 1
-        assert segments["bench"] == 1
+        assert segments["available"] == 1
 
     def test_facet_options_show_how_many_they_would_return(self, client, user, marketplace):
         """A facet count is worth having because you see the size of a filter

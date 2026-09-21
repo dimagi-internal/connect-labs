@@ -1,16 +1,20 @@
 {% extends "base.html" %}
 {% comment %}Tailwind, not Bootstrap. Brand values from tailwind/tailwind.css.{% endcomment %}
-{% block title %}Rounds{% endblock %}
+{% block title %}Expressions of interest{% endblock %}
 
 {% block content %}
-<div class="max-w-screen-2xl mx-auto px-8 py-6">
+<div class="max-w-screen-2xl mx-auto px-0 sm:px-6 lg:px-8 py-5 sm:py-6">
   <div class="text-[12.5px] text-gray-500 mb-3.5">
-    <a href="{% url 'marketplace:home' %}" class="hover:text-gray-700">Marketplace</a> · <span class="text-gray-900">Rounds</span>
+    <a href="{% url 'marketplace:home' %}" class="hover:text-gray-700">Marketplace</a> · <span class="text-gray-900">Expressions of interest</span>
   </div>
-  <div class="text-2xl font-semibold text-brand-deep-purple mb-1">Rounds</div>
+  <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-1">
+    <h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple">Expressions of interest</h1>
+    <span class="text-[13px] text-gray-500 tabular-nums">{{ network.rounds }} rounds · {{ network.applications }} applications</span>
+  </div>
   <div class="text-sm text-gray-600 mb-6 max-w-2xl">
     Every EOI and RFP the network has been asked to answer. One row is one form —
-    a single announcement can run several.
+    a single announcement can run several. A round is shown as open only while its
+    own deadline is still ahead of it.
   </div>
 
   {% for group in groups %}
@@ -19,32 +23,38 @@
         <span class="text-lg font-semibold text-brand-deep-purple">{{ group.label }}</span>
         <span class="text-sm text-gray-500">{{ group.rounds|length }}</span>
       </div>
+      {% comment %}
+      Identity and headline number stay on a phone; the rest return as the
+      viewport earns them, and anything still too wide scrolls inside the
+      card rather than being clipped by the body's overflow rule.
+      {% endcomment %}
       <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+        <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
-              <th class="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Round</th>
-              <th class="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Published</th>
-              <th class="px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Where</th>
-              <th class="px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Applicants</th>
-              <th class="px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organisations</th>
-              <th class="px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Read</th>
+              <th class="px-4 sm:px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Round</th>
+              <th class="hidden sm:table-cell px-4 sm:px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Published</th>
+              <th class="hidden xl:table-cell px-4 sm:px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Where</th>
+              <th class="px-4 sm:px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Applicants</th>
+              <th class="hidden md:table-cell px-4 sm:px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organizations</th>
+              <th class="hidden lg:table-cell px-4 sm:px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Read</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
             {% for r in group.rounds %}
               <tr class="hover:bg-gray-50 transition">
-                <td class="px-5 py-3">
+                <td class="px-4 sm:px-5 py-3">
                   <a href="{% url 'marketplace:round' r.slug %}" class="flex items-center gap-2.5">
                     <span class="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded {% if r.solicitation_type == 'rfp' %}bg-red-50 text-red-800{% else %}bg-indigo-50 text-brand-indigo{% endif %}">{{ r.solicitation_type|upper }}</span>
                     <span class="text-[13.5px] font-medium text-brand-deep-purple">{{ r.title }}</span>
                   </a>
                 </td>
-                <td class="px-5 py-3 text-[12.5px] text-gray-600 whitespace-nowrap">{% if r.published_on %}{{ r.published_on|date:"j M Y" }}{% else %}—{% endif %}</td>
-                <td class="px-5 py-3 text-[12.5px] text-gray-600">{{ r.target_countries|default:"—"|truncatechars:48 }}</td>
-                <td class="px-5 py-3 text-[13px] text-gray-900 text-right tabular-nums font-medium">{{ r.applications }}</td>
-                <td class="px-5 py-3 text-[13px] text-gray-600 text-right tabular-nums">{{ r.organisations }}</td>
-                <td class="px-5 py-3 text-right">
+                <td class="hidden sm:table-cell px-4 sm:px-5 py-3 text-[12.5px] text-gray-600 whitespace-nowrap">{% if r.published_on %}{{ r.published_on|date:"j M Y" }}{% else %}—{% endif %}</td>
+                <td class="hidden xl:table-cell px-4 sm:px-5 py-3 text-[12.5px] text-gray-600">{{ r.target_countries|default:"—"|truncatechars:48 }}</td>
+                <td class="px-4 sm:px-5 py-3 text-[13px] text-gray-900 text-right tabular-nums font-medium">{{ r.applications }}</td>
+                <td class="hidden md:table-cell px-4 sm:px-5 py-3 text-[13px] text-gray-600 text-right tabular-nums">{{ r.organisations }}</td>
+                <td class="hidden lg:table-cell px-4 sm:px-5 py-3 text-right">
                   {% if r.sa_access_state == 'ok' %}
                     <span class="text-[11.5px] text-gray-400">yes</span>
                   {% else %}
@@ -55,6 +65,7 @@
             {% endfor %}
           </tbody>
         </table>
+        </div>
       </div>
     {% endif %}
   {% endfor %}
