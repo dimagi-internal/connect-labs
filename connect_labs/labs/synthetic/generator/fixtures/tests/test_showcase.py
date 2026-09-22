@@ -372,12 +372,13 @@ def test_a_showcase_case_is_a_duplicate_of_a_standard_case_with_the_specifics_ap
         assert v["form_json"]["form"]["case"]["@case_id"] == v["entity_id"], "no template id may leak"
     assert len({v["xform_id"] for v in visits}) == len(visits)
     # dates: registration the day before the first weighing, weighings weekly,
-    # and the template's own offsets (birth -9, discharge -3) preserved
+    # born six and discharged two days before the first weighing (not the
+    # template's -9 / -3 from registration)
     assert reg["visit_date"] == "2026-03-01"
     assert [v["visit_date"] for v in weighings] == ["2026-03-02", "2026-03-09", "2026-03-16", "2026-03-23"]
     upd = form["subcase_0"]["case"]["update"]
     assert upd["reg_date"] == "2026-03-01"
-    assert upd["child_DOB"] == "2026-02-20" and upd["date_hospital_discharge"] == "2026-02-26"
+    assert upd["child_DOB"] == "2026-02-24" and upd["date_hospital_discharge"] == "2026-02-28"
     assert form["meta"]["timeEnd"] == "2026-03-01T10:15:00.000000Z", "time suffixes survive the shift"
     # weights and photos are the trajectory's, at every place the template kept a weight
     for v, p in zip(weighings, series):
@@ -402,6 +403,46 @@ def test_a_showcase_case_is_a_duplicate_of_a_standard_case_with_the_specifics_ap
         upd["gestational_age_at_birth_lmp"] == 31.0 and form["mothers_details"]["gestational_age_at_birth_lmp"] == 31.0
     )
     assert reg["showcase"]["cloned_from"] == "tmpl-1"
+
+
+def test_a_template_registered_weeks_after_birth_still_yields_a_newborn_showcase():
+    """The birth weight is 100 g under the first weighing; kept at the template's
+    age (29 days on opp 10019), that drew a flat first month under a case gaining
+    ~25 g/kg/day, and "Steady Gain" read as slow (2026-09-22). Birth is re-dated
+    to six days before the first weighing on every form; LMP moves with it so
+    gestational age still holds, and the ages derived from DOB follow."""
+    reg_date = dt.date(2026, 1, 20)
+    templates = _template_case(
+        "tmpl-old",
+        "flw_001",
+        5,
+        reg_date=reg_date,
+        extra={
+            "child_details": {"child_age": 29.0, "child_age_at_reg": 29.0, "child_age_at_reg_discharge_date": 28},
+            "mothers_details": {"lmp": (reg_date - dt.timedelta(days=29 + 31 * 7)).isoformat()},
+        },
+    )
+    for v in templates:
+        for upd in (
+            v["form_json"]["form"].get("subcase_0", {}).get("case", {}).get("update", {}),
+            v["form_json"]["form"]["case"]["update"],
+        ):
+            if "child_DOB" in upd:
+                upd["child_DOB"] = (reg_date - dt.timedelta(days=29)).isoformat()
+            if "date_hospital_discharge" in upd:
+                upd["date_hospital_discharge"] = (reg_date - dt.timedelta(days=28)).isoformat()
+    visits = _clone_build(templates, {"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"})
+    reg, weighings = visits[0], _weighings(visits)
+    form = reg["form_json"]["form"]
+    upd = form["subcase_0"]["case"]["update"]
+    assert upd["child_DOB"] == "2026-02-24"
+    assert upd["date_hospital_discharge"] == "2026-02-28"
+    for v in weighings:
+        assert v["form_json"]["form"]["case"]["update"]["child_DOB"] == "2026-02-24", "every form agrees"
+    assert form["child_details"]["child_age"] == 5.0 and form["child_details"]["child_age_at_reg"] == 5.0
+    assert form["child_details"]["child_age_at_reg_discharge_date"] == 1
+    lmp = dt.date.fromisoformat(form["mothers_details"]["lmp"])
+    assert (dt.date(2026, 2, 24) - lmp).days == 31 * 7, "gestational age at birth is unchanged"
 
 
 def test_the_template_is_picked_deterministically_and_from_the_same_worker_when_possible():

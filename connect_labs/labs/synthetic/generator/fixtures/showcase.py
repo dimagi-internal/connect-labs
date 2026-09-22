@@ -18,8 +18,10 @@ with the Child Registration Form and continues with Record Visit Details forms,
 each carrying the full field set the real app writes (hundreds of fields). The
 showcase builder deep-copies one such case -- registration plus the first N
 weighed follow-ups -- and then applies only the showcase specifics: identity,
-dates (shifted so the internal offsets between birth, discharge, registration
-and visits are the template's own), the weights, the photos, and a birth /
+dates (shifted so the offsets between registration and visits are the
+template's own; birth and discharge are re-dated to six and two days before
+the first weighing, so the derived birth weight is a growth story), the
+weights, the photos, and a birth /
 enrolment weight and gestational age consistent with the trajectory. Built from
 nothing, a showcase case was a weight and a photo per visit; the pipeline saw no
 registration, the record rail read as dashes and the growth chart had no age
@@ -254,6 +256,11 @@ _ENROL_WEIGHT_KEYS = {"child_weight_reg"}
 _GA_KEY = re.compile(r"^gestational_age")
 _ISO_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})(.*)$")
 _ALIVE_KEYS = {"child_alive"}
+_DOB_KEYS = {"child_DOB"}
+_DISCHARGE_KEYS = {"date_hospital_discharge"}
+_LMP_KEYS = {"lmp"}
+_AGE_AT_REG_KEYS = {"child_age", "child_age_at_reg"}
+_REG_TO_DISCHARGE_KEYS = {"child_age_at_reg_discharge_date"}
 
 
 def _form_name(visit: dict[str, Any]) -> str:
@@ -468,6 +475,48 @@ def _set_keys(node: Any, keys: set[str], value: Any) -> int:
     return n
 
 
+def _first_date(node: Any, keys: set[str]) -> dt.date | None:
+    for parent, key in _walk(node):
+        v = parent[key]
+        if isinstance(parent, dict) and key in keys and isinstance(v, str) and _ISO_DATE.match(v):
+            try:
+                return dt.date.fromisoformat(v[:10])
+            except ValueError:
+                continue
+    return None
+
+
+def _set_date_keys(node: Any, keys: set[str], new: Any) -> int:
+    """Rewrite every ISO date under ``keys`` to ``new(old_date)``, time suffix kept."""
+    n = 0
+    for parent, key in _walk(node):
+        v = parent[key]
+        if not (isinstance(parent, dict) and key in keys and isinstance(v, str)):
+            continue
+        m = _ISO_DATE.match(v)
+        if not m:
+            continue
+        try:
+            d = dt.date.fromisoformat(m.group(1))
+        except ValueError:
+            continue
+        parent[key] = new(d).isoformat() + m.group(2)
+        n += 1
+    return n
+
+
+def _set_number_keys(node: Any, keys: set[str], value: int) -> int:
+    """Set numeric fields under ``keys``, keeping each one's own type (the app
+    writes some as floats, some as ints)."""
+    n = 0
+    for parent, key in _walk(node):
+        v = parent[key]
+        if isinstance(parent, dict) and key in keys and isinstance(v, (int, float)) and not isinstance(v, bool):
+            parent[key] = type(v)(value)
+            n += 1
+    return n
+
+
 def _set_key_re(node: Any, pattern: re.Pattern, value: Any) -> int:
     n = 0
     for parent, key in _walk(node):
@@ -580,6 +629,18 @@ def _clone_case(
         template_mother_id=template_mother_id,
     )
 
+    # Birth and discharge are the showcase's, not the template's. The birth
+    # weight is derived as 100 g under the first weighing, which is only a
+    # growth story if the baby is days old at that weighing -- the synthesised
+    # path's six. A template registered a month after birth kept its offsets,
+    # and the chart drew a flat month from birth (+2.7 g/kg/day) under a case
+    # that then gains ~25 g/kg/day: "Steady Gain" read as slow (opp 10019,
+    # 2026-09-22). LMP moves with the DOB so gestational age still holds.
+    dob = start_date - dt.timedelta(days=6)
+    discharged = start_date - dt.timedelta(days=2)
+    old_dob = _first_date(reg["form_json"], _DOB_KEYS)
+    dob_delta = dob - old_dob if old_dob else dt.timedelta(0)
+
     def fit_record(fj: dict[str, Any]) -> None:
         # The record values that must agree with the trajectory, wherever a
         # form repeats them. A follow-up form carries the case's birth weight
@@ -589,6 +650,11 @@ def _clone_case(
         _set_keys(fj, _BIRTH_WEIGHT_KEYS, birth_weight)
         _set_keys(fj, _ENROL_WEIGHT_KEYS, first_reading)
         _set_key_re(fj, _GA_KEY, ga)
+        _set_date_keys(fj, _DOB_KEYS, lambda d: dob)
+        _set_date_keys(fj, _DISCHARGE_KEYS, lambda d: discharged)
+        _set_date_keys(fj, _LMP_KEYS, lambda d: d + dob_delta)
+        _set_number_keys(fj, _AGE_AT_REG_KEYS, (reg_date - dob).days)
+        _set_number_keys(fj, _REG_TO_DISCHARGE_KEYS, (reg_date - discharged).days)
 
     fj = reg["form_json"]
     fit_record(fj)
