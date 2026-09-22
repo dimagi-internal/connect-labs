@@ -98,6 +98,13 @@ def labs_commcare_callback(request: HttpRequest) -> HttpResponseRedirect:
     saved_state = request.session.get("commcare_oauth_state")
 
     if not state or state != saved_state:
+        # A second request for a callback that already succeeded — a double-click on
+        # Authorize, a refresh, a browser retry. The state was consumed by the first
+        # one, so without this the user lands on an error while actually connected.
+        completed = request.session.get("commcare_oauth_completed") or {}
+        if state and completed.get("state") == state and request.session.get("commcare_oauth"):
+            logger.info("CommCare OAuth callback replayed after success; redirecting quietly")
+            return redirect(completed.get("next") or "/audit/")
         logger.warning("CommCare OAuth callback with invalid state parameter", extra={"received_state": state})
         messages.error(request, "Invalid authentication state. Please try logging in again.")
         return redirect("/audit/")
@@ -174,6 +181,7 @@ def labs_commcare_callback(request: HttpRequest) -> HttpResponseRedirect:
         if not url_has_allowed_host_and_scheme(next_url, allowed_hosts=None):
             next_url = "/audit/"
 
+        request.session["commcare_oauth_completed"] = {"state": state, "next": next_url}
         return redirect(next_url)
 
     except Exception as e:
