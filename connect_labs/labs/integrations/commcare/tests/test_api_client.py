@@ -346,3 +346,47 @@ class TestIsCchqOauthActive:
         request = MagicMock()
         request.session = {}
         assert is_cchq_oauth_active(request) is False
+
+
+def _forms_page(form_ids, next_url=None):
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = 200
+    resp.raise_for_status.return_value = None
+    resp.json.return_value = {"objects": [{"id": fid} for fid in form_ids], "meta": {"next": next_url}}
+    return resp
+
+
+class TestFormPagingIsStable:
+    """#1958. HQ's form list sorts newest-first by default and pages by offset, so
+    a form submitted mid-walk shifts every row down one place and page k+1 opens
+    with page k's last form. On a live domain that duplicate aborted whole
+    45k-form cache writes (the unique key rejects a repeated visit_id) and
+    re-walked HQ on every view. Ascending order makes new arrivals append instead;
+    the walk also drops any id it has already yielded, as a safety net."""
+
+    NEXT = "?limit=2&offset=2&order_by=received_on"
+
+    @pytest.mark.parametrize("method", ["fetch_forms", "iter_forms"])
+    def test_first_request_asks_hq_for_ascending_received_on(self, method):
+        client = _client()
+        with (
+            patch("httpx.get", return_value=_forms_page(["a"])) as mock_get,
+            patch.object(client, "check_token_valid", return_value=True),
+        ):
+            list(getattr(client, method)(xmlns="x"))
+
+        assert mock_get.call_args_list[0].kwargs["params"]["order_by"] == "received_on"
+
+    @pytest.mark.parametrize("method", ["fetch_forms", "iter_forms"])
+    def test_a_form_repeated_across_a_page_boundary_is_yielded_once(self, method):
+        """The exact shape a mid-walk submission produces: page 2 opens with the
+        form that closed page 1."""
+        client = _client()
+        pages = [_forms_page(["a", "b"], next_url=self.NEXT), _forms_page(["b", "c"])]
+        with (
+            patch("httpx.get", side_effect=pages),
+            patch.object(client, "check_token_valid", return_value=True),
+        ):
+            forms = list(getattr(client, method)(xmlns="x"))
+
+        assert [f["id"] for f in forms] == ["a", "b", "c"]
