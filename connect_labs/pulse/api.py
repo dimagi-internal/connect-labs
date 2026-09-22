@@ -17,8 +17,7 @@ from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 
 from django.conf import settings
-from django.db.models import Count, Max, Min, Q, Sum
-from django.db.models.functions import TruncHour
+from django.db.models import Count, F, Func, IntegerField, Max, Min, Q, Sum, Value
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views import View
@@ -1417,7 +1416,17 @@ def _events_payload(rows, partners: bool = False) -> dict:
 # The header widget. Short, because the widget polls and a minute-old count is
 # the freshest the poller's own cadence can honestly give; long enough that
 # every page load across labs is one cache read, not one query each.
-WIDGET_CACHE_KEY = "pulse:widget:v1"
+WIDGET_CACHE_KEY = "pulse:widget:v2"
+
+
+class _HoursBefore(Func):
+    """Whole hours between two timestamps: ``floor((a - b) / 1 hour)``."""
+
+    template = "FLOOR(EXTRACT(EPOCH FROM (%(expressions)s)) / 3600)"
+    arg_joiner = " - "
+    output_field = IntegerField()
+
+
 WIDGET_CACHE_SECONDS = 60
 
 
@@ -1439,15 +1448,18 @@ def widget_payload(now: datetime | None = None) -> dict:
     test_opps = PulseOpportunity.objects.filter(is_test=True).values("opportunity_id")
     day = PulseEvent.objects.filter(sync_ts__gt=since, sync_ts__lte=now).exclude(opportunity_id__in=test_opps)
 
-    # 24 hour-wide bins, oldest first, the last being the hour now under way
-    # (so the first is part of an hour: the total is exactly 24 hours). Binned
-    # in SQL -- at most 25 rows back -- and pinned to UTC, because a bin
-    # boundary that moved with the session time zone would not be one.
-    current_hour = now.astimezone(dt_timezone.utc).replace(minute=0, second=0, microsecond=0)
+    # 24 rolling one-hour bins ending NOW, oldest first: bin 23 is the last
+    # sixty minutes. Clock-hour bins were wrong twice over. A 24-hour window
+    # spans 25 clock hours, so keeping 24 of them dropped whatever sat in the
+    # partial oldest hour from a total that claimed to be the whole day; and
+    # the newest bar held only the minutes since the top of the hour, so the
+    # sparkline fell off a cliff every hour on the hour. Rolling bins are all
+    # the same width and sum to exactly the window. Grouped in SQL, so at most
+    # 24 rows come back however busy the day was.
     hourly = [0] * 24
-    bins = day.annotate(hour=TruncHour("sync_ts", tzinfo=dt_timezone.utc)).values("hour").annotate(n=Count("id"))
+    bins = day.annotate(back=_HoursBefore(Value(now), F("sync_ts"))).values("back").annotate(n=Count("id"))
     for row in bins:
-        back = int((current_hour - row["hour"]).total_seconds() // 3600)
+        back = int(row["back"])
         if 0 <= back < 24:
             hourly[23 - back] += row["n"]
 
