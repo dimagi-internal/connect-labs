@@ -118,6 +118,13 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
     saved_state = request.session.get("oauth_state")
 
     if not state or state != saved_state:
+        # A second request for a callback that already succeeded — a double-click on
+        # Authorize, a refresh, a browser retry. The state was consumed by the first
+        # one, so without this the user lands on an error while actually logged in.
+        completed = request.session.get("oauth_completed") or {}
+        if state and completed.get("state") == state and request.session.get("labs_oauth"):
+            logger.info("OAuth callback replayed after success; redirecting quietly")
+            return redirect(completed.get("next") or "/labs/overview/")
         logger.warning("OAuth callback with invalid state parameter", extra={"received_state": state})
         messages.error(request, "Invalid authentication state. Please try logging in again.")
         return redirect("labs:oauth_initiate")
@@ -282,6 +289,7 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
     if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
         next_url = "/labs/overview/"
 
+    request.session["oauth_completed"] = {"state": state, "next": next_url}
     return redirect(next_url)
 
 
