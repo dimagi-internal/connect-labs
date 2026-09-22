@@ -22,7 +22,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views import View
 
-from connect_labs.pulse import costs, groups
+from connect_labs.pulse import costs, groups, live
 from connect_labs.pulse.client import PulseAuthError, get_poller_user
 from connect_labs.pulse.ingest import SCALAR_SCOPE_DRIFT
 from connect_labs.pulse.models import (
@@ -48,7 +48,16 @@ DEFAULT_REPLAY_HOURS = 48
 
 
 def _ingest_state() -> dict:
-    """Whether anything on screen can honestly be called live."""
+    """Whether anything on screen can honestly be called live.
+
+    Shared through the cache (see ``live.py``): it is the same answer for every
+    viewer, and every live poll on every open screen asks for it. Ingest drops
+    the cached copy whenever a tier succeeds or fails.
+    """
+    return live.cached(live.INGEST_KEY, _ingest_state_uncached)
+
+
+def _ingest_state_uncached() -> dict:
     rows = list(PulseIngestHealth.objects.all())
     healthy = bool(rows) and all(r.is_healthy for r in rows)
     last_success = max((r.last_success_at for r in rows if r.last_success_at), default=None)
@@ -1390,6 +1399,13 @@ class EventsView(View):
 
     def get(self, request):
         since = request.GET.get("since")
+        # Nearly every live poll arrives already caught up. If its cursor is at
+        # the newest visit Pulse holds, nothing is new in ANY scope, so it is
+        # answered from the cache without resolving a scope or reading events.
+        # Anything newer falls through to the full query as before.
+        if since and int(since) >= live.head():
+            return JsonResponse({"fields": EVENT_FIELDS, "events": [], "cursor": None, "ingest": _ingest_state()})
+
         limit = min(int(request.GET.get("limit", 500)), MAX_EVENTS)
         partners = _partner_names_allowed(request)
 
@@ -1413,10 +1429,11 @@ def _events_payload(rows, partners: bool = False) -> dict:
     }
 
 
-# The header widget. Short, because the widget polls and a minute-old count is
-# the freshest the poller's own cadence can honestly give; long enough that
-# every page load across labs is one cache read, not one query each.
-WIDGET_CACHE_KEY = "pulse:widget:v2"
+# The header widget refreshes at the hot ingest tier's cadence -- 15s, the
+# freshest the poller itself can be -- and every open page shares one
+# computation per interval: however many pages are open, the payload is built
+# at most four times a minute.
+WIDGET_CACHE_KEY = "pulse:widget:v3"
 
 
 class _HoursBefore(Func):
@@ -1427,7 +1444,7 @@ class _HoursBefore(Func):
     output_field = IntegerField()
 
 
-WIDGET_CACHE_SECONDS = 60
+WIDGET_CACHE_SECONDS = 15
 
 
 def widget_payload(now: datetime | None = None) -> dict:

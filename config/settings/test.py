@@ -56,6 +56,9 @@ LABS_PUBLIC_URL = "https://labs.connect.dimagi.com"
 # Summary caching off: tests assert the payload tracks DB changes within a
 # single run, which a TTL cache would (correctly, in prod) prevent.
 PULSE_SUMMARY_CACHE_SECONDS = 0
+# The live views' shared head and ingest verdict (pulse/live.py): off, so a
+# test that changes health rows or events sees the change on its next request.
+PULSE_LIVE_CACHE_SECONDS = 0
 
 # CACHES
 # ------------------------------------------------------------------------------
