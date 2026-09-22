@@ -127,7 +127,7 @@
         .then(function (data) {
           paint(el, data);
           painted = true;
-          every = Math.max(Number(data.poll_seconds) || 60, 30);
+          every = Math.max(Number(data.poll_seconds) || 60, 10);
         })
         .catch(function (err) {
           // Keep whatever is on screen and say so on hover, not in the header.
