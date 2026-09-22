@@ -17,6 +17,36 @@ from connect_labs.utils.lock import try_redis_lock
 
 logger = logging.getLogger(__name__)
 
+# HQ's form list sorts newest-first unless told otherwise
+# (XFormInstanceResource: .order_by('-received_on')) and pages by offset. On a
+# live domain every form submitted mid-walk then lands at offset 0 and pushes the
+# last form of page k onto page k+1, so a long walk sees duplicates. Those aborted
+# whole 45k-form cache writes on the unique visit_id key, and every view re-walked
+# HQ (#1958). Ascending order appends new submissions at the end instead. HQ carries
+# the param into meta.next, and `order_by` replaces the default sort; it does not
+# add to it.
+FORM_LIST_ORDER_BY = "received_on"
+
+
+def _first_sighting(forms: list[dict], seen: set) -> list[dict]:
+    """Drop forms already yielded earlier in this walk; record the rest as seen.
+
+    The ascending order above stops the common duplicate. This is the safety net
+    for anything it misses: a repeated form costs one skipped row, not an aborted
+    cache write.
+    """
+    fresh = []
+    for form in forms:
+        form_id = form.get("id")
+        if form_id is not None:
+            if form_id in seen:
+                continue
+            seen.add(form_id)
+        fresh.append(form)
+    if len(fresh) < len(forms):
+        logger.warning(f"[forms] Skipped {len(forms) - len(fresh)} form(s) already returned on an earlier page")
+    return fresh
+
 
 class CCHQAuthError(Exception):
     """
@@ -620,7 +650,7 @@ class CommCareDataAccess:
             )
 
         endpoint = f"{self.base_url}/a/{self.domain}/api/form/v1/"
-        params = {"limit": limit}
+        params = {"limit": limit, "order_by": FORM_LIST_ORDER_BY}
         if xmlns:
             params["xmlns"] = xmlns
         if app_id:
@@ -633,6 +663,7 @@ class CommCareDataAccess:
         headers = {"Authorization": f"Bearer {self.access_token}"}
 
         all_forms = []
+        seen_ids: set = set()
         next_url = endpoint
         page = 0
         retried_after_refresh = False
@@ -676,7 +707,7 @@ class CommCareDataAccess:
 
                 response.raise_for_status()
                 data = response.json()
-                forms = data.get("objects", [])
+                forms = _first_sighting(data.get("objects", []), seen_ids)
                 all_forms.extend(forms)
 
                 logger.info(f"Retrieved {len(forms)} forms (total so far: {len(all_forms)})")
@@ -733,7 +764,7 @@ class CommCareDataAccess:
             )
 
         endpoint = f"{self.base_url}/a/{self.domain}/api/form/v1/"
-        params = {"limit": limit}
+        params = {"limit": limit, "order_by": FORM_LIST_ORDER_BY}
         if xmlns:
             params["xmlns"] = xmlns
         if app_id:
@@ -745,6 +776,7 @@ class CommCareDataAccess:
 
         headers = {"Authorization": f"Bearer {self.access_token}"}
 
+        seen_ids: set = set()
         next_url = endpoint
         page = 0
         retried_after_refresh = False
@@ -787,7 +819,7 @@ class CommCareDataAccess:
                 # stays alive across yields, defeating the streaming win.
                 meta = data.get("meta", {})
                 next_url = meta.get("next")
-                forms = data.get("objects", [])
+                forms = _first_sighting(data.get("objects", []), seen_ids)
                 data = None  # free the parsed dict
 
                 for form in forms:
