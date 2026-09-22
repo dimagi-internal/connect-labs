@@ -23,9 +23,15 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 
+from connect_labs.labs.chrome import page_chrome
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import programs, queries
 from connect_labs.solicitations.local_models import SolicitationResponse
+
+# Nothing in the marketplace is scoped by the labs context selector, and on a
+# phone it was the largest thing on the screen. The Pulse widget takes its
+# place: the figures these pages quote are Pulse's own.
+MARKETPLACE_CHROME = page_chrome(labs_context=False, pulse_widget=True)
 
 
 def _controls(request) -> dict:
@@ -87,6 +93,7 @@ def _population(request) -> dict:
 
 
 @login_required
+@MARKETPLACE_CHROME
 def home(request):
     """The marketplace: every kind of work on Connect, by program.
 
@@ -137,6 +144,7 @@ def home(request):
 
 
 @login_required
+@MARKETPLACE_CHROME
 def network(request):
     """The organizations, filterable, with the globe showing what is in scope."""
     state = _population(request)
@@ -212,6 +220,7 @@ def network_points(request):
 
 
 @login_required
+@MARKETPLACE_CHROME
 def rounds(request):
     """Every expression of interest and request for proposals, open first.
 
@@ -232,6 +241,7 @@ def rounds(request):
 
 
 @login_required
+@MARKETPLACE_CHROME
 def round_detail(request, slug):
     """One round: who answered it, what it asked, and what became of them."""
     round_ = get_object_or_404(queries.rounds_with_counts(), slug=slug)
@@ -261,6 +271,7 @@ def round_detail(request, slug):
 
 
 @login_required
+@MARKETPLACE_CHROME
 def organisation(request, slug):
     org = get_object_or_404(LabsOrg.objects.select_related("marketplace_profile"), slug=slug)
     responses = list(org.solicitation_responses.select_related("solicitation").order_by("-submission_date"))
@@ -315,6 +326,7 @@ def organisation(request, slug):
 
 
 @login_required
+@MARKETPLACE_CHROME
 def unmatched(request):
     """Submissions no rule could safely attribute — the review queue.
 

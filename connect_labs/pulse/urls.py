@@ -11,6 +11,8 @@ urlpatterns = [
     path("api/replay/", api.ReplayView.as_view(), name="api_replay"),
     path("api/grid/", api.GridView.as_view(), name="api_grid"),
     path("api/network/", network_api.NetworkView.as_view(), name="api_network"),
+    # The header widget any labs page can opt into. Aggregates only, no names.
+    path("api/widget/", api.WidgetView.as_view(), name="api_widget"),
     # Drill-down, fetched on click rather than polled with the summary.
     path("api/partner/", api.PartnerView.as_view(), name="api_partner"),
     path("api/worker/", api.WorkerView.as_view(), name="api_worker"),
