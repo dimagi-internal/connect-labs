@@ -7,7 +7,7 @@
  * arrivals, and dropping them would leave the totals disagreeing with the
  * ticker the moment you resumed.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -131,5 +131,66 @@ describe('canClaimLive', () => {
     expect(store.canClaimLive).toBe(true);
     store.mode = 'replay';
     expect(store.canClaimLive).toBe(false);
+  });
+});
+
+describe('live polling and hidden tabs', () => {
+  // store.js reaches for the page's `document` and `fetch`; these stand in.
+  let listeners;
+
+  beforeEach(() => {
+    listeners = {};
+    globalThis.document = {
+      hidden: false,
+      addEventListener: (type, fn) => (listeners[type] = fn),
+    };
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        fields: FIELDS,
+        events: [],
+        cursor: null,
+        ingest: { live_ok: true },
+      }),
+    }));
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete globalThis.document;
+    delete globalThis.fetch;
+  });
+
+  it('asks for nothing while the tab is hidden', async () => {
+    const store = new (loadStore())({ mode: 'live', livePollMs: 5000 });
+    await store.startLive();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    document.hidden = true;
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('catches up the moment the tab is shown again', async () => {
+    const store = new (loadStore())({ mode: 'live', livePollMs: 5000 });
+    await store.startLive();
+    document.hidden = true;
+    await vi.advanceTimersByTimeAsync(60000);
+
+    document.hidden = false;
+    listeners.visibilitychange();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not wake live polling after switching to replay', async () => {
+    const store = new (loadStore())({ mode: 'live', livePollMs: 5000 });
+    store.loadReplayWindow = vi.fn().mockResolvedValue(undefined);
+    await store.startLive();
+    await store.setMode('replay');
+
+    listeners.visibilitychange();
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

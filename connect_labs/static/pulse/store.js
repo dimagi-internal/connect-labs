@@ -275,6 +275,11 @@
 
     async startLive() {
       const poll = async () => {
+        // A screen nobody can see has nothing to show. A wall display is
+        // always visible; a night map left in a background tab is not, and
+        // used to ask for events every five seconds for as long as it stayed
+        // open. It catches up the moment the tab is shown again (below).
+        if (typeof document !== 'undefined' && document.hidden) return;
         try {
           const url = this.cursor
             ? this._url('/api/events/', { since: this.cursor })
@@ -306,6 +311,14 @@
           this.emit('ingest', this.ingest);
         }
       };
+      this._livePoll = poll;
+      if (typeof document !== 'undefined' && !this._onVisible) {
+        this._onVisible = () => {
+          if (!document.hidden && this.mode === 'live' && this._livePoll)
+            this._livePoll();
+        };
+        document.addEventListener('visibilitychange', this._onVisible);
+      }
       await poll();
       this._livePollTimer = setInterval(poll, this.opts.livePollMs);
     }

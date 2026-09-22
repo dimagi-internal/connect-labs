@@ -46,6 +46,7 @@ from django.db import transaction
 from django.db.models import Count as models_count
 from django.utils import timezone
 
+from connect_labs.pulse import live
 from connect_labs.pulse.models import (
     TIER_COLD,
     TIER_DORMANT,
@@ -781,6 +782,9 @@ def _store_events(rows, opp) -> tuple[int, int]:
         ignore_conflicts=True,
         batch_size=500,
     )
+    # Tell the live views the head may have moved, so a waiting screen sees
+    # these on its next poll rather than when the cached head expires.
+    live.events_arrived()
     return len(created), off_map
 
 
@@ -924,6 +928,7 @@ def record_success(tier: str) -> None:
     health.consecutive_failures = 0
     health.last_error = ""
     health.save()
+    live.ingest_changed()
 
 
 def record_failure(tier: str, error: str) -> None:
@@ -934,6 +939,7 @@ def record_failure(tier: str, error: str) -> None:
     health.last_error = str(error)[:2000]
     health.consecutive_failures += 1
     health.save()
+    live.ingest_changed()
     logger.error("[pulse] %s tier failed (%sx): %s", tier, health.consecutive_failures, error)
 
 
