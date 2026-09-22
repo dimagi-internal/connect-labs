@@ -18,6 +18,7 @@ from datetime import timezone as dt_timezone
 
 from django.conf import settings
 from django.db.models import Count, Max, Min, Q, Sum
+from django.db.models.functions import TruncHour
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views import View
@@ -1411,6 +1412,77 @@ def _events_payload(rows, partners: bool = False) -> dict:
         "cursor": rows[-1].connect_visit_id if rows else None,
         "ingest": _ingest_state(),
     }
+
+
+# The header widget. Short, because the widget polls and a minute-old count is
+# the freshest the poller's own cadence can honestly give; long enough that
+# every page load across labs is one cache read, not one query each.
+WIDGET_CACHE_KEY = "pulse:widget:v1"
+WIDGET_CACHE_SECONDS = 60
+
+
+def widget_payload(now: datetime | None = None) -> dict:
+    """Pulse in one line: is it live, how much in the last day, and the latest.
+
+    Built only from the last 24 hours on ``sync_ts`` -- indexed, and the clock
+    Pulse trusts (``field_ts`` comes off a handset). Nothing here touches the
+    full-history aggregates behind SummaryView, which is what makes it safe to
+    put on every page.
+
+    It carries no partner identity and no coordinates: a service, a country,
+    and counts. So it needs no naming entitlement and cannot leak one. The
+    ingest verdict is reduced to live-or-not and the data's age; the poller
+    account and its errors stay on the pages built to show them.
+    """
+    now = now or timezone.now()
+    since = now - timedelta(hours=24)
+    test_opps = PulseOpportunity.objects.filter(is_test=True).values("opportunity_id")
+    day = PulseEvent.objects.filter(sync_ts__gt=since, sync_ts__lte=now).exclude(opportunity_id__in=test_opps)
+
+    # 24 hour-wide bins, oldest first, the last being the hour now under way
+    # (so the first is part of an hour: the total is exactly 24 hours). Binned
+    # in SQL -- at most 25 rows back -- and pinned to UTC, because a bin
+    # boundary that moved with the session time zone would not be one.
+    current_hour = now.astimezone(dt_timezone.utc).replace(minute=0, second=0, microsecond=0)
+    hourly = [0] * 24
+    bins = day.annotate(hour=TruncHour("sync_ts", tzinfo=dt_timezone.utc)).values("hour").annotate(n=Count("id"))
+    for row in bins:
+        back = int((current_hour - row["hour"]).total_seconds() // 3600)
+        if 0 <= back < 24:
+            hourly[23 - back] += row["n"]
+
+    latest = day.exclude(service_slug="").order_by("-sync_ts").only("service_slug", "country", "sync_ts").first()
+    ingest = _ingest_state()
+    return {
+        "live": bool(ingest["live_ok"]),
+        "staleness_seconds": ingest["staleness_seconds"],
+        "services_24h": sum(hourly),
+        "hourly": hourly,
+        "countries_24h": day.exclude(country="").values("country").distinct().count(),
+        "latest": (
+            {
+                "service": service_label(latest.service_slug),
+                "country": COUNTRY_NAMES.get(latest.country, "") if latest.country else "",
+                "seconds_ago": max(int((now - latest.sync_ts).total_seconds()), 0),
+            }
+            if latest
+            else None
+        ),
+        "poll_seconds": max(WIDGET_CACHE_SECONDS, TIER_INTERVALS_SECONDS[TIER_HOT]),
+    }
+
+
+class WidgetView(View):
+    """The Pulse header widget's data. See ``widget_payload``."""
+
+    def get(self, request):
+        from django.core.cache import cache
+
+        payload = cache.get(WIDGET_CACHE_KEY)
+        if payload is None:
+            payload = widget_payload()
+            cache.set(WIDGET_CACHE_KEY, payload, WIDGET_CACHE_SECONDS)
+        return JsonResponse(payload)
 
 
 class ReplayView(View):

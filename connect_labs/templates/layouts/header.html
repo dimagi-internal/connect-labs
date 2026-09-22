@@ -4,15 +4,24 @@
 <header class="fixed top-0 left-16 right-0 bg-gray-100 z-30 h-16">
     <div class="flex items-center justify-between w-full h-full px-4 py-2">
         <!-- Left Section: Module Name -->
-        <h1 class="text-lg text-brand-deep-purple font-medium">
+        <h1 class="text-lg text-brand-deep-purple font-medium truncate min-w-0 mr-3">
             <a href="{% url 'labs:overview' %}" class="hover:underline">{{ header_title|default:"Connect Labs" }}</a>
         </h1>
 
         {% if request.user.is_authenticated %}
         <!-- Right Section: Org, Profile Dropdown -->
-        <div class="flex items-center gap-x-2">
-            <!-- Labs Context Selector -->
-            {% include "labs/context_selector.html" %}
+        <div class="flex items-center gap-x-2 min-w-0">
+            {% comment %}
+            What sits here is the page's choice -- see connect_labs/labs/chrome.py.
+            The context selector is on unless a page opts out; the Pulse widget
+            is off unless a page opts in.
+            {% endcomment %}
+            {% if page_chrome.pulse_widget %}
+              {% include "pulse/widget.html" %}
+            {% endif %}
+            {% if not page_chrome or page_chrome.labs_context %}
+              {% include "labs/context_selector.html" %}
+            {% endif %}
 
             <!-- User Profile -->
             <div x-data="{ open: false }" @click.away="open = false" class="relative">
