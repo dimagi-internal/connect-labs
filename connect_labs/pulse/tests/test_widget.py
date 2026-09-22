@@ -19,8 +19,8 @@ from connect_labs.pulse.api import widget_payload
 from connect_labs.pulse.models import PulseEvent, PulseIngestHealth, PulseOpportunity
 
 
-def event(vid, *, synced_ago, opp=765, service="kmc", country="NG", org="partner-workspace"):
-    ts = timezone.now() - synced_ago
+def event(vid, *, now, synced_ago, opp=765, service="kmc", country="NG", org="partner-workspace"):
+    ts = now - synced_ago
     return PulseEvent.objects.create(
         connect_visit_id=vid,
         opportunity_id=opp,
@@ -38,50 +38,82 @@ def event(vid, *, synced_ago, opp=765, service="kmc", country="NG", org="partner
 
 @pytest.fixture
 def pulse(db, settings, django_user_model):
+    """The fixture's own "now", yielded so each test passes the same instant to
+    widget_payload: a bin boundary is then a fact of the test, not of the wall
+    clock it happened to run at."""
+    now = timezone.now()
     cache.clear()
     django_user_model.objects.create(username="poller-account")
     settings.PULSE_POLLER_USERNAME = "poller-account"
     PulseOpportunity.objects.create(opportunity_id=765, name="KMC Nigeria", is_active=True)
     PulseOpportunity.objects.create(opportunity_id=999, name="Sandbox", is_test=True)
 
-    event(1, synced_ago=timedelta(minutes=4))
-    event(2, synced_ago=timedelta(minutes=40), service="chc", country="UG")
-    event(3, synced_ago=timedelta(hours=5))
-    event(4, synced_ago=timedelta(hours=23, minutes=30))
-    event(5, synced_ago=timedelta(hours=30))  # outside the day
-    event(6, synced_ago=timedelta(minutes=1), opp=999, service="ace")  # test work
+    event(1, now=now, synced_ago=timedelta(minutes=4))
+    event(2, now=now, synced_ago=timedelta(minutes=40), service="chc", country="UG")
+    event(3, now=now, synced_ago=timedelta(hours=5, minutes=10))
+    # Inside the day by one minute. Clock-hour bins dropped a service like this
+    # one whenever the test ran in the first part of an hour.
+    event(4, now=now, synced_ago=timedelta(hours=23, minutes=59))
+    event(5, now=now, synced_ago=timedelta(hours=30))  # outside the day
+    event(6, now=now, synced_ago=timedelta(minutes=1), opp=999, service="ace")  # test work
     ingest.record_success("tail")
-    yield
+    yield now
     cache.clear()
 
 
 @pytest.mark.django_db
 class TestTheFigures:
     def test_counts_the_last_24_hours_of_real_work_only(self, pulse):
-        data = widget_payload()
+        data = widget_payload(now=pulse)
         assert data["services_24h"] == 4
         assert data["countries_24h"] == 2
 
     def test_hourly_bins_are_24_long_and_sum_to_the_count(self, pulse):
-        data = widget_payload()
+        data = widget_payload(now=pulse)
         assert len(data["hourly"]) == 24
         assert sum(data["hourly"]) == data["services_24h"]
 
-    def test_the_newest_bin_is_last(self, pulse):
-        """Oldest first, so the sparkline reads left to right as time does."""
-        hourly = widget_payload()["hourly"]
-        assert hourly[-1] + hourly[-2] >= 1  # the 4-minute-old service is at the end
-        assert hourly[0] + hourly[1] >= 1  # the 23.5-hour-old one at the start
+    def test_bins_are_rolling_hours_ending_now(self, pulse):
+        """Oldest first, so the sparkline reads left to right as time does, and
+        every bar is a full hour: the last is the last sixty minutes, not the
+        minutes since the top of the clock hour."""
+        hourly = widget_payload(now=pulse)["hourly"]
+        assert hourly[23] == 2  # 4 and 40 minutes ago
+        assert hourly[23 - 5] == 1  # five hours and ten minutes ago
+        assert hourly[0] == 1  # 23h59m ago: the oldest bar, not dropped
+        assert sum(hourly) == 4
+
+    @pytest.mark.parametrize("minute", [0, 1, 29, 30, 59])
+    def test_the_total_never_depends_on_the_minute_it_is_asked(self, pulse, minute):
+        """The bug this replaced passed or failed with the clock."""
+        at = pulse.replace(minute=minute, second=0, microsecond=0) + timedelta(hours=1)
+        PulseEvent.objects.all().delete()
+        for i, age in enumerate(
+            [timedelta(seconds=30), timedelta(hours=12), timedelta(hours=23, minutes=59, seconds=30)]
+        ):
+            PulseEvent.objects.create(
+                connect_visit_id=100 + i,
+                opportunity_id=765,
+                field_ts=at - age,
+                sync_ts=at - age,
+                country="NG",
+                status="approved",
+                service_slug="kmc",
+                worker_hash="w",
+            )
+        data = widget_payload(now=at)
+        assert data["services_24h"] == 3
+        assert data["hourly"][0] == 1 and data["hourly"][23] == 1
 
     def test_the_latest_service_is_named_the_way_pulse_names_it(self, pulse):
-        latest = widget_payload()["latest"]
+        latest = widget_payload(now=pulse)["latest"]
         assert latest["service"] == "Kangaroo Mother Care"
         assert latest["country"] == "Nigeria"
         assert 200 <= latest["seconds_ago"] <= 300
 
     def test_test_work_is_never_the_latest(self, pulse):
         """The sandbox synced a minute ago; the widget must not lead with it."""
-        assert widget_payload()["latest"]["service"] != "ACE"
+        assert widget_payload(now=pulse)["latest"]["service"] != "ACE"
 
     def test_a_quiet_day_says_so_rather_than_failing(self, db, settings, django_user_model):
         cache.clear()
@@ -124,11 +156,11 @@ class TestWhatItMustNotCarry:
 @pytest.mark.django_db
 class TestLiveMeansLive:
     def test_healthy_ingest_is_live(self, pulse):
-        assert widget_payload()["live"] is True
+        assert widget_payload(now=pulse)["live"] is True
 
     def test_a_stale_stream_is_not_live(self, pulse):
         PulseIngestHealth.objects.filter(tier="tail").update(last_success_at=timezone.now() - timedelta(days=2))
-        assert widget_payload()["live"] is False
+        assert widget_payload(now=pulse)["live"] is False
 
     def test_no_ingest_at_all_is_not_live(self, db, settings, django_user_model):
         cache.clear()
@@ -138,9 +170,13 @@ class TestLiveMeansLive:
 @pytest.mark.django_db
 class TestTheEndpoint:
     def test_serves_json_and_is_cached(self, client, pulse, django_assert_max_num_queries):
+        """The view reads the real clock, not the fixture's, so this counts
+        only what stays inside the day however long the run takes to reach it:
+        the 23h59m service is excluded rather than raced."""
+        PulseEvent.objects.filter(connect_visit_id=4).delete()
         first = client.get(reverse("pulse:api_widget"))
         assert first.status_code == 200
-        assert first.json()["services_24h"] == 4
+        assert first.json()["services_24h"] == 3
         with django_assert_max_num_queries(2):  # session/auth only; the payload is a cache read
             again = client.get(reverse("pulse:api_widget"))
         assert again.json() == first.json()
