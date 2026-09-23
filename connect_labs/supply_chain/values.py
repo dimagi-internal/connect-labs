@@ -73,6 +73,19 @@ class NotCosted:
     reason: str
 
 
+@dataclass(frozen=True)
+class NotForecast:
+    """A consumption figure that does not apply, rather than one that is missing.
+
+    A dispenser is held and moved but never consumed, so its "months of
+    stock" is not unknown -- it is not a quantity at all. Reporting it as
+    `Unconfirmed` would send somebody looking for consumption data that will
+    never exist; reporting a number would invent one.
+    """
+
+    reason: str
+
+
 Derived = Money | Unconfirmed
 DerivedQuantity = Quantity | Unconfirmed
 
@@ -118,6 +131,8 @@ def to_wire(value: Derived | DerivedQuantity) -> dict:
         return {"amount": decimal_string(value.amount), "unit": value.unit}
     if isinstance(value, NotCosted):
         return {"not_costed": value.reason}
+    if isinstance(value, NotForecast):
+        return {"not_forecast": value.reason}
     return {"unconfirmed": list(value.reasons)}
 
 

@@ -340,6 +340,28 @@ class FulfilmentRepositoryMixin:
             invoice.save(update_fields=["status", "updated_at"])
         return _fresh(payment)
 
+    def confirm_payment(self, payment_id, confirmed_on=None):
+        """The payee's word that the money arrived.
+
+        Not before the payment was made: a confirmation dated earlier than the
+        settlement it confirms is a typo that would read as a fact.
+        """
+        from datetime import date
+
+        from connect_labs.supply_chain.data_access import _fresh
+
+        payment = self.get_payment(payment_id)
+        if payment is None:
+            raise ValueError(f"payment {payment_id} does not exist in this programme")
+        on = date.fromisoformat(confirmed_on) if isinstance(confirmed_on, str) else (confirmed_on or date.today())
+        if on < payment.paid_on:
+            raise ValueError(
+                f"a confirmation on {on} is before the payment was made on {payment.paid_on}; check the date"
+            )
+        payment.confirmed_by_payee_on = on
+        payment.save(update_fields=["confirmed_by_payee_on", "updated_at"])
+        return _fresh(payment)
+
     # ---- documents -------------------------------------------------------
 
     def list_documents(self, kind=None, **links):

@@ -44,6 +44,7 @@ CHECK_LABELS = {
     "shipment_overdue": "Shipment past its expected date",
     "shipment_documents_outstanding": "Documents it needs, not on file",
     "award_awaiting_approval": "Awarded, awaiting approval",
+    "payment_unconfirmed": "Payment not confirmed by the payee",
     "contract_delivery_overdue": "Delivery past the promised lead time",
 }
 
@@ -147,6 +148,9 @@ def figure_text(cell):
     if "not_costed" in cell:
         # Not a gap: the goods were never bought, and the reason is the text.
         return cell["not_costed"]
+    if "not_forecast" in cell:
+        # Not a gap either: durable equipment is never consumed.
+        return "durable — not forecast"
     amount = cell.get("amount")
     unit = cell.get("unit") or cell.get("currency") or ""
     return f"{amount} {unit}".strip()

@@ -877,6 +877,8 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         _refuse_a_price_on_what_is_not_bought(data.get("consideration") or "priced", data.get("unit_price"))
         if data.get("award_id") is not None:
             self._require_approved_award(data["award_id"])
+        if data.get("covers_shortfall_of_id") is not None:
+            self._require_contract_to_cover(data["covers_shortfall_of_id"], covering_id=None)
         return _fresh(
             Contract.objects.create(
                 program_id=self._require_program(),
@@ -889,12 +891,21 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
             )
         )
 
+    def _require_contract_to_cover(self, short_id, covering_id):
+        """The short order a covering one names: in this programme, and not itself."""
+        if covering_id is not None and int(short_id) == covering_id:
+            raise ValueError("an order cannot cover its own shortfall; name the order that came up short")
+        if self.get_contract(short_id) is None:
+            raise ValueError(f"contract {short_id} does not exist in this programme")
+
     def update_contract(self, contract_id, data):
         found = self.get_contract(contract_id)
         if found is None:
             raise ValueError(f"contract {contract_id} not found")
         if data.get("award_id") is not None and data["award_id"] != found.award_id:
             self._require_approved_award(data["award_id"])
+        if data.get("covers_shortfall_of_id") is not None:
+            self._require_contract_to_cover(data["covers_shortfall_of_id"], covering_id=found.pk)
         for key, value in _columns(Contract, data).items():
             setattr(found, key, value)
         _refuse_a_price_on_what_is_not_bought(found.consideration, found.unit_price)

@@ -105,6 +105,8 @@ def item(obj) -> dict:
         "components": obj.components,
         "is_kit": obj.is_kit,
         "one_course_is": obj.one_course_is,
+        "stock_class": obj.stock_class,
+        "is_durable": obj.is_durable,
         "reference_scope": _reference_scope(obj.scope_key),
     }
 
@@ -262,6 +264,7 @@ def contract(obj) -> dict:
         "delivery_supply_point_id": obj.delivery_supply_point_id,
         "promised_lead_time_days": obj.promised_lead_time_days,
         "consideration": obj.consideration,
+        "covers_shortfall_of_id": obj.covers_shortfall_of_id,
         **_sourced(obj),
     }
 
@@ -352,6 +355,7 @@ def invoice(obj) -> dict:
                 "currency": payment.currency,
                 "method": payment.method,
                 "reference": payment.reference,
+                "confirmed_by_payee_on": _date(payment.confirmed_by_payee_on),
                 **_sourced(payment),
             }
             for payment in obj.payments.all()
@@ -370,6 +374,7 @@ def payment(obj) -> dict:
         "currency": obj.currency,
         "method": obj.method,
         "reference": obj.reference,
+        "confirmed_by_payee_on": _date(obj.confirmed_by_payee_on),
         **_sourced(obj),
     }
 

@@ -82,6 +82,7 @@ KIND_CATEGORIES = {
     "stock_never_reported": "missing",
     "shipment_documents_outstanding": "missing",
     "award_awaiting_approval": "missing",
+    "payment_unconfirmed": "missing",
     # conflict -- two records disagree
     "award_not_contracted": "conflict",
     "invoice_over_billed": "conflict",
@@ -98,6 +99,15 @@ KIND_CATEGORIES = {
 }
 
 KINDS = tuple(KIND_CATEGORIES)
+
+# How long after a payment its payee's confirmation is a missing fact rather
+# than simply not yet arrived. This is the one number in this module that is
+# not read from a row, and it is deliberately not a threshold on a figure:
+# it is the grace between "we sent it" and "they should have said so", the
+# same allowance every check that dates from `since` makes implicitly. A
+# payment made yesterday is not a missing confirmation, and reporting it as
+# one would put every settlement on the list the day it happened.
+PAYMENT_CONFIRMATION_GRACE_DAYS = 14
 
 
 def _check(kind, *, subject_type, subject_id, label, audience, facts=None, since=None, as_of=None):
@@ -401,6 +411,7 @@ def _fulfilment(access, as_of):
         .select_related("contract__supplier")
     )
     out += _late_shipments(access, as_of)
+    out += _unconfirmed_payments(access, as_of)
     out += _outstanding_documents(access, as_of)
 
     for shipment in uncertified:
@@ -436,7 +447,9 @@ def _contract_lateness(contract, match, as_of):
         return None
     if contract.signed_on is None or contract.promised_lead_time_days is None:
         return None
-    if match["status"] in ("fully_received", "over_received"):
+    # A shortfall another order was placed to buy is not a late delivery:
+    # nobody is waiting on this supplier for it any more.
+    if match["status"] in ("fully_received", "over_received", "shortfall_covered"):
         return None
     expected_on = contract.signed_on + timedelta(days=contract.promised_lead_time_days)
     today = as_of or date.today()
@@ -505,6 +518,46 @@ def _late_shipments(access, as_of):
                     "contract_id": shipment.contract_id,
                 },
                 since=shipment.expected_on,
+                as_of=as_of,
+            )
+        )
+    return out
+
+
+def _unconfirmed_payments(access, as_of):
+    """Payments the payee has not confirmed receiving, past the grace period.
+
+    Aged from the payment date, so `days_open` is how long ago we paid. The
+    supplier is the only one who can answer, and the answer is one date.
+    """
+    from connect_labs.supply_chain.models import Payment
+
+    today = as_of or date.today()
+    cutoff = today - timedelta(days=PAYMENT_CONFIRMATION_GRACE_DAYS)
+    unconfirmed = Payment.objects.filter(
+        invoice__contract__program_id=access.program_id,
+        confirmed_by_payee_on__isnull=True,
+        paid_on__lt=cutoff,
+    ).select_related("invoice__contract__supplier")
+    out = []
+    for payment in unconfirmed:
+        contract = payment.invoice.contract
+        out.append(
+            _check(
+                "payment_unconfirmed",
+                subject_type="payment",
+                subject_id=payment.pk,
+                label=f"{contract.supplier.name} — {payment.reference or payment.invoice.reference or payment.pk}",
+                audience="supplier",
+                facts={
+                    "amount": decimal_string(payment.amount),
+                    "currency": payment.currency,
+                    "paid_on": payment.paid_on.isoformat(),
+                    "invoice_id": payment.invoice_id,
+                    "contract_id": contract.pk,
+                    "supplier": _supplier_fact(contract.supplier),
+                },
+                since=payment.paid_on,
                 as_of=as_of,
             )
         )

@@ -193,6 +193,11 @@ urlpatterns = [
         fulfilment_views.PaymentRecordView.as_view(),
         name="payment_record",
     ),
+    path(
+        "payments/<int:payment_id>/confirm/",
+        fulfilment_views.PaymentConfirmView.as_view(),
+        name="payment_confirm",
+    ),
     # Before Stock, the way the work runs: stock has to have somewhere to rest
     # before there is any to look at.
     path("network/", network_views.NetworkView.as_view(), name="network"),
