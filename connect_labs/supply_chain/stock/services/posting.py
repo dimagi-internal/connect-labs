@@ -134,7 +134,11 @@ def post_override(count, program_id):
     put a guess. The error names the missing pack specification, which is the
     thing that would make it computable.
     """
-    balance = ledger.balance(program_id, count.supply_point, item=count.item, unit=count.quantity_unit)
+    # The count may not name a trade item -- the form leaves it optional -- but a
+    # point that has only ever held one item can still be added up across its
+    # packs and single units. Resolve it the way every other reader does.
+    item = count.item or ledger.sole_item(program_id, count.supply_point)
+    balance = ledger.balance(program_id, count.supply_point, item=item, unit=count.quantity_unit)
     if isinstance(balance, Unconfirmed):
         raise ValueError("cannot override stock on hand here: " + "; ".join(balance.reasons))
 
@@ -147,7 +151,7 @@ def post_override(count, program_id):
         kind="adjustment",
         quantity=delta,
         unit=count.quantity_unit,
-        item=count.item,
+        item=item,
         commodity=count.commodity,
         batch=count.batch,
         to=count.supply_point,
