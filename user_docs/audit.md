@@ -165,4 +165,4 @@ All other steps — AI reviewer selection, pass threshold, exclude already-audit
 
 The bulk review screen for this workflow works the same as every other audit workflow: each image has a single **Duplicate/Fake** button, and completed reports are read-only. To change a finished audit you press **Reopen**, exactly as you would in any other workflow.
 
-!
+###

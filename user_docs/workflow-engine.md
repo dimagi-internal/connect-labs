@@ -84,7 +84,7 @@ Clicking **Create Workflow** opens the **Choose a template** modal. The modal is
 
 | Group | Examples |
 |---|---|
-| Programme reports | KMC Programme Metrics |
+| Programme reports | KMC Programme Metrics, Photo Audit Report |
 | Automatic reports | Scheduled summary reports |
 | Worker reviews | KMC Worker Review |
 | Audits | Weekly Dual-Track Image Audit, Muac Picture Audit |
@@ -105,6 +105,45 @@ Before this change, creating the KMC Programme Metrics report by hand left worke
 
 !!! note "The opportunity picker spans all programmes you can access"
     When you create a workflow from the programme-level Workflows page, the opportunity picker shows **every opportunity you have access to**, not only those belonging to the current programme. The current programme's own opportunities appear at the top of the list and are pre-ticked, so the default selection is correct for most reports. If your KMC report needs to span opportunities from several programmes — which is common for whole-programme KMC metrics — you can tick the additional opportunities from the same picker without navigating away.
+
+### Photo Audit Report
+
+The **Photo Audit Report** shows the photo verification success rate from the bulk image audits your team runs — that is, the percentage of audited photos that passed review. Create it from **Workflows → Create Workflow → "Photo Audit Report"** (listed under *Programme reports*).
+
+#### Choosing what the report covers
+
+The report follows the top-right context selector:
+
+- **Select a program** — the report shows the program-wide success rate (all its opportunities pooled together) plus a per-opportunity breakdown table. A dropdown lets you drill into any single opportunity from that same view.
+- **Select a single opportunity** — the report shows data for that opportunity only.
+
+Because the report is tied to your access permissions rather than to a fixed program or opportunity, the same report can be reused across any program or opportunity you have access to.
+
+#### Key metrics
+
+The report surfaces two headline figures:
+
+- **Overall success rate** — the percentage of audited photos that passed.
+- **Photos not yet reviewed** — the count of photos that have been submitted but not yet reviewed. These are kept out of the success rate calculation entirely.
+
+**How the success rate is calculated:** pass ÷ (pass + fail + duplicate/fake). Photos marked as duplicate or fake count as failures. Unreviewed photos are excluded from both the numerator and denominator.
+
+#### Per-opportunity breakdown table
+
+When viewing at program level, a table lists each opportunity with:
+
+- **Auditor(s)** — who carried out the audit for that opportunity
+- Underlying counts: **pass**, **fail**, **duplicate/fake**, **reviewed**, **not reviewed**, and **audits**
+
+#### Filters
+
+All filters are chosen from the values already present in your data — there is no free-text typing required:
+
+- **Auditors** multi-select
+- **Audits** multi-select
+- **Date range**
+
+Your filter selections are saved on the report, so they persist between sessions.
 
 ### MBW Visit Verification template
 
@@ -167,24 +206,3 @@ Click any **indicator column heading** on the KMC Programme Report, KMC Opportun
 - A **plain-English sentence** describing what the indicator measures
 - **How it's counted** — which babies the indicator is *out of*, what it *counts* among them, and when it is shown (for example: out of babies who qualify for growth review, counts those whose growth class is fast, shown when at least 20 qualify)
 - **Terms** — each concept the indicator relies on, explained in plain words (for example: "Qualifies for growth review: followed 42+ days with 2+ visits, birthweight band known, and early weight gain computable")
-- The **thresholds**, folded away by default
-- The **underlying calculation**, which you can copy to your clipboard or download as a file. You can also request the full statement for that table's level if you need complete detail.
-
-Definitions do not include developer notes or partner-specific history — all descriptions apply to the indicator as it works for every programme.
-
-The popup also gives you the same sort controls as the column arrow — you can sort the table high-to-low or low-to-high directly from the popup without closing it first.
-
-#### Peer cohort benchmarking for individual workers
-
-When you drill into a worker from the programme report, each of that worker's indicators is now shown in context alongside comparable workers — not just as a raw number. The comparison panel expands directly under the worker's row in the table, so you can read how they compare without losing sight of their own figures.
-
-A dropdown lets you choose what "comparable" means:
-
-- **In the same opportunity** — the colleagues they actually work alongside day to day
-- **Who started the same month** — everyone in the programme who joined during the same intake period, regardless of which opportunity they belong to
-- **Carrying a similar caseload** — workers anywhere in the programme who have a comparable number of active cases
-
-A second dropdown controls how each indicator's peer distribution is displayed:
-
-- **One dot per worker** — shows every individual peer as a dot, with this worker's own value marked. Use this when you want to see exactly where specific individuals sit relative to each other.
-- **How many workers sit in each band** — groups peers into bands and shows a count for each band, with taller bars for bands that contain more workers. Use this when you want a sense of how many people are performing at roughly the same level. Each bar is given enough height to show real differences in size, so the shape of the distribution is readable at a glance rather than every band appearing the same height. **Value labels along the bottom of the chart mark every third band edge plus the top of the range**, so
