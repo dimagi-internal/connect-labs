@@ -9,9 +9,9 @@ Safe Mode adds security guardrails so that when AI has access to real program da
 
 ## What Is Safe Mode?
 
-When Claude Code has access to real program data through the Connect MCP, there is a risk that it could accidentally send patient information to external services, write it to local files, or execute arbitrary commands. Safe Mode closes those channels — only workflow edits and CommCare app structure reads are allowed through.
+When Claude Code has access to real program data through the Connect MCP, there is a risk that it could accidentally send patient information to external services, write it to local files, or execute arbitrary commands. Safe Mode closes those channels. Claude can use the Labs MCP tools (acting as you), read-only CommCare HQ app-structure tools, and read local files — nothing else.
 
-All Claude interactions in Safe Mode route through a zero-data-retention (ZDR) AI endpoint, so patient data is never stored or logged by the AI provider.
+Model traffic in Safe Mode goes only to a governed endpoint — the Anthropic zero-data-retention (ZDR) API key (`--auth=api-key`) or Dimagi's Google Vertex project (`--auth=vertex`) — rather than a personal Claude account.
 
 ---
 
@@ -43,9 +43,9 @@ flowchart LR
     SM -->|Blocks| W[Web Fetch / Search]
     SM -->|Blocks| F[File Write]
     SM -->|Blocks| S[Subagent Spawn]
-    SM -->|Allows| MCP[connect_labs MCP\nWorkflow & Pipeline tools]
+    SM -->|Allows| MCP[connect_labs MCP\nall Labs tools, as you]
     SM -->|Allows| HQ[CommCare HQ\nApp Structure only]
-    SM -->|Routes through| ZDR[Zero Data Retention\nAI Endpoint]
+    SM -->|Routes through| ZDR[Governed AI endpoint\nZDR key or Vertex]
 ```
 
 | Safe Mode blocks                    | Why                                                                |
@@ -57,9 +57,9 @@ flowchart LR
 
 **Safe Mode allows only:**
 
-- Reading and editing workflows and pipelines via the Labs MCP
+- The Labs MCP tools, acting as you — workflows and pipelines, but also everything else the Labs MCP offers (solicitations, funds, reviews, pages, synthetic data), **including edits and deletes**. Safe Mode limits where data can *go*, not what you can change in Labs.
 - Reading CommCare HQ app structure (form definitions only — no patient data)
-- Reading files in the connect-labs repository
+- Reading local files
 
 ---
 
@@ -67,7 +67,7 @@ flowchart LR
 
 | Problem                           | Fix                                                                              |
 | --------------------------------- | -------------------------------------------------------------------------------- |
-| "No connect_labs PAT found"       | Run `/labs-token-setup` in a normal Claude Code session                          |
+| "No connect_labs PAT found"       | Safe Mode needs a Personal Access Token — signing in through `/mcp` is not enough. Run `/labs-token-setup` from inside your connect-labs checkout, then restart Claude Code. |
 | `op` errors or sign-in failures   | Run `op signin --account dimagi` in your terminal                                |
 | "Workflow not found" or 403 error | Check the workflow ID; confirm you can open it in Labs in the browser            |
 | Claude says "I can't edit files"  | That's correct in Safe Mode — ask it to use the `connect_labs` MCP tools instead |

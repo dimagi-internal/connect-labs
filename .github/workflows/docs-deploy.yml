@@ -1,6 +1,16 @@
-name: Deploy Docs to GitHub Pages
+name: Docs Build Check
+
+# The help site is built into the Labs image and served at /labs/docs/help/
+# (see the build-docs stage in Dockerfile and connect_labs/labs/help_site.py).
+# This used to deploy to GitHub Pages, which was never enabled after the repo
+# moved to dimagi-internal -- so it passed for months while the site 404'd.
+# It now only checks that the docs build with no broken internal links.
 
 on:
+  pull_request:
+    paths:
+      - 'user_docs/**'
+      - 'mkdocs.yml'
   push:
     branches: [main]
     paths:
@@ -9,39 +19,20 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-
-concurrency:
-  group: docs-automation
-  cancel-in-progress: false
+  contents: read
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
       - name: Install MkDocs
-        run: pip install mkdocs-material
+        run: pip install mkdocs==1.6.1 mkdocs-material==9.7.7
 
-      - name: Build docs
-        run: mkdocs build --site-dir site
-
-      - name: Deploy to gh-pages /docs/ subdirectory
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin gh-pages
-          git checkout gh-pages
-          # Remove only the docs/ subdirectory, preserving slide decks at root
-          git rm -rf --ignore-unmatch docs/
-          cp -r site/ docs/
-          git add docs/
-          git diff --cached --quiet || git commit -m "Deploy MkDocs to /docs/ [skip ci]"
-          git push origin gh-pages
+      - name: Build docs (strict)
+        run: mkdocs build --strict --site-dir site

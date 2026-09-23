@@ -93,6 +93,7 @@ ENV/
 
 # mkdocs documentation
 /site
+/help_site
 
 # mypy
 .mypy_cache/

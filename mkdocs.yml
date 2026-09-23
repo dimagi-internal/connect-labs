@@ -1,6 +1,6 @@
 site_name: Connect Labs Help
 site_description: User documentation for Connect Labs at labs.connect.dimagi.com
-site_url: https://dimagi-internal.github.io/connect-labs/docs/
+site_url: https://labs.connect.dimagi.com/labs/docs/help/
 
 docs_dir: user_docs
 
@@ -29,6 +29,7 @@ nav:
       - Coverage Maps: coverage-maps.md
       - AI Features: ai-features.md
   - For Power Users:
+      - Reports with Claude: reports-with-claude.md
       - Connect MCP: connect-mcp.md
       - Connect Safe Mode: connect-safe-mode.md
 
