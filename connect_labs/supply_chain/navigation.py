@@ -39,6 +39,8 @@ TAB_FOR_VIEW = {
     # Organisations are infrastructure rather than a daily destination, so they
     # read as part of Suppliers rather than taking a tab of their own.
     "supply_chain:organisations": "supply_chain:suppliers",
+    # The checks are the overview's second panel, read in full.
+    "supply_chain:checks": "supply_chain:home",
 }
 
 

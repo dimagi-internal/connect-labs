@@ -44,7 +44,7 @@ the partner. Handing a supplier a question about our own configuration wastes
 their time and ours.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from django.db.models import Count, Q
 
@@ -80,6 +80,10 @@ KIND_CATEGORIES = {
     "stock_stockout": "threshold",
     "stock_below_minimum": "threshold",
     "item_fails_specification": "threshold",
+    # The bound is a date the record itself holds: the shipment's expected
+    # date, or the contract's signature plus its promised lead time.
+    "shipment_overdue": "threshold",
+    "contract_delivery_overdue": "threshold",
 }
 
 KINDS = tuple(KIND_CATEGORIES)
@@ -320,6 +324,9 @@ def _fulfilment(access, as_of):
             )
 
         match = three_way_match(contract)
+        late = _contract_lateness(contract, match, as_of)
+        if late is not None:
+            out.append(late)
         if match["status"] == "over_invoiced":
             out.append(
                 _check(
@@ -354,6 +361,8 @@ def _fulfilment(access, as_of):
         .filter(certificates=0)
         .select_related("contract__supplier")
     )
+    out += _late_shipments(access, as_of)
+
     for shipment in uncertified:
         out.append(
             _check(
@@ -364,6 +373,98 @@ def _fulfilment(access, as_of):
                 audience="supplier",
                 facts={"status": shipment.status},
                 since=shipment.dispatched_on,
+                as_of=as_of,
+            )
+        )
+    return out
+
+
+def _supplier_fact(supplier) -> dict:
+    return {"id": supplier.pk, "name": supplier.name}
+
+
+def _contract_lateness(contract, match, as_of):
+    """A contract past its promised lead time and not yet fully received.
+
+    The bound is the contract's own: signed on a date, with a lead time the
+    supplier promised. A contract that states neither cannot be late, and is
+    not guessed to be. Cancelled and closed are decisions that end the
+    question, so they are left alone; a contract whose goods have all
+    arrived is on time by definition, whatever its status says.
+    """
+    if contract.status in ("cancelled", "closed"):
+        return None
+    if contract.signed_on is None or contract.promised_lead_time_days is None:
+        return None
+    if match["status"] in ("fully_received", "over_received"):
+        return None
+    expected_on = contract.signed_on + timedelta(days=contract.promised_lead_time_days)
+    today = as_of or date.today()
+    if expected_on >= today:
+        return None
+    outstanding = match.get("outstanding")
+    facts = {
+        "days_late": (today - expected_on).days,
+        "expected_on": expected_on.isoformat(),
+        "signed_on": contract.signed_on.isoformat(),
+        "promised_lead_time_days": contract.promised_lead_time_days,
+        "supplier": _supplier_fact(contract.supplier),
+        "status": contract.status,
+    }
+    if outstanding is not None and not isinstance(outstanding, Unconfirmed):
+        facts["outstanding"] = decimal_string(outstanding.amount)
+        facts["unit"] = outstanding.unit
+    return _check(
+        "contract_delivery_overdue",
+        subject_type="contract",
+        subject_id=contract.pk,
+        label=f"{contract.supplier.name} — {contract.commodity.name}",
+        # The supplier is who knows where the goods are. Whether to chase,
+        # wait or buy elsewhere is not a fact and is not said here.
+        audience="supplier",
+        facts=facts,
+        since=expected_on,
+        as_of=as_of,
+    )
+
+
+def _late_shipments(access, as_of):
+    """Shipments past their expected date and not yet received.
+
+    `shipment_stalled` was removed from this module because it had no time
+    bound at all -- a consignment dispatched yesterday read the same as one
+    held for seventy days. This one has the bound the record states: its own
+    `expected_on`. A shipment with none cannot be late. Received means either
+    status `delivered` or a goods received note against it, because a store
+    that recorded the receipt and never moved the status has still received
+    the goods. `lost` is its own ending, not lateness.
+    """
+    today = as_of or date.today()
+    late = (
+        Shipment.objects.filter(contract__program_id=access.program_id, expected_on__lt=today)
+        .exclude(status__in=("delivered", "lost"))
+        .filter(receipts__isnull=True)
+        .select_related("contract__supplier", "contract__commodity")
+        .distinct()
+    )
+    out = []
+    for shipment in late:
+        supplier = shipment.contract.supplier
+        out.append(
+            _check(
+                "shipment_overdue",
+                subject_type="shipment",
+                subject_id=shipment.pk,
+                label=f"{shipment.reference or shipment.pk} — {supplier.name}",
+                audience="supplier",
+                facts={
+                    "days_late": (today - shipment.expected_on).days,
+                    "expected_on": shipment.expected_on.isoformat(),
+                    "supplier": _supplier_fact(supplier),
+                    "status": shipment.status,
+                    "contract_id": shipment.contract_id,
+                },
+                since=shipment.expected_on,
                 as_of=as_of,
             )
         )
