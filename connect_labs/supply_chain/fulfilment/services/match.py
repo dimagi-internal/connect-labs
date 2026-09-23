@@ -50,9 +50,14 @@ def three_way_match(contract) -> dict:
         if contract.quantity is not None and contract.quantity_unit
         else unconfirmed("the contract does not state a quantity and a unit")
     )
+    # All three in the unit the order was placed in wherever the pack
+    # specification allows it: "700 packet ordered, 9 carton received" is
+    # arithmetic the reader should not have to do, and an empty receipt read as
+    # "0 carton" beside an order in packets.
+    in_order_unit = ordered.unit if not isinstance(ordered, Unconfirmed) else None
     received_by_unit = _received(contract)
-    received = ledger.collapse(received_by_unit, contract.item, None)
-    invoiced = ledger.collapse(_invoiced(contract), contract.item, None)
+    received = _in_unit(ledger.collapse(received_by_unit, contract.item, None), in_order_unit, contract.item)
+    invoiced = _in_unit(ledger.collapse(_invoiced(contract), contract.item, None), in_order_unit, contract.item)
 
     billed = contract.invoices.exclude(status="rejected").aggregate(total=Sum("amount"))["total"] or ZERO
     paid = Payment.objects.filter(invoice__contract=contract).aggregate(total=Sum("amount"))["total"] or ZERO
@@ -129,6 +134,21 @@ def three_way_match(contract) -> dict:
         "status": status,
         "matches": status == "fully_received" and _is_zero(over_invoiced),
     }
+
+
+def _in_unit(figure, unit, item):
+    """`figure` restated in `unit` when that can be done exactly, else unchanged.
+
+    Unchanged rather than Unconfirmed: a quantity in its own unit is still a
+    true figure, and whether the order and receipt units reconcile is the
+    match's question to answer below, not this helper's.
+    """
+    if unit is None or not isinstance(figure, Quantity) or figure.unit == unit:
+        return figure
+    if figure.amount == ZERO:
+        return Quantity(ZERO, unit)
+    restated = ledger.convert(figure.amount, figure.unit, unit, item)
+    return restated if isinstance(restated, Quantity) else figure
 
 
 def _is_zero(figure) -> bool:
