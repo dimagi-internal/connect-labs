@@ -93,6 +93,10 @@ def check_href(check):
 
 def _fact_text(value):
     if isinstance(value, dict):
+        if "kind" in value and isinstance(value.get("owed_by"), dict):
+            # A document a consignment still needs: what it is, and who to ask.
+            kind = str(value["kind"]).replace("_", " ").capitalize()
+            return f"{kind} — owed by {value['owed_by'].get('name') or '—'}"
         if "name" in value:
             return str(value["name"])
         if "question" in value:
