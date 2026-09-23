@@ -368,6 +368,7 @@ _CONTRACT_DATA = _data_with(
     incoterm={"type": "string"},
     delivery_supply_point_id=ID,
     promised_lead_time_days=_NON_NEGATIVE_INT,
+    consideration={"enum": list(records.CONSIDERATIONS)},
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
 )

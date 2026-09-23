@@ -122,7 +122,9 @@ def contract_get(access, contract_id):
     summary=(
         "Record a contract or purchase order. buyer_of_record is required and has no default: import "
         "duty and VAT depend on who imports. Set duty_relief_claimed only alongside a duty_exemption "
-        "document. source is required — it says who told you."
+        "document. source is required — it says who told you. consideration is priced (the default), "
+        "in_kind for a donation, or bundled for goods paid out of something else such as a setup fee; "
+        "only a priced contract takes a unit price."
     ),
     input_schema=obj({"data": _CONTRACT_DATA_CREATE}, required=("data",)),
     is_write=True,
@@ -396,7 +398,8 @@ def document_attach(access, data):
     summary=(
         "The all-in cost of a contract and the buyer it assumed. The buyer of record is an input, "
         "never a default: duty and VAT fall on the importer. A duty relief with no exemption document "
-        "comes back unconfirmed, not zero. Set compare_buyers to cost it under all three."
+        "comes back unconfirmed, not zero. A contract whose consideration is in_kind or bundled has no "
+        "cost and says why as {not_costed: reason} instead. Set compare_buyers to cost it under all three."
     ),
     input_schema=obj({"contract_id": ID, "compare_buyers": {"type": "boolean"}}, required=("contract_id",)),
 )
@@ -407,6 +410,7 @@ def contract_landed_cost(access, contract_id, compare_buyers=False):
     costed = landed.landed_total(contract)
     out = {
         "contract_id": contract.pk,
+        "consideration": costed["consideration"],
         "buyer_of_record": costed["buyer_of_record"],
         "currency": costed["currency"],
         "duty_relief_claimed": costed["duty_relief_claimed"],

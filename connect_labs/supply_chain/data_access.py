@@ -142,6 +142,21 @@ def _fresh(obj):
     return obj
 
 
+def _refuse_a_price_on_what_is_not_bought(consideration, unit_price):
+    """A unit price on a donation is two statements that cannot both be true.
+
+    Coherence, not policing: the landed cost of an in-kind contract is "not
+    purchased", and a price stored beside that would either be ignored
+    silently or contradict the statement the page makes.
+    """
+    if consideration != "priced" and unit_price not in (None, ""):
+        label = "in kind" if consideration == "in_kind" else "bundled into another cost"
+        raise ValueError(
+            f"this contract's goods are {label}, so it takes no unit price; set consideration "
+            "to priced if the goods are being bought"
+        )
+
+
 def _copy_of(obj, overrides: dict) -> dict:
     """Every plain column of `obj`, with `overrides` applied on top.
 
@@ -769,6 +784,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         buyer = self.get_org(data["buyer_org_id"])
         if buyer is None:
             raise ValueError(f"organisation {data['buyer_org_id']} does not exist")
+        _refuse_a_price_on_what_is_not_bought(data.get("consideration") or "priced", data.get("unit_price"))
         return _fresh(
             Contract.objects.create(
                 program_id=self._require_program(),
@@ -787,5 +803,6 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
             raise ValueError(f"contract {contract_id} not found")
         for key, value in _columns(Contract, data).items():
             setattr(found, key, value)
+        _refuse_a_price_on_what_is_not_bought(found.consideration, found.unit_price)
         found.save()
         return _fresh(found)

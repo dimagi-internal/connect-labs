@@ -31,6 +31,11 @@ figure here can go stale.
     as <span class="text-gray-500">{{ contract.buyer_of_record|humanise }}</span>
     {% if contract.incoterm %} · {{ contract.incoterm }}{% endif %}
     {% if contract.status %} · {{ contract.status|humanise }}{% endif %}
+    {% if contract.consideration == "in_kind" %}
+      <span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-message-info text-brand-indigo">In kind — donated</span>
+    {% elif contract.consideration == "bundled" %}
+      <span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-message-info text-brand-indigo">Bundled in setup fee</span>
+    {% endif %}
   </p>
   <div class="flex flex-wrap gap-2 mt-3">
     <a href="{% url 'supply_chain:contract_edit' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit order</a>
@@ -70,6 +75,12 @@ figure here can go stale.
     {% for reason in landed.landed_total|unconfirmed_reasons %}
       <div class="px-4 py-2 text-xs text-orange-800 bg-orange-50 border-t border-orange-100">{{ reason }}</div>
     {% endfor %}
+    {% if contract.consideration != "priced" %}
+    <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
+      These goods were not bought, so there is no price to find and nothing is
+      missing. The shipments and receipts below are the whole record of them.
+    </p>
+    {% else %}
     <div class="px-4 py-2.5 border-t border-gray-100">
       <div class="text-xs font-semibold text-gray-500 mb-1">The same order, per buyer</div>
       <div class="overflow-x-auto">
@@ -96,6 +107,7 @@ figure here can go stale.
         {% endif %}
       </p>
     </div>
+    {% endif %}
   </div>
 
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">

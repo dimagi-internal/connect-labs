@@ -14,9 +14,10 @@ from decimal import Decimal
 
 from django.db.models import Sum
 
+from connect_labs.supply_chain.fulfilment.services.landed import costing_exclusion
 from connect_labs.supply_chain.models import Payment, ReceiptLine
 from connect_labs.supply_chain.stock.services import ledger
-from connect_labs.supply_chain.values import Money, Quantity, Unconfirmed, unconfirmed
+from connect_labs.supply_chain.values import Money, NotCosted, Quantity, Unconfirmed, unconfirmed
 
 ZERO = Decimal("0")
 
@@ -110,7 +111,13 @@ def _payable_now(contract, received, billed, paid):
     Refuses rather than guessing when the unit price cannot be applied to the
     received quantity: paying against a number nobody can derive is the
     failure this whole control exists to prevent.
+
+    Nothing is payable on goods nobody bought, and that is a statement rather
+    than a missing price -- so a donation says why, not "unconfirmed".
     """
+    excluded = costing_exclusion(contract)
+    if excluded is not None:
+        return NotCosted(excluded)
     if isinstance(received, Unconfirmed):
         return received
     if contract.unit_price is None or not contract.unit_price_unit:

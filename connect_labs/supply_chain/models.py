@@ -471,6 +471,13 @@ class Contract(SourcedModel):
     )
     promised_lead_time_days = models.IntegerField(null=True, blank=True)
 
+    # Whether the goods are bought at all. Not every contract is a purchase:
+    # a donor's in-kind chlorine and a partner's MUAC strips paid out of its
+    # setup fee both have a supplier, a quantity, promised dates, shipments
+    # and receipts -- the whole physical chain -- and no price that will ever
+    # exist. Treating them as priced reported that absence as a gap forever.
+    consideration = models.CharField(max_length=16, default="priced", choices=_choices(records.CONSIDERATIONS))
+
     class Meta:
         ordering = ["-signed_on", "-created_at"]
         indexes = [models.Index(fields=["program_id", "status"])]
@@ -481,6 +488,10 @@ class Contract(SourcedModel):
     @property
     def duty_relief_evidenced(self) -> bool:
         return self.duty_relief_claimed and self.duty_relief_document_id is not None
+
+    @property
+    def is_priced(self) -> bool:
+        return self.consideration == "priced"
 
 
 class Shipment(SourcedModel):

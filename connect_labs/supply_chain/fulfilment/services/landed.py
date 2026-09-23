@@ -17,9 +17,29 @@ nobody had evidenced.
 
 from decimal import Decimal
 
-from connect_labs.supply_chain.values import Money, Unconfirmed, merge, unconfirmed
+from connect_labs.supply_chain.values import Money, NotCosted, Unconfirmed, merge, unconfirmed
 
 ZERO = Decimal("0")
+
+# What a landed cost says instead of a number when nothing was bought. The
+# same words on every surface -- the order page, the API, an agent's answer --
+# so "not purchased" cannot drift into three phrasings of one fact.
+NOT_COSTED = {
+    "in_kind": "not purchased (in kind)",
+    "bundled": "bundled in setup fee",
+}
+
+
+def costing_exclusion(contract) -> str | None:
+    """Why this contract has no cost, or None when it is a purchase.
+
+    The one question anything aggregating cost has to ask first: a cost
+    library, a per-unit average or a comparison that counted a donation as a
+    purchase would either divide by a price that does not exist or quietly
+    drop the row. Leaving it out is right; leaving it out WITHOUT saying why
+    is how a total silently stops meaning what it says.
+    """
+    return NOT_COSTED.get(contract.consideration)
 
 
 def _line_total(contract):
@@ -101,7 +121,28 @@ def landed_total(contract):
     Every component is returned alongside the total so a reader can see which
     line blocked it, and `buyer_of_record` travels with the answer because
     the answer is only true for that buyer.
+
+    A contract that is not a purchase -- a donation, or goods paid for out of
+    a setup fee -- has no landed cost to compute, and says so as a
+    `NotCosted` rather than an `Unconfirmed`: nothing is missing, so there is
+    nothing for anyone to chase.
     """
+    excluded = costing_exclusion(contract)
+    if excluded is not None:
+        nothing = NotCosted(excluded)
+        return {
+            "buyer_of_record": contract.buyer_of_record,
+            "currency": contract.currency,
+            "consideration": contract.consideration,
+            "goods": nothing,
+            "freight": nothing,
+            "duty": nothing,
+            "vat": nothing,
+            "landed_total": nothing,
+            "duty_relief_claimed": contract.duty_relief_claimed,
+            "duty_relief_evidenced": contract.duty_relief_evidenced,
+        }
+
     goods = _line_total(contract)
     freight = _extra(contract.freight_basis, contract.freight_amount, "freight")
     duty = _tax_line(contract, contract.duties_basis, contract.duties_amount, "import duty")
@@ -112,6 +153,7 @@ def landed_total(contract):
     return {
         "buyer_of_record": contract.buyer_of_record,
         "currency": contract.currency,
+        "consideration": contract.consideration,
         "goods": goods,
         "freight": freight,
         "duty": duty,
@@ -143,4 +185,4 @@ def compare_buyers(contract):
 
 
 def is_confirmed(figure) -> bool:
-    return not isinstance(figure, Unconfirmed)
+    return not isinstance(figure, (Unconfirmed, NotCosted))
