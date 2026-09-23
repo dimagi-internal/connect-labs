@@ -8,7 +8,7 @@ Automated system that keeps user-facing documentation current without manual eff
 
 | Component | What it does | When it runs |
 |---|---|---|
-| GitHub Pages site | Rich HTML docs for non-developer program staff | Deployed on every push to `user_docs/` or `mkdocs.yml` |
+| Labs help site | Rich HTML docs for non-developer program staff, at `/labs/docs/help/` (login required) | Built into the Labs image on every deploy |
 | Per-merge doc updater | Updates the relevant help page and Confluence summary when a PR ships a user-visible change | On every push to `main` |
 | Weekly changelog | Plain-English summary of the week's changes → Confluence + Slack | Mondays 09:00 UTC (+ manual trigger) |
 
@@ -51,13 +51,15 @@ user_docs/
   custom-analysis.md     Custom Analysis
   coverage-maps.md       Coverage Maps
   ai-features.md         AI Features
-  connect-mcp-safe-mode.md  Connect MCP & Safe Mode
+  connect-mcp.md         Connect MCP & Safe Mode
+  connect-safe-mode.md   (linked from connect-mcp.md; not auto-updated)
+  reports-with-claude.md (not auto-updated)
   assets/screenshots/    Manually maintained screenshots
 
 mkdocs.yml               MkDocs Material theme config (Mermaid.js via superfences)
 
 .github/workflows/
-  docs-deploy.yml        Deploys MkDocs → GitHub Pages (gh-pages branch)
+  docs-deploy.yml        Strict MkDocs build check on PRs (no deploy)
   docs-update.yml        Per-merge doc updater
   weekly-changelog.yml   Weekly changelog cron + workflow_dispatch
 ```
@@ -86,9 +88,16 @@ mkdocs.yml               MkDocs Material theme config (Mermaid.js via superfence
 | AI Features | `3928817690` |
 | Connect MCP & Safe Mode | `3927801885` |
 
-## GitHub Pages
+## Labs help site
 
-Site deploys to `https://dimagi-internal.github.io/connect-labs/docs/`. Enable in repo settings if not already live: Settings → Pages → Source: Deploy from branch → `gh-pages`.
+The MkDocs build of `user_docs/` is served by Labs itself at
+`https://labs.connect.dimagi.com/labs/docs/help/`, behind the Labs login
+(`connect_labs/labs/help_site.py`). The `build-docs` stage of the `Dockerfile`
+builds it, so it ships with every deploy. Preview locally with
+`mkdocs build --site-dir help_site` and open `/labs/docs/help/` on a dev server.
+
+It used to deploy to GitHub Pages; that was never re-enabled after the repo moved
+to `dimagi-internal`, and the repo is public, so Pages would publish the docs openly.
 
 ## Model usage and cost
 
