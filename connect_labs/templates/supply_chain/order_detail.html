@@ -46,6 +46,15 @@ figure here can go stale.
   </div>
 </div>
 
+{% if contract_late %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning px-4 py-3 mb-3 text-sm text-message-warning-text">
+    <strong>{{ contract_late.facts.days_late }} day{{ contract_late.facts.days_late|pluralize }} past the promised lead time.</strong>
+    Signed {{ contract_late.facts.signed_on }} with {{ contract_late.facts.promised_lead_time_days }} days promised,
+    so due {{ contract_late.facts.expected_on }}{% if contract_late.facts.outstanding %};
+    {{ contract_late.facts.outstanding }} {{ contract_late.facts.unit }} still to arrive{% endif %}.
+  </div>
+{% endif %}
+
 <div class="grid gap-3 md:grid-cols-2">
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100">
@@ -186,6 +195,11 @@ figure here can go stale.
               {% if shipment.is_in_transit %}
                 <div class="text-xs text-amber-800">in transit — not counted as stock</div>
               {% endif %}
+              {% with late=late_shipments|dictkey:shipment.id %}
+                {% if late %}
+                  <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on }}</div>
+                {% endif %}
+              {% endwith %}
             </td>
             <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
             <td class="px-4 py-2 text-gray-600">{{ line.expiry|default:"—" }}</td>

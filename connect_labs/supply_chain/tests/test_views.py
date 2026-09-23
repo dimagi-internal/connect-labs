@@ -970,6 +970,7 @@ def test_an_order_links_out_to_the_supplier_it_is_with(client, sophie, monkeypat
         "document_list": [],
         "org_list": [{"id": 2, "name": "Dimagi", "slug": "dimagi"}],
         "supplier_list": [SUPPLIER],
+        "checks_list": {"checks": []},
     }
     with patch(
         "connect_labs.supply_chain.views.call_operation",
