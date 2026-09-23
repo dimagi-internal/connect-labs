@@ -21,7 +21,7 @@ from django.urls import reverse
 from connect_labs.supply_chain.api_views import _access
 from connect_labs.supply_chain.form_views import OperationFormView
 from connect_labs.supply_chain.models import Commodity, Item, Supplier
-from connect_labs.supply_chain.reference_forms import CommodityForm, ItemForm, SupplierForm
+from connect_labs.supply_chain.reference_forms import CommodityForm, ComponentLineFormSet, ItemForm, SupplierForm
 
 
 class _ScopedInstanceMixin:
@@ -92,8 +92,73 @@ class ProductUpdateView(_ScopedInstanceMixin, _ProductScreen):
 
 
 class _ItemScreen(OperationFormView):
+    """A trade item, plus what is inside it when it is a kit.
+
+    The components are a formset, the way a round's lines are, and are sent
+    on every save -- an empty list included, because removing the last
+    component is how a kit stops being one.
+    """
+
     operation = "item_upsert"
     form_class = ItemForm
+    template_name = "supply_chain/item_form.html"
+
+    def commodities(self):
+        return [(c["slug"], c["name"]) for c in self.op("commodity_list")]
+
+    def component_formset(self, data=None, initial=None):
+        return ComponentLineFormSet(
+            data, initial=initial, prefix="components", form_kwargs={"commodities": self.commodities()}
+        )
+
+    def initial_components(self):
+        return []
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if context.get("has_program_context") and "components" not in context:
+            context["components"] = (
+                self.component_formset(self.request.POST)
+                if self.request.method == "POST"
+                else self.component_formset(initial=self.initial_components())
+            )
+        return context
+
+    def existing_components(self) -> list:
+        return []
+
+    def form_valid(self, form):
+        if "components-TOTAL_FORMS" not in self.request.POST:
+            # A post that carried no component rows at all -- not an empty
+            # list, no formset -- has said nothing about the contents, so it
+            # changes nothing. Sending [] here would silently unmake a kit.
+            return super().form_valid(form)
+        components = self.component_formset(self.request.POST)
+        if not components.is_valid():
+            return self.render_to_response(self.get_context_data(form=form, components=components))
+        # A component's stated specification is not on this screen -- like the
+        # item's own, it arrives through the API -- so an edit keeps what each
+        # product already had rather than wiping it by omission.
+        stated = {c.get("commodity_slug"): c.get("spec_attributes") for c in self.existing_components()}
+        kept = []
+        for row in components.cleaned_data:
+            if not row or row.get("DELETE") or not row.get("commodity_slug"):
+                continue
+            entry = {
+                "commodity_slug": row["commodity_slug"],
+                "quantity": str(row["quantity"]),
+                "base_unit": row["base_unit"],
+            }
+            if stated.get(row["commodity_slug"]):
+                entry["spec_attributes"] = stated[row["commodity_slug"]]
+            kept.append(entry)
+        self._components = kept
+        return super().form_valid(form)
+
+    def fixed(self, **kwargs):
+        if not hasattr(self, "_components"):
+            return {}
+        return {"data": {"components": self._components}}
 
     def breadcrumb(self, **kwargs):
         return [{"label": "Catalogue", "href": reverse("supply_chain:catalogue")}, {"label": self.title}]
@@ -132,6 +197,15 @@ class ItemUpdateView(_ScopedInstanceMixin, _ItemScreen):
     model = Item
     lookup_kwarg = "item_id"
     missing = "no such trade item in this catalogue"
+
+    def existing_components(self):
+        return self.instance().components or []
+
+    def initial_components(self):
+        return [
+            {"commodity_slug": c.get("commodity_slug"), "quantity": c.get("quantity"), "base_unit": c.get("base_unit")}
+            for c in self.existing_components()
+        ]
 
 
 # ---- suppliers ---------------------------------------------------------

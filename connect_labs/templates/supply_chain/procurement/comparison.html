@@ -100,6 +100,7 @@
               <td class="font-medium">
                 <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
                    class="text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
+                {% include "supply_chain/procurement/_composition.html" with composition=row.composition %}
               </td>
               {% for column in comparison.columns %}
                 {% with cell=row.figures|dictkey:column.key %}
@@ -155,6 +156,7 @@
         <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
            class="text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
       </h3>
+      {% include "supply_chain/procurement/_composition.html" with composition=row.composition %}
       {% for column in comparison.columns %}
         {% with cell=row.figures|dictkey:column.key %}
           {% if cell.unconfirmed %}

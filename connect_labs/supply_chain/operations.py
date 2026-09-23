@@ -320,6 +320,21 @@ _ITEM_DATA = _data_with(
     base_unit_grams=_NON_NEGATIVE_INT,
     shelf_life_months=_NON_NEGATIVE_INT,
     status={"enum": ["active", "discontinued"]},
+    # A kit's contents. Each component names a product in this catalogue, how
+    # many of its base units one kit holds, and optionally the component's own
+    # stated specification -- which is what lets the zinc inside a co-pack be
+    # checked against the zinc requirement rather than the co-pack's.
+    components={
+        "type": "array",
+        "items": _data_with(
+            ("commodity_slug", "quantity", "base_unit"),
+            commodity_slug={"type": "string", "minLength": 1},
+            quantity=QUANTITY,
+            base_unit={"type": "string", "minLength": 1},
+            spec_attributes={"type": "object"},
+        ),
+    },
+    one_course_is={"enum": list(records.ONE_COURSE_IS)},
 )
 
 # A contract is the commitment. buyer_of_record is required and has no

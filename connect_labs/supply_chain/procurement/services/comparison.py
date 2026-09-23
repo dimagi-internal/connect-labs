@@ -22,6 +22,7 @@ frozen at all.
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from connect_labs.supply_chain.models import Commodity, Quote, Round
 from connect_labs.supply_chain.procurement.services.compliance import check_compliance
@@ -31,8 +32,13 @@ from connect_labs.supply_chain.procurement.services.pricing import (
     FIGURE_LABELS,
     compute_figures,
 )
-from connect_labs.supply_chain.procurement.services.questions import audience_for_reason, missing_facts
-from connect_labs.supply_chain.values import Unconfirmed, to_wire
+from connect_labs.supply_chain.procurement.services.questions import (
+    INTERNAL,
+    MissingFact,
+    audience_for_reason,
+    missing_facts,
+)
+from connect_labs.supply_chain.values import Unconfirmed, decimal_string, merge, to_wire, unconfirmed
 
 
 @dataclass(frozen=True)
@@ -52,6 +58,9 @@ class ComparisonRow:
     compliance: list = field(default_factory=list)
     questions: list = field(default_factory=list)
     is_comparable: bool = False
+    # What one unit of the quoted trade item holds, when it is a kit; empty
+    # for an ordinary item and None when the quote names no item at all.
+    composition: list | None = None
 
 
 @dataclass
@@ -116,6 +125,7 @@ class Comparison:
                     for r in row.compliance
                 ],
                 "questions": [{"key": f.key, "question": f.question, "audience": f.audience} for f in row.questions],
+                "composition": row.composition,
             }
 
         return {
@@ -177,6 +187,83 @@ def _unavailable_figures(rows: list[ComparisonRow]) -> dict:
         if all(audience_for_reason(reason) == "internal" for reason in reasons):
             out[key] = {"label": FIGURE_LABELS.get(key, key), "reasons": reasons}
     return out
+
+
+def _composition(item) -> list | None:
+    """A kit's contents in a canonical order, so two lists compare by value."""
+    if item is None:
+        return None
+    return sorted(
+        (
+            {
+                "commodity_slug": component.get("commodity_slug"),
+                "quantity": decimal_string(Decimal(str(component.get("quantity")))),
+                "base_unit": component.get("base_unit") or "",
+            }
+            for component in item.components or []
+        ),
+        key=lambda component: (component["commodity_slug"] or "", component["base_unit"]),
+    )
+
+
+def _composition_phrase(composition) -> str:
+    if composition is None:
+        return "an unnamed trade item, so its contents are not known"
+    if not composition:
+        return "a single product, not a kit"
+    return " + ".join(f"{c['quantity']} {c['base_unit']} {c['commodity_slug']}" for c in composition)
+
+
+def _separate_differing_kits(comparable, blocked):
+    """Kits are ranked only against kits holding the same contents.
+
+    Two suppliers' "co-packs" at 38 and 40 dollars are not the same product
+    at two prices if one holds ten zinc tablets and the other twelve, and a
+    ranking that sets them side by side says they are. So when the
+    comparable rows include a kit and disagree about what is inside, NONE of
+    them is ranked -- rule 6 again: never rank across the partition. Picking
+    the majority composition as the "real" one would be a judgement about
+    what to buy, which is ours to make, so the question each row carries is
+    addressed to us: decide the contents, then compare like with like.
+
+    The ranking figure carries the reason, so the cell says why it is not a
+    number rather than going blank.
+    """
+    compositions = {
+        tuple(tuple(sorted(c.items())) for c in row.composition) if row.composition is not None else None
+        for row in comparable
+    }
+    has_a_kit = any(row.composition for row in comparable)
+    if not has_a_kit or len(compositions) < 2:
+        return comparable, blocked
+
+    for row in comparable:
+        others = sorted(
+            {
+                f"{other.supplier_name}: {_composition_phrase(other.composition)}"
+                for other in comparable
+                if other is not row and other.composition != row.composition
+            }
+        )
+        reason = f"kit composition differs: this offer is {_composition_phrase(row.composition)}; " + "; ".join(others)
+        row.figures["landed_total_for_round_quantity"] = merge(
+            unconfirmed(reason), row.figures["landed_total_for_round_quantity"]
+        )
+        row.questions = [
+            *row.questions,
+            MissingFact(
+                key="kit_composition",
+                question=(
+                    f"This offer holds {_composition_phrase(row.composition)}, which differs from "
+                    + "; ".join(others)
+                    + ". Decide which contents the round is for; offers are ranked only against "
+                    "the same contents."
+                ),
+                audience=INTERNAL,
+            ),
+        ]
+        row.is_comparable = False
+    return [], [*blocked, *comparable]
 
 
 def _ranking_key(comparable: list[ComparisonRow]) -> str | None:
@@ -241,8 +328,11 @@ def compare_round(
             # COMPARABILITY_FIELDS: gating on the course figures blocked
             # suppliers for our own missing ration table.
             is_comparable=not any(isinstance(figures[key], Unconfirmed) for key in COMPARABILITY_FIELDS),
+            composition=_composition(item) if quote.item_id else None,
         )
         (comparable if row.is_comparable else blocked).append(row)
+
+    comparable, blocked = _separate_differing_kits(comparable, blocked)
 
     ranked_by = _ranking_key(comparable)
     # Cheapest first: comparable[0] is the leader the screen names, and it is

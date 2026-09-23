@@ -185,6 +185,22 @@ class Item(TimestampedModel):
     spec_attributes = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=16, default="active", choices=_choices(("active", "discontinued")))
 
+    # A kit: one SKU that bundles several products -- an ORS/zinc co-pack, a
+    # three-day treatment packet, a test kit with its reagents. A list of
+    # {commodity_slug, quantity, base_unit, spec_attributes?}. The item still
+    # belongs to ONE primary commodity and is counted in its own SKUs; the
+    # ledger never breaks a kit apart. What the list is for is the three
+    # questions a single commodity cannot answer: does the zinc inside meet
+    # the zinc specification, do two suppliers' "co-packs" hold the same
+    # contents, and is one of these a whole course.
+    components = models.JSONField(default=list, blank=True)
+    # Whether one of this item is a full treatment course, and at which level:
+    # "" (not a course, or not known), "base_unit" or "pack". A packet that IS
+    # a three-day course needs no ration table to cost per course -- the
+    # manufacturer packed the course. Stated per item rather than inferred,
+    # because nothing in a component list says it adds up to a protocol.
+    one_course_is = models.CharField(max_length=16, blank=True, default="", choices=_choices(records.ONE_COURSE_IS))
+
     class Meta:
         constraints = [models.UniqueConstraint(fields=["scope_key", "sku"], name="uniq_item_scope_sku")]
         ordering = ["name"]
@@ -195,6 +211,10 @@ class Item(TimestampedModel):
     @property
     def commodity_slug(self):
         return self.commodity.slug
+
+    @property
+    def is_kit(self) -> bool:
+        return bool(self.components)
 
 
 class Supplier(TimestampedModel):

@@ -15,7 +15,7 @@ from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.checks import course_applies_to_category
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
-from connect_labs.supply_chain.procurement.services.compliance import spec_verdict
+from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
 
 
 @method_decorator(login_required, name="dispatch")
@@ -49,19 +49,43 @@ def newest_standing_first(quotes):
     return ordered
 
 
-def annotate_product(product, own_items):
+def annotate_product(product, own_items, products=()):
     """Hang a product's trade items off it, each measured against its spec.
 
     Module-level rather than a method because two pages need identically
     annotated products -- the catalogue list and one product on its own -- and
     a second copy of this would be a second opinion about whether a trade item
     passes its specification.
+
+    `products` is the whole catalogue, for kits: the zinc inside a co-pack is
+    held to the zinc product's requirements, so checking a kit needs more
+    than its own product. The verdict comes from the same function the checks
+    feed uses, so the page and the feed cannot disagree about a kit.
     """
+    requirements_by_slug = {p["slug"]: p.get("spec_requirements") or [] for p in products}
+    names = {p["slug"]: p["name"] for p in products}
     packs = {i["base_per_pack"] for i in own_items if i.get("base_per_pack")}
     weights = {i["base_unit_grams"] for i in own_items if i.get("base_unit_grams")}
 
     for item in own_items:
-        item["spec_verdict"] = spec_verdict(item.get("spec_attributes"), product.get("spec_requirements") or [])
+        checked = kit_spec_verdict(
+            item.get("spec_attributes"),
+            product.get("spec_requirements") or [],
+            item.get("components"),
+            requirements_by_slug,
+        )
+        item["spec_verdict"] = checked["verdict"]
+        # Each product inside a kit, with its own name and its own verdict, so
+        # the page can say WHICH part fails rather than that something does.
+        verdicts = {part["commodity_slug"]: part["verdict"] for part in checked["components"]}
+        item["component_rows"] = [
+            {
+                **component,
+                "name": names.get(component.get("commodity_slug"), component.get("commodity_slug")),
+                "verdict": verdicts.get(component.get("commodity_slug"), "No requirements"),
+            }
+            for component in item.get("components") or []
+        ]
         # Two different kinds of disagreement, and they are not the same
         # finding. Differing from the product's nominal pack is often
         # legitimate -- a manufacturer may genuinely pack 144. Two trade items
@@ -138,7 +162,7 @@ class CatalogueView(OperationBase):
             by_product.setdefault(item["commodity_slug"], []).append(item)
 
         for product in products:
-            annotate_product(product, by_product.get(product["slug"], []))
+            annotate_product(product, by_product.get(product["slug"], []), products)
 
         context["products"] = products
         context["orphan_items"] = [
@@ -366,7 +390,7 @@ class ProductDetailView(OperationBase):
         if product is None:
             raise Http404(f"no product '{slug}' in this catalogue")
         items = [i for i in self.op("item_list") if i["commodity_slug"] == slug]
-        context["product"] = annotate_product(product, items)
+        context["product"] = annotate_product(product, items, self.op("commodity_list"))
 
         if not context["has_program_context"]:
             # The specification is reference data and reads fine on its own.
@@ -406,12 +430,13 @@ class ItemDetailView(OperationBase):
         item = self.op("item_get", item_id=item_id)
         if item is None:
             raise Http404(f"no trade item {item_id} in this catalogue")
-        product = next((c for c in self.op("commodity_list") if c["slug"] == item["commodity_slug"]), None)
+        products = self.op("commodity_list")
+        product = next((c for c in products if c["slug"] == item["commodity_slug"]), None)
         if product is not None:
             # Annotated through its own product so the verdict, the sibling
             # disagreements and the GTIN list are computed the one way.
             siblings = [i for i in self.op("item_list") if i["commodity_slug"] == item["commodity_slug"]]
-            annotate_product(product, siblings)
+            annotate_product(product, siblings, products)
             item = next((i for i in siblings if i["id"] == item["id"]), item)
         context["item"] = item
         context["product"] = product
