@@ -10,7 +10,9 @@ from connect_labs.supply_chain import (
     stock_views,
     views,
 )
+from connect_labs.supply_chain.alerts import views as alert_views
 from connect_labs.supply_chain.procurement import views as procurement_views
+from connect_labs.supply_chain.update_links import views as update_link_views
 
 app_name = "supply_chain"
 
@@ -214,6 +216,23 @@ urlpatterns = [
     path("stock/counts/new/", stock_views.StockCountRecordView.as_view(), name="stock_count_record"),
     path("distribution/", views.DistributionView.as_view(), name="distribution"),
     path("distribution/new/", distribution_views.DistributionRecordView.as_view(), name="distribution_record"),
+    # Alerts: who is told about what, and the log of what they were told.
+    path("alerts/", alert_views.AlertListView.as_view(), name="alerts"),
+    path("alerts/new/", alert_views.AlertCreateView.as_view(), name="alert_create"),
+    path("alerts/<int:subscription_id>/edit/", alert_views.AlertUpdateView.as_view(), name="alert_edit"),
+    path("alerts/<int:subscription_id>/delete/", alert_views.AlertDeleteView.as_view(), name="alert_delete"),
+    # Supplier update links: the programme's screens for issuing them...
+    path("links/", update_link_views.UpdateLinkListView.as_view(), name="update_links"),
+    path("links/new/", update_link_views.UpdateLinkIssueView.as_view(), name="update_link_issue"),
+    path(
+        "links/<int:link_id>/revoke/",
+        update_link_views.UpdateLinkRevokeView.as_view(),
+        name="update_link_revoke",
+    ),
+    # ...and the page behind one. Unauthenticated and token-gated: the only
+    # route in the domain without login_required, and skip-listed in
+    # labs/oauth_session.py for the same reason Pulse's public displays are.
+    path("u/<str:token>/", update_link_views.UpdateLinkPublicView.as_view(), name="update_link_public"),
 ]
 
 if settings.DEBUG:

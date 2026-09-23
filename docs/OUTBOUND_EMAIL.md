@@ -244,6 +244,17 @@ re-migration will not silently re-arm it. Verify with:
 PeriodicTask.objects.filter(name="send_monthly_delivery_reminder").values("enabled")
 ```
 
+### Supply alerts — an unattended send path, on purpose
+
+`connect_labs.supply_chain.tasks.send_supply_alerts` runs every five minutes from
+beat (`PeriodicTask` `supply_chain_send_alerts`, seeded by
+`supply_chain/migrations/0007`). It mails only addresses a programme member put on
+an `AlertSubscription` at `/supply/alerts/` (a labs user, or an outside address such
+as a donor), only while that subscription is active, and only checks that are
+**new** since it last reported them. While `LABS_EMAIL_ENABLED` is off, notices are
+logged as `email_disabled` rather than queued, so turning mail on does not release
+a backlog. To stop it entirely: `PeriodicTask.objects.filter(name="supply_chain_send_alerts").update(enabled=False)`.
+
 ### The audit to repeat before enabling mail anywhere
 
 A send path nobody remembers is worse than no send path. All three of these are

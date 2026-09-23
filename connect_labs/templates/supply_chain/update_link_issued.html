@@ -1,0 +1,70 @@
+{% extends 'supply_chain/base.html' %}
+
+{% comment %}
+The only time the link is ever shown. Rendered on the POST's own response
+rather than after a redirect, so the token never sits in a Location header,
+browser history or an access log -- and only a keyed fingerprint of it is
+stored, so it cannot be shown again.
+{% endcomment %}
+
+{% block supply_content %}
+
+<nav class="text-sm text-gray-500 mb-3">
+  <a href="{% url 'supply_chain:update_links' %}" class="text-brand-indigo hover:underline">Supplier links</a>
+  <span class="mx-1.5 text-gray-300">/</span>
+  <span class="text-gray-700">Link issued</span>
+</nav>
+
+<div class="max-w-3xl bg-white border border-brand-border-light rounded-lg overflow-hidden">
+  <div class="px-5 py-4 border-b border-brand-border-light">
+    <h1 class="text-base font-semibold text-gray-900">Link issued for {{ link.org_name }}</h1>
+    <p class="text-sm text-gray-500 mt-0.5">
+      Send this to them however you normally would. It works until
+      {{ link.expires_at|slice:":10" }}, or until you revoke it.
+    </p>
+  </div>
+
+  <div class="px-5 py-4 space-y-4">
+    <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-3">
+      <p class="text-sm text-message-warning-text">
+        <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+        <strong>Copy it now — this is the only time it is shown.</strong>
+        Anyone holding it can record updates as {{ link.org_name }}, so send it only to them.
+      </p>
+    </div>
+
+    <div>
+      <label for="issued-link" class="block text-sm font-medium text-gray-700 mb-1">The link</label>
+      <div class="flex gap-2">
+        <input id="issued-link" type="text" readonly value="{{ link.url }}"
+               class="base-input font-mono text-xs flex-1" onfocus="this.select()">
+        <button type="button"
+                class="px-3 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md whitespace-nowrap"
+                onclick="navigator.clipboard.writeText(document.getElementById('issued-link').value); this.textContent='Copied';">
+          <i class="fa-regular fa-copy mr-1"></i> Copy
+        </button>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="text-sm font-semibold text-gray-900 mb-1">What it covers</h2>
+      <ul class="text-sm text-gray-700 space-y-0.5">
+        {% for contract in link.contracts %}
+          <li><i class="fa-solid fa-file-contract text-gray-400 mr-1"></i>Order {{ contract.reference|default:contract.id }}</li>
+        {% endfor %}
+        {% for point in link.supply_points %}
+          <li><i class="fa-solid fa-warehouse text-gray-400 mr-1"></i>{{ point.name }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="px-5 py-3 border-t border-brand-border-light bg-gray-50/60 flex items-center justify-end">
+    <a href="{% url 'supply_chain:update_links' %}"
+       class="px-4 py-2 text-sm font-medium rounded-md text-white bg-brand-indigo hover:bg-brand-deep-purple">
+      Done
+    </a>
+  </div>
+</div>
+
+{% endblock %}
