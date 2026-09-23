@@ -49,6 +49,7 @@ from decimal import Decimal
 
 from django.db.models import Count, Q
 
+from connect_labs.supply_chain import records
 from connect_labs.supply_chain.fulfilment.services.landed import landed_total
 from connect_labs.supply_chain.fulfilment.services.match import three_way_match
 from connect_labs.supply_chain.models import (
@@ -405,7 +406,7 @@ def _fulfilment(access, as_of):
         .annotate(
             certificates=Count(
                 "documents",
-                filter=Q(documents__kind__in=("certificate_of_analysis", "certificate_of_conformity")),
+                filter=Q(documents__kind__in=records.CERTIFICATE_KINDS),
             )
         )
         .filter(certificates=0)

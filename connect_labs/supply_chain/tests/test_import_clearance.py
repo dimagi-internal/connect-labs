@@ -325,6 +325,39 @@ class TestTheShipmentPage:
         body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
         assert reverse("supply_chain:shipment_detail", args=[shipment["id"]]) in body
 
+    def test_an_airway_bill_is_not_a_certificate(self, scoped, da, world):
+        # The order page's Certificate column read "on file" for any attached
+        # document, while the checks list -- counting only certificates --
+        # said "no certificate on file" about the same consignment.
+        shipment = _shipment(da, world)
+        op(
+            da,
+            "document_attach",
+            data={
+                "kind": "airway_bill",
+                "shipment_id": shipment["id"],
+                "external_url": "https://example.org/awb.pdf",
+                "source": "document",
+            },
+        )
+        assert op(da, "shipment_get", shipment_id=shipment["id"])["has_certificate"] is False
+        body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
+        shipments = body.split(">Shipments<", 1)[1].split(">Received<", 1)[0]
+        assert "on file" not in shipments
+        op(
+            da,
+            "document_attach",
+            data={
+                "kind": "certificate_of_conformity",
+                "shipment_id": shipment["id"],
+                "external_url": "https://example.org/coc.pdf",
+                "source": "document",
+            },
+        )
+        assert op(da, "shipment_get", shipment_id=shipment["id"])["has_certificate"] is True
+        body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
+        assert "on file" in body.split(">Shipments<", 1)[1].split(">Received<", 1)[0]
+
     def test_the_order_page_itemises_the_charges_in_landed_cost(self, scoped, da, world):
         shipment = _shipment(da, world)
         _charge(da, shipment, world["agent"], kind="clearing", amount="120.50")
