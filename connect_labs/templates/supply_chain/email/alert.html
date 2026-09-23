@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+{% comment %}
+Facts and links only. No advice, no ranking (design doc section 22). Inline
+styles because mail clients drop stylesheets.
+{% endcomment %}
+<body style="margin:0;padding:20px;background:#f4f4f4;font-family:Arial,sans-serif;font-size:14px;color:#333333;">
+<div style="max-width:640px;margin:0 auto;background:#ffffff;padding:24px;border-radius:6px;">
+  <h1 style="font-size:18px;margin:0 0 4px 0;color:#16006d;">Supply alert</h1>
+  <p style="margin:0 0 16px 0;color:#666666;">{{ name }}</p>
+
+  {% if checks %}
+    <h2 style="font-size:15px;margin:16px 0 8px 0;">New checks ({{ checks|length }})</h2>
+    {% for notice in checks %}
+      <div style="border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin-bottom:10px;">
+        <div style="font-weight:bold;">{{ notice.subject_kind }}
+          <span style="font-weight:normal;color:#666666;">· {{ notice.subject.category }}</span></div>
+        <div style="margin-top:4px;">{{ notice.subject.label }}
+          <span style="color:#666666;">({{ notice.subject.type }} {{ notice.subject.id }})</span></div>
+        {% if notice.since %}<div style="color:#666666;margin-top:4px;">True since {{ notice.since|date:"Y-m-d" }}</div>{% endif %}
+        {% if notice.facts %}
+          <table style="margin-top:6px;font-size:13px;border-collapse:collapse;">
+            {% for key, value in notice.facts.items %}
+              <tr><td style="color:#666666;padding:1px 12px 1px 0;vertical-align:top;">{{ key }}</td><td style="padding:1px 0;">{{ value }}</td></tr>
+            {% endfor %}
+          </table>
+        {% endif %}
+        <div style="margin-top:8px;"><a href="{{ notice.record_url }}" style="color:#3843d0;">Open the record</a></div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if movements %}
+    <h2 style="font-size:15px;margin:16px 0 8px 0;">Movements recorded ({{ movements|length }})</h2>
+    {% for notice in movements %}
+      <div style="border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin-bottom:10px;">
+        <div style="font-weight:bold;">{{ notice.subject_kind }}:
+          {{ notice.facts.quantity }} {{ notice.facts.quantity_unit }} of {{ notice.facts.commodity }}</div>
+        <div style="color:#666666;margin-top:4px;">
+          {% if notice.facts.from %}from {{ notice.facts.from }} {% endif %}{% if notice.facts.to %}to {{ notice.facts.to }} {% endif %}on {{ notice.facts.occurred_on }}
+          {% if notice.facts.batch %}· batch {{ notice.facts.batch }}{% endif %}
+        </div>
+        <div style="color:#666666;margin-top:4px;">Source: {{ notice.facts.source }}{% if notice.facts.recorded_by %} ({{ notice.facts.recorded_by }}){% endif %}</div>
+        <div style="margin-top:8px;"><a href="{{ notice.record_url }}" style="color:#3843d0;">Open the record</a></div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <p style="color:#666666;font-size:12px;margin-top:20px;">
+    {% if is_external %}
+      A member of the programme team subscribed this address to these alerts. To stop them, reply to the person who set them up.
+    {% else %}
+      <a href="{{ manage_url }}" style="color:#3843d0;">Manage these alerts</a>
+    {% endif %}
+  </p>
+</div>
+</body>
+</html>
