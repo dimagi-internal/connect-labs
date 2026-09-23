@@ -1,6 +1,16 @@
 {
-  "build_order": [],
-  "fetched_at": "2026-09-23T23:49:08.779197+00:00",
+  "build_order": [
+    "the-checks-list-says-the-import-is-stuck",
+    "the-consignment-and-who-owes-what",
+    "attaching-the-donors-documents",
+    "the-declaration-clears-the-check",
+    "paying-to-land-it",
+    "what-landing-a-donation-cost",
+    "arrival-and-the-two-broken-units",
+    "releasing-to-the-project-sites",
+    "where-the-dispensers-are"
+  ],
+  "fetched_at": "2026-09-23T23:49:50.221309+00:00",
   "name": "supply-dispenser-import",
   "narrative": "Halima Yusuf runs supply for the chlorine programme, and the dispensers ClearWater Action is donating are somewhere between the airport and the project sites. She starts on the checks list, which tells her without anyone being asked that the dispenser consignment is late and that some of its import documents are not on file. She opens the consignment and reads its checklist: each document it needs to clear customs, whether it is on file, and who owes it. ClearWater has emailed its packing list and commercial invoice, so Halima attaches both straight onto their lines. The clearing agent sends the customs declaration, Halima attaches it, and the missing-documents entry drops off the checks list. She records the customs fee and the clearing agent's charge against the consignment, each with the organisation it was paid to. On the order she reads what landing a donation cost: the goods were not bought, and the two charges are itemised with their payees. The consignment clears and reaches Harmattan Health Supplies' warehouse, where inspection refuses two cracked dispensers, and Halima records the goods-received note with the reason. She posts Harmattan's release notes moving dispensers out to the Dawaki and Rimi project sites. Finally she checks where the dispensers are: each site's holding is a balance in the ledger, marked durable, with no months-of-stock figure pretending they get used up.",
   "personas": {
@@ -135,5 +145,5 @@
     }
   ],
   "slug": "supply-dispenser-import",
-  "version": 0
+  "version": 1
 }
