@@ -26,7 +26,16 @@ from django.core.files.storage import default_storage
 from django.db import transaction
 
 from connect_labs.supply_chain import records
-from connect_labs.supply_chain.models import Document, Invoice, Payment, Receipt, ReceiptLine, Shipment, ShipmentLine
+from connect_labs.supply_chain.models import (
+    Charge,
+    Document,
+    Invoice,
+    Payment,
+    Receipt,
+    ReceiptLine,
+    Shipment,
+    ShipmentLine,
+)
 from connect_labs.supply_chain.stock.services import posting
 
 # Generous for a scanned certificate, small enough that a JSON body carrying
@@ -104,6 +113,7 @@ class FulfilmentRepositoryMixin:
         from connect_labs.supply_chain.data_access import _columns, _fresh
 
         contract = self._require_contract(data["contract_id"])
+        self._check_required_documents(data.get("required_documents"))
         shipment = Shipment.objects.create(contract=contract, **_columns(Shipment, data))
         for line in data.get("lines") or []:
             ShipmentLine.objects.create(
@@ -122,10 +132,65 @@ class FulfilmentRepositoryMixin:
         found = self.get_shipment(shipment_id)
         if found is None:
             raise ValueError(f"shipment {shipment_id} not found")
+        self._check_required_documents(data.get("required_documents"))
         for key, value in _columns(Shipment, data).items():
             setattr(found, key, value)
         found.save()
         return _fresh(found)
+
+    def _check_required_documents(self, required):
+        """Each requirement names an organisation that exists.
+
+        The whole point of the list is to say who to follow up with; a
+        requirement owed by a dangling id answers nothing. Organisations are
+        labs-wide, so this is an existence check and not a scope check.
+        """
+        from connect_labs.labs.models import LabsOrg
+
+        wanted = {entry.get("owed_by_org_id") for entry in required or [] if entry.get("owed_by_org_id")}
+        found = set(LabsOrg.objects.filter(pk__in=wanted).values_list("pk", flat=True))
+        missing = sorted(wanted - found)
+        if missing:
+            raise ValueError(
+                f"organisation {missing[0]} does not exist; record it with org_upsert before naming it "
+                "as owing a document"
+            )
+
+    # ---- charges ---------------------------------------------------------
+
+    def list_charges(self, shipment_id=None, contract_id=None):
+        qs = (
+            Charge.objects.filter(shipment__contract__program_id=self._require_program())
+            .select_related("payee_org")
+            .prefetch_related("documents")
+        )
+        if shipment_id is not None:
+            qs = qs.filter(shipment_id=shipment_id)
+        if contract_id is not None:
+            qs = qs.filter(shipment__contract_id=contract_id)
+        return list(qs)
+
+    def get_charge(self, charge_id):
+        """Scoped through the shipment's contract, like every row below it."""
+        return (
+            Charge.objects.filter(shipment__contract__program_id=self._require_program(), pk=charge_id)
+            .select_related("payee_org")
+            .first()
+        )
+
+    def record_charge(self, data):
+        """A fee paid to land a consignment, to somebody who is not the supplier."""
+        from connect_labs.labs.models import LabsOrg
+        from connect_labs.supply_chain.data_access import _columns, _fresh
+
+        shipment = self.get_shipment(data["shipment_id"])
+        if shipment is None:
+            raise ValueError(f"shipment {data['shipment_id']} does not exist in this programme")
+        payee = LabsOrg.objects.filter(pk=data["payee_org_id"]).first()
+        if payee is None:
+            raise ValueError(f"organisation {data['payee_org_id']} does not exist")
+        charge = Charge.objects.create(shipment=shipment, payee_org=payee, **_columns(Charge, data))
+        return _fresh(charge)
 
     # ---- receipts --------------------------------------------------------
 
@@ -273,6 +338,28 @@ class FulfilmentRepositoryMixin:
         if invoice.amount is not None:
             invoice.status = "paid" if settled >= invoice.amount else "part_paid"
             invoice.save(update_fields=["status", "updated_at"])
+        return _fresh(payment)
+
+    def confirm_payment(self, payment_id, confirmed_on=None):
+        """The payee's word that the money arrived.
+
+        Not before the payment was made: a confirmation dated earlier than the
+        settlement it confirms is a typo that would read as a fact.
+        """
+        from datetime import date
+
+        from connect_labs.supply_chain.data_access import _fresh
+
+        payment = self.get_payment(payment_id)
+        if payment is None:
+            raise ValueError(f"payment {payment_id} does not exist in this programme")
+        on = date.fromisoformat(confirmed_on) if isinstance(confirmed_on, str) else (confirmed_on or date.today())
+        if on < payment.paid_on:
+            raise ValueError(
+                f"a confirmation on {on} is before the payment was made on {payment.paid_on}; check the date"
+            )
+        payment.confirmed_by_payee_on = on
+        payment.save(update_fields=["confirmed_by_payee_on", "updated_at"])
         return _fresh(payment)
 
     # ---- documents -------------------------------------------------------

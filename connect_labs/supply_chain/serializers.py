@@ -102,6 +102,11 @@ def item(obj) -> dict:
         "gpc_brick": obj.gpc_brick,
         "spec_attributes": obj.spec_attributes,
         "status": obj.status,
+        "components": obj.components,
+        "is_kit": obj.is_kit,
+        "one_course_is": obj.one_course_is,
+        "stock_class": obj.stock_class,
+        "is_durable": obj.is_durable,
         "reference_scope": _reference_scope(obj.scope_key),
     }
 
@@ -205,6 +210,20 @@ def award(obj) -> dict:
     }
 
 
+def approval(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "award_id": obj.award_id,
+        "approver_org_id": obj.approver_org_id,
+        "role": obj.role,
+        "status": obj.status,
+        "requested_on": _date(obj.requested_on),
+        "decided_on": _date(obj.decided_on),
+        "note": obj.note,
+        "document_ids": [doc.pk for doc in obj.documents.all()],
+    }
+
+
 def _sourced(obj) -> dict:
     return {
         "source": obj.source,
@@ -244,6 +263,8 @@ def contract(obj) -> dict:
         "incoterm": obj.incoterm,
         "delivery_supply_point_id": obj.delivery_supply_point_id,
         "promised_lead_time_days": obj.promised_lead_time_days,
+        "consideration": obj.consideration,
+        "covers_shortfall_of_id": obj.covers_shortfall_of_id,
         **_sourced(obj),
     }
 
@@ -269,6 +290,22 @@ def shipment(obj) -> dict:
             }
             for line in obj.lines.all()
         ],
+        "document_ids": [doc.pk for doc in obj.documents.all()],
+        "required_documents": obj.required_documents,
+        **_sourced(obj),
+    }
+
+
+def charge(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "shipment_id": obj.shipment_id,
+        "kind": obj.kind,
+        "payee_org_id": obj.payee_org_id,
+        "amount": _num(obj.amount),
+        "currency": obj.currency,
+        "fx_rate_to_usd": _num(obj.fx_rate_to_usd),
+        "paid_on": _date(obj.paid_on),
         "document_ids": [doc.pk for doc in obj.documents.all()],
         **_sourced(obj),
     }
@@ -318,6 +355,7 @@ def invoice(obj) -> dict:
                 "currency": payment.currency,
                 "method": payment.method,
                 "reference": payment.reference,
+                "confirmed_by_payee_on": _date(payment.confirmed_by_payee_on),
                 **_sourced(payment),
             }
             for payment in obj.payments.all()
@@ -336,6 +374,7 @@ def payment(obj) -> dict:
         "currency": obj.currency,
         "method": obj.method,
         "reference": obj.reference,
+        "confirmed_by_payee_on": _date(obj.confirmed_by_payee_on),
         **_sourced(obj),
     }
 

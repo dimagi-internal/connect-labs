@@ -166,7 +166,12 @@ def supply_base(
             contract.supplier_id,
             Evidence(
                 kind="contracted",
-                detail=contract.reference or f"contract {contract.pk}",
+                # A donor is a real source of supply, but "contracted" alone
+                # would read as a purchase with a price behind it.
+                detail=(contract.reference or f"contract {contract.pk}")
+                + {"in_kind": " (in kind)", "bundled": " (bundled in setup fee)"}.get(
+                    getattr(contract, "consideration", "priced"), ""
+                ),
                 on=contract.signed_on,
                 contract_id=contract.pk,
                 item_id=contract.item_id,

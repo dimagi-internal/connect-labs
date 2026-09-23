@@ -1,0 +1,175 @@
+{% extends 'supply_chain/base.html' %}
+
+{% comment %}
+Who is told about what, and what they were told. The two sit on one page
+because the question a person arrives with is usually "did EvAc get told?" --
+and the answer is a row in the log beside the subscription that sent it.
+
+The log says how each notice left, including when it did not: "email off" and
+"no address" are shown as such, never as sent.
+{% endcomment %}
+
+{% block supply_content %}
+
+<div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Alerts</h1>
+    <p class="text-sm text-gray-500 mt-1 max-w-2xl">
+      An email when a check becomes true or stock moves. Each states what is now true and links to the
+      record — no advice, no ranking. A check that stays true is sent once.
+    </p>
+  </div>
+  {% if has_program_context %}
+    <a href="{% url 'supply_chain:alert_create' %}"
+       class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+      <i class="fa-solid fa-plus mr-1"></i> New alert
+    </a>
+  {% endif %}
+</div>
+
+{% if not has_program_context %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
+    <p class="text-sm text-message-warning-text/90">Choose a programme above. Alerts belong to one.</p>
+  </div>
+{% else %}
+
+<section class="mb-8">
+  <h2 class="text-sm font-semibold text-gray-900 mb-2">
+    Subscriptions <span class="ml-1 font-normal text-gray-500">{{ subscriptions|length }}</span>
+  </h2>
+  <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+      <table class="min-w-[52rem] w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+          <tr>
+            <th class="text-left px-4 py-2">Alert</th>
+            <th class="text-left px-4 py-2">Watches</th>
+            <th class="text-left px-4 py-2">Narrowed to</th>
+            <th class="text-left px-4 py-2">Sends to</th>
+            <th class="text-left px-4 py-2">How often</th>
+            <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for sub in subscriptions %}
+            <tr class="align-top">
+              <td class="px-4 py-2">
+                <span class="text-gray-900">{{ sub.label|default:"Untitled alert" }}</span>
+                {% if not sub.active %}
+                  <span class="ml-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">paused</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-2">
+                <div class="flex flex-wrap gap-1">
+                  {% for kind in sub.check_kinds %}
+                    <code class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs">{{ kind }}</code>
+                  {% endfor %}
+                  {% for kind in sub.movement_kinds %}
+                    <span class="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-xs">{{ kind }} movements</span>
+                  {% endfor %}
+                </div>
+              </td>
+              <td class="px-4 py-2 text-gray-700">
+                {% if sub.supply_point_name or sub.commodity_name %}
+                  {{ sub.supply_point_name|default:"" }}{% if sub.supply_point_name and sub.commodity_name %} · {% endif %}{{ sub.commodity_name|default:"" }}
+                {% else %}
+                  <span class="text-gray-400">whole programme</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-2 text-gray-700">
+                {{ sub.recipient }}
+                {% if sub.recipient_email %}<div class="text-xs text-gray-500">outside labs</div>{% endif %}
+              </td>
+              <td class="px-4 py-2 text-gray-700">
+                {% if sub.cadence == "daily_digest" %}once a day{% else %}as it happens{% endif %}
+              </td>
+              <td class="px-4 py-2 text-right whitespace-nowrap">
+                <a href="{% url 'supply_chain:alert_edit' sub.id %}" class="text-brand-indigo hover:underline">Edit</a>
+                <form method="post" action="{% url 'supply_chain:alert_delete' sub.id %}" class="inline ml-3" onsubmit="return confirm('Delete this alert? Nothing more will be sent for it.')">
+                  {% csrf_token %}
+                  <button type="submit" class="text-red-600 hover:underline">Delete</button>
+                </form>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="6" class="px-4 py-8 text-center">
+                <p class="text-sm text-gray-600">No alerts yet.</p>
+                <p class="text-sm text-gray-500 mt-1 max-w-lg mx-auto">
+                  Start with the one the field asked for: stock below its minimum, sent to whoever
+                  restocks it.
+                </p>
+                <a href="{% url 'supply_chain:alert_create' %}"
+                   class="inline-block mt-4 px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+                  Create the first one
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2 class="text-sm font-semibold text-gray-900 mb-1">Sent log</h2>
+  <p class="text-sm text-gray-500 mb-2">The newest fifty notices. Each is a fact as it stood when it was found.</p>
+  <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+      <table class="min-w-[52rem] w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+          <tr>
+            <th class="text-left px-4 py-2">Found</th>
+            <th class="text-left px-4 py-2">What</th>
+            <th class="text-left px-4 py-2">About</th>
+            <th class="text-left px-4 py-2">Alert</th>
+            <th class="text-left px-4 py-2">Delivery</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for notice in log %}
+            <tr class="align-top">
+              <td class="px-4 py-2 text-gray-700 whitespace-nowrap">{{ notice.detected|date:"j M Y, H:i" }}</td>
+              <td class="px-4 py-2">
+                {% if notice.kind == "check" %}
+                  <code class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs">{{ notice.subject_kind }}</code>
+                {% else %}
+                  <span class="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-xs">{{ notice.subject_kind }}</span>
+                  <span class="text-xs text-gray-600">{{ notice.facts.quantity }} {{ notice.facts.quantity_unit }}</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-2">
+                <a href="{{ notice.record_url }}" class="text-brand-indigo hover:underline">{{ notice.subject.label|default:notice.subject.type }}</a>
+                {% if notice.since %}<div class="text-xs text-gray-500">since {{ notice.since }}</div>{% endif %}
+              </td>
+              <td class="px-4 py-2 text-gray-700">{{ notice.subscription_name }}</td>
+              <td class="px-4 py-2">
+                {% if notice.delivery == "queued" %}
+                  <span class="px-2 py-0.5 rounded-full text-xs bg-message-success text-message-success-text">sent</span>
+                  <div class="text-xs text-gray-500 mt-0.5">to {{ notice.sent_to }}</div>
+                {% elif notice.delivery == "pending" %}
+                  <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">in the next digest</span>
+                {% elif notice.delivery == "email_disabled" %}
+                  <span class="px-2 py-0.5 rounded-full text-xs bg-message-warning text-message-warning-text">not sent — email is off</span>
+                {% else %}
+                  <span class="px-2 py-0.5 rounded-full text-xs bg-message-warning text-message-warning-text">not sent — no address</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="5" class="px-4 py-6 text-center text-sm text-gray-500">
+                Nothing has been sent yet. Alerts are checked every five minutes.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% endif %}
+{% endblock %}

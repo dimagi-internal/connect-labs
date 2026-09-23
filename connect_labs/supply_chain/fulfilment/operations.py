@@ -122,7 +122,9 @@ def contract_get(access, contract_id):
     summary=(
         "Record a contract or purchase order. buyer_of_record is required and has no default: import "
         "duty and VAT depend on who imports. Set duty_relief_claimed only alongside a duty_exemption "
-        "document. source is required — it says who told you."
+        "document. source is required — it says who told you. consideration is priced (the default), "
+        "in_kind for a donation, or bundled for goods paid out of something else such as a setup fee; "
+        "only a priced contract takes a unit price."
     ),
     input_schema=obj({"data": _CONTRACT_DATA_CREATE}, required=("data",)),
     is_write=True,
@@ -173,6 +175,30 @@ _SHIPMENT_DATA = _data_with(
     expected_on=_DATE,
     carrier={"type": "string"},
     lines={"type": "array", "items": _SHIPMENT_LINE},
+    # What it needs to clear, and who owes each. Sent whole on an update: the
+    # list IS the requirement, so a partial merge could not remove one.
+    required_documents={
+        "type": "array",
+        "items": _data_with(
+            ("kind", "owed_by_org_id"),
+            kind={"enum": list(records.DOCUMENT_KINDS)},
+            owed_by_org_id=ID,
+        ),
+    },
+    source={"enum": list(records.SOURCES)},
+    recorded_by_org_id=ID,
+)
+
+_CHARGE_DATA = _data_with(
+    ("shipment_id", "kind", "payee_org_id", "amount", "source"),
+    shipment_id=ID,
+    kind={"enum": list(records.CHARGE_KINDS)},
+    payee_org_id=ID,
+    amount=MONEY_NONZERO,
+    currency={"type": "string", "minLength": 3, "maxLength": 3},
+    fx_rate_to_usd=MONEY_NONZERO,
+    paid_on=_DATE,
+    note={"type": "string"},
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
 )
@@ -259,6 +285,19 @@ def shipment_list(access, contract_id=None, status=None):
 
 
 @register_operation(
+    name="shipment_get",
+    summary=(
+        "Fetch one shipment with its lines, the documents it requires (and who owes each), the "
+        "documents attached to it, and its status and expected date."
+    ),
+    input_schema=obj({"shipment_id": ID}, required=("shipment_id",)),
+)
+def shipment_get(access, shipment_id):
+    shipment = access.get_shipment(shipment_id)
+    return record(shipment) if shipment else None
+
+
+@register_operation(
     name="shipment_record",
     summary=(
         "Record a dispatch. Lines carry batch and expiry, which a receipt later matches against. A "
@@ -283,6 +322,34 @@ def shipment_record(access, data):
 )
 def shipment_update(access, shipment_id, data):
     return record(access.update_shipment(shipment_id, data))
+
+
+@register_operation(
+    name="charge_list",
+    summary=(
+        "List what was paid to land this programme's consignments — customs fees, clearing agents, "
+        "inland freight, storage — optionally for one shipment or one contract. Paid to somebody "
+        "other than the supplier, so not part of the contract's price."
+    ),
+    input_schema=obj({"shipment_id": ID, "contract_id": ID}),
+)
+def charge_list(access, shipment_id=None, contract_id=None):
+    return [record(c) for c in access.list_charges(shipment_id=shipment_id, contract_id=contract_id)]
+
+
+@register_operation(
+    name="charge_record",
+    summary=(
+        "Record a charge paid to land a shipment: customs_duty, customs_fee, clearing, inland_freight, "
+        "storage or other, paid to payee_org_id (an organisation from org_list — customs, a clearing "
+        "agent, a haulier). Give fx_rate_to_usd for a charge in local currency, or the contract's "
+        "landed total cannot add it. Attach the receipt with document_attach and charge_id."
+    ),
+    input_schema=obj({"data": _CHARGE_DATA}, required=("data",)),
+    is_write=True,
+)
+def charge_record(access, data):
+    return record(access.record_charge(data))
 
 
 @register_operation(
@@ -356,6 +423,20 @@ def payment_record(access, data):
 
 
 @register_operation(
+    name="payment_confirm",
+    summary=(
+        "Record that the payee confirmed a payment arrived, on confirmed_on (today if omitted). Until "
+        "then a payment older than a fortnight appears in checks_list as payment_unconfirmed. Not "
+        "before the payment's own date."
+    ),
+    input_schema=obj({"payment_id": ID, "confirmed_on": _DATE}, required=("payment_id",)),
+    is_write=True,
+)
+def payment_confirm(access, payment_id, confirmed_on=None):
+    return record(access.confirm_payment(payment_id, confirmed_on=confirmed_on))
+
+
+@register_operation(
     name="document_list",
     summary=(
         "List documents, optionally filtered by kind or by what they evidence. Two derivations "
@@ -396,7 +477,10 @@ def document_attach(access, data):
     summary=(
         "The all-in cost of a contract and the buyer it assumed. The buyer of record is an input, "
         "never a default: duty and VAT fall on the importer. A duty relief with no exemption document "
-        "comes back unconfirmed, not zero. Set compare_buyers to cost it under all three."
+        "comes back unconfirmed, not zero. Charges paid to land its shipments (customs, clearing, inland "
+        "freight) are itemised and added. A contract whose consideration is in_kind or bundled has no "
+        "goods cost and says why as {not_costed: reason} instead, with its charges still itemised. Set "
+        "compare_buyers to cost it under all three."
     ),
     input_schema=obj({"contract_id": ID, "compare_buyers": {"type": "boolean"}}, required=("contract_id",)),
 )
@@ -407,11 +491,22 @@ def contract_landed_cost(access, contract_id, compare_buyers=False):
     costed = landed.landed_total(contract)
     out = {
         "contract_id": contract.pk,
+        "consideration": costed["consideration"],
         "buyer_of_record": costed["buyer_of_record"],
         "currency": costed["currency"],
         "duty_relief_claimed": costed["duty_relief_claimed"],
         "duty_relief_evidenced": costed["duty_relief_evidenced"],
-        **{key: figure(costed[key]) for key in ("goods", "freight", "duty", "vat", "landed_total")},
+        **{key: figure(costed[key]) for key in ("goods", "freight", "duty", "vat", "charges_total", "landed_total")},
+        # Paid to somebody other than the supplier to land the goods, one line
+        # each, in the currency each was paid in.
+        "charges": [
+            {
+                **charge,
+                "amount": figure(charge["amount"]),
+                "paid_on": charge["paid_on"].isoformat() if charge["paid_on"] else None,
+            }
+            for charge in costed["charges"]
+        ],
     }
     if compare_buyers:
         out["by_buyer"] = {buyer: figure(value) for buyer, value in landed.compare_buyers(contract).items()}
@@ -423,7 +518,8 @@ def contract_landed_cost(access, contract_id, compare_buyers=False):
     summary=(
         "The three-way match for a contract: ordered against received against invoiced, plus what is "
         "safe to pay now. Computed, never stored. payable_now is the value of what actually ARRIVED, "
-        "never what was billed."
+        "never what was billed. A shortfall another contract was placed to buy (covers_shortfall_of_id) "
+        "reads as status shortfall_covered, naming the covering orders in covered_by."
     ),
     input_schema=obj({"contract_id": ID}, required=("contract_id",)),
 )
@@ -437,6 +533,7 @@ def contract_match(access, contract_id):
         "currency": matched["currency"],
         "status": matched["status"],
         "matches": matched["matches"],
+        "covered_by": matched["covered_by"],
         **{
             key: figure(matched[key]) if matched[key] is not None else None
             for key in (

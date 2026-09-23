@@ -28,15 +28,36 @@ from crispy_forms.layout import Column, Field, Layout, Row
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
+from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import records
-from connect_labs.supply_chain.forms import DATE, INPUT, SEARCHABLE, SELECT, TEXTAREA, set_choices, to_payload
+from connect_labs.supply_chain.forms import (
+    DATE,
+    INPUT,
+    MONEY_INPUT,
+    SEARCHABLE,
+    SELECT,
+    TEXTAREA,
+    set_choices,
+    to_payload,
+)
 from connect_labs.supply_chain.fulfilment_forms import ProvenancedForm
-from connect_labs.supply_chain.models import Commodity, Item, Movement, Receipt, Shipment, StockCount, SupplyPoint
+from connect_labs.supply_chain.models import (
+    Charge,
+    Commodity,
+    Item,
+    Movement,
+    Receipt,
+    Shipment,
+    StockCount,
+    SupplyPoint,
+)
 
 __all__ = [
     "BatchLineFormSet",
+    "ChargeForm",
     "MovementForm",
     "ReceiptForm",
+    "RequiredDocumentForm",
     "ShipmentForm",
     "ShipmentStatusForm",
     "StockCountForm",
@@ -183,6 +204,122 @@ class ShipmentStatusForm(ProvenancedForm):
             Row(Column("status"), Column("expected_on"), css_class="grid md:grid-cols-2 gap-x-6"),
             Field("source"),
         )
+
+
+class RequiredDocumentForm(ProvenancedForm):
+    """Add one document to what a consignment needs to clear, and who owes it.
+
+    One at a time, onto the list already there, because that is how the list
+    grows in practice: the clearing agent asks for an import permit on
+    Tuesday and a product registration on Thursday. The operation takes the
+    whole list, so the form sends the existing one with the new line added.
+    """
+
+    kind = forms.ChoiceField(label=_("Document"), widget=forms.Select(attrs=SEARCHABLE))
+    owed_by_org = forms.ModelChoiceField(
+        label=_("Owed by"),
+        queryset=LabsOrg.objects.none(),
+        widget=forms.Select(attrs=SEARCHABLE),
+        help_text=_("Who has to produce it — the donor, the supplier, a clearing agent. They are who gets asked."),
+    )
+
+    class Meta:
+        model = Shipment
+        fields = []
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        set_choices(
+            self,
+            "kind",
+            [("", "—")] + [(value, str(value).replace("_", " ").capitalize()) for value in records.DOCUMENT_KINDS],
+        )
+        # Organisations are labs-wide, so this picker is deliberately unscoped.
+        self.fields["owed_by_org"].queryset = LabsOrg.objects.order_by("name")
+        self.fields["owed_by_org"].empty_label = _("Select an organisation…")
+        # The list is being edited; who reported the shipment is not. Its
+        # `source` is sent back unchanged, as the remove button does.
+        del self.fields["source"]
+        self.helper.layout = Layout(
+            Row(Column("kind"), Column("owed_by_org"), css_class="grid md:grid-cols-2 gap-x-6"),
+        )
+
+    def clean_kind(self):
+        kind = self.cleaned_data.get("kind")
+        existing = (
+            {entry.get("kind") for entry in (self.instance.required_documents or [])} if self.instance else set()
+        )
+        if kind in existing:
+            raise forms.ValidationError(_("Already on the list for this consignment."))
+        return kind
+
+    def payload(self) -> dict:
+        existing = list(self.instance.required_documents or []) if self.instance else []
+        return {
+            "source": self.instance.source,
+            "required_documents": existing
+            + [{"kind": self.cleaned_data["kind"], "owed_by_org_id": self.cleaned_data["owed_by_org"].pk}],
+        }
+
+
+class ChargeForm(ProvenancedForm):
+    """Money paid to land a consignment, to somebody who is not the supplier."""
+
+    class Meta:
+        model = Charge
+        fields = ["kind", "payee_org", "amount", "currency", "fx_rate_to_usd", "paid_on", "note"]
+        widgets = {
+            "kind": forms.Select(attrs=SELECT),
+            "payee_org": forms.Select(attrs=SEARCHABLE),
+            "amount": forms.NumberInput(attrs={**MONEY_INPUT, "placeholder": "250.00"}),
+            "currency": forms.TextInput(attrs={**INPUT, "placeholder": "USD", "maxlength": 3}),
+            "fx_rate_to_usd": forms.NumberInput(attrs={**MONEY_INPUT, "placeholder": "0.00065"}),
+            "paid_on": forms.DateInput(attrs=DATE),
+            "note": forms.Textarea(attrs=TEXTAREA),
+        }
+        labels = {
+            "kind": _("What for"),
+            "payee_org": _("Paid to"),
+            "amount": _("Amount"),
+            "currency": _("Currency"),
+            "fx_rate_to_usd": _("USD per unit of that currency"),
+            "paid_on": _("Paid on"),
+            "note": _("Note"),
+        }
+        help_texts = {
+            "payee_org": _("Customs, a clearing agent, a haulier — never the supplier; that is the contract price."),
+            "fx_rate_to_usd": _(
+                "Only for a charge not in the order's currency. Without it the landed total cannot add "
+                "this charge, and says so."
+            ),
+            "paid_on": _("Leave empty if it has been assessed but not yet paid."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        set_choices(
+            self,
+            "kind",
+            [(value, str(value).replace("_", " ").capitalize()) for value in records.CHARGE_KINDS],
+        )
+        # Organisations are labs-wide, so this picker is deliberately unscoped.
+        self.fields["payee_org"].queryset = LabsOrg.objects.order_by("name")
+        self.fields["payee_org"].empty_label = _("Select an organisation…")
+        self.helper.layout = Layout(
+            Row(Column("kind"), Column("payee_org"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(
+                Column("amount"),
+                Column("currency"),
+                Column("fx_rate_to_usd"),
+                Column("paid_on"),
+                css_class="grid md:grid-cols-4 gap-x-6",
+            ),
+            Field("note"),
+            Field("source"),
+        )
+
+    def clean_currency(self):
+        return (self.cleaned_data.get("currency") or "").strip().upper()
 
 
 class ReceiptForm(ProvenancedForm):

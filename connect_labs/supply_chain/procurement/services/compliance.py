@@ -145,10 +145,14 @@ def spec_verdict(item_spec_attributes: dict | None, spec_requirements: list[dict
     """
     if not spec_requirements:
         return "No requirements"
+    return _summarise(_outcomes(item_spec_attributes, spec_requirements))
 
-    attributes = item_spec_attributes or {}
+
+def _outcomes(spec_attributes: dict | None, spec_requirements: list[dict]) -> list[str]:
+    """pass / fail / not_stated for each requirement, in order."""
+    attributes = spec_attributes or {}
     outcomes: list[str] = []
-    for requirement in spec_requirements:
+    for requirement in spec_requirements or []:
         operator = requirement.get("operator")
         if operator not in OPERATORS:
             outcomes.append(NOT_STATED)
@@ -161,7 +165,46 @@ def spec_verdict(item_spec_attributes: dict | None, spec_requirements: list[dict
             outcomes.append(PASS)
         else:
             outcomes.append(FAIL)
+    return outcomes
 
+
+def kit_spec_verdict(
+    item_spec_attributes: dict | None,
+    spec_requirements: list[dict],
+    components: list[dict] | None,
+    requirements_by_slug: dict[str, list[dict]],
+) -> dict:
+    """The verdict for a trade item that may be a kit, part by part.
+
+    A co-pack is checked against the co-pack's own requirements AND each
+    component against its own product's: the zinc inside is held to the zinc
+    specification, because that is the product a child actually takes. The
+    component's stated figures travel on the component
+    (`spec_attributes`), not on the kit, so "zinc_mg" on a kit that holds
+    two zinc formulations cannot be ambiguous.
+
+    Returns {"verdict": <summary over every part>, "components": [{
+    commodity_slug, verdict}]}. The summary uses `spec_verdict`'s wording, so
+    a kit and an ordinary item read the same way on the same page. An item
+    with no components gets an empty list and its ordinary verdict.
+    """
+    outcomes = _outcomes(item_spec_attributes, spec_requirements)
+    parts = []
+    for component in components or []:
+        slug = component.get("commodity_slug")
+        requirements = requirements_by_slug.get(slug) or []
+        component_outcomes = _outcomes(component.get("spec_attributes"), requirements)
+        outcomes.extend(component_outcomes)
+        parts.append(
+            {
+                "commodity_slug": slug,
+                "verdict": _summarise(component_outcomes) if requirements else "No requirements",
+            }
+        )
+    return {"verdict": _summarise(outcomes) if outcomes else "No requirements", "components": parts}
+
+
+def _summarise(outcomes: list[str]) -> str:
     if FAIL in outcomes:
         return f"{outcomes.count(FAIL)} of {len(outcomes)} fail"
     if NOT_STATED in outcomes:

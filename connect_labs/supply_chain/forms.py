@@ -44,7 +44,8 @@ from crispy_forms.layout import Column, Field, Fieldset, Layout, Row
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from connect_labs.supply_chain.models import Commodity, Item, Outreach, Quote, Round, Supplier
+from connect_labs.labs.models import LabsOrg
+from connect_labs.supply_chain.models import AwardApproval, Commodity, Item, Outreach, Quote, Round, Supplier
 
 # The house widget classes, as prod uses them and as the rest of labs does.
 # `data-tomselect` is picked up by static/js/tomselect.js, which turns a plain
@@ -375,6 +376,76 @@ class ReasonForm(forms.Form):
 
     def payload(self) -> dict:
         return to_payload(self.cleaned_data)
+
+
+# ---- approvals ---------------------------------------------------------
+
+
+class ApprovalRequestForm(ScopedForm):
+    """Ask a third party to agree to an award before it becomes an order."""
+
+    class Meta:
+        model = AwardApproval
+        fields = ["approver_org", "role", "requested_on", "note"]
+        widgets = {
+            "approver_org": forms.Select(attrs=SEARCHABLE),
+            "role": forms.Select(attrs=SELECT),
+            "requested_on": forms.DateInput(attrs=DATE),
+            "note": forms.Textarea(attrs=TEXTAREA),
+        }
+        labels = {
+            "approver_org": _("Who has to agree"),
+            "role": _("As what"),
+            "requested_on": _("Asked on"),
+            "note": _("What was asked"),
+        }
+        help_texts = {
+            "approver_org": _("Not the person deciding the award — somebody whose agreement it needs."),
+            "role": _("Technical: confirms the product. Funder: approves the use of funds. Regulatory: a licence."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Organisations are labs-wide, so this picker is deliberately unscoped.
+        self.fields["approver_org"].queryset = LabsOrg.objects.order_by("name")
+        self.fields["approver_org"].empty_label = _("Select an organisation…")
+        self.fields["requested_on"].initial = date.today()
+        set_choices(
+            self,
+            "role",
+            [("technical", _("Technical")), ("funder", _("Funder")), ("regulatory", _("Regulatory"))],
+        )
+        self.helper.layout = Layout(
+            Row(
+                Column("approver_org"), Column("role"), Column("requested_on"), css_class="grid md:grid-cols-3 gap-x-6"
+            ),
+            Field("note"),
+        )
+
+
+class ApprovalDecisionForm(ScopedForm):
+    """The approver's answer. Final on its row: a reversal is a new request."""
+
+    class Meta:
+        model = AwardApproval
+        fields = ["status", "decided_on", "note"]
+        widgets = {
+            "status": forms.Select(attrs=SELECT),
+            "decided_on": forms.DateInput(attrs=DATE),
+            "note": forms.Textarea(attrs=TEXTAREA),
+        }
+        labels = {"status": _("Their answer"), "decided_on": _("Answered on"), "note": _("Note")}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        set_choices(self, "status", [("approved", _("Approved")), ("declined", _("Declined"))])
+        self.fields["status"].initial = "approved"
+        self.fields["decided_on"].initial = date.today()
+        self.fields["note"].required = False
+        self.helper.layout = Layout(
+            Row(Column("status"), Column("decided_on"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Field("note"),
+        )
 
 
 # ---- quotes ------------------------------------------------------------

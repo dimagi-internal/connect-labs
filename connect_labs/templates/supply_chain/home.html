@@ -58,6 +58,7 @@ figures, and the catalogue is where our own gaps get closed.
   <h2 class="text-sm font-semibold text-gray-900 mt-8 mb-1">Needs an answer</h2>
   <p class="text-xs text-gray-500 mb-3">
     Derived on read, so this is the state now rather than a queue somebody groomed.
+    <a class="text-brand-indigo hover:underline ml-1" href="{% url 'supply_chain:checks' %}">Read every check, with its facts</a>
   </p>
   <div class="grid gap-3 sm:grid-cols-3 mb-2">
     {% for group in checks_by_audience %}

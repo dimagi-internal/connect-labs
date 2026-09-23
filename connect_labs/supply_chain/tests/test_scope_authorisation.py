@@ -177,6 +177,12 @@ def test_the_system_escape_hatch_is_greppable():
         "supply_chain/management/commands/supply_dev_seed.py",
         "supply_chain/management/commands/supply_ingest_stock_reports.py",
         "supply_chain/management/commands/supply_load_bootstrap.py",
+        # The alert beat task: no user, reads only programmes that already
+        # hold a subscription a member created.
+        "supply_chain/alerts/service.py",
+        # A supplier update link: no user, and the token is the authority. It
+        # writes only rows inside the link's own scope (see its tests).
+        "supply_chain/update_links/service.py",
         "labs/access/scopes.py",
     }
     offenders = sorted(

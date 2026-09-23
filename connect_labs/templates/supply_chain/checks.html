@@ -1,0 +1,76 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+Every check, with the facts behind it. Grouped by kind -- what the finding IS
+-- and never ranked: an order of importance is a judgement about today that
+the database cannot make (design doc sections 22 and 24). Each row links to
+the record it is about, because that is where it gets answered.
+{% endcomment %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+  </div>
+{% else %}
+
+<div class="mb-4">
+  <div class="text-xs text-gray-500">
+    <a class="hover:underline" href="{% url 'supply_chain:home' %}">Overview</a> › Checks
+  </div>
+  <h2 class="text-lg font-semibold text-brand-indigo">What the record cannot answer, or disagrees with itself about</h2>
+  <p class="text-sm text-gray-600 max-w-3xl">
+    {{ checks.count }} check{{ checks.count|pluralize }}. Each is a fact nobody supplied, two records that
+    disagree, or a figure past a bound your own data sets. None is ranked and none says what to do.
+  </p>
+  <div class="flex flex-wrap gap-2 mt-3 text-sm">
+    <a href="{% url 'supply_chain:checks' %}"
+       class="px-2.5 py-1 rounded-md border {% if not category and not kind %}border-brand-indigo text-brand-indigo{% else %}border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">All</a>
+    {% for name in checks.categories %}
+      <a href="?category={{ name }}"
+         class="px-2.5 py-1 rounded-md border {% if category == name %}border-brand-indigo text-brand-indigo{% else %}border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">
+        {{ name|humanise }} <span class="text-gray-400">— {{ name|category_label }}</span>
+      </a>
+    {% endfor %}
+  </div>
+</div>
+
+{% for group in groups %}
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden mb-4">
+    <div class="px-4 py-2.5 border-b border-gray-100 flex items-baseline gap-2">
+      <a href="?kind={{ group.kind }}" class="text-sm font-semibold text-gray-900 hover:underline">{{ group.kind|check_label }}</a>
+      <span class="text-xs text-gray-500">{{ group.items|length }} · {{ group.category|category_label }}</span>
+    </div>
+    <ul class="divide-y divide-gray-100">
+      {% for check in group.items %}
+        <li class="px-4 py-3 text-sm">
+          <div class="flex flex-wrap items-baseline gap-x-3">
+            {% with href=check|check_href %}
+              {% if href %}
+                <a class="font-medium text-brand-indigo hover:underline" href="{{ href }}">{{ check.subject.label }}</a>
+              {% else %}
+                <span class="font-medium text-gray-900">{{ check.subject.label }}</span>
+              {% endif %}
+            {% endwith %}
+            <span class="text-xs text-gray-500">{{ check.audience|audience_label }}</span>
+            {% if check.days_open is not None %}
+              <span class="text-xs text-gray-500 tabular-nums">{{ check.days_open }} day{{ check.days_open|pluralize }} since {{ check.since }}</span>
+            {% endif %}
+          </div>
+          <dl class="grid grid-cols-1 sm:grid-cols-4 gap-x-4 gap-y-0.5 mt-1.5">
+            {% for label, text in check.facts|fact_rows %}
+              <dt class="text-xs text-gray-500">{{ label }}</dt>
+              <dd class="text-xs text-gray-800 break-words sm:col-span-3">{{ text }}</dd>
+            {% endfor %}
+          </dl>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% empty %}
+  <p class="text-sm text-gray-500">Nothing to report{% if kind or category %} of this kind{% endif %}.</p>
+{% endfor %}
+
+{% endif %}
+{% endblock %}

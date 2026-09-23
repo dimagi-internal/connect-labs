@@ -1,0 +1,132 @@
+{% extends 'supply_chain/_update_link_shell.html' %}
+{% load crispy_forms_tags %}
+
+{% comment %}
+No icon font here: base.html gets Font Awesome from the vendors JS bundle, and
+this page loads no script at all.
+
+What an organisation sees behind its update link. Only what the link covers:
+its orders (with their dispatches) and its supply points. Nothing else in the
+programme is read to build this page -- not other orders, not the catalogue,
+not other organisations' stock.
+
+Each action is a card that opens in place. They share one URL; the hidden
+`action` field says which form a POST belongs to, and each form carries its
+own prefix so seven of them cannot collide.
+{% endcomment %}
+
+{% block title %}Updates for {{ org.name }}{% endblock %}
+{% block heading %}Updates for {{ org.name }}{% endblock %}
+
+{% block body %}
+
+{% if done %}
+  <div class="flex items-center gap-2 p-4 mb-4 rounded-lg border-[0.5px] bg-message-success text-message-success-text border-message-success-border">
+    <span>Recorded: {{ done.title|lower }}. The programme team can see it now.</span>
+  </div>
+{% endif %}
+
+<div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-6">
+  <div class="px-5 py-4 border-b border-brand-border-light">
+    <h2 class="text-base font-semibold text-gray-900">What this link covers</h2>
+    <p class="text-sm text-gray-500 mt-0.5">
+      Anything you record here is shared with the programme team and marked as reported by
+      {{ org.name }}. The link works until {{ expires_on|date:"j F Y" }}.
+    </p>
+  </div>
+  <div class="grid md:grid-cols-2 gap-x-6">
+    <div class="px-5 py-4">
+      <h3 class="text-xs uppercase tracking-wide text-gray-500 mb-2">Orders</h3>
+      {% for contract in contracts %}
+        <div class="mb-3">
+          <div class="text-sm text-gray-900 font-medium">
+            {% if contract.reference %}{{ contract.reference }}{% else %}Order {{ contract.pk }}{% endif %}
+            <span class="ml-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">{{ contract.get_status_display }}</span>
+          </div>
+          <div class="text-sm text-gray-600">
+            {% if contract.item %}{{ contract.item.name }}{% else %}{{ contract.commodity.name }}{% endif %}{% if contract.quantity %} · {{ contract.quantity.normalize }} {{ contract.quantity_unit }}{% endif %}
+          </div>
+          {% for shipment in contract.shipments.all %}
+            <div class="text-xs text-gray-500 mt-0.5">
+              <span class="text-gray-400">↳</span> {{ shipment.reference|default:"Dispatch" }} — {{ shipment.get_status_display }}{% if shipment.expected_on %}, expected {{ shipment.expected_on|date:"j M" }}{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% empty %}
+        <p class="text-sm text-gray-400">None</p>
+      {% endfor %}
+    </div>
+    <div class="px-5 py-4">
+      <h3 class="text-xs uppercase tracking-wide text-gray-500 mb-2">Supply points</h3>
+      {% for point in supply_points %}
+        <div class="text-sm text-gray-900 mb-1">{{ point.name }}</div>
+      {% empty %}
+        <p class="text-sm text-gray-400">None</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<h2 class="text-sm font-semibold text-gray-900 mb-2">Record an update</h2>
+
+{% for form in forms %}
+  <details class="bg-white border rounded-lg overflow-hidden mb-3 {% if form.non_field_errors %}border-message-error-border/50{% else %}border-brand-border-light{% endif %}"
+           {% if form.action == bound_action %}open{% endif %}>
+    <summary class="px-5 py-4 cursor-pointer select-none">
+      <span class="text-base font-semibold text-gray-900">{{ form.title }}</span>
+      <span class="block text-sm text-gray-500 mt-0.5">{{ form.intro }}</span>
+    </summary>
+    <form method="post" class="border-t border-brand-border-light">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="{{ form.action }}">
+      {% if form.non_field_errors %}
+        <div class="px-5 py-3 border-b border-red-200 bg-red-50">
+          {% for error in form.non_field_errors %}
+            <p class="text-sm text-red-800"><strong>Not saved:</strong> {{ error }}</p>
+          {% endfor %}
+          <p class="text-xs text-red-700 mt-0.5">Nothing you typed was lost — fix what is marked and submit again.</p>
+        </div>
+      {% endif %}
+      <div class="px-5 py-4 space-y-4">
+        {% crispy form %}
+      </div>
+      <div class="px-5 py-3 border-t border-brand-border-light bg-gray-50/60 flex justify-end">
+        <button type="submit"
+                class="px-4 py-2 text-sm font-medium rounded-md text-white bg-brand-indigo hover:bg-brand-deep-purple focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-indigo">
+          {{ form.submit_label }}
+        </button>
+      </div>
+    </form>
+  </details>
+{% endfor %}
+
+{% if unavailable %}
+  <p class="text-xs text-gray-500 mt-2">
+    Not available on this link right now:
+    {% for form in unavailable %}{{ form.title|lower }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+    {% comment %}Said rather than hidden, so a missing action reads as the link's scope and not as a fault.{% endcomment %}
+  </p>
+{% endif %}
+
+{% if recent %}
+  <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mt-6">
+    <div class="px-5 py-3 border-b border-brand-border-light">
+      <h2 class="text-sm font-semibold text-gray-900">Recorded through this link</h2>
+    </div>
+    <ul class="divide-y divide-gray-100">
+      {% for submission in recent %}
+        <li class="px-5 py-2 text-sm text-gray-700 flex justify-between gap-4">
+          <span>{{ submission.title }}</span>
+          <span class="text-gray-500 whitespace-nowrap">{{ submission.at|date:"j M Y, H:i" }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<p class="text-xs text-gray-500 mt-6">
+  This is a private link for {{ org.name }}. Anyone who has it can record updates as {{ org.name }} —
+  keep it to the people who need it.
+</p>
+
+{% endblock %}

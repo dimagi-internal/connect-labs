@@ -44,15 +44,24 @@ the partner. Handing a supplier a question about our own configuration wastes
 their time and ours.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from django.db.models import Count, Q
 
 from connect_labs.supply_chain.fulfilment.services.landed import landed_total
 from connect_labs.supply_chain.fulfilment.services.match import three_way_match
-from connect_labs.supply_chain.models import Award, Commodity, Contract, Item, Movement, Round, Shipment
+from connect_labs.supply_chain.models import (
+    Award,
+    AwardApproval,
+    Commodity,
+    Contract,
+    Item,
+    Movement,
+    Round,
+    Shipment,
+)
 from connect_labs.supply_chain.procurement.services.comparison import compare_round
-from connect_labs.supply_chain.procurement.services.compliance import spec_verdict
+from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
 from connect_labs.supply_chain.stock.services import network, soh
 from connect_labs.supply_chain.values import Unconfirmed, decimal_string
 
@@ -71,6 +80,9 @@ KIND_CATEGORIES = {
     "commodity_course_undefined": "missing",
     "stock_unconfirmed": "missing",
     "stock_never_reported": "missing",
+    "shipment_documents_outstanding": "missing",
+    "award_awaiting_approval": "missing",
+    "payment_unconfirmed": "missing",
     # conflict -- two records disagree
     "award_not_contracted": "conflict",
     "invoice_over_billed": "conflict",
@@ -80,9 +92,22 @@ KIND_CATEGORIES = {
     "stock_stockout": "threshold",
     "stock_below_minimum": "threshold",
     "item_fails_specification": "threshold",
+    # The bound is a date the record itself holds: the shipment's expected
+    # date, or the contract's signature plus its promised lead time.
+    "shipment_overdue": "threshold",
+    "contract_delivery_overdue": "threshold",
 }
 
 KINDS = tuple(KIND_CATEGORIES)
+
+# How long after a payment its payee's confirmation is a missing fact rather
+# than simply not yet arrived. This is the one number in this module that is
+# not read from a row, and it is deliberately not a threshold on a figure:
+# it is the grace between "we sent it" and "they should have said so", the
+# same allowance every check that dates from `since` makes implicitly. A
+# payment made yesterday is not a missing confirmation, and reporting it as
+# one would put every settlement on the list the day it happened.
+PAYMENT_CONFIRMATION_GRACE_DAYS = 14
 
 
 def _check(kind, *, subject_type, subject_id, label, audience, facts=None, since=None, as_of=None):
@@ -210,9 +235,27 @@ def _catalogue(access, as_of):
                 )
             )
 
+    requirements_by_slug = {
+        slug: requirements
+        for slug, requirements in Commodity.objects.filter(scope_key=access.scope_key).values_list(
+            "slug", "spec_requirements"
+        )
+    }
     for item in Item.objects.filter(scope_key=access.scope_key).select_related("commodity"):
-        verdict = spec_verdict(item.spec_attributes, item.commodity.spec_requirements)
+        # A kit is checked part by part: the zinc inside a co-pack is held to
+        # the zinc specification, not to the co-pack's.
+        checked = kit_spec_verdict(
+            item.spec_attributes, item.commodity.spec_requirements, item.components, requirements_by_slug
+        )
+        verdict = checked["verdict"]
         if "fail" in verdict.lower():
+            facts = {
+                "verdict": verdict,
+                "requirements": item.commodity.spec_requirements,
+                "stated": item.spec_attributes,
+            }
+            if item.is_kit:
+                facts["components"] = checked["components"]
             out.append(
                 _check(
                     "item_fails_specification",
@@ -223,11 +266,7 @@ def _catalogue(access, as_of):
                     # so the decision is ours: buy a different item, or change
                     # the requirement. Not a question for the manufacturer.
                     audience="internal",
-                    facts={
-                        "verdict": verdict,
-                        "requirements": item.commodity.spec_requirements,
-                        "stated": item.spec_attributes,
-                    },
+                    facts=facts,
                     as_of=as_of,
                 )
             )
@@ -254,6 +293,34 @@ def _fulfilment(access, as_of):
                     as_of=as_of,
                 )
             )
+
+    # An approval asked for and not yet given. The fact nobody has supplied is
+    # the approver's answer; how long it has been outstanding is the age.
+    # Only pending ones: a declined approval is an answer, and the refusal it
+    # causes lives on contract_create, where it bites.
+    pending = AwardApproval.objects.filter(
+        award__round__program_id=access.program_id, status="requested"
+    ).select_related("approver_org", "award__supplier", "award__commodity")
+    for approval in pending:
+        award = approval.award
+        out.append(
+            _check(
+                "award_awaiting_approval",
+                subject_type="award",
+                subject_id=award.pk,
+                label=f"{award.supplier.name} — {award.commodity.name}",
+                audience="internal",
+                facts={
+                    "approval_id": approval.pk,
+                    "approver": {"id": approval.approver_org_id, "name": approval.approver_org.name},
+                    "role": approval.role,
+                    "requested_on": approval.requested_on.isoformat(),
+                    "round_id": award.round_id,
+                },
+                since=approval.requested_on,
+                as_of=as_of,
+            )
+        )
 
     for contract in Contract.objects.filter(program_id=access.program_id).select_related(
         "commodity", "supplier", "buyer_org"
@@ -306,6 +373,9 @@ def _fulfilment(access, as_of):
             )
 
         match = three_way_match(contract)
+        late = _contract_lateness(contract, match, as_of)
+        if late is not None:
+            out.append(late)
         if match["status"] == "over_invoiced":
             out.append(
                 _check(
@@ -340,6 +410,10 @@ def _fulfilment(access, as_of):
         .filter(certificates=0)
         .select_related("contract__supplier")
     )
+    out += _late_shipments(access, as_of)
+    out += _unconfirmed_payments(access, as_of)
+    out += _outstanding_documents(access, as_of)
+
     for shipment in uncertified:
         out.append(
             _check(
@@ -354,6 +428,212 @@ def _fulfilment(access, as_of):
             )
         )
     return out
+
+
+def _supplier_fact(supplier) -> dict:
+    return {"id": supplier.pk, "name": supplier.name}
+
+
+def _contract_lateness(contract, match, as_of):
+    """A contract past its promised lead time and not yet fully received.
+
+    The bound is the contract's own: signed on a date, with a lead time the
+    supplier promised. A contract that states neither cannot be late, and is
+    not guessed to be. Cancelled and closed are decisions that end the
+    question, so they are left alone; a contract whose goods have all
+    arrived is on time by definition, whatever its status says.
+    """
+    if contract.status in ("cancelled", "closed"):
+        return None
+    if contract.signed_on is None or contract.promised_lead_time_days is None:
+        return None
+    # A shortfall another order was placed to buy is not a late delivery:
+    # nobody is waiting on this supplier for it any more. Lateness is read
+    # from the outstanding quantity, not the match status: "over_invoiced"
+    # overwrites the received status and says nothing about what arrived.
+    if match.get("covered_by"):
+        return None
+    outstanding = match.get("outstanding")
+    if outstanding is not None and not isinstance(outstanding, Unconfirmed) and outstanding.amount <= 0:
+        return None
+    expected_on = contract.signed_on + timedelta(days=contract.promised_lead_time_days)
+    today = as_of or date.today()
+    if expected_on >= today:
+        return None
+    facts = {
+        "days_late": (today - expected_on).days,
+        "expected_on": expected_on.isoformat(),
+        "signed_on": contract.signed_on.isoformat(),
+        "promised_lead_time_days": contract.promised_lead_time_days,
+        "supplier": _supplier_fact(contract.supplier),
+        "status": contract.status,
+    }
+    if outstanding is not None and not isinstance(outstanding, Unconfirmed):
+        facts["outstanding"] = decimal_string(outstanding.amount)
+        facts["unit"] = outstanding.unit
+    return _check(
+        "contract_delivery_overdue",
+        subject_type="contract",
+        subject_id=contract.pk,
+        label=f"{contract.supplier.name} — {contract.commodity.name}",
+        # The supplier is who knows where the goods are. Whether to chase,
+        # wait or buy elsewhere is not a fact and is not said here.
+        audience="supplier",
+        facts=facts,
+        since=expected_on,
+        as_of=as_of,
+    )
+
+
+def _late_shipments(access, as_of):
+    """Shipments past their expected date and not yet received.
+
+    `shipment_stalled` was removed from this module because it had no time
+    bound at all -- a consignment dispatched yesterday read the same as one
+    held for seventy days. This one has the bound the record states: its own
+    `expected_on`. A shipment with none cannot be late. Received means either
+    status `delivered` or a goods received note against it, because a store
+    that recorded the receipt and never moved the status has still received
+    the goods. `lost` is its own ending, not lateness.
+    """
+    today = as_of or date.today()
+    late = (
+        Shipment.objects.filter(contract__program_id=access.program_id, expected_on__lt=today)
+        .exclude(status__in=("delivered", "lost"))
+        .filter(receipts__isnull=True)
+        .select_related("contract__supplier", "contract__commodity")
+        .distinct()
+    )
+    out = []
+    for shipment in late:
+        supplier = shipment.contract.supplier
+        out.append(
+            _check(
+                "shipment_overdue",
+                subject_type="shipment",
+                subject_id=shipment.pk,
+                label=f"{shipment.reference or shipment.pk} — {supplier.name}",
+                audience="supplier",
+                facts={
+                    "days_late": (today - shipment.expected_on).days,
+                    "expected_on": shipment.expected_on.isoformat(),
+                    "supplier": _supplier_fact(supplier),
+                    "status": shipment.status,
+                    "contract_id": shipment.contract_id,
+                },
+                since=shipment.expected_on,
+                as_of=as_of,
+            )
+        )
+    return out
+
+
+def _unconfirmed_payments(access, as_of):
+    """Payments the payee has not confirmed receiving, past the grace period.
+
+    Aged from the payment date, so `days_open` is how long ago we paid. The
+    supplier is the only one who can answer, and the answer is one date.
+    """
+    from connect_labs.supply_chain.models import Payment
+
+    today = as_of or date.today()
+    cutoff = today - timedelta(days=PAYMENT_CONFIRMATION_GRACE_DAYS)
+    unconfirmed = Payment.objects.filter(
+        invoice__contract__program_id=access.program_id,
+        confirmed_by_payee_on__isnull=True,
+        paid_on__lt=cutoff,
+    ).select_related("invoice__contract__supplier")
+    out = []
+    for payment in unconfirmed:
+        contract = payment.invoice.contract
+        out.append(
+            _check(
+                "payment_unconfirmed",
+                subject_type="payment",
+                subject_id=payment.pk,
+                label=f"{contract.supplier.name} — {payment.reference or payment.invoice.reference or payment.pk}",
+                audience="supplier",
+                facts={
+                    "amount": decimal_string(payment.amount),
+                    "currency": payment.currency,
+                    "paid_on": payment.paid_on.isoformat(),
+                    "invoice_id": payment.invoice_id,
+                    "contract_id": contract.pk,
+                    "supplier": _supplier_fact(contract.supplier),
+                },
+                since=payment.paid_on,
+                as_of=as_of,
+            )
+        )
+    return out
+
+
+def _outstanding_documents(access, as_of):
+    """Each document a shipment requires and does not have, and who owes it.
+
+    The requirement is the shipment's own list, so this is a gap in a row --
+    "missing" -- and not a judgement about what a consignment ought to carry.
+    A requirement is met by a document of that kind attached to the shipment
+    itself: two consignments under one contract each need their own airway
+    bill, so a contract-level document would satisfy the wrong one.
+    """
+    from connect_labs.labs.models import LabsOrg
+
+    shipments = list(
+        Shipment.objects.filter(contract__program_id=access.program_id)
+        .exclude(required_documents=[])
+        .select_related("contract__supplier", "contract")
+        .prefetch_related("documents")
+    )
+    owed_by_ids = {
+        entry.get("owed_by_org_id") for shipment in shipments for entry in shipment.required_documents or []
+    }
+    names = dict(LabsOrg.objects.filter(pk__in=owed_by_ids).values_list("pk", "name"))
+
+    out = []
+    for shipment in shipments:
+        on_file = {document.kind for document in shipment.documents.all()}
+        outstanding = [
+            {
+                "kind": entry["kind"],
+                "owed_by": {"id": entry.get("owed_by_org_id"), "name": names.get(entry.get("owed_by_org_id"))},
+            }
+            for entry in shipment.required_documents or []
+            if entry.get("kind") not in on_file
+        ]
+        if not outstanding:
+            continue
+        contract = shipment.contract
+        out.append(
+            _check(
+                "shipment_documents_outstanding",
+                subject_type="shipment",
+                subject_id=shipment.pk,
+                label=f"{shipment.reference or shipment.pk} — {contract.supplier.name}",
+                # Who owes each is on each line; the check's own audience is
+                # the first one's, mapped to the domain's three: the supplier's
+                # organisation, the buying partner, or anybody else (whom we
+                # chase ourselves).
+                audience=_audience_for_org(contract, outstanding[0]["owed_by"]["id"]),
+                facts={
+                    "outstanding": outstanding,
+                    "required": len(shipment.required_documents),
+                    "status": shipment.status,
+                    "contract_id": contract.pk,
+                },
+                since=shipment.dispatched_on,
+                as_of=as_of,
+            )
+        )
+    return out
+
+
+def _audience_for_org(contract, org_id):
+    if org_id is not None and org_id == contract.supplier.org_id:
+        return "supplier"
+    if org_id is not None and org_id == contract.buyer_org_id and contract.buyer_of_record == "partner_org":
+        return "partner"
+    return "internal"
 
 
 def _stock(access, as_of, opportunity_id=None):

@@ -31,6 +31,15 @@ figure here can go stale.
     as <span class="text-gray-500">{{ contract.buyer_of_record|humanise }}</span>
     {% if contract.incoterm %} · {{ contract.incoterm }}{% endif %}
     {% if contract.status %} · {{ contract.status|humanise }}{% endif %}
+    {% if contract.covers_shortfall_of_id %}
+      · Covers the shortfall on
+      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.covers_shortfall_of_id %}">order {{ contract.covers_shortfall_of_id }}</a>
+    {% endif %}
+    {% if contract.consideration == "in_kind" %}
+      <span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-900">In kind — donated</span>
+    {% elif contract.consideration == "bundled" %}
+      <span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-900">Bundled in setup fee</span>
+    {% endif %}
   </p>
   <div class="flex flex-wrap gap-2 mt-3">
     <a href="{% url 'supply_chain:contract_edit' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit order</a>
@@ -40,6 +49,15 @@ figure here can go stale.
     <a href="{% url 'supply_chain:document_attach' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Attach a document</a>
   </div>
 </div>
+
+{% if contract_late %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning px-4 py-3 mb-3 text-sm text-message-warning-text">
+    <strong>{{ contract_late.facts.days_late }} day{{ contract_late.facts.days_late|pluralize }} past the promised lead time.</strong>
+    Signed {{ contract_late.facts.signed_on }} with {{ contract_late.facts.promised_lead_time_days }} days promised,
+    so due {{ contract_late.facts.expected_on }}{% if contract_late.facts.outstanding %};
+    {{ contract_late.facts.outstanding }} {{ contract_late.facts.unit }} still to arrive{% endif %}.
+  </div>
+{% endif %}
 
 <div class="grid gap-3 md:grid-cols-2">
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -58,6 +76,23 @@ figure here can go stale.
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.duty|figure_text }}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">VAT</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.vat|figure_text }}</td></tr>
+        {% for charge in landed.charges %}
+          {% comment %}
+          Paid to land the goods, to somebody who is not the supplier. One line
+          each, so a reader can see who was paid what rather than a lump.
+          {% endcomment %}
+          <tr>
+            <td class="px-4 py-2 text-gray-600">
+              {{ charge.kind|humanise|capfirst }}
+              <span class="text-xs text-gray-400">to {{ charge.payee.name }}</span>
+            </td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ charge.amount|figure_text }}</td>
+          </tr>
+        {% endfor %}
+        {% if landed.charges %}
+          <tr><td class="px-4 py-2 text-gray-600">Charges to land it</td>
+              <td class="px-4 py-2 text-right tabular-nums">{{ landed.charges_total|figure_text }}</td></tr>
+        {% endif %}
         <tr class="bg-gray-50">
           <td class="px-4 py-2 font-semibold text-brand-indigo">Landed total</td>
           <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">
@@ -70,6 +105,17 @@ figure here can go stale.
     {% for reason in landed.landed_total|unconfirmed_reasons %}
       <div class="px-4 py-2 text-xs text-orange-800 bg-orange-50 border-t border-orange-100">{{ reason }}</div>
     {% endfor %}
+    {% if contract.consideration != "priced" %}
+      {% for reason in landed.charges_total|unconfirmed_reasons %}
+        <div class="px-4 py-2 text-xs text-orange-800 bg-orange-50 border-t border-orange-100">{{ reason }}</div>
+      {% endfor %}
+    {% endif %}
+    {% if contract.consideration != "priced" %}
+    <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
+      These goods were not bought, so there is no price to find and nothing is
+      missing. The shipments and receipts below are the whole record of them.
+    </p>
+    {% else %}
     <div class="px-4 py-2.5 border-t border-gray-100">
       <div class="text-xs font-semibold text-gray-500 mb-1">The same order, per buyer</div>
       <div class="overflow-x-auto">
@@ -96,6 +142,7 @@ figure here can go stale.
         {% endif %}
       </p>
     </div>
+    {% endif %}
   </div>
 
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -114,6 +161,17 @@ figure here can go stale.
             <td class="px-4 py-2 text-right tabular-nums">{{ match.invoiced|figure_text }}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">Still outstanding</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ match.outstanding|figure_text }}</td></tr>
+        {% if match.covered_by %}
+          <tr class="bg-blue-50">
+            <td class="px-4 py-2 text-gray-700" colspan="2">
+              Shortfall covered by
+              {% for cover in match.covered_by %}
+                <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' cover.contract_id %}">{{ cover.reference|default:"order" }}</a>
+                <span class="text-xs text-gray-500">({{ cover.quantity }} {{ cover.quantity_unit }} from {{ cover.supplier.name }})</span>{% if not forloop.last %},{% endif %}
+              {% endfor %}
+            </td>
+          </tr>
+        {% endif %}
         {% if match.over_invoiced %}
           <tr class="bg-red-50">
             <td class="px-4 py-2 text-red-800">Billed beyond what arrived</td>
@@ -168,12 +226,24 @@ figure here can go stale.
       {% for shipment in shipments %}
         {% for line in shipment.lines %}
           <tr>
-            <td class="px-4 py-2 font-medium text-gray-900">{{ shipment.reference|default:shipment.id }}</td>
+            <td class="px-4 py-2 font-medium text-gray-900">
+              {% if forloop.first %}
+                <a class="text-brand-indigo hover:underline"
+                   href="{% url 'supply_chain:shipment_detail' shipment.id %}">{{ shipment.reference|default:shipment.id }}</a>
+              {% else %}
+                {{ shipment.reference|default:shipment.id }}
+              {% endif %}
+            </td>
             <td class="px-4 py-2">
               {{ shipment.status }}
               {% if shipment.is_in_transit %}
                 <div class="text-xs text-amber-800">in transit — not counted as stock</div>
               {% endif %}
+              {% with late=late_shipments|dictkey:shipment.id %}
+                {% if late %}
+                  <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on }}</div>
+                {% endif %}
+              {% endwith %}
             </td>
             <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
             <td class="px-4 py-2 text-gray-600">{{ line.expiry|default:"—" }}</td>
@@ -196,6 +266,33 @@ figure here can go stale.
                 <a href="{% url 'supply_chain:shipment_status' shipment.id %}"
                    class="text-brand-indigo hover:underline">Update</a>
               {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          {% comment %}
+          A shipment with no lines still gets a row: a consignment held at
+          customs before anyone listed its batches is exactly the one worth
+          seeing.
+          {% endcomment %}
+          <tr>
+            <td class="px-4 py-2 font-medium text-gray-900">
+              <a class="text-brand-indigo hover:underline"
+                 href="{% url 'supply_chain:shipment_detail' shipment.id %}">{{ shipment.reference|default:shipment.id }}</a>
+            </td>
+            <td class="px-4 py-2">{{ shipment.status }}
+              {% with late=late_shipments|dictkey:shipment.id %}
+                {% if late %}
+                  <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on }}</div>
+                {% endif %}
+              {% endwith %}
+            </td>
+            <td colspan="3" class="px-4 py-2 text-xs text-gray-500">no lines recorded</td>
+            <td class="px-4 py-2">
+              {% if shipment.document_ids %}<span class="text-xs text-teal-700">on file</span>{% else %}<span class="text-xs text-amber-800">none</span>{% endif %}
+            </td>
+            <td class="px-4 py-2 text-xs text-gray-500">{{ shipment.source }}</td>
+            <td class="px-4 py-2 text-right whitespace-nowrap">
+              <a href="{% url 'supply_chain:shipment_status' shipment.id %}" class="text-brand-indigo hover:underline">Update</a>
             </td>
           </tr>
         {% endfor %}
@@ -303,6 +400,28 @@ figure here can go stale.
                class="text-brand-indigo hover:underline">Edit</a>
           </td>
         </tr>
+        {% for payment in invoice.payments %}
+          {% comment %}
+          Each settlement under its invoice, with the payee's side of it: "we
+          sent it" and "they got it" are two facts from two people.
+          {% endcomment %}
+          <tr class="bg-gray-50/60">
+            <td class="px-4 py-1.5 pl-8 text-xs text-gray-600" colspan="6">
+              Paid {{ payment.amount }} {{ payment.currency }} on {{ payment.paid_on }}{% if payment.method %} by {{ payment.method }}{% endif %}
+              ·
+              {% if payment.confirmed_by_payee_on %}
+                <span class="text-message-success-text">confirmed by the payee {{ payment.confirmed_by_payee_on }}</span>
+              {% else %}
+                <span class="text-message-warning-text">not confirmed by the payee</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-1.5 text-right whitespace-nowrap text-xs">
+              {% if not payment.confirmed_by_payee_on %}
+                <a href="{% url 'supply_chain:payment_confirm' payment.id %}" class="text-brand-indigo hover:underline">Record confirmation</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
       {% empty %}
         <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">Nothing billed yet.</td></tr>
       {% endfor %}

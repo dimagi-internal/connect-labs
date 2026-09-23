@@ -243,6 +243,7 @@ four screens and an id held in your head.
           <a class="text-brand-indigo hover:underline"
              href="{% url 'supply_chain:procurement_comparison' award.round_id %}?commodity={{ award.commodity_slug }}">{{ award.commodity_slug|humanise }}</a>
           <span class="text-gray-500">· {{ award.decided_on|default:"undated" }}</span>
+          · <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award.id %}">the award, its approvals and orders</a>
           {% if award.provisional %}
             <span class="text-xs text-amber-800">· provisional</span>
           {% endif %}

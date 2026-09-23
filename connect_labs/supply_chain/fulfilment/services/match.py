@@ -14,9 +14,10 @@ from decimal import Decimal
 
 from django.db.models import Sum
 
+from connect_labs.supply_chain.fulfilment.services.landed import costing_exclusion
 from connect_labs.supply_chain.models import Payment, ReceiptLine
 from connect_labs.supply_chain.stock.services import ledger
-from connect_labs.supply_chain.values import Money, Quantity, Unconfirmed, unconfirmed
+from connect_labs.supply_chain.values import Money, NotCosted, Quantity, Unconfirmed, decimal_string, unconfirmed
 
 ZERO = Decimal("0")
 
@@ -84,6 +85,26 @@ def three_way_match(contract) -> dict:
 
     payable = _payable_now(contract, received, billed, paid)
 
+    # A shortfall another order was placed to buy. Still stated -- covered is
+    # not received, and the arithmetic stays visible -- but no longer open:
+    # the status names the orders that cover it, so the short contract stops
+    # reading as waiting on goods its supplier is never going to send. A
+    # cancelled covering order covers nothing.
+    covered_by = [
+        {
+            "contract_id": cover.pk,
+            "reference": cover.reference,
+            "supplier": {"id": cover.supplier_id, "name": cover.supplier.name},
+            "quantity": decimal_string(cover.quantity) if cover.quantity is not None else None,
+            "quantity_unit": cover.quantity_unit,
+        }
+        for cover in contract.shortfall_covered_by.exclude(status="cancelled")
+        .select_related("supplier")
+        .order_by("pk")
+    ]
+    if status == "part_received" and covered_by:
+        status = "shortfall_covered"
+
     return {
         "contract_id": contract.pk,
         "currency": contract.currency,
@@ -95,6 +116,7 @@ def three_way_match(contract) -> dict:
         "billed_amount": Money(billed, contract.currency),
         "paid_amount": Money(paid, contract.currency),
         "payable_now": payable,
+        "covered_by": covered_by,
         "status": status,
         "matches": status == "fully_received" and _is_zero(over_invoiced),
     }
@@ -110,7 +132,13 @@ def _payable_now(contract, received, billed, paid):
     Refuses rather than guessing when the unit price cannot be applied to the
     received quantity: paying against a number nobody can derive is the
     failure this whole control exists to prevent.
+
+    Nothing is payable on goods nobody bought, and that is a statement rather
+    than a missing price -- so a donation says why, not "unconfirmed".
     """
+    excluded = costing_exclusion(contract)
+    if excluded is not None:
+        return NotCosted(excluded)
     if isinstance(received, Unconfirmed):
         return received
     if contract.unit_price is None or not contract.unit_price_unit:

@@ -1,0 +1,129 @@
+{% extends "supply_chain/base.html" %}
+{% load supply_chain_extras %}
+
+{% comment %}
+One award: the decision, who else has to agree to it, and what was ordered
+against it. The approvals sit between the decision and the order because that
+is where they bite -- while one is pending or declined, contract_create refuses
+the award, so the page says so where the order button would otherwise be.
+{% endcomment %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+  </div>
+{% else %}
+
+<div class="mb-4">
+  <div class="text-xs text-gray-500">
+    <a class="hover:underline" href="{% url 'supply_chain:procurement_round_board' %}">Sourcing</a> ›
+    <a class="hover:underline" href="{% url 'supply_chain:procurement_round_detail' award.round_id %}">{{ round.label }}</a> ›
+    Award
+  </div>
+  <h2 class="text-lg font-semibold text-brand-indigo">
+    Awarded to
+    <a href="{% url 'supply_chain:supplier_detail' supplier.id %}" class="text-brand-indigo hover:underline">{{ supplier.name }}</a>
+    <span class="text-sm font-normal text-gray-600">— {{ award.commodity_slug|humanise }}</span>
+  </h2>
+  <p class="text-sm text-gray-600">
+    Decided {{ award.decided_on|default:"undated" }}{% if award.decided_by %} by {{ award.decided_by }}{% endif %}
+    {% if award.provisional %}<span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">provisional ranking</span>{% endif %}
+    · <a class="text-brand-indigo hover:underline"
+         href="{% url 'supply_chain:procurement_comparison' award.round_id %}?commodity={{ award.commodity_slug }}">the comparison it was chosen from</a>
+  </p>
+  {% if award.rationale %}
+    <p class="text-sm text-gray-800 mt-2 max-w-3xl"><span class="text-gray-500">Why:</span> {{ award.rationale }}</p>
+  {% endif %}
+</div>
+
+<div class="bg-white border border-gray-200 rounded-lg overflow-hidden mb-4">
+  <div class="px-4 py-2.5 border-b border-gray-100 flex items-baseline justify-between">
+    <span>
+      <span class="text-xs font-semibold text-gray-600">Approvals</span>
+      <span class="text-xs text-gray-400 ml-2">agreement this award needs from somebody other than the decider</span>
+    </span>
+    <a href="{% url 'supply_chain:approval_request' award.id %}" class="text-xs text-brand-indigo hover:underline">+ Ask for an approval</a>
+  </div>
+  {% if approvals %}
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+      <table class="min-w-[44rem] w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+          <tr>
+            <th class="text-left px-4 py-2">Who</th>
+            <th class="text-left px-4 py-2">As</th>
+            <th class="text-left px-4 py-2">Asked</th>
+            <th class="text-left px-4 py-2">Answer</th>
+            <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for approval in approvals %}
+            <tr>
+              <td class="px-4 py-2 text-gray-900">
+                {{ approval.approver.name|default:"—" }}
+                {% if approval.note %}<div class="text-xs text-gray-500">{{ approval.note }}</div>{% endif %}
+              </td>
+              <td class="px-4 py-2 text-gray-700">{{ approval.role|capfirst }}</td>
+              <td class="px-4 py-2 text-gray-600 tabular-nums">{{ approval.requested_on }}</td>
+              <td class="px-4 py-2">
+                {% if approval.status == "approved" %}
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-success text-message-success-text">approved</span>
+                  <span class="text-xs text-gray-500">{{ approval.decided_on }}</span>
+                {% elif approval.status == "declined" %}
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-800">declined</span>
+                  <span class="text-xs text-gray-500">{{ approval.decided_on }}</span>
+                {% else %}
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-warning text-message-warning-text">requested</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-2 text-right whitespace-nowrap">
+                {% if approval.status == "requested" %}
+                  <a href="{% url 'supply_chain:approval_decide' approval.id %}" class="text-brand-indigo hover:underline">Record their answer</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="px-4 py-4 text-sm text-gray-500">
+      None asked for. If a technical partner has to confirm the product, or a funder approve its use,
+      record it here — an order cannot then be placed until they have said yes.
+    </p>
+  {% endif %}
+</div>
+
+<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+  <div class="px-4 py-2.5 border-b border-gray-100 flex items-baseline justify-between">
+    <span class="text-xs font-semibold text-gray-600">Ordered against it</span>
+    {% if not blocking %}
+      <a href="{% url 'supply_chain:contract_create' %}?award={{ award.id }}" class="text-xs text-brand-indigo hover:underline">+ Place an order against this award</a>
+    {% endif %}
+  </div>
+  {% if blocking %}
+    <div class="px-4 py-3 text-sm text-message-warning-text bg-message-warning border-b border-message-warning-border/50">
+      This award cannot be ordered yet:
+      {% for approval in blocking %}
+        {{ approval.approver.name }} ({{ approval.role }})
+        {% if approval.status == "declined" %}declined on {{ approval.decided_on }}{% else %}has not answered since {{ approval.requested_on }}{% endif %}{% if not forloop.last %}; {% endif %}
+      {% endfor %}.
+    </div>
+  {% endif %}
+  {% if contracts %}
+    <ul class="divide-y divide-gray-100">
+      {% for contract in contracts %}
+        <li class="px-4 py-2.5 text-sm">
+          <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.id %}">{{ contract.reference|default:"order" }} {{ contract.id }}</a>
+          <span class="text-gray-500">· {{ contract.status|humanise }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% elif not blocking %}
+    <p class="px-4 py-4 text-sm text-gray-500">Nothing ordered yet. An award on its own commits nothing.</p>
+  {% endif %}
+</div>
+
+{% endif %}
+{% endblock %}
