@@ -245,6 +245,67 @@ class TestAShortfallCoveredByAnotherOrder:
             _contract(da, world, world["local"], "250", covers_shortfall_of_id=999999)
 
 
+class TestTheMatchSpeaksTheOrdersUnit:
+    """Ordered, received, invoiced and the gaps between them in ONE unit.
+
+    An order for 700 packets of an item packed 50 to the carton, invoiced for
+    450 packets before anything arrived, read "Ordered 700 packet · Received 0
+    carton · Billed beyond what arrived 9 carton": the empty receipt fell back
+    to the pack unit and the invoice was restated into it.
+    """
+
+    @pytest.fixture
+    def packets(self, da, world):
+        op(
+            da,
+            "item_upsert",
+            data={
+                "sku": "PKT",
+                "name": "Packet",
+                "commodity_slug": "iptsc",
+                "base_unit": "packet",
+                "pack_unit": "carton",
+                "base_per_pack": 50,
+            },
+        )
+        return op(da, "item_list")[0]
+
+    def test_nothing_received_yet_is_zero_of_what_was_ordered(self, da, world, packets):
+        order = _contract(da, world, world["main"], "700", item_id=packets["id"])
+        op(
+            da,
+            "invoice_record",
+            data={
+                "contract_id": order["id"],
+                "amount": "900.00",
+                "quantity_billed": "450",
+                "quantity_unit": "packet",
+                "source": "supplier_reported",
+            },
+        )
+        match = op(da, "contract_match", contract_id=order["id"])
+        assert match["received"] == {"amount": "0", "unit": "packet"}
+        assert match["invoiced"] == {"amount": "450", "unit": "packet"}
+        assert match["over_invoiced"] == {"amount": "450", "unit": "packet"}
+
+    def test_a_receipt_in_cartons_is_restated_in_packets(self, da, world, packets):
+        order = _contract(da, world, world["main"], "700", item_id=packets["id"])
+        op(
+            da,
+            "receipt_record",
+            data={
+                "contract_id": order["id"],
+                "supply_point_id": world["store"]["id"],
+                "received_on": TODAY.isoformat(),
+                "source": "we_recorded",
+                "lines": [{"item_id": packets["id"], "quantity_accepted": "9", "quantity_unit": "carton"}],
+            },
+        )
+        match = op(da, "contract_match", contract_id=order["id"])
+        assert match["received"] == {"amount": "450", "unit": "packet"}
+        assert match["outstanding"] == {"amount": "250", "unit": "packet"}
+
+
 @pytest.fixture
 def dispensers(da, world):
     op(da, "commodity_upsert", data={"slug": "dispenser", "name": "Dispenser", "category": "equipment"})
@@ -401,6 +462,25 @@ class TestTheScreens:
         covering = scoped.get(reverse("supply_chain:order_detail", args=[cover["id"]])).content.decode()
         assert "Covers the shortfall on" in covering
         assert reverse("supply_chain:order_detail", args=[short["id"]]) in covering
+        # By the reference people use for it, not by a database id.
+        assert short["reference"] in covering
+
+    def test_billing_that_matches_what_arrived_is_not_called_billed_beyond_it(self, scoped, da, world):
+        order = _contract(da, world, world["main"], "700")
+        _receive(da, world, order, "450")
+        op(
+            da,
+            "invoice_record",
+            data={
+                "contract_id": order["id"],
+                "amount": "900.00",
+                "quantity_billed": "450",
+                "quantity_unit": "packet",
+                "source": "supplier_reported",
+            },
+        )
+        body = scoped.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
+        assert "Billed beyond what arrived" not in body
 
     def test_the_order_form_offers_the_order_it_covers(self, scoped, da, world):
         _contract(da, world, world["main"], "700")

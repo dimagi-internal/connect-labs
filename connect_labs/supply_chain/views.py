@@ -346,6 +346,9 @@ class OrderDetailView(OperationBase):
         context["contract"] = contract
         context["landed"] = self.op("contract_landed_cost", contract_id=contract_id, compare_buyers=True)
         context["match"] = self.op("contract_match", contract_id=contract_id)
+        # The short order this one covers, by the reference people use for it.
+        if contract.get("covers_shortfall_of_id"):
+            context["covers"] = self.op("contract_get", contract_id=contract["covers_shortfall_of_id"])
         context["shipments"] = self.op("shipment_list", contract_id=contract_id)
         context["receipts"] = self.op("receipt_list", contract_id=contract_id)
         # Where each receipt landed, by name: the received table said what
