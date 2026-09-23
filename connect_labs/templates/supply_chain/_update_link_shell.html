@@ -1,0 +1,35 @@
+{% load static %}<!DOCTYPE html>
+{% comment %}
+A standalone document, not an extension of base.html -- the Pulse public
+display made the same choice for the same reasons. The people who open this
+have no labs account, so the labs shell (navigation, programme picker, user
+menu) would be furniture they cannot use.
+
+And one reason of its own: the token is in this page's URL. So this document
+loads no analytics script, sends no referrer, and is never indexed. It uses
+the labs stylesheet and typeface, so it still looks like the supply screens.
+{% endcomment %}
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>{% block title %}Supply updates{% endblock %}</title>
+  {% include 'favicon.html' %}
+  <link rel="stylesheet" href="{% static 'bundles/css/vendors.css' %}">
+  <link rel="stylesheet" href="{% static 'bundles/css/tailwind.css' %}">
+  <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-stone-100 font-work-sans">
+  <div class="max-w-4xl mx-auto px-4 py-6">
+    <div class="flex gap-4 items-center p-4 bg-brand-indigo rounded-2xl mb-6">
+      <div class="flex flex-col justify-center text-white">
+        <p class="text-xs uppercase tracking-wide opacity-80">Connect · Supply</p>
+        <h1 class="text-2xl font-bold">{% block heading %}Supply updates{% endblock %}</h1>
+      </div>
+    </div>
+    {% block body %}{% endblock %}
+  </div>
+</body>
+</html>

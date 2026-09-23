@@ -21,6 +21,10 @@ SUPPLY_TABS = (
     ("supply_chain:network", "Network"),
     ("supply_chain:stock", "Stock"),
     ("supply_chain:distribution", "Distribution"),
+    # After the chain, because they cut across it: who is told when something
+    # in it changes, and how a supplier records its own part.
+    ("supply_chain:alerts", "Alerts"),
+    ("supply_chain:update_links", "Supplier links"),
 )
 
 # Pages that belong under a tab without being it, so the tab still reads as
@@ -39,6 +43,9 @@ TAB_FOR_VIEW = {
     # Organisations are infrastructure rather than a daily destination, so they
     # read as part of Suppliers rather than taking a tab of their own.
     "supply_chain:organisations": "supply_chain:suppliers",
+    "supply_chain:alert_create": "supply_chain:alerts",
+    "supply_chain:alert_edit": "supply_chain:alerts",
+    "supply_chain:update_link_issue": "supply_chain:update_links",
 }
 
 

@@ -51,8 +51,19 @@ def every_form_class():
     from connect_labs.supply_chain import distribution_forms
     from connect_labs.supply_chain import forms as sourcing_forms
     from connect_labs.supply_chain import fulfilment_forms, network_forms, reference_forms, stock_forms
+    from connect_labs.supply_chain.alerts import forms as alert_forms
+    from connect_labs.supply_chain.update_links import forms as update_link_forms
 
-    modules = [sourcing_forms, reference_forms, network_forms, fulfilment_forms, stock_forms, distribution_forms]
+    modules = [
+        sourcing_forms,
+        reference_forms,
+        network_forms,
+        fulfilment_forms,
+        stock_forms,
+        distribution_forms,
+        alert_forms,
+        update_link_forms,
+    ]
     found = {}
     for module in modules:
         for name in dir(module):
@@ -68,7 +79,7 @@ def every_form_class():
 # Bases with no model of their own, and the formset row forms, which take
 # their querysets as explicit kwargs rather than reading an access object.
 # The rows are covered through their formsets below.
-NOT_A_SCREEN = {"ScopedForm", "ProvenancedForm", "KeyedUpsertForm"}
+NOT_A_SCREEN = {"ScopedForm", "ProvenancedForm", "KeyedUpsertForm", "PublicForm"}
 LINE_FORMS = {"RoundLineForm", "BatchLineForm", "DistributionLineForm"}
 
 
