@@ -47,6 +47,11 @@ def _pack_spec(item):
     return base_per_pack, base_unit, pack_unit
 
 
+def pack_unit_of(item) -> str | None:
+    """The unit an item's stock is reported in: its pack unit, else its product's, else None."""
+    return _pack_spec(item)[2] or None
+
+
 def convert(amount: Decimal, from_unit: str, to_unit: str, item):
     """`amount` restated in `to_unit`, or an Unconfirmed naming what is missing.
 
