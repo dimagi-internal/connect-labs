@@ -194,6 +194,13 @@ DOCUMENT_LINKS = (
 
 BASIS = ("included", "excluded", "not_specified")
 
+# What the programme gives for the goods. `priced` is a purchase and the
+# default. `in_kind` is a donation -- a donor still supplies, ships and is
+# received from, but nobody pays for the goods. `bundled` is paid for out of
+# something else, typically a partner's setup fee. Only a priced contract
+# expects a unit price, an invoice or a landed cost.
+CONSIDERATIONS = ("priced", "in_kind", "bundled")
+
 # Which level of a trade item is one full treatment course, if either is.
 # Empty means "not a course, or nobody has said", and is the default.
 ONE_COURSE_IS = ("", "base_unit", "pack")

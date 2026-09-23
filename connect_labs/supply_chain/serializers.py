@@ -247,6 +247,7 @@ def contract(obj) -> dict:
         "incoterm": obj.incoterm,
         "delivery_supply_point_id": obj.delivery_supply_point_id,
         "promised_lead_time_days": obj.promised_lead_time_days,
+        "consideration": obj.consideration,
         **_sourced(obj),
     }
 

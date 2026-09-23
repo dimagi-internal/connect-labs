@@ -104,6 +104,7 @@ class ContractForm(ProvenancedForm):
             "reference",
             "signed_on",
             "status",
+            "consideration",
             "currency",
             "quantity",
             "quantity_unit",
@@ -129,6 +130,7 @@ class ContractForm(ProvenancedForm):
             "reference": forms.TextInput(attrs={**INPUT, "placeholder": _("their PO number, or ours")}),
             "signed_on": forms.DateInput(attrs=DATE),
             "status": forms.Select(attrs=SELECT),
+            "consideration": forms.Select(attrs=SELECT),
             "currency": forms.TextInput(attrs={**INPUT, "placeholder": "USD", "maxlength": 3}),
             "quantity": forms.NumberInput(attrs={**INPUT, "step": "any", "placeholder": "500"}),
             "quantity_unit": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. carton")}),
@@ -154,6 +156,7 @@ class ContractForm(ProvenancedForm):
             "reference": _("Reference"),
             "signed_on": _("Signed on"),
             "status": _("Status"),
+            "consideration": _("Paid for how"),
             "currency": _("Currency"),
             "quantity": _("Quantity"),
             "quantity_unit": _("Unit"),
@@ -181,6 +184,10 @@ class ContractForm(ProvenancedForm):
                 "line derives as Unconfirmed rather than as zero."
             ),
             "currency": _("Three letters, ISO 4217."),
+            "consideration": _(
+                "Only a bought order has a price. A donation, or goods paid for out of a setup fee, "
+                "still ships and is received — it just has no landed cost to find."
+            ),
         }
 
     def __init__(self, *args, **kwargs):
@@ -231,6 +238,18 @@ class ContractForm(ProvenancedForm):
             "status",
             [(value, str(value).replace("_", " ").capitalize()) for value in records.CONTRACT_STATUSES],
         )
+        set_choices(
+            self,
+            "consideration",
+            [
+                ("priced", _("Bought — we pay a price")),
+                ("in_kind", _("In kind — donated, nobody pays")),
+                ("bundled", _("Bundled — paid out of another cost, such as a setup fee")),
+            ],
+            # Not required: a post that omits it has not said the goods are
+            # donated, and the model's own default -- priced -- then applies.
+            required=False,
+        )
 
         self.helper.layout = Layout(
             Row(Column("supplier"), Column("commodity"), Column("item"), css_class="grid md:grid-cols-3 gap-x-6"),
@@ -247,6 +266,7 @@ class ContractForm(ProvenancedForm):
                     Column("status"),
                     css_class="grid md:grid-cols-3 gap-x-6",
                 ),
+                Field("consideration"),
                 Row(
                     Column("quantity"),
                     Column("quantity_unit"),
@@ -287,6 +307,10 @@ class ContractForm(ProvenancedForm):
 
     def clean(self):
         cleaned = super().clean()
+        if cleaned.get("consideration") not in (None, "", "priced") and cleaned.get("unit_price") is not None:
+            # Said on the field rather than left to the operation's refusal,
+            # which would land as a banner over twenty fields.
+            self.add_error("unit_price", _("Goods that are not bought have no unit price."))
         if cleaned.get("unit_price") is not None and not cleaned.get("unit_price_unit"):
             # A price with no basis cannot be compared with anything, and the
             # comparison is what the whole tier exists for.

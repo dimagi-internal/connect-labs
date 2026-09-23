@@ -84,6 +84,9 @@ def figure_text(cell):
         return "—"
     if "unconfirmed" in cell:
         return "Unconfirmed"
+    if "not_costed" in cell:
+        # Not a gap: the goods were never bought, and the reason is the text.
+        return cell["not_costed"]
     amount = cell.get("amount")
     unit = cell.get("unit") or cell.get("currency") or ""
     return f"{amount} {unit}".strip()

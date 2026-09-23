@@ -59,6 +59,20 @@ class Unconfirmed:
     reasons: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class NotCosted:
+    """A cost that does not exist, as distinct from one nobody has supplied.
+
+    Goods donated in kind, or paid for inside a setup fee, have no price and
+    never will. `Unconfirmed` would say a fact is missing and send somebody to
+    chase it; this says there is nothing to chase, and why. It is never
+    summed and never ranked -- a derivation that meets one does not become a
+    number, it carries the statement through.
+    """
+
+    reason: str
+
+
 Derived = Money | Unconfirmed
 DerivedQuantity = Quantity | Unconfirmed
 
@@ -102,6 +116,8 @@ def to_wire(value: Derived | DerivedQuantity) -> dict:
         return {"amount": decimal_string(value.amount.quantize(MONEY_SCALE)), "currency": value.currency}
     if isinstance(value, Quantity):
         return {"amount": decimal_string(value.amount), "unit": value.unit}
+    if isinstance(value, NotCosted):
+        return {"not_costed": value.reason}
     return {"unconfirmed": list(value.reasons)}
 
 
