@@ -34,6 +34,8 @@ from django.views.generic import TemplateView
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
 from connect_labs.supply_chain.forms import (
+    ApprovalDecisionForm,
+    ApprovalRequestForm,
     OutreachForm,
     OutreachReplyForm,
     QuoteForm,
@@ -193,6 +195,13 @@ class ComparisonView(_Base):
             commodity = lines[0].get("commodity_slug")
 
         comparison = self.op("round_compare", round_id=round_id, commodity_slug=commodity) if commodity else None
+        # The awards already made on this line, so the page that awards is
+        # also the way to one -- and to the approvals it may be waiting on.
+        context["awards"] = (
+            [a for a in self.op("award_list", round_id=round_id) if a["commodity_slug"] == commodity]
+            if commodity
+            else []
+        )
 
         context["round"] = round_
         context["round_id"] = round_id
@@ -541,3 +550,122 @@ class QuoteVoidView(OperationFormView):
 
     def redirect_to(self, result):
         return reverse("supply_chain:procurement_quote_detail", args=[result["id"]])
+
+
+# ---- awards and their approvals -----------------------------------------
+
+
+def _award(request, award_id):
+    """An award, reached through its round's programme, or a 404."""
+    from connect_labs.supply_chain.models import Award
+
+    found = (
+        Award.objects.filter(pk=award_id, round__program_id=_access(request).program_id)
+        .select_related("supplier", "commodity", "round")
+        .first()
+    )
+    if found is None:
+        raise Http404(f"no award {award_id} in this programme")
+    return found
+
+
+class AwardDetailView(_Base):
+    """One award: the decision, who else has to agree to it, and what was ordered.
+
+    An award is a decision, not a commitment. Between the two there may be
+    somebody whose agreement the award needs -- a technical partner, a
+    funder, a regulator -- and until they have said yes, an order cannot be
+    placed against it. The page says so in the place the order button would
+    otherwise be, naming whose answer is outstanding.
+    """
+
+    template_name = "supply_chain/procurement/award_detail.html"
+
+    def get_context_data(self, award_id, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+        if not context["has_program_context"]:
+            return context
+        award = _award(self.request, award_id)
+        detail = next((a for a in self.op("award_list", round_id=award.round_id) if a["id"] == award.pk), None)
+        if detail is None:
+            raise Http404(f"no award {award_id} in this programme")
+        approvals = self.op("approval_list", award_id=award.pk)
+        orgs = {o["id"]: o for o in self.op("org_list")}
+        context["award"] = detail
+        context["supplier"] = self.op("supplier_get", supplier_id=detail["supplier_id"])
+        context["round"] = self.op("round_get", round_id=detail["round_id"])
+        context["approvals"] = [{**a, "approver": orgs.get(a["approver_org_id"])} for a in approvals]
+        context["blocking"] = [a for a in context["approvals"] if a["status"] in ("requested", "declined")]
+        context["contracts"] = [
+            c for c in self.op("contract_list", round_id=detail["round_id"]) if c["award_id"] == award.pk
+        ]
+        return context
+
+
+class _AwardScreen(OperationFormView):
+    def breadcrumb(self, **kwargs):
+        award = self.award()
+        return [
+            {"label": "Sourcing", "href": reverse("supply_chain:procurement_round_board")},
+            {
+                "label": award.round.label,
+                "href": reverse("supply_chain:procurement_round_detail", args=[award.round_id]),
+            },
+            {
+                "label": f"Award to {award.supplier.name}",
+                "href": reverse("supply_chain:award_detail", args=[award.pk]),
+            },
+            {"label": self.title},
+        ]
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:award_detail", args=[self.award().pk])
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:award_detail", args=[self.award().pk])
+
+
+class ApprovalRequestView(_AwardScreen):
+    operation = "approval_request"
+    form_class = ApprovalRequestForm
+    title = "Ask for an approval"
+    intro = (
+        "Somebody other than the decider whose agreement this award needs before money moves — a "
+        "technical partner confirming the product, a funder approving its use. Until they answer, "
+        "no order can be placed against the award."
+    )
+    submit_label = "Record the request"
+
+    def award(self):
+        return _award(self.request, self.kwargs["award_id"])
+
+    def fixed(self, **kwargs):
+        return {"data": {"award_id": int(kwargs["award_id"])}}
+
+
+class ApprovalDecideView(_AwardScreen):
+    operation = "approval_decide"
+    form_class = ApprovalDecisionForm
+    title = "Record their answer"
+    intro = (
+        "Approved or declined, once. If a refusal is later reversed, ask again — the first answer "
+        "stays on the record."
+    )
+    submit_label = "Record the answer"
+
+    def approval(self):
+        from connect_labs.supply_chain.models import AwardApproval
+
+        found = AwardApproval.objects.filter(
+            pk=self.kwargs["approval_id"], award__round__program_id=_access(self.request).program_id
+        ).first()
+        if found is None:
+            raise Http404(f"no approval {self.kwargs['approval_id']} in this programme")
+        return found
+
+    def award(self):
+        return _award(self.request, self.approval().award_id)
+
+    def fixed(self, **kwargs):
+        return {"approval_id": int(kwargs["approval_id"])}

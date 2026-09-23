@@ -32,6 +32,7 @@ TAB_FOR_VIEW = {
     # A quote's own page had no entry, so landing on it un-highlighted every
     # tab and the nav read as though you had left the domain.
     "supply_chain:procurement_quote_detail": "supply_chain:procurement_round_board",
+    "supply_chain:award_detail": "supply_chain:procurement_round_board",
     "supply_chain:product_detail": "supply_chain:catalogue",
     "supply_chain:item_detail": "supply_chain:catalogue",
     "supply_chain:supplier_detail": "supply_chain:suppliers",

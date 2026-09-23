@@ -10,6 +10,15 @@ from django.urls import reverse
 pytestmark = pytest.mark.django_db
 
 
+def _comparing(snapshot):
+    """Answer every call with the comparison snapshot, except the award list.
+
+    The comparison page also lists the round's awards; a mock answering that
+    with a snapshot dict would hand the page a dict to iterate as awards.
+    """
+    return lambda name, access, payload: [] if name == "award_list" else snapshot
+
+
 @pytest.fixture
 def sophie(client, django_user_model):
     user = django_user_model.objects.create_user(username="sophie", password="x")
@@ -157,7 +166,7 @@ def test_the_comparison_page_shows_an_unconfirmed_reason_rather_than_a_number(cl
         "blocked": [row],
         "all_rows": [row],
     }
-    with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=snapshot):
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_comparing(snapshot)):
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
     body = response.content.decode()
     assert "pack spec not stated" in body
@@ -206,7 +215,7 @@ def test_the_comparison_page_uses_house_tailwind_not_bootstrap(client, sophie):
         "blocked": [blocked_row],
         "all_rows": [comparable_row, blocked_row],
     }
-    with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=snapshot):
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_comparing(snapshot)):
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
     body = response.content.decode()
     for bootstrap_class in (
@@ -253,7 +262,7 @@ def test_the_comparison_page_shows_outstanding_questions_for_a_comparable_row(cl
         "blocked": [],
         "all_rows": [comparable_row],
     }
-    with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=snapshot):
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_comparing(snapshot)):
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
     body = response.content.decode()
     assert response.status_code == 200
@@ -285,6 +294,8 @@ def test_award_post_without_a_rationale_does_not_500(client, sophie):
     def _reject_missing_rationale(name, access, payload):
         if name == "award_create":
             raise jsonschema.ValidationError("'rationale' is a required property")
+        if name == "award_list":
+            return []
         return {"comparable": [], "blocked": [], "all_rows": [], "comparable_count": 0, "total_count": 0}
 
     with patch(
@@ -352,6 +363,8 @@ def test_comparison_without_a_commodity_defaults_when_the_round_has_one_line(cli
             return round_
         if name == "round_compare":
             return snapshot
+        if name == "award_list":
+            return []
         raise AssertionError(name)
 
     with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch):
@@ -535,7 +548,7 @@ def test_the_comparison_page_attributes_an_uncomputable_column_to_us_not_a_suppl
         "blocked": [],
         "all_rows": [row],
     }
-    with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=snapshot):
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_comparing(snapshot)):
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
     body = response.content.decode()
 
@@ -588,7 +601,7 @@ def test_a_comparable_row_never_renders_an_unconfirmed_figure_as_a_blank(client,
         "blocked": [],
         "all_rows": [row],
     }
-    with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=snapshot):
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_comparing(snapshot)):
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
     body = response.content.decode()
 
@@ -637,7 +650,7 @@ def test_with_nothing_comparable_the_page_does_not_claim_a_provisional_ranking(c
         "blocked": [blocked, dict(blocked, quote_id=1, supplier_id=1, supplier_name="DABS")],
         "all_rows": [blocked],
     }
-    with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=snapshot):
+    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_comparing(snapshot)):
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
     body = response.content.decode()
 

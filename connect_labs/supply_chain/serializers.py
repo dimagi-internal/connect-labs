@@ -208,6 +208,20 @@ def award(obj) -> dict:
     }
 
 
+def approval(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "award_id": obj.award_id,
+        "approver_org_id": obj.approver_org_id,
+        "role": obj.role,
+        "status": obj.status,
+        "requested_on": _date(obj.requested_on),
+        "decided_on": _date(obj.decided_on),
+        "note": obj.note,
+        "document_ids": [doc.pk for doc in obj.documents.all()],
+    }
+
+
 def _sourced(obj) -> dict:
     return {
         "source": obj.source,

@@ -43,6 +43,7 @@ CHECK_LABELS = {
     "item_fails_specification": "Fails the commodity specification",
     "shipment_overdue": "Shipment past its expected date",
     "shipment_documents_outstanding": "Documents it needs, not on file",
+    "award_awaiting_approval": "Awarded, awaiting approval",
     "contract_delivery_overdue": "Delivery past the promised lead time",
 }
 
@@ -66,6 +67,7 @@ _SUBJECT_ROUTES = {
     "quote": "supply_chain:procurement_quote_detail",
     "contract": "supply_chain:order_detail",
     "shipment": "supply_chain:shipment_detail",
+    "award": "supply_chain:award_detail",
     "item": "supply_chain:item_detail",
     "supplier": "supply_chain:supplier_detail",
 }

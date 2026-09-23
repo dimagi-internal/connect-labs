@@ -610,7 +610,7 @@ class TestDocumentTargets:
         """
         from connect_labs.supply_chain import records
 
-        assert len(records.DOCUMENT_LINKS) == 14
+        assert len(records.DOCUMENT_LINKS) == 15
         for name in records.DOCUMENT_LINKS:
             target_id = chain.get(name)
             if target_id is None:

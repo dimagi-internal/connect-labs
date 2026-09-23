@@ -203,10 +203,18 @@ DOCUMENT_LINKS = (
     "item",
     # a customs or clearing receipt, against the charge it evidences
     "charge",
+    # the approver's letter or email, against the approval it records
+    "approval",
 )
 
 # What it costs to land a consignment, paid to somebody other than the
 # supplier: customs, a clearing agent, a haulier from the port, a warehouse.
+# Who, other than the person deciding an award, has to agree to it: a
+# technical partner confirming a product, a funder approving a use of funds,
+# a regulator. And where that stands.
+APPROVAL_ROLES = ("technical", "funder", "regulatory")
+APPROVAL_STATUSES = ("requested", "approved", "declined")
+
 CHARGE_KINDS = ("customs_duty", "customs_fee", "clearing", "inland_freight", "storage", "other")
 
 BASIS = ("included", "excluded", "not_specified")

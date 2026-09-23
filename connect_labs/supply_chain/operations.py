@@ -29,6 +29,7 @@ _SERIALIZERS = {
     models.Outreach: serializers.outreach,
     models.Quote: serializers.quote,
     models.Award: serializers.award,
+    models.AwardApproval: serializers.approval,
     models.Contract: serializers.contract,
     models.Shipment: serializers.shipment,
     models.Charge: serializers.charge,

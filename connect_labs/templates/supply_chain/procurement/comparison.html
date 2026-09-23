@@ -70,6 +70,17 @@
   </div>
 {% endif %}
 
+{% if awards %}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 mb-4 text-sm">
+    <span class="font-semibold text-gray-900">Awarded</span>
+    {% for award in awards %}
+      <a class="ml-2 text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award.id %}">
+        award {{ award.id }}{% for row in comparison.all_rows %}{% if row.quote_id == award.quote_id %} to {{ row.supplier_name }}{% endif %}{% endfor %}{% if award.decided_on %}, {{ award.decided_on }}{% endif %}</a>{% if not forloop.last %} ·{% endif %}
+    {% endfor %}
+    <span class="text-xs text-gray-500 ml-2">— approvals and the order are on the award.</span>
+  </div>
+{% endif %}
+
 {% if award_error %}
   <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 text-sm text-red-800">
     Could not award: {{ award_error }}

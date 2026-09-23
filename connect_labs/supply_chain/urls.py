@@ -127,6 +127,21 @@ urlpatterns = [
     ),
     # Every check with its facts. The overview only counts them.
     path("checks/", views.ChecksView.as_view(), name="checks"),
+    path(
+        "procurement/awards/<int:award_id>/",
+        procurement_views.AwardDetailView.as_view(),
+        name="award_detail",
+    ),
+    path(
+        "procurement/awards/<int:award_id>/approvals/new/",
+        procurement_views.ApprovalRequestView.as_view(),
+        name="approval_request",
+    ),
+    path(
+        "procurement/approvals/<int:approval_id>/decide/",
+        procurement_views.ApprovalDecideView.as_view(),
+        name="approval_decide",
+    ),
     path("orders/", views.OrdersView.as_view(), name="orders"),
     # "new" before the int route, so the literal cannot be read as an id.
     path("orders/new/", fulfilment_views.ContractCreateView.as_view(), name="contract_create"),
