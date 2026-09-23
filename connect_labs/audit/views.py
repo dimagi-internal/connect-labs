@@ -31,7 +31,12 @@ from django_tables2 import SingleTableView
 
 from connect_labs.audit.analysis_config import extract_additional_case_info, extract_images_with_question_ids
 from connect_labs.audit.classifier_fail_sync import sync_after_save
-from connect_labs.audit.data_access import AuditDataAccess, ImageDownloadError
+from connect_labs.audit.data_access import (
+    AuditDataAccess,
+    ImageDownloadError,
+    filter_audit_sessions,
+    parse_session_id_filter,
+)
 from connect_labs.audit.link_helpers import (
     build_connect_visit_url,
     build_hq_form_url,
@@ -2288,6 +2293,37 @@ class WorkflowSessionsAPIView(LoginRequiredMixin, View):
             return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
 
 
+def _build_audit_summary_dicts(data_access, sessions):
+    """Serialize audit sessions for the sessions-summary endpoints (opportunity
+    and program scoped), adding the fields a Photo Audit Report needs.
+
+    On each session dict: ``auditor_username`` (who created the audit, distinct
+    from the FLW audited), ``workflow_run_id`` (to tell which configured audit
+    IDs matched — own id vs run id), ``opportunity_name`` (to group per
+    opportunity in program scope), and ``flw_display_name`` resolved per
+    distinct opportunity present (a program-scoped result spans several).
+    """
+    session_dicts = []
+    for s in sessions:
+        d = s.to_question_summary_dict()
+        d["auditor_username"] = s.username
+        d["workflow_run_id"] = s.workflow_run_id
+        d["opportunity_name"] = s.opportunity_name
+        session_dicts.append(d)
+
+    opp_ids = {d.get("opportunity_id") for d in session_dicts if d.get("opportunity_id")}
+    flw_names = {}
+    for opp_id in opp_ids:
+        try:
+            flw_names.update(data_access.get_flw_names(opp_id))
+        except Exception as e:  # names are a nicety; never fail the summary over them
+            logger.warning(f"Failed to fetch FLW names for opp {opp_id}: {e}")
+    for d in session_dicts:
+        username = d.get("flw_username", "")
+        d["flw_display_name"] = flw_names.get(username, username)
+    return session_dicts
+
+
 class OpportunityAuditSessionsSummaryAPIView(LoginRequiredMixin, View):
     """API endpoint to get every photo-audit session for an opportunity, with
     pass/fail stats disaggregated by photo question type.
@@ -2342,28 +2378,101 @@ class OpportunityAuditSessionsSummaryAPIView(LoginRequiredMixin, View):
             data_access = AuditDataAccess(opportunity_id=opp_id, request=request)
             try:
                 sessions = data_access.get_audit_sessions()
-                session_dicts = [s.to_question_summary_dict() for s in sessions]
 
-                try:
-                    flw_names = data_access.get_flw_names(opp_id)
-                    for session_dict in session_dicts:
-                        username = session_dict.get("flw_username", "")
-                        session_dict["flw_display_name"] = flw_names.get(username, username)
-                except Exception as e:
-                    logger.warning(f"Failed to fetch FLW names: {e}")
-                    for session_dict in session_dicts:
-                        session_dict["flw_display_name"] = session_dict.get("flw_username", "")
+                # Optional scoping for report callers: ``?ids=`` narrows to a
+                # specific set of audits (matched by session id OR the
+                # workflow-run id that created them), and ``?created_by=``
+                # pins the result to one auditor's username. Both absent =
+                # every session for the opportunity, as before.
+                ids = parse_session_id_filter(request.GET.get("ids"))
+                created_by = request.GET.get("created_by") or None
+                sessions = filter_audit_sessions(sessions, ids=ids, created_by=created_by)
 
-                return JsonResponse(
-                    {
-                        "success": True,
-                        "sessions": session_dicts,
-                    }
-                )
+                session_dicts = _build_audit_summary_dicts(data_access, sessions)
+                return JsonResponse({"success": True, "sessions": session_dicts})
             finally:
                 data_access.close()
         except Exception:
             logger.exception("Error fetching opportunity audit sessions summary")
+            return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
+
+
+class AuditScopeContextAPIView(LoginRequiredMixin, View):
+    """Report the caller's currently-selected labs context (set by the top-right
+    context picker) so a report can scope itself to it without server-side
+    rendering.
+
+    Returns ``mode`` = "program" | "opportunity" | "none" plus the selected
+    program/opportunity id and name. In opportunity mode it also surfaces the
+    opportunity's PARENT program (id + name) so a report can offer a
+    whole-program view alongside the single-opportunity one.
+    """
+
+    def get(self, request):
+        labs_context = getattr(request, "labs_context", {}) or {}
+        opportunity_id = labs_context.get("opportunity_id")
+        program_id = labs_context.get("program_id")
+
+        org_data = get_org_data(request)
+        programs = org_data.get("programs", []) or []
+        opportunities = org_data.get("opportunities", []) or []
+
+        def program_name(pid):
+            return next((p.get("name") for p in programs if p.get("id") == pid), None)
+
+        opportunity_name = None
+        if opportunity_id is not None:
+            opp = next((o for o in opportunities if o.get("id") == opportunity_id), None)
+            opportunity_name = (opp or {}).get("name")
+            # Surface the opp's parent program even when only an opp is selected.
+            if program_id is None:
+                program_id = (opp or {}).get("program")
+
+        if opportunity_id is not None:
+            mode = "opportunity"
+        elif program_id is not None:
+            mode = "program"
+        else:
+            mode = "none"
+
+        return JsonResponse(
+            {
+                "success": True,
+                "mode": mode,
+                "program_id": program_id,
+                "program_name": program_name(program_id) if program_id is not None else None,
+                "opportunity_id": opportunity_id,
+                "opportunity_name": opportunity_name,
+            }
+        )
+
+
+class ProgramAuditSessionsSummaryAPIView(LoginRequiredMixin, View):
+    """Program-scoped variant of OpportunityAuditSessionsSummaryAPIView.
+
+    Builds a PROGRAM-scoped AuditDataAccess so ``get_audit_sessions`` fans out
+    across every member opportunity of the program (the audit layer resolves
+    them from the caller's org data — so this is naturally limited to opps the
+    caller can access). Each returned session carries its own
+    ``opportunity_id``/``opportunity_name`` so a report can group per
+    opportunity and pool a program total. Same ``?ids=`` / ``?created_by=``
+    filters as the opportunity endpoint.
+    """
+
+    def get(self, request, program_id: int):
+        try:
+            data_access = AuditDataAccess(program_id=program_id, request=request)
+            try:
+                sessions = data_access.get_audit_sessions()
+                ids = parse_session_id_filter(request.GET.get("ids"))
+                created_by = request.GET.get("created_by") or None
+                sessions = filter_audit_sessions(sessions, ids=ids, created_by=created_by)
+                session_dicts = _build_audit_summary_dicts(data_access, sessions)
+                return JsonResponse({"success": True, "sessions": session_dicts})
+            finally:
+                data_access.close()
+        except Exception:
+            logger.exception("Error fetching program audit sessions summary")
             return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
 
 
