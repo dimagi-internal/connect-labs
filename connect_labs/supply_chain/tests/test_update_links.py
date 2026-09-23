@@ -26,7 +26,7 @@ from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.models import Contract, Movement, Receipt, Shipment, StockCount
 from connect_labs.supply_chain.operations import call_operation
-from connect_labs.supply_chain.update_links import service, tokens
+from connect_labs.supply_chain.update_links import forms, service, tokens
 from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission
 
 pytestmark = pytest.mark.django_db
@@ -325,6 +325,66 @@ class TestWritesGoThroughTheOrdinaryOperations:
         assert (receipt.source, receipt.recorded_by_org_id) == ("supplier_reported", world["eha"]["id"])
         movement = Movement.objects.get(receipt=receipt)
         assert movement.to_supply_point_id == world["warehouse"]["id"]
+
+    def test_a_receipt_names_the_dispatch_it_received_and_that_dispatch_is_delivered(self, da, issued, world):
+        """The IPTSc walkthrough's shape: the distributor records a dispatch on
+        its link, the partner records the goods arriving on its own. Without
+        the receipt naming the dispatch, the consignment read "in transit — not
+        counted as stock" beside the stock it had become, and went overdue the
+        day after its expected date."""
+        yesterday = timezone.now().date() - timedelta(days=1)
+        dispatched = op(
+            da,
+            "shipment_record",
+            data={
+                "contract_id": world["contract"]["id"],
+                "status": "dispatched",
+                "expected_on": (yesterday - timedelta(days=1)).isoformat(),
+                "source": "supplier_reported",
+            },
+        )
+        form = forms.RecordReceiptForm(prefix="record_receipt")
+        form.limit_to_scope(service.scope_for(_link(issued)))
+        assert list(form.fields["shipment"].queryset.values_list("pk", flat=True)) == [dispatched["id"]]
+        assert form.fields["shipment"].required is False
+
+        result = service.submit(
+            _link(issued),
+            "record_receipt",
+            {
+                "contract": Contract.objects.get(pk=world["contract"]["id"]),
+                "shipment": Shipment.objects.get(pk=dispatched["id"]),
+                "supply_point": _point(world["warehouse"]),
+                "received_on": yesterday,
+                "quantity_accepted": "40",
+                "unit_basis": "pack",
+            },
+        )
+        assert Receipt.objects.get(pk=result["id"]).shipment_id == dispatched["id"]
+        assert Shipment.objects.get(pk=dispatched["id"]).status == "delivered"
+        overdue = [c for c in op(da, "checks_list")["checks"] if c["kind"] == "shipment_overdue"]
+        assert overdue == []
+
+    def test_a_receipt_cannot_name_a_dispatch_on_another_order(self, da, issued, world):
+        elsewhere = op(
+            da,
+            "shipment_record",
+            data={"contract_id": world["other_contract"]["id"], "status": "dispatched", "source": "we_recorded"},
+        )
+        with pytest.raises(ValueError):
+            op(
+                da,
+                "receipt_record",
+                data={
+                    "contract_id": world["contract"]["id"],
+                    "shipment_id": elsewhere["id"],
+                    "supply_point_id": world["warehouse"]["id"],
+                    "received_on": timezone.now().date().isoformat(),
+                    "source": "we_recorded",
+                    "lines": [{"quantity_accepted": "1", "quantity_unit": "carton"}],
+                },
+            )
+        assert Shipment.objects.get(pk=elsewhere["id"]).status == "dispatched"
 
     def test_a_stock_count_is_a_physical_count_reported_by_the_supplier(self, issued, world):
         link = _link(issued)

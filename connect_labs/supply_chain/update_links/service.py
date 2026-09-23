@@ -220,9 +220,11 @@ def _record_receipt(scope, data):
             "quantity_unit": _unit(data.get("unit_basis"), contract.item, contract),
         }
     )
+    shipment = _require(scope.shipments, data["shipment"], "dispatch") if data.get("shipment") else None
     receipt = _drop_empty(
         {
             "contract_id": contract.pk,
+            "shipment_id": shipment.pk if shipment else None,
             "supply_point_id": point.pk,
             "reference": data.get("reference"),
             "received_on": _iso(data.get("received_on") or timezone.localdate()),
