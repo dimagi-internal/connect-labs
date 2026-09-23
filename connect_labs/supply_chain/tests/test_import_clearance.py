@@ -325,6 +325,13 @@ class TestTheShipmentPage:
         body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
         assert reverse("supply_chain:shipment_detail", args=[shipment["id"]]) in body
 
+    def test_the_checks_page_names_each_missing_document_and_who_owes_it(self, scoped, da, world):
+        _shipment(da, world)
+        body = scoped.get(reverse("supply_chain:checks")).content.decode()
+        assert "Packing list — owed by A donor" in body
+        assert "Product registration — owed by A clearing agent" in body
+        assert "kind packing_list" not in body
+
     def test_an_airway_bill_is_not_a_certificate(self, scoped, da, world):
         # The order page's Certificate column read "on file" for any attached
         # document, while the checks list -- counting only certificates --
