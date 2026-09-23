@@ -323,6 +323,41 @@ class TestTheLedger:
         assert response.status_code == 200
         assert not Movement.objects.filter(program_id=PROGRAM).exists()
 
+    def test_a_transfer_into_the_place_it_came_out_of_is_refused(self, scoped, rutf, store):
+        # Posted as a "release to a site" with the wrong site picked in both
+        # boxes, it moved nothing and still wrote a ledger row that says it did.
+        response = scoped.post(
+            reverse("supply_chain:movement_record"),
+            movement_post(rutf, from_supply_point=store.pk, to_supply_point=store.pk),
+        )
+        assert response.status_code == 200
+        assert "somewhere other than where it came from" in response.content.decode()
+        assert not Movement.objects.filter(program_id=PROGRAM).exists()
+
+    def test_the_operation_refuses_it_too(self, rutf, store):
+        from connect_labs.labs.access.scopes import SYSTEM
+        from connect_labs.supply_chain.data_access import SupplyDataAccess
+        from connect_labs.supply_chain.operations import call_operation
+
+        da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
+        with pytest.raises(ValueError, match="same supply point"):
+            call_operation(
+                "movement_record",
+                da,
+                {
+                    "data": {
+                        "kind": "transfer",
+                        "occurred_on": "2026-09-01",
+                        "from_supply_point_id": store.pk,
+                        "to_supply_point_id": store.pk,
+                        "commodity_slug": rutf.slug,
+                        "quantity": "5",
+                        "quantity_unit": "carton",
+                        "source": "we_recorded",
+                    }
+                },
+            )
+
     def test_only_an_adjustment_may_be_negative(self, scoped, rutf, store, other_store):
         """Every other kind's direction comes from what the kind means, in one
         place — so a movement counted the wrong way round cannot silently
