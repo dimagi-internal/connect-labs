@@ -1023,3 +1023,14 @@ class DistributionLine(models.Model):
     movement = models.OneToOneField(
         Movement, null=True, blank=True, on_delete=models.PROTECT, related_name="distribution_line"
     )
+
+
+# ======================================================================
+# Alerts and supplier update links -- in their own modules, registered here
+# ======================================================================
+#
+# Declared in `alerts/models.py` and `update_links/models.py` next to the code
+# that uses them, and imported at the bottom of this module so Django finds
+# them when it loads the app. At the bottom because both import from here.
+from connect_labs.supply_chain.alerts.models import AlertCheckState, AlertNotice, AlertSubscription  # noqa: E402,F401
+from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission  # noqa: E402,F401

@@ -1,0 +1,18 @@
+{% extends 'supply_chain/_update_link_shell.html' %}
+{% comment %}
+One page for a link that never existed, one that expired and one that was
+revoked -- byte for byte the same, with no CSRF token and no date in it, so a
+guesser learns nothing from which they got.
+{% endcomment %}
+{% block title %}Link not valid{% endblock %}
+{% block heading %}This link is not valid{% endblock %}
+{% block body %}
+<div class="bg-white border border-brand-border-light rounded-lg px-5 py-6 max-w-2xl">
+  <p class="text-sm text-gray-700">
+    It may have expired or been withdrawn, or part of it may be missing.
+  </p>
+  <p class="text-sm text-gray-500 mt-2">
+    Ask the programme team that sent it to you for a new one.
+  </p>
+</div>
+{% endblock %}

@@ -52,6 +52,11 @@ _LABS_SKIP_PATH_PREFIXES = (
     # PII-free Pulse data. Only /p/ is skipped — the authenticated Pulse views
     # under /labs/pulse/ stay inside the boundary.
     "/labs/pulse/p/",
+    # A supplier's update link (supply_chain/update_links). Same reasoning as
+    # Pulse above: the page authenticates nobody and grants nothing beyond
+    # the one revocable, expiring token in its path, and a signed-in staffer
+    # opening a supplier's link should not be logged out by it.
+    "/supply/u/",
     "/mcp/",
     "/admin/",
     "/o/",

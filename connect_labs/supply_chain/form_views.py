@@ -148,6 +148,15 @@ class OperationFormView(SupplyWriteMixin, FormView):
             form.add_error(None, str(exc))
             return self.form_invalid(form)
 
+        return self.succeeded(result)
+
+    def succeeded(self, result):
+        """The response once the operation has run. A redirect, almost always.
+
+        Overridable for the one kind of result that must not survive a
+        redirect: a secret shown once (an update link's token), which in a
+        Location header would sit in browser history and access logs.
+        """
         return redirect(self.redirect_to(result))
 
 
