@@ -71,6 +71,14 @@
         {
           "name": "LABS_SES_CONFIGURATION_SET",
           "value": "labs-jj-email"
+        },
+        {
+          "name": "CANOPY_BASE_URL",
+          "value": "https://labs.connect.dimagi.com/canopy"
+        },
+        {
+          "name": "CANOPY_APP_NAME",
+          "value": "connect-labs"
         }
       ],
       "mountPoints": [],
@@ -135,6 +143,10 @@
         {
           "name": "SUPPLY_DEMO_PASSWORD",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-supply-demo-password-6QXk52"
+        },
+        {
+          "name": "CANOPY_SIGNING_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-canopy-signing-key-hS59zO"
         }
       ],
       "logConfiguration": {
