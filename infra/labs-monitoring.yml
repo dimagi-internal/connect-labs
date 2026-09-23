@@ -589,19 +589,20 @@ Resources:
       # pasted into the notification email, and that email pages an agent
       # mailbox, so it is read cold by a session with no prior context.
       AlarmDescription: >-
-        A web task is at/over 90% CPU in 3 of the last 5 five-minute periods AND
-        no deploy is rolling. Deploy rollouts are already excluded, so unlike the
-        raw labs-jj-web-cpu-high signal this one should NOT be explained away as
-        deploy churn — check `labs-jj-deploy-in-progress` to confirm, then treat
-        it as real. Each task has 1 vCPU, so a pinned task means requests queue
-        behind CPU-bound Python and every user routed to it stalls. Likeliest
-        cause is a request path fanning out remote calls in a loop: query the
-        /ecs/labs-jj-web log group for one URL repeating at high volume, and read
-        the outbound_ms / db_ms / self_ms split before reaching for a scale-up.
-        Caveat when you read the metric: Statistic is Maximum over 300s, which
-        records the peak INSTANT in each bucket, not a duration — so confirm the
-        pin is sustained by re-reading CPUUtilization at Period 60 before
-        concluding the tier was saturated for 15 minutes. See connect-labs#1461.
+        A web task has been at/over 90% CPU for 4 of the last 5 MINUTES (Period
+        60, see connect-labs#1512/#1647 — NOT the old 3-of-5-five-minute-periods
+        rule this text used to describe) AND no deploy is rolling. Deploy
+        rollouts are already excluded, so unlike the raw labs-jj-web-cpu-high
+        signal this one should NOT be explained away as deploy churn — check
+        `labs-jj-deploy-in-progress` to confirm, then treat it as real. Each
+        task has 1 vCPU, so a pinned task means requests queue behind CPU-bound
+        Python and every user routed to it stalls. The established non-deploy
+        pattern (connect-labs#1575) is a SINGLE task pinned by a memory-driven
+        spike from an expensive request (bulk-data / RawVisitCache large reads)
+        that gets OOM-killed before it appears in the slow-request log — check
+        MemoryUtilization alongside CPU, not just an outbound fan-out. Query the
+        /ecs/labs-jj-web log group for the request in flight when the pin
+        started, and read the outbound_ms / db_ms / self_ms split.
       AlarmRule: !Sub 'ALARM("${WebCpuHighAlarm}") AND NOT ALARM("${DeployInProgressAlarm}")'
       AlarmActions: [!Ref AlertTopic]
       OKActions: [!Ref AlertTopic]
