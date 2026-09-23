@@ -506,6 +506,54 @@ def filter_out_prior_audited(all_visit_images: dict, prior_index: dict) -> tuple
     return filtered, excluded
 
 
+def parse_session_id_filter(raw):
+    """Parse a ``?ids=`` query value into a set of ints, or None for "no filter".
+
+    Forgiving on input from a report config field: trims whitespace, ignores
+    blank and non-integer tokens, and returns None (not an empty set) when
+    nothing usable remains, so ``filter_audit_sessions`` applies no id filter
+    rather than filtering everything out.
+    """
+    if not raw:
+        return None
+    ids = set()
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            ids.add(int(token))
+        except ValueError:
+            continue
+    return ids or None
+
+
+def filter_audit_sessions(sessions, ids=None, created_by=None):
+    """Narrow a list of AuditSessionRecords down to a specific set of audits.
+
+    ``ids`` matches a session by EITHER its own record id OR the
+    workflow-run id that created it -- an auditor handing over "the audits I
+    ran" cannot know which kind of id they have (both come from the same
+    LabsRecord id sequence), so either resolves. An empty/None ``ids``
+    applies no id filter, leaving the input unchanged.
+
+    ``created_by`` pins the result to a single auditor's ``username`` (the
+    user who created the session, not the FLW audited). None applies no
+    auditor filter. Both filters combine with AND.
+
+    See test_photo_verification_session_filter for the full contract.
+    """
+    result = sessions
+    if ids:
+        id_set = set(ids)
+        result = [
+            s for s in result if s.id in id_set or (s.workflow_run_id is not None and s.workflow_run_id in id_set)
+        ]
+    if created_by:
+        result = [s for s in result if s.username == created_by]
+    return result
+
+
 def generate_audit_description(criteria: AuditCriteria) -> str:
     """Generate human-readable description of audit criteria."""
     parts = []
