@@ -115,6 +115,44 @@ def _tax_line(contract, basis, amount, label):
     return _extra(basis, amount, label)
 
 
+def charges(contract):
+    """What was paid to land this contract's shipments, itemised, and its total.
+
+    Paid to customs, a clearing agent or a haulier -- never to the supplier --
+    so it is neither the price nor the freight line. Each charge is kept in
+    the currency it was paid in; the total is in the contract's currency, and
+    a charge that cannot be restated into it (a naira fee with no rate
+    against a dollar contract) makes the total Unconfirmed, naming the
+    charge, rather than adding naira to dollars.
+    """
+    from connect_labs.supply_chain.models import Charge
+
+    items = []
+    total = ZERO
+    reasons = []
+    for charge in Charge.objects.filter(shipment__contract=contract).select_related("payee_org"):
+        items.append(
+            {
+                "id": charge.pk,
+                "shipment_id": charge.shipment_id,
+                "kind": charge.kind,
+                "payee": {"id": charge.payee_org_id, "name": charge.payee_org.name},
+                "amount": Money(charge.amount, charge.currency),
+                "paid_on": charge.paid_on,
+            }
+        )
+        if charge.currency == contract.currency:
+            total += charge.amount
+        elif contract.currency == "USD" and charge.fx_rate_to_usd:
+            total += charge.amount * charge.fx_rate_to_usd
+        else:
+            reasons.append(
+                f"a {charge.kind.replace('_', ' ')} charge of {charge.amount} {charge.currency} cannot be "
+                f"added to a {contract.currency} total without an exchange rate"
+            )
+    return items, (unconfirmed(*reasons) if reasons else Money(total, contract.currency))
+
+
 def landed_total(contract):
     """The all-in cost of this contract, or why it cannot be computed.
 
@@ -127,10 +165,17 @@ def landed_total(contract):
     `NotCosted` rather than an `Unconfirmed`: nothing is missing, so there is
     nothing for anyone to chase.
     """
+    charge_items, charges_total = charges(contract)
     excluded = costing_exclusion(contract)
     if excluded is not None:
+        # The goods have no cost, but landing them did: customs on a donated
+        # dispenser is real money we paid. Itemised beside the statement, and
+        # deliberately NOT turned into a landed total, which would read as
+        # the price of the goods.
         nothing = NotCosted(excluded)
         return {
+            "charges": charge_items,
+            "charges_total": charges_total,
             "buyer_of_record": contract.buyer_of_record,
             "currency": contract.currency,
             "consideration": contract.consideration,
@@ -148,9 +193,13 @@ def landed_total(contract):
     duty = _tax_line(contract, contract.duties_basis, contract.duties_amount, "import duty")
     vat = _tax_line(contract, contract.vat_basis, contract.vat_amount, "VAT")
 
-    blocked = merge(goods, freight, duty, vat)
-    total = blocked or Money(goods.amount + freight.amount + duty.amount + vat.amount, contract.currency)
+    blocked = merge(goods, freight, duty, vat, charges_total)
+    total = blocked or Money(
+        goods.amount + freight.amount + duty.amount + vat.amount + charges_total.amount, contract.currency
+    )
     return {
+        "charges": charge_items,
+        "charges_total": charges_total,
         "buyer_of_record": contract.buyer_of_record,
         "currency": contract.currency,
         "consideration": contract.consideration,

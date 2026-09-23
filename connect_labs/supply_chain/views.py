@@ -366,6 +366,55 @@ class OrderDetailView(OperationBase):
         return context
 
 
+class ShipmentDetailView(OperationBase):
+    """One consignment: what it carries, what it needs to clear, and what landing it cost.
+
+    The page an import is worked from. The documents it requires are a
+    checklist -- each one on file or outstanding, and who owes it -- derived
+    from the same rule as the `shipment_documents_outstanding` check: a
+    document of that kind attached to this shipment. The charges paid to
+    land it sit beside them, because they are paid at the same port by the
+    same people.
+    """
+
+    template_name = "supply_chain/shipment_detail.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+        if not context["has_program_context"]:
+            return context
+        shipment_id = int(kwargs["shipment_id"])
+        shipment = self.op("shipment_get", shipment_id=shipment_id)
+        if shipment is None:
+            raise Http404(f"no shipment {shipment_id} in this programme")
+        contract = self.op("contract_get", contract_id=shipment["contract_id"])
+        orgs = {o["id"]: o for o in self.op("org_list")}
+        documents = self.op("document_list", shipment_id=shipment_id)
+        by_kind: dict[str, list] = {}
+        for document in documents:
+            by_kind.setdefault(document["kind"], []).append(document)
+
+        context["shipment"] = shipment
+        context["contract"] = contract
+        context["supplier"] = self.op("supplier_get", supplier_id=contract["supplier_id"])
+        context["orgs"] = orgs
+        context["documents"] = documents
+        context["checklist"] = [
+            {
+                "kind": entry["kind"],
+                "owed_by": orgs.get(entry.get("owed_by_org_id")),
+                "documents": by_kind.get(entry["kind"], []),
+            }
+            for entry in shipment.get("required_documents") or []
+        ]
+        context["outstanding_count"] = sum(1 for line in context["checklist"] if not line["documents"])
+        context["charges"] = self.op("charge_list", shipment_id=shipment_id)
+        late = self.op("checks_list", kinds=["shipment_overdue"])["checks"]
+        context["late"] = next((c for c in late if c["subject"]["id"] == shipment_id), None)
+        return context
+
+
 class StockView(OperationBase):
     """Stock across the network: the ledger, what was reported, and the gap.
 

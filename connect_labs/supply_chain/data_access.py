@@ -86,6 +86,7 @@ _RESOLVED = {
     "shipment_id",
     "receipt_id",
     "invoice_id",
+    "payee_org_id",
 }
 
 # Never settable by a caller: the identity and the audit timestamps.
