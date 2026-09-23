@@ -31,6 +31,10 @@ figure here can go stale.
     as <span class="text-gray-500">{{ contract.buyer_of_record|humanise }}</span>
     {% if contract.incoterm %} · {{ contract.incoterm }}{% endif %}
     {% if contract.status %} · {{ contract.status|humanise }}{% endif %}
+    {% if contract.covers_shortfall_of_id %}
+      · Covers the shortfall on
+      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.covers_shortfall_of_id %}">order {{ contract.covers_shortfall_of_id }}</a>
+    {% endif %}
     {% if contract.consideration == "in_kind" %}
       <span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-message-info text-brand-indigo">In kind — donated</span>
     {% elif contract.consideration == "bundled" %}
@@ -157,6 +161,17 @@ figure here can go stale.
             <td class="px-4 py-2 text-right tabular-nums">{{ match.invoiced|figure_text }}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">Still outstanding</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ match.outstanding|figure_text }}</td></tr>
+        {% if match.covered_by %}
+          <tr class="bg-message-info">
+            <td class="px-4 py-2 text-gray-700" colspan="2">
+              Shortfall covered by
+              {% for cover in match.covered_by %}
+                <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' cover.contract_id %}">{{ cover.reference|default:"order" }}</a>
+                <span class="text-xs text-gray-500">({{ cover.quantity }} {{ cover.quantity_unit }} from {{ cover.supplier.name }})</span>{% if not forloop.last %},{% endif %}
+              {% endfor %}
+            </td>
+          </tr>
+        {% endif %}
         {% if match.over_invoiced %}
           <tr class="bg-red-50">
             <td class="px-4 py-2 text-red-800">Billed beyond what arrived</td>
@@ -385,6 +400,28 @@ figure here can go stale.
                class="text-brand-indigo hover:underline">Edit</a>
           </td>
         </tr>
+        {% for payment in invoice.payments %}
+          {% comment %}
+          Each settlement under its invoice, with the payee's side of it: "we
+          sent it" and "they got it" are two facts from two people.
+          {% endcomment %}
+          <tr class="bg-gray-50/60">
+            <td class="px-4 py-1.5 pl-8 text-xs text-gray-600" colspan="6">
+              Paid {{ payment.amount }} {{ payment.currency }} on {{ payment.paid_on }}{% if payment.method %} by {{ payment.method }}{% endif %}
+              ·
+              {% if payment.confirmed_by_payee_on %}
+                <span class="text-message-success-text">confirmed by the payee {{ payment.confirmed_by_payee_on }}</span>
+              {% else %}
+                <span class="text-message-warning-text">not confirmed by the payee</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-1.5 text-right whitespace-nowrap text-xs">
+              {% if not payment.confirmed_by_payee_on %}
+                <a href="{% url 'supply_chain:payment_confirm' payment.id %}" class="text-brand-indigo hover:underline">Record confirmation</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
       {% empty %}
         <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">Nothing billed yet.</td></tr>
       {% endfor %}

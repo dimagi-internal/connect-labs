@@ -15,7 +15,13 @@ from django.urls import reverse
 
 from connect_labs.supply_chain.api_views import _access
 from connect_labs.supply_chain.form_views import OperationFormView
-from connect_labs.supply_chain.fulfilment_forms import ContractForm, DocumentForm, InvoiceForm, PaymentForm
+from connect_labs.supply_chain.fulfilment_forms import (
+    ContractForm,
+    DocumentForm,
+    InvoiceForm,
+    PaymentConfirmationForm,
+    PaymentForm,
+)
 from connect_labs.supply_chain.models import Contract, Invoice
 
 
@@ -273,6 +279,50 @@ class PaymentRecordView(OperationFormView):
 
     def redirect_to(self, result):
         return reverse("supply_chain:order_detail", args=[self.invoice().contract_id])
+
+
+class PaymentConfirmView(OperationFormView):
+    """The payee says the money arrived. One date, and the check clears."""
+
+    operation = "payment_confirm"
+    form_class = PaymentConfirmationForm
+    title = "Payee confirmed receipt"
+    intro = (
+        'When the supplier says the payment arrived. "We sent it" and "we got it" are two facts '
+        "from two people, and until the second is recorded an older payment stays on the checks list."
+    )
+    submit_label = "Record confirmation"
+
+    def payment(self):
+        from connect_labs.supply_chain.models import Payment
+
+        found = (
+            Payment.objects.filter(
+                pk=self.kwargs["payment_id"], invoice__contract__program_id=_access(self.request).program_id
+            )
+            .select_related("invoice__contract")
+            .first()
+        )
+        if found is None:
+            raise Http404(f"no payment {self.kwargs['payment_id']} in this programme")
+        return found
+
+    def fixed(self, **kwargs):
+        return {"payment_id": int(kwargs["payment_id"])}
+
+    def breadcrumb(self, **kwargs):
+        contract = self.payment().invoice.contract
+        return [
+            {"label": "Orders", "href": reverse("supply_chain:orders")},
+            {"label": str(contract), "href": reverse("supply_chain:order_detail", args=[contract.pk])},
+            {"label": self.title},
+        ]
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:order_detail", args=[self.payment().invoice.contract_id])
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:order_detail", args=[self.payment().invoice.contract_id])
 
 
 # ---- documents ---------------------------------------------------------

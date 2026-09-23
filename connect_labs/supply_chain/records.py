@@ -229,3 +229,8 @@ CONSIDERATIONS = ("priced", "in_kind", "bundled")
 # Which level of a trade item is one full treatment course, if either is.
 # Empty means "not a course, or nobody has said", and is the default.
 ONE_COURSE_IS = ("", "base_unit", "pack")
+
+# A durable item is held and moved but never consumed -- a dispenser, a
+# scale -- so consumption-rate figures are refused for it rather than
+# computed from nothing.
+STOCK_CLASSES = ("consumable", "durable")

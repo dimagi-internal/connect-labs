@@ -303,9 +303,11 @@ class ItemForm(KeyedUpsertForm):
             "gtin_case",
             "gpc_brick",
             "one_course_is",
+            "stock_class",
         ]
         widgets = {
             "one_course_is": forms.Select(attrs=SELECT),
+            "stock_class": forms.Select(attrs=SELECT),
             "sku": forms.TextInput(attrs={**INPUT, "placeholder": _("the manufacturer's own code")}),
             "name": forms.TextInput(attrs=INPUT),
             "commodity": forms.Select(attrs=SEARCHABLE),
@@ -339,6 +341,7 @@ class ItemForm(KeyedUpsertForm):
             "gtin_case": _("GTIN, case"),
             "gpc_brick": _("GPC brick"),
             "one_course_is": _("Is one of these a full course?"),
+            "stock_class": _("Used up, or kept?"),
         }
         help_texts = {
             "base_per_pack": _("As the manufacturer states it, not as the product assumes. This is the whole point."),
@@ -346,6 +349,10 @@ class ItemForm(KeyedUpsertForm):
             "one_course_is": _(
                 "Say so when the manufacturer packed a whole treatment course — a three-day packet, a "
                 "co-pack. Cost per course then needs no ration table."
+            ),
+            "stock_class": _(
+                "Durable equipment — a dispenser, a scale — still has a balance at each site, but no "
+                "consumption rate, months of stock or resupply quantity, which would be made-up numbers."
             ),
         }
 
@@ -375,10 +382,17 @@ class ItemForm(KeyedUpsertForm):
             ],
             required=False,
         )
+        set_choices(
+            self,
+            "stock_class",
+            [("consumable", _("Consumable — used up")), ("durable", _("Durable — kept and moved, not consumed"))],
+            # Not required: a post that omits it leaves the item as it was.
+            required=False,
+        )
         self.helper.layout = Layout(
             Row(Column("sku"), Column("name"), css_class="grid md:grid-cols-[1fr,2fr] gap-x-6"),
             Row(Column("commodity"), Column("manufacturer"), css_class="grid md:grid-cols-2 gap-x-6"),
-            Field("status"),
+            Row(Column("status"), Column("stock_class"), css_class="grid md:grid-cols-2 gap-x-6"),
             Fieldset(
                 str(_("How this one is packed")),
                 Row(

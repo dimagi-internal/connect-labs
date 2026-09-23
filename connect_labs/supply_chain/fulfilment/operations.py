@@ -423,6 +423,20 @@ def payment_record(access, data):
 
 
 @register_operation(
+    name="payment_confirm",
+    summary=(
+        "Record that the payee confirmed a payment arrived, on confirmed_on (today if omitted). Until "
+        "then a payment older than a fortnight appears in checks_list as payment_unconfirmed. Not "
+        "before the payment's own date."
+    ),
+    input_schema=obj({"payment_id": ID, "confirmed_on": _DATE}, required=("payment_id",)),
+    is_write=True,
+)
+def payment_confirm(access, payment_id, confirmed_on=None):
+    return record(access.confirm_payment(payment_id, confirmed_on=confirmed_on))
+
+
+@register_operation(
     name="document_list",
     summary=(
         "List documents, optionally filtered by kind or by what they evidence. Two derivations "
@@ -504,7 +518,8 @@ def contract_landed_cost(access, contract_id, compare_buyers=False):
     summary=(
         "The three-way match for a contract: ordered against received against invoiced, plus what is "
         "safe to pay now. Computed, never stored. payable_now is the value of what actually ARRIVED, "
-        "never what was billed."
+        "never what was billed. A shortfall another contract was placed to buy (covers_shortfall_of_id) "
+        "reads as status shortfall_covered, naming the covering orders in covered_by."
     ),
     input_schema=obj({"contract_id": ID}, required=("contract_id",)),
 )
@@ -518,6 +533,7 @@ def contract_match(access, contract_id):
         "currency": matched["currency"],
         "status": matched["status"],
         "matches": matched["matches"],
+        "covered_by": matched["covered_by"],
         **{
             key: figure(matched[key]) if matched[key] is not None else None
             for key in (

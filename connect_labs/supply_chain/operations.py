@@ -337,6 +337,7 @@ _ITEM_DATA = _data_with(
         ),
     },
     one_course_is={"enum": list(records.ONE_COURSE_IS)},
+    stock_class={"enum": list(records.STOCK_CLASSES)},
 )
 
 # A contract is the commitment. buyer_of_record is required and has no
@@ -371,6 +372,9 @@ _CONTRACT_DATA = _data_with(
     delivery_supply_point_id=ID,
     promised_lead_time_days=_NON_NEGATIVE_INT,
     consideration={"enum": list(records.CONSIDERATIONS)},
+    # Nullable because un-naming it is a real edit: the covering order was
+    # recorded against the wrong short one.
+    covers_shortfall_of_id=NULLABLE_ID,
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
 )

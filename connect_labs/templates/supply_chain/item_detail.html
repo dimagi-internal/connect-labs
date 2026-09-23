@@ -68,6 +68,12 @@ sachets are in the carton, and neither does a balance.
         </dd>
       </div>
       <div>
+        <dt class="text-[11px] text-gray-500">Kept or used up</dt>
+        <dd class="text-sm mt-0.5 text-gray-900">
+          {% if item.is_durable %}Durable — kept and moved, not forecast{% else %}Consumable{% endif %}
+        </dd>
+      </div>
+      <div>
         <dt class="text-[11px] text-gray-500">Against the spec</dt>
         <dd class="text-sm mt-0.5">
           {% if item.spec_verdict %}{{ item.spec_verdict }}{% else %}<span class="text-gray-400">no product to check against</span>{% endif %}

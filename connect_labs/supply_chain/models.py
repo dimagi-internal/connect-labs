@@ -200,6 +200,11 @@ class Item(TimestampedModel):
     # manufacturer packed the course. Stated per item rather than inferred,
     # because nothing in a component list says it adds up to a protocol.
     one_course_is = models.CharField(max_length=16, blank=True, default="", choices=_choices(records.ONE_COURSE_IS))
+    # consumable (the default) or durable. A dispenser is not consumed, so a
+    # consumption rate, months of stock and a resupply quantity for one are
+    # meaningless; it still moves through the ledger, because "which site has
+    # which dispenser" is a balance like any other.
+    stock_class = models.CharField(max_length=16, default="consumable", choices=_choices(records.STOCK_CLASSES))
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["scope_key", "sku"], name="uniq_item_scope_sku")]
@@ -215,6 +220,10 @@ class Item(TimestampedModel):
     @property
     def is_kit(self) -> bool:
         return bool(self.components)
+
+    @property
+    def is_durable(self) -> bool:
+        return self.stock_class == "durable"
 
 
 class Supplier(TimestampedModel):
@@ -507,6 +516,12 @@ class Contract(SourcedModel):
     # and receipts -- the whole physical chain -- and no price that will ever
     # exist. Treating them as priced reported that absence as a gap forever.
     consideration = models.CharField(max_length=16, default="priced", choices=_choices(records.CONSIDERATIONS))
+    # The order this one buys the shortfall of: the main supplier delivered
+    # 450 of 700, and a partner bought the other 250 locally. The short order
+    # then reads as covered, by name, rather than as open for ever.
+    covers_shortfall_of = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="shortfall_covered_by"
+    )
 
     class Meta:
         ordering = ["-signed_on", "-created_at"]
@@ -627,6 +642,10 @@ class Payment(SourcedModel):
     currency = models.CharField(max_length=3, default="USD")
     method = models.CharField(max_length=32, blank=True, default="")
     reference = models.CharField(max_length=64, blank=True, default="")
+    # When the payee said the money arrived. Separate from `paid_on` because
+    # the two are different facts from different people, and "we sent it"
+    # is exactly the claim a supplier chasing payment disputes.
+    confirmed_by_payee_on = models.DateField(null=True, blank=True)
 
     class Meta:
         ordering = ["-paid_on"]
