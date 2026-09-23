@@ -653,6 +653,22 @@ CHATBOT_EMBED_KEY = env("CHATBOT_EMBED_KEY", default="")
 # Labs MCP rate limits (per-user, per-time-window)
 MCP_WRITE_RATE_LIMIT = env("MCP_WRITE_RATE_LIMIT", default="30/m")
 
+# Canopy agent panel (the chat overlay on marketplace pages)
+# ------------------------------------------------------------------------------
+# Labs vouches for the signed-in person by SIGNING a statement about them, and
+# canopy hands back a short-lived token for that visitor. The private half of
+# the key pair lives here and never reaches a browser; canopy holds only the
+# public half. See docs/canopy-agent-panel.md.
+#
+# The panel is off unless all three are set. Fail-closed on purpose: a partly
+# configured panel is a launcher that opens on an error nobody can read from
+# the page, so it should not render at all.
+CANOPY_BASE_URL = env("CANOPY_BASE_URL", default="")
+CANOPY_APP_NAME = env("CANOPY_APP_NAME", default="connect-labs")
+# PEM, Ed25519. Newlines survive an env var as literal "\n", which is how a
+# task definition and a .env can both carry one.
+CANOPY_SIGNING_KEY = env("CANOPY_SIGNING_KEY", default="").replace("\\n", "\n")
+
 # Audit trail (HIPAA-bar access/change logging — see docs/AUDIT_LOGGING.md)
 # ------------------------------------------------------------------------------
 # S3 bucket for the immutable long-term archive (Object Lock, 6-year

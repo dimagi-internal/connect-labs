@@ -1,0 +1,77 @@
+{% comment %}
+The canopy agent panel — a floating launcher, bottom-right, opening a chat with
+one of the agents this site is allowed to offer.
+
+A page opts in by putting `canopy_panel` in its context and including this at the
+end of its `javascript` block:
+
+    context["canopy_panel"] = canopy.panel_context(
+        resource="labs-marketplace://orgs",
+        backing_tool="marketplace_orgs_get",
+        visible_ids=[row["org"].slug for row in listed],
+        filters=state["selected"],
+    )
+
+    {% include "labs/includes/canopy_panel.html" %}
+
+`visible_ids` is the SELECTION — slugs or ids — never the rows. The agent reads
+the rows itself through `backing_tool`, live, so one place decides what a row says
+and one place decides who may read it. Canopy refuses a page state over 8 KiB:
+generous for several hundred ids, deliberately too small for the rows behind them.
+
+Nothing renders unless the deployment holds a signing key, because a launcher that
+opens onto an error the page cannot explain is worse than no launcher.
+
+The page state is passed through `json_script` rather than interpolated into the
+script body — Django escapes it there, so an org name containing `</script>`
+cannot end the block.
+{% endcomment %}
+{% if canopy_panel.ready %}
+  {{ canopy_panel.page_state|json_script:"canopy-page-state" }}
+  <script src="{{ canopy_panel.base_url }}/embed/widget.js"></script>
+  <script>
+    (function () {
+      // Absent if widget.js was blocked, or canopy's frontend is not built.
+      if (!window.canopy) return;
+
+      var declared = null;
+      var el = document.getElementById("canopy-page-state");
+      if (el) {
+        try { declared = JSON.parse(el.textContent); } catch (e) { declared = null; }
+      }
+
+      var widget = window.canopy.init({
+        baseUrl: "{{ canopy_panel.base_url|escapejs }}",
+        app: "{{ canopy_panel.app_name|escapejs }}",
+        tokenUrl: "{% url 'labs:canopy_token' %}",
+        mode: "overlay",
+        launcherLabel: "Ask an agent",
+        // Labs sets CSRF_COOKIE_HTTPONLY, so the widget cannot read the cookie.
+        // Django takes the token from the DOM just as happily, which is what
+        // every other fetch in labs does. A function, not a string: the token
+        // rotates on login, and a value captured here would then be stale.
+        csrfToken: function () {
+          var field = document.querySelector("[name=csrfmiddlewaretoken]");
+          return field ? field.value : null;
+        },
+        // Somebody else changed the data this page is showing — the agent, a
+        // scheduled job, or the same page in another tab. These pages are
+        // server-rendered, so the page IS the query: re-running it is both the
+        // honest refresh and the one where labs' own access rules apply again.
+        onInvalidate: function (resource) {
+          if (declared && resource === declared.resource) window.location.reload();
+        },
+        theme: {
+          mode: "light",
+          accent: "#3F4FA0",
+          font: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+        },
+      });
+
+      // Declared before the first message can be sent, so an opening question
+      // is answered against this screen rather than whatever the agent could
+      // find on its own.
+      if (declared) widget.setPageState(declared);
+    })();
+  </script>
+{% endif %}

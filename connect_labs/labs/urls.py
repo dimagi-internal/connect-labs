@@ -1,6 +1,6 @@
 from django.urls import include, path
 
-from connect_labs.labs import docs_comment_views, views, views_test_auth
+from connect_labs.labs import canopy_views, docs_comment_views, views, views_test_auth
 from connect_labs.labs.analysis import views as analysis_views
 from connect_labs.labs.integrations.commcare import oauth_views as commcare_oauth_views
 from connect_labs.labs.integrations.connect import oauth_views as connect_oauth_views
@@ -12,6 +12,8 @@ app_name = "labs"
 urlpatterns = [
     # Context management
     path("clear-context/", views.clear_context, name="clear_context"),
+    # The canopy agent panel vouches for the signed-in visitor here.
+    path("canopy/token/", canopy_views.token, name="canopy_token"),
     path("refresh-org-data/", views.refresh_org_data, name="refresh_org_data"),
     # MCP Personal Access Tokens (self-service)
     path("mcp/tokens/", mcp_token_views.tokens_index, name="mcp_tokens_index"),
