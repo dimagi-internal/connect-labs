@@ -170,3 +170,67 @@ class TestTheScreens:
         body = scoped.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         assert "not purchased (in kind)" in body
         assert "Unconfirmed" not in body.split("Landed cost", 1)[1].split("Ordered", 1)[0]
+
+
+class TestTheMatchSaysWhatHappened:
+    """What the order page's match panel said about a donation on its way.
+
+    Both were on screen while a donated import sat at customs: the panel read
+    "part received" with nothing received, and a red "billed beyond what
+    arrived" row for a donation nobody will ever bill.
+    """
+
+    def _store(self, da):
+        return op(
+            da,
+            "supply_point_upsert",
+            data={"slug": "store", "name": "Store", "kind": "central_store", "source": "we_recorded"},
+        )
+
+    def _receive(self, da, contract, accepted, **line):
+        op(
+            da,
+            "receipt_record",
+            data={
+                "contract_id": contract["id"],
+                "supply_point_id": self._store(da)["id"],
+                "received_on": "2026-09-01",
+                "source": "we_recorded",
+                "lines": [{"quantity_accepted": accepted, "quantity_unit": "jerry_can", **line}],
+            },
+        )
+
+    def test_nothing_received_yet_is_not_part_received(self, da, parties):
+        contract = _contract(da, parties, consideration="in_kind")
+        assert op(da, "contract_match", contract_id=contract["id"])["status"] == "not_received"
+
+    def test_a_partial_receipt_is_still_part_received(self, da, parties):
+        contract = _contract(da, parties, consideration="in_kind")
+        self._receive(da, contract, "598", quantity_rejected="2", rejection_reason="cracked")
+        assert op(da, "contract_match", contract_id=contract["id"])["status"] == "part_received"
+
+    def test_the_page_raises_billed_beyond_arrived_only_when_it_is(self, scoped, da, parties):
+        contract = _contract(da, parties, consideration="in_kind")
+        self._receive(da, contract, "598")
+        body = scoped.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
+        assert "Billed beyond what arrived" not in body
+
+    def test_the_page_still_raises_it_when_more_is_billed_than_arrived(self, scoped, da, parties):
+        contract = _contract(da, parties, unit_price="2.00", unit_price_unit="per_pack", currency="USD")
+        self._receive(da, contract, "100")
+        op(
+            da,
+            "invoice_record",
+            data={
+                "contract_id": contract["id"],
+                "reference": "INV-1",
+                "issued_on": "2026-09-02",
+                "amount": "300.00",
+                "currency": "USD",
+                "quantity_billed": "150",
+                "quantity_unit": "jerry_can",
+                "source": "we_recorded",
+            },
+        )
+        body = scoped.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
+        assert "Billed beyond what arrived" in body

@@ -172,7 +172,10 @@ figure here can go stale.
             </td>
           </tr>
         {% endif %}
-        {% if match.over_invoiced %}
+        {% comment %}On the status, not the figure: a Quantity is always truthy, so this
+        row used to show in red on every order -- "0" when billing matched and a
+        negative number when less had been billed than arrived.{% endcomment %}
+        {% if match.status == "over_invoiced" %}
           <tr class="bg-red-50">
             <td class="px-4 py-2 text-red-800">Billed beyond what arrived</td>
             <td class="px-4 py-2 text-right tabular-nums text-red-800">{{ match.over_invoiced|figure_text }}</td>
@@ -249,7 +252,7 @@ figure here can go stale.
             <td class="px-4 py-2 text-gray-600">{{ line.expiry|default:"—" }}</td>
             <td class="px-4 py-2 tabular-nums">{{ line.quantity }} {{ line.quantity_unit }}</td>
             <td class="px-4 py-2">
-              {% if shipment.document_ids %}
+              {% if shipment.has_certificate %}
                 <span class="text-xs text-teal-700">on file</span>
               {% else %}
                 <span class="text-xs text-amber-800">none</span>
@@ -288,7 +291,7 @@ figure here can go stale.
             </td>
             <td colspan="3" class="px-4 py-2 text-xs text-gray-500">no lines recorded</td>
             <td class="px-4 py-2">
-              {% if shipment.document_ids %}<span class="text-xs text-teal-700">on file</span>{% else %}<span class="text-xs text-amber-800">none</span>{% endif %}
+              {% if shipment.has_certificate %}<span class="text-xs text-teal-700">on file</span>{% else %}<span class="text-xs text-amber-800">none</span>{% endif %}
             </td>
             <td class="px-4 py-2 text-xs text-gray-500">{{ shipment.source }}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
