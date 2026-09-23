@@ -38,7 +38,10 @@ def delete_periodic_task(apps, schema_editor):
 class Migration(migrations.Migration):
     dependencies = [
         ("supply_chain", "0011_alerts_and_update_links"),
-        ("django_celery_beat", "0001_initial"),
+        # The live PeriodicTask model is used above, so every column it has
+        # (headers, expire_seconds, ...) must exist first -- a targeted
+        # `migrate supply_chain` would otherwise run this after 0001 alone.
+        ("django_celery_beat", "0019_alter_periodictasks_options"),
     ]
 
     operations = [

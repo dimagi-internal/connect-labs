@@ -448,14 +448,18 @@ def _contract_lateness(contract, match, as_of):
     if contract.signed_on is None or contract.promised_lead_time_days is None:
         return None
     # A shortfall another order was placed to buy is not a late delivery:
-    # nobody is waiting on this supplier for it any more.
-    if match["status"] in ("fully_received", "over_received", "shortfall_covered"):
+    # nobody is waiting on this supplier for it any more. Lateness is read
+    # from the outstanding quantity, not the match status: "over_invoiced"
+    # overwrites the received status and says nothing about what arrived.
+    if match.get("covered_by"):
+        return None
+    outstanding = match.get("outstanding")
+    if outstanding is not None and not isinstance(outstanding, Unconfirmed) and outstanding.amount <= 0:
         return None
     expected_on = contract.signed_on + timedelta(days=contract.promised_lead_time_days)
     today = as_of or date.today()
     if expected_on >= today:
         return None
-    outstanding = match.get("outstanding")
     facts = {
         "days_late": (today - expected_on).days,
         "expected_on": expected_on.isoformat(),

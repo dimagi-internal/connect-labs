@@ -189,6 +189,24 @@ class TestAnOrderMayNotRestOnAnUnapprovedAward:
         op(da, "approval_decide", approval_id=approval["id"], status="approved")
         assert _order(da, world)["award_id"] == world["award"]["id"]
 
+    def test_a_refusal_later_reversed_by_a_new_approval_no_longer_blocks(self, da, world):
+        first = _request(da, world)
+        op(da, "approval_decide", approval_id=first["id"], status="declined")
+        second = _request(da, world, requested_on=TODAY.isoformat())
+        with pytest.raises(ValueError, match=f"approval {second['id']}"):
+            _order(da, world)
+        op(da, "approval_decide", approval_id=second["id"], status="approved")
+        assert _order(da, world)["award_id"] == world["award"]["id"]
+
+    def test_a_refusal_from_a_different_approver_still_blocks(self, da, world):
+        other = op(da, "org_upsert", data={"slug": "regulator", "name": "A regulator"})
+        declined = _request(da, world, approver_org_id=other["id"], role="regulatory")
+        op(da, "approval_decide", approval_id=declined["id"], status="declined")
+        approved = _request(da, world, requested_on=TODAY.isoformat())
+        op(da, "approval_decide", approval_id=approved["id"], status="approved")
+        with pytest.raises(ValueError, match="declined"):
+            _order(da, world)
+
     def test_an_award_that_needed_no_approval_is_unaffected(self, da, world):
         assert _order(da, world)["award_id"] == world["award"]["id"]
 
@@ -255,6 +273,15 @@ class TestTheAwardPage:
         approval = _request(da, world)
         op(da, "approval_decide", approval_id=approval["id"], status="approved")
         body = scoped.get(reverse("supply_chain:award_detail", args=[world["award"]["id"]])).content.decode()
+        assert reverse("supply_chain:contract_create") + f"?award={world['award']['id']}" in body
+
+    def test_a_reversed_refusal_offers_placing_the_order(self, scoped, da, world):
+        first = _request(da, world)
+        op(da, "approval_decide", approval_id=first["id"], status="declined")
+        second = _request(da, world, requested_on=TODAY.isoformat())
+        op(da, "approval_decide", approval_id=second["id"], status="approved")
+        body = scoped.get(reverse("supply_chain:award_detail", args=[world["award"]["id"]])).content.decode()
+        assert "cannot be ordered" not in body
         assert reverse("supply_chain:contract_create") + f"?award={world['award']['id']}" in body
 
     def test_the_comparison_links_to_its_awards(self, scoped, da, world):

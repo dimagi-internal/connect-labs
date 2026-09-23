@@ -27,6 +27,8 @@ excludes it and reassembles it, the same way `RoundForm` handles
 `delivery_point`.
 """
 
+from decimal import Decimal
+
 from crispy_forms.layout import Column, Field, Fieldset, Layout, Row
 from django import forms
 from django.utils.translation import gettext_lazy as _
@@ -453,7 +455,9 @@ class ComponentLineForm(forms.Form):
     commodity_slug = forms.ChoiceField(label=_("Product inside"), widget=forms.Select(attrs=SEARCHABLE))
     quantity = forms.DecimalField(
         label=_("How many"),
-        min_value=0,
+        # More than nothing: `item_upsert` refuses a zero component, and the
+        # refusal belongs on this field rather than in a banner.
+        min_value=Decimal("0.0001"),
         max_digits=18,
         decimal_places=4,
         widget=forms.NumberInput(attrs={**INPUT, "step": "any", "placeholder": "10"}),
@@ -463,6 +467,10 @@ class ComponentLineForm(forms.Form):
         max_length=32,
         widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. tablet")}),
     )
+    # Which of the item's stored components this row began as, so an edit
+    # keeps that component's own stated specification -- a kit may hold two
+    # formulations of one product, so the product alone cannot say which.
+    source_index = forms.IntegerField(required=False, min_value=0, widget=forms.HiddenInput)
 
     def __init__(self, *args, commodities=(), **kwargs):
         super().__init__(*args, **kwargs)

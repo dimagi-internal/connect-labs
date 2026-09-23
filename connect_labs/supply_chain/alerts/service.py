@@ -1,6 +1,6 @@
 """Find what is new for each subscription, and send it.
 
-One run, on celery beat every five minutes (migration 0007):
+One run, on celery beat every five minutes (migration 0012):
 
   1. For each programme with an active subscription, run the checks ONCE.
   2. For each subscription, compare the matching checks with what it has

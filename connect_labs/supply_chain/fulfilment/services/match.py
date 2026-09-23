@@ -88,7 +88,8 @@ def three_way_match(contract) -> dict:
     # A shortfall another order was placed to buy. Still stated -- covered is
     # not received, and the arithmetic stays visible -- but no longer open:
     # the status names the orders that cover it, so the short contract stops
-    # reading as waiting on goods its supplier is never going to send.
+    # reading as waiting on goods its supplier is never going to send. A
+    # cancelled covering order covers nothing.
     covered_by = [
         {
             "contract_id": cover.pk,
@@ -97,7 +98,9 @@ def three_way_match(contract) -> dict:
             "quantity": decimal_string(cover.quantity) if cover.quantity is not None else None,
             "quantity_unit": cover.quantity_unit,
         }
-        for cover in contract.shortfall_covered_by.select_related("supplier").order_by("pk")
+        for cover in contract.shortfall_covered_by.exclude(status="cancelled")
+        .select_related("supplier")
+        .order_by("pk")
     ]
     if status == "part_received" and covered_by:
         status = "shortfall_covered"

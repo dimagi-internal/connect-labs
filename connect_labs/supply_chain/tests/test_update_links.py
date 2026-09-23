@@ -231,6 +231,25 @@ class TestWritesGoThroughTheOrdinaryOperations:
         assert Contract.objects.get(pk=world["contract"]["id"]).status == "confirmed"
         assert called.call_args.args[0] == "contract_update"
 
+    def test_confirming_an_order_does_not_change_who_recorded_it(self, issued, world):
+        before = Contract.objects.get(pk=world["contract"]["id"])
+        service.submit(_link(issued), "confirm_order", {"contract": before})
+        after = Contract.objects.get(pk=world["contract"]["id"])
+        assert (after.source, after.recorded_by_org_id) == (before.source, before.recorded_by_org_id)
+        assert after.source == "we_recorded"
+
+    def test_moving_a_dispatch_does_not_change_who_recorded_it(self, da, issued, world):
+        recorded = op(
+            da,
+            "shipment_record",
+            data={"contract_id": world["contract"]["id"], "status": "dispatched", "source": "we_recorded"},
+        )
+        before = Shipment.objects.get(pk=recorded["id"])
+        service.submit(_link(issued), "update_shipment", {"shipment": before, "status": "in_transit"})
+        after = Shipment.objects.get(pk=recorded["id"])
+        assert after.status == "in_transit"
+        assert (after.source, after.recorded_by_org_id) == ("we_recorded", before.recorded_by_org_id)
+
     def test_a_shipment_is_supplier_reported_by_the_links_organisation(self, issued, world):
         link = _link(issued)
         result = service.submit(
@@ -467,6 +486,7 @@ class TestThePublicPage:
             _url(issued["token"]), {"action": "confirm_order", "confirm_order-contract": world["contract"]["id"]}
         )
         assert response.status_code == 302
+        assert response["Location"] == _url(issued["token"]) + "?done=confirm_order"
         assert Contract.objects.get(pk=world["contract"]["id"]).status == "confirmed"
 
     def test_posting_another_contracts_id_is_refused_by_the_form(self, client, issued, world):
@@ -494,6 +514,29 @@ class TestThePublicPage:
         codes = [client.get(_url(f"guess-{n}")).status_code for n in range(40)]
         assert 429 in codes
         cache.clear()
+
+    def test_rotating_a_forged_forwarded_address_does_not_escape_the_throttle(self, client):
+        from django.core.cache import cache
+
+        cache.clear()
+        # The load balancer appends the address it saw; everything left of
+        # that is whatever the caller sent.
+        codes = [
+            client.get(_url(f"guess-{n}"), HTTP_X_FORWARDED_FOR=f"10.0.0.{n}, 203.0.113.9").status_code
+            for n in range(40)
+        ]
+        assert 429 in codes
+        cache.clear()
+
+    def test_the_token_never_reaches_the_audit_trail(self, client, issued, world):
+        from connect_labs.audit_trail.models import AuditEvent
+
+        client.post(
+            _url(issued["token"]), {"action": "confirm_order", "confirm_order-contract": world["contract"]["id"]}
+        )
+        paths = list(AuditEvent.objects.values_list("path", flat=True))
+        assert paths, "the write was not audited"
+        assert not any(issued["token"] in path for path in paths)
 
     def test_the_token_never_reaches_analytics(self, client, issued):
         body = client.get(_url(issued["token"])).content.decode()

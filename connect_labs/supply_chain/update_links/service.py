@@ -145,7 +145,9 @@ def _confirm_order(scope, data):
     contract = _require(scope.contracts, data.get("contract"), "order")
     if contract.status not in CONFIRMABLE:
         raise ValueError(f"order {contract} is already {contract.status.replace('_', ' ')}")
-    payload = {"contract_id": contract.pk, "data": {"status": "confirmed", **_provenance(scope.link)}}
+    # A status change, not a new record: who recorded the order stays who
+    # recorded it. The supplier's part is kept on the submission and the audit.
+    payload = {"contract_id": contract.pk, "data": {"status": "confirmed"}}
     return "contract_update", payload, Action.UPDATE
 
 
@@ -196,8 +198,10 @@ def _update_shipment(scope, data):
     changes = _drop_empty({"status": status, "expected_on": _iso(data.get("expected_on"))})
     payload = {
         "shipment_id": shipment.pk,
-        # Required by the shipment schema on an update too; not a change.
-        "data": {"contract_id": shipment.contract_id, **changes, **_provenance(scope.link)},
+        # `contract_id` and `source` are required by the shipment schema on an
+        # update too; neither is a change. Who recorded the dispatch stays who
+        # recorded it; the supplier's part is on the submission and the audit.
+        "data": {"contract_id": shipment.contract_id, "source": shipment.source, **changes},
     }
     return "shipment_update", payload, Action.UPDATE
 

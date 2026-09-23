@@ -77,14 +77,15 @@ def annotate_product(product, own_items, products=()):
         item["spec_verdict"] = checked["verdict"]
         # Each product inside a kit, with its own name and its own verdict, so
         # the page can say WHICH part fails rather than that something does.
-        verdicts = {part["commodity_slug"]: part["verdict"] for part in checked["components"]}
+        # Paired by position: `kit_spec_verdict` returns the parts in input
+        # order, and a kit may hold two components of one product.
         item["component_rows"] = [
             {
                 **component,
                 "name": names.get(component.get("commodity_slug"), component.get("commodity_slug")),
-                "verdict": verdicts.get(component.get("commodity_slug"), "No requirements"),
+                "verdict": part["verdict"],
             }
-            for component in item.get("components") or []
+            for component, part in zip(item.get("components") or [], checked["components"])
         ]
         # Two different kinds of disagreement, and they are not the same
         # finding. Differing from the product's nominal pack is often

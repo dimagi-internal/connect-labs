@@ -237,9 +237,11 @@ class RequiredDocumentForm(ProvenancedForm):
         # Organisations are labs-wide, so this picker is deliberately unscoped.
         self.fields["owed_by_org"].queryset = LabsOrg.objects.order_by("name")
         self.fields["owed_by_org"].empty_label = _("Select an organisation…")
+        # The list is being edited; who reported the shipment is not. Its
+        # `source` is sent back unchanged, as the remove button does.
+        del self.fields["source"]
         self.helper.layout = Layout(
             Row(Column("kind"), Column("owed_by_org"), css_class="grid md:grid-cols-2 gap-x-6"),
-            Field("source"),
         )
 
     def clean_kind(self):
@@ -254,7 +256,7 @@ class RequiredDocumentForm(ProvenancedForm):
     def payload(self) -> dict:
         existing = list(self.instance.required_documents or []) if self.instance else []
         return {
-            "source": self.cleaned_data["source"],
+            "source": self.instance.source,
             "required_documents": existing
             + [{"kind": self.cleaned_data["kind"], "owed_by_org_id": self.cleaned_data["owed_by_org"].pk}],
         }
