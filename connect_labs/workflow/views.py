@@ -5316,6 +5316,32 @@ def open_tasks_api(request):
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
+def _coaching_indicators(task_data: dict) -> list:
+    """The indicators a coaching task was created to cover, in the order they should be worked.
+
+    Written by the dashboard into ``extra_data`` at creation and never updated, which is the
+    point: it is the one part of coaching progress the chatbot cannot influence. The bot
+    reports which topics it finished; this says how many there were to finish.
+
+    ``task.data`` is free-form JSON with no schema, so an older task has no key at all and a
+    hand-edited one can hold anything. Everything unusable is dropped rather than guessed at,
+    and an empty list means "we do not know what this task was for" — which a caller must be
+    able to tell apart from "it covered nothing".
+    """
+    raw = task_data.get("coaching_indicators")
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        key = item.strip()
+        # Order is meaningful (worst first), so keep first-seen rather than sorting.
+        if key and key not in out:
+            out.append(key)
+    return out
+
+
 @login_required
 @require_GET
 def worker_tasks_api(request):
@@ -5373,6 +5399,12 @@ def worker_tasks_api(request):
                     "review": task.data.get("review"),
                     "session_ids": session_ids,
                     "workflow_run_id": task.data.get("workflow_run_id"),
+                    # What the dashboard asked the chatbot to cover, written at creation and
+                    # never touched afterwards. This is the DENOMINATOR for coaching progress:
+                    # the chatbot reports which topics it finished, but it cannot change how
+                    # many there were, so a conversation that closes early can be recognised
+                    # rather than taken at its word.
+                    "coaching_indicators": _coaching_indicators(task.data),
                 }
             )
 
@@ -5424,9 +5456,17 @@ def chatbot_status_api(request):
     try:
         client = OCSDataAccess(request=request)
         if not client.check_token_valid():
-            return JsonResponse({"ocs_auth_required": True, "statuses": {}, "login_url": "/labs/ocs/initiate/"})
+            return JsonResponse(
+                {
+                    "ocs_auth_required": True,
+                    "statuses": {},
+                    "topics_done": {},
+                    "login_url": "/labs/ocs/initiate/",
+                }
+            )
 
         by_username: dict = {}
+        done_by_username: dict = {}
         for participant in client.list_participants(experiment_id):
             identifier = (participant.get("identifier") or "").lower()
             if not identifier:
@@ -5437,7 +5477,18 @@ def chatbot_status_api(request):
             for entry in participant.get("data") or []:
                 if experiment_id not in (str(entry.get("chatbot_id") or ""), ""):
                     continue
-                status = ((entry.get("data") or {}).get("chatbot_task_status") or "").strip()
+                entry_data = entry.get("data") or {}
+
+                # Which topics the bot says it has finished. Separate from the status because
+                # they answer different questions: the status is how far the CONVERSATION got,
+                # this is how much of the WORK is done. A bot that closes after one topic of
+                # three reports completed and one entry here, and the caller can see the gap.
+                for topic in _chatbot_topics_done(entry_data):
+                    seen = done_by_username.setdefault(identifier, [])
+                    if topic not in seen:
+                        seen.append(topic)
+
+                status = (entry_data.get("chatbot_task_status") or "").strip()
                 if not status:
                     continue
                 prior = by_username.get(identifier)
@@ -5446,10 +5497,13 @@ def chatbot_status_api(request):
                 if prior is None or _chatbot_status_rank(status) > _chatbot_status_rank(prior):
                     by_username[identifier] = status
 
-        return JsonResponse({"statuses": by_username, "experiment": experiment_id})
+        return JsonResponse({"statuses": by_username, "topics_done": done_by_username, "experiment": experiment_id})
     except OCSAPIError as e:
         logger.warning("OCS refused the participant read for %s: %s", experiment_id, e)
-        return JsonResponse({"error": "Open Chat Studio could not be read.", "statuses": {}}, status=502)
+        return JsonResponse(
+            {"error": "Open Chat Studio could not be read.", "statuses": {}, "topics_done": {}},
+            status=502,
+        )
     except Exception:
         logger.exception("Failed to fetch chatbot status for experiment %s", experiment_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
@@ -5467,6 +5521,38 @@ def _chatbot_status_rank(value: str) -> int:
         return CHATBOT_STATUS_ORDER.index(value)
     except ValueError:
         return -1
+
+
+def _chatbot_topics_done(entry_data: dict) -> list:
+    """Topics the chatbot says it has finished for this worker, in the order it finished them.
+
+    Written by the OCS pipeline with ``append_to_participant_data_key``, so the natural shape
+    is a list that only ever grows — a later turn cannot erase what an earlier one recorded.
+
+    Two tolerances, both deliberate:
+
+    * a single string is accepted as a one-item list, because a Python node written with
+      ``set_participant_data_key`` instead of the append helper produces exactly that, and
+      silently reading it as zero topics would understate real progress;
+    * anything else — a dict, a number, a nested list — is dropped rather than coerced.
+
+    Nothing here validates the topic names. The dashboard compares them against the list it
+    wrote on the task itself, so a name this endpoint has never heard of should reach the
+    reader intact and be visible as unmatched, not be quietly filtered out here.
+    """
+    raw = entry_data.get("chatbot_topics_done")
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        topic = item.strip()
+        if topic and topic not in out:
+            out.append(topic)
+    return out
 
 
 @login_required
