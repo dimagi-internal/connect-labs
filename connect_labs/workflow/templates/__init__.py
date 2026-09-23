@@ -344,6 +344,9 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     # opportunity, not by someone reviewing one worker.
     "kmc_opp_report": "reports",
     "verified_monitoring": "reports",
+    # Photo audit success rate, per opportunity and pooled per programme,
+    # scoped by the context picker and drillable to one opportunity.
+    "photo_audit_report": "reports",
     # Automatic reports: run themselves on a schedule, no statuses.
     "flw_weekly_audit_report": "automatic",
     "flw_daily_indicator_report": "automatic",

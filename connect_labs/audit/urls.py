@@ -34,6 +34,16 @@ urlpatterns = [
         name="opportunity_sessions_summary",
     ),
     path(
+        "api/program/<int:program_id>/sessions-summary/",
+        views.ProgramAuditSessionsSummaryAPIView.as_view(),
+        name="program_sessions_summary",
+    ),
+    path(
+        "api/scope-context/",
+        views.AuditScopeContextAPIView.as_view(),
+        name="scope_context",
+    ),
+    path(
         "api/opportunities/search/",
         views.ExperimentOpportunitySearchAPIView.as_view(),
         name="program_search",
