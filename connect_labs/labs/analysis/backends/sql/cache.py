@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
-from django.db.models import Min
+from django.db.models import Min, Subquery
 from django.db.models.fields.json import KeyTextTransform
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
@@ -162,12 +162,34 @@ class SQLCacheManager:
             expires_at__gt=timezone.now(),
         ).exists()
 
+    @staticmethod
+    def _one_generation(qs):
+        """Narrow a raw-slot queryset to a single finalized generation.
+
+        Every writer leaves one ``visit_count`` label on a slot -- a full
+        rebuild's finalize deletes every other row, a top-up re-stamps the old
+        rows onto the new label -- so on a healthy slot this changes nothing.
+        But two rebuilds that commit concurrently can each keep their own rows,
+        and since the unique key includes ``visit_count``, two labels of the
+        same visits never collide. Readers then got every visit twice: the
+        visit-level computed write collided with itself (reported, misleadingly,
+        as "another pipeline run is in flight"), and the shrink guard's baseline
+        doubled, so a correct refresh read as a 50% shrink and was thrown away
+        -- the slot could not heal. Seen 2026-09-23 as 118,309 rows for ~59.7k
+        visits. Serving the largest generation keeps every reader at one copy;
+        the next finalize deletes the other, as it always did.
+        """
+        largest = qs.order_by("-visit_count").values("visit_count")[:1]
+        return qs.filter(visit_count=Subquery(largest))
+
     def get_raw_visit_count(self) -> int:
         """Get count of cached raw visits (excludes in-progress sentinel rows)."""
-        return RawVisitCache.objects.filter(
-            **self._raw_filter(),
-            visit_count__gt=0,
-            expires_at__gt=timezone.now(),
+        return self._one_generation(
+            RawVisitCache.objects.filter(
+                **self._raw_filter(),
+                visit_count__gt=0,
+                expires_at__gt=timezone.now(),
+            )
         ).count()
 
     def get_raw_visit_count_ignoring_ttl(self) -> int:
@@ -180,10 +202,15 @@ class SQLCacheManager:
         cache is a "miss" precisely because it *is* expired, so get_raw_visit_count
         (which filters on expires_at__gt=now()) would always read 0 there and
         silently disable the guard for the one scenario it was built for.
+
+        Counts ONE generation (see ``_one_generation``): measured against every
+        row of a doubled slot, a correct refresh looks like a 50% shrink.
         """
-        return RawVisitCache.objects.filter(
-            **self._raw_filter(),
-            visit_count__gt=0,
+        return self._one_generation(
+            RawVisitCache.objects.filter(
+                **self._raw_filter(),
+                visit_count__gt=0,
+            )
         ).count()
 
     def _raw_fetch_anomaly_cache_key(self) -> str:
@@ -603,11 +630,16 @@ class SQLCacheManager:
         return oldest is not None and oldest >= since
 
     def get_raw_visits_queryset(self):
-        """Get queryset of cached raw visits (excludes in-progress sentinel rows)."""
-        return RawVisitCache.objects.filter(
-            **self._raw_filter(),
-            visit_count__gt=0,
-            expires_at__gt=timezone.now(),
+        """Get queryset of cached raw visits (excludes in-progress sentinel rows).
+
+        One generation only, so no reader sees a visit twice -- see ``_one_generation``.
+        """
+        return self._one_generation(
+            RawVisitCache.objects.filter(
+                **self._raw_filter(),
+                visit_count__gt=0,
+                expires_at__gt=timezone.now(),
+            )
         )
 
     # -------------------------------------------------------------------------
