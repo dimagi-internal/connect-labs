@@ -201,3 +201,12 @@ different thing that happens to plot dots.
   <script src="{% static 'maps/connect_map.js' %}"></script>
   <script src="{% static 'marketplace/globe.js' %}"></script>
 {% endblock %}
+
+{% comment %}
+The agent panel goes at the END of the body, not in `javascript` — that block
+renders inside <head>, where `document.body` is still null and the launcher has
+nothing to attach to.
+{% endcomment %}
+{% block inline_javascript %}
+  {% include "labs/includes/canopy_panel.html" %}
+{% endblock %}
