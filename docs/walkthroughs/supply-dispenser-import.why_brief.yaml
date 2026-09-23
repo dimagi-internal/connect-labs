@@ -1,180 +1,164 @@
-schema_version: 1
-narrative_slug: supply-dispenser-import
-problem: >-
-  The chlorine programme's supply officer is responsible for dispensers that are
-  durable equipment, donated in kind by a donor NGO and imported by courier.
-  Getting them to the project sites means
-  chasing import documents that several different organisations owe, paying
-  customs and clearing fees to parties who are not the supplier, checking the
-  units for breakage when they reach the distributor's warehouse, and then
-  knowing how many dispensers each site holds. Today every one of those facts
-  lives in an email or WhatsApp thread, and the stock tools built for
-  consumables would forecast months of stock for equipment nobody consumes.
-spine:
-  - id: S0
-    claim: >-
-      A programme officer can see from one list that an import is late and which
-      of its documents are missing, without having asked anyone.
-    status: grounded
-    rationale: >-
-      The interview says every status update is chased by email or WhatsApp. A
-      check that fires when a promised date passes, and one that names each
-      missing document, turn the chase into something the record states.
-    evidence:
-      - kind: documented
-        ref: >-
-          docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §0 — the requirements interview
-          (Chlorine tab): "Every status update is asked for by email or WhatsApp"; dispensers imported
-          by the donor, import documents chased, customs fees paid by us, checked on arrival
-      - kind: documented
-        ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G3 (shipment_overdue) and G4 (shipment_documents_outstanding)
-      - kind: implemented
-        ref: connect_labs/supply_chain/checks.py — _late_shipments, _outstanding_documents
-      - kind: implemented
-        ref: connect_labs/templates/supply_chain/checks.html — /supply/checks/
-  - id: S1
-    claim: >-
-      A consignment carries its own required-documents checklist: each document on
-      file or outstanding, and which organisation owes it.
-    status: grounded
-    rationale: >-
-      The dispensers need an airway bill from the courier, a packing list and a
-      commercial invoice from the donor, and a customs declaration from the
-      clearing agent. "Follow up with the donor when needed" only becomes
-      actionable when the record says who owes what.
-    evidence:
-      - kind: documented
-        ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G4 — Shipment.required_documents {kind, owed_by_org}
-      - kind: implemented
-        ref: connect_labs/supply_chain/views.py — ShipmentDetailView (checklist)
-      - kind: implemented
-        ref: connect_labs/supply_chain/stock_views.py — ShipmentDocumentAttachView (?kind= prefill from the checklist row)
-  - id: S2
-    claim: >-
-      Attaching a document satisfies its line on the checklist, and the
-      outstanding check clears once nothing is owed.
-    status: grounded
-    rationale: >-
-      The checklist and the check are derived from the same rule (a document of
-      that kind attached to this shipment), so the page and the checks list
-      cannot disagree about what is still missing.
-    evidence:
-      - kind: implemented
-        ref: connect_labs/supply_chain/checks.py — _outstanding_documents
-      - kind: implemented
-        ref: connect_labs/supply_chain/tests/test_import_clearance.py — test_attaching_one_takes_it_off_the_list
-  - id: S3
-    claim: >-
-      Customs fees and clearing charges paid to someone other than the donor are
-      recorded against the shipment, with their payee, and itemised in the
-      order's landed cost.
-    status: grounded
-    rationale: >-
-      The programme pays customs and a clearing agent for goods it never bought.
-      Those payments are the real cost of landing a donation and belong beside
-      the consignment, not in a contract price that does not exist.
-    evidence:
-      - kind: documented
-        ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G4 — Charge record, landed cost adds charges itemised
-      - kind: implemented
-        ref: connect_labs/supply_chain/fulfilment/services/landed.py — charges(), landed_total() for in-kind contracts
-  - id: S4
-    claim: >-
-      A donated order reads as not purchased rather than as missing a price, while
-      its physical chain (shipment, receipt, rejection) works unchanged.
-    status: grounded
-    rationale: >-
-      Without this an in-kind contract raises "cost unconfirmed" for ever, and
-      cost data that was never going to exist is reported as missing.
-    evidence:
-      - kind: documented
-        ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G2 — Contract.consideration in_kind
-      - kind: implemented
-        ref: connect_labs/supply_chain/tests/test_consideration.py
-  - id: S5
-    claim: >-
-      When the consignment reaches the distributor's warehouse, the goods-received
-      note records what was accepted and what was refused, with the reason, and
-      only the accepted units become stock.
-    status: grounded
-    rationale: >-
-      The dispensers are checked on arrival for breakage. A refused unit that is
-      silently counted as stock is a dispenser a site will be promised and never
-      get.
-    evidence:
-      - kind: documented
-        ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §1 — receipt quantity_accepted / quantity_rejected / rejection_reason
-      - kind: implemented
-        ref: connect_labs/supply_chain/stock_forms.py — BatchLineForm (Refused, Why refused)
-  - id: S6
-    claim: >-
-      Releasing dispensers from the warehouse to project sites moves them through
-      the same ledger, so which site holds how many is a balance.
-    status: grounded
-    rationale: >-
-      Durable equipment is not consumed, but it is moved; "which site has which
-      dispenser" is still a question the ledger answers.
-    evidence:
-      - kind: documented
-        ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G8 — durable items still move through the ledger
-      - kind: implemented
-        ref: connect_labs/supply_chain/stock_forms.py — MovementForm (transfer)
-  - id: S7
-    claim: >-
-      The stock view marks dispensers as durable and gives no consumption rate,
-      months of stock or resupply figure for them, while still showing the balance
-      at each site.
-    status: grounded
-    rationale: >-
-      A months-of-stock figure for equipment nobody consumes is a made-up number,
-      and a resupply suggestion built on it would be worse.
-    evidence:
-      - kind: documented
-        ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G8 — Item.stock_class durable
-      - kind: implemented
-        ref: connect_labs/templates/supply_chain/stock.html — status "durable", NotForecast cells
 gaps:
-  - id: G1
-    type: CAPABILITY
-    claim_ref: S5
-    detail: >-
-      The distributor cannot yet record its own goods-received and release notes
-      through its supplier update link on the deployed build: the public form's
-      Referrer-Policy made browsers send Origin: null, which Django's CSRF check
-      refuses over HTTPS. Until the fix on this branch is deployed, the programme
-      officer records the distributor's notes, marked as reported by a partner.
-    proposed_action: >-
-      Deploy the strict-origin fix, then move the arrival and release beats to the
-      distributor's own update link.
-  - id: G2
-    type: CAPABILITY
-    claim_ref: S7
-    detail: >-
-      The network stock view could not compute a balance for an item that takes
-      its units from its product (display unit read from item.pack_unit only), so
-      durable sites read Unconfirmed. Fixed on this branch; the demo item states
-      its own units so the deployed build shows the balance.
-    proposed_action: Deploy the network display-unit fix.
-  - id: G3
-    type: DECISION
-    claim_ref: S6
-    detail: >-
-      "Which site has which dispenser" could mean individual units (serial numbers) or how many each
-      site holds. The ledger answers how many.
-    proposed_action: >-
-      Treat per-site counts as sufficient for this narrative; serial-level tracking of dispensers is
-      out of scope and not claimed.
-    resolved: >-
-      Counts per site. The problem statement and scenes say "how many each site holds"; nothing
-      claims unit-level tracking.
-  - id: G4
-    type: RESEARCH
-    claim_ref: S0
-    detail: >-
-      The lateness and missing-documents checks only fire if someone records the consignment's
-      expected date and its required-documents list. Who does that in practice (the programme
-      officer from the courier's notice, or the distributor through its update link) was not asked
-      in the interview.
-    proposed_action: >-
-      Ask the programme team who first learns the expected date and document list for an import;
-      the demo has the programme officer record them.
+- id: G1
+  type: CAPABILITY
+  detail: 'The distributor cannot yet record its own goods-received and release notes
+    through its supplier update link on the deployed build: the public form''s Referrer-Policy
+    made browsers send Origin: null, which Django''s CSRF check refuses over HTTPS.
+    Until the fix on this branch is deployed, the programme officer records the distributor''s
+    notes, marked as reported by a partner.'
+  claim_ref: S5
+  proposed_action: Deploy the strict-origin fix, then move the arrival and release
+    beats to the distributor's own update link.
+- id: G2
+  type: CAPABILITY
+  detail: The network stock view could not compute a balance for an item that takes
+    its units from its product (display unit read from item.pack_unit only), so durable
+    sites read Unconfirmed. Fixed on this branch; the demo item states its own units
+    so the deployed build shows the balance.
+  claim_ref: S7
+  proposed_action: Deploy the network display-unit fix.
+- id: G3
+  type: DECISION
+  detail: '"Which site has which dispenser" could mean individual units (serial numbers)
+    or how many each site holds. The ledger answers how many.'
+  resolved: Counts per site. The problem statement and scenes say "how many each site
+    holds"; nothing claims unit-level tracking.
+  claim_ref: S6
+  proposed_action: Treat per-site counts as sufficient for this narrative; serial-level
+    tracking of dispensers is out of scope and not claimed.
+- id: G4
+  type: RESEARCH
+  detail: The lateness and missing-documents checks only fire if someone records the
+    consignment's expected date and its required-documents list. Who does that in
+    practice (the programme officer from the courier's notice, or the distributor
+    through its update link) was not asked in the interview.
+  claim_ref: S0
+  proposed_action: Ask the programme team who first learns the expected date and document
+    list for an import; the demo has the programme officer record them.
+spine:
+- id: S0
+  claim: A programme officer can see from one list that an import is late and which
+    of its documents are missing, without having asked anyone.
+  status: grounded
+  evidence:
+  - ref: 'docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §0 — the requirements
+      interview (Chlorine tab): "Every status update is asked for by email or WhatsApp";
+      dispensers imported by the donor, import documents chased, customs fees paid
+      by us, checked on arrival'
+    kind: documented
+  - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G3 (shipment_overdue)
+      and G4 (shipment_documents_outstanding)
+    kind: documented
+  - ref: connect_labs/supply_chain/checks.py — _late_shipments, _outstanding_documents
+    kind: implemented
+  - ref: connect_labs/templates/supply_chain/checks.html — /supply/checks/
+    kind: implemented
+  rationale: The interview says every status update is chased by email or WhatsApp.
+    A check that fires when a promised date passes, and one that names each missing
+    document, turn the chase into something the record states.
+- id: S1
+  claim: 'A consignment carries its own required-documents checklist: each document
+    on file or outstanding, and which organisation owes it.'
+  status: grounded
+  evidence:
+  - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G4 — Shipment.required_documents
+      {kind, owed_by_org}
+    kind: documented
+  - ref: connect_labs/supply_chain/views.py — ShipmentDetailView (checklist)
+    kind: implemented
+  - ref: connect_labs/supply_chain/stock_views.py — ShipmentDocumentAttachView (?kind=
+      prefill from the checklist row)
+    kind: implemented
+  rationale: The dispensers need an airway bill from the courier, a packing list and
+    a commercial invoice from the donor, and a customs declaration from the clearing
+    agent. "Follow up with the donor when needed" only becomes actionable when the
+    record says who owes what.
+- id: S2
+  claim: Attaching a document satisfies its line on the checklist, and the outstanding
+    check clears once nothing is owed.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply_chain/checks.py — _outstanding_documents
+    kind: implemented
+  - ref: connect_labs/supply_chain/tests/test_import_clearance.py — test_attaching_one_takes_it_off_the_list
+    kind: implemented
+  rationale: The checklist and the check are derived from the same rule (a document
+    of that kind attached to this shipment), so the page and the checks list cannot
+    disagree about what is still missing.
+- id: S3
+  claim: Customs fees and clearing charges paid to someone other than the donor are
+    recorded against the shipment, with their payee, and itemised in the order's landed
+    cost.
+  status: grounded
+  evidence:
+  - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G4 — Charge
+      record, landed cost adds charges itemised
+    kind: documented
+  - ref: connect_labs/supply_chain/fulfilment/services/landed.py — charges(), landed_total()
+      for in-kind contracts
+    kind: implemented
+  rationale: The programme pays customs and a clearing agent for goods it never bought.
+    Those payments are the real cost of landing a donation and belong beside the consignment,
+    not in a contract price that does not exist.
+- id: S4
+  claim: A donated order reads as not purchased rather than as missing a price, while
+    its physical chain (shipment, receipt, rejection) works unchanged.
+  status: grounded
+  evidence:
+  - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G2 — Contract.consideration
+      in_kind
+    kind: documented
+  - ref: connect_labs/supply_chain/tests/test_consideration.py
+    kind: implemented
+  rationale: Without this an in-kind contract raises "cost unconfirmed" for ever,
+    and cost data that was never going to exist is reported as missing.
+- id: S5
+  claim: When the consignment reaches the distributor's warehouse, the goods-received
+    note records what was accepted and what was refused, with the reason, and only
+    the accepted units become stock.
+  status: grounded
+  evidence:
+  - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §1 — receipt
+      quantity_accepted / quantity_rejected / rejection_reason
+    kind: documented
+  - ref: connect_labs/supply_chain/stock_forms.py — BatchLineForm (Refused, Why refused)
+    kind: implemented
+  rationale: The dispensers are checked on arrival for breakage. A refused unit that
+    is silently counted as stock is a dispenser a site will be promised and never
+    get.
+- id: S6
+  claim: Releasing dispensers from the warehouse to project sites moves them through
+    the same ledger, so which site holds how many is a balance.
+  status: grounded
+  evidence:
+  - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G8 — durable
+      items still move through the ledger
+    kind: documented
+  - ref: connect_labs/supply_chain/stock_forms.py — MovementForm (transfer)
+    kind: implemented
+  rationale: Durable equipment is not consumed, but it is moved; "which site has which
+    dispenser" is still a question the ledger answers.
+- id: S7
+  claim: The stock view marks dispensers as durable and gives no consumption rate,
+    months of stock or resupply figure for them, while still showing the balance at
+    each site.
+  status: grounded
+  evidence:
+  - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G8 — Item.stock_class
+      durable
+    kind: documented
+  - ref: connect_labs/templates/supply_chain/stock.html — status "durable", NotForecast
+      cells
+    kind: implemented
+  rationale: A months-of-stock figure for equipment nobody consumes is a made-up number,
+    and a resupply suggestion built on it would be worse.
+problem: The chlorine programme's supply officer is responsible for dispensers that
+  are durable equipment, donated in kind by a donor NGO and imported by courier. Getting
+  them to the project sites means chasing import documents that several different
+  organisations owe, paying customs and clearing fees to parties who are not the supplier,
+  checking the units for breakage when they reach the distributor's warehouse, and
+  then knowing how many dispensers each site holds. Today every one of those facts
+  lives in an email or WhatsApp thread, and the stock tools built for consumables
+  would forecast months of stock for equipment nobody consumes.
+narrative_slug: supply-dispenser-import
+schema_version: 1

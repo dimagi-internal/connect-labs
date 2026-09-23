@@ -2,6 +2,8 @@ base_url: https://labs.connect.dimagi.com
 narrative_locked: true
 narrative_locked_at: '2026-09-23T23:49:08.636022+00:00'
 review_mode: autonomous
+video_viewport_width: 1440
+video_viewport_height: 900
 setup:
   command: python scripts/walkthroughs/supply-dispenser-import/ensure_demo.py
   outputs: scripts/walkthroughs/supply-dispenser-import/outputs.json
@@ -188,6 +190,9 @@ scenes:
     target: css:#id_payee_org-ts-control
   - kind: type
     value: Port customs
+  - kind: hold
+    seconds: 0.8
+    note: let the picker filter to what was typed before choosing
   - kind: press
     value: Enter
   - kind: fill
@@ -221,6 +226,9 @@ scenes:
     target: css:#id_payee_org-ts-control
   - kind: type
     value: Lagoon
+  - kind: hold
+    seconds: 0.8
+    note: let the picker filter to what was typed before choosing
   - kind: press
     value: Enter
   - kind: fill
@@ -312,6 +320,9 @@ scenes:
     target: css:#id_supply_point-ts-control
   - kind: type
     value: Harmattan
+  - kind: hold
+    seconds: 0.8
+    note: let the picker filter to what was typed before choosing
   - kind: press
     value: Enter
   - kind: fill
@@ -327,6 +338,9 @@ scenes:
     target: css:#id_lines-0-item-ts-control
   - kind: type
     value: ClearWater
+  - kind: hold
+    seconds: 0.8
+    note: let the picker filter to what was typed before choosing
   - kind: press
     value: Enter
   - kind: fill
@@ -379,6 +393,9 @@ scenes:
     target: css:#id_from_supply_point-ts-control
   - kind: type
     value: Harmattan
+  - kind: hold
+    seconds: 0.8
+    note: let the picker filter to what was typed before choosing
   - kind: press
     value: Enter
   - kind: click
@@ -386,18 +403,27 @@ scenes:
     target: css:#id_to_supply_point-ts-control
   - kind: type
     value: Dawaki
+  - kind: hold
+    seconds: 0.8
+    note: let the picker filter to what was typed before choosing
   - kind: press
     value: Enter
   - kind: click
     target: css:#id_commodity-ts-control
   - kind: type
     value: Chlorine dispenser
+  - kind: hold
+    seconds: 0.8
+    note: let the picker filter to what was typed before choosing
   - kind: press
     value: Enter
   - kind: click
     target: css:#id_item-ts-control
   - kind: type
     value: ClearWater
+  - kind: hold
+    seconds: 0.8
+    note: let the picker filter to what was typed before choosing
   - kind: press
     value: Enter
   - kind: fill
@@ -430,6 +456,9 @@ scenes:
     target: css:#id_from_supply_point-ts-control
   - kind: type
     value: Harmattan
+  - kind: hold
+    seconds: 0.8
+    note: let the picker filter to what was typed before choosing
   - kind: press
     value: Enter
   - kind: click
@@ -437,18 +466,27 @@ scenes:
     target: css:#id_to_supply_point-ts-control
   - kind: type
     value: Rimi
+  - kind: hold
+    seconds: 0.8
+    note: let the picker filter to what was typed before choosing
   - kind: press
     value: Enter
   - kind: click
     target: css:#id_commodity-ts-control
   - kind: type
     value: Chlorine dispenser
+  - kind: hold
+    seconds: 0.8
+    note: let the picker filter to what was typed before choosing
   - kind: press
     value: Enter
   - kind: click
     target: css:#id_item-ts-control
   - kind: type
     value: ClearWater
+  - kind: hold
+    seconds: 0.8
+    note: let the picker filter to what was typed before choosing
   - kind: press
     value: Enter
   - kind: fill
