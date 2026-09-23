@@ -14,6 +14,9 @@ urlpatterns = [
     path("clear-context/", views.clear_context, name="clear_context"),
     # The canopy agent panel vouches for the signed-in visitor here.
     path("canopy/token/", canopy_views.token, name="canopy_token"),
+    # Public: the verification key canopy fetches, so rotating ours is a secret
+    # swap rather than a person re-pasting a key into canopy.
+    path("canopy/jwks/", canopy_views.jwks, name="canopy_jwks"),
     path("refresh-org-data/", views.refresh_org_data, name="refresh_org_data"),
     # MCP Personal Access Tokens (self-service)
     path("mcp/tokens/", mcp_token_views.tokens_index, name="mcp_tokens_index"),

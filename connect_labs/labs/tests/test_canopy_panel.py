@@ -226,6 +226,74 @@ class TestTheEndpoint:
         assert "bad_signature" not in response.content.decode()
 
 
+@pytest.mark.django_db
+class TestTheJwks:
+    """Publishing a URL rather than a pasted key is what makes rotation free:
+    swap the secret and canopy follows by `kid` on its next fetch."""
+
+    def test_it_needs_no_session(self, client, configured):
+        """A public key is public, and canopy fetches it from outside any session."""
+        response = client.get(reverse("labs:canopy_jwks"))
+
+        assert response.status_code == 200
+        assert response.json()["keys"][0]["kty"] == "OKP"
+
+    def test_it_publishes_the_public_half_and_never_the_private_one(self, client, configured):
+        response = client.get(reverse("labs:canopy_jwks"))
+
+        body = response.content.decode()
+        assert "PRIVATE KEY" not in body
+        assert "d" not in response.json()["keys"][0], "`d` is the private scalar of an OKP key"
+
+    def test_the_published_key_verifies_what_we_sign(self, client, user, configured):
+        """The whole contract in one assertion: canopy fetches this document and
+        must be able to check our signature with it."""
+        from jwt import PyJWK
+
+        published = client.get(reverse("labs:canopy_jwks")).json()["keys"][0]
+        claims = jwt.decode(
+            canopy.assertion_for(user),
+            PyJWK.from_dict(published).key,
+            algorithms=["EdDSA"],
+            audience="https://labs.example.invalid/canopy",
+        )
+
+        assert claims["sub"] == str(user.pk)
+
+    def test_the_assertion_names_the_key_that_signed_it(self, client, configured, user):
+        """Canopy selects a verification key by `kid`. Without it a rotation has
+        nothing to select on and succeeds only by luck of ordering."""
+        published = client.get(reverse("labs:canopy_jwks")).json()["keys"][0]
+
+        header = jwt.get_unverified_header(canopy.assertion_for(user))
+
+        assert header["kid"] == published["kid"]
+
+    def test_the_kid_is_derived_from_the_key_so_rotation_changes_it(self, settings, keys):
+        """A fixed label would give two different keys the same name."""
+        settings.CANOPY_BASE_URL = "https://labs.example.invalid/canopy"
+        settings.CANOPY_APP_NAME = "connect-labs"
+
+        settings.CANOPY_SIGNING_KEY = keys[0]
+        before = canopy.public_jwk()["kid"]
+        settings.CANOPY_SIGNING_KEY = _keypair()[0]
+        after = canopy.public_jwk()["kid"]
+
+        assert before != after
+
+    def test_an_unreadable_key_publishes_an_empty_set(self, client, settings):
+        """Canopy then refuses our assertions, rather than being handed something
+        it cannot parse."""
+        settings.CANOPY_BASE_URL = "https://labs.example.invalid/canopy"
+        settings.CANOPY_APP_NAME = "connect-labs"
+        settings.CANOPY_SIGNING_KEY = "not a pem"
+
+        response = client.get(reverse("labs:canopy_jwks"))
+
+        assert response.status_code == 503
+        assert response.json() == {"keys": []}
+
+
 class TestPageState:
     def test_it_carries_the_selection_and_not_the_rows(self):
         state = canopy.panel_context(

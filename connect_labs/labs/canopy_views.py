@@ -11,7 +11,7 @@ import logging
 
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
 from connect_labs.labs import canopy
 
@@ -50,3 +50,28 @@ def token(request):
         return JsonResponse({"error": "could not reach the agent service"}, status=502)
 
     return JsonResponse({"token": vouched["token"], "expires_at": vouched["expires_at"]})
+
+
+@require_GET
+def jwks(request):
+    """The public half of labs' signing key, for canopy to verify against.
+
+    **Unauthenticated on purpose.** A public key is public — this is the same
+    document every OIDC provider serves, and canopy fetches it from outside any
+    session.
+
+    Publishing it as a URL rather than pasting the key into canopy is what makes
+    rotation free: put a new private key in the secret store, and canopy follows
+    by `kid` on its next fetch. A key that can only be rotated by somebody
+    re-pasting it is a key that never gets rotated.
+    """
+    if not canopy.is_configured():
+        return JsonResponse({"keys": []}, status=503)
+    try:
+        return JsonResponse({"keys": [canopy.public_jwk()]})
+    except Exception:
+        # A malformed key is a deployment fault, and an empty key set is the
+        # honest answer: canopy then refuses our assertions rather than being
+        # handed something it cannot parse.
+        log.exception("CANOPY_SIGNING_KEY could not be read as a private key")
+        return JsonResponse({"keys": []}, status=503)

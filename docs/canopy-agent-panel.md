@@ -29,7 +29,7 @@ Four labs-side pieces:
 | Piece | Where |
 | --- | --- |
 | Signing + the mint call | `connect_labs/labs/canopy.py` |
-| The one endpoint | `connect_labs/labs/canopy_views.py` → `/labs/canopy/token/` |
+| The one endpoint, plus the published key | `connect_labs/labs/canopy_views.py` → `/labs/canopy/token/`, `/labs/canopy/jwks/` |
 | The overlay, and the page it declares | `connect_labs/templates/labs/includes/canopy_panel.html` |
 | What the agent reads | `connect_labs/mcp/tools/marketplace.py` |
 
@@ -122,7 +122,7 @@ Steps 1–2 are one-off per environment.
 | Name | `connect-labs` (matches `CANOPY_APP_NAME`) |
 | Site URLs | `https://labs.connect.dimagi.com` **and** `http://localhost:8000` |
 | Agents it may offer | ACE and Eva |
-| Signing key | the PUBLIC half from step 2 |
+| Where your site publishes its keys | `https://labs.connect.dimagi.com/labs/canopy/jwks/` |
 
 All three fail closed, which is why "nothing happens" is almost always a missing
 one rather than something broken.
@@ -131,8 +131,22 @@ one rather than something broken.
 
 ```bash
 openssl genpkey -algorithm ed25519 -out canopy-signing.pem
-openssl pkey -in canopy-signing.pem -pubout     # paste THIS into canopy
 ```
+
+**Give canopy the JWKS URL, not the key.** Labs publishes the public half at
+`/labs/canopy/jwks/`, derived from the private key rather than configured
+beside it — two settings that must agree are two that can disagree, and that
+failure shows up as assertions verifying against nothing, far from the edit.
+
+Rotation then costs nothing: put a new private key in Secrets Manager and canopy
+follows by `kid` on its next fetch, refetching the moment it meets a `kid` it has
+not seen. A key that can only be rotated by somebody re-pasting it is a key that
+never gets rotated. Canopy requires the URL to be https, publicly reachable, free
+of redirects and under 64 KiB.
+
+(Pasting the public key into canopy's "…or paste a signing key" box still works
+and behaves identically — the only difference is that each rotation means going
+back there.)
 
 **3. Set three env vars** (`deploy/task-definitions/*.json` for AWS — env vars
 are wiped on deploy unless pinned there; see the `aws-env-update` skill):
@@ -154,6 +168,7 @@ launcher.
 | Symptom | Cause |
 | --- | --- |
 | No launcher at all | one of the three settings is unset — the include renders nothing |
+| Every mint 401s with `bad_signature` | canopy cannot reach `/labs/canopy/jwks/`, or it is serving `{"keys": []}` because `CANOPY_SIGNING_KEY` is not a readable PEM |
 | Launcher, then a token error | the mint 403'd (CSRF binding), 502'd (canopy unreachable) or 401'd (signature). Labs logs canopy's own words; the browser deliberately does not get them |
 | Blank panel, console says a frame refused to load | labs' origin is not in the site's **Site URLs** |
 | "No agent is available here yet" | no allowed-agents row, or the agent is not in that workspace |
