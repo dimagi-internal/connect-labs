@@ -156,6 +156,17 @@ DOCUMENT_KINDS = (
     "specification_sheet",
     "photo",
     "stock_report",
+    # Import clearance. What a consignment needs to leave the port, and what
+    # a clearing agent or customs will ask for -- each owed by somebody, which
+    # is what `Shipment.required_documents` records.
+    "airway_bill",
+    "bill_of_lading",
+    "packing_list",
+    "commercial_invoice",
+    "import_permit",
+    "customs_declaration",
+    # A national regulator's product registration (NAFDAC in Nigeria).
+    "product_registration",
     "other",
 )
 
@@ -190,7 +201,13 @@ DOCUMENT_LINKS = (
     # photograph of the product
     "supplier",
     "item",
+    # a customs or clearing receipt, against the charge it evidences
+    "charge",
 )
+
+# What it costs to land a consignment, paid to somebody other than the
+# supplier: customs, a clearing agent, a haulier from the port, a warehouse.
+CHARGE_KINDS = ("customs_duty", "customs_fee", "clearing", "inland_freight", "storage", "other")
 
 BASIS = ("included", "excluded", "not_specified")
 

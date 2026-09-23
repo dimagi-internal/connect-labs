@@ -31,6 +31,7 @@ _SERIALIZERS = {
     models.Award: serializers.award,
     models.Contract: serializers.contract,
     models.Shipment: serializers.shipment,
+    models.Charge: serializers.charge,
     models.Receipt: serializers.receipt,
     models.Invoice: serializers.invoice,
     models.Payment: serializers.payment,

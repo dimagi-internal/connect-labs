@@ -154,7 +154,24 @@ urlpatterns = [
         stock_views.ReceiptRecordView.as_view(),
         name="receipt_record",
     ),
+    path("shipments/<int:shipment_id>/", views.ShipmentDetailView.as_view(), name="shipment_detail"),
     path("shipments/<int:shipment_id>/status/", stock_views.ShipmentStatusView.as_view(), name="shipment_status"),
+    path(
+        "shipments/<int:shipment_id>/documents/require/",
+        stock_views.ShipmentRequireDocumentView.as_view(),
+        name="shipment_require_document",
+    ),
+    path(
+        "shipments/<int:shipment_id>/documents/unrequire/",
+        stock_views.ShipmentRequirementRemoveView.as_view(),
+        name="shipment_unrequire_document",
+    ),
+    path(
+        "shipments/<int:shipment_id>/documents/new/",
+        stock_views.ShipmentDocumentAttachView.as_view(),
+        name="shipment_document_attach",
+    ),
+    path("shipments/<int:shipment_id>/charges/new/", stock_views.ChargeRecordView.as_view(), name="charge_record"),
     path("invoices/<int:invoice_id>/edit/", fulfilment_views.InvoiceUpdateView.as_view(), name="invoice_edit"),
     path(
         "invoices/<int:invoice_id>/payments/new/",

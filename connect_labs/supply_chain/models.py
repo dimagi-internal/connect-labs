@@ -502,6 +502,12 @@ class Shipment(SourcedModel):
     dispatched_on = models.DateField(null=True, blank=True)
     expected_on = models.DateField(null=True, blank=True)
     carrier = models.CharField(max_length=255, blank=True, default="")
+    # What this consignment needs to clear, and who owes each: a list of
+    # {kind, owed_by_org_id}. "Follow up with the donor when needed", as data.
+    # A requirement is met by a document of that kind attached to THIS
+    # shipment -- two consignments under one contract each need their own
+    # airway bill.
+    required_documents = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["-dispatched_on", "-created_at"]
@@ -510,6 +516,31 @@ class Shipment(SourcedModel):
     def is_in_transit(self) -> bool:
         """Dispatched and not yet received. Never counted as stock (section 19.1)."""
         return self.status in records.IN_TRANSIT_STATUSES
+
+
+class Charge(SourcedModel):
+    """Money paid to land a consignment, to somebody who is not the supplier.
+
+    Customs fees, a clearing agent, the lorry from the port: paid by us to a
+    courier or to customs, never to the supplier, so it is neither the
+    contract's price nor its freight line. It hangs off the shipment it was
+    paid to clear, and the contract's landed cost adds it, itemised.
+    """
+
+    shipment = models.ForeignKey(Shipment, on_delete=models.CASCADE, related_name="charges")
+    kind = models.CharField(max_length=24, choices=_choices(records.CHARGE_KINDS))
+    payee_org = models.ForeignKey("labs.LabsOrg", on_delete=models.PROTECT, related_name="supply_charges")
+    amount = models.DecimalField(**MONEY)
+    currency = models.CharField(max_length=3, default="USD")
+    # Local fees are paid in local currency. Without a rate they cannot be
+    # added to a USD landed total, and the total says so rather than adding
+    # naira to dollars.
+    fx_rate_to_usd = models.DecimalField(null=True, blank=True, max_digits=18, decimal_places=8)
+    # Null while assessed but not yet paid.
+    paid_on = models.DateField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["paid_on", "id"]
 
 
 class ShipmentLine(models.Model):
@@ -628,6 +659,9 @@ class Document(SourcedModel):
     )
     item = models.ForeignKey(
         "supply_chain.Item", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    )
+    charge = models.ForeignKey(
+        "supply_chain.Charge", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
     )
 
     class Meta:

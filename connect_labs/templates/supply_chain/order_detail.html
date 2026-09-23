@@ -72,6 +72,23 @@ figure here can go stale.
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.duty|figure_text }}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">VAT</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.vat|figure_text }}</td></tr>
+        {% for charge in landed.charges %}
+          {% comment %}
+          Paid to land the goods, to somebody who is not the supplier. One line
+          each, so a reader can see who was paid what rather than a lump.
+          {% endcomment %}
+          <tr>
+            <td class="px-4 py-2 text-gray-600">
+              {{ charge.kind|humanise|capfirst }}
+              <span class="text-xs text-gray-400">to {{ charge.payee.name }}</span>
+            </td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ charge.amount|figure_text }}</td>
+          </tr>
+        {% endfor %}
+        {% if landed.charges %}
+          <tr><td class="px-4 py-2 text-gray-600">Charges to land it</td>
+              <td class="px-4 py-2 text-right tabular-nums">{{ landed.charges_total|figure_text }}</td></tr>
+        {% endif %}
         <tr class="bg-gray-50">
           <td class="px-4 py-2 font-semibold text-brand-indigo">Landed total</td>
           <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">
@@ -84,6 +101,11 @@ figure here can go stale.
     {% for reason in landed.landed_total|unconfirmed_reasons %}
       <div class="px-4 py-2 text-xs text-orange-800 bg-orange-50 border-t border-orange-100">{{ reason }}</div>
     {% endfor %}
+    {% if contract.consideration != "priced" %}
+      {% for reason in landed.charges_total|unconfirmed_reasons %}
+        <div class="px-4 py-2 text-xs text-orange-800 bg-orange-50 border-t border-orange-100">{{ reason }}</div>
+      {% endfor %}
+    {% endif %}
     {% if contract.consideration != "priced" %}
     <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
       These goods were not bought, so there is no price to find and nothing is
@@ -189,7 +211,14 @@ figure here can go stale.
       {% for shipment in shipments %}
         {% for line in shipment.lines %}
           <tr>
-            <td class="px-4 py-2 font-medium text-gray-900">{{ shipment.reference|default:shipment.id }}</td>
+            <td class="px-4 py-2 font-medium text-gray-900">
+              {% if forloop.first %}
+                <a class="text-brand-indigo hover:underline"
+                   href="{% url 'supply_chain:shipment_detail' shipment.id %}">{{ shipment.reference|default:shipment.id }}</a>
+              {% else %}
+                {{ shipment.reference|default:shipment.id }}
+              {% endif %}
+            </td>
             <td class="px-4 py-2">
               {{ shipment.status }}
               {% if shipment.is_in_transit %}
@@ -222,6 +251,33 @@ figure here can go stale.
                 <a href="{% url 'supply_chain:shipment_status' shipment.id %}"
                    class="text-brand-indigo hover:underline">Update</a>
               {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          {% comment %}
+          A shipment with no lines still gets a row: a consignment held at
+          customs before anyone listed its batches is exactly the one worth
+          seeing.
+          {% endcomment %}
+          <tr>
+            <td class="px-4 py-2 font-medium text-gray-900">
+              <a class="text-brand-indigo hover:underline"
+                 href="{% url 'supply_chain:shipment_detail' shipment.id %}">{{ shipment.reference|default:shipment.id }}</a>
+            </td>
+            <td class="px-4 py-2">{{ shipment.status }}
+              {% with late=late_shipments|dictkey:shipment.id %}
+                {% if late %}
+                  <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on }}</div>
+                {% endif %}
+              {% endwith %}
+            </td>
+            <td colspan="3" class="px-4 py-2 text-xs text-gray-500">no lines recorded</td>
+            <td class="px-4 py-2">
+              {% if shipment.document_ids %}<span class="text-xs text-teal-700">on file</span>{% else %}<span class="text-xs text-amber-800">none</span>{% endif %}
+            </td>
+            <td class="px-4 py-2 text-xs text-gray-500">{{ shipment.source }}</td>
+            <td class="px-4 py-2 text-right whitespace-nowrap">
+              <a href="{% url 'supply_chain:shipment_status' shipment.id %}" class="text-brand-indigo hover:underline">Update</a>
             </td>
           </tr>
         {% endfor %}

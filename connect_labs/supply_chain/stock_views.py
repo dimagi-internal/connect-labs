@@ -18,13 +18,16 @@ from django.http import Http404
 from django.urls import reverse
 
 from connect_labs.supply_chain.api_views import _access
-from connect_labs.supply_chain.form_views import OperationFormView
+from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
+from connect_labs.supply_chain.fulfilment_forms import DocumentForm
 from connect_labs.supply_chain.fulfilment_views import _contract
 from connect_labs.supply_chain.models import Item, Shipment
 from connect_labs.supply_chain.stock_forms import (
     BatchLineFormSet,
+    ChargeForm,
     MovementForm,
     ReceiptForm,
+    RequiredDocumentForm,
     ShipmentForm,
     ShipmentStatusForm,
     StockCountForm,
@@ -177,6 +180,124 @@ class ShipmentStatusView(OperationFormView):
 
     def redirect_to(self, result):
         return reverse("supply_chain:order_detail", args=[self.shipment().contract_id])
+
+
+class _UnderAShipment(OperationFormView):
+    """A screen for something that belongs to one consignment."""
+
+    def shipment(self):
+        if not hasattr(self, "_shipment"):
+            self._shipment = _shipment(self.request, self.kwargs["shipment_id"])
+        return self._shipment
+
+    def breadcrumb(self, **kwargs):
+        shipment = self.shipment()
+        return [
+            {"label": "Orders", "href": reverse("supply_chain:orders")},
+            {
+                "label": str(shipment.contract),
+                "href": reverse("supply_chain:order_detail", args=[shipment.contract_id]),
+            },
+            {
+                "label": f"Shipment {shipment.reference or shipment.pk}",
+                "href": reverse("supply_chain:shipment_detail", args=[shipment.pk]),
+            },
+            {"label": self.title},
+        ]
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:shipment_detail", args=[self.kwargs["shipment_id"]])
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:shipment_detail", args=[self.kwargs["shipment_id"]])
+
+
+class ShipmentRequireDocumentView(_UnderAShipment):
+    """Add a document the consignment needs to clear, and who owes it."""
+
+    operation = "shipment_update"
+    form_class = RequiredDocumentForm
+    title = "Require a document"
+    intro = (
+        "What this consignment needs before it can clear — an airway bill, a packing list, a "
+        "product registration — and who has to produce it. Until one is attached to the shipment "
+        "it stays on the checks list, naming who owes it."
+    )
+    submit_label = "Add to the list"
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["instance"] = self.shipment()
+        return kwargs
+
+    def fixed(self, **kwargs):
+        # `contract_id` rides along because the shipment schema requires it on
+        # an update; it is not asked, because it is not being changed.
+        return {"shipment_id": int(kwargs["shipment_id"]), "data": {"contract_id": self.shipment().contract_id}}
+
+
+class ShipmentRequirementRemoveView(OperationActionView):
+    """Take one document off what a consignment needs. A button, not a page.
+
+    Removing is an edit of the list and nothing else, so it records nothing
+    about provenance beyond what the shipment already says.
+    """
+
+    operation = "shipment_update"
+    success_message = "Removed from what this consignment needs."
+
+    def fixed(self, **kwargs):
+        shipment = _shipment(self.request, kwargs["shipment_id"])
+        kind = self.request.POST.get("kind")
+        return {
+            "shipment_id": shipment.pk,
+            "data": {
+                "contract_id": shipment.contract_id,
+                "source": shipment.source,
+                "required_documents": [e for e in shipment.required_documents or [] if e.get("kind") != kind],
+            },
+        }
+
+    def redirect_to(self, **kwargs):
+        return reverse("supply_chain:shipment_detail", args=[kwargs["shipment_id"]])
+
+
+class ShipmentDocumentAttachView(_UnderAShipment):
+    """Evidence for one consignment -- most often one of the documents it needs."""
+
+    operation = "document_attach"
+    form_class = DocumentForm
+    title = "Attach a document to this shipment"
+    intro = (
+        "An airway bill, a packing list, a customs declaration — attached here it satisfies the "
+        "matching line on this consignment's list. Upload the file or link to where it lives."
+    )
+    submit_label = "Attach"
+
+    def get_initial(self):
+        initial = super().get_initial()
+        # Arriving from an outstanding line on the checklist, the kind is the answer.
+        kind = self.request.GET.get("kind")
+        if kind:
+            initial["kind"] = kind
+        return initial
+
+    def fixed(self, **kwargs):
+        return {"data": {"shipment_id": int(kwargs["shipment_id"])}}
+
+
+class ChargeRecordView(_UnderAShipment):
+    operation = "charge_record"
+    form_class = ChargeForm
+    title = "Record a charge"
+    intro = (
+        "What it cost to land this consignment, paid to somebody who is not the supplier: customs, "
+        "a clearing agent, the lorry from the port. It is added to the order's landed cost, one line each."
+    )
+    submit_label = "Record charge"
+
+    def fixed(self, **kwargs):
+        return {"data": {"shipment_id": int(kwargs["shipment_id"])}}
 
 
 # ---- receipts ----------------------------------------------------------

@@ -71,6 +71,7 @@ KIND_CATEGORIES = {
     "commodity_course_undefined": "missing",
     "stock_unconfirmed": "missing",
     "stock_never_reported": "missing",
+    "shipment_documents_outstanding": "missing",
     # conflict -- two records disagree
     "award_not_contracted": "conflict",
     "invoice_over_billed": "conflict",
@@ -362,6 +363,7 @@ def _fulfilment(access, as_of):
         .select_related("contract__supplier")
     )
     out += _late_shipments(access, as_of)
+    out += _outstanding_documents(access, as_of)
 
     for shipment in uncertified:
         out.append(
@@ -469,6 +471,74 @@ def _late_shipments(access, as_of):
             )
         )
     return out
+
+
+def _outstanding_documents(access, as_of):
+    """Each document a shipment requires and does not have, and who owes it.
+
+    The requirement is the shipment's own list, so this is a gap in a row --
+    "missing" -- and not a judgement about what a consignment ought to carry.
+    A requirement is met by a document of that kind attached to the shipment
+    itself: two consignments under one contract each need their own airway
+    bill, so a contract-level document would satisfy the wrong one.
+    """
+    from connect_labs.labs.models import LabsOrg
+
+    shipments = list(
+        Shipment.objects.filter(contract__program_id=access.program_id)
+        .exclude(required_documents=[])
+        .select_related("contract__supplier", "contract")
+        .prefetch_related("documents")
+    )
+    owed_by_ids = {
+        entry.get("owed_by_org_id") for shipment in shipments for entry in shipment.required_documents or []
+    }
+    names = dict(LabsOrg.objects.filter(pk__in=owed_by_ids).values_list("pk", "name"))
+
+    out = []
+    for shipment in shipments:
+        on_file = {document.kind for document in shipment.documents.all()}
+        outstanding = [
+            {
+                "kind": entry["kind"],
+                "owed_by": {"id": entry.get("owed_by_org_id"), "name": names.get(entry.get("owed_by_org_id"))},
+            }
+            for entry in shipment.required_documents or []
+            if entry.get("kind") not in on_file
+        ]
+        if not outstanding:
+            continue
+        contract = shipment.contract
+        out.append(
+            _check(
+                "shipment_documents_outstanding",
+                subject_type="shipment",
+                subject_id=shipment.pk,
+                label=f"{shipment.reference or shipment.pk} — {contract.supplier.name}",
+                # Who owes each is on each line; the check's own audience is
+                # the first one's, mapped to the domain's three: the supplier's
+                # organisation, the buying partner, or anybody else (whom we
+                # chase ourselves).
+                audience=_audience_for_org(contract, outstanding[0]["owed_by"]["id"]),
+                facts={
+                    "outstanding": outstanding,
+                    "required": len(shipment.required_documents),
+                    "status": shipment.status,
+                    "contract_id": contract.pk,
+                },
+                since=shipment.dispatched_on,
+                as_of=as_of,
+            )
+        )
+    return out
+
+
+def _audience_for_org(contract, org_id):
+    if org_id is not None and org_id == contract.supplier.org_id:
+        return "supplier"
+    if org_id is not None and org_id == contract.buyer_org_id and contract.buyer_of_record == "partner_org":
+        return "partner"
+    return "internal"
 
 
 def _stock(access, as_of, opportunity_id=None):

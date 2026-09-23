@@ -274,6 +274,22 @@ def shipment(obj) -> dict:
             for line in obj.lines.all()
         ],
         "document_ids": [doc.pk for doc in obj.documents.all()],
+        "required_documents": obj.required_documents,
+        **_sourced(obj),
+    }
+
+
+def charge(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "shipment_id": obj.shipment_id,
+        "kind": obj.kind,
+        "payee_org_id": obj.payee_org_id,
+        "amount": _num(obj.amount),
+        "currency": obj.currency,
+        "fx_rate_to_usd": _num(obj.fx_rate_to_usd),
+        "paid_on": _date(obj.paid_on),
+        "document_ids": [doc.pk for doc in obj.documents.all()],
         **_sourced(obj),
     }
 
