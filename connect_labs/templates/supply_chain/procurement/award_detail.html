@@ -47,7 +47,7 @@ the award, so the page says so where the order button would otherwise be.
   </div>
   {% if approvals %}
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
-      <table class="min-w-[36rem] w-full text-sm">
+      <table class="min-w-[44rem] w-full text-sm">
         <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
           <tr>
             <th class="text-left px-4 py-2">Who</th>
@@ -103,7 +103,7 @@ the award, so the page says so where the order button would otherwise be.
     {% endif %}
   </div>
   {% if blocking %}
-    <div class="px-4 py-3 text-sm text-message-warning-text bg-message-warning border-b border-message-warning-border/40">
+    <div class="px-4 py-3 text-sm text-message-warning-text bg-message-warning border-b border-message-warning-border/50">
       This award cannot be ordered yet:
       {% for approval in blocking %}
         {{ approval.approver.name }} ({{ approval.role }})
