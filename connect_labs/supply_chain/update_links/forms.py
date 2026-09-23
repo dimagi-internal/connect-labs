@@ -375,6 +375,16 @@ class RecordReceiptForm(PublicForm):
     supply_point = _PointChoice(
         label=_("Received at"), queryset=SupplyPoint.objects.none(), widget=forms.Select(attrs=SELECT)
     )
+    # Optional: goods can arrive that nobody recorded dispatching. When they do
+    # match a dispatch, naming it is what stops that consignment reading "in
+    # transit" beside the stock it became, and going overdue the day after.
+    shipment = _ShipmentChoice(
+        label=_("From the dispatch"),
+        queryset=Shipment.objects.none(),
+        required=False,
+        empty_label=_("Not a recorded dispatch"),
+        widget=forms.Select(attrs=SELECT),
+    )
     received_on = forms.DateField(label=_("Received on"), widget=forms.DateInput(attrs=DATE))
     reference = forms.CharField(
         label=_("Goods received note number"), required=False, max_length=64, widget=forms.TextInput(attrs=INPUT)
@@ -397,10 +407,12 @@ class RecordReceiptForm(PublicForm):
         if scope is not None:
             self.fields["contract"].queryset = scope.contracts.exclude(status__in=("closed", "cancelled"))
             self.fields["supply_point"].queryset = scope.supply_points
+            self.fields["shipment"].queryset = scope.shipments.exclude(status__in=("delivered", "lost"))
 
     def rows(self):
         return [
             _pair("contract", "supply_point"),
+            "shipment",
             _pair("received_on", "reference"),
             _triple("quantity_accepted", "quantity_rejected", "unit_basis"),
             "rejection_reason",
