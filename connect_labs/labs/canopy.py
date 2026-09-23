@@ -163,7 +163,49 @@ def assertion_for(user) -> str:
         },
         settings.CANOPY_SIGNING_KEY,
         algorithm="EdDSA",
+        # So canopy can pick this key out of the JWKS we publish. Without it a
+        # rotation has nothing to select on: canopy would try every published key
+        # and succeed only by luck of ordering.
+        headers={"kid": public_jwk()["kid"]},
     )
+
+
+def _thumbprint(jwk: dict) -> str:
+    """RFC 7638 thumbprint — the key's ``kid``, derived FROM the key.
+
+    Canopy selects a verification key by the ``kid`` on the assertion, and
+    computes this same value from what we publish. A fixed string would give two
+    different keys the same name, leaving a rotation nothing to select on; a
+    thumbprint changes when the key does and needs no configuration.
+    """
+    import base64
+    import hashlib
+
+    # Only the members RFC 7638 defines for this key type, lexicographic, no
+    # whitespace. The canonical form is the whole point.
+    canonical = json.dumps(
+        {"crv": jwk["crv"], "kty": jwk["kty"], "x": jwk["x"]},
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    return base64.urlsafe_b64encode(hashlib.sha256(canonical).digest()).decode().rstrip("=")
+
+
+def public_jwk() -> dict:
+    """The public half of our signing key, as a JWK.
+
+    **Derived from the private key, never configured separately.** Two settings
+    that have to agree are two settings that can disagree — and the failure mode
+    is assertions that verify against nothing, at a moment far from the edit.
+    """
+    from cryptography.hazmat.primitives import serialization
+    from jwt.algorithms import OKPAlgorithm
+
+    private = serialization.load_pem_private_key(settings.CANOPY_SIGNING_KEY.encode(), password=None)
+    jwk = OKPAlgorithm.to_jwk(private.public_key(), as_dict=True)
+    jwk.update({"use": "sig", "alg": "EdDSA"})
+    jwk["kid"] = _thumbprint(jwk)
+    return jwk
 
 
 def _audience() -> str:
