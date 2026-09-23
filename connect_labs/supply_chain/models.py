@@ -413,6 +413,36 @@ class Award(TimestampedModel):
         ordering = ["-decided_on", "-created_at"]
 
 
+class AwardApproval(TimestampedModel):
+    """A third party's agreement to an award, asked for and then given or refused.
+
+    The approver is not the person deciding the award -- `Award.decided_by`
+    is -- but somebody whose agreement the award needs before money moves: a
+    technical partner confirming the product, a funder approving its use, a
+    regulator. A contract may not rest on an award with one pending or
+    declined, which is a statement of fact, not a recommendation.
+
+    A decision is final on its row. A funder who declines and later relents
+    is a second request; overwriting the first would lose that it was ever
+    declined.
+    """
+
+    award = models.ForeignKey(Award, on_delete=models.CASCADE, related_name="approvals")
+    approver_org = models.ForeignKey("labs.LabsOrg", on_delete=models.PROTECT, related_name="supply_approvals")
+    role = models.CharField(max_length=16, choices=_choices(records.APPROVAL_ROLES))
+    status = models.CharField(max_length=16, default="requested", choices=_choices(records.APPROVAL_STATUSES))
+    requested_on = models.DateField()
+    decided_on = models.DateField(null=True, blank=True)
+    note = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["requested_on", "id"]
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == "requested"
+
+
 # ======================================================================
 # Fulfilment tier -- contract to receipt
 # ======================================================================
@@ -662,6 +692,9 @@ class Document(SourcedModel):
     )
     charge = models.ForeignKey(
         "supply_chain.Charge", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    )
+    approval = models.ForeignKey(
+        "supply_chain.AwardApproval", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
     )
 
     class Meta:

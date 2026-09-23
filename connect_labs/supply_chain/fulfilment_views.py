@@ -65,6 +65,60 @@ class ContractCreateView(_ContractScreen):
     )
     submit_label = "Record order"
 
+    def award(self):
+        """The award this order is placed against, when it arrived from one.
+
+        Scoped through the round's programme. The order then carries the
+        award, which is what lets `contract_create` refuse it while an
+        approval is pending or declined -- and say whose.
+        """
+        from connect_labs.supply_chain.models import Award
+
+        raw = self.request.GET.get("award") or ""
+        if not raw.isdigit():
+            return None
+        return (
+            Award.objects.filter(pk=int(raw), round__program_id=_access(self.request).program_id)
+            .select_related("quote", "supplier", "commodity")
+            .first()
+        )
+
+    def get_initial(self):
+        initial = super().get_initial()
+        award = self.award()
+        if award is not None:
+            # Opening on what was awarded: the supplier, the product, the
+            # trade item and the quantity and price that won.
+            quote = award.quote
+            initial.update(supplier=award.supplier_id, commodity=award.commodity_id)
+            if quote.item_id:
+                initial["item"] = quote.item_id
+            if quote.quantity_basis is not None:
+                initial.update(quantity=quote.quantity_basis, quantity_unit=quote.quantity_basis_unit)
+            if quote.as_quoted_amount is not None and quote.as_quoted_unit:
+                initial.update(
+                    unit_price=quote.as_quoted_amount,
+                    unit_price_unit=quote.as_quoted_unit,
+                    currency=quote.as_quoted_currency,
+                )
+        return initial
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        award = self.award() if context.get("has_program_context") else None
+        if award is not None:
+            context["intro"] = (
+                f"Against the award to {award.supplier.name} for {award.commodity.name}, decided "
+                f"{award.decided_on or 'undated'}. {self.intro}"
+            )
+        return context
+
+    def fixed(self, **kwargs):
+        award = self.award()
+        if award is None:
+            return {}
+        return {"data": {"award_id": award.pk, "round_id": award.round_id}}
+
 
 class ContractUpdateView(_ContractScreen):
     operation = "contract_update"

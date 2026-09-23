@@ -50,7 +50,16 @@ from django.db.models import Count, Q
 
 from connect_labs.supply_chain.fulfilment.services.landed import landed_total
 from connect_labs.supply_chain.fulfilment.services.match import three_way_match
-from connect_labs.supply_chain.models import Award, Commodity, Contract, Item, Movement, Round, Shipment
+from connect_labs.supply_chain.models import (
+    Award,
+    AwardApproval,
+    Commodity,
+    Contract,
+    Item,
+    Movement,
+    Round,
+    Shipment,
+)
 from connect_labs.supply_chain.procurement.services.comparison import compare_round
 from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
 from connect_labs.supply_chain.stock.services import network, soh
@@ -72,6 +81,7 @@ KIND_CATEGORIES = {
     "stock_unconfirmed": "missing",
     "stock_never_reported": "missing",
     "shipment_documents_outstanding": "missing",
+    "award_awaiting_approval": "missing",
     # conflict -- two records disagree
     "award_not_contracted": "conflict",
     "invoice_over_billed": "conflict",
@@ -273,6 +283,34 @@ def _fulfilment(access, as_of):
                     as_of=as_of,
                 )
             )
+
+    # An approval asked for and not yet given. The fact nobody has supplied is
+    # the approver's answer; how long it has been outstanding is the age.
+    # Only pending ones: a declined approval is an answer, and the refusal it
+    # causes lives on contract_create, where it bites.
+    pending = AwardApproval.objects.filter(
+        award__round__program_id=access.program_id, status="requested"
+    ).select_related("approver_org", "award__supplier", "award__commodity")
+    for approval in pending:
+        award = approval.award
+        out.append(
+            _check(
+                "award_awaiting_approval",
+                subject_type="award",
+                subject_id=award.pk,
+                label=f"{award.supplier.name} — {award.commodity.name}",
+                audience="internal",
+                facts={
+                    "approval_id": approval.pk,
+                    "approver": {"id": approval.approver_org_id, "name": approval.approver_org.name},
+                    "role": approval.role,
+                    "requested_on": approval.requested_on.isoformat(),
+                    "round_id": award.round_id,
+                },
+                since=approval.requested_on,
+                as_of=as_of,
+            )
+        )
 
     for contract in Contract.objects.filter(program_id=access.program_id).select_related(
         "commodity", "supplier", "buyer_org"

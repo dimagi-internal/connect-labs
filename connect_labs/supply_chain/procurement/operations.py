@@ -3,6 +3,7 @@
 Handlers take a SupplyDataAccess first and return JSON-serialisable dicts.
 """
 
+from connect_labs.supply_chain import records
 from connect_labs.supply_chain.operations import (
     _OUTREACH_DATA,
     _OUTREACH_DATA_CREATE,
@@ -10,6 +11,7 @@ from connect_labs.supply_chain.operations import (
     _QUOTE_DATA_CREATE,
     _ROUND_DATA,
     ID,
+    _data_with,
     figure,
     obj,
     record,
@@ -442,3 +444,70 @@ def tracker_import(access, spreadsheet_id=None, commodity_slug="rutf", ensure_co
         ensure_commodity=ensure_commodity,
         dry_run=dry_run,
     )
+
+
+# ---- approvals ----------------------------------------------------------
+#
+# Somebody other than the decider has to agree before an award becomes an
+# order: a technical partner confirming the product, a funder approving a use
+# of funds, a regulator. contract_create refuses an award with one pending or
+# declined, and names it.
+
+_DATE = {"type": "string", "format": "date"}
+
+
+@register_operation(
+    name="approval_request",
+    summary=(
+        "Record that an award needs a third party's agreement before it can be ordered: approver_org_id "
+        "(an organisation from org_list) in the role technical, funder or regulatory. It starts as "
+        "requested. While any approval on an award is requested or declined, contract_create against "
+        "that award is refused. Attach the approver's letter with document_attach and approval_id."
+    ),
+    input_schema=obj(
+        {
+            "data": _data_with(
+                ("award_id", "approver_org_id", "role"),
+                award_id=ID,
+                approver_org_id=ID,
+                role={"enum": list(records.APPROVAL_ROLES)},
+                requested_on=_DATE,
+                note={"type": "string"},
+            )
+        },
+        required=("data",),
+    ),
+    is_write=True,
+)
+def approval_request(access, data):
+    return record(access.request_approval(data))
+
+
+@register_operation(
+    name="approval_decide",
+    summary=(
+        "Record the approver's answer: approved or declined, on decided_on (today if omitted). A decision "
+        "is final on its row; a reversal is a new approval_request, so the first answer stays on record."
+    ),
+    input_schema=obj(
+        {
+            "approval_id": ID,
+            "status": {"enum": ["approved", "declined"]},
+            "decided_on": _DATE,
+            "note": {"type": "string"},
+        },
+        required=("approval_id", "status"),
+    ),
+    is_write=True,
+)
+def approval_decide(access, approval_id, status, decided_on=None, note=None):
+    return record(access.decide_approval(approval_id, status, decided_on=decided_on, note=note))
+
+
+@register_operation(
+    name="approval_list",
+    summary="List approvals on this programme's awards, optionally for one award or in one status.",
+    input_schema=obj({"award_id": ID, "status": {"enum": list(records.APPROVAL_STATUSES)}}),
+)
+def approval_list(access, award_id=None, status=None):
+    return [record(a) for a in access.list_approvals(award_id=award_id, status=status)]
