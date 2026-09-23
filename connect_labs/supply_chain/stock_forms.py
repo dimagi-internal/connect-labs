@@ -472,6 +472,9 @@ class MovementForm(ProvenancedForm):
             self.add_error("quantity", _("A movement of nothing is not a movement."))
         if kind == "transfer" and not (cleaned.get("from_supply_point") and cleaned.get("to_supply_point")):
             self.add_error("to_supply_point", _("A transfer needs somewhere out of and somewhere into."))
+        source, destination = cleaned.get("from_supply_point"), cleaned.get("to_supply_point")
+        if source is not None and source == destination:
+            self.add_error("to_supply_point", _("Pick somewhere other than where it came from."))
         return cleaned
 
     def payload(self) -> dict:
