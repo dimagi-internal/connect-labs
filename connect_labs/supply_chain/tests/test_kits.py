@@ -206,6 +206,46 @@ class TestKitsAreComparedOnlyAgainstTheSameContents:
         ]
 
 
+class TestOptionsFromOneSupplierCanBeToldApart:
+    """A distributor offering several co-packs is one supplier with several rows.
+
+    Named by supplier alone, the rows read "EHA Clinics, EHA Clinics" and only
+    the price tells them apart -- which is exactly the thing a comparison
+    exists to set beside something else. Each row carries the trade item it
+    quotes, so the choice being made is legible on the screen that makes it.
+    """
+
+    def test_each_row_names_the_trade_item_it_quotes(self, da, catalogue):
+        first = _kit(da, "A", 10)
+        second = _kit(da, "B", 10)
+        comparison = _round_with_quotes(da, (first, "40.00"), (second, "38.00"))
+        assert sorted(row["item_name"] for row in comparison["comparable"]) == ["Co-pack A", "Co-pack B"]
+
+    def test_the_comparison_screen_shows_which_option_each_row_is(
+        self, client, django_user_model, monkeypatch, da, catalogue
+    ):
+        from connect_labs.supply_chain.api_views import _access as real_access
+        from connect_labs.supply_chain.procurement import views as procurement_views
+
+        account = django_user_model.objects.create_user(username="cmp", password="x", email="cmp@dimagi.com")
+        client.force_login(account)
+
+        def _scoped(request):
+            access = real_access(request)
+            access.program_id = PROGRAM
+            return access
+
+        monkeypatch.setattr(procurement_views, "_access", _scoped)
+        monkeypatch.setattr(procurement_views, "has_program_context", lambda request: True)
+        comparison = _round_with_quotes(da, (_kit(da, "A", 10), "40.00"), (_kit(da, "B", 10), "38.00"))
+        response = client.get(
+            reverse("supply_chain:procurement_comparison", args=[comparison["round_id"]]) + "?commodity=ors-zinc"
+        )
+        body = response.content.decode()
+        assert response.status_code == 200
+        assert "Co-pack A" in body and "Co-pack B" in body
+
+
 class TestAKitCanBeOneCourse:
     def test_a_packet_that_is_one_course_costs_per_course_with_no_ration_table(self, da, catalogue):
         """The co-pack commodity has no course definition. A packet the

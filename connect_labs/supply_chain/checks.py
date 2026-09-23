@@ -45,6 +45,7 @@ their time and ours.
 """
 
 from datetime import date, timedelta
+from decimal import Decimal
 
 from django.db.models import Count, Q
 
@@ -675,7 +676,10 @@ def _stock(access, as_of, opportunity_id=None):
                     "stock_below_minimum",
                     **subject,
                     facts={
-                        "months_of_stock": decimal_string(row["months_of_stock"]),
+                        # At the stock page's precision: a figure derived from
+                        # counted cartons carried to 28 places is false precision,
+                        # and this is what the checks page and every alert print.
+                        "months_of_stock": decimal_string(Decimal(row["months_of_stock"]).quantize(Decimal("0.01"))),
                         "min_months_of_stock": decimal_string(row["min_months_of_stock"]),
                     },
                     as_of=as_of,

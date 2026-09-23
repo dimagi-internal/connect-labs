@@ -139,6 +139,42 @@ def _link(issued):
     return UpdateLink.objects.get(pk=issued["id"])
 
 
+class TestAResetTakesItsLinksWithIt:
+    """A seeder's --reset purges the programme and seeds it again.
+
+    The link rows are not reached by purge's cascade: an update link only
+    points at its contracts through a join table, so deleting the contracts
+    left the link standing -- listed on /supply/links/ as a working link that
+    covers nothing, and still accepted at its URL. The same for an alert
+    watching the whole programme. A reset has to take both with it.
+    """
+
+    def test_purge_removes_the_programmes_links_and_alerts_and_no_one_elses(self, da, other_da, issued):
+        from connect_labs.labs.synthetic.models import SyntheticOpportunity
+        from connect_labs.supply_chain.alerts.models import AlertSubscription
+
+        SyntheticOpportunity.objects.create(
+            opportunity_id=PROGRAM, program_id=PROGRAM, labs_only=True, enabled=True, label="links", allowed_domains=[]
+        )
+        op(
+            da,
+            "alert_subscription_create",
+            data={"check_kinds": ["stock_below_minimum"], "recipient_email": "a@x.org"},
+        )
+        theirs = _world(other_da, suffix="-other")
+        op(
+            other_da,
+            "update_link_issue",
+            data={"org_id": theirs["eha"]["id"], "contract_ids": [theirs["contract"]["id"]]},
+        )
+
+        da.purge()
+
+        assert not UpdateLink.objects.filter(program_id=PROGRAM).exists()
+        assert not AlertSubscription.objects.filter(program_id=PROGRAM).exists()
+        assert UpdateLink.objects.filter(program_id=OTHER_PROGRAM).count() == 1
+
+
 # ---- issuing ---------------------------------------------------------------
 
 
@@ -469,7 +505,7 @@ class TestThePublicPage:
         assert "PO-1" in body
         assert "PO-2" not in body, "the page shows a contract outside the link's scope"
         assert response["X-Robots-Tag"] == "noindex, nofollow"
-        assert response["Referrer-Policy"] == "no-referrer"
+        assert response["Referrer-Policy"] == "same-origin"
 
     def test_unknown_expired_and_revoked_look_identical(self, client, da, issued):
         unknown = client.get(_url("definitely-not-a-token"))
@@ -506,6 +542,46 @@ class TestThePublicPage:
         )
         assert response.status_code == 403
         assert Contract.objects.get(pk=world["contract"]["id"]).status == "placed"
+
+    def test_a_browser_can_submit_the_form_it_was_given(self, issued, world):
+        """The page's own referrer policy must not break its own forms.
+
+        Under `Referrer-Policy: no-referrer` a browser sends `Origin: null` on
+        a form POST (Fetch spec, "serializing a request origin"), and Django's
+        CSRF check refuses a null origin. The test client sends no Origin at
+        all, so every other test here passed while every real submission on
+        labs came back 403 -- found by filming the supplier using the link.
+        This replays the POST with the Origin a browser would actually send.
+        """
+        import re
+
+        from django.test import Client
+
+        browser = Client(enforce_csrf_checks=True)
+        page = browser.get(_url(issued["token"]))
+        policy = page["Referrer-Policy"]
+        assert re.search(
+            r'<meta name="referrer" content="%s">' % re.escape(policy), page.content.decode()
+        ), "the meta tag and the header disagree, and a browser obeys the stricter one"
+        # What a browser serialises as the Origin of a same-origin POST.
+        origin = "null" if policy == "no-referrer" else "http://testserver"
+        token = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', page.content.decode()).group(1)
+        response = browser.post(
+            _url(issued["token"]),
+            {
+                "csrfmiddlewaretoken": token,
+                "action": "confirm_order",
+                "confirm_order-contract": world["contract"]["id"],
+            },
+            HTTP_ORIGIN=origin,
+        )
+        assert response.status_code == 302, "a supplier's own browser was refused by CSRF"
+        assert Contract.objects.get(pk=world["contract"]["id"]).status == "confirmed"
+
+    def test_the_token_never_leaves_for_another_site(self, client, issued):
+        """No referrer to other origins: the URL is the credential."""
+        response = client.get(_url(issued["token"]))
+        assert response["Referrer-Policy"] in ("same-origin", "no-referrer")
 
     def test_repeated_bad_tokens_are_throttled(self, client):
         from django.core.cache import cache

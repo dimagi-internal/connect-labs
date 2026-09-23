@@ -14,7 +14,7 @@ are not there, and the two that matter most are:
 the policy is data rather than a constant in here.
 """
 
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from connect_labs.supply_chain.models import Movement
@@ -47,8 +47,12 @@ def average_monthly_consumption(program_id, supply_point, item=None, as_of=None,
             f"(at least {MINIMUM_WINDOW_DAYS} days are needed)"
         )
 
-    end = as_of
-    start = (end - timedelta(days=window_days)) if end else None
+    # No as-of date means "as of today", not "with no end": an open end left
+    # the window with no start either, so all history was summed and divided
+    # by the window's days -- a store with a long history read far busier than
+    # it is, and a short one read idler.
+    end = as_of or date.today()
+    start = end - timedelta(days=window_days)
     consumed = (
         Movement.objects.for_program(program_id)
         .filter(kind="consumption", from_supply_point=supply_point)
@@ -64,9 +68,7 @@ def average_monthly_consumption(program_id, supply_point, item=None, as_of=None,
     if earliest is None:
         return unconfirmed("nothing has been dispensed from here yet, so there is no consumption rate")
 
-    observed_days = window_days
-    if end is not None:
-        observed_days = min(window_days, (end - earliest).days + 1)
+    observed_days = min(window_days, (end - earliest).days + 1)
     if observed_days < MINIMUM_WINDOW_DAYS:
         return unconfirmed(
             f"only {observed_days} days of dispensing have been recorded here; "
