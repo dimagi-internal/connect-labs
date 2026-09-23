@@ -201,6 +201,9 @@ On the programme report's worker table, sorting ranks **all** workers across the
 
 #### Looking up what an indicator means
 
+!!! tip "Want to change a definition, not just read it?"
+    See [Reports with Claude](reports-with-claude.md#change-what-an-indicator-means).
+
 Click any **indicator column heading** on the KMC Programme Report, KMC Opportunity Report, or KMC Worker Review to open a definition popup for that indicator. The popup shows, in order from top to bottom:
 
 - A **plain-English sentence** describing what the indicator measures

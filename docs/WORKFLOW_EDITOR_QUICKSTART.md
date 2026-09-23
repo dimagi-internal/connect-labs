@@ -7,7 +7,7 @@ knowledge required.
 
 `git`, `python@3.11`, `node` + `@anthropic-ai/claude-code`, Python `invoke`,
 and the 1Password CLI (`op`). Dimagi 1Password (Employee + AI-Agents vaults),
-Labs login, GitHub access to `dimagi/connect-labs`. Ask your AI to help
+Labs login, GitHub access to `dimagi-internal/connect-labs`. Ask your AI to help
 install anything missing.
 
 ### Install the 1Password CLI
@@ -53,7 +53,7 @@ op signin --account dimagi
 Clone the repo and seed your `.env` from 1Password:
 
 ```bash
-git clone https://github.com/dimagi/connect-labs.git && cd connect-labs
+git clone https://github.com/dimagi-internal/connect-labs.git && cd connect-labs
 op inject -f -i .env.tpl -o .env && chmod 600 .env
 ```
 
@@ -61,7 +61,7 @@ op inject -f -i .env.tpl -o .env && chmod 600 .env
 
 A Personal Access Token (PAT) is a password substitute that lets the
 `connect_labs` MCP server verify your identity without your login
-credentials. Open a normal Claude Code session (from any folder) and:
+credentials. From inside your connect-labs checkout, start a normal Claude Code session and:
 
 1. Run `/labs-token-setup`.
 2. When Claude prompts, answer **Production labs environment**.
@@ -113,8 +113,9 @@ always know which governed endpoint your PII is about to route through.
 
 ## What safe-claude can and can't do
 
-Can: read/edit workflows + pipelines, read/create solicitations/funds/reviews,
-read HQ app structure (no form data), read this repo's docs.
+Can: call any `connect_labs` MCP tool as you (workflows, pipelines,
+solicitations, funds, reviews, pages, synthetic data — including writes and
+deletes), read HQ app structure (no form data), read local files.
 
 Can't: run shell commands, edit local files, fetch URLs, web search, spawn
 sub-agents, or talk to any MCP server besides `connect_labs` and

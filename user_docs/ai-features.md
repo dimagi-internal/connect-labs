@@ -23,7 +23,7 @@ When editing a workflow or pipeline in the Workflow Engine, an AI assistant is a
 - _"Change the status labels from Active/Inactive to Enrolled/Graduated"_
 - _"Remove the RUTF field from the table — it's not relevant for this program"_
 
-The AI understands the current workflow's structure and makes targeted changes. Replies appear word-by-word as the AI writes them, so you can start reading immediately rather than waiting for the full response to arrive. After each change, you can preview the result and either keep it or ask for a revision. More advanced edits can be done using [Connect MCP & Safe Mode](connect-mcp-safe-mode.md) from the command line.
+The AI understands the current workflow's structure and makes targeted changes. Replies appear word-by-word as the AI writes them, so you can start reading immediately rather than waiting for the full response to arrive. After each change, you can preview the result and either keep it or ask for a revision. More advanced edits can be done with Claude through the [Connect MCP](connect-mcp.md) — see [Reports with Claude](reports-with-claude.md).
 
 ---
 
@@ -114,7 +114,7 @@ See [Solicitations](solicitations.md) for the step-by-step procurement workflow.
 AI features in Connect Labs route through a **governed endpoint** — content that passes through AI processing is handled under Dimagi's Zero Data Retention (ZDR) agreement with Anthropic. This means prompt content is not stored by the AI provider after processing.
 
 !!! info "Safe Mode for sensitive workflows"
-If you're working with programs that have stricter data handling requirements, use [Connect MCP & Safe Mode](connect-mcp-safe-mode.md) — a locked-down AI editing environment with additional safeguards.
+If you're working with programs that have stricter data handling requirements, use [Connect Safe Mode](connect-safe-mode.md) — a locked-down AI editing environment with additional safeguards.
 
 ---
 
