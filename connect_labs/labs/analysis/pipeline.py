@@ -104,12 +104,13 @@ class AnalysisPipeline:
 
         self.access_token = access_token
 
-        # CCHQ OAuth token (for cchq_forms/cchq_cases data sources): explicit kwarg
-        # wins (headless callers — e.g. a scheduled celery task using a durable,
-        # DB-persisted UserCCHQToken via get_valid_cchq_access_token), otherwise
-        # extract from the request's session (web path).
-        if cchq_access_token is None and request is not None:
-            cchq_access_token = request.session.get("commcare_oauth", {}).get("access_token")
+        # CCHQ OAuth token (for cchq_forms/cchq_cases data sources): only headless
+        # callers pass one (e.g. a scheduled celery task using a durable,
+        # DB-persisted UserCCHQToken via get_valid_cchq_access_token). The web path
+        # leaves it None so the fetchers' CommCareDataAccess reads the token from
+        # the request and can refresh it. Copying the session's access_token here
+        # used to put CommCareDataAccess in headless mode, which never refreshes:
+        # 15 minutes after an authorize, every live pull failed the access probe.
         self.cchq_access_token = cchq_access_token
         self.labs_context = getattr(request, "labs_context", {}) if request is not None else {}
 

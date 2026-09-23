@@ -13,8 +13,6 @@ from django.conf import settings
 from django.http import HttpRequest
 from django.utils import timezone
 
-from connect_labs.utils.lock import try_redis_lock
-
 logger = logging.getLogger(__name__)
 
 # HQ's form list sorts newest-first unless told otherwise
@@ -87,9 +85,12 @@ class CCHQHeadlessError(Exception):
 
 class CommCareDataAccess:
     """
-    Fetch cases from CommCare Case API v2 using session OAuth.
+    Fetch cases from CommCare Case API v2 using the user's CommCare OAuth token.
 
-    Uses the CommCare OAuth token stored in request.session["commcare_oauth"].
+    On the web path the token chain lives in the user's ``UserCCHQToken`` row,
+    shared with headless callers. ``request.session["commcare_oauth"]`` holds a
+    mirror of that row and records that the user connected CommCare in this
+    browser session. See _current_oauth() and _refresh_token().
 
     Constructed with ``request=None`` and no ``cchq_access_token`` only as a
     placeholder — every call that touches CCHQ will then raise
@@ -135,7 +136,7 @@ class CommCareDataAccess:
             self.commcare_oauth = {"access_token": cchq_access_token}
             self.access_token = cchq_access_token
         elif request is not None:
-            self.commcare_oauth = request.session.get("commcare_oauth", {})
+            self.commcare_oauth = self._current_oauth()
             self.access_token = self.commcare_oauth.get("access_token")
         else:
             # Get CommCare OAuth token from session. In headless mode (request=None,
@@ -230,11 +231,7 @@ class CommCareDataAccess:
 
         url = f"{self.base_url}/api/v0.5/identity/"
         try:
-            response = httpx.get(
-                url,
-                headers={"Authorization": f"Bearer {self.access_token}"},
-                timeout=15.0,
-            )
+            response = self._probe(url)
         except httpx.RequestError as e:
             logger.warning(f"[CCHQ verify_token_alive] network error: {e}")
             return False
@@ -277,11 +274,7 @@ class CommCareDataAccess:
 
         url = f"{self.base_url}/a/{self.domain}/api/form/v1/?limit=1"
         try:
-            response = httpx.get(
-                url,
-                headers={"Authorization": f"Bearer {self.access_token}"},
-                timeout=15.0,
-            )
+            response = self._probe(url)
         except httpx.RequestError as e:
             logger.warning(f"[CCHQ verify_hq_access] network error pinging {self.domain}: {e}")
             return False
@@ -304,71 +297,115 @@ class CommCareDataAccess:
             return False
         return True
 
+    def _probe(self, url: str) -> httpx.Response:
+        """GET a CCHQ probe endpoint. On a 401, refresh once and retry.
+
+        A 401 on a token whose timestamp still looks valid usually means another
+        holder of the chain refreshed it, which revokes the old pair at once.
+        A refresh either picks up that holder's new token from UserCCHQToken or
+        redeems a fresh one.
+        """
+        response = httpx.get(url, headers={"Authorization": f"Bearer {self.access_token}"}, timeout=15.0)
+        if response.status_code == 401 and self._refresh_token():
+            response = httpx.get(url, headers={"Authorization": f"Bearer {self.access_token}"}, timeout=15.0)
+        return response
+
+    def _token_owner(self):
+        """The signed-in user whose UserCCHQToken row backs this request, or None."""
+        user = getattr(self.request, "user", None)
+        # `is not True`, not falsiness: a MagicMock user has a truthy is_authenticated.
+        if user is None or getattr(user, "is_authenticated", False) is not True:
+            return None
+        return user
+
+    def _current_oauth(self) -> dict:
+        """The newer of the session's token and the user's UserCCHQToken row.
+
+        Anything that refreshes the chain writes the row: scheduled tasks,
+        mopup, MCP, and other requests (including SSE streams, whose session
+        write can be lost or overwritten, see _mirror_into_session). A session
+        copy older than the row is usually already revoked, so the row wins
+        when it is newer.
+
+        With no ``commcare_oauth`` in the session, the user has not connected
+        CommCare in this browser session, or disconnected it. The web path
+        then reports "not connected" even if a row exists for schedules.
+        """
+        session_oauth = self.request.session.get("commcare_oauth") or {}
+        user = self._token_owner()
+        if not session_oauth or user is None:
+            return session_oauth
+
+        from connect_labs.labs.integrations.commcare.cchq_tokens import token_to_session_oauth
+        from connect_labs.labs.models import UserCCHQToken
+
+        try:
+            token = UserCCHQToken.objects.filter(user=user).first()
+        except Exception:
+            logger.warning("Could not read UserCCHQToken; using the session's CommCare token", exc_info=True)
+            return session_oauth
+        if token is None:
+            return session_oauth
+
+        db_oauth = token_to_session_oauth(token)
+        if db_oauth["expires_at"] <= session_oauth.get("expires_at", 0):
+            return session_oauth
+        if db_oauth["access_token"] != session_oauth.get("access_token"):
+            self._mirror_into_session(db_oauth, persist=False)
+        return db_oauth
+
     def _refresh_token(self) -> bool:
         """
-        Attempt to refresh the CommCare OAuth token using the stored refresh token.
+        Refresh the CommCare OAuth token. Stores it in UserCCHQToken and mirrors it into the session.
 
-        Updates both the instance state and the session so the new token persists.
-
-        Serialized per-user via a redis lock. A single page load fires several
-        independent requests that can each decide the token looks expired at
-        the same moment (the auth-status check and the pipeline SSE stream, at
-        minimum) — without serialization they race to redeem the SAME stored
-        refresh_token. CCHQ rotates refresh tokens on redemption, so exactly
-        one of those concurrent exchanges succeeds and the other(s) get
-        rejected with the now-already-used refresh_token, each independently
-        (and wrongly) concluding "the user needs to re-authorize" even though
-        the session holds a perfectly good token seconds later. Reproduced
-        live as a user having to click "Authorize CommCare HQ" multiple times
-        before it stuck, on a page (program-owned, multi-opp run) that fires
-        exactly this kind of concurrent auth check.
+        The refresh goes through cchq_tokens.refresh_cchq_token(), the same
+        path headless callers use. That path holds the per-user redis lock and
+        re-reads the row once it has the lock. A caller that waited behind a
+        concurrent refresh (another request, or a scheduled task) then picks
+        up the winner's token from the DB. It does not redeem the
+        refresh_token the winner just rotated out, and it does not read its
+        own request's session, which never saw the winner's write.
 
         Returns:
-            True if refresh succeeded (or a concurrent request already
-            refreshed it while we waited for the lock), False otherwise
+            True if refresh succeeded (or a concurrent caller already
+            refreshed while we waited for the lock), False otherwise
         """
         if self.request is None:
             logger.debug("No request context for CommCare OAuth refresh")
             return False
 
-        user_id = getattr(getattr(self.request, "user", None), "id", None)
-        if not user_id:
+        user = self._token_owner()
+        if user is None:
+            # No UserCCHQToken row to share (anonymous request, or a
+            # hand-built request such as the CLI's): the session is the only copy.
             return self._exchange_refresh_token(self.commcare_oauth.get("refresh_token"))
 
-        lock_key = f"cchq-oauth-refresh:{user_id}"
+        from connect_labs.labs.integrations.commcare.cchq_tokens import (
+            CCHQTokenError,
+            refresh_cchq_token,
+            token_to_session_oauth,
+        )
+
         try:
-            with try_redis_lock(lock_key, timeout=15, blocking_timeout=10) as acquired:
-                # Whichever request loses the race to acquire arrives here
-                # AFTER the winner's exchange has landed in the session (the
-                # lock is held for the duration of the exchange below) —
-                # re-read it before doing anything else, so a loser reuses
-                # the winner's fresh token instead of needlessly (and
-                # incorrectly) failing.
-                fresh = self.request.session.get("commcare_oauth", {}) or {}
-                if fresh.get("access_token") and timezone.now().timestamp() < fresh.get("expires_at", 0):
-                    self.access_token = fresh["access_token"]
-                    self.commcare_oauth = fresh
-                    return True
-                if not acquired:
-                    logger.warning(
-                        "CCHQ refresh lock busy for user %s and no fresh token appeared after waiting", user_id
-                    )
-                    return False
-                return self._exchange_refresh_token(
-                    fresh.get("refresh_token") or self.commcare_oauth.get("refresh_token")
-                )
-        except Exception:
-            # The lock is a best-effort guard against the refresh-token race
-            # described above, not a correctness requirement — a broken lock
-            # backend (redis blip, unexpected client error) should degrade to
-            # the old unlocked exchange rather than turn what used to be a
-            # graceful "please reauthorize" outcome into an unhandled 500.
-            logger.exception("CCHQ refresh lock machinery failed; falling back to an unlocked refresh attempt")
-            return self._exchange_refresh_token(self.commcare_oauth.get("refresh_token"))
+            token = refresh_cchq_token(
+                user,
+                stale_access_token=self.access_token,
+                session_oauth=self.request.session.get("commcare_oauth"),
+            )
+        except CCHQTokenError as e:
+            logger.warning(f"CommCare token refresh failed for {user.username}: {e}")
+            return False
+        except Exception as e:
+            logger.warning(f"CommCare token refresh error for {user.username}: {e}")
+            return False
+
+        self._adopt(token_to_session_oauth(token))
+        return True
 
     def _exchange_refresh_token(self, refresh_token: str | None) -> bool:
-        """The actual CCHQ refresh-token grant exchange. Call via _refresh_token(),
-        which serializes concurrent callers — calling this directly can race.
+        """Session-only refresh-token exchange, for requests with no UserCCHQToken owner.
+
+        Signed-in users go through _refresh_token() -> refresh_cchq_token().
         """
         if not refresh_token:
             logger.debug("No refresh token available for CommCare OAuth")
@@ -397,26 +434,56 @@ class CommCareDataAccess:
                 return False
 
             token_data = response.json()
-            new_oauth = {
-                "access_token": token_data["access_token"],
-                "refresh_token": token_data.get("refresh_token", refresh_token),
-                "expires_at": timezone.now().timestamp() + token_data.get("expires_in", 3600),
-                "token_type": token_data.get("token_type", "Bearer"),
-            }
-
-            # Update instance state
-            self.access_token = new_oauth["access_token"]
-            self.commcare_oauth = new_oauth
-
-            # Update session so it persists across requests
-            self.request.session["commcare_oauth"] = new_oauth
-            if hasattr(self.request.session, "modified"):
-                self.request.session.modified = True
-
+            self._adopt(
+                {
+                    "access_token": token_data["access_token"],
+                    "refresh_token": token_data.get("refresh_token", refresh_token),
+                    "expires_at": timezone.now().timestamp() + token_data.get("expires_in", 3600),
+                    "token_type": token_data.get("token_type", "Bearer"),
+                }
+            )
             return True
         except Exception as e:
             logger.warning(f"CommCare token refresh error: {e}")
             return False
+
+    def _adopt(self, oauth: dict) -> None:
+        """Make a freshly refreshed token this client's and write it through to the session."""
+        self.access_token = oauth["access_token"]
+        self.commcare_oauth = oauth
+        self._mirror_into_session(oauth, persist=True)
+
+    def _mirror_into_session(self, oauth: dict, *, persist: bool) -> None:
+        """Copy a token into ``request.session["commcare_oauth"]``. With ``persist``, save it now.
+
+        Pipeline fetches refresh inside SSE views (BaseSSEStreamView returns a
+        StreamingHttpResponse). SessionMiddleware saves the session when the
+        view returns the response, before the generator runs, so an in-memory
+        write made during the stream never reaches the session store. The next
+        request would then load a pair CCHQ has already revoked.
+
+        So after a refresh we write the key straight to the store. We load a
+        fresh copy and change only ``commcare_oauth``. Saving this request's
+        in-memory session instead would write back stale values for keys that
+        other requests changed meanwhile, such as a refreshed ``labs_oauth``.
+        """
+        session = self.request.session
+        session["commcare_oauth"] = oauth
+        if hasattr(session, "modified"):
+            session.modified = True
+
+        session_key = getattr(session, "session_key", None)
+        if not persist or not session_key:
+            return
+        try:
+            store = session.__class__(session_key=session_key)
+            store["commcare_oauth"] = oauth
+            # A session_key the store no longer has loads as a new empty session
+            # with no key. Saving that would create an orphan row, so skip it.
+            if store.session_key == session_key:
+                store.save()
+        except Exception:
+            logger.warning("Could not write the refreshed CommCare token to the session store", exc_info=True)
 
     def _validate_pagination_url(self, url: str) -> bool:
         """Check that a pagination URL points to the expected CommCare HQ domain."""
