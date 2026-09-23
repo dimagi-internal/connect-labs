@@ -37,6 +37,8 @@ PREFIX_TO_FEATURE = {
     "connect_labs/custom_analysis/": "Custom Analysis",
     "connect_labs/coverage/": "Coverage Maps",
     "connect_labs/ai/": "AI Features",
+    "connect_labs/mcp/": "Connect MCP & Safe Mode",
+    "docs/MCP_SETUP.md": "Connect MCP & Safe Mode",
     "docs/WORKFLOW_EDITOR_QUICKSTART.md": "Connect MCP & Safe Mode",
     "docs/SAFE_MODE.md": "Connect MCP & Safe Mode",
 }
@@ -62,10 +64,11 @@ FEATURE_TO_DOC_FILE = {
     "Custom Analysis": "user_docs/custom-analysis.md",
     "Coverage Maps": "user_docs/coverage-maps.md",
     "AI Features": "user_docs/ai-features.md",
-    "Connect MCP & Safe Mode": "user_docs/connect-mcp-safe-mode.md",
+    "Connect MCP & Safe Mode": "user_docs/connect-mcp.md",
 }
 
-GITHUB_PAGES_BASE = "https://dimagi-internal.github.io/connect-labs/docs"
+# The help site is served by Labs itself (connect_labs/labs/help_site.py), not GitHub Pages.
+GITHUB_PAGES_BASE = "https://labs.connect.dimagi.com/labs/docs/help"
 
 CONFLUENCE_SUMMARY_SYSTEM_PROMPT = """\
 You write concise Confluence summary pages for Connect Labs features.

@@ -1,6 +1,6 @@
 from django.urls import include, path
 
-from connect_labs.labs import canopy_views, docs_comment_views, views, views_test_auth
+from connect_labs.labs import canopy_views, docs_comment_views, help_site, views, views_test_auth
 from connect_labs.labs.analysis import views as analysis_views
 from connect_labs.labs.integrations.commcare import oauth_views as commcare_oauth_views
 from connect_labs.labs.integrations.connect import oauth_views as connect_oauth_views
@@ -42,6 +42,9 @@ urlpatterns = [
     # Documentations (project-wise tech docs, context-free)
     path("docs/", views.LabsDocsView.as_view(), name="docs"),
     path("docs/chc/", views.LabsDocsCHCView.as_view(), name="docs_chc"),
+    # Labs help (the MkDocs build of user_docs/, login-gated)
+    path("docs/help/", help_site.help_site, name="docs_help"),
+    path("docs/help/<path:path>", help_site.help_site, name="docs_help_page"),
     path(
         "docs/api/comments/<str:doc_key>/",
         docs_comment_views.doc_comments,

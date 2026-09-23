@@ -24,66 +24,56 @@ Claude reads the workflow's current definition, makes the change, and pushes it 
 
 ## Prerequisites
 
-Before you start, you'll need these tools installed:
-
-| Tool                 | How to get it                                                                        |
-| -------------------- | ------------------------------------------------------------------------------------ |
-| `git`                | [git-scm.com](https://git-scm.com)                                                   |
-| Python 3.11+         | [python.org](https://www.python.org)                                                 |
-| Node.js              | [nodejs.org](https://nodejs.org)                                                     |
-| Claude Code CLI      | `npm install -g @anthropic-ai/claude-code`                                           |
-| 1Password CLI (`op`) | [1password.com/downloads/command-line](https://1password.com/downloads/command-line) |
-
-You'll also need:
-
-- A Dimagi 1Password account with access to the **AI-Agents** vault
-- A **Labs login** (same account you use at [labs.connect.dimagi.com](https://labs.connect.dimagi.com))
-- Access to the connect-labs GitHub repository
+| You need | For |
+| --- | --- |
+| A **Labs login** (the account you use at [labs.connect.dimagi.com](https://labs.connect.dimagi.com)) | Everything |
+| **Claude Code** (`npm install -g @anthropic-ai/claude-code`), or Claude desktop / claude.ai | Everything |
+| A clone of the connect-labs repository (`git clone https://github.com/dimagi-internal/connect-labs.git`) | The `/workflow-author` skill and Safe Mode |
+| The 1Password CLI (`op`), with access to the **Employee** and **AI-Agents** vaults | Safe Mode only |
 
 Ask in **#engineering-connect** if you're unsure about any of these.
 
 !!! note "You don't need to run Labs locally"
-    For workflow editing, cloning the repository is enough — you do **not** need to run the Django app locally. Even a local instance fetches all data from Connect prod, so there is no isolation benefit. Claude Code pushes workflow changes directly to Labs prod, and you verify the result in your browser. Run locally only if you are modifying the core Connect Labs application code itself.
+    For workflow editing you do **not** need to run the Django app locally. The Labs MCP server is hosted on Labs itself; Claude pushes workflow changes directly to Labs prod, and you verify the result in your browser. Run locally only if you are modifying the core Connect Labs application code itself.
 
 ---
 
 ## First-Time Setup
 
-### 1. Install 1Password CLI and sign in
+### 1. Connect Claude to Labs
 
-=== "macOS"
-
-    ```bash
-    brew install 1password-cli
-    op signin --account dimagi
-    ```
-
-=== "Windows (WSL)"
+=== "Claude Code"
 
     ```bash
-    curl -sS https://downloads.1password.com/linux/keys/1password.asc | \
-      sudo gpg --dearmor --output /usr/share/keyrings/1password-archive-keyring.gpg
-    sudo apt update && sudo apt install 1password-cli
-    op signin --account dimagi
+    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/
     ```
 
-### 2. Clone the repo and set up credentials
+    Then type `/mcp`, choose `connect_labs` and sign in with CommCare Connect when the browser opens. There is no token to copy.
 
-```bash
-git clone https://github.com/dimagi-internal/connect-labs.git
-cd connect-labs
-op inject -f -i .env.tpl -o .env
-```
+=== "Claude desktop or claude.ai"
 
-### 3. Set up your Labs token
+    Open **Settings → Connectors**, choose **Add custom connector**, and add `https://labs.connect.dimagi.com/mcp/`. Click **Connect** and sign in with CommCare Connect.
 
-Your Labs token lets Claude Code talk to the Labs MCP server securely. Open a normal Claude Code session (in any folder) and run:
+Claude acts as you, with your Connect permissions. To see or disconnect the apps you have signed in, visit [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
+
+### 2. (Safe Mode only) Register a Labs token
+
+[Safe Mode](connect-safe-mode.md) cannot use the browser sign-in — it needs a Personal Access Token. From **inside your connect-labs checkout**, start Claude Code and run:
 
 ```
 /labs-token-setup
 ```
 
-Follow the prompts. When asked, choose **Production labs environment**. Claude will open a browser URL — approve the token there. This only needs to be done once (or when your token expires).
+When asked, choose **Production labs environment**, then approve the token in the browser. Fully quit and restart Claude Code afterwards. The token lasts 90 days by default; run the skill again to replace it.
+
+### 3. (Safe Mode only) Fetch the CommCare HQ credentials
+
+```bash
+op signin --account dimagi
+op inject -f -i .env.tpl -o .env
+```
+
+The `.env` holds the CommCare HQ credentials Safe Mode's read-only app-structure tools use.
 
 ---
 
@@ -119,12 +109,13 @@ The power of this loop is: describe change → Claude pushes → reload browser 
 
 Safe Mode is for editing **live workflow instances**. If you are authoring or updating a **seed template** (a `.py` file in the repository that other workflows are cloned from), you need a regular Claude Code session instead — Safe Mode blocks the file writes that template authoring requires.
 
-In a regular session, you can use `workflow_sync_from_template_file` to push a local `.py` file straight to a live preview workflow without a full redeploy. See [Deploy-Free Template Iteration](workflow-engine.md#deploy-free-template-iteration) for the full loop.
+In a regular session, you can use `workflow_sync_from_template_file` to push a local `.py` file straight to a live preview workflow without a full redeploy. The full loop is in the "Two iteration loops" section of the [`workflow-author` skill](https://github.com/dimagi-internal/connect-labs/blob/main/.claude/skills/workflow-author/SKILL.md). It refuses a workflow that follows the deployed template.
 
 ---
 
 ## More Information
 
+- **[Reports with Claude](reports-with-claude.md)** — plain-English guide to changing reports, pipelines and indicator definitions through the MCP
 - **[MCP_SETUP.md](https://github.com/dimagi-internal/connect-labs/blob/main/docs/MCP_SETUP.md)** — Labs MCP server and token details
 - For security guardrails when working with real program data, see [Safe Mode](connect-safe-mode.md)
 - For help, post in **#connect-labs** on Slack

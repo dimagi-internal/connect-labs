@@ -16,7 +16,7 @@ A common failure mode is iterating directly on a workflow because "deploys are s
 
 Use the `connect_labs` MCP tools to round-trip a workflow between labs and Claude Code without copy-pasting through the browser.
 
-**Prereq:** the user must have logged into labs in a browser at least once (creates their `UserConnectToken`) and have a PAT configured in `~/.claude/mcp.json` (see `docs/MCP_SETUP.md`). If the first MCP call returns `PERMISSION_DENIED`, tell the user to log into labs in a browser and retry.
+**Prereq:** the user must have logged into labs in a browser at least once (creates their `UserConnectToken`) and have a `connect_labs` MCP connection — signed in via `/mcp`, or a PAT registered by `/labs-token-setup` (stored in `~/.claude.json`; see `docs/MCP_SETUP.md`). If the first MCP call returns `PERMISSION_DENIED`, tell the user to log into labs in a browser and retry.
 
 ## Basic iteration loop
 

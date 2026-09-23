@@ -21,7 +21,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from confluence_client import ConfluenceClient  # isort: skip  # noqa: E402
 
 PARENT_PAGE_ID = "3916103691"  # Connect Labs Documentation
-GITHUB_PAGES_BASE = "https://dimagi-internal.github.io/connect-labs/docs"
+# The help site is served by Labs itself (connect_labs/labs/help_site.py), not GitHub Pages.
+GITHUB_PAGES_BASE = "https://labs.connect.dimagi.com/labs/docs/help"
 
 FEATURES = [
     {
@@ -85,7 +86,7 @@ FEATURES = [
     },
     {
         "title": "Connect MCP & Safe Mode",
-        "slug": "connect-mcp-safe-mode",
+        "slug": "connect-mcp",
         "summary": (
             "Edit Labs workflows using Claude Code from the command line — no coding required. "
             "Safe Mode ensures patient data stays protected by restricting what Claude can access."

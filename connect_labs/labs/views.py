@@ -139,6 +139,13 @@ class LabsDocsView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["doc_projects"] = [
             {
+                "name": "Labs Help",
+                "url": "/labs/docs/help/",
+                "icon": "fa-circle-question",
+                "description": "How to use Labs: workflows, audits, tasks, and building reports with Claude",
+                "color": "blue",
+            },
+            {
                 "name": "CHC",
                 "url": "/labs/docs/chc/",
                 "icon": "fa-hand-holding-medical",

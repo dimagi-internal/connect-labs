@@ -38,6 +38,7 @@ graph LR
 | [Solicitations](solicitations.md)     | Post RFPs/EOIs, collect responses from organizations, score and award funding |
 | [Custom Analysis](custom-analysis.md) | Program-specific dashboards for KMC, MBW, nutrition, and SAM tracking         |
 | [Coverage Maps](coverage-maps.md)     | Interactive map of delivery unit boundaries and service point locations       |
+| [Reports with Claude](reports-with-claude.md) | Build and change reports and indicator definitions by talking to Claude |
 | [AI Features](ai-features.md)         | AI assistants embedded throughout Labs for editing, reviewing, and analysis   |
 
 These features work together. A common flow: review visits with **Audit**, create follow-up **Tasks** for flagged workers, and monitor outcomes in a **Workflow** dashboard.
