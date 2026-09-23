@@ -26,6 +26,7 @@ __prefix__ for the next index, bump TOTAL_FORMS.
     {% for component in components %}
       <div class="grid grid-cols-1 md:grid-cols-[2fr,1fr,1fr,auto] gap-x-4 gap-y-2 items-start
                   rounded-md border border-gray-200 bg-gray-50/40 px-3 py-3">
+        {% for hidden in component.hidden_fields %}{{ hidden }}{% endfor %}
         {% for field in component.visible_fields %}
           {% if field.name != "DELETE" %}
             <div>

@@ -134,6 +134,23 @@ class AlertSubscriptionForm(forms.Form):
                 ("me", _("Me (%(email)s)") % {"email": user.email}),
                 ("email", _("An email address — a colleague, a partner, a donor")),
             ]
+        # Someone else's alert: offer to leave its recipient alone, and make
+        # that the default, so changing its cadence does not quietly move it
+        # to whoever is editing.
+        if (
+            subscription is not None
+            and subscription.recipient_user_id
+            and subscription.recipient_user_id != getattr(user, "pk", None)
+        ):
+            owner = subscription.recipient_user
+            name = subscription.recipient_label
+            if owner.email and owner.email != name:
+                name = f"{name} ({owner.email})"
+            self.fields["recipient"].choices = [("keep", _("Keep: %(name)s") % {"name": name})] + list(
+                self.fields["recipient"].choices
+            )
+            if not self.is_bound:
+                self.initial["recipient"] = "keep"
         if subscription is None:
             del self.fields["active"]
 
@@ -182,7 +199,9 @@ class AlertSubscriptionForm(forms.Form):
             "commodity_slug": cleaned["commodity"].slug if cleaned.get("commodity") else None,
             "cadence": cleaned["cadence"],
         }
-        if cleaned.get("recipient") == "me":
+        if cleaned.get("recipient") == "keep":
+            pass  # the recipient is left as it is
+        elif cleaned.get("recipient") == "me":
             data["recipient_user_id"] = self.access.user.pk
         else:
             data["recipient_email"] = cleaned["recipient_email"]

@@ -596,7 +596,10 @@ class AwardDetailView(_Base):
         context["supplier"] = self.op("supplier_get", supplier_id=detail["supplier_id"])
         context["round"] = self.op("round_get", round_id=detail["round_id"])
         context["approvals"] = [{**a, "approver": orgs.get(a["approver_org_id"])} for a in approvals]
-        context["blocking"] = [a for a in context["approvals"] if a["status"] in ("requested", "declined")]
+        # The same rule the order guard applies: a refusal later reversed by
+        # a fresh approval from the same approver in the same role is history.
+        blocking_ids = {a.pk for a in _access(self.request).blocking_approvals(award)}
+        context["blocking"] = [a for a in context["approvals"] if a["id"] in blocking_ids]
         context["contracts"] = [
             c for c in self.op("contract_list", round_id=detail["round_id"]) if c["award_id"] == award.pk
         ]

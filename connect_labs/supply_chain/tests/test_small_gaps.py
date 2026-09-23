@@ -192,6 +192,49 @@ class TestAShortfallCoveredByAnotherOrder:
         kinds = [c["kind"] for c in op(da, "checks_list")["checks"]]
         assert "contract_delivery_overdue" not in kinds
 
+    def test_a_cancelled_covering_order_does_not_cover_it(self, da, world):
+        short = _contract(
+            da,
+            world,
+            world["main"],
+            "700",
+            signed_on=(TODAY - timedelta(days=90)).isoformat(),
+            promised_lead_time_days=30,
+        )
+        _receive(da, world, short, "450")
+        cover = _contract(da, world, world["local"], "250", covers_shortfall_of_id=short["id"])
+        op(da, "contract_update", contract_id=cover["id"], data={"status": "cancelled"})
+        match = op(da, "contract_match", contract_id=short["id"])
+        assert match["status"] == "part_received"
+        assert match["covered_by"] == []
+        kinds = [c["kind"] for c in op(da, "checks_list")["checks"]]
+        assert "contract_delivery_overdue" in kinds
+
+    def test_a_fully_received_order_invoiced_beyond_receipt_is_not_late(self, da, world):
+        full = _contract(
+            da,
+            world,
+            world["main"],
+            "700",
+            signed_on=(TODAY - timedelta(days=90)).isoformat(),
+            promised_lead_time_days=30,
+        )
+        _receive(da, world, full, "700")
+        op(
+            da,
+            "invoice_record",
+            data={
+                "contract_id": full["id"],
+                "amount": "1600.00",
+                "quantity_billed": "800",
+                "quantity_unit": "packet",
+                "source": "supplier_reported",
+            },
+        )
+        assert op(da, "contract_match", contract_id=full["id"])["status"] == "over_invoiced"
+        kinds = [c["kind"] for c in op(da, "checks_list")["checks"]]
+        assert "contract_delivery_overdue" not in kinds
+
     def test_an_order_cannot_cover_itself(self, da, world):
         short = _contract(da, world, world["main"], "700")
         with pytest.raises(ValueError, match="its own shortfall"):

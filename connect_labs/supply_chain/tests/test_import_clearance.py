@@ -346,6 +346,17 @@ class TestTheShipmentScreens:
             {"kind": "import_permit", "owed_by_org_id": world["donor"]["id"]}
         ]
 
+    def test_requiring_a_document_keeps_who_reported_the_shipment(self, scoped, da, world):
+        shipment = _shipment(da, world, required=[])
+        page = scoped.get(reverse("supply_chain:shipment_require_document", args=[shipment["id"]])).content.decode()
+        assert 'name="source"' not in page
+        response = scoped.post(
+            reverse("supply_chain:shipment_require_document", args=[shipment["id"]]),
+            {"kind": "import_permit", "owed_by_org": world["donor"]["id"]},
+        )
+        assert response.status_code == 302, response.content.decode()[:2000]
+        assert Shipment.objects.get(pk=shipment["id"]).source == "supplier_reported"
+
     def test_recording_a_charge(self, scoped, da, world):
         shipment = _shipment(da, world)
         response = scoped.post(

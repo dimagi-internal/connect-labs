@@ -304,3 +304,66 @@ class TestTheKitScreens:
         # The component's own verdict, not only the kit's.
         assert "fail" in body
         assert "One co_pack is one full course" in body or "one full course" in body
+
+
+def _twin_zinc_kit(da):
+    """A kit holding two zinc formulations, one to spec and one not."""
+    return op(
+        da,
+        "item_upsert",
+        data={
+            "sku": "TWIN-ZN",
+            "name": "Twin zinc co-pack",
+            "commodity_slug": "ors-zinc",
+            "base_unit": "co_pack",
+            "components": [
+                {"commodity_slug": "zinc", "quantity": 5, "base_unit": "tablet", "spec_attributes": {"zinc_mg": 20}},
+                {"commodity_slug": "zinc", "quantity": 5, "base_unit": "tablet", "spec_attributes": {"zinc_mg": 10}},
+            ],
+        },
+    )
+
+
+class TestTwoComponentsOfOneProduct:
+    def test_each_row_on_the_item_page_carries_its_own_verdict(self, scoped, da, catalogue):
+        kit = _twin_zinc_kit(da)
+        response = scoped.get(reverse("supply_chain:item_detail", args=[kit["id"]]))
+        verdicts = [row["verdict"] for row in response.context["item"]["component_rows"]]
+        assert verdicts == ["Meets all 1", "1 of 1 fail"]
+
+    def test_editing_keeps_each_components_own_specification(self, scoped, da, catalogue):
+        from connect_labs.supply_chain.models import Commodity
+
+        kit = _twin_zinc_kit(da)
+        copack = Commodity.objects.get(scope_key=f"prog:{PROGRAM}", slug="ors-zinc")
+        body = scoped.get(reverse("supply_chain:item_edit", args=[kit["id"]])).content.decode()
+        assert 'name="components-1-source_index"' in body
+        response = scoped.post(
+            reverse("supply_chain:item_edit", args=[kit["id"]]),
+            _item_post(
+                sku="TWIN-ZN",
+                commodity=copack.pk,
+                **{
+                    "components-0-commodity_slug": "zinc",
+                    "components-0-quantity": "5",
+                    "components-0-base_unit": "tablet",
+                    "components-0-source_index": "0",
+                    "components-1-quantity": "6",
+                    "components-1-source_index": "1",
+                },
+            ),
+        )
+        assert response.status_code == 302, response.content.decode()[:2000]
+        item = Item.objects.get(pk=kit["id"])
+        assert [c.get("spec_attributes") for c in item.components] == [{"zinc_mg": 20}, {"zinc_mg": 10}]
+
+    def test_a_zero_quantity_is_refused_on_the_field(self, scoped, da, catalogue):
+        from connect_labs.supply_chain.models import Commodity
+
+        copack = Commodity.objects.get(scope_key=f"prog:{PROGRAM}", slug="ors-zinc")
+        response = scoped.post(
+            reverse("supply_chain:item_create"), _item_post(commodity=copack.pk, **{"components-1-quantity": "0"})
+        )
+        assert response.status_code == 200
+        assert response.context["components"].forms[1].errors["quantity"]
+        assert not Item.objects.filter(sku="EHA-CP-10").exists()

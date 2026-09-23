@@ -820,6 +820,28 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         approval.save(update_fields=["status", "decided_on", "note", "updated_at"])
         return _fresh(approval)
 
+    def blocking_approvals(self, award):
+        """The approvals standing against an award, oldest first.
+
+        The latest answer from each approver in each role decides. A refusal
+        followed by a fresh request from the same approver in the same role
+        is history, not a veto: that is how a funder who relents is recorded
+        (see `AwardApproval`). The award page and the order guard both read
+        this, so they cannot disagree.
+        """
+        latest = {}
+        for approval in AwardApproval.objects.filter(award=award).select_related("approver_org"):
+            key = (approval.approver_org_id, approval.role)
+            if key not in latest or (approval.requested_on, approval.pk) >= (
+                latest[key].requested_on,
+                latest[key].pk,
+            ):
+                latest[key] = approval
+        return sorted(
+            (a for a in latest.values() if a.status in ("requested", "declined")),
+            key=lambda a: (a.requested_on, a.pk),
+        )
+
     def _require_approved_award(self, award_id):
         """The award, scoped to this programme, with nothing standing against it.
 
@@ -832,7 +854,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         award = self.get_award(award_id)
         if award is None:
             raise ValueError(f"award {award_id} does not exist in this programme")
-        for approval in AwardApproval.objects.filter(award=award).select_related("approver_org"):
+        for approval in self.blocking_approvals(award):
             if approval.status == "requested":
                 raise ValueError(
                     f"award {award.pk} is awaiting approval {approval.pk} from {approval.approver_org.name} "

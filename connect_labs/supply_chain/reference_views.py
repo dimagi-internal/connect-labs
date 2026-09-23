@@ -139,7 +139,9 @@ class _ItemScreen(OperationFormView):
         # A component's stated specification is not on this screen -- like the
         # item's own, it arrives through the API -- so an edit keeps what each
         # product already had rather than wiping it by omission.
-        stated = {c.get("commodity_slug"): c.get("spec_attributes") for c in self.existing_components()}
+        # Matched by the row's position in the stored list, not by product: a
+        # kit may hold two formulations of one product, each with its own.
+        existing = self.existing_components()
         kept = []
         for row in components.cleaned_data:
             if not row or row.get("DELETE") or not row.get("commodity_slug"):
@@ -149,8 +151,11 @@ class _ItemScreen(OperationFormView):
                 "quantity": str(row["quantity"]),
                 "base_unit": row["base_unit"],
             }
-            if stated.get(row["commodity_slug"]):
-                entry["spec_attributes"] = stated[row["commodity_slug"]]
+            index = row.get("source_index")
+            source = existing[index] if index is not None and index < len(existing) else None
+            # A row switched to another product does not take the old one's figures.
+            if source and source.get("commodity_slug") == row["commodity_slug"] and source.get("spec_attributes"):
+                entry["spec_attributes"] = source["spec_attributes"]
             kept.append(entry)
         self._components = kept
         return super().form_valid(form)
@@ -203,8 +208,13 @@ class ItemUpdateView(_ScopedInstanceMixin, _ItemScreen):
 
     def initial_components(self):
         return [
-            {"commodity_slug": c.get("commodity_slug"), "quantity": c.get("quantity"), "base_unit": c.get("base_unit")}
-            for c in self.existing_components()
+            {
+                "commodity_slug": c.get("commodity_slug"),
+                "quantity": c.get("quantity"),
+                "base_unit": c.get("base_unit"),
+                "source_index": index,
+            }
+            for index, c in enumerate(self.existing_components())
         ]
 
 

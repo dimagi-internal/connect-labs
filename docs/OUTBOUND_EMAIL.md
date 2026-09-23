@@ -248,7 +248,7 @@ PeriodicTask.objects.filter(name="send_monthly_delivery_reminder").values("enabl
 
 `connect_labs.supply_chain.tasks.send_supply_alerts` runs every five minutes from
 beat (`PeriodicTask` `supply_chain_send_alerts`, seeded by
-`supply_chain/migrations/0007`). It mails only addresses a programme member put on
+`supply_chain/migrations/0012_seed_alert_beat_task.py`). It mails only addresses a programme member put on
 an `AlertSubscription` at `/supply/alerts/` (a labs user, or an outside address such
 as a donor), only while that subscription is active, and only checks that are
 **new** since it last reported them. While `LABS_EMAIL_ENABLED` is off, notices are

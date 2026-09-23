@@ -19,6 +19,8 @@ ordinary ones, through `service.submit`. What stands in for a login:
     token is in the URL.
 """
 
+from urllib.parse import urlencode
+
 import jsonschema
 from django.core.cache import cache
 from django.http import Http404
@@ -27,9 +29,11 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.utils.decorators import method_decorator
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.decorators.cache import never_cache
 
+from connect_labs.audit_trail.context import get_audit_context
 from connect_labs.supply_chain.api_views import has_program_context
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
 from connect_labs.supply_chain.update_links import service, tokens
@@ -123,9 +127,19 @@ WRITE_LIMIT = 60
 WRITE_WINDOW = 60 * 60
 
 
+# Proxies that append to X-Forwarded-For in front of labs: the load balancer.
+# It APPENDS the address it saw, so its entry is the rightmost one; anything to
+# the left is whatever the caller sent. Keying the throttle on the leftmost
+# entry would let a guesser rotate it per request (the same rule as
+# `mcp/oauth.py`'s `_client_ip`).
+_TRUSTED_PROXY_HOPS = 1
+
+
 def _client_address(request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    return (forwarded.split(",")[0].strip() if forwarded else request.META.get("REMOTE_ADDR", "")) or "unknown"
+    forwarded = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
+    if len(forwarded) >= _TRUSTED_PROXY_HOPS:
+        return forwarded[-_TRUSTED_PROXY_HOPS]
+    return request.META.get("REMOTE_ADDR", "") or "unknown"
 
 
 def _count(key, window) -> int:
@@ -157,6 +171,12 @@ class UpdateLinkPublicView(View):
     template_name = "supply_chain/update_link_public.html"
 
     def dispatch(self, request, *args, **kwargs):
+        # The audit trail is append-only and archived under object lock, so a
+        # token written into it could never be taken back out. Record the
+        # route, not the credential.
+        audit = get_audit_context()
+        if audit is not None:
+            audit.path = reverse("supply_chain:update_link_public", kwargs={"token": "redacted"})
         address = _client_address(request)
         if (cache.get(f"supply:update-link:bad:{address}") or 0) >= BAD_TOKEN_LIMIT:
             return _not_valid(request, status=429)
@@ -223,4 +243,9 @@ class UpdateLinkPublicView(View):
         except (ValueError, TypeError) as exc:
             form.add_error(None, str(exc))
             return self._render(scope, bound=form)
-        return redirect(f"{request.path}?done={form.action}")
+        # Rebuilt from the route rather than echoed from the request path, and
+        # `done` is one of PUBLIC_FORMS' own keys, never the posted string.
+        target = reverse("supply_chain:update_link_public", kwargs={"token": token})
+        if not url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}):
+            raise Http404("no such link")
+        return redirect(f"{target}?{urlencode({'done': form.action})}")

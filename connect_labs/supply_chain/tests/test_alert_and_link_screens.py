@@ -137,6 +137,27 @@ class TestAlertScreens:
         sub.refresh_from_db()
         assert (sub.recipient_email, sub.active) == ("b@example.org", False)
 
+    def test_editing_a_colleagues_alert_keeps_it_theirs(self, scoped, user, django_user_model):
+        colleague = django_user_model.objects.create_user(username="ada", password="x", email="ada@dimagi.com")
+        sub = AlertSubscription.objects.create(
+            program_id=PROGRAM, check_kinds=["stock_stockout"], recipient_user=colleague, cadence="immediate"
+        )
+        page = scoped.get(reverse("supply_chain:alert_edit", args=[sub.pk])).content.decode()
+        assert 'value="keep"' in page
+        assert "ada@dimagi.com" in page
+        response = scoped.post(
+            reverse("supply_chain:alert_edit", args=[sub.pk]),
+            {"check_kinds": ["stock_stockout"], "recipient": "keep", "cadence": "daily_digest", "active": "on"},
+        )
+        assert response.status_code == 302, response.content.decode()[:2000]
+        sub.refresh_from_db()
+        assert (sub.recipient_user_id, sub.cadence) == (colleague.pk, "daily_digest")
+
+    def test_my_own_alert_offers_no_keep_choice(self, scoped, user):
+        sub = AlertSubscription.objects.create(program_id=PROGRAM, check_kinds=["stock_stockout"], recipient_user=user)
+        page = scoped.get(reverse("supply_chain:alert_edit", args=[sub.pk])).content.decode()
+        assert 'value="keep"' not in page
+
     def test_another_programmes_alert_is_not_editable_here(self, scoped):
         theirs = AlertSubscription.objects.create(
             program_id=PROGRAM + 1, check_kinds=["stock_stockout"], recipient_email="a@example.org"

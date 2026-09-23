@@ -12,7 +12,7 @@ from connect_labs.audit_trail.context import audit_context
 def send_supply_alerts() -> dict:
     """Run every active alert subscription and email what is new.
 
-    Scheduled every five minutes by migration 0007.
+    Scheduled every five minutes by migration 0012.
     """
     from connect_labs.supply_chain.alerts import service
 
