@@ -102,6 +102,9 @@ def item(obj) -> dict:
         "gpc_brick": obj.gpc_brick,
         "spec_attributes": obj.spec_attributes,
         "status": obj.status,
+        "components": obj.components,
+        "is_kit": obj.is_kit,
+        "one_course_is": obj.one_course_is,
         "reference_scope": _reference_scope(obj.scope_key),
     }
 

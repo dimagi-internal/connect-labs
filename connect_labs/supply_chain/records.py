@@ -193,3 +193,7 @@ DOCUMENT_LINKS = (
 )
 
 BASIS = ("included", "excluded", "not_specified")
+
+# Which level of a trade item is one full treatment course, if either is.
+# Empty means "not a course, or nobody has said", and is the default.
+ONE_COURSE_IS = ("", "base_unit", "pack")

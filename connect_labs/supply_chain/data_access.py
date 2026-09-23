@@ -383,8 +383,42 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         defaults = _columns(Item, {k: v for k, v in data.items() if k != "sku"})
         if commodity is not None:
             defaults["commodity"] = commodity
+        if "components" in data:
+            defaults["components"] = self._kit_components(data.get("components") or [])
         obj, _ = Item.objects.update_or_create(scope_key=self.scope_key, sku=data["sku"], defaults=defaults)
         return _fresh(obj)
+
+    def _kit_components(self, components) -> list[dict]:
+        """A kit's contents, each naming a product that exists in this catalogue.
+
+        Checked here because existence needs a read: a component pointing at
+        a product nobody defined could never be tested against a
+        specification, and "no requirement to fail" would read as a pass.
+        The quantity is stored as a decimal string, the way every quantity in
+        this domain goes over the wire, so a composition compares equal
+        whether it arrived as 10 or "10".
+        """
+        from decimal import Decimal
+
+        from connect_labs.supply_chain.values import decimal_string
+
+        cleaned = []
+        for component in components:
+            slug = component["commodity_slug"]
+            if self.get_commodity(slug) is None:
+                raise ValueError(
+                    f"component {slug!r} is not a product in this catalogue; add it as a product "
+                    "first, so its specification can be checked"
+                )
+            entry = {
+                "commodity_slug": slug,
+                "quantity": decimal_string(Decimal(str(component["quantity"]))),
+                "base_unit": component["base_unit"],
+            }
+            if component.get("spec_attributes"):
+                entry["spec_attributes"] = component["spec_attributes"]
+            cleaned.append(entry)
+        return cleaned
 
     def list_suppliers(self, search: str | None = None):
         found = list(self._reference(Supplier).all())

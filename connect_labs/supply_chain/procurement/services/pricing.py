@@ -168,7 +168,20 @@ def _extras(quote: Quote) -> Derived:
     return Money(total)
 
 
-def _course_size(commodity: Commodity) -> int | Derived:
+def _course_size(commodity: Commodity, item: Item | None = None, pack_spec: int | Derived = None) -> int | Derived:
+    """Base units per treatment course.
+
+    The item speaks first when it says it IS a course: a three-day packet or
+    a co-pack made as one course needs no ration table, because the
+    manufacturer packed the protocol. `one_course_is="pack"` counts the pack
+    through the same pack specification every other per-pack figure uses --
+    never the commodity's nominal one. Otherwise the programme's own ration
+    table decides, and its absence is our gap, not a supplier's.
+    """
+    if item is not None and item.one_course_is == "base_unit":
+        return 1
+    if item is not None and item.one_course_is == "pack":
+        return pack_spec
     size = commodity.base_units_per_course
     if not size:
         base_unit = commodity.base_unit or "unit"
@@ -259,7 +272,7 @@ def compute_figures(
     usd = _usd_amount(quote)
     pack_spec = _pack_spec(quote, item)
     extras = _extras(quote)
-    course = _course_size(commodity)
+    course = _course_size(commodity, item, pack_spec)
 
     # --- per base unit and per pack -------------------------------------
     per_base_unit: Derived

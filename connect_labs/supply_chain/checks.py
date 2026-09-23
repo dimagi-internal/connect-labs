@@ -52,7 +52,7 @@ from connect_labs.supply_chain.fulfilment.services.landed import landed_total
 from connect_labs.supply_chain.fulfilment.services.match import three_way_match
 from connect_labs.supply_chain.models import Award, Commodity, Contract, Item, Movement, Round, Shipment
 from connect_labs.supply_chain.procurement.services.comparison import compare_round
-from connect_labs.supply_chain.procurement.services.compliance import spec_verdict
+from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
 from connect_labs.supply_chain.stock.services import network, soh
 from connect_labs.supply_chain.values import Unconfirmed, decimal_string
 
@@ -210,9 +210,27 @@ def _catalogue(access, as_of):
                 )
             )
 
+    requirements_by_slug = {
+        slug: requirements
+        for slug, requirements in Commodity.objects.filter(scope_key=access.scope_key).values_list(
+            "slug", "spec_requirements"
+        )
+    }
     for item in Item.objects.filter(scope_key=access.scope_key).select_related("commodity"):
-        verdict = spec_verdict(item.spec_attributes, item.commodity.spec_requirements)
+        # A kit is checked part by part: the zinc inside a co-pack is held to
+        # the zinc specification, not to the co-pack's.
+        checked = kit_spec_verdict(
+            item.spec_attributes, item.commodity.spec_requirements, item.components, requirements_by_slug
+        )
+        verdict = checked["verdict"]
         if "fail" in verdict.lower():
+            facts = {
+                "verdict": verdict,
+                "requirements": item.commodity.spec_requirements,
+                "stated": item.spec_attributes,
+            }
+            if item.is_kit:
+                facts["components"] = checked["components"]
             out.append(
                 _check(
                     "item_fails_specification",
@@ -223,11 +241,7 @@ def _catalogue(access, as_of):
                     # so the decision is ours: buy a different item, or change
                     # the requirement. Not a question for the manufacturer.
                     audience="internal",
-                    facts={
-                        "verdict": verdict,
-                        "requirements": item.commodity.spec_requirements,
-                        "stated": item.spec_attributes,
-                    },
+                    facts=facts,
                     as_of=as_of,
                 )
             )

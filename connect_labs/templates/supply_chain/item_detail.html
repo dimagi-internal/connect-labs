@@ -75,6 +75,53 @@ sachets are in the carton, and neither does a balance.
       </div>
     </dl>
 
+    {% if item.one_course_is %}
+      <p class="mt-3 text-sm text-gray-700">
+        {% if item.one_course_is == "pack" %}
+          One {{ item.pack_unit|default:product.pack_unit|default:"pack" }} is one full course
+        {% else %}
+          One {{ item.base_unit|default:product.base_unit|default:"unit" }} is one full course
+        {% endif %}
+        <span class="text-gray-500">— so its cost per course needs no ration table.</span>
+      </p>
+    {% endif %}
+
+    {% if item.is_kit %}
+      <div class="mt-4">
+        <div class="text-[11px] text-gray-500">What is inside — one {{ item.base_unit|default:product.base_unit|default:"kit" }} holds</div>
+        <div class="overflow-x-auto mt-1" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+          <table class="min-w-[28rem] w-full text-sm">
+            <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+              <tr>
+                <th class="text-left px-3 py-1.5">Product</th>
+                <th class="text-left px-3 py-1.5">How many</th>
+                <th class="text-left px-3 py-1.5">Against its own spec</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              {% for component in item.component_rows %}
+                <tr>
+                  <td class="px-3 py-1.5">
+                    <a class="text-brand-indigo hover:underline"
+                       href="{% url 'supply_chain:product_detail' component.commodity_slug %}">{{ component.name }}</a>
+                  </td>
+                  <td class="px-3 py-1.5 tabular-nums">{{ component.quantity }} {{ component.base_unit }}</td>
+                  <td class="px-3 py-1.5 {% if 'fail' in component.verdict %}text-message-error-text{% elif 'not stated' in component.verdict %}text-message-warning-text{% else %}text-gray-700{% endif %}">
+                    {{ component.verdict }}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p class="text-xs text-gray-500 mt-1 max-w-2xl">
+          Counted in stock as whole kits — the ledger never breaks one apart. Two
+          suppliers' kits are ranked against each other only when they hold the same
+          products in the same numbers.
+        </p>
+      </div>
+    {% endif %}
+
     {% if item.differs_from_product %}
       <p class="mt-3 text-sm text-orange-800 bg-orange-50 border border-orange-200 rounded px-3 py-2 max-w-2xl">
         Packed {{ item.base_per_pack }} to the {{ item.pack_unit|default:product.pack_unit }} where
