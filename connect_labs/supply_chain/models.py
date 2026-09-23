@@ -185,6 +185,27 @@ class Item(TimestampedModel):
     spec_attributes = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=16, default="active", choices=_choices(("active", "discontinued")))
 
+    # A kit: one SKU that bundles several products -- an ORS/zinc co-pack, a
+    # three-day treatment packet, a test kit with its reagents. A list of
+    # {commodity_slug, quantity, base_unit, spec_attributes?}. The item still
+    # belongs to ONE primary commodity and is counted in its own SKUs; the
+    # ledger never breaks a kit apart. What the list is for is the three
+    # questions a single commodity cannot answer: does the zinc inside meet
+    # the zinc specification, do two suppliers' "co-packs" hold the same
+    # contents, and is one of these a whole course.
+    components = models.JSONField(default=list, blank=True)
+    # Whether one of this item is a full treatment course, and at which level:
+    # "" (not a course, or not known), "base_unit" or "pack". A packet that IS
+    # a three-day course needs no ration table to cost per course -- the
+    # manufacturer packed the course. Stated per item rather than inferred,
+    # because nothing in a component list says it adds up to a protocol.
+    one_course_is = models.CharField(max_length=16, blank=True, default="", choices=_choices(records.ONE_COURSE_IS))
+    # consumable (the default) or durable. A dispenser is not consumed, so a
+    # consumption rate, months of stock and a resupply quantity for one are
+    # meaningless; it still moves through the ledger, because "which site has
+    # which dispenser" is a balance like any other.
+    stock_class = models.CharField(max_length=16, default="consumable", choices=_choices(records.STOCK_CLASSES))
+
     class Meta:
         constraints = [models.UniqueConstraint(fields=["scope_key", "sku"], name="uniq_item_scope_sku")]
         ordering = ["name"]
@@ -195,6 +216,14 @@ class Item(TimestampedModel):
     @property
     def commodity_slug(self):
         return self.commodity.slug
+
+    @property
+    def is_kit(self) -> bool:
+        return bool(self.components)
+
+    @property
+    def is_durable(self) -> bool:
+        return self.stock_class == "durable"
 
 
 class Supplier(TimestampedModel):
@@ -393,6 +422,36 @@ class Award(TimestampedModel):
         ordering = ["-decided_on", "-created_at"]
 
 
+class AwardApproval(TimestampedModel):
+    """A third party's agreement to an award, asked for and then given or refused.
+
+    The approver is not the person deciding the award -- `Award.decided_by`
+    is -- but somebody whose agreement the award needs before money moves: a
+    technical partner confirming the product, a funder approving its use, a
+    regulator. A contract may not rest on an award with one pending or
+    declined, which is a statement of fact, not a recommendation.
+
+    A decision is final on its row. A funder who declines and later relents
+    is a second request; overwriting the first would lose that it was ever
+    declined.
+    """
+
+    award = models.ForeignKey(Award, on_delete=models.CASCADE, related_name="approvals")
+    approver_org = models.ForeignKey("labs.LabsOrg", on_delete=models.PROTECT, related_name="supply_approvals")
+    role = models.CharField(max_length=16, choices=_choices(records.APPROVAL_ROLES))
+    status = models.CharField(max_length=16, default="requested", choices=_choices(records.APPROVAL_STATUSES))
+    requested_on = models.DateField()
+    decided_on = models.DateField(null=True, blank=True)
+    note = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["requested_on", "id"]
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == "requested"
+
+
 # ======================================================================
 # Fulfilment tier -- contract to receipt
 # ======================================================================
@@ -451,6 +510,19 @@ class Contract(SourcedModel):
     )
     promised_lead_time_days = models.IntegerField(null=True, blank=True)
 
+    # Whether the goods are bought at all. Not every contract is a purchase:
+    # a donor's in-kind chlorine and a partner's MUAC strips paid out of its
+    # setup fee both have a supplier, a quantity, promised dates, shipments
+    # and receipts -- the whole physical chain -- and no price that will ever
+    # exist. Treating them as priced reported that absence as a gap forever.
+    consideration = models.CharField(max_length=16, default="priced", choices=_choices(records.CONSIDERATIONS))
+    # The order this one buys the shortfall of: the main supplier delivered
+    # 450 of 700, and a partner bought the other 250 locally. The short order
+    # then reads as covered, by name, rather than as open for ever.
+    covers_shortfall_of = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="shortfall_covered_by"
+    )
+
     class Meta:
         ordering = ["-signed_on", "-created_at"]
         indexes = [models.Index(fields=["program_id", "status"])]
@@ -462,6 +534,10 @@ class Contract(SourcedModel):
     def duty_relief_evidenced(self) -> bool:
         return self.duty_relief_claimed and self.duty_relief_document_id is not None
 
+    @property
+    def is_priced(self) -> bool:
+        return self.consideration == "priced"
+
 
 class Shipment(SourcedModel):
     contract = models.ForeignKey(Contract, on_delete=models.CASCADE, related_name="shipments")
@@ -471,6 +547,12 @@ class Shipment(SourcedModel):
     dispatched_on = models.DateField(null=True, blank=True)
     expected_on = models.DateField(null=True, blank=True)
     carrier = models.CharField(max_length=255, blank=True, default="")
+    # What this consignment needs to clear, and who owes each: a list of
+    # {kind, owed_by_org_id}. "Follow up with the donor when needed", as data.
+    # A requirement is met by a document of that kind attached to THIS
+    # shipment -- two consignments under one contract each need their own
+    # airway bill.
+    required_documents = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["-dispatched_on", "-created_at"]
@@ -479,6 +561,31 @@ class Shipment(SourcedModel):
     def is_in_transit(self) -> bool:
         """Dispatched and not yet received. Never counted as stock (section 19.1)."""
         return self.status in records.IN_TRANSIT_STATUSES
+
+
+class Charge(SourcedModel):
+    """Money paid to land a consignment, to somebody who is not the supplier.
+
+    Customs fees, a clearing agent, the lorry from the port: paid by us to a
+    courier or to customs, never to the supplier, so it is neither the
+    contract's price nor its freight line. It hangs off the shipment it was
+    paid to clear, and the contract's landed cost adds it, itemised.
+    """
+
+    shipment = models.ForeignKey(Shipment, on_delete=models.CASCADE, related_name="charges")
+    kind = models.CharField(max_length=24, choices=_choices(records.CHARGE_KINDS))
+    payee_org = models.ForeignKey("labs.LabsOrg", on_delete=models.PROTECT, related_name="supply_charges")
+    amount = models.DecimalField(**MONEY)
+    currency = models.CharField(max_length=3, default="USD")
+    # Local fees are paid in local currency. Without a rate they cannot be
+    # added to a USD landed total, and the total says so rather than adding
+    # naira to dollars.
+    fx_rate_to_usd = models.DecimalField(null=True, blank=True, max_digits=18, decimal_places=8)
+    # Null while assessed but not yet paid.
+    paid_on = models.DateField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["paid_on", "id"]
 
 
 class ShipmentLine(models.Model):
@@ -535,6 +642,10 @@ class Payment(SourcedModel):
     currency = models.CharField(max_length=3, default="USD")
     method = models.CharField(max_length=32, blank=True, default="")
     reference = models.CharField(max_length=64, blank=True, default="")
+    # When the payee said the money arrived. Separate from `paid_on` because
+    # the two are different facts from different people, and "we sent it"
+    # is exactly the claim a supplier chasing payment disputes.
+    confirmed_by_payee_on = models.DateField(null=True, blank=True)
 
     class Meta:
         ordering = ["-paid_on"]
@@ -597,6 +708,12 @@ class Document(SourcedModel):
     )
     item = models.ForeignKey(
         "supply_chain.Item", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    )
+    charge = models.ForeignKey(
+        "supply_chain.Charge", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    )
+    approval = models.ForeignKey(
+        "supply_chain.AwardApproval", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
     )
 
     class Meta:
@@ -906,3 +1023,14 @@ class DistributionLine(models.Model):
     movement = models.OneToOneField(
         Movement, null=True, blank=True, on_delete=models.PROTECT, related_name="distribution_line"
     )
+
+
+# ======================================================================
+# Alerts and supplier update links -- in their own modules, registered here
+# ======================================================================
+#
+# Declared in `alerts/models.py` and `update_links/models.py` next to the code
+# that uses them, and imported at the bottom of this module so Django finds
+# them when it loads the app. At the bottom because both import from here.
+from connect_labs.supply_chain.alerts.models import AlertCheckState, AlertNotice, AlertSubscription  # noqa: E402,F401
+from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission  # noqa: E402,F401

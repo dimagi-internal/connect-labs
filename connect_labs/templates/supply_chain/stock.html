@@ -119,6 +119,9 @@ one of them would destroy the only signal it had.
             {% elif point.status == "negative" %}
               <span class="text-xs font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">negative</span>
               <div class="text-xs text-red-700 mt-0.5">more left here than ever arrived</div>
+            {% elif point.status == "durable" %}
+              <span class="text-xs font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">durable</span>
+              <div class="text-xs text-gray-500 mt-0.5">held, not consumed — no cover to assess</div>
             {% elif point.status == "overstocked" %}
               <span class="text-xs font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">over max</span>
             {% else %}

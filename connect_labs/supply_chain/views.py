@@ -15,7 +15,7 @@ from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.checks import course_applies_to_category
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
-from connect_labs.supply_chain.procurement.services.compliance import spec_verdict
+from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
 
 
 @method_decorator(login_required, name="dispatch")
@@ -49,19 +49,44 @@ def newest_standing_first(quotes):
     return ordered
 
 
-def annotate_product(product, own_items):
+def annotate_product(product, own_items, products=()):
     """Hang a product's trade items off it, each measured against its spec.
 
     Module-level rather than a method because two pages need identically
     annotated products -- the catalogue list and one product on its own -- and
     a second copy of this would be a second opinion about whether a trade item
     passes its specification.
+
+    `products` is the whole catalogue, for kits: the zinc inside a co-pack is
+    held to the zinc product's requirements, so checking a kit needs more
+    than its own product. The verdict comes from the same function the checks
+    feed uses, so the page and the feed cannot disagree about a kit.
     """
+    requirements_by_slug = {p["slug"]: p.get("spec_requirements") or [] for p in products}
+    names = {p["slug"]: p["name"] for p in products}
     packs = {i["base_per_pack"] for i in own_items if i.get("base_per_pack")}
     weights = {i["base_unit_grams"] for i in own_items if i.get("base_unit_grams")}
 
     for item in own_items:
-        item["spec_verdict"] = spec_verdict(item.get("spec_attributes"), product.get("spec_requirements") or [])
+        checked = kit_spec_verdict(
+            item.get("spec_attributes"),
+            product.get("spec_requirements") or [],
+            item.get("components"),
+            requirements_by_slug,
+        )
+        item["spec_verdict"] = checked["verdict"]
+        # Each product inside a kit, with its own name and its own verdict, so
+        # the page can say WHICH part fails rather than that something does.
+        # Paired by position: `kit_spec_verdict` returns the parts in input
+        # order, and a kit may hold two components of one product.
+        item["component_rows"] = [
+            {
+                **component,
+                "name": names.get(component.get("commodity_slug"), component.get("commodity_slug")),
+                "verdict": part["verdict"],
+            }
+            for component, part in zip(item.get("components") or [], checked["components"])
+        ]
         # Two different kinds of disagreement, and they are not the same
         # finding. Differing from the product's nominal pack is often
         # legitimate -- a manufacturer may genuinely pack 144. Two trade items
@@ -138,7 +163,7 @@ class CatalogueView(OperationBase):
             by_product.setdefault(item["commodity_slug"], []).append(item)
 
         for product in products:
-            annotate_product(product, by_product.get(product["slug"], []))
+            annotate_product(product, by_product.get(product["slug"], []), products)
 
         context["products"] = products
         context["orphan_items"] = [
@@ -236,6 +261,43 @@ class DomainHomeView(OperationBase):
         return reverse("supply_chain:procurement_round_board")
 
 
+class ChecksView(OperationBase):
+    """Every check, with the facts behind it, grouped by kind.
+
+    The overview says how many and who can answer; this is where each one is
+    read in full. Grouped by KIND rather than ranked: a kind is what the
+    finding is, which is a fact, where an order of importance is a judgement
+    the database cannot make (design doc sections 22 and 24). Each row links
+    to the record it is about, because that is where it gets answered.
+    """
+
+    template_name = "supply_chain/checks.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+        if not context["has_program_context"]:
+            return context
+        kind = self.request.GET.get("kind") or None
+        category = self.request.GET.get("category") or None
+        checks = self.op(
+            "checks_list",
+            kinds=[kind] if kind else None,
+            categories=[category] if category else None,
+        )
+        groups: dict[str, list] = {}
+        for check in checks["checks"]:
+            groups.setdefault(check["kind"], []).append(check)
+        context["checks"] = checks
+        context["groups"] = [
+            {"kind": kind_name, "category": checks["kinds"][kind_name], "items": items}
+            for kind_name, items in groups.items()
+        ]
+        context["kind"] = kind
+        context["category"] = category
+        return context
+
+
 class OrdersView(OperationBase):
     """Contracts, and who is buying under each.
 
@@ -290,6 +352,67 @@ class OrderDetailView(OperationBase):
         context["documents"] = self.op("document_list", contract_id=contract_id)
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
+        # Lateness, read from the checks rather than recomputed here, so this
+        # page and the checks feed cannot disagree about whether it is late.
+        shipment_ids = {s["id"] for s in context["shipments"]}
+        late = self.op("checks_list", kinds=["contract_delivery_overdue", "shipment_overdue"])["checks"]
+        context["contract_late"] = next(
+            (c for c in late if c["kind"] == "contract_delivery_overdue" and c["subject"]["id"] == contract_id), None
+        )
+        context["late_shipments"] = {
+            c["subject"]["id"]: c
+            for c in late
+            if c["kind"] == "shipment_overdue" and c["subject"]["id"] in shipment_ids
+        }
+        return context
+
+
+class ShipmentDetailView(OperationBase):
+    """One consignment: what it carries, what it needs to clear, and what landing it cost.
+
+    The page an import is worked from. The documents it requires are a
+    checklist -- each one on file or outstanding, and who owes it -- derived
+    from the same rule as the `shipment_documents_outstanding` check: a
+    document of that kind attached to this shipment. The charges paid to
+    land it sit beside them, because they are paid at the same port by the
+    same people.
+    """
+
+    template_name = "supply_chain/shipment_detail.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+        if not context["has_program_context"]:
+            return context
+        shipment_id = int(kwargs["shipment_id"])
+        shipment = self.op("shipment_get", shipment_id=shipment_id)
+        if shipment is None:
+            raise Http404(f"no shipment {shipment_id} in this programme")
+        contract = self.op("contract_get", contract_id=shipment["contract_id"])
+        orgs = {o["id"]: o for o in self.op("org_list")}
+        documents = self.op("document_list", shipment_id=shipment_id)
+        by_kind: dict[str, list] = {}
+        for document in documents:
+            by_kind.setdefault(document["kind"], []).append(document)
+
+        context["shipment"] = shipment
+        context["contract"] = contract
+        context["supplier"] = self.op("supplier_get", supplier_id=contract["supplier_id"])
+        context["orgs"] = orgs
+        context["documents"] = documents
+        context["checklist"] = [
+            {
+                "kind": entry["kind"],
+                "owed_by": orgs.get(entry.get("owed_by_org_id")),
+                "documents": by_kind.get(entry["kind"], []),
+            }
+            for entry in shipment.get("required_documents") or []
+        ]
+        context["outstanding_count"] = sum(1 for line in context["checklist"] if not line["documents"])
+        context["charges"] = self.op("charge_list", shipment_id=shipment_id)
+        late = self.op("checks_list", kinds=["shipment_overdue"])["checks"]
+        context["late"] = next((c for c in late if c["subject"]["id"] == shipment_id), None)
         return context
 
 
@@ -366,7 +489,7 @@ class ProductDetailView(OperationBase):
         if product is None:
             raise Http404(f"no product '{slug}' in this catalogue")
         items = [i for i in self.op("item_list") if i["commodity_slug"] == slug]
-        context["product"] = annotate_product(product, items)
+        context["product"] = annotate_product(product, items, self.op("commodity_list"))
 
         if not context["has_program_context"]:
             # The specification is reference data and reads fine on its own.
@@ -406,12 +529,13 @@ class ItemDetailView(OperationBase):
         item = self.op("item_get", item_id=item_id)
         if item is None:
             raise Http404(f"no trade item {item_id} in this catalogue")
-        product = next((c for c in self.op("commodity_list") if c["slug"] == item["commodity_slug"]), None)
+        products = self.op("commodity_list")
+        product = next((c for c in products if c["slug"] == item["commodity_slug"]), None)
         if product is not None:
             # Annotated through its own product so the verdict, the sibling
             # disagreements and the GTIN list are computed the one way.
             siblings = [i for i in self.op("item_list") if i["commodity_slug"] == item["commodity_slug"]]
-            annotate_product(product, siblings)
+            annotate_product(product, siblings, products)
             item = next((i for i in siblings if i["id"] == item["id"]), item)
         context["item"] = item
         context["product"] = product

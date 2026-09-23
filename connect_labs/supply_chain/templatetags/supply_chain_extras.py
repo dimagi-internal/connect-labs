@@ -41,6 +41,11 @@ CHECK_LABELS = {
     "stock_stockout": "No stock on hand",
     "stock_below_minimum": "Below its own minimum",
     "item_fails_specification": "Fails the commodity specification",
+    "shipment_overdue": "Shipment past its expected date",
+    "shipment_documents_outstanding": "Documents it needs, not on file",
+    "award_awaiting_approval": "Awarded, awaiting approval",
+    "payment_unconfirmed": "Payment not confirmed by the payee",
+    "contract_delivery_overdue": "Delivery past the promised lead time",
 }
 
 AUDIENCE_LABELS = {
@@ -54,6 +59,62 @@ CATEGORY_LABELS = {
     "conflict": "two records disagree",
     "threshold": "past a bound you set",
 }
+
+
+# Where each kind of subject is answered. A check about a shipment is read on
+# the shipment; one about a contract on its order. Subjects with no page of
+# their own fall back to a record they belong to, named in the facts.
+_SUBJECT_ROUTES = {
+    "quote": "supply_chain:procurement_quote_detail",
+    "contract": "supply_chain:order_detail",
+    "shipment": "supply_chain:shipment_detail",
+    "award": "supply_chain:award_detail",
+    "item": "supply_chain:item_detail",
+    "supplier": "supply_chain:supplier_detail",
+}
+
+
+@register.filter
+def check_href(check):
+    """The page a check is answered on, or "" when there is none."""
+    subject = check.get("subject") or {}
+    kind, subject_id = subject.get("type"), subject.get("id")
+    facts = check.get("facts") or {}
+    if kind in _SUBJECT_ROUTES and subject_id:
+        return reverse(_SUBJECT_ROUTES[kind], args=[subject_id])
+    if facts.get("contract_id"):
+        return reverse("supply_chain:order_detail", args=[facts["contract_id"]])
+    if kind == "supply_point":
+        return reverse("supply_chain:stock")
+    if kind == "commodity":
+        return reverse("supply_chain:catalogue")
+    return ""
+
+
+def _fact_text(value):
+    if isinstance(value, dict):
+        if "name" in value:
+            return str(value["name"])
+        if "question" in value:
+            return str(value["question"])
+        if "commodity_slug" in value and "verdict" in value:
+            return f"{value['commodity_slug']}: {value['verdict']}"
+        return ", ".join(f"{str(k).replace('_', ' ')} {_fact_text(v)}" for k, v in value.items())
+    if isinstance(value, list | tuple):
+        return "; ".join(_fact_text(v) for v in value) or "none"
+    if value is None or value == "":
+        return "—"
+    return str(value)
+
+
+@register.filter
+def fact_rows(facts):
+    """A check's facts as (label, text) rows, for reading rather than parsing.
+
+    Generic on purpose: the facts are the domain's structured data, and this
+    only spells them out. A client wanting to word them does so itself.
+    """
+    return [(str(key).replace("_", " "), _fact_text(value)) for key, value in (facts or {}).items()]
 
 
 @register.filter
@@ -84,6 +145,12 @@ def figure_text(cell):
         return "—"
     if "unconfirmed" in cell:
         return "Unconfirmed"
+    if "not_costed" in cell:
+        # Not a gap: the goods were never bought, and the reason is the text.
+        return cell["not_costed"]
+    if "not_forecast" in cell:
+        # Not a gap either: durable equipment is never consumed.
+        return "durable — not forecast"
     amount = cell.get("amount")
     unit = cell.get("unit") or cell.get("currency") or ""
     return f"{amount} {unit}".strip()

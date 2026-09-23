@@ -10,7 +10,9 @@ from connect_labs.supply_chain import (
     stock_views,
     views,
 )
+from connect_labs.supply_chain.alerts import views as alert_views
 from connect_labs.supply_chain.procurement import views as procurement_views
+from connect_labs.supply_chain.update_links import views as update_link_views
 
 app_name = "supply_chain"
 
@@ -125,6 +127,23 @@ urlpatterns = [
         procurement_views.QuoteDetailView.as_view(),
         name="procurement_quote_detail",
     ),
+    # Every check with its facts. The overview only counts them.
+    path("checks/", views.ChecksView.as_view(), name="checks"),
+    path(
+        "procurement/awards/<int:award_id>/",
+        procurement_views.AwardDetailView.as_view(),
+        name="award_detail",
+    ),
+    path(
+        "procurement/awards/<int:award_id>/approvals/new/",
+        procurement_views.ApprovalRequestView.as_view(),
+        name="approval_request",
+    ),
+    path(
+        "procurement/approvals/<int:approval_id>/decide/",
+        procurement_views.ApprovalDecideView.as_view(),
+        name="approval_decide",
+    ),
     path("orders/", views.OrdersView.as_view(), name="orders"),
     # "new" before the int route, so the literal cannot be read as an id.
     path("orders/new/", fulfilment_views.ContractCreateView.as_view(), name="contract_create"),
@@ -152,12 +171,34 @@ urlpatterns = [
         stock_views.ReceiptRecordView.as_view(),
         name="receipt_record",
     ),
+    path("shipments/<int:shipment_id>/", views.ShipmentDetailView.as_view(), name="shipment_detail"),
     path("shipments/<int:shipment_id>/status/", stock_views.ShipmentStatusView.as_view(), name="shipment_status"),
+    path(
+        "shipments/<int:shipment_id>/documents/require/",
+        stock_views.ShipmentRequireDocumentView.as_view(),
+        name="shipment_require_document",
+    ),
+    path(
+        "shipments/<int:shipment_id>/documents/unrequire/",
+        stock_views.ShipmentRequirementRemoveView.as_view(),
+        name="shipment_unrequire_document",
+    ),
+    path(
+        "shipments/<int:shipment_id>/documents/new/",
+        stock_views.ShipmentDocumentAttachView.as_view(),
+        name="shipment_document_attach",
+    ),
+    path("shipments/<int:shipment_id>/charges/new/", stock_views.ChargeRecordView.as_view(), name="charge_record"),
     path("invoices/<int:invoice_id>/edit/", fulfilment_views.InvoiceUpdateView.as_view(), name="invoice_edit"),
     path(
         "invoices/<int:invoice_id>/payments/new/",
         fulfilment_views.PaymentRecordView.as_view(),
         name="payment_record",
+    ),
+    path(
+        "payments/<int:payment_id>/confirm/",
+        fulfilment_views.PaymentConfirmView.as_view(),
+        name="payment_confirm",
     ),
     # Before Stock, the way the work runs: stock has to have somewhere to rest
     # before there is any to look at.
@@ -175,6 +216,23 @@ urlpatterns = [
     path("stock/counts/new/", stock_views.StockCountRecordView.as_view(), name="stock_count_record"),
     path("distribution/", views.DistributionView.as_view(), name="distribution"),
     path("distribution/new/", distribution_views.DistributionRecordView.as_view(), name="distribution_record"),
+    # Alerts: who is told about what, and the log of what they were told.
+    path("alerts/", alert_views.AlertListView.as_view(), name="alerts"),
+    path("alerts/new/", alert_views.AlertCreateView.as_view(), name="alert_create"),
+    path("alerts/<int:subscription_id>/edit/", alert_views.AlertUpdateView.as_view(), name="alert_edit"),
+    path("alerts/<int:subscription_id>/delete/", alert_views.AlertDeleteView.as_view(), name="alert_delete"),
+    # Supplier update links: the programme's screens for issuing them...
+    path("links/", update_link_views.UpdateLinkListView.as_view(), name="update_links"),
+    path("links/new/", update_link_views.UpdateLinkIssueView.as_view(), name="update_link_issue"),
+    path(
+        "links/<int:link_id>/revoke/",
+        update_link_views.UpdateLinkRevokeView.as_view(),
+        name="update_link_revoke",
+    ),
+    # ...and the page behind one. Unauthenticated and token-gated: the only
+    # route in the domain without login_required, and skip-listed in
+    # labs/oauth_session.py for the same reason Pulse's public displays are.
+    path("u/<str:token>/", update_link_views.UpdateLinkPublicView.as_view(), name="update_link_public"),
 ]
 
 if settings.DEBUG:

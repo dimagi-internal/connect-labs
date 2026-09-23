@@ -21,6 +21,10 @@ SUPPLY_TABS = (
     ("supply_chain:network", "Network"),
     ("supply_chain:stock", "Stock"),
     ("supply_chain:distribution", "Distribution"),
+    # After the chain, because they cut across it: who is told when something
+    # in it changes, and how a supplier records its own part.
+    ("supply_chain:alerts", "Alerts"),
+    ("supply_chain:update_links", "Supplier links"),
 )
 
 # Pages that belong under a tab without being it, so the tab still reads as
@@ -32,13 +36,20 @@ TAB_FOR_VIEW = {
     # A quote's own page had no entry, so landing on it un-highlighted every
     # tab and the nav read as though you had left the domain.
     "supply_chain:procurement_quote_detail": "supply_chain:procurement_round_board",
+    "supply_chain:award_detail": "supply_chain:procurement_round_board",
     "supply_chain:product_detail": "supply_chain:catalogue",
     "supply_chain:item_detail": "supply_chain:catalogue",
     "supply_chain:supplier_detail": "supply_chain:suppliers",
     "supply_chain:order_detail": "supply_chain:orders",
+    "supply_chain:shipment_detail": "supply_chain:orders",
     # Organisations are infrastructure rather than a daily destination, so they
     # read as part of Suppliers rather than taking a tab of their own.
     "supply_chain:organisations": "supply_chain:suppliers",
+    # The checks are the overview's second panel, read in full.
+    "supply_chain:checks": "supply_chain:home",
+    "supply_chain:alert_create": "supply_chain:alerts",
+    "supply_chain:alert_edit": "supply_chain:alerts",
+    "supply_chain:update_link_issue": "supply_chain:update_links",
 }
 
 

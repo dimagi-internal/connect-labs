@@ -15,7 +15,13 @@ from django.urls import reverse
 
 from connect_labs.supply_chain.api_views import _access
 from connect_labs.supply_chain.form_views import OperationFormView
-from connect_labs.supply_chain.fulfilment_forms import ContractForm, DocumentForm, InvoiceForm, PaymentForm
+from connect_labs.supply_chain.fulfilment_forms import (
+    ContractForm,
+    DocumentForm,
+    InvoiceForm,
+    PaymentConfirmationForm,
+    PaymentForm,
+)
 from connect_labs.supply_chain.models import Contract, Invoice
 
 
@@ -64,6 +70,60 @@ class ContractCreateView(_ContractScreen):
         "it is asked rather than assumed."
     )
     submit_label = "Record order"
+
+    def award(self):
+        """The award this order is placed against, when it arrived from one.
+
+        Scoped through the round's programme. The order then carries the
+        award, which is what lets `contract_create` refuse it while an
+        approval is pending or declined -- and say whose.
+        """
+        from connect_labs.supply_chain.models import Award
+
+        raw = self.request.GET.get("award") or ""
+        if not raw.isdigit():
+            return None
+        return (
+            Award.objects.filter(pk=int(raw), round__program_id=_access(self.request).program_id)
+            .select_related("quote", "supplier", "commodity")
+            .first()
+        )
+
+    def get_initial(self):
+        initial = super().get_initial()
+        award = self.award()
+        if award is not None:
+            # Opening on what was awarded: the supplier, the product, the
+            # trade item and the quantity and price that won.
+            quote = award.quote
+            initial.update(supplier=award.supplier_id, commodity=award.commodity_id)
+            if quote.item_id:
+                initial["item"] = quote.item_id
+            if quote.quantity_basis is not None:
+                initial.update(quantity=quote.quantity_basis, quantity_unit=quote.quantity_basis_unit)
+            if quote.as_quoted_amount is not None and quote.as_quoted_unit:
+                initial.update(
+                    unit_price=quote.as_quoted_amount,
+                    unit_price_unit=quote.as_quoted_unit,
+                    currency=quote.as_quoted_currency,
+                )
+        return initial
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        award = self.award() if context.get("has_program_context") else None
+        if award is not None:
+            context["intro"] = (
+                f"Against the award to {award.supplier.name} for {award.commodity.name}, decided "
+                f"{award.decided_on or 'undated'}. {self.intro}"
+            )
+        return context
+
+    def fixed(self, **kwargs):
+        award = self.award()
+        if award is None:
+            return {}
+        return {"data": {"award_id": award.pk, "round_id": award.round_id}}
 
 
 class ContractUpdateView(_ContractScreen):
@@ -219,6 +279,50 @@ class PaymentRecordView(OperationFormView):
 
     def redirect_to(self, result):
         return reverse("supply_chain:order_detail", args=[self.invoice().contract_id])
+
+
+class PaymentConfirmView(OperationFormView):
+    """The payee says the money arrived. One date, and the check clears."""
+
+    operation = "payment_confirm"
+    form_class = PaymentConfirmationForm
+    title = "Payee confirmed receipt"
+    intro = (
+        'When the supplier says the payment arrived. "We sent it" and "we got it" are two facts '
+        "from two people, and until the second is recorded an older payment stays on the checks list."
+    )
+    submit_label = "Record confirmation"
+
+    def payment(self):
+        from connect_labs.supply_chain.models import Payment
+
+        found = (
+            Payment.objects.filter(
+                pk=self.kwargs["payment_id"], invoice__contract__program_id=_access(self.request).program_id
+            )
+            .select_related("invoice__contract")
+            .first()
+        )
+        if found is None:
+            raise Http404(f"no payment {self.kwargs['payment_id']} in this programme")
+        return found
+
+    def fixed(self, **kwargs):
+        return {"payment_id": int(kwargs["payment_id"])}
+
+    def breadcrumb(self, **kwargs):
+        contract = self.payment().invoice.contract
+        return [
+            {"label": "Orders", "href": reverse("supply_chain:orders")},
+            {"label": str(contract), "href": reverse("supply_chain:order_detail", args=[contract.pk])},
+            {"label": self.title},
+        ]
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:order_detail", args=[self.payment().invoice.contract_id])
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:order_detail", args=[self.payment().invoice.contract_id])
 
 
 # ---- documents ---------------------------------------------------------

@@ -37,6 +37,7 @@ from connect_labs.supply_chain import gs1, scopes
 from connect_labs.supply_chain.fulfilment.repository import FulfilmentRepositoryMixin
 from connect_labs.supply_chain.models import (
     Award,
+    AwardApproval,
     Commodity,
     Contract,
     Distribution,
@@ -86,6 +87,7 @@ _RESOLVED = {
     "shipment_id",
     "receipt_id",
     "invoice_id",
+    "payee_org_id",
 }
 
 # Never settable by a caller: the identity and the audit timestamps.
@@ -140,6 +142,21 @@ def _fresh(obj):
     """
     obj.refresh_from_db()
     return obj
+
+
+def _refuse_a_price_on_what_is_not_bought(consideration, unit_price):
+    """A unit price on a donation is two statements that cannot both be true.
+
+    Coherence, not policing: the landed cost of an in-kind contract is "not
+    purchased", and a price stored beside that would either be ignored
+    silently or contradict the statement the page makes.
+    """
+    if consideration != "priced" and unit_price not in (None, ""):
+        label = "in kind" if consideration == "in_kind" else "bundled into another cost"
+        raise ValueError(
+            f"this contract's goods are {label}, so it takes no unit price; set consideration "
+            "to priced if the goods are being bought"
+        )
 
 
 def _copy_of(obj, overrides: dict) -> dict:
@@ -383,8 +400,42 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         defaults = _columns(Item, {k: v for k, v in data.items() if k != "sku"})
         if commodity is not None:
             defaults["commodity"] = commodity
+        if "components" in data:
+            defaults["components"] = self._kit_components(data.get("components") or [])
         obj, _ = Item.objects.update_or_create(scope_key=self.scope_key, sku=data["sku"], defaults=defaults)
         return _fresh(obj)
+
+    def _kit_components(self, components) -> list[dict]:
+        """A kit's contents, each naming a product that exists in this catalogue.
+
+        Checked here because existence needs a read: a component pointing at
+        a product nobody defined could never be tested against a
+        specification, and "no requirement to fail" would read as a pass.
+        The quantity is stored as a decimal string, the way every quantity in
+        this domain goes over the wire, so a composition compares equal
+        whether it arrived as 10 or "10".
+        """
+        from decimal import Decimal
+
+        from connect_labs.supply_chain.values import decimal_string
+
+        cleaned = []
+        for component in components:
+            slug = component["commodity_slug"]
+            if self.get_commodity(slug) is None:
+                raise ValueError(
+                    f"component {slug!r} is not a product in this catalogue; add it as a product "
+                    "first, so its specification can be checked"
+                )
+            entry = {
+                "commodity_slug": slug,
+                "quantity": decimal_string(Decimal(str(component["quantity"]))),
+                "base_unit": component["base_unit"],
+            }
+            if component.get("spec_attributes"):
+                entry["spec_attributes"] = component["spec_attributes"]
+            cleaned.append(entry)
+        return cleaned
 
     def list_suppliers(self, search: str | None = None):
         found = list(self._reference(Supplier).all())
@@ -708,6 +759,116 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         )
         return _fresh(award)
 
+    # ---- approvals ------------------------------------------------------
+
+    def list_approvals(self, award_id=None, status=None):
+        qs = AwardApproval.objects.filter(award__round__program_id=self._require_program()).select_related(
+            "approver_org"
+        )
+        if award_id is not None:
+            qs = qs.filter(award_id=award_id)
+        if status is not None:
+            qs = qs.filter(status=status)
+        return list(qs.prefetch_related("documents"))
+
+    def get_approval(self, approval_id):
+        """Scoped through the award's round, so a document cannot be attached
+        to another programme's approval."""
+        return (
+            AwardApproval.objects.filter(award__round__program_id=self._require_program(), pk=approval_id)
+            .select_related("approver_org")
+            .first()
+        )
+
+    def request_approval(self, data):
+        award = self.get_award(data["award_id"])
+        if award is None:
+            raise ValueError(f"award {data['award_id']} does not exist in this programme")
+        approver = self.get_org(data["approver_org_id"])
+        if approver is None:
+            raise ValueError(f"organisation {data['approver_org_id']} does not exist")
+        return _fresh(
+            AwardApproval.objects.create(
+                award=award,
+                approver_org=approver,
+                role=data["role"],
+                status="requested",
+                requested_on=data.get("requested_on") or date.today(),
+                note=data.get("note") or "",
+            )
+        )
+
+    def decide_approval(self, approval_id, status, decided_on=None, note=None):
+        """Approved or declined, once.
+
+        A reversal is a new request, so the refusal stays on the record: an
+        approval that was declined and then quietly flipped would erase the
+        one fact a later reader most needs.
+        """
+        approval = self.get_approval(approval_id)
+        if approval is None:
+            raise ValueError(f"approval {approval_id} does not exist in this programme")
+        if not approval.is_pending:
+            raise ValueError(
+                f"approval {approval_id} was already {approval.status} on {approval.decided_on}; "
+                "request a new approval rather than overwrite a decision"
+            )
+        approval.status = status
+        approval.decided_on = decided_on or date.today()
+        if note:
+            approval.note = note
+        approval.save(update_fields=["status", "decided_on", "note", "updated_at"])
+        return _fresh(approval)
+
+    def blocking_approvals(self, award):
+        """The approvals standing against an award, oldest first.
+
+        The latest answer from each approver in each role decides. A refusal
+        followed by a fresh request from the same approver in the same role
+        is history, not a veto: that is how a funder who relents is recorded
+        (see `AwardApproval`). The award page and the order guard both read
+        this, so they cannot disagree.
+        """
+        latest = {}
+        for approval in AwardApproval.objects.filter(award=award).select_related("approver_org"):
+            key = (approval.approver_org_id, approval.role)
+            if key not in latest or (approval.requested_on, approval.pk) >= (
+                latest[key].requested_on,
+                latest[key].pk,
+            ):
+                latest[key] = approval
+        return sorted(
+            (a for a in latest.values() if a.status in ("requested", "declined")),
+            key=lambda a: (a.requested_on, a.pk),
+        )
+
+    def _require_approved_award(self, award_id):
+        """The award, scoped to this programme, with nothing standing against it.
+
+        A contract may not rest on an award whose approval is pending or was
+        declined. That is refused rather than warned about because it is a
+        fact about the award, not a judgement: the funder has not agreed, or
+        said no. The refusal names the approval, so the reader knows exactly
+        whose answer is outstanding.
+        """
+        award = self.get_award(award_id)
+        if award is None:
+            raise ValueError(f"award {award_id} does not exist in this programme")
+        for approval in self.blocking_approvals(award):
+            if approval.status == "requested":
+                raise ValueError(
+                    f"award {award.pk} is awaiting approval {approval.pk} from {approval.approver_org.name} "
+                    f"({approval.role}, requested {approval.requested_on}); an order cannot be placed against "
+                    "it until that approval is decided"
+                )
+            if approval.status == "declined":
+                raise ValueError(
+                    f"award {award.pk} was declined under approval {approval.pk} by "
+                    f"{approval.approver_org.name} ({approval.role}, on {approval.decided_on}); an order "
+                    "cannot rest on it"
+                )
+        return award
+
     # ---- contracts ------------------------------------------------------
 
     def _contracts(self):
@@ -735,6 +896,11 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         buyer = self.get_org(data["buyer_org_id"])
         if buyer is None:
             raise ValueError(f"organisation {data['buyer_org_id']} does not exist")
+        _refuse_a_price_on_what_is_not_bought(data.get("consideration") or "priced", data.get("unit_price"))
+        if data.get("award_id") is not None:
+            self._require_approved_award(data["award_id"])
+        if data.get("covers_shortfall_of_id") is not None:
+            self._require_contract_to_cover(data["covers_shortfall_of_id"], covering_id=None)
         return _fresh(
             Contract.objects.create(
                 program_id=self._require_program(),
@@ -747,11 +913,23 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
             )
         )
 
+    def _require_contract_to_cover(self, short_id, covering_id):
+        """The short order a covering one names: in this programme, and not itself."""
+        if covering_id is not None and int(short_id) == covering_id:
+            raise ValueError("an order cannot cover its own shortfall; name the order that came up short")
+        if self.get_contract(short_id) is None:
+            raise ValueError(f"contract {short_id} does not exist in this programme")
+
     def update_contract(self, contract_id, data):
         found = self.get_contract(contract_id)
         if found is None:
             raise ValueError(f"contract {contract_id} not found")
+        if data.get("award_id") is not None and data["award_id"] != found.award_id:
+            self._require_approved_award(data["award_id"])
+        if data.get("covers_shortfall_of_id") is not None:
+            self._require_contract_to_cover(data["covers_shortfall_of_id"], covering_id=found.pk)
         for key, value in _columns(Contract, data).items():
             setattr(found, key, value)
+        _refuse_a_price_on_what_is_not_bought(found.consideration, found.unit_price)
         found.save()
         return _fresh(found)

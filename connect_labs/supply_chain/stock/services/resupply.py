@@ -19,11 +19,17 @@ from decimal import Decimal
 
 from connect_labs.supply_chain.models import Movement
 from connect_labs.supply_chain.stock.services import ledger
-from connect_labs.supply_chain.values import Quantity, Unconfirmed, decimal_string, unconfirmed
+from connect_labs.supply_chain.values import NotForecast, Quantity, Unconfirmed, decimal_string, unconfirmed
 
 DAYS_PER_MONTH = Decimal("30")
 MINIMUM_WINDOW_DAYS = 30
 DEFAULT_WINDOW_DAYS = 90
+
+DURABLE = NotForecast("durable — not forecast: it is held and moved, never consumed")
+
+
+def _is_durable(item) -> bool:
+    return item is not None and getattr(item, "stock_class", "consumable") == "durable"
 
 
 def average_monthly_consumption(program_id, supply_point, item=None, as_of=None, window_days=DEFAULT_WINDOW_DAYS):
@@ -33,6 +39,8 @@ def average_monthly_consumption(program_id, supply_point, item=None, as_of=None,
     different windows are different figures and should never be compared as
     if they were the same one. Callers get `amc_window_days` back alongside.
     """
+    if _is_durable(item):
+        return DURABLE
     if window_days < MINIMUM_WINDOW_DAYS:
         return unconfirmed(
             f"a {window_days}-day window is too short to average a month of consumption "
@@ -96,6 +104,24 @@ def plan(program_id, supply_point, item=None, as_of=None, window_days=DEFAULT_WI
     """
     on_hand = ledger.balance(program_id, supply_point, item=item, on_date=as_of)
     amc = average_monthly_consumption(program_id, supply_point, item=item, as_of=as_of, window_days=window_days)
+
+    if _is_durable(item):
+        # The balance is real -- "which site has which dispenser" -- and is
+        # returned as it stands. Everything derived from consumption says why
+        # it is not a number, and the status says the same, so no check reads
+        # a durable point as a stockout or as below its band.
+        return {
+            "on_hand": on_hand,
+            "amc": DURABLE,
+            "amc_window_days": window_days,
+            "months_of_stock": DURABLE,
+            "days_to_stockout": DURABLE,
+            "reorder_point": DURABLE,
+            "resupply_quantity": DURABLE,
+            "status": "durable",
+            "min_months_of_stock": supply_point.min_months_of_stock,
+            "max_months_of_stock": supply_point.max_months_of_stock,
+        }
 
     def blocked_on(reason):
         """Every dependent figure carries the same reason, rather than going blank.

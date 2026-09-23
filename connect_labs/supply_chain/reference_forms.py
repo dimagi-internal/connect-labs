@@ -27,6 +27,8 @@ excludes it and reassembles it, the same way `RoundForm` handles
 `delivery_point`.
 """
 
+from decimal import Decimal
+
 from crispy_forms.layout import Column, Field, Fieldset, Layout, Row
 from django import forms
 from django.utils.translation import gettext_lazy as _
@@ -36,6 +38,7 @@ from connect_labs.supply_chain.models import Commodity, Item, Supplier
 
 __all__ = [
     "CommodityForm",
+    "ComponentLineFormSet",
     "ItemForm",
     "SupplierForm",
 ]
@@ -301,8 +304,12 @@ class ItemForm(KeyedUpsertForm):
             "gtin_pack",
             "gtin_case",
             "gpc_brick",
+            "one_course_is",
+            "stock_class",
         ]
         widgets = {
+            "one_course_is": forms.Select(attrs=SELECT),
+            "stock_class": forms.Select(attrs=SELECT),
             "sku": forms.TextInput(attrs={**INPUT, "placeholder": _("the manufacturer's own code")}),
             "name": forms.TextInput(attrs=INPUT),
             "commodity": forms.Select(attrs=SEARCHABLE),
@@ -335,10 +342,20 @@ class ItemForm(KeyedUpsertForm):
             "gtin_pack": _("GTIN, pack"),
             "gtin_case": _("GTIN, case"),
             "gpc_brick": _("GPC brick"),
+            "one_course_is": _("Is one of these a full course?"),
+            "stock_class": _("Used up, or kept?"),
         }
         help_texts = {
             "base_per_pack": _("As the manufacturer states it, not as the product assumes. This is the whole point."),
             "gtin_base": _("Checked against its GS1 check digit. A mistyped one is refused, not stored."),
+            "one_course_is": _(
+                "Say so when the manufacturer packed a whole treatment course — a three-day packet, a "
+                "co-pack. Cost per course then needs no ration table."
+            ),
+            "stock_class": _(
+                "Durable equipment — a dispenser, a scale — still has a balance at each site, but no "
+                "consumption rate, months of stock or resupply quantity, which would be made-up numbers."
+            ),
         }
 
     def __init__(self, *args, **kwargs):
@@ -357,10 +374,27 @@ class ItemForm(KeyedUpsertForm):
                 ("discontinued", _("Discontinued")),
             ],
         )
+        set_choices(
+            self,
+            "one_course_is",
+            [
+                ("", _("No, or not known")),
+                ("base_unit", _("Yes — one unit is one full course")),
+                ("pack", _("Yes — one pack is one full course")),
+            ],
+            required=False,
+        )
+        set_choices(
+            self,
+            "stock_class",
+            [("consumable", _("Consumable — used up")), ("durable", _("Durable — kept and moved, not consumed"))],
+            # Not required: a post that omits it leaves the item as it was.
+            required=False,
+        )
         self.helper.layout = Layout(
             Row(Column("sku"), Column("name"), css_class="grid md:grid-cols-[1fr,2fr] gap-x-6"),
             Row(Column("commodity"), Column("manufacturer"), css_class="grid md:grid-cols-2 gap-x-6"),
-            Field("status"),
+            Row(Column("status"), Column("stock_class"), css_class="grid md:grid-cols-2 gap-x-6"),
             Fieldset(
                 str(_("How this one is packed")),
                 Row(
@@ -373,7 +407,8 @@ class ItemForm(KeyedUpsertForm):
                 Row(
                     Column("base_unit_grams"),
                     Column("shelf_life_months"),
-                    css_class="grid md:grid-cols-2 gap-x-6",
+                    Column("one_course_is"),
+                    css_class="grid md:grid-cols-3 gap-x-6",
                 ),
                 css_class="pt-2",
             ),
@@ -402,7 +437,49 @@ class ItemForm(KeyedUpsertForm):
         commodity = self.cleaned_data.get("commodity")
         if commodity is not None:
             data["commodity_slug"] = commodity.slug
+        # Sent even when blank. `to_payload` drops "", which is right for a
+        # field nobody answered and wrong for this one: choosing "No" on an
+        # item that was a course has to reach the upsert, or the item stays a
+        # course and every per-course figure keeps its old basis.
+        data["one_course_is"] = self.cleaned_data.get("one_course_is") or ""
         return data
+
+
+class ComponentLineForm(forms.Form):
+    """One product inside a kit, and how much of it one kit holds.
+
+    A repeating row, so a formset, for the reason a round's lines are one:
+    a co-pack is two products and a test kit can be five.
+    """
+
+    commodity_slug = forms.ChoiceField(label=_("Product inside"), widget=forms.Select(attrs=SEARCHABLE))
+    quantity = forms.DecimalField(
+        label=_("How many"),
+        # More than nothing: `item_upsert` refuses a zero component, and the
+        # refusal belongs on this field rather than in a banner.
+        min_value=Decimal("0.0001"),
+        max_digits=18,
+        decimal_places=4,
+        widget=forms.NumberInput(attrs={**INPUT, "step": "any", "placeholder": "10"}),
+    )
+    base_unit = forms.CharField(
+        label=_("Of what"),
+        max_length=32,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. tablet")}),
+    )
+    # Which of the item's stored components this row began as, so an edit
+    # keeps that component's own stated specification -- a kit may hold two
+    # formulations of one product, so the product alone cannot say which.
+    source_index = forms.IntegerField(required=False, min_value=0, widget=forms.HiddenInput)
+
+    def __init__(self, *args, commodities=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        set_choices(self, "commodity_slug", [("", "—")] + list(commodities))
+
+
+# No minimum: an ordinary trade item has no components, and that is the
+# common case. `extra=0` for the reason RoundLineFormSet gives.
+ComponentLineFormSet = forms.formset_factory(ComponentLineForm, extra=0, min_num=0, can_delete=True)
 
 
 class SupplierForm(ScopedForm):

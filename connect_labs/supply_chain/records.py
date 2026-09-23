@@ -156,6 +156,17 @@ DOCUMENT_KINDS = (
     "specification_sheet",
     "photo",
     "stock_report",
+    # Import clearance. What a consignment needs to leave the port, and what
+    # a clearing agent or customs will ask for -- each owed by somebody, which
+    # is what `Shipment.required_documents` records.
+    "airway_bill",
+    "bill_of_lading",
+    "packing_list",
+    "commercial_invoice",
+    "import_permit",
+    "customs_declaration",
+    # A national regulator's product registration (NAFDAC in Nigeria).
+    "product_registration",
     "other",
 )
 
@@ -190,6 +201,36 @@ DOCUMENT_LINKS = (
     # photograph of the product
     "supplier",
     "item",
+    # a customs or clearing receipt, against the charge it evidences
+    "charge",
+    # the approver's letter or email, against the approval it records
+    "approval",
 )
 
+# What it costs to land a consignment, paid to somebody other than the
+# supplier: customs, a clearing agent, a haulier from the port, a warehouse.
+# Who, other than the person deciding an award, has to agree to it: a
+# technical partner confirming a product, a funder approving a use of funds,
+# a regulator. And where that stands.
+APPROVAL_ROLES = ("technical", "funder", "regulatory")
+APPROVAL_STATUSES = ("requested", "approved", "declined")
+
+CHARGE_KINDS = ("customs_duty", "customs_fee", "clearing", "inland_freight", "storage", "other")
+
 BASIS = ("included", "excluded", "not_specified")
+
+# What the programme gives for the goods. `priced` is a purchase and the
+# default. `in_kind` is a donation -- a donor still supplies, ships and is
+# received from, but nobody pays for the goods. `bundled` is paid for out of
+# something else, typically a partner's setup fee. Only a priced contract
+# expects a unit price, an invoice or a landed cost.
+CONSIDERATIONS = ("priced", "in_kind", "bundled")
+
+# Which level of a trade item is one full treatment course, if either is.
+# Empty means "not a course, or nobody has said", and is the default.
+ONE_COURSE_IS = ("", "base_unit", "pack")
+
+# A durable item is held and moved but never consumed -- a dispenser, a
+# scale -- so consumption-rate figures are refused for it rather than
+# computed from nothing.
+STOCK_CLASSES = ("consumable", "durable")
