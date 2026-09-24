@@ -402,3 +402,19 @@ def test_every_cohort_source_and_one_clone_of_it_is_mapped_to_its_llo():
     source_mix = Counter(llo_map[o] for o in sources)
     clone_mix = Counter(v for k, v in llo_map.items() if k >= 10000)
     assert clone_mix == source_mix, f"clones {dict(clone_mix)} vs sources {dict(source_mix)}"
+
+
+def test_every_mapped_opportunity_says_which_questions_its_app_asks():
+    """An opportunity in `llo_map` with no `app_asks` entry has no availability
+    facts, so the gates cannot tell "the app never asks" from a real 0. 2166 was
+    added to the live record's app_asks by hand and never to this file; the #2004
+    re-seed from here would have dropped it had the record not been diffed first.
+    """
+    from pathlib import Path
+
+    import yaml
+
+    seed = yaml.safe_load((Path(__file__).resolve().parents[1] / "registry" / "kmc" / "deployment.yml").read_text())
+    mapped = {int(k) for k in seed["llo_map"]}
+    asked = {int(k) for k in seed["app_asks"]}
+    assert not sorted(mapped - asked), f"mapped to an LLO but no app_asks: {sorted(mapped - asked)}"
