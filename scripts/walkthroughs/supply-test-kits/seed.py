@@ -436,6 +436,10 @@ def seed(mcp: Mcp) -> dict:
         "harmattan_org_id": harmattan["id"],
         "aqualytic_org_id": aqualytic["id"],
         "programme_org_id": programme_org["id"],
+        # The day the take is filmed. The award is decided today, so every
+        # date typed after it on camera must be today too, not a fixed day
+        # that falls before it on the next day's take.
+        "today": time.strftime("%Y-%m-%d"),
     }
 
 

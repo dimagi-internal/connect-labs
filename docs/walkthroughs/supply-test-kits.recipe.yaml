@@ -108,6 +108,10 @@ scenes:
     say: why
     target: css:form:has(input[name=quote_id][value='${quote_lumen_id}']) input[name=rationale]
     value: Only kit that reads the 2 mg/L dispenser dose
+  - kind: fill
+    note: the person who decided, not the account recording it
+    target: css:form:has(input[name=quote_id][value='${quote_lumen_id}']) input[name=decided_by]
+    value: Hauwa
   - kind: click
     must_succeed: true
     target: css:form:has(input[name=quote_id][value='${quote_lumen_id}']) button:has-text('Award')
@@ -256,21 +260,21 @@ scenes:
   - kind: fill
     target: css:#id_record_answer-note
     value: 'Lumen FC-50 meets AQ-TK-1: 50 tests, reads 0.1 to 3.5 mg/L.'
-  - kind: fill
-    target: css:#id_record_answer-document_url
-    value: https://files.aqualytic.example/confirmations/aq-tk-1-lumen-fc50.pdf
   - kind: hold
-    seconds: 1.2
-  - kind: snapshot
     note: Aqualytic's answer, in its own words
+    seconds: 1.5
   - kind: click
     must_succeed: true
     target: role:button:Record my answer
     timeout_ms: 30000
   - kind: wait_for
-    target: Recorded
+    must_succeed: true
+    seconds: 30
+    target: 'text:Recorded: answer'
   - kind: hold
-    seconds: 1.5
+    seconds: 2.0
+  - kind: snapshot
+    note: recorded as Aqualytic's own answer
   concept_claim: Through its own link, with no labs login, Aqualytic records its approval of the Lumen
     kit, and the page confirms it was recorded.
   design_intent: The gate is cleared by the party it waits on, not by the buyer it gates.
@@ -306,7 +310,7 @@ scenes:
     value: PO-TK-2026-01
   - kind: fill
     target: css:#id_signed_on
-    value: '2026-09-23'
+    value: ${today}
   - kind: select
     target: css:#id_status
     value: placed
@@ -369,7 +373,7 @@ scenes:
     value: HHS-INV-0412
   - kind: fill
     target: css:#id_issued_on
-    value: '2026-09-23'
+    value: ${today}
   - kind: fill
     target: css:#id_amount
     value: '760.00'
@@ -395,7 +399,7 @@ scenes:
     target: Record a payment
   - kind: fill
     target: css:#id_paid_on
-    value: '2026-09-23'
+    value: ${today}
   - kind: fill
     target: css:#id_amount
     value: '760.00'
@@ -461,13 +465,21 @@ scenes:
     var: update_link
   - kind: hold
     seconds: 2.0
+  - kind: click
+    note: back to the programme's links -- Aqualytic's and Harmattan's, each with its own scope
+    target: role:link:Done
+  - kind: wait_for
+    target: Harmattan — test kit order
+  - kind: hold
+    seconds: 2.0
   - kind: snapshot
-    note: the link and what it covers
+    note: two links, two scopes
   concept_claim: Issuing an update link for Harmattan scoped to one order and one warehouse shows the
-    link once with exactly that scope.
+    link once, and the programme's list of links then holds it beside Aqualytic's, each with its own scope.
   design_intent: A link covers the rows it was issued for and nothing else, and needs no labs account.
   show: Hauwa issues a supplier update link for Harmattan Health Supplies covering order PO-TK-2026-01
-    and Harmattan's Kano warehouse, and the link is shown once to send.
+    and Harmattan's Kano warehouse, copies the link shown once to send, and returns to the list where it
+    sits beside Aqualytic's link to its one question.
   url: /supply/links/new/?program_id=${program_id}
 - id: ibrahim-confirms-order-and-payment
   actions:
@@ -486,18 +498,21 @@ scenes:
     target: role:button:Confirm this order
     timeout_ms: 30000
   - kind: wait_for
-    target: confirmed
+    seconds: 30
+    target: 'text:Recorded: order confirmation'
   - kind: click
     target: css:summary:has-text('Confirm a payment was received')
   - kind: fill
     target: css:#id_confirm_payment-received_on
-    value: '2026-09-23'
+    value: ${today}
   - kind: click
     must_succeed: true
     target: role:button:Confirm payment received
     timeout_ms: 30000
   - kind: wait_for
-    target: Updates for Harmattan Health Supplies
+    must_succeed: true
+    seconds: 30
+    target: 'text:Recorded: payment confirmation'
   - kind: hold
     seconds: 2.0
   - kind: snapshot
@@ -530,16 +545,20 @@ scenes:
   - kind: hold
     note: twenty kits accepted, in packs, with batch and expiry
     seconds: 1.5
-  - kind: snapshot
-    note: the receipt Ibrahim is about to record
   - kind: click
     must_succeed: true
     target: role:button:Record receipt
     timeout_ms: 30000
   - kind: wait_for
-    target: Updates for Harmattan Health Supplies
+    must_succeed: true
+    seconds: 30
+    target: 'text:Recorded: receipt'
+  - kind: scroll_to
+    target: text:Recorded through this link
   - kind: hold
     seconds: 2.0
+  - kind: snapshot
+    note: the receipt, recorded as Harmattan's own entry
   concept_claim: Recording a receipt of 20 kits through the link posts a receipt movement of 20 kits —
     the pack unit, not tests — into the warehouse, marked as reported by Harmattan.
   design_intent: A receipt is the event that creates stock; the unit comes off the kit's own ladder, never
