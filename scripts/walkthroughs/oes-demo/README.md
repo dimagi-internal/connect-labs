@@ -41,3 +41,47 @@ entirely rather than sending it as `null` -- the seed carries the partner's
 "organisation known, numeric id not yet": it is a plain finding-aid field
 that only matches a row with no id yet, and is passed through independent of
 whether an id is also known.
+
+## Partner links, and the third kind of truth
+
+`seed_partner_links` mints one login-free update link per partner named in
+the document's `partner_links`, and then records that document's
+`chc_chain.partner_entered` rows **through the distributor's link** -- by
+POSTing to the public page, the way a partner records anything.
+
+That is not ceremony. Tiers 1 and 2 differ only in `source` and are both
+recorded by us, so the seeder can stamp them. Tier 3 differs in
+`recorded_by_org`, which `update_links/service.py` derives from the link a
+submission came through and from nothing the caller sends. A row written any
+other way would carry our organisation and read as ours -- the substitution
+section 5a of the design exists to make impossible. The page answers a
+refusal with a 200 and form errors rather than an exception, so the seeder
+raises on anything but the redirect: a silent no-op here would seed two of
+the three tiers and look like it had seeded all three.
+
+The tokens are returned to the operator and never written anywhere. They are
+shown once; if one is lost, revoke it and issue another.
+
+**Coverage is not a free choice.** A link that covers _everything involving
+the organisation_ resolves its stores as the ones that organisation runs, so
+it cannot name a collecting partner's store -- and a distributor releasing
+stock into one therefore needs a link that _lists_ what it covers, which is
+what `update_links/forms.py` tells an issuer ("include the collecting
+partner's store if they hand stock over"). The document says which kind each
+link is; the seeder works out which order and stores a listed one names from
+the chain it was minted for, and refuses rather than widening a link that
+cannot reach its own rows.
+
+## The three readings, on one order
+
+After a seed, the order page carries all three and they must not read alike:
+
+| Row            | Reads                                           |
+| -------------- | ----------------------------------------------- |
+| the order      | the programme's name alone -- we placed it      |
+| goods received | "⟨programme⟩, for ⟨distributor⟩ (they told us)" |
+| the dispatch   | the distributor's name alone -- they entered it |
+
+`test_oes_demo_provenance.py` renders that page and asserts the three are
+present and distinct. If they collapse into one reading the seed has failed
+even though it ran.
