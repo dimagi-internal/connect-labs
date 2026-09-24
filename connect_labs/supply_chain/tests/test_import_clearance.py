@@ -92,6 +92,38 @@ def _outstanding(da):
     return [c for c in op(da, "checks_list")["checks"] if c["kind"] == "shipment_documents_outstanding"]
 
 
+class TestTheChecksReadRightForAnImport:
+    """What the checks list said about the dispenser import when it was filmed."""
+
+    def test_documents_owed_by_several_parties_are_not_the_suppliers_alone_to_answer(self, da, world):
+        # Two of the three are owed by the donor, one by the clearing agent;
+        # "only the supplier can answer" was taken from the first line alone.
+        from connect_labs.supply_chain.models import Supplier
+
+        Supplier.objects.filter(pk=world["contract"]["supplier_id"]).update(org_id=world["donor"]["id"])
+        _shipment(da, world)
+        (check,) = _outstanding(da)
+        assert check["audience"] != "supplier"
+
+    def test_the_label_names_what_is_in_the_consignment(self, da, world):
+        _shipment(da, world)
+        (check,) = _outstanding(da)
+        assert "Chlorine dispenser" in check["subject"]["label"]
+
+    def test_a_consignment_with_its_own_document_list_is_not_also_asked_for_a_certificate(self, da, world):
+        # Its list says what it needs to clear. A certificate check on top
+        # kept a "missing document" on the checks list after the shipment's
+        # own checklist read nothing outstanding.
+        _shipment(da, world)
+        kinds = {c["kind"] for c in op(da, "checks_list")["checks"]}
+        assert "shipment_without_certificate" not in kinds
+
+    def test_a_consignment_without_a_list_still_is(self, da, world):
+        _shipment(da, world, required=[])
+        kinds = {c["kind"] for c in op(da, "checks_list")["checks"]}
+        assert "shipment_without_certificate" in kinds
+
+
 class TestImportDocumentKinds:
     def test_the_clearance_documents_are_kinds_a_document_can_be(self):
         assert {
