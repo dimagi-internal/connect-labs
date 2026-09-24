@@ -206,6 +206,9 @@ class TestTheComparison:
         other = table[table.index("Lagoon co-pack") :]
         assert "Awarded" not in other[: other.index("</td>")]
 
+    def test_headings_clear_the_sticky_bar_when_scrolled_to(self, client_in_programme, chain):
+        assert "scroll-margin-top" in self._page(client_in_programme, chain)
+
     def test_identical_landed_totals_are_one_column(self, client_in_programme, chain):
         body = self._page(client_in_programme, chain)
         head = body[body.index("<thead") : body.index("</thead>")]
@@ -264,6 +267,12 @@ class TestTheRoundsQuotes:
         table = self._quotes_table(client_in_programme, chain)
         assert "USD 0.60" in table
         assert "per_base_unit" not in table
+
+    def test_the_price_is_per_the_products_own_unit(self, client_in_programme, chain):
+        table = self._quotes_table(client_in_programme, chain)
+        assert "per co-pack" in table
+        assert "per base unit" not in table
+        assert "per single unit" not in table
 
 
 class TestTheOrder:
