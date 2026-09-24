@@ -275,7 +275,7 @@ scenes:
     target: css:input[name=recipient][value=email]
   - kind: fill
     target: css:#id_recipient_email
-    value: amara.bello@dimagi-ai.com
+    value: amara.bello@chp-programme.example
   - kind: fill
     target: css:#id_recipient_name
     value: Amara Bello
