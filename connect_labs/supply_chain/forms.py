@@ -45,7 +45,17 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.supply_chain.models import AwardApproval, Commodity, Item, Outreach, Quote, Round, Supplier
+from connect_labs.supply_chain.models import (
+    AwardApproval,
+    Commodity,
+    Contract,
+    Item,
+    Outreach,
+    Quote,
+    Round,
+    Supplier,
+    SupplyPoint,
+)
 
 # The house widget classes, as prod uses them and as the rest of labs does.
 # `data-tomselect` is picked up by static/js/tomselect.js, which turns a plain
@@ -513,6 +523,15 @@ def _rests_on_field(form):
     )
 
 
+def _programme_first(queryset, in_programme):
+    """Organisations already in this programme first, then the rest, each by name."""
+    from django.db.models import Case, IntegerField, Value, When
+
+    return queryset.annotate(
+        _in_programme=Case(When(pk__in=in_programme, then=Value(0)), default=Value(1), output_field=IntegerField())
+    ).order_by("_in_programme", "name")
+
+
 class ApprovalRequestForm(ScopedForm):
     """Ask a third party to agree to an award before it becomes an order."""
 
@@ -544,8 +563,13 @@ class ApprovalRequestForm(ScopedForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Organisations are labs-wide, so this picker is deliberately unscoped.
-        self.fields["approver_org"].queryset = LabsOrg.objects.order_by("name")
+        # Organisations are labs-wide, so this picker is deliberately unscoped --
+        # but the ones already working in this programme come first. Labs-wide
+        # and alphabetical, it opened on hundreds of unrelated organisations
+        # and the technical partner the buyer means was pages down (the
+        # test-kit render). The same correction `buyer_org` already carries;
+        # this picker was simply one behind it.
+        self.fields["approver_org"].queryset = _programme_first(LabsOrg.objects.all(), self._orgs_in_this_programme())
         self.fields["approver_org"].empty_label = _("Select an organisation…")
         self.fields["requested_on"].initial = date.today()
         set_choices(
@@ -561,6 +585,31 @@ class ApprovalRequestForm(ScopedForm):
             Field("rests_on_document"),
         )
         _rests_on_field(self)
+
+    def _orgs_in_this_programme(self):
+        """Organisations this programme already works with, however they touch it."""
+        program_id = getattr(self.access, "program_id", None) if self.access else None
+        scope = getattr(self.access, "scope_key", None) if self.access else None
+        if not program_id:
+            return set()
+        found = set(
+            SupplyPoint.objects.filter(program_id=program_id)
+            .exclude(managed_by_org=None)
+            .values_list("managed_by_org_id", flat=True)
+        )
+        found |= set(
+            Contract.objects.filter(program_id=program_id)
+            .exclude(buyer_org=None)
+            .values_list("buyer_org_id", flat=True)
+        )
+        found |= set(
+            AwardApproval.objects.filter(award__round__program_id=program_id)
+            .exclude(approver_org=None)
+            .values_list("approver_org_id", flat=True)
+        )
+        if scope:
+            found |= set(Supplier.objects.filter(scope_key=scope).exclude(org=None).values_list("org_id", flat=True))
+        return found
 
 
 class ApprovalDecisionForm(ScopedForm):

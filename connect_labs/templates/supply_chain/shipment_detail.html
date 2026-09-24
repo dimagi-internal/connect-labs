@@ -94,7 +94,7 @@ checks feed cannot disagree about what is outstanding.
                 <form method="post" action="{% url 'supply_chain:shipment_unrequire_document' shipment.id %}" class="inline">
                   {% csrf_token %}
                   <input type="hidden" name="kind" value="{{ line.kind }}">
-                  <button type="submit" class="text-xs text-gray-400 hover:text-gray-700" title="No longer needed">Remove</button>
+                  <button type="submit" class="text-xs text-gray-600 hover:text-gray-700" title="No longer needed">Remove</button>
                 </form>
               </span>
             </div>
@@ -127,7 +127,7 @@ checks feed cannot disagree about what is outstanding.
                 </td>
                 <td class="px-4 py-2 text-right tabular-nums">
                   {{ charge.currency }} {{ charge.amount|money }}
-                  {% if charge.fx_rate_to_usd %}<div class="text-xs text-gray-400">at {{ charge.fx_rate_to_usd }} USD</div>{% endif %}
+                  {% if charge.fx_rate_to_usd %}<div class="text-xs text-gray-600">at {{ charge.fx_rate_to_usd }} USD</div>{% endif %}
                 </td>
               </tr>
             {% endfor %}
@@ -161,7 +161,7 @@ checks feed cannot disagree about what is outstanding.
         {% for line in shipment.lines %}
           <tr>
             <td class="px-4 py-2 text-gray-700">{{ line.batch|default:"—" }}</td>
-            <td class="px-4 py-2 text-gray-600">{{ line.expiry|default:"—" }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ line.expiry|day|default:"—" }}</td>
             <td class="px-4 py-2 tabular-nums">{{ line.quantity|qty:line.quantity_unit }}</td>
           </tr>
         {% empty %}
@@ -180,7 +180,7 @@ checks feed cannot disagree about what is outstanding.
         <li class="py-1.5 flex items-baseline gap-2">
           <span class="text-gray-900">{{ document.title|default:document.kind|humanise }}</span>
           <span class="text-xs text-gray-500">{{ document.kind|humanise }}</span>
-          <span class="text-xs text-gray-400 ml-auto">
+          <span class="text-xs text-gray-600 ml-auto">
             {% if document.is_stored %}stored{% else %}linked{% endif %} · {{ document.source|humanise }}
           </span>
         </li>

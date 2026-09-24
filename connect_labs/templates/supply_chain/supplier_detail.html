@@ -59,7 +59,7 @@ four screens and an id held in your head.
 
     {% if supplier.notes %}
       <div class="mt-4">
-        <div class="text-[11px] text-gray-500">Notes</div>
+        <div class="text-[11px] text-gray-600">Notes</div>
         <p class="text-sm text-gray-700 mt-0.5 whitespace-pre-line">{{ supplier.notes }}</p>
       </div>
     {% endif %}
@@ -83,7 +83,7 @@ four screens and an id held in your head.
     {% endif %}
 
     <div class="mt-4">
-      <div class="text-[11px] text-gray-500">Connect organisation</div>
+      <div class="text-[11px] text-gray-600">Connect organisation</div>
       <p class="text-sm mt-0.5 {% if supplier.connect_organization_id %}text-gray-800{% else %}text-gray-500{% endif %}">
         {% if supplier.connect_organization_id %}
           linked · {{ supplier.connect_organization_id }}
@@ -217,7 +217,7 @@ four screens and an id held in your head.
                   <div class="text-xs text-amber-800">{{ quote.unanswered }} question{{ quote.unanswered|pluralize }} outstanding</div>
                 {% endif %}
               </td>
-              <td class="px-4 py-2.5 text-gray-600">{{ quote.received_on|default:"—" }}</td>
+              <td class="px-4 py-2.5 text-gray-600">{{ quote.received_on|day|default:"—" }}</td>
               <td class="px-4 py-2.5">
                 {% if quote.voided %}<span class="text-xs text-red-700">voided</span>
                 {% elif quote.superseded_by_quote_id %}<span class="text-xs text-amber-800">superseded</span>
@@ -244,7 +244,7 @@ four screens and an id held in your head.
         <li class="px-5 py-3 text-sm">
           <a class="text-brand-indigo hover:underline"
              href="{% url 'supply_chain:procurement_comparison' award.round_id %}?commodity={{ award.commodity_slug }}">{{ award.commodity_slug|humanise }}</a>
-          <span class="text-gray-500">· {{ award.decided_on|default:"undated" }}</span>
+          <span class="text-gray-500">· {{ award.decided_on|day|default:"undated" }}</span>
           · <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award.id %}">the award, its approvals and orders</a>
           {% if award.provisional %}
             <span class="text-xs text-amber-800">· provisional</span>
@@ -277,7 +277,7 @@ four screens and an id held in your head.
           <div class="text-sm text-gray-700 mt-1 tabular-nums">
             {% if contract.quantity %}{{ contract.quantity|qty:contract.quantity_unit }}{% endif %}
             {% if contract.unit_price %}at {{ contract.currency }} {{ contract.unit_price|qty:contract.unit_price_unit }}{% endif %}
-            {% if contract.signed_on %}<span class="text-gray-500">· signed {{ contract.signed_on }}</span>{% endif %}
+            {% if contract.signed_on %}<span class="text-gray-500">· signed {{ contract.signed_on|day }}</span>{% endif %}
           </div>
           <div class="text-xs text-gray-500 mt-1">
             {{ contract.shipments|length }} shipment{{ contract.shipments|length|pluralize }} ·

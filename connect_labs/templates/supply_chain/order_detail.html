@@ -49,7 +49,7 @@ class this build has not seen ships purged.
   {% endcomment %}
   <dl class="flex flex-wrap gap-x-6 gap-y-2 mt-2 text-sm">
     <div>
-      <dt class="text-[11px] text-gray-500">Buyer</dt>
+      <dt class="text-[11px] text-gray-600">Buyer</dt>
       <dd class="text-gray-900">
         {% if contract.consideration == "in_kind" %}Donated to{% else %}Bought by{% endif %}
         <b>{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record|buyer_label }}</b>
@@ -57,7 +57,7 @@ class this build has not seen ships purged.
       </dd>
     </div>
     <div>
-      <dt class="text-[11px] text-gray-500">Status</dt>
+      <dt class="text-[11px] text-gray-600">Status</dt>
       <dd>
         {% if match.status == "shortfall_covered" %}
           {% comment %}"Part received" was true and misleading: nobody is waiting on this order any more.{% endcomment %}
@@ -70,13 +70,13 @@ class this build has not seen ships purged.
     </div>
     {% if contract.signed_on %}
     <div>
-      <dt class="text-[11px] text-gray-500">Signed</dt>
+      <dt class="text-[11px] text-gray-600">Signed</dt>
       <dd class="text-gray-900">{{ contract.signed_on|day }}</dd>
     </div>
     {% endif %}
     {% if contract.covers_shortfall_of_id %}
     <div>
-      <dt class="text-[11px] text-gray-500">Why this order</dt>
+      <dt class="text-[11px] text-gray-600">Why this order</dt>
       <dd class="text-gray-900">
         Covers the shortfall on
         <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.covers_shortfall_of_id %}">{% if covers.reference %}{{ covers.reference }}{% else %}order {{ contract.covers_shortfall_of_id }}{% endif %}</a>
@@ -85,7 +85,7 @@ class this build has not seen ships purged.
     {% endif %}
     {% if contract.consideration == "in_kind" or contract.consideration == "bundled" %}
     <div>
-      <dt class="text-[11px] text-gray-500">Payment</dt>
+      <dt class="text-[11px] text-gray-600">Payment</dt>
       <dd>
         {% if contract.consideration == "in_kind" %}
           <span class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">In kind — donated</span>
@@ -98,13 +98,13 @@ class this build has not seen ships purged.
     {% if contract.incoterm %}
     {% comment %}The delivery term in words: who pays to move the goods, and to where.{% endcomment %}
     <div>
-      <dt class="text-[11px] text-gray-500">Delivery term</dt>
+      <dt class="text-[11px] text-gray-600">Delivery term</dt>
       <dd class="text-gray-900" data-incoterm>{{ contract.incoterm|incoterm_words }}</dd>
     </div>
     {% endif %}
     {% if contract.source %}
     <div>
-      <dt class="text-[11px] text-gray-500">Recorded by</dt>
+      <dt class="text-[11px] text-gray-600">Recorded by</dt>
       <dd class="text-gray-900">{% told_by_for contract orgs tellers %}</dd>
     </div>
     {% endif %}
@@ -160,7 +160,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
 <section id="fulfilment" class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-3">
   <div class="px-4 py-2.5 border-b border-gray-100">
     <span class="text-xs font-semibold text-gray-600">How the order was filled</span>
-    <span class="text-xs text-gray-400 ml-2">{{ fulfilment.ordered|figure_text }} ordered</span>
+    <span class="text-xs text-gray-600 ml-2">{{ fulfilment.ordered|figure_text }} ordered</span>
   </div>
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
   <table class="min-w-[36rem] w-full text-sm">
@@ -207,7 +207,7 @@ partner's name (the IPTSc render).
 <section data-link-updates="{{ panel.org }}" class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-3">
   <div class="px-4 py-2.5 border-b border-gray-100">
     <span class="text-xs font-semibold text-gray-600">Recorded through the update link held by {{ panel.org }}</span>
-    <span class="text-xs text-gray-400 ml-2">entered by them, without signing in</span>
+    <span class="text-xs text-gray-600 ml-2">entered by them, without signing in</span>
   </div>
   <ul class="divide-y divide-gray-100">
     {% for update in panel.updates %}
@@ -215,7 +215,7 @@ partner's name (the IPTSc render).
         <span>{{ update.title|capfirst }}{% if update.detail %}<span class="text-gray-500"> — {{ update.detail }}</span>{% endif %}</span>
         {% comment %}When it happened, as they gave it -- a distributor catching up types a week of
         events in one sitting, and every row then read the same minute. The typing day only when later.{% endcomment %}
-        <span class="text-xs text-gray-500 whitespace-nowrap text-right">{{ update.on|date:"j M Y" }}{% if update.caught_up %}<span class="block text-gray-400">recorded {{ update.at|date:"j M Y" }}</span>{% endif %}</span>
+        <span class="text-xs text-gray-500 whitespace-nowrap text-right">{{ update.on|date:"j M Y" }}{% if update.caught_up %}<span class="block text-gray-600">recorded {{ update.at|date:"j M Y" }}</span>{% endif %}</span>
       </li>
     {% endfor %}
   </ul>
@@ -229,7 +229,7 @@ partner's name (the IPTSc render).
       local purchase paid out of a setup fee: nothing was priced or imported.{% endcomment %}
       {% if contract.consideration == "priced" %}
         <span class="text-xs font-semibold text-gray-600">Landed cost</span>
-        <span class="text-xs text-gray-400 ml-2">assuming {{ landed.buyer_of_record|buyer_label }} imports</span>
+        <span class="text-xs text-gray-600 ml-2">assuming {{ landed.buyer_of_record|buyer_label }} imports</span>
       {% elif landed.charges %}
         <span class="text-xs font-semibold text-gray-600">Landed cost</span>
       {% else %}
@@ -267,7 +267,7 @@ partner's name (the IPTSc render).
           <tr>
             <td class="px-4 py-2 text-gray-600">
               {{ charge.kind|humanise|capfirst }}
-              <span class="text-xs text-gray-400">to {{ charge.payee.name }}</span>
+              <span class="text-xs text-gray-600">to {{ charge.payee.name }}</span>
             </td>
             <td class="px-4 py-2 text-right tabular-nums">
               {{ charge.amount|figure_text }}
@@ -372,7 +372,7 @@ partner's name (the IPTSc render).
   <div id="match" class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100">
       <span class="text-xs font-semibold text-gray-600">Ordered · received{% if contract.consideration == "priced" %} · invoiced{% endif %}</span>
-      <span class="text-xs text-gray-400 ml-2">{% if match.still_to_arrive and match.still_to_arrive.amount == "0" %}all arrived, some refused{% else %}{{ match.status|humanise }}{% endif %}{% if match.payment_terms == "advance" and match.status != "paid_in_advance" %} · {% if match.advance_state == "unpaid" %}payable{% else %}paid{% endif %} in advance{% endif %}</span>
+      <span class="text-xs text-gray-600 ml-2">{% if match.still_to_arrive and match.still_to_arrive.amount == "0" %}all arrived, some refused{% else %}{{ match.status|humanise }}{% endif %}{% if match.payment_terms == "advance" and match.status != "paid_in_advance" %} · {% if match.advance_state == "unpaid" %}payable{% else %}paid{% endif %} in advance{% endif %}</span>
     </div>
     <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
@@ -499,14 +499,14 @@ partner's name (the IPTSc render).
 <div id="where-now" class="bg-white border border-gray-200 rounded-lg overflow-hidden mt-3">
   <div class="px-4 py-2.5 border-b border-gray-100">
     <span class="text-xs font-semibold text-gray-600">Where they are now</span>
-    <span class="text-xs text-gray-400 ml-2">equipment is kept and moved, not used up</span>
+    <span class="text-xs text-gray-600 ml-2">equipment is kept and moved, not used up</span>
   </div>
   {% if where_now.points %}
   <table class="min-w-full text-sm">
     <tbody class="divide-y divide-gray-100">
       {% for point in where_now.points %}
         <tr>
-          <td class="px-4 py-2 text-gray-700">{{ point.name }} <span class="text-xs text-gray-400">{{ point.kind|humanise }}</span></td>
+          <td class="px-4 py-2 text-gray-700">{{ point.name }} <span class="text-xs text-gray-600">{{ point.kind|humanise }}</span></td>
           <td class="px-4 py-2 text-right tabular-nums">{{ point.on_hand|figure_text }}</td>
         </tr>
       {% endfor %}
@@ -576,7 +576,7 @@ partner's name (the IPTSc render).
               {% endwith %}
             </td>
             <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
-            <td class="px-4 py-2 text-gray-600">{{ line.expiry|default:"—" }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ line.expiry|day|default:"—" }}</td>
             <td class="px-4 py-2 tabular-nums">{{ line.quantity|qty:line.quantity_unit }}</td>
             <td class="px-4 py-2">
               {% comment %}A consignment with its own list of documents is judged by that
@@ -792,7 +792,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
         <li class="py-1.5 flex items-baseline gap-2">
           <span class="text-gray-900">{% if document.title %}{{ document.title }}{% else %}{{ document.kind|words|capfirst }}{% endif %}</span>
           <span class="text-xs text-gray-500">{{ document.kind|words|capfirst }}{% if document.shipment_reference %} · shipment {{ document.shipment_reference }}{% endif %}</span>
-          <span class="text-xs text-gray-400 ml-auto">
+          <span class="text-xs text-gray-600 ml-auto">
             {% if document.is_stored %}stored{% else %}linked{% endif %} · {{ document.source|source_label }}
           </span>
           <a href="{% url 'supply_chain:document_open' document.id %}" target="_blank" rel="noopener noreferrer"

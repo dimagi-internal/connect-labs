@@ -46,7 +46,7 @@ from connect_labs.supply_chain.forms import (
 from connect_labs.supply_chain.fulfilment_forms import DocumentForm
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
-from connect_labs.supply_chain.values import unit_noun
+from connect_labs.supply_chain.values import quantity_phrase, unit_noun
 
 
 def _days_waiting(sent_on):
@@ -348,7 +348,7 @@ class ComparisonView(_Base):
         # Prefilled only with a person's name. A login handle ("ace") is the
         # account recording the award, not the person who decided it, and
         # prefilled it reads as though somebody called that made the choice.
-        context["decider"] = getattr(self.request.user, "name", "") or self.request.user.get_full_name()
+        context["decider"] = _person_name(self.request.user)
         # Offers set aside on this line. A voided quote leaves the ranking, and
         # without this it left the page too -- so the one screen that applies
         # "kits rank only against the same contents" never showed an offer the
@@ -424,6 +424,31 @@ class ComparisonView(_Base):
 # does is press a drafted message on the user as the next thing to do.
 # Prioritising and phrasing are judgements about what matters today, which a
 # client can make better than a hardcoded page can.
+
+
+def _person_name(user) -> str:
+    """The signed-in person's own name, or "" when all we have is a handle.
+
+    `User.name` is free text, and on a shared or service account it holds the
+    login itself. Prefilled into "Decided by", that read as though somebody
+    called "ace" had made the purchasing decision -- the exact reading the
+    field exists to prevent. A name that IS the account's handle is not a
+    person's name, so nothing is prefilled and the decider types who decided.
+    """
+    name = (getattr(user, "name", "") or "").strip()
+    if not name:
+        # Not `get_full_name()`: it joins the two halves unconditionally, so a
+        # user with both unset reads "None None" -- which would then be
+        # prefilled as the person who decided.
+        name = " ".join(
+            str(part).strip() for part in (getattr(user, "first_name", ""), getattr(user, "last_name", "")) if part
+        ).strip()
+    handles = {
+        (user.get_username() or "").strip().lower(),
+        (getattr(user, "email", "") or "").split("@")[0].strip().lower(),
+    }
+    handles.discard("")
+    return "" if name.lower() in handles else name
 
 
 def _display_name(user) -> str:
@@ -803,6 +828,26 @@ class AwardDetailView(_Base):
         context["contracts"] = [
             c for c in self.op("contract_list", round_id=detail["round_id"]) if c["award_id"] == award.pk
         ]
+        # The offer the award froze, read from the comparison it was chosen
+        # from rather than recomputed here -- so the award and the ranking can
+        # never disagree about the money. Without it the award named a kit, a
+        # decider and a reason, and stated no quantity, price or total above
+        # its own "Place order" button; and it never said the awarded kit met
+        # the specification it was chosen against (the test-kit render).
+        context["awarded_row"] = None
+        context["awarded_columns"] = []
+        comparison = self.op("round_compare", round_id=detail["round_id"], commodity_slug=detail["commodity_slug"])
+        if comparison:
+            rows = list(comparison.get("comparable") or []) + list(comparison.get("all_rows") or [])
+            context["awarded_row"] = next((r for r in rows if r.get("quote_id") == award.quote_id), None)
+            context["awarded_columns"] = table_columns(comparison)
+        # How many the money is for. "USD 760.00 landed" means nothing without
+        # it, and the comparison's own column says only "(this round)".
+        sought = self.op("round_get", round_id=detail["round_id"]) or {}
+        for line in sought.get("lines") or []:
+            if line.get("commodity_slug") == detail["commodity_slug"] and line.get("quantity") not in (None, ""):
+                context["round_quantity"] = quantity_phrase(line["quantity"], line.get("quantity_unit"))
+                break
         return context
 
 

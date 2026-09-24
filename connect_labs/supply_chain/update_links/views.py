@@ -327,6 +327,16 @@ class UpdateLinkPublicView(View):
             }
             for submission in UpdateLinkSubmission.objects.filter(link=self.link)[:10]
         ]
+        # What this link has already put on the record. An action can be
+        # unavailable for two opposite reasons -- the link's scope never
+        # covered it, or its work is DONE -- and `is_available()` returns
+        # False for both. Printed together, the page told a distributor that
+        # "confirm an order" was unavailable on the same screen that showed
+        # his own confirmation of it (the test-kit render, scene 9). The
+        # approver half of this was fixed by excluding `for_approvers`; this
+        # is the same fault for suppliers, so it is fixed by cause rather
+        # than by role.
+        recorded_here = set(UpdateLinkSubmission.objects.filter(link=self.link).values_list("action", flat=True))
         context = {
             "link": self.link,
             "org": self.link.org,
@@ -340,7 +350,12 @@ class UpdateLinkPublicView(View):
             # to take: say that, rather than listing "record your answer" as
             # unavailable, which reads as an instruction.
             "unavailable": [
-                form for form in forms if not form.is_available() and form is not bound and not form.for_approvers
+                form
+                for form in forms
+                if not form.is_available()
+                and form is not bound
+                and not form.for_approvers
+                and form.action not in recorded_here
             ],
             "all_answered": any(form.for_approvers for form in forms)
             and not any(form.for_approvers and form.is_available() for form in forms),

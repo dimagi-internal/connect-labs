@@ -50,7 +50,7 @@ own prefix so seven of them cannot collide.
           <span class="ml-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">{{ approval.get_status_display }}</span>
         </div>
         <div class="text-sm text-gray-600">
-          Awarded to {{ approval.award.supplier.name }} · your {{ approval.role|words }} approval, asked {{ approval.requested_on|date:"j M Y" }}
+          Awarded to {{ approval.award.supplier.name }} · your {{ approval.role|words }} approval, asked {{ approval.requested_on|day }}
         </div>
         {% if approval.note %}<div class="text-sm text-gray-700 mt-0.5">“{{ approval.note }}”</div>{% endif %}
       </div>
@@ -78,12 +78,12 @@ own prefix so seven of them cannot collide.
             <div class="text-xs text-gray-500 mt-0.5">
               {% comment %}When it left and with whom, when recorded; once delivered, the
               day it arrived rather than the day it was expected.{% endcomment %}
-              <span class="text-gray-400">↳</span> {{ shipment.reference|default:"Dispatch" }} —{% for line in shipment.lines.all %} {{ line.quantity|qty:line.quantity_unit }},{% endfor %}{% if shipment.status != "delivered" %} {{ shipment.get_status_display }}{% if shipment.dispatched_on or shipment.carrier %},{% endif %}{% endif %}{% if shipment.dispatched_on %} left {{ shipment.dispatched_on|date:"j M Y" }}{% endif %}{% if shipment.carrier %} via {{ shipment.carrier }}{% endif %}{% if shipment.status == "delivered" %}{% if shipment.dispatched_on or shipment.carrier %},{% endif %}{% with received=shipment.receipts.all.0 %} {{ shipment.get_status_display }}{% if received %} {{ received.received_on|date:"j M Y" }}{% endif %}{% endwith %}{% elif shipment.expected_on %}, expected {{ shipment.expected_on|date:"j M Y" }}{% endif %}
+              <span class="text-gray-600">↳</span> {{ shipment.reference|default:"Dispatch" }} —{% for line in shipment.lines.all %} {{ line.quantity|qty:line.quantity_unit }},{% endfor %}{% if shipment.status != "delivered" %} {{ shipment.get_status_display }}{% if shipment.dispatched_on or shipment.carrier %},{% endif %}{% endif %}{% if shipment.dispatched_on %} left {{ shipment.dispatched_on|date:"j M Y" }}{% endif %}{% if shipment.carrier %} via {{ shipment.carrier }}{% endif %}{% if shipment.status == "delivered" %}{% if shipment.dispatched_on or shipment.carrier %},{% endif %}{% with received=shipment.receipts.all.0 %} {{ shipment.get_status_display }}{% if received %} {{ received.received_on|day }}{% endif %}{% endwith %}{% elif shipment.expected_on %}, expected {{ shipment.expected_on|date:"j M Y" }}{% endif %}
             </div>
           {% endfor %}
         </div>
       {% empty %}
-        <p class="text-sm text-gray-400">None</p>
+        <p class="text-sm text-gray-600">None</p>
       {% endfor %}
     </div>
     <div class="px-5 py-4">
@@ -91,7 +91,7 @@ own prefix so seven of them cannot collide.
       {% for point in supply_points %}
         <div class="text-sm text-gray-900 mb-1">{{ point.name }}{% if point.holding %} <span class="text-gray-500">— holds {{ point.holding }}</span>{% endif %}</div>
       {% empty %}
-        <p class="text-sm text-gray-400">None</p>
+        <p class="text-sm text-gray-600">None</p>
       {% endfor %}
     </div>
   </div>
@@ -154,7 +154,7 @@ own prefix so seven of them cannot collide.
         <li class="px-5 py-2 text-sm text-gray-700 flex justify-between gap-4">
           <span>{{ submission.title }}{% if submission.detail %}<span class="text-gray-500"> — {{ submission.detail }}</span>{% endif %}</span>
           {% comment %}The day it happened, as they gave it; the typing time only when it was a later day.{% endcomment %}
-          <span class="text-gray-500 whitespace-nowrap text-right">{{ submission.on|date:"j M Y" }}{% if submission.caught_up %}<span class="block text-xs text-gray-400">recorded {{ submission.at|date:"j M Y" }}</span>{% endif %}</span>
+          <span class="text-gray-500 whitespace-nowrap text-right">{{ submission.on|date:"j M Y" }}{% if submission.caught_up %}<span class="block text-xs text-gray-600">recorded {{ submission.at|date:"j M Y" }}</span>{% endif %}</span>
         </li>
       {% endfor %}
     </ul>
