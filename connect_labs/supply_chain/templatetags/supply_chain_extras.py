@@ -220,6 +220,7 @@ CHECK_FACT_LABELS = {
     "role": "As",
     "requested_on": "Asked",
     "verdict": "Verdict",
+    "fails": "Fails",
     "requirements": "Required",
     "stated": "Stated",
     "components": "Parts",

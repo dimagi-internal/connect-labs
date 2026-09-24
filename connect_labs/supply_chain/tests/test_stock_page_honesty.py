@@ -156,7 +156,7 @@ class TestTheHeadlineCountsItsPoints:
         text = _text(_stock_page(scoped))
         assert "1 supply point ·" in text
         assert "1 supply points" not in text
-        assert "1 has never reported" in text
+        assert "1 has no count yet" in text
 
 
 class TestWholePacksAreSentWhole:
