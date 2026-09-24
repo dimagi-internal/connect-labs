@@ -49,6 +49,10 @@ scenes:
     target: text:Requirements every trade item is checked against
   - kind: hold
     seconds: 2.0
+  - kind: hover
+    target: text:What you can actually order
+    seconds: 0.8
+    note: park the cursor off the figures
   - kind: snapshot
     note: the three requirements, the dose one just added, its unit filled from the figure
   concept_claim: A requirement whose figure is picked by name from the catalogue's known figures is saved
@@ -76,6 +80,10 @@ scenes:
     say: 1.5 mg/L
   - kind: hold
     seconds: 1.5
+  - kind: hover
+    target: text:Ranked by
+    seconds: 0.8
+    note: park the cursor off the figures
   - kind: snapshot
     note: two kits ranked by price; the cheaper one fails its range
   concept_claim: The comparison ranks both kits because their contents match, names the kit on each row
@@ -194,31 +202,19 @@ scenes:
     technical approval has not been answered since it was asked.'
 - id: hauwa-gives-aqualytic-a-link
   actions:
-  - kind: wait_for
-    target: Update links
-  - kind: hold
-    seconds: 1.5
-    note: Harmattan's standing link is already here
   - kind: click
-    target: role:link:Issue a link
+    target: role:link:Send them a link to answer
     must_succeed: true
+    note: from the pending approval, straight to a link for that one question
   - kind: wait_for
     target: Issue an update link
-  - kind: click
-    target: css:#id_org ~ .ts-wrapper .ts-control
-  - kind: type
-    value: Aqualytic
-  - kind: hold
-    seconds: 1.0
-    note: let the picker filter
-  - kind: press
-    value: Enter
   - kind: fill
     target: css:#id_label
     value: Aqualytic — Lumen FC-50 confirmation
-  - kind: click
-    target: css:input[name=approvals]
-    note: the one approval asked of Aqualytic
+  - kind: hover
+    target: css:input[name=approvals]:checked
+    seconds: 1.2
+    note: Aqualytic and its one question, already chosen
     say: question
   - kind: click
     target: role:button:Issue link
@@ -236,20 +232,20 @@ scenes:
     seconds: 1.5
   - kind: click
     target: role:link:Done
-    note: back to the programme's update links
+    note: the programme's update links
   - kind: wait_for
     target: Aqualytic — Lumen FC-50 confirmation
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: 'two links, two scopes: Harmattan''s standing one and Aqualytic''s one question'
-  concept_claim: An update link issued to Aqualytic covers exactly the approval asked of it, is shown
-    once, and then sits on the Update links page beside Harmattan's standing link, each with its own scope.
+    note: 'two links, two scopes: Aqualytic''s one question beside Harmattan''s standing link'
+  concept_claim: A link issued from a pending approval is prefilled with the approver and that approval,
+    covers exactly that question, is shown once, and then sits on Update links beside Harmattan's standing
+    link with a different scope.
   design_intent: The approver answers the question itself, so the answer is its word, not ours.
-  show: Hauwa opens Update links, where Harmattan's standing link already sits, issues a link to Aqualytic
-    that covers only its pending technical approval on the Lumen award, and returns to the list where
-    the two links show their different scopes.
-  url: /supply/links/?program_id=${program_id}
+  show: 'From Aqualytic''s pending approval on the award, Hauwa follows "Send them a link to answer":
+    the link form arrives with Aqualytic and that one question chosen; she names it, issues it, and the
+    Update links list shows it beside Harmattan''s standing link, each with its own scope.'
 - id: kemi-answers-for-aqualytic
   actions:
   - kind: goto
@@ -426,8 +422,9 @@ scenes:
     target: 'text:Recorded: receipt'
     must_succeed: true
     seconds: 30
-  - kind: scroll_to
-    target: text:Recorded through this link
+  - kind: scroll
+    value: top
+    note: the receipt banner, the order now received, the warehouse holding 20 kits
   - kind: hold
     seconds: 2.0
   - kind: snapshot
@@ -455,6 +452,10 @@ scenes:
     say: thousand tests
   - kind: hold
     seconds: 1.5
+  - kind: hover
+    target: text:Stock across the network
+    seconds: 0.8
+    note: park the cursor off the figures
   - kind: snapshot
     note: the balance in kits and tests, of the kit Aqualytic approved against AQ-TK-1
   concept_claim: The stock page for the Lumen kit states that it meets the AQ-TK-1 specification and was
