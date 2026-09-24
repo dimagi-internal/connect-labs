@@ -108,6 +108,20 @@ class UpdateLinkIssueView(OperationFormView):
     def breadcrumb(self, **kwargs):
         return [{"label": "Update links", "href": reverse("supply_chain:update_links")}, {"label": self.title}]
 
+    def get_initial(self):
+        """Arriving from an approval ("Send them a link to answer"): that organisation, that question.
+
+        Only a starting point -- the form still checks the approval was asked
+        of the organisation, so a hand-edited query string cannot cross them.
+        """
+        initial = super().get_initial()
+        org, approval = self.request.GET.get("org", ""), self.request.GET.get("approval", "")
+        if org.isdigit():
+            initial["org"] = int(org)
+        if approval.isdigit():
+            initial["approvals"] = [int(approval)]
+        return initial
+
     def cancel_href(self, **kwargs):
         return reverse("supply_chain:update_links")
 
@@ -322,7 +336,14 @@ class UpdateLinkPublicView(View):
             "supply_points": _with_holdings(self.link.program_id, scope),
             "approvals": list(scope.approvals) if scope.approvals is not None else [],
             "forms": [form for form in forms if form.is_available() or form is bound],
-            "unavailable": [form for form in forms if not form.is_available() and form is not bound],
+            # An approver link with every question answered has nothing left
+            # to take: say that, rather than listing "record your answer" as
+            # unavailable, which reads as an instruction.
+            "unavailable": [
+                form for form in forms if not form.is_available() and form is not bound and not form.for_approvers
+            ],
+            "all_answered": any(form.for_approvers for form in forms)
+            and not any(form.for_approvers and form.is_available() for form in forms),
             "bound_action": bound.action if bound is not None else "",
             "done": PUBLIC_FORMS.get(done_action),
             "recent": recent,

@@ -14,14 +14,17 @@ apart. The token is shown once, when the link is issued.
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Update links</h1>
     <p class="text-sm text-gray-500 mt-1 max-w-2xl">
-      A private link lets one organisation record its own part without a labs login — a supplier or a
-      partner holding our stock confirming orders and payments and recording dispatches, receipts, stock
-      counts and releases, or an approver answering what it was asked to confirm. It covers
-      either only the orders and supply points it was issued for, or everything involving that
-      organisation in the programme, including orders created later. Either way it can only take the
-      organisation's own part, and everything recorded through it is marked as reported by that
-      organisation.
+      Private links that let an organisation with no labs login record its own part — a supplier or
+      stock-holding partner its orders, deliveries and stock, an approver its answer.
     </p>
+    <details class="text-xs text-gray-500 mt-1 max-w-2xl">
+      <summary class="cursor-pointer text-brand-indigo">What a link covers</summary>
+      <p class="mt-1">
+        Either only the orders, supply points and approvals it was issued for, or everything involving that
+        organisation in the programme, including orders created later. Either way it can only take the
+        organisation's own part, and everything recorded through it is marked as reported by that organisation.
+      </p>
+    </details>
   </div>
   {% if has_program_context %}
     <a href="{% url 'supply_chain:update_link_issue' %}"

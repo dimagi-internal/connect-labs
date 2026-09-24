@@ -302,7 +302,7 @@ def seed(mcp: Mcp) -> dict:
                     "operator": ">=",
                     "value": 50,
                     "unit": "tests",
-                    "rationale": "Aqualytic: reagents for at least 50 tests in every kit",
+                    "rationale": "reagents for at least 50 tests in every kit",
                 },
                 {
                     "field": "range_min_mg_per_l",
