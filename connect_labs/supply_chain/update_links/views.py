@@ -44,6 +44,23 @@ from connect_labs.supply_chain.views import OperationBase
 # ---- the programme's screens ------------------------------------------------
 
 
+def _with_cover(contracts, scope):
+    """Stamp each short order with the order bought to cover it, as the programme's page reads it.
+
+    "Part received" on the partner's link beside "short -- covered by SCHI-LP-0921" on
+    the programme's order page was one order read two ways. The covering order is
+    named only when it is itself on this link; otherwise it is "another order", so a
+    link never learns the reference of an order outside its scope.
+    """
+    in_scope = {c.pk for c in contracts}
+    for contract in contracts:
+        covers = list(contract.shortfall_covered_by.exclude(status="cancelled").order_by("pk"))
+        contract.covered_by_refs = [
+            (c.reference or f"order {c.pk}") if c.pk in in_scope else "another order" for c in covers
+        ]
+    return contracts
+
+
 class UpdateLinkListView(OperationBase):
     template_name = "supply_chain/update_links.html"
 
@@ -273,7 +290,9 @@ class UpdateLinkPublicView(View):
         context = {
             "link": self.link,
             "org": self.link.org,
-            "contracts": list(scope.contracts.prefetch_related("shipments__lines", "shipments__receipts")),
+            "contracts": _with_cover(
+                list(scope.contracts.prefetch_related("shipments__lines", "shipments__receipts")), scope
+            ),
             "supply_points": list(scope.supply_points),
             "approvals": list(scope.approvals) if scope.approvals is not None else [],
             "forms": [form for form in forms if form.is_available() or form is bound],
