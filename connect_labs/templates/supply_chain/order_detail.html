@@ -26,7 +26,7 @@ figure here can go stale.
     {{ contract.quantity }} {{ contract.quantity_unit }}
   </h2>
   <p class="text-sm text-gray-600">
-    Bought by
+    {% if contract.consideration == "in_kind" %}Donated to{% else %}Bought by{% endif %}
     <b>{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record }}</b>
     as <span class="text-gray-500">{{ contract.buyer_of_record|humanise }}</span>
     {% if contract.incoterm %} · {{ contract.incoterm }}{% endif %}
@@ -96,7 +96,15 @@ figure here can go stale.
         <tr class="bg-gray-50">
           <td class="px-4 py-2 font-semibold text-brand-indigo">Landed total</td>
           <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">
-            {{ landed.landed_total|figure_text }}
+            {% comment %}Goods not bought, but landing them cost money: the total a
+            programme actually paid is its charges, said so beside the figure, so it
+            cannot read as the price of the goods.{% endcomment %}
+            {% if contract.consideration != "priced" and landed.charges %}
+              {{ landed.charges_total|figure_text }}
+              <div class="text-xs font-normal text-gray-500">charges only — goods {% if contract.consideration == "in_kind" %}donated{% else %}bundled{% endif %}, not purchased</div>
+            {% else %}
+              {{ landed.landed_total|figure_text }}
+            {% endif %}
           </td>
         </tr>
       </tbody>
@@ -172,7 +180,10 @@ figure here can go stale.
             </td>
           </tr>
         {% endif %}
-        {% if match.over_invoiced %}
+        {% comment %}On the status, not the figure: a Quantity is always truthy, so this
+        row used to show in red on every order -- "0" when billing matched and a
+        negative number when less had been billed than arrived.{% endcomment %}
+        {% if match.status == "over_invoiced" %}
           <tr class="bg-red-50">
             <td class="px-4 py-2 text-red-800">Billed beyond what arrived</td>
             <td class="px-4 py-2 text-right tabular-nums text-red-800">{{ match.over_invoiced|figure_text }}</td>
@@ -249,13 +260,13 @@ figure here can go stale.
             <td class="px-4 py-2 text-gray-600">{{ line.expiry|default:"—" }}</td>
             <td class="px-4 py-2 tabular-nums">{{ line.quantity }} {{ line.quantity_unit }}</td>
             <td class="px-4 py-2">
-              {% if shipment.document_ids %}
+              {% if shipment.has_certificate %}
                 <span class="text-xs text-teal-700">on file</span>
               {% else %}
                 <span class="text-xs text-amber-800">none</span>
               {% endif %}
             </td>
-            <td class="px-4 py-2 text-xs text-gray-500">{{ shipment.source }}</td>
+            <td class="px-4 py-2 text-xs text-gray-500">{{ shipment.source|source_label }}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
               {% if forloop.first %}
                 {% comment %}
@@ -288,9 +299,9 @@ figure here can go stale.
             </td>
             <td colspan="3" class="px-4 py-2 text-xs text-gray-500">no lines recorded</td>
             <td class="px-4 py-2">
-              {% if shipment.document_ids %}<span class="text-xs text-teal-700">on file</span>{% else %}<span class="text-xs text-amber-800">none</span>{% endif %}
+              {% if shipment.has_certificate %}<span class="text-xs text-teal-700">on file</span>{% else %}<span class="text-xs text-amber-800">none</span>{% endif %}
             </td>
-            <td class="px-4 py-2 text-xs text-gray-500">{{ shipment.source }}</td>
+            <td class="px-4 py-2 text-xs text-gray-500">{{ shipment.source|source_label }}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
               <a href="{% url 'supply_chain:shipment_status' shipment.id %}" class="text-brand-indigo hover:underline">Update</a>
             </td>
@@ -320,6 +331,7 @@ figure here can go stale.
       <tr>
         <th class="text-left px-4 py-2">Note</th>
         <th class="text-left px-4 py-2">Date</th>
+        <th class="text-left px-4 py-2">Received at</th>
         <th class="text-left px-4 py-2">Batch</th>
         <th class="text-left px-4 py-2">Accepted</th>
         <th class="text-left px-4 py-2">Refused</th>
@@ -332,19 +344,20 @@ figure here can go stale.
           <tr>
             <td class="px-4 py-2 font-medium text-gray-900">{{ receipt.reference|default:receipt.id }}</td>
             <td class="px-4 py-2 text-gray-600">{{ receipt.received_on }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ supply_points|dictkey:receipt.supply_point_id|default:"—" }}</td>
             <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
             <td class="px-4 py-2 tabular-nums">{{ line.quantity_accepted }} {{ line.quantity_unit }}</td>
             <td class="px-4 py-2 tabular-nums">
-              {{ line.quantity_rejected }}
+              {{ line.quantity_rejected }}{% if line.quantity_rejected and line.quantity_rejected != "0" %} {{ line.quantity_unit }}{% endif %}
               {% if line.rejection_reason %}
                 <div class="text-xs text-gray-500">{{ line.rejection_reason }}</div>
               {% endif %}
             </td>
-            <td class="px-4 py-2 text-xs text-gray-500">{{ receipt.source }}</td>
+            <td class="px-4 py-2 text-xs text-gray-500">{{ receipt.source|source_label }}</td>
           </tr>
         {% endfor %}
       {% empty %}
-        <tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">Nothing received yet.</td></tr>
+        <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">Nothing received yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

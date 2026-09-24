@@ -291,6 +291,7 @@ def shipment(obj) -> dict:
             for line in obj.lines.all()
         ],
         "document_ids": [doc.pk for doc in obj.documents.all()],
+        "has_certificate": any(doc.kind in records.CERTIFICATE_KINDS for doc in obj.documents.all()),
         "required_documents": obj.required_documents,
         **_sourced(obj),
     }

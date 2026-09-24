@@ -118,6 +118,10 @@ class StockRepositoryMixin:
                 "a movement must name a from_supply_point_id, a to_supply_point_id, or both -- "
                 "one that touches neither changes no balance"
             )
+        if frm is not None and to is not None and frm.pk == to.pk:
+            # Out of a place and back into it: no balance changes, but the
+            # ledger would still carry a row saying something moved.
+            raise ValueError("a movement's from and to cannot be the same supply point")
         return _fresh(
             Movement.objects.create(
                 program_id=self._require_program(),

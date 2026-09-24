@@ -50,7 +50,8 @@ def three_way_match(contract) -> dict:
         if contract.quantity is not None and contract.quantity_unit
         else unconfirmed("the contract does not state a quantity and a unit")
     )
-    received = ledger.collapse(_received(contract), contract.item, None)
+    received_by_unit = _received(contract)
+    received = ledger.collapse(received_by_unit, contract.item, None)
     invoiced = ledger.collapse(_invoiced(contract), contract.item, None)
 
     billed = contract.invoices.exclude(status="rejected").aggregate(total=Sum("amount"))["total"] or ZERO
@@ -58,7 +59,15 @@ def three_way_match(contract) -> dict:
 
     shortfall = None
     status = "unknown"
-    if not isinstance(ordered, Unconfirmed) and not isinstance(received, Unconfirmed):
+    if not isinstance(ordered, Unconfirmed) and not any(received_by_unit.values()):
+        # Nothing has arrived. Not "part received" -- which is what an empty
+        # receipt list read as whenever the item named a unit, and "unknown"
+        # whenever it did not -- and nothing to convert: all of it is still
+        # to come.
+        received = Quantity(ZERO, ordered.unit)
+        shortfall = ordered
+        status = "not_received"
+    elif not isinstance(ordered, Unconfirmed) and not isinstance(received, Unconfirmed):
         restated = ledger.convert(received.amount, received.unit, ordered.unit, contract.item)
         if isinstance(restated, Unconfirmed):
             shortfall = restated
