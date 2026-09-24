@@ -218,8 +218,14 @@ class TestTheMatchSaysWhatHappened:
 
     def test_a_partial_receipt_is_still_part_received(self, da, parties):
         contract = _contract(da, parties, consideration="in_kind")
-        self._receive(da, contract, "598", quantity_rejected="2", rejection_reason="cracked")
+        self._receive(da, contract, "500", quantity_rejected="2", rejection_reason="cracked")
         assert op(da, "contract_match", contract_id=contract["id"])["status"] == "part_received"
+
+    def test_every_unit_accepted_or_refused_is_not_part_received(self, da, parties):
+        # 598 accepted and 2 refused of 600: nothing more is coming.
+        contract = _contract(da, parties, consideration="in_kind")
+        self._receive(da, contract, "598", quantity_rejected="2", rejection_reason="cracked")
+        assert op(da, "contract_match", contract_id=contract["id"])["status"] == "arrived_with_refusals"
 
     def test_the_page_raises_billed_beyond_arrived_only_when_it_is(self, scoped, da, parties):
         contract = _contract(da, parties, consideration="in_kind")

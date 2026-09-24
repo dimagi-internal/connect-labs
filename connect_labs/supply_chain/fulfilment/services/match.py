@@ -230,6 +230,10 @@ def three_way_match(contract) -> dict:
         status = "shortfall_covered"
 
     still_to_arrive = _still_to_arrive(contract, ordered, received, refused)
+    if status == "part_received" and isinstance(still_to_arrive, Quantity) and still_to_arrive.amount == 0:
+        # Every unit arrived; some were refused. "Part received" told a reader
+        # more were coming beside a delivered consignment (the dispenser import).
+        status = "arrived_with_refusals"
 
     return {
         "contract_id": contract.pk,
