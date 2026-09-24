@@ -1,0 +1,161 @@
+{
+  "build_order": [],
+  "fetched_at": "2026-09-23T23:47:11.484650+00:00",
+  "name": "supply-iptsc-shortfall",
+  "narrative": "Ngozi runs supply for the programme's school malaria prevention round, and she ordered 700 IPTSc packets from Harmattan Health Supplies in July. She opens the packet in the catalogue and confirms what the programme is counting: one packet holds a full three-day course, so 700 packets are 700 children treated. Musa at Harmattan opens the update link the programme gave him, with no labs login, and records the dispatch of the 450 packets he could find. Hauwa at the Sahel Community Health Initiative opens her own link and records the 450 packets that reached the SCHI district store. Ngozi opens the order and reads it: 700 ordered, 450 received, 250 still outstanding, and the order past its promised lead time. Hauwa's team has already bought the missing 250 from Tamarind Pharmacy Wholesale, a vendor they know, out of SCHI's setup fee, so Ngozi records that purchase as its own order, with SCHI as the buyer, paid as bundled, and marked as buying the shortfall on the Harmattan order. She records the 250 arriving at the store, and the new order's cost reads as bundled in the setup fee rather than as a missing price. Back on the Harmattan order, Ngozi sees the shortfall covered by name and the lateness gone. On the stock page she checks the SCHI district store and reads 700 packets, enough for every child on the list.",
+  "personas": {
+    "hauwa": {
+      "color": "#0D7A5F",
+      "intro": "Hauwa runs the IPTSc round in the schools and receives the packets into SCHI's district store; when the distributor ran short her team bought the rest locally.",
+      "name": "Hauwa Bello",
+      "role": "Programme manager, Sahel Community Health Initiative (local partner)"
+    },
+    "musa": {
+      "color": "#B45309",
+      "intro": "Musa sources and ships the programme's orders, and is usually asked by message what he sent and when.",
+      "name": "Musa Garba",
+      "role": "Logistics officer, Harmattan Health Supplies (distributor)"
+    },
+    "ngozi": {
+      "color": "#4F46E5",
+      "intro": "Ngozi places the programme's orders and has to know, without chasing anyone on WhatsApp, whether the partner holds enough packets for every child on the list.",
+      "name": "Ngozi Adeyemi",
+      "role": "Programme supply lead"
+    }
+  },
+  "scenes": [
+    {
+      "features": [
+        {
+          "description": "The supply Orders list at /supply/orders/ shows each contract's reference, supplier, buyer of record, quantity and status for the selected programme.",
+          "id": "orders-list",
+          "verify": "Playwright: GET /supply/orders/?program_id=10602 shows a row containing IPTSC-PO-0715 and 700 packet"
+        }
+      ],
+      "id": "the-order-that-ran-short",
+      "narrative": "Ngozi ordered 700 IPTSc packets from Harmattan Health Supplies in July for the school round. This is the one record she will follow, from the distributor's dispatch to the partner's shelf, instead of a thread of messages.",
+      "persona": "ngozi",
+      "provenance": "S0",
+      "title": "One order for 700 packets, and a school round waiting on it"
+    },
+    {
+      "features": [
+        {
+          "description": "Item.components and Item.one_course_is render on the item detail page as a contents table and a \"one packet is one full course\" statement.",
+          "id": "kit-components",
+          "verify": "pytest connect_labs/supply_chain/tests/test_kits.py; Playwright: item page shows \"is one full course\" and a row \"9 tablet\""
+        }
+      ],
+      "id": "one-packet-is-one-course",
+      "narrative": "Ngozi opens the packet in the catalogue. It lists what is inside — nine tablets and a dosing card — and says one packet is one full course, so she can read 700 packets as 700 children.",
+      "persona": "ngozi",
+      "provenance": "S1",
+      "title": "Ngozi checks that a packet is a whole course"
+    },
+    {
+      "features": [
+        {
+          "description": "The token-gated page /supply/u/<token>/ lets the linked organisation record a shipment against a contract in its scope, written with source=supplier_reported.",
+          "id": "supplier-update-link-dispatch",
+          "verify": "pytest connect_labs/supply_chain/tests -k update_link; Playwright: after submitting Record a dispatch the page shows \"Recorded:\""
+        }
+      ],
+      "id": "the-distributor-says-what-it-sent",
+      "narrative": "Musa opens the link the programme gave Harmattan, with no labs login. He picks the order, types the waybill and the carrier, and records that 450 packets left on the nineteenth, due at the store on the twenty-second.",
+      "persona": "musa",
+      "provenance": "S2",
+      "title": "Musa records the 450 packets he could find"
+    },
+    {
+      "features": [
+        {
+          "description": "The update link's Record goods received form writes a receipt at a supply point in the link's scope, bringing the accepted quantity into the ledger.",
+          "id": "supplier-update-link-receipt",
+          "verify": "Playwright: submit Record goods received on the partner link; supply_chain_stock_on_hand for the store returns 450 packet"
+        }
+      ],
+      "id": "the-partner-receives-450",
+      "narrative": "Hauwa opens SCHI's own link when the truck reaches the district store. She picks the order and the store, and records 450 packets accepted.",
+      "persona": "hauwa",
+      "provenance": "S3",
+      "title": "Hauwa records 450 packets on the shelf"
+    },
+    {
+      "features": [
+        {
+          "description": "contract_delivery_overdue derives days late from signed_on + promised_lead_time_days while the contract is not fully received, shown as a banner on the order page.",
+          "id": "contract-lateness",
+          "verify": "pytest connect_labs/supply_chain/tests/test_overdue.py; Playwright: order page shows \"past the promised lead time\""
+        },
+        {
+          "description": "contract_match returns ordered, received, invoiced and outstanding for the contract, rendered in the order page's match table.",
+          "id": "three-way-match",
+          "verify": "MCP supply_chain_contract_match(contract_id) returns outstanding.amount \"250\" after a 450-packet receipt"
+        }
+      ],
+      "id": "short-and-late",
+      "narrative": "Ngozi opens the Harmattan order. It reads 700 ordered, 450 received and 250 still outstanding, and a banner says the order is past the lead time Harmattan promised.",
+      "persona": "ngozi",
+      "provenance": "S3",
+      "title": "Ngozi reads the order as 250 short and past due"
+    },
+    {
+      "features": [
+        {
+          "description": "The order form's \"Paid for how\" (consideration) and \"Buys the shortfall on\" (covers_shortfall_of) fields write Contract.consideration and Contract.covers_shortfall_of.",
+          "id": "contract-cover-and-consideration",
+          "verify": "pytest connect_labs/supply_chain/tests/test_small_gaps.py -k covering; MCP supply_chain_contract_get returns consideration=bundled and covers_shortfall_of_id"
+        }
+      ],
+      "id": "the-partner-bought-the-rest",
+      "narrative": "Hauwa's team has already bought the missing 250 from Tamarind Pharmacy Wholesale, out of SCHI's setup fee. Ngozi records it as its own order, with SCHI as the buyer, paid as bundled, and marks it as buying the shortfall on the Harmattan order.",
+      "persona": "ngozi",
+      "provenance": "S4",
+      "title": "Ngozi records SCHI's local purchase as the cover"
+    },
+    {
+      "features": [
+        {
+          "description": "contract_landed_cost for a consideration=bundled contract returns {not_costed \"bundled in setup fee\"} and the order page shows the bundled badge and explanation.",
+          "id": "bundled-landed-cost",
+          "verify": "pytest connect_labs/supply_chain/tests/test_consideration.py; Playwright: order page shows \"Bundled in setup fee\""
+        }
+      ],
+      "id": "the-250-arrive-and-cost-says-why",
+      "narrative": "Ngozi records the 250 packets arriving at the SCHI district store. The new order's cost reads bundled in the setup fee, not a missing price.",
+      "persona": "ngozi",
+      "provenance": "S5",
+      "title": "Ngozi receives the 250 and the cost says bundled"
+    },
+    {
+      "features": [
+        {
+          "description": "three_way_match reports status shortfall_covered with covered_by naming the covering contract, and _contract_lateness is suppressed while covered_by is non-empty.",
+          "id": "shortfall-covered",
+          "verify": "pytest connect_labs/supply_chain/tests/test_small_gaps.py::TestAShortfallCoveredByAnotherOrder"
+        }
+      ],
+      "id": "covered-not-late",
+      "narrative": "Back on the Harmattan order, Ngozi sees the 250 shortfall covered by SCHI's order from Tamarind, by name, and the lateness banner is gone.",
+      "persona": "ngozi",
+      "provenance": "S6",
+      "title": "The short order reads as covered, and no longer late"
+    },
+    {
+      "features": [
+        {
+          "description": "network_stock returns each supply point's ledger balance, rendered on /supply/stock/ per supply point.",
+          "id": "network-stock",
+          "verify": "MCP supply_chain_stock_on_hand(supply_point_id=<store>) returns 700 packet after both receipts"
+        }
+      ],
+      "id": "seven-hundred-on-the-shelf",
+      "narrative": "On the stock page Ngozi checks the SCHI district store and reads 700 packets — the distributor's 450 and the local 250 — enough for every child on the list.",
+      "persona": "ngozi",
+      "provenance": "S7",
+      "title": "Seven hundred packets at the SCHI store"
+    }
+  ],
+  "slug": "supply-iptsc-shortfall",
+  "version": 0
+}

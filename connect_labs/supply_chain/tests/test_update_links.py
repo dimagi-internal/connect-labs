@@ -26,7 +26,7 @@ from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.models import Contract, Movement, Receipt, Shipment, StockCount
 from connect_labs.supply_chain.operations import call_operation
-from connect_labs.supply_chain.update_links import service, tokens
+from connect_labs.supply_chain.update_links import forms, service, tokens
 from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission
 
 pytestmark = pytest.mark.django_db
@@ -326,6 +326,105 @@ class TestWritesGoThroughTheOrdinaryOperations:
         movement = Movement.objects.get(receipt=receipt)
         assert movement.to_supply_point_id == world["warehouse"]["id"]
 
+    def test_a_receipt_names_the_dispatch_it_received_and_that_dispatch_is_delivered(self, da, issued, world):
+        """The IPTSc walkthrough's shape: the distributor records a dispatch on
+        its link, the partner records the goods arriving on its own. Without
+        the receipt naming the dispatch, the consignment read "in transit — not
+        counted as stock" beside the stock it had become, and went overdue the
+        day after its expected date."""
+        yesterday = timezone.now().date() - timedelta(days=1)
+        dispatched = op(
+            da,
+            "shipment_record",
+            data={
+                "contract_id": world["contract"]["id"],
+                "status": "dispatched",
+                "expected_on": (yesterday - timedelta(days=1)).isoformat(),
+                "source": "supplier_reported",
+            },
+        )
+        form = forms.RecordReceiptForm(prefix="record_receipt")
+        form.limit_to_scope(service.scope_for(_link(issued)))
+        assert list(form.fields["shipment"].queryset.values_list("pk", flat=True)) == [dispatched["id"]]
+        assert form.fields["shipment"].required is False
+
+        result = service.submit(
+            _link(issued),
+            "record_receipt",
+            {
+                "contract": Contract.objects.get(pk=world["contract"]["id"]),
+                "shipment": Shipment.objects.get(pk=dispatched["id"]),
+                "supply_point": _point(world["warehouse"]),
+                "received_on": yesterday,
+                "quantity_accepted": "40",
+                "unit_basis": "pack",
+            },
+        )
+        assert Receipt.objects.get(pk=result["id"]).shipment_id == dispatched["id"]
+        assert Shipment.objects.get(pk=dispatched["id"]).status == "delivered"
+        overdue = [c for c in op(da, "checks_list")["checks"] if c["kind"] == "shipment_overdue"]
+        assert overdue == []
+
+    def test_a_receipt_cannot_name_a_dispatch_on_another_order(self, da, issued, world):
+        elsewhere = op(
+            da,
+            "shipment_record",
+            data={"contract_id": world["other_contract"]["id"], "status": "dispatched", "source": "we_recorded"},
+        )
+        with pytest.raises(ValueError):
+            op(
+                da,
+                "receipt_record",
+                data={
+                    "contract_id": world["contract"]["id"],
+                    "shipment_id": elsewhere["id"],
+                    "supply_point_id": world["warehouse"]["id"],
+                    "received_on": timezone.now().date().isoformat(),
+                    "source": "we_recorded",
+                    "lines": [{"quantity_accepted": "1", "quantity_unit": "carton"}],
+                },
+            )
+        assert Shipment.objects.get(pk=elsewhere["id"]).status == "dispatched"
+
+    def test_a_partner_link_records_as_partner_reported(self, da, world):
+        """SCHI's link, for the store SCHI runs, stamped the partner's own
+        goods received note as `supplier_reported` -- the IPTSc walkthrough
+        showed a partner's receipt labelled as the supplier's word."""
+        partner = op(da, "org_upsert", data={"slug": "schi", "name": "SCHI"})
+        store = op(
+            da,
+            "supply_point_upsert",
+            data={
+                "slug": "schi-store",
+                "name": "SCHI store",
+                "kind": "regional_store",
+                "managed_by_org_id": partner["id"],
+                "source": "we_recorded",
+            },
+        )
+        issued = op(
+            da,
+            "update_link_issue",
+            data={
+                "org_id": partner["id"],
+                "contract_ids": [world["contract"]["id"]],
+                "supply_point_ids": [store["id"]],
+            },
+        )
+        result = service.submit(
+            _link(issued),
+            "record_receipt",
+            {
+                "contract": Contract.objects.get(pk=world["contract"]["id"]),
+                "supply_point": _point(store),
+                "received_on": timezone.now().date(),
+                "quantity_accepted": "5",
+                "unit_basis": "pack",
+            },
+        )
+        receipt = Receipt.objects.get(pk=result["id"])
+        assert (receipt.source, receipt.recorded_by_org_id) == ("partner_reported", partner["id"])
+
     def test_a_stock_count_is_a_physical_count_reported_by_the_supplier(self, issued, world):
         link = _link(issued)
         result = service.submit(
@@ -506,6 +605,23 @@ class TestThePublicPage:
         assert "PO-2" not in body, "the page shows a contract outside the link's scope"
         assert response["X-Robots-Tag"] == "noindex, nofollow"
         assert response["Referrer-Policy"] == "same-origin"
+
+    def test_each_dispatch_says_how_much_it_carried(self, client, da, issued, world):
+        """A supplier who has just recorded a dispatch saw it listed with a
+        reference and a status but not the quantity it had typed."""
+        op(
+            da,
+            "shipment_record",
+            data={
+                "contract_id": world["contract"]["id"],
+                "reference": "AWB-9",
+                "status": "dispatched",
+                "source": "supplier_reported",
+                "lines": [{"quantity": "40", "quantity_unit": "carton"}],
+            },
+        )
+        body = client.get(_url(issued["token"])).content.decode()
+        assert re.search(r"AWB-9 — 40 carton, dispatched", body)
 
     def test_unknown_expired_and_revoked_look_identical(self, client, da, issued):
         unknown = client.get(_url("definitely-not-a-token"))

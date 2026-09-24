@@ -33,7 +33,7 @@ figure here can go stale.
     {% if contract.status %} · {{ contract.status|humanise }}{% endif %}
     {% if contract.covers_shortfall_of_id %}
       · Covers the shortfall on
-      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.covers_shortfall_of_id %}">order {{ contract.covers_shortfall_of_id }}</a>
+      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.covers_shortfall_of_id %}">{% if covers.reference %}{{ covers.reference }}{% else %}order {{ contract.covers_shortfall_of_id }}{% endif %}</a>
     {% endif %}
     {% if contract.consideration == "in_kind" %}
       <span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-900">In kind — donated</span>
@@ -120,8 +120,14 @@ figure here can go stale.
     {% endif %}
     {% if contract.consideration != "priced" %}
     <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
-      These goods were not bought, so there is no price to find and nothing is
-      missing. The shipments and receipts below are the whole record of them.
+      {% if contract.consideration == "bundled" %}
+        These goods were paid for inside another cost, such as a setup fee, so
+        there is no unit price to find and nothing is missing.
+      {% else %}
+        These goods were donated, so there is no price to find and nothing is
+        missing.
+      {% endif %}
+      The shipments and receipts below are the whole record of them.
     </p>
     {% else %}
     <div class="px-4 py-2.5 border-t border-gray-100">

@@ -262,6 +262,68 @@ class TestAKitCanBeOneCourse:
         assert "unconfirmed" in comparison["comparable"][0]["figures"]["usd_per_course"]
 
 
+class TestTheNetworkSaysHowManyKits:
+    """Stock is counted in whole kits, and the network view reported only
+    cartons: 700 IPTSc packets -- 700 courses -- read "14 carton"."""
+
+    def test_the_balance_is_also_given_in_kits(self, da, catalogue, scoped):
+        kit = _kit(da, "A", 10, one_course_is="base_unit")
+        store = op(
+            da,
+            "supply_point_upsert",
+            data={"slug": "store", "name": "District store", "kind": "regional_store", "source": "we_recorded"},
+        )
+        op(
+            da,
+            "receipt_record",
+            data={
+                "commodity_slug": "ors-zinc",
+                "supply_point_id": store["id"],
+                "received_on": "2026-09-01",
+                "source": "we_recorded",
+                "lines": [{"item_id": kit["id"], "quantity_accepted": "700", "quantity_unit": "co_pack"}],
+            },
+        )
+        row = op(da, "network_stock")["points"][0]
+        assert row["on_hand"] == {"amount": "14", "unit": "carton"}
+        assert row["on_hand_in_base"] == {"amount": "700", "unit": "co_pack"}
+        body = scoped.get(reverse("supply_chain:stock")).content.decode()
+        assert "700 co_pack" in body
+
+
+def _no_ration_table(da):
+    return {
+        c["subject"]["label"] for c in op(da, "checks_list")["checks"] if c["kind"] == "commodity_course_undefined"
+    }
+
+
+class TestACourseCarriedByTheKitIsNotAMissingRationTable:
+    """The IPTSc walkthrough's checks page asked for a ration table for the
+    tablets inside a packet that is itself the course. Nobody buys, stocks or
+    dispenses those tablets on their own; the packet carries the course."""
+
+    def test_neither_the_kit_nor_its_parts_ask_for_one_when_the_kit_is_the_course(self, da, catalogue):
+        _kit(da, "A", 10, one_course_is="base_unit")
+        flagged = _no_ration_table(da)
+        assert "ORS/zinc co-pack" not in flagged
+        assert "ORS" not in flagged
+        assert "Zinc 20 mg" not in flagged
+
+    def test_they_still_do_when_the_kit_does_not_say_it_is_the_course(self, da, catalogue):
+        _kit(da, "A", 10)
+        assert {"ORS/zinc co-pack", "ORS"} <= _no_ration_table(da)
+
+    def test_the_catalogue_page_agrees_with_the_feed(self, scoped, da, catalogue):
+        _kit(da, "A", 10, one_course_is="base_unit")
+        body = scoped.get(reverse("supply_chain:catalogue")).content.decode()
+        assert "No ration table" not in body
+
+    def test_a_part_also_bought_on_its_own_still_needs_its_ration_table(self, da, catalogue):
+        _kit(da, "A", 10, one_course_is="base_unit")
+        op(da, "item_upsert", data={"sku": "ORS-LOOSE", "name": "ORS sachet", "commodity_slug": "ors"})
+        assert "ORS" in _no_ration_table(da)
+
+
 # ---- screens --------------------------------------------------------------
 
 

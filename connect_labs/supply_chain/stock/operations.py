@@ -445,6 +445,7 @@ def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_d
                     key: _plain(row[key])
                     for key in (
                         "on_hand",
+                        "on_hand_in_base",
                         "reported",
                         "amc",
                         "months_of_stock",
