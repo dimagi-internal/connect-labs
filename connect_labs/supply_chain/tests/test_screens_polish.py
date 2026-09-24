@@ -488,7 +488,7 @@ class TestCheckAlertsNow:
         self._subscribe(da)
         client_in_programme.post(reverse("supply_chain:alert_check_now"))
         body = client_in_programme.post(reverse("supply_chain:alert_check_now"), follow=True).content.decode()
-        assert "nothing new since the last check" in body
+        assert "Checked now: nothing new" in body
         assert AlertNotice.objects.filter(program_id=PROGRAM).count() == 1
 
     def test_it_runs_only_this_programmes_subscriptions(self, client_in_programme, da):
@@ -623,3 +623,422 @@ class TestPickers:
         assert "Zenith Clearing" in first
         assert "The regulator" in select.split('<optgroup label="Every organisation">', 1)[1]
         assert "data-tomselect" in select
+
+
+class TestTheQuotePageAsksNoCourseOfAConsumable:
+    """The comparison stopped offering per-course figures, and stopped asking
+    for a treatment protocol, for a category that has no course. The page for
+    one quote kept doing both -- "USD per course: Unconfirmed" against
+    water-treatment chlorine, and an internal question nobody could close. One
+    rule, from the same place, on both screens."""
+
+    def _quote_on(self, da, world, slug, name, category):
+        op(
+            da,
+            "commodity_upsert",
+            data={
+                "slug": slug,
+                "name": name,
+                "category": category,
+                "base_unit": "L",
+                "pack_unit": "jerry_can",
+                "base_per_pack": 20,
+            },
+        )
+        round_ = op(
+            da,
+            "round_create",
+            data={
+                "label": f"{name} round",
+                "delivery_point": {"city": "Kano"},
+                "lines": [{"commodity_slug": slug, "quantity": "600", "quantity_unit": "jerry_can"}],
+            },
+        )
+        return op(
+            da,
+            "quote_record",
+            data={
+                "round_id": round_["id"],
+                "commodity_slug": slug,
+                "supplier_id": world["supplier"]["id"],
+                "as_quoted_amount": "4.00",
+                "as_quoted_unit": "per_pack",
+                "quantity_basis": "600",
+                "quantity_basis_unit": "jerry_can",
+            },
+        )
+
+    def _page(self, client, quote):
+        return client.get(reverse("supply_chain:procurement_quote_detail", args=[quote["id"]])).content.decode()
+
+    def test_a_consumable_quote_shows_no_course_figure_and_asks_no_protocol(self, client_in_programme, da, world):
+        quote = self._quote_on(da, world, "dispenser-chlorine", "Dispenser chlorine solution", "consumable")
+        body = self._page(client_in_programme, quote)
+        assert "USD per course" not in body
+        assert "USD per child treated" not in body
+        assert "course definition" not in body
+        assert "treatment protocol" not in body
+        # The rest of the derivation is still there, named in the product's unit.
+        assert "USD per jerry can" in body
+
+    def test_the_operation_agrees_with_the_page(self, da, world):
+        quote = self._quote_on(da, world, "dispenser-chlorine", "Dispenser chlorine solution", "consumable")
+        detail = op(da, "quote_get", quote_id=quote["id"])
+        assert not {"usd_per_course", "usd_per_child_treated"} & set(detail["figures"])
+        assert "course_definition" not in {q["key"] for q in detail["missing"]}
+
+    def test_a_therapeutic_food_quote_still_shows_and_asks_them(self, client_in_programme, da, world):
+        quote = self._quote_on(da, world, "rutf-paste", "RUTF paste", "therapeutic_food")
+        body = self._page(client_in_programme, quote)
+        assert "USD per course" in body
+        assert "USD per child treated" in body
+        assert "treatment protocol" in body
+
+
+class TestApprovalDatesDoNotWrap:
+    def test_the_asked_and_answered_dates_are_nowrap(self, client_in_programme, da, world):
+        approval = _ask(da, world)
+        op(da, "approval_decide", approval_id=approval["id"], status="approved", decided_on="2026-09-24")
+        body = client_in_programme.get(reverse("supply_chain:award_detail", args=[world["award"]["id"]])).content
+        body = body.decode()
+        asked = re.search(r"<td[^>]*>\s*2026-09-01\s*</td>", body).group(0)
+        assert "whitespace-nowrap" in asked
+        answered = re.search(r"<span[^>]*>\s*2026-09-24\s*</span>", body).group(0)
+        assert "whitespace-nowrap" in answered
+
+
+# ---- the chlorine stop-gap walkthrough, second pass -------------------------
+
+
+def _late_delivery(**facts):
+    """A `contract_delivery_overdue` check as `checks_list` returns it."""
+    check = {
+        "kind": "contract_delivery_overdue",
+        "category": "threshold",
+        "subject": {"type": "contract", "id": 128, "label": "A donor — Chlorine"},
+        "audience": "supplier",
+        "since": "2026-06-26",
+        "days_open": 90,
+        "facts": {
+            "days_late": 90,
+            "expected_on": "2026-06-26",
+            "signed_on": "2026-04-27",
+            "promised_lead_time_days": 60,
+            "supplier": {"id": 4, "name": "A donor"},
+            "status": "placed",
+            "outstanding": "400",
+            "unit": "jerry_can",
+        },
+    }
+    check["facts"].update(facts)
+    return check
+
+
+class TestCheckFactsReadAsWords:
+    """Each check card dumped its facts as raw keys -- "promised lead time days",
+    "contract id 128", "unit jerry can" on a row of its own -- and repeated the
+    header's "90 days since 2026-06-26" as "days late 90" and "expected on"."""
+
+    def test_a_quantity_reads_with_its_unit_and_a_lead_time_in_days(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import check_facts
+
+        rows = dict(check_facts(_late_delivery()))
+        assert rows["Promised lead time"] == "60 days"
+        assert rows["Outstanding"] == "400 jerry cans"
+        assert rows["Signed"] == "2026-04-27"
+        assert rows["Status"] == "placed"
+
+    def test_what_the_header_already_says_is_not_said_again(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import check_facts
+
+        labels = {label for label, _ in check_facts(_late_delivery())}
+        # The age and its date are the header's; the supplier is in the label.
+        assert not {"Days late", "Expected on", "Supplier", "Unit"} & labels
+        assert all("_" not in label and label[0].isupper() for label in labels)
+
+    def test_a_supplier_the_label_does_not_name_is_kept(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import check_facts
+
+        check = _late_delivery()
+        check["subject"]["label"] = "DON-1 — Chlorine"
+        assert dict(check_facts(check))["Supplier"] == "A donor"
+
+    def test_ids_the_card_already_links_are_dropped(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import check_facts
+
+        check = {
+            "kind": "shipment_overdue",
+            "subject": {"type": "shipment", "id": 9, "label": "SHIP-1 — Chlorine — A donor"},
+            "since": "2026-06-26",
+            "days_open": 90,
+            "facts": {
+                "days_late": 90,
+                "expected_on": "2026-06-26",
+                "supplier": {"id": 4, "name": "A donor"},
+                "status": "in_transit",
+                "contract_id": 128,
+            },
+        }
+        assert check_facts(check) == [("Status", "in transit")]
+
+    def test_money_reads_with_its_currency_and_the_payment_date_is_the_header(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import check_facts
+
+        check = {
+            "kind": "payment_unconfirmed",
+            "subject": {"type": "payment", "id": 3, "label": "A donor — PAY-1"},
+            "since": "2026-08-01",
+            "days_open": 54,
+            "facts": {
+                "amount": "1000",
+                "currency": "USD",
+                "paid_on": "2026-08-01",
+                "invoice_id": 7,
+                "contract_id": 128,
+                "supplier": {"id": 4, "name": "A donor"},
+            },
+        }
+        assert check_facts(check) == [("Amount", "USD 1,000.00")]
+
+    def test_a_count_and_a_ledger_each_carry_their_unit_and_a_yes_or_no_reads_as_one(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import check_facts
+
+        variance = {
+            "kind": "stock_variance",
+            "subject": {"type": "supply_point", "id": 2, "label": "Kano store"},
+            "since": "2026-09-20",
+            "days_open": 4,
+            "facts": {
+                "ledger": "120",
+                "reported": "100",
+                "variance": "20",
+                "unit": "carton",
+                "reconcilable": True,
+                "reported_kind": "self_reported",
+            },
+        }
+        rows = dict(check_facts(variance))
+        assert rows["Ledger"] == "120 cartons"
+        assert rows["Counted"] == "100 cartons"
+        assert rows["Difference"] == "20 cartons"
+        assert rows["Can be reconciled"] == "yes"
+        assert rows["How it was counted"] == "self-reported"
+
+
+class TestTheChecksPageReadsAsSentences:
+    def _page(self, client_in_programme, da):
+        op(da, "commodity_upsert", data={"slug": "chlorine", "name": "Chlorine", "base_unit": "L"})
+        donor = op(da, "supplier_create", data={"name": "A donor"})
+        us = op(da, "org_upsert", data={"slug": "us", "name": "The programme"})
+        op(
+            da,
+            "contract_create",
+            data={
+                "commodity_slug": "chlorine",
+                "supplier_id": donor["id"],
+                "buyer_of_record": "programme_org",
+                "buyer_org_id": us["id"],
+                "consideration": "in_kind",
+                "source": "we_recorded",
+                "reference": "DON-1",
+                "status": "placed",
+                "quantity": "400",
+                "quantity_unit": "jerry_can",
+                "signed_on": "2026-01-01",
+                "promised_lead_time_days": 60,
+            },
+        )
+        return client_in_programme.get(reverse("supply_chain:checks")).content.decode()
+
+    def test_a_late_delivery_reads_as_labelled_facts(self, client_in_programme, da):
+        body = self._page(client_in_programme, da)
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
+        assert "Promised lead time: 60 days" in text
+        assert "Outstanding: 400 jerry cans" in text
+        for raw in ("promised lead time days", "days late", "expected on", "contract id"):
+            assert raw not in text
+
+    def test_the_category_definition_is_dark_enough_to_read(self, client_in_programme, da):
+        body = self._page(client_in_programme, da)
+        chip = re.search(r'<span class="([^"]*)">— past a bound you set</span>', body)
+        assert chip, "the threshold chip carries its definition"
+        assert "text-gray-600" in chip.group(1)
+        assert "text-gray-400" not in chip.group(1)
+
+
+class TestCheckNowSaysWhatIsAlreadyTrue:
+    """ "Checked now: nothing new since the last check." sat directly above
+    the sent-log rows it had found, and read as a contradiction."""
+
+    def _subscribe(self, da):
+        op(da, "commodity_upsert", data={"slug": "rutf", "name": "RUTF", "base_unit": "sachet"})
+        return op(
+            da,
+            "alert_subscription_create",
+            data={"check_kinds": ["commodity_course_undefined"], "recipient_email": "stores@example.org"},
+        )
+
+    def _twice(self, client_in_programme):
+        client_in_programme.post(reverse("supply_chain:alert_check_now"))
+        response = client_in_programme.post(reverse("supply_chain:alert_check_now"), follow=True)
+        # The first press's message is still queued; the second's is last.
+        return [str(m) for m in response.context["messages"]][-1:]
+
+    def test_nothing_new_names_the_notices_already_sent_and_when(self, client_in_programme, da):
+        from unittest.mock import patch
+
+        from connect_labs.supply_chain.alerts import service
+        from connect_labs.supply_chain.alerts.models import AlertNotice
+
+        self._subscribe(da)
+        with patch.object(service, "send_labs_email"), patch.object(service, "email_enabled", return_value=True):
+            (said,) = self._twice(client_in_programme)
+        sent_at = AlertNotice.objects.get(program_id=PROGRAM).sent_at
+        assert said.startswith("Checked now: nothing new — the notice these alerts found was already sent")
+        assert sent_at.strftime("%-d %b %Y, %H:%M") in said
+        assert "since the last check" not in said
+
+    def test_it_does_not_claim_sent_what_was_not(self, client_in_programme, da):
+        # Email is off in tests: the notice was logged and not sent.
+        self._subscribe(da)
+        (said,) = self._twice(client_in_programme)
+        assert said.startswith("Checked now: nothing new")
+        assert "1 not sent — email is off" in said
+        assert "already sent" not in said
+
+    def test_it_says_so_when_these_alerts_have_found_nothing_at_all(self, client_in_programme, da):
+        op(da, "alert_subscription_create", data={"check_kinds": ["stock_stockout"], "recipient_email": "a@b.org"})
+        (said,) = self._twice(client_in_programme)
+        assert said == "Checked now: nothing new — these alerts have not found anything yet."
+
+
+class TestTheOrderPageSaysWhichAwardItWasPlacedAgainst:
+    def _order(self, da, world, **extra):
+        return op(
+            da,
+            "contract_create",
+            data={
+                "commodity_slug": "chlorine",
+                "supplier_id": world["supplier"]["id"],
+                "buyer_of_record": "programme_org",
+                "buyer_org_id": world["us"]["id"],
+                "source": "we_recorded",
+                **extra,
+            },
+        )
+
+    def test_it_names_the_award_who_decided_it_and_who_approved_it(self, client_in_programme, da, world):
+        from connect_labs.supply_chain.models import Award
+
+        Award.objects.filter(pk=world["award"]["id"]).update(decided_by="Amina Bello", decided_on=date(2026, 9, 2))
+        approval = _ask(da, world)
+        op(da, "approval_decide", approval_id=approval["id"], status="approved", decided_on="2026-09-10")
+        order = self._order(da, world, award_id=world["award"]["id"], round_id=world["round"]["id"])
+        body = client_in_programme.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
+        text = re.sub(r"\s+([,.;)])", r"\1", re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)))
+        assert "Against the award to Sahel Chemicals, decided 2026-09-02 by Amina Bello" in text
+        assert reverse("supply_chain:award_detail", args=[world["award"]["id"]]) in body
+        assert "The regulator (Regulatory) approved 2026-09-10" in text
+
+    def test_an_order_placed_without_an_award_says_nothing_of_one(self, client_in_programme, da, world):
+        order = self._order(da, world)
+        body = client_in_programme.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
+        assert "Against the award" not in body
+        assert reverse("supply_chain:award_detail", args=[world["award"]["id"]]) not in body
+
+
+class TestTheQuotePanelsSayWhatLandsInEach:
+    """The supplier panel claimed "a certification, a registration", while a
+    product registration filed with a quote lands in the quote's own panel."""
+
+    def test_each_panel_describes_what_is_actually_filed_there(self, client_in_programme, world):
+        body = client_in_programme.get(
+            reverse("supply_chain:procurement_quote_detail", args=[world["quote"]["id"]])
+        ).content.decode()
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
+        assert "a certification, a registration" not in text
+        assert "Documents filed with this offer — the quotation, a pro-forma invoice, the product's" in text
+        assert "registration or certificate" in text
+        assert "The company's own standing documents — its trading licence, a GDP certificate" in text
+
+
+def _comparable_pair(da, world):
+    """Two comparable chlorine quotes on the world's round, neither awarded yet."""
+    op(da, "quote_void", quote_id=world["quote"]["id"], reason="re-quoted")
+    for name, price in (("Second chemicals", "4.20"), ("Third chemicals", "4.40")):
+        supplier = op(da, "supplier_create", data={"name": name})
+        op(
+            da,
+            "quote_record",
+            data={
+                "round_id": world["round"]["id"],
+                "commodity_slug": "chlorine",
+                "supplier_id": supplier["id"],
+                "as_quoted_amount": price,
+                "as_quoted_unit": "per_pack",
+                "quantity_basis": "600",
+                "quantity_basis_unit": "jerry_can",
+                "pack_spec_source": "stated_on_quote",
+                "base_per_pack_stated": 20,
+                "freight_basis": "included",
+                "duties_basis": "included",
+            },
+        )
+
+
+def _compare_url(world):
+    return reverse("supply_chain:procurement_comparison", args=[world["round"]["id"]]) + "?commodity=chlorine"
+
+
+class TestTheAwardControlsFitTheColumn:
+    """At 1440px the reason, date, decided-by and Award button sat side by side
+    and pushed the table past the content column, clipping the button off the
+    right edge of the sideways-scrolling region."""
+
+    def test_they_stack_rather_than_sit_in_one_row(self, client_in_programme, da, world):
+        _comparable_pair(da, world)
+        body = client_in_programme.get(_compare_url(world)).content.decode()
+        forms = re.findall(r'<form method="post" action="" class="([^"]*)">(.*?)</form>', body, re.S)
+        award_forms = [(cls, inner) for cls, inner in forms if 'name="rationale"' in inner]
+        assert len(award_forms) == 2
+        for cls, inner in award_forms:
+            assert "flex-col" in cls and "w-56" in cls
+            # Same fields, posting to the same URL.
+            for field in ("quote_id", "rationale", "decided_on", "decided_by"):
+                assert f'name="{field}"' in inner
+            assert 'type="submit"' in inner and "Award" in inner
+
+    def test_the_stacked_form_still_awards(self, client_in_programme, da, world):
+        from connect_labs.supply_chain.models import Award, Quote
+
+        _comparable_pair(da, world)
+        quote = Quote.objects.get(supplier__name="Second chemicals")
+        client_in_programme.post(
+            _compare_url(world),
+            {"quote_id": quote.pk, "rationale": "cheaper", "decided_on": "2026-09-20", "decided_by": "Ngozi Eze"},
+        )
+        award = Award.objects.get(quote_id=quote.pk)
+        assert (award.decided_by, award.decided_on.isoformat()) == ("Ngozi Eze", "2026-09-20")
+
+
+class TestAFigureHeaderNamesItsUnitInWords:
+    """The comparison's header read "USD per jerry_can", the stored code."""
+
+    def test_the_comparison_header_reads_jerry_can(self, client_in_programme, da, world):
+        _comparable_pair(da, world)
+        body = client_in_programme.get(_compare_url(world)).content.decode()
+        assert "<th>USD per jerry can</th>" in body
+        assert "jerry_can" not in "".join(re.findall(r"<th>(.*?)</th>", body))
+
+    def test_the_operation_labels_its_columns_the_same_way(self, da, world):
+        _comparable_pair(da, world)
+        comparison = op(da, "round_compare", round_id=world["round"]["id"], commodity_slug="chlorine")
+        labels = {c["key"]: c["label"] for c in comparison["columns"]}
+        assert labels["usd_per_pack_normalized"] == "USD per jerry can"
+
+    def test_the_quote_page_names_the_same_unit(self, client_in_programme, da, world):
+        body = client_in_programme.get(
+            reverse("supply_chain:procurement_quote_detail", args=[world["quote"]["id"]])
+        ).content.decode()
+        assert "USD per jerry can" in body
+        assert "USD per pack<" not in body

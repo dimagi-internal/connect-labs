@@ -400,7 +400,8 @@ def resupply_plan(access, supply_point_id, item_id=None, window_days=resupply.DE
     summary=(
         "Stock on hand and cover across a whole network — every field worker on an opportunity, or "
         "every store in a programme. A point whose figure cannot be computed appears carrying its "
-        "reason, never as a zero and never omitted."
+        "reason, never as a zero and never omitted. Orders still to arrive at a point are listed "
+        "beside it (expected_inbound) and never counted as cover."
     ),
     input_schema=obj(
         {
@@ -442,6 +443,14 @@ def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_d
                 "amc_basis": row["amc_basis"],
                 "item_id": row["item_id"],
                 "counted_in_base": row["counted_in_base"],
+                "expected_inbound": [
+                    {
+                        **expected,
+                        "outstanding": _plain(expected["outstanding"]),
+                        "expected_on": expected["expected_on"].isoformat() if expected["expected_on"] else None,
+                    }
+                    for expected in row["expected_inbound"]
+                ],
                 "min_months_of_stock": (
                     str(row["min_months_of_stock"]) if row["min_months_of_stock"] is not None else None
                 ),

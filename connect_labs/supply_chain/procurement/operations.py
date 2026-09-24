@@ -17,7 +17,7 @@ from connect_labs.supply_chain.operations import (
     record,
     register_operation,
 )
-from connect_labs.supply_chain.procurement.services.comparison import compare_round
+from connect_labs.supply_chain.procurement.services.comparison import COURSE_FIGURES, compare_round
 from connect_labs.supply_chain.procurement.services.compliance import check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
 from connect_labs.supply_chain.procurement.services.questions import missing_facts
@@ -198,11 +198,20 @@ def quote_get(access, quote_id):
     round_ = access.get_round(quote.round_id)
     commodity = access.get_commodity(quote.commodity_slug)
     item = access.get_item(quote.item_id) if quote.item_id else None
-    figures = compute_figures(quote, commodity, round_, item=item)
+    figures = compute_figures(quote, commodity, round_, item=item).as_dict()
+    missing = missing_facts(quote, commodity, round_, item=item)
+    # The comparison's rule, applied to one quote: a category with no course
+    # (a consumable, a dispenser, a test kit) has no per-course figure to be
+    # unconfirmed and no treatment protocol for us to enter. Showing them here
+    # after the comparison stopped reported the same absence as a gap on one
+    # screen and not on the other.
+    if not records.course_applies_to_category(commodity.category):
+        figures = {key: value for key, value in figures.items() if key not in COURSE_FIGURES}
+        missing = [f for f in missing if f.key != "course_definition"]
     return {
         "quote": record(quote),
         "item": record(item) if item else None,
-        "figures": {key: figure(value) for key, value in figures.as_dict().items()},
+        "figures": {key: figure(value) for key, value in figures.items()},
         "compliance": [
             {
                 "field": r.field,
@@ -213,10 +222,7 @@ def quote_get(access, quote_id):
             }
             for r in check_compliance(quote, commodity, item=item)
         ],
-        "missing": [
-            {"key": f.key, "question": f.question, "audience": f.audience}
-            for f in missing_facts(quote, commodity, round_, item=item)
-        ],
+        "missing": [{"key": f.key, "question": f.question, "audience": f.audience} for f in missing],
     }
 
 

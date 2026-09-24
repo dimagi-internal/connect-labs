@@ -13,9 +13,11 @@ view that silently drops the points it could not compute is how a stockout
 goes unnoticed.
 """
 
+from datetime import date, timedelta
+
 from django.db.models import Sum
 
-from connect_labs.supply_chain.models import Item, Movement, StockCount, SupplyPoint
+from connect_labs.supply_chain.models import Contract, Item, Movement, StockCount, SupplyPoint
 from connect_labs.supply_chain.stock.services import ledger, resupply
 from connect_labs.supply_chain.values import Quantity, Unconfirmed
 
@@ -74,6 +76,63 @@ def _balances(program_id, points, item=None, on_date=None):
     return by_point
 
 
+# Nothing more is coming on an order in one of these: settled, or called off.
+# A draft has not been placed, so nothing is coming on it yet either.
+_NOT_EXPECTED = ("draft", "received", "closed", "cancelled")
+
+
+def _expected_inbound(program_id, points, item=None, as_of=None):
+    """{supply_point_id: [order still to arrive]} -- stock on its way, not cover.
+
+    Months of stock is on-hand alone (resupply.py), and it stays that way: a
+    consignment ninety days late has proved it is not cover. But a store
+    whose donor still owes it 400 jerry cans is not in the same position as
+    one nobody owes anything, and the page said the second about both.
+
+    What is still to come is the order page's own "Still outstanding" -- the
+    three-way match -- so the two screens cannot disagree about it. On an
+    order paid in advance that is what is awaited, not what was refused on
+    arrival: refused goods are owed back, not on their way. An order whose
+    shortfall another order was placed to cover is not waited on.
+    """
+    from connect_labs.supply_chain.fulfilment.services.match import three_way_match
+
+    contracts = (
+        Contract.objects.filter(program_id=program_id, delivery_supply_point__in=points)
+        .exclude(status__in=_NOT_EXPECTED)
+        .select_related("supplier", "item")
+        .order_by("signed_on", "pk")
+    )
+    if item is not None:
+        contracts = contracts.filter(item=item)
+    today = as_of or date.today()
+
+    by_point: dict[int, list] = {}
+    for contract in contracts:
+        match = three_way_match(contract)
+        outstanding = (
+            match["awaiting_delivery"] if match.get("awaiting_delivery") is not None else match["outstanding"]
+        )
+        if outstanding is None or match["covered_by"]:
+            continue
+        if isinstance(outstanding, Quantity) and outstanding.amount <= 0:
+            continue
+        expected_on = None
+        if contract.signed_on is not None and contract.promised_lead_time_days is not None:
+            expected_on = contract.signed_on + timedelta(days=contract.promised_lead_time_days)
+        by_point.setdefault(contract.delivery_supply_point_id, []).append(
+            {
+                "contract_id": contract.pk,
+                "reference": contract.reference,
+                "supplier": {"id": contract.supplier_id, "name": contract.supplier.name},
+                "outstanding": outstanding,
+                "expected_on": expected_on,
+                "overdue": expected_on is not None and expected_on < today,
+            }
+        )
+    return by_point
+
+
 def _restated(amc, unit, item):
     if not isinstance(amc, Quantity) or not unit or amc.unit == unit:
         return None
@@ -104,6 +163,7 @@ def network_stock(
         return []
 
     balances = _balances(program_id, points, item=item, on_date=on_date)
+    expected = _expected_inbound(program_id, points, item=item, as_of=on_date)
     counts = _latest_counts(program_id, points, item=item)
     # One fetch for every item any of these points has held, so resolving a
     # point's sole item costs no extra query per point.
@@ -192,6 +252,8 @@ def network_stock(
                 "days_to_stockout": plan["days_to_stockout"],
                 "resupply_quantity": plan["resupply_quantity"],
                 "status": plan["status"],
+                # Shown beside the figures above, never netted into them.
+                "expected_inbound": expected.get(point.pk, []),
                 "min_months_of_stock": point.min_months_of_stock,
                 "max_months_of_stock": point.max_months_of_stock,
             }
