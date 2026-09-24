@@ -12,7 +12,7 @@ from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 
 from connect_labs.supply_chain.api_views import _access, has_program_context
-from connect_labs.supply_chain.checks import course_applies_to_category
+from connect_labs.supply_chain.checks import course_applies_to_category, courses_carried_by_kits
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
@@ -49,7 +49,7 @@ def newest_standing_first(quotes):
     return ordered
 
 
-def annotate_product(product, own_items, products=()):
+def annotate_product(product, own_items, products=(), all_items=()):
     """Hang a product's trade items off it, each measured against its spec.
 
     Module-level rather than a method because two pages need identically
@@ -119,7 +119,11 @@ def annotate_product(product, own_items, products=()):
     # table set" against an infant scale, which is not dispensed over days and
     # will never have one. Same rule as the check, from the same place, so the
     # page and the feed cannot disagree about whether something is missing.
-    product["course_applies"] = course_applies_to_category(product.get("category"))
+    # `all_items` for the one exception the feed also makes: a product whose
+    # course a kit states (the tablets inside a one-course packet) needs none.
+    product["course_applies"] = course_applies_to_category(product.get("category")) and (
+        product["slug"] not in courses_carried_by_kits(all_items or own_items)
+    )
     # Same reasoning one field over. A height board has no gram weight per
     # unit and does not expire, so amber "not stated" against those was a
     # warning nobody could ever close -- and a permanent warning teaches a
@@ -163,7 +167,7 @@ class CatalogueView(OperationBase):
             by_product.setdefault(item["commodity_slug"], []).append(item)
 
         for product in products:
-            annotate_product(product, by_product.get(product["slug"], []), products)
+            annotate_product(product, by_product.get(product["slug"], []), products, items)
 
         context["products"] = products
         context["orphan_items"] = [
@@ -314,6 +318,14 @@ class OrdersView(OperationBase):
         if not context["has_program_context"]:
             return context
         context["contracts"] = self.op("contract_list")
+        context["references"] = {c["id"]: c["reference"] or f"order {c['id']}" for c in context["contracts"]}
+        covered_by: dict[int, list] = {}
+        for contract in context["contracts"]:
+            if contract.get("covers_shortfall_of_id") and contract.get("status") != "cancelled":
+                covered_by.setdefault(contract["covers_shortfall_of_id"], []).append(
+                    context["references"][contract["id"]]
+                )
+        context["covered_by"] = covered_by
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
         return context
@@ -346,6 +358,9 @@ class OrderDetailView(OperationBase):
         context["contract"] = contract
         context["landed"] = self.op("contract_landed_cost", contract_id=contract_id, compare_buyers=True)
         context["match"] = self.op("contract_match", contract_id=contract_id)
+        # The short order this one covers, by the reference people use for it.
+        if contract.get("covers_shortfall_of_id"):
+            context["covers"] = self.op("contract_get", contract_id=contract["covers_shortfall_of_id"])
         context["shipments"] = self.op("shipment_list", contract_id=contract_id)
         context["receipts"] = self.op("receipt_list", contract_id=contract_id)
         # Where each receipt landed, by name: the received table said what
@@ -491,8 +506,9 @@ class ProductDetailView(OperationBase):
         product = next((c for c in self.op("commodity_list") if c["slug"] == slug), None)
         if product is None:
             raise Http404(f"no product '{slug}' in this catalogue")
-        items = [i for i in self.op("item_list") if i["commodity_slug"] == slug]
-        context["product"] = annotate_product(product, items, self.op("commodity_list"))
+        all_items = self.op("item_list")
+        items = [i for i in all_items if i["commodity_slug"] == slug]
+        context["product"] = annotate_product(product, items, self.op("commodity_list"), all_items)
 
         if not context["has_program_context"]:
             # The specification is reference data and reads fine on its own.

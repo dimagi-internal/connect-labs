@@ -228,6 +228,10 @@ class FulfilmentRepositoryMixin:
             shipment = self.get_shipment(data["shipment_id"])
             if shipment is None:
                 raise ValueError(f"shipment {data['shipment_id']} does not exist in this programme")
+            if contract is not None and shipment.contract_id != contract.pk:
+                raise ValueError(
+                    f"shipment {shipment.pk} is a dispatch against another order, not against contract {contract.pk}"
+                )
 
         lines = data.get("lines") or []
         if not lines:
@@ -250,6 +254,13 @@ class FulfilmentRepositoryMixin:
 
         commodity = contract.commodity if contract else self._require_commodity(data["commodity_slug"])
         posting.post_receipt(receipt, commodity, self._require_program())
+
+        # A goods received note against a dispatch is that dispatch arriving.
+        # Left in transit, it read "not counted as stock" beside the stock it
+        # had become. `lost` is its own ending and is not overwritten.
+        if shipment is not None and shipment.status not in ("delivered", "lost"):
+            shipment.status = "delivered"
+            shipment.save(update_fields=["status", "updated_at"])
 
         if contract is not None:
             self._advance_contract_status(contract)

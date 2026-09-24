@@ -1,0 +1,358 @@
+base_url: https://labs.connect.dimagi.com
+narrative_locked: true
+narrative_locked_at: '2026-09-23T23:47:06.560995+00:00'
+prewarm: true
+record_video: true
+review_mode: autonomous
+setup:
+  command: python3 scripts/walkthroughs/supply-iptsc-shortfall/ensure_demo.py
+  outputs: scripts/walkthroughs/supply-iptsc-shortfall/.run_ids.json
+  rerun: per_render
+  timeout_seconds: 900
+tagline: A short order, covered locally, read as one record instead of a message thread
+video_pace: medium
+video_viewport_height: 900
+video_viewport_width: 1440
+why_brief: supply-iptsc-shortfall.why_brief.yaml
+scenes:
+- id: the-order-that-ran-short
+  actions:
+  - kind: wait_for
+    target: css:table:has-text('IPTSC-PO-0715')
+  - kind: hold
+    note: the single open order, its supplier, buyer and quantity
+    seconds: 2.0
+  concept_claim: The Orders list shows the IPTSc order IPTSC-PO-0715 for 700 packets
+    from Harmattan Health Supplies with the programme as buyer of record.
+  design_intent: Open on the one commitment everything else hangs off, so the viewer
+    knows which order the rest of the story is about.
+  role: overview
+  show: Ngozi opens the programme's Orders list, where the single open order — IPTSC-PO-0715,
+    700 packets from Harmattan Health Supplies, bought by the programme — is the procurement
+    she will follow end to end.
+  url: /supply/orders/?program_id=${program_id}
+- id: one-packet-is-one-course
+  actions:
+  - kind: wait_for
+    target: text:is one full course
+  - kind: hold
+    note: the course statement — one packet is one three-day course
+    seconds: 1.5
+  - kind: scroll_to
+    target: text:What is inside
+  - kind: hold
+    note: the kit's components, counted in stock as whole packets
+    seconds: 2.0
+  concept_claim: The trade item page states that one packet is one full course and
+    lists the kit's two components with their quantities.
+  design_intent: Settle the unit before any quantity appears, so every later "450"
+    and "700" is read as courses, not boxes.
+  show: Ngozi opens the trade item "IPTSc three-day packet (standard)" and reads that
+    one packet is one full course, then scrolls to the kit's contents — nine dihydroartemisinin-piperaquine
+    tablets and one dosing card (illustrative contents).
+  url: /supply/catalogue/items/${item_id}/?program_id=${program_id}
+- id: the-distributor-says-what-it-sent
+  actions:
+  - kind: wait_for
+    target: text:Updates for Harmattan Health Supplies
+  - kind: click
+    target: css:summary:has-text('Record a dispatch')
+  - kind: select
+    say: order
+    target: css:#id_record_shipment-contract
+    value: ${order_id}
+  - kind: fill
+    say: waybill
+    target: css:#id_record_shipment-reference
+    value: HHS-WB-3310
+  - kind: fill
+    say: carrier
+    target: css:#id_record_shipment-carrier
+    value: Kano Road Haulage
+  - kind: fill
+    say: nineteenth
+    target: css:#id_record_shipment-dispatched_on
+    value: '2026-09-19'
+  - kind: fill
+    say: twenty-second
+    target: css:#id_record_shipment-expected_on
+    value: '2026-09-22'
+  - kind: fill
+    say: '450'
+    target: css:#id_record_shipment-quantity
+    value: '450'
+  - kind: select
+    target: css:#id_record_shipment-unit_basis
+    value: base
+  - kind: fill
+    target: css:#id_record_shipment-batch
+    value: DP-2608-A
+  - kind: click
+    must_succeed: true
+    target: css:form:has(input[value='record_shipment']) button[type='submit']
+    timeout_ms: 30000
+  - kind: wait_for
+    must_succeed: true
+    target: 'text:Recorded:'
+  - kind: hold
+    note: the confirmation, and the dispatch now listed under the order
+    seconds: 2.0
+  concept_claim: A distributor with no labs login records a 450-packet dispatch against
+    the programme's order through its update link, and the page confirms it was recorded.
+  design_intent: The fact arrives from the party who knows it, marked as reported
+    by them, instead of being asked for.
+  show: On Harmattan's update link page Musa opens "Record a dispatch", chooses the
+    order, enters waybill HHS-WB-3310 and the carrier, the dispatch and expected dates,
+    450 single packets and the batch, and records it — the page confirms the dispatch
+    is shared with the programme team.
+  url: ${distributor_link_path}
+- id: the-partner-receives-450
+  actions:
+  - kind: wait_for
+    target: text:Updates for Sahel Community Health Initiative
+  - kind: click
+    target: css:summary:has-text('Record goods received')
+  - kind: select
+    say: order
+    target: css:#id_record_receipt-contract
+    value: ${order_id}
+  - kind: select
+    say: store
+    target: css:#id_record_receipt-supply_point
+    value: ${store_id}
+  - kind: select
+    target: css:#id_record_receipt-shipment
+    value: HHS-WB-3310 — IPTSC-PO-0715 (dispatched)
+    note: the dispatch Musa recorded — naming it is what marks that consignment delivered
+  - kind: fill
+    target: css:#id_record_receipt-reference
+    value: SCHI-GRN-0922
+  - kind: fill
+    say: accepted
+    target: css:#id_record_receipt-quantity_accepted
+    value: '450'
+  - kind: select
+    target: css:#id_record_receipt-unit_basis
+    value: base
+  - kind: fill
+    target: css:#id_record_receipt-batch
+    value: DP-2608-A
+  - kind: click
+    must_succeed: true
+    target: css:form:has(input[value='record_receipt']) button[type='submit']
+    timeout_ms: 30000
+  - kind: wait_for
+    must_succeed: true
+    target: 'text:Recorded:'
+  - kind: hold
+    seconds: 1.5
+  concept_claim: The partner records a goods received note of 450 packets at the SCHI
+    district store through its own update link, without a labs login.
+  design_intent: Stock comes into existence where the goods land, recorded by the
+    person who counted them.
+  show: On SCHI's update link Hauwa opens "Record goods received", chooses the Harmattan
+    order, the SCHI district store and the dispatch Musa recorded (HHS-WB-3310), enters
+    goods received note SCHI-GRN-0922, 450 single packets accepted and the batch, and
+    records it.
+  url: ${partner_link_path}
+- id: short-and-late
+  actions:
+  - kind: wait_for
+    target: text:past the promised lead time
+  - kind: hold
+    note: the late banner and the three-way match side by side
+    seconds: 2.5
+  - kind: scroll_to
+    target: css:h3:has-text('Shipments')
+  - kind: hold
+    note: the dispatch Musa reported and the receipt Hauwa recorded, each marked with
+      who told us
+    seconds: 2.0
+  concept_claim: The order page derives 700 ordered, 450 received and 250 outstanding
+    from the receipt, and shows the order as past its promised lead time.
+  design_intent: Shortfall and lateness are both derived from records, so neither
+    has to be asked about or typed.
+  show: Ngozi opens order IPTSC-PO-0715 and reads the late banner — days past the
+    promised lead time with 250 packets still to arrive — then the ordered, received
+    and invoiced table, and scrolls to the dispatch Musa reported and the receipt
+    Hauwa recorded.
+  url: /supply/orders/${order_id}/?program_id=${program_id}
+- id: the-partner-bought-the-rest
+  actions:
+  - kind: wait_for
+    target: css:#id_supplier-ts-control
+  - kind: click
+    target: css:#id_supplier-ts-control
+  - kind: click_menu
+    say: Tamarind
+    target: "css:#id_supplier-ts-dropdown .option:has-text('Tamarind Pharmacy Wholesale')"
+  - kind: click
+    target: css:#id_commodity-ts-control
+  - kind: click_menu
+    target: "css:#id_commodity-ts-dropdown .option:has-text('IPTSc three-day treatment packet')"
+  - kind: click
+    target: css:#id_item-ts-control
+  - kind: click_menu
+    target: "css:#id_item-ts-dropdown .option:has-text('IPTSc three-day packet (standard)')"
+  - kind: select
+    say: buyer
+    target: css:#id_buyer_of_record
+    value: partner_org
+  - kind: click
+    target: css:#id_buyer_org-ts-control
+  - kind: fill
+    target: css:#id_buyer_org-ts-control
+    value: Sahel Comm
+    note: the organisation list is labs-wide and long, and only its first page renders until you search it
+  - kind: click_menu
+    say: SCHI
+    target: "css:#id_buyer_org-ts-dropdown .option:has-text('Sahel Community Health Initiative')"
+  - kind: fill
+    target: css:#id_reference
+    value: SCHI-LP-0921
+  - kind: fill
+    target: css:#id_signed_on
+    value: '2026-09-21'
+  - kind: select
+    target: css:#id_status
+    value: placed
+  - kind: select
+    say: bundled
+    target: css:#id_consideration
+    value: bundled
+  - kind: fill
+    target: css:#id_quantity
+    value: '250'
+  - kind: fill
+    target: css:#id_quantity_unit
+    value: packet
+  - kind: fill
+    target: css:#id_currency
+    value: NGN
+  - kind: click
+    target: css:#id_delivery_supply_point-ts-control
+  - kind: click_menu
+    target: "css:#id_delivery_supply_point-ts-dropdown .option:has-text('SCHI district store')"
+  - kind: click
+    target: css:#id_covers_shortfall_of-ts-control
+  - kind: fill
+    target: css:#id_covers_shortfall_of-ts-control
+    value: IPTSC
+    note: she looks the short order up by its reference
+  - kind: click_menu
+    say: shortfall
+    target: "css:#id_covers_shortfall_of-ts-dropdown .option:has-text('IPTSC-PO-0715')"
+  - kind: select
+    target: css:#id_source
+    value: partner_reported
+  - kind: hold
+    note: the whole order, complete, before it is recorded
+    seconds: 1.0
+  - kind: click
+    must_succeed: true
+    target: role:button:Record order
+    timeout_ms: 30000
+  - kind: wait_for
+    must_succeed: true
+    target: text:Covers the shortfall on
+  - kind: capture
+    pattern: /supply/orders/(\d+)/
+    source: url
+    var: cover_id
+  concept_claim: A new order records the partner as buyer of record, its consideration
+    as bundled with no unit price, and names IPTSC-PO-0715 as the order whose shortfall
+    it buys.
+  design_intent: The local purchase is a first-class order joined to the short one,
+    not a note on it.
+  show: Ngozi opens New order and records Tamarind Pharmacy Wholesale selling the
+    same standard packet, with "A partner is" buying and the organisation Sahel Community
+    Health Initiative, "Bundled — paid out of another cost, such as a setup fee",
+    250 packets with no unit price, delivered to the SCHI district store, "Buys the
+    shortfall on" IPTSC-PO-0715, and "A partner told us" as the source, then records
+    the order.
+  url: /supply/orders/new/?program_id=${program_id}
+- id: the-250-arrive-and-cost-says-why
+  actions:
+  - kind: wait_for
+    target: css:#id_supply_point-ts-control
+  - kind: click
+    target: css:#id_supply_point-ts-control
+  - kind: click_menu
+    say: store
+    target: "css:#id_supply_point-ts-dropdown .option:has-text('SCHI district store')"
+  - kind: fill
+    target: css:#id_received_on
+    value: '2026-09-22'
+  - kind: fill
+    target: css:#id_reference
+    value: SCHI-GRN-0923
+  - kind: select
+    target: css:#id_source
+    value: partner_reported
+  - kind: click
+    target: css:#id_lines-0-item-ts-control
+  - kind: click_menu
+    target: "css:#id_lines-0-item-ts-dropdown .option:has-text('IPTSc three-day packet (standard)')"
+  - kind: fill
+    target: css:#id_lines-0-batch
+    value: TPW-DP-0914
+  - kind: fill
+    say: '250'
+    target: css:#id_lines-0-quantity
+    value: '250'
+  - kind: fill
+    target: css:#id_lines-0-quantity_unit
+    value: packet
+  - kind: click
+    must_succeed: true
+    target: role:button:Record receipt
+    timeout_ms: 30000
+  - kind: wait_for
+    must_succeed: true
+    target: text:Bundled in setup fee
+  - kind: hold
+    note: the badge, the cost card that says nothing is missing, and 250 received
+    seconds: 2.0
+  - kind: scroll_to
+    target: css:h3:has-text('Received')
+    note: the 250-packet receipt line itself, so this frame is not the order page scene 6 ended on
+  - kind: hold
+    seconds: 2.0
+  concept_claim: After the receipt, the covering order's landed cost reads "bundled
+    in setup fee" instead of an unconfirmed price, and its match shows 250 received.
+  design_intent: A cost that was never going to exist is named, not reported missing.
+  show: Ngozi records the goods received note for the 250 Tamarind packets at the
+    SCHI district store, and the order page she lands on shows the "Bundled in setup
+    fee" badge and a landed-cost card that says these goods were not bought, so nothing
+    is missing.
+  url: /supply/orders/${cover_id}/receipts/new/?program_id=${program_id}
+- id: covered-not-late
+  actions:
+  - kind: wait_for
+    must_succeed: true
+    target: text:Shortfall covered by
+  - kind: hold
+    note: the covered row naming the covering order, and no late banner above
+    seconds: 3.0
+  concept_claim: With a covering order named, the short order's match reads shortfall
+    covered and names SCHI-LP-0921, and the past-due banner no longer appears.
+  design_intent: Nobody is waiting on Harmattan for the 250 any more, so calling the
+    order late would be a false alarm.
+  show: Ngozi returns to IPTSC-PO-0715 and reads, under the reference she typed, "Shortfall
+    covered by SCHI-LP-0921 (250 packet from Tamarind Pharmacy Wholesale)" in the
+    match, with no past-due banner.
+  url: /supply/orders/${order_id}/?program_id=${program_id}
+- id: seven-hundred-on-the-shelf
+  actions:
+  - kind: wait_for
+    target: text:SCHI district store
+  - kind: hold
+    note: the store's ledger balance, 700 packets
+    seconds: 3.0
+  concept_claim: The stock page shows the SCHI district store holding 700 packets
+    from the two receipts.
+  design_intent: The answer to "can SCHI treat 700 children" is one balance, not a
+    reconciliation.
+  show: Ngozi opens Stock and reads the SCHI district store's ledger balance of 700
+    packets, the sum of the two receipts.
+  url: /supply/stock/?program_id=${program_id}

@@ -128,7 +128,17 @@ def _iso(value):
 
 
 def _provenance(link):
-    return {"source": SOURCE, "recorded_by_org_id": link.org_id}
+    """Who told us: the supplier, or the partner the link was issued to.
+
+    A link issued to the organisation that runs one of its supply points, or
+    that is the buyer on one of its orders, belongs to a partner, and what it
+    records is the partner's word. Every other link is a supplier's.
+    """
+    is_partner = (
+        link.supply_points.filter(managed_by_org_id=link.org_id).exists()
+        or link.contracts.filter(buyer_org_id=link.org_id).exists()
+    )
+    return {"source": "partner_reported" if is_partner else SOURCE, "recorded_by_org_id": link.org_id}
 
 
 def _drop_empty(data):
@@ -220,9 +230,11 @@ def _record_receipt(scope, data):
             "quantity_unit": _unit(data.get("unit_basis"), contract.item, contract),
         }
     )
+    shipment = _require(scope.shipments, data["shipment"], "dispatch") if data.get("shipment") else None
     receipt = _drop_empty(
         {
             "contract_id": contract.pk,
+            "shipment_id": shipment.pk if shipment else None,
             "supply_point_id": point.pk,
             "reference": data.get("reference"),
             "received_on": _iso(data.get("received_on") or timezone.localdate()),

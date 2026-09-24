@@ -48,7 +48,7 @@ own prefix so seven of them cannot collide.
           </div>
           {% for shipment in contract.shipments.all %}
             <div class="text-xs text-gray-500 mt-0.5">
-              <span class="text-gray-400">↳</span> {{ shipment.reference|default:"Dispatch" }} — {{ shipment.get_status_display }}{% if shipment.expected_on %}, expected {{ shipment.expected_on|date:"j M" }}{% endif %}
+              <span class="text-gray-400">↳</span> {{ shipment.reference|default:"Dispatch" }} —{% for line in shipment.lines.all %} {{ line.quantity.normalize }} {{ line.quantity_unit }},{% endfor %} {{ shipment.get_status_display }}{% if shipment.expected_on %}, expected {{ shipment.expected_on|date:"j M" }}{% endif %}
             </div>
           {% endfor %}
         </div>
