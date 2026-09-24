@@ -680,6 +680,17 @@ def _audience_for_org(contract, org_id):
     return "internal"
 
 
+def _stocked(row) -> dict:
+    """What a stock check is about, by name: the product and the trade item, when the point holds one."""
+    item = row.get("item")
+    if item is None:
+        return {}
+    return {
+        "commodity": {"slug": item.commodity.slug, "name": item.commodity.name},
+        "trade_item": {"id": item.pk, "name": item.name},
+    }
+
+
 def _stock(access, as_of, opportunity_id=None):
     out = []
     rows = network.network_stock(access.program_id, opportunity_id=opportunity_id)
@@ -712,7 +723,7 @@ def _stock(access, as_of, opportunity_id=None):
                 )
             )
         elif row["status"] == "stockout":
-            out.append(_check("stock_stockout", **subject, facts={"kind": row["kind"]}, as_of=as_of))
+            out.append(_check("stock_stockout", **subject, facts={"kind": row["kind"], **_stocked(row)}, as_of=as_of))
         elif row["status"] == "below_min":
             out.append(
                 _check(
@@ -724,6 +735,7 @@ def _stock(access, as_of, opportunity_id=None):
                         # and this is what the checks page and every alert print.
                         "months_of_stock": decimal_string(Decimal(row["months_of_stock"]).quantize(Decimal("0.01"))),
                         "min_months_of_stock": decimal_string(row["min_months_of_stock"]),
+                        **_stocked(row),
                     },
                     as_of=as_of,
                 )

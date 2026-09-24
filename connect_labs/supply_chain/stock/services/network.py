@@ -154,6 +154,9 @@ def network_stock(
             {
                 "supply_point_id": point.pk,
                 "name": point.name,
+                # What the figures are of, when the point holds one item: a
+                # check that says "below its minimum" should say of what.
+                "item": for_conversion,
                 "kind": point.kind,
                 "connect_username": point.connect_username,
                 "admin_area": point.admin_area,
