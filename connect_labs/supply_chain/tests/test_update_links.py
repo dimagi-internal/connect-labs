@@ -386,6 +386,45 @@ class TestWritesGoThroughTheOrdinaryOperations:
             )
         assert Shipment.objects.get(pk=elsewhere["id"]).status == "dispatched"
 
+    def test_a_partner_link_records_as_partner_reported(self, da, world):
+        """SCHI's link, for the store SCHI runs, stamped the partner's own
+        goods received note as `supplier_reported` -- the IPTSc walkthrough
+        showed a partner's receipt labelled as the supplier's word."""
+        partner = op(da, "org_upsert", data={"slug": "schi", "name": "SCHI"})
+        store = op(
+            da,
+            "supply_point_upsert",
+            data={
+                "slug": "schi-store",
+                "name": "SCHI store",
+                "kind": "regional_store",
+                "managed_by_org_id": partner["id"],
+                "source": "we_recorded",
+            },
+        )
+        issued = op(
+            da,
+            "update_link_issue",
+            data={
+                "org_id": partner["id"],
+                "contract_ids": [world["contract"]["id"]],
+                "supply_point_ids": [store["id"]],
+            },
+        )
+        result = service.submit(
+            _link(issued),
+            "record_receipt",
+            {
+                "contract": Contract.objects.get(pk=world["contract"]["id"]),
+                "supply_point": _point(store),
+                "received_on": timezone.now().date(),
+                "quantity_accepted": "5",
+                "unit_basis": "pack",
+            },
+        )
+        receipt = Receipt.objects.get(pk=result["id"])
+        assert (receipt.source, receipt.recorded_by_org_id) == ("partner_reported", partner["id"])
+
     def test_a_stock_count_is_a_physical_count_reported_by_the_supplier(self, issued, world):
         link = _link(issued)
         result = service.submit(
