@@ -65,7 +65,11 @@ own prefix so seven of them cannot collide.
         <div class="mb-3">
           <div class="text-sm text-gray-900 font-medium">
             {% if contract.reference %}{{ contract.reference }}{% else %}Order {{ contract.pk }}{% endif %}
-            <span class="ml-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">{{ contract.get_status_display }}</span>
+            {% if contract.covered_by_refs and contract.status != "received" %}
+              <span class="ml-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">short — covered by {{ contract.covered_by_refs|join:", " }}</span>
+            {% else %}
+              <span class="ml-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">{{ contract.get_status_display }}</span>
+            {% endif %}
           </div>
           <div class="text-sm text-gray-600">
             {% if contract.item %}{{ contract.item.name }}{% else %}{{ contract.commodity.name }}{% endif %}{% if contract.quantity %} · {{ contract.quantity|qty:contract.quantity_unit }}{% endif %}

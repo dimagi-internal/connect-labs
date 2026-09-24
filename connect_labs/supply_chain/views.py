@@ -735,6 +735,12 @@ class StockView(OperationBase):
             point["no_consumption_yet"] = isinstance(amc, dict) and NO_CONSUMPTION_YET in (
                 amc.get("unconfirmed") or []
             )
+            on_hand = point.get("on_hand")
+            point["stocked_out"] = (
+                isinstance(on_hand, dict)
+                and on_hand.get("amount") not in (None, "")
+                and (float(on_hand["amount"]) <= 0)
+            )
         return context
 
 
@@ -776,7 +782,23 @@ class MovementsView(OperationBase):
         # Each receipt by the note number people use for it, and its order.
         receipts = self.op("receipt_list", supply_point_id=point_id) if point_id is not None else []
         context["receipts"] = {r["id"]: r for r in receipts}
-        context["references"] = {c["id"]: c["reference"] or f"order {c['id']}" for c in self.op("contract_list")}
+        contracts = self.op("contract_list")
+        context["references"] = {c["id"]: c["reference"] or f"order {c['id']}" for c in contracts}
+        # A receipt has no supply point it came FROM -- it came from a supplier.
+        # "—" hid Harmattan and Tamarind behind the one column that should name them.
+        suppliers = {s["id"]: s["name"] for s in self.op("supplier_list")}
+        context["received_from"] = {
+            c["id"]: suppliers.get(c.get("supplier_id")) for c in contracts if c.get("supplier_id") in suppliers
+        }
+        # The page says "a balance is these movements added up": show the sum it
+        # means, from the same ledger read the stock page uses, in the unit the rows
+        # share. Only for one item at one point -- across items there is no one sum.
+        context["balance"] = None
+        if point_id is not None and item_id is not None and context["movements"]:
+            units = {m.get("quantity_unit") for m in context["movements"]}
+            unit = units.pop() if len(units) == 1 else None
+            on_hand = self.op("stock_on_hand", supply_point_id=point_id, item_id=item_id, unit=unit)
+            context["balance"] = on_hand.get("ledger")
         return context
 
 
