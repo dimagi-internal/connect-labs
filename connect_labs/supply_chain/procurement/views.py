@@ -1084,5 +1084,15 @@ class ApprovalDecideView(_AwardScreen):
     def award(self):
         return _award(self.request, self.approval().award_id)
 
+    def get_initial(self):
+        # The document the request already rests on, pre-selected: the answer
+        # form said "None -- it rests on nothing on file" beside an approval
+        # the award page showed resting on a registration.
+        initial = super().get_initial()
+        rests_on = self.approval().rests_on_document_id
+        if rests_on:
+            initial["rests_on_document"] = rests_on
+        return initial
+
     def fixed(self, **kwargs):
         return {"approval_id": int(kwargs["approval_id"])}

@@ -194,6 +194,15 @@ paragraphs of method above a one-row table.{% endcomment %}
                 (min {{ point.min_months_of_stock }} / max {{ point.max_months_of_stock }})
               </span>
             {% endif %}
+            {% comment %}Cover before the latest receipt, so a restock reads as a change and not as a
+            number the reader has to remember from last time.{% endcomment %}
+            {% if point.last_receipt %}
+              <div class="text-xs text-gray-600 mt-0.5" data-cover-before="{{ point.supply_point_id }}">
+                was {{ point.last_receipt.months_before }} before
+                {% if point.last_receipt.reference %}{{ point.last_receipt.reference }}{% else %}the last receipt{% endif %}
+                (+{{ point.last_receipt.added|figure_text }}, {{ point.last_receipt.received_on }})
+              </div>
+            {% endif %}
           </td>
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
             {% comment %}Send or reorder: the same top-up, acted on by the point above,

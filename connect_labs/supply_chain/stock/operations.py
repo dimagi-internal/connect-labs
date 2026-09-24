@@ -527,6 +527,16 @@ def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_d
                     }
                     for expected in row["expected_inbound"]
                 ],
+                "last_receipt": (
+                    {
+                        "reference": row["last_receipt"]["reference"],
+                        "received_on": row["last_receipt"]["received_on"].isoformat(),
+                        "added": _plain(row["last_receipt"]["added"]),
+                        "months_before": _plain(row["last_receipt"]["months_before"]),
+                    }
+                    if row.get("last_receipt")
+                    else None
+                ),
                 "min_months_of_stock": (
                     str(row["min_months_of_stock"]) if row["min_months_of_stock"] is not None else None
                 ),
