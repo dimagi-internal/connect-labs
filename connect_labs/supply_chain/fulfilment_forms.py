@@ -520,7 +520,18 @@ class DocumentForm(ProvenancedForm):
     upload = forms.FileField(
         label=_("The file"),
         required=False,
-        widget=forms.ClearableFileInput(attrs={"class": "text-sm"}),
+        # A styled button and the chosen file's name, not the browser's bare
+        # control. These exact utilities already ship in the Tailwind build
+        # (the admin upload pages use them), so no rebuild is needed.
+        widget=forms.ClearableFileInput(
+            attrs={
+                "class": (
+                    "block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded "
+                    "file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 "
+                    "hover:file:bg-blue-100"
+                )
+            }
+        ),
         help_text=_("Stored here. Use this for anything that has no other home."),
     )
 

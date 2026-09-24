@@ -387,6 +387,48 @@ def audience_label(audience):
     return AUDIENCE_LABELS.get(audience, audience)
 
 
+# What a check's age is counted from, by kind. The header used to read "19
+# days since 2026-09-05" for a late shipment and "40 days since 2026-08-15"
+# for its missing papers, leaving the reader to guess which date was which.
+# Every `since=` a check in checks.py sets has its phrase here; a kind without
+# one falls back to the bare "since".
+AGE_FROM = {
+    "quote_not_comparable": "since the quote arrived",
+    "award_not_contracted": "since the award",
+    "award_awaiting_approval": "since approval was asked",
+    "contract_reference_unknown": "since the order was signed",
+    "duty_relief_unevidenced": "since the order was signed",
+    "shipment_without_certificate": "since dispatch",
+    "shipment_documents_outstanding": "since dispatch",
+    "shipment_overdue": "past the expected date",
+    "contract_delivery_overdue": "past the expected date",
+    "payment_unconfirmed": "since payment",
+}
+
+
+@register.filter
+def check_age(check):
+    """ "19 days past the expected date, 2026-09-05" -- the age and what it counts from."""
+    days = check.get("days_open")
+    if days is None:
+        return ""
+    phrase = AGE_FROM.get(check.get("kind"))
+    noun = "day" if days == 1 else "days"
+    if phrase:
+        return f"{days} {noun} {phrase}, {check.get('since')}"
+    return f"{days} {noun} since {check.get('since')}"
+
+
+@register.filter
+def check_audience(check):
+    """Who can answer a check. A documents check is ours when several parties
+    owe papers -- we are the ones chasing them, so it says so rather than
+    claiming we can answer for papers somebody else holds."""
+    if check.get("kind") == "shipment_documents_outstanding" and check.get("audience") == "internal":
+        return "Ours to chase"
+    return audience_label(check.get("audience"))
+
+
 @register.filter
 def category_label(category):
     return CATEGORY_LABELS.get(category, category)

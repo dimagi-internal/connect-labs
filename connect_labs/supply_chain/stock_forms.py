@@ -302,7 +302,7 @@ class ChargeForm(ProvenancedForm):
             "note": _("Note"),
         }
         help_texts = {
-            "payee_org": _("Customs, a clearing agent, a haulier — never the supplier; that is the contract price."),
+            "payee_org": _("Customs, a clearing agent, a haulier — never the supplier or the donor of the goods."),
             "fx_rate_to_usd": _(
                 "Dollars per one unit of the charge's currency (naira: about 0.00065). Only for a charge "
                 "not in the order's currency; without it the landed total cannot add this charge, and says so."

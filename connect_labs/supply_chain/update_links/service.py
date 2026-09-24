@@ -471,7 +471,7 @@ def _describe_receipt(rid):
 
 
 def _describe_movement(rid):
-    movement = Movement.objects.filter(pk=rid).select_related("from_supply_point", "to_supply_point").first()
+    movement = Movement.objects.filter(pk=rid).select_related("from_supply_point", "to_supply_point", "item").first()
     if movement is None:
         return ""
     text = _quantity(movement.quantity, movement.quantity_unit)
@@ -479,6 +479,11 @@ def _describe_movement(rid):
         text = f"{movement.reference}: {text}"
     if movement.from_supply_point and movement.to_supply_point:
         text += f" from {movement.from_supply_point.name} to {movement.to_supply_point.name}"
+    # When it happened, which the row's timestamp (when it was typed in) is
+    # not, and what moved -- "50 units" alone does not say.
+    text += f" on {movement.occurred_on.isoformat()}"
+    if movement.item_id:
+        text += f" ({movement.item.name})"
     if movement.batch:
         text += f", batch {movement.batch}"
     return text

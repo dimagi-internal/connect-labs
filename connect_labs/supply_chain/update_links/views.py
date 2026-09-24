@@ -217,6 +217,32 @@ def _done_sentence(form_class, detail) -> str:
     return f"Recorded: {text.rstrip('.')}."
 
 
+def _with_holdings(program_id, scope):
+    """The link's supply points, each carrying what it holds of the link's orders' items.
+
+    A distributor that records a release should see it land: "Dawaki project
+    site — holds 60 units", read from the same ledger the programme's stock
+    page reads. Only the items on the link's own orders, so a link shows
+    nothing about stock it was not given. Nothing held, or a holding the
+    ledger cannot state in one unit, shows no figure rather than a guess.
+    """
+    from connect_labs.supply_chain.models import Item
+    from connect_labs.supply_chain.stock.services import ledger
+    from connect_labs.supply_chain.values import Quantity, quantity_phrase
+
+    item_ids = {pk for pk in scope.contracts.values_list("item_id", flat=True) if pk}
+    items = list(Item.objects.filter(pk__in=item_ids).order_by("name"))
+    points = list(scope.supply_points)
+    for point in points:
+        held = []
+        for item in items:
+            quantity = ledger.balance(program_id, point, item=item)
+            if isinstance(quantity, Quantity) and quantity.amount and quantity.unit:
+                held.append(quantity_phrase(quantity.amount, quantity.unit))
+        point.holding = ", ".join(held)
+    return points
+
+
 @method_decorator(never_cache, name="dispatch")
 class UpdateLinkPublicView(View):
     template_name = "supply_chain/update_link_public.html"
@@ -293,7 +319,7 @@ class UpdateLinkPublicView(View):
             "contracts": _with_cover(
                 list(scope.contracts.prefetch_related("shipments__lines", "shipments__receipts")), scope
             ),
-            "supply_points": list(scope.supply_points),
+            "supply_points": _with_holdings(self.link.program_id, scope),
             "approvals": list(scope.approvals) if scope.approvals is not None else [],
             "forms": [form for form in forms if form.is_available() or form is bound],
             "unavailable": [form for form in forms if not form.is_available() and form is not bound],

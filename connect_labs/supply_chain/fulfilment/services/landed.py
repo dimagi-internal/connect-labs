@@ -134,20 +134,26 @@ def charges(contract):
     total = ZERO
     reasons = []
     for charge in Charge.objects.filter(shipment__contract=contract).select_related("payee_org"):
-        items.append(
-            {
-                "id": charge.pk,
-                "shipment_id": charge.shipment_id,
-                "kind": charge.kind,
-                "payee": {"id": charge.payee_org_id, "name": charge.payee_org.name},
-                "amount": Money(charge.amount, charge.currency),
-                "paid_on": charge.paid_on,
-            }
-        )
+        item = {
+            "id": charge.pk,
+            "shipment_id": charge.shipment_id,
+            "kind": charge.kind,
+            "payee": {"id": charge.payee_org_id, "name": charge.payee_org.name},
+            "amount": Money(charge.amount, charge.currency),
+            "paid_on": charge.paid_on,
+            # Set only when the charge was restated into the contract's
+            # currency, so a reader can check the total line by line.
+            "fx_rate_to_usd": None,
+            "restated": None,
+        }
+        items.append(item)
         if charge.currency == contract.currency:
             total += charge.amount
         elif contract.currency == "USD" and charge.fx_rate_to_usd:
-            total += charge.amount * charge.fx_rate_to_usd
+            restated = charge.amount * charge.fx_rate_to_usd
+            item["fx_rate_to_usd"] = charge.fx_rate_to_usd
+            item["restated"] = Money(restated, contract.currency)
+            total += restated
         else:
             reasons.append(
                 f"a {charge.kind.replace('_', ' ')} charge of {charge.amount} {charge.currency} cannot be "
