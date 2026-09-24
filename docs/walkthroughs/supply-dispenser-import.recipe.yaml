@@ -107,6 +107,10 @@ scenes:
   - kind: fill
     target: css:#id_external_url
     value: https://files.example.org/clearwater/CWA-CI-0412.pdf
+  - kind: hold
+    seconds: 1.0
+  - kind: snapshot
+    note: the attach form opened from the commercial-invoice row, kind already chosen, filled in
   - kind: click
     must_succeed: true
     target: css:form button[type=submit]:has-text('Attach')
@@ -115,8 +119,6 @@ scenes:
     target: css:li:has-text('Commercial invoice') span:has-text('on file')
   - kind: hold
     seconds: 1.2
-  - kind: snapshot
-    note: both donor documents on file, the customs declaration still outstanding
   concept_claim: Attaching a document from its checklist line files it as that kind
     against this consignment and marks the line on file.
   design_intent: 'Start from the outstanding line, not from a blank form: the kind
@@ -243,6 +245,10 @@ scenes:
   - kind: fill
     target: css:#id_paid_on
     value: ${today}
+  - kind: hold
+    seconds: 1.0
+  - kind: snapshot
+    note: the clearing charge filled in, paid to the clearing agent rather than the donor
   - kind: click
     must_succeed: true
     target: css:form button[type=submit]:has-text('Record charge')
@@ -251,8 +257,6 @@ scenes:
     target: css:td:has-text('Clearing')
   - kind: hold
     seconds: 1.5
-  - kind: snapshot
-    note: both charges itemised with their payees on the consignment
   concept_claim: A charge is recorded against the consignment with its kind and payee,
     and the shipment page itemises every charge paid to land it.
   design_intent: 'Payee is the point: these are paid to customs and a clearing agent,
@@ -260,7 +264,8 @@ scenes:
   show: 'The Record a charge form, twice: a customs fee paid to Port customs (duty
     account) and a clearing charge paid to Lagoon Clearing & Forwarding, each in naira
     with its rate to dollars and the date paid. The consignment''s "Charges paid to
-    land it" panel then lists both, each naming its payee.'
+    land it" panel then lists both, each naming its payee. The frame is the clearing
+    charge''s form, filled in; the itemised result is the next scene.'
   url: /supply/shipments/${shipment_id}/
 - id: what-landing-a-donation-cost
   actions:
@@ -501,14 +506,20 @@ scenes:
   - kind: select
     target: css:#id_source
     value: partner_reported
-  - kind: snapshot
-    note: the second release filled in, before it is posted
   - kind: click
     must_succeed: true
     target: css:form button[type=submit]:has-text('Post it')
     timeout_ms: 30000
   - kind: wait_for
     target: css:h2:has-text('Stock across the network')
+  - kind: hover
+    seconds: 1.2
+    target: css:tr:has-text('Dawaki project site') td:nth-child(2)
+  - kind: hover
+    seconds: 1.2
+    target: css:tr:has-text('Rimi project site') td:nth-child(2)
+  - kind: snapshot
+    note: both releases landed — each site's ledger balance, the warehouse's remainder
   concept_claim: A release from the warehouse to a site is a transfer in the same
     ledger, so durable equipment moves between named supply points like any other
     stock.
@@ -516,34 +527,41 @@ scenes:
     place and into another, with the document it answers to.'
   show: 'The Post a movement form, twice: a transfer out of the Harmattan warehouse
     into the Dawaki project site (60) and one into the Rimi project site (50), each
-    with Harmattan''s release-note number and marked as reported by a partner.'
+    with Harmattan''s release-note number and marked as reported by a partner. After
+    the second post the stock page shows the warehouse, Dawaki and Rimi balances.'
   url: /supply/stock/movements/new/
 - id: where-the-dispensers-are
   actions:
   - kind: wait_for
-    target: css:h2:has-text('Stock across the network')
+    target: text:Kept or used up
   - kind: hold
     seconds: 1.2
   - kind: hover
-    say: balance
-    seconds: 1.5
-    target: css:tr:has-text('Dawaki project site') td:nth-child(2)
-  - kind: hover
-    say: months-of-stock
-    seconds: 1.5
-    target: css:tr:has-text('Rimi project site') td:nth-child(5)
-  - kind: hover
     say: durable
     seconds: 1.5
-    target: css:tr:has-text('Harmattan warehouse') span:has-text('durable')
+    target: text:Durable — kept and moved, not forecast
+  - kind: scroll_to
+    target: text:What is inside
+  - kind: hold
+    seconds: 1.5
+    note: the dispenser and its spare-parts set, one kit
+  - kind: scroll_to
+    say: balance
+    target: text:Where it is now
+  - kind: hold
+    seconds: 1.5
+  - kind: hover
+    seconds: 1.5
+    target: css:tr:has-text('Dawaki project site')
   - kind: snapshot
-    note: balances per site, durable, not forecast
-  concept_claim: For durable equipment the stock view shows the balance at each site
-    and declines to forecast consumption, months of stock or resupply.
+    note: where each dispenser is, by site, for an item marked durable
+  concept_claim: A durable item is marked as kept and moved rather than forecast, and
+    its page gives the ledger balance at each site that holds it.
   design_intent: The closing frame answers the question Halima started with — where
     are the dispensers — and shows the product refusing a meaningless number rather
     than inventing one.
-  show: The stock page. The Harmattan warehouse and the Dawaki and Rimi project sites
-    each show a ledger balance of dispensers; consumption, months of stock and resupply
-    read "durable — not forecast", and each row is marked DURABLE — held, not consumed.
-  url: /supply/stock/
+  show: The dispenser's own page in the catalogue. It is marked "Durable — kept and
+    moved, not forecast", lists what one unit holds (the dispenser and its spare-parts
+    set), and under "Where it is now" gives the ledger balance at the Harmattan
+    warehouse and the Dawaki and Rimi project sites.
+  url: /supply/catalogue/items/${item_id}/
