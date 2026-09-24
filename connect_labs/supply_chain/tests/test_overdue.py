@@ -208,7 +208,11 @@ class TestTheScreens:
         body = scoped.get(reverse("supply_chain:checks")).content.decode()
         assert "Shipment past its expected date" in body
         assert "Delivery past the promised lead time" in body
-        assert "days late" in body
+        # How late is the header's "90 days since"; the facts beneath it read
+        # as labelled words, not as the raw keys that repeated it.
+        assert "90 days since" in body
+        assert "days late" not in body
+        assert "Promised lead time:" in body and "30 days" in body
         assert "A donor" in body
         # Links back to the order it is about.
         assert reverse("supply_chain:order_detail", args=[contract["id"]]) in body

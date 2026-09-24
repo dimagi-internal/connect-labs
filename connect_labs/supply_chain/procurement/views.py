@@ -189,10 +189,17 @@ class QuoteDetailView(_Base):
         context["quote"] = quote
         context["round"] = self.op("round_get", round_id=quote["round_id"])
         context["supplier"] = self.op("supplier_get", supplier_id=quote["supplier_id"])
+        # The product quoted, so each derived figure names its unit the way the
+        # comparison's header does ("USD per jerry can") rather than "per pack".
+        context["commodity"] = next(
+            (c for c in self.op("commodity_list") if c.get("slug") == quote.get("commodity_slug")), None
+        )
         # A quote carries its own evidence now -- a quotation PDF, or the
         # pro-forma invoice a price came off, which is what EHA's note cites.
         # The supplier's own documents are shown separately rather than mixed
-        # in: a certification belongs to the company, not to this offer.
+        # in: a trading licence belongs to the company, not to this offer.
+        # Anything attached through this page's "Attach document" -- a
+        # product's registration included -- is filed with the quote.
         context["documents"] = self.op("document_list", quote_id=quote["id"])
         # Guarded rather than passed straight through. `list_documents` treats
         # a None link id as "no filter", so a missing supplier would render
@@ -698,6 +705,34 @@ def _award(request, award_id):
     return found
 
 
+def approvals_as_read(op, award_id) -> list[dict]:
+    """An award's approvals as its page reads them: each with its approver and evidence.
+
+    The documents attached to it (the approver's letter), the one it rests on
+    (a product registration), and whether the approver answered through its
+    own link. One reading, shared by the award page and the order placed
+    against the award, so the two cannot describe the same approval apart.
+    `op` is a view's `op`, so the reads run as that view's caller.
+    """
+    approvals = op("approval_list", award_id=award_id)
+    if not approvals:
+        return []
+    orgs = {o["id"]: o for o in op("org_list")}
+    documents = {d["id"]: d for d in op("document_list")}
+    return [
+        {
+            **a,
+            "approver": orgs.get(a["approver_org_id"]),
+            "documents": [documents[i] for i in a.get("document_ids") or [] if i in documents],
+            "rests_on": documents.get(a.get("rests_on_document_id")),
+            # Answered by the approver itself, through its own link.
+            "answered_by_approver": a.get("decision_source") == "partner_reported"
+            and a.get("decision_recorded_by_org_id") == a["approver_org_id"],
+        }
+        for a in approvals
+    ]
+
+
 class AwardDetailView(_Base):
     """One award: the decision, who else has to agree to it, and what was ordered.
 
@@ -719,28 +754,12 @@ class AwardDetailView(_Base):
         detail = next((a for a in self.op("award_list", round_id=award.round_id) if a["id"] == award.pk), None)
         if detail is None:
             raise Http404(f"no award {award_id} in this programme")
-        approvals = self.op("approval_list", award_id=award.pk)
-        orgs = {o["id"]: o for o in self.op("org_list")}
         context["award"] = detail
         # The heading named the product's slug; what was awarded is a kit.
         context["awarded_item"] = award.quote.item.name if award.quote.item_id else None
         context["supplier"] = self.op("supplier_get", supplier_id=detail["supplier_id"])
         context["round"] = self.op("round_get", round_id=detail["round_id"])
-        # Each approval with its evidence: the documents attached to it (the
-        # approver's letter) and the one it rests on (a product registration).
-        documents = {d["id"]: d for d in self.op("document_list")}
-        context["approvals"] = [
-            {
-                **a,
-                "approver": orgs.get(a["approver_org_id"]),
-                "documents": [documents[i] for i in a.get("document_ids") or [] if i in documents],
-                "rests_on": documents.get(a.get("rests_on_document_id")),
-                # Answered by the approver itself, through its own link.
-                "answered_by_approver": a.get("decision_source") == "partner_reported"
-                and a.get("decision_recorded_by_org_id") == a["approver_org_id"],
-            }
-            for a in approvals
-        ]
+        context["approvals"] = approvals_as_read(self.op, award.pk)
         # The same rule the order guard applies: a refusal later reversed by
         # a fresh approval from the same approver in the same role is history.
         blocking_ids = {a.pk for a in _access(self.request).blocking_approvals(award)}
@@ -836,14 +855,14 @@ class ApprovalDocumentAttachView(_AwardScreen):
 
 
 class QuoteDocumentAttachView(OperationFormView):
-    """The quotation itself, or the pro-forma invoice a price came off."""
+    """A document filed with this offer: the quotation, a pro-forma, the product's registration."""
 
     operation = "document_attach"
     form_class = DocumentForm
     title = "Attach a document to this quote"
     intro = (
-        "The quotation as the supplier sent it, or the pro-forma invoice its price came off. "
-        "Upload the file or link to where it lives."
+        "The quotation as the supplier sent it, the pro-forma invoice its price came off, or the "
+        "product's registration or certificate sent with it. Upload the file or link to where it lives."
     )
     submit_label = "Attach"
     footnote = "Over 12 MB, store it elsewhere and give a link."

@@ -300,7 +300,6 @@ class ChecksView(OperationBase):
         context["refs"] = {
             "round": {r["id"]: r.get("label") or f"round {r['id']}" for r in self.op("round_list")},
             "supplier": {s["id"]: s["name"] for s in self.op("supplier_list")},
-            "order": {c["id"]: c.get("reference") or f"order {c['id']}" for c in self.op("contract_list")},
         }
         context["groups"] = [
             {"kind": kind_name, "category": checks["kinds"][kind_name], "items": items}
@@ -492,6 +491,29 @@ class OrderDetailView(OperationBase):
             "complete": total is not None and total >= (_amount(match.get("ordered")) or 0),
         }
 
+    def _award(self, contract):
+        """The award this order was placed against, and that award's approvals.
+
+        (None, []) for an order placed without one. The approvals are read the
+        way the award page reads them, so the two pages cannot disagree.
+        """
+        from connect_labs.supply_chain.procurement.views import approvals_as_read
+
+        award_id = contract.get("award_id")
+        if not award_id:
+            return None, []
+        awards = self.op("award_list", round_id=contract["round_id"]) if contract.get("round_id") else []
+        award = next((a for a in awards if a["id"] == award_id), None)
+        if award is None:
+            awards = self.op("award_list")
+            award = next((a for a in awards if a["id"] == award_id), None)
+        if award is None:
+            return None, []
+        award["supplier_name"] = next(
+            (s["name"] for s in self.op("supplier_list") if s["id"] == award["supplier_id"]), ""
+        )
+        return award, approvals_as_read(self.op, award_id)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["has_program_context"] = has_program_context(self.request)
@@ -517,6 +539,7 @@ class OrderDetailView(OperationBase):
             if contract.get("item_id")
             else None
         )
+        context["award"], context["award_approvals"] = self._award(contract)
         # The short order this one covers, by the reference people use for it.
         if contract.get("covers_shortfall_of_id"):
             context["covers"] = self.op("contract_get", contract_id=contract["covers_shortfall_of_id"])

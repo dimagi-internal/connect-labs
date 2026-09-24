@@ -190,15 +190,94 @@ def fact_rows(facts):
     return [(str(key).replace("_", " "), _fact_text(value)) for key, value in (facts or {}).items()]
 
 
-# Fact keys that are references to a record, and the page that record is read on.
-_FACT_REFERENCES = {
-    "round_id": ("round", "supply_chain:procurement_round_detail"),
-    "supplier_id": ("supplier", "supply_chain:supplier_detail"),
-    "contract_id": ("order", "supply_chain:order_detail"),
+# A check's facts as a person reads them on the checks page. Keyed by the fact's
+# name; a key not here is spelled out by `humanise` rather than dropped, so a
+# new fact still reaches the page. Each is a label for a fact, never a verdict.
+CHECK_FACT_LABELS = {
+    "signed_on": "Signed",
+    "promised_lead_time_days": "Promised lead time",
+    "supplier": "Supplier",
+    "status": "Status",
+    "outstanding": "Outstanding",
+    "over_invoiced": "Billed beyond what arrived",
+    "amount": "Amount",
+    "required": "Documents required",
+    "balance": "Balance",
+    "kind": "Kind of site",
+    "months_of_stock": "Months of stock",
+    "min_months_of_stock": "Its own minimum",
+    "ledger": "Ledger",
+    "reported": "Counted",
+    "variance": "Difference",
+    "reconcilable": "Can be reconciled",
+    "reported_kind": "How it was counted",
+    "reasons": "Why",
+    "missing": "Not stated",
+    "blocks": "Cannot compute",
+    "buyer_of_record": "Buyer of record",
+    "provisional": "Provisional ranking",
+    "approver": "Approver",
+    "role": "As",
+    "requested_on": "Asked",
+    "verdict": "Verdict",
+    "requirements": "Required",
+    "stated": "Stated",
+    "components": "Parts",
+    "components_in_each": "Parts in each",
+    "connect_username": "Connect username",
+    "holds_stock": "Holds stock",
+    "commodity": "Product",
+    "trade_item": "Trade item",
 }
+
+# Fact keys that reference another record: the label, the key into the view's
+# `refs` ({id: name}), and the page that record is read on. "round id 33" and
+# "supplier id 88" were the raw facts; the page has the names one list call away.
+# `contract_id` is not here: the card already goes to that order -- it is the
+# card's own link when the subject has no page, and a shipment's page opens
+# with its order.
+_FACT_REFERENCES = {
+    "round_id": ("Round", "round", "supply_chain:procurement_round_detail"),
+    "supplier_id": ("Supplier", "supplier", "supply_chain:supplier_detail"),
+}
+
+# Quantities and the key their unit rides in, so "400" and "jerry_can" read as
+# one fact, "400 jerry cans", rather than two rows.
+_CHECK_FACT_UNITS = {
+    "outstanding": "unit",
+    "over_invoiced": "unit",
+    "balance": "unit",
+    "variance": "unit",
+    "ledger": "ledger_unit",
+    "reported": "reported_unit",
+}
+
+# Figures stated in months or days, where the key names the period.
+_CHECK_FACT_PERIODS = {"promised_lead_time_days": "day", "min_months_of_stock": "month"}
 
 # A check against a bound, and the two facts that say it in one line.
 _READOUTS = {"stock_below_minimum": ("months_of_stock", "min_months_of_stock")}
+
+
+class FactRow(tuple):
+    """One fact on a check card: (label, text), and the page it links to, if any.
+
+    A plain two-tuple to anything that unpacks or compares it; `href` rides
+    alongside so the template can link a referenced record by its name.
+    """
+
+    def __new__(cls, label, text, href=None):
+        row = super().__new__(cls, (label, text))
+        row.href = href
+        return row
+
+    @property
+    def label(self):
+        return self[0]
+
+    @property
+    def text(self):
+        return self[1]
 
 
 @register.filter
@@ -213,36 +292,79 @@ def check_readout(check):
     return f"{line} · minimum {quantity_digits(bound)}" if bound not in (None, "") else line
 
 
-@register.filter
-def check_rows(check, refs=None):
-    """A check's facts as rows a person reads: related records by name, linked.
+def _check_fact_value(key, value, facts):
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if key in _CHECK_FACT_UNITS and not isinstance(value, list | tuple | dict):
+        unit = facts.get(_CHECK_FACT_UNITS[key]) or facts.get("unit")
+        return qty(value, unit) if unit else _fact_text(value)
+    if key in _CHECK_FACT_PERIODS and value not in (None, ""):
+        return qty(value, _CHECK_FACT_PERIODS[key])
+    if key == "amount" and facts.get("currency"):
+        return f"{facts['currency']} {money_digits(value)}"
+    if key == "buyer_of_record":
+        return buyer_label(value)
+    if key in ("role", "kind", "reported_kind", "status") and isinstance(value, str):
+        return words(value)
+    if key == "blocks" and isinstance(value, list | tuple):
+        return "; ".join(words(v) for v in value) or "none"
+    return _fact_text(value)
 
-    `refs` maps "round" / "supplier" / "order" to {id: name}. "round id 33"
-    and "supplier id 88" were the raw facts; the page has the names one list
-    call away. A fact the readout already says is not repeated.
+
+@register.filter
+def check_facts(check, refs=None):
+    """A check's facts as labelled rows, worded for the checks page.
+
+    Each row is a `FactRow` -- (label, text) plus an `href` when the fact is
+    another record: a round or supplier reads by its name (from `refs`, which
+    maps "round" / "supplier" to {id: name}) and links to it.
+
+    Leaves out what the card already says: the age and the date it counts
+    from (the header's "90 days since 2026-06-26" is `days_late` and
+    `expected_on` again), a threshold the readout line states, a supplier the
+    subject's label already names, a record the card itself links to, and
+    ids with no page of their own. A quantity is read with its unit and a
+    period with its noun. Nothing is ranked or added: every row is one of the
+    check's own facts, in words.
     """
+    check = check or {}
     refs = refs or {}
-    facts = (check or {}).get("facts") or {}
-    said = set(_READOUTS.get((check or {}).get("kind"), ())) if check_readout(check) else set()
+    facts = check.get("facts") or {}
+    since = check.get("since")
+    label = ((check.get("subject") or {}).get("label")) or ""
+    card_href = check_href(check)
+    said = set(_READOUTS.get(check.get("kind"), ())) if check_readout(check) else set()
+    units = set(_CHECK_FACT_UNITS.values()) | {"currency"}
     rows = []
     for key, value in facts.items():
-        if key in said:
+        if key in said or key in units:
             continue
-        if key in _FACT_REFERENCES and value not in (None, ""):
-            noun, url_name = _FACT_REFERENCES[key]
-            name = (refs.get(noun) or {}).get(value)
-            rows.append({"label": noun, "text": name or f"{noun} {value}", "href": reverse(url_name, args=[value])})
+        if key in _FACT_REFERENCES:
+            if value in (None, ""):
+                continue
+            row_label, ref_key, url_name = _FACT_REFERENCES[key]
+            href = reverse(url_name, args=[value])
+            if href == card_href:
+                continue
+            name = (refs.get(ref_key) or {}).get(value)
+            rows.append(FactRow(row_label, name or f"{row_label.lower()} {value}", href))
             continue
-        if key == "supplier" and isinstance(value, dict) and value.get("id"):
-            rows.append(
-                {
-                    "label": "supplier",
-                    "text": _fact_text(value),
-                    "href": reverse("supply_chain:supplier_detail", args=[value["id"]]),
-                }
-            )
+        if key == "id" or str(key).endswith("_id"):
             continue
-        rows.append({"label": str(key).replace("_", " "), "text": _fact_text(value), "href": None})
+        if key == "days_late" and value == check.get("days_open"):
+            continue
+        if since and value == since and key != "signed_on":
+            continue
+        if key == "supplier" and isinstance(value, dict):
+            if value.get("name") and value["name"] in label:
+                continue
+            if value.get("id"):
+                href = reverse("supply_chain:supplier_detail", args=[value["id"]])
+                if href != card_href:
+                    rows.append(FactRow("Supplier", _fact_text(value), href))
+                continue
+        text = _check_fact_value(key, value, facts)
+        rows.append(FactRow(CHECK_FACT_LABELS.get(key) or humanise(key).capitalize(), text))
     return rows
 
 
@@ -626,17 +748,20 @@ def _as_number(amount):
 
 
 @register.filter
-def figure_label(key):
+def figure_label(key, commodity=None):
     """A derived figure's name, from the one place that names them.
 
-    The unit placeholders are left unfilled here: the template that shows a
-    single quote has no commodity in scope, and "USD per {base_unit}" read as
+    `{{ key|figure_label:commodity }}` fills the unit with the commodity's own
+    noun, as the comparison's column headers do: "USD per jerry can". Without
+    a commodity the placeholders read generically ("base unit", "pack") --
     "USD per sachet" on a page about cartons would be worse than the generic
     word.
     """
-    from connect_labs.supply_chain.procurement.services.pricing import FIGURE_LABELS
+    from connect_labs.supply_chain.procurement.services.pricing import FIGURE_LABELS, figure_nouns
 
     label = FIGURE_LABELS.get(key, str(key).replace("_", " "))
+    if isinstance(commodity, dict):
+        return label.format(**figure_nouns(commodity.get("base_unit"), commodity.get("pack_unit")))
     return label.replace("{base_unit}", "base unit").replace("{pack_unit}", "pack")
 
 

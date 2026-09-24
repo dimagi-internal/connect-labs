@@ -413,6 +413,25 @@ def deliver(now, program_id=None) -> int:
     return emails
 
 
+def found_so_far(program_id) -> dict:
+    """What this programme's active alerts have already found, and how each left.
+
+    Read after a "Check now" that found nothing new, so the page can say what
+    IS true -- the notices already in the log, and whether each was sent --
+    rather than "nothing new" directly above the rows it had found before.
+    Counts by delivery status, and the latest time a notice was sent.
+    """
+    notices = AlertNotice.objects.filter(program_id=program_id, subscription__active=True)
+    by_delivery = defaultdict(int)
+    for delivery in notices.values_list("delivery", flat=True):
+        by_delivery[delivery] += 1
+    return {
+        "total": sum(by_delivery.values()),
+        "by_delivery": dict(by_delivery),
+        "latest_sent_at": notices.filter(delivery="queued").aggregate(latest=Max("sent_at"))["latest"],
+    }
+
+
 def run_alerts(now=None, program_id=None) -> dict:
     """One full pass: detect for every active subscription, then deliver.
 

@@ -30,7 +30,7 @@ the record it is about, because that is where it gets answered.
     {% for name in checks.categories %}
       <a href="?category={{ name }}"
          class="px-2.5 py-1 rounded-md border {% if category == name %}border-brand-indigo text-brand-indigo{% else %}border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">
-        {{ name|humanise }} <span class="text-gray-400">— {{ name|category_label }}</span>
+        {{ name|humanise }} <span class="text-gray-600">— {{ name|category_label }}</span>
       </a>
     {% endfor %}
   </div>
@@ -61,14 +61,18 @@ the record it is about, because that is where it gets answered.
           {% with readout=check|check_readout %}
             {% if readout %}<p class="text-xs text-gray-800 mt-1.5 tabular-nums">{{ readout }}</p>{% endif %}
           {% endwith %}
-          <dl class="grid grid-cols-1 sm:grid-cols-4 gap-x-4 gap-y-0.5 mt-1.5">
-            {% for row in check|check_rows:refs %}
-              <dt class="text-xs text-gray-500">{{ row.label }}</dt>
-              <dd class="text-xs text-gray-800 break-words sm:col-span-3">
-                {% if row.href %}<a class="text-brand-indigo hover:underline" href="{{ row.href }}">{{ row.text }}</a>{% else %}{{ row.text }}{% endif %}
-              </dd>
-            {% endfor %}
-          </dl>
+          {% comment %}Each fact beside its label, in words: "Promised lead time: 60 days",
+          "Outstanding: 400 jerry cans", a round or supplier by name and linked. What the
+          header or the readout already says is left out.{% endcomment %}
+          {% with rows=check|check_facts:refs %}
+            {% if rows %}
+              <dl class="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-xs">
+                {% for row in rows %}
+                  <div class="flex gap-1 break-words"><dt class="text-gray-500">{{ row.label }}:</dt><dd class="text-gray-800">{% if row.href %}<a class="text-brand-indigo hover:underline" href="{{ row.href }}">{{ row.text }}</a>{% else %}{{ row.text }}{% endif %}</dd></div>
+                {% endfor %}
+              </dl>
+            {% endif %}
+          {% endwith %}
         </li>
       {% endfor %}
     </ul>
