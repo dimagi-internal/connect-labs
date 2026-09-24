@@ -187,6 +187,26 @@ class TestWholePacksAreSentWhole:
         assert abs(Decimal(digits) - amc) <= Decimal("0.5")
 
 
+class TestDemandReadsAsTheDataAllows:
+    """One demand rule: whole counted units, one place for a measure, never rounded to nothing."""
+
+    def test_counted_units_are_whole(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import demand_text
+
+        assert demand_text({"amount": "83.7209", "unit": "jerry_can"}) == "84 jerry cans"
+        assert demand_text({"amount": "3033.33", "unit": "co-pack"}) == "3,033 co-packs"
+
+    def test_a_measure_keeps_one_place(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import demand_text
+
+        assert demand_text({"amount": "83.72", "unit": "L"}) == "83.7 L"
+
+    def test_under_one_whole_unit_is_not_zero(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import demand_text
+
+        assert demand_text({"amount": "0.4", "unit": "carton"}) == "0.4 cartons"
+
+
 class TestTheFootnoteSaysWhereConsumptionComesFrom:
     def test_it_does_not_credit_connect_visits_with_a_partners_report(self, scoped, world):
         text = _text(_stock_page(scoped))
@@ -243,6 +263,42 @@ class TestStockOnItsWayIsShownButNotCounted:
         )
         (expected,) = _row(da, world)["expected_inbound"]
         assert expected["outstanding"] == {"amount": "250", "unit": "jerry_can"}
+
+    def test_an_order_paid_in_advance_expects_what_is_awaited_not_what_was_refused(self, da, world):
+        """Refused goods on an order paid ahead are owed back, not on their way --
+        the order page's "Still outstanding" there is what is awaited."""
+        advance = world["contract"](
+            reference="ADV-1",
+            status="confirmed",
+            consideration="priced",
+            payment_terms="advance",
+            unit_price="2",
+            currency="USD",
+            quantity="100",
+            signed_on=days_ago(20),
+            promised_lead_time_days=60,
+        )
+        op(
+            da,
+            "receipt_record",
+            data={
+                "contract_id": advance["id"],
+                "supply_point_id": world["store"]["id"],
+                "received_on": days_ago(2),
+                "source": "partner_reported",
+                "lines": [
+                    {
+                        "quantity_accepted": "60",
+                        "quantity_rejected": "10",
+                        "rejection_reason": "leaking",
+                        "quantity_unit": "jerry_can",
+                    }
+                ],
+            },
+        )
+        match = op(da, "contract_match", contract_id=advance["id"])
+        (expected,) = _row(da, world)["expected_inbound"]
+        assert expected["outstanding"] == match["awaiting_delivery"] == {"amount": "30", "unit": "jerry_can"}
 
     def test_an_order_not_yet_due_is_expected_but_not_overdue(self, scoped, da, world):
         world["contract"](
