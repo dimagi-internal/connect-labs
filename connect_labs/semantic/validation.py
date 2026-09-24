@@ -24,7 +24,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from connect_labs.semantic.compiler import SCOPES, RegistryError, compile_indicator_sql, validate
+from connect_labs.semantic.compiler import (
+    SCOPES,
+    RegistryError,
+    compile_indicator_sql,
+    deployment_literal_problems,
+    validate,
+)
 
 # A registry is compiled against Layer 1's output columns, and Layer 1 is
 # generated from the pipeline. At save time there is no pipeline in hand, so the
@@ -67,6 +73,13 @@ def validate_registry(
         errors.append("deployment: every llo_map key must be an opportunity id (an integer)")
         llo_map = None
     settings = deployment.get("settings") or None
+    if settings is not None and not isinstance(settings, dict):
+        errors.append("deployment: settings must be a mapping of setting -> {LLO: true/false}")
+        settings = None
+
+    # LLO names and settings keys are quoted into the compiled SQL (the `llo` CASE
+    # and the suppression IN lists). Refuse the values quoting could not make safe.
+    errors.extend(deployment_literal_problems(llo_map, settings))
 
     # 1. References and the expression grammar.
     try:

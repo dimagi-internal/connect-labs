@@ -308,41 +308,396 @@ _FORBIDDEN_NODES: dict[str, str] = {
 }
 
 
-def _check_expression(fragment: str, measure_name: str) -> list[str]:
-    """Refuse anything outside the grammar. Returns problems, never raises."""
-    import sqlglot
-    from sqlglot import exp
+# Characters that change where Postgres thinks a token ENDS without changing where
+# sqlglot thinks it does. The grammar check parses a fragment on its own, but the
+# compiler splices the RAW text into a much larger statement -- so anything the two
+# lexers disagree about is a way to smuggle SQL past the check. sqlglot drops
+# comments silently (`a /* c */ + 1` parses as `a + 1`), so a fragment that opens a
+# comment can swallow the text between it and a later fragment's `*/`, and that
+# later fragment can hide a subquery inside what the check saw as a string literal.
+# Backslashes (E'' escapes) and `$` (dollar quoting, positional parameters) are the
+# other two ways the lexers can drift. None of them is needed to express a registry.
+_LEXICAL_FORBIDDEN: tuple[tuple[str, str], ...] = (
+    (";", "a statement separator"),
+    ("--", "a comment"),
+    ("/*", "a comment"),
+    ("*/", "a comment"),
+    ("\\", "a backslash"),
+    ("$", "a dollar sign"),
+)
 
-    # `{other_measure}` references are resolved by compile_measures later; here they
-    # only need to parse, so stand each one up as a plain identifier. Without this
-    # sqlglot reads `{c01_numerator}` as a brace struct literal and every real
-    # measure in the registry fails its own grammar.
-    text = _MEASURE_REF.sub(lambda m: m.group(1), _cube_to_props(fragment))
+# Casts are how the registry moves between dates, timestamps and numbers. The type
+# is on a list too: `x::regclass` / `::regproc` are catalogue lookups, not arithmetic.
+_ALLOWED_CAST_TYPES = frozenset(
+    {
+        "INT",
+        "BIGINT",
+        "SMALLINT",
+        "DECIMAL",
+        "DOUBLE",
+        "FLOAT",
+        "DATE",
+        "TIMESTAMP",
+        "TIMESTAMPTZ",
+        "TEXT",
+        "VARCHAR",
+        "BOOLEAN",
+    }
+)
+
+# Bare words Postgres evaluates as session functions rather than column names. A
+# column reference cannot reach another table, but `user` would still read the
+# database role into a dashboard, so these are refused wherever a column may appear.
+_SESSION_WORDS = frozenset(
+    {
+        "user",
+        "current_user",
+        "session_user",
+        "current_role",
+        "current_catalog",
+        "current_schema",
+        "system_user",
+    }
+)
+
+# A date part is a bare word too (`EXTRACT(EPOCH FROM ...)`, `DATE_TRUNC('month', ...)`,
+# `INTERVAL '1 day'`); sqlglot calls it a Var. It is only legal as that argument.
+_DATE_PART_PARENTS = frozenset({"Extract", "TimestampTrunc", "DateTrunc", "Interval"})
+_DATE_PARTS = frozenset(
+    {
+        "EPOCH",
+        "YEAR",
+        "QUARTER",
+        "MONTH",
+        "WEEK",
+        "DAY",
+        "DOW",
+        "ISODOW",
+        "DOY",
+        "HOUR",
+        "MINUTE",
+        "SECOND",
+        "DAYS",
+        "MONTHS",
+        "WEEKS",
+        "YEARS",
+    }
+)
+
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+
+
+def _lexical_problems(text: str, label: str) -> list[str]:
+    return [f"{label}: sql may not contain {why} ({token!r})" for token, why in _LEXICAL_FORBIDDEN if token in text]
+
+
+def _parse_fragment(text: str, label: str, original: str):
+    """(tree, problems). A fragment that does not parse is a problem, not a raise."""
+    import sqlglot
+
     try:
         tree = sqlglot.parse_one(text, read="postgres")
     except Exception as parse_error:
-        return [f"{measure_name}: sql does not parse ({type(parse_error).__name__}): {fragment!r}"]
+        return None, [f"{label}: sql does not parse ({type(parse_error).__name__}): {original!r}"]
     if tree is None:
-        return [f"{measure_name}: sql is empty"]
+        return None, [f"{label}: sql is empty"]
+    return tree, []
+
+
+def _grammar_problems(
+    tree,
+    label: str,
+    *,
+    functions: frozenset[str],
+    nodes: frozenset[str],
+    anonymous_ok: bool,
+    columns: frozenset[str] | None = None,
+    qualifiers: frozenset[str] = frozenset(),
+) -> list[str]:
+    """Walk a parsed fragment and refuse anything outside `functions` / `nodes`.
+
+    `columns`, when given, is the complete set of names a bare column may resolve
+    to at the point the fragment runs. When it is None the fragment reads Layer-1
+    columns whose names depend on the pipeline, so only their SHAPE is checked.
+    """
+    from sqlglot import exp
 
     problems: list[str] = []
     for node in tree.walk():
         kind = type(node).__name__
         if kind in _FORBIDDEN_NODES:
-            problems.append(f"{measure_name}: sql may not contain {_FORBIDDEN_NODES[kind]}")
+            problems.append(f"{label}: sql may not contain {_FORBIDDEN_NODES[kind]}")
             continue
-        if kind in ALLOWED_FUNCTIONS or kind in _ALLOWED_NODES:
+        if kind not in functions and kind not in nodes:
+            if kind == "Anonymous":
+                problems.append(f"{label}: sql calls {node.this!s}(), which is not an allowed function")
+            elif isinstance(node, exp.Func):
+                problems.append(f"{label}: sql calls {kind}, which is not an allowed function")
+            else:
+                problems.append(f"{label}: sql uses {kind}, which the expression grammar does not allow")
+            continue
+        if kind == "Anonymous":
             # An Anonymous node is a function sqlglot has no class for -- i.e. one
             # nobody put on the list. That is exactly the case to refuse.
-            if kind == "Anonymous":
-                name = str(getattr(node, "this", "") or "")
-                if name and name.capitalize() not in ALLOWED_FUNCTIONS:
-                    problems.append(f"{measure_name}: sql calls {name}(), which is not an allowed function")
+            name = str(getattr(node, "this", "") or "")
+            if not anonymous_ok or (name and name.capitalize() not in functions):
+                problems.append(f"{label}: sql calls {name}(), which is not an allowed function")
+        elif kind == "DataType":
+            type_name = getattr(node.this, "name", str(node.this))
+            if type_name not in _ALLOWED_CAST_TYPES:
+                problems.append(f"{label}: sql casts to {node.sql('postgres')}, which is not an allowed type")
+        elif kind == "Var":
+            parent = type(node.parent).__name__ if node.parent is not None else ""
+            if parent not in _DATE_PART_PARENTS or str(node.this).upper() not in _DATE_PARTS:
+                problems.append(f"{label}: sql uses the bare word {node.this!s}, which is not a column or date part")
+        elif kind == "Column":
+            name = node.name
+            if node.args.get("db") or node.args.get("catalog") or (node.table and node.table not in qualifiers):
+                problems.append(f"{label}: sql may not qualify a column ({node.sql('postgres')})")
+                continue
+            if not _IDENTIFIER.match(name or "") or name.lower() in _SESSION_WORDS:
+                problems.append(f"{label}: {name!r} is not a column name this registry may reference")
+            elif columns is not None and name not in columns:
+                problems.append(f"{label}: unknown column {name}")
+    return problems
+
+
+def _check_expression(fragment: str, measure_name: str) -> list[str]:
+    """Refuse anything outside the grammar. Returns problems, never raises."""
+    lexical = _lexical_problems(fragment, measure_name)
+    if lexical:
+        return lexical
+    # `{other_measure}` references are resolved by compile_measures later; here they
+    # only need to parse, so stand each one up as a plain identifier. Without this
+    # sqlglot reads `{c01_numerator}` as a brace struct literal and every real
+    # measure in the registry fails its own grammar.
+    text = _MEASURE_REF.sub(lambda m: m.group(1), _cube_to_props(fragment))
+    tree, problems = _parse_fragment(text, measure_name, fragment)
+    if tree is None:
+        return problems
+    return _grammar_problems(
+        tree,
+        measure_name,
+        functions=ALLOWED_FUNCTIONS,
+        nodes=frozenset(_ALLOWED_NODES),
+        anonymous_ok=True,
+        qualifiers=frozenset({"props"}),  # what {CUBE} becomes
+    )
+
+
+# ── The Layer 2 grammar ──────────────────────────────────────────────────────
+#
+# The measure grammar above guarded only the INDICATORS document. Everything in the
+# PROPERTIES document -- properties, aggregates and every part of the weight series
+# -- was interpolated into the compiled statement with nothing looking at it, so
+# the hole the measure grammar closed was still open one document over. Measured
+# before this existed, each of these passed validate_registry:
+#
+#     properties[].sql:   (SELECT count(*) FROM auth_user)
+#     aggregates[].sql:   MIN(pg_read_file('/etc/passwd'))
+#     weight_series.derived[].sql / valid / day_collapse: any subquery
+#     constants:          {"WMIN": "0 AND (SELECT ...) IS NOT NULL"}
+#
+# Layer 2 legitimately needs more than a measure does -- date arithmetic, EXTRACT,
+# BOOL_AND/BOOL_OR, regex matches on form names -- and this list is exactly what the
+# shipped and live KMC registries use, plus the date helpers the notation implies.
+# Deny by default: a function that is not named here is refused, including every
+# Anonymous one, so pg_read_file / dblink / pg_sleep / lo_* / set_config /
+# current_setting cannot be reached however they are spelled.
+LAYER2_FUNCTIONS: frozenset[str] = ALLOWED_FUNCTIONS | frozenset(
+    {
+        "LogicalAnd",  # BOOL_AND
+        "LogicalOr",  # BOOL_OR
+        "Extract",  # EXTRACT(EPOCH FROM ...)
+        "TimestampTrunc",  # DATE_TRUNC('month', ...)
+        "DateTrunc",
+        "CurrentDate",  # the default :as_of
+        "RegexpLike",  # form_name ~ '...'
+        "RegexpILike",  # form_name ~* '...'
+    }
+)
+_LAYER2_NODES: frozenset[str] = (frozenset(_ALLOWED_NODES) - {"Alias", "Anonymous"}) | {"Var", "Interval"}
+
+# Columns each weight-series fragment can see. These CTEs are the compiler's own,
+# so the set is exact; see _build_ctes.
+_DAY_COLLAPSE_COLUMNS = frozenset({"baby_id", "day", "weight_g", "is_seed"})  # weight_readings
+_DERIVED_COLUMNS = frozenset(
+    {"baby_id", "day", "w", "is_seed", "prev_w", "prev_day", "series_day", "age_days"}
+)  # weight_seq
+# What base_m adds beyond the aggregates and weight derivations (visit_agg's keys).
+_BASE_COLUMNS = frozenset({"baby_id", "opportunity_id", "username", "case_id", "cohort_month"})
+
+
+def _check_layer2_fragment(
+    fragment: Any,
+    label: str,
+    constants: dict[str, Any],
+    columns: frozenset[str] | None = None,
+) -> list[str]:
+    """One properties-document fragment, checked AS THE COMPILER WILL EMIT IT.
+
+    Constants are substituted first, so a constant that carries SQL is parsed as
+    SQL -- the check reads the text the database would, not the text the author wrote.
+    """
+    if not isinstance(fragment, str) or not fragment.strip():
+        return [f"{label}: sql must be a non-empty string"]
+    lexical = _lexical_problems(fragment, label)
+    if lexical:
+        return lexical
+    try:
+        text = _subst_constants(fragment, constants)
+    except RegistryError as exc:
+        return [f"{label}: {exc}"]
+    lexical = _lexical_problems(text, label)
+    if lexical:
+        return lexical
+    tree, problems = _parse_fragment(text, label, fragment)
+    if tree is None:
+        return problems
+    return _grammar_problems(
+        tree, label, functions=LAYER2_FUNCTIONS, nodes=_LAYER2_NODES, anonymous_ok=False, columns=columns
+    )
+
+
+def _constant_problems(constants: Any) -> list[str]:
+    """A constant is spliced in as text, so it may only be a number or a boolean."""
+    import math
+
+    if not isinstance(constants, dict):
+        return ["constants: must be a mapping of NAME -> number"]
+    problems = []
+    for key, value in constants.items():
+        if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", key):
+            problems.append(f"constants: {key!r} is not a valid constant name")
+        if isinstance(value, bool):
             continue
-        if isinstance(node, exp.Func):
-            problems.append(f"{measure_name}: sql calls {kind}, which is not an allowed function")
+        if isinstance(value, int) or (isinstance(value, float) and math.isfinite(value)):
+            continue
+        problems.append(f"constants.{key}: must be a number, got {value!r}")
+    return problems
+
+
+def _name_problems(kind: str, items: Any) -> list[str]:
+    """Every name becomes `AS <name>` in the compiled SQL -- an identifier, nothing more."""
+    if not isinstance(items, list):
+        return [f"{kind}: must be a list"]
+    problems = []
+    for item in items:
+        name = item.get("name") if isinstance(item, dict) else None
+        if not isinstance(name, str) or not _IDENTIFIER.match(name):
+            problems.append(f"{kind}: {name!r} is not a valid name (letters, digits and _ only)")
+    return problems
+
+
+def validate_properties_doc(props_doc: dict[str, Any], llo_map: dict[Any, str] | None = None) -> list[str]:
+    """Every SQL fragment in the properties document, against the Layer 2 grammar."""
+    problems: list[str] = []
+    raw_constants = props_doc.get("constants") or {}
+    problems.extend(_constant_problems(raw_constants))
+    constants = dict(raw_constants) if isinstance(raw_constants, dict) else {}
+    # Checked against the default the compiler uses; callers only ever pass
+    # CURRENT_DATE or an ISO-validated DATE '...' literal (workflow views, snapshot
+    # builders), never registry-controlled text.
+    constants["as_of"] = "CURRENT_DATE"
+
+    properties = props_doc.get("properties") or []
+    aggregates = props_doc.get("aggregates") or []
+    ws = props_doc.get("weight_series") or {}
+    derived = ws.get("derived") or []
+    name_problems = [
+        p
+        for kind, items in (
+            ("properties", properties),
+            ("aggregates", aggregates),
+            ("weight_series.derived", derived),
+        )
+        for p in _name_problems(kind, items)
+    ]
+    if name_problems:
+        return problems + name_problems  # every label below is built from a name
+
+    # Aggregates and the `valid` predicate read Layer-1 columns, named by the
+    # pipeline rather than the registry -- only their shape can be checked here.
+    for a in aggregates:
+        problems.extend(_check_layer2_fragment(a.get("sql"), f"aggregates.{a['name']}", constants))
+    problems.extend(_check_layer2_fragment(ws.get("valid"), "weight_series.valid", constants))
+    problems.extend(
+        _check_layer2_fragment(
+            ws.get("day_collapse"), "weight_series.day_collapse", constants, columns=_DAY_COLLAPSE_COLUMNS
+        )
+    )
+    for d in derived:
+        problems.extend(
+            _check_layer2_fragment(
+                d.get("sql"), f"weight_series.derived.{d['name']}", constants, columns=_DERIVED_COLUMNS
+            )
+        )
+
+    seed = ws.get("seed_reading")
+    if seed:
+        if not isinstance(seed, dict):
+            problems.append("weight_series.seed_reading: must be a mapping")
         else:
-            problems.append(f"{measure_name}: sql uses {kind}, which the expression grammar does not allow")
+            for key in ("day", "value"):
+                if not isinstance(seed.get(key), str) or not _IDENTIFIER.match(seed[key]):
+                    problems.append(f"weight_series.seed_reading.{key}: must be a single column name")
+            if seed.get("exclude"):
+                problems.extend(
+                    _check_layer2_fragment(seed["exclude"], "weight_series.seed_reading.exclude", constants)
+                )
+
+    # A property runs over base_m and the property levels before it: the baby's
+    # keys, every aggregate, every weight derivation, and the other properties
+    # (ordering and cycles are _property_levels' job).
+    visible = (
+        set(_BASE_COLUMNS)
+        | {a["name"] for a in aggregates}
+        | {d["name"] for d in derived}
+        | {p["name"] for p in properties}
+    )
+    if llo_map:
+        visible.add("llo")
+    for p in properties:
+        problems.extend(
+            _check_layer2_fragment(p.get("sql"), f"properties.{p['name']}", constants, columns=frozenset(visible))
+        )
+    return problems
+
+
+def _sql_string_literal(value: Any) -> str:
+    """A deployment fact (an LLO name, a settings key) as a quoted SQL literal.
+
+    Doubling the quote is the whole escape under standard_conforming_strings, which
+    is Postgres's default. A backslash or a control character is the one thing that
+    could make the escape depend on a server setting, and no LLO is named with one,
+    so refuse rather than reason about it.
+    """
+    text = str(value)
+    if "\\" in text or any(ord(ch) < 32 or ord(ch) == 127 for ch in text):
+        raise RegistryError(f"{text!r} contains a backslash or control character and cannot be quoted safely")
+    return "'" + text.replace("'", "''") + "'"
+
+
+def deployment_literal_problems(
+    llo_map: dict[Any, str] | None,
+    settings: dict[str, dict[Any, bool]] | None,
+) -> list[str]:
+    """Deployment values the compiler quotes into SQL, checked before it has to."""
+    problems: list[str] = []
+    for opp, name in (llo_map or {}).items():
+        try:
+            _sql_string_literal(name)
+        except RegistryError as exc:
+            problems.append(f"deployment.llo_map.{opp}: {exc}")
+    for setting, table in (settings or {}).items():
+        if not isinstance(table, dict):
+            problems.append(f"deployment.settings.{setting}: must be a mapping of LLO -> true/false")
+            continue
+        for key in table:
+            try:
+                _sql_string_literal(key)
+            except RegistryError as exc:
+                problems.append(f"deployment.settings.{setting}: {exc}")
     return problems
 
 
@@ -351,10 +706,14 @@ def validate(
     registry: dict[str, Any],
     llo_map: dict[Any, str] | None = None,
 ) -> list[str]:
-    """Every {CUBE}.col must resolve to a real property or aggregate.
+    """Every {CUBE}.col must resolve to a real property or aggregate, and every SQL
+    fragment in BOTH documents must sit inside its grammar.
 
     This is the check a Cube runtime would do for us and will not, because we do
-    not run one. Without it a typo silently produces a NULL column.
+    not run one. Without it a typo silently produces a NULL column. It runs on the
+    write path (validation.validate_registry) AND on every compile (_build_ctes),
+    so a record saved before a rule existed is refused when it is next run rather
+    than executed.
     """
     known = {p["name"] for p in props_doc["properties"]}
     known |= {a["name"] for a in props_doc["aggregates"]}
@@ -365,6 +724,18 @@ def validate(
         known.add("llo")
 
     problems: list[str] = []
+    # Names and the properties document first: both are spliced into the compiled
+    # statement as raw text, and neither was looked at before.
+    problems.extend(_name_problems("measures", registry["measures"]))
+    problems.extend(validate_properties_doc(props_doc, llo_map))
+    for rule in registry.get("suppression") or []:
+        scope_col = rule.get("scope", "llo") if isinstance(rule, dict) else None
+        if scope_col not in INTRINSIC_SCOPE_COLUMNS | {"llo"}:
+            problems.append(
+                f"suppression: scope {scope_col!r} is not a scope column; expected one of "
+                f"{sorted(INTRINSIC_SCOPE_COLUMNS | {'llo'})}"
+            )
+
     for m in registry["measures"]:
         frags = [m.get("sql") or ""] + [f["sql"] for f in (m.get("filters") or [])]
         for frag in frags:
@@ -411,7 +782,7 @@ def _property_levels(properties: list[dict[str, Any]]) -> list[list[dict[str, An
 def _llo_case_sql(llo_map: dict[Any, str]) -> str:
     """opportunity_id -> LLO as a CASE, so `llo` is a real column to GROUP BY."""
     whens = " ".join(
-        f"WHEN {int(opp)} THEN '{str(name).replace(chr(39), chr(39) * 2)}'"
+        f"WHEN {int(opp)} THEN {_sql_string_literal(name)}"
         for opp, name in sorted(llo_map.items(), key=lambda kv: int(kv[0]))
     )
     return f"CASE v.opportunity_id {whens} ELSE NULL END"
@@ -724,7 +1095,7 @@ def _suppression_columns(
             )
         credible = [k for k, v in table.items() if v]
         if credible:
-            lits = ", ".join("'" + str(k).replace("'", "''") + "'" for k in credible)
+            lits = ", ".join(_sql_string_literal(k) for k in credible)
             # BOOL_OR, not a bare predicate. The rule is scoped by llo but the QUERY
             # may be grouped by something else, and `props.llo` is only a legal bare
             # reference where llo is a grouping column -- so `scopes=programme`,
