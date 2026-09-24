@@ -231,6 +231,12 @@ BASIS = ("included", "excluded", "not_specified")
 # expects a unit price, an invoice or a landed cost.
 CONSIDERATIONS = ("priced", "in_kind", "bundled")
 
+# When a priced order is paid. `on_delivery` is the control three-way match
+# was built for: pay for what arrived. `advance` is how a distributor who buys
+# from manufacturers on our behalf is paid -- before any carton exists -- and
+# paying it is the agreed terms, not a discrepancy.
+PAYMENT_TERMS = ("on_delivery", "advance")
+
 # Which level of a trade item is one full treatment course, if either is.
 # Empty means "not a course, or nobody has said", and is the default.
 ONE_COURSE_IS = ("", "base_unit", "pack")

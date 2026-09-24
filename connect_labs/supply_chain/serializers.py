@@ -264,6 +264,7 @@ def contract(obj) -> dict:
         "delivery_supply_point_id": obj.delivery_supply_point_id,
         "promised_lead_time_days": obj.promised_lead_time_days,
         "consideration": obj.consideration,
+        "payment_terms": obj.payment_terms,
         "covers_shortfall_of_id": obj.covers_shortfall_of_id,
         **_sourced(obj),
     }

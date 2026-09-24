@@ -184,7 +184,7 @@ figure here can go stale.
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100">
       <span class="text-xs font-semibold text-gray-600">Ordered · received · invoiced</span>
-      <span class="text-xs text-gray-400 ml-2">{{ match.status|humanise }}</span>
+      <span class="text-xs text-gray-400 ml-2">{{ match.status|humanise }}{% if match.payment_terms == "advance" %} · paid in advance{% endif %}</span>
     </div>
     <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
@@ -221,18 +221,40 @@ figure here can go stale.
             <td class="px-4 py-2 text-right tabular-nums">{{ match.billed_amount|figure_text }}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">Paid</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ match.paid_amount|figure_text }}</td></tr>
-        <tr class="bg-gray-50">
-          <td class="px-4 py-2 font-semibold text-brand-indigo">Safe to pay now</td>
-          <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">
-            {{ match.payable_now|figure_text }}
-          </td>
-        </tr>
+        {% if match.payment_terms == "advance" %}
+          <tr class="bg-gray-50">
+            <td class="px-4 py-2 font-semibold text-brand-indigo">Paid in advance</td>
+            <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">
+              {% if match.awaiting_delivery.amount and match.awaiting_delivery.amount != "0" %}
+                awaiting delivery of {{ match.awaiting_delivery|figure_text }}
+              {% else %}
+                nothing more to come
+              {% endif %}
+            </td>
+          </tr>
+          <tr class="{% if match.recoverable.amount and match.recoverable.amount != '0' %}bg-amber-50{% endif %}">
+            <td class="px-4 py-2 text-gray-700">Recoverable from the supplier</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ match.recoverable|money_text }}</td>
+          </tr>
+        {% else %}
+          <tr class="bg-gray-50">
+            <td class="px-4 py-2 font-semibold text-brand-indigo">Safe to pay now</td>
+            <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">
+              {{ match.payable_now|figure_text }}
+            </td>
+          </tr>
+        {% endif %}
       </tbody>
     </table>
     </div>
     <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
-      The value of what actually arrived, less what has been paid — never the
-      value of what was billed.
+      {% if match.payment_terms == "advance" %}
+        Paid before delivery, as agreed. What was paid for and refused on arrival — or never
+        delivered, once the order is closed — is owed back.
+      {% else %}
+        The value of what actually arrived, less what has been paid — never the
+        value of what was billed.
+      {% endif %}
     </p>
   </div>
 </div>

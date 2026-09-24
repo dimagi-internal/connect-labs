@@ -143,6 +143,9 @@
                   <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
                   <input type="text" name="rationale" placeholder="Why this supplier?" required
                          class="w-40 border border-gray-300 rounded-md px-2 py-1 text-sm">
+                  <input type="date" name="decided_on" value="{{ today }}" max="{{ today }}" aria-label="Decided on"
+                         title="The day the decision was made"
+                         class="border border-gray-300 rounded-md px-2 py-1 text-sm">
                   <button class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
                           type="submit">
                     Award

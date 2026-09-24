@@ -113,6 +113,22 @@ class RoundDetailView(_Base):
         # reading the page, and the name is one list call away.
         context["supplier_names"] = {s["id"]: s["name"] for s in self.op("supplier_list")}
         context["commodity_names"] = _commodity_names(self.op("commodity_list"))
+        # What the round buys, a line at a time, with a kit's contents when
+        # the round states them -- the fact its comparison ranks against.
+        context["buys"] = [
+            {
+                "name": context["commodity_names"].get(line.get("commodity_slug"), line.get("commodity_slug")),
+                "quantity": line.get("quantity"),
+                "unit": line.get("quantity_unit"),
+                "contents": " + ".join(
+                    f"{part.get('quantity')} {part.get('base_unit')} "
+                    f"{context['commodity_names'].get(part.get('commodity_slug'), part.get('commodity_slug'))}"
+                    for part in line.get("components") or []
+                ),
+            }
+            for line in (round_.get("lines") or [])
+            if isinstance(line, dict)
+        ]
         return context
 
 
@@ -232,6 +248,7 @@ class ComparisonView(_Base):
         # The offers already chosen, so the page marks them rather than
         # offering to award them again.
         context["awarded_quote_ids"] = {a.get("quote_id") for a in context["awards"] if isinstance(a, dict)}
+        context["today"] = date.today().isoformat()
         # Offers set aside on this line. A voided quote leaves the ranking, and
         # without this it left the page too -- so the one screen that applies
         # "kits rank only against the same contents" never showed an offer the
@@ -271,6 +288,7 @@ class ComparisonView(_Base):
         """
         quote_id_raw = request.POST.get("quote_id")
         rationale = request.POST.get("rationale", "")
+        decided_on = request.POST.get("decided_on") or None
         try:
             self.op(
                 "award_create",
@@ -278,6 +296,7 @@ class ComparisonView(_Base):
                 quote_id=int(quote_id_raw),
                 rationale=rationale,
                 decided_by=request.user.get_username(),
+                **({"decided_on": decided_on} if decided_on else {}),
             )
         except jsonschema.ValidationError as exc:
             context = self.get_context_data(round_id=round_id, **kwargs)
