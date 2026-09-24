@@ -180,25 +180,33 @@ scenes:
 - id: the-partner-bought-the-rest
   actions:
   - kind: wait_for
-    target: css:#id_supplier
-  - kind: select
+    target: css:#id_supplier-ts-control
+  - kind: click
+    target: css:#id_supplier-ts-control
+  - kind: click_menu
     say: Tamarind
-    target: css:#id_supplier
-    value: Tamarind Pharmacy Wholesale
-  - kind: select
-    target: css:#id_commodity
-    value: IPTSc three-day treatment packet
-  - kind: select
-    target: css:#id_item
-    value: ${item_id}
+    target: "css:#id_supplier-ts-dropdown .option:has-text('Tamarind Pharmacy Wholesale')"
+  - kind: click
+    target: css:#id_commodity-ts-control
+  - kind: click_menu
+    target: "css:#id_commodity-ts-dropdown .option:has-text('IPTSc three-day treatment packet')"
+  - kind: click
+    target: css:#id_item-ts-control
+  - kind: click_menu
+    target: "css:#id_item-ts-dropdown .option:has-text('IPTSc three-day packet (standard)')"
   - kind: select
     say: buyer
     target: css:#id_buyer_of_record
     value: partner_org
-  - kind: select
+  - kind: click
+    target: css:#id_buyer_org-ts-control
+  - kind: fill
+    target: css:#id_buyer_org-ts-control
+    value: Sahel Comm
+    note: the organisation list is labs-wide and long, and only its first page renders until you search it
+  - kind: click_menu
     say: SCHI
-    target: css:#id_buyer_org
-    value: Sahel Community Health Initiative
+    target: "css:#id_buyer_org-ts-dropdown .option:has-text('Sahel Community Health Initiative')"
   - kind: fill
     target: css:#id_reference
     value: SCHI-LP-0921
@@ -221,13 +229,19 @@ scenes:
   - kind: fill
     target: css:#id_currency
     value: NGN
-  - kind: select
-    target: css:#id_delivery_supply_point
-    value: ${store_id}
-  - kind: select
+  - kind: click
+    target: css:#id_delivery_supply_point-ts-control
+  - kind: click_menu
+    target: "css:#id_delivery_supply_point-ts-dropdown .option:has-text('SCHI district store')"
+  - kind: click
+    target: css:#id_covers_shortfall_of-ts-control
+  - kind: fill
+    target: css:#id_covers_shortfall_of-ts-control
+    value: IPTSC
+    note: she looks the short order up by its reference
+  - kind: click_menu
     say: shortfall
-    target: css:#id_covers_shortfall_of
-    value: ${order_id}
+    target: "css:#id_covers_shortfall_of-ts-dropdown .option:has-text('IPTSC-PO-0715')"
   - kind: select
     target: css:#id_source
     value: partner_reported
@@ -260,11 +274,12 @@ scenes:
 - id: the-250-arrive-and-cost-says-why
   actions:
   - kind: wait_for
-    target: css:#id_supply_point
-  - kind: select
+    target: css:#id_supply_point-ts-control
+  - kind: click
+    target: css:#id_supply_point-ts-control
+  - kind: click_menu
     say: store
-    target: css:#id_supply_point
-    value: ${store_id}
+    target: "css:#id_supply_point-ts-dropdown .option:has-text('SCHI district store')"
   - kind: fill
     target: css:#id_received_on
     value: '2026-09-22'
@@ -274,9 +289,10 @@ scenes:
   - kind: select
     target: css:#id_source
     value: partner_reported
-  - kind: select
-    target: css:#id_lines-0-item
-    value: ${item_id}
+  - kind: click
+    target: css:#id_lines-0-item-ts-control
+  - kind: click_menu
+    target: "css:#id_lines-0-item-ts-dropdown .option:has-text('IPTSc three-day packet (standard)')"
   - kind: fill
     target: css:#id_lines-0-batch
     value: TPW-DP-0914
@@ -296,7 +312,12 @@ scenes:
     target: text:Bundled in setup fee
   - kind: hold
     note: the badge, the cost card that says nothing is missing, and 250 received
-    seconds: 2.5
+    seconds: 2.0
+  - kind: scroll_to
+    target: css:h3:has-text('Received')
+    note: the 250-packet receipt line itself, so this frame is not the order page scene 6 ended on
+  - kind: hold
+    seconds: 2.0
   concept_claim: After the receipt, the covering order's landed cost reads "bundled
     in setup fee" instead of an unconfirmed price, and its match shows 250 received.
   design_intent: A cost that was never going to exist is named, not reported missing.
