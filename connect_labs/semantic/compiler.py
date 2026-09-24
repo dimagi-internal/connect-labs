@@ -35,7 +35,7 @@ import re
 from typing import Any
 
 from connect_labs.semantic import legacy
-from connect_labs.semantic.model import RegistryModel, resolve_model
+from connect_labs.semantic.model import RegistryModel, indicator_series, resolve_model
 
 # Cube's real measure types. Anything outside this set is rejected at load: the
 # whole point of borrowing Cube's notation is that we do not invent dialect.
@@ -954,7 +954,19 @@ def indicator_model_problems(registry: dict[str, Any]) -> list[str]:
         if not isinstance(series, list) or not all(
             isinstance(x, str) and re.fullmatch(r"[A-Za-z]+", x) for x in series
         ):
-            problems.append("series: must be a list of indicator prefixes (letters only), e.g. [C, N]")
+            problems.append("series: must be a list of family names (letters only), e.g. [KMC] or [C, N]")
+        elif len(series) > 1:
+            # With several families an indicator must say which it belongs to --
+            # by `meta.series` or by an id prefix naming one. Otherwise it falls in
+            # none and every `?series=` request silently leaves it out.
+            declared = {x.upper() for x in series}
+            for m in registry.get("measures") or []:
+                meta = m.get("meta") if isinstance(m, dict) else None
+                if meta and indicator_series(registry, meta) not in declared:
+                    problems.append(
+                        f"{meta.get('indicator') or m.get('name')}: belongs to none of the declared "
+                        f"series {sorted(declared)}; give it meta.series"
+                    )
     return problems
 
 
