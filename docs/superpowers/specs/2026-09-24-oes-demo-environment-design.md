@@ -50,6 +50,84 @@ along, plus a second org that uses only half of it.
 | Third org — supply, no verified delivery | Seeded, no `opportunity_id` on its points | Build now |
 | RUTF — rounds 1 and 2 | **Generated** new | Blocked, see §7 |
 
+## 1a. Three programmes, and a portfolio across them
+
+An earlier draft of this document put CHC, RUTF and chlorine into ONE labs
+supply programme because it was convenient for the seeder. That was wrong, and
+the product owner caught it. They are three different things:
+
+| Chain | In Connect | Supply scope |
+|---|---|---|
+| CHC basket | programme 217, org `dimagi-chc-rct` | its own |
+| RUTF | programme 263, org `dimagi-ng-rutf` | its own |
+| Chlorine / safe water | **nothing — it is not an opportunity yet** | its own |
+
+`SupplyDataAccess.scope_key` is "the programme, always", and it governs the
+catalogue as well as the ledger: commodities, items and suppliers are
+per-programme, not shared. So one scope holding all three would have put
+chlorine in the CHC catalogue and RUTF's supplier register in with ORS — a
+programme on screen that corresponds to nothing real.
+
+Modelling it correctly also makes the chlorine case stronger. Its supply scope
+has **no Connect programme behind it at all**, because the delivery programme
+does not exist yet. A team can track a procurement before there is anything to
+deliver with — which is exactly the position the chlorine is in.
+
+### The consequence: there is no view across them
+
+Every surface in the domain stops at one programme, by construction. So
+"how is this operation doing" cannot be asked at all today — not badly, not at
+all. That is the gap this section closes.
+
+### A portfolio is a named set of programmes
+
+Deliberately a *set of programmes*, not a property of one: a programme belongs
+to as many portfolios as somebody finds useful, and adding one to a portfolio
+grants nothing.
+
+**Access is the load-bearing part.** Supply is programme-scoped for a reason,
+and a portfolio must never become a way to see a programme you could not
+otherwise reach. So:
+
+- the view renders only the portfolio's programmes that the viewer can already
+  reach, from `labs.context.get_org_data(request)["programs"]` — the same
+  source the programme picker uses;
+- when some are hidden it **says so** rather than silently shortening the
+  list. A portfolio that shows two of three chains without mentioning the
+  third misrepresents the operation, which is the one thing this view exists
+  not to do.
+
+**A portfolio is not programme-scoped, and every other model in
+`supply_chain` is.** That is a real exception and it is stated here so nobody
+later "fixes" it by adding a `program_id`. It carries no supply data of its
+own — only names and a list of programme ids.
+
+### What the master view shows
+
+One row per programme, each keeping its own units, because there is no
+conversion between a carton of co-pack and a jerry can of chlorine and the
+domain already refuses to invent one:
+
+- what is being sourced, what is on order, what has arrived — the stage counts
+  `chain_summary` already returns;
+- what is **blocked**, including the case where nothing is owed a date (§6a);
+- what the record cannot answer, from the checks feed, grouped as the
+  Overview groups it.
+
+It does not rank the rows. The Overview's own docstring records that a
+priority banner was built and removed because "prioritising is a judgement
+about what matters today and the database does not contain what it would take
+to make it". A portfolio view has no more information than the Overview does,
+so it inherits the same restraint.
+
+### Why this outlives the demo
+
+The same shape answers OES's actual job. Theirs is a portfolio of
+*implementers'* programmes rather than their own three, and the question —
+what is each one running, and what is in trouble — is identical. Building it
+for one org is the honest first version of the thing approach B would have
+needed.
+
 ## 2. The CHC delivery side — clone, do not copy
 
 Programme **217, "CHC - NG - RCT - Aug 2026"**, four active opportunities,
@@ -276,6 +354,7 @@ does it survive without Connect.*
 
 | # | Beat | Screen | The point for OES |
 |---|---|---|---|
+| 0 | **The whole operation** | The portfolio: three chains, one screen | §1a. What this team runs and what is in trouble, before any drill-down |
 | 1 | The problem in their language | RUTF round 2 comparison | Three suppliers, three units, no comparable total — their "best value" problem, unsolved |
 | 2 | Refusing to fake it | Same page, unconfirmed cells | It will not compute a landed cost it cannot defend; it names what to ask |
 | 3 | Cost per child treated | Comparison, per-course column | Their cost-effectiveness metric, derived rather than typed |
