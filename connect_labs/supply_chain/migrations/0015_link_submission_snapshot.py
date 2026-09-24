@@ -34,7 +34,7 @@ def carry_contracts(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("supply_chain", "0013_contract_payment_terms"),
+        ("supply_chain", "0014_approval_decision_note"),
     ]
 
     operations = [
