@@ -85,7 +85,7 @@ Each item below is a common task. It shows what to say, what Claude will do, and
 
 ### Understand a number
 
-> *"On this report, how exactly is C14 (Mortality) calculated? Explain it so I could check it by hand."*
+> *"On this report, how exactly is mortality calculated? Explain it so I could check it by hand."*
 
 Claude looks up the indicator's full definition: what it's counted out of, what it counts, every rule it depends on, and every cutoff. You get the actual logic the report runs, not a summary written by someone else. This makes no changes, so it's a safe first question.
 
@@ -95,7 +95,7 @@ On the KMC reports you can also click any **indicator column heading** to see it
 
 ### Change what an indicator means
 
-> *"Change C09 so it only counts babies registered after 1 March. Show me the current and new definitions side by side before you save."*
+> *"Change healthy growth so it only counts babies registered after 1 March. Show me the current and new definitions side by side before you save."*
 
 Before saving, Claude checks that the new definition can be calculated at every level of the report: programme, organisation, opportunity, worker, month, the month-by-level trends, and a single baby. It refuses to save one that can't. **That check catches a broken definition, not a wrong number.** You see the new numbers only after it's saved, so check the report straight away.
 
@@ -106,9 +106,9 @@ Once saved, the change shows on the next page load. There is no deploy and no re
 
 Smaller changes work the same way:
 
-- *"Raise the minimum number of babies needed to show C14 from 25 to 30."*
-- *"Make C09 green at 70% or more instead of 60%."*
-- *"Change whether higher or lower is better for C20."*
+- *"Raise the minimum number of babies needed to show mortality from 20 to 30."*
+- *"Make healthy growth green only at 75% or more."*
+- *"Change whether higher or lower is better for danger-sign incidence."*
 
 !!! danger "Indicator definitions can be shared"
     A report created from a KMC template gets its **own** copy of the definitions unless it was set up to share an
@@ -160,7 +160,7 @@ To experiment with indicator definitions without affecting anyone else, ask for 
 
 Trend lines come from saved runs, one per week. Today only the **KMC Programme Report** keeps them. If you change what an indicator means, past weeks still show the **old** figures until you rebuild them.
 
-> *"I changed C14. First show me what the week ending 7 September would say under the new definition, then rebuild the last 6 months."*
+> *"I changed mortality. First show me what the week ending 7 September would say under the new definition, then rebuild the last 6 months."*
 
 Claude recalculates one past week first, without saving anything, so you can check it against a figure you trust. Then it rebuilds the history a few weeks at a time.
 
@@ -174,7 +174,7 @@ Claude recalculates one past week first, without saving anything, so you can che
 
 ### Find out why a number looks wrong
 
-> *"Why does C20 show n/a for this worker but a number for the one next to them?"*
+> *"Why does danger-sign incidence show n/a for this worker but a number for the one next to them?"*
 > *"Why is everything zero on this report?"*
 
 Claude can tell you which of these it is:
@@ -192,7 +192,7 @@ Claude can tell you which of these it is:
 
 ## How to work well with Claude
 
-**Give it the report link and the result you want.** *"On [link], I want C14 to exclude transfers"* works better than *"fix the mortality number"*.
+**Give it the report link and the result you want.** *"On [link], I want mortality to exclude transfers"* works better than *"fix the mortality number"*.
 
 **Ask to see the current version before it changes anything.** Labs doesn't keep a history of earlier versions of report pages, pipelines or indicator definitions. Claude can undo a change only by putting back what it read earlier **in the same conversation**. If you might want to go back, start with *"show me what's there now"*, and do the undo before you close the conversation.
 
@@ -222,7 +222,7 @@ Claude can tell you which of these it is:
 | **Workflow** | Labs' name for a report or dashboard. |
 | **Pipeline** | The step that pulls answers out of submitted forms. |
 | **Semantic layer / semantic registry** | The indicator definitions: the stored rules that turn pipeline data into reported figures. A *registry* is one saved set of definitions, which one or more reports use. |
-| **Indicator** | One reported figure, such as C14. It always has a numerator (what's counted) and a denominator (what it's out of). |
+| **Indicator** | One reported figure, such as `mortality`. It always has a numerator (what's counted) and a denominator (what it's out of). |
 | **Scope** | The level a figure is calculated at: programme, organisation (LLO), opportunity, worker (FLW), month, those levels by month, or a single baby (case). |
 | **Minimum denominator** | The fewest cases an indicator needs before it's shown. Below that it shows as n<25, or the indicator's own minimum. |
 | **Saved run** | The report's figures for one period (usually a week), kept so the trend can be drawn. |

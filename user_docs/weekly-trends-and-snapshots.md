@@ -81,7 +81,7 @@ If the report is the source of a [benchmark](benchmarks.md) that follows it, eve
 | --- | --- | --- |
 | See the saved and rebuilt runs | *"List this report's saved runs."* | `workflow_history_runs` |
 | Preview a run's snapshot before saving it | *"What would saving run 5631 capture?"* | `workflow_preview_snapshot` |
-| Recalculate one past date without saving | *"What did C14 look like as of 7 September?"* | `workflow_preview_as_of` |
+| Recalculate one past date without saving | *"What did mortality look like as of 7 September?"* | `workflow_preview_as_of` |
 | Rebuild weeks | *"Rebuild the last 6 months weekly."* | `workflow_rebuild_history` |
 | Remove rebuilt runs outside a window, or specific runs | *"Delete the rebuilt runs before March."* | `workflow_prune_history` (a dry run by default; naming run IDs can remove hand-saved runs too) |
 
@@ -121,8 +121,8 @@ If the report is the source of a [benchmark](benchmarks.md) that follows it, eve
 
 ## Worked example: KMC
 
-- **The report:** the **KMC Programme Report** (template `kmc_programme_metrics`) over the 12 KMC opportunities ([how it spans them](cross-program-rollups.md)). Its saved runs use the `semantic_snapshot` builder and carry the C and N indicators at every level, plus a slim index of cases so the Worker Review can drill into a saved run.
-- **The trends:** four trend cards, each with a dashed target line: healthy growth (N10, target 70%), mean growth rate (C13, 15 g/kg/day), mortality (C14, 4%) and lost to follow-up by day 28 (C15, 10%). The headline figures show their change since the previous saved run. A separate chart shows registrations and visits by week, from inside the current run.
+- **The report:** the **KMC Programme Report** (template `kmc_programme_metrics`) over the 12 KMC opportunities ([how it spans them](cross-program-rollups.md)). Its saved runs use the `semantic_snapshot` builder and carry the KMC indicators at every level, plus a slim index of cases so the Worker Review can drill into a saved run.
+- **The trends:** four trend cards, each with a dashed target line: healthy growth (`pct_healthy_growth`, target 70%), early growth rate (`mean_early_growth_rate`, 15 g/kg/day), mortality (`mortality`, 4%) and lost by day 28 (`lost_by_day_28`, 10%). The headline figures show their change since the previous saved run. A separate chart shows registrations and visits by week, from inside the current run.
 - **Drill pages inherit the run.** A Worker Review opened from a saved run reads that run's figures, so the whole drill is as of one date.
 - **How the history was built:** the first weeks were created by hand, one run per past Sunday, and then the history was rebuilt weekly from 26 April 2026 with `workflow_rebuild_history`, a few weeks per call. Each week takes roughly ten seconds to compute.
 - **Weekly is a habit, not a schedule.** Nothing saves the KMC Programme Report automatically: its template doesn't support scheduled runs. Each week's point comes from someone saving that week's run, or from a rebuild.
