@@ -238,6 +238,12 @@ class PublicForm(forms.Form):
     # A form for the organisation an approval was asked of, rather than for a
     # supplier. A link shows the forms for what it covers and no others.
     for_approvers = False
+    # Only the organisation sending the goods takes this action: confirming,
+    # dispatching, moving a dispatch along. Not offered on a receiving
+    # partner's link at all.
+    for_suppliers = False
+    # What the banner calls the record this action made: "Recorded: dispatch ...".
+    done_noun = ""
 
     def __init__(self, *args, scope=None, **kwargs):
         kwargs.setdefault("prefix", self.action)
@@ -296,12 +302,14 @@ class ConfirmOrderForm(PublicForm):
     title = _("Confirm an order")
     intro = _("Tell the programme team you have accepted this order and will supply it.")
     submit_label = _("Confirm this order")
+    for_suppliers = True
+    done_noun = _("order confirmation")
 
     contract = _OrderChoice(label=_("Order"), queryset=Contract.objects.none(), widget=forms.Select(attrs=SELECT))
 
     def limit_to_scope(self, scope):
         if scope is not None:
-            self.fields["contract"].queryset = scope.contracts.filter(status__in=CONFIRMABLE)
+            self.fields["contract"].queryset = scope.supplied.filter(status__in=CONFIRMABLE)
 
     def is_available(self):
         return self.fields["contract"].queryset.exists()
@@ -312,6 +320,7 @@ class ConfirmPaymentForm(PublicForm):
     title = _("Confirm a payment was received")
     intro = _("Tell the programme team a payment they recorded has reached you.")
     submit_label = _("Confirm payment received")
+    done_noun = _("payment confirmation")
 
     payment = _PaymentChoice(label=_("Payment"), queryset=Payment.objects.none(), widget=forms.Select(attrs=SELECT))
     received_on = forms.DateField(label=_("Received on"), widget=forms.DateInput(attrs=DATE))
@@ -334,6 +343,8 @@ class RecordShipmentForm(PublicForm):
     title = _("Record a dispatch")
     intro = _("Goods that have left you for this order. They count as in transit until someone receives them.")
     submit_label = _("Record dispatch")
+    for_suppliers = True
+    done_noun = _("dispatch")
 
     contract = _OrderChoice(label=_("Order"), queryset=Contract.objects.none(), widget=forms.Select(attrs=SELECT))
     status = forms.ChoiceField(
@@ -357,7 +368,7 @@ class RecordShipmentForm(PublicForm):
 
     def limit_to_scope(self, scope):
         if scope is not None:
-            self.fields["contract"].queryset = scope.contracts.exclude(status__in=("closed", "cancelled"))
+            self.fields["contract"].queryset = scope.supplied.exclude(status__in=("closed", "cancelled"))
 
     def rows(self):
         return [
@@ -377,6 +388,8 @@ class UpdateShipmentForm(PublicForm):
     title = _("Move a dispatch along")
     intro = _("Where a consignment has got to — at customs, cleared, delivered.")
     submit_label = _("Update dispatch")
+    for_suppliers = True
+    done_noun = _("dispatch update")
 
     shipment = _ShipmentChoice(
         label=_("Dispatch"), queryset=Shipment.objects.none(), widget=forms.Select(attrs=SELECT)
@@ -390,7 +403,9 @@ class UpdateShipmentForm(PublicForm):
 
     def limit_to_scope(self, scope):
         if scope is not None:
-            self.fields["shipment"].queryset = scope.shipments.exclude(status__in=("delivered", "lost"))
+            self.fields["shipment"].queryset = scope.shipments.filter(contract__in=scope.supplied).exclude(
+                status__in=("delivered", "lost")
+            )
 
     def rows(self):
         return [_triple("shipment", "status", "expected_on")]
@@ -407,6 +422,7 @@ class RecordReceiptForm(PublicForm):
         "reject is kept on the record with the reason, and never counts as stock."
     )
     submit_label = _("Record receipt")
+    done_noun = _("receipt")
 
     contract = _OrderChoice(label=_("Order"), queryset=Contract.objects.none(), widget=forms.Select(attrs=SELECT))
     supply_point = _PointChoice(
@@ -474,6 +490,7 @@ class RecordStockCountForm(PublicForm):
         "shows up rather than one figure quietly replacing the other."
     )
     submit_label = _("Record count")
+    done_noun = _("stock count")
 
     supply_point = _PointChoice(
         label=_("Where"), queryset=SupplyPoint.objects.none(), widget=forms.Select(attrs=SELECT)
@@ -503,6 +520,7 @@ class RecordReleaseForm(PublicForm):
     title = _("Record a release")
     intro = _("Stock handed over from one place to another — a partner collecting from your warehouse.")
     submit_label = _("Record release")
+    done_noun = _("release")
 
     from_supply_point = _PointChoice(
         label=_("From"), queryset=SupplyPoint.objects.none(), widget=forms.Select(attrs=SELECT)
@@ -555,6 +573,7 @@ class RecordAnswerForm(PublicForm):
     )
     submit_label = _("Record my answer")
     for_approvers = True
+    done_noun = _("answer")
 
     approval = _AnswerChoice(
         label=_("What you were asked"), queryset=AwardApproval.objects.none(), widget=forms.Select(attrs=SELECT)

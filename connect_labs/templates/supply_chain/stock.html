@@ -25,7 +25,7 @@ one of them would destroy the only signal it had.
 <div class="flex items-baseline gap-3 mb-1">
   <h2 class="text-lg font-semibold text-brand-indigo">Stock across the network</h2>
   <span class="text-sm text-gray-500">
-    {{ network.summary.points }} supply points ·
+    {{ network.summary.points }} supply point{{ network.summary.points|pluralize }} ·
     {{ network.summary.never_reported }} {% if network.summary.never_reported == 1 %}has{% else %}have{% endif %} never reported
   </span>
 </div>
@@ -77,10 +77,23 @@ one of them would destroy the only signal it had.
               {{ point.kind|humanise }}{% if point.admin_area %} · {{ point.admin_area }}{% endif %}
             </div>
           </td>
-          <td class="px-4 py-2.5 tabular-nums">
-            {{ point.on_hand|figure_text }}
-            {% if point.on_hand_in_base %}
-              <div class="text-xs text-gray-500">{{ point.on_hand_in_base|figure_text }}</div>
+          <td class="px-4 py-2.5 tabular-nums" data-ledger="{{ point.supply_point_id }}">
+            {% comment %}
+            An item counted whole in its single unit (a kit: one packet is one
+            course) leads with that unit, packs beneath; anything else leads with
+            the pack, the one unit the column shares. The figure links to the
+            movements behind it, so a balance can be traced to its receipts.
+            {% endcomment %}
+            <a class="hover:underline" title="The movements behind this balance"
+               href="{% url 'supply_chain:movements' %}?supply_point_id={{ point.supply_point_id }}{% if point.item_id %}&amp;item_id={{ point.item_id }}{% endif %}">
+            {% if point.counted_in_base and point.on_hand_in_base %}
+              {{ point.on_hand_in_base|figure_text }}</a>
+              <div class="text-xs text-gray-500">{{ point.on_hand|figure_text }}</div>
+            {% else %}
+              {{ point.on_hand|figure_text }}</a>
+              {% if point.on_hand_in_base %}
+                <div class="text-xs text-gray-500">{{ point.on_hand_in_base|figure_text }}</div>
+              {% endif %}
             {% endif %}
             {% for reason in point.on_hand|unconfirmed_reasons %}
               <div class="text-xs text-orange-700 mt-0.5">{{ reason }}</div>
@@ -117,8 +130,10 @@ one of them would destroy the only signal it had.
           </td>
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
             {{ point.resupply_quantity|derived_text }}
+            {% comment %}Grey, as under months of stock: no rate yet is not a threshold
+            crossed, and the same sentence read red here and grey beside it.{% endcomment %}
             {% for reason in point.resupply_quantity|unconfirmed_reasons %}
-              <div class="text-xs text-orange-700 mt-0.5">{{ reason }}</div>
+              <div class="text-xs text-gray-500 mt-0.5">{{ reason }}</div>
             {% endfor %}
           </td>
           {% endif %}

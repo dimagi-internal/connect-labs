@@ -437,6 +437,8 @@ def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_d
                 "reported_on": row["reported_on"].isoformat() if row["reported_on"] else None,
                 "reported_kind": row["reported_kind"],
                 "amc_basis": row["amc_basis"],
+                "item_id": row["item_id"],
+                "counted_in_base": row["counted_in_base"],
                 "min_months_of_stock": (
                     str(row["min_months_of_stock"]) if row["min_months_of_stock"] is not None else None
                 ),

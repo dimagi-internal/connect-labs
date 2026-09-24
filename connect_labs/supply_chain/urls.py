@@ -223,6 +223,7 @@ urlpatterns = [
     path("stock/", views.StockView.as_view(), name="stock"),
     # No edit screen for a movement, deliberately: the ledger is append-only,
     # and a correction is another movement naming its cause.
+    path("stock/movements/", views.MovementsView.as_view(), name="movements"),
     path("stock/movements/new/", stock_views.MovementRecordView.as_view(), name="movement_record"),
     path("stock/counts/new/", stock_views.StockCountRecordView.as_view(), name="stock_count_record"),
     path("distribution/", views.DistributionView.as_view(), name="distribution"),
