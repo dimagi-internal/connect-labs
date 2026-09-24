@@ -1,5 +1,5 @@
 {% extends 'supply_chain/base.html' %}
-{% load crispy_forms_tags static %}
+{% load crispy_forms_tags static supply_chain_extras %}
 
 {% comment %}
 TomSelect is bundled but not loaded globally -- every page that wants it pulls
@@ -81,7 +81,12 @@ upload -- a message that describes the symptom and not the cause.
         {% for error in form.non_field_errors %}
           <p class="text-sm text-red-800"><strong>Not saved:</strong> {{ error }}</p>
         {% endfor %}
-        <p class="text-xs text-red-700 mt-0.5">Nothing you typed was lost — fix what is marked and submit again.</p>
+        {% comment %}Only when a field is marked: a refusal about the record itself (an award awaiting approval) has nothing on the form to fix.{% endcomment %}
+        {% if form|has_field_errors %}
+          <p class="text-xs text-red-700 mt-0.5">Nothing you typed was lost — fix what is marked and submit again.</p>
+        {% else %}
+          <p class="text-xs text-red-700 mt-0.5">Nothing you typed was lost.</p>
+        {% endif %}
       </div>
     {% endif %}
 

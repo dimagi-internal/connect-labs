@@ -56,7 +56,7 @@ class TestAlertScreens:
     def test_the_page_lists_subscriptions_and_the_log(self, scoped, user):
         sub = AlertSubscription.objects.create(
             program_id=PROGRAM,
-            label="Low stock to EvAc",
+            label="Low stock to the donor",
             check_kinds=["stock_below_minimum"],
             recipient_email="evac@example.org",
         )
@@ -72,7 +72,7 @@ class TestAlertScreens:
             delivery="email_disabled",
         )
         body = scoped.get(reverse("supply_chain:alerts")).content.decode()
-        assert "Low stock to EvAc" in body
+        assert "Low stock to the donor" in body
         assert "evac@example.org" in body
         assert "not sent — email is off" in body
         assert reverse("supply_chain:alert_create") in body
@@ -88,7 +88,7 @@ class TestAlertScreens:
         response = scoped.post(
             reverse("supply_chain:alert_create"),
             {
-                "label": "Chlorine low → EvAc",
+                "label": "Chlorine low → the donor",
                 "check_kinds": ["stock_below_minimum", "stock_stockout"],
                 "supply_point": store.pk,
                 "recipient": "email",

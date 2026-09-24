@@ -442,7 +442,10 @@ class AwardApproval(TimestampedModel):
     status = models.CharField(max_length=16, default="requested", choices=_choices(records.APPROVAL_STATUSES))
     requested_on = models.DateField()
     decided_on = models.DateField(null=True, blank=True)
+    # What was asked, and what they answered, are two facts. The answer used
+    # to be written over the request's note, which lost the question.
     note = models.TextField(blank=True, default="")
+    decision_note = models.TextField(blank=True, default="")
 
     class Meta:
         ordering = ["requested_on", "id"]

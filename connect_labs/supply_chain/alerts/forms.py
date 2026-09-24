@@ -50,7 +50,7 @@ class AlertSubscriptionForm(forms.Form):
         label=_("What to call it"),
         required=False,
         max_length=255,
-        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. Low chlorine stock → EvAc")}),
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. Low chlorine stock → the donor")}),
         help_text=_("Used as the email's subject, so the recipient knows which alert this is."),
     )
     check_kinds = forms.MultipleChoiceField(
