@@ -523,3 +523,124 @@ class TestTheScreens:
     def test_the_stock_page_says_durable_not_forecast(self, scoped, da, world, dispensers):
         body = scoped.get(reverse("supply_chain:stock")).content.decode()
         assert "durable — not forecast" in body
+
+
+# ---- what the IPTSc render still showed (iteration 0 findings) ------------
+
+
+def _header(body):
+    """The order page's header: from the breadcrumb to the action buttons."""
+    return body.rsplit("Orders</a> ›", 1)[-1].split("Edit order", 1)[0]
+
+
+def _visible(html):
+    import re
+
+    return re.sub(r"<[^>]+>", " ", html)
+
+
+def _short_and_covered(da, world):
+    short = _contract(
+        da,
+        world,
+        world["main"],
+        "700",
+        reference="IPTSC-PO-0715",
+        signed_on="2026-07-15",
+        promised_lead_time_days=45,
+    )
+    _receive(da, world, short, "450")
+    cover = _contract(
+        da,
+        world,
+        world["local"],
+        "250",
+        reference="SCHI-LP-0921",
+        covers_shortfall_of_id=short["id"],
+        buyer_of_record="partner_org",
+        buyer_org_id=world["partner"]["id"],
+        consideration="bundled",
+        unit_price=None,
+        unit_price_unit=None,
+    )
+    _receive(da, world, cover, "250")
+    return short, cover
+
+
+class TestWhatTheIptscRenderStillShowed:
+    def test_a_bundled_order_has_no_billing_rows_and_one_cost_line(self, scoped, da, world):
+        _, cover = _short_and_covered(da, world)
+        body = scoped.get(reverse("supply_chain:order_detail", args=[cover["id"]])).content.decode()
+        cards = _visible(body.split("Landed cost", 1)[1].split(">Shipments<", 1)[0])
+        assert cards.lower().count("bundled in setup fee") == 1
+        for row in ("Invoiced", "Billed", "Paid", "Safe to pay now", "Freight", "Import duty"):
+            assert row not in cards, row
+        assert "250 packet" in cards
+
+    def test_a_covered_short_order_reads_short_covered_by_its_cover(self, scoped, da, world):
+        short, _ = _short_and_covered(da, world)
+        body = scoped.get(reverse("supply_chain:order_detail", args=[short["id"]])).content.decode()
+        header = " ".join(_visible(_header(body)).split())
+        assert "short — covered by SCHI-LP-0921" in header
+        assert "part received" not in header
+
+    def test_the_short_order_shows_one_fulfilment_view_that_adds_up(self, scoped, da, world):
+        short, cover = _short_and_covered(da, world)
+        body = scoped.get(reverse("supply_chain:order_detail", args=[short["id"]])).content.decode()
+        section = body.split('id="fulfilment"', 1)[1].split("</section>", 1)[0]
+        text = " ".join(_visible(section).split())
+        assert "700 packet ordered" in text
+        assert "450 packet" in text and "Main supplier" in text
+        assert "250 packet" in text and "Local vendor" in text
+        assert "700 packet received" in text
+        assert reverse("supply_chain:order_detail", args=[short["id"]]) in section
+        assert reverse("supply_chain:order_detail", args=[cover["id"]]) in section
+
+    def test_an_order_nothing_covers_has_no_fulfilment_view(self, scoped, da, world):
+        plain = _contract(da, world, world["main"], "10")
+        body = scoped.get(reverse("supply_chain:order_detail", args=[plain["id"]])).content.decode()
+        assert 'id="fulfilment"' not in body
+
+    def test_a_bundled_order_needs_no_currency_or_landing_terms(self, scoped, da, world):
+        from connect_labs.supply_chain.models import Commodity, Contract
+
+        response = scoped.post(
+            reverse("supply_chain:contract_create"),
+            {
+                "supplier": world["local"]["id"],
+                "commodity": Commodity.objects.get(slug="iptsc").pk,
+                "buyer_of_record": "partner_org",
+                "buyer_org": world["partner"]["id"],
+                "reference": "BUNDLED-1",
+                "status": "placed",
+                "consideration": "bundled",
+                "quantity": "250",
+                "quantity_unit": "packet",
+                "source": "partner_reported",
+            },
+        )
+        assert response.status_code == 302, response.content.decode()[:4000]
+        assert Contract.objects.get(reference="BUNDLED-1").consideration == "bundled"
+
+    def test_a_bought_order_still_needs_its_currency_and_landing_terms(self, scoped, da, world):
+        from connect_labs.supply_chain.models import Commodity, Contract
+
+        response = scoped.post(
+            reverse("supply_chain:contract_create"),
+            {
+                "supplier": world["main"]["id"],
+                "commodity": Commodity.objects.get(slug="iptsc").pk,
+                "buyer_of_record": "programme_org",
+                "buyer_org": world["us"]["id"],
+                "reference": "PRICED-1",
+                "status": "placed",
+                "consideration": "priced",
+                "quantity": "10",
+                "quantity_unit": "packet",
+                "source": "we_recorded",
+            },
+        )
+        assert response.status_code == 200
+        form = response.context["form"]
+        assert {"currency", "freight_basis", "duties_basis", "vat_basis"} <= set(form.errors)
+        assert not Contract.objects.filter(reference="PRICED-1").exists()
