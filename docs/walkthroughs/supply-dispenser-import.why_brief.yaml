@@ -4,7 +4,7 @@ gaps:
   detail: 'The distributor cannot yet record its own goods-received and release notes
     through its supplier update link on the deployed build: the public form''s Referrer-Policy
     made browsers send Origin: null, which Django''s CSRF check refuses over HTTPS.
-    Until the fix on this branch is deployed, the programme officer records the distributor''s
+    Until the fix (PR #1972) is deployed, the programme officer records the distributor''s
     notes, marked as reported by a partner.'
   claim_ref: S5
   proposed_action: Deploy the strict-origin fix, then move the arrival and release
@@ -13,7 +13,7 @@ gaps:
   type: CAPABILITY
   detail: The network stock view could not compute a balance for an item that takes
     its units from its product (display unit read from item.pack_unit only), so durable
-    sites read Unconfirmed. Fixed on this branch; the demo item states its own units
+    sites read Unconfirmed. Fixed on the supply-dispenser-import branch; the demo item states its own units
     so the deployed build shows the balance.
   claim_ref: S7
   proposed_action: Deploy the network display-unit fix.

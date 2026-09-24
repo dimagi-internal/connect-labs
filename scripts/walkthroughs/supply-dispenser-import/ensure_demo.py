@@ -23,8 +23,8 @@ navigate to and today's date for the dates typed on camera.
 No supplier update link is issued. The distributor's goods-received and
 release notes are recorded programme-side, as reported by the distributor,
 because the public update-link form could not be submitted from a browser on
-the deployed build (Referrer-Policy: no-referrer -> Origin: null -> CSRF 403;
-fixed in the same branch as this script). Once that fix is live the arrival
+the deployed build (Referrer-Policy: no-referrer -> Origin: null -> CSRF 403; fixed by
+PR #1972). Once that fix is live the arrival
 beats can move to the distributor's own link.
 
 THIS REPOSITORY IS PUBLIC. Every organisation, person and amount here is
