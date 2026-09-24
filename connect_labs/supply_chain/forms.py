@@ -130,6 +130,95 @@ def set_choices(form, name, choices, required=None):
     return form.fields[name]
 
 
+# Offered in every currency picker, after the ones this programme already
+# uses. ISO 4217. The currencies of the places supply programmes run, plus the
+# ones suppliers and donors quote in.
+COMMON_CURRENCIES = (
+    "USD",
+    "EUR",
+    "GBP",
+    "CHF",
+    "NGN",
+    "KES",
+    "UGX",
+    "TZS",
+    "ETB",
+    "GHS",
+    "XOF",
+    "XAF",
+    "CDF",
+    "MWK",
+    "ZMW",
+    "MZN",
+    "RWF",
+    "SLE",
+    "LRD",
+    "SSP",
+    "SOS",
+    "ZAR",
+    "INR",
+    "BDT",
+    "PKR",
+    "CNY",
+)
+
+
+def programme_currencies(program_id) -> list[str]:
+    """Every currency this programme has already recorded a price or payment in."""
+    from connect_labs.supply_chain.models import Charge, Contract, Invoice, Payment, Quote
+
+    if not program_id:
+        return []
+    found = set()
+    for queryset in (
+        Contract.objects.filter(program_id=program_id).values_list("currency", flat=True),
+        Invoice.objects.filter(contract__program_id=program_id).values_list("currency", flat=True),
+        Payment.objects.filter(invoice__contract__program_id=program_id).values_list("currency", flat=True),
+        Charge.objects.filter(shipment__contract__program_id=program_id).values_list("currency", flat=True),
+        Quote.objects.filter(round__program_id=program_id).values_list("as_quoted_currency", flat=True),
+    ):
+        found.update(code.upper() for code in queryset.distinct() if code)
+    return sorted(found)
+
+
+def currency_select(form, name):
+    """A currency as a pick-list rather than three letters typed free-hand.
+
+    "usd", "US$" and "NGN " were all typed into the old text box. The list is
+    the programme's own currencies first, then the common ones; the current
+    value is kept even if it is on neither list, so an edit never silently
+    changes a record's currency.
+    """
+    program_id = getattr(getattr(form, "access", None), "program_id", None)
+    used = programme_currencies(program_id)
+    common = [code for code in COMMON_CURRENCIES if code not in used]
+    current = (form.initial.get(name) or getattr(form.instance, name, "") or "").upper()
+    choices = []
+    if used:
+        choices.append((_("Used in this programme"), [(code, code) for code in used]))
+    choices.append((_("Other currencies"), [(code, code) for code in common]))
+    if current and current not in used and current not in COMMON_CURRENCIES:
+        choices.insert(0, (current, current))
+    existing = form.fields[name]
+    form.fields[name] = CurrencyField(
+        choices=choices,
+        label=existing.label,
+        help_text=existing.help_text,
+        required=existing.required,
+        initial=existing.initial,
+        widget=forms.Select(attrs=SEARCHABLE),
+    )
+    return form.fields[name]
+
+
+class CurrencyField(forms.ChoiceField):
+    """A currency choice that reads "usd" as "USD": an API-shaped caller, or a
+    browser without the picker, still names a currency the list holds."""
+
+    def to_python(self, value):
+        return super().to_python(value).strip().upper()
+
+
 class ScopedForm(forms.ModelForm):
     """A ModelForm that knows whose data it may offer in its dropdowns."""
 
@@ -381,13 +470,44 @@ class ReasonForm(forms.Form):
 # ---- approvals ---------------------------------------------------------
 
 
+def _rests_on_field(form):
+    """An optional picker of this programme's documents, registrations first.
+
+    What a regulatory approval rests on is usually a product registration
+    already on file; offering every document the programme holds, with the
+    registrations at the top, lets the other cases through without making the
+    common one hunt.
+    """
+    from django.db.models import Case, IntegerField, Value, When
+
+    from connect_labs.supply_chain.models import Document
+    from connect_labs.supply_chain.templatetags.supply_chain_extras import words
+
+    field = form.fields["rests_on_document"]
+    field.required = False
+    field.queryset = (
+        Document.objects.filter(program_id=form.access.program_id)
+        .annotate(
+            first=Case(When(kind="product_registration", then=Value(0)), default=Value(1), output_field=IntegerField())
+        )
+        .order_by("first", "kind", "title", "pk")
+        if form.access is not None and form.access.program_id
+        else Document.objects.none()
+    )
+    field.empty_label = _("None — it rests on nothing on file")
+    field.label_from_instance = lambda document: " — ".join(
+        part for part in (words(document.kind).capitalize(), document.title or document.filename) if part
+    )
+
+
 class ApprovalRequestForm(ScopedForm):
     """Ask a third party to agree to an award before it becomes an order."""
 
     class Meta:
         model = AwardApproval
-        fields = ["approver_org", "role", "requested_on", "note"]
+        fields = ["approver_org", "role", "requested_on", "note", "rests_on_document"]
         widgets = {
+            "rests_on_document": forms.Select(attrs=SEARCHABLE),
             "approver_org": forms.Select(attrs=SEARCHABLE),
             "role": forms.Select(attrs=SELECT),
             "requested_on": forms.DateInput(attrs=DATE),
@@ -398,8 +518,13 @@ class ApprovalRequestForm(ScopedForm):
             "role": _("As what"),
             "requested_on": _("Asked on"),
             "note": _("What was asked"),
+            "rests_on_document": _("Rests on"),
         }
         help_texts = {
+            "rests_on_document": _(
+                "A document already on file it is granted against — for a regulatory approval, the "
+                "product registration. The approver's own letter is attached to the approval itself."
+            ),
             "approver_org": _("Not the person deciding the award — somebody whose agreement it needs."),
             "role": _("Technical: confirms the product. Funder: approves the use of funds. Regulatory: a licence."),
         }
@@ -420,7 +545,9 @@ class ApprovalRequestForm(ScopedForm):
                 Column("approver_org"), Column("role"), Column("requested_on"), css_class="grid md:grid-cols-3 gap-x-6"
             ),
             Field("note"),
+            Field("rests_on_document"),
         )
+        _rests_on_field(self)
 
 
 class ApprovalDecisionForm(ScopedForm):
@@ -428,13 +555,19 @@ class ApprovalDecisionForm(ScopedForm):
 
     class Meta:
         model = AwardApproval
-        fields = ["status", "decided_on", "note"]
+        fields = ["status", "decided_on", "note", "rests_on_document"]
         widgets = {
+            "rests_on_document": forms.Select(attrs=SEARCHABLE),
             "status": forms.Select(attrs=SELECT),
             "decided_on": forms.DateInput(attrs=DATE),
             "note": forms.Textarea(attrs=TEXTAREA),
         }
-        labels = {"status": _("Their answer"), "decided_on": _("Answered on"), "note": _("Note")}
+        labels = {
+            "status": _("Their answer"),
+            "decided_on": _("Answered on"),
+            "note": _("Note"),
+            "rests_on_document": _("Rests on"),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -445,7 +578,11 @@ class ApprovalDecisionForm(ScopedForm):
         self.helper.layout = Layout(
             Row(Column("status"), Column("decided_on"), css_class="grid md:grid-cols-2 gap-x-6"),
             Field("note"),
+            Field("rests_on_document"),
         )
+        _rests_on_field(self)
+        if self.instance and self.instance.rests_on_document_id:
+            self.fields["rests_on_document"].initial = self.instance.rests_on_document_id
 
 
 # ---- quotes ------------------------------------------------------------
@@ -583,6 +720,7 @@ class QuoteForm(ScopedForm):
                 ("trade_item_confirmed", _("Confirmed against the trade item")),
             ],
         )
+        currency_select(self, "as_quoted_currency")
         self.helper.layout = self.build_layout()
 
     # ---- the two halves a correction reuses ----------------------------

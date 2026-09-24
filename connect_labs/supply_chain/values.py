@@ -189,22 +189,83 @@ def metric_tonnes_to_base_units(tonnes: Decimal, base_unit_grams: int) -> Decima
     return (grams / Decimal(base_unit_grams)).to_integral_value(rounding="ROUND_DOWN")
 
 
-def _plural_unit(unit: str, count) -> str:
-    """Naive English pluralisation for a unit noun (carton, sachet, tonne, ...).
+# ---- how a figure is written for a person ------------------------------
+#
+# The display rules, stated once. Every screen, the RFQ and the alert email
+# write numbers through these, so "83.7209 jerry_can" on one page and "84
+# jerry cans" on the next cannot happen.
+#
+#   A quantity: thousands grouped, at most QUANTITY_PLACES decimals (rounded
+#   half up), trailing zeros dropped -- a whole number shows no point at all.
+#   "30000.0000" -> "30,000"; "83.7209" -> "83.72"; "0.5" -> "0.5".
+#
+#   Money: thousands grouped, at least two decimals, and MORE when the stored
+#   figure has them, up to MONEY_SCALE. A per-unit comparison price of 0.3333
+#   against 0.3350 must never both read "0.33": two different offers shown as
+#   the same price is a wrong answer, not a rounding choice. Whole-currency
+#   totals still read "18,000.00".
+QUANTITY_PLACES = 2
+MONEY_MIN_PLACES = 2
 
-    Handles count == 1 so a single-carton round reads "carton", not "1
-    cartons". No unit in this domain's vocabulary takes an irregular plural.
-    Private: composed into quantity_phrase() below rather than called on its
-    own, so a quantity's digits and its unit noun cannot drift apart into two
-    separately-formatted pieces.
+# Units written as symbols, which take no plural: "3 L", never "3 Ls".
+_UNIT_SYMBOLS = frozenset({"l", "ml", "kg", "g", "mg", "mt", "t", "m", "cm", "m3"})
+
+
+def _as_decimal(value) -> Decimal | None:
+    if isinstance(value, Decimal):
+        return value
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return Decimal(str(value).replace(",", "").strip())
+    except (ArithmeticError, ValueError):
+        return None
+
+
+def quantity_digits(value) -> str:
+    """A quantity's digits, by the one quantity rule above. Non-numbers pass through."""
+    number = _as_decimal(value)
+    if number is None or not number.is_finite():
+        return "" if value is None else str(value)
+    rounded = number.quantize(Decimal(1).scaleb(-QUANTITY_PLACES), rounding="ROUND_HALF_UP")
+    text = f"{rounded:,.{QUANTITY_PLACES}f}".rstrip("0").rstrip(".")
+    return "0" if text in ("-0", "") else text
+
+
+def money_digits(value) -> str:
+    """An amount's digits, by the one money rule above. Non-numbers pass through."""
+    number = _as_decimal(value)
+    if number is None or not number.is_finite():
+        return "" if value is None else str(value)
+    number = number.quantize(MONEY_SCALE, rounding="ROUND_HALF_UP")
+    places = max(MONEY_MIN_PLACES, -number.normalize().as_tuple().exponent)
+    places = min(places, -MONEY_SCALE.as_tuple().exponent)
+    return f"{number:,.{places}f}"
+
+
+def unit_noun(unit: str | None, count=None) -> str:
+    """A stored unit as the noun a person writes after a number.
+
+    "jerry_can" -> "jerry can", and "jerry cans" unless the count is exactly
+    one. Symbols ("L", "kg") never take a plural. `count` is compared as it
+    DISPLAYS, so 1.001 rounds to "1" and reads "1 carton", not "1 cartons".
     """
-    return unit if count == 1 else f"{unit}s"
+    noun = str(unit or "").replace("_", " ").strip()
+    if not noun:
+        return ""
+    if count is None:
+        return noun
+    shown = quantity_digits(count)
+    if shown in ("1", "-1") or noun.lower() in _UNIT_SYMBOLS or noun.lower().endswith("s"):
+        return noun
+    if noun.endswith(("x", "ch", "sh")):
+        return f"{noun}es"
+    return f"{noun}s"
 
 
-def _format_quantity(quantity) -> str:
-    """A quantity's digits written the way commercial correspondence writes
-    them, e.g. 2000 -> "2,000". Private for the same reason as _plural_unit."""
-    return f"{quantity:,}"
+def _plural_unit(unit: str, count) -> str:
+    """Kept for callers of the older name; unit_noun() is the rule."""
+    return unit_noun(unit, count)
 
 
 def destination_phrase(delivery_point: dict | None) -> str:
@@ -239,4 +300,4 @@ def quantity_phrase(count, unit: str) -> str:
     Composing both here means there is nothing left for a caller to get
     inconsistent.
     """
-    return f"{_format_quantity(count)} {_plural_unit(unit, count)}"
+    return f"{quantity_digits(count)} {unit_noun(unit, count)}".strip()

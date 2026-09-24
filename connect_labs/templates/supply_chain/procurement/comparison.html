@@ -11,7 +11,7 @@
       <li>
         <a href="?commodity={{ line.commodity_slug }}"
            class="inline-block px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md text-brand-indigo hover:bg-gray-50">
-          {{ line.commodity_slug }}{% if line.quantity %} — {{ line.quantity }} {{ line.quantity_unit }}{% endif %}
+          {{ line.commodity_slug }}{% if line.quantity %} — {{ line.quantity|qty:line.quantity_unit }}{% endif %}
         </a>
       </li>
     {% empty %}
@@ -146,6 +146,10 @@
                   <input type="date" name="decided_on" value="{{ today }}" max="{{ today }}" aria-label="Decided on"
                          title="The day the decision was made"
                          class="border border-gray-300 rounded-md px-2 py-1 text-sm">
+                  <input type="text" name="decided_by" value="{{ decider }}" aria-label="Decided by"
+                         title="Who made the decision — the person, not the account recording it"
+                         placeholder="Decided by"
+                         class="w-32 border border-gray-300 rounded-md px-2 py-1 text-sm">
                   <button class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
                           type="submit">
                     Award
@@ -173,7 +177,7 @@
         <div class="px-4 py-3 text-sm">
           <a href="{% url 'supply_chain:procurement_quote_detail' entry.quote.id %}"
              class="font-medium text-brand-indigo hover:underline">{{ entry.item.name|default:entry.quote.supplier_id }}</a>
-          <span class="text-gray-500">· {{ entry.quote.as_quoted_currency }} {{ entry.quote.as_quoted_amount }}</span>
+          <span class="text-gray-500">· {{ entry.quote.as_quoted_currency }} {{ entry.quote.as_quoted_amount|money }}</span>
           {% if entry.item.components %}
             {% include "supply_chain/procurement/_composition.html" with composition=entry.item.components %}
           {% endif %}

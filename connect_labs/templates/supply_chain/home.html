@@ -164,7 +164,7 @@ figures, and the catalogue is where our own gaps get closed.
                 </span>
               {% endif %}
             </td>
-            <td class="px-4 py-2.5 text-gray-600">{{ contract.quantity }} {{ contract.quantity_unit }}</td>
+            <td class="px-4 py-2.5 text-gray-600">{{ contract.quantity|qty:contract.quantity_unit }}</td>
             <td class="px-4 py-2.5">{{ contract.status|humanise }}</td>
             <td class="px-4 py-2.5 text-xs text-gray-500">{{ contract.source|humanise }}</td>
             <td class="px-4 py-2.5 text-right">

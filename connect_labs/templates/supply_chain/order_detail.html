@@ -22,12 +22,12 @@ figure here can go stale.
   </div>
   <h2 class="text-lg font-semibold text-brand-indigo">
     <a href="{% url 'supply_chain:supplier_detail' contract.supplier_id %}"
-       class="text-brand-indigo hover:underline">{{ suppliers|dictkey:contract.supplier_id|dictkey:"name" }}</a> ·
-    {{ contract.quantity }} {{ contract.quantity_unit }}
+       class="text-brand-indigo hover:underline">{{ suppliers|dictkey:contract.supplier_id|dictkey:"name" }}</a>{% if contract.quantity %} ·
+    {{ contract.quantity|qty:contract.quantity_unit }}{% endif %}
   </h2>
   <p class="text-sm text-gray-600">
     {% if contract.consideration == "in_kind" %}Donated to{% else %}Bought by{% endif %}
-    <b>{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record }}</b>
+    <b>{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record|buyer_label }}</b>
     <span class="text-gray-500">— buyer of record: {{ contract.buyer_of_record|buyer_label }}</span>
     {% if contract.incoterm %} · {{ contract.incoterm }}{% endif %}
     {% if match.status == "shortfall_covered" %}
@@ -59,7 +59,7 @@ figure here can go stale.
     <strong>{{ contract_late.facts.days_late }} day{{ contract_late.facts.days_late|pluralize }} past the promised lead time.</strong>
     Signed {{ contract_late.facts.signed_on }} with {{ contract_late.facts.promised_lead_time_days }} days promised,
     so due {{ contract_late.facts.expected_on }}{% if contract_late.facts.outstanding %};
-    {{ contract_late.facts.outstanding }} {{ contract_late.facts.unit }} still to arrive{% endif %}.
+    {{ contract_late.facts.outstanding|qty:contract_late.facts.unit }} still to arrive{% endif %}.
   </div>
 {% endif %}
 
@@ -228,13 +228,23 @@ was ordered. Before, the page showed this order's half and a link to the other.
       </table>
       </div>
       <p class="text-xs text-gray-500 mt-2">
-        {% if landed.by_buyer|distinct_count > 1 %}
-          Duty and VAT fall on whoever imports, so this is the same goods at the
-          same price costing different amounts.
-        {% else %}
-          Duty and VAT fall on whoever imports; here none are payable, so it
-          costs the same whoever buys.
-        {% endif %}
+        {% comment %}Only what the figures establish: never "they differ" when they
+        are equal, and never "none are payable" from totals that are unconfirmed
+        (CodeRabbit on #1975).{% endcomment %}
+        {% with compared=landed.by_buyer|buyer_comparison %}
+          Duty and VAT fall on whoever imports.
+          {% if compared.state == "differ" %}
+            Under the buyers whose totals are known, the same goods at the same price cost different amounts.
+          {% elif compared.state == "same" %}
+            Every buyer's total is known and they are the same.
+          {% endif %}
+          {% if compared.unconfirmed %}
+            {% if compared.state == "differ" %}The rest cannot be compared yet:{% else %}Whether it costs more or less under another buyer cannot be said yet:{% endif %}
+            the total is unconfirmed when
+            {% for buyer in compared.unconfirmed %}{{ buyer|buyer_label }}{% if not forloop.last %}{% if forloop.revcounter == 2 %} or {% else %}, {% endif %}{% endif %}{% endfor %}
+            imports.
+          {% endif %}
+        {% endwith %}
         {% if contract.duty_relief_claimed and not contract.duty_relief_evidenced %}
           A relief is claimed here with no exemption document attached, which is
           why the figure above is unconfirmed rather than a bargain.
@@ -268,7 +278,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
               Shortfall covered by
               {% for cover in match.covered_by %}
                 <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' cover.contract_id %}">{{ cover.reference|default:"order" }}</a>
-                <span class="text-xs text-gray-500">({{ cover.quantity }} {{ cover.quantity_unit }} from {{ cover.supplier.name }})</span>{% if not forloop.last %},{% endif %}
+                <span class="text-xs text-gray-500">({{ cover.quantity|qty:cover.quantity_unit }} from {{ cover.supplier.name }})</span>{% if not forloop.last %},{% endif %}
               {% endfor %}
             </td>
           </tr>
@@ -371,7 +381,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
               {% endif %}
             </td>
             <td class="px-4 py-2">
-              {{ shipment.status }}
+              {{ shipment.status|words|capfirst }}
               {% if shipment.is_in_transit %}
                 <div class="text-xs text-amber-800">in transit — not counted as stock</div>
               {% endif %}
@@ -383,7 +393,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
             </td>
             <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
             <td class="px-4 py-2 text-gray-600">{{ line.expiry|default:"—" }}</td>
-            <td class="px-4 py-2 tabular-nums">{{ line.quantity }} {{ line.quantity_unit }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ line.quantity|qty:line.quantity_unit }}</td>
             <td class="px-4 py-2">
               {% if shipment.has_certificate %}
                 <span class="text-xs text-teal-700">on file</span>
@@ -415,7 +425,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
               <a class="text-brand-indigo hover:underline"
                  href="{% url 'supply_chain:shipment_detail' shipment.id %}">{{ shipment.reference|default:shipment.id }}</a>
             </td>
-            <td class="px-4 py-2">{{ shipment.status }}
+            <td class="px-4 py-2">{{ shipment.status|words|capfirst }}
               {% with late=late_shipments|dictkey:shipment.id %}
                 {% if late %}
                   <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on }}</div>
@@ -473,9 +483,9 @@ was ordered. Before, the page showed this order's half and a link to the other.
             <td class="px-4 py-2 text-gray-600">{{ receipt.received_on }}</td>
             <td class="px-4 py-2 text-gray-600">{{ supply_points|dictkey:receipt.supply_point_id|default:"—" }}</td>
             <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
-            <td class="px-4 py-2 tabular-nums">{{ line.quantity_accepted }} {{ line.quantity_unit }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ line.quantity_accepted|qty:line.quantity_unit }}</td>
             <td class="px-4 py-2 tabular-nums">
-              {{ line.quantity_rejected }}{% if line.quantity_rejected and line.quantity_rejected != "0" %} {{ line.quantity_unit }}{% endif %}
+              {% if line.quantity_rejected and line.quantity_rejected != "0" %}{{ line.quantity_rejected|qty:line.quantity_unit }}{% else %}0{% endif %}
               {% if line.rejection_reason %}
                 <div class="text-xs text-gray-500">{{ line.rejection_reason }}</div>
               {% endif %}
@@ -516,11 +526,11 @@ was ordered. Before, the page showed this order's half and a link to the other.
           <td class="px-4 py-2 font-medium text-gray-900">{{ invoice.reference|default:invoice.id }}</td>
           <td class="px-4 py-2 text-gray-600">{{ invoice.issued_on|default:"—" }}</td>
           <td class="px-4 py-2 text-right tabular-nums">
-            {{ invoice.amount|default:"—" }} {{ invoice.currency }}
+            {% if invoice.amount %}{{ invoice.currency }} {{ invoice.amount|money }}{% else %}—{% endif %}
           </td>
           <td class="px-4 py-2 text-right tabular-nums">
             {% if invoice.quantity_billed %}
-              {{ invoice.quantity_billed }} {{ invoice.quantity_unit }}
+              {{ invoice.quantity_billed|qty:invoice.quantity_unit }}
             {% else %}
               {% comment %}
               Said rather than dashed: without a billed quantity the three-way
@@ -547,7 +557,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
           {% endcomment %}
           <tr class="bg-gray-50/60">
             <td class="px-4 py-1.5 pl-8 text-xs text-gray-600" colspan="6">
-              Paid {{ payment.amount }} {{ payment.currency }} on {{ payment.paid_on }}{% if payment.method %} by {{ payment.method }}{% endif %}
+              Paid {{ payment.currency }} {{ payment.amount|money }} on {{ payment.paid_on }}{% if payment.method %} by {{ payment.method|words }}{% endif %}
               ·
               {% if payment.confirmed_by_payee_on %}
                 <span class="text-message-success-text">confirmed by the payee {{ payment.confirmed_by_payee_on }}</span>
@@ -580,11 +590,13 @@ was ordered. Before, the page showed this order's half and a link to the other.
     <ul class="text-sm divide-y divide-gray-100">
       {% for document in documents %}
         <li class="py-1.5 flex items-baseline gap-2">
-          <span class="text-gray-900">{{ document.title|default:document.kind }}</span>
-          <span class="text-xs text-gray-500">{{ document.kind }}</span>
+          <span class="text-gray-900">{% if document.title %}{{ document.title }}{% else %}{{ document.kind|words|capfirst }}{% endif %}</span>
+          <span class="text-xs text-gray-500">{{ document.kind|words|capfirst }}</span>
           <span class="text-xs text-gray-400 ml-auto">
-            {% if document.is_stored %}stored{% else %}linked{% endif %} · {{ document.source }}
+            {% if document.is_stored %}stored{% else %}linked{% endif %} · {{ document.source|source_label }}
           </span>
+          <a href="{% url 'supply_chain:document_open' document.id %}" target="_blank" rel="noopener noreferrer"
+             class="text-xs text-brand-indigo hover:underline">Open</a>
         </li>
       {% endfor %}
     </ul>

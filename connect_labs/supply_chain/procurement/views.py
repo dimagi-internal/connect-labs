@@ -43,6 +43,7 @@ from connect_labs.supply_chain.forms import (
     RoundForm,
     RoundLineFormSet,
 )
+from connect_labs.supply_chain.fulfilment_forms import DocumentForm
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 
@@ -249,6 +250,10 @@ class ComparisonView(_Base):
         # offering to award them again.
         context["awarded_quote_ids"] = {a.get("quote_id") for a in context["awards"] if isinstance(a, dict)}
         context["today"] = date.today().isoformat()
+        # Who decides, by name: the award form's "decided by" starts as the
+        # signed-in person's display name, never their login or email -- on a
+        # shared or service account that read as the account, not the person.
+        context["decider"] = _display_name(self.request.user)
         # Offers set aside on this line. A voided quote leaves the ranking, and
         # without this it left the page too -- so the one screen that applies
         # "kits rank only against the same contents" never showed an offer the
@@ -289,13 +294,14 @@ class ComparisonView(_Base):
         quote_id_raw = request.POST.get("quote_id")
         rationale = request.POST.get("rationale", "")
         decided_on = request.POST.get("decided_on") or None
+        decided_by = (request.POST.get("decided_by") or "").strip() or _display_name(request.user)
         try:
             self.op(
                 "award_create",
                 round_id=round_id,
                 quote_id=int(quote_id_raw),
                 rationale=rationale,
-                decided_by=request.user.get_username(),
+                decided_by=decided_by,
                 **({"decided_on": decided_on} if decided_on else {}),
             )
         except jsonschema.ValidationError as exc:
@@ -319,6 +325,13 @@ class ComparisonView(_Base):
 # does is press a drafted message on the user as the next thing to do.
 # Prioritising and phrasing are judgements about what matters today, which a
 # client can make better than a hardcoded page can.
+
+
+def _display_name(user) -> str:
+    """The name a person goes by, for "decided by": their name, not their login."""
+    if hasattr(user, "get_display_name"):
+        return user.get_display_name()
+    return user.get_full_name() or user.get_username()
 
 
 class QuoteEntryView(OperationFormView):
@@ -655,7 +668,18 @@ class AwardDetailView(_Base):
         context["award"] = detail
         context["supplier"] = self.op("supplier_get", supplier_id=detail["supplier_id"])
         context["round"] = self.op("round_get", round_id=detail["round_id"])
-        context["approvals"] = [{**a, "approver": orgs.get(a["approver_org_id"])} for a in approvals]
+        # Each approval with its evidence: the documents attached to it (the
+        # approver's letter) and the one it rests on (a product registration).
+        documents = {d["id"]: d for d in self.op("document_list")}
+        context["approvals"] = [
+            {
+                **a,
+                "approver": orgs.get(a["approver_org_id"]),
+                "documents": [documents[i] for i in a.get("document_ids") or [] if i in documents],
+                "rests_on": documents.get(a.get("rests_on_document_id")),
+            }
+            for a in approvals
+        ]
         # The same rule the order guard applies: a refusal later reversed by
         # a fresh approval from the same approver in the same role is history.
         blocking_ids = {a.pk for a in _access(self.request).blocking_approvals(award)}
@@ -705,6 +729,104 @@ class ApprovalRequestView(_AwardScreen):
 
     def fixed(self, **kwargs):
         return {"data": {"award_id": int(kwargs["award_id"])}}
+
+
+class ApprovalDocumentAttachView(_AwardScreen):
+    """The approver's letter or email, attached to the approval it records."""
+
+    operation = "document_attach"
+    form_class = DocumentForm
+    title = "Attach a document to this approval"
+    submit_label = "Attach"
+    footnote = "Over 12 MB, store it elsewhere and give a link."
+
+    def approval(self):
+        from connect_labs.supply_chain.models import AwardApproval
+
+        found = (
+            AwardApproval.objects.filter(
+                pk=self.kwargs["approval_id"], award__round__program_id=_access(self.request).program_id
+            )
+            .select_related("approver_org")
+            .first()
+        )
+        if found is None:
+            raise Http404(f"no approval {self.kwargs['approval_id']} in this programme")
+        return found
+
+    def award(self):
+        return _award(self.request, self.approval().award_id)
+
+    @property
+    def intro(self):
+        approval = self.approval()
+        return (
+            f"Evidence for {approval.approver_org.name}'s {approval.role} approval of this award — their "
+            "letter, their email, the registration they granted. Upload the file or link to where it lives."
+        )
+
+    def get_initial(self):
+        initial = super().get_initial()
+        initial["kind"] = "product_registration" if self.approval().role == "regulatory" else "other"
+        return initial
+
+    def fixed(self, **kwargs):
+        return {"data": {"approval_id": int(kwargs["approval_id"])}}
+
+
+class QuoteDocumentAttachView(OperationFormView):
+    """The quotation itself, or the pro-forma invoice a price came off."""
+
+    operation = "document_attach"
+    form_class = DocumentForm
+    title = "Attach a document to this quote"
+    intro = (
+        "The quotation as the supplier sent it, or the pro-forma invoice its price came off. "
+        "Upload the file or link to where it lives."
+    )
+    submit_label = "Attach"
+    footnote = "Over 12 MB, store it elsewhere and give a link."
+
+    def quote(self):
+        from connect_labs.supply_chain.models import Quote
+
+        found = (
+            Quote.objects.filter(pk=self.kwargs["quote_id"], round__program_id=_access(self.request).program_id)
+            .select_related("supplier", "round")
+            .first()
+        )
+        if found is None:
+            raise Http404(f"no quote {self.kwargs['quote_id']} in this programme")
+        return found
+
+    def breadcrumb(self, **kwargs):
+        quote = self.quote()
+        return [
+            {"label": "Sourcing", "href": reverse("supply_chain:procurement_round_board")},
+            {
+                "label": quote.round.label,
+                "href": reverse("supply_chain:procurement_round_detail", args=[quote.round_id]),
+            },
+            {
+                "label": f"Quote from {quote.supplier.name}",
+                "href": reverse("supply_chain:procurement_quote_detail", args=[quote.pk]),
+            },
+            {"label": self.title},
+        ]
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:procurement_quote_detail", args=[self.kwargs["quote_id"]])
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:procurement_quote_detail", args=[self.kwargs["quote_id"]])
+
+    def get_initial(self):
+        initial = super().get_initial()
+        initial["kind"] = "quotation"
+        return initial
+
+    def fixed(self, **kwargs):
+        return {"data": {"quote_id": int(kwargs["quote_id"])}}
 
 
 class ApprovalDecideView(_AwardScreen):

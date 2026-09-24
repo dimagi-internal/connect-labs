@@ -314,7 +314,9 @@ class TestDigest:
         later = timezone.now() + timedelta(hours=25)
         service.run_alerts(now=later)
         assert len(sent) == 1
-        assert "commodity_course_undefined" in sent[0]["body"] and "stock_never_reported" in sent[0]["body"]
+        # Said in words, not as the check kind's code.
+        assert "No ration table" in sent[0]["body"] and "Never reported stock" in sent[0]["body"]
+        assert "commodity_course_undefined" not in sent[0]["body"]
         assert AlertNotice.objects.filter(subscription_id=sub["id"], delivery="queued").count() == 2
 
 
@@ -323,7 +325,8 @@ class TestTheEmail:
         _subscribe(da, check_kinds=["commodity_course_undefined"], label="Catalogue gaps")
         service.run_alerts()
         body = sent[0]["body"]
-        assert "commodity_course_undefined" in body
+        assert "No ration table" in body
+        assert "commodity_course_undefined" not in body
         assert "RUTF" in body
         assert "https://labs.connect.dimagi.com/supply/catalogue/rutf/?program_id=10501" in body
         assert "Catalogue gaps" in sent[0]["subject"]

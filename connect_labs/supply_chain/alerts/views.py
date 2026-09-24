@@ -5,9 +5,14 @@ question a person arrives with is usually "was the donor told?", and the answer
 is a row in the log next to the subscription that produced it.
 """
 
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.http import Http404
+from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.dateparse import parse_datetime
+from django.utils.decorators import method_decorator
+from django.views import View
 
 from connect_labs.supply_chain.alerts.forms import AlertSubscriptionForm
 from connect_labs.supply_chain.alerts.models import AlertSubscription
@@ -30,6 +35,44 @@ class AlertListView(OperationBase):
                 notice["subscription_name"] = names.get(notice["subscription_id"], "")
                 notice["detected"] = parse_datetime(notice["detected_at"])
         return context
+
+
+@method_decorator(login_required, name="dispatch")
+class AlertCheckNowView(View):
+    """Evaluate this programme's subscriptions now, rather than at the next beat.
+
+    The same pass the five-minute task runs (service.run_alerts), narrowed to
+    the programme in context: new checks only, logged and delivered exactly as
+    beat would. The answer is said on the page, including "nothing new".
+    """
+
+    http_method_names = ["post"]
+
+    def post(self, request, *args, **kwargs):
+        from connect_labs.supply_chain.alerts import service
+
+        if not has_program_context(request):
+            return redirect("supply_chain:alerts")
+        result = service.run_alerts(program_id=_access(request).program_id)
+        if result.get("skipped"):
+            messages.info(request, "A check is already running. Its results will appear in the log below.")
+        else:
+            found = result["new_checks"] + result["new_movements"]
+            if not result["subscriptions"]:
+                messages.info(request, "Nothing to check: no active alerts in this programme.")
+            elif found:
+                sent = (
+                    f"; {result['emails']} email{'s' if result['emails'] != 1 else ''} sent"
+                    if result["emails"]
+                    else ""
+                )
+                messages.success(
+                    request,
+                    f"Checked now: {found} new notice{'s' if found != 1 else ''}{sent}. They are in the log below.",
+                )
+            else:
+                messages.info(request, "Checked now: nothing new since the last check.")
+        return redirect("supply_chain:alerts")
 
 
 class _AlertScreen(OperationFormView):

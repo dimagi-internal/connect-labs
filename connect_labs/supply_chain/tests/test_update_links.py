@@ -629,7 +629,7 @@ class TestThePublicPage:
             },
         )
         body = client.get(_url(issued["token"])).content.decode()
-        assert re.search(r"AWB-9 — 40 carton, dispatched", body)
+        assert re.search(r"AWB-9 — 40 cartons, dispatched", body)
 
     def test_unknown_expired_and_revoked_look_identical(self, client, da, issued):
         unknown = client.get(_url("definitely-not-a-token"))
@@ -662,7 +662,7 @@ class TestThePublicPage:
             follow=True,
         )
         body = response.content.decode()
-        assert "96 carton accepted" in body
+        assert "96 cartons accepted" in body
         assert "4 rejected (crushed)" in body
         assert "B-1" in body and "EHA warehouse" in body
 
@@ -679,7 +679,7 @@ class TestThePublicPage:
             },
         )
         body = client.get(_url(issued["token"]) + "?done=record_release").content.decode()
-        assert "30 carton from EHA warehouse to LLO store" in body
+        assert "30 cartons from EHA warehouse to LLO store" in body
 
     def test_posting_an_action_writes_and_redirects_back(self, client, issued, world):
         response = client.post(
@@ -817,3 +817,72 @@ class TestTheStaffScreens:
         match = re.search(r"/supply/u/([A-Za-z0-9_\-]+)/", body)
         assert match, "the issued link is not shown"
         assert tokens.find_usable_link(match.group(1)) is not None
+
+
+class TestTheReadBackSaysWhatThatSubmissionReported:
+    """CodeRabbit on #1975: a recorded shipment read back as its reference and
+    status only; every submission was re-read from the row as it is NOW, so a
+    dispatch later moved to customs rewrote what the first submission said;
+    and the order page filtered submissions in Python."""
+
+    def _dispatch(self, issued, world, **extra):
+        return service.submit(
+            _link(issued),
+            "record_shipment",
+            {
+                "contract": Contract.objects.get(pk=world["contract"]["id"]),
+                "reference": "AWB-31",
+                "status": "dispatched",
+                "quantity": "40",
+                "unit_basis": "pack",
+                "batch": "B-12",
+                **extra,
+            },
+        )
+
+    def test_a_recorded_shipment_reads_back_its_quantity_and_batch(self, issued, world):
+        self._dispatch(issued, world)
+        (update,) = service.updates_for_contract(Contract.objects.get(pk=world["contract"]["id"]))
+        assert "40 cartons" in update["detail"]
+        assert "batch B-12" in update["detail"]
+        assert "AWB-31" in update["detail"]
+
+    def test_each_submission_keeps_what_it_reported_when_the_row_moves_on(self, issued, world):
+        recorded = self._dispatch(issued, world)
+        service.submit(
+            _link(issued),
+            "update_shipment",
+            {"shipment": Shipment.objects.get(pk=recorded["id"]), "status": "at_customs"},
+        )
+        updates = service.updates_for_contract(Contract.objects.get(pk=world["contract"]["id"]))
+        newest, first = updates
+        assert "at customs" in newest["detail"]
+        assert "dispatched" in first["detail"] and "at customs" not in first["detail"]
+        # The public page reads the same snapshot.
+        first_submission = UpdateLinkSubmission.objects.order_by("pk").first()
+        assert "dispatched" in service.describe(first_submission)
+
+    def test_the_order_page_asks_the_database_for_its_submissions(
+        self, da, issued, world, django_assert_max_num_queries
+    ):
+        other = op(
+            da,
+            "update_link_issue",
+            data={"org_id": world["eha"]["id"], "contract_ids": [world["other_contract"]["id"]]},
+        )
+        for n in range(5):
+            service.submit(
+                UpdateLink.objects.get(pk=other["id"]),
+                "record_shipment",
+                {
+                    "contract": Contract.objects.get(pk=world["other_contract"]["id"]),
+                    "reference": f"ELSEWHERE-{n}",
+                    "quantity": "1",
+                    "unit_basis": "pack",
+                },
+            )
+        self._dispatch(issued, world)
+        contract = Contract.objects.get(pk=world["contract"]["id"])
+        with django_assert_max_num_queries(2):
+            updates = service.updates_for_contract(contract)
+        assert [u["detail"].split(":")[0] for u in updates] == ["AWB-31"]

@@ -172,19 +172,20 @@ unconfirmed figures on the right.
 <div class="grid gap-4 lg:grid-cols-2">
   <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
     <header class="px-4 py-2.5 border-b border-brand-border-light">
-      <h2 class="text-sm font-semibold text-gray-900">Evidence for this quote</h2>
+      <div class="flex items-baseline justify-between gap-3">
+        <h2 class="text-sm font-semibold text-gray-900">Evidence for this quote</h2>
+        <a href="{% url 'supply_chain:quote_document_attach' quote.id %}" class="text-xs text-brand-indigo hover:underline">+ Attach document</a>
+      </div>
       <p class="text-xs text-gray-500 mt-0.5">The quotation itself, or the pro-forma invoice a price came off.</p>
     </header>
     {% if documents %}
       <ul class="divide-y divide-brand-border-light/70">
         {% for doc in documents %}
           <li class="flex items-baseline gap-3 px-4 py-3">
-            <span class="text-xs text-gray-500 w-36 shrink-0">{{ doc.kind|humanise }}</span>
+            <span class="text-xs text-gray-500 w-36 shrink-0">{{ doc.kind|words|capfirst }}</span>
             <span class="text-sm text-gray-900">{{ doc.title|default:doc.filename|default:"untitled" }}</span>
-            {% if doc.external_url %}
-              <a href="{{ doc.external_url }}" rel="noopener noreferrer" target="_blank"
-                 class="text-sm text-brand-indigo hover:underline ml-auto">Open</a>
-            {% endif %}
+            <a href="{% url 'supply_chain:document_open' doc.id %}" rel="noopener noreferrer" target="_blank"
+               class="text-sm text-brand-indigo hover:underline ml-auto">Open</a>
           </li>
         {% endfor %}
       </ul>
@@ -204,12 +205,10 @@ unconfirmed figures on the right.
       <ul class="divide-y divide-brand-border-light/70">
         {% for doc in supplier_documents %}
           <li class="flex items-baseline gap-3 px-4 py-3">
-            <span class="text-xs text-gray-500 w-36 shrink-0">{{ doc.kind|humanise }}</span>
+            <span class="text-xs text-gray-500 w-36 shrink-0">{{ doc.kind|words|capfirst }}</span>
             <span class="text-sm text-gray-900">{{ doc.title|default:doc.filename|default:"untitled" }}</span>
-            {% if doc.external_url %}
-              <a href="{{ doc.external_url }}" rel="noopener noreferrer" target="_blank"
-                 class="text-sm text-brand-indigo hover:underline ml-auto">Open</a>
-            {% endif %}
+            <a href="{% url 'supply_chain:document_open' doc.id %}" rel="noopener noreferrer" target="_blank"
+               class="text-sm text-brand-indigo hover:underline ml-auto">Open</a>
           </li>
         {% endfor %}
       </ul>

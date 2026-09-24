@@ -804,10 +804,20 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
                 status="requested",
                 requested_on=data.get("requested_on") or date.today(),
                 note=data.get("note") or "",
+                rests_on_document=self._approval_rests_on(data.get("rests_on_document_id")),
             )
         )
 
-    def decide_approval(self, approval_id, status, decided_on=None, note=None):
+    def _approval_rests_on(self, document_id):
+        """The document an approval rests on, from this programme, or a refusal."""
+        if document_id is None:
+            return None
+        document = self.get_document(document_id)
+        if document is None:
+            raise ValueError(f"document {document_id} does not exist in this programme")
+        return document
+
+    def decide_approval(self, approval_id, status, decided_on=None, note=None, rests_on_document_id=None):
         """Approved or declined, once.
 
         A reversal is a new request, so the refusal stays on the record: an
@@ -827,6 +837,9 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         if note:
             approval.decision_note = note
         approval.save(update_fields=["status", "decided_on", "decision_note", "updated_at"])
+        if rests_on_document_id is not None:
+            approval.rests_on_document = self._approval_rests_on(rests_on_document_id)
+            approval.save(update_fields=["rests_on_document", "updated_at"])
         return _fresh(approval)
 
     def blocking_approvals(self, award):

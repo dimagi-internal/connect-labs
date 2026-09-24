@@ -140,6 +140,16 @@ urlpatterns = [
         name="approval_request",
     ),
     path(
+        "procurement/approvals/<int:approval_id>/documents/new/",
+        procurement_views.ApprovalDocumentAttachView.as_view(),
+        name="approval_document_attach",
+    ),
+    path(
+        "procurement/quotes/<int:quote_id>/documents/new/",
+        procurement_views.QuoteDocumentAttachView.as_view(),
+        name="quote_document_attach",
+    ),
+    path(
         "procurement/approvals/<int:approval_id>/decide/",
         procurement_views.ApprovalDecideView.as_view(),
         name="approval_decide",
@@ -171,6 +181,7 @@ urlpatterns = [
         stock_views.ReceiptRecordView.as_view(),
         name="receipt_record",
     ),
+    path("documents/<int:document_id>/", views.document_open, name="document_open"),
     path("shipments/<int:shipment_id>/", views.ShipmentDetailView.as_view(), name="shipment_detail"),
     path("shipments/<int:shipment_id>/status/", stock_views.ShipmentStatusView.as_view(), name="shipment_status"),
     path(
@@ -219,6 +230,7 @@ urlpatterns = [
     # Alerts: who is told about what, and the log of what they were told.
     path("alerts/", alert_views.AlertListView.as_view(), name="alerts"),
     path("alerts/new/", alert_views.AlertCreateView.as_view(), name="alert_create"),
+    path("alerts/check-now/", alert_views.AlertCheckNowView.as_view(), name="alert_check_now"),
     path("alerts/<int:subscription_id>/edit/", alert_views.AlertUpdateView.as_view(), name="alert_edit"),
     path("alerts/<int:subscription_id>/delete/", alert_views.AlertDeleteView.as_view(), name="alert_delete"),
     # Supplier update links: the programme's screens for issuing them...

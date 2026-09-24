@@ -589,10 +589,10 @@ class TestWhatTheIptscRenderStillShowed:
         body = scoped.get(reverse("supply_chain:order_detail", args=[short["id"]])).content.decode()
         section = body.split('id="fulfilment"', 1)[1].split("</section>", 1)[0]
         text = " ".join(_visible(section).split())
-        assert "700 packet ordered" in text
+        assert "700 packets ordered" in text
         assert "450 packet" in text and "Main supplier" in text
         assert "250 packet" in text and "Local vendor" in text
-        assert "700 packet received" in text
+        assert "700 packets received" in text
         assert reverse("supply_chain:order_detail", args=[short["id"]]) in section
         assert reverse("supply_chain:order_detail", args=[cover["id"]]) in section
 

@@ -32,7 +32,7 @@
       </span>
       <span class="text-xs text-gray-500 ml-auto">
         {{ run.lines|length }} line{{ run.lines|length|pluralize }} ·
-        told by {{ run.source }}{% if not run.witnessed %} (reported, not witnessed){% endif %}
+        told by {{ run.source|source_label }}{% if not run.witnessed %} (reported, not witnessed){% endif %}
       </span>
     </div>
     {% comment %}
@@ -63,7 +63,7 @@
               {% endif %}
             </td>
             <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
-            <td class="px-4 py-2 tabular-nums">{{ line.quantity }} {{ line.quantity_unit }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ line.quantity|qty:line.quantity_unit }}</td>
             <td class="px-4 py-2 text-xs">
               {% if line.movement_id %}
                 <span class="text-teal-700">movement {{ line.movement_id }}</span>

@@ -463,7 +463,7 @@ _OUTREACH_DATA_CREATE = {**_OUTREACH_DATA, "required": ["round_id"]}
 
 _SUPPLIER_DATA = _data_with(
     name={"type": "string", "minLength": 1},
-    type={"enum": ["manufacturer", "distributor", "trader"]},
+    type={"enum": list(records.SUPPLIER_TYPES)},
     status={
         "enum": [
             "identified",

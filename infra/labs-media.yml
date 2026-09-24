@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Labs media uploads -- where `default_storage` writes (see infra/README.md for
+# the pattern: a standalone stack that owns a NEW layer and references the core
+# infra created out-of-band).
+#
+# Why this exists. Labs never set DJANGO_AWS_STORAGE_BUCKET_NAME, so
+# config/settings/labs_aws.py fell back to `commcare-connect-media` -- Connect
+# PRODUCTION's media bucket, in another AWS account. Every upload through
+# `default_storage` (supply-chain documents today; mopup worked around it in
+# #1694) was answered 403 on its first HeadObject, and demos had to link
+# documents instead of uploading them.
+#
+# Media now lives under `media/` in the existing labs exports bucket, which is
+# already private (BucketOwnerEnforced, all public access blocked, SSE-S3). The
+# bucket's ListBucket grant is in the out-of-band `labs-s3-exports-dev` inline
+# policy and is what makes a HeadObject on a missing key a 404 rather than a
+# 403. Reads are served through short-lived presigned URLs
+# (MediaRootS3Boto3Storage.querystring_auth), never a public object URL.
+#
+# Owns: one inline IAM policy on the existing ECS task role.
+# References, does NOT own: the task role, the exports bucket.
+#
+# Deploy (needs CAPABILITY_NAMED_IAM; ship the app change with or after it):
+#
+#   aws cloudformation deploy \
+#     --region us-east-1 --profile labs \
+#     --stack-name labs-jj-media \
+#     --template-file infra/labs-media.yml \
+#     --capabilities CAPABILITY_NAMED_IAM
+
+Parameters:
+  TaskRoleName:
+    Type: String
+    Default: labs-jj-ecs-task-role
+    Description: Existing ECS task role (app runtime permissions), web and worker.
+  MediaBucketName:
+    Type: String
+    Default: labs-jj-exports-dev-858923557655-us-east-1-an
+    Description: >-
+      Existing private labs bucket that holds media under media/. Must match
+      DJANGO_AWS_STORAGE_BUCKET_NAME in deploy/task-definitions/*.json.
+
+Resources:
+  # Get and Put only. No Delete: an uploaded document is evidence a derivation
+  # may rest on (a duty relief, a batch's conformity), and the app never
+  # deletes one.
+  TaskRoleMediaPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: labs-media-uploads
+      Roles: [!Ref TaskRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ['s3:GetObject', 's3:PutObject']
+            Resource: !Sub 'arn:aws:s3:::${MediaBucketName}/media/*'

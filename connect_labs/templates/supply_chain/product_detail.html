@@ -48,7 +48,7 @@ numbers of sachets and adding them needs the pack spec.
       <div>
         <dt class="text-[11px] text-gray-500">Unit ladder</dt>
         <dd class="text-sm mt-0.5 {% if product.base_per_pack %}text-gray-900{% else %}text-message-warning-text{% endif %}">
-          {% if product.base_per_pack %}{{ product.base_per_pack }} {{ product.base_unit }}{{ product.base_per_pack|pluralize }} / {{ product.pack_unit }}
+          {% if product.base_per_pack %}{{ product.base_per_pack|qty:product.base_unit }} / {{ product.pack_unit|unit_words }}
           {% else %}not stated{% endif %}
         </dd>
       </div>
@@ -100,14 +100,14 @@ numbers of sachets and adding them needs the pack spec.
       {% if product.has_course_definition %}
         <p class="mt-4 text-sm text-gray-700">
           <span class="text-gray-500">Ration table</span>
-          {{ product.course_definition.base_units_per_course }} {{ product.base_unit }}s per course
+          {{ product.course_definition.base_units_per_course|qty:product.base_unit }} per course
           {% if product.course_definition.source %}<span class="text-gray-500">({{ product.course_definition.source }})</span>{% endif %}
         </p>
       {% else %}
         <div class="mt-4 rounded-md bg-message-warning border border-message-warning-border/50 px-3 py-2.5">
           <p class="text-sm font-medium text-message-warning-text">No ration table set</p>
           <p class="text-sm text-message-warning-text/90 mt-0.5 max-w-2xl">
-            {{ product.base_unit|capfirst }}s per day and days per course is
+            {{ product.base_unit|unit_plural|capfirst }} per day and days per course is
             this programme's treatment protocol, not part of the specification
             — so cost per course and cost per child stay unconfirmed until it
             is set. Nobody outside can answer it.
@@ -119,12 +119,12 @@ numbers of sachets and adding them needs the pack spec.
     {% if product.pack_values|length > 1 or product.weight_values|length > 1 %}
       <div class="mt-4 text-sm text-orange-800 bg-orange-50 border border-orange-200 rounded px-3 py-2">
         {% if product.pack_values|length > 1 %}
-          Its trade items are packed {{ product.pack_values|join:" and " }} to the {{ product.pack_unit }}.
+          Its trade items are packed {{ product.pack_values|join:" and " }} to the {{ product.pack_unit|unit_words }}.
         {% endif %}
         {% if product.weight_values|length > 1 %}
           Their unit weights differ: {{ product.weight_values|join:" g and " }} g.
         {% endif %}
-        A single per&#8209;{{ product.base_unit }} figure across them is not one number.
+        A single per&#8209;{{ product.base_unit|unit_words }} figure across them is not one number.
       </div>
     {% endif %}
   </div>
@@ -162,7 +162,7 @@ numbers of sachets and adding them needs the pack spec.
               </td>
               <td class="px-4 py-2.5 text-gray-700">{{ item.manufacturer|default:"—" }}</td>
               <td class="px-4 py-2.5 tabular-nums">
-                {% if item.base_per_pack %}{{ item.base_per_pack }} / {{ item.pack_unit|default:product.pack_unit }}
+                {% if item.base_per_pack %}{{ item.base_per_pack }} / {{ item.pack_unit|default:product.pack_unit|unit_words }}
                 {% else %}<span class="text-amber-800 text-xs">not stated</span>{% endif %}
               </td>
               <td class="px-4 py-2.5 tabular-nums">
@@ -191,7 +191,7 @@ numbers of sachets and adding them needs the pack spec.
     <p class="px-5 py-5 text-sm text-gray-500 max-w-2xl">
       No trade items yet. Nothing can be ordered against a product until at
       least one manufacturer's version of it is on file, and a quote naming no
-      trade item cannot be turned into a per&#8209;{{ product.base_unit|default:"unit" }} price.
+      trade item cannot be turned into a per&#8209;{{ product.base_unit|default:"unit"|unit_words }} price.
     </p>
   {% endif %}
 </div>
@@ -241,9 +241,9 @@ numbers of sachets and adding them needs the pack spec.
                 <td class="px-4 py-2.5 tabular-nums">
                   <a class="text-brand-indigo hover:underline"
                      href="{% url 'supply_chain:procurement_quote_detail' quote.id %}">
-                    {% if quote.as_quoted_amount %}{{ quote.as_quoted_currency }} {{ quote.as_quoted_amount }}{% else %}no price{% endif %}
+                    {% if quote.as_quoted_amount %}{{ quote.as_quoted_currency }} {{ quote.as_quoted_amount|money }}{% else %}no price{% endif %}
                   </a>
-                  <div class="text-xs text-gray-500">{{ quote.as_quoted_unit|humanise|default:"basis not stated" }}</div>
+                  <div class="text-xs text-gray-500">{{ quote.as_quoted_unit|words|default:"basis not stated" }}</div>
                 </td>
                 <td class="px-4 py-2.5">
                   {% if quote.item_id %}
@@ -284,11 +284,11 @@ numbers of sachets and adding them needs the pack spec.
             <li class="px-5 py-3 text-sm">
               <a class="text-brand-indigo hover:underline"
                  href="{% url 'supply_chain:procurement_round_detail' round.id %}">{{ round.label }}</a>
-              <span class="text-gray-500">· {{ round.status }}</span>
+              <span class="text-gray-500">· {{ round.status|words }}</span>
               {% for line in round.lines %}
                 {% if line.commodity_slug == product.slug and line.quantity %}
                   <div class="text-xs text-gray-500">
-                    {{ line.quantity }} {{ line.quantity_unit|humanise }} sought
+                    {{ line.quantity|qty:line.quantity_unit }} sought
                   </div>
                 {% endif %}
               {% endfor %}
@@ -312,8 +312,8 @@ numbers of sachets and adding them needs the pack spec.
                  href="{% url 'supply_chain:order_detail' contract.id %}">{{ contract.reference|default:"contract" }} {{ contract.id }}</a>
               <span class="text-gray-500">· {{ contract.status|humanise }}</span>
               <div class="text-xs text-gray-500">
-                {% if contract.quantity %}{{ contract.quantity }} {{ contract.quantity_unit|humanise }}{% endif %}
-                {% if contract.unit_price %}at {{ contract.currency }} {{ contract.unit_price }}{% endif %}
+                {% if contract.quantity %}{{ contract.quantity|qty:contract.quantity_unit }}{% endif %}
+                {% if contract.unit_price %}at {{ contract.currency }} {{ contract.unit_price|money }}{% endif %}
                 · bought by {{ contract.buyer_of_record|humanise }}
               </div>
             </li>

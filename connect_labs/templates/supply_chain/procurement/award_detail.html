@@ -63,8 +63,22 @@ the award, so the page says so where the order button would otherwise be.
               <td class="px-4 py-2 text-gray-900">
                 {{ approval.approver.name|default:"—" }}
                 {% if approval.note %}<div class="text-xs text-gray-500">{{ approval.note }}</div>{% endif %}
+                {% comment %}The evidence, where the approval is read: what it rests on, and
+                the approver's own letter. Open signs a fresh link for a stored file.{% endcomment %}
+                {% if approval.rests_on %}
+                  <div class="text-xs text-gray-600 mt-0.5">
+                    Rests on
+                    <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:document_open' approval.rests_on.id %}" target="_blank" rel="noopener noreferrer">{{ approval.rests_on.kind|words|capfirst }}{% if approval.rests_on.title %} — {{ approval.rests_on.title }}{% endif %}</a>
+                  </div>
+                {% endif %}
+                {% for document in approval.documents %}
+                  <div class="text-xs text-gray-600 mt-0.5">
+                    <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:document_open' document.id %}" target="_blank" rel="noopener noreferrer">{{ document.title|default:document.filename|default:"document" }}</a>
+                    <span class="text-gray-400">{{ document.kind|words }}</span>
+                  </div>
+                {% endfor %}
               </td>
-              <td class="px-4 py-2 text-gray-700">{{ approval.role|capfirst }}</td>
+              <td class="px-4 py-2 text-gray-700">{{ approval.role|words|capfirst }}</td>
               <td class="px-4 py-2 text-gray-600 tabular-nums">{{ approval.requested_on }}</td>
               <td class="px-4 py-2">
                 {% if approval.status == "approved" %}
@@ -81,7 +95,9 @@ the award, so the page says so where the order button would otherwise be.
               <td class="px-4 py-2 text-right whitespace-nowrap">
                 {% if approval.status == "requested" %}
                   <a href="{% url 'supply_chain:approval_decide' approval.id %}" class="text-brand-indigo hover:underline">Record their answer</a>
+                  <span class="mx-1 text-gray-300">·</span>
                 {% endif %}
+                <a href="{% url 'supply_chain:approval_document_attach' approval.id %}" class="text-brand-indigo hover:underline">Attach document</a>
               </td>
             </tr>
           {% endfor %}
@@ -99,17 +115,24 @@ the award, so the page says so where the order button would otherwise be.
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   <div class="px-4 py-2.5 border-b border-gray-100 flex items-baseline justify-between">
     <span class="text-xs font-semibold text-gray-600">Ordered against it</span>
-    {% if not blocking %}
-      <a href="{% url 'supply_chain:contract_create' %}?award={{ award.id }}" class="text-xs text-brand-indigo hover:underline">+ Place an order against this award</a>
+    {% comment %}
+    Shown disabled while an approval stands against the award, never hidden: a
+    missing button reads as "this cannot be ordered here", a disabled one with
+    its reason says what to wait for and from whom.
+    {% endcomment %}
+    {% if blocking %}
+      <button type="button" disabled aria-disabled="true" aria-describedby="order-blocked"
+              class="px-3 py-1.5 text-sm rounded-md border border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed">Place order</button>
+    {% else %}
+      <a href="{% url 'supply_chain:contract_create' %}?award={{ award.id }}" class="px-3 py-1.5 text-sm rounded-md bg-brand-indigo text-white hover:opacity-90">Place order</a>
     {% endif %}
   </div>
   {% if blocking %}
-    <div class="px-4 py-3 text-sm text-message-warning-text bg-message-warning border-b border-message-warning-border/50">
-      This award cannot be ordered yet:
+    <div id="order-blocked" class="px-4 py-3 text-sm text-message-warning-text bg-message-warning border-b border-message-warning-border/50">
+      This award cannot be ordered yet. Place order is waiting on
       {% for approval in blocking %}
-        {{ approval.approver.name }} ({{ approval.role }})
-        {% if approval.status == "declined" %}declined on {{ approval.decided_on }}{% else %}has not answered since {{ approval.requested_on }}{% endif %}{% if not forloop.last %}; {% endif %}
-      {% endfor %}.
+        the {{ approval.role|words }} approval from <b>{{ approval.approver.name }}</b>,
+        {% if approval.status == "declined" %}declined on {{ approval.decided_on }} — ask again if they relent{% else %}asked {{ approval.requested_on }} and not yet answered{% endif %}{% if not forloop.last %}; and {% endif %}{% endfor %}.
     </div>
   {% endif %}
   {% if contracts %}

@@ -81,7 +81,7 @@ of the reader who does not.
           <dt class="text-[11px] text-gray-500">Unit ladder</dt>
           <dd class="text-sm mt-0.5 {% if product.base_per_pack %}text-gray-900{% else %}text-message-warning-text{% endif %}">
             {% if product.base_per_pack %}
-              {{ product.base_per_pack }} {{ product.base_unit }}{{ product.base_per_pack|pluralize }} / {{ product.pack_unit }}
+              {{ product.base_per_pack|qty:product.base_unit }} / {{ product.pack_unit|unit_words }}
             {% else %}not stated{% endif %}
           </dd>
         </div>
@@ -127,7 +127,7 @@ of the reader who does not.
         {% if product.has_course_definition %}
           <div class="mt-4 text-sm text-gray-700">
             <span class="text-gray-500">Ration table</span>
-            {{ product.course_definition.base_units_per_course }} {{ product.base_unit }}s per course
+            {{ product.course_definition.base_units_per_course|qty:product.base_unit }} per course
             {% if product.course_definition.source %}
               <span class="text-gray-500">({{ product.course_definition.source }})</span>
             {% endif %}
@@ -144,7 +144,7 @@ of the reader who does not.
           <p class="mt-3 text-sm text-message-warning-text">
             No ration table set — cost per course and cost per child stay
             unconfirmed until someone here says how many
-            {{ product.base_unit }}s a course is.
+            {{ product.base_unit|unit_plural }} a course is.
           </p>
         {% endif %}
       {% endif %}
@@ -171,12 +171,12 @@ of the reader who does not.
         <div class="mt-2 text-xs text-orange-800 bg-orange-50 border border-orange-200 rounded px-2 py-1.5">
           {% if product.pack_values|length > 1 %}
             Its trade items are packed {{ product.pack_values|join:" and " }} to the
-            {{ product.pack_unit }}.
+            {{ product.pack_unit|unit_words }}.
           {% endif %}
           {% if product.weight_values|length > 1 %}
             Their unit weights differ: {{ product.weight_values|join:" g and " }} g.
           {% endif %}
-          A single per&#8209;{{ product.base_unit }} figure across them is not one number —
+          A single per&#8209;{{ product.base_unit|unit_words }} figure across them is not one number —
           which is exactly why the trade item layer exists.
         </div>
       {% endif %}
@@ -216,7 +216,7 @@ of the reader who does not.
               <td class="px-4 py-2.5 text-gray-700">{{ item.manufacturer|default:"—" }}</td>
               <td class="px-4 py-2.5 tabular-nums">
                 {% if item.base_per_pack %}
-                  {{ item.base_per_pack }} / {{ item.pack_unit|default:product.pack_unit }}
+                  {{ item.base_per_pack }} / {{ item.pack_unit|default:product.pack_unit|unit_words }}
                   {% if item.differs_from_product %}
                     <div class="text-xs text-gray-500">
                       product says {{ product.base_per_pack }}
@@ -265,7 +265,7 @@ of the reader who does not.
       <p class="px-4 py-4 text-sm text-gray-500">
         No trade items yet. Nothing can be ordered against a product until at
         least one manufacturer's version of it is recorded, and a quote that
-        names no trade item cannot be converted to a per&#8209;{{ product.base_unit }}
+        names no trade item cannot be converted to a per&#8209;{{ product.base_unit|unit_words }}
         price.
       </p>
     {% endif %}
