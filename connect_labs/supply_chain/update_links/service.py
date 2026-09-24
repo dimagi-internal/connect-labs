@@ -42,7 +42,7 @@ from connect_labs.supply_chain.models import (
 )
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission
-from connect_labs.supply_chain.values import money_digits, quantity_digits, quantity_phrase
+from connect_labs.supply_chain.values import day_text, money_digits, quantity_digits, quantity_phrase
 
 SOURCE = "supplier_reported"
 
@@ -496,7 +496,7 @@ def _describe_payment(rid):
     if payment is None or payment.confirmed_by_payee_on is None:
         return ""
     ref = f" ({payment.reference})" if payment.reference else ""
-    received = payment.confirmed_by_payee_on.isoformat()
+    received = day_text(payment.confirmed_by_payee_on)
     return f"{payment.currency} {money_digits(payment.amount)}{ref} received on {received}"
 
 
@@ -533,7 +533,7 @@ def _describe_approval(rid):
         return ""
     award = approval.award
     what = award.quote.item.name if award.quote.item_id else award.commodity.name
-    text = f"{approval.status} {what}, awarded to {award.supplier.name}, on {approval.decided_on.isoformat()}"
+    text = f"{approval.status} {what}, awarded to {award.supplier.name}, on {day_text(approval.decided_on)}"
     return f"{text}: “{approval.decision_note}”" if approval.decision_note else text
 
 
@@ -610,6 +610,41 @@ def record_noun(action: str) -> str:
     return RECORD_NOUNS.get(action, action.replace("_", " ").capitalize())
 
 
+# The form field that says when each action happened, in the words of the
+# organisation recording it. An action without one (moving a dispatch along)
+# happened when it was recorded.
+HAPPENED_ON_FIELDS = {
+    "confirm_order": "confirmed_on",
+    "confirm_payment": "received_on",
+    "record_shipment": "dispatched_on",
+    "record_receipt": "received_on",
+    "record_stock_count": "counted_on",
+    "record_release": "occurred_on",
+}
+
+
+def happened_on(action, data, submitted_at):
+    """The date an action happened: the one the organisation gave, else the day it was recorded."""
+    field = HAPPENED_ON_FIELDS.get(action)
+    stated = data.get(field) if field else None
+    return stated or timezone.localdate(submitted_at)
+
+
+def when(submission) -> dict:
+    """{on, at, caught_up}: when it happened, when it was typed, and whether they differ.
+
+    `caught_up` says the record was made on a later day than the thing it
+    records, which is the ordinary case for a distributor updating a week at
+    once -- and the only case in which the typing time is worth showing.
+    """
+    on = submission.happened_on or timezone.localdate(submission.submitted_at)
+    return {
+        "on": on,
+        "at": submission.submitted_at,
+        "caught_up": on != timezone.localdate(submission.submitted_at),
+    }
+
+
 def updates_for_contract(contract) -> list[dict]:
     """Every submission through any link that touched this order, newest first.
 
@@ -623,16 +658,21 @@ def updates_for_contract(contract) -> list[dict]:
     submissions = UpdateLinkSubmission.objects.filter(
         link__program_id=contract.program_id, contract=contract
     ).select_related("link__org")
-    return [
+    updates = [
         {
             "org": submission.link.org.name,
             "org_id": submission.link.org_id,
             "title": record_noun(submission.action),
             "detail": describe(submission),
-            "at": submission.submitted_at,
+            **when(submission),
         }
         for submission in submissions
     ]
+    # Newest EVENT first, not newest keystroke: three things typed in one
+    # sitting read in the order they happened. Sorted here rather than in SQL
+    # so a submission from before `happened_on` existed sorts by its own day.
+    updates.sort(key=lambda update: (update["on"], update["at"]), reverse=True)
+    return updates
 
 
 def link_access(link):
@@ -674,6 +714,7 @@ def submit(link, action, data) -> dict:
 
     result_id = result.get("id") if isinstance(result, dict) else None
     now = timezone.now()
+    happened = happened_on(action, data, now)
     UpdateLinkSubmission.objects.create(
         link=link,
         action=action,
@@ -683,6 +724,7 @@ def submit(link, action, data) -> dict:
         summary=_read_back(operation, result_id),
         contract_id=_contract_of(operation, result_id),
         submitted_at=now,
+        happened_on=happened,
     )
     UpdateLink.objects.filter(pk=link.pk).update(last_used_at=now)
     audit_record(

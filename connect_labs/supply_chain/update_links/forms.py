@@ -27,7 +27,7 @@ from connect_labs.supply_chain.models import AwardApproval, Contract, Item, Paym
 from connect_labs.supply_chain.update_links.models import COVERAGE_LISTED, COVERAGE_ORGANISATION
 from connect_labs.supply_chain.update_links.operations import DEFAULT_EXPIRY_DAYS, MAX_EXPIRY_DAYS
 from connect_labs.supply_chain.update_links.service import CONFIRMABLE, SUPPLIER_SHIPMENT_STATUSES
-from connect_labs.supply_chain.values import quantity_digits, unit_noun
+from connect_labs.supply_chain.values import day_text, money_digits, quantity_digits, unit_noun
 
 __all__ = [
     "UpdateLinkIssueForm",
@@ -50,7 +50,7 @@ UNIT_BASIS = [
 ]
 
 # Dates that are almost always today, so the field starts there.
-TODAY_FIELDS = {"received_on", "counted_on", "occurred_on", "dispatched_on"}
+TODAY_FIELDS = {"received_on", "counted_on", "occurred_on", "dispatched_on", "confirmed_on"}
 
 
 def _tidy(helper_owner, *rows):
@@ -242,8 +242,10 @@ class _PointChoice(forms.ModelChoiceField):
 
 
 class _ItemChoice(forms.ModelChoiceField):
+    # The name a supplier knows it by. The SKU was a slug of our own making
+    # ("kpw-orszinc-copack") that pushed the name out of the field.
     def label_from_instance(self, obj):
-        return f"{obj.name} ({obj.sku})"
+        return obj.name
 
 
 class _ShipmentChoice(forms.ModelChoiceField):
@@ -255,13 +257,15 @@ class _ShipmentChoice(forms.ModelChoiceField):
 class _PaymentChoice(forms.ModelChoiceField):
     def label_from_instance(self, obj):
         order = obj.invoice.contract.reference or f"order {obj.invoice.contract_id}"
-        return f"{obj.amount.normalize():f} {obj.currency} paid {obj.paid_on.isoformat()} — {order}"
+        # Money and dates as every other screen writes them: "USD 18,000.00
+        # paid 18 Sep 2026", not "18000 USD paid 2026-09-18".
+        return f"{obj.currency} {money_digits(obj.amount)} paid {day_text(obj.paid_on)} — {order}"
 
 
 class _AnswerChoice(forms.ModelChoiceField):
     def label_from_instance(self, obj):
         what = obj.award.quote.item.name if obj.award.quote.item_id else obj.award.commodity.name
-        return f"{what} — the award to {obj.award.supplier.name} (asked {obj.requested_on.isoformat()})"
+        return f"{what} — the award to {obj.award.supplier.name} (asked {day_text(obj.requested_on)})"
 
 
 class PublicForm(forms.Form):
@@ -378,10 +382,16 @@ class ConfirmOrderForm(PublicForm):
     done_noun = _("order confirmation")
 
     contract = _OrderChoice(label=_("Order"), queryset=Contract.objects.none(), widget=forms.Select(attrs=SELECT))
+    # The day it was accepted, which is not always the day it is recorded here.
+    # Optional: an older page, or a script, posts without it and means today.
+    confirmed_on = forms.DateField(label=_("Confirmed on"), required=False, widget=forms.DateInput(attrs=DATE))
 
     def limit_to_scope(self, scope):
         if scope is not None:
             self.fields["contract"].queryset = scope.supplied.filter(status__in=CONFIRMABLE)
+
+    def rows(self):
+        return ["contract", "confirmed_on"]
 
     def is_available(self):
         return self.fields["contract"].queryset.exists()
@@ -444,8 +454,11 @@ class RecordShipmentForm(PublicForm):
             self.fields["contract"].queryset = scope.supplied.exclude(status__in=("closed", "cancelled"))
 
     def rows(self):
+        # The order on a row of its own: its name is the longest thing on the
+        # form, and half a row cut it to "Kaduna Pharma Works ORS/zi".
         return [
-            _pair("contract", "status"),
+            "contract",
+            "status",
             _pair("reference", "carrier"),
             _pair("dispatched_on", "expected_on"),
             _pair("quantity", "unit_basis"),
@@ -540,8 +553,8 @@ class RecordReceiptForm(PublicForm):
 
     def rows(self):
         return [
-            _pair("contract", "supply_point"),
-            "shipment",
+            "contract",
+            _pair("supply_point", "shipment"),
             _pair("received_on", "reference"),
             _triple("quantity_accepted", "quantity_rejected", "unit_basis"),
             "rejection_reason",
@@ -624,8 +637,8 @@ class RecordReleaseForm(PublicForm):
     def rows(self):
         return [
             _pair("from_supply_point", "to_supply_point"),
-            _pair("item", "occurred_on"),
-            _pair("quantity", "unit_basis"),
+            "item",
+            _triple("occurred_on", "quantity", "unit_basis"),
             _pair("batch", "reference"),
         ]
 

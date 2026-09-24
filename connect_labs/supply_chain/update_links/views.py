@@ -283,7 +283,7 @@ class UpdateLinkPublicView(View):
                 "action": submission.action,
                 "title": service.record_noun(submission.action),
                 "detail": service.describe(submission),
-                "at": submission.submitted_at,
+                **service.when(submission),
             }
             for submission in UpdateLinkSubmission.objects.filter(link=self.link)[:10]
         ]

@@ -243,6 +243,21 @@ def money_digits(value) -> str:
     return f"{number:,.{places}f}"
 
 
+# The one date rule for anything a supplier or partner reads: "6 Sep 2026".
+# Written in the programme's own order, not the browser's -- one page printed
+# "2026-09-24", "24 Sep 2026" and "24 September 2026" for three dates.
+DAY_FORMAT = "j M Y"
+
+
+def day_text(value) -> str:
+    """A date by the one date rule, or "" for none. Datetimes read as their date."""
+    if not value:
+        return ""
+    from django.utils.dateformat import format as date_format
+
+    return date_format(value, DAY_FORMAT)
+
+
 def is_counted_unit(unit: str | None) -> bool:
     """Whether a unit is counted out whole -- a jerry can, a carton, a sachet.
 

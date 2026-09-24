@@ -91,7 +91,7 @@ The log says how each notice left, including when it did not: "email off" and
               </td>
               <td class="px-4 py-2 text-gray-700">
                 {{ sub.recipient }}
-                {% if sub.recipient_email %}<div class="text-xs text-gray-500">outside labs</div>{% endif %}
+                {% if sub.recipient_email %}<div class="text-xs text-gray-500">{% if sub.recipient_name %}{{ sub.recipient_email }} · {% endif %}outside labs</div>{% endif %}
               </td>
               <td class="px-4 py-2 text-gray-700">
                 {% if sub.cadence == "daily_digest" %}once a day{% else %}as it happens{% endif %}
@@ -160,7 +160,7 @@ The log says how each notice left, including when it did not: "email off" and
               <td class="px-4 py-2">
                 {% if notice.delivery == "queued" %}
                   <span class="px-2 py-0.5 rounded-full text-xs bg-message-success text-message-success-text">sent</span>
-                  <div class="text-xs text-gray-500 mt-0.5">to {{ notice.sent_to }}</div>
+                  <div class="text-xs text-gray-500 mt-0.5">to {{ notice.sent_to_name }}{% if notice.sent_to_name != notice.sent_to %} · {{ notice.sent_to }}{% endif %}</div>
                 {% elif notice.delivery == "pending" %}
                   <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">in the next digest</span>
                 {% elif notice.delivery == "email_disabled" %}

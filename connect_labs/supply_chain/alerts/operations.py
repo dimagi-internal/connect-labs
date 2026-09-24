@@ -27,6 +27,7 @@ _SUBSCRIPTION_DATA = _data_with(
     movement_kinds={"type": "array", "items": {"enum": list(records.MOVEMENT_KINDS)}, "uniqueItems": True},
     recipient_user_id=NULLABLE_ID,
     recipient_email={"type": "string", "format": "email"},
+    recipient_name={"type": "string", "maxLength": 255},
     cadence={"enum": list(CADENCES)},
     active={"type": "boolean"},
 )
@@ -45,6 +46,7 @@ def serialize_subscription(sub) -> dict:
         "movement_kinds": list(sub.movement_kinds or []),
         "recipient_user_id": sub.recipient_user_id,
         "recipient_email": sub.recipient_email,
+        "recipient_name": sub.recipient_name,
         "recipient": sub.recipient_label,
         "cadence": sub.cadence,
         "active": sub.active,
@@ -153,6 +155,9 @@ def _apply(access, sub, data, creating):
         if bool(user_id) == bool(email):
             raise ValueError("an alert goes to exactly one recipient: a labs user or an email address, not both")
         if user_id:
+            # A labs user carries their own name; one given for an address
+            # that is no longer the recipient would be a name for nobody.
+            sub.recipient_name = ""
             caller = _caller_user(access)
             # A member may subscribe themselves. Anyone else is reached by
             # typing their address, which is a visible, deliberate act --
@@ -170,6 +175,9 @@ def _apply(access, sub, data, creating):
         else:
             sub.recipient_user = None
             sub.recipient_email = email
+
+    if "recipient_name" in data and not sub.recipient_user_id:
+        sub.recipient_name = (data["recipient_name"] or "").strip()
 
     if not (sub.check_kinds or sub.movement_kinds):
         raise ValueError("an alert has to watch something: name at least one check kind or movement kind")
