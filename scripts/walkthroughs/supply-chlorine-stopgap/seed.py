@@ -197,13 +197,30 @@ from connect_labs.supply_chain.update_links.models import UpdateLink
 links = UpdateLink.objects.filter(program_id={PROGRAMME_ID}).delete()[0]
 alerts = AlertSubscription.objects.filter(program_id={PROGRAMME_ID}).delete()[0]
 access = SupplyDataAccess(access_token="walkthrough-reset", program_id={PROGRAMME_ID}, caller=SYSTEM)
-print("PURGED", access.purge(), "links", links, "alerts", alerts)
+print("PURGED", {PROGRAMME_ID}, access.purge(), "links", links, "alerts", alerts)
 """
 
 
 def reset() -> None:
+    """Purge the programme in the deployed web container.
+
+    ECS Exec first (fast, needs a live `labs` AWS SSO session). When that
+    session has expired, the same code runs as a one-off Fargate task through
+    the `run-labs-command.yml` workflow, which authenticates with GitHub OIDC
+    rather than local credentials -- slower (about two minutes), but a render
+    must not depend on somebody having signed in to AWS that morning.
+    """
+    encoded = base64.b64encode(PURGE.encode()).decode()
+    code = f"exec(__import__('base64').b64decode('{encoded}').decode())"
+    line = _reset_over_ecs_exec(code) or _reset_over_workflow(code)
+    if line is None:
+        sys.exit("reset failed over both ECS Exec and the run-labs-command workflow")
+    print(f"reset: {line.strip()}", file=sys.stderr)
+
+
+def _reset_over_ecs_exec(code: str) -> str | None:
     env = {**os.environ, "AWS_PROFILE": os.environ.get("AWS_PROFILE", "labs"), "AWS_REGION": "us-east-1"}
-    task = subprocess.run(
+    listed = subprocess.run(
         [
             "aws",
             "ecs",
@@ -222,10 +239,11 @@ def reset() -> None:
         capture_output=True,
         text=True,
         env=env,
-        check=True,
-    ).stdout.strip()
-    encoded = base64.b64encode(PURGE.encode()).decode()
-    command = f"python manage.py shell -c \"exec(__import__('base64').b64decode('{encoded}').decode())\""
+    )
+    if listed.returncode != 0:
+        print(f"reset: ECS Exec unavailable ({listed.stderr.strip()[:160]})", file=sys.stderr)
+        return None
+    command = f'python manage.py shell -c "{code}"'
     # The session needs stdin held open until the command has finished, or it
     # closes before the output arrives.
     with subprocess.Popen(["sleep", "45"], stdout=subprocess.PIPE) as keepalive:
@@ -237,7 +255,7 @@ def reset() -> None:
                 "--cluster",
                 "labs-jj-cluster",
                 "--task",
-                task,
+                listed.stdout.strip(),
                 "--container",
                 "web",
                 "--interactive",
@@ -251,10 +269,47 @@ def reset() -> None:
             timeout=180,
         )
         keepalive.kill()
-    line = next((ln for ln in out.stdout.splitlines() if "PURGED" in ln), None)
-    if line is None:
-        sys.exit(f"reset failed:\n{out.stdout[-2000:]}\n{out.stderr[-2000:]}")
-    print(f"reset: {line.strip()}", file=sys.stderr)
+    return next((ln for ln in out.stdout.splitlines() if f"PURGED {PROGRAMME_ID}" in ln), None)
+
+
+WORKFLOW = "run-labs-command.yml"
+REPO = "dimagi-internal/connect-labs"
+
+
+def _reset_over_workflow(code: str) -> str | None:
+    def runs() -> list[dict]:
+        listed = subprocess.run(
+            ["gh", "run", "list", "--repo", REPO, "--workflow", WORKFLOW, "-L", "10", "--json", "databaseId,status"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return json.loads(listed.stdout)
+
+    before = {run["databaseId"] for run in runs()}
+    subprocess.run(
+        ["gh", "workflow", "run", WORKFLOW, "--repo", REPO, "--ref", "main", "--field", f'command=shell -c "{code}"'],
+        check=True,
+    )
+    print("reset: purging through the run-labs-command workflow (about two minutes)", file=sys.stderr)
+    deadline = time.monotonic() + 900
+    while time.monotonic() < deadline:
+        time.sleep(15)
+        # A sibling may dispatch the same workflow; ours is whichever new run
+        # prints this programme's PURGED line.
+        for run in runs():
+            if run["databaseId"] in before or run["status"] != "completed":
+                continue
+            log = subprocess.run(
+                ["gh", "run", "view", str(run["databaseId"]), "--repo", REPO, "--log"],
+                capture_output=True,
+                text=True,
+            ).stdout
+            line = next((ln for ln in log.splitlines() if f"PURGED {PROGRAMME_ID}" in ln), None)
+            if line:
+                return "PURGED" + line.split("PURGED", 1)[1]
+            before.add(run["databaseId"])
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -272,17 +327,21 @@ def org(mcp: Mcp, slug: str, name: str, notes: str) -> int:
     return mcp.op("org_upsert", data={"slug": slug, "name": name, "country": "NG", "notes": notes})["id"]
 
 
-# The specimens live beside this script. They are linked rather than uploaded:
-# a stored upload (content_base64) is refused on the deployed labs today -- the
-# default storage bucket answers HeadObject with a 403 -- and a link is an
-# equally honest record of where the evidence is.
-DOCUMENTS_URL = (
-    "https://github.com/dimagi-internal/connect-labs/blob/main/scripts/walkthroughs/supply-chlorine-stopgap/documents"
-)
+# The specimens live beside this script as PDFs (rendered from their Markdown
+# sources by make_specimens.py). They are UPLOADED -- stored in labs' document
+# bucket, exactly as a file chosen in the browser is -- not linked. The product
+# registration is not seeded at all: the programme lead files it against the
+# quote on camera.
+DOCUMENTS = Path(__file__).with_name("documents")
 
 
-def linked_document(title: str, filename: str) -> dict:
-    return {"title": title, "filename": filename, "external_url": f"{DOCUMENTS_URL}/{filename}"}
+def uploaded_document(title: str, filename: str) -> dict:
+    return {
+        "title": title,
+        "filename": filename,
+        "content_type": "application/pdf",
+        "content_base64": base64.b64encode((DOCUMENTS / filename).read_bytes()).decode(),
+    }
 
 
 def seed(mcp: Mcp) -> dict:
@@ -373,11 +432,11 @@ def seed(mcp: Mcp) -> dict:
     )["id"]
 
     # --- who supplies it -------------------------------------------------------
-    # A donor is not a distributor, but the supplier types stop at manufacturer,
-    # distributor and trader; "distributor" is what the sibling narratives use.
+    # ClearWater gives the chlorine; it does not sell it. A donor supplier says
+    # so in every picker, and its orders are in kind.
     donor = mcp.op(
         "supplier_create",
-        data={"name": "ClearWater Action", "type": "distributor", "status": "awarded", "org_id": clearwater},
+        data={"name": "ClearWater Action", "type": "donor", "status": "awarded", "org_id": clearwater},
     )["id"]
     distributor = mcp.op(
         "supplier_create",
@@ -448,8 +507,8 @@ def seed(mcp: Mcp) -> dict:
             "shipment_id": prior_shipment,
             "source": "supplier_reported",
             "recorded_by_org_id": clearwater,
-            **linked_document(
-                "ClearWater batch CW-2605 — certificate of analysis", "certificate-of-analysis-CW-2605.md"
+            **uploaded_document(
+                "ClearWater batch CW-2605 — certificate of analysis", "certificate-of-analysis-CW-2605.pdf"
             ),
         },
     )
@@ -593,20 +652,7 @@ def seed(mcp: Mcp) -> dict:
             "quote_id": quote_id,
             "source": "supplier_reported",
             "recorded_by_org_id": harmattan,
-            **linked_document("Harmattan quotation HHS-Q-2291", "quotation-HHS-Q-2291.md"),
-        },
-    )
-    mcp.op(
-        "document_attach",
-        data={
-            "kind": "product_registration",
-            "quote_id": quote_id,
-            "source": "supplier_reported",
-            "recorded_by_org_id": harmattan,
-            **linked_document(
-                "Aquaguard 1.25% — national registration WTP-04-1187, valid to March 2028",
-                "registration-WTP-04-1187.md",
-            ),
+            **uploaded_document("Harmattan quotation HHS-Q-2291", "quotation-HHS-Q-2291.pdf"),
         },
     )
 
