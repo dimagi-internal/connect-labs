@@ -46,6 +46,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -148,7 +149,9 @@ class Mcp:
         """Call `supply_chain_<name>`, waiting out the per-user MCP write-rate limit.
 
         The sibling supply narratives seed as the same user, so a burst from any
-        of them can land on this one.
+        of them can land on this one. A 5xx while a deploy rolls is waited out too.
+        Neither retry can double a write: a rate-limited call was refused before it
+        ran, and a 502 from the load balancer never reached a task.
         """
         for attempt in range(8):
             try:
@@ -157,6 +160,12 @@ class Mcp:
                 if "rate limit" not in str(error).lower() or attempt == 7:
                     raise
                 print(f"  {name}: rate-limited, waiting", file=sys.stderr)
+                time.sleep(15)
+            except urllib.error.HTTPError as error:
+                # A deploy rolling its web tasks answers 502/503 for a minute.
+                if error.code < 500 or attempt == 7:
+                    raise
+                print(f"  {name}: HTTP {error.code}, waiting for labs", file=sys.stderr)
                 time.sleep(15)
 
     def _op(self, name: str, **arguments):
