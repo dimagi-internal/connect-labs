@@ -33,6 +33,8 @@ one of them would destroy the only signal it had.
   Cover is measured against each point's own minimum and maximum months of
   stock, so "below its band" means below what this programme set. Goods in
   transit are excluded: they are real, but they are not cover.
+  Each point is topped up to its maximum; below its minimum it is overdue.
+  A point with none above it in the network is restocked by reordering from its supplier.
 </p>
 
 {% if items|length > 1 %}
@@ -64,7 +66,7 @@ one of them would destroy the only signal it had.
         <th class="text-left px-4 py-2">Reported</th>
         <th class="text-left px-4 py-2" title="What a store dispenses; for a store that only releases to others, what it releases">Demand / month</th>
         <th class="text-left px-4 py-2">Months of stock</th>
-        <th class="text-left px-4 py-2">Send</th>
+        <th class="text-left px-4 py-2">To reach its maximum</th>
         <th class="text-left px-4 py-2">Against its band</th>
       </tr>
     </thead>
@@ -108,7 +110,7 @@ one of them would destroy the only signal it had.
             {% endif %}
           </td>
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
-            {{ point.amc|quantity_text }}{% if point.amc.amount %} <span class="text-xs text-gray-500">{% if point.amc_basis == "releases" %}releases{% else %}dispensed{% endif %} a month</span>{% endif %}
+            {{ point.amc|whole_quantity_text }}{% if point.amc.amount %} <span class="text-xs text-gray-500">{% if point.amc_basis == "releases" %}releases{% else %}dispensed{% endif %} a month</span>{% endif %}
             {% if point.amc_in_display_unit %}<div class="text-xs text-gray-500">(= {{ point.amc_in_display_unit|quantity_text }})</div>{% endif %}
           </td>
           {% comment %}Durable equipment: said once, in the demand column. Repeating
@@ -129,7 +131,15 @@ one of them would destroy the only signal it had.
             {% endif %}
           </td>
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
+            {% comment %}Send or reorder: the same top-up, acted on by the point above,
+            or -- at the top of the network -- by an order to the supplier.{% endcomment %}
+            {% if point.resupply_quantity.amount == "0" %}
+              nothing to {% if point.restocked_from == "supplier" %}reorder{% else %}send{% endif %}
+            {% elif point.resupply_quantity.amount %}
+              {{ point.resupply_quantity|derived_text }} to {% if point.restocked_from == "supplier" %}reorder{% else %}send{% endif %}
+            {% else %}
             {{ point.resupply_quantity|derived_text }}
+            {% endif %}
             {% comment %}Grey, as under months of stock: no rate yet is not a threshold
             crossed, and the same sentence read red here and grey beside it.{% endcomment %}
             {% for reason in point.resupply_quantity|unconfirmed_reasons %}

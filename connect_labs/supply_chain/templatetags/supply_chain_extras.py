@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 
 from django import template
 from django.urls import reverse
@@ -533,6 +534,19 @@ def quantity_text(value):
     """
     if isinstance(value, dict) and value.get("amount") not in (None, ""):
         return qty(value["amount"], value.get("unit"))
+    return derived_text(value)
+
+
+@register.filter
+def whole_quantity_text(value):
+    """A rate in whole units: "3,033 co-packs", not "3,033.33" -- a demand averaged
+    over counted cartons has no meaningful fraction of a co-pack."""
+    if isinstance(value, dict) and value.get("amount") not in (None, ""):
+        try:
+            whole = Decimal(str(value["amount"])).quantize(Decimal("1"), rounding="ROUND_HALF_UP")
+        except (ArithmeticError, ValueError):
+            return quantity_text(value)
+        return qty(str(whole), value.get("unit"))
     return derived_text(value)
 
 
