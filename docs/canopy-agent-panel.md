@@ -85,9 +85,27 @@ not claim `email_verified`, which is canopy's trigger for resolving a visitor to
 a real canopy account. Two reasons, both in `canopy._why_no_email_verified`: a
 labs `User` comes from Connect's OAuth identity, so restating that as "labs
 verified this email" would launder a claim to obtain a stronger grant; and
-nothing needs it, because a contact can declare its page (canopy-web#925). Do
-not reach for `resolvable_domains` — canopy grants a site only the *setter's own*
-domain, so three Dimagi domains would need three people.
+nothing needs it, because a contact can declare its page (canopy-web#925) and the
+page picks the agent's capability (below). Do not reach for `resolvable_domains` —
+canopy grants a site only the *setter's own* domain, so three Dimagi domains would
+need three people.
+
+**The page's resource picks what the agent may do.** A conversation on a labs page
+runs in whichever capability of the agent's published interface names that page's
+`resource` (canopy-web#942). ACE's `marketplace` capability names
+`labs-marketplace://*` and carries `current_page`, the `marketplace_*` read tools,
+`Skill`, and its Drive tools; everything else — including anyone who emails ACE —
+stays in `ask`.
+
+So **a new labs surface needs a capability, or the panel can only chat.** Declaring
+a resource nothing matches falls back to `ask`, which for ACE is an email door: no
+page tool, no `Skill`. That is how the first live run ended with the agent trying
+`screencapture`. The interface is edited on the agent's canopy page, or with
+`canopy agent interface get|set --slug <agent>` — never a file in the agent's repo.
+
+Two things a capability cannot fix, learned the same way: a confined turn has no
+`AskUserQuestion`, so an agent must ask in the chat; and a Drive write needs a
+`parentFolderId` the agent can actually discover.
 
 **The agent reads as itself, not as the visitor.** Its tools run with its own
 labs credential, so the ids in the page state narrow what it looks at but do not
