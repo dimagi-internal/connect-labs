@@ -87,6 +87,16 @@ class UpdateLinkSubmission(models.Model):
     operation = models.CharField(max_length=64)
     result_type = models.CharField(max_length=32, blank=True, default="")
     result_id = models.IntegerField(null=True, blank=True)
+    # What this submission put on the record, written when it was made. Read
+    # back from the row at submit time and kept, because the row moves on: a
+    # dispatch recorded as "dispatched" and later moved to customs must still
+    # read "dispatched" against the submission that recorded it.
+    summary = models.TextField(blank=True, default="")
+    # The order it touched, so the order page can ask the database for its
+    # submissions rather than filtering every link's in Python.
+    contract = models.ForeignKey(
+        Contract, null=True, blank=True, on_delete=models.SET_NULL, related_name="link_submissions"
+    )
     submitted_at = models.DateTimeField(default=timezone.now, db_index=True)
 
     class Meta:

@@ -33,7 +33,7 @@ from connect_labs.supply_chain import scopes as synthetic_scopes
 from connect_labs.supply_chain.models import Contract, Item, Movement, Payment, Shipment, SupplyPoint
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission
-from connect_labs.supply_chain.values import decimal_string
+from connect_labs.supply_chain.values import money_digits, quantity_digits, quantity_phrase
 
 SOURCE = "supplier_reported"
 
@@ -303,7 +303,7 @@ ACTIONS = {
 
 
 def _quantity(value, unit):
-    return f"{decimal_string(value)} {unit}".strip()
+    return quantity_phrase(value, unit)
 
 
 def _describe_receipt(rid):
@@ -317,7 +317,7 @@ def _describe_receipt(rid):
         text = f"{_quantity(line.quantity_accepted, line.quantity_unit)} accepted"
         if line.quantity_rejected:
             reason = f" ({line.rejection_reason})" if line.rejection_reason else ""
-            text += f", {decimal_string(line.quantity_rejected)} rejected{reason}"
+            text += f", {quantity_digits(line.quantity_rejected)} rejected{reason}"
         if line.batch:
             text += f", batch {line.batch}"
         parts.append(text)
@@ -350,7 +350,7 @@ def _describe_payment(rid):
         return ""
     ref = f" ({payment.reference})" if payment.reference else ""
     received = payment.confirmed_by_payee_on.isoformat()
-    return f"{decimal_string(payment.amount)} {payment.currency}{ref} received on {received}"
+    return f"{payment.currency} {money_digits(payment.amount)}{ref} received on {received}"
 
 
 def _describe_contract(rid):
@@ -359,8 +359,21 @@ def _describe_contract(rid):
 
 
 def _describe_shipment(rid):
-    shipment = Shipment.objects.filter(pk=rid).first()
-    return f"{shipment.reference or 'dispatch'} is {shipment.status.replace('_', ' ')}" if shipment else ""
+    """What a dispatch carried, and where it stood: "AWB-31: 40 cartons, batch
+    B-12 — dispatched". The quantity and batch are what the supplier typed and
+    what the programme will receive against; a status alone read back neither."""
+    shipment = Shipment.objects.filter(pk=rid).prefetch_related("lines").first()
+    if shipment is None:
+        return ""
+    parts = []
+    for line in shipment.lines.all():
+        text = _quantity(line.quantity, line.quantity_unit)
+        if line.batch:
+            text += f", batch {line.batch}"
+        parts.append(text)
+    status = shipment.status.replace("_", " ")
+    name = shipment.reference or "Dispatch"
+    return f"{name}: {'; '.join(parts)} — {status}" if parts else f"{name} is {status}"
 
 
 _DESCRIBERS = {
@@ -374,18 +387,46 @@ _DESCRIBERS = {
 }
 
 
+def _read_back(operation, result_id) -> str:
+    describer = _DESCRIBERS.get(operation)
+    if describer is None or result_id is None:
+        return ""
+    return describer(result_id)
+
+
 def describe(submission) -> str:
     """What one submission put on the record, in the supplier's own terms.
 
-    Read back from the row the write produced, so the page repeats what the
-    programme now holds -- not what the browser sent. Empty when the row is
-    gone (a purged demo, a deleted record): the title alone is then all there
-    is to say.
+    Read back from the row the write produced -- so it repeats what the
+    programme holds, not what the browser sent -- AT THE MOMENT OF THE WRITE,
+    and kept on the submission. Re-reading the row later made an early
+    submission report the row's current state: a dispatch recorded as
+    dispatched read "at customs" once somebody moved it on.
+
+    Submissions made before the snapshot existed are read back live, the best
+    there is for them. Empty when the row is gone.
     """
-    describer = _DESCRIBERS.get(submission.operation)
-    if describer is None or submission.result_id is None:
-        return ""
-    return describer(submission.result_id)
+    if submission.summary:
+        return submission.summary
+    return _read_back(submission.operation, submission.result_id)
+
+
+def _contract_of(operation, result_id):
+    """The order a write touched, or None. Kept on the submission so the order
+    page can filter in the database."""
+    from connect_labs.supply_chain.models import Receipt
+
+    if result_id is None:
+        return None
+    if operation == "contract_update":
+        return result_id
+    if operation == "receipt_record":
+        return Receipt.objects.filter(pk=result_id).values_list("contract_id", flat=True).first()
+    if operation == "payment_confirm":
+        return Payment.objects.filter(pk=result_id).values_list("invoice__contract_id", flat=True).first()
+    if operation in ("shipment_record", "shipment_update"):
+        return Shipment.objects.filter(pk=result_id).values_list("contract_id", flat=True).first()
+    return None
 
 
 def updates_for_contract(contract) -> list[dict]:
@@ -394,35 +435,22 @@ def updates_for_contract(contract) -> list[dict]:
     The programme-side half of the update link: the order page says what the
     supplier reported, through which organisation's link, and when -- rather
     than leaving the confirmation to be inferred from a status word.
-    """
-    from connect_labs.supply_chain.models import Receipt
 
-    receipt_ids = set(Receipt.objects.filter(contract=contract).values_list("pk", flat=True))
-    payment_ids = set(Payment.objects.filter(invoice__contract=contract).values_list("pk", flat=True))
-    shipment_ids = set(Shipment.objects.filter(contract=contract).values_list("pk", flat=True))
-    wanted = {
-        "contract_update": {contract.pk},
-        "receipt_record": receipt_ids,
-        "payment_confirm": payment_ids,
-        "shipment_record": shipment_ids,
-        "shipment_update": shipment_ids,
-    }
+    Asked of the database: a submission carries the order it touched, so this
+    is one query however many links and submissions the programme has.
+    """
     submissions = UpdateLinkSubmission.objects.filter(
-        link__program_id=contract.program_id, operation__in=list(wanted)
+        link__program_id=contract.program_id, contract=contract
     ).select_related("link__org")
-    out = []
-    for submission in submissions:
-        if submission.result_id not in wanted.get(submission.operation, set()):
-            continue
-        out.append(
-            {
-                "org": submission.link.org.name,
-                "title": submission.action.replace("_", " "),
-                "detail": describe(submission),
-                "at": submission.submitted_at,
-            }
-        )
-    return out
+    return [
+        {
+            "org": submission.link.org.name,
+            "title": submission.action.replace("_", " "),
+            "detail": describe(submission),
+            "at": submission.submitted_at,
+        }
+        for submission in submissions
+    ]
 
 
 def link_access(link):
@@ -461,6 +489,8 @@ def submit(link, action, data) -> dict:
         operation=operation,
         result_type=operation.split("_", 1)[0],
         result_id=result_id,
+        summary=_read_back(operation, result_id),
+        contract_id=_contract_of(operation, result_id),
         submitted_at=now,
     )
     UpdateLink.objects.filter(pk=link.pk).update(last_used_at=now)
