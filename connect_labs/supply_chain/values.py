@@ -243,6 +243,16 @@ def money_digits(value) -> str:
     return f"{number:,.{places}f}"
 
 
+def is_counted_unit(unit: str | None) -> bool:
+    """Whether a unit is counted out whole -- a jerry can, a carton, a sachet.
+
+    A measure ("L", "kg") can be sent in any amount; a counted unit cannot be
+    sent as 0.88 of one. With no unit there is nothing to say it is counted.
+    """
+    noun = str(unit or "").strip().lower()
+    return bool(noun) and noun not in _UNIT_SYMBOLS
+
+
 def unit_noun(unit: str | None, count=None) -> str:
     """A stored unit as the noun a person writes after a number.
 

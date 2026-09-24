@@ -1,10 +1,10 @@
 import re
-from decimal import Decimal
+from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 
 from django import template
 from django.urls import reverse
 
-from connect_labs.supply_chain.values import money_digits, quantity_digits, unit_noun
+from connect_labs.supply_chain.values import _as_decimal, is_counted_unit, money_digits, quantity_digits, unit_noun
 
 register = template.Library()
 
@@ -538,15 +538,38 @@ def quantity_text(value):
 
 
 @register.filter
-def whole_quantity_text(value):
-    """A rate in whole units: "3,033 co-packs", not "3,033.33" -- a demand averaged
-    over counted cartons has no meaningful fraction of a co-pack."""
+def demand_text(value):
+    """A demand rate with no more precision than the data has.
+
+    A rate averaged over counted units reads in whole units -- "3,033 co-packs",
+    not "3,033.33"; "84 jerry cans", not "83.72" -- because there is no
+    meaningful fraction of a co-pack. A measure ("L", "kg") keeps one place.
+    A rate is never rounded to nothing: under one whole unit it keeps one place.
+    """
     if isinstance(value, dict) and value.get("amount") not in (None, ""):
-        try:
-            whole = Decimal(str(value["amount"])).quantize(Decimal("1"), rounding="ROUND_HALF_UP")
-        except (ArithmeticError, ValueError):
-            return quantity_text(value)
-        return qty(str(whole), value.get("unit"))
+        amount = _as_decimal(value["amount"])
+        unit = value.get("unit")
+        if amount is not None and amount.is_finite():
+            whole = amount.quantize(Decimal(1), rounding=ROUND_HALF_UP)
+            if is_counted_unit(unit) and (whole or not amount):
+                return qty(whole, unit)
+            return qty(amount.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP), unit)
+    return quantity_text(value)
+
+
+@register.filter
+def send_text(value):
+    """What to send or reorder, rounded UP to a whole unit wherever the unit is counted.
+
+    Nobody can send 0.88 of a jerry can, and rounding down would send less
+    than the band asks for. The operation's figure stays exact; only what the
+    page asks a person to do is whole. A measure ("L") is shown as it is.
+    """
+    if isinstance(value, dict) and value.get("amount") not in (None, ""):
+        amount = _as_decimal(value["amount"])
+        unit = value.get("unit")
+        if amount is not None and amount.is_finite() and is_counted_unit(unit):
+            return qty(amount.quantize(Decimal(1), rounding=ROUND_CEILING), unit)
     return derived_text(value)
 
 
