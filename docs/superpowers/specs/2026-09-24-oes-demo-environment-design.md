@@ -138,6 +138,44 @@ supply seeders register their programmes with `"gdrive_folder_id": "none"`
 precisely because supply data does not come from Drive. The new loader closes
 that gap for the supply side without touching the fixture store.
 
+## 5a. Two kinds of truth, and they are already modelled
+
+There are two quite different things in this demo that look alike: what the
+programme team believes about a supply chain and types in, and what the
+organisation running it entered itself. They must not read the same, and in
+this domain they already do not.
+
+Every record below the contract carries two independent facts:
+`recorded_by_org` (who typed it) and `source` (how they knew it), drawn from
+`records.SOURCES`. `Provenanced.witnessed` is true only for `we_recorded` and
+`document` — "a missing source is weaker than a partner's claim, not
+stronger" — and `identity.source_for()` refuses to let a non-programme caller
+claim first-hand knowledge at all.
+
+The case worth showing is the one where *we* write down what *they* told us.
+`told_by_for` already renders it: **"Dimagi, for EHA Clinics (they told us)"**,
+with `reported, not witnessed` beneath.
+
+The demo therefore seeds three tiers deliberately:
+
+| Tier | `recorded_by_org` | `source` | Reads as |
+|---|---|---|---|
+| Ours, second-hand — the spreadsheet world | Dimagi | `partner_reported` | "Dimagi, for EHA Clinics (they told us)" · reported, not witnessed |
+| Ours, first-hand — what we did ourselves | Dimagi | `we_recorded` | "Dimagi" · witnessed |
+| Theirs — entered through their own link | the partner | `partner_reported` / `supplier_reported` | "EHA Clinics" |
+
+Seeded so that **one order carries all three**, with the second-hand rows
+above the point at which EHA was given its link and its own rows below.
+That single screen answers the question an OES programme officer actually
+has — *what do we really know about our implementers' stock, and how do we
+know it* — and it answers it without flattering the data. Onboarding a
+partner visibly upgrades the evidentiary status of the record; nothing else
+in the demo argues the value of the partner seat as economically.
+
+This is also the most direct expression of OES's stated transparency
+principle available in the product, and it costs nothing to build: it is
+seed-data choice, not code.
+
 ## 6. The third org
 
 An implementer that uses the supply domain and runs its own last mile.
@@ -187,6 +225,7 @@ does it survive without Connect.*
 | 6 | Hand to the partner | EHA's login-free link | Their implementers' suppliers have no logins and never will |
 | 7 | It arrives | Receipt: batch, expiry, landed cost | Shelf life against programme timeline |
 | 8 | The second basket | CHC: ORS/zinc, vitamin A, dewormer | Same machinery, different commodity |
+| 8a | **How do we know?** | One order's rows: ours second-hand, ours first-hand, theirs | What we actually know about an implementer's stock, and how — see §5a. Onboarding the partner upgrades the record in front of them |
 | 9 | The third org | Supply-only network | Chain ends at the last store — honest about the loss |
 | 10 | The contrast | Our org: user-held points, consumption | With Connect the ledger runs to the worker and reconciles against verified visits |
 
