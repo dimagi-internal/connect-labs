@@ -11,12 +11,13 @@ pytestmark = pytest.mark.django_db
 
 
 def _comparing(snapshot):
-    """Answer every call with the comparison snapshot, except the award list.
+    """Answer every call with the comparison snapshot, except the two lists.
 
-    The comparison page also lists the round's awards; a mock answering that
-    with a snapshot dict would hand the page a dict to iterate as awards.
+    The comparison page also lists the round's awards and names the product
+    from the catalogue; a mock answering either with a snapshot dict would
+    hand the page a dict to iterate.
     """
-    return lambda name, access, payload: [] if name == "award_list" else snapshot
+    return lambda name, access, payload: [] if name in ("award_list", "commodity_list") else snapshot
 
 
 @pytest.fixture
@@ -363,7 +364,7 @@ def test_comparison_without_a_commodity_defaults_when_the_round_has_one_line(cli
             return round_
         if name == "round_compare":
             return snapshot
-        if name == "award_list":
+        if name in ("award_list", "commodity_list", "quote_list"):
             return []
         raise AssertionError(name)
 
@@ -607,7 +608,7 @@ def test_a_comparable_row_never_renders_an_unconfirmed_figure_as_a_blank(client,
 
     assert "Unconfirmed" in body, "the cell rendered blank instead of saying it is unconfirmed"
     # The confirmed figure on the same row still renders as a number.
-    assert "100000" in body
+    assert "100,000.00" in body
 
 
 def test_with_nothing_comparable_the_page_does_not_claim_a_provisional_ranking(client, sophie):
@@ -947,6 +948,7 @@ def test_the_round_detail_page_links_each_supplier_it_names(client, sophie):
         "outreach_list": [{"id": 1, "round_id": 5, "supplier_id": 1, "sent_on": "2026-04-28", "responded": False}],
         "quote_list": [QUOTE],
         "supplier_list": [SUPPLIER],
+        "commodity_list": [],
     }
     with patch(
         "connect_labs.supply_chain.procurement.views.call_operation",

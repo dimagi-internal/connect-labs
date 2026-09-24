@@ -53,37 +53,65 @@ def average_monthly_consumption(program_id, supply_point, item=None, as_of=None,
     # it is, and a short one read idler.
     end = as_of or date.today()
     start = end - timedelta(days=window_days)
-    consumed = (
-        Movement.objects.for_program(program_id)
-        .filter(kind="consumption", from_supply_point=supply_point)
-        .between(start, end)
-    )
-    if item is not None:
-        consumed = consumed.filter(item=item)
-
-    first = Movement.objects.for_program(program_id).filter(kind="consumption", from_supply_point=supply_point)
-    if item is not None:
-        first = first.filter(item=item)
-    earliest = first.order_by("occurred_on").values_list("occurred_on", flat=True).first()
+    basis = demand_basis(program_id, supply_point, item=item)
+    demand = _demand(program_id, supply_point, basis, item=item)
+    in_window = demand.between(start, end)
+    earliest = demand.order_by("occurred_on").values_list("occurred_on", flat=True).first()
     if earliest is None:
         return unconfirmed("nothing has been dispensed from here yet, so there is no consumption rate")
 
     observed_days = min(window_days, (end - earliest).days + 1)
     if observed_days < MINIMUM_WINDOW_DAYS:
+        what = "dispensing" if basis == CONSUMPTION else "releases"
         return unconfirmed(
-            f"only {observed_days} days of dispensing have been recorded here; "
+            f"only {observed_days} days of {what} have been recorded here; "
             f"at least {MINIMUM_WINDOW_DAYS} are needed before a monthly rate means anything"
         )
 
-    total = ledger.collapse(consumed.consumption_by_unit(), item, None)
+    by_unit = {unit[0]: total for unit, total in in_window._totals(["quantity_unit"]).items()}
+    total = ledger.collapse(by_unit, item, None)
     if isinstance(total, Unconfirmed):
         return total
     if total.amount == 0:
-        return unconfirmed("no consumption recorded in the window, so there is no rate to project")
+        return unconfirmed(f"no {basis} recorded in the window, so there is no rate to project")
     # Quantized for the same reason conversions are: a rate carried to 27
     # digits is false precision on a figure derived from counted cartons.
     rate = (total.amount / Decimal(observed_days) * DAYS_PER_MONTH).quantize(ledger.QUANTITY_SCALE)
     return Quantity(rate, total.unit)
+
+
+CONSUMPTION = "consumption"
+RELEASES = "releases"
+
+# What leaves a store for another supply point: the demand on a store that
+# does not dispense to anyone itself, such as a distributor's warehouse whose
+# whole outflow is partners collecting.
+RELEASE_KINDS = ("issue", "transfer", "distribution")
+
+
+def demand_basis(program_id, supply_point, item=None) -> str:
+    """What a point's rate is averaged from, stated rather than assumed.
+
+    A point that dispenses is rated on what it dispenses -- that is demand.
+    A point that never has is rated on what it releases to other points, which
+    is the demand placed on it; without this a warehouse had no rate at all,
+    and so no months of stock and no reorder figure, however busy it was.
+    """
+    dispensed = Movement.objects.for_program(program_id).filter(kind="consumption", from_supply_point=supply_point)
+    if item is not None:
+        dispensed = dispensed.filter(item=item)
+    return CONSUMPTION if dispensed.exists() else RELEASES
+
+
+def _demand(program_id, supply_point, basis, item=None):
+    qs = Movement.objects.for_program(program_id).filter(from_supply_point=supply_point)
+    if basis == CONSUMPTION:
+        qs = qs.filter(kind="consumption")
+    else:
+        qs = qs.filter(kind__in=RELEASE_KINDS, to_supply_point__isnull=False).exclude(to_supply_point=supply_point)
+    if item is not None:
+        qs = qs.filter(item=item)
+    return qs
 
 
 def _ratio(numerator: Quantity, denominator: Quantity, item):
@@ -105,6 +133,7 @@ def plan(program_id, supply_point, item=None, as_of=None, window_days=DEFAULT_WI
     section 22).
     """
     on_hand = ledger.balance(program_id, supply_point, item=item, on_date=as_of)
+    basis = demand_basis(program_id, supply_point, item=item)
     amc = average_monthly_consumption(program_id, supply_point, item=item, as_of=as_of, window_days=window_days)
 
     if _is_durable(item):
@@ -116,6 +145,8 @@ def plan(program_id, supply_point, item=None, as_of=None, window_days=DEFAULT_WI
             "on_hand": on_hand,
             "amc": DURABLE,
             "amc_window_days": window_days,
+            "amc_basis": basis,
+            "amc_basis": basis,
             "months_of_stock": DURABLE,
             "days_to_stockout": DURABLE,
             "reorder_point": DURABLE,
@@ -135,6 +166,8 @@ def plan(program_id, supply_point, item=None, as_of=None, window_days=DEFAULT_WI
             "on_hand": on_hand,
             "amc": amc,
             "amc_window_days": window_days,
+            "amc_basis": basis,
+            "amc_basis": basis,
             "months_of_stock": reason,
             "days_to_stockout": reason,
             "reorder_point": reason,
@@ -208,6 +241,7 @@ def plan(program_id, supply_point, item=None, as_of=None, window_days=DEFAULT_WI
         "on_hand": on_hand,
         "amc": amc,
         "amc_window_days": window_days,
+        "amc_basis": basis,
         "months_of_stock": months,
         "days_to_stockout": months * DAYS_PER_MONTH,
         "reorder_point": reorder_point,

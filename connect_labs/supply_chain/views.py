@@ -331,6 +331,21 @@ class OrdersView(OperationBase):
         return context
 
 
+def _link_updates(contract_id):
+    """What suppliers reported about this order through their update links.
+
+    Read from the link submissions rather than an operation: they are the
+    record of which link a write came through, which the rows themselves do
+    not carry. The contract was already fetched through the programme-scoped
+    `contract_get`, so this reads nothing the page could not already show.
+    """
+    from connect_labs.supply_chain.models import Contract
+    from connect_labs.supply_chain.update_links import service
+
+    contract = Contract.objects.filter(pk=contract_id).first()
+    return service.updates_for_contract(contract) if contract is not None else []
+
+
 class OrderDetailView(OperationBase):
     """One order, with the two derivations that decide whether to pay it.
 
@@ -370,6 +385,7 @@ class OrderDetailView(OperationBase):
         context["documents"] = self.op("document_list", contract_id=contract_id)
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
+        context["link_updates"] = _link_updates(contract_id)
         # Lateness, read from the checks rather than recomputed here, so this
         # page and the checks feed cannot disagree about whether it is late.
         shipment_ids = {s["id"] for s in context["shipments"]}

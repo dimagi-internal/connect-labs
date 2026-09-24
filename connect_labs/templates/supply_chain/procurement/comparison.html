@@ -19,7 +19,7 @@
     {% endfor %}
   </ul>
 {% else %}
-<h1 class="text-xl font-semibold text-gray-900 mb-4">Comparison — round {{ round_id }}, {{ commodity_slug }}</h1>
+<h1 class="text-xl font-semibold text-gray-900 mb-4">Comparison — {{ commodity_name }}{% if round.label %} <span class="font-normal text-gray-500">· {{ round.label }}</span>{% endif %}</h1>
 
 {% if comparison.provisional %}
   <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-sm text-amber-900">
@@ -130,21 +130,28 @@
                       Unconfirmed
                     </td>
                   {% else %}
-                    <td>{{ cell.currency }} {{ cell.amount|floatformat:4 }}</td>
+                    <td class="tabular-nums">{{ cell|money_text }}</td>
                   {% endif %}
                 {% endwith %}
               {% endfor %}
               <td>
+                {% if row.quote_id in awarded_quote_ids %}
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Chosen</span>
+                {% else %}
                 <form method="post" action="" class="flex items-center gap-2">
                   {% csrf_token %}
                   <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
                   <input type="text" name="rationale" placeholder="Why this supplier?" required
                          class="w-40 border border-gray-300 rounded-md px-2 py-1 text-sm">
+                  <input type="date" name="decided_on" value="{{ today }}" max="{{ today }}" aria-label="Decided on"
+                         title="The day the decision was made"
+                         class="border border-gray-300 rounded-md px-2 py-1 text-sm">
                   <button class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
                           type="submit">
                     Award
                   </button>
                 </form>
+                {% endif %}
                 {% include "supply_chain/procurement/_row_questions.html" with row=row %}
               </td>
             </tr>
@@ -156,6 +163,25 @@
 {% else %}
   <p class="text-gray-500 mb-4">Nothing is comparable yet. Every quote is missing something —
   the questions below are the whole job right now.</p>
+{% endif %}
+
+{% if set_aside %}
+  <section class="mb-4">
+    <h2 class="text-sm font-semibold text-gray-900 mb-2">Set aside — {{ set_aside|length }}</h2>
+    <div class="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100">
+      {% for entry in set_aside %}
+        <div class="px-4 py-3 text-sm">
+          <a href="{% url 'supply_chain:procurement_quote_detail' entry.quote.id %}"
+             class="font-medium text-brand-indigo hover:underline">{{ entry.item.name|default:entry.quote.supplier_id }}</a>
+          <span class="text-gray-500">· {{ entry.quote.as_quoted_currency }} {{ entry.quote.as_quoted_amount }}</span>
+          {% if entry.item.components %}
+            {% include "supply_chain/procurement/_composition.html" with composition=entry.item.components %}
+          {% endif %}
+          <div class="text-gray-700 mt-1">{{ entry.quote.void_reason }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
 {% endif %}
 
 {% if comparison.blocked %}

@@ -499,6 +499,14 @@ class TestWritesGoThroughTheOrdinaryOperations:
         )
         assert Payment.objects.get(pk=payment["id"]).confirmed_by_payee_on == timezone.now().date()
 
+        # Once confirmed, the page stops offering to confirm it again: the
+        # supplier's next visit found "Confirm a payment was received" still
+        # listed with the payment it had just confirmed.
+        from connect_labs.supply_chain.update_links.forms import ConfirmPaymentForm
+
+        form = ConfirmPaymentForm(scope=service.scope_for(_link(issued)))
+        assert not form.is_available()
+
 
 def _point(row):
     from connect_labs.supply_chain.models import SupplyPoint
@@ -632,6 +640,46 @@ class TestThePublicPage:
         revoked = client.get(_url(issued["token"]))
         assert unknown.status_code == expired.status_code == revoked.status_code == 404
         assert unknown.content == expired.content == revoked.content
+
+    def test_the_page_says_what_was_recorded_not_just_that_something_was(self, client, issued, world):
+        """After a receipt the banner read "Recorded: record goods received" --
+        not what was received. The supplier who just typed 96 and 4 had no way
+        to see the programme got 96 and 4, and neither did anyone watching."""
+        response = client.post(
+            _url(issued["token"]),
+            {
+                "action": "record_receipt",
+                "record_receipt-contract": world["contract"]["id"],
+                "record_receipt-supply_point": world["warehouse"]["id"],
+                "record_receipt-received_on": "2026-09-20",
+                "record_receipt-reference": "GRN-7",
+                "record_receipt-quantity_accepted": "96",
+                "record_receipt-quantity_rejected": "4",
+                "record_receipt-rejection_reason": "crushed",
+                "record_receipt-unit_basis": "pack",
+                "record_receipt-batch": "B-1",
+            },
+            follow=True,
+        )
+        body = response.content.decode()
+        assert "96 carton accepted" in body
+        assert "4 rejected (crushed)" in body
+        assert "B-1" in body and "EHA warehouse" in body
+
+        client.post(
+            _url(issued["token"]),
+            {
+                "action": "record_release",
+                "record_release-from_supply_point": world["warehouse"]["id"],
+                "record_release-to_supply_point": world["llo"]["id"],
+                "record_release-item": world["item"]["id"],
+                "record_release-occurred_on": "2026-09-21",
+                "record_release-quantity": "30",
+                "record_release-unit_basis": "pack",
+            },
+        )
+        body = client.get(_url(issued["token"]) + "?done=record_release").content.decode()
+        assert "30 carton from EHA warehouse to LLO store" in body
 
     def test_posting_an_action_writes_and_redirects_back(self, client, issued, world):
         response = client.post(

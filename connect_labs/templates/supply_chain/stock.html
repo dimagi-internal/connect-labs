@@ -26,7 +26,7 @@ one of them would destroy the only signal it had.
   <h2 class="text-lg font-semibold text-brand-indigo">Stock across the network</h2>
   <span class="text-sm text-gray-500">
     {{ network.summary.points }} supply points ·
-    {{ network.summary.never_reported }} have never reported
+    {{ network.summary.never_reported }} {% if network.summary.never_reported == 1 %}has{% else %}have{% endif %} never reported
   </span>
 </div>
 <p class="text-xs text-gray-500 mb-4">
@@ -62,7 +62,7 @@ one of them would destroy the only signal it had.
         <th class="text-left px-4 py-2">Supply point</th>
         <th class="text-left px-4 py-2">Ledger says</th>
         <th class="text-left px-4 py-2">Reported</th>
-        <th class="text-left px-4 py-2">Consumption / month</th>
+        <th class="text-left px-4 py-2" title="What a store dispenses; for a store that only releases to others, what it releases">Demand / month</th>
         <th class="text-left px-4 py-2">Months of stock</th>
         <th class="text-left px-4 py-2">Send</th>
         <th class="text-left px-4 py-2">Against its band</th>
@@ -94,7 +94,10 @@ one of them would destroy the only signal it had.
               <span class="text-gray-400">never</span>
             {% endif %}
           </td>
-          <td class="px-4 py-2.5 tabular-nums text-gray-600">{{ point.amc|derived_text }}</td>
+          <td class="px-4 py-2.5 tabular-nums text-gray-600">
+            {{ point.amc|quantity_text }}{% if point.amc.amount %} <span class="text-xs text-gray-500">{% if point.amc_basis == "releases" %}releases{% else %}dispensed{% endif %} a month</span>{% endif %}
+            {% if point.amc_in_display_unit %}<div class="text-xs text-gray-500">(= {{ point.amc_in_display_unit|quantity_text }})</div>{% endif %}
+          </td>
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
             {{ point.months_of_stock|derived_text }}
             {% for reason in point.months_of_stock|unconfirmed_reasons %}
@@ -150,7 +153,8 @@ one of them would destroy the only signal it had.
 
 <p class="text-xs text-gray-500 mt-3">
   Consumption is derived from Connect visits, not keyed by a clerk — the field
-  record is the consumption record. A worker's reported figure is kept beside
+  record is the consumption record. A store that dispenses nothing itself, such as
+  a distributor's warehouse, is rated on what it releases to other supply points. A worker's reported figure is kept beside
   the ledger rather than overwriting it; moving the ledger takes a deliberate
   override with a reason.
 </p>

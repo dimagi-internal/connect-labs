@@ -114,7 +114,10 @@ class AlertSubscription(TimestampedModel):
     @property
     def recipient_label(self) -> str:
         if self.recipient_user_id:
-            return self.recipient_user.get_full_name() or self.recipient_user.username
+            # Not get_full_name(): the labs user model sets first_name and
+            # last_name to None, so AbstractUser's version reads "None None".
+            user = self.recipient_user
+            return getattr(user, "name", "") or user.email or user.username
         return self.recipient_email
 
 

@@ -283,7 +283,9 @@ class ConfirmPaymentForm(PublicForm):
 
     def limit_to_scope(self, scope):
         if scope is not None:
-            self.fields["payment"].queryset = scope.payments
+            # Only payments not yet confirmed: one already confirmed offered
+            # again reads as if the confirmation had not been recorded.
+            self.fields["payment"].queryset = scope.payments.filter(confirmed_by_payee_on__isnull=True)
 
     def rows(self):
         return ["payment", "received_on"]

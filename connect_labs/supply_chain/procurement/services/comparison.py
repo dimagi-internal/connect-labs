@@ -219,6 +219,54 @@ def _composition_phrase(composition) -> str:
     return " + ".join(f"{c['quantity']} {c['base_unit']} {c['commodity_slug']}" for c in composition)
 
 
+def _canonical(components) -> list:
+    """A list of components in the same canonical shape `_composition` gives."""
+    return sorted(
+        (
+            {
+                "commodity_slug": component.get("commodity_slug"),
+                "quantity": decimal_string(Decimal(str(component.get("quantity")))),
+                "base_unit": component.get("base_unit") or "",
+            }
+            for component in components or []
+        ),
+        key=lambda component: (component["commodity_slug"] or "", component["base_unit"]),
+    )
+
+
+def _round_contents(round_, commodity) -> list | None:
+    """The kit contents this round's line for `commodity` says it buys, if it says."""
+    for line in getattr(round_, "lines", None) or []:
+        if isinstance(line, dict) and line.get("commodity_slug") == commodity.slug and line.get("components"):
+            return _canonical(line["components"])
+    return None
+
+
+def _refuse_other_contents(comparable, blocked, wanted):
+    """The round has decided the contents: rank those, refuse the rest, and say why.
+
+    This is the decision `_separate_differing_kits` asks us for, taken once on
+    the round rather than by voiding offers one at a time -- so an offer with
+    other contents stays on the page, refused a ranking in plain view, instead
+    of disappearing from it.
+    """
+    keep = []
+    for row in comparable:
+        if row.composition is None or row.composition == wanted:
+            keep.append(row)
+            continue
+        reason = (
+            f"not the contents this round buys: this offer is {_composition_phrase(row.composition)}; "
+            f"the round buys {_composition_phrase(wanted)}"
+        )
+        row.figures["landed_total_for_round_quantity"] = merge(
+            unconfirmed(reason), row.figures["landed_total_for_round_quantity"]
+        )
+        row.is_comparable = False
+        blocked = [*blocked, row]
+    return keep, blocked
+
+
 def _separate_differing_kits(comparable, blocked):
     """Kits are ranked only against kits holding the same contents.
 
@@ -338,6 +386,9 @@ def compare_round(
         )
         (comparable if row.is_comparable else blocked).append(row)
 
+    wanted = _round_contents(round_, commodity)
+    if wanted:
+        comparable, blocked = _refuse_other_contents(comparable, blocked, wanted)
     comparable, blocked = _separate_differing_kits(comparable, blocked)
 
     ranked_by = _ranking_key(comparable)

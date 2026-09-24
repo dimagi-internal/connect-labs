@@ -32,9 +32,71 @@ def _received(contract):
     return {row["quantity_unit"]: (row["total"] or ZERO) for row in rows}
 
 
+def _rejected(contract):
+    """Refused quantity against this contract, per unit."""
+    rows = (
+        ReceiptLine.objects.filter(receipt__contract=contract)
+        .values("quantity_unit")
+        .annotate(total=Sum("quantity_rejected"))
+    )
+    return {row["quantity_unit"]: (row["total"] or ZERO) for row in rows}
+
+
+# An order settled: nothing more is coming, so what was paid for and never
+# delivered is owed back rather than awaited.
+_CLOSED_OUT = ("received", "closed", "cancelled")
+
+
+def _value_of(contract, quantity):
+    """quantity at the contract's unit price, as Money, or Unconfirmed."""
+    if contract.unit_price is None or not contract.unit_price_unit or contract.unit_price_unit == "per_lot_total":
+        return unconfirmed("the contract's unit price cannot be applied to a quantity")
+    restated = ledger.convert(quantity.amount, quantity.unit, contract.quantity_unit or quantity.unit, contract.item)
+    if isinstance(restated, Unconfirmed):
+        return restated
+    return Money(contract.unit_price * restated.amount, contract.currency)
+
+
+def _advance(contract, ordered, received, rejected, paid):
+    """Awaiting delivery and recoverable, for an order paid in advance.
+
+    Paid before the goods, the question is no longer "what is safe to pay"
+    but "what is still coming, and what is owed back". Refused goods are owed
+    back at once -- they were paid for and will not be accepted. Anything not
+    delivered is awaited while the order is open, and owed back once it is
+    closed out.
+    """
+    zero = Quantity(ZERO, ordered.unit)
+    delivered = ledger.convert(received.amount, received.unit, ordered.unit, contract.item)
+    refused = ledger.convert(rejected.amount, rejected.unit, ordered.unit, contract.item)
+    if isinstance(delivered, Unconfirmed) or isinstance(refused, Unconfirmed):
+        reason = delivered if isinstance(delivered, Unconfirmed) else refused
+        return reason, reason
+    not_delivered = max(ordered.amount - delivered.amount - refused.amount, ZERO)
+    awaiting = Quantity(not_delivered, ordered.unit)
+    owed_back = refused.amount
+    if contract.status in _CLOSED_OUT:
+        owed_back += not_delivered
+        awaiting = zero
+    recoverable = _value_of(contract, Quantity(owed_back, ordered.unit))
+    if isinstance(recoverable, Money):
+        # Never more than was paid: an order paid in part cannot be owed back in full.
+        recoverable = Money(min(recoverable.amount, paid), contract.currency)
+    return awaiting, recoverable
+
+
 def _invoiced(contract):
     rows = contract.invoices.exclude(status="rejected").values("quantity_unit").annotate(total=Sum("quantity_billed"))
     return {row["quantity_unit"]: (row["total"] or ZERO) for row in rows if row["quantity_unit"]}
+
+
+def _in_order_unit(by_unit, item, unit):
+    """One figure in the order's unit, or -- if that cannot be done -- in whatever it can."""
+    if unit is not None:
+        stated = ledger.collapse(by_unit, item, unit)
+        if isinstance(stated, Quantity):
+            return stated
+    return ledger.collapse(by_unit, item, None)
 
 
 def three_way_match(contract) -> dict:
@@ -58,6 +120,7 @@ def three_way_match(contract) -> dict:
     received_by_unit = _received(contract)
     received = _in_unit(ledger.collapse(received_by_unit, contract.item, None), in_order_unit, contract.item)
     invoiced = _in_unit(ledger.collapse(_invoiced(contract), contract.item, None), in_order_unit, contract.item)
+    unit = in_order_unit
 
     billed = contract.invoices.exclude(status="rejected").aggregate(total=Sum("amount"))["total"] or ZERO
     paid = Payment.objects.filter(invoice__contract=contract).aggregate(total=Sum("amount"))["total"] or ZERO
@@ -99,6 +162,22 @@ def three_way_match(contract) -> dict:
 
     payable = _payable_now(contract, received, billed, paid)
 
+    awaiting = recoverable = None
+    if contract.payment_terms == "advance" and isinstance(ordered, Quantity) and isinstance(received, Quantity):
+        # Billed and paid ahead of the goods is the agreement, not a
+        # discrepancy: never "over invoiced" on quantity, and never "safe to
+        # pay 0" -- what the reader needs is what is still coming and what
+        # is owed back.
+        rejected = _in_order_unit(_rejected(contract), contract.item, unit)
+        if isinstance(rejected, Unconfirmed) or not any(_rejected(contract).values()):
+            rejected = Quantity(ZERO, ordered.unit)
+        awaiting, recoverable = _advance(contract, ordered, received, rejected, paid)
+        over_invoiced = None
+        if not any(received_by_unit.values()):
+            status = "paid_in_advance" if paid > 0 else "not_received"
+        elif status == "over_invoiced":
+            status = "part_received" if isinstance(shortfall, Quantity) and shortfall.amount > 0 else "fully_received"
+
     # A shortfall another order was placed to buy. Still stated -- covered is
     # not received, and the arithmetic stays visible -- but no longer open:
     # the status names the orders that cover it, so the short contract stops
@@ -130,6 +209,9 @@ def three_way_match(contract) -> dict:
         "billed_amount": Money(billed, contract.currency),
         "paid_amount": Money(paid, contract.currency),
         "payable_now": payable,
+        "payment_terms": contract.payment_terms,
+        "awaiting_delivery": awaiting,
+        "recoverable": recoverable,
         "covered_by": covered_by,
         "status": status,
         "matches": status == "fully_received" and _is_zero(over_invoiced),

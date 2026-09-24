@@ -382,6 +382,7 @@ def resupply_plan(access, supply_point_id, item_id=None, window_days=resupply.DE
     return {
         "supply_point_id": point.pk,
         "amc_window_days": plan["amc_window_days"],
+        "amc_basis": plan["amc_basis"],
         "status": plan["status"],
         "min_months_of_stock": str(plan["min_months_of_stock"]) if plan["min_months_of_stock"] is not None else None,
         "max_months_of_stock": str(plan["max_months_of_stock"]) if plan["max_months_of_stock"] is not None else None,
@@ -435,6 +436,7 @@ def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_d
                 },
                 "reported_on": row["reported_on"].isoformat() if row["reported_on"] else None,
                 "reported_kind": row["reported_kind"],
+                "amc_basis": row["amc_basis"],
                 "min_months_of_stock": (
                     str(row["min_months_of_stock"]) if row["min_months_of_stock"] is not None else None
                 ),
@@ -448,6 +450,7 @@ def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_d
                         "on_hand_in_base",
                         "reported",
                         "amc",
+                        "amc_in_display_unit",
                         "months_of_stock",
                         "days_to_stockout",
                         "resupply_quantity",

@@ -14,7 +14,7 @@
     {% for line in round.lines %}
     <a href="{% url 'supply_chain:procurement_comparison' round.id %}?commodity={{ line.commodity_slug }}"
        class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-      Compare {{ line.commodity_slug }}
+      Compare {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}
     </a>
     {% endfor %}
     <a href="{% url 'supply_chain:procurement_round_edit' round.id %}"
@@ -43,6 +43,22 @@
     {% endif %}
   </div>
 </div>
+
+{% if buys %}
+<div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-6">
+  <div class="px-4 py-2.5 border-b border-brand-border-light">
+    <h2 class="text-sm font-semibold text-gray-900">What this round buys</h2>
+  </div>
+  <ul class="divide-y divide-gray-100">
+    {% for line in buys %}
+      <li class="px-4 py-2 text-sm text-gray-800 flex flex-wrap justify-between gap-2">
+        <span>{{ line.name }}{% if line.contents %} <span class="text-gray-500">— one unit holds {{ line.contents }}</span>{% endif %}</span>
+        <span class="tabular-nums text-gray-600">{{ line.quantity }} {{ line.unit }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 <div class="flex items-center justify-between mb-2">
   <h2 class="text-lg font-semibold text-gray-900">Outreach</h2>

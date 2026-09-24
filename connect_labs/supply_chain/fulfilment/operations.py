@@ -519,7 +519,10 @@ def contract_landed_cost(access, contract_id, compare_buyers=False):
         "The three-way match for a contract: ordered against received against invoiced, plus what is "
         "safe to pay now. Computed, never stored. payable_now is the value of what actually ARRIVED, "
         "never what was billed. A shortfall another contract was placed to buy (covers_shortfall_of_id) "
-        "reads as status shortfall_covered, naming the covering orders in covered_by."
+        "reads as status shortfall_covered, naming the covering orders in covered_by. An order on "
+        "payment_terms advance reads as paid_in_advance until goods arrive, reports awaiting_delivery, and "
+        "reports what was paid for and refused (or never delivered, once closed) as recoverable -- "
+        "never as over-invoiced."
     ),
     input_schema=obj({"contract_id": ID}, required=("contract_id",)),
 )
@@ -534,6 +537,7 @@ def contract_match(access, contract_id):
         "status": matched["status"],
         "matches": matched["matches"],
         "covered_by": matched["covered_by"],
+        "payment_terms": matched["payment_terms"],
         **{
             key: figure(matched[key]) if matched[key] is not None else None
             for key in (
@@ -545,6 +549,8 @@ def contract_match(access, contract_id):
                 "billed_amount",
                 "paid_amount",
                 "payable_now",
+                "awaiting_delivery",
+                "recoverable",
             )
         },
     }
