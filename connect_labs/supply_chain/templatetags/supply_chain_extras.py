@@ -543,3 +543,14 @@ EVIDENCE_LABELS = {
 @register.filter
 def evidence_label(kind):
     return EVIDENCE_LABELS.get(kind, humanise(kind))
+
+
+@register.filter
+def has_field_errors(form) -> bool:
+    """Whether any single field is marked, as opposed to only a form-wide refusal.
+
+    A refusal about the record itself -- an award still awaiting approval --
+    leaves nothing on the form to fix, and the hint that says to fix what is
+    marked would send the reader hunting for a field that is fine.
+    """
+    return any(name != "__all__" for name in getattr(form, "errors", {}) or {})

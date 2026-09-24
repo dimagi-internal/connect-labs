@@ -352,4 +352,8 @@ class TestTheApprovalScreens:
             },
         )
         assert response.status_code == 200
-        assert "awaiting approval" in response.content.decode()
+        body = response.content.decode()
+        assert "awaiting approval" in body
+        # Nothing on the form is wrong: the refusal is about the award, so
+        # telling her to "fix what is marked" sends her looking for a field.
+        assert "fix what is marked" not in body
