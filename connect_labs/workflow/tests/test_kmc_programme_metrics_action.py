@@ -226,3 +226,14 @@ def test_a_pre_2004_run_keeps_only_the_indicators_whose_definition_did_not_chang
     assert {k for k in mapped if k.startswith("N")} == {f"N{i:02d}" for i in range(1, 16)}
     assert {k for k in mapped if k.startswith("C")} == {"C01", "C05", "C28", "C31"}
     assert "legacyIds: true" in src and "P.legacyIds ?" in src, "the page must say an old run is partial"
+
+
+def test_an_old_runs_mortality_tile_falls_back_to_its_own_cell():
+    """A pre-2004 run carries no pooled-over-credible mortality (its pool was the
+    workbook's rule, dropped as not comparable), so the undrilled tile must read
+    the programme cell rather than render blank."""
+    src = RENDER.read_text()
+    body = src[src.index("  function tileEntry(id) {") :]
+    body = body[: body.index("\n  }\n")]
+    assert "mortalityCredible.ind)" in body and "return entryOf(scopeInd, id);" in body
+    assert "'all organisations'" in src
