@@ -55,6 +55,44 @@ def requirement_label(field, unit="") -> str:
     return " ".join(_FIELD_WORDS.get(word, word) for word in words if word).capitalize()
 
 
+# The unit a figure's name ends in, as it is written beside a number. A
+# figure called `range_max_mg_per_l` is stated in mg/L; saying so lets the
+# requirement editor fill the unit rather than ask for it.
+_UNIT_SUFFIXES = (
+    ("mg_per_l", "mg/L"),
+    ("ppm", "ppm"),
+    ("months", "months"),
+    ("days", "days"),
+    ("pct", "%"),
+    ("percent", "%"),
+    ("mg", "mg"),
+    ("kg", "kg"),
+    ("ml", "mL"),
+    ("g", "g"),
+)
+
+
+def _split_unit(field) -> tuple[str, str]:
+    """(the figure's name without its unit, the unit): ("range_max", "mg/L")."""
+    name = (field or "").lower()
+    for suffix, unit in _UNIT_SUFFIXES:
+        if name.endswith(f"_{suffix}"):
+            return name[: -len(suffix) - 1], unit
+    return name, ""
+
+
+def figure_unit(field) -> str:
+    """The unit a figure's name says it is stated in: `range_max_mg_per_l` -> "mg/L", else ""."""
+    return _split_unit(field)[1]
+
+
+def figure_label(field) -> str:
+    """A figure's name as a person picks it from a list: "Range maximum (mg/L)", "Tests per kit"."""
+    name, unit = _split_unit(field)
+    label = requirement_label(name)
+    return f"{label} ({unit})" if unit else label
+
+
 def requirement_text(requirement: dict) -> str:
     """One requirement as a sentence fragment: "Range maximum at least 2.0 mg/L"."""
     operator = requirement.get("operator")

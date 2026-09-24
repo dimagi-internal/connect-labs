@@ -518,19 +518,51 @@ def spec_value(text):
     return int(number) if number == number.to_integral_value() and "." not in text else float(number)
 
 
+def figure_choices(commodities=(), items=()) -> list[tuple[str, str]]:
+    """Every figure this catalogue already knows, as (name, words) to pick from.
+
+    A requirement is only checkable against a figure some trade item states,
+    so the list is what the items (and the products inside kits) state, plus
+    whatever requirements already name. Nobody should have to remember that the
+    range is stored as `range_max_mg_per_l`.
+    """
+    from connect_labs.supply_chain.procurement.services.compliance import figure_label
+
+    names = set()
+    for commodity in commodities or ():
+        names.update(r.get("field") for r in commodity.get("spec_requirements") or [] if r.get("field"))
+    for item in items or ():
+        names.update((item.get("spec_attributes") or {}).keys())
+        for component in item.get("components") or []:
+            names.update((component.get("spec_attributes") or {}).keys())
+    choices = [(name, figure_label(name)) for name in names if name]
+    return sorted(choices, key=lambda choice: choice[1].lower())
+
+
 class RequirementLineForm(forms.Form):
     """One requirement every trade item of a product is checked against.
 
     The rule the check runs (a figure, a comparison, a value and its unit) and
     the sentence a person reads (the rationale) -- "must still read at the
     2 mg/L dispenser dose" is what a technical partner actually wrote.
+
+    The figure is picked from the ones the catalogue already knows, in words
+    ("Range maximum (mg/L)"); a figure nothing states yet is named in the box
+    beside it. The unit follows from the figure when its name says it.
     """
 
-    field = forms.SlugField(
+    field = forms.CharField(
         label=_("Figure"),
         max_length=64,
-        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. range_max_mg_per_l")}),
-        help_text=_("The name each trade item states its figure under."),
+        required=False,
+        widget=forms.Select(attrs=SELECT),
+        help_text=_("What each trade item states."),
+    )
+    new_field = forms.SlugField(
+        label=_("…or a new figure"),
+        max_length=64,
+        required=False,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. tests_per_kit")}),
     )
     operator = forms.ChoiceField(label=_("Must be"), widget=forms.Select(attrs=SELECT))
     value = forms.CharField(label=_("Value"), max_length=64, widget=forms.TextInput(attrs=INPUT))
@@ -544,9 +576,9 @@ class RequirementLineForm(forms.Form):
         widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. must still read at the 2 mg/L dose")}),
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, figures=(), **kwargs):
         super().__init__(*args, **kwargs)
-        from connect_labs.supply_chain.procurement.services.compliance import OPERATORS
+        from connect_labs.supply_chain.procurement.services.compliance import OPERATORS, figure_label
 
         labels = {
             ">=": _("at least"),
@@ -556,6 +588,40 @@ class RequirementLineForm(forms.Form):
             "==": _("exactly"),
         }
         set_choices(self, "operator", [(op, f"{op}  {labels.get(op, '')}") for op in OPERATORS])
+        choices = list(figures)
+        # The figure this row already holds stays pickable even when nothing
+        # else in the catalogue states it -- an edit must not lose a requirement.
+        current = (self.initial or {}).get("field") or (
+            self.data.get(self.add_prefix("field")) if self.is_bound else ""
+        )
+        if current and current not in {name for name, _label in choices}:
+            choices.append((current, figure_label(current)))
+        self.fields["field"].widget.choices = [("", _("Choose a figure…"))] + choices
+
+    def clean(self):
+        cleaned = super().clean()
+        from django.core.validators import validate_slug
+
+        from connect_labs.supply_chain.procurement.services.compliance import figure_unit
+
+        picked = (cleaned.get("field") or "").strip()
+        named = (cleaned.get("new_field") or "").strip()
+        if picked and named:
+            self.add_error("new_field", _("Pick a figure or name a new one, not both."))
+            return cleaned
+        if not picked and not named:
+            self.add_error("field", _("Choose the figure this requirement is about, or name a new one."))
+            return cleaned
+        figure = picked or named
+        try:
+            validate_slug(figure)
+        except forms.ValidationError:
+            self.add_error("field", _("Not a figure name."))
+            return cleaned
+        cleaned["field"] = figure
+        if not (cleaned.get("unit") or "").strip():
+            cleaned["unit"] = figure_unit(figure)
+        return cleaned
 
     def requirement(self) -> dict:
         data = self.cleaned_data
