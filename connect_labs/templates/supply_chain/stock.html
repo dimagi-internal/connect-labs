@@ -100,6 +100,16 @@ one of them would destroy the only signal it had.
             {% for reason in point.on_hand|unconfirmed_reasons %}
               <div class="text-xs text-orange-700 mt-0.5">{{ reason }}</div>
             {% endfor %}
+            {% comment %}Ordered to this point and not yet here: real, owed, and not cover --
+            so it is said beside the balance and never added into it.{% endcomment %}
+            {% for expected in point.expected_inbound %}
+              <div class="text-xs text-gray-500 mt-0.5">
+                expected: {{ expected.outstanding|figure_text }} from
+                <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' expected.contract_id %}">{{ expected.supplier.name }}</a>{% if expected.expected_on %} —
+                {% if expected.overdue %}<span class="text-orange-700">overdue since {{ expected.expected_on }}</span>{% else %}due {{ expected.expected_on }}{% endif %}{% endif %}
+                · not counted as cover
+              </div>
+            {% endfor %}
           </td>
           <td class="px-4 py-2.5 tabular-nums">
             {% if point.reported %}
@@ -110,8 +120,8 @@ one of them would destroy the only signal it had.
             {% endif %}
           </td>
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
-            {{ point.amc|whole_quantity_text }}{% if point.amc.amount %} <span class="text-xs text-gray-500">{% if point.amc_basis == "releases" %}releases{% else %}dispensed{% endif %} a month</span>{% endif %}
-            {% if point.amc_in_display_unit %}<div class="text-xs text-gray-500">(= {{ point.amc_in_display_unit|quantity_text }})</div>{% endif %}
+            {{ point.amc|demand_text }}{% if point.amc.amount %} <span class="text-xs text-gray-500">{% if point.amc_basis == "releases" %}releases{% else %}dispensed{% endif %} a month</span>{% endif %}
+            {% if point.amc_in_display_unit %}<div class="text-xs text-gray-500">(= {{ point.amc_in_display_unit|demand_text }})</div>{% endif %}
           </td>
           {% comment %}Durable equipment: said once, in the demand column. Repeating
           "durable — not forecast" in every forecast column read as three findings.{% endcomment %}
@@ -132,13 +142,14 @@ one of them would destroy the only signal it had.
           </td>
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
             {% comment %}Send or reorder: the same top-up, acted on by the point above,
-            or -- at the top of the network -- by an order to the supplier.{% endcomment %}
+            or -- at the top of the network -- by an order to the supplier. Rounded up
+            to a whole counted unit: nobody sends 0.88 of a jerry can.{% endcomment %}
             {% if point.resupply_quantity.amount == "0" %}
               nothing to {% if point.restocked_from == "supplier" %}reorder{% else %}send{% endif %}
             {% elif point.resupply_quantity.amount %}
-              {{ point.resupply_quantity|derived_text }} to {% if point.restocked_from == "supplier" %}reorder{% else %}send{% endif %}
+              {{ point.resupply_quantity|send_text }} to {% if point.restocked_from == "supplier" %}reorder{% else %}send{% endif %}
             {% else %}
-            {{ point.resupply_quantity|derived_text }}
+            {{ point.resupply_quantity|send_text }}
             {% endif %}
             {% comment %}Grey, as under months of stock: no rate yet is not a threshold
             crossed, and the same sentence read red here and grey beside it.{% endcomment %}
@@ -184,8 +195,8 @@ one of them would destroy the only signal it had.
 </div>
 
 <p class="text-xs text-gray-500 mt-3">
-  Consumption is derived from Connect visits, not keyed by a clerk — the field
-  record is the consumption record. A store that dispenses nothing itself, such as
+  Demand is read from the consumption movements on each store's ledger, whoever
+  recorded them — a Connect visit, a partner's report or a clerk's entry. A store that dispenses nothing itself, such as
   a distributor's warehouse, is rated on what it releases to other supply points. A worker's reported figure is kept beside
   the ledger rather than overwriting it; moving the ledger takes a deliberate
   override with a reason.
