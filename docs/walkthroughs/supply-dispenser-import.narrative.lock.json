@@ -9,7 +9,7 @@
     "the-checks-list-is-clear",
     "the-import-reconciles"
   ],
-  "fetched_at": "2026-09-24T12:48:58.872912+00:00",
+  "fetched_at": "2026-09-24T13:06:17.143272+00:00",
   "name": "supply-dispenser-import",
   "narrative": "Halima runs supply for the chlorine programme, and the checks list tells her, without anyone being asked, that ClearWater Action's dispenser consignment is past its expected date and that three of its import documents are not on file. She opens the consignment, whose checklist names who owes each document, and uploads the packing list and commercial invoice ClearWater emailed straight onto their lines. When the clearing agent sends the customs declaration, she uploads it the same way, and the consignment has every document it needs. She records the customs fee and the clearing agent's charge, each paid to someone other than the donor, and marks the consignment cleared. At its warehouse, Harmattan Health Supplies opens its own update link, with no login, and records the goods-received note: 118 accepted and 2 refused because their tap housings cracked in transit. Through the same link it records the release notes that send 60 dispensers to the Dawaki project site and 50 to Rimi. Back on the checks list that opened the story, nothing is left to report about the consignment. On the order the import reconciles: 120 donated, 118 accepted and 2 refused with nothing still to come, the two charges it took to land them, and every accepted dispenser held at the warehouse, Dawaki or Rimi, kept and moved rather than forecast.",
   "personas": {
@@ -117,9 +117,9 @@
     {
       "features": [
         {
-          "description": "The order's match card splits refused on arrival from still to arrive, and a durable item's order shows where its units are held now, per supply point, with a total.",
+          "description": "The order's match card states what was refused on arrival apart from what is still outstanding, and a durable item's order shows where its units are held now, per supply point, with a total.",
           "id": "order-reconciles",
-          "verify": "GET /supply/orders/<id>/ shows Refused on arrival 2 units, Still to arrive nothing, and Where they are now: Harmattan warehouse 8, Dawaki project site 60, Rimi project site 50, held across 3 places 118 units."
+          "verify": "GET /supply/orders/<id>/ shows Refused on arrival 2 units, Still outstanding 0 units, and Where they are now: Harmattan warehouse 8, Dawaki project site 60, Rimi project site 50, held across 3 places 118 units."
         }
       ],
       "id": "the-import-reconciles",
@@ -130,5 +130,5 @@
     }
   ],
   "slug": "supply-dispenser-import",
-  "version": 2
+  "version": 3
 }

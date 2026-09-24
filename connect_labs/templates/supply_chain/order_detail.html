@@ -345,8 +345,8 @@ partner's name (the IPTSc render).
         {% if match.still_to_arrive %}
           <tr><td class="px-4 py-2 text-gray-600">Refused on arrival</td>
               <td class="px-4 py-2 text-right tabular-nums">{{ match.refused|figure_text }}</td></tr>
-          <tr><td class="px-4 py-2 text-gray-600">Still to arrive</td>
-              <td class="px-4 py-2 text-right tabular-nums">{% if match.payment_terms == "advance" and match.awaiting_delivery %}{{ match.awaiting_delivery|figure_text }}{% elif match.still_to_arrive.amount == "0" %}nothing{% else %}{{ match.still_to_arrive|figure_text }}{% endif %}</td></tr>
+          <tr><td class="px-4 py-2 text-gray-600">Still outstanding</td>
+              <td class="px-4 py-2 text-right tabular-nums">{% if match.payment_terms == "advance" and match.awaiting_delivery %}{{ match.awaiting_delivery|figure_text }}{% else %}{{ match.still_to_arrive|figure_text }}{% endif %}</td></tr>
         {% else %}
         <tr><td class="px-4 py-2 text-gray-600">Still outstanding</td>
             <td class="px-4 py-2 text-right tabular-nums">{% if outstanding_after_cover %}{{ outstanding_after_cover|figure_text }}{% elif match.payment_terms == "advance" and match.awaiting_delivery %}{{ match.awaiting_delivery|figure_text }}{% else %}{{ match.outstanding|figure_text }}{% endif %}</td></tr>
