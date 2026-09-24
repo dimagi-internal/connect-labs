@@ -12,7 +12,15 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from connect_labs.supply_chain.models import Commodity, Item, Quote, Round
-from connect_labs.supply_chain.values import Derived, Money, confirmed, merge, metric_tonnes_to_base_units, unconfirmed
+from connect_labs.supply_chain.values import (
+    Derived,
+    Money,
+    confirmed,
+    merge,
+    metric_tonnes_to_base_units,
+    unconfirmed,
+    unit_noun,
+)
 
 FIGURE_FIELDS = (
     "usd_per_base_unit",
@@ -58,6 +66,16 @@ FIGURE_LABELS = {
     "landed_total_for_round_quantity": "Landed total (this round)",
     "usd_per_child_treated": "USD per child treated",
 }
+
+
+def figure_nouns(base_unit, pack_unit) -> dict:
+    """The nouns FIGURE_LABELS is formatted with, as a person writes a unit.
+
+    "jerry_can" is a stored code; a column header reads "USD per jerry can".
+    One helper, so the comparison's columns and the quote page's rows name a
+    figure the same way. A commodity with no unit reads "unit" or "pack".
+    """
+    return {"base_unit": unit_noun(base_unit) or "unit", "pack_unit": unit_noun(pack_unit) or "pack"}
 
 
 @dataclass(frozen=True)

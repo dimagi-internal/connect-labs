@@ -142,22 +142,28 @@
               {% endfor %}
               <td>
                 {% if row.quote_id not in awarded_quote_ids %}
-                <form method="post" action="" class="flex flex-col items-stretch gap-1">
+                {% comment %}Stacked in one narrow column: side by side, the four controls pushed
+                the table past the content column at 1440px and clipped the Award button
+                off the edge of the sideways-scrolling region. The awarded offer is marked
+                beside its name, not here.{% endcomment %}
+                <form method="post" action="" class="flex flex-col gap-1.5 w-56">
                   {% csrf_token %}
                   <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
-                  <input type="text" name="rationale" placeholder="Why this supplier?" required
+                  <input type="text" name="rationale" placeholder="Why this supplier?" required aria-label="Why this supplier"
                          class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm">
                   <input type="date" name="decided_on" value="{{ today }}" max="{{ today }}" aria-label="Decided on"
                          title="The day the decision was made"
-                         class="border border-gray-300 rounded-md px-2 py-1 text-sm">
-                  <input type="text" name="decided_by" value="{{ decider }}" aria-label="Decided by"
-                         title="Who made the decision — the person, not the account recording it"
-                         placeholder="Decided by"
                          class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm">
-                  <button class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
-                          type="submit">
-                    Award
-                  </button>
+                  <div class="flex items-center gap-2">
+                    <input type="text" name="decided_by" value="{{ decider }}" aria-label="Decided by"
+                           title="Who made the decision — the person, not the account recording it"
+                           placeholder="Decided by"
+                           class="flex-1 min-w-0 border border-gray-300 rounded-md px-2 py-1 text-sm">
+                    <button class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
+                            type="submit">
+                      Award
+                    </button>
+                  </div>
                 </form>
                 {% endif %}
                 {% include "supply_chain/procurement/_row_questions.html" with row=row %}
