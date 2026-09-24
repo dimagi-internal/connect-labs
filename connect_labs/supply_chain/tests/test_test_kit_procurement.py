@@ -164,7 +164,8 @@ class TestTwoOffersFromOneSupplier:
         assert bad["outcome"] == "fail"
         assert bad["summary"] == "1 of 2 fail"
         assert bad["failures"] == [
-            "range_max_mg_per_l 1.5 mg/L fails >= 2.0 mg/L (per the item specification) — must read the 2 mg/L dose"
+            "Range maximum 1.5 mg/L fails: it must be at least 2.0 mg/L (per the item specification)"
+            " — must read the 2 mg/L dose"
         ]
 
     def test_failing_the_specification_does_not_reorder_the_ranking(self, da, world):
@@ -311,7 +312,8 @@ class TestTheScreens:
         body = scoped.get(url + "?commodity=chlorine-test-kit").content.decode()
         assert "Lumen FC-50 kit" in body
         assert "Brightwell PoolCheck-50 kit" in body
-        assert "range_max_mg_per_l 1.5 mg/L fails" in body
+        assert "Range maximum 1.5 mg/L fails: it must be at least 2.0 mg/L" in body
+        assert "range_max_mg_per_l" not in body
         assert "Meets all 2" in body
         assert "treatment protocol" not in body
         assert "USD per course" not in body
@@ -384,3 +386,71 @@ class TestTheScreens:
             },
         )
         assert "Billed beyond what arrived" not in scoped.get(page).content.decode()
+
+
+# ---- iteration 1 of the walkthrough (2026-09-24) ---------------------------
+
+
+class TestRequirementsReadAsWords:
+    """Every screen printed a requirement as its stored rule --
+    "range max mg per l >= 2.0" -- and the checks page dumped the whole
+    requirement list as data without saying which one failed."""
+
+    def test_a_requirement_reads_as_a_sentence(self):
+        from connect_labs.supply_chain.procurement.services.compliance import requirement_text
+
+        rule = {"field": "range_max_mg_per_l", "operator": ">=", "value": 2.0, "unit": "mg/L"}
+        assert requirement_text(rule) == "Range maximum at least 2.0 mg/L"
+        assert requirement_text({"field": "tests_per_kit", "operator": ">=", "value": 50, "unit": "tests"}) == (
+            "Tests per kit at least 50 tests"
+        )
+
+    def test_the_check_names_the_failing_requirement_and_nothing_else(self, da, world):
+        check = next(
+            c
+            for c in op(da, "checks_list")["checks"]
+            if c["kind"] == "item_fails_specification" and c["subject"]["id"] == world["bad"]["id"]
+        )
+        assert check["facts"]["fails"] == [
+            "Range maximum 1.5 mg/L; it must be at least 2.0 mg/L — must read the 2 mg/L dose"
+        ]
+        assert "requirements" not in check["facts"]
+
+    def test_the_product_page_says_each_requirement_in_words(self, scoped, da, world):
+        body = scoped.get(reverse("supply_chain:product_detail", args=["chlorine-test-kit"])).content.decode()
+        assert "Range maximum at least 2.0 mg/L" in body
+        assert "&gt;=" not in body
+
+
+class TestAPaidInvoice:
+    def test_a_paid_invoice_offers_no_second_payment(self, scoped, da, world):
+        order = _order(da, world, _award(da, world, world["good_quote"]), payment_terms="advance")
+        invoice = op(
+            da,
+            "invoice_record",
+            data={
+                "contract_id": order["id"],
+                "amount": "760.00",
+                "currency": "USD",
+                "quantity_billed": "20",
+                "quantity_unit": "kit",
+                "source": "supplier_reported",
+            },
+        )
+        pay = reverse("supply_chain:payment_record", args=[invoice["id"]])
+        page = reverse("supply_chain:order_detail", args=[order["id"]])
+        assert pay in scoped.get(page).content.decode()
+        op(
+            da,
+            "payment_record",
+            data={
+                "invoice_id": invoice["id"],
+                "paid_on": "2026-09-24",
+                "amount": "760.00",
+                "currency": "USD",
+                "source": "we_recorded",
+            },
+        )
+        body = scoped.get(page).content.decode()
+        assert pay not in body
+        assert "Paid in advance" in body

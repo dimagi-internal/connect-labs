@@ -59,7 +59,7 @@ class this build has not seen ships purged.
     {% elif contract.consideration == "bundled" %}
       <span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-900">Bundled in setup fee</span>
     {% endif %}
-    {% if contract.source %}<span class="text-gray-500">· {{ contract|told_by:orgs }}</span>{% endif %}
+    {% if contract.source %}<span class="text-gray-500">· told by {{ contract|told_by:orgs }}</span>{% endif %}
   </p>
   {% if award %}
     {% comment %}Where the order came from: the award it was placed against, who
@@ -620,9 +620,11 @@ The section stays only if one was somehow recorded, so it is not hidden.
           <td class="px-4 py-2 text-gray-700">{{ invoice.status|humanise }}</td>
           <td class="px-4 py-2 text-xs text-gray-500">{{ invoice|told_by:orgs }}</td>
           <td class="px-4 py-2 text-right whitespace-nowrap">
-            <a href="{% url 'supply_chain:payment_record' invoice.id %}"
-               class="text-brand-indigo hover:underline">Pay</a>
-            <span class="mx-1 text-gray-300">·</span>
+            {% if invoice.status != "paid" %}
+              <a href="{% url 'supply_chain:payment_record' invoice.id %}"
+                 class="text-brand-indigo hover:underline">Pay</a>
+              <span class="mx-1 text-gray-300">·</span>
+            {% endif %}
             <a href="{% url 'supply_chain:invoice_edit' invoice.id %}"
                class="text-brand-indigo hover:underline">Edit</a>
           </td>
