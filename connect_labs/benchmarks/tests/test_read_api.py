@@ -42,7 +42,7 @@ def _published(name="KMC", members=OPPS):
 def test_a_member_reads_its_cohorts_benchmarks():
     cohort = _published()
     out = benchmarks_for_opportunity(_request(OPPS[0]), OPPS[0])
-    assert out["indicators"][str(cohort.pk)]["C"]["C15"]["peers"], "a cohort member got no benchmark"
+    assert out["indicators"][str(cohort.pk)]["KMC"]["lost_by_day_28"]["peers"], "a cohort member got no benchmark"
 
 
 def test_a_user_without_access_to_that_opportunity_reads_nothing():
@@ -68,8 +68,8 @@ def test_overlapping_cohorts_do_not_collide_on_peer_index():
     out = benchmarks_for_opportunity(_request(OPPS[0]), OPPS[0])
 
     assert set(out["indicators"]) == {str(a.pk), str(b.pk)}
-    peers_a = out["indicators"][str(a.pk)]["C"]["C15"]["peers"]
-    peers_b = out["indicators"][str(b.pk)]["C"]["C15"]["peers"]
+    peers_a = out["indicators"][str(a.pk)]["KMC"]["lost_by_day_28"]["peers"]
+    peers_b = out["indicators"][str(b.pk)]["KMC"]["lost_by_day_28"]["peers"]
     # One short of each cohort's membership: the reader's own row is excluded
     # from both (see test_a_reader_never_gets_its_own_row_back).
     assert len(peers_a) == len(OPPS) - 1
@@ -126,7 +126,9 @@ def test_a_reader_never_gets_its_own_row_back():
     value, once at the current one — and a reader who can difference "the set
     including me" against "me" learns something about the remainder."""
     cohort = _published()
-    peers = benchmarks_for_opportunity(_request(OPPS[0]), OPPS[0])["indicators"][str(cohort.pk)]["C"]["C15"]["peers"]
+    peers = benchmarks_for_opportunity(_request(OPPS[0]), OPPS[0])["indicators"][str(cohort.pk)]["KMC"][
+        "lost_by_day_28"
+    ]["peers"]
     assert len(peers) == len(OPPS) - 1, "the reader's own row is still in its peer set"
 
 
@@ -138,7 +140,7 @@ def test_the_excluded_row_is_the_readers_own_and_not_just_any_row():
 
     def peer_values(opp):
         out = benchmarks_for_opportunity(_request(opp), opp)
-        return sorted(p["value"] for p in out["indicators"][str(cohort.pk)]["C"]["C15"]["peers"])
+        return sorted(p["value"] for p in out["indicators"][str(cohort.pk)]["KMC"]["lost_by_day_28"]["peers"])
 
     first, second = peer_values(OPPS[0]), peer_values(OPPS[1])
     assert first != second, "both members saw the same peer set, so self was not what got dropped"
@@ -156,7 +158,9 @@ def test_the_reader_gets_its_own_published_figures_back_separately():
     from the same publication as the peers', because the report's live figure is
     a different vintage and would not be comparable to the lines beside it."""
     cohort = _published()
-    entry = benchmarks_for_opportunity(_request(OPPS[0]), OPPS[0])["indicators"][str(cohort.pk)]["C"]["C15"]
+    entry = benchmarks_for_opportunity(_request(OPPS[0]), OPPS[0])["indicators"][str(cohort.pk)]["KMC"][
+        "lost_by_day_28"
+    ]
     assert entry["own"] is not None, "the reader's own published point value is missing"
     assert entry["ownSeries"], "the reader's own published series is missing"
     assert entry["own"] not in [p["value"] for p in entry["peers"]], "own value is ALSO in the peer set"
@@ -166,6 +170,8 @@ def test_each_member_gets_its_own_figures_not_a_shared_one():
     cohort = _published()
 
     def own(opp):
-        return benchmarks_for_opportunity(_request(opp), opp)["indicators"][str(cohort.pk)]["C"]["C15"]["own"]
+        return benchmarks_for_opportunity(_request(opp), opp)["indicators"][str(cohort.pk)]["KMC"]["lost_by_day_28"][
+            "own"
+        ]
 
     assert own(OPPS[0]) != own(OPPS[1]), "two members were handed the same 'own' value"

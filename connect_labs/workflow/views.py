@@ -3458,8 +3458,8 @@ def semantic_indicators_api(request, definition_id):
     executable; this is the door.
 
     Query params:
-      series  one indicator family, by its prefix (KMC: "C" the workbook's, "N" the
-              demo compute spec). Omitted returns the registry as written.
+      series  one indicator family, by the name the registry declares (KMC declares
+              one, "KMC"; visit_quality "Q"). Omitted returns the registry as written.
       scopes  comma-separated. Several scopes come back from ONE pass via
               GROUPING SETS, which is the only version where pushing this into SQL
               is an improvement: per-scope calls re-run the whole Layer 1

@@ -1,7 +1,7 @@
 """KMC Programme Metrics (Layer 2 + rollups).
 
-A direct port of the `kmc_metrics_framework` workbook: the Case-indicators tab
-(C01-C33) evaluated live, rolled up Programme -> LLO -> opportunity -> FLW -> case.
+The KMC indicator set (connect_labs/semantic/registry/kmc) evaluated live and rolled
+up Programme -> LLO -> opportunity -> FLW -> case.
 
 Two things in here are load-bearing and easy to lose, which is why this template
 exists as a file rather than only as a DB row:
@@ -247,7 +247,7 @@ CASE_PROPERTIES_SCHEMA = {
             ],
             "transform": "float",
             "aggregation": "first",
-            "description": "Days between hospital discharge and registration \u2014 C16/C17 numerator input",
+            "description": "Days between hospital discharge and registration \u2014 the enrolment indicators' input",
         },
         {
             "name": "danger_visits",
@@ -357,7 +357,7 @@ CASE_PROPERTIES_SCHEMA = {
             "aggregation": "list",
             "description": (
                 "Every form name in this baby's series. Separates REGISTERED (has a registration "
-                "form) from STARTED (has a follow-up visit) \u2014 without it C01/C02/C05 were all "
+                "form) from STARTED (has a follow-up visit) \u2014 without it registered, started and total cases were all "
                 "identical because 'started' was defined as having >=1 visit, which every case "
                 "has by construction."
             ),
@@ -423,9 +423,9 @@ WEIGHT_SERIES_SCHEMA = {
 # missing when the server computes the numbers.
 SNAPSHOT_INPUTS = {
     "builder": "semantic_snapshot",
-    # C is the headline registry (Neal's workbook, banded). N is his demo compute
-    # spec -- the 15-metric scorecard -- graded from the same rows.
-    "series": ["C", "N"],
+    # One indicator family. There used to be two (the workbook's C and the demo
+    # compute spec's N, #2004); the registry now carries one set of slug ids.
+    "series": ["KMC"],
     # Every scope a saved run can drill to, in ONE evaluate pass: GROUPING SETS
     # exist precisely because per-scope calls re-run the whole Layer 1 extraction.
     "scopes": [
@@ -464,17 +464,13 @@ SNAPSHOT_INPUTS = {
     },
     "visits_pipeline": "visits",
     # indicator -> the registry settings table that says which LLOs record it
-    # credibly. Was three indicator ids and three settings keys baked into the hook.
+    # credibly. Completion has a table too, but no indicator until its definition
+    # exists.
     "credibility": {
-        "C14": "mortality_recording_credible",
-        "C18": "completion_recording_credible",
-        "C22": "completion_recording_credible",
-        # The scorecard's mortality is the same human judgement.
-        "N13": "mortality_recording_credible",
+        "mortality": "mortality_recording_credible",
     },
-    # The render's own fallback (`var MIN_DEN = 25`), for measures that declare no
-    # `min_denominator` of their own.
-    "min_denominator_default": 25,
+    # No `min_denominator_default`: the registry's `defaults.min_denominator` (20,
+    # spec section 0) decides, so the floor lives with the definitions.
     "workers": False,
 }
 
@@ -489,7 +485,7 @@ SNAPSHOT_INPUTS = {
 SNAPSHOT_SCHEMA = {
     "version": 3,
     "keys": {
-        "state.snapshot.programInd": "Programme-wide indicator results (C01-C31) as published",
+        "state.snapshot.programInd": "Programme-wide indicator results, keyed by indicator id, as published",
         "state.snapshot.byLLO": "Per-LLO indicator results, with each LLO's opportunities nested",
         "state.snapshot.byOpp": "Per-opportunity indicator results",
         "state.snapshot.byFLW": (
@@ -529,7 +525,7 @@ SNAPSHOT_SCHEMA = {
         "state.snapshot.credibility": (
             "indicator -> which LLOs record it credibly, as published. Resolved from the "
             "builder spec's `credibility` mapping onto the registry's settings tables. "
-            "Replaces the single-purpose `mortalityCredible`, which could only carry C14"
+            "Replaces the single-purpose `mortalityCredible`, which could only carry mortality"
         ),
         "state.snapshot.deployment": (
             "The availability facts the gates graded with (`llo_map`, `app_asks`), so a saved "
@@ -545,10 +541,10 @@ SNAPSHOT_SCHEMA = {
             "'insufficient' still contributes to the pool while storing no value"
         ),
         "state.snapshot.series": (
-            "Further indicator families graded from the same evaluation, keyed by series. "
-            "`N` is the 15-metric scorecard from the demo compute spec: its catalog and its "
-            "programme / LLO / opportunity / worker cells, in the same {id, n, value, band} "
-            "shape as the headline series"
+            "Further indicator families graded from the same evaluation, keyed by series, "
+            "each with its catalog and its programme / LLO / opportunity / worker cells in the "
+            "same {id, n, value, band} shape as the headline series. Empty for KMC, which has "
+            "one family; runs saved before #2004 carry the old scorecard under `N`"
         ),
         "state.snapshot.weekly": (
             "Activity by ISO week per drill scope (all / llo:<name> / opp:<id>): visits that "
@@ -622,7 +618,7 @@ DEFINITION = {
     "name": "KMC Programme Metrics",
     "description": (
         "Kangaroo Mother Care programme report, one page per saved weekly run: five headline "
-        "indicators with a week-on-week delta, the 15-metric scorecard by organisation with "
+        "indicators with a week-on-week delta, the indicator scorecard by organisation with "
         "last visit and attention, activity by week and indicator trends across saved reports. "
         "An organisation opens to its opportunities and workers; a worker opens to the KMC "
         "Worker Review. Every figure comes off the semantic-snapshot payload; indicators an "

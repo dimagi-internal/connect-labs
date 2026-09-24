@@ -694,8 +694,8 @@ def test_publish_returns_the_documented_shape_and_withholds_non_rate_indicators(
 
     assert set(out) == {"publication_id", "cohort_id", "as_of", "value_count", "withheld_indicator_ids"}
     assert out["as_of"] == "2026-09-11"
-    # C01 is `unit: n` -- a raw case count -- and must never be published.
-    assert "C:C01" in out["withheld_indicator_ids"]
+    # total_cases is `unit: n` -- a raw case count -- and must never be published.
+    assert "KMC:total_cases" in out["withheld_indicator_ids"]
 
 
 def test_publish_lets_snapshot_shape_error_propagate_rather_than_publishing_nothing(monkeypatch):
@@ -800,6 +800,9 @@ def test_publish_survives_a_history_read_that_fails():
 
 
 def test_run_history_projects_each_completed_run_to_its_per_opportunity_cells():
+    """A run frozen before catalog entries named their family -- no `cMeasures`,
+    C/N codes -- still projects: the primary family is named by its ids' prefix,
+    and every further family by its key under `series`."""
     from connect_labs.benchmarks.mcp_tools import _run_history
 
     def _run(date, value, completed=True):
@@ -984,8 +987,8 @@ def _publish_capturing(monkeypatch, **extra):
 def test_publish_passes_an_explicit_allow_list_through(monkeypatch):
     """The override has to REACH `publish_benchmark`. Accepted and dropped, it
     publishes the wrong set and reports success."""
-    seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids=["C13"])
-    assert seen["benchmarkable_indicator_ids"] == {"C13"}
+    seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids=["mean_early_growth_rate"])
+    assert seen["benchmarkable_indicator_ids"] == {"mean_early_growth_rate"}
 
 
 def test_publish_without_the_override_passes_none_not_an_empty_set(monkeypatch):
@@ -1003,28 +1006,30 @@ class TestAStringifiedAllowListIsCoercedNotIterated:
     Seen for real against the live KMC cohort."""
 
     def test_a_json_string_becomes_the_list_it_spells(self, monkeypatch):
-        seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids='["C13", "C15"]')
-        assert seen["benchmarkable_indicator_ids"] == {"C13", "C15"}
+        seen = _publish_capturing(
+            monkeypatch, benchmarkable_indicator_ids='["mean_early_growth_rate", "lost_by_day_28"]'
+        )
+        assert seen["benchmarkable_indicator_ids"] == {"mean_early_growth_rate", "lost_by_day_28"}
 
     def test_a_comma_separated_string_works_too(self, monkeypatch):
-        seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids="C13, C15")
-        assert seen["benchmarkable_indicator_ids"] == {"C13", "C15"}
+        seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids="mean_early_growth_rate, lost_by_day_28")
+        assert seen["benchmarkable_indicator_ids"] == {"mean_early_growth_rate", "lost_by_day_28"}
 
     def test_a_real_list_is_unchanged(self, monkeypatch):
-        seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids=["C13"])
-        assert seen["benchmarkable_indicator_ids"] == {"C13"}
+        seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids=["mean_early_growth_rate"])
+        assert seen["benchmarkable_indicator_ids"] == {"mean_early_growth_rate"}
 
     def test_a_bare_string_never_degrades_into_its_characters(self, monkeypatch):
-        """The failure this exists to prevent: 'C13' must not become
-        {'C', '1', '3'}."""
-        seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids="C13")
-        assert seen["benchmarkable_indicator_ids"] == {"C13"}
+        """The failure this exists to prevent: 'mean_early_growth_rate' must not become
+        its characters."""
+        seen = _publish_capturing(monkeypatch, benchmarkable_indicator_ids="mean_early_growth_rate")
+        assert seen["benchmarkable_indicator_ids"] == {"mean_early_growth_rate"}
 
     def test_a_shape_that_is_not_a_list_is_refused(self, monkeypatch):
         from connect_labs.benchmarks.mcp_tools import _as_id_list
 
         with pytest.raises(MCPToolError) as exc:
-            _as_id_list({"C13": True}, "benchmarkable_indicator_ids")
+            _as_id_list({"mean_early_growth_rate": True}, "benchmarkable_indicator_ids")
         assert exc.value.code == "INVALID_SCHEMA"
 
     def test_empty_means_no_override_not_an_empty_allow_list(self, monkeypatch):

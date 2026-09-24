@@ -32,9 +32,6 @@ Two shapes in the data constrain the design and are not worth rediscovering:
   * There is no per-FLW monthly series anywhere. `monthlyByScope` carries `all`,
     `llo:<name>` and `opp:<id>`. The worker table is point-in-time and says so
     on the page; a per-worker trend line would have to be invented.
-  * Only the C family has monthly trends at all — `monthlyByScope` is graded
-    with the primary catalog only — so the N scorecard is point-in-time
-    everywhere, including in a published benchmark's series.
 
 NO SAVED RUNS. A drill view has no moment of completion: it is opened, read and
 closed. The thing that DOES have one is the programme report, and it is the
@@ -84,28 +81,26 @@ DEFINITION = {
         # opportunity, so a cold load costs one opportunity's download.
         "warm_cache_on_read": True,
         # The render's fallback for a measure that declares no min_denominator
-        # of its own, matching the programme report's `var MIN_DEN = 25`.
-        "min_denominator_default": 25,
+        # of its own: the KMC registry's `defaults.min_denominator` (spec
+        # section 0). The live endpoint does not carry the registry default,
+        # so the render needs it here.
+        "min_denominator_default": 20,
         # WHICH INDICATORS ARE GATED ON RECORDING CREDIBILITY, taken from the
         # programme report's own credibility map so there is ONE copy of the
         # fact in the repo, and carried on the definition so it is patchable
         # through `workflow_update_definition` with no deploy.
         #
-        # Two mechanisms reach the render, covering different indicators:
+        # Two mechanisms reach the render:
         #
         #   * the registry's own `suppression:` rules compile to a
         #     `<measure>_suppressed` column that the live semantic endpoint
-        #     returns on every row. Today that is C14, and only in the C series
-        #     -- `filter_to_series` drops the C measures, and with them the
-        #     rule's target, when the N scorecard is asked for.
+        #     returns on every row -- today `mortality_suppressed`.
         #   * this list, which is what the render falls back to when a gated
         #     indicator arrives with no flag. It cannot say WHETHER the figure
         #     is credible, only that nothing established it -- so the render
-        #     withholds rather than bands. Today that bites N13, the scorecard's
-        #     mortality metric, which is C14 under another name.
-        #
-        # C18 and C22 are in the map and are not computed by this registry at
-        # all; they are carried so the two surfaces cannot drift if they are.
+        #     withholds rather than bands. Until #2004 that withheld the old
+        #     scorecard's mortality on every opportunity: it had no rule of its
+        #     own. With one indicator set, the flag always arrives.
         "credibility_gated_indicators": sorted(PROGRAMME_SNAPSHOT_INPUTS["credibility"]),
     },
     "pipeline_sources": [],

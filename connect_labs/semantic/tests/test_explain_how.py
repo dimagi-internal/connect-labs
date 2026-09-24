@@ -23,7 +23,7 @@ def _indicators(reg):
 
 def test_a_growth_share_reads_as_out_of_and_counts(registry):
     props, reg = registry
-    how = english(reg, props, "N11")["how"]
+    how = english(reg, props, "pct_fast_growth")["how"]
     assert how == {
         "kind": "percent",
         "base": {"what": "babies", "where": ["Qualifies for growth review"]},
@@ -34,7 +34,7 @@ def test_a_growth_share_reads_as_out_of_and_counts(registry):
 
 def test_a_value_indicator_names_what_it_takes_the_median_of(registry):
     props, reg = registry
-    how = english(reg, props, "N06")["how"]
+    how = english(reg, props, "median_birthweight")["how"]
     assert how["kind"] == "value"
     assert how["value"] == "median birthweight (g)"
 
@@ -63,8 +63,8 @@ def test_no_plain_definition_names_a_partner_or_carries_history(registry):
 
 def test_reads_never_surface_the_developer_notes(registry):
     props, reg = registry
-    reads = {r["name"]: r for r in english(reg, props, "N11")["reads"]}
-    notes = next(p["notes"] for p in props["properties"] if p["name"] == "qualifying_spec")
+    reads = {r["name"]: r for r in english(reg, props, "pct_fast_growth")["reads"]}
+    notes = next(p["notes"] for p in props["properties"] if p["name"] == "growth_qualifying")
     assert "PIPN" in notes, "fixture assumption: the notes do carry the history"
-    assert reads["qualifying_spec"]["means"] != notes
-    assert "PIPN" not in reads["qualifying_spec"]["means"]
+    assert reads["growth_qualifying"]["means"] != notes
+    assert "PIPN" not in reads["growth_qualifying"]["means"]

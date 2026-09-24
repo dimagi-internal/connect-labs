@@ -19,7 +19,7 @@ function WorkflowUI({
   // of the worker's recent images.
   var cfg = (definition && definition.config) || {};
   var FLW_SEP = '::';
-  var MIN_DEN = 25;
+  var MIN_DEN = 20; // the registry's defaults.min_denominator
 
   var search = String(window.location.search || '');
   function qp(name) {
@@ -271,7 +271,149 @@ function WorkflowUI({
     [sourceRun, cfg.source_workflow_id],
   );
 
-  var P = report.payload || {};
+  // ── Runs saved before the indicator set was unified (#2004) ────────────────
+  // Until 2026-09 the registry carried two families with coded ids -- the
+  // workbook's C01..C31 and the demo compute spec's N01..N15 -- and a saved run
+  // froze both: C at the top level, N under `series.N`. The set is one family of
+  // named indicators now, and a completed run is write-protected, so an old run
+  // is translated HERE, on read. Only an indicator whose definition did not
+  // change carries across: every N id, plus the workbook ids that were the same
+  // rule under another name. The rest -- the workbook's growth, loss-to-follow-up
+  // and care figures, computed on a one-visit "started" -- are not comparable
+  // with today's and are left out rather than shown under a name that now means
+  // something else. The page says so (`P.legacyIds`).
+  //
+  // A COPY of the programme report's translation (kmc_programme_metrics_render.js):
+  // this page reads that report's saved runs, and renders cannot import one
+  // another. test_kmc_flw_review pins the two copies identical.
+  var LEGACY_ID = {
+    N01: 'total_cases',
+    N02: 'registered_cases',
+    N03: 'started_cases',
+    N04: 'cumulative_svns_reached',
+    N05: 'median_gestational_age',
+    N06: 'median_birthweight',
+    N07: 'visits_per_case',
+    N08: 'pct_enrolled_within_3d',
+    N09: 'pct_slow_growth',
+    N10: 'pct_healthy_growth',
+    N11: 'pct_fast_growth',
+    N12: 'pct_incomplete_growth_data',
+    N13: 'mortality',
+    N14: 'weight_rounding_rate',
+    N15: 'pct_impossible_weight_changes',
+    C01: 'registered_cases',
+    C05: 'total_cases',
+    C28: 'birth_copy_rate',
+    C31: 'weight_rounding_rate',
+  };
+  var LEGACY_CODE = /^[CN]\d\d$/;
+  function legacyCells(ind) {
+    if (!ind) return ind;
+    var out = {};
+    Object.keys(ind).forEach(function (k) {
+      if (!LEGACY_CODE.test(k)) {
+        out[k] = ind[k];
+        return;
+      }
+      var to = LEGACY_ID[k];
+      if (to && !(to in out)) out[to] = Object.assign({}, ind[k], { id: to });
+    });
+    return out;
+  }
+  function fromLegacyIds(p) {
+    var N = p.series && p.series.N;
+    if (!N) return p;
+    // N first: where a workbook id and a scorecard id name the same rule, the
+    // scorecard's cell is the one graded with today's thresholds.
+    function merge(cInd, nInd) {
+      var out = legacyCells(nInd || {});
+      var c = legacyCells(cInd || {});
+      Object.keys(c).forEach(function (k) {
+        if (!(k in out)) out[k] = c[k];
+      });
+      return out;
+    }
+    function tally(entry, ind) {
+      var reds = 0;
+      var yellows = 0;
+      Object.keys(ind).forEach(function (k) {
+        if (ind[k] && ind[k].band === 'red') reds++;
+        if (ind[k] && ind[k].band === 'yellow') yellows++;
+      });
+      return Object.assign({}, entry, {
+        ind: ind,
+        reds: reds,
+        yellows: yellows,
+      });
+    }
+    function find(list, field, value) {
+      return (list || []).filter(function (x) {
+        return String(x[field]) === String(value);
+      })[0];
+    }
+    function rollup(cList, nList, field) {
+      return (cList || []).map(function (e) {
+        var n = find(nList, field, e[field]);
+        var out = tally(e, merge(e.ind, n && n.ind));
+        if (e.opps)
+          out.opps = e.opps.map(function (o) {
+            var no = find(N.byOpp, 'opp', o.opp);
+            return tally(o, merge(o.ind, no && no.ind));
+          });
+        return out;
+      });
+    }
+    function months(cList, nList) {
+      return (cList || nList || []).map(function (pt) {
+        var n = find(nList, 'month', pt.month);
+        var c = find(cList, 'month', pt.month);
+        return Object.assign({}, pt, {
+          ind: merge(c && c.ind, n && n.ind),
+          pooled: legacyCells((n && n.pooled) || {}),
+        });
+      });
+    }
+    var byScope = {};
+    var nByScope = N.monthlyByScope || {};
+    Object.keys(p.monthlyByScope || nByScope).forEach(function (k) {
+      byScope[k] = months((p.monthlyByScope || {})[k], nByScope[k]);
+    });
+    var seen = {};
+    var measures = []
+      .concat(N.measures || [], p.cMeasures || [])
+      .map(function (m) {
+        var to = LEGACY_ID[m.indicator];
+        return to ? Object.assign({}, m, { id: to, indicator: to }) : null;
+      })
+      .filter(function (m) {
+        if (!m || seen[m.indicator]) return false;
+        seen[m.indicator] = true;
+        return true;
+      });
+    return Object.assign({}, p, {
+      legacyIds: true,
+      cMeasures: measures,
+      programInd: merge(p.programInd, N.programme),
+      byLLO: rollup(p.byLLO, N.byLLO, 'llo'),
+      byOpp: rollup(p.byOpp, N.byOpp, 'opp'),
+      byFLW: rollup(p.byFLW, N.byFLW, 'key'),
+      // The old pooled figure is the workbook's one-visit mortality: not
+      // comparable, so the headline falls back to the scope's own cell.
+      pooledOverCredible: {},
+      credibility: legacyCells(p.credibility || {}),
+      monthly: months(p.monthly, N.monthly),
+      monthlyByScope: byScope,
+      series: {},
+    });
+  }
+
+  var P = React.useMemo(
+    function () {
+      return fromLegacyIds(report.payload || {});
+    },
+    [report.payload],
+  );
   var LLO_OF = (P.deployment && P.deployment.llo_map) || {};
   function oppLabel(o) {
     return LLO_OF[o] ? LLO_OF[o] + ' · opp ' + o : 'opp ' + o;
@@ -280,7 +422,7 @@ function WorkflowUI({
   // The display contract travels with the payload, as on the programme page.
   var N_LIST = React.useMemo(
     function () {
-      return (((P.series || {}).N || {}).measures || [])
+      return (P.cMeasures || [])
         .filter(function (m) {
           return m && m.indicator;
         })
@@ -300,7 +442,7 @@ function WorkflowUI({
   var nByKey = React.useMemo(
     function () {
       var m = {};
-      (((P.series || {}).N || {}).byFLW || []).forEach(function (f) {
+      (P.byFLW || []).forEach(function (f) {
         m[f.key] = f;
       });
       return m;
@@ -312,7 +454,7 @@ function WorkflowUI({
       return f.key === selKey;
     })[0] || null;
   var nFLW = nByKey[selKey] || null;
-  var SC = (P.series && P.series.N) || null;
+  var SC = { byLLO: P.byLLO || [], byOpp: P.byOpp || [] };
   var lloRow =
     flw && SC
       ? (SC.byLLO || []).filter(function (r) {
@@ -1309,7 +1451,8 @@ function WorkflowUI({
   // Weight against age: postmenstrual age when gestational age is known (the axis
   // a preterm standard uses), else days since birth, else days since the first
   // weighing. Every weighing is a point with its value; the dashed line is the
-  // 15 g/kg/day target C13 is graded against, compounding from the first weight.
+  // 15 g/kg/day target the early growth rate is graded against, compounding from
+  // the first weight.
   // The weight entered at registration (birth weight, hollow marker) is the
   // series' first point and the line runs through it: it used to float apart
   // from the weighings, which read as a gap in the record rather than a
@@ -1568,40 +1711,50 @@ function WorkflowUI({
   // without relearning the table. The case table below reuses the header with
   // case-level labels.
   var SCORECARD = [
-    { id: 'N01', label: 'Total', caseLabel: 'Counted', title: 'Total cases' },
-    { id: 'N02', label: 'Reg', caseLabel: 'Reg', title: 'Registered (C01)' },
     {
-      id: 'N03',
-      label: 'Started',
-      caseLabel: 'Started',
-      title: 'Started (C02)',
+      id: 'total_cases',
+      label: 'Total',
+      caseLabel: 'Counted',
+      title: 'Total cases',
     },
     {
-      id: 'N05',
+      id: 'registered_cases',
+      label: 'Reg',
+      caseLabel: 'Reg',
+      title: 'Registered',
+    },
+    {
+      id: 'started_cases',
+      label: 'Started',
+      caseLabel: 'Started',
+      title: 'Started — two or more follow-up visits',
+    },
+    {
+      id: 'median_gestational_age',
       label: 'Med GA',
       caseLabel: 'GA',
       title: 'Median gestational age, weeks',
     },
     {
-      id: 'N06',
+      id: 'median_birthweight',
       label: 'Med BW',
       caseLabel: 'BW',
       title: 'Median birthweight, g',
     },
     {
-      id: 'N07',
+      id: 'visits_per_case',
       label: 'Visits/case',
       caseLabel: 'Visits',
-      title: 'Mean visits per case (C24)',
+      title: 'Mean visits per case',
     },
     {
-      id: 'N08',
+      id: 'pct_enrolled_within_3d',
       label: '%1st≤3d',
       caseLabel: '1st≤3d',
-      title: '% first visit within 3 days of discharge (C16)',
+      title: '% first visit within 3 days of discharge',
     },
     {
-      id: 'N09',
+      id: 'pct_slow_growth',
       label: 'Qual N',
       caseLabel: 'Qual',
       title:
@@ -1609,46 +1762,46 @@ function WorkflowUI({
       denOnly: true,
     },
     {
-      id: 'N09',
+      id: 'pct_slow_growth',
       label: '%slow',
       caseLabel: 'Slow',
       title: '% slow growth, of qualifying SVNs',
     },
     {
-      id: 'N10',
+      id: 'pct_healthy_growth',
       label: '%healthy',
       caseLabel: 'Healthy',
       title: '% healthy growth, of qualifying SVNs',
     },
     {
-      id: 'N11',
+      id: 'pct_fast_growth',
       label: '%fast',
       caseLabel: 'Fast',
       title: '% fast growth, of qualifying SVNs',
     },
     {
-      id: 'N12',
+      id: 'pct_incomplete_growth_data',
       label: '%incompl',
       caseLabel: 'Incompl',
       title: '% incomplete growth data, of qualifying SVNs',
     },
     {
-      id: 'N13',
+      id: 'mortality',
       label: 'Mortality',
       caseLabel: 'Outcome',
-      title: 'Mortality (C14) — shown only where death recording is credible',
+      title: 'Mortality — shown only where death recording is credible',
     },
     {
-      id: 'N14',
+      id: 'weight_rounding_rate',
       label: 'Round%',
       caseLabel: 'Rounded',
-      title: 'Weight rounding rate (C31)',
+      title: 'Weight rounding rate',
     },
     {
-      id: 'N15',
+      id: 'pct_impossible_weight_changes',
       label: '%imposs',
       caseLabel: 'Implausible',
-      title: '% impossible weight changes (C27)',
+      title: '% impossible weight changes',
     },
   ];
   var SCORECARD_GROUPS = [
@@ -1690,7 +1843,7 @@ function WorkflowUI({
     if (m.unit === '%') return (100 * v).toFixed(1) + '%';
     if (m.unit === 'g') return nCount(v);
     if (m.unit === 'wks') return String(Math.round(v * 10) / 10);
-    if (c.id === 'N07') return v.toFixed(1);
+    if (c.id === 'visits_per_case') return v.toFixed(1);
     return nCount(v);
   }
   // `table` makes the header sortable (the cases table); the scope scorecard
@@ -1907,12 +2060,12 @@ function WorkflowUI({
     var den = row[m + '_denominator'];
     var has = den !== null && den !== undefined && Number(den) > 0;
     if (col.denOnly) return has ? 1 : null;
-    if (col.id === 'N01') return 1;
-    if (col.id === 'N05' || col.id === 'N06')
+    if (col.id === 'total_cases') return 1;
+    if (col.id === 'median_gestational_age' || col.id === 'median_birthweight')
       return v === null || v === undefined ? null : Number(v);
-    if (col.id === 'N07')
+    if (col.id === 'visits_per_case')
       return has ? Number(v) : Number(c.total_visits) || null;
-    if (col.id === 'N14') return has ? Number(v) : null;
+    if (col.id === 'weight_rounding_rate') return has ? Number(v) : null;
     return has ? (Number(v) > 0 ? 1 : 0) : null;
   }
   var YES = <span className="text-green-700 font-semibold">✓</span>;
@@ -1932,15 +2085,20 @@ function WorkflowUI({
     var has = den !== null && den !== undefined && Number(den) > 0;
     var pos = has && Number(v) > 0;
     if (c.denOnly) return has ? YES : DASH;
-    if (c.id === 'N01') return YES;
-    if (c.id === 'N02' || c.id === 'N03' || c.id === 'N08')
+    if (c.id === 'total_cases') return YES;
+    if (
+      c.id === 'registered_cases' ||
+      c.id === 'started_cases' ||
+      c.id === 'pct_enrolled_within_3d'
+    )
       return has ? (pos ? YES : NO) : DASH;
-    if (c.id === 'N05')
+    if (c.id === 'median_gestational_age')
       return v === null || v === undefined
         ? DASH
         : String(Math.round(Number(v) * 10) / 10);
-    if (c.id === 'N06') return v === null || v === undefined ? DASH : nCount(v);
-    if (c.id === 'N07')
+    if (c.id === 'median_birthweight')
+      return v === null || v === undefined ? DASH : nCount(v);
+    if (c.id === 'visits_per_case')
       return has ? (
         nCount(v)
       ) : (
@@ -1951,9 +2109,14 @@ function WorkflowUI({
           {rec.total_visits || '—'}
         </span>
       );
-    if (c.id === 'N09' || c.id === 'N10' || c.id === 'N11' || c.id === 'N12')
+    if (
+      c.id === 'pct_slow_growth' ||
+      c.id === 'pct_healthy_growth' ||
+      c.id === 'pct_fast_growth' ||
+      c.id === 'pct_incomplete_growth_data'
+    )
       return has ? (pos ? DOT : DASH) : '';
-    if (c.id === 'N13')
+    if (c.id === 'mortality')
       return has ? (
         pos ? (
           <span className="text-red-700 font-semibold">died</span>
@@ -1963,11 +2126,11 @@ function WorkflowUI({
       ) : (
         DASH
       );
-    if (c.id === 'N14')
+    if (c.id === 'weight_rounding_rate')
       return has
         ? Math.round((Number(v) / 100) * Number(den)) + '/' + den
         : DASH;
-    if (c.id === 'N15')
+    if (c.id === 'pct_impossible_weight_changes')
       return has ? (
         pos ? (
           <span className="text-red-700 font-semibold">yes</span>
@@ -2094,30 +2257,36 @@ function WorkflowUI({
     var idx = cases.indexOf(c);
     var prev = idx > 0 ? cases[idx - 1] : null;
     var next = idx >= 0 && idx < cases.length - 1 ? cases[idx + 1] : null;
-    // Early growth: the velocity across the weighings inside the first 42 days
-    // after the first weighing -- the window C13 uses.
+    // Early growth: the velocity over the first 21 days after the first
+    // weighing, per kg of the mean weight in that window -- the rule the
+    // registry's mean_early_growth_rate averages.
     var first = weighed[0];
     var earlyEnd = weighed.filter(function (p) {
-      return first && p.x - first.x <= 42;
+      return first && p.x - first.x <= 21;
     });
     var earlyLast = earlyEnd[earlyEnd.length - 1];
-    // Early growth is C13 at case scope when the registry has it (the baby is
-    // past the growth gate); the descriptive window here is only a fallback.
+    var earlyMean = earlyEnd.length
+      ? earlyEnd.reduce(function (a, p) {
+          return a + p.y;
+        }, 0) / earlyEnd.length
+      : null;
+    // The registry's own figure when the baby is in it (qualifying, with good
+    // weight data); the descriptive window here is only a fallback.
     var scopeRow = caseScopeRow(c);
-    var c13 =
-      scopeRow && Number(scopeRow.c13_denominator) > 0
-        ? Number(scopeRow.c13)
+    var growthRate =
+      scopeRow && Number(scopeRow.mean_early_growth_rate_denominator) > 0
+        ? Number(scopeRow.mean_early_growth_rate)
         : null;
     var earlyVel =
-      c13 !== null
-        ? c13
+      growthRate !== null
+        ? growthRate
         : first &&
             earlyLast &&
             earlyLast !== first &&
-            first.y > 0 &&
+            earlyMean > 0 &&
             earlyLast.x > first.x
           ? (earlyLast.y - first.y) /
-            ((first.y / 1000) * (earlyLast.x - first.x))
+            ((earlyMean / 1000) * (earlyLast.x - first.x))
           : null;
     var gain =
       first && weighed.length > 1
@@ -2404,8 +2573,8 @@ function WorkflowUI({
                   {earlyVel === null ? '—' : earlyVel.toFixed(1) + ' g/kg/day'}
                 </div>
                 <div className="text-[10px] text-gray-400">
-                  {c13 !== null
-                    ? 'C13 · target 15'
+                  {growthRate !== null
+                    ? 'target 15'
                     : seriesNote
                       ? seriesNote
                       : first && earlyLast && earlyLast !== first

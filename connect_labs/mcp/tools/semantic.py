@@ -273,7 +273,7 @@ def semantic_registry_update(
             "registry_id": {"type": "integer"},
             "patches": {
                 "type": "object",
-                "description": 'e.g. {"C13": {"benchmarkable": true}}',
+                "description": 'e.g. {"mean_early_growth_rate": {"benchmarkable": true}}',
             },
             "opportunity_id": {"type": "integer"},
             "program_id": {"type": "integer"},
@@ -380,8 +380,9 @@ def _indicator_index(record) -> list[dict]:
         "series window derivations it touches, and the constants used. The full compiled "
         "statement for the scope comes back ONCE, beside the indicators (Layer 1, the "
         "pipeline rows, is a named placeholder -- read that schema with pipeline_get). Pass "
-        "an indicator id (N15, C14, Q02), a measure name (n15), or several. This is how a "
-        "second engine reproduces a number instead of trusting its label. Omit `indicators` "
+        "an indicator id (mortality, pct_impossible_weight_changes, Q02), a measure name "
+        "(q02), or several. This is how a second engine reproduces a number instead of "
+        "trusting its label. Omit `indicators` "
         "for an INDEX of every top-level indicator -- id, title and one-line definition -- "
         "then ask again by id for the ones you want; the "
         "chains are far too big to return all at once."
@@ -394,8 +395,9 @@ def _indicator_index(record) -> list[dict]:
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Indicator ids or measure names, e.g. ['N15', 'C14']. Omit for an index of every "
-                    "top-level indicator (id, title, one-line definition) rather than their full chains."
+                    "Indicator ids or measure names, e.g. ['mortality', 'pct_impossible_weight_changes']. "
+                    "Omit for an index of every top-level indicator (id, title, one-line definition) "
+                    "rather than their full chains."
                 ),
             },
             "scope": {

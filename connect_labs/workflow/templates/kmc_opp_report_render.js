@@ -91,13 +91,6 @@ function WorkflowUI({
     return ids.length ? Number(ids[0]) : null;
   }
 
-  // C is the workbook's headline family; N is the 15-metric scorecard from the
-  // demo compute spec. Both are graded from the same rows, and the benchmark
-  // payload is keyed by the same letter, so ONE switch moves all three sections.
-  var sSeries = React.useState(qp('series') === 'C' ? 'C' : 'N');
-  var series = sSeries[0],
-    setSeries = sSeries[1];
-
   // ══ Grading ════════════════════════════════════════════════════════════════
   // A port of `semantic/snapshot.py`'s `grade()` — the same branch order, which
   // is load-bearing: availability gates outrank the denominator floor, which
@@ -206,12 +199,10 @@ function WorkflowUI({
       out.value = measure.unit === '%' ? rawf / 100 : rawf;
       return out;
     }
-    // A gated indicator whose row carries NO flag at all. Only the C family
-    // carries the registry's suppression rule, and `filter_to_series` drops it
-    // with the rest of C — so in the N scorecard N13 (mortality, which is C14
-    // under another name) arrives ungated. The page cannot establish
-    // credibility, so it must not publish a banded number: withheld, and named
-    // on the page rather than silently dropped.
+    // A gated indicator whose row carries NO flag at all -- the registry bound
+    // to this workflow has no suppression rule for it. The page cannot
+    // establish credibility, so it must not publish a banded number: withheld,
+    // and named on the page rather than silently dropped.
     if (
       (suppressed === undefined || suppressed === null) &&
       isGated(measure.indicator)
@@ -280,9 +271,9 @@ function WorkflowUI({
       );
     if (cell.band === 'unverifiable')
       return (
-        'This indicator is gated on recording credibility and this series ' +
-        'carries no credibility rule, so the figure is withheld rather than ' +
-        'shown unverified.'
+        'This indicator is gated on recording credibility and no credibility ' +
+        'rule reached this page, so the figure is withheld rather than shown ' +
+        'unverified.'
       );
     if (cell.thin) return 'thin denominator';
     return measure.title || '';
@@ -326,7 +317,7 @@ function WorkflowUI({
         {withheld.length ? (
           <div>
             Withheld: {withheld.join(', ')} — gated on recording credibility,
-            which this series carries no rule for. Shown on the programme
+            and no credibility rule reached this page. Shown on the programme
             report, which grades it from the workbook's settings.
           </div>
         ) : null}
@@ -361,9 +352,7 @@ function WorkflowUI({
           '/semantic/' +
           sp +
           (sp ? '&' : '?') +
-          'series=' +
-          series +
-          '&scopes=opportunity,flw',
+          'scopes=opportunity,flw',
         { credentials: 'same-origin' },
       )
         .then(function (r) {
@@ -412,7 +401,7 @@ function WorkflowUI({
         cancelled = true;
       };
     },
-    [series, semTry],
+    [semTry],
   );
 
   var MEASURES = sem.measures || [];
@@ -1539,7 +1528,14 @@ function WorkflowUI({
     var blocks = [];
     ids.forEach(function (cid) {
       var meta = cohorts[cid] || {};
-      var byIndicator = ((payload.indicators || {})[cid] || {})[series] || {};
+      // Published values are keyed family -> indicator; each measure names its
+      // own family, so no letter is assumed here.
+      var byFamily = (payload.indicators || {})[cid] || {};
+      var byIndicator = {};
+      MEASURES.forEach(function (m) {
+        var e = (byFamily[m.series] || {})[m.indicator];
+        if (e) byIndicator[m.indicator] = e;
+      });
       // ONE CARD PER INDICATOR, carrying both readings side by side: where this
       // opportunity sits today, and how it got there. They were two separate
       // grids, so answering "am I low, and have I always been?" meant scrolling
@@ -1619,7 +1615,7 @@ function WorkflowUI({
             </div>
           ) : (
             <div className="text-sm text-gray-500">
-              Nothing published for the {series} indicators in this cohort.{' '}
+              Nothing published for these indicators in this cohort.{' '}
               {benchmarkEmptyMessage}
             </div>
           )}
@@ -1643,32 +1639,6 @@ function WorkflowUI({
   }
 
   // ══ Shared chrome ══════════════════════════════════════════════════════════
-  function SeriesSwitch() {
-    return (
-      <div className="inline-flex rounded border border-gray-300 overflow-hidden text-xs">
-        {['N', 'C'].map(function (s) {
-          return (
-            <button
-              key={s}
-              type="button"
-              onClick={function () {
-                setSeries(s);
-              }}
-              className={
-                'px-3 py-1 ' +
-                (series === s
-                  ? 'bg-indigo-600 text-white font-semibold'
-                  : 'bg-white text-gray-600 hover:bg-gray-50')
-              }
-            >
-              {s === 'N' ? 'Scorecard (N)' : 'Workbook (C)'}
-            </button>
-          );
-        })}
-      </div>
-    );
-  }
-
   function CacheNote() {
     if (sem.status !== 'ready') return null;
     if (!sem.cold && !sem.partial) return null;
@@ -1769,7 +1739,6 @@ function WorkflowUI({
             anonymous peers.
           </div>
         </div>
-        <SeriesSwitch />
       </div>
 
       <CacheNote />

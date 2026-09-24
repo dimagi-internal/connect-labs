@@ -180,8 +180,8 @@ def test_a_constant_carrying_sql_is_refused(shipped):
 @pytest.mark.parametrize("value", ["28", None, [1], {"a": 1}, float("nan")])
 def test_a_constant_must_be_a_number(shipped, value):
     props = copy.deepcopy(shipped["properties"])
-    props["constants"]["ELIG_DAYS"] = value
-    assert any("constants.ELIG_DAYS" in e for e in _errors(shipped, props=props))
+    props["constants"]["MATURITY_OUTCOME_DAYS"] = value
+    assert any("constants.MATURITY_OUTCOME_DAYS" in e for e in _errors(shipped, props=props))
 
 
 def test_an_llo_name_is_quoted_as_a_single_literal(shipped):
@@ -231,7 +231,7 @@ def test_a_suppression_scope_must_be_a_scope_column(shipped):
 @pytest.mark.parametrize(
     "sql",
     [
-        "CASE WHEN num_visits > :ELIG_DAYS THEN 'many' ELSE 'few' END",
+        "CASE WHEN num_visits > :MATURITY_OUTCOME_DAYS THEN 'many' ELSE 'few' END",
         "COALESCE(n_weight_days, 0) >= 2 AND NOT died",
         "FLOOR(EXTRACT(EPOCH FROM ((:as_of)::timestamp - first_visit::timestamp)) / 86400)::int",
         "DATE_TRUNC('month', first_visit)::date",
