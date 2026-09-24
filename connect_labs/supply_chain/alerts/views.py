@@ -32,8 +32,12 @@ class AlertListView(OperationBase):
             context["subscriptions"] = self.op("alert_subscription_list")
             context["log"] = self.op("alert_log_list", limit=50)
             names = {s["id"]: s["label"] or f"Alert {s['id']}" for s in context["subscriptions"]}
+            recipients = {s["id"]: s["recipient"] for s in context["subscriptions"]}
             for notice in context["log"]:
                 notice["subscription_name"] = names.get(notice["subscription_id"], "")
+                # Who it went to, by name where the alert has one; the address
+                # it was sent to stays beside it, because that is what was used.
+                notice["sent_to_name"] = recipients.get(notice["subscription_id"]) or notice["sent_to"]
                 notice["detected"] = parse_datetime(notice["detected_at"])
         return context
 

@@ -96,6 +96,13 @@ class AlertSubscriptionForm(forms.Form):
         widget=forms.EmailInput(attrs={**INPUT, "placeholder": "stores@example.org"}),
         help_text=_("They need no labs account. The email carries the facts and links; the links need one."),
     )
+    recipient_name = forms.CharField(
+        label=_("Their name"),
+        required=False,
+        max_length=255,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. the stores officer")}),
+        help_text=_("So the alert and its sent log say who is told, not just an address."),
+    )
     cadence = forms.ChoiceField(
         label=_("How often"),
         choices=[(c, _CADENCE_LABELS[c]) for c in CADENCES],
@@ -116,6 +123,7 @@ class AlertSubscriptionForm(forms.Form):
                 "commodity": subscription.commodity_id,
                 "recipient": "me" if subscription.recipient_user_id else "email",
                 "recipient_email": subscription.recipient_email,
+                "recipient_name": subscription.recipient_name,
                 "cadence": subscription.cadence,
                 "active": subscription.active,
             }
@@ -169,7 +177,11 @@ class AlertSubscriptionForm(forms.Form):
             ),
             Fieldset(
                 str(_("Who hears, and how often")),
-                Row(Column("recipient"), Column("recipient_email"), css_class="grid md:grid-cols-2 gap-x-6"),
+                Row(
+                    Column("recipient"),
+                    Column("recipient_email", "recipient_name"),
+                    css_class="grid md:grid-cols-2 gap-x-6",
+                ),
                 "cadence",
             ),
         ]
@@ -205,6 +217,7 @@ class AlertSubscriptionForm(forms.Form):
             data["recipient_user_id"] = self.access.user.pk
         else:
             data["recipient_email"] = cleaned["recipient_email"]
+            data["recipient_name"] = (cleaned.get("recipient_name") or "").strip()
         if "active" in self.fields:
             data["active"] = bool(cleaned.get("active"))
         if self.subscription is None:

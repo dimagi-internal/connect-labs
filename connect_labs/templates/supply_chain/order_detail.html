@@ -197,7 +197,9 @@ partner's name (the IPTSc render).
     {% for update in panel.updates %}
       <li class="px-4 py-2 text-sm text-gray-700 flex justify-between gap-4">
         <span>{{ update.title|capfirst }}{% if update.detail %}<span class="text-gray-500"> — {{ update.detail }}</span>{% endif %}</span>
-        <span class="text-xs text-gray-500 whitespace-nowrap">{{ update.at|date:"j M Y, H:i" }}</span>
+        {% comment %}When it happened, as they gave it -- a distributor catching up types a week of
+        events in one sitting, and every row then read the same minute. The typing day only when later.{% endcomment %}
+        <span class="text-xs text-gray-500 whitespace-nowrap text-right">{{ update.on|date:"j M Y" }}{% if update.caught_up %}<span class="block text-gray-400">recorded {{ update.at|date:"j M Y" }}</span>{% endif %}</span>
       </li>
     {% endfor %}
   </ul>

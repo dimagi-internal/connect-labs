@@ -425,36 +425,35 @@ llo_store = op(
 
 
 def contract(award, item, commodity, qty, unit, price, reference, status, signed_on, lead_days=45):
-    return op(
-        "contract_create",
-        data={
-            "round_id": round_id,
-            "award_id": award["id"],
-            "supplier_id": distributor["id"],
-            "item_id": item["id"],
-            "commodity_slug": commodity,
-            # We order and pay the distributor ourselves: the programme is the
-            # buyer of record, not the LLO (design doc section 17).
-            "buyer_of_record": "programme_org",
-            "buyer_org_id": programme["id"],
-            "reference": reference,
-            "quantity": qty,
-            "quantity_unit": unit,
-            "unit_price": price,
-            "unit_price_unit": "per_base_unit",
-            "currency": "USD",
-            "freight_basis": "included",
-            "duties_basis": "included",
-            "vat_basis": "included",
-            "incoterm": "DAP",
-            "delivery_supply_point_id": warehouse["id"],
-            "promised_lead_time_days": lead_days,
-            "payment_terms": "advance",
-            "status": status,
-            "signed_on": signed_on,
-            "source": "we_recorded",
-        },
-    )
+    data = {
+        "round_id": round_id,
+        "award_id": award["id"],
+        "supplier_id": distributor["id"],
+        "item_id": item["id"],
+        "commodity_slug": commodity,
+        # We order and pay the distributor ourselves: the programme is the
+        # buyer of record, not the LLO (design doc section 17).
+        "buyer_of_record": "programme_org",
+        "buyer_org_id": programme["id"],
+        "reference": reference,
+        "quantity": qty,
+        "quantity_unit": unit,
+        "unit_price": price,
+        "unit_price_unit": "per_base_unit",
+        "currency": "USD",
+        "freight_basis": "included",
+        "duties_basis": "included",
+        "vat_basis": "included",
+        "incoterm": "DAP",
+        "delivery_supply_point_id": warehouse["id"],
+        "promised_lead_time_days": lead_days,
+        "payment_terms": "advance",
+        "status": status,
+        "signed_on": signed_on,
+        "source": "we_recorded",
+    }
+    # A draft is not signed yet: no date rather than a made-up one.
+    return op("contract_create", data={key: value for key, value in data.items() if value is not None})
 
 
 # --- last year's order: the stock the LLO has been dispensing -----------------
@@ -571,18 +570,30 @@ for days_ago in range(89, 0, -7):
     )
 
 # --- this year's orders -------------------------------------------------------
-# Awards are dated the day they are recorded, so this year's chain runs from
-# today: the orders are drawn up today, and everything the narrative performs
-# is dated today too. Only last year's order and the dispensing are history.
+# The chain the narrative performs took about a week in the world, and the
+# render films it in minutes. So every act on camera is entered with the day it
+# HAPPENED, relative to the render day, and the screens read those days rather
+# than the minute they were typed (the order page once listed an order
+# confirmed, a payment received and 600 cartons inspected all at "12:08"):
+#
+#   award                a week ago     (seeded)
+#   order placed/signed  6 days ago     (scene 4)   Harmattan confirms it the same day (scene 6)
+#   paid by transfer     5 days ago     (scene 5)   Harmattan sees it arrive a day later (scene 6)
+#   goods received       yesterday      (scene 7)
+#   stock take, release  today          (scenes 10, 13)
 TODAY = TODAY_DATE.isoformat()
+PLACED_ON = ago(6)
+PAID_ON = ago(5)
+PAYMENT_RECEIVED_ON = ago(4)
+RECEIVED_ON = ago(1)
 
-# The co-pack order is a DRAFT: placing it is the first thing the lead does on
-# camera. Vitamin A and the dewormer are placed alongside it.
+# The co-pack order is a DRAFT, and unsigned: placing it is the first thing the
+# lead does on camera. Vitamin A and the dewormer were placed alongside it.
 copack_order = contract(
-    award_copack, copack_a, "ors-zinc-copack", "30000", "co-pack", "0.60", "CHC-2026-01", "draft", TODAY
+    award_copack, copack_a, "ors-zinc-copack", "30000", "co-pack", "0.60", "CHC-2026-01", "draft", None
 )
-contract(award_vita, vit_a, "vitamin-a", "40000", "capsule", "0.021", "CHC-2026-02", "placed", TODAY, 30)
-contract(award_alb, albendazole, "albendazole", "25000", "tablet", "0.018", "CHC-2026-03", "placed", TODAY, 30)
+contract(award_vita, vit_a, "vitamin-a", "40000", "capsule", "0.021", "CHC-2026-02", "placed", PLACED_ON, 30)
+contract(award_alb, albendazole, "albendazole", "25000", "tablet", "0.018", "CHC-2026-03", "placed", PLACED_ON, 30)
 
 # The distributor invoices up front: we pay it before it pays the manufacturer,
 # so the invoice arrives before a single carton has.
@@ -591,7 +602,7 @@ invoice = op(
     data={
         "contract_id": copack_order["id"],
         "reference": "HHS-INV-2026-014",
-        "issued_on": TODAY,
+        "issued_on": PLACED_ON,
         "amount": "18000.00",
         "currency": "USD",
         "quantity_billed": "30000",
@@ -622,6 +633,10 @@ print(
         {
             "program_id": PROGRAMME_ID,
             "today": TODAY,
+            "placed_on": PLACED_ON,
+            "paid_on": PAID_ON,
+            "payment_received_on": PAYMENT_RECEIVED_ON,
+            "received_on": RECEIVED_ON,
             "round_id": round_id,
             "quote_c_id": q_c["id"],
             "decided_on": DECIDED,
