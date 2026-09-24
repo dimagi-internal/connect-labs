@@ -124,7 +124,10 @@ def network_stock(
         # Report the whole column in one unit where the item states a pack
         # size: a table mixing cartons and sachets row by row is not
         # comparable by eye, which is the only thing a network view is for.
-        display_unit = for_conversion.pack_unit if for_conversion is not None else None
+        # The pack unit as the ledger resolves it -- the item's own, else its
+        # product's. Reading `item.pack_unit` alone gave "" for an item that
+        # inherits its units, and a balance cannot be converted into "".
+        display_unit = ledger.pack_unit_of(for_conversion)
         on_hand = ledger.collapse(units, for_conversion, display_unit)
         count = counts.get(point.pk)
         # The RESOLVED item, not the caller's: cover divides a carton balance

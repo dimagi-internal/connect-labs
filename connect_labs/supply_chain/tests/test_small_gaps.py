@@ -308,6 +308,42 @@ class TestDurableEquipmentIsNotForecast:
             assert "durable" in plan[key]["not_forecast"]
         assert Decimal(plan["on_hand"]["amount"]) == Decimal("4")
 
+    def test_the_network_view_says_how_many_each_site_holds(self, da, world, dispensers):
+        # "Which site has which dispenser" is the whole reason a durable item
+        # stays in the ledger. The network view picked its display unit from
+        # the ITEM's own pack unit, which is blank when the item inherits its
+        # units from the product -- and then refused to convert the balance
+        # into a blank unit, so every site read Unconfirmed.
+        item, site = dispensers
+        row = next(r for r in op(da, "network_stock")["points"] if r["supply_point_id"] == site["id"])
+        assert "unconfirmed" not in row["on_hand"], row["on_hand"]
+        assert Decimal(row["on_hand"]["amount"]) == Decimal("4")
+
+    def test_a_pack_unit_inherited_from_the_product_is_the_display_unit(self, da, world):
+        op(
+            da,
+            "commodity_upsert",
+            data={"slug": "tap", "name": "Tap", "category": "equipment", "base_unit": "unit", "pack_unit": "unit"},
+        )
+        item = op(da, "item_upsert", data={"sku": "TAP-1", "commodity_slug": "tap", "stock_class": "durable"})
+        op(
+            da,
+            "movement_record",
+            data={
+                "kind": "receipt",
+                "occurred_on": TODAY.isoformat(),
+                "to_supply_point_id": world["store"]["id"],
+                "item_id": item["id"],
+                "commodity_slug": "tap",
+                "quantity": "7",
+                "quantity_unit": "unit",
+                "source": "we_recorded",
+            },
+        )
+        row = next(r for r in op(da, "network_stock")["points"] if r["supply_point_id"] == world["store"]["id"])
+        assert Decimal(row["on_hand"]["amount"]) == Decimal("7")
+        assert row["on_hand"]["unit"] == "unit"
+
     def test_it_raises_no_stockout_or_below_minimum(self, da, world, dispensers):
         kinds = {c["kind"] for c in op(da, "checks_list")["checks"]}
         assert not {"stock_stockout", "stock_below_minimum"} & kinds

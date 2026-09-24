@@ -92,6 +92,38 @@ def _outstanding(da):
     return [c for c in op(da, "checks_list")["checks"] if c["kind"] == "shipment_documents_outstanding"]
 
 
+class TestTheChecksReadRightForAnImport:
+    """What the checks list said about the dispenser import when it was filmed."""
+
+    def test_documents_owed_by_several_parties_are_not_the_suppliers_alone_to_answer(self, da, world):
+        # Two of the three are owed by the donor, one by the clearing agent;
+        # "only the supplier can answer" was taken from the first line alone.
+        from connect_labs.supply_chain.models import Supplier
+
+        Supplier.objects.filter(pk=world["contract"]["supplier_id"]).update(org_id=world["donor"]["id"])
+        _shipment(da, world)
+        (check,) = _outstanding(da)
+        assert check["audience"] != "supplier"
+
+    def test_the_label_names_what_is_in_the_consignment(self, da, world):
+        _shipment(da, world)
+        (check,) = _outstanding(da)
+        assert "Chlorine dispenser" in check["subject"]["label"]
+
+    def test_a_consignment_with_its_own_document_list_is_not_also_asked_for_a_certificate(self, da, world):
+        # Its list says what it needs to clear. A certificate check on top
+        # kept a "missing document" on the checks list after the shipment's
+        # own checklist read nothing outstanding.
+        _shipment(da, world)
+        kinds = {c["kind"] for c in op(da, "checks_list")["checks"]}
+        assert "shipment_without_certificate" not in kinds
+
+    def test_a_consignment_without_a_list_still_is(self, da, world):
+        _shipment(da, world, required=[])
+        kinds = {c["kind"] for c in op(da, "checks_list")["checks"]}
+        assert "shipment_without_certificate" in kinds
+
+
 class TestImportDocumentKinds:
     def test_the_clearance_documents_are_kinds_a_document_can_be(self):
         assert {
@@ -325,6 +357,46 @@ class TestTheShipmentPage:
         body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
         assert reverse("supply_chain:shipment_detail", args=[shipment["id"]]) in body
 
+    def test_the_checks_page_names_each_missing_document_and_who_owes_it(self, scoped, da, world):
+        _shipment(da, world)
+        body = scoped.get(reverse("supply_chain:checks")).content.decode()
+        assert "Packing list — owed by A donor" in body
+        assert "Product registration — owed by A clearing agent" in body
+        assert "kind packing_list" not in body
+
+    def test_an_airway_bill_is_not_a_certificate(self, scoped, da, world):
+        # The order page's Certificate column read "on file" for any attached
+        # document, while the checks list -- counting only certificates --
+        # said "no certificate on file" about the same consignment.
+        shipment = _shipment(da, world)
+        op(
+            da,
+            "document_attach",
+            data={
+                "kind": "airway_bill",
+                "shipment_id": shipment["id"],
+                "external_url": "https://example.org/awb.pdf",
+                "source": "document",
+            },
+        )
+        assert op(da, "shipment_get", shipment_id=shipment["id"])["has_certificate"] is False
+        body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
+        shipments = body.split(">Shipments<", 1)[1].split(">Received<", 1)[0]
+        assert "on file" not in shipments
+        op(
+            da,
+            "document_attach",
+            data={
+                "kind": "certificate_of_conformity",
+                "shipment_id": shipment["id"],
+                "external_url": "https://example.org/coc.pdf",
+                "source": "document",
+            },
+        )
+        assert op(da, "shipment_get", shipment_id=shipment["id"])["has_certificate"] is True
+        body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
+        assert "on file" in body.split(">Shipments<", 1)[1].split(">Received<", 1)[0]
+
     def test_the_order_page_itemises_the_charges_in_landed_cost(self, scoped, da, world):
         shipment = _shipment(da, world)
         _charge(da, shipment, world["agent"], kind="clearing", amount="120.50")
@@ -397,3 +469,72 @@ class TestTheShipmentScreens:
         assert response.status_code == 302, response.content.decode()[:2000]
         (check,) = _outstanding(da)
         assert "packing_list" not in [d["kind"] for d in check["facts"]["outstanding"]]
+
+
+class TestTheScreensSpeakPlainly:
+    """Database values that reached the dispenser-import walkthrough's screens."""
+
+    def _receive(self, da, world):
+        store = op(
+            da,
+            "supply_point_upsert",
+            data={"slug": "wh", "name": "Distributor warehouse", "kind": "central_store", "source": "we_recorded"},
+        )
+        op(
+            da,
+            "receipt_record",
+            data={
+                "contract_id": world["contract"]["id"],
+                "supply_point_id": store["id"],
+                "received_on": "2026-09-20",
+                "source": "partner_reported",
+                "lines": [
+                    {
+                        "quantity_accepted": "38",
+                        "quantity_rejected": "2",
+                        "rejection_reason": "cracked",
+                        "quantity_unit": "dispenser",
+                    }
+                ],
+            },
+        )
+        return store
+
+    def test_the_checks_page_says_where_a_shipment_is_in_words(self, scoped, da, world):
+        _shipment(da, world)
+        body = scoped.get(reverse("supply_chain:checks")).content.decode()
+        assert "at_customs" not in body
+        assert "at customs" in body
+
+    def test_the_order_page_says_who_told_us_and_where_it_was_received(self, scoped, da, world):
+        _shipment(da, world)
+        self._receive(da, world)
+        body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
+        received = body.split(">Received<", 1)[1].split(">Invoices<", 1)[0]
+        assert "partner_reported" not in received
+        assert "a partner told us" in received
+        assert "Distributor warehouse" in received
+        assert "2 dispenser" in received
+
+    def test_a_donated_order_is_not_bought_and_its_landed_total_is_what_landing_it_cost(self, scoped, da, world):
+        from connect_labs.supply_chain.models import Contract
+
+        Contract.objects.filter(pk=world["contract"]["id"]).update(
+            consideration="in_kind", unit_price=None, unit_price_unit=""
+        )
+        shipment = _shipment(da, world)
+        _charge(da, shipment, world["agent"], kind="clearing", amount="120.50")
+        body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
+        assert "Bought by" not in body
+        assert "Donated to" in body
+        landed = body.split("Landed cost", 1)[1].split("Ordered", 1)[0]
+        total = landed.split("Landed total", 1)[1]
+        assert "120.5" in total
+        assert "goods donated" in total
+
+    def test_the_shipment_page_says_how_we_know_and_formats_money(self, scoped, da, world):
+        shipment = _shipment(da, world)
+        _charge(da, shipment, world["customs"], amount="410000", currency="NGN", fx_rate_to_usd="0.00065")
+        body = scoped.get(reverse("supply_chain:shipment_detail", args=[shipment["id"]])).content.decode()
+        assert "told by supplier reported" not in body
+        assert "410,000" in body

@@ -348,6 +348,9 @@ class OrderDetailView(OperationBase):
         context["match"] = self.op("contract_match", contract_id=contract_id)
         context["shipments"] = self.op("shipment_list", contract_id=contract_id)
         context["receipts"] = self.op("receipt_list", contract_id=contract_id)
+        # Where each receipt landed, by name: the received table said what
+        # arrived and never where.
+        context["supply_points"] = {p["id"]: p["name"] for p in self.op("supply_point_list")}
         context["invoices"] = self.op("invoice_list", contract_id=contract_id)
         context["documents"] = self.op("document_list", contract_id=contract_id)
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}

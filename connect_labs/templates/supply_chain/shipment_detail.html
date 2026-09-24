@@ -34,7 +34,7 @@ checks feed cannot disagree about what is outstanding.
     {% if shipment.dispatched_on %} · dispatched {{ shipment.dispatched_on }}{% endif %}
     {% if shipment.expected_on %} · expected {{ shipment.expected_on }}{% endif %}
     {% if shipment.carrier %} · {{ shipment.carrier }}{% endif %}
-    · told by {{ shipment.source|humanise }}
+    · how we know: {{ shipment.source|source_label }}
   </p>
   <div class="flex flex-wrap gap-2 mt-3">
     <a href="{% url 'supply_chain:shipment_status' shipment.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Update status</a>
@@ -118,7 +118,7 @@ checks feed cannot disagree about what is outstanding.
                   <div class="text-xs text-gray-500">to {{ orgs|dictkey:charge.payee_org_id|dictkey:"name" }}{% if charge.paid_on %} · paid {{ charge.paid_on }}{% else %} · not yet paid{% endif %}</div>
                 </td>
                 <td class="px-4 py-2 text-right tabular-nums">
-                  {{ charge.amount }} {{ charge.currency }}
+                  {{ charge.amount|money }} {{ charge.currency }}
                   {% if charge.fx_rate_to_usd %}<div class="text-xs text-gray-400">at {{ charge.fx_rate_to_usd }} USD</div>{% endif %}
                 </td>
               </tr>

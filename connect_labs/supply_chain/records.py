@@ -140,6 +140,11 @@ CONTRACT_STATUSES = (
 
 INVOICE_STATUSES = ("received", "queried", "approved", "part_paid", "paid", "rejected")
 
+# The documents that certify what is in a consignment, as opposed to the ones
+# that move it through a port. `shipment_without_certificate` and the order
+# page's Certificate column both read this, so they cannot disagree.
+CERTIFICATE_KINDS = ("certificate_of_analysis", "certificate_of_conformity")
+
 DOCUMENT_KINDS = (
     "purchase_order",
     "order_confirmation",

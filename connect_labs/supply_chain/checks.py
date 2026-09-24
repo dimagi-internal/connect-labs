@@ -49,6 +49,7 @@ from decimal import Decimal
 
 from django.db.models import Count, Q
 
+from connect_labs.supply_chain import records
 from connect_labs.supply_chain.fulfilment.services.landed import landed_total
 from connect_labs.supply_chain.fulfilment.services.match import three_way_match
 from connect_labs.supply_chain.models import (
@@ -405,11 +406,16 @@ def _fulfilment(access, as_of):
         .annotate(
             certificates=Count(
                 "documents",
-                filter=Q(documents__kind__in=("certificate_of_analysis", "certificate_of_conformity")),
+                filter=Q(documents__kind__in=records.CERTIFICATE_KINDS),
             )
         )
         .filter(certificates=0)
-        .select_related("contract__supplier")
+        # A consignment that declares its own required documents says what it
+        # needs; a certificate belongs on that list when it is needed. Asking
+        # for one on top kept a "missing document" on the checks list after the
+        # consignment's own checklist read nothing outstanding.
+        .filter(required_documents=[])
+        .select_related("contract__supplier", "contract__commodity", "contract__item")
     )
     out += _late_shipments(access, as_of)
     out += _unconfirmed_payments(access, as_of)
@@ -421,7 +427,7 @@ def _fulfilment(access, as_of):
                 "shipment_without_certificate",
                 subject_type="shipment",
                 subject_id=shipment.pk,
-                label=f"{shipment.reference or shipment.pk} — {shipment.contract.supplier.name}",
+                label=_shipment_label(shipment),
                 audience="supplier",
                 facts={"status": shipment.status},
                 since=shipment.dispatched_on,
@@ -502,7 +508,7 @@ def _late_shipments(access, as_of):
         Shipment.objects.filter(contract__program_id=access.program_id, expected_on__lt=today)
         .exclude(status__in=("delivered", "lost"))
         .filter(receipts__isnull=True)
-        .select_related("contract__supplier", "contract__commodity")
+        .select_related("contract__supplier", "contract__commodity", "contract__item")
         .distinct()
     )
     out = []
@@ -513,7 +519,7 @@ def _late_shipments(access, as_of):
                 "shipment_overdue",
                 subject_type="shipment",
                 subject_id=shipment.pk,
-                label=f"{shipment.reference or shipment.pk} — {supplier.name}",
+                label=_shipment_label(shipment),
                 audience="supplier",
                 facts={
                     "days_late": (today - shipment.expected_on).days,
@@ -583,7 +589,7 @@ def _outstanding_documents(access, as_of):
     shipments = list(
         Shipment.objects.filter(contract__program_id=access.program_id)
         .exclude(required_documents=[])
-        .select_related("contract__supplier", "contract")
+        .select_related("contract__supplier", "contract__commodity", "contract__item")
         .prefetch_related("documents")
     )
     owed_by_ids = {
@@ -610,12 +616,12 @@ def _outstanding_documents(access, as_of):
                 "shipment_documents_outstanding",
                 subject_type="shipment",
                 subject_id=shipment.pk,
-                label=f"{shipment.reference or shipment.pk} — {contract.supplier.name}",
+                label=_shipment_label(shipment),
                 # Who owes each is on each line; the check's own audience is
-                # the first one's, mapped to the domain's three: the supplier's
-                # organisation, the buying partner, or anybody else (whom we
-                # chase ourselves).
-                audience=_audience_for_org(contract, outstanding[0]["owed_by"]["id"]),
+                # mapped to the domain's three -- the supplier's organisation,
+                # the buying partner, or anybody else (whom we chase
+                # ourselves) -- and is ours when more than one party owes.
+                audience=_audience_for_documents(contract, outstanding),
                 facts={
                     "outstanding": outstanding,
                     "required": len(shipment.required_documents),
@@ -627,6 +633,24 @@ def _outstanding_documents(access, as_of):
             )
         )
     return out
+
+
+def _shipment_label(shipment) -> str:
+    """Reference, what it carries, and who sent it -- so a check names the goods."""
+    contract = shipment.contract
+    what = contract.item.name if contract.item_id else contract.commodity.name
+    return f"{shipment.reference or shipment.pk} — {what} — {contract.supplier.name}"
+
+
+def _audience_for_documents(contract, outstanding) -> str:
+    """Whose to answer, when several organisations may each owe a document.
+
+    One owner: that owner's audience. Several: ours, because we are the ones
+    chasing more than one party -- "only the supplier can answer" was taken
+    from the first line alone while the next line named a clearing agent.
+    """
+    audiences = {_audience_for_org(contract, entry["owed_by"]["id"]) for entry in outstanding}
+    return audiences.pop() if len(audiences) == 1 else "internal"
 
 
 def _audience_for_org(contract, org_id):
