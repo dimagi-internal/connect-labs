@@ -220,6 +220,7 @@ CHECK_FACT_LABELS = {
     "role": "As",
     "requested_on": "Asked",
     "verdict": "Verdict",
+    "fails": "Fails",
     "requirements": "Required",
     "stated": "Stated",
     "components": "Parts",
@@ -366,6 +367,14 @@ def check_facts(check, refs=None):
         text = _check_fact_value(key, value, facts)
         rows.append(FactRow(CHECK_FACT_LABELS.get(key) or humanise(key).capitalize(), text))
     return rows
+
+
+@register.filter
+def requirement_text(requirement):
+    """A specification requirement in words: "Range maximum at least 2.0 mg/L"."""
+    from connect_labs.supply_chain.procurement.services.compliance import requirement_text as text
+
+    return text(requirement or {})
 
 
 @register.filter

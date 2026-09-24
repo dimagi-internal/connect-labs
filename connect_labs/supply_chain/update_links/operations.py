@@ -68,7 +68,7 @@ def serialize_link(link) -> dict:
     else:
         contracts = list(link.contracts.all())
         points = list(link.supply_points.all())
-        approvals = list(link.approvals.select_related("award__supplier"))
+        approvals = list(link.approvals.select_related("award__supplier", "award__commodity", "award__quote__item"))
     return {
         "id": link.pk,
         "program_id": link.program_id,
@@ -83,7 +83,16 @@ def serialize_link(link) -> dict:
         "supply_points": [{"id": p.pk, "name": p.name} for p in points],
         "approval_ids": [a.pk for a in approvals],
         "approvals": [
-            {"id": a.pk, "award_id": a.award_id, "role": a.role, "status": a.status, "supplier": a.award.supplier.name}
+            {
+                "id": a.pk,
+                "award_id": a.award_id,
+                "role": a.role,
+                "status": a.status,
+                "supplier": a.award.supplier.name,
+                # What the approver is asked about: the trade item awarded, or
+                # the product when the award named none.
+                "product": a.award.quote.item.name if a.award.quote.item_id else a.award.commodity.name,
+            }
             for a in approvals
         ],
         "token_hint": link.token_hint,
