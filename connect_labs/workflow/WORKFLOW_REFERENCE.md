@@ -1755,3 +1755,66 @@ A report that fetches its figures from the semantic endpoint and never streams i
 - A **new opportunity** in the programme: add it to the cohort (`benchmarks_cohort_add_opportunities`), then re-run `benchmarks_create_opp_reports`.
 - A **changed config value** in the template: patch existing instances (see the limit above).
 - Benchmarks: see `connect_labs/benchmarks/README.md`. Publication follows the source report automatically once the cohort's `source_workflow_id` and `auto_publish_on_completion` are set.
+
+---
+
+## 13. Semantic registries (indicator definitions as data)
+
+Use this section when a report's figures are **indicators**: a numerator over a denominator, graded against bands and a minimum denominator, at several levels (programme / LLO / opportunity / worker / month). Don't compute them in render code. Put the definitions in a **semantic registry** and let the engine compile them to SQL. The page then only displays and grades what comes back, and an indicator edit reaches every report bound to the registry without a deploy. The full user-facing guide is `user_docs/semantic-layer.md`; engine internals are in `connect_labs/semantic/`.
+
+### The registry is general; KMC is one example
+
+A registry is three documents. `properties_doc` holds the MODEL, the constants, the per-entity aggregates and the properties. `indicators_doc` holds the measures, suppression rules, `defaults` and `series`. `deployment` holds optional facts: `llo_map`, credibility `settings`, `app_asks`, `asks_as`. The model says what the engine counts:
+
+```yaml
+entity:
+  {
+    name: beneficiary,
+    plural: beneficiaries,
+    key: entity_id,
+    cohort_date: first_visit,
+  }
+visit_columns: # derived per-visit columns added to Layer 1
+  - { name: is_approved, word_match: { column: status, word: approved } }
+  - { name: is_flagged, sql: 'COALESCE(flagged, FALSE)' }
+pipelines: { entity: visits } # + extra_fields: {<column>: <pipeline alias>} to merge a column in
+# weight_series: {...}               # optional per-entity reading series (KMC's weights); needs value_column
+```
+
+Two examples ship: `registry/visit_quality` (per beneficiary, generic Connect visit columns, series Q, no LLOs) and `registry/kmc` (per baby, weight series, LLOs, series C/N). Copy the closer one. Indicator IDs can start with any letters: the letters name the series, or you list them in `indicators_doc.series`.
+
+### Tools
+
+| Step                                | Tool                                                                                                                                                                                |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Start a registry                    | `semantic_registry_create` (`seed_from: 'visit_quality'` or `'kmc'`, or pass documents)                                                                                             |
+| Check before saving                 | `semantic_registry_validate`. It compiles at every scope the registry can have, and allow-lists every SQL fragment: no subqueries, no other tables, no comments, constants numeric. |
+| Change one indicator's display keys | `semantic_registry_set_indicator_meta`. It's surgical; prefer it to `semantic_registry_update`, which replaces a whole document.                                                    |
+| Read the exact logic                | `semantic_registry_explain`. Pass indicator IDs; with none, you get the index.                                                                                                      |
+| Bind a report                       | `workflow_update_definition` patch `registry_source: {registry_id: N}`, or `workflow_create_from_template(..., registry_source=...)`. Omitting it seeds a private copy.             |
+
+Registry writes only succeed from the record's **home scope** (the organisation, programme or opportunity it was created in). A shared record can be read and bound from anywhere.
+
+### Render contract
+
+```
+GET /labs/workflow/api/<workflow_id>/semantic/?series=<prefix>&scopes=opportunity,flw
+    [&as_of=YYYY-MM-DD] [&flw=<opportunity_id>::<username>] [&catalog_only=1] [&registry_id=<candidate>]
+→ { rows: [{scope, opportunity_id?, username?, llo?, cohort_month?, case_id?, n_cases,
+            <measure>, <measure>_numerator, <measure>_denominator, <measure>_suppressed?, anyrec_<input>?}],
+    measures: <catalog: titles, units, directions, bands, min_denominator, inputs…>,
+    deployment, cold_cache, partial_cache, opportunities_missing, … }
+```
+
+- **Grade in the page, from `measures`**: minimum denominator, bands, n/a from `anyrec_*` and `inputs`, and not-credible from `_suppressed`. The SQL returns counts only. `kmc_opp_report_render.js` is a working example of grading.
+- Show `cold_cache` / `partial_cache`. A cold cache reads as zeros, not as "no data".
+- `scopes=case` returns one row per entity. Use it for drill-downs and for checking numbers.
+- `registry_id=` evaluates a candidate registry without binding it.
+- The definitions popup reads `/labs/workflow/api/<workflow_id>/indicator-definitions/` (`?format=json|md|sql`).
+- Saved runs: `snapshot_inputs: {builder: semantic_snapshot, series, scopes, case_index: {pipeline, fields, date_fields}, credibility, …}` (see §9 and `kmc_programme_metrics.py`).
+
+### Don'ts
+
+- Don't hand-write Layer 1 SQL. It is generated from the pipeline named in `pipelines.entity`, and that's where form paths and their fallbacks live.
+- Don't copy indicator logic into render code. That's the two-copies drift the semantic layer exists to end.
+- Don't create a report from a template without `registry_source` when a registry for that indicator family already exists.
