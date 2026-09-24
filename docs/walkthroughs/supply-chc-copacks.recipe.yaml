@@ -32,35 +32,39 @@ scenes:
 - id: three-co-packs-one-set-aside
   actions:
   - kind: wait_for
-    target: css:text=Quotes
+    target: css:text=What this round buys
   - kind: hold
     seconds: 2.5
-    note: Harmattan's three co-pack quotes, one marked voided
-  - kind: goto
-    target: /supply/procurement/quotes/${quote_c_id}/
-  - kind: wait_for
-    target: css:text=Voided
+    note: 'the round names the contents it buys: 2 ORS sachets + 10 zinc tablets'
+  - kind: scroll_to
+    target: css:h2:has-text('Quotes')
   - kind: hold
-    seconds: 2.5
+    seconds: 2.0
   - kind: snapshot
-    note: 'the set-aside co-pack: what one unit holds, and the reason it was set aside'
-  concept_claim: The round lists the distributor's three co-pack quotes, and the voided quote keeps its
-    reason on record — its contents differ from the protocol co-pack.
-  show: The round page with its three co-pack quotes (one voided), then the voided quote's detail with
-    its reason.
+    note: the three co-pack offers against the round's stated contents
+  concept_claim: The round page states the contents its co-pack line buys (2 ORS sachets + 10 zinc tablets)
+    and lists the distributor's three co-pack quotes against it.
+  show: 'The round page: ''What this round buys'' naming the co-pack line''s contents (2 sachet ORS +
+    10 tablet zinc), then the quotes table with Harmattan''s three co-pack offers.'
   url: /supply/procurement/rounds/${round_id}/
 - id: two-co-packs-ranked-like-with-like
   actions:
   - kind: wait_for
     target: css:text=Comparable
   - kind: hold
-    seconds: 3.0
+    seconds: 2.5
+    note: two co-packs with the round's contents, ranked; the chosen one marked
+  - kind: scroll_to
+    target: css:text=not the contents this round buys
+  - kind: hold
+    seconds: 2.5
   - kind: snapshot
-    note: two co-packs, same contents, ranked
-  concept_claim: The comparison ranks the two co-pack quotes whose kit contents match (2 ORS sachets +
-    10 zinc tablets) and names the contents on each row.
-  show: The co-pack comparison with two ranked rows, each carrying its kit contents, and the banner naming
-    the chosen quote.
+    note: the four-sachet co-pack refused a ranking, and why
+  concept_claim: The comparison ranks the two co-pack quotes whose contents match the round's (2 ORS sachets
+    + 10 zinc tablets) and refuses to rank the four-sachet co-pack, naming the difference in contents
+    as the reason.
+  show: 'The co-pack comparison: two ranked rows (Kaduna Pharma Works first, marked Chosen), then the
+    four-sachet co-pack under ''Needs info'' refused a ranking — its contents are not what the round buys.'
   url: /supply/procurement/rounds/${round_id}/compare/?commodity=ors-zinc-copack
 - id: amara-places-the-order
   actions:
@@ -118,15 +122,15 @@ scenes:
     target: role:button:Record payment
     timeout_ms: 30000
   - kind: wait_for
-    target: css:text=Safe to pay now
+    target: css:text=Paid in advance
   - kind: scroll_to
     target: css:text=Ordered · received · invoiced
   - kind: hold
     seconds: 2.0
-  concept_claim: Recording the payment against the distributor's invoice shows it as paid on the order
-    while the three-way match still reports nothing received.
+  concept_claim: Recording the payment on an order paid in advance shows it as paid in advance and awaiting
+    delivery of the whole order, not as billed beyond what arrived.
   show: The payment form for invoice HHS-INV-2026-014 — paid on today, 18000 USD, bank transfer, reference
-    — then the order page with Paid 18000 USD and Received 0.
+    — then the order page reading 'Paid in advance — awaiting delivery of 30000 co-pack'.
   url: /supply/invoices/${invoice_id}/payments/new/
 - id: tunde-confirms-order-and-payment
   actions:
@@ -208,20 +212,21 @@ scenes:
 - id: amara-reads-harmattan-updates
   actions:
   - kind: wait_for
-    target: css:text=Bought by
+    target: css:text=update link
   - kind: hold
-    seconds: 1.5
+    seconds: 2.5
+    note: what Harmattan recorded through its link, nobody asked
   - kind: scroll_to
-    target: css:text=GRN-HHS-0923
+    target: css:text=Recoverable from the supplier
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the distributor's own updates, on the order
-  concept_claim: The order page shows the distributor's confirmation, receipt and payment confirmation,
-    attributed to the distributor, and the match now reports the 4 refused cartons as billed beyond what
-    arrived.
-  show: The order page — status, the Received table (GRN-HHS-0923, 596 accepted, 4 refused, told by supplier),
-    the match panel and the invoice with its confirmed payment.
+    note: 'paid for and refused: 120 USD recoverable'
+  concept_claim: The order page lists the distributor's link updates (order confirmed, payment received,
+    receipt) and reports the refused cartons of an advance order as an amount recoverable from the supplier.
+  show: 'The order page — the ''Through Harmattan Health Supplies''s update link'' panel (order confirmed,
+    payment received, GRN-HHS-0923 596 accepted / 4 rejected), then the match panel: recoverable from
+    the supplier 120 USD.'
   url: /supply/orders/${copack_order_id}/
 - id: amara-subscribes-to-low-stock
   actions:
@@ -377,8 +382,8 @@ scenes:
     seconds: 3.0
   - kind: snapshot
     note: the loop closed
-  concept_claim: After the release the Sahel store reads 364 cartons, six months of stock and inside its
-    band, and the warehouse reads 526 cartons.
+  concept_claim: After the release the Sahel store reads six months of stock, inside its band, and the
+    warehouse — rated on its releases — shows its own months of stock and a send quantity.
   show: The stock network table after the release — Sahel CHI store 364 carton, 6.00 months, inside its
-    band; the warehouse at 526 cartons.
+    band; the Harmattan warehouse rated on releases, with its months of stock and a send quantity.
   url: /supply/stock/
