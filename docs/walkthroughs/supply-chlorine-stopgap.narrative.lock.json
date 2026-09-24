@@ -9,12 +9,11 @@
     "place-order-waits-for-northstar",
     "northstar-says-yes-and-the-order-goes-through",
     "the-stop-gap-reaches-kano",
-    "clearwater-has-already-been-told",
     "the-stop-gap-bridges-but-does-not-replace"
   ],
-  "fetched_at": "2026-09-24T11:19:07.706330+00:00",
+  "fetched_at": "2026-09-24T12:08:44.569119+00:00",
   "name": "supply-chlorine-stopgap",
-  "narrative": "Ngozi starts at the checks, where ClearWater Action's donated chlorine is ninety days past the date it was promised and the Sahel CHI store in Kano that refills the dispensers sits under its two-month floor. She opens the donation and reads it as ClearWater gave it: in kind, nothing to pay, 400 jerry cans still to arrive. Instead of chasing ClearWater again, she points an alert at their supply desk's email, so the store falling below its minimum or their shipment passing its date reaches them straight from the record. For a stop-gap she has asked Harmattan Health Supplies for nationally registered chlorine, and she checks their quote: Aquaguard at 1.25%, 90 jerry cans within a week, the product's registration certificate filed beside the quotation. She awards the stop-gap to Harmattan and writes down why. She records the regulator's approval, which rests on that registration certificate, and asks Northstar Fund, which pays for the programme, to approve the spend; until Northstar answers, the award cannot be ordered. When she tries to place the order before Northstar has answered, the order screen refuses it and names Northstar's pending approval. Northstar says yes, Ngozi records their answer and places the order again, and this time it goes through, with a price the donation never had. When the jerry cans reach Kano she records Sahel CHI's goods received note, and the 90 cans enter the store's ledger. Ngozi checks the alerts and sees that ClearWater's supply desk has already been emailed both facts, the store below its minimum and their shipment overdue. Last she reads the Kano store: its cover rises to just under two months, still below its floor, so the stop-gap bridges the gap and ClearWater's 400 jerry cans are what will close it.",
+  "narrative": "Ngozi starts at the checks, where ClearWater Action's donated chlorine is ninety days past the date it was promised and the Sahel CHI store in Kano that refills the dispensers sits under its two-month floor. She opens the donation and reads it as ClearWater gave it: in kind, nothing to pay, 400 jerry cans still to arrive. Instead of chasing ClearWater again, she points an alert at their supply desk's email for the store falling below its minimum or their shipment passing its date, and checks it at once: both facts go to ClearWater straight from the record. For a stop-gap she has asked Harmattan Health Supplies for nationally registered chlorine. Their quote reads Aquaguard at 1.25%, 90 jerry cans within a week, and she files the product's registration certificate beside the quotation. Gidan Ruwa Traders' quote is cheaper, but she awards the stop-gap to Harmattan in her own name and writes down why. On the award, decided under her name with her reason, she asks the national regulator for its approval and records their approval, resting on the registration certificate she has just filed. Then she asks Northstar Fund, which pays for the programme, to approve the spend, and Place order greys out, naming the answer it is waiting for. Northstar says yes. Ngozi records their answer, Place order comes back, and she orders the jerry cans for the Kano store within a week; this time it goes through, with a price the donation never had. When the jerry cans reach Kano she records the goods received note Sahel CHI sent from the store, batch and expiry included, and the 90 cans enter the store's ledger. Last she reads the Kano store: its cover rises to just under two months, still below its floor, so the stop-gap bridges the gap and ClearWater's 400 jerry cans are what will close it.",
   "personas": {
     "ngozi": {
       "color": "#2563EB",
@@ -79,13 +78,23 @@
           "description": "/supply/alerts/new/ offers every check kind as a checkbox, a supply point and product filter, and a recipient choice of me or an email address.",
           "id": "alert-form",
           "verify": "Playwright: submit /supply/alerts/new/ with two check kinds and an email; /supply/alerts/ lists the address under 'Sends to'"
+        },
+        {
+          "description": "The alerts page lists each notice with the check it found, the record it is about, the alert that found it and its delivery, including the address it was sent to.",
+          "id": "alert-sent-log",
+          "verify": "Playwright: /supply/alerts/ sent log shows 'Below its own minimum' and 'Shipment past its expected date' rows for the ClearWater alert"
+        },
+        {
+          "description": "Check now runs the same pass the five-minute beat runs, for this programme, and a check that stays true is sent once.",
+          "id": "alert-check-now",
+          "verify": "pytest connect_labs/supply_chain/tests -k TestCheckAlertsNow asserts the button runs this programme and a repeat run sends nothing new"
         }
       ],
       "id": "ngozi-points-the-alert-at-clearwater",
-      "narrative": "Instead of chasing ClearWater again, she points an alert at their supply desk's email, so the store falling below its minimum or their shipment passing its date reaches them straight from the record.",
+      "narrative": "Instead of chasing ClearWater again, she points an alert at their supply desk's email for the store falling below its minimum or their shipment passing its date, and checks it at once: both facts go to ClearWater straight from the record.",
       "persona": "ngozi",
       "provenance": "S2",
-      "title": "Ngozi points the alert at ClearWater instead of chasing them"
+      "title": "Ngozi points the alert at ClearWater, and they are told at once"
     },
     {
       "features": [
@@ -120,7 +129,7 @@
         }
       ],
       "id": "ngozi-awards-the-stop-gap",
-      "narrative": "She awards the stop-gap to Harmattan in her own name and writes down why.",
+      "narrative": "Gidan Ruwa Traders' quote is cheaper, but she awards the stop-gap to Harmattan in her own name and writes down why.",
       "persona": "ngozi",
       "provenance": "S4",
       "title": "Ngozi awards the stop-gap in her own name and writes down why"
@@ -149,7 +158,7 @@
         }
       ],
       "id": "the-regulators-approval-rests-on-the-registration",
-      "narrative": "On the award she records the regulator's approval, resting on the registration certificate she has just filed.",
+      "narrative": "On the award, decided under her name with her reason, she asks the national regulator for its approval and records their approval, resting on the registration certificate she has just filed.",
       "persona": "ngozi",
       "provenance": "S4",
       "title": "The regulator's approval rests on that certificate"
@@ -187,7 +196,7 @@
         }
       ],
       "id": "northstar-says-yes-and-the-order-goes-through",
-      "narrative": "Northstar says yes, Ngozi records their answer, Place order comes back, and the order goes through with a price the donation never had.",
+      "narrative": "Northstar says yes. Ngozi records their answer, Place order comes back, and she orders the jerry cans for the Kano store within a week; this time it goes through, with a price the donation never had.",
       "persona": "ngozi",
       "provenance": "S4",
       "title": "Northstar says yes and the order goes through"
@@ -206,29 +215,10 @@
         }
       ],
       "id": "the-stop-gap-reaches-kano",
-      "narrative": "When the jerry cans reach Kano she records Sahel CHI's goods received note, and the 90 cans enter the store's ledger.",
+      "narrative": "When the jerry cans reach Kano she records the goods received note Sahel CHI sent from the store, batch and expiry included, and the 90 cans enter the store's ledger.",
       "persona": "ngozi",
       "provenance": "S5",
       "title": "The stop-gap reaches Kano"
-    },
-    {
-      "features": [
-        {
-          "description": "The alerts page lists each notice with the check it found, the record it is about, the alert that found it and its delivery, including the address it was sent to.",
-          "id": "alert-sent-log",
-          "verify": "Playwright: /supply/alerts/ sent log shows 'Below its own minimum' and 'Shipment past its expected date' rows for the ClearWater alert"
-        },
-        {
-          "description": "Check now runs the same pass the five-minute beat runs, for this programme, and a check that stays true is sent once.",
-          "id": "alert-check-now",
-          "verify": "pytest connect_labs/supply_chain/tests -k TestCheckAlertsNow asserts the button runs this programme and a repeat run sends nothing new"
-        }
-      ],
-      "id": "clearwater-has-already-been-told",
-      "narrative": "Rather than wait for the next run she checks the alerts now, and the sent log shows ClearWater's supply desk has been emailed both facts: the store below its minimum and their shipment overdue.",
-      "persona": "ngozi",
-      "provenance": "S2",
-      "title": "ClearWater has already been told"
     },
     {
       "features": [
@@ -251,5 +241,5 @@
     }
   ],
   "slug": "supply-chlorine-stopgap",
-  "version": 3
+  "version": 5
 }

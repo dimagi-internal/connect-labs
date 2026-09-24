@@ -665,6 +665,64 @@ def seed(mcp: Mcp) -> dict:
         },
     )
 
+    # --- a rival quote: cheaper, slower, and with no registration on file ----
+    # The comparison ranks cheapest first, so this one leads it. Ngozi awards
+    # Harmattan anyway, and her written reason is what the record keeps.
+    rival_org = org(
+        mcp,
+        "gidan-ruwa-traders",
+        "Gidan Ruwa Traders",
+        "Invented chemical trader for the supply walkthroughs.",
+    )
+    rival_item = mcp.op(
+        "item_upsert",
+        data={
+            "sku": "gidan-ruwa-hypochlorite-1-25-3l",
+            "name": "Gidan Ruwa sodium hypochlorite 1.25%, 3 L",
+            "commodity_slug": "dispenser-chlorine",
+            "manufacturer": "Gidan Ruwa Traders",
+            "base_unit": "L",
+            "pack_unit": "jerry_can",
+            "base_per_pack": 3,
+            "shelf_life_months": 12,
+            "spec_attributes": {"available_chlorine_percent": 1.25},
+            "status": "active",
+        },
+    )["id"]
+    rival = mcp.op(
+        "supplier_create",
+        data={"name": "Gidan Ruwa Traders", "type": "trader", "status": "quoting", "org_id": rival_org},
+    )["id"]
+    rival_outreach = mcp.op(
+        "outreach_log",
+        data={"round_id": round_id, "supplier_id": rival, "channel": "manual", "sent_on": today_minus(5)},
+    )
+    mcp.op("outreach_update", outreach_id=rival_outreach["id"], data={"responded": True, "response_kind": "quote"})
+    mcp.op(
+        "quote_record",
+        data={
+            "round_id": round_id,
+            "supplier_id": rival,
+            "item_id": rival_item,
+            "commodity_slug": "dispenser-chlorine",
+            "as_quoted_amount": "6100",
+            "as_quoted_unit": "per_pack",
+            "as_quoted_currency": "NGN",
+            "quantity_basis": STOPGAP_CANS,
+            "quantity_basis_unit": "jerry_can",
+            "fx_rate_to_usd": "0.00065",
+            "pack_spec_source": "trade_item_confirmed",
+            "freight_basis": "included",
+            "duties_basis": "included",
+            "shelf_life_months_stated": 12,
+            "lead_time_days": 21,
+            "moq": 50,
+            "moq_unit": "jerry_can",
+            "validity_until": (today() + timedelta(days=14)).isoformat(),
+            "received_on": today_minus(1),
+        },
+    )
+
     return {
         "programme_id": PROGRAMME_ID,
         "round_id": round_id,

@@ -17,23 +17,19 @@ scenes:
   actions:
   - kind: wait_for
     target: Delivery past the promised lead time
+  - kind: click
+    target: text:threshold — past a bound you set
+    note: only the figures past a bound
+  - kind: wait_for
+    target: Below its own minimum
   - kind: hold
-    note: ClearWater's contract, ninety days past its promised lead time
     seconds: 2.5
-  - kind: scroll_to
-    target: Shipment past its expected date
-  - kind: hold
-    note: the shipment itself, past the date it was expected
-    seconds: 2.0
+    note: ClearWater's contract, ninety days past its promised lead time
   - kind: scroll_to
     target: Below its own minimum
   - kind: hold
+    seconds: 3.0
     note: and the Kano store under its own two-month floor
-    seconds: 2.5
-  - kind: hover
-    note: cursor off the cards
-    seconds: 1.0
-    target: text:What the record cannot answer
   concept_claim: The checks page reports ClearWater's in-kind consignment as ninety days past both its
     promised lead time and its shipment's expected date, and the Kano store as below its own two-month
     minimum, with no one having entered a lateness flag.
@@ -51,7 +47,7 @@ scenes:
   - kind: hover
     note: 'every cost line reads not purchased: there was never a price to find'
     seconds: 2.0
-    target: text:Landed total
+    target: text:Goods and landing
   - kind: hover
     note: 400 jerry cans promised, none received
     seconds: 2.0
@@ -101,7 +97,6 @@ scenes:
     note: an address outside labs
     target: css:#id_recipient_2
   - kind: fill
-    say: email
     target: css:#id_recipient_email
     value: supply-desk@clearwater-action.example
   - kind: click
@@ -111,16 +106,34 @@ scenes:
   - kind: wait_for
     must_succeed: true
     target: supply-desk@clearwater-action.example
-  - kind: hold
-    note: the subscription, sending to ClearWater as it happens
+  - kind: wait_for
+    target: Check now
+  - kind: click
+    target: role:button:Check now
+    must_succeed: true
+    timeout_ms: 60000
+    say: once
+    note: the same pass the five-minute run makes, now
+  - kind: wait_for
+    target: css:section:has(h2:has-text('Sent log')) tbody tr:has-text('Below its own minimum')
+    must_succeed: true
+    seconds: 60
+  - kind: hover
+    target: css:section:has(h2:has-text('Sent log')) tbody tr:has-text('Below its own minimum')
     seconds: 2.0
-  concept_claim: A programme member can subscribe an outside email address to the stock_below_minimum
-    and shipment_overdue checks for one store and one product, and the new subscription lists that address
-    as its recipient.
+    note: the store below its minimum, sent to ClearWater's desk
+  - kind: hover
+    target: css:section:has(h2:has-text('Sent log')) tbody tr:has-text('Shipment past its expected date')
+    seconds: 2.0
+    note: and their own shipment, overdue
+  concept_claim: A programme member can subscribe an outside email address to the below-minimum and shipment-overdue
+    checks for one store and one product, and Check now sends what is already true at once, listed in
+    the sent log with its delivery status and address.
   design_intent: For chlorine the low-stock signal belongs to the donor, so the alert is addressed to
-    them rather than to the team that would otherwise forward it.
-  show: Ngozi names the alert, ticks stock below minimum and shipment overdue, narrows it to the Kano
-    store and dispenser chlorine, sends it to ClearWater's supply desk address, and creates it.
+    them, and the team can see it went rather than wonder.
+  show: 'Ngozi names the alert, ticks stock below minimum and shipment overdue, narrows it to the Kano
+    store and dispenser chlorine, sends it to ClearWater''s supply desk address, creates it, and presses
+    Check now: the sent log shows both facts sent to that address.'
   url: /supply/alerts/new/?program_id=10603
 - id: ngozi-files-the-registration-beside-the-quote
   actions:
@@ -187,21 +200,25 @@ scenes:
 - id: ngozi-awards-the-stop-gap
   actions:
   - kind: wait_for
-    target: Harmattan Health Supplies
+    target: Gidan Ruwa Traders
+  - kind: hover
+    target: css:tr:has-text('Gidan Ruwa Traders')
+    seconds: 2.0
+    note: the cheaper quote, ranked first
   - kind: fill
-    target: css:input[name=rationale]
-    value: Only registered 1.25% chlorine available within a week
-    say: why
-  - kind: fill
-    target: css:input[name=decided_by]
+    target: css:tr:has-text('Harmattan Health Supplies') input[name=decided_by]
     value: Ngozi Eze
     say: name
     note: the person deciding, not the account
+  - kind: fill
+    target: css:tr:has-text('Harmattan Health Supplies') input[name=rationale]
+    value: Only registered 1.25% chlorine available within a week
+    say: why
   - kind: hold
     seconds: 1.5
-    note: the reason and the decider, written before the award is made
+    note: her name and her reason, written before the award is made
   - kind: click
-    target: css:form:has(input[name=rationale]) button:has-text('Award')
+    target: css:tr:has-text('Harmattan Health Supplies') button:has-text('Award')
     must_succeed: true
     timeout_ms: 30000
   - kind: wait_for
@@ -209,18 +226,15 @@ scenes:
     must_succeed: true
   - kind: hover
     target: text:Chosen
-    seconds: 1.5
-    note: Harmattan's quote, chosen
-  - kind: hover
-    target: css:a[href*='/procurement/awards/']
     seconds: 2.0
-    note: the award, dated, above the comparison
-  concept_claim: Awarding from the comparison takes a written reason and the name of the person deciding;
-    the comparison then marks the quote Chosen and links the award.
+    note: Harmattan chosen over the cheaper quote
+  concept_claim: Awarding from the comparison takes a written reason and the name of the person deciding,
+    and can go to a quote that is not the cheapest; the comparison then marks the chosen quote.
   design_intent: The award is a decision a named person made for a stated reason, not a click an account
     made.
-  show: On the comparison Ngozi types her reason and her own name as the decider beside Harmattan's quote,
-    awards it, and the comparison marks the quote Chosen and links the award.
+  show: On the comparison Ngozi passes over Gidan Ruwa Traders' cheaper quote, ranked first, types her
+    own name as the decider and her reason beside Harmattan's quote, awards it, and the comparison marks
+    Harmattan Chosen.
   url: /supply/procurement/rounds/${round_id}/compare/?commodity=dispenser-chlorine&program_id=10603
 - id: the-regulators-approval-rests-on-the-registration
   actions:
@@ -340,6 +354,10 @@ scenes:
     seconds: 2.5
     say: waiting
     note: and the answer it is waiting for
+  - kind: hover
+    target: text:Approvals
+    seconds: 1.0
+    note: cursor off the banner
   concept_claim: While a funder approval is requested, the award page shows Place order disabled with
     a reason naming the approver, the role and the date it was asked.
   design_intent: A disabled button with its reason says what to wait for and from whom; the server refuses
@@ -469,7 +487,7 @@ scenes:
     target: css:#id_lines-0-expiry
     value: ${stopgap_expiry}
   - kind: fill
-    say: cans
+    say: '90'
     target: css:#id_lines-0-quantity
     value: '90'
   - kind: fill
@@ -486,8 +504,6 @@ scenes:
     note: the order now reads received
     seconds: 1.5
     target: text:Ordered · received · invoiced
-  - kind: scroll
-    value: bottom
   - kind: hover
     note: GRN-KANO-0431, 90 jerry cans accepted into the Kano store
     seconds: 2.5
@@ -499,39 +515,6 @@ scenes:
   show: Ngozi records the goods received note Sahel CHI sent from the Kano store (90 jerry cans of Aquaguard,
     batch and expiry) as a partner's report, and the order shows them received.
   url: /supply/orders/${stopgap_contract_id}/receipts/new/?program_id=10603
-- id: clearwater-has-already-been-told
-  actions:
-  - kind: wait_for
-    target: Sent log
-  - kind: click
-    target: role:button:Check now
-    must_succeed: true
-    timeout_ms: 60000
-    say: now
-    note: the same pass the five-minute run makes
-  - kind: wait_for
-    target: css:section:has(h2:has-text('Sent log')) tbody tr:has-text('Below its own minimum')
-    must_succeed: true
-    seconds: 60
-  - kind: hover
-    target: css:section:has(h2:has-text('Sent log')) tbody tr:has-text('Below its own minimum')
-    seconds: 2.5
-    say: minimum
-    note: the store below its minimum, found by her alert
-  - kind: hover
-    target: css:section:has(h2:has-text('Sent log')) tbody tr:has-text('Shipment past its expected date')
-    seconds: 2.5
-    say: overdue
-    note: and their shipment overdue, sent to the same desk
-  concept_claim: Check now runs the programme's alerts on demand, and the sent log lists the below-minimum
-    and shipment-overdue notices the subscription found, each with its delivery status and the address
-    it went to.
-  design_intent: The payoff of the alert is that the donor hears it from the record, and the team can
-    see that it was sent rather than wonder.
-  show: 'Ngozi presses Check now on the alerts page and reads the sent log: the store below its minimum
-    and ClearWater''s overdue shipment, each found by the alert she created and sent to ClearWater''s
-    supply desk.'
-  url: /supply/alerts/?program_id=10603
 - id: the-stop-gap-bridges-but-does-not-replace
   actions:
   - kind: wait_for
