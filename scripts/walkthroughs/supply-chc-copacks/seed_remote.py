@@ -424,6 +424,40 @@ llo_store = op(
 )
 
 
+# The other partner stores the warehouse releases to. Sahel is one LLO among
+# several, so the stock page, the alert and the resupply figure have to pick
+# the one store that is short out of a network that is otherwise fine --
+# which is the job they exist for. A two-point network (the render through
+# iteration 4) made a well-kept spreadsheet look as good. Each is rated on
+# its own dispensing and sits inside its band: (slug, name, area, co-packs a week).
+PARTNER_STORES = [
+    ("dala-store", "Dala community store", "Dala", 500),
+    ("gezawa-store", "Gezawa community store", "Gezawa", 600),
+    ("kura-store", "Kura community store", "Kura", 400),
+    ("bichi-store", "Bichi community store", "Bichi", 800),
+    ("rano-store", "Rano community store", "Rano", 300),
+]
+partner_stores = [
+    (
+        op(
+            "supply_point_upsert",
+            data={
+                "slug": slug,
+                "name": name,
+                "kind": "facility",
+                "parent_supply_point_id": warehouse["id"],
+                "admin_area": area,
+                "min_months_of_stock": "3",
+                "max_months_of_stock": "6",
+                "source": "we_recorded",
+            },
+        ),
+        weekly,
+    )
+    for slug, name, area, weekly in PARTNER_STORES
+]
+
+
 def contract(award, item, commodity, qty, unit, price, reference, status, signed_on, lead_days=45):
     data = {
         "round_id": round_id,
@@ -466,7 +500,7 @@ prior = op(
         "buyer_of_record": "programme_org",
         "buyer_org_id": programme["id"],
         "reference": "CHC-2025-03",
-        "quantity": "25000",
+        "quantity": "212500",
         "quantity_unit": "co-pack",
         "unit_price": "0.62",
         "unit_price_unit": "per_base_unit",
@@ -497,7 +531,7 @@ op(
                 "item_id": copack_a["id"],
                 "batch": "KPW-2504",
                 "expiry": "2028-03-31",
-                "quantity_accepted": "500",
+                "quantity_accepted": "4250",
                 "quantity_unit": "carton",
             }
         ],
@@ -509,9 +543,9 @@ prior_invoice = op(
         "contract_id": prior["id"],
         "reference": "HHS-INV-2025-031",
         "issued_on": ago(124),
-        "amount": "15500.00",
+        "amount": "131750.00",
         "currency": "USD",
-        "quantity_billed": "25000",
+        "quantity_billed": "212500",
         "quantity_unit": "co-pack",
         "source": "supplier_reported",
     },
@@ -521,7 +555,7 @@ prior_payment = op(
     data={
         "invoice_id": prior_invoice["id"],
         "paid_on": ago(117),
-        "amount": "15500.00",
+        "amount": "131750.00",
         "currency": "USD",
         "method": "bank transfer",
         "reference": "PAY-2025-031",
@@ -568,6 +602,46 @@ for days_ago in range(89, 0, -7):
             "source": "connect_visit",
         },
     )
+
+# The other stores collect twice in the same 90 days and dispense every week,
+# ending about four and a half months into a three-to-six-month band. What
+# they collect is 2.5 x thirteen weeks of dispensing, in cartons of 50.
+for store, weekly in partner_stores:
+    collected = weekly * 13 * 5 // 2 // 50
+    first = collected * 3 // 5
+    for occurred_on, cartons, n in ((ago(90), first, 1), (ago(42), collected - first, 2)):
+        op(
+            "movement_record",
+            data={
+                "kind": "transfer",
+                "occurred_on": occurred_on,
+                "from_supply_point_id": warehouse["id"],
+                "to_supply_point_id": store["id"],
+                "item_id": copack_a["id"],
+                "commodity_slug": "ors-zinc-copack",
+                "batch": "KPW-2504",
+                "quantity": str(cartons),
+                "quantity_unit": "carton",
+                "reference": f"REL-HHS-{store['id'] % 100:02d}{n}",
+                "source": "supplier_reported",
+                "recorded_by_org_id": harmattan["id"],
+            },
+        )
+    for days_ago in range(89, 0, -7):
+        op(
+            "movement_record",
+            data={
+                "kind": "consumption",
+                "occurred_on": ago(days_ago),
+                "from_supply_point_id": store["id"],
+                "item_id": copack_a["id"],
+                "commodity_slug": "ors-zinc-copack",
+                "batch": "KPW-2504",
+                "quantity": str(weekly),
+                "quantity_unit": "co-pack",
+                "source": "connect_visit",
+            },
+        )
 
 # --- this year's orders -------------------------------------------------------
 # The chain the narrative performs took about a week in the world, and the

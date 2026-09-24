@@ -260,7 +260,37 @@ def table_columns(comparison) -> list:
         for row in rows
     ):
         columns = [column for column in columns if column.get("key") != as_quoted]
-    return columns
+    return [column for column in columns if column.get("key") not in folded_columns(comparison, columns)]
+
+
+def folded_columns(comparison, columns=None) -> dict:
+    """{key: label} of the per-course figures that repeat the first column in every ranked row.
+
+    A co-pack IS one course, so "USD per course" and "USD per child treated"
+    printed the per-co-pack price twice more and pushed the table past a
+    1280px screen, cutting a header mid-word (the CHC render). They are
+    dropped only when they say nothing new, and the page says they were.
+    """
+    from connect_labs.supply_chain.procurement.services.comparison import COURSE_FIGURES
+
+    columns = list(columns if columns is not None else comparison.get("columns") or [])
+    rows = comparison.get("comparable") or []
+    if not columns or not rows:
+        return {}
+    first = columns[0].get("key")
+
+    def amount(row, key):
+        return ((row.get("figures") or {}).get(key) or {}).get("amount")
+
+    return {
+        column["key"]: column.get("label", column["key"])
+        for column in columns
+        if column.get("key") in COURSE_FIGURES
+        and column.get("key") != first
+        and all(
+            amount(row, column["key"]) is not None and amount(row, column["key"]) == amount(row, first) for row in rows
+        )
+    }
 
 
 def _commodity_names(commodities) -> dict:
@@ -333,6 +363,9 @@ class ComparisonView(_Base):
                 context["set_aside"].append({"quote": quote, "item": items.get(item_id)})
         context["comparison"] = comparison
         context["table_columns"] = table_columns(comparison) if comparison else []
+        if comparison and context["table_columns"]:
+            context["folded_columns"] = list(folded_columns(comparison).values())
+            context["first_column_label"] = context["table_columns"][0].get("label")
         # ranked_by is a bare figure key (e.g. "landed_total_for_round_quantity");
         # its human label already lives on the matching column (pricing.py's
         # FIGURE_LABELS, formatted with this commodity's own unit nouns), so look

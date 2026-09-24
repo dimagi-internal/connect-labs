@@ -4,7 +4,14 @@ from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 from django import template
 from django.urls import reverse
 
-from connect_labs.supply_chain.values import _as_decimal, is_counted_unit, money_digits, quantity_digits, unit_noun
+from connect_labs.supply_chain.values import (
+    _as_decimal,
+    day_text,
+    is_counted_unit,
+    money_digits,
+    quantity_digits,
+    unit_noun,
+)
 
 register = template.Library()
 
@@ -60,9 +67,9 @@ AUDIENCE_LABELS = {
 }
 
 CATEGORY_LABELS = {
-    "missing": "a fact nobody supplied",
+    "missing": "something nobody has told us yet",
     "conflict": "two records disagree",
-    "threshold": "past a bound you set",
+    "threshold": "a figure past a limit you set",
 }
 
 
@@ -118,6 +125,26 @@ def money(value):
     different per-unit prices never read the same.
     """
     return money_digits(value)
+
+
+@register.filter
+def day(value):
+    """A date by the one date rule (values.day_text): "2026-09-17" -> "17 Sep 2026".
+
+    Operations hand screens ISO strings, which printed as they came -- one
+    order page read "decided 2026-09-17" above "received 23 Sep 2026". Takes a
+    date, a datetime or an ISO string; anything else passes through.
+    """
+    if value in (None, ""):
+        return value
+    if isinstance(value, str):
+        from datetime import date
+
+        try:
+            value = date.fromisoformat(value[:10])
+        except ValueError:
+            return value
+    return day_text(value) or value
 
 
 @register.filter

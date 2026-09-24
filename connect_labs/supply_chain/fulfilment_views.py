@@ -23,6 +23,7 @@ from connect_labs.supply_chain.fulfilment_forms import (
     PaymentForm,
 )
 from connect_labs.supply_chain.models import Contract, Invoice
+from connect_labs.supply_chain.values import money_digits
 
 
 def _contract(request, contract_id):
@@ -276,6 +277,22 @@ class PaymentRecordView(OperationFormView):
 
     def fixed(self, **kwargs):
         return {"data": {"invoice_id": int(kwargs["invoice_id"])}}
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Name the invoice being paid. "Record a payment" over an amount and a
+        # date never said which bill it settles, or whose (the CHC render).
+        invoice = self.invoice()
+        name = invoice.reference or f"invoice {invoice.pk}"
+        context["title"] = f"Pay {name}"
+        billed = (
+            f"{invoice.currency} {money_digits(invoice.amount)} billed" if invoice.amount is not None else "Billed"
+        )
+        context["intro"] = (
+            f"{billed} by {invoice.contract.supplier.name} for order {invoice.contract}. "
+            "The invoice's status follows from what has been paid."
+        )
+        return context
 
     def breadcrumb(self, **kwargs):
         invoice = self.invoice()

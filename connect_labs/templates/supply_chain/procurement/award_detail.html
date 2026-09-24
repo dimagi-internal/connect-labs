@@ -27,7 +27,7 @@ the award, so the page says so where the order button would otherwise be.
     <span class="text-sm font-normal text-gray-600">— {{ awarded_item|default:award.commodity_slug|words }}</span>
   </h2>
   <p class="text-sm text-gray-600">
-    Decided {{ award.decided_on|default:"undated" }}{% if award.decided_by %} by {{ award.decided_by }}{% endif %}
+    Decided {{ award.decided_on|day|default:"undated" }}{% if award.decided_by %} by {{ award.decided_by }}{% endif %}
     {% if award.provisional %}<span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">provisional ranking</span>{% endif %}
     · <a class="text-brand-indigo hover:underline"
          href="{% url 'supply_chain:procurement_comparison' award.round_id %}?commodity={{ award.commodity_slug }}">the comparison it was chosen from</a>
@@ -79,14 +79,14 @@ the award, so the page says so where the order button would otherwise be.
                 {% endfor %}
               </td>
               <td class="px-4 py-2 text-gray-700">{{ approval.role|words|capfirst }}</td>
-              <td class="px-4 py-2 text-gray-600 tabular-nums whitespace-nowrap">{{ approval.requested_on }}</td>
+              <td class="px-4 py-2 text-gray-600 tabular-nums whitespace-nowrap">{{ approval.requested_on|day }}</td>
               <td class="px-4 py-2">
                 {% if approval.status == "approved" %}
                   <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-success text-message-success-text">approved</span>
-                  <span class="text-xs text-gray-500 whitespace-nowrap">{{ approval.decided_on }}</span>
+                  <span class="text-xs text-gray-500 whitespace-nowrap">{{ approval.decided_on|day }}</span>
                 {% elif approval.status == "declined" %}
                   <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-800">declined</span>
-                  <span class="text-xs text-gray-500 whitespace-nowrap">{{ approval.decided_on }}</span>
+                  <span class="text-xs text-gray-500 whitespace-nowrap">{{ approval.decided_on|day }}</span>
                 {% else %}
                   <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-warning text-message-warning-text">requested</span>
                 {% endif %}
@@ -137,7 +137,7 @@ the award, so the page says so where the order button would otherwise be.
       This award cannot be ordered yet. Place order is waiting on
       {% for approval in blocking %}
         the {{ approval.role|words }} approval from <b>{{ approval.approver.name }}</b>,
-        {% if approval.status == "declined" %}declined on {{ approval.decided_on }} — ask again if they relent{% else %}asked {{ approval.requested_on }} and not yet answered{% endif %}{% if not forloop.last %}; and {% endif %}{% endfor %}.
+        {% if approval.status == "declined" %}declined on {{ approval.decided_on|day }} — ask again if they relent{% else %}asked {{ approval.requested_on|day }} and not yet answered{% endif %}{% if not forloop.last %}; and {% endif %}{% endfor %}.
     </div>
   {% endif %}
   {% if contracts %}
