@@ -1,8 +1,8 @@
 {
   "build_order": [],
-  "fetched_at": "2026-09-23T23:59:06.765210+00:00",
+  "fetched_at": "2026-09-24T00:28:44.744483+00:00",
   "name": "supply-chlorine-stopgap",
-  "narrative": "Ngozi runs supply for the Safe Water Programme, and she starts at the checks, where ClearWater Action's donated chlorine is ninety days past the date it was promised and the Sahel CHI store in Kano that refills the dispensers sits under its two-month floor. She opens the donation and reads it as ClearWater gave it: in kind, nothing to pay, 400 jerry cans still to arrive. Instead of chasing ClearWater again, she points an alert at their supply desk's email, so the store falling below its minimum or their shipment passing its date reaches them straight from the record. For a stop-gap she has asked Harmattan Health Supplies for nationally registered chlorine, and she checks their quote: Aquaguard at 1.25%, 90 jerry cans within a week, the product's registration certificate filed beside the quotation. She awards the stop-gap to Harmattan and writes down why. She records the regulator's approval on the award, citing that registration certificate. She asks Northstar Fund, which pays for the programme, to approve the spend. When she tries to place the order before Northstar has answered, the order screen refuses it and names Northstar's pending approval. Northstar says yes, Ngozi records their answer, and the same order goes through. When the jerry cans reach Kano she records Sahel CHI's goods received note, and the 90 cans enter the store's ledger. The store's cover rises but stays under its floor: the stop-gap bridges the gap, and ClearWater's donation is still what Kano is waiting on. On the alerts page Ngozi sees that ClearWater's supply desk has already been emailed both facts, the store below its minimum and their shipment overdue, and decides the next chase can wait for their reply.",
+  "narrative": "Ngozi starts at the checks, where ClearWater Action's donated chlorine is ninety days past the date it was promised and the Sahel CHI store in Kano that refills the dispensers sits under its two-month floor. She opens the donation and reads it as ClearWater gave it: in kind, nothing to pay, 400 jerry cans still to arrive. Instead of chasing ClearWater again, she points an alert at their supply desk's email, so the store falling below its minimum or their shipment passing its date reaches them straight from the record. For a stop-gap she has asked Harmattan Health Supplies for nationally registered chlorine, and she checks their quote: Aquaguard at 1.25%, 90 jerry cans within a week, the product's registration certificate filed beside the quotation. She awards the stop-gap to Harmattan and writes down why. She records the regulator's approval, which rests on that registration certificate, and asks Northstar Fund, which pays for the programme, to approve the spend; until Northstar answers, the award cannot be ordered. When she tries to place the order before Northstar has answered, the order screen refuses it and names Northstar's pending approval. Northstar says yes, Ngozi records their answer and places the order again, and this time it goes through, with a price the donation never had. When the jerry cans reach Kano she records Sahel CHI's goods received note, and the 90 cans enter the store's ledger. Ngozi checks the alerts and sees that ClearWater's supply desk has already been emailed both facts, the store below its minimum and their shipment overdue. Last she reads the Kano store: its cover rises to just under two months, still below its floor, so the stop-gap bridges the gap and ClearWater's 400 jerry cans are what will close it.",
   "personas": {
     "ngozi": {
       "color": "#2563EB",
@@ -123,16 +123,7 @@
           "description": "approval_decide records approved or declined with a date, once per row.",
           "id": "approval-decide",
           "verify": "Playwright: 'Record their answer' then Approved; the award page shows 'approved' for the regulator"
-        }
-      ],
-      "id": "the-registration-is-the-regulators-answer",
-      "narrative": "She records the regulator's approval on the award, citing that registration certificate.",
-      "persona": "ngozi",
-      "provenance": "S4",
-      "title": "The registration certificate is the regulator's answer"
-    },
-    {
-      "features": [
+        },
         {
           "description": "award_detail hides \"Place an order\" and names each pending or declined approval while blocking_approvals is non-empty.",
           "id": "blocking-banner",
@@ -144,11 +135,11 @@
           "verify": "pytest connect_labs/supply_chain/tests -k award_awaiting_approval asserts the approver name in the facts"
         }
       ],
-      "id": "the-funder-has-to-agree",
-      "narrative": "She asks Northstar Fund, which pays for the programme, to approve the spend.",
+      "id": "two-answers-stand-between-the-award-and-an-order",
+      "narrative": "She records the regulator's approval, which rests on that registration certificate, and asks Northstar Fund, which pays for the programme, to approve the spend; until Northstar answers, the award cannot be ordered.",
       "persona": "ngozi",
       "provenance": "S4",
-      "title": "Northstar Fund has to agree before money moves"
+      "title": "Two answers stand between the award and an order"
     },
     {
       "features": [
@@ -183,10 +174,10 @@
         }
       ],
       "id": "northstar-says-yes-and-the-order-goes-through",
-      "narrative": "Northstar says yes, Ngozi records their answer, and the same order goes through.",
+      "narrative": "Northstar says yes, Ngozi records their answer and places the order again, and this time it goes through, with a price the donation never had.",
       "persona": "ngozi",
       "provenance": "S4",
-      "title": "Northstar says yes and the same order goes through"
+      "title": "Northstar says yes and the order goes through"
     },
     {
       "features": [
@@ -210,25 +201,6 @@
     {
       "features": [
         {
-          "description": "The stock page shows each supply point's ledger balance, average monthly consumption and months of stock against its own min and max.",
-          "id": "months-of-stock-against-band",
-          "verify": "Playwright: /supply/stock/ shows the Kano store with 'min 2.00 / max 4.00' and 'BELOW MIN'"
-        },
-        {
-          "description": "Average monthly consumption counts only consumption inside the stated window ending today.",
-          "id": "amc-window",
-          "verify": "pytest connect_labs/supply_chain/tests -k average_monthly_consumption asserts consumption older than the window is not counted"
-        }
-      ],
-      "id": "the-stop-gap-bridges-but-does-not-replace",
-      "narrative": "The store's cover rises but stays under its floor: the stop-gap bridges the gap, and ClearWater's donation is still what Kano is waiting on.",
-      "persona": "ngozi",
-      "provenance": "S5",
-      "title": "The stop-gap bridges the gap but does not replace the donation"
-    },
-    {
-      "features": [
-        {
           "description": "The alerts page lists each notice with the check kind, the record it is about, the alert that found it and its delivery, including the address it was sent to.",
           "id": "alert-sent-log",
           "verify": "Playwright: /supply/alerts/ sent log shows 'stock_below_minimum' and 'shipment_overdue' rows for the ClearWater alert"
@@ -240,10 +212,29 @@
         }
       ],
       "id": "clearwater-has-already-been-told",
-      "narrative": "On the alerts page Ngozi sees that ClearWater's supply desk has already been emailed both facts, the store below its minimum and their shipment overdue, and decides the next chase can wait for their reply.",
+      "narrative": "Ngozi checks the alerts and sees that ClearWater's supply desk has already been emailed both facts, the store below its minimum and their shipment overdue.",
       "persona": "ngozi",
       "provenance": "S2",
       "title": "ClearWater has already been told"
+    },
+    {
+      "features": [
+        {
+          "description": "The stock page shows each supply point's ledger balance, average monthly consumption and months of stock against its own min and max.",
+          "id": "months-of-stock-against-band",
+          "verify": "Playwright: /supply/stock/ shows the Kano store with 'min 2.00 / max 4.00' and 'BELOW MIN'"
+        },
+        {
+          "description": "Average monthly consumption counts only consumption inside the stated window ending today.",
+          "id": "amc-window",
+          "verify": "pytest connect_labs/supply_chain/tests -k average_monthly_consumption asserts consumption older than the window is not counted"
+        }
+      ],
+      "id": "the-stop-gap-bridges-but-does-not-replace",
+      "narrative": "Last she reads the Kano store: its cover rises to just under two months, still below its floor, so the stop-gap bridges the gap and ClearWater's 400 jerry cans are what will close it.",
+      "persona": "ngozi",
+      "provenance": "S5",
+      "title": "Kano is covered for now, and ClearWater's cans close the gap"
     }
   ],
   "slug": "supply-chlorine-stopgap",
