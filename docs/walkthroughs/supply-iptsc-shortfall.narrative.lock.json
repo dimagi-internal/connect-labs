@@ -1,25 +1,38 @@
 {
-  "build_order": [],
-  "fetched_at": "2026-09-23T23:47:11.484650+00:00",
+  "build_order": [
+    "the-order-that-ran-short",
+    "one-packet-is-one-course",
+    "the-distributor-says-what-it-sent",
+    "the-partner-receives-450",
+    "short-and-late",
+    "the-partner-bought-the-rest",
+    "the-250-arrive-and-cost-says-why",
+    "covered-not-late",
+    "seven-hundred-on-the-shelf"
+  ],
+  "fetched_at": "2026-09-24T11:22:35.706937+00:00",
   "name": "supply-iptsc-shortfall",
-  "narrative": "Ngozi runs supply for the programme's school malaria prevention round, and she ordered 700 IPTSc packets from Harmattan Health Supplies in July. She opens the packet in the catalogue and confirms what the programme is counting: one packet holds a full three-day course, so 700 packets are 700 children treated. Musa at Harmattan opens the update link the programme gave him, with no labs login, and records the dispatch of the 450 packets he could find. Hauwa at the Sahel Community Health Initiative opens her own link and records the 450 packets that reached the SCHI district store. Ngozi opens the order and reads it: 700 ordered, 450 received, 250 still outstanding, and the order past its promised lead time. Hauwa's team has already bought the missing 250 from Tamarind Pharmacy Wholesale, a vendor they know, out of SCHI's setup fee, so Ngozi records that purchase as its own order, with SCHI as the buyer, paid as bundled, and marked as buying the shortfall on the Harmattan order. She records the 250 arriving at the store, and the new order's cost reads as bundled in the setup fee rather than as a missing price. Back on the Harmattan order, Ngozi sees the shortfall covered by name and the lateness gone. On the stock page she checks the SCHI district store and reads 700 packets, enough for every child on the list.",
+  "narrative": "Ngozi runs supply for the programme's school malaria prevention round, and she ordered 700 IPTSc packets from Harmattan Health Supplies. She opens the packet in the catalogue and confirms what the programme is counting: one packet holds a full three-day course, so 700 packets are 700 three-day courses. Musa at Harmattan opens the update link the programme gave him, with no labs login, and records the dispatch of the 450 packets he could find. Hauwa at the Sahel Community Health Initiative opens her own link and records the 450 packets that reached the SCHI district store. Ngozi opens the order and reads it: 700 ordered, 450 received, 250 still outstanding, and the order past its promised lead time. Hauwa's team has already bought the missing 250 from Tamarind Pharmacy Wholesale, a vendor they know, out of SCHI's setup fee, so Ngozi records that purchase as its own order, with SCHI as the buyer, paid as bundled, and marked as buying the shortfall on the Harmattan order. She records the 250 arriving at the store, and the new order's cost reads as bundled in the setup fee rather than as a missing price. Back on the Harmattan order, Ngozi sees the shortfall covered by name and the lateness gone. On the stock page she checks the SCHI district store and reads 700 packets: every course the round ordered.",
   "personas": {
     "hauwa": {
       "color": "#0D7A5F",
       "intro": "Hauwa runs the IPTSc round in the schools and receives the packets into SCHI's district store; when the distributor ran short her team bought the rest locally.",
       "name": "Hauwa Bello",
+      "org": "",
       "role": "Programme manager, Sahel Community Health Initiative (local partner)"
     },
     "musa": {
       "color": "#B45309",
       "intro": "Musa sources and ships the programme's orders, and is usually asked by message what he sent and when.",
       "name": "Musa Garba",
+      "org": "",
       "role": "Logistics officer, Harmattan Health Supplies (distributor)"
     },
     "ngozi": {
       "color": "#4F46E5",
       "intro": "Ngozi places the programme's orders and has to know, without chasing anyone on WhatsApp, whether the partner holds enough packets for every child on the list.",
       "name": "Ngozi Adeyemi",
+      "org": "",
       "role": "Programme supply lead"
     }
   },
@@ -33,7 +46,7 @@
         }
       ],
       "id": "the-order-that-ran-short",
-      "narrative": "Ngozi ordered 700 IPTSc packets from Harmattan Health Supplies in July for the school round. This is the one record she will follow, from the distributor's dispatch to the partner's shelf, instead of a thread of messages.",
+      "narrative": "Ngozi ordered 700 IPTSc packets from Harmattan Health Supplies for the school round. This is the one record she will follow, from the distributor's dispatch to the partner's shelf, instead of a thread of messages.",
       "persona": "ngozi",
       "provenance": "S0",
       "title": "One order for 700 packets, and a school round waiting on it"
@@ -47,7 +60,7 @@
         }
       ],
       "id": "one-packet-is-one-course",
-      "narrative": "Ngozi opens the packet in the catalogue. It lists what is inside — nine tablets and a dosing card — and says one packet is one full course, so she can read 700 packets as 700 children.",
+      "narrative": "Ngozi opens the packet in the catalogue. It lists what is inside — nine tablets and a dosing card — and says one packet is one full course, so she can count 700 packets as 700 three-day courses.",
       "persona": "ngozi",
       "provenance": "S1",
       "title": "Ngozi checks that a packet is a whole course"
@@ -150,12 +163,12 @@
         }
       ],
       "id": "seven-hundred-on-the-shelf",
-      "narrative": "On the stock page Ngozi checks the SCHI district store and reads 700 packets — the distributor's 450 and the local 250 — enough for every child on the list.",
+      "narrative": "On the stock page Ngozi checks the SCHI district store and reads 700 packets on its ledger: every course the round ordered is on the shelf.",
       "persona": "ngozi",
       "provenance": "S7",
       "title": "Seven hundred packets at the SCHI store"
     }
   ],
   "slug": "supply-iptsc-shortfall",
-  "version": 0
+  "version": 2
 }
