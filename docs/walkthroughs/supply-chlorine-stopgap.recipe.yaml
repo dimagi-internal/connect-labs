@@ -15,6 +15,9 @@ why_brief: supply-chlorine-stopgap.why_brief.yaml
 scenes:
 - id: the-donated-chlorine-is-ninety-days-late
   actions:
+  - kind: hold
+    seconds: 1.0
+    note: let the checks load before the first frame, so the opening is never a half-drawn page
   - kind: wait_for
     target: Delivery past the promised lead time
   - kind: click
