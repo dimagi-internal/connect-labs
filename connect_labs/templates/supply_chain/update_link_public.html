@@ -98,7 +98,9 @@ own prefix so seven of them cannot collide.
   {% endif %}
 </div>
 
+{% if forms or unavailable %}
 <h2 class="text-sm font-semibold text-gray-900 mb-2">Record an update</h2>
+{% endif %}
 
 {% for form in forms %}
   <details class="bg-white border rounded-lg overflow-hidden mb-3 {% if form.non_field_errors %}border-message-error-border/50{% else %}border-brand-border-light{% endif %}"
@@ -131,6 +133,9 @@ own prefix so seven of them cannot collide.
   </details>
 {% endfor %}
 
+{% if all_answered %}
+  <p class="text-sm text-gray-600 mt-2" data-all-answered>Everything this link asked you to confirm has been answered. Nothing more is needed.</p>
+{% endif %}
 {% if unavailable %}
   <p class="text-xs text-gray-500 mt-2">
     Not available on this link right now:

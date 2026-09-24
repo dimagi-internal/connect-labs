@@ -345,7 +345,10 @@ class ComparisonView(_Base):
         # Who decides, by name: the award form's "decided by" starts as the
         # signed-in person's display name, never their login or email -- on a
         # shared or service account that read as the account, not the person.
-        context["decider"] = _display_name(self.request.user)
+        # Prefilled only with a person's name. A login handle ("ace") is the
+        # account recording the award, not the person who decided it, and
+        # prefilled it reads as though somebody called that made the choice.
+        context["decider"] = getattr(self.request.user, "name", "") or self.request.user.get_full_name()
         # Offers set aside on this line. A voided quote leaves the ranking, and
         # without this it left the page too -- so the one screen that applies
         # "kits rank only against the same contents" never showed an offer the
