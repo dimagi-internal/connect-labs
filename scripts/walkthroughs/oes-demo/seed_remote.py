@@ -15,6 +15,11 @@ appear here. What IS here is the shape of the chain, which is public already
 See docs/superpowers/specs/2026-09-24-oes-demo-environment-design.md.
 """
 
+from datetime import timedelta
+from decimal import Decimal
+
+from django.utils import timezone
+
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
@@ -69,3 +74,403 @@ def seed_reference(access, data):
         commodities[row["slug"]] = op(access, "commodity_upsert", data=row)
 
     return {"orgs": orgs, "commodities": commodities}
+
+
+# ======================================================================
+# The chain -- and the three kinds of truth it carries
+# ======================================================================
+#
+# The chain is dated relative to the day it is seeded, so the demo reads as
+# something that happened recently rather than in whichever month this file
+# was written. The order of the offsets is the story: the award is decided,
+# the order placed, billed and paid; the goods land; the distributor reads
+# its own sheet to us over WhatsApp -- and everything the distributor enters
+# ITSELF, once it has a link, comes after all of them. That ordering is what
+# makes section 5a legible on one screen: the second-hand rows sit above the
+# day the partner was onboarded and its own rows below.
+
+AWARDED_DAYS_AGO = 32
+ORDERED_DAYS_AGO = 28
+INVOICED_DAYS_AGO = 24
+PAID_DAYS_AGO = 21
+RECEIVED_DAYS_AGO = 18
+COUNTED_DAYS_AGO = 14
+# The day the distributor was given its own login-free link. Task 4's rows
+# are recorded through it and are dated after this.
+ONBOARDED_DAYS_AGO = 10
+
+
+def day(days_ago):
+    """A day in the chain's timeline, as an ISO date string."""
+    return (timezone.localdate() - timedelta(days=days_ago)).isoformat()
+
+
+def without_commentary(value):
+    """The document without the notes its authors left for each other.
+
+    Keys beginning with an underscore (`_why`, `_indicative`, `_note`) are
+    written for a human reading the Drive document and are fields of no
+    operation. They are stripped once, here, rather than at each call site:
+    one forgotten strip is a row of commentary sitting in a JSONField that
+    reads back as data, several hundred writes into a seed.
+    """
+    if isinstance(value, dict):
+        return {key: without_commentary(item) for key, item in value.items() if not key.startswith("_")}
+    if isinstance(value, list):
+        return [without_commentary(item) for item in value]
+    return value
+
+
+def supplier_for_org(access, org, kind="distributor"):
+    """The distributor as a supplier, and as the organisation it already is.
+
+    The document models the distributor as an ORG, because that is what it is
+    at the receiving end of the chain: it runs a warehouse and releases stock
+    to the partners who collect. `quote_record` needs a SUPPLIER, because
+    that is what the same body is at the selling end. One organisation, two
+    roles -- which is the whole reason the partner seat is worth showing.
+
+    The supplier row therefore carries `org_id`. Without it the two roles are
+    two bodies: `update_links/service.py` decides whose word a submission is
+    by asking whether the link's organisation supplies the order or manages
+    the supply point, and a supplier with no `org` answers neither.
+
+    Matched by name before creating, so re-running the seed does not leave
+    two suppliers with the same name quoting against each other.
+    """
+    for existing in op(access, "supplier_list", search=org["name"]):
+        if existing["name"] == org["name"]:
+            return existing
+    return op(
+        access,
+        "supplier_create",
+        data={"name": org["name"], "type": kind, "status": "awarded", "org_id": org["id"]},
+    )
+
+
+def _order_value(quote, contract):
+    """What the order is worth, from the price that was actually quoted.
+
+    The Drive document carries no invoice value and says why: we do not hold
+    the real supplier prices, and "inventing them and calling them real would
+    be worse than saying so". So the figure the demo shows is ARITHMETIC over
+    the quoted price and the ordered quantity, not a number anyone made up --
+    which is the only kind of money this demo is entitled to display.
+
+    A basis we cannot multiply is refused rather than guessed: a wrong total
+    on a screen whose whole argument is "it will not compute a landed cost it
+    cannot defend" would undo the point of the demo.
+    """
+    amount = Decimal(str(quote["as_quoted_amount"]))
+    basis = quote.get("as_quoted_unit")
+    if basis == "per_lot_total":
+        return amount
+    if basis == "per_pack":
+        return amount * Decimal(str(contract["quantity"]))
+    raise ValueError(
+        f"cannot work out what this order is worth from a price quoted {basis!r}: "
+        "state the invoice amount in the seed document instead"
+    )
+
+
+def _unit(basis, context):
+    """A `pack` / `base` basis as the unit the ledger actually holds.
+
+    The document says "pack" rather than "carton" for the same reason the
+    partner's own form does (`update_links/service.py`): a unit typed by hand
+    splits one balance into two that never add up. The ladder is the trade
+    item's own, then the order's, then the commodity's.
+    """
+    item, commodity, contract = context["item"], context["commodity"], context["contract"]
+    if basis == "base":
+        unit = item.get("base_unit") or commodity.get("base_unit")
+    else:
+        unit = item.get("pack_unit") or contract.get("quantity_unit") or commodity.get("pack_unit")
+    if not unit:
+        raise ValueError(f"this product has no {'single' if basis == 'base' else 'pack'} unit on file")
+    return unit
+
+
+def _with_unit(data, context):
+    """`unit_basis` resolved into the `quantity_unit` the operation wants."""
+    if "unit_basis" in data:
+        data["quantity_unit"] = _unit(data.pop("unit_basis"), context)
+    return data
+
+
+def _wire_receipt(data, context):
+    """A goods received note. The quantities are the fact; the ids are ours.
+
+    The document states one accepted quantity, its basis and a batch, because
+    that is what somebody reads off a delivery note. `receipt_record` wants
+    them as a line against a contract, at a supply point, on a date -- none
+    of which the document can know, because it is written once and seeded
+    into whatever programme is standing.
+    """
+    line = {key: data.pop(key) for key in _RECEIPT_LINE_FIELDS if key in data}
+    line["item_id"] = context["item"]["id"]
+    # No fallback unit. A line that says neither `unit_basis` nor
+    # `quantity_unit` is a document that did not say what it counted, and
+    # `receipt_record`'s own schema refuses it by name -- which is a better
+    # error than a quantity silently filed against a guessed unit.
+    _with_unit(line, context)
+    return {
+        "contract_id": context["contract"]["id"],
+        "supply_point_id": context["warehouse"]["id"],
+        "received_on": day(RECEIVED_DAYS_AGO),
+        **data,
+        "lines": [line],
+    }
+
+
+_RECEIPT_LINE_FIELDS = (
+    "quantity_accepted",
+    "quantity_rejected",
+    "rejection_reason",
+    "batch",
+    "expiry",
+    "unit_basis",
+)
+
+
+def _wire_stock_count(data, context):
+    """What somebody says is on hand, at the store it is on hand in."""
+    return {
+        "supply_point_id": context["warehouse"]["id"],
+        "commodity_slug": context["commodity"]["slug"],
+        "item_id": context["item"]["id"],
+        "counted_on": day(COUNTED_DAYS_AGO),
+        **_with_unit(data, context),
+    }
+
+
+def _wire_payment(data, context):
+    """A settlement, against the bill it settles.
+
+    The document names the payment and not the invoice, because from the
+    programme's side the fact is "we paid this". The invoice exists so the
+    payment has something to be a settlement OF -- an amount paid against
+    nothing cannot be shown as outstanding or cleared.
+    """
+    return {
+        "invoice_id": context["invoice"]["id"],
+        "paid_on": day(PAID_DAYS_AGO),
+        "amount": context["invoice"]["amount"],
+        "currency": context["invoice"]["currency"],
+        **data,
+    }
+
+
+_WIRING = {
+    "receipt_record": _wire_receipt,
+    "stock_count_record": _wire_stock_count,
+    "payment_record": _wire_payment,
+}
+
+
+def wired(row, context, stamp):
+    """A document row's partial `data`, with the ids only this run knows.
+
+    `stamp` is the provenance the tier asserts -- who wrote the row down and
+    how they knew. It is applied as a DEFAULT so a row can say something
+    sharper about itself, and it is applied here rather than left to
+    `identity.stamp_provenance` because this seeder runs as SYSTEM with no
+    user and no request: there is nobody for the stamping layer to resolve,
+    so it deliberately leaves the payload alone. A row that arrived here with
+    no provenance would be refused by the schema, which is the right way
+    round.
+    """
+    operation = row["operation"]
+    wire = _WIRING.get(operation)
+    if wire is None:
+        raise ValueError(
+            f"the seed does not know how to attach {operation!r} to this chain; "
+            f"add it to _WIRING (known: {', '.join(sorted(_WIRING))})"
+        )
+    data = {**stamp, **row["data"]}
+    if row.get("source"):
+        data["source"] = row["source"]
+    return wire(data, context)
+
+
+def _supply_point(access, row, reference, stamp):
+    """One store, managed by the organisation that runs it.
+
+    The document names that organisation by slug, because it is written
+    before any of this exists; the domain holds `managed_by_org_id`.
+    """
+    row = dict(row)
+    org_slug = row.pop("managed_by_org_slug", None)
+    org_slug = row.pop("org_slug", None) or org_slug
+    data = {**stamp, **row}
+    if org_slug:
+        data["managed_by_org_id"] = reference["orgs"][org_slug]["id"]
+    return op(access, "supply_point_upsert", data=data)
+
+
+def seed_chain(access, chain, reference):
+    """One procurement, from the round to the stock sitting in the warehouse.
+
+    Shared by the programme's own CHC chain and by the supply-only
+    organisation's, because the document gives them the same shape: they
+    differ in what they carry, not in how they are built. The difference that
+    matters -- the supply-only chain has no opportunity binding and no
+    user-held points -- is data, so `summary._deliver()` stops at the last
+    store on its own rather than being made to.
+    """
+    chain = without_commentary(chain)
+    orgs = reference["orgs"]
+    programme_org = orgs[chain["programme_org_slug"]]
+    distributor = orgs[chain["distributor_slug"]]
+
+    # Tier 2 in the design's table: our own hand, first-hand. Everything the
+    # programme itself does carries this, and `witnessed` is true of it.
+    ours = {"source": "we_recorded", "recorded_by_org_id": programme_org["id"]}
+    # Tier 1: our hand, their word. The spreadsheet world, told honestly --
+    # `told_by_for` renders it "Dimagi, for EHA Clinics (they told us)".
+    their_word = {"source": "partner_reported", "recorded_by_org_id": programme_org["id"]}
+
+    supplier = supplier_for_org(access, distributor)
+
+    round_ = op(access, "round_create", data=chain["round"])
+    # A round that received quotes was open when it received them.
+    round_ = op(access, "round_open", round_id=round_["id"])
+
+    items, quotes = {}, []
+    for quoted in chain["quotes"]:
+        quoted = dict(quoted)
+        item = op(
+            access,
+            "item_upsert",
+            data={**quoted.pop("item"), "commodity_slug": quoted["commodity_slug"]},
+        )
+        items[item["sku"]] = item
+        quotes.append(
+            op(
+                access,
+                "quote_record",
+                data={
+                    **quoted,
+                    "round_id": round_["id"],
+                    "supplier_id": supplier["id"],
+                    "item_id": item["id"],
+                },
+            )
+        )
+
+    awarded_index = chain["awarded_quote_index"]
+    awarded_quote = chain["quotes"][awarded_index]
+    awarded_item = items[awarded_quote["item"]["sku"]]
+    award = op(
+        access,
+        "award_create",
+        round_id=round_["id"],
+        quote_id=quotes[awarded_index]["id"],
+        rationale=chain["award_rationale"],
+        decided_on=day(AWARDED_DAYS_AGO),
+        **({"decided_by": chain["award_decided_by"]} if chain.get("award_decided_by") else {}),
+    )
+
+    # The stores first: the order says where its goods are to be delivered,
+    # and a contract that cannot name the place is a contract nobody can
+    # receive against.
+    warehouse = _supply_point(access, chain["warehouse"], reference, ours)
+    partner_points = {row["org_slug"]: _supply_point(access, row, reference, ours) for row in chain["partner_points"]}
+
+    contract_row = dict(chain["contract"])
+    buyer_slug = contract_row.pop("buyer_org_slug")
+    contract = op(
+        access,
+        "contract_create",
+        data={
+            **ours,
+            **contract_row,
+            "round_id": round_["id"],
+            "award_id": award["id"],
+            "supplier_id": supplier["id"],
+            "item_id": awarded_item["id"],
+            "commodity_slug": awarded_quote["commodity_slug"],
+            "buyer_org_id": orgs[buyer_slug]["id"],
+            "delivery_supply_point_id": warehouse["id"],
+            # The price the award was made at. Not a new figure: the contract
+            # IS that award, and without it the comparison's per-course
+            # column has nothing to carry through to the order.
+            "unit_price": awarded_quote["as_quoted_amount"],
+            "unit_price_unit": awarded_quote["as_quoted_unit"],
+            "signed_on": day(ORDERED_DAYS_AGO),
+        },
+    )
+
+    invoice = op(
+        access,
+        "invoice_record",
+        data={
+            **ours,
+            "contract_id": contract["id"],
+            "issued_on": day(INVOICED_DAYS_AGO),
+            "amount": str(_order_value(awarded_quote, contract_row)),
+            "currency": contract_row["currency"],
+            "quantity_billed": contract_row["quantity"],
+            "quantity_unit": contract_row["quantity_unit"],
+        },
+    )
+
+    context = {
+        "contract": {**contract, "quantity_unit": contract_row["quantity_unit"]},
+        "commodity": reference["commodities"][awarded_quote["commodity_slug"]],
+        "item": awarded_item,
+        "warehouse": warehouse,
+        "partner_points": partner_points,
+        "invoice": invoice,
+    }
+
+    # Tier 1 -- the spreadsheet world. The distributor told us over WhatsApp
+    # that the goods had landed and read us a stock figure off its own sheet;
+    # we typed both in. Our hand, their word, and the screen says so.
+    reported_to_us = [
+        op(access, row["operation"], data=wired(row, context, their_word)) for row in chain["reported_to_us"]
+    ]
+
+    # Tier 2 -- what we did ourselves, and therefore witnessed.
+    we_did = [op(access, row["operation"], data=wired(row, context, ours)) for row in chain["we_did"]]
+
+    # Tier 3 -- what the partner enters through its own link -- is seeded by
+    # the partner-link step, because it has to go THROUGH the link: that is
+    # what makes `recorded_by_org` the partner's rather than ours, and a row
+    # written here claiming to be theirs would be exactly the self-assertion
+    # `identity.stamp_provenance` exists to refuse.
+    return {
+        "round": round_,
+        "supplier": supplier,
+        "items": items,
+        "quotes": quotes,
+        "award": award,
+        "contract": contract,
+        "invoice": invoice,
+        "warehouse": warehouse,
+        # Keyed by organisation slug: this is the reference-map resolution a
+        # row naming `to_org_slug` needs.
+        "partner_points": partner_points,
+        "reported_to_us": reported_to_us,
+        "we_did": we_did,
+    }
+
+
+def seed_chc_chain(access, data, reference):
+    """The CHC chain as it ran, carrying all three kinds of truth.
+
+    The programme buys from the distributor; the distributor pays the
+    manufacturers, holds the goods and releases them to the collecting
+    partners. The rows are deliberately split three ways:
+
+      - what we wrote down from an email or a WhatsApp message, which is the
+        partner's word with our hand on it (`partner_reported`, recorded by
+        us) -- this is the spreadsheet world, told honestly;
+      - what we did ourselves and therefore witnessed (`we_recorded`);
+      - what the partner entered through its own link, from the point at
+        which it was given one.
+
+    One order carries all three, so the screen can answer "what do we
+    actually know about this stock, and how" in one read.
+    """
+    return seed_chain(access, data["chc_chain"], reference)
