@@ -82,20 +82,73 @@ class Scope:
     # offering it "Record a dispatch" asked the partner to speak for the
     # distributor (the IPTSc render).
     supplied: object = None
+    # The orders it may record goods received against. Every covered order on
+    # a listed link (the issuer chose them); on a link that follows its
+    # organisation, only those it buys or receives at a store it runs -- a
+    # supplier does not record its own goods as received.
+    received: object = None
+
+    @property
+    def follows_org(self) -> bool:
+        return self.link.follows_org
+
+
+# Orders a link that follows its organisation does not reach: a draft has not
+# been sent to anybody, and a cancelled order has nothing left to record.
+_NOT_YET_OR_NO_LONGER = ("draft", "cancelled")
+
+
+def _org_contracts(program_id, org_id):
+    """Orders involving the organisation, resolved now: it supplies them, buys
+    them, or they are delivered to a store it runs. Nothing else -- not another
+    order of the same supplier's that names some other organisation."""
+    return (
+        Contract.objects.filter(program_id=program_id)
+        .filter(
+            Q(supplier__org_id=org_id) | Q(buyer_org_id=org_id) | Q(delivery_supply_point__managed_by_org_id=org_id)
+        )
+        .exclude(status__in=_NOT_YET_OR_NO_LONGER)
+    )
+
+
+def _org_points(program_id, org_id):
+    # The same stores an issuer could tick: active, and not a field worker's
+    # own holding.
+    return SupplyPoint.objects.filter(program_id=program_id, managed_by_org_id=org_id, status="active").exclude(
+        kind="user_held"
+    )
+
+
+def _receives(contract, org_id) -> bool:
+    return contract.buyer_org_id == org_id or (
+        contract.delivery_supply_point is not None and contract.delivery_supply_point.managed_by_org_id == org_id
+    )
 
 
 def scope_for(link) -> Scope:
     """The rows this link covers. Filtered by programme as well as by the link.
 
-    The link's own join rows are already programme-checked when it is issued;
+    A listed link's join rows are already programme-checked when it is issued;
     filtering again here costs nothing and means a row moved between
     programmes (which nothing does today) could not carry a link with it.
+
+    A link that follows its organisation has no join rows: its scope is worked
+    out here, from the programme's rows as they are NOW, at every request. An
+    order created after the link was issued is covered the moment it exists.
     """
     program_id = link.program_id
-    contracts = Contract.objects.filter(program_id=program_id, update_links=link).select_related(
-        "commodity", "item", "supplier"
-    )
-    points = SupplyPoint.objects.filter(program_id=program_id, update_links=link)
+    if link.follows_org:
+        contracts = _org_contracts(program_id, link.org_id)
+        points = _org_points(program_id, link.org_id)
+        approvals = AwardApproval.objects.filter(award__round__program_id=program_id, approver_org_id=link.org_id)
+    else:
+        contracts = Contract.objects.filter(program_id=program_id, update_links=link)
+        points = SupplyPoint.objects.filter(program_id=program_id, update_links=link)
+        approvals = AwardApproval.objects.filter(
+            award__round__program_id=program_id, update_links=link, approver_org_id=link.org_id
+        )
+    contracts = contracts.select_related("commodity", "item", "supplier")
+    approvals = approvals.select_related("award__supplier", "award__quote__item", "award__commodity", "approver_org")
 
     # Products the link can name: what its contracts are for, and what has
     # ever rested at its supply points. Not the programme's catalogue -- the
@@ -110,14 +163,18 @@ def scope_for(link) -> Scope:
     )
     items = Item.objects.filter(pk__in=item_ids).select_related("commodity")
     shipments = Shipment.objects.filter(contract__in=contracts).select_related("contract")
-    payments = Payment.objects.filter(invoice__contract__in=contracts).select_related("invoice__contract")
-    approvals = AwardApproval.objects.filter(
-        award__round__program_id=program_id, update_links=link, approver_org_id=link.org_id
-    ).select_related("award__supplier", "award__quote__item", "award__commodity", "approver_org")
-    supplied = contracts.filter(
-        pk__in=[c.pk for c in contracts.select_related("delivery_supply_point") if _supplies(c, link.org_id)]
-    )
-    return Scope(link, contracts, points, items, shipments, payments, approvals, supplied)
+    rows = list(contracts.select_related("delivery_supply_point"))
+    supplied = contracts.filter(pk__in=[c.pk for c in rows if _supplies(c, link.org_id)])
+    if link.follows_org:
+        received = contracts.filter(pk__in=[c.pk for c in rows if _receives(c, link.org_id)])
+        # A payment is confirmed by whoever it was paid to: the supplier. A
+        # buyer confirming a payment "received" would speak for the payee.
+        payments = Payment.objects.filter(invoice__contract__in=supplied)
+    else:
+        received = contracts
+        payments = Payment.objects.filter(invoice__contract__in=contracts)
+    payments = payments.select_related("invoice__contract")
+    return Scope(link, contracts, points, items, shipments, payments, approvals, supplied, received)
 
 
 def _supplies(contract, org_id) -> bool:
@@ -130,10 +187,7 @@ def _supplies(contract, org_id) -> bool:
     """
     if contract.supplier.org_id is not None:
         return contract.supplier.org_id == org_id
-    receives = contract.buyer_org_id == org_id or (
-        contract.delivery_supply_point is not None and contract.delivery_supply_point.managed_by_org_id == org_id
-    )
-    return not receives
+    return not _receives(contract, org_id)
 
 
 def _require(queryset, obj, what):
@@ -167,16 +221,23 @@ def _iso(value):
     return value.isoformat() if value else None
 
 
-def _provenance(link):
+def _provenance(scope, contract=None):
     """Who told us: the supplier, or the partner the link was issued to.
 
     A link issued to the organisation that runs one of its supply points, or
     that is the buyer on one of its orders, belongs to a partner, and what it
     records is the partner's word. Every other link is a supplier's.
+
+    A link that follows its organisation can cover both roles at once -- a
+    distributor that also runs a store -- so a dispatch on an order it
+    supplies is the supplier's word whatever else the link covers.
     """
+    link = scope.link
+    if contract is not None and scope.follows_org and scope.supplied.filter(pk=contract.pk).exists():
+        return {"source": SOURCE, "recorded_by_org_id": link.org_id}
     is_partner = (
-        link.supply_points.filter(managed_by_org_id=link.org_id).exists()
-        or link.contracts.filter(buyer_org_id=link.org_id).exists()
+        scope.supply_points.filter(managed_by_org_id=link.org_id).exists()
+        or scope.contracts.filter(buyer_org_id=link.org_id).exists()
     )
     return {"source": "partner_reported" if is_partner else SOURCE, "recorded_by_org_id": link.org_id}
 
@@ -237,7 +298,7 @@ def _record_shipment(scope, data):
     )
     return (
         "shipment_record",
-        {"data": {**shipment, "lines": [line], **_provenance(scope.link)}},
+        {"data": {**shipment, "lines": [line], **_provenance(scope, contract)}},
         Action.CREATE,
     )
 
@@ -259,7 +320,7 @@ def _update_shipment(scope, data):
 
 
 def _record_receipt(scope, data):
-    contract = _require(scope.contracts, data.get("contract"), "order")
+    contract = _require(scope.received, data.get("contract"), "order")
     point = _require(scope.supply_points, data.get("supply_point"), "supply point")
     line = _drop_empty(
         {
@@ -282,7 +343,7 @@ def _record_receipt(scope, data):
             "received_on": _iso(data.get("received_on") or timezone.localdate()),
         }
     )
-    return "receipt_record", {"data": {**receipt, "lines": [line], **_provenance(scope.link)}}, Action.CREATE
+    return "receipt_record", {"data": {**receipt, "lines": [line], **_provenance(scope)}}, Action.CREATE
 
 
 def _record_stock_count(scope, data):
@@ -303,7 +364,7 @@ def _record_stock_count(scope, data):
             "quantity_unit": _unit(data.get("unit_basis"), item),
         }
     )
-    return "stock_count_record", {"data": {**count, **_provenance(scope.link)}}, Action.CREATE
+    return "stock_count_record", {"data": {**count, **_provenance(scope)}}, Action.CREATE
 
 
 def _record_release(scope, data):
@@ -326,7 +387,7 @@ def _record_release(scope, data):
             "reference": data.get("reference"),
         }
     )
-    return "movement_record", {"data": {**movement, **_provenance(scope.link)}}, Action.CREATE
+    return "movement_record", {"data": {**movement, **_provenance(scope)}}, Action.CREATE
 
 
 def _record_answer(scope, data):

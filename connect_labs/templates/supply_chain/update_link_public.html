@@ -33,6 +33,12 @@ own prefix so seven of them cannot collide.
       Anything you record here is shared with the programme team and marked as reported by
       {{ org.name }}. The link works until {{ expires_on|date:"j F Y" }}.
     </p>
+    {% if link.follows_org %}
+      <p class="text-sm text-gray-700 mt-1" data-follows-org>
+        It covers everything involving {{ org.name }} in this programme — new orders appear here as soon as
+        they are created. {% if not contracts and not supply_points and not approvals %}Nothing involves {{ org.name }} yet.{% endif %}
+      </p>
+    {% endif %}
   </div>
   {% if approvals %}
   <div class="px-5 py-4 border-b border-brand-border-light">

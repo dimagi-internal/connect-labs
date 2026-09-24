@@ -406,7 +406,11 @@ def world(da):
         "alert_subscription_create",
         data={"check_kinds": ["stock_below_minimum", "shipment_overdue"], "recipient_email": "stores@example.org"},
     )
+    # A link that follows the programme's own organisation: its page and the
+    # links list render what it reaches today, statuses and units included.
+    org_link = op(da, "update_link_issue", data={"org_id": us["id"], "coverage": "organisation"})
     return {
+        "org_link": org_link,
         "round": round_,
         "quote": quote,
         "award": award,
@@ -493,6 +497,15 @@ def test_the_approvers_own_page_reads_as_words(client, world):
     assert response.status_code == 200
     assert "Record your answer" in response.content.decode()
     assert raw_codes_in(response.content.decode()) == []
+
+
+def test_an_organisation_links_own_page_reads_as_words(client, world):
+    url = reverse("supply_chain:update_link_public", args=[world["org_link"]["token"]])
+    response = client.get(url)
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "CL-1" in body, "the organisation's order is not listed"
+    assert raw_codes_in(body) == []
 
 
 def test_the_answered_award_reads_as_words(client_in_programme, world):
