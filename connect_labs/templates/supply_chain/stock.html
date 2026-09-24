@@ -132,7 +132,7 @@ one of them would destroy the only signal it had.
             {% for expected in point.expected_inbound %}
               {% comment %}The reason a store is short, so it reads at body size, not as a caption.{% endcomment %}
               <div class="text-sm text-gray-700 mt-1" data-expected>
-                expected: {{ expected.outstanding|figure_text }} from
+                expected: {{ expected.outstanding|figure_text }}{% if expected.item_name and not point.item_name %} of {{ expected.item_name }}{% endif %} from
                 <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' expected.contract_id %}">{{ expected.supplier.name }}</a>{% if expected.expected_on %} —
                 {% if expected.overdue %}<span class="text-orange-700">overdue since {{ expected.expected_on }}</span>{% else %}due {{ expected.expected_on }}{% endif %}{% endif %}
                 <span class="text-gray-600">· not counted as cover</span>
