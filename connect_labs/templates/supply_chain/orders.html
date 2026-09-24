@@ -62,9 +62,9 @@
           </td>
           <td class="px-4 py-2.5">
             <div class="text-gray-900">
-              {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record }}
+              {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"" }}
             </div>
-            <div class="text-xs text-gray-500">{{ contract.buyer_of_record|humanise }}</div>
+            <div class="text-xs text-gray-500">{{ contract.buyer_of_record|buyer_label }}</div>
           </td>
           {% with progress=progress|dictkey:contract.id %}
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
