@@ -72,9 +72,28 @@ function WorkflowUI({
   function fetchRowsWithProgress(url, onProgress) {
     var cancelled = false;
     var es = null;
-    function plain() {
+    // A 502/503/504 is the gateway, not the query: a rolling deploy answers
+    // them for the seconds a task is draining, and a reviewer who opened a case
+    // then was told "failed -- reload the page" for data that was fine (seen
+    // 2026-09-24, mid-deploy). Retry those twice before calling it a failure;
+    // any other status is a real answer and fails at once.
+    function plain(attempt) {
+      attempt = attempt || 0;
       return fetch(url, { credentials: 'same-origin' }).then(function (r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (!r.ok) {
+          if (
+            attempt < 2 &&
+            !cancelled &&
+            [502, 503, 504].indexOf(r.status) >= 0
+          ) {
+            return new Promise(function (res) {
+              window.setTimeout(res, attempt ? 5000 : 2000);
+            }).then(function () {
+              return plain(attempt + 1);
+            });
+          }
+          throw new Error('HTTP ' + r.status);
+        }
         return r.json();
       });
     }
@@ -2120,6 +2139,24 @@ function WorkflowUI({
     var photos = weighed.filter(function (p) {
       return photoUrl(p.v);
     }).length;
+    // The cards below are computed from the weight series. Until it arrives --
+    // or when it failed -- they have nothing to say, and "needs two weighings"
+    // under a "—" misdescribed a failed request on a case with five.
+    var seriesNote = weighingsLoaded
+      ? ''
+      : visitState.status === 'error'
+        ? 'weight series not loaded'
+        : 'loading weighings…';
+    // Discharge, skin-to-skin, danger signs, referrals and alive-at-last-visit
+    // exist only on the live `children` rows; the report's case index does not
+    // carry them. The panel opens from the index, so these can be absent because
+    // the rows are still coming or because the read failed -- and a bare "—"
+    // said "not recorded" in both cases. Say which it is.
+    function live(v) {
+      if (childState.status === 'loading') return 'loading…';
+      if (childState.status === 'error') return 'not loaded';
+      return v;
+    }
     var facts = [
       [
         'Born',
@@ -2131,25 +2168,35 @@ function WorkflowUI({
         c.birth_weight_g ? nCount(c.birth_weight_g) + ' g' : '—',
       ],
       ['Sex', c.gender || '—'],
-      ['Discharged', dateOnly(c.hospital_discharge_date)],
+      [
+        'Discharged',
+        c.hospital_discharge_date
+          ? dateOnly(c.hospital_discharge_date)
+          : live('—'),
+      ],
       ['Registered', dateOnly(c.reg_date)],
       null,
       ['KMC status', c.last_kmc_status || '—'],
       [
         'Skin-to-skin',
-        c.kmc_hours_mean ? Number(c.kmc_hours_mean).toFixed(1) + ' h/day' : '—',
+        c.kmc_hours_mean
+          ? Number(c.kmc_hours_mean).toFixed(1) + ' h/day'
+          : live('—'),
       ],
       [
         'Danger signs',
         c.danger_visits === undefined
-          ? '—'
+          ? live('—')
           : c.danger_visits + (c.danger_visits === 1 ? ' visit' : ' visits'),
       ],
-      ['Referrals', c.referral_visits === undefined ? '—' : c.referral_visits],
+      [
+        'Referrals',
+        c.referral_visits === undefined ? live('—') : c.referral_visits,
+      ],
       [
         'Alive at last visit',
         c.alive_last === undefined || c.alive_last === null
-          ? '—'
+          ? live('—')
           : String(c.alive_last),
       ],
       [
@@ -2359,13 +2406,15 @@ function WorkflowUI({
                 <div className="text-[10px] text-gray-400">
                   {c13 !== null
                     ? 'C13 · target 15'
-                    : first && earlyLast && earlyLast !== first
-                      ? 'days ' +
-                        first.x +
-                        '–' +
-                        earlyLast.x +
-                        ' · not yet graded'
-                      : 'needs two weighings'}
+                    : seriesNote
+                      ? seriesNote
+                      : first && earlyLast && earlyLast !== first
+                        ? 'days ' +
+                          first.x +
+                          '–' +
+                          earlyLast.x +
+                          ' · not yet graded'
+                        : 'needs two weighings'}
                 </div>
               </div>
               <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
@@ -2378,7 +2427,8 @@ function WorkflowUI({
                     : (gain > 0 ? '+' : '') + nCount(gain) + ' g'}
                 </div>
                 <div className="text-[10px] text-gray-400">
-                  {span === null ? '' : 'over ' + span + ' days'}
+                  {seriesNote ||
+                    (span === null ? '' : 'over ' + span + ' days')}
                 </div>
               </div>
               <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
@@ -2389,7 +2439,7 @@ function WorkflowUI({
                   {weighed.length ? rounded + ' / ' + weighed.length : '—'}
                 </div>
                 <div className="text-[10px] text-gray-400">
-                  readings ending in 00
+                  {seriesNote || 'readings ending in 00'}
                 </div>
               </div>
               <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
@@ -2400,7 +2450,7 @@ function WorkflowUI({
                   {weighed.length ? implausible.length : '—'}
                 </div>
                 <div className="text-[10px] text-gray-400">
-                  losses after day 7 or &gt;50 g/kg/day
+                  {seriesNote || 'losses after day 7 or >50 g/kg/day'}
                 </div>
               </div>
             </div>
