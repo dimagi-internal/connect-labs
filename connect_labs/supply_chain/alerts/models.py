@@ -117,7 +117,13 @@ class AlertSubscription(TimestampedModel):
             # Not get_full_name(): the labs user model sets first_name and
             # last_name to None, so AbstractUser's version reads "None None".
             user = self.recipient_user
-            return getattr(user, "name", "") or user.email or user.username
+            # Sign-in falls back to the login handle for `name` when Connect
+            # gives no first or last name, so a name equal to the username is
+            # not a name: "Sends to: ace" named an account, not a person.
+            name = getattr(user, "name", "") or ""
+            if name and name != user.username:
+                return name
+            return user.email or user.username
         return self.recipient_email
 
 

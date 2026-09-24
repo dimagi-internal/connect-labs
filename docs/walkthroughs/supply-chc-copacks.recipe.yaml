@@ -54,8 +54,8 @@ scenes:
   - kind: hold
     seconds: 2.5
     note: two co-packs with the round's contents, ranked; the chosen one marked
-  - kind: scroll_to
-    target: css:text=not the contents this round buys
+  - kind: scroll
+    value: bottom
   - kind: hold
     seconds: 2.5
   - kind: snapshot
@@ -81,17 +81,19 @@ scenes:
     target: css:#id_status
     value: Placed
   - kind: hold
-    seconds: 1.0
-  - kind: snapshot
-    note: Placed chosen, about to save
+    seconds: 1.5
   - kind: click
     must_succeed: true
     target: role:button:Save changes
     timeout_ms: 30000
   - kind: wait_for
     target: css:text=Bought by
+  - kind: scroll
+    value: top
   - kind: hold
-    seconds: 1.5
+    seconds: 2.0
+  - kind: snapshot
+    note: the order, now placed, bought by the programme
   concept_claim: Placing the order changes the contract's status from draft to placed, with the programme
     organisation as buyer of record.
   show: The order page (draft, bought by Connect Child Health Programme as programme org), then Edit order
@@ -114,19 +116,19 @@ scenes:
     target: css:#id_source
     value: We set this up ourselves
   - kind: hold
-    seconds: 1.0
-  - kind: snapshot
-    note: the payment, filled in
+    seconds: 1.5
   - kind: click
     must_succeed: true
     target: role:button:Record payment
     timeout_ms: 30000
   - kind: wait_for
     target: css:text=Paid in advance
-  - kind: scroll_to
-    target: css:text=Ordered · received · invoiced
+  - kind: scroll
+    value: '520'
   - kind: hold
-    seconds: 2.0
+    seconds: 2.5
+  - kind: snapshot
+    note: paid in advance, awaiting delivery of the whole order
   concept_claim: Recording the payment on an order paid in advance shows it as paid in advance and awaiting
     delivery of the whole order, not as billed beyond what arrived.
   show: The payment form for invoice HHS-INV-2026-014 — paid on today, 18000 USD, bank transfer, reference
@@ -213,18 +215,21 @@ scenes:
   actions:
   - kind: wait_for
     target: css:text=update link
+  - kind: scroll
+    value: top
   - kind: hold
     seconds: 2.5
-    note: what Harmattan recorded through its link, nobody asked
-  - kind: scroll_to
-    target: css:text=Recoverable from the supplier
+    note: what Harmattan recorded through its own link
+  - kind: scroll
+    value: '300'
   - kind: hold
-    seconds: 2.0
+    seconds: 3.0
+    note: 'the link''s updates above, and paid for and refused: 120 USD recoverable'
   - kind: snapshot
-    note: 'paid for and refused: 120 USD recoverable'
+    note: the link's updates and the recoverable amount, in one frame
   concept_claim: The order page lists the distributor's link updates (order confirmed, payment received,
     receipt) and reports the refused cartons of an advance order as an amount recoverable from the supplier.
-  show: 'The order page — the ''Through Harmattan Health Supplies''s update link'' panel (order confirmed,
+  show: 'The order page — the ''Recorded through the update link held by Harmattan Health Supplies'' panel (order confirmed,
     payment received, GRN-HHS-0923 596 accepted / 4 rejected), then the match panel: recoverable from
     the supplier 120 USD.'
   url: /supply/orders/${copack_order_id}/
@@ -273,7 +278,7 @@ scenes:
     value: ${today}
   - kind: select
     target: css:#id_kind
-    value: Set by hand, overriding both
+    value: override
   - kind: click
     target: css:#id_commodity-ts-control
   - kind: click
@@ -290,7 +295,7 @@ scenes:
     value: carton
   - kind: fill
     target: css:#id_reason
-    value: Sahel CHI month-end stock take. 24 cartons short of the ledger — handed out at outreach days,
+    value: Sahel CHI stock take. 24 cartons short of the ledger — handed out at outreach days,
       visits not yet synced.
   - kind: select
     target: css:#id_source
@@ -307,24 +312,33 @@ scenes:
     seconds: 2.0
   concept_claim: Recording the partner's stock take as an override sets the store's co-pack balance to
     the counted 170 cartons.
-  show: The record-a-count form — Sahel CHI store, today, "Set by hand, overriding both", the co-pack
+  show: The record-a-count form — Sahel CHI store, today, "Replace the ledger with this count", the co-pack
     and its Kaduna Pharma Works trade item, 170 carton, notes, "A partner told us".
   url: /supply/stock/counts/new/
 - id: the-check-trips
   actions:
   - kind: wait_for
-    target: css:text=Below its own minimum
-  - kind: scroll_to
-    target: css:text=Below its own minimum
+    target: css:text=Sent log
   - kind: hold
-    seconds: 2.5
+    seconds: 1.5
+  - kind: click
+    must_succeed: true
+    target: role:button:Check now
+    timeout_ms: 30000
+  - kind: wait_for
+    target: css:td a:has-text('Sahel CHI store')
+    timeout_ms: 60000
+  - kind: scroll_to
+    target: css:h2:has-text('Sent log')
+  - kind: hold
+    seconds: 3.0
   - kind: snapshot
-    note: the derived fact the alert sends
-  concept_claim: The checks page lists stock_below_minimum for Sahel CHI store, with its months of stock
-    and its minimum.
-  show: The checks page, "Below its own minimum", Sahel CHI store, Wudil — months of stock 2.8 against
-    min 3.
-  url: /supply/checks/
+    note: the notice the stock take tripped, sent to Amara
+  concept_claim: The alert's sent log records a 'Below its own minimum' notice for Sahel CHI store, found
+    after the stock take and sent to the subscriber.
+  show: The alerts page — Check now, then the sent log's row for Sahel CHI store, Wudil, 'Below its own
+    minimum', under the co-pack alert, marked sent.
+  url: /supply/alerts/
 - id: the-resupply-plan-names-the-quantity
   actions:
   - kind: wait_for
@@ -343,6 +357,8 @@ scenes:
   - kind: wait_for
     target: css:text=Updates for Harmattan Health Supplies
   - kind: click
+    target: css:summary:has-text('Record a release')
+  - kind: scroll_to
     target: css:summary:has-text('Record a release')
   - kind: select
     target: css:#id_record_release-from_supply_point
@@ -368,7 +384,8 @@ scenes:
     target: role:button:Record release
     timeout_ms: 30000
   - kind: hold
-    seconds: 2.0
+    seconds: 2.5
+    note: the release, recorded as reported by Harmattan
   concept_claim: The link's release form records a transfer of 194 cartons from the distributor's warehouse
     to the partner's store.
   show: The "Record a release" form on the link — from Harmattan warehouse, Kano to Sahel CHI store, Wudil,

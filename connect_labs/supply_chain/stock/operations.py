@@ -362,9 +362,10 @@ def stock_by_batch(access, supply_point_id, item_id=None):
     name="resupply_plan",
     summary=(
         "Consumption rate and cover for one supply point: average monthly consumption, months of "
-        "stock, days to stockout, reorder point, and how much to send. An AMC over a window shorter "
-        "than 30 days is refused as unconfirmed. `status` classifies against the point's own band and "
-        "recommends nothing."
+        "stock, days to stockout, reorder point, and how much to send. restocked_from says who acts "
+        "on it: supply_point -- sent from the point above; supplier -- reordered, the top of the "
+        "network. An AMC over a window shorter than 30 days is refused as unconfirmed. `status` "
+        "classifies against the point's own band and recommends nothing."
     ),
     input_schema=obj(
         {
@@ -381,6 +382,7 @@ def resupply_plan(access, supply_point_id, item_id=None, window_days=resupply.DE
     plan = resupply.plan(access.program_id, point, item=item, window_days=window_days)
     return {
         "supply_point_id": point.pk,
+        "restocked_from": resupply.restocked_from(point),
         "amc_window_days": plan["amc_window_days"],
         "amc_basis": plan["amc_basis"],
         "status": plan["status"],
@@ -432,6 +434,7 @@ def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_d
                         "admin_area",
                         "opportunity_id",
                         "status",
+                        "restocked_from",
                     )
                 },
                 "reported_on": row["reported_on"].isoformat() if row["reported_on"] else None,

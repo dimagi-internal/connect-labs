@@ -13,7 +13,10 @@ slot into it.
 {% endcomment %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 py-6">
+{% comment %}Headings clear the sticky top bar when a link or a recorder scrolls to them;
+without it the bar covered a page's title and the banner under it.{% endcomment %}
+<style>.supply-page h1, .supply-page h2, .supply-page h3 { scroll-margin-top: 5rem; }</style>
+<div class="supply-page max-w-7xl mx-auto px-4 py-6">
   <div class="flex gap-4 items-center p-4 profile-bg bg-brand-indigo rounded-2xl mb-6">
     <div class="flex flex-col justify-center text-white">
       <h1 class="text-2xl font-bold mb-1">Supply</h1>

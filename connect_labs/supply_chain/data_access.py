@@ -766,7 +766,28 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
             commodity=self._resolve_commodity(data.get("commodity_slug")) or (quote.commodity if quote else None),
             **{"decided_on": date.today(), **_columns(Award, data)},
         )
+        self._mark_awarded_when_complete(found)
         return _fresh(award)
+
+    @staticmethod
+    def _mark_awarded_when_complete(round_):
+        """A round whose every line has an award is awarded, and says so.
+
+        The status existed and nothing set it, so a round decided line by line
+        still read "open" long past its deadline. Derived from the awards, not
+        set by hand; a round still missing an award on any line stays as it
+        is, and a closed round is never moved -- closing was somebody's call.
+        """
+        if round_.status not in ("draft", "open"):
+            return
+        wanted = {line.get("commodity_slug") for line in round_.lines or [] if isinstance(line, dict)}
+        wanted.discard(None)
+        if not wanted:
+            return
+        awarded = set(Award.objects.filter(round=round_).values_list("commodity__slug", flat=True))
+        if wanted <= awarded:
+            round_.status = "awarded"
+            round_.save(update_fields=["status", "updated_at"])
 
     # ---- approvals ------------------------------------------------------
 

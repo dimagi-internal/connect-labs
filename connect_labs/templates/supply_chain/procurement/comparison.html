@@ -100,7 +100,7 @@
         <thead>
           <tr>
             <th>#</th><th>Supplier</th>
-            {% for column in comparison.columns %}<th>{{ column.label }}</th>{% endfor %}
+            {% for column in table_columns %}<th>{{ column.label }}</th>{% endfor %}
             <th></th>
           </tr>
         </thead>
@@ -111,11 +111,16 @@
               <td class="font-medium">
                 <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
                    class="text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
+                {% comment %}Beside the name, not in the last column: at 1280px that
+                column ran off the right edge and took the marker with it.{% endcomment %}
                 {% if row.item_name %}<div class="text-sm font-normal text-gray-700">{{ row.item_name }}</div>{% endif %}
+                {% if row.quote_id in awarded_quote_ids %}
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Awarded</span>
+                {% endif %}
                 {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
                 {% include "supply_chain/procurement/_specification.html" with specification=row.specification %}
               </td>
-              {% for column in comparison.columns %}
+              {% for column in table_columns %}
                 {% with cell=row.figures|dictkey:column.key %}
                   {% if cell.unconfirmed %}
                     {% comment %}
@@ -136,21 +141,19 @@
                 {% endwith %}
               {% endfor %}
               <td>
-                {% if row.quote_id in awarded_quote_ids %}
-                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Chosen</span>
-                {% else %}
-                <form method="post" action="" class="flex items-center gap-2">
+                {% if row.quote_id not in awarded_quote_ids %}
+                <form method="post" action="" class="flex flex-col items-stretch gap-1">
                   {% csrf_token %}
                   <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
                   <input type="text" name="rationale" placeholder="Why this supplier?" required
-                         class="w-40 border border-gray-300 rounded-md px-2 py-1 text-sm">
+                         class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm">
                   <input type="date" name="decided_on" value="{{ today }}" max="{{ today }}" aria-label="Decided on"
                          title="The day the decision was made"
                          class="border border-gray-300 rounded-md px-2 py-1 text-sm">
                   <input type="text" name="decided_by" value="{{ decider }}" aria-label="Decided by"
                          title="Who made the decision — the person, not the account recording it"
                          placeholder="Decided by"
-                         class="w-32 border border-gray-300 rounded-md px-2 py-1 text-sm">
+                         class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm">
                   <button class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
                           type="submit">
                     Award
@@ -165,9 +168,11 @@
       </table>
     </div>
   </div>
-{% else %}
+{% elif comparison.blocked %}
   <p class="text-gray-500 mb-4">Nothing is comparable yet. Every quote is missing something —
   the questions below are the whole job right now.</p>
+{% else %}
+  <p class="text-gray-500 mb-4">Nothing is comparable: no offer holds the contents this round buys.</p>
 {% endif %}
 
 {% if set_aside %}
@@ -183,6 +188,33 @@
             {% include "supply_chain/procurement/_composition.html" with composition=entry.item.components unit=entry.item.components_unit %}
           {% endif %}
           <div class="text-gray-700 mt-1">{{ entry.quote.void_reason }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+{% if comparison.not_comparable %}
+  {% comment %}
+  Terminal, not missing information: filed under "Needs info" with a question
+  for the supplier, an offer holding other contents read as if an answer could
+  make it comparable, and it made the ranking above read as provisional.
+  {% endcomment %}
+  <section class="mt-6 mb-4">
+    <h2 class="text-lg font-semibold text-gray-900 mb-2">
+      Not comparable — different contents
+    </h2>
+    {% if comparison.round_contents %}
+      <p class="text-sm text-gray-600 mb-2">This round buys</p>
+      {% include "supply_chain/procurement/_composition.html" with composition=comparison.round_contents unit="" %}
+    {% endif %}
+    <div class="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 mt-2">
+      {% for row in comparison.not_comparable %}
+        <div class="px-4 py-3 text-sm">
+          <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
+             class="font-medium text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
+          {% if row.item_name %}<span class="text-gray-700">· {{ row.item_name }}</span>{% endif %}
+          {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
         </div>
       {% endfor %}
     </div>

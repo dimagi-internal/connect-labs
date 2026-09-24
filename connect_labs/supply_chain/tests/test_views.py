@@ -949,6 +949,7 @@ def test_the_round_detail_page_links_each_supplier_it_names(client, sophie):
         "quote_list": [QUOTE],
         "supplier_list": [SUPPLIER],
         "commodity_list": [],
+        "item_get": None,
     }
     with patch(
         "connect_labs.supply_chain.procurement.views.call_operation",

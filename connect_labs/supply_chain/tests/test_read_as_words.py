@@ -193,9 +193,86 @@ class TestTheComparison:
 
     def test_the_chosen_offer_is_marked_and_not_offered_again(self, client_in_programme, chain):
         body = self._page(client_in_programme, chain)
-        assert "Chosen" in body
         # One Award form left: the offer not chosen.
         assert body.count('name="rationale"') == 1
+
+    def test_the_awarded_offer_is_marked_beside_its_name(self, client_in_programme, chain):
+        # At 1280px the rightmost column ran off the page, and the marker with it.
+        body = self._page(client_in_programme, chain)
+        table = body[body.index("<table") : body.index("</table>")]
+        supplier_cell = table[table.index("Kaduna co-pack") :]
+        supplier_cell = supplier_cell[: supplier_cell.index("</td>")]
+        assert "Awarded" in supplier_cell
+        other = table[table.index("Lagoon co-pack") :]
+        assert "Awarded" not in other[: other.index("</td>")]
+
+    def test_headings_clear_the_sticky_bar_when_scrolled_to(self, client_in_programme, chain):
+        assert "scroll-margin-top" in self._page(client_in_programme, chain)
+
+    def test_identical_landed_totals_are_one_column(self, client_in_programme, chain):
+        body = self._page(client_in_programme, chain)
+        head = body[body.index("<thead") : body.index("</thead>")]
+        assert "Landed total (as quoted)" not in head
+        assert head.count("Landed total") == 1
+
+    def test_differing_landed_totals_stay_two_columns(self):
+        from connect_labs.supply_chain.procurement.views import table_columns
+
+        columns = [
+            {"key": "landed_total_as_quoted", "label": "Landed total (as quoted)"},
+            {"key": "landed_total_for_round_quantity", "label": "Landed total (this round)"},
+        ]
+        same = {"amount": "18000", "currency": "USD"}
+        rows = [
+            {"figures": {"landed_total_as_quoted": same, "landed_total_for_round_quantity": same}},
+            {
+                "figures": {
+                    "landed_total_as_quoted": {"amount": "9000", "currency": "USD"},
+                    "landed_total_for_round_quantity": same,
+                }
+            },
+        ]
+        assert [c["key"] for c in table_columns({"columns": columns, "comparable": rows})] == [
+            "landed_total_as_quoted",
+            "landed_total_for_round_quantity",
+        ]
+        assert [c["key"] for c in table_columns({"columns": columns, "comparable": rows[:1]})] == [
+            "landed_total_for_round_quantity"
+        ]
+
+
+class TestTheRoundsQuotes:
+    """Three co-pack quotes differing only by price, told apart by nothing but the price."""
+
+    def _quotes_table(self, client, chain):
+        response = client.get(reverse("supply_chain:procurement_round_detail", args=[chain["round"]["id"]]))
+        assert response.status_code == 200
+        body = response.content.decode()
+        start = body.index(">Quotes<")
+        return body[start : body.index("</table>", start)]
+
+    def test_each_quote_names_its_trade_item_and_contents(self, client_in_programme, chain):
+        table = self._quotes_table(client_in_programme, chain)
+        assert "Kaduna co-pack" in table
+        assert "Lagoon co-pack" in table
+        assert "2 sachets ors + 10 tablets zinc" in table
+
+    def test_the_commodity_is_named_not_slugged(self, client_in_programme, chain):
+        table = self._quotes_table(client_in_programme, chain)
+        assert "ORS/zinc co-pack" in table
+        assert "ors-zinc-copack" not in table
+        assert "ors zinc copack" not in table
+
+    def test_prices_read_as_money(self, client_in_programme, chain):
+        table = self._quotes_table(client_in_programme, chain)
+        assert "USD 0.60" in table
+        assert "per_base_unit" not in table
+
+    def test_the_price_is_per_the_products_own_unit(self, client_in_programme, chain):
+        table = self._quotes_table(client_in_programme, chain)
+        assert "per co-pack" in table
+        assert "per base unit" not in table
+        assert "per single unit" not in table
 
 
 class TestTheOrder:
@@ -208,6 +285,22 @@ class TestTheOrder:
         body = self._page(client_in_programme, chain)
         assert "programme_org" not in body
         assert "programme org" not in body
+
+    def test_the_header_names_the_buyer_with_the_role_beside_it(self, client_in_programme, chain):
+        body = self._page(client_in_programme, chain)
+        header = body[body.index("Bought by") :]
+        header = header[: header.index("</p>")]
+        assert "Child Health Programme" in header
+        assert "the programme" in header
+        assert header.index("Child Health Programme") < header.index("the programme")
+
+    def test_the_overview_names_the_buyer_of_record(self, client_in_programme, chain):
+        body = client_in_programme.get(reverse("supply_chain:home")).content.decode()
+        row = body[body.index("CHC-1") :]
+        row = row[: row.index("</tr>")]
+        assert "Child Health Programme" in row
+        assert "programme org" not in row
+        assert "the programme" in row
 
     def test_it_does_not_claim_three_different_amounts_when_they_are_the_same(self, client_in_programme, chain):
         body = self._page(client_in_programme, chain)
@@ -332,7 +425,9 @@ class TestTheOrderShowsWhatCameThroughTheLink:
         body = client_in_programme.get(
             reverse("supply_chain:order_detail", args=[chain["contract"]["id"]])
         ).content.decode()
-        assert "Through Harmattan Health Supplies" in body
+        assert "Recorded through the update link held by Harmattan Health Supplies" in body
+        assert "Supplies's" not in body, "a possessive on a name ending in s"
+        assert "nobody asked" not in body, "an opinion on a screen of facts"
         assert "CHC-1 is confirmed" in body
 
     def test_received_goods_with_no_dispatch_are_not_nothing(self, client_in_programme, chain):
@@ -341,6 +436,100 @@ class TestTheOrderShowsWhatCameThroughTheLink:
         ).content.decode()
         assert "Nothing dispatched yet" not in body
         assert "No dispatch was recorded" in body
+
+
+class TestTheStockPageSaysSendOrReorder:
+    """A point restocked from its supplier reorders; one restocked from another point is sent to."""
+
+    @pytest.fixture
+    def points(self, da, chain):
+        item_id = chain["contract"]["item_id"]
+        warehouse = next(p for p in op(da, "supply_point_list") if p["slug"] == "wh")
+        child = op(
+            da,
+            "supply_point_upsert",
+            data={
+                "slug": "child",
+                "name": "Child store",
+                "kind": "regional_store",
+                "parent_supply_point_id": warehouse["id"],
+                "min_months_of_stock": "3",
+                "max_months_of_stock": "6",
+                "source": "we_recorded",
+            },
+        )
+        op(
+            da,
+            "supply_point_upsert",
+            data={
+                "slug": "wh",
+                "name": "Harmattan warehouse",
+                "kind": "central_store",
+                "min_months_of_stock": "2",
+                "max_months_of_stock": "6",
+                "source": "we_recorded",
+            },
+        )
+        op(
+            da,
+            "movement_record",
+            data={
+                "kind": "transfer",
+                "occurred_on": "2026-07-01",
+                "commodity_slug": "ors-zinc-copack",
+                "item_id": item_id,
+                "from_supply_point_id": warehouse["id"],
+                "to_supply_point_id": child["id"],
+                "quantity": "100",
+                "quantity_unit": "carton",
+                "source": "we_recorded",
+            },
+        )
+        for day, amount in (("2026-08-01", "1500"), ("2026-09-01", "1501")):
+            op(
+                da,
+                "movement_record",
+                data={
+                    "kind": "consumption",
+                    "occurred_on": day,
+                    "commodity_slug": "ors-zinc-copack",
+                    "item_id": item_id,
+                    "from_supply_point_id": child["id"],
+                    "quantity": amount,
+                    "quantity_unit": "co-pack",
+                    "source": "connect_visit",
+                },
+            )
+        return {"warehouse": warehouse, "child": child, "item_id": item_id}
+
+    def _row(self, body, name):
+        row = body[body.index(name) :]
+        return row[: row.index("</tr>")]
+
+    def test_the_operations_say_where_a_point_is_restocked_from(self, da, points):
+        rows = {p["name"]: p for p in op(da, "network_stock")["points"]}
+        assert rows["Harmattan warehouse"]["restocked_from"] == "supplier"
+        assert rows["Child store"]["restocked_from"] == "supply_point"
+        plan = op(da, "resupply_plan", supply_point_id=points["warehouse"]["id"], item_id=points["item_id"])
+        assert plan["restocked_from"] == "supplier"
+
+    def test_the_page_says_reorder_for_the_top_of_the_chain_and_send_below_it(self, client_in_programme, points):
+        body = client_in_programme.get(reverse("supply_chain:stock")).content.decode()
+        assert "to reorder" in self._row(body, "Harmattan warehouse")
+        assert "to send" in self._row(body, "Child store")
+        assert "to reorder" not in self._row(body, "Child store")
+
+    def test_the_policy_is_stated_once(self, client_in_programme, points):
+        body = client_in_programme.get(reverse("supply_chain:stock")).content.decode()
+        assert body.count("Each point is topped up to its maximum") == 1
+
+    def test_demand_is_in_whole_units(self, client_in_programme, points):
+        row = self._row(client_in_programme.get(reverse("supply_chain:stock")).content.decode(), "Child store")
+        import re
+
+        demand = re.search(r"([0-9][0-9,.]*) co-packs <span[^>]*>dispensed a month", row)
+        assert demand, row
+        assert "." not in demand.group(1)
 
 
 class TestTheStockPageSpeaksInPacks:
@@ -382,6 +571,97 @@ class TestTheStockPageSpeaksInPacks:
             )
         body = client_in_programme.get(reverse("supply_chain:stock")).content.decode()
         assert " cartons a month" in body or " cartons)" in body or " carton)" in body
+
+
+class TestTheChecksPage:
+    """A check card listed "round id 33", "supplier id 88", "min months of stock"."""
+
+    @pytest.fixture
+    def page(self, client_in_programme, da, chain):
+        item_id = chain["contract"]["item_id"]
+        store = op(
+            da,
+            "supply_point_upsert",
+            data={
+                "slug": "low",
+                "name": "Low store",
+                "kind": "regional_store",
+                "min_months_of_stock": "3",
+                "max_months_of_stock": "6",
+                "source": "we_recorded",
+            },
+        )
+        op(
+            da,
+            "movement_record",
+            data={
+                "kind": "receipt",
+                "occurred_on": "2026-06-01",
+                "commodity_slug": "ors-zinc-copack",
+                "item_id": item_id,
+                "to_supply_point_id": store["id"],
+                "quantity": "100",
+                "quantity_unit": "carton",
+                "source": "we_recorded",
+            },
+        )
+        for day in ("2026-08-01", "2026-09-01"):
+            op(
+                da,
+                "movement_record",
+                data={
+                    "kind": "consumption",
+                    "occurred_on": day,
+                    "commodity_slug": "ors-zinc-copack",
+                    "item_id": item_id,
+                    "from_supply_point_id": store["id"],
+                    "quantity": "1500",
+                    "quantity_unit": "co-pack",
+                    "source": "connect_visit",
+                },
+            )
+        from connect_labs.supply_chain.models import Round
+
+        Round.objects.filter(pk=chain["round"]["id"]).update(status="open")
+        # A quote that cannot be compared: in euros, with no exchange rate.
+        op(
+            da,
+            "quote_record",
+            data={
+                "round_id": chain["round"]["id"],
+                "commodity_slug": "ors-zinc-copack",
+                "supplier_id": chain["quotes"][0]["supplier_id"],
+                "as_quoted_amount": "30",
+                "as_quoted_currency": "EUR",
+                "as_quoted_unit": "per_pack",
+                "quantity_basis": "600",
+                "quantity_basis_unit": "carton",
+            },
+        )
+        return client_in_programme.get(reverse("supply_chain:checks")).content.decode()
+
+    def test_no_raw_ids(self, page):
+        assert "round id" not in page
+        assert "supplier id" not in page
+        assert "min months of stock" not in page
+
+    def test_the_round_and_supplier_are_named_and_linked(self, page, chain):
+        round_href = reverse("supply_chain:procurement_round_detail", args=[chain["round"]["id"]])
+        supplier_href = reverse("supply_chain:supplier_detail", args=[chain["quotes"][0]["supplier_id"]])
+        assert f'href="{round_href}"' in page
+        assert f'href="{supplier_href}"' in page
+        card = page[page.index(f'href="{round_href}"') :]
+        assert card[: card.index("</a>")].endswith("CHC")
+
+    def test_a_threshold_reads_as_a_readout(self, page):
+        import re
+
+        assert re.search(r"[0-9.]+ months of stock · minimum 3", page)
+
+    def test_the_stock_check_names_what_is_stocked(self, page):
+        card = page[page.index("Low store") :]
+        card = card[: card.index("</li>")]
+        assert "ORS/zinc co-pack" in card
 
 
 class TestAlertChips:

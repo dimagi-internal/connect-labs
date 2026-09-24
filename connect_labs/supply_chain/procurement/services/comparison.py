@@ -111,6 +111,13 @@ class Comparison:
     # answered everything look like the problem.
     unavailable: dict = field(default_factory=dict)
     commodity_name: str = ""
+    # Offers whose kit contents are not the contents the round buys. Terminal,
+    # not missing information: there is nothing to ask the supplier and
+    # nothing that could make them comparable, so they are neither "blocked"
+    # (which reads as needs-info and makes the ranking provisional) nor ranked.
+    not_comparable: list[ComparisonRow] = field(default_factory=list)
+    # The contents the round's line says it buys, when it says.
+    round_contents: list | None = None
 
     @property
     def all_rows(self) -> list[ComparisonRow]:
@@ -123,7 +130,7 @@ class Comparison:
         comparison this module exists to refuse. The name is deliberately in
         the way at the call site.
         """
-        return [*self.comparable, *self.blocked]
+        return [*self.comparable, *self.blocked, *self.not_comparable]
 
     @property
     def comparable_count(self) -> int:
@@ -131,7 +138,7 @@ class Comparison:
 
     @property
     def total_count(self) -> int:
-        return len(self.comparable) + len(self.blocked)
+        return len(self.comparable) + len(self.blocked) + len(self.not_comparable)
 
     def to_snapshot(self) -> dict:
         """A JSON-serialisable freeze, for award.comparison_snapshot.
@@ -185,6 +192,8 @@ class Comparison:
             ],
             "comparable": [row_dict(row) for row in self.comparable],
             "blocked": [row_dict(row) for row in self.blocked],
+            "not_comparable": [row_dict(row) for row in self.not_comparable],
+            "round_contents": self.round_contents,
             # Flat view for consumers that legitimately need every supplier's
             # row regardless of state (e.g. Task 10's round_outstanding_questions).
             # Named all_rows, not rows: see Comparison.all_rows's docstring.
@@ -287,16 +296,21 @@ def _round_contents(round_, commodity) -> list | None:
     return None
 
 
-def _refuse_other_contents(comparable, blocked, wanted):
+def _refuse_other_contents(rows, wanted):
     """The round has decided the contents: rank those, refuse the rest, and say why.
 
     This is the decision `_separate_differing_kits` asks us for, taken once on
     the round rather than by voiding offers one at a time -- so an offer with
     other contents stays on the page, refused a ranking in plain view, instead
     of disappearing from it.
+
+    Returns (kept, refused). A refusal is terminal: the offer carries no
+    questions, because no answer from anyone makes other contents the ones
+    the round buys -- and asking the supplier their minimum order on it read
+    as if one could.
     """
-    keep = []
-    for row in comparable:
+    keep, refused = [], []
+    for row in rows:
         if row.composition is None or row.composition == wanted:
             keep.append(row)
             continue
@@ -308,8 +322,9 @@ def _refuse_other_contents(comparable, blocked, wanted):
             unconfirmed(reason), row.figures["landed_total_for_round_quantity"]
         )
         row.is_comparable = False
-        blocked = [*blocked, row]
-    return keep, blocked
+        row.questions = []
+        refused.append(row)
+    return keep, refused
 
 
 def _separate_differing_kits(comparable, blocked):
@@ -442,8 +457,11 @@ def compare_round(
         (comparable if row.is_comparable else blocked).append(row)
 
     wanted = _round_contents(round_, commodity)
+    not_comparable: list[ComparisonRow] = []
     if wanted:
-        comparable, blocked = _refuse_other_contents(comparable, blocked, wanted)
+        comparable, refused_ranked = _refuse_other_contents(comparable, wanted)
+        blocked, refused_blocked = _refuse_other_contents(blocked, wanted)
+        not_comparable = [*refused_ranked, *refused_blocked]
     comparable, blocked = _separate_differing_kits(comparable, blocked)
 
     ranked_by = _ranking_key(comparable)
@@ -456,7 +474,7 @@ def compare_round(
     if ranked_by is not None:
         comparable.sort(key=lambda row: row.figures[ranked_by].amount)
 
-    unavailable = _unavailable_figures(comparable + blocked, figure_fields)
+    unavailable = _unavailable_figures(comparable + blocked + not_comparable, figure_fields)
     columns: list[ComparisonColumn] = []
     for key in figure_fields:
         # blocked_by names every supplier missing this figure, so the template can
@@ -465,7 +483,9 @@ def compare_round(
         # two live blocked quotes on one round must not appear twice.
         short = tuple(
             dict.fromkeys(
-                row.supplier_name for row in (*comparable, *blocked) if isinstance(row.figures.get(key), Unconfirmed)
+                row.supplier_name
+                for row in (*comparable, *blocked, *not_comparable)
+                if isinstance(row.figures.get(key), Unconfirmed)
             )
         )
         columns.append(
@@ -487,7 +507,11 @@ def compare_round(
         blocked=blocked,
         generated_at=datetime.now(UTC).isoformat(),
         ranked_by=ranked_by,
+        # Only what could still be compared makes a ranking provisional: an
+        # offer with other contents can never beat it.
         provisional=bool(blocked),
         unavailable=unavailable,
         commodity_name=commodity.name,
+        not_comparable=not_comparable,
+        round_contents=wanted,
     )
