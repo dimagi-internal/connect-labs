@@ -1007,3 +1007,18 @@ def has_field_errors(form) -> bool:
     marked would send the reader hunting for a field that is fine.
     """
     return any(name != "__all__" for name in getattr(form, "errors", {}) or {})
+
+
+@register.filter
+def day(value):
+    """An ISO date string (operations return dates as text) as "21 Sep 2026"; anything else unchanged."""
+    from datetime import date
+
+    if isinstance(value, str):
+        try:
+            value = date.fromisoformat(value[:10])
+        except ValueError:
+            return value
+    if isinstance(value, date):
+        return f"{value.day} {value:%b %Y}"
+    return value

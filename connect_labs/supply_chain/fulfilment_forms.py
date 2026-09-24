@@ -26,6 +26,7 @@ and believe the number moved.
 
 from crispy_forms.layout import Column, Field, Fieldset, Layout, Row
 from django import forms
+from django.db.models import Case, Value, When
 from django.utils.translation import gettext_lazy as _
 
 from connect_labs.labs.models import LabsOrg
@@ -212,8 +213,19 @@ class ContractForm(ProvenancedForm):
         self.fields["commodity"].queryset = self.scoped(Commodity).order_by("name")
         self.fields["item"].queryset = self.scoped(Item).order_by("name")
         self.fields["delivery_supply_point"].queryset = self.in_program(SupplyPoint).order_by("name")
-        # Organisations are labs-wide, so this one is deliberately unscoped.
-        self.fields["buyer_org"].queryset = LabsOrg.objects.order_by("name")
+        # Organisations are labs-wide, so this one is deliberately unscoped -- but
+        # the organisations already in this programme (running its stores,
+        # supplying it, buying for it) come first. Labs-wide and alphabetical, the
+        # partner a programme officer means was off the picker's first page and
+        # had to be searched for (the IPTSc render).
+        in_programme = (
+            set(self.in_program(SupplyPoint).exclude(managed_by_org=None).values_list("managed_by_org_id", flat=True))
+            | set(self.in_program(Contract).exclude(buyer_org=None).values_list("buyer_org_id", flat=True))
+            | set(self.scoped(Supplier).exclude(org=None).values_list("org_id", flat=True))
+        )
+        self.fields["buyer_org"].queryset = LabsOrg.objects.annotate(
+            _in_programme=Case(When(pk__in=in_programme, then=Value(0)), default=Value(1))
+        ).order_by("_in_programme", "name")
 
         self.fields["supplier"].empty_label = _("Select a supplier…")
         self.fields["commodity"].empty_label = _("Select a product…")

@@ -61,16 +61,22 @@ class this build has not seen ships purged.
       <dd>
         {% if match.status == "shortfall_covered" %}
           {% comment %}"Part received" was true and misleading: nobody is waiting on this order any more.{% endcomment %}
-          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-900">short — covered by
+          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-900 border border-amber-200">short — covered by
           {% for cover in match.covered_by %}<a class="underline" href="{% url 'supply_chain:order_detail' cover.contract_id %}">{{ cover.reference|default:"another order" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</span>
         {% elif contract.status %}
-          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-900">{{ contract.status|humanise|capfirst }}</span>
+          <span class="px-2 py-0.5 rounded-full text-xs font-medium {% if contract.status == "received" %}bg-teal-50 text-teal-800{% else %}bg-blue-50 text-blue-900{% endif %}">{{ contract.status|humanise|capfirst }}</span>
         {% endif %}
       </dd>
     </div>
+    {% if contract.signed_on %}
+    <div>
+      <dt class="text-[11px] text-gray-500">Signed</dt>
+      <dd class="text-gray-900">{{ contract.signed_on|day }}</dd>
+    </div>
+    {% endif %}
     {% if contract.covers_shortfall_of_id %}
     <div>
-      <dt class="text-[11px] text-gray-500">Placed to</dt>
+      <dt class="text-[11px] text-gray-500">Why this order</dt>
       <dd class="text-gray-900">
         Covers the shortfall on
         <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.covers_shortfall_of_id %}">{% if covers.reference %}{{ covers.reference }}{% else %}order {{ contract.covers_shortfall_of_id }}{% endif %}</a>
@@ -82,9 +88,9 @@ class this build has not seen ships purged.
       <dt class="text-[11px] text-gray-500">Payment</dt>
       <dd>
         {% if contract.consideration == "in_kind" %}
-          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-900">In kind — donated</span>
+          <span class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">In kind — donated</span>
         {% else %}
-          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-900">Bundled in setup fee</span>
+          <span class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">Bundled in setup fee</span>
         {% endif %}
       </dd>
     </div>
@@ -158,7 +164,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
       <tr>
         <th class="text-left px-4 py-2">Order</th>
         <th class="text-left px-4 py-2">From</th>
-        <th class="text-right px-4 py-2">Counts toward it</th>
+        {% if fulfilment.shows_contribution %}<th class="text-right px-4 py-2">Counts toward it</th>{% endif %}
         <th class="text-right px-4 py-2">Received</th>
       </tr>
     </thead>
@@ -170,14 +176,14 @@ was ordered. Before, the page showed this order's half and a link to the other.
             <div class="text-xs text-gray-500">{{ source.role }}</div>
           </td>
           <td class="px-4 py-2 text-gray-700">{{ source.supplier }}</td>
-          <td class="px-4 py-2 text-right tabular-nums">{{ source.contributes|figure_text }}</td>
+          {% if fulfilment.shows_contribution %}<td class="px-4 py-2 text-right tabular-nums">{{ source.contributes|figure_text }}</td>{% endif %}
           <td class="px-4 py-2 text-right tabular-nums">{{ source.received|figure_text }}</td>
         </tr>
       {% endfor %}
     </tbody>
     <tfoot>
       <tr class="bg-gray-50">
-        <td class="px-4 py-2 font-semibold text-brand-indigo" colspan="3">{{ fulfilment.ordered|figure_text }} ordered</td>
+        <td class="px-4 py-2 font-semibold text-brand-indigo" colspan="{% if fulfilment.shows_contribution %}3{% else %}2{% endif %}">{{ fulfilment.ordered|figure_text }} ordered</td>
         <td class="px-4 py-2 text-right font-semibold tabular-nums {% if fulfilment.complete %}text-message-success-text{% else %}text-brand-indigo{% endif %}">
           {% if fulfilment.received_total %}{{ fulfilment.received_total|figure_text }} received{% else %}not comparable across units{% endif %}
         </td>
@@ -466,8 +472,12 @@ partner's name (the IPTSc render).
     </table>
     </div>
     <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
-      {% if contract.consideration != "priced" %}
-        Not purchased: nothing is billed or paid against this order.
+      {% comment %}"Not purchased" beside "Bought by …" and "Bundled in setup fee" was the
+      same order read two ways: a bundled order WAS bought, just not billed on its own.{% endcomment %}
+      {% if contract.consideration == "bundled" %}
+        Bought out of {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"the buyer" }}'s setup fee — nothing is billed or paid against this order on its own.
+      {% elif contract.consideration != "priced" %}
+        Donated: nothing is billed or paid against this order.
       {% elif match.payment_terms == "advance" %}
         Paid before delivery, as agreed. What was paid for and refused on arrival — or never
         delivered, once the order is closed — is owed back.

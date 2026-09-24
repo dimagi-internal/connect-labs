@@ -515,6 +515,9 @@ class OrderDetailView(OperationBase):
             "sources": sources,
             "received_total": {"amount": decimal_string(total), "unit": unit} if total is not None else None,
             "complete": total is not None and total >= (_amount(match.get("ordered")) or 0),
+            # "Counts toward it" only says something when a source delivered other
+            # than what it counts for; when every row matches, it repeats Received.
+            "shows_contribution": any(_amount(s["contributes"]) != _amount(s["received"]) for s in sources),
         }
 
     def _award(self, contract):

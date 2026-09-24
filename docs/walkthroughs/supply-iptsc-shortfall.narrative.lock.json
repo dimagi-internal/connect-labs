@@ -10,9 +10,9 @@
     "covered-not-late",
     "seven-hundred-on-the-shelf"
   ],
-  "fetched_at": "2026-09-24T13:10:29.472357+00:00",
+  "fetched_at": "2026-09-24T17:09:04.791698+00:00",
   "name": "supply-iptsc-shortfall",
-  "narrative": "Ngozi runs supply for the programme's school malaria prevention round. The SCHI district store the round draws from is empty, and the 700 IPTSc packets she ordered from Harmattan Health Supplies are overdue. She opens the packet in the catalogue and confirms what the programme is counting: one packet holds a full three-day course, so 700 packets are 700 three-day courses. Musa at Harmattan opens the update link the programme gave him, with no labs login, and records the dispatch of the 450 packets he could find. Hauwa at the Sahel Community Health Initiative opens her own link and records the 450 packets that reached the SCHI district store. Ngozi opens the order and reads it: 700 ordered, 450 received, 250 still outstanding, and the order past its promised lead time. Hauwa's team has already bought the missing 250 from Tamarind Pharmacy Wholesale, a vendor they know, out of SCHI's setup fee, so Ngozi records that purchase as its own order, with SCHI as the buyer, paid as bundled, and marked as buying the shortfall on the Harmattan order. Its cost reads as bundled in the setup fee rather than as a missing price. When the 250 reach the store, Hauwa records them through SCHI's own link, which covers everything involving SCHI. Back on the Harmattan order, Ngozi sees the shortfall covered by name and the lateness gone. Back on the stock page, the store that held nothing reads 700 packets with nothing left overdue, and its balance opens onto Harmattan's 450 and Tamarind's 250: seven hundred courses, every one the round ordered.",
+  "narrative": "Ngozi runs supply for the programme's school malaria prevention round. The SCHI district store the round draws from is empty, and the 700 IPTSc packets she ordered from Harmattan Health Supplies are overdue. She opens the packet in the catalogue and confirms what the programme is counting: one packet holds a full three-day course, so 700 packets are 700 three-day courses. Musa at Harmattan opens the update link the programme gave him, with no labs login, and records the dispatch of the 450 packets he could find. Hauwa at the Sahel Community Health Initiative opens her own link and records the 450 packets that reached the SCHI district store. Ngozi opens the order and reads it: 700 ordered, 450 received, 250 still outstanding, and the order past its promised lead time. Hauwa's team has already bought the missing 250 from Tamarind Pharmacy Wholesale, a vendor they know, out of SCHI's setup fee, so Ngozi records that purchase as its own order, with SCHI as the buyer, paid as bundled, and marked as buying the shortfall on the Harmattan order. Its cost reads as bundled in the setup fee rather than as a missing price. When the 250 reach the store, Hauwa records them through SCHI's own link, which covers everything involving SCHI. Back on the Harmattan order, Ngozi sees the shortfall covered by name and the lateness gone. She opens the store's balance to Harmattan's 450 and Tamarind's 250, and back on the stock page the store that held nothing reads 700 packets with nothing left overdue: seven hundred courses, every one the round ordered.",
   "personas": {
     "hauwa": {
       "color": "#0D7A5F",
@@ -142,7 +142,7 @@
       "id": "the-250-arrive-and-cost-says-why",
       "narrative": "When Tamarind's 250 packets reach the district store, Hauwa records them through the same SCHI link. The link covers everything involving SCHI, so the new order is already on it; she picks it and records 250 packets accepted.",
       "persona": "hauwa",
-      "provenance": "S0",
+      "provenance": "S8",
       "title": "Hauwa records the 250 from Tamarind"
     },
     {
@@ -168,12 +168,12 @@
         }
       ],
       "id": "seven-hundred-on-the-shelf",
-      "narrative": "Back on the stock page, the SCHI district store that held nothing now reads 700 packets, with no order left expected or overdue. She opens the balance: Harmattan's 450 and Tamarind's 250, seven hundred three-day courses, every one the round ordered.",
+      "narrative": "Ngozi opens the SCHI district store's balance: Harmattan's 450 and Tamarind's 250. Back on the stock page, the store that held nothing now reads 700 packets, with no order left expected or overdue — seven hundred three-day courses, every one the round ordered.",
       "persona": "ngozi",
       "provenance": "S7",
       "title": "The empty store now holds 700 courses"
     }
   ],
   "slug": "supply-iptsc-shortfall",
-  "version": 4
+  "version": 6
 }
