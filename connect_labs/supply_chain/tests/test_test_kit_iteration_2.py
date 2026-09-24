@@ -357,7 +357,7 @@ class TestTheStockSaysWhichKit:
         )
         body = scoped.get(reverse("supply_chain:stock") + f"?item_id={world['lumen']['id']}").content.decode()
         assert "data-standing" in body
-        assert "specification AQ-TK-1: meets all 2" in body
+        assert "Meets all 2 requirements of" in body and "AQ-TK-1." in body
         assert "Approved by <b>Aqualytic</b>" in body
         assert "through Aqualytic's own link" in body
 

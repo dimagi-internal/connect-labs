@@ -386,7 +386,7 @@ class ReceiptRecordView(_WithBatchLines):
 class MovementRecordView(OperationFormView):
     operation = "movement_record"
     form_class = MovementForm
-    title = "Post a movement"
+    title = "Record stock in or out"
     intro = (
         "One line of the ledger: a transfer between stores, a loss, an expiry, or the adjustment "
         "that carries a stock count's variance."
