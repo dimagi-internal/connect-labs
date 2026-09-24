@@ -1,7 +1,7 @@
 """Turn an on-disk registry into the payload for a database-backed one.
 
-The on-disk registries are the seed, not the rival. `registry_payload("kmc")`
-reads the three YAML documents and returns exactly the dict a
+The on-disk registries are the seed, not the rival. `registry_payload(<name>)`
+(`kmc`, `visit_quality`, ...) reads the three YAML documents and returns exactly the dict a
 ``semantic_registry`` record holds, so moving KMC from files to a record is a
 copy rather than a re-typing -- and the copy is validated on the way in, which
 means a record can never be seeded from a registry that would not have been
@@ -19,10 +19,8 @@ from typing import Any
 from connect_labs.semantic.runtime import load_deployment_facts, load_registry
 from connect_labs.semantic.validation import assert_registry_valid
 
-REGISTRY_ROOT_NAME = "kmc"
 
-
-def registry_payload(name: str = REGISTRY_ROOT_NAME) -> dict[str, Any]:
+def registry_payload(name: str) -> dict[str, Any]:
     """The `data` for a semantic_registry record, seeded from the on-disk registry."""
     props, inds = load_registry(name)
     # EVERY deployment fact, not just the compiler's two. This read `load_deployment`,

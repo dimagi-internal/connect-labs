@@ -15,10 +15,12 @@ This page is the detailed companion to [Reports with Claude](reports-with-claude
     answers "why does this say 38%?". You don't need to write SQL. The sections on SQL show you what to look for,
     and Claude can do the reading.
 
-!!! warning "Today the semantic layer is KMC-shaped"
-    The only reports on the semantic layer are the KMC reports. Parts of the engine assume KMC data: a baby, a weight
-    series, and organisations (LLOs). A report for another programme can't be moved onto it without developer work.
-    See [Converting an existing report](#converting-an-existing-report) for exactly what that work is.
+!!! note "KMC is one registry, not the shape of the engine"
+    The KMC reports were the first on the semantic layer, and the engine used to assume KMC data: a baby, a weight
+    series, organisations (LLOs). It no longer does. What a registry counts (its **entity**), the extra columns it
+    adds to each visit, which pipelines feed it and whether it has a reading series are all declared in the registry
+    itself — see [The model](#the-model). A second, non-KMC registry, `visit_quality`, ships alongside KMC as a worked
+    example.
 
 ---
 
@@ -75,6 +77,42 @@ A saved weekly run is graded by the same engine, cut off at the run's end date. 
 
 A registry is one record with three documents. These excerpts come from the KMC registry, trimmed.
 
+### The model
+
+The top of the properties document says what one row is and where the visit rows come from:
+
+```yaml
+entity:
+  name: baby                 # one row per baby; the row key is baby_id
+  plural: babies             # used in explanations
+  key: baby_case_id          # the visit column that identifies a baby within an opportunity
+  cohort_date: 'COALESCE(reg_date, first_visit::timestamp)'   # which month a baby belongs to
+visit_columns:               # extra columns added to every visit row
+  - name: child_alive_no
+    word_match: { column: death_visits, word: 'no' }   # the answer contains the word "no"
+  - name: ebf_recorded
+    sql: 'ebf_visits IS NOT NULL'
+  - name: form_name
+    column: form_names                                 # a plain rename
+pipelines:
+  entity: children           # the report's pipeline the visit rows are built from
+  extra_fields: { weight_g: visits }   # a column taken from another of the report's pipelines
+```
+
+and the indicators document can set defaults:
+
+```yaml
+defaults: { min_denominator: 25 }   # the floor for an indicator that sets none of its own
+series: [C, N]                      # the indicator families; otherwise read off the indicator IDs
+```
+
+`visit_quality` answers the same questions differently: one row per **beneficiary** keyed by `entity_id`,
+cohorted on the first visit, visit columns built from `status` and `flagged`, one `visits` pipeline, no weight
+series and no organisations.
+
+Registries saved before these sections existed (the live KMC records) have none of them. For those, and only
+those, Labs supplies KMC's values; a registry that declares `entity:` as a mapping gets nothing it didn't declare.
+
 ### Properties (Layer 2)
 
 ```yaml
@@ -85,7 +123,8 @@ aggregates:              # one value per baby, over all their visits
   - name: death_visits
     label: 'Visits recording death'
     sql: 'COUNT(*) FILTER (WHERE child_alive_no)'
-weight_series:           # how the day-by-day weight series is cleaned
+weight_series:           # optional: how the day-by-day weight series is cleaned
+  value_column: weight_g
   day_collapse: 'AVG(weight_g)'
   valid: 'weight_g BETWEEN :WMIN AND :WMAX'
   derived:
@@ -100,7 +139,7 @@ properties:              # yes/no or numeric facts about each baby
 
 - **Constants** are named numbers. Writing `:ELIG_DAYS` anywhere means 28, and changing the constant changes every rule that uses it.
 - **Aggregates** summarise a baby's visits: how many there were, the first visit date, how many recorded a death.
-- **The weight series** turns raw weight readings into one clean value per day, then works out things like "was there an implausible swing?" and "what did the baby weigh around day 28?"
+- **The weight series** (optional — a registry without one has no series steps at all) turns raw readings into one clean value per day, then works out things like "was there an implausible swing?" and "what did the baby weigh around day 28?"
 - **Properties** are built from the above and from each other. Labs works out the order: `eligible` needs `started`, so `started` is computed first.
 
 ### Indicators (Layer 3)
@@ -162,7 +201,8 @@ Labs checks every registry before saving it:
 - every reference resolves;
 - indicator expressions use only allowed SQL;
 - nothing is circular;
-- the whole registry compiles at **every** level (programme, LLO, opportunity, worker, month, each level by month, single baby).
+- the model's names are plain identifiers and its SQL uses only allowed functions (a `word_match` word is letters, digits and `_` only);
+- the whole registry compiles at **every** level it can have (programme, opportunity, worker, month, each level by month, single entity — and the LLO levels when it has an `llo_map`; a registry without one simply has no LLO level).
 
 Validation doesn't run the SQL, so **it catches a broken definition, not a wrong number.**
 
@@ -300,24 +340,25 @@ A report is on the semantic layer when:
 2. **Registry.** Bind to the existing KMC registry (see [Managing registries](#managing-registries-across-programmes)) rather than creating a new one. Create a new one only if the definitions really differ, with `semantic_registry_create` and `seed_from: kmc`.
 3. **Bind.** `workflow_update_definition` with `registry_source: {registry_id: N}`. Or create the report from a KMC template with `registry_source` set, so it binds to that registry instead of seeding a copy of its own.
 4. **Page.** Either use the KMC templates' pages, which already read from the engine, or fetch `/api/<id>/semantic/?series=C&scopes=opportunity,flw` and grade the rows. The definition popup reads `/api/<id>/indicator-definitions/`.
-5. **Saved runs.** To get a weekly trend, set `snapshot_inputs` to `{builder: semantic_snapshot, series, scopes, case_index, credibility, …}`. Copy it from the KMC Programme Report. Then [rebuild history](reports-with-claude.md#rebuild-the-trend-after-a-definition-change).
+5. **Saved runs.** To get a weekly trend, set `snapshot_inputs` to `{builder: semantic_snapshot, series, scopes, case_index, credibility, …}` (`case_index.date_fields` names the fields that date a case; default `reg_date`, `first_visit_date`). Copy it from the KMC Programme Report. Then [rebuild history](reports-with-claude.md#rebuild-the-trend-after-a-definition-change).
 6. **Prove it.** Before switching anyone over, compare the new numbers with the old report on the same date, at every level, for every indicator. That's how KMC was converted, and the comparison found seven real defects, each invisible on its own. Keep the old report until it matches.
 
 ### If the report is not KMC-shaped
 
-Parts of the engine are hard-wired to KMC, so **a developer needs to generalise them first**:
+Declare its [model](#the-model) instead of pretending to be KMC:
 
-| Assumption | Where |
+| Question | Where it goes |
 | --- | --- |
-| Each row is a baby, identified by `baby_case_id`, with `visit_date`, `username`, `reg_date` | the compiler's per-baby steps |
-| There is a weight series (`weight_g`) and a `weight_series` section | the compiler, and validation (required) |
-| Visits carry the KMC marker columns (death, danger sign, referral, exclusive breastfeeding) | Layer 1 generation |
-| The main pipeline is called `children` and the weight pipeline `visits` | workflow binding |
-| Indicator IDs start with C or N | series selection |
-| Every registry has an `llo_map` | validation compiles the LLO level |
-| Wording says "babies"; minimum denominator defaults to 25 | explanations, grading, page code |
+| What is one row, and which visit column identifies it? | `entity: {name, plural, key}` |
+| Which month does a row belong to? | `entity.cohort_date` (defaults to a `first_visit` aggregate) |
+| Which extra per-visit columns do the rules need? | `visit_columns` (`word_match`, `sql` or `column`) |
+| Which of the report's pipelines feed it? | `pipelines: {entity, extra_fields}` |
+| Is there a per-entity reading series? | `weight_series` with its `value_column` — or leave it out |
+| Are there organisations? | `llo_map` in the deployment facts — or leave it out |
+| What is the minimum denominator? | `defaults.min_denominator` in the indicators document |
 
-The indicator half of the engine is already general: measures, filters, grouping by level, grading, explanations and validation. The work is making the per-entity half (which entity, which series, which markers) come from the registry instead of being fixed. Until that's done, don't fake it by renaming columns to look like KMC. The numbers will compile, and the explanations will describe babies and weights that aren't there.
+`registry/visit_quality` is the template to copy. The engine does not care what the IDs start with, what the entity
+is called or whether there are weights; explanations say "beneficiaries" when the entity is a beneficiary.
 
 ### Worked example: how KMC was converted
 

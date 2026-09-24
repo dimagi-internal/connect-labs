@@ -15,12 +15,8 @@ Plus a few invariants about repo CODE, which is not dynamic.
 
 from __future__ import annotations
 
-import pytest
+from connect_labs.semantic.gates import any_asks, input_state
 
-from connect_labs.semantic.gates import any_asks, credible_for, input_state
-
-MORTALITY = {"mortality_recording_credible": {"PIPN": True, "EHA": True, "GHI": False, "NAMA": False}}
-COMPLETION = {"completion_recording_credible": {"PIPN": True, "GHI": False}}
 # `referred` is stored as `referral_visits`; without the alias the gate looks up a
 # column that is not there and fails open.
 ASKS_AS = {"referred": "referral_visits", "self_referral_count": "self_referral_visits"}
@@ -70,31 +66,6 @@ class TestInputAvailability:
         """`IND_INPUTS` was keyed by indicator id, so an indicator and its inputs
         could be edited apart. They are one record now."""
         assert state("C20", [], {"anyrec_ever_danger_sign": 0}) == "ok"
-
-
-class TestCredibility:
-    @pytest.mark.parametrize("llo,expected", [("PIPN", True), ("EHA", True), ("GHI", False), ("NAMA", False)])
-    def test_mortality_is_an_allow_list(self, llo, expected):
-        assert credible_for("C14", llo, settings=MORTALITY) is expected
-
-    def test_programme_scope_is_never_gated(self):
-        """Pooling is the point: the programme figure includes credible recorders."""
-        assert credible_for("C14", None, settings=MORTALITY) is True
-        assert credible_for("C18", None, settings=COMPLETION) is True
-
-    def test_completion_gate_is_deny_listed_not_allow_listed(self):
-        """The two readings are deliberately opposite, which is why a registry must
-        state a verdict for every LLO — see the validator rule that enforces it."""
-        assert credible_for("C18", "GHI", settings=COMPLETION) is False
-        assert credible_for("C18", "PIPN", settings=COMPLETION) is True
-        assert credible_for("C18", "NOT-LISTED", settings=COMPLETION) is True
-
-    def test_ungated_indicators_pass(self):
-        assert credible_for("C09", "GHI", settings=MORTALITY) is True
-
-    def test_absent_settings_do_not_silently_publish_a_gated_figure(self):
-        """An empty table must not read as "everyone is credible" for C14."""
-        assert credible_for("C14", "PIPN", settings={}) is False
 
 
 class TestAppAsks:

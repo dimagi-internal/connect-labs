@@ -1,0 +1,7 @@
+# Visit quality -- deployment facts.
+#
+# Deliberately EMPTY. This registry has no LLO grouping (no llo_map, so no llo
+# scopes -- every other scope compiles), no credibility settings and no
+# availability map. That is a valid registry, not a half-configured one.
+
+version: 1

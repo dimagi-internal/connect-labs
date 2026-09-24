@@ -18,21 +18,17 @@ still run everywhere.
 from __future__ import annotations
 
 import math
-import os
 from pathlib import Path
 
 import pytest
 import yaml
 
 from connect_labs.semantic.compiler import compile_indicator_sql
+from connect_labs.semantic.tests.pg import connect_or_skip
 
 psycopg2 = pytest.importorskip("psycopg2")
 
 REGISTRY = Path(__file__).resolve().parents[1] / "registry" / "kmc"
-DSN = os.environ.get(
-    "SEMANTIC_TEST_DSN",
-    "host=127.0.0.1 port=5432 user=postgres password=postgres dbname=postgres",
-)
 ELIG, SWING = 28, 0.25
 LO, HI = 21, 35
 PLAUSIBLE_LO, PLAUSIBLE_HI = 10, 20
@@ -40,10 +36,7 @@ PLAUSIBLE_LO, PLAUSIBLE_HI = 10, 20
 
 @pytest.fixture(scope="module")
 def conn():
-    try:
-        c = psycopg2.connect(DSN, connect_timeout=4)
-    except Exception as exc:  # pragma: no cover
-        pytest.skip(f"no Postgres for the parity test: {exc}")
+    c = connect_or_skip("the parity test")
     yield c
     c.close()
 
@@ -122,7 +115,7 @@ DISCHARGE_TO_REG = {"b10": 6, "b11": 2, "b12": -1}
 
 DDL = """
 DROP TABLE IF EXISTS fixture_visits;
-CREATE TABLE fixture_visits (
+CREATE TEMP TABLE fixture_visits (
     baby_case_id text, visit_date timestamp, weight_g double precision,
     child_alive_no boolean, danger_sign_yes boolean, referred_yes boolean,
     self_referral_yes boolean, ebf_recorded boolean, form_name text,
@@ -473,7 +466,7 @@ def test_every_scope_executes_with_the_suppression_gates_on(conn):
 
     props_doc = yaml.safe_load((REGISTRY / "properties.yml").read_text())
     registry = yaml.safe_load((REGISTRY / "indicators.yml").read_text())
-    llo_map, settings = load_deployment()
+    llo_map, settings = load_deployment("kmc")
     _load(conn)
     cur = conn.cursor()
 

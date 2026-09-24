@@ -1,0 +1,111 @@
+# Visit quality -- Layer 3, in Cube measure syntax. Same shape as every registry:
+# an indicator is a value over a numerator and a denominator.
+#
+# Series prefix Q. Nothing about the engine knows that letter; filter_to_series
+# reads it off these ids (or `series:` below).
+
+version: 1
+cube: visit_quality_beneficiary
+description: >-
+  One row per beneficiary (see properties.yml), evaluated with GROUP BY over the
+  scope the caller selects -- programme, opportunity, FLW, month or beneficiary.
+
+defaults:
+  min_denominator: 5
+
+series: [Q]
+
+measures:
+  - name: q01
+    title: Beneficiaries reached
+    type: number
+    sql: '{q01_numerator}'
+    meta:
+      {
+        indicator: Q01,
+        category: Reach,
+        prominence: Top,
+        unit: n,
+        direction: none,
+      }
+  - name: q01_numerator
+    type: count
+  - name: q01_denominator
+    type: count
+
+  - name: q02
+    title: '% visited at least twice'
+    type: number
+    sql: '100.0 * {q02_numerator} / NULLIF({q02_denominator}, 0)'
+    meta:
+      {
+        indicator: Q02,
+        category: Follow-up,
+        prominence: Top,
+        unit: '%',
+        direction: higher,
+        bands: [60, 40],
+      }
+  - name: q02_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.visited_twice' }]
+  - name: q02_denominator
+    type: count
+
+  - name: q03
+    title: '% with a flagged visit'
+    type: number
+    sql: '100.0 * {q03_numerator} / NULLIF({q03_denominator}, 0)'
+    meta:
+      {
+        indicator: Q03,
+        category: Quality,
+        prominence: Top,
+        unit: '%',
+        direction: lower,
+        bands: [10, 25],
+      }
+  - name: q03_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.any_flagged' }]
+  - name: q03_denominator
+    type: count
+
+  - name: q04
+    title: '% with every visit approved'
+    type: number
+    sql: '100.0 * {q04_numerator} / NULLIF({q04_denominator}, 0)'
+    meta:
+      {
+        indicator: Q04,
+        category: Quality,
+        prominence: Lower,
+        unit: '%',
+        direction: higher,
+        bands: [90, 75],
+      }
+  - name: q04_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.all_approved' }]
+  - name: q04_denominator
+    type: count
+
+  - name: q05
+    title: Mean visits per beneficiary seen recently
+    type: number
+    sql: '{q05_numerator}'
+    meta:
+      {
+        indicator: Q05,
+        category: Follow-up,
+        prominence: Lower,
+        unit: n,
+        direction: none,
+      }
+  - name: q05_numerator
+    type: avg
+    sql: '{CUBE}.num_visits'
+    filters: [{ sql: '{CUBE}.seen_recently' }]
+  - name: q05_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.seen_recently' }]

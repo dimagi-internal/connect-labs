@@ -6,14 +6,18 @@ the reader. Given an indicator id it returns everything that determines its
 value, resolved and in the order it is evaluated:
 
   constants   the :NAME values that were substituted (section-2 cutoffs)
-  aggregates  the per-baby aggregates over the visit rows it touches
+  aggregates  the per-entity aggregates over the visit rows it touches
   weight_series
-              the window-function derivations over the weight series
+              the window-function derivations over the entity's reading series,
+              when the registry declares one
   properties  the Layer-2 property chain, transitively, constants substituted
   measure     the Layer-3 numerator / denominator / expression, compiled
 
 plus the full compiled statement for one scope, with the pipeline rows as a
 named placeholder (Layer 1 is the pipeline schema and lives with the pipeline).
+
+Every noun comes from the registry's model (`entity.name` / `entity.plural`), so
+a KMC indicator reads "babies" and any other registry reads its own entity.
 
 Pure: no database, no request. `semantic_registry_explain` wraps it for MCP.
 """
@@ -30,6 +34,7 @@ from connect_labs.semantic.compiler import (
     compile_indicator_sql,
     compile_measures,
 )
+from connect_labs.semantic.model import RegistryModel, resolve_model
 
 _IDENT = re.compile(r"\b([a-z_][a-z0-9_]*)\b")
 _CONST = re.compile(r"(?<!:):([A-Za-z][A-Za-z0-9_]*)")
@@ -99,6 +104,7 @@ def explain(
     by_name = _measure_index(registry)
     components = _referenced_measures(top, by_name)
     compiled = compile_measures(registry)
+    model = resolve_model(props_doc)
 
     constants = props_doc.get("constants") or {}
     props = {p["name"]: p for p in props_doc.get("properties") or []}
@@ -159,6 +165,7 @@ def explain(
     ws = props_doc.get("weight_series") or {}
     return {
         "indicator": (top.get("meta") or {}).get("indicator") or top["name"],
+        "entity": {"name": model.entity_name, "plural": model.entity_plural},
         "english": english(registry, props_doc, top["name"]),
         "measure": top["name"],
         "title": top.get("title"),
@@ -188,10 +195,15 @@ def explain(
             settings=settings,
         ),
         "layer1": (
-            "Visit rows come from the workflow's pipelines (children + visits), whose schema is the "
+            f"Visit rows come from the workflow's pipelines ({_pipeline_aliases(model)}), whose schema is the "
             "Layer-1 definition: read it with pipeline_get on the workflow's pipeline_sources."
         ),
     }
+
+
+def _pipeline_aliases(model: RegistryModel) -> str:
+    aliases = [a for a in [model.entity_pipeline, *model.extra_fields.values()] if a]
+    return " + ".join(dict.fromkeys(aliases)) or "as bound"
 
 
 # ── English ────────────────────────────────────────────────────────────────
@@ -222,37 +234,37 @@ def _words(sql: str) -> str:
     return out.replace("_", " ").strip()
 
 
-def _component_words(m: dict[str, Any]) -> str:
-    """One aggregating measure -> 'number of babies where ...' and friends."""
+def _component_words(m: dict[str, Any], plural: str) -> str:
+    """One aggregating measure -> 'number of <entities> where ...' and friends."""
     where = " and ".join(f"({_words(f['sql'])})" for f in (m.get("filters") or []))
     where = where.strip("()") if where.count("(") == 1 else where
     scope = f" where {where}" if where else ""
     mtype = m.get("type")
     inner = m.get("sql") or ""
     if mtype == "count":
-        return f"the number of babies{scope}"
+        return f"the number of {plural}{scope}"
     if mtype == "count_distinct":
         return f"the number of distinct {_words(inner)}{scope}"
     if mtype == "sum":
         guarded = re.match(r"\s*CASE WHEN (.+?) THEN (.+?) ELSE 0 END\s*$", inner, re.S)
         if guarded and not scope:
-            return f"the sum of {_words(guarded.group(2))} over babies where {_words(guarded.group(1))}"
-        return f"the sum of {_words(inner)} over babies{scope}"
+            return f"the sum of {_words(guarded.group(2))} over {plural} where {_words(guarded.group(1))}"
+        return f"the sum of {_words(inner)} over {plural}{scope}"
     if mtype == "avg":
-        return f"the mean of {_words(inner)} over babies{scope}"
+        return f"the mean of {_words(inner)} over {plural}{scope}"
     if mtype == "min":
-        return f"the smallest {_words(inner)} over babies{scope}"
+        return f"the smallest {_words(inner)} over {plural}{scope}"
     if mtype == "max":
-        return f"the largest {_words(inner)} over babies{scope}"
+        return f"the largest {_words(inner)} over {plural}{scope}"
     if "PERCENTILE_CONT(0.5)" in inner:
         col = re.search(r"ORDER BY \{CUBE\}\.([a-z0-9_]+)", inner)
-        return f"the median {_words(col.group(1)) if col else 'value'} over babies{scope}"
+        return f"the median {_words(col.group(1)) if col else 'value'} over {plural}{scope}"
     return f"{_words(inner)}{scope}"
 
 
 # ── How it is counted ──────────────────────────────────────────────────────
 # The same measure, as the two or three facts a reader actually needs: which
-# babies it is OUT OF, what it COUNTS among them, and when it is shown. Built
+# entities it is OUT OF, what it COUNTS among them, and when it is shown. Built
 # from the measures' own filters and the registry's `label` on each property and
 # aggregate, so it cannot drift from the SQL. A condition this cannot phrase is
 # returned in words rather than dropped.
@@ -328,12 +340,12 @@ def _conditions(sqls: list[str], labels: dict[str, str]) -> list[str]:
     return out
 
 
-def _quantity(m: dict[str, Any], labels: dict[str, str]) -> tuple[str, list[str]]:
+def _quantity(m: dict[str, Any], labels: dict[str, str], model: RegistryModel) -> tuple[str, list[str]]:
     """(what is aggregated, extra conditions it carries) for one component measure."""
     mtype = m.get("type")
     inner = re.sub(r"\{CUBE\}\.", "", m.get("sql") or "").strip()
     if mtype == "count":
-        return "babies", []
+        return model.entity_plural, []
     if mtype == "sum":
         guarded = re.fullmatch(r"CASE WHEN (.+?) THEN ([a-z_][a-z0-9_]*) ELSE 0 END", inner, re.S)
         if guarded:
@@ -341,15 +353,17 @@ def _quantity(m: dict[str, Any], labels: dict[str, str]) -> tuple[str, list[str]
         return f"total {_lower_first(_label(inner, labels))}", []
     if mtype == "avg":
         if per100 := re.fullmatch(r"([a-z_][a-z0-9_]*)\s*\*\s*100", inner):
-            return f"{_lower_first(_label(per100.group(1), labels))} per 100 babies", []
-        return f"average {_lower_first(_label(inner, labels))} per baby", []
+            return f"{_lower_first(_label(per100.group(1), labels))} per 100 {model.entity_plural}", []
+        return f"average {_lower_first(_label(inner, labels))} per {model.entity_name}", []
     if "PERCENTILE_CONT(0.5)" in inner:
         col = re.search(r"ORDER BY ([a-z_][a-z0-9_]*)", inner)
         return f"median {_lower_first(_label(col.group(1), labels)) if col else 'value'}", []
     return _words(inner), []
 
 
-def _how(top: dict[str, Any], by_name: dict[str, dict[str, Any]], labels: dict[str, str]) -> dict[str, Any] | None:
+def _how(
+    top: dict[str, Any], by_name: dict[str, dict[str, Any]], labels: dict[str, str], model: RegistryModel
+) -> dict[str, Any] | None:
     """{kind, base, counts|value, shown_when}, or None for an expression it cannot read."""
     expr = top.get("sql") or ""
     refs = [r for r in re.findall(r"\{([a-z0-9_]+)\}", expr) if r in by_name]
@@ -357,7 +371,7 @@ def _how(top: dict[str, Any], by_name: dict[str, dict[str, Any]], labels: dict[s
 
     def side(name):
         m = by_name[name]
-        what, extra = _quantity(m, labels)
+        what, extra = _quantity(m, labels, model)
         return what, _conditions([f["sql"] for f in (m.get("filters") or [])] + extra, labels)
 
     shown_when = None
@@ -376,8 +390,13 @@ def _how(top: dict[str, Any], by_name: dict[str, dict[str, Any]], labels: dict[s
     if len(refs) == 1 and expr.strip() == "{" + refs[0] + "}":
         what, where = side(refs[0])
         if shown_when:
-            shown_when = f"at least {meta['min_denominator']} babies"
-        return {"kind": "value", "base": {"what": "babies", "where": where}, "value": what, "shown_when": shown_when}
+            shown_when = f"at least {meta['min_denominator']} {model.entity_plural}"
+        return {
+            "kind": "value",
+            "base": {"what": model.entity_plural, "where": where},
+            "value": what,
+            "shown_when": shown_when,
+        }
     return None
 
 
@@ -394,7 +413,8 @@ def english(registry: dict[str, Any], props_doc: dict[str, Any], indicator: str)
     unit = meta.get("unit") or ""
     expr = top.get("sql") or ""
     refs = [r for r in re.findall(r"\{([a-z0-9_]+)\}", expr) if r in by_name]
-    parts = {r: _component_words(by_name[r]) for r in refs}
+    model = resolve_model(props_doc)
+    parts = {r: _component_words(by_name[r], model.entity_plural) for r in refs}
     labels = _labels(props_doc)
 
     if len(refs) == 2 and expr.startswith("100.0 *"):
@@ -437,18 +457,19 @@ def english(registry: dict[str, Any], props_doc: dict[str, Any], indicator: str)
     return {
         "plain": meta.get("plain"),
         "definition": definition,
-        "how": _how(top, by_name, labels),
+        "how": _how(top, by_name, labels, model),
         "reads": reads,
     }
 
 
 def to_markdown(explanations: list[dict[str, Any]], *, registry_label: str = "") -> str:
     """Every indicator as a Markdown section: English first, then the SQL chain."""
+    noun = ((explanations[0].get("entity") or {}).get("name") if explanations else None) or "entity"
     lines = [f"# Indicator definitions{(' — ' + registry_label) if registry_label else ''}", ""]
     lines.append(
         "Each indicator: the plain-English definition (authored where one exists, otherwise "
-        "rendered from the SQL), the properties it reads, the measure as compiled, and the "
-        "constants substituted. `props` is one row per baby; Layer 1 (the visit rows) is the "
+        f"rendered from the SQL), the properties it reads, the measure as compiled, and the "
+        f"constants substituted. `props` is one row per {noun}; Layer 1 (the visit rows) is the "
         "workflow's pipeline schema."
     )
     lines.append("")
@@ -481,7 +502,7 @@ def to_markdown(explanations: list[dict[str, Any]], *, registry_label: str = "")
         lines.append("```")
         if e.get("properties"):
             lines.append("")
-            lines.append("**Properties it reads (one row per baby, in evaluation order):**")
+            lines.append(f"**Properties it reads (one row per {noun}, in evaluation order):**")
             lines.append("```sql")
             for p in e["properties"]:
                 if p.get("notes"):
@@ -491,7 +512,7 @@ def to_markdown(explanations: list[dict[str, Any]], *, registry_label: str = "")
         ws = e.get("weight_series") or {}
         if ws.get("derived"):
             lines.append("")
-            lines.append("**Weight-series derivations (window over each baby's weighings):**")
+            lines.append(f"**Weight-series derivations (window over each {noun}'s readings):**")
             lines.append("```sql")
             for d in ws["derived"]:
                 lines.append(f"{d['name']} = {d['sql']}")

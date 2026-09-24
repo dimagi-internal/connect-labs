@@ -1,12 +1,16 @@
 """Compile a Cube-syntax indicator registry into one SQL statement.
 
 WHY
-The kmc_programme_metrics dashboard derives Layer 2 (case properties) and
-aggregates Layer 3 (indicators) in the BROWSER, in JavaScript, over one row per
-baby carrying a weights array. That forces the in-memory shape: indicators cannot
-be pushed into SQL because none of the properties they reference exist in the
-database to GROUP BY. This compiler removes that constraint -- properties become
-columns, indicators become a GROUP BY, and the browser receives aggregates.
+Indicator dashboards used to derive Layer 2 (per-entity properties) and aggregate
+Layer 3 (indicators) in the BROWSER, in JavaScript, over one row per entity. That
+forces the in-memory shape: indicators cannot be pushed into SQL because none of
+the properties they reference exist in the database to GROUP BY. This compiler
+removes that constraint -- properties become columns, indicators become a GROUP
+BY, and the browser receives aggregates.
+
+It knows nothing about any one programme. What it counts -- the entity, its key,
+its cohort date, an optional per-entity reading series -- is the registry's MODEL
+(`semantic/model.py`); KMC's babies and weights are one registry's answers.
 
 CONTRACT
     compile_indicator_sql(props, registry, visit_sql, scope) -> str
@@ -17,11 +21,11 @@ works; this compiler only owns Layer 2 and Layer 3.
 
 The emitted statement is:
 
-    visits      -- the pipeline's extraction, unchanged
-    weight_days -- one weight per (baby, day), implausible readings dropped
-    weight_agg  -- window functions over that series (swing check, growth window)
-    visit_agg   -- per-baby aggregates
-    props       -- Layer 2, one row per baby
+    visits      -- the pipeline's extraction, cut at the as-of date
+    weight_*    -- only when the registry declares a series: one reading per
+                   (entity, day), then window functions over that series
+    visit_agg   -- per-entity aggregates
+    props       -- Layer 2, one row per entity
     SELECT <scope cols>, <indicator measures> FROM props GROUP BY <scope cols>
 """
 
@@ -29,6 +33,9 @@ from __future__ import annotations
 
 import re
 from typing import Any
+
+from connect_labs.semantic import legacy
+from connect_labs.semantic.model import RegistryModel, resolve_model
 
 # Cube's real measure types. Anything outside this set is rejected at load: the
 # whole point of borrowing Cube's notation is that we do not invent dialect.
@@ -77,9 +84,9 @@ SCOPES: dict[str, list[str]] = {
     "llo_month": ["llo", "cohort_month"],
     "opportunity_month": ["opportunity_id", "cohort_month"],
     "flw_month": ["opportunity_id", "username", "cohort_month"],
-    # One row per baby. This is how a measure becomes a CONTRIBUTION: at case
+    # One row per entity. This is how a measure becomes a CONTRIBUTION: at case
     # scope a rate's denominator is 1 or 0 and its value 100 or 0, a median is the
-    # baby's own value, a mean-per-case is the baby's count -- the same measure,
+    # entity's own value, a mean-per-case is the entity's count -- the same measure,
     # the same gates, read one grouping level further down. A worker's case table
     # is this scope filtered to that worker (see `visit_filter`), never a second
     # implementation of the registry in the browser.
@@ -518,14 +525,43 @@ LAYER2_FUNCTIONS: frozenset[str] = ALLOWED_FUNCTIONS | frozenset(
 )
 _LAYER2_NODES: frozenset[str] = (frozenset(_ALLOWED_NODES) - {"Alias", "Anonymous"}) | {"Var", "Interval"}
 
-# Columns each weight-series fragment can see. These CTEs are the compiler's own,
-# so the set is exact; see _build_ctes.
-_DAY_COLLAPSE_COLUMNS = frozenset({"baby_id", "day", "weight_g", "is_seed"})  # weight_readings
-_DERIVED_COLUMNS = frozenset(
-    {"baby_id", "day", "w", "is_seed", "prev_w", "prev_day", "series_day", "age_days"}
-)  # weight_seq
-# What base_m adds beyond the aggregates and weight derivations (visit_agg's keys).
-_BASE_COLUMNS = frozenset({"baby_id", "opportunity_id", "username", "case_id", "cohort_month"})
+# Aggregates cannot run where a fragment is evaluated once per ROW -- a Layer-1
+# visit column, or the cohort date in base_m. The grammar would admit them (they
+# are safe), and the statement would then fail at execution with a grouping error;
+# refusing them here keeps that a validation message instead.
+_AGGREGATE_FUNCTIONS = frozenset(
+    {"Sum", "Count", "Avg", "Min", "Max", "ArrayAgg", "LogicalAnd", "LogicalOr", "PercentileCont", "PercentileDisc"}
+)
+ROW_FUNCTIONS: frozenset[str] = LAYER2_FUNCTIONS - _AGGREGATE_FUNCTIONS
+
+# A `word_match` visit column compiles to `(x.<column> ~* '\y<word>\y')`. The word
+# is structured data rather than SQL because the lexical guard refuses every
+# backslash in a fragment (see _LEXICAL_FORBIDDEN) -- so the engine writes the `\y`
+# itself, around a word that can hold nothing a regex or a string literal could
+# misread.
+_WORD = re.compile(r"[A-Za-z0-9_]+\Z")
+
+
+# Columns each series fragment can see. These CTEs are the compiler's own, so the
+# set is exact; see _build_ctes. The internal names (day, w, prev_w, ...) are a
+# contract with the registries that exist, and the entity key and value column are
+# the registry's own.
+def _day_collapse_columns(model: RegistryModel) -> frozenset[str]:  # weight_readings
+    return frozenset({model.row_id, "day", model.value_column or "", "is_seed"}) - {""}
+
+
+def _derived_columns(model: RegistryModel) -> frozenset[str]:  # weight_seq
+    return frozenset({model.row_id, "day", "w", "is_seed", "prev_w", "prev_day", "series_day", "age_days"})
+
+
+# What base_m adds beyond the aggregates and series derivations (visit_agg's keys).
+def _base_columns(model: RegistryModel) -> frozenset[str]:
+    return frozenset({model.row_id, "opportunity_id", "username", "case_id", "cohort_month"})
+
+
+# What visit_agg carries, and so what the cohort date may read.
+def _visit_agg_columns(model: RegistryModel, aggregates: list[dict[str, Any]]) -> frozenset[str]:
+    return frozenset({model.row_id, "opportunity_id", "username"} | {a["name"] for a in aggregates})
 
 
 def _check_layer2_fragment(
@@ -533,6 +569,7 @@ def _check_layer2_fragment(
     label: str,
     constants: dict[str, Any],
     columns: frozenset[str] | None = None,
+    functions: frozenset[str] = LAYER2_FUNCTIONS,
 ) -> list[str]:
     """One properties-document fragment, checked AS THE COMPILER WILL EMIT IT.
 
@@ -555,8 +592,144 @@ def _check_layer2_fragment(
     if tree is None:
         return problems
     return _grammar_problems(
-        tree, label, functions=LAYER2_FUNCTIONS, nodes=_LAYER2_NODES, anonymous_ok=False, columns=columns
+        tree, label, functions=functions, nodes=_LAYER2_NODES, anonymous_ok=False, columns=columns
     )
+
+
+def fragment_columns(fragment: str) -> set[str]:
+    """The bare column names a (grammar-checked) fragment reads."""
+    import sqlglot
+    from sqlglot import exp
+
+    tree = sqlglot.parse_one(fragment, read="postgres")
+    return {c.name for c in tree.find_all(exp.Column) if not c.table}
+
+
+def qualify_columns(fragment: str, alias: str, columns: set[str] | frozenset[str]) -> str:
+    """`reg_date` -> `v.reg_date` for each named column, outside string literals.
+
+    Used on fragments that have already passed the grammar, so the only quoting is
+    single-quoted literals. A name after `::` is a type, and a name before `(` is a
+    function, so neither is touched.
+    """
+    if not columns:
+        return fragment
+    names = "|".join(sorted((re.escape(c) for c in columns), key=len, reverse=True))
+    pattern = re.compile(rf"(?<![\w.:])({names})\b(?!\s*\()")
+    parts = re.split(r"('(?:[^']|'')*')", fragment)
+    return "".join(part if part.startswith("'") else pattern.sub(rf"{alias}.\1", part) for part in parts)
+
+
+def _identifier_problem(value: Any, label: str) -> list[str]:
+    if not isinstance(value, str) or not _IDENTIFIER.match(value) or value.lower() in _SESSION_WORDS:
+        return [f"{label}: {value!r} must be a column name (letters, digits and _ only)"]
+    return []
+
+
+def _model_problems(props_doc: dict[str, Any], constants: dict[str, Any]) -> list[str]:
+    """The model sections: entity, visit_columns, pipelines, weight_series.value_column.
+
+    For a document that predates the model the legacy values are checked too, so a
+    shim value can never be the one thing that skips the grammar.
+    """
+    old = legacy.predates_model(props_doc)
+    problems: list[str] = []
+
+    entity = legacy.ENTITY if old else props_doc.get("entity")
+    if not isinstance(entity, dict):
+        return ["entity: must be a mapping with name, plural, key and (optionally) cohort_date"]
+    problems += _identifier_problem(entity.get("name"), "entity.name")
+    problems += _identifier_problem(entity.get("key"), "entity.key")
+    plural = entity.get("plural")
+    if plural is not None and (
+        not isinstance(plural, str) or not plural.strip() or len(plural) > 64 or not plural.isprintable()
+    ):
+        problems.append("entity.plural: must be a short printable noun")
+    if problems:
+        return problems  # every check below is built from the name and key
+
+    model = resolve_model(props_doc)
+    aggregates = [a for a in (props_doc.get("aggregates") or []) if isinstance(a, dict) and a.get("name")]
+    cohort_cols = _visit_agg_columns(model, aggregates)
+    cohort = _check_layer2_fragment(
+        model.cohort_date, "entity.cohort_date", constants, columns=cohort_cols, functions=ROW_FUNCTIONS
+    )
+    if cohort and "cohort_date" not in entity:
+        cohort.append(
+            "entity.cohort_date: not declared, so it defaults to `first_visit` -- declare an aggregate named "
+            "first_visit, or set entity.cohort_date"
+        )
+    problems += cohort
+
+    columns = (
+        legacy.VISIT_COLUMNS if old and props_doc.get("visit_columns") is None else props_doc.get("visit_columns")
+    )
+    if columns is not None:
+        if not isinstance(columns, list):
+            problems.append("visit_columns: must be a list")
+            columns = []
+        seen: set[str] = set()
+        for i, col in enumerate(columns):
+            name = col.get("name") if isinstance(col, dict) else None
+            label = f"visit_columns.{name if isinstance(name, str) else i}"
+            if not isinstance(name, str) or not _IDENTIFIER.match(name):
+                problems.append(f"{label}: {name!r} is not a valid name (letters, digits and _ only)")
+                continue
+            if name in seen:
+                problems.append(f"{label}: declared twice")
+            seen.add(name)
+            kinds = [k for k in ("word_match", "sql", "column") if k in col]
+            if len(kinds) != 1:
+                problems.append(f"{label}: needs exactly one of word_match, sql or column")
+                continue
+            if kinds == ["word_match"]:
+                wm = col["word_match"]
+                if not isinstance(wm, dict):
+                    problems.append(f"{label}.word_match: must be a mapping of column and word")
+                    continue
+                problems += _identifier_problem(wm.get("column"), f"{label}.word_match.column")
+                word = wm.get("word")
+                if not isinstance(word, str) or not _WORD.match(word):
+                    problems.append(f"{label}.word_match.word: {word!r} must match ^[A-Za-z0-9_]+$")
+            elif kinds == ["column"]:
+                problems += _identifier_problem(col["column"], f"{label}.column")
+            else:
+                # Layer-1 columns are named by the pipeline, so only the shape can be
+                # checked; and there are no constants at Layer 1.
+                problems += _check_layer2_fragment(col["sql"], f"{label}.sql", {}, functions=ROW_FUNCTIONS)
+
+    pipelines = legacy.PIPELINES if old and props_doc.get("pipelines") is None else props_doc.get("pipelines")
+    if pipelines is not None:
+        if not isinstance(pipelines, dict):
+            problems.append("pipelines: must be a mapping of entity and extra_fields")
+        else:
+            if pipelines.get("entity") is not None:
+                problems += _identifier_problem(pipelines["entity"], "pipelines.entity")
+            extra = pipelines.get("extra_fields") or {}
+            if not isinstance(extra, dict):
+                problems.append("pipelines.extra_fields: must be a mapping of column -> pipeline alias")
+            else:
+                for col, alias in extra.items():
+                    problems += _identifier_problem(col, "pipelines.extra_fields")
+                    problems += _identifier_problem(alias, f"pipelines.extra_fields.{col}")
+
+    ws = props_doc.get("weight_series")
+    if ws is not None and not isinstance(ws, dict):
+        problems.append("weight_series: must be a mapping")
+    elif ws:
+        if model.value_column is None:
+            problems.append("weight_series.value_column: required -- the Layer-1 column the series reads")
+        else:
+            problems += _identifier_problem(model.value_column, "weight_series.value_column")
+    return problems
+
+
+def model_problems(props_doc: dict[str, Any]) -> list[str]:
+    """The model sections alone, with the document's constants -- for Layer 1."""
+    raw = props_doc.get("constants") or {}
+    constants = dict(raw) if isinstance(raw, dict) else {}
+    constants["as_of"] = "CURRENT_DATE"
+    return _model_problems(props_doc, constants)
 
 
 def _constant_problems(constants: Any) -> list[str]:
@@ -603,7 +776,7 @@ def validate_properties_doc(props_doc: dict[str, Any], llo_map: dict[Any, str] |
     properties = props_doc.get("properties") or []
     aggregates = props_doc.get("aggregates") or []
     ws = props_doc.get("weight_series") or {}
-    derived = ws.get("derived") or []
+    derived = ws.get("derived") or [] if isinstance(ws, dict) else []
     name_problems = [
         p
         for kind, items in (
@@ -616,41 +789,50 @@ def validate_properties_doc(props_doc: dict[str, Any], llo_map: dict[Any, str] |
     if name_problems:
         return problems + name_problems  # every label below is built from a name
 
+    model_problems = _model_problems(props_doc, constants)
+    if model_problems:
+        return problems + model_problems  # the column sets below come from the model
+    model = resolve_model(props_doc)
+
     # Aggregates and the `valid` predicate read Layer-1 columns, named by the
     # pipeline rather than the registry -- only their shape can be checked here.
     for a in aggregates:
         problems.extend(_check_layer2_fragment(a.get("sql"), f"aggregates.{a['name']}", constants))
-    problems.extend(_check_layer2_fragment(ws.get("valid"), "weight_series.valid", constants))
-    problems.extend(
-        _check_layer2_fragment(
-            ws.get("day_collapse"), "weight_series.day_collapse", constants, columns=_DAY_COLLAPSE_COLUMNS
-        )
-    )
-    for d in derived:
+    if ws:
+        problems.extend(_check_layer2_fragment(ws.get("valid"), "weight_series.valid", constants))
         problems.extend(
             _check_layer2_fragment(
-                d.get("sql"), f"weight_series.derived.{d['name']}", constants, columns=_DERIVED_COLUMNS
+                ws.get("day_collapse"),
+                "weight_series.day_collapse",
+                constants,
+                columns=_day_collapse_columns(model),
             )
         )
-
-    seed = ws.get("seed_reading")
-    if seed:
-        if not isinstance(seed, dict):
-            problems.append("weight_series.seed_reading: must be a mapping")
-        else:
-            for key in ("day", "value"):
-                if not isinstance(seed.get(key), str) or not _IDENTIFIER.match(seed[key]):
-                    problems.append(f"weight_series.seed_reading.{key}: must be a single column name")
-            if seed.get("exclude"):
-                problems.extend(
-                    _check_layer2_fragment(seed["exclude"], "weight_series.seed_reading.exclude", constants)
+        for d in derived:
+            problems.extend(
+                _check_layer2_fragment(
+                    d.get("sql"), f"weight_series.derived.{d['name']}", constants, columns=_derived_columns(model)
                 )
+            )
 
-    # A property runs over base_m and the property levels before it: the baby's
-    # keys, every aggregate, every weight derivation, and the other properties
+        seed = ws.get("seed_reading")
+        if seed:
+            if not isinstance(seed, dict):
+                problems.append("weight_series.seed_reading: must be a mapping")
+            else:
+                for key in ("day", "value"):
+                    if not isinstance(seed.get(key), str) or not _IDENTIFIER.match(seed[key]):
+                        problems.append(f"weight_series.seed_reading.{key}: must be a single column name")
+                if seed.get("exclude"):
+                    problems.extend(
+                        _check_layer2_fragment(seed["exclude"], "weight_series.seed_reading.exclude", constants)
+                    )
+
+    # A property runs over base_m and the property levels before it: the entity's
+    # keys, every aggregate, every series derivation, and the other properties
     # (ordering and cycles are _property_levels' job).
     visible = (
-        set(_BASE_COLUMNS)
+        set(_base_columns(model))
         | {a["name"] for a in aggregates}
         | {d["name"] for d in derived}
         | {p["name"] for p in properties}
@@ -715,10 +897,11 @@ def validate(
     so a record saved before a rule existed is refused when it is next run rather
     than executed.
     """
+    ws = props_doc.get("weight_series") or {}
     known = {p["name"] for p in props_doc["properties"]}
-    known |= {a["name"] for a in props_doc["aggregates"]}
-    known |= {d["name"] for d in props_doc["weight_series"]["derived"]}
-    known |= {"baby_id", "num_visits"}
+    known |= {a["name"] for a in props_doc.get("aggregates") or []}
+    known |= {d["name"] for d in (ws.get("derived") or [] if isinstance(ws, dict) else [])}
+    known.add(resolve_model(props_doc).row_id)
     known |= set(INTRINSIC_SCOPE_COLUMNS)
     if llo_map:
         known.add("llo")
@@ -728,6 +911,7 @@ def validate(
     # statement as raw text, and neither was looked at before.
     problems.extend(_name_problems("measures", registry["measures"]))
     problems.extend(validate_properties_doc(props_doc, llo_map))
+    problems.extend(indicator_model_problems(registry))
     for rule in registry.get("suppression") or []:
         scope_col = rule.get("scope", "llo") if isinstance(rule, dict) else None
         if scope_col not in INTRINSIC_SCOPE_COLUMNS | {"llo"}:
@@ -748,6 +932,29 @@ def validate(
             # check reads the whole expression.
             if frag.strip():
                 problems.extend(_check_expression(frag, m["name"]))
+    return problems
+
+
+def indicator_model_problems(registry: dict[str, Any]) -> list[str]:
+    """The indicators document's model sections: `defaults` and `series`."""
+    problems: list[str] = []
+    defaults = registry.get("defaults")
+    if defaults is not None:
+        if not isinstance(defaults, dict):
+            problems.append("defaults: must be a mapping (e.g. {min_denominator: 25})")
+        else:
+            unknown = sorted(set(defaults) - {"min_denominator"})
+            if unknown:
+                problems.append(f"defaults: unknown key(s) {unknown}; expected min_denominator")
+            md = defaults.get("min_denominator")
+            if md is not None and (isinstance(md, bool) or not isinstance(md, int) or md < 1):
+                problems.append(f"defaults.min_denominator: must be a positive integer, got {md!r}")
+    series = registry.get("series")
+    if series is not None:
+        if not isinstance(series, list) or not all(
+            isinstance(x, str) and re.fullmatch(r"[A-Za-z]+", x) for x in series
+        ):
+            problems.append("series: must be a list of indicator prefixes (letters only), e.g. [C, N]")
     return problems
 
 
@@ -805,62 +1012,64 @@ _SQL_WORDS = frozenset(
         "then",
         "else",
         "end",
-        "weight_g",
         "day",
     }
 )
 
 
-def _seed_reading_sql(ws: dict[str, Any], C) -> str:
-    """The optional per-baby SEED reading a registry may declare on its weight series.
+def _seed_reading_sql(ws: dict[str, Any], C, model: RegistryModel) -> str:
+    """The optional per-entity SEED reading a registry may declare on its series.
 
-    The demo compute spec's weight series is the ENROLMENT weight at the registration
-    date plus every visit weight, with an enrolment weight within 1 g of birth weight
-    dropped as a re-entry. The visits pipeline carries only visit weights, so without
-    this every "measured weigh-days" rule (thin) and the window anchor run one reading
-    short. Declared as data::
+    KMC's case: the demo compute spec's weight series is the ENROLMENT weight at the
+    registration date plus every visit weight, with an enrolment weight within 1 g
+    of birth weight dropped as a re-entry. The visits pipeline carries only visit
+    weights, so without this every "measured weigh-days" rule (thin) and the
+    window anchor run one reading short. Declared as data::
 
         weight_series:
+          value_column: weight_g
           seed_reading:
-            day: reg_date                  # a Layer-1 column, MIN() per baby
-            value: enrollment_weight_g     # a Layer-1 column, MIN() per baby
+            day: reg_date                  # a Layer-1 column, MIN() per entity
+            value: enrollment_weight_g     # a Layer-1 column, MIN() per entity
             exclude: 'ABS(weight_g - birth_weight_g) < 1'   # optional predicate
 
-    Any other column the predicate names is also MIN()'d per baby, so the rule can
-    read registration fields. A registry without `seed_reading` compiles to the
+    Any other column the predicate names is also MIN()'d per entity, so the rule
+    can read registration fields. A registry without `seed_reading` compiles to the
     same SQL it always did: every reading is is_seed = FALSE.
     """
     seed = ws.get("seed_reading")
     if not seed:
         return ""
+    rid, key, vcol = model.row_id, model.key, model.value_column
     day, value = seed["day"], seed["value"]
     exclude = seed.get("exclude") or "FALSE"
     refs = set(re.findall(r"\b([a-z_][a-z0-9_]*)\b", exclude.lower()))
-    extra = sorted(c for c in refs if c not in _SQL_WORDS and c not in {day, value})
+    extra = sorted(c for c in refs if c not in _SQL_WORDS and c not in {day, value, vcol})
     extra_cols = "".join(f",\n               MIN({c}) AS {c}" for c in extra)
     return f"""
     UNION ALL
-    SELECT baby_id, day, weight_g, TRUE AS is_seed
+    SELECT {rid}, day, {vcol}, TRUE AS is_seed
     FROM (
-        SELECT opportunity_id || '|' || baby_case_id AS baby_id,
+        SELECT opportunity_id || '|' || {key} AS {rid},
                MIN({day})::date AS day,
-               MIN({value}) AS weight_g{extra_cols}
+               MIN({value}) AS {vcol}{extra_cols}
         FROM visits
-        WHERE baby_case_id IS NOT NULL
+        WHERE {key} IS NOT NULL
         GROUP BY 1
     ) seed
     WHERE day IS NOT NULL
-      AND weight_g IS NOT NULL
+      AND {vcol} IS NOT NULL
       AND {C(ws['valid'])}
       AND NOT COALESCE(({C(exclude)}), FALSE)"""
 
 
 # The visit-level predicate a caller may push down. Keys are the only columns a
-# filter may name; values are escaped here, never interpolated by the caller.
-_FILTER_COLUMNS = {"opportunity_id": int, "username": str, "baby_case_id": str}
+# filter may name -- the two every visit row carries, plus the registry's own entity
+# key -- and values are escaped here, never interpolated by the caller.
+_FILTER_COLUMNS = {"opportunity_id": int, "username": str}
 
 
-def visit_filter_sql(visit_filter: dict[str, Any] | None) -> str:
+def visit_filter_sql(visit_filter: dict[str, Any] | None, entity_key: str | None = None) -> str:
     """AND-clauses restricting the visit set BEFORE Layer 2 runs, or ''.
 
     A per-worker case table needs the case scope for ONE worker. Filtering the
@@ -871,20 +1080,92 @@ def visit_filter_sql(visit_filter: dict[str, Any] | None) -> str:
     """
     if not visit_filter:
         return ""
+    allowed = dict(_FILTER_COLUMNS)
+    if entity_key and _IDENTIFIER.match(entity_key):
+        allowed[entity_key] = str
     parts = []
     for key, value in visit_filter.items():
-        if key not in _FILTER_COLUMNS:
-            raise RegistryError(
-                f"visit_filter key {key!r} is not filterable; expected one of {sorted(_FILTER_COLUMNS)}"
-            )
+        if key not in allowed:
+            raise RegistryError(f"visit_filter key {key!r} is not filterable; expected one of {sorted(allowed)}")
         if value is None:
             continue
-        if _FILTER_COLUMNS[key] is int:
+        if allowed[key] is int:
             parts.append(f"{key} = {int(value)}")
         else:
             escaped = str(value).replace("'", "''")
             parts.append(f"{key} = '{escaped}'")
     return "".join(f"\n      AND {p}" for p in parts)
+
+
+def _series_ctes(ws: dict[str, Any], C, model: RegistryModel) -> str:
+    """The per-entity reading series: readings -> one per day -> windowed -> aggregated.
+
+    Emitted only when the registry declares `weight_series`. The internal column
+    names (day, w, prev_w, prev_day, series_day, age_days, is_seed) are what every
+    registry's `derived` and `day_collapse` fragments are written against.
+
+    Why each piece is the way it is, all learned on KMC's real data:
+
+    * age_days is measured from the entity's FIRST VISIT, not its first reading.
+      Anchoring on the first weighing shifted KMC's growth window for every baby
+      whose first visit carried no weight, and silently changed C09-C13.
+    * prev_* are partitioned by is_seed as well as entity: a measured reading's
+      predecessor is the previous MEASURED reading, so a seed reading never forms
+      a pair (the spec excludes the enrolment->visit-1 rebound), and a registry
+      with no seed reading compiles to exactly what it did before.
+    * series_day counts from the first MEASURED (non-seed) reading. Anchoring on
+      the seed pulled KMC's velocity window back to the registration date, where
+      it held too few visit weighings to score (measured 2026-09-10: PIPN
+      incomplete 45 to 54 percent, EHA 39 to 66).
+    * A measured reading wins over a seed reading on the same day.
+    """
+    rid, key, vcol = model.row_id, model.key, model.value_column
+    first = f"{model.entity_name}_first"
+    seed_union = _seed_reading_sql(ws, C, model)
+    wderived = ",\n    ".join(f"{C(d['sql'])} AS {d['name']}" for d in ws["derived"])
+    return f"""
+weight_readings AS (
+    SELECT opportunity_id || '|' || {key} AS {rid},
+           visit_date::date AS day,
+           {vcol},
+           FALSE AS is_seed
+    FROM visits
+    WHERE {key} IS NOT NULL
+      AND {C(ws['valid'])}{seed_union}
+),
+weight_days AS (
+    -- One reading per (entity, day); a measured reading wins over a seed reading.
+    SELECT {rid}, day,
+           COALESCE({ws['day_collapse']} FILTER (WHERE NOT is_seed),
+                    MAX({vcol}) FILTER (WHERE is_seed)) AS w,
+           BOOL_AND(is_seed) AS is_seed
+    FROM weight_readings
+    GROUP BY 1, 2
+),
+{first} AS (
+    SELECT opportunity_id || '|' || {key} AS {rid},
+           MIN(visit_date)::date AS first_visit_day
+    FROM visits
+    WHERE {key} IS NOT NULL
+    GROUP BY 1
+),
+weight_seq AS (
+    -- age_days: from the FIRST VISIT. prev_*: the previous reading of the same
+    -- kind (seed or measured). series_day: from the first MEASURED reading.
+    SELECT wd.{rid}, wd.day, wd.w, wd.is_seed,
+           LAG(wd.w) OVER (PARTITION BY wd.{rid}, wd.is_seed ORDER BY wd.day) AS prev_w,
+           LAG(wd.day) OVER (PARTITION BY wd.{rid}, wd.is_seed ORDER BY wd.day) AS prev_day,
+           (wd.day - MIN(wd.day) FILTER (WHERE NOT wd.is_seed) OVER (PARTITION BY wd.{rid}))::int AS series_day,
+           (wd.day - bf.first_visit_day)::int AS age_days
+    FROM weight_days wd
+    JOIN {first} bf USING ({rid})
+),
+weight_agg AS (
+    SELECT {rid},
+    {wderived}
+    FROM weight_seq
+    GROUP BY {rid}
+),"""
 
 
 def _build_ctes(
@@ -899,21 +1180,35 @@ def _build_ctes(
 
     Shared by both entry points so a multi-scope rollup reuses ONE extraction
     instead of re-running the whole chain per scope.
+
+    The entity is keyed on (opportunity, key), NOT the key alone: 829 case ids in
+    the KMC cohort appear in more than one opportunity, and grouping on the id by
+    itself merged them -- 7,889 cases instead of 8,718, silently changing every
+    denominator.
+
+    The cohort month truncates the registry's `entity.cohort_date`. KMC's is its
+    registration date falling back to the first visit, because reg_date is a
+    FILTERed MIN that is NULL for a baby whose rows never carried one; truncating
+    reg_date alone dropped those cases out of every month.
     """
     problems = validate(props_doc, registry, llo_map=llo_map)
     if problems:
         raise RegistryError("registry does not validate:\n  " + "\n  ".join(problems))
 
-    consts = dict(props_doc["constants"])
+    model = resolve_model(props_doc)
+    rid, key = model.row_id, model.key
+
+    consts = dict(props_doc.get("constants") or {})
     consts["as_of"] = as_of
 
     def C(sql: str) -> str:
         return _subst_constants(sql, consts)
 
-    ws = props_doc["weight_series"]
-    seed_union = _seed_reading_sql(ws, C)
-    agg_cols = ",\n    ".join(f"{C(a['sql'])} AS {a['name']}" for a in props_doc["aggregates"])
-    wderived = ",\n    ".join(f"{C(d['sql'])} AS {d['name']}" for d in ws["derived"])
+    aggregates = props_doc.get("aggregates") or []
+    agg_cols = ",\n    ".join(f"{C(a['sql'])} AS {a['name']}" for a in aggregates)
+    ws = props_doc.get("weight_series") or None
+    series_ctes = _series_ctes(ws, C, model) if ws else ""
+    cohort = qualify_columns(C(model.cohort_date), "v", _visit_agg_columns(model, aggregates))
 
     levels = _property_levels(props_doc["properties"])
     prop_ctes = []
@@ -928,6 +1223,7 @@ def _build_ctes(
 
     compiled = compile_measures(registry)
     llo_col = f",\n           {_llo_case_sql(llo_map)} AS llo" if llo_map else ""
+    series_select, series_join = (", w.*", f"\n    LEFT JOIN weight_agg w USING ({rid})") if ws else ("", "")
 
     ctes = f"""WITH visits_all AS (
 {visit_sql}
@@ -939,103 +1235,29 @@ visits AS (
     -- 6 Sep" quietly meant "eligibility as of 6 Sep, activity as of now".
     -- `< date + 1` keeps the whole of the as-of day, midnight included.
     SELECT * FROM visits_all
-    WHERE visit_date < ((({as_of}))::date + 1)::timestamp{visit_filter_sql(visit_filter)}
-),
-weight_readings AS (
-    -- The baby key is (opportunity, case), NOT the case id alone. 829 case ids in
-    -- the KMC cohort appear in more than one opportunity, and grouping on the id
-    -- by itself merged them into a single baby -- 7,889 cases instead of 8,718,
-    -- silently changing every denominator. The render code keys on opp+case for
-    -- exactly this reason.
-    SELECT opportunity_id || '|' || baby_case_id AS baby_id,
-           visit_date::date AS day,
-           weight_g,
-           FALSE AS is_seed
-    FROM visits
-    WHERE baby_case_id IS NOT NULL
-      AND {C(ws['valid'])}{seed_union}
-),
-weight_days AS (
-    -- One reading per (baby, day). A measured reading wins over a seed reading
-    -- on the same day, as the demo compute spec has it ("a visit weighing wins
-    -- over the enrolment value").
-    SELECT baby_id, day,
-           COALESCE({ws['day_collapse']} FILTER (WHERE NOT is_seed),
-                    MAX(weight_g) FILTER (WHERE is_seed)) AS w,
-           BOOL_AND(is_seed) AS is_seed
-    FROM weight_readings
-    GROUP BY 1, 2
-),
-baby_first AS (
-    SELECT opportunity_id || '|' || baby_case_id AS baby_id,
-           MIN(visit_date)::date AS first_visit_day
-    FROM visits
-    WHERE baby_case_id IS NOT NULL
-    GROUP BY 1
-),
-weight_seq AS (
-    -- age_days is measured from the baby's FIRST VISIT, not its first weight
-    -- reading. The render code uses `(p.day - fv) / DAY` where fv is the first
-    -- visit; anchoring on the first weighing instead shifts the growth window for
-    -- every baby whose first visit carried no weight, and silently changes
-    -- C09-C13. Caught only on real data.
-    SELECT wd.baby_id, wd.day, wd.w, wd.is_seed,
-           -- prev_* are partitioned by is_seed as well as baby: a measured
-           -- reading's predecessor is the previous MEASURED reading, so a seed
-           -- reading (the enrolment weight) never forms a pair -- the spec
-           -- excludes the enrolment->visit-1 rebound -- and a registry with no
-           -- seed reading compiles to exactly what it did before.
-           LAG(wd.w) OVER (PARTITION BY wd.baby_id, wd.is_seed ORDER BY wd.day) AS prev_w,
-           -- prev_day and series_day exist for the demo compute spec's rules,
-           -- which the render's old swing check cannot express: an IMPOSSIBLE
-           -- step is a per-pair g/kg/DAY rate (so the gap in days matters), and
-           -- the velocity window is "the first 21 days of the VISIT weight
-           -- series" -- counted from the first MEASURED (non-seed) weighing.
-           -- Anchoring on the seed reading instead pulled the window back to
-           -- the registration date, where it held too few visit weighings to
-           -- score, and turned healthy babies into "incomplete" (measured
-           -- 2026-09-10: PIPN incomplete 45 to 54 percent, EHA 39 to 66).
-           LAG(wd.day) OVER (PARTITION BY wd.baby_id, wd.is_seed ORDER BY wd.day) AS prev_day,
-           (wd.day - MIN(wd.day) FILTER (WHERE NOT wd.is_seed) OVER (PARTITION BY wd.baby_id))::int AS series_day,
-           (wd.day - bf.first_visit_day)::int AS age_days
-    FROM weight_days wd
-    JOIN baby_first bf USING (baby_id)
-),
-weight_agg AS (
-    SELECT baby_id,
-    {wderived}
-    FROM weight_seq
-    GROUP BY baby_id
-),
+    WHERE visit_date < ((({as_of}))::date + 1)::timestamp{visit_filter_sql(visit_filter, key)}
+),{series_ctes}
 visit_agg AS (
-    SELECT opportunity_id || '|' || baby_case_id AS baby_id,
+    -- One row per entity, keyed (opportunity, key) -- see _build_ctes.
+    SELECT opportunity_id || '|' || {key} AS {rid},
            MIN(opportunity_id) AS opportunity_id,
            MIN(username) AS username,
     {agg_cols}
     FROM visits
-    WHERE baby_case_id IS NOT NULL
-    GROUP BY opportunity_id, baby_case_id
+    WHERE {key} IS NOT NULL
+    GROUP BY opportunity_id, {key}
 ),
 base_m AS (
-    SELECT v.*, w.*,
-           -- The baby's key under its own name: `baby_id` is on both sides of the
-           -- join below (USING keeps both), so a scope cannot reference it
-           -- unambiguously. This is what the `case` scope groups by.
-           v.baby_id AS case_id,
-           -- Cohort on registration, falling back to the first visit. The render
-           -- has always done this (`m(r.reg_date) || m(r.first_visit)`), and
-           -- reg_date is NOT guaranteed: it is a FILTERed MIN over the visits, so
-           -- a baby whose rows never carried one aggregates to NULL. Truncating
-           -- reg_date alone drops those cases out of every month instead of
-           -- cohorting them, which silently understates the trend. Parity never
-           -- caught it because it covered programme/opportunity/llo/flw and not
-           -- month -- the one scope this column exists for.
+    SELECT v.*{series_select},
+           -- The entity's key under a scope-safe name: `{rid}` is on both sides
+           -- of the series join (USING keeps both). The `case` scope groups by it.
+           v.{rid} AS case_id,
+           -- The registry's entity.cohort_date, truncated to its month.
            DATE_TRUNC(
                'month',
-               COALESCE(v.reg_date, v.first_visit::timestamp)
+               {cohort}
            )::date AS cohort_month{llo_col}
-    FROM visit_agg v
-    LEFT JOIN weight_agg w USING (baby_id)
+    FROM visit_agg v{series_join}
 ),
 {prop_cte_sql},
 props AS (SELECT * FROM {final_props})"""
@@ -1043,20 +1265,36 @@ props AS (SELECT * FROM {final_props})"""
 
 
 def _check_scopes(scopes: list[str], llo_map: dict[Any, str] | None) -> None:
-    """Refuse a scope whose column cannot be produced, loudly and early."""
+    """Refuse a scope whose column cannot be produced, loudly and early.
+
+    LLO grouping is OPTIONAL. `llo` is not on a visit row: it is a CASE over the
+    deployment's llo_map, so a registry that declares no map has no llo scopes --
+    every other scope compiles, and asking for an llo one is refused by name here
+    rather than emitted as SQL that references a column nothing defines.
+    """
     unknown = [sc for sc in scopes if sc not in SCOPES]
     if unknown:
         raise RegistryError(f"unknown scope(s) {unknown}; expected from {sorted(SCOPES)}")
-    available = set(INTRINSIC_SCOPE_COLUMNS) | ({"llo"} if llo_map else set())
+    available = available_scope_columns(llo_map)
     for sc in scopes:
         missing = [c for c in SCOPES[sc] if c not in available]
         if missing:
             raise RegistryError(
-                f"scope {sc!r} needs column(s) {missing}, which the pipeline does not "
-                f"produce. `llo` is not on a visit row -- pass llo_map={{opportunity_id: "
-                f"'LLO'}} to materialise it. Emitting SQL that references a column "
-                f"nothing defines is how this failed silently before."
+                f"scope {sc!r} groups by {missing}, which this registry cannot produce: it declares "
+                f"no deployment.llo_map, and `llo` is not on a visit row -- it is materialised from "
+                f"that map ({{opportunity_id: 'LLO'}}). Declare one to use the llo scopes; every "
+                f"other scope works without it."
             )
+
+
+def available_scope_columns(llo_map: dict[Any, str] | None) -> frozenset[str]:
+    return frozenset(INTRINSIC_SCOPE_COLUMNS | ({"llo"} if llo_map else set()))
+
+
+def available_scopes(llo_map: dict[Any, str] | None) -> list[str]:
+    """The scopes a registry with (or without) an llo_map can compile, in SCOPES order."""
+    cols = available_scope_columns(llo_map)
+    return [sc for sc, needs in SCOPES.items() if set(needs) <= cols]
 
 
 def _suppression_columns(

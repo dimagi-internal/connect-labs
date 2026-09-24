@@ -266,3 +266,165 @@ def test_a_stored_record_that_predates_the_check_is_refused_at_compile(shipped):
     assert validate(props, shipped["indicators"])
     with pytest.raises(RegistryError, match="subquery"):
         compile_indicator_sql(props, shipped["indicators"], VISIT_SQL)
+
+
+# ── the model sections ───────────────────────────────────────────────────────
+#
+# The engine's KMC constants became registry data (entity, visit_columns,
+# pipelines, weight_series.value_column, defaults). Every one of them reaches the
+# compiled SQL or Layer 1, so each is a new place text could be smuggled in, and
+# each is held to the same allow-list as the fragments above. Layer 1 checks them
+# again itself, because it runs before the compiler's own validation.
+
+
+def _with(payload, **sections):
+    props = copy.deepcopy(payload["properties"])
+    props.update(sections)
+    return props
+
+
+def _with_visit_column(payload, column):
+    props = copy.deepcopy(payload["properties"])
+    props["visit_columns"] = props["visit_columns"] + [column]
+    return props
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "(SELECT count(*) FROM auth_user) > 0",
+        "pg_read_file('/etc/passwd') IS NOT NULL",
+        "ebf_visits IS NOT NULL -- ",
+        "ebf_visits IS NOT NULL; DROP TABLE auth_user",
+        "current_user IS NOT NULL",
+        "auth_user.password IS NULL",
+        # Aggregates are safe but meaningless per row, and would fail at execution.
+        "COUNT(*) > 0",
+        "BOOL_OR(ebf_visits IS NOT NULL)",
+    ],
+)
+def test_a_visit_column_sql_is_held_to_the_grammar(shipped, sql):
+    errors = _errors(shipped, props=_with_visit_column(shipped, {"name": "probe_col", "sql": sql}))
+    assert any("visit_columns.probe_col" in e for e in errors), (sql, errors)
+
+
+@pytest.mark.parametrize(
+    "word",
+    [
+        "no') OR (SELECT 1)=1 --",
+        "no\\y|x",  # a backslash would let the author write their own regex escapes
+        "n'o",
+        "yes no",
+        "",
+        None,
+        5,
+    ],
+)
+def test_a_word_match_word_is_letters_digits_and_underscore_only(shipped, word):
+    column = {"name": "probe_col", "word_match": {"column": "death_visits", "word": word}}
+    errors = _errors(shipped, props=_with_visit_column(shipped, column))
+    assert any("probe_col.word_match.word" in e for e in errors), (word, errors)
+
+
+@pytest.mark.parametrize(
+    "column",
+    [
+        {"name": "probe_col", "word_match": {"column": "death_visits) OR (1=1", "word": "no"}},
+        {"name": "probe_col", "column": "form_names FROM auth_user --"},
+        {"name": "probe_col", "column": "current_user"},
+        {"name": "x FROM auth_user --", "column": "form_names"},
+        {"name": "probe_col", "column": "form_names", "sql": "TRUE"},  # ambiguous kind
+        {"name": "probe_col"},  # no kind at all
+        {"name": "form_name", "column": "form_names"},  # declared twice
+    ],
+)
+def test_visit_column_names_and_sources_are_identifiers(shipped, column):
+    assert _errors(shipped, props=_with_visit_column(shipped, column)), column
+
+
+@pytest.mark.parametrize(
+    "entity_patch",
+    [
+        {"key": "baby_case_id IS NOT NULL OR TRUE --"},
+        {"key": "current_user"},
+        {"name": "baby; DROP TABLE auth_user"},
+        {"cohort_date": "(SELECT MIN(date_joined) FROM auth_user)"},
+        {"cohort_date": "pg_read_file('x')::timestamp"},
+        {"cohort_date": "MIN(first_visit)"},  # an aggregate, in a per-row position
+        {"cohort_date": "not_a_visit_agg_column"},  # only visit_agg's columns exist there
+        {"plural": "babies\n"},
+    ],
+)
+def test_the_entity_is_held_to_identifiers_and_the_grammar(shipped, entity_patch):
+    entity = {**shipped["properties"]["entity"], **entity_patch}
+    assert _errors(shipped, props=_with(shipped, entity=entity)), entity_patch
+
+
+@pytest.mark.parametrize(
+    "pipelines",
+    [
+        {"entity": "children' OR '1'='1"},
+        {"entity": "children", "extra_fields": {"weight_g FROM x": "visits"}},
+        {"entity": "children", "extra_fields": {"weight_g": "visits; --"}},
+        {"entity": "children", "extra_fields": ["weight_g"]},
+        "children",
+    ],
+)
+def test_pipeline_aliases_are_identifiers(shipped, pipelines):
+    errors = _errors(shipped, props=_with(shipped, pipelines=pipelines))
+    assert any(e.startswith("pipelines") for e in errors), (pipelines, errors)
+
+
+@pytest.mark.parametrize("value_column", ["weight_g FROM auth_user --", "current_user", 5])
+def test_the_series_value_column_is_an_identifier(shipped, value_column):
+    props = copy.deepcopy(shipped["properties"])
+    props["weight_series"]["value_column"] = value_column
+    errors = _errors(shipped, props=props)
+    assert any("value_column" in e for e in errors), (value_column, errors)
+
+
+def test_a_new_shape_series_must_name_its_value_column(shipped):
+    """Only a record that PREDATES the model gets `weight_g` from the legacy shim."""
+    props = copy.deepcopy(shipped["properties"])
+    del props["weight_series"]["value_column"]
+    assert any("weight_series.value_column: required" in e for e in _errors(shipped, props=props))
+
+
+@pytest.mark.parametrize(
+    "defaults",
+    [{"min_denominator": "25; DROP"}, {"min_denominator": 0}, {"min_denominator": True}, {"floor": 3}, [25]],
+)
+def test_indicator_defaults_are_checked(shipped, defaults):
+    inds = copy.deepcopy(shipped["indicators"])
+    inds["defaults"] = defaults
+    assert _errors(shipped, inds=inds), defaults
+
+
+@pytest.mark.parametrize("series", [["C", "N;"], "C", [1]])
+def test_a_declared_series_list_is_letters_only(shipped, series):
+    inds = copy.deepcopy(shipped["indicators"])
+    inds["series"] = series
+    assert _errors(shipped, inds=inds), series
+
+
+def test_the_shim_values_are_checked_too(shipped):
+    """A record that predates the model runs the legacy visit columns and cohort
+    date; they pass the same grammar, so the shim is never the way round it."""
+    props = copy.deepcopy(shipped["properties"])
+    for section in ("visit_columns", "pipelines"):
+        props.pop(section)
+    props["entity"] = "baby"
+    del props["weight_series"]["value_column"]
+    assert _errors(shipped, props=props) == []
+
+
+def test_layer1_refuses_an_unsafe_visit_column_before_the_compiler_sees_it(shipped):
+    from connect_labs.semantic.layer1 import build_visit_sql
+
+    props = _with_visit_column(shipped, {"name": "probe_col", "sql": "(SELECT 1) = 1"})
+    extraction = {
+        "visit_extraction_sql": "SELECT\nvisit_id,\nvisit_date\nFROM labs_raw_visit_cache AS labs_raw_visit_cache\n"
+        "WHERE opportunity_id = 1 AND pipeline_id = 2"
+    }
+    with pytest.raises(ValueError, match="subquery"):
+        build_visit_sql({}, [1], generate_sql_preview=lambda s, o: extraction, props_doc=props)

@@ -74,6 +74,17 @@ two-day-old snapshot is a bug in the test, not the code.
   the worse failure.
 - `test_parity.py` — mutation-verified: changing `ELIG_DAYS`, restoring the `llo`
   whitelist, or making suppression a no-op each turns the suite red.
+- `test_engine_parity.py` — the engine is no longer KMC-shaped (its entity, cohort
+  date, visit markers, weight series, pipelines and denominator floor are the
+  registry's MODEL, `model.py`), and making it so moved no number. The golden file
+  `tests/fixtures/kmc_rollup_golden.json` was produced by the KMC-shaped engine
+  before the change: all nine scopes, gates on, over a fixture spread across three
+  opportunities, six workers, two LLOs and three cohort months. The explicit
+  on-disk registry and the pre-model LEGACY shape (the live record's, served by
+  `legacy.py`) must both reproduce it value for value, and compile to the same SQL.
+- `test_visit_quality_registry.py` — a second, non-KMC registry
+  (`registry/visit_quality`: beneficiaries, no series, no LLO map, Q-series),
+  executed against hand-computed numbers. The proof KMC is one example.
 
 ## Performance
 
