@@ -272,7 +272,7 @@ four screens and an id held in your head.
                href="{% url 'supply_chain:order_detail' contract.id %}">{{ contract.reference|default:"Contract" }} {{ contract.id }}</a>
             <span class="text-sm text-gray-600">{{ contract.commodity_slug|humanise }}</span>
             <span class="text-xs text-gray-500">{{ contract.status|humanise }}</span>
-            <span class="ml-auto text-xs text-gray-500">bought by {{ contract.buyer_of_record|humanise }}</span>
+            <span class="ml-auto text-xs text-gray-500">bought by {{ contract.buyer_of_record|buyer_label }}</span>
           </div>
           <div class="text-sm text-gray-700 mt-1 tabular-nums">
             {% if contract.quantity %}{{ contract.quantity|qty:contract.quantity_unit }}{% endif %}

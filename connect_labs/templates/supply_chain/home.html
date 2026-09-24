@@ -157,7 +157,8 @@ figures, and the catalogue is where our own gaps get closed.
               {{ contract.reference|default:"—" }}
             </td>
             <td class="px-4 py-2.5">
-              {{ contract.buyer_of_record|humanise }}
+              {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"" }}
+              <div class="text-xs text-gray-500">{{ contract.buyer_of_record|buyer_label }}</div>
               {% if contract.duty_relief_claimed and not contract.duty_relief_evidenced %}
                 <span class="ml-1 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded px-1.5 py-0.5">
                   relief unevidenced

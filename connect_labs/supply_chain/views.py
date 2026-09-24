@@ -217,6 +217,8 @@ class DomainHomeView(OperationBase):
         context["summary"] = self.op("chain_summary", commodity_slug=commodity_slug)
         context["rounds"] = self.op("round_list")
         context["contracts"] = self.op("contract_list")
+        # The buyer of record by name: "programme org" is the role, not who.
+        context["orgs"] = {o["id"]: o for o in self.op("org_list")}
 
         checks = self.op("checks_list")
         context["checks"] = checks

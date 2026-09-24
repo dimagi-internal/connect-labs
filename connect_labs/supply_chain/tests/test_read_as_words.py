@@ -277,6 +277,22 @@ class TestTheOrder:
         assert "programme_org" not in body
         assert "programme org" not in body
 
+    def test_the_header_names_the_buyer_with_the_role_beside_it(self, client_in_programme, chain):
+        body = self._page(client_in_programme, chain)
+        header = body[body.index("Bought by") :]
+        header = header[: header.index("</p>")]
+        assert "Child Health Programme" in header
+        assert "the programme" in header
+        assert header.index("Child Health Programme") < header.index("the programme")
+
+    def test_the_overview_names_the_buyer_of_record(self, client_in_programme, chain):
+        body = client_in_programme.get(reverse("supply_chain:home")).content.decode()
+        row = body[body.index("CHC-1") :]
+        row = row[: row.index("</tr>")]
+        assert "Child Health Programme" in row
+        assert "programme org" not in row
+        assert "the programme" in row
+
     def test_it_does_not_claim_three_different_amounts_when_they_are_the_same(self, client_in_programme, chain):
         body = self._page(client_in_programme, chain)
         assert "costing three different amounts" not in body

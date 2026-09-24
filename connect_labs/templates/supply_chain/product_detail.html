@@ -316,7 +316,7 @@ numbers of sachets and adding them needs the pack spec.
               <div class="text-xs text-gray-500">
                 {% if contract.quantity %}{{ contract.quantity|qty:contract.quantity_unit }}{% endif %}
                 {% if contract.unit_price %}at {{ contract.currency }} {{ contract.unit_price|money }}{% endif %}
-                · bought by {{ contract.buyer_of_record|humanise }}
+                · bought by {{ contract.buyer_of_record|buyer_label }}
               </div>
             </li>
           {% endfor %}
