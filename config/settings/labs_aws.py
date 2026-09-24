@@ -56,7 +56,14 @@ SESSION_SAVE_EVERY_REQUEST = env.bool("DJANGO_SESSION_SAVE_EVERY_REQUEST", defau
 # ------------------------------------------------------------------------------
 INSTALLED_APPS = list(INSTALLED_APPS)
 INSTALLED_APPS += ["storages"]
-AWS_STORAGE_BUCKET_NAME = env("DJANGO_AWS_STORAGE_BUCKET_NAME", default="commcare-connect-media")
+# No default. This used to fall back to `commcare-connect-media` -- Connect
+# PRODUCTION's media bucket, in another AWS account -- so labs, which never set
+# the variable, sent every upload there and every one was answered 403. The
+# bucket is pinned in deploy/task-definitions/*.json and the task role's grant
+# lives in infra/labs-media.yml. Unset, an upload now fails naming the setting.
+AWS_STORAGE_BUCKET_NAME = env("DJANGO_AWS_STORAGE_BUCKET_NAME", default=None)
+# Public static files use unsigned URLs; media is private and signs its own
+# (MediaRootS3Boto3Storage.querystring_auth).
 AWS_QUERYSTRING_AUTH = False
 _AWS_EXPIRY = 60 * 60 * 24 * 7
 AWS_S3_OBJECT_PARAMETERS = {
@@ -65,7 +72,7 @@ AWS_S3_OBJECT_PARAMETERS = {
 AWS_S3_MAX_MEMORY_SIZE = env.int("DJANGO_AWS_S3_MAX_MEMORY_SIZE", default=100_000_000)
 AWS_S3_REGION_NAME = env("AWS_DEFAULT_REGION", default=None)
 AWS_S3_CUSTOM_DOMAIN = env("DJANGO_AWS_S3_CUSTOM_DOMAIN", default=None)
-aws_s3_domain = AWS_S3_CUSTOM_DOMAIN or f"{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com"
+aws_s3_domain = AWS_S3_CUSTOM_DOMAIN or f"{AWS_STORAGE_BUCKET_NAME or 'no-media-bucket-configured'}.s3.amazonaws.com"
 MEDIA_URL = f"https://{aws_s3_domain}/media/"
 STORAGES["default"]["BACKEND"] = "connect_labs.utils.storages.MediaRootS3Boto3Storage"
 
