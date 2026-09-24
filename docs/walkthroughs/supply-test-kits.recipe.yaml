@@ -159,22 +159,23 @@ scenes:
   - kind: fill
     target: css:#id_note
     value: Please confirm the Lumen FC-50 kit meets AQ-TK-1 before we buy.
+  - kind: hold
+    note: who is asked, as what, and what they are asked to confirm
+    seconds: 1.5
+  - kind: snapshot
+    note: the request, before it is recorded
   - kind: click
     must_succeed: true
     target: role:button:Record the request
     timeout_ms: 30000
   - kind: wait_for
     target: cannot be ordered yet
-  - kind: hold
-    seconds: 2.0
-  - kind: snapshot
-    note: requested, and the order held back with Aqualytic named
-  concept_claim: Recording a technical approval request from Aqualytic makes the award page list it as
-    requested and state that the award cannot be ordered yet.
-  design_intent: The approver is a third party, not the decider; the pending request is visible exactly
-    where the order action would be.
-  show: From the award Hauwa asks for an approval — Aqualytic, as technical partner, asked today to confirm
-    the Lumen kit meets AQ-TK-1 — and the award now shows the request and says it cannot be ordered yet.
+  concept_claim: The approval request on the award names Aqualytic as the approver, its role as technical
+    partner, and the note saying what it is asked to confirm, before the request is recorded.
+  design_intent: The approver is a third party, not the decider; the request says what they are asked
+    to agree to.
+  show: From the award Hauwa asks for an approval — Aqualytic, as technical partner, asked to confirm the
+    Lumen kit meets AQ-TK-1 before anything is bought — and records the request.
 - id: the-order-waits-for-aqualytic
   actions:
   - kind: scroll_to
@@ -373,9 +374,6 @@ scenes:
     target: css:#id_amount
     value: '760.00'
   - kind: fill
-    target: css:#id_currency
-    value: USD
-  - kind: fill
     target: css:#id_quantity_billed
     value: '20'
   - kind: fill
@@ -401,9 +399,6 @@ scenes:
   - kind: fill
     target: css:#id_amount
     value: '760.00'
-  - kind: fill
-    target: css:#id_currency
-    value: USD
   - kind: fill
     say: transfer
     target: css:#id_method
@@ -433,7 +428,7 @@ scenes:
 - id: hauwa-issues-a-link
   actions:
   - kind: wait_for
-    target: Issue a supplier update link
+    target: Issue an update link
   - kind: click
     target: css:#id_org ~ .ts-wrapper .ts-control
   - kind: type
