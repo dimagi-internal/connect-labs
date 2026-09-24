@@ -603,7 +603,10 @@ def seed(mcp: Mcp) -> dict:
             "quote_id": quote_id,
             "source": "supplier_reported",
             "recorded_by_org_id": harmattan,
-            **linked_document("Aquaguard 1.25% — national registration WTP-04-1187", "registration-WTP-04-1187.md"),
+            **linked_document(
+                "Aquaguard 1.25% — national registration WTP-04-1187, valid to March 2028",
+                "registration-WTP-04-1187.md",
+            ),
         },
     )
 

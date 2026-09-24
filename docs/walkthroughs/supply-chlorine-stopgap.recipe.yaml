@@ -449,12 +449,17 @@ scenes:
     must_succeed: true
     target: GRN-KANO-0431
   - kind: hover
-    seconds: 1.0
+    note: the order now reads received
+    seconds: 1.5
     target: text:Ordered · received · invoiced
+  # Scene 8 already ended on the top of this page; the receipt's own frame is
+  # the goods received note, further down, so the two beats look different.
+  - kind: scroll
+    value: bottom
   - kind: hover
-    note: 90 jerry cans received into the Kano store
-    seconds: 2.0
-    target: text:Received
+    note: GRN-KANO-0431, 90 jerry cans accepted into the Kano store
+    seconds: 2.5
+    target: css:tr:has-text('GRN-KANO-0431')
   concept_claim: Recording a goods received note against the order posts the accepted
     jerry cans into the Kano store's ledger and moves the order from placed to received.
   design_intent: Stock exists only once someone at the store says it arrived; the
