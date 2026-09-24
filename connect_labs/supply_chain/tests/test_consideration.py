@@ -171,6 +171,17 @@ class TestTheScreens:
         assert "not purchased (in kind)" in body
         assert "Unconfirmed" not in body.split("Landed cost", 1)[1].split("Ordered", 1)[0]
 
+    def test_a_donation_is_not_headed_as_bought(self, scoped, da, parties):
+        # The header read "Bought by <org>" over a donation whose every cost
+        # line said it was not purchased.
+        donated = _contract(da, parties, consideration="in_kind")
+        body = scoped.get(reverse("supply_chain:order_detail", args=[donated["id"]])).content.decode()
+        assert "Bought by" not in body
+        assert "Donated to" in body
+
+        bought = _contract(da, parties)
+        body = scoped.get(reverse("supply_chain:order_detail", args=[bought["id"]])).content.decode()
+        assert "Bought by" in body
 
 class TestTheMatchSaysWhatHappened:
     """What the order page's match panel said about a donation on its way.
