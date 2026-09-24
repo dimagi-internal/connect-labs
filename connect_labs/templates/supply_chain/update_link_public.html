@@ -89,7 +89,7 @@ own prefix so seven of them cannot collide.
     <div class="px-5 py-4">
       <h3 class="text-xs uppercase tracking-wide text-gray-500 mb-2">Supply points</h3>
       {% for point in supply_points %}
-        <div class="text-sm text-gray-900 mb-1">{{ point.name }}</div>
+        <div class="text-sm text-gray-900 mb-1">{{ point.name }}{% if point.holding %} <span class="text-gray-500">— holds {{ point.holding }}</span>{% endif %}</div>
       {% empty %}
         <p class="text-sm text-gray-400">None</p>
       {% endfor %}
