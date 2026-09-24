@@ -230,6 +230,7 @@ urlpatterns = [
     # Alerts: who is told about what, and the log of what they were told.
     path("alerts/", alert_views.AlertListView.as_view(), name="alerts"),
     path("alerts/new/", alert_views.AlertCreateView.as_view(), name="alert_create"),
+    path("alerts/check-now/", alert_views.AlertCheckNowView.as_view(), name="alert_check_now"),
     path("alerts/<int:subscription_id>/edit/", alert_views.AlertUpdateView.as_view(), name="alert_edit"),
     path("alerts/<int:subscription_id>/delete/", alert_views.AlertDeleteView.as_view(), name="alert_delete"),
     # Supplier update links: the programme's screens for issuing them...
