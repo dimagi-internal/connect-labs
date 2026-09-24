@@ -15,7 +15,9 @@ appear here. What IS here is the shape of the chain, which is public already
 See docs/superpowers/specs/2026-09-24-oes-demo-environment-design.md.
 """
 
+import re
 from datetime import timedelta
+from html import unescape
 
 from django.utils import timezone
 
@@ -661,7 +663,9 @@ def entered_through_link(token, row, context):
 
     A refused submission is answered with a 200 and the form's errors, not an
     exception, so a seeder that only called this would report success and seed
-    nothing. Anything but the redirect is raised, carrying the errors.
+    nothing. Anything but the redirect is raised, carrying the errors as the
+    page printed them (`_why`, which reads the page rather than the test
+    client's `response.context` -- that is empty outside pytest).
     """
     from django.test import Client
     from django.urls import reverse
@@ -700,11 +704,36 @@ def entered_through_link(token, row, context):
     return response
 
 
+def _visible(html):
+    """One line of the text a person would have read, entities and all."""
+    return unescape(" ".join(re.sub(r"<[^>]+>", " ", html).split()))
+
+
 def _why(response):
-    """What the page said was wrong, from the form it re-rendered."""
-    forms = (getattr(response, "context", None) or {}).get("forms") or []
-    errors = [form.errors.as_text() for form in forms if getattr(form, "errors", None)]
-    return " / ".join(errors) or "no form errors -- the page did not accept the submission at all"
+    """What the page said was wrong, read off the page it rendered.
+
+    Out of the HTML, and deliberately NOT out of `response.context`. That
+    attribute is filled from the `template_rendered` signal, which is only
+    ever SENT by the instrumented renderer `setup_test_environment()` installs
+    -- so it is there under pytest and is `None` in a `manage.py shell` on the
+    deployment. Reading it would have made this helper articulate in tests and
+    silent on the one run that matters: the seed against a real programme,
+    refused by a scope or a form, which is the entire reason it exists.
+
+    Two shapes, because the page prints two: a field's own error, which crispy
+    gives an id naming the field, and a refusal of the whole submission, which
+    the page heads "Not saved:".
+    """
+    body = response.content.decode(errors="replace")
+    errors = [
+        f"{field.partition('-')[2] or field}: {_visible(message)}"
+        for field, message in re.findall(r'<p id="error_\d+_id_([^"]+)"[^>]*>\s*<strong>(.*?)</strong>', body, re.S)
+    ]
+    errors += [_visible(message) for message in re.findall(r"<strong>Not saved:</strong>(.*?)</p>", body, re.S)]
+    return " / ".join(error for error in errors if error) or (
+        "the page printed no error -- it may not have been the page at all (a wrong host is answered "
+        "before the view, with a 400)"
+    )
 
 
 def _listed_cover(org, chain, destinations):

@@ -57,7 +57,11 @@ other way would carry our organisation and read as ours -- the substitution
 section 5a of the design exists to make impossible. The page answers a
 refusal with a 200 and form errors rather than an exception, so the seeder
 raises on anything but the redirect: a silent no-op here would seed two of
-the three tiers and look like it had seeded all three.
+the three tiers and look like it had seeded all three. The errors it raises
+with are read out of the rendered page, not out of the test client's
+`response.context` -- that is filled from a signal only
+`setup_test_environment()` installs, so it is empty in a `manage.py shell` and
+the explanation would have gone missing in the one place it is needed.
 
 The tokens are returned to the operator and never written anywhere. They are
 shown once; if one is lost, revoke it and issue another.
