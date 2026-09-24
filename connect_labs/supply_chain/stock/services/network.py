@@ -129,6 +129,14 @@ def network_stock(
         # inherits its units, and a balance cannot be converted into "".
         display_unit = ledger.pack_unit_of(for_conversion)
         on_hand = ledger.collapse(units, for_conversion, display_unit)
+        # The same balance in single units beside it. The pack keeps the column
+        # comparable; the unit is what gets counted out -- for a kit that is one
+        # course, "14 carton" hides the answer "700 courses" behind arithmetic.
+        on_hand_in_base = None
+        _, base_unit, _ = ledger._pack_spec(for_conversion)
+        if isinstance(on_hand, Quantity) and base_unit and on_hand.unit != base_unit:
+            restated = ledger.convert(on_hand.amount, on_hand.unit, base_unit, for_conversion)
+            on_hand_in_base = restated if isinstance(restated, Quantity) else None
         count = counts.get(point.pk)
         # The RESOLVED item, not the caller's: cover divides a carton balance
         # by a sachet consumption rate, which needs the pack size. Without it
@@ -144,6 +152,7 @@ def network_stock(
                 "admin_area": point.admin_area,
                 "opportunity_id": point.opportunity_id,
                 "on_hand": on_hand,
+                "on_hand_in_base": on_hand_in_base,
                 "reported": Quantity(count.quantity, count.quantity_unit) if count else None,
                 "reported_on": count.counted_on if count else None,
                 "reported_kind": count.kind if count else None,
