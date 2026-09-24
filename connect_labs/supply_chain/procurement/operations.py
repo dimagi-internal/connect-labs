@@ -319,12 +319,16 @@ def round_outstanding_questions(access, round_id, commodity_slug):
             "quote_id": ID,
             "rationale": {"type": "string", "minLength": 1},
             "decided_by": {"type": "string"},
+            # The day the decision was made, which is often not the day it
+            # is recorded -- the meeting was in July, the entry is today. It
+            # defaults to today, and may not be a day that has not come.
+            "decided_on": {"type": "string", "format": "date"},
         },
         required=("round_id", "quote_id", "rationale"),
     ),
     is_write=True,
 )
-def award_create(access, round_id, quote_id, rationale, decided_by=None):
+def award_create(access, round_id, quote_id, rationale, decided_by=None, decided_on=None):
     """The decision of record — validate at least as hard as every other write.
 
     Every other write operation reference-checks what it points at
@@ -358,6 +362,7 @@ def award_create(access, round_id, quote_id, rationale, decided_by=None):
             f"quote {quote_id} has been superseded by quote {quote.superseded_by_quote_id} — "
             "award the current version instead"
         )
+    decided = _decided_on(decided_on)
     snapshot = round_compare(access, round_id, quote.commodity_slug)
     return record(
         access.create_award(
@@ -366,10 +371,23 @@ def award_create(access, round_id, quote_id, rationale, decided_by=None):
                 "quote_id": quote_id,
                 "rationale": rationale,
                 "decided_by": decided_by,
+                "decided_on": decided,
                 "comparison_snapshot": snapshot,
             }
         )
     )
+
+
+def _decided_on(value):
+    """A parsed decision date: today when not given, never in the future."""
+    from datetime import date
+
+    if not value:
+        return date.today()
+    decided = date.fromisoformat(str(value))
+    if decided > date.today():
+        raise ValueError(f"an award cannot be dated {decided.isoformat()}: that is in the future")
+    return decided
 
 
 @register_operation(

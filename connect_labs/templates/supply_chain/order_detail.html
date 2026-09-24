@@ -28,7 +28,7 @@ figure here can go stale.
   <p class="text-sm text-gray-600">
     {% if contract.consideration == "in_kind" %}Donated to{% else %}Bought by{% endif %}
     <b>{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record }}</b>
-    as <span class="text-gray-500">{{ contract.buyer_of_record|humanise }}</span>
+    <span class="text-gray-500">— buyer of record: {{ contract.buyer_of_record|buyer_label }}</span>
     {% if contract.incoterm %} · {{ contract.incoterm }}{% endif %}
     {% if contract.status %} · {{ contract.status|humanise }}{% endif %}
     {% if contract.covers_shortfall_of_id %}
@@ -59,11 +59,28 @@ figure here can go stale.
   </div>
 {% endif %}
 
+{% if link_updates %}
+<div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-3">
+  <div class="px-4 py-2.5 border-b border-gray-100">
+    <span class="text-xs font-semibold text-gray-600">Through {{ link_updates.0.org }}'s update link</span>
+    <span class="text-xs text-gray-400 ml-2">recorded by them, no login, nobody asked</span>
+  </div>
+  <ul class="divide-y divide-gray-100">
+    {% for update in link_updates %}
+      <li class="px-4 py-2 text-sm text-gray-700 flex justify-between gap-4">
+        <span>{{ update.title|capfirst }}{% if update.detail %}<span class="text-gray-500"> — {{ update.detail }}</span>{% endif %}</span>
+        <span class="text-xs text-gray-500 whitespace-nowrap">{{ update.at|date:"j M Y, H:i" }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 <div class="grid gap-3 md:grid-cols-2">
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100">
       <span class="text-xs font-semibold text-gray-600">Landed cost</span>
-      <span class="text-xs text-gray-400 ml-2">assuming {{ landed.buyer_of_record|humanise }} imports</span>
+      <span class="text-xs text-gray-400 ml-2">assuming {{ landed.buyer_of_record|buyer_label }} imports</span>
     </div>
     <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
@@ -138,7 +155,7 @@ figure here can go stale.
           {% for buyer, cell in landed.by_buyer.items %}
             <tr>
               <td class="py-1 text-gray-600">
-                {{ buyer }}{% if buyer == landed.buyer_of_record %}
+                {{ buyer|buyer_label|capfirst }}{% if buyer == landed.buyer_of_record %}
                   <span class="text-xs text-brand-indigo">chosen</span>{% endif %}
               </td>
               <td class="py-1 text-right tabular-nums">{{ cell|figure_text }}</td>
@@ -148,8 +165,13 @@ figure here can go stale.
       </table>
       </div>
       <p class="text-xs text-gray-500 mt-2">
-        Duty and VAT fall on whoever imports, so this is the same goods at the
-        same price costing three different amounts.
+        {% if landed.by_buyer|distinct_count > 1 %}
+          Duty and VAT fall on whoever imports, so this is the same goods at the
+          same price costing different amounts.
+        {% else %}
+          Duty and VAT fall on whoever imports; here none are payable, so it
+          costs the same whoever buys.
+        {% endif %}
         {% if contract.duty_relief_claimed and not contract.duty_relief_evidenced %}
           A relief is claimed here with no exemption document attached, which is
           why the figure above is unconfirmed rather than a bargain.
@@ -162,7 +184,7 @@ figure here can go stale.
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100">
       <span class="text-xs font-semibold text-gray-600">Ordered · received · invoiced</span>
-      <span class="text-xs text-gray-400 ml-2">{{ match.status|humanise }}</span>
+      <span class="text-xs text-gray-400 ml-2">{{ match.status|humanise }}{% if match.payment_terms == "advance" %} · paid in advance{% endif %}</span>
     </div>
     <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
@@ -199,18 +221,40 @@ figure here can go stale.
             <td class="px-4 py-2 text-right tabular-nums">{{ match.billed_amount|figure_text }}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">Paid</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ match.paid_amount|figure_text }}</td></tr>
-        <tr class="bg-gray-50">
-          <td class="px-4 py-2 font-semibold text-brand-indigo">Safe to pay now</td>
-          <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">
-            {{ match.payable_now|figure_text }}
-          </td>
-        </tr>
+        {% if match.payment_terms == "advance" %}
+          <tr class="bg-gray-50">
+            <td class="px-4 py-2 font-semibold text-brand-indigo">Paid in advance</td>
+            <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">
+              {% if match.awaiting_delivery.amount and match.awaiting_delivery.amount != "0" %}
+                awaiting delivery of {{ match.awaiting_delivery|figure_text }}
+              {% else %}
+                nothing more to come
+              {% endif %}
+            </td>
+          </tr>
+          <tr class="{% if match.recoverable.amount and match.recoverable.amount != '0' %}bg-amber-50{% endif %}">
+            <td class="px-4 py-2 text-gray-700">Recoverable from the supplier</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ match.recoverable|money_text }}</td>
+          </tr>
+        {% else %}
+          <tr class="bg-gray-50">
+            <td class="px-4 py-2 font-semibold text-brand-indigo">Safe to pay now</td>
+            <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">
+              {{ match.payable_now|figure_text }}
+            </td>
+          </tr>
+        {% endif %}
       </tbody>
     </table>
     </div>
     <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
-      The value of what actually arrived, less what has been paid — never the
-      value of what was billed.
+      {% if match.payment_terms == "advance" %}
+        Paid before delivery, as agreed. What was paid for and refused on arrival — or never
+        delivered, once the order is closed — is owed back.
+      {% else %}
+        The value of what actually arrived, less what has been paid — never the
+        value of what was billed.
+      {% endif %}
     </p>
   </div>
 </div>
@@ -272,7 +316,7 @@ figure here can go stale.
                 <span class="text-xs text-amber-800">none</span>
               {% endif %}
             </td>
-            <td class="px-4 py-2 text-xs text-gray-500">{{ shipment.source|source_label }}</td>
+            <td class="px-4 py-2 text-xs text-gray-500">{{ shipment|told_by:orgs }}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
               {% if forloop.first %}
                 {% comment %}
@@ -307,14 +351,16 @@ figure here can go stale.
             <td class="px-4 py-2">
               {% if shipment.has_certificate %}<span class="text-xs text-teal-700">on file</span>{% else %}<span class="text-xs text-amber-800">none</span>{% endif %}
             </td>
-            <td class="px-4 py-2 text-xs text-gray-500">{{ shipment.source|source_label }}</td>
+            <td class="px-4 py-2 text-xs text-gray-500">{{ shipment|told_by:orgs }}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
               <a href="{% url 'supply_chain:shipment_status' shipment.id %}" class="text-brand-indigo hover:underline">Update</a>
             </td>
           </tr>
         {% endfor %}
       {% empty %}
-        <tr><td colspan="8" class="px-4 py-6 text-center text-gray-500">Nothing dispatched yet.</td></tr>
+        <tr><td colspan="8" class="px-4 py-6 text-center text-gray-500">
+          {% if receipts %}No dispatch was recorded — the goods below were received directly.{% else %}Nothing dispatched yet.{% endif %}
+        </td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -359,7 +405,7 @@ figure here can go stale.
                 <div class="text-xs text-gray-500">{{ line.rejection_reason }}</div>
               {% endif %}
             </td>
-            <td class="px-4 py-2 text-xs text-gray-500">{{ receipt.source|source_label }}</td>
+            <td class="px-4 py-2 text-xs text-gray-500">{{ receipt|told_by:orgs }}</td>
           </tr>
         {% endfor %}
       {% empty %}
@@ -410,7 +456,7 @@ figure here can go stale.
             {% endif %}
           </td>
           <td class="px-4 py-2 text-gray-700">{{ invoice.status|humanise }}</td>
-          <td class="px-4 py-2 text-xs text-gray-500">{{ invoice.source|humanise }}</td>
+          <td class="px-4 py-2 text-xs text-gray-500">{{ invoice|told_by:orgs }}</td>
           <td class="px-4 py-2 text-right whitespace-nowrap">
             <a href="{% url 'supply_chain:payment_record' invoice.id %}"
                class="text-brand-indigo hover:underline">Pay</a>

@@ -408,6 +408,47 @@ class TestThreeWayMatch:
         # 300 cartons x 52.42 -- what arrived, not what was billed.
         assert match["payable_now"]["amount"] == "15726"
 
+    def test_every_figure_is_stated_in_the_unit_the_order_was_placed_in(self, da, setup):
+        """An order for 75,000 sachets received in cartons read "Ordered 75000
+        sachet / Received 298 carton / Billed beyond what arrived 2 carton" --
+        three figures a reader has to convert before they can compare them, on
+        the panel whose whole job is comparing them."""
+        contract = _contract(da, setup, quantity="75000", quantity_unit="sachet", unit_price_unit="per_base_unit")
+        op(
+            da,
+            "receipt_record",
+            data={
+                "contract_id": contract["id"],
+                "supply_point_id": setup["store"]["id"],
+                "received_on": "2026-06-12",
+                "source": "supplier_reported",
+                "lines": [
+                    {
+                        "item_id": setup["item"]["id"],
+                        "quantity_accepted": "498",
+                        "quantity_rejected": "2",
+                        "quantity_unit": "carton",
+                    }
+                ],
+            },
+        )
+        op(
+            da,
+            "invoice_record",
+            data={
+                "contract_id": contract["id"],
+                "amount": "100.00",
+                "quantity_billed": "75000",
+                "quantity_unit": "sachet",
+                "source": "supplier_reported",
+            },
+        )
+
+        match = op(da, "contract_match", contract_id=contract["id"])
+        assert match["received"] == {"amount": "74700", "unit": "sachet"}
+        assert match["over_invoiced"] == {"amount": "300", "unit": "sachet"}
+        assert match["outstanding"] == {"amount": "300", "unit": "sachet"}
+
     def test_a_clean_delivery_matches(self, da, setup):
         contract = _contract(da, setup)
         op(

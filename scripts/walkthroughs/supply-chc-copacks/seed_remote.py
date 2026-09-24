@@ -291,7 +291,17 @@ round_rec = op(
     data={
         "label": "CHC 2026 — co-packs, vitamin A, dewormer",
         "lines": [
-            {"commodity_slug": "ors-zinc-copack", "quantity": "30000", "quantity_unit": "co-pack"},
+            {
+                "commodity_slug": "ors-zinc-copack",
+                "quantity": "30000",
+                "quantity_unit": "co-pack",
+                # The contents this round buys: the protocol co-pack. Kits
+                # holding them are ranked; any other contents are refused.
+                "components": [
+                    {"commodity_slug": "ors", "quantity": "2", "base_unit": "sachet"},
+                    {"commodity_slug": "zinc", "quantity": "10", "base_unit": "tablet"},
+                ],
+            },
             {"commodity_slug": "vitamin-a", "quantity": "40000", "quantity_unit": "capsule"},
             {"commodity_slug": "albendazole", "quantity": "25000", "quantity_unit": "tablet"},
         ],
@@ -352,24 +362,18 @@ q_c = quote(copack_c, "ors-zinc-copack", "0.55", "30000", "co-pack", 50)
 q_vita = quote(vit_a, "vitamin-a", "0.021", "40000", "capsule", 30)
 q_alb = quote(albendazole, "albendazole", "0.018", "25000", "tablet", 30)
 
-# --- the lead's decision on contents, then the awards -------------------------
-# While C was live, round_compare refused to rank any co-pack: the kits hold
-# different contents. The lead decides the round is for the protocol co-pack
-# (2 ORS sachets + 10 zinc tablets) and sets C aside -- then A and B rank.
-op(
-    "quote_void",
-    quote_id=q_c["id"],
-    reason=(
-        "Holds 4 ORS sachets + 10 zinc tablets. This round buys the protocol co-pack "
-        "(2 ORS sachets + 10 zinc tablets); offers are compared only against the same contents."
-    ),
-)
+# --- the awards ----------------------------------------------------------------
+# The round states the contents it buys, so C -- four sachets, cheapest -- is
+# refused a ranking by the comparison itself and stays on the page saying why.
+# A and B rank; the lead chose A a week ago.
+DECIDED = ago(7)
 award_copack = op(
     "award_create",
     round_id=round_id,
     quote_id=q_a["id"],
     rationale="Lowest landed cost of the two co-packs holding the protocol contents (2 ORS + 10 zinc 20 mg).",
     decided_by="Amara Bello",
+    decided_on=DECIDED,
 )
 award_vita = op(
     "award_create",
@@ -377,6 +381,7 @@ award_vita = op(
     quote_id=q_vita["id"],
     rationale="Only offer; comparable on every figure.",
     decided_by="Amara Bello",
+    decided_on=DECIDED,
 )
 award_alb = op(
     "award_create",
@@ -384,6 +389,7 @@ award_alb = op(
     quote_id=q_alb["id"],
     rationale="Only offer; comparable on every figure.",
     decided_by="Amara Bello",
+    decided_on=DECIDED,
 )
 
 # --- the network: the distributor's warehouse and the LLO's store -------------
@@ -395,6 +401,10 @@ warehouse = op(
         "kind": "central_store",
         "managed_by_org_id": harmattan["id"],
         "admin_area": "Kano Municipal",
+        # Rated on what it releases to partners, so it has a band and a
+        # reorder figure of its own: this is where the programme reorders.
+        "min_months_of_stock": "2",
+        "max_months_of_stock": "6",
         "source": "we_recorded",
     },
 )
@@ -439,6 +449,7 @@ def contract(award, item, commodity, qty, unit, price, reference, status, signed
             "incoterm": "DAP",
             "delivery_supply_point_id": warehouse["id"],
             "promised_lead_time_days": lead_days,
+            "payment_terms": "advance",
             "status": status,
             "signed_on": signed_on,
             "source": "we_recorded",
@@ -467,7 +478,8 @@ prior = op(
         "incoterm": "DAP",
         "delivery_supply_point_id": warehouse["id"],
         "promised_lead_time_days": 45,
-        "status": "confirmed",
+        "status": "received",
+        "payment_terms": "advance",
         "signed_on": ago(280),
         "source": "we_recorded",
     },
@@ -520,7 +532,7 @@ prior_payment = op(
 op("payment_confirm", payment_id=prior_payment["id"], confirmed_on=ago(113))
 
 # The LLO collected most of it over the summer, in two trips...
-for occurred_on, cartons, reference in ((ago(91), "200", "REL-HHS-01"), (ago(42), "176", "REL-HHS-02")):
+for occurred_on, cartons, reference in ((ago(90), "200", "REL-HHS-01"), (ago(42), "176", "REL-HHS-02")):
     op(
         "movement_record",
         data={
@@ -612,6 +624,7 @@ print(
             "today": TODAY,
             "round_id": round_id,
             "quote_c_id": q_c["id"],
+            "decided_on": DECIDED,
             "award_copack_id": award_copack["id"],
             "copack_item_id": copack_a["id"],
             "copack_c_item_id": copack_c["id"],

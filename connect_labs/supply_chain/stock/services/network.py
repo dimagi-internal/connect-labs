@@ -74,6 +74,13 @@ def _balances(program_id, points, item=None, on_date=None):
     return by_point
 
 
+def _restated(amc, unit, item):
+    if not isinstance(amc, Quantity) or not unit or amc.unit == unit:
+        return None
+    converted = ledger.convert(amc.amount, amc.unit, unit, item)
+    return converted if isinstance(converted, Quantity) else None
+
+
 def network_stock(
     program_id,
     opportunity_id=None,
@@ -157,6 +164,10 @@ def network_stock(
                 "reported_on": count.counted_on if count else None,
                 "reported_kind": count.kind if count else None,
                 "amc": plan["amc"],
+                "amc_basis": plan["amc_basis"],
+                # The same rate in the unit the balance is shown in, so "170
+                # carton" and "3,033 co-pack a month" can be compared by eye.
+                "amc_in_display_unit": _restated(plan["amc"], display_unit, for_conversion),
                 "months_of_stock": plan["months_of_stock"],
                 "days_to_stockout": plan["days_to_stockout"],
                 "resupply_quantity": plan["resupply_quantity"],
