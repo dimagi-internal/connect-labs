@@ -30,7 +30,11 @@ figure here can go stale.
     <b>{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record }}</b>
     <span class="text-gray-500">— buyer of record: {{ contract.buyer_of_record|buyer_label }}</span>
     {% if contract.incoterm %} · {{ contract.incoterm }}{% endif %}
-    {% if contract.status %} · {{ contract.status|humanise }}{% endif %}
+    {% if match.status == "shortfall_covered" %}
+      {% comment %}"Part received" was true and misleading: nobody is waiting on this order any more.{% endcomment %}
+      · short — covered by
+      {% for cover in match.covered_by %}<a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' cover.contract_id %}">{{ cover.reference|default:"another order" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+    {% elif contract.status %} · {{ contract.status|humanise }}{% endif %}
     {% if contract.covers_shortfall_of_id %}
       · Covers the shortfall on
       <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.covers_shortfall_of_id %}">{% if covers.reference %}{{ covers.reference }}{% else %}order {{ contract.covers_shortfall_of_id }}{% endif %}</a>
@@ -59,6 +63,53 @@ figure here can go stale.
   </div>
 {% endif %}
 
+{% if fulfilment %}
+{% comment %}
+The whole answer to "did what we ordered arrive", for an order another order
+covers: this order's own deliveries plus each covering order, adding up to what
+was ordered. Before, the page showed this order's half and a link to the other.
+{% endcomment %}
+<section id="fulfilment" class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-3">
+  <div class="px-4 py-2.5 border-b border-gray-100">
+    <span class="text-xs font-semibold text-gray-600">How the order was filled</span>
+    <span class="text-xs text-gray-400 ml-2">{{ fulfilment.ordered|figure_text }} ordered</span>
+  </div>
+  <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+  <table class="min-w-[36rem] w-full text-sm">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+      <tr>
+        <th class="text-left px-4 py-2">Order</th>
+        <th class="text-left px-4 py-2">From</th>
+        <th class="text-right px-4 py-2">Counts toward it</th>
+        <th class="text-right px-4 py-2">Received</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for source in fulfilment.sources %}
+        <tr>
+          <td class="px-4 py-2">
+            <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' source.contract_id %}">{{ source.reference }}</a>
+            <div class="text-xs text-gray-500">{{ source.role }}</div>
+          </td>
+          <td class="px-4 py-2 text-gray-700">{{ source.supplier }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ source.contributes|figure_text }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ source.received|figure_text }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr class="bg-gray-50">
+        <td class="px-4 py-2 font-semibold text-brand-indigo" colspan="3">{{ fulfilment.ordered|figure_text }} ordered</td>
+        <td class="px-4 py-2 text-right font-semibold tabular-nums {% if fulfilment.complete %}text-message-success-text{% else %}text-brand-indigo{% endif %}">
+          {% if fulfilment.received_total %}{{ fulfilment.received_total|figure_text }} received{% else %}not comparable across units{% endif %}
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+  </div>
+</section>
+{% endif %}
+
 {% if link_updates %}
 <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-3">
   <div class="px-4 py-2.5 border-b border-gray-100">
@@ -85,6 +136,7 @@ figure here can go stale.
     <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
       <tbody class="divide-y divide-gray-100">
+        {% if contract.consideration == "priced" %}
         <tr><td class="px-4 py-2 text-gray-600">Goods</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.goods|figure_text }}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">Freight</td>
@@ -93,6 +145,15 @@ figure here can go stale.
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.duty|figure_text }}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">VAT</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.vat|figure_text }}</td></tr>
+        {% else %}
+        {% comment %}
+        One line, not five. Goods nobody priced have no freight, duty or VAT
+        line of their own either, and five rows each reading "bundled in setup
+        fee" said one fact five times (the IPTSc walkthrough).
+        {% endcomment %}
+        <tr><td class="px-4 py-2 text-gray-600">Goods and landing</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ landed.goods|figure_text }}</td></tr>
+        {% endif %}
         {% for charge in landed.charges %}
           {% comment %}
           Paid to land the goods, to somebody who is not the supplier. One line
@@ -110,6 +171,7 @@ figure here can go stale.
           <tr><td class="px-4 py-2 text-gray-600">Charges to land it</td>
               <td class="px-4 py-2 text-right tabular-nums">{{ landed.charges_total|figure_text }}</td></tr>
         {% endif %}
+        {% if contract.consideration == "priced" or landed.charges %}
         <tr class="bg-gray-50">
           <td class="px-4 py-2 font-semibold text-brand-indigo">Landed total</td>
           <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">
@@ -124,6 +186,7 @@ figure here can go stale.
             {% endif %}
           </td>
         </tr>
+        {% endif %}
       </tbody>
     </table>
     </div>
@@ -183,7 +246,7 @@ figure here can go stale.
 
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100">
-      <span class="text-xs font-semibold text-gray-600">Ordered · received · invoiced</span>
+      <span class="text-xs font-semibold text-gray-600">Ordered · received{% if contract.consideration == "priced" %} · invoiced{% endif %}</span>
       <span class="text-xs text-gray-400 ml-2">{{ match.status|humanise }}{% if match.payment_terms == "advance" %} · paid in advance{% endif %}</span>
     </div>
     <div class="overflow-x-auto">
@@ -193,8 +256,10 @@ figure here can go stale.
             <td class="px-4 py-2 text-right tabular-nums">{{ match.ordered|figure_text }}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">Received</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ match.received|figure_text }}</td></tr>
+        {% if contract.consideration == "priced" %}
         <tr><td class="px-4 py-2 text-gray-600">Invoiced</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ match.invoiced|figure_text }}</td></tr>
+        {% endif %}
         <tr><td class="px-4 py-2 text-gray-600">Still outstanding</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ match.outstanding|figure_text }}</td></tr>
         {% if match.covered_by %}
@@ -208,6 +273,13 @@ figure here can go stale.
             </td>
           </tr>
         {% endif %}
+        {% comment %}
+        Billing is a bought order's business. A donation or a purchase paid out
+        of a setup fee has no invoice to match and nothing to pay, and five rows
+        reading "0", "0 NGN" and "bundled in setup fee" asked a question with no
+        answer (the IPTSc walkthrough).
+        {% endcomment %}
+        {% if contract.consideration == "priced" %}
         {% comment %}On the status, not the figure: a Quantity is always truthy, so this
         row used to show in red on every order -- "0" when billing matched and a
         negative number when less had been billed than arrived.{% endcomment %}
@@ -244,11 +316,14 @@ figure here can go stale.
             </td>
           </tr>
         {% endif %}
+        {% endif %}
       </tbody>
     </table>
     </div>
     <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
-      {% if match.payment_terms == "advance" %}
+      {% if contract.consideration != "priced" %}
+        Nothing to bill or pay: what matters here is what arrived.
+      {% elif match.payment_terms == "advance" %}
         Paid before delivery, as agreed. What was paid for and refused on arrival — or never
         delivered, once the order is closed — is owed back.
       {% else %}

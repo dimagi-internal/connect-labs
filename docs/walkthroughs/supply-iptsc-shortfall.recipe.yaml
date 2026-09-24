@@ -226,9 +226,6 @@ scenes:
   - kind: fill
     target: css:#id_quantity_unit
     value: packet
-  - kind: fill
-    target: css:#id_currency
-    value: NGN
   - kind: click
     target: css:#id_delivery_supply_point-ts-control
   - kind: click_menu
@@ -330,17 +327,22 @@ scenes:
   actions:
   - kind: wait_for
     must_succeed: true
-    target: text:Shortfall covered by
+    target: css:#fulfilment
   - kind: hold
-    note: the covered row naming the covering order, and no late banner above
-    seconds: 3.0
-  concept_claim: With a covering order named, the short order's match reads shortfall
-    covered and names SCHI-LP-0921, and the past-due banner no longer appears.
+    note: the header reads "short — covered by SCHI-LP-0921", with no late banner,
+      and "How the order was filled" adds 450 from Harmattan and 250 from Tamarind
+      to the 700 ordered
+    seconds: 3.5
+  concept_claim: With a covering order named, the short order reads "short — covered
+    by SCHI-LP-0921" with no past-due banner, and one view adds the distributor's
+    450 and the covering order's 250 to the 700 ordered.
   design_intent: Nobody is waiting on Harmattan for the 250 any more, so calling the
-    order late would be a false alarm.
-  show: Ngozi returns to IPTSC-PO-0715 and reads, under the reference she typed, "Shortfall
-    covered by SCHI-LP-0921 (250 packet from Tamarind Pharmacy Wholesale)" in the
-    match, with no past-due banner.
+    order late would be a false alarm; and the reader should not have to add two
+    order pages together to know all 700 arrived.
+  show: Ngozi returns to IPTSC-PO-0715. Its header reads "short — covered by SCHI-LP-0921"
+    with no past-due banner, and "How the order was filled" lists this order's 450
+    packets from Harmattan and SCHI-LP-0921's 250 from Tamarind, each linked, adding
+    up to 700 received against 700 ordered.
   url: /supply/orders/${order_id}/?program_id=${program_id}
 - id: seven-hundred-on-the-shelf
   actions:
