@@ -17,12 +17,13 @@ from decimal import Decimal
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Layout, Row
 from django import forms
+from django.core.validators import URLValidator
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.forms import DATE, INPUT, SEARCHABLE, SELECT
-from connect_labs.supply_chain.models import Contract, Item, Payment, Shipment, SupplyPoint
+from connect_labs.supply_chain.models import AwardApproval, Contract, Item, Payment, Shipment, SupplyPoint
 from connect_labs.supply_chain.update_links.operations import DEFAULT_EXPIRY_DAYS, MAX_EXPIRY_DAYS
 from connect_labs.supply_chain.update_links.service import CONFIRMABLE, SUPPLIER_SHIPMENT_STATUSES
 
@@ -35,6 +36,7 @@ __all__ = [
     "RecordReceiptForm",
     "RecordStockCountForm",
     "RecordReleaseForm",
+    "RecordAnswerForm",
     "PUBLIC_FORMS",
 ]
 
@@ -74,6 +76,12 @@ class _ContractChoices(forms.ModelMultipleChoiceField):
         return f"{obj.reference or f'Order {obj.pk}'} — {obj.supplier.name}, {what} ({obj.status.replace('_', ' ')})"
 
 
+class _ApprovalChoices(forms.ModelMultipleChoiceField):
+    def label_from_instance(self, obj):
+        what = obj.award.quote.item.name if obj.award.quote.item_id else obj.award.commodity.name
+        return f"{obj.approver_org.name} ({obj.role}) — the award to {obj.award.supplier.name}, {what}"
+
+
 class _PointChoices(forms.ModelMultipleChoiceField):
     def label_from_instance(self, obj):
         return f"{obj.name} ({obj.kind.replace('_', ' ')})"
@@ -109,6 +117,16 @@ class UpdateLinkIssueForm(forms.Form):
             "to another, so include the collecting partner's store if they hand stock over."
         ),
     )
+    approvals = _ApprovalChoices(
+        label=_("Approvals it can answer"),
+        queryset=AwardApproval.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        help_text=_(
+            "For an approver — a technical partner confirming a product, a funder approving its use. "
+            "Only approvals asked of this organisation are accepted; it answers them itself."
+        ),
+    )
     expires_in_days = forms.IntegerField(
         label=_("Stops working after (days)"),
         min_value=1,
@@ -140,12 +158,19 @@ class UpdateLinkIssueForm(forms.Form):
             self.fields["supply_points"].queryset = SupplyPoint.objects.filter(
                 program_id=program_id, status="active"
             ).exclude(kind="user_held")
-        self.helper = _tidy(self, _pair("org", "label"), "contracts", "supply_points", "expires_in_days")
+            self.fields["approvals"].queryset = (
+                AwardApproval.objects.filter(award__round__program_id=program_id, status="requested")
+                .select_related("approver_org", "award__supplier", "award__quote__item", "award__commodity")
+                .order_by("-requested_on")
+            )
+        self.helper = _tidy(self, _pair("org", "label"), "contracts", "supply_points", "approvals", "expires_in_days")
 
     def clean(self):
         cleaned = super().clean()
-        if not cleaned.get("contracts") and not cleaned.get("supply_points"):
-            raise forms.ValidationError(_("Pick at least one order or supply point — a link has to cover something."))
+        if not cleaned.get("contracts") and not cleaned.get("supply_points") and not cleaned.get("approvals"):
+            raise forms.ValidationError(
+                _("Pick at least one order, supply point or approval — a link has to cover something.")
+            )
         return cleaned
 
     def payload(self) -> dict:
@@ -153,6 +178,7 @@ class UpdateLinkIssueForm(forms.Form):
             "org_id": self.cleaned_data["org"].pk,
             "contract_ids": [c.pk for c in self.cleaned_data.get("contracts") or []],
             "supply_point_ids": [p.pk for p in self.cleaned_data.get("supply_points") or []],
+            "approval_ids": [a.pk for a in self.cleaned_data.get("approvals") or []],
             "expires_in_days": self.cleaned_data["expires_in_days"],
         }
         if self.cleaned_data.get("label"):
@@ -192,6 +218,12 @@ class _PaymentChoice(forms.ModelChoiceField):
         return f"{obj.amount.normalize():f} {obj.currency} paid {obj.paid_on.isoformat()} — {order}"
 
 
+class _AnswerChoice(forms.ModelChoiceField):
+    def label_from_instance(self, obj):
+        what = obj.award.quote.item.name if obj.award.quote.item_id else obj.award.commodity.name
+        return f"{what} — the award to {obj.award.supplier.name} (asked {obj.requested_on.isoformat()})"
+
+
 class PublicForm(forms.Form):
     """One action on the link's page. Knows its own scope and its own prefix.
 
@@ -203,6 +235,9 @@ class PublicForm(forms.Form):
     title = ""
     intro = ""
     submit_label = _("Save")
+    # A form for the organisation an approval was asked of, rather than for a
+    # supplier. A link shows the forms for what it covers and no others.
+    for_approvers = False
 
     def __init__(self, *args, scope=None, **kwargs):
         kwargs.setdefault("prefix", self.action)
@@ -511,11 +546,58 @@ class RecordReleaseForm(PublicForm):
         return self.fields["from_supply_point"].queryset.count() >= 2 and self.fields["item"].queryset.exists()
 
 
+class RecordAnswerForm(PublicForm):
+    action = "record_answer"
+    title = _("Record your answer")
+    intro = _(
+        "Approve or decline what the programme asked you to confirm. Your answer is recorded as yours, "
+        "and until you have given it no order can be placed against the award."
+    )
+    submit_label = _("Record my answer")
+    for_approvers = True
+
+    approval = _AnswerChoice(
+        label=_("What you were asked"), queryset=AwardApproval.objects.none(), widget=forms.Select(attrs=SELECT)
+    )
+    status = forms.ChoiceField(
+        label=_("Your answer"),
+        choices=[("approved", _("Approve")), ("declined", _("Decline"))],
+        widget=forms.Select(attrs=SELECT),
+    )
+    note = forms.CharField(
+        label=_("Note"),
+        required=False,
+        max_length=1000,
+        widget=forms.Textarea(attrs={**INPUT, "rows": 2, "class": "base-input !h-auto min-h-16 py-2"}),
+    )
+    # What document_attach will take: http(s) only, and no longer than
+    # Document.external_url holds.
+    document_url = forms.URLField(
+        label=_("Link to your signed confirmation (optional)"),
+        required=False,
+        max_length=1024,
+        validators=[URLValidator(schemes=["http", "https"])],
+        widget=forms.URLInput(attrs={**INPUT, "placeholder": "https://"}),
+    )
+
+    def limit_to_scope(self, scope):
+        if scope is not None and scope.approvals is not None:
+            self.fields["approval"].queryset = scope.approvals.filter(status="requested")
+
+    def rows(self):
+        return [_pair("approval", "status"), "note", "document_url"]
+
+    def is_available(self):
+        return self.fields["approval"].queryset.exists()
+
+
 # In the order they appear on the page: the order, the money, the goods moving,
-# then what is on the shelf.
+# then what is on the shelf. An approver's answer first: an approver link
+# covers nothing else.
 PUBLIC_FORMS = {
     form.action: form
     for form in (
+        RecordAnswerForm,
         ConfirmOrderForm,
         ConfirmPaymentForm,
         RecordShipmentForm,

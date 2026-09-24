@@ -338,6 +338,9 @@ _ITEM_DATA = _data_with(
     },
     one_course_is={"enum": list(records.ONE_COURSE_IS)},
     stock_class={"enum": list(records.STOCK_CLASSES)},
+    # Whether `components` are what one base unit holds (a co-pack) or one
+    # pack (a test kit). Defaults to base.
+    components_per={"enum": list(records.COMPONENTS_PER)},
 )
 
 # A contract is the commitment. buyer_of_record is required and has no

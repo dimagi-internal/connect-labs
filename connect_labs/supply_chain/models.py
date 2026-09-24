@@ -205,6 +205,9 @@ class Item(TimestampedModel):
     # meaningless; it still moves through the ledger, because "which site has
     # which dispenser" is a balance like any other.
     stock_class = models.CharField(max_length=16, default="consumable", choices=_choices(records.STOCK_CLASSES))
+    # Which unit the `components` describe: one base unit ("base", a co-pack)
+    # or one pack ("pack", a test kit of 50 tests). See records.COMPONENTS_PER.
+    components_per = models.CharField(max_length=8, default="base", choices=_choices(records.COMPONENTS_PER))
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["scope_key", "sku"], name="uniq_item_scope_sku")]
@@ -220,6 +223,35 @@ class Item(TimestampedModel):
     @property
     def is_kit(self) -> bool:
         return bool(self.components)
+
+    @property
+    def components_unit(self) -> str:
+        """The unit one set of `components` fills: "kit", "co-pack"."""
+        commodity = self.commodity if self.commodity_id else None
+        if self.components_per == "pack":
+            return self.pack_unit or (commodity.pack_unit if commodity else "") or "pack"
+        return self.base_unit or (commodity.base_unit if commodity else "") or "unit"
+
+    def components_per_base_unit(self) -> list[tuple[str, str, "Decimal"]]:
+        """The components restated as what ONE BASE UNIT holds, for comparing kits.
+
+        (slug, unit, quantity), sorted. A kit described per pack is divided by
+        its pack size; one with no pack size cannot be restated and keeps its
+        own figures, which then simply fail to match a kit that could be.
+        """
+        from decimal import Decimal
+
+        divisor = Decimal(1)
+        if self.components_per == "pack" and self.base_per_pack:
+            divisor = Decimal(int(self.base_per_pack))
+        return sorted(
+            (
+                c.get("commodity_slug") or "",
+                c.get("base_unit") or "",
+                (Decimal(str(c.get("quantity"))) / divisor).normalize(),
+            )
+            for c in self.components or []
+        )
 
     @property
     def is_durable(self) -> bool:
@@ -444,6 +476,14 @@ class AwardApproval(TimestampedModel):
     status = models.CharField(max_length=16, default="requested", choices=_choices(records.APPROVAL_STATUSES))
     requested_on = models.DateField()
     decided_on = models.DateField(null=True, blank=True)
+    # Whose word the answer is. Blank or `we_recorded` when the programme
+    # recorded it; `partner_reported` with the approver as recorder when the
+    # approver answered through its own update link -- the difference between
+    # "they told us" and "we say they told us" is the gate's whole value.
+    decision_source = models.CharField(max_length=32, blank=True, default="")
+    decision_recorded_by_org = models.ForeignKey(
+        "labs.LabsOrg", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
+    )
     # What was asked, and what they answered, are two facts. The answer used
     # to be written over the request's note, which lost the question.
     note = models.TextField(blank=True, default="")

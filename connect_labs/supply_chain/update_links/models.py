@@ -20,7 +20,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from connect_labs.supply_chain.models import Contract, SupplyPoint, TimestampedModel
+from connect_labs.supply_chain.models import AwardApproval, Contract, SupplyPoint, TimestampedModel
 
 
 class UpdateLink(TimestampedModel):
@@ -30,6 +30,9 @@ class UpdateLink(TimestampedModel):
 
     contracts = models.ManyToManyField(Contract, blank=True, related_name="update_links")
     supply_points = models.ManyToManyField(SupplyPoint, blank=True, related_name="update_links")
+    # Approvals asked of this link's organisation, which it may answer itself.
+    # A link to an approver, not a supplier: it names these and nothing else.
+    approvals = models.ManyToManyField(AwardApproval, blank=True, related_name="update_links")
 
     token_hash = models.CharField(max_length=64, unique=True)
     # The first characters of the raw token, so the issuer can tell two links

@@ -182,9 +182,11 @@ class TestAnOrderMayNotRestOnAnUnapprovedAward:
         with pytest.raises(ValueError) as refused:
             _order(da, world)
         message = str(refused.value)
-        assert f"approval {approval['id']}" in message
-        assert "A funder" in message
-        assert "requested" in message
+        # Named in words: whose approval, which award. Row ids meant nothing
+        # to the person refused.
+        assert "awaiting A funder's funder approval" in message
+        assert f"approval {approval['id']}" not in message
+        assert "asked" in message
 
     def test_a_declined_approval_refuses_it_too(self, da, world):
         approval = _request(da, world)
@@ -201,7 +203,7 @@ class TestAnOrderMayNotRestOnAnUnapprovedAward:
         first = _request(da, world)
         op(da, "approval_decide", approval_id=first["id"], status="declined")
         second = _request(da, world, requested_on=TODAY.isoformat())
-        with pytest.raises(ValueError, match=f"approval {second['id']}"):
+        with pytest.raises(ValueError, match=f"asked {TODAY.isoformat()}"):
             _order(da, world)
         op(da, "approval_decide", approval_id=second["id"], status="approved")
         assert _order(da, world)["award_id"] == world["award"]["id"]
@@ -353,7 +355,7 @@ class TestTheApprovalScreens:
         )
         assert response.status_code == 200
         body = response.content.decode()
-        assert "awaiting approval" in body
+        assert "awaiting A funder&#x27;s funder approval" in body
         # Nothing on the form is wrong: the refusal is about the award, so
         # telling her to "fix what is marked" sends her looking for a field.
         assert "fix what is marked" not in body

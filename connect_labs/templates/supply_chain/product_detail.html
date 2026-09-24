@@ -88,8 +88,10 @@ numbers of sachets and adding them needs the pack spec.
         <ul class="text-sm text-gray-600 list-disc list-inside mt-1">
           {% for requirement in product.spec_requirements %}
             <li>
-              {{ requirement.field }} {{ requirement.operator }} {{ requirement.value }}{{ requirement.unit }}
-              {% if requirement.rationale %}<span class="text-gray-400">— {{ requirement.rationale }}</span>{% endif %}
+              {% comment %}The rationale is the sentence a person reads; the rule is the check behind it.{% endcomment %}
+              {% if requirement.rationale %}<span class="text-gray-900">{{ requirement.rationale|capfirst }}</span>
+                <span class="text-gray-500">({{ requirement.field|words }} {{ requirement.operator }} {{ requirement.value }}{% if requirement.unit %} {{ requirement.unit }}{% endif %})</span>
+              {% else %}{{ requirement.field|words }} {{ requirement.operator }} {{ requirement.value }}{% if requirement.unit %} {{ requirement.unit }}{% endif %}{% endif %}
             </li>
           {% endfor %}
         </ul>

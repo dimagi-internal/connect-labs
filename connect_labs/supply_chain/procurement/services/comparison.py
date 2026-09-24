@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from connect_labs.supply_chain.models import Commodity, Quote, Round
-from connect_labs.supply_chain.procurement.services.compliance import check_compliance
+from connect_labs.supply_chain.procurement.services.compliance import FAIL, PASS, check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import (
     COMPARABILITY_FIELDS,
     FIGURE_FIELDS,
@@ -38,6 +38,7 @@ from connect_labs.supply_chain.procurement.services.questions import (
     audience_for_reason,
     missing_facts,
 )
+from connect_labs.supply_chain.records import course_applies_to_category
 from connect_labs.supply_chain.values import Unconfirmed, decimal_string, merge, to_wire, unconfirmed
 
 
@@ -65,6 +66,34 @@ class ComparisonRow:
     # is one supplier with several rows, and without this they read as the
     # same name twice, told apart only by the price being compared.
     item_name: str = ""
+    # The unit `composition` describes ("kit", "co-pack"), and the contents
+    # restated per base unit -- what kits are compared on, so 50 tablets per
+    # kit of 50 and 1 tablet per test are the same kit, and 50 per kit and 50
+    # per test are not.
+    composition_unit: str = ""
+    composition_key: tuple | None = None
+
+    @property
+    def specification(self) -> dict | None:
+        """This offer against the product's specification, summarised.
+
+        A statement, not a ranking input: an offer that fails stays where its
+        price puts it, and the row says what it fails. Whether a failing
+        offer is still worth buying is the buyer's decision -- and the award
+        freezes this summary beside the reason they gave.
+        """
+        if not self.compliance:
+            return None
+        outcomes = [r.outcome for r in self.compliance]
+        failures = [r.message for r in self.compliance if r.outcome == FAIL]
+        if failures:
+            outcome, summary = FAIL, f"{len(failures)} of {len(outcomes)} fail"
+        elif all(o == PASS for o in outcomes):
+            outcome, summary = PASS, f"Meets all {len(outcomes)}"
+        else:
+            unstated = len([o for o in outcomes if o != PASS])
+            outcome, summary = "not_stated", f"{unstated} of {len(outcomes)} not stated"
+        return {"outcome": outcome, "summary": summary, "failures": failures}
 
 
 @dataclass
@@ -81,6 +110,7 @@ class Comparison:
     # from `blocked` because conflating the two is what made a supplier who
     # answered everything look like the problem.
     unavailable: dict = field(default_factory=dict)
+    commodity_name: str = ""
 
     @property
     def all_rows(self) -> list[ComparisonRow]:
@@ -130,11 +160,14 @@ class Comparison:
                 ],
                 "questions": [{"key": f.key, "question": f.question, "audience": f.audience} for f in row.questions],
                 "composition": row.composition,
+                "composition_unit": row.composition_unit,
                 "item_name": row.item_name,
+                "specification": row.specification,
             }
 
         return {
             "round_id": self.round_id,
+            "commodity_name": self.commodity_name,
             "generated_at": self.generated_at,
             "comparable_count": self.comparable_count,
             "total_count": self.total_count,
@@ -159,11 +192,15 @@ class Comparison:
         }
 
 
+# The figures that only exist for something given as a course of treatment.
+COURSE_FIGURES = frozenset({"usd_per_course", "usd_per_child_treated"})
+
+
 def _is_live(quote: Quote) -> bool:
     return not quote.voided and not quote.superseded_by_quote_id
 
 
-def _unavailable_figures(rows: list[ComparisonRow]) -> dict:
+def _unavailable_figures(rows: list[ComparisonRow], figure_fields=FIGURE_FIELDS) -> dict:
     """Figures no supplier could supply, because the gap is OURS.
 
     Decided by the audience of the reasons, not by how many rows are missing
@@ -180,7 +217,7 @@ def _unavailable_figures(rows: list[ComparisonRow]) -> dict:
     if not rows:
         return {}
     out = {}
-    for key in FIGURE_FIELDS:
+    for key in figure_fields:
         values = [row.figures.get(key) for row in rows]
         if not all(isinstance(value, Unconfirmed) for value in values):
             continue
@@ -211,12 +248,20 @@ def _composition(item) -> list | None:
     )
 
 
-def _composition_phrase(composition) -> str:
+def _composition_key(item):
+    """What kits are compared on: the contents per base unit (see Item)."""
+    if item is None:
+        return None
+    return tuple(item.components_per_base_unit())
+
+
+def _composition_phrase(composition, unit="") -> str:
     if composition is None:
         return "an unnamed trade item, so its contents are not known"
     if not composition:
         return "a single product, not a kit"
-    return " + ".join(f"{c['quantity']} {c['base_unit']} {c['commodity_slug']}" for c in composition)
+    contents = " + ".join(f"{c['quantity']} {c['base_unit']} {c['commodity_slug']}" for c in composition)
+    return f"{contents} per {unit}" if unit else contents
 
 
 def _canonical(components) -> list:
@@ -282,10 +327,7 @@ def _separate_differing_kits(comparable, blocked):
     The ranking figure carries the reason, so the cell says why it is not a
     number rather than going blank.
     """
-    compositions = {
-        tuple(tuple(sorted(c.items())) for c in row.composition) if row.composition is not None else None
-        for row in comparable
-    }
+    compositions = {row.composition_key for row in comparable}
     has_a_kit = any(row.composition for row in comparable)
     if not has_a_kit or len(compositions) < 2:
         return comparable, blocked
@@ -293,12 +335,13 @@ def _separate_differing_kits(comparable, blocked):
     for row in comparable:
         others = sorted(
             {
-                f"{other.supplier_name}: {_composition_phrase(other.composition)}"
+                f"{other.supplier_name}: {_composition_phrase(other.composition, other.composition_unit)}"
                 for other in comparable
-                if other is not row and other.composition != row.composition
+                if other is not row and other.composition_key != row.composition_key
             }
         )
-        reason = f"kit composition differs: this offer is {_composition_phrase(row.composition)}; " + "; ".join(others)
+        this = _composition_phrase(row.composition, row.composition_unit)
+        reason = f"kit composition differs: this offer is {this}; " + "; ".join(others)
         row.figures["landed_total_for_round_quantity"] = merge(
             unconfirmed(reason), row.figures["landed_total_for_round_quantity"]
         )
@@ -307,7 +350,7 @@ def _separate_differing_kits(comparable, blocked):
             MissingFact(
                 key="kit_composition",
                 question=(
-                    f"This offer holds {_composition_phrase(row.composition)}, which differs from "
+                    f"This offer holds {this}, which differs from "
                     + "; ".join(others)
                     + ". Decide which contents the round is for; offers are ranked only against "
                     "the same contents."
@@ -363,6 +406,13 @@ def compare_round(
 
     comparable: list[ComparisonRow] = []
     blocked: list[ComparisonRow] = []
+    # A test kit or a dispenser is not administered over a course, so "per
+    # course" and "per child treated" are not unknown for it -- they do not
+    # exist. Offering them as columns, and asking us for a treatment protocol
+    # to fill them, reported a category's absence of the concept as our gap;
+    # the checks feed and the product page already knew better.
+    course_applies = course_applies_to_category(commodity.category)
+    figure_fields = [key for key in FIGURE_FIELDS if course_applies or key not in COURSE_FIGURES]
 
     for quote in quotes:
         if not _is_live(quote):
@@ -383,7 +433,12 @@ def compare_round(
             is_comparable=not any(isinstance(figures[key], Unconfirmed) for key in COMPARABILITY_FIELDS),
             composition=_composition(item) if quote.item_id else None,
             item_name=item.name if item is not None else "",
+            composition_unit=item.components_unit if item is not None and item.components else "",
+            composition_key=_composition_key(item) if quote.item_id else None,
         )
+        if not course_applies:
+            row.figures = {key: value for key, value in figures.items() if key not in COURSE_FIGURES}
+            row.questions = [q for q in row.questions if q.key != "course_definition"]
         (comparable if row.is_comparable else blocked).append(row)
 
     wanted = _round_contents(round_, commodity)
@@ -401,9 +456,9 @@ def compare_round(
     if ranked_by is not None:
         comparable.sort(key=lambda row: row.figures[ranked_by].amount)
 
-    unavailable = _unavailable_figures(comparable + blocked)
+    unavailable = _unavailable_figures(comparable + blocked, figure_fields)
     columns: list[ComparisonColumn] = []
-    for key in FIGURE_FIELDS:
+    for key in figure_fields:
         # blocked_by names every supplier missing this figure, so the template can
         # say what a blocked row is short of — but rankability is judged over the
         # comparable subset alone (rule 6 as amended). Deduped: a supplier with
@@ -434,4 +489,5 @@ def compare_round(
         ranked_by=ranked_by,
         provisional=bool(blocked),
         unavailable=unavailable,
+        commodity_name=commodity.name,
     )

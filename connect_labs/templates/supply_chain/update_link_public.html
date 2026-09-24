@@ -34,6 +34,24 @@ own prefix so seven of them cannot collide.
       {{ org.name }}. The link works until {{ expires_on|date:"j F Y" }}.
     </p>
   </div>
+  {% if approvals %}
+  <div class="px-5 py-4 border-b border-brand-border-light">
+    <h3 class="text-xs uppercase tracking-wide text-gray-500 mb-2">What you are asked to confirm</h3>
+    {% for approval in approvals %}
+      <div class="mb-3">
+        <div class="text-sm text-gray-900 font-medium">
+          {% if approval.award.quote.item %}{{ approval.award.quote.item.name }}{% else %}{{ approval.award.commodity.name }}{% endif %}
+          <span class="ml-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">{{ approval.get_status_display }}</span>
+        </div>
+        <div class="text-sm text-gray-600">
+          Awarded to {{ approval.award.supplier.name }} · your {{ approval.role|words }} approval, asked {{ approval.requested_on|date:"j F Y" }}
+        </div>
+        {% if approval.note %}<div class="text-sm text-gray-700 mt-0.5">“{{ approval.note }}”</div>{% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if contracts or supply_points %}
   <div class="grid md:grid-cols-2 gap-x-6">
     <div class="px-5 py-4">
       <h3 class="text-xs uppercase tracking-wide text-gray-500 mb-2">Orders</h3>
@@ -65,6 +83,7 @@ own prefix so seven of them cannot collide.
       {% endfor %}
     </div>
   </div>
+  {% endif %}
 </div>
 
 <h2 class="text-sm font-semibold text-gray-900 mb-2">Record an update</h2>

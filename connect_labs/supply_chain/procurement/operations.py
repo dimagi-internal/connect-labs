@@ -517,15 +517,39 @@ def approval_request(access, data):
             "decided_on": _DATE,
             "note": {"type": "string"},
             "rests_on_document_id": ID,
+            # Set only by the approver's own update link (update_links/service.py),
+            # which runs with no user. It makes the answer the approver's word.
+            "via_update_link_id": ID,
         },
         required=("approval_id", "status"),
     ),
     is_write=True,
 )
-def approval_decide(access, approval_id, status, decided_on=None, note=None, rests_on_document_id=None):
+def approval_decide(
+    access, approval_id, status, decided_on=None, note=None, rests_on_document_id=None, via_update_link_id=None
+):
+    source, recorded_by = None, None
+    if via_update_link_id is not None:
+        # Refused for anyone signed in: a programme member recording the
+        # answer is `we_recorded`, and letting them stamp it as the approver's
+        # own word would undo the one thing the approver's link establishes.
+        if getattr(access, "user", None) is not None or getattr(access, "request", None) is not None:
+            raise ValueError("an answer is the approver's own word only through the approver's own link")
+        from connect_labs.supply_chain.update_links.models import UpdateLink
+
+        link = UpdateLink.objects.filter(pk=via_update_link_id, program_id=access.program_id).first()
+        if link is None or not link.is_usable or not link.approvals.filter(pk=approval_id).exists():
+            raise ValueError(f"update link {via_update_link_id} does not cover approval {approval_id}")
+        source, recorded_by = "partner_reported", link.org_id
     return record(
         access.decide_approval(
-            approval_id, status, decided_on=decided_on, note=note, rests_on_document_id=rests_on_document_id
+            approval_id,
+            status,
+            decided_on=decided_on,
+            note=note,
+            rests_on_document_id=rests_on_document_id,
+            source=source,
+            recorded_by_org_id=recorded_by,
         )
     )
 
