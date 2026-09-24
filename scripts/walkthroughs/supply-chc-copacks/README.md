@@ -16,7 +16,11 @@ What each scene performs:
 - The checks page and the resupply plan then show the result.
 - Tunde records Sahel's collection through the link.
 
-Every seeded date is relative to the render day. On any day this gives:
+Every date is relative to the render day, including the ones the scenes type. The chain took about a week in the world and is filmed in minutes, so each act is entered with the day it happened (`placed_on`, `paid_on`, `payment_received_on`, `received_on` in `.realized.json`): signed and confirmed six days ago, paid five days ago, the payment seen arriving four days ago, the goods received yesterday, the stock take and the release today. The order page and the link page read those days, not the minute they were typed.
+
+Amara's low-stock alert goes to her own address by name (an invented `.example` address, which never delivers), not to the login the render uses.
+
+On any day this gives:
 
 - a consumption rate of 3,033 co-packs a month;
 - 170 cartons after the stock take, which is 2.80 months against a minimum of 3;

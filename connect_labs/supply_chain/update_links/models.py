@@ -125,6 +125,12 @@ class UpdateLinkSubmission(models.Model):
         Contract, null=True, blank=True, on_delete=models.SET_NULL, related_name="link_submissions"
     )
     submitted_at = models.DateTimeField(default=timezone.now, db_index=True)
+    # When it HAPPENED, in the organisation's own words: the day the payment
+    # arrived, the goods were received, the stock was released. Not when it
+    # was typed. A distributor catching up records a fortnight of events in
+    # one sitting, and the order page listed an order confirmed, a payment
+    # received and 600 cartons inspected all "24 Sep, 12:08".
+    happened_on = models.DateField(null=True, blank=True)
 
     class Meta:
         ordering = ["-submitted_at", "-id"]

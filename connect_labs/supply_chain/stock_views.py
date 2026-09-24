@@ -421,6 +421,8 @@ class StockCountRecordView(OperationFormView):
         "the working figure while remaining the authority. The other two kinds move nothing."
     )
 
+    template_name = "supply_chain/stock_count_form.html"
+
     def breadcrumb(self, **kwargs):
         return [{"label": "Stock", "href": reverse("supply_chain:stock")}, {"label": self.title}]
 
@@ -429,3 +431,59 @@ class StockCountRecordView(OperationFormView):
 
     def redirect_to(self, result):
         return reverse("supply_chain:stock")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if context.get("has_program_context"):
+            context["ledger_balances"] = ledger_balances(_access(self.request).program_id)
+        return context
+
+
+def ledger_balances(program_id) -> dict:
+    """{"<point id>:<item id>": {...}} -- what the ledger holds, for the count form.
+
+    A count is recorded against a balance the person counting cannot see: the
+    stock take that "comes in short" came in short of a figure the form never
+    showed, and an override replaced it without saying what it replaced. So
+    the form is handed the balance of every point and item that has moved,
+    and says it beside "Found" as they are chosen. The key "<point id>:" is the
+    point's balance when it has only ever held one item (ledger.sole_item),
+    which is what a count without a trade item is compared against.
+
+    Figures only. Nothing here suggests a count; a count is what somebody
+    found, and showing them the ledger is not asking them to agree with it.
+    """
+    from connect_labs.supply_chain.models import Movement, SupplyPoint
+    from connect_labs.supply_chain.stock.services import ledger
+    from connect_labs.supply_chain.values import Quantity, quantity_digits, unit_noun
+
+    moved = Movement.objects.for_program(program_id)
+    pairs = set(moved.exclude(to_supply_point=None).values_list("to_supply_point_id", "item_id"))
+    pairs |= set(moved.exclude(from_supply_point=None).values_list("from_supply_point_id", "item_id"))
+    points = SupplyPoint.objects.in_bulk({point for point, _ in pairs})
+    items = Item.objects.select_related("commodity").in_bulk({item for _, item in pairs if item})
+
+    def described(figure):
+        if not isinstance(figure, Quantity):
+            return {"known": False, "reasons": list(getattr(figure, "reasons", ()))}
+        return {
+            "known": True,
+            "amount": str(figure.amount),
+            "unit": unit_noun(figure.unit),
+            "plural": unit_noun(figure.unit, 2),
+            "text": f"{quantity_digits(figure.amount)} {unit_noun(figure.unit, figure.amount)}".strip(),
+        }
+
+    balances = {}
+    for point_id, item_id in pairs:
+        point = points.get(point_id)
+        if point is None:
+            continue
+        item = items.get(item_id) if item_id else None
+        if item is not None:
+            balances[f"{point_id}:{item_id}"] = described(ledger.balance(program_id, point, item=item))
+    for point in points.values():
+        balances[f"{point.pk}:"] = described(
+            ledger.balance(program_id, point, item=ledger.sole_item(program_id, point))
+        )
+    return balances
