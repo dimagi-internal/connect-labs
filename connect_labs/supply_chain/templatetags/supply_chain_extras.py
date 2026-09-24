@@ -369,6 +369,14 @@ def check_facts(check, refs=None):
 
 
 @register.filter
+def requirement_text(requirement):
+    """A specification requirement in words: "Range maximum at least 2.0 mg/L"."""
+    from connect_labs.supply_chain.procurement.services.compliance import requirement_text as text
+
+    return text(requirement or {})
+
+
+@register.filter
 def check_label(kind):
     return CHECK_LABELS.get(kind, kind.replace("_", " "))
 

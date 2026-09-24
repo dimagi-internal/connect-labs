@@ -157,7 +157,7 @@ of the reader who does not.
           <ul class="text-xs text-gray-600 list-disc list-inside mt-0.5">
             {% for requirement in product.spec_requirements %}
               <li>
-                {{ requirement.field }} {{ requirement.operator }} {{ requirement.value }}{{ requirement.unit }}
+                {{ requirement|requirement_text }}
                 {% if requirement.rationale %}
                   <span class="text-gray-400">— {{ requirement.rationale }}</span>
                 {% endif %}

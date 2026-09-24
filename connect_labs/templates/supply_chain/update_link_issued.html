@@ -1,4 +1,5 @@
 {% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
 
 {% comment %}
 The only time the link is ever shown. Rendered on the POST's own response
@@ -19,8 +20,8 @@ stored, so it cannot be shown again.
   <div class="px-5 py-4 border-b border-brand-border-light">
     <h1 class="text-base font-semibold text-gray-900">Link issued for {{ link.org_name }}</h1>
     <p class="text-sm text-gray-500 mt-0.5">
-      Send this to them however you normally would. It works until
-      {{ link.expires_at|slice:":10" }}, or until you revoke it.
+      Send this to them however you normally would. It opens with no labs account, and lets them
+      record only what it covers below. It works until {{ link.expires_at|slice:":10" }}, or until you revoke it.
     </p>
   </div>
 
@@ -62,7 +63,7 @@ stored, so it cannot be shown again.
           <li><i class="fa-solid fa-warehouse text-gray-400 mr-1"></i>{{ point.name }}</li>
         {% endfor %}
         {% for approval in link.approvals %}
-          <li><i class="fa-solid fa-circle-check text-gray-400 mr-1"></i>Approval of the award to {{ approval.supplier }}</li>
+          <li><i class="fa-solid fa-circle-check text-gray-400 mr-1"></i>Their {{ approval.role|words }} approval of the {{ approval.product }} awarded to {{ approval.supplier }} — {{ approval.status|words }}</li>
         {% endfor %}
       </ul>
     </div>

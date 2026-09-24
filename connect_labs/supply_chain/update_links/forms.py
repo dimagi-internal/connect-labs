@@ -287,6 +287,8 @@ class PublicForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.scope = scope
         self.limit_to_scope(scope)
+        if "unit_basis" in self.fields:
+            self.fields["unit_basis"].choices = _unit_choices(scope)
         for name, field in self.fields.items():
             if isinstance(field, forms.ModelChoiceField):
                 field.empty_label = _("Choose…")
@@ -326,6 +328,28 @@ def _quantity(label, required=True, allow_zero=False):
         decimal_places=4,
         widget=forms.NumberInput(attrs=QUANTITY_INPUT),
     )
+
+
+def _plural(unit):
+    return unit if unit.endswith("s") else f"{unit}s"
+
+
+def _unit_choices(scope):
+    """ "Counted in", in the product's own units when the link covers one kind.
+
+    "Packs (cartons, boxes)" asked a distributor receiving test kits to
+    translate kits into our vocabulary; when every product on the link packs
+    the same way, the options say kits and tests.
+    """
+    items = getattr(scope, "items", None)
+    ladders = set()
+    if items is not None:
+        ladders = {(i.pack_unit, i.base_unit, i.base_per_pack) for i in items if i.pack_unit and i.base_unit}
+    if len(ladders) != 1:
+        return UNIT_BASIS
+    pack, base, per = ladders.pop()
+    pack_label = f"{_plural(pack).capitalize()} ({per} {_plural(base)} each)" if per else _plural(pack).capitalize()
+    return [("pack", pack_label), ("base", _plural(base).capitalize())]
 
 
 def _unit_basis():
