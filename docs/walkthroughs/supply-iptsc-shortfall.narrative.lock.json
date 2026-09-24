@@ -10,9 +10,9 @@
     "covered-not-late",
     "seven-hundred-on-the-shelf"
   ],
-  "fetched_at": "2026-09-24T11:22:35.706937+00:00",
+  "fetched_at": "2026-09-24T12:33:42.557757+00:00",
   "name": "supply-iptsc-shortfall",
-  "narrative": "Ngozi runs supply for the programme's school malaria prevention round, and she ordered 700 IPTSc packets from Harmattan Health Supplies. She opens the packet in the catalogue and confirms what the programme is counting: one packet holds a full three-day course, so 700 packets are 700 three-day courses. Musa at Harmattan opens the update link the programme gave him, with no labs login, and records the dispatch of the 450 packets he could find. Hauwa at the Sahel Community Health Initiative opens her own link and records the 450 packets that reached the SCHI district store. Ngozi opens the order and reads it: 700 ordered, 450 received, 250 still outstanding, and the order past its promised lead time. Hauwa's team has already bought the missing 250 from Tamarind Pharmacy Wholesale, a vendor they know, out of SCHI's setup fee, so Ngozi records that purchase as its own order, with SCHI as the buyer, paid as bundled, and marked as buying the shortfall on the Harmattan order. She records the 250 arriving at the store, and the new order's cost reads as bundled in the setup fee rather than as a missing price. Back on the Harmattan order, Ngozi sees the shortfall covered by name and the lateness gone. On the stock page she checks the SCHI district store and reads 700 packets: every course the round ordered.",
+  "narrative": "Ngozi runs supply for the programme's school malaria prevention round, and she ordered 700 IPTSc packets from Harmattan Health Supplies. She opens the packet in the catalogue and confirms what the programme is counting: one packet holds a full three-day course, so 700 packets are 700 three-day courses. Musa at Harmattan opens the update link the programme gave him, with no labs login, and records the dispatch of the 450 packets he could find. Hauwa at the Sahel Community Health Initiative opens her own link and records the 450 packets that reached the SCHI district store. Ngozi opens the order and reads it: 700 ordered, 450 received, 250 still outstanding, and the order past its promised lead time. Hauwa's team has already bought the missing 250 from Tamarind Pharmacy Wholesale, a vendor they know, out of SCHI's setup fee, so Ngozi records that purchase as its own order, with SCHI as the buyer, paid as bundled, and marked as buying the shortfall on the Harmattan order. Its cost reads as bundled in the setup fee rather than as a missing price. When the 250 reach the store, Hauwa records them through SCHI's own link. Back on the Harmattan order, Ngozi sees the shortfall covered by name and the lateness gone. On the stock page she checks the SCHI district store, reads 700 packets, and opens the balance to see Harmattan's 450 and Tamarind's 250: every course the round ordered.",
   "personas": {
     "hauwa": {
       "color": "#0D7A5F",
@@ -46,7 +46,7 @@
         }
       ],
       "id": "the-order-that-ran-short",
-      "narrative": "Ngozi ordered 700 IPTSc packets from Harmattan Health Supplies for the school round. This is the one record she will follow, from the distributor's dispatch to the partner's shelf, instead of a thread of messages.",
+      "narrative": "Ngozi ordered 700 IPTSc packets from Harmattan Health Supplies for the school round. The list already says the order is past due with nothing received. This is the one record she will follow, from the distributor's dispatch to the partner's shelf, instead of a thread of messages.",
       "persona": "ngozi",
       "provenance": "S0",
       "title": "One order for 700 packets, and a school round waiting on it"
@@ -118,6 +118,11 @@
           "description": "The order form's \"Paid for how\" (consideration) and \"Buys the shortfall on\" (covers_shortfall_of) fields write Contract.consideration and Contract.covers_shortfall_of.",
           "id": "contract-cover-and-consideration",
           "verify": "pytest connect_labs/supply_chain/tests/test_small_gaps.py -k covering; MCP supply_chain_contract_get returns consideration=bundled and covers_shortfall_of_id"
+        },
+        {
+          "description": "contract_landed_cost for a consideration=bundled contract returns {not_costed \"bundled in setup fee\"} and the order page shows the bundled badge and explanation.",
+          "id": "bundled-landed-cost",
+          "verify": "pytest connect_labs/supply_chain/tests/test_consideration.py; Playwright: order page shows \"Bundled in setup fee\""
         }
       ],
       "id": "the-partner-bought-the-rest",
@@ -129,16 +134,16 @@
     {
       "features": [
         {
-          "description": "contract_landed_cost for a consideration=bundled contract returns {not_costed \"bundled in setup fee\"} and the order page shows the bundled badge and explanation.",
-          "id": "bundled-landed-cost",
-          "verify": "pytest connect_labs/supply_chain/tests/test_consideration.py; Playwright: order page shows \"Bundled in setup fee\""
+          "description": "A partner's update link scoped to a store can record goods received against an order created after the link was issued, when that order delivers to the store and the partner is on the receiving end.",
+          "id": "partner-link-receipt-for-new-order",
+          "verify": "pytest connect_labs/supply_chain/tests -k partner_link; Playwright: SCHI link offers SCHI-LP-0921 in Record goods received"
         }
       ],
       "id": "the-250-arrive-and-cost-says-why",
-      "narrative": "Ngozi records the 250 packets arriving at the SCHI district store. The new order's cost reads bundled in the setup fee, not a missing price.",
-      "persona": "ngozi",
-      "provenance": "S5",
-      "title": "Ngozi receives the 250 and the cost says bundled"
+      "narrative": "When Tamarind's 250 packets reach the district store, Hauwa records them through the same SCHI link. The link now lists the new order, because it delivers to her store, so she picks it and records 250 packets accepted.",
+      "persona": "hauwa",
+      "provenance": "S0",
+      "title": "Hauwa records the 250 from Tamarind"
     },
     {
       "features": [
@@ -163,12 +168,12 @@
         }
       ],
       "id": "seven-hundred-on-the-shelf",
-      "narrative": "On the stock page Ngozi checks the SCHI district store and reads 700 packets on its ledger: every course the round ordered is on the shelf.",
+      "narrative": "On the stock page Ngozi checks the SCHI district store: its ledger reads 700 packets. She opens the balance and sees what it is made of, Harmattan's 450 and Tamarind's 250 — every course the round ordered.",
       "persona": "ngozi",
       "provenance": "S7",
       "title": "Seven hundred packets at the SCHI store"
     }
   ],
   "slug": "supply-iptsc-shortfall",
-  "version": 2
+  "version": 3
 }

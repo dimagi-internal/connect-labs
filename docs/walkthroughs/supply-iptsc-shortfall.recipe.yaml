@@ -279,58 +279,52 @@ scenes:
 - id: the-250-arrive-and-cost-says-why
   actions:
   - kind: wait_for
-    target: css:#id_supply_point-ts-control
+    target: text:Updates for Sahel Community Health Initiative
   - kind: click
-    target: css:#id_supply_point-ts-control
-  - kind: click_menu
-    say: store
-    target: "css:#id_supply_point-ts-dropdown .option:has-text('SCHI district store')"
-  - kind: fill
-    target: css:#id_received_on
-    value: ${today}
-  - kind: fill
-    target: css:#id_reference
-    value: SCHI-GRN-0923
+    target: css:summary:has-text('Record goods received')
   - kind: select
-    target: css:#id_source
-    value: partner_reported
-  - kind: click
-    target: css:#id_lines-0-item-ts-control
-  - kind: click_menu
-    target: "css:#id_lines-0-item-ts-dropdown .option:has-text('IPTSc three-day packet (standard)')"
+    say: picks it
+    target: css:#id_record_receipt-contract
+    value: ${cover_id}
+    note: the new Tamarind order is offered because it delivers to SCHI's store
+  - kind: select
+    target: css:#id_record_receipt-supply_point
+    value: ${store_id}
   - kind: fill
-    target: css:#id_lines-0-batch
-    value: TPW-DP-0914
+    target: css:#id_record_receipt-reference
+    value: SCHI-GRN-0923
   - kind: fill
-    say: '250'
-    target: css:#id_lines-0-quantity
+    say: accepted
+    target: css:#id_record_receipt-quantity_accepted
     value: '250'
+  - kind: select
+    target: css:#id_record_receipt-unit_basis
+    value: base
   - kind: fill
-    target: css:#id_lines-0-quantity_unit
-    value: packet
+    target: css:#id_record_receipt-batch
+    value: TPW-DP-0914
+  - kind: hold
+    note: the filled goods received form for the Tamarind order, before it is recorded
+    seconds: 1.5
   - kind: click
     must_succeed: true
-    target: role:button:Record receipt
+    target: css:form:has(input[value='record_receipt']) button[type='submit']
     timeout_ms: 30000
   - kind: wait_for
     must_succeed: true
-    target: text:Bundled in setup fee
+    target: 'text:Recorded:'
   - kind: hold
-    note: the badge, the cost card that says nothing is missing, and 250 received
+    note: the confirmation, and SCHI-LP-0921 now listed under the link's orders as received
     seconds: 2.0
-  - kind: scroll
-    value: '180'
-    note: the order title, its bundled cost and the 250-packet receipt line together, so this frame is not the order page scene 6 ended on
-  - kind: hold
-    seconds: 2.0
-  concept_claim: After the receipt, the covering order's landed cost reads "bundled
-    in setup fee" instead of an unconfirmed price, and its match shows 250 received.
-  design_intent: A cost that was never going to exist is named, not reported missing.
-  show: Ngozi records the goods received note for the 250 Tamarind packets at the
-    SCHI district store, and the order page she lands on shows the "Bundled in setup
-    fee" badge and a landed-cost card that says these goods were not bought, so nothing
-    is missing.
-  url: /supply/orders/${cover_id}/receipts/new/?program_id=${program_id}
+  concept_claim: The partner's own update link offers the covering order SCHI-LP-0921,
+    created after the link was issued, because it delivers to SCHI's store, and records
+    250 packets accepted against it.
+  design_intent: The party who counted the goods records them, for every order that
+    lands at its store, without the programme re-issuing a link or keying it for them.
+  show: On SCHI's update link Hauwa opens "Record goods received", chooses the new
+    Tamarind order SCHI-LP-0921 and the SCHI district store, enters goods received
+    note SCHI-GRN-0923, 250 single packets accepted and the batch, and records it.
+  url: ${partner_link_path}
 - id: covered-not-late
   actions:
   - kind: wait_for
@@ -358,11 +352,22 @@ scenes:
     target: text:SCHI district store
   - kind: hold
     note: the store's ledger balance, 700 packets
+    seconds: 2.5
+  - kind: click
+    must_succeed: true
+    target: css:a[href*='stock/movements']
+    note: she opens the balance
+  - kind: wait_for
+    must_succeed: true
+    target: text:What moved in and out of
+  - kind: hold
+    note: the two receipts behind the balance, 450 from IPTSC-PO-0715 and 250 from SCHI-LP-0921
     seconds: 3.0
-  concept_claim: The stock page shows the SCHI district store holding 700 packets
-    from the two receipts.
+  concept_claim: The stock page shows the SCHI district store holding 700 packets,
+    and its balance opens onto the two receipts it is made of, 450 and 250.
   design_intent: The answer to "can SCHI treat 700 children" is one balance, not a
     reconciliation.
-  show: Ngozi opens Stock and reads the SCHI district store's ledger balance of 700
-    packets, the sum of the two receipts.
+  show: Ngozi opens Stock, reads the SCHI district store's ledger balance of 700
+    packets, and opens it to the movements behind it — SCHI-GRN-0922, 450 packets
+    on IPTSC-PO-0715, and SCHI-GRN-0923, 250 packets on SCHI-LP-0921.
   url: /supply/stock/?program_id=${program_id}
