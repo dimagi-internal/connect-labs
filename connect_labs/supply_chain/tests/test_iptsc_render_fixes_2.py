@@ -297,4 +297,4 @@ class TestIterationThree:
     def test_an_empty_store_reads_as_stocked_out(self, scoped, world):
         row = _visible(_page(scoped, "stock").split('data-ledger="', 1)[1].split("</tr>", 1)[0])
         assert "Stocked out" in row
-        assert "expected: 700 packets from Harmattan Health Supplies" in row
+        assert "expected: 700 packets of IPTSc three-day packet (standard) from Harmattan Health Supplies" in row

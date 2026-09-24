@@ -68,9 +68,15 @@ class this build has not seen ships purged.
         {% endif %}
       </dd>
     </div>
+    {% if contract.signed_on %}
+    <div>
+      <dt class="text-[11px] text-gray-500">Signed</dt>
+      <dd class="text-gray-900">{{ contract.signed_on|day }}</dd>
+    </div>
+    {% endif %}
     {% if contract.covers_shortfall_of_id %}
     <div>
-      <dt class="text-[11px] text-gray-500">Placed to</dt>
+      <dt class="text-[11px] text-gray-500">Why this order</dt>
       <dd class="text-gray-900">
         Covers the shortfall on
         <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.covers_shortfall_of_id %}">{% if covers.reference %}{{ covers.reference }}{% else %}order {{ contract.covers_shortfall_of_id }}{% endif %}</a>
@@ -466,8 +472,12 @@ partner's name (the IPTSc render).
     </table>
     </div>
     <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
-      {% if contract.consideration != "priced" %}
-        Not purchased: nothing is billed or paid against this order.
+      {% comment %}"Not purchased" beside "Bought by …" and "Bundled in setup fee" was the
+      same order read two ways: a bundled order WAS bought, just not billed on its own.{% endcomment %}
+      {% if contract.consideration == "bundled" %}
+        Bought out of {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"the buyer" }}'s setup fee — nothing is billed or paid against this order on its own.
+      {% elif contract.consideration != "priced" %}
+        Donated: nothing is billed or paid against this order.
       {% elif match.payment_terms == "advance" %}
         Paid before delivery, as agreed. What was paid for and refused on arrival — or never
         delivered, once the order is closed — is owed back.
