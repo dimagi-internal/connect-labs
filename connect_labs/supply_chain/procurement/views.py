@@ -112,6 +112,7 @@ class RoundDetailView(_Base):
         # Rows showed "Supplier #2". An id is not a supplier to anyone
         # reading the page, and the name is one list call away.
         context["supplier_names"] = {s["id"]: s["name"] for s in self.op("supplier_list")}
+        context["commodity_names"] = _commodity_names(self.op("commodity_list"))
         return context
 
 
@@ -168,7 +169,26 @@ class QuoteDetailView(_Base):
             o for o in self.op("outreach_list", round_id=quote["round_id"]) if o["supplier_id"] == quote["supplier_id"]
         ]
         context["questions"] = detail["missing"]
+        # The trade item quoted and, for a kit, what one unit of it holds --
+        # the fact a co-pack is chosen or set aside on, which otherwise lived
+        # only in the comparison and in a void reason typed by hand.
+        item = self.op("item_get", item_id=quote["item_id"]) if quote.get("item_id") else None
+        context["item"] = item
+        if item and item.get("components"):
+            names = _commodity_names(self.op("commodity_list"))
+            context["contents"] = " + ".join(
+                f"{part.get('quantity')} {part.get('base_unit')} {names.get(slug, slug)}"
+                for part in item["components"]
+                for slug in [part.get("commodity_slug")]
+            )
         return context
+
+
+def _commodity_names(commodities) -> dict:
+    """slug -> name, tolerating anything that is not a list of commodity rows."""
+    if not isinstance(commodities, list):
+        return {}
+    return {c["slug"]: c.get("name") or c["slug"] for c in commodities if isinstance(c, dict) and c.get("slug")}
 
 
 class ComparisonView(_Base):
@@ -206,6 +226,27 @@ class ComparisonView(_Base):
         context["round"] = round_
         context["round_id"] = round_id
         context["commodity_slug"] = commodity
+        # The product's name, not its slug: "ors-zinc-copack" is an identifier.
+        names = _commodity_names(self.op("commodity_list")) if commodity else {}
+        context["commodity_name"] = names.get(commodity) or commodity
+        # The offers already chosen, so the page marks them rather than
+        # offering to award them again.
+        context["awarded_quote_ids"] = {a.get("quote_id") for a in context["awards"] if isinstance(a, dict)}
+        # Offers set aside on this line. A voided quote leaves the ranking, and
+        # without this it left the page too -- so the one screen that applies
+        # "kits rank only against the same contents" never showed an offer the
+        # rule had excluded, or the reason it was excluded.
+        context["set_aside"] = []
+        if commodity:
+            quotes = self.op("quote_list", round_id=round_id)
+            items = {}
+            for quote in quotes if isinstance(quotes, list) else []:
+                if not (isinstance(quote, dict) and quote.get("voided") and quote.get("commodity_slug") == commodity):
+                    continue
+                item_id = quote.get("item_id")
+                if item_id and item_id not in items:
+                    items[item_id] = self.op("item_get", item_id=item_id)
+                context["set_aside"].append({"quote": quote, "item": items.get(item_id)})
         context["comparison"] = comparison
         # ranked_by is a bare figure key (e.g. "landed_total_for_round_quantity");
         # its human label already lives on the matching column (pricing.py's

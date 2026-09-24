@@ -150,6 +150,10 @@ class TestSubscriptionOperations:
         )
         assert sub["recipient_user_id"] == me.pk
         assert sub["created_by_id"] == me.pk
+        # The labs user model drops first/last name, so AbstractUser's
+        # get_full_name() reads "None None" -- which is what the alerts list
+        # printed under "Sends to". Name, then email.
+        assert sub["recipient"] == "amina@example.org"
         with pytest.raises(ValueError, match="email address"):
             op(
                 mine,

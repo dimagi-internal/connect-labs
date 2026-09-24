@@ -98,6 +98,18 @@ unconfirmed figures on the right.
       <p class="text-xs text-gray-500 mt-0.5">On the supplier's own terms. Blanks are facts nobody supplied.</p>
     </header>
     <dl class="divide-y divide-brand-border-light/70">
+      {% if item %}
+        <div class="flex items-baseline gap-3 px-4 py-2.5">
+          <dt class="w-44 shrink-0 text-xs text-gray-500">Trade item</dt>
+          <dd class="text-sm text-gray-900">{{ item.name }}</dd>
+        </div>
+      {% endif %}
+      {% if contents %}
+        <div class="flex items-baseline gap-3 px-4 py-2.5">
+          <dt class="w-44 shrink-0 text-xs text-gray-500">One unit holds</dt>
+          <dd class="text-sm text-gray-900">{{ contents }}</dd>
+        </div>
+      {% endif %}
       {% for row in quote|stated_rows %}
         <div class="flex items-baseline gap-3 px-4 py-2.5">
           <dt class="w-44 shrink-0 text-xs text-gray-500">{{ row.label }}</dt>
@@ -178,8 +190,7 @@ unconfirmed figures on the right.
       </ul>
     {% else %}
       <p class="px-4 py-6 text-sm text-gray-500">
-        Nothing attached yet. Attach the quotation or its pro-forma invoice with
-        <code class="text-xs">document_attach</code>, giving this quote's id.
+        Nothing attached yet — the quotation, or the pro-forma invoice its price came off, belongs here.
       </p>
     {% endif %}
   </section>

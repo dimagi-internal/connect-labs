@@ -37,6 +37,15 @@ def _invoiced(contract):
     return {row["quantity_unit"]: (row["total"] or ZERO) for row in rows if row["quantity_unit"]}
 
 
+def _in_order_unit(by_unit, item, unit):
+    """One figure in the order's unit, or -- if that cannot be done -- in whatever it can."""
+    if unit is not None:
+        stated = ledger.collapse(by_unit, item, unit)
+        if isinstance(stated, Quantity):
+            return stated
+    return ledger.collapse(by_unit, item, None)
+
+
 def three_way_match(contract) -> dict:
     """Ordered / received / invoiced, and what is safe to pay.
 
@@ -58,6 +67,7 @@ def three_way_match(contract) -> dict:
     received_by_unit = _received(contract)
     received = _in_unit(ledger.collapse(received_by_unit, contract.item, None), in_order_unit, contract.item)
     invoiced = _in_unit(ledger.collapse(_invoiced(contract), contract.item, None), in_order_unit, contract.item)
+    unit = in_order_unit
 
     billed = contract.invoices.exclude(status="rejected").aggregate(total=Sum("amount"))["total"] or ZERO
     paid = Payment.objects.filter(invoice__contract=contract).aggregate(total=Sum("amount"))["total"] or ZERO

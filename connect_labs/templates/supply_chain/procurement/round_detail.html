@@ -14,7 +14,7 @@
     {% for line in round.lines %}
     <a href="{% url 'supply_chain:procurement_comparison' round.id %}?commodity={{ line.commodity_slug }}"
        class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-      Compare {{ line.commodity_slug }}
+      Compare {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}
     </a>
     {% endfor %}
     <a href="{% url 'supply_chain:procurement_round_edit' round.id %}"

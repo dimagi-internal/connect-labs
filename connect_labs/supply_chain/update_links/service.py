@@ -33,6 +33,7 @@ from connect_labs.supply_chain import scopes as synthetic_scopes
 from connect_labs.supply_chain.models import Contract, Item, Movement, Payment, Shipment, SupplyPoint
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission
+from connect_labs.supply_chain.values import decimal_string
 
 SOURCE = "supplier_reported"
 
@@ -296,6 +297,129 @@ ACTIONS = {
     "record_stock_count": _record_stock_count,
     "record_release": _record_release,
 }
+
+
+def _quantity(value, unit):
+    return f"{decimal_string(value)} {unit}".strip()
+
+
+def _describe_receipt(rid):
+    from connect_labs.supply_chain.models import Receipt
+
+    receipt = Receipt.objects.filter(pk=rid).select_related("supply_point").first()
+    if receipt is None:
+        return ""
+    parts = []
+    for line in receipt.lines.all():
+        text = f"{_quantity(line.quantity_accepted, line.quantity_unit)} accepted"
+        if line.quantity_rejected:
+            reason = f" ({line.rejection_reason})" if line.rejection_reason else ""
+            text += f", {decimal_string(line.quantity_rejected)} rejected{reason}"
+        if line.batch:
+            text += f", batch {line.batch}"
+        parts.append(text)
+    ref = f"{receipt.reference}: " if receipt.reference else ""
+    return ref + "; ".join(parts) + f" at {receipt.supply_point.name}"
+
+
+def _describe_movement(rid):
+    movement = Movement.objects.filter(pk=rid).select_related("from_supply_point", "to_supply_point").first()
+    if movement is None:
+        return ""
+    text = _quantity(movement.quantity, movement.quantity_unit)
+    if movement.from_supply_point and movement.to_supply_point:
+        text += f" from {movement.from_supply_point.name} to {movement.to_supply_point.name}"
+    if movement.batch:
+        text += f", batch {movement.batch}"
+    return text
+
+
+def _describe_count(rid):
+    from connect_labs.supply_chain.models import StockCount
+
+    count = StockCount.objects.filter(pk=rid).select_related("supply_point").first()
+    return f"{_quantity(count.quantity, count.quantity_unit)} at {count.supply_point.name}" if count else ""
+
+
+def _describe_payment(rid):
+    payment = Payment.objects.filter(pk=rid).first()
+    if payment is None or payment.confirmed_by_payee_on is None:
+        return ""
+    ref = f" ({payment.reference})" if payment.reference else ""
+    received = payment.confirmed_by_payee_on.isoformat()
+    return f"{decimal_string(payment.amount)} {payment.currency}{ref} received on {received}"
+
+
+def _describe_contract(rid):
+    contract = Contract.objects.filter(pk=rid).first()
+    return f"{contract.reference or contract} is {contract.status.replace('_', ' ')}" if contract else ""
+
+
+def _describe_shipment(rid):
+    shipment = Shipment.objects.filter(pk=rid).first()
+    return f"{shipment.reference or 'dispatch'} is {shipment.status.replace('_', ' ')}" if shipment else ""
+
+
+_DESCRIBERS = {
+    "receipt_record": _describe_receipt,
+    "movement_record": _describe_movement,
+    "stock_count_record": _describe_count,
+    "payment_confirm": _describe_payment,
+    "contract_update": _describe_contract,
+    "shipment_record": _describe_shipment,
+    "shipment_update": _describe_shipment,
+}
+
+
+def describe(submission) -> str:
+    """What one submission put on the record, in the supplier's own terms.
+
+    Read back from the row the write produced, so the page repeats what the
+    programme now holds -- not what the browser sent. Empty when the row is
+    gone (a purged demo, a deleted record): the title alone is then all there
+    is to say.
+    """
+    describer = _DESCRIBERS.get(submission.operation)
+    if describer is None or submission.result_id is None:
+        return ""
+    return describer(submission.result_id)
+
+
+def updates_for_contract(contract) -> list[dict]:
+    """Every submission through any link that touched this order, newest first.
+
+    The programme-side half of the update link: the order page says what the
+    supplier reported, through which organisation's link, and when -- rather
+    than leaving the confirmation to be inferred from a status word.
+    """
+    from connect_labs.supply_chain.models import Receipt
+
+    receipt_ids = set(Receipt.objects.filter(contract=contract).values_list("pk", flat=True))
+    payment_ids = set(Payment.objects.filter(invoice__contract=contract).values_list("pk", flat=True))
+    shipment_ids = set(Shipment.objects.filter(contract=contract).values_list("pk", flat=True))
+    wanted = {
+        "contract_update": {contract.pk},
+        "receipt_record": receipt_ids,
+        "payment_confirm": payment_ids,
+        "shipment_record": shipment_ids,
+        "shipment_update": shipment_ids,
+    }
+    submissions = UpdateLinkSubmission.objects.filter(
+        link__program_id=contract.program_id, operation__in=list(wanted)
+    ).select_related("link__org")
+    out = []
+    for submission in submissions:
+        if submission.result_id not in wanted.get(submission.operation, set()):
+            continue
+        out.append(
+            {
+                "org": submission.link.org.name,
+                "title": submission.action.replace("_", " "),
+                "detail": describe(submission),
+                "at": submission.submitted_at,
+            }
+        )
+    return out
 
 
 def link_access(link):

@@ -1,4 +1,5 @@
 {% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
 
 {% comment %}
 Who is told about what, and what they were told. The two sit on one page
@@ -63,7 +64,7 @@ The log says how each notice left, including when it did not: "email off" and
               <td class="px-4 py-2">
                 <div class="flex flex-wrap gap-1">
                   {% for kind in sub.check_kinds %}
-                    <code class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs">{{ kind }}</code>
+                    <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs" title="{{ kind }}">{{ kind|check_label }}</span>
                   {% endfor %}
                   {% for kind in sub.movement_kinds %}
                     <span class="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-xs">{{ kind }} movements</span>
@@ -134,7 +135,7 @@ The log says how each notice left, including when it did not: "email off" and
               <td class="px-4 py-2 text-gray-700 whitespace-nowrap">{{ notice.detected|date:"j M Y, H:i" }}</td>
               <td class="px-4 py-2">
                 {% if notice.kind == "check" %}
-                  <code class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs">{{ notice.subject_kind }}</code>
+                  <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs" title="{{ notice.subject_kind }}">{{ notice.subject_kind|check_label }}</span>
                 {% else %}
                   <span class="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-xs">{{ notice.subject_kind }}</span>
                   <span class="text-xs text-gray-600">{{ notice.facts.quantity }} {{ notice.facts.quantity_unit }}</span>

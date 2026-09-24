@@ -26,7 +26,7 @@ one of them would destroy the only signal it had.
   <h2 class="text-lg font-semibold text-brand-indigo">Stock across the network</h2>
   <span class="text-sm text-gray-500">
     {{ network.summary.points }} supply points ·
-    {{ network.summary.never_reported }} have never reported
+    {{ network.summary.never_reported }} {% if network.summary.never_reported == 1 %}has{% else %}have{% endif %} never reported
   </span>
 </div>
 <p class="text-xs text-gray-500 mb-4">
@@ -94,7 +94,10 @@ one of them would destroy the only signal it had.
               <span class="text-gray-400">never</span>
             {% endif %}
           </td>
-          <td class="px-4 py-2.5 tabular-nums text-gray-600">{{ point.amc|derived_text }}</td>
+          <td class="px-4 py-2.5 tabular-nums text-gray-600">
+            {{ point.amc|quantity_text }}
+            {% if point.amc_in_display_unit %}<div class="text-xs text-gray-500">(= {{ point.amc_in_display_unit|quantity_text }})</div>{% endif %}
+          </td>
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
             {{ point.months_of_stock|derived_text }}
             {% for reason in point.months_of_stock|unconfirmed_reasons %}

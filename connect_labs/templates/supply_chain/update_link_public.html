@@ -22,7 +22,7 @@ own prefix so seven of them cannot collide.
 
 {% if done %}
   <div class="flex items-center gap-2 p-4 mb-4 rounded-lg border-[0.5px] bg-message-success text-message-success-text border-message-success-border">
-    <span>Recorded: {{ done.title|lower }}. The programme team can see it now.</span>
+    <span>Recorded: {{ done.title|lower }}{% if done_detail %} — {{ done_detail }}{% endif %}. The programme team can see it now.</span>
   </div>
 {% endif %}
 
@@ -116,7 +116,7 @@ own prefix so seven of them cannot collide.
     <ul class="divide-y divide-gray-100">
       {% for submission in recent %}
         <li class="px-5 py-2 text-sm text-gray-700 flex justify-between gap-4">
-          <span>{{ submission.title }}</span>
+          <span>{{ submission.title }}{% if submission.detail %}<span class="text-gray-500"> — {{ submission.detail }}</span>{% endif %}</span>
           <span class="text-gray-500 whitespace-nowrap">{{ submission.at|date:"j M Y, H:i" }}</span>
         </li>
       {% endfor %}

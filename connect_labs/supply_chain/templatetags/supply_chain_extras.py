@@ -368,6 +368,75 @@ def humanise(value):
     return str(value or "").replace("_", " ")
 
 
+# Who the buyer of record is, in words. The enum is the domain's; the screen
+# is a person's, and "as programme org" read like a database column.
+BUYER_LABELS = {
+    "programme_org": "the programme",
+    "partner_org": "a local partner",
+    "agency": "a procurement agency",
+}
+
+
+@register.filter
+def buyer_label(value):
+    return BUYER_LABELS.get(value, humanise(value))
+
+
+def _grouped(amount, places):
+    from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+
+    try:
+        number = Decimal(str(amount))
+    except (InvalidOperation, ValueError):
+        return str(amount)
+    quantum = Decimal(1).scaleb(-places)
+    return f"{number.quantize(quantum, rounding=ROUND_HALF_UP):,.{places}f}"
+
+
+@register.filter
+def money_text(cell):
+    """A money cell as a person writes money: "USD 18,000.00", never "18000.0000"."""
+    if not isinstance(cell, dict) or cell.get("amount") in (None, ""):
+        return figure_text(cell)
+    return f"{cell.get('currency') or ''} {_grouped(cell['amount'], 2)}".strip()
+
+
+@register.filter
+def quantity_text(value):
+    """A derived quantity (a consumption rate, a balance) to at most two places.
+
+    "3033.3333 co-pack a month" is false precision on a figure averaged over
+    counted cartons; "3,033.33" says the same thing a reader can take in.
+    """
+    if isinstance(value, dict) and value.get("amount") not in (None, ""):
+        grouped = _grouped(value["amount"], 2)
+        if "." in grouped:
+            grouped = grouped.rstrip("0").rstrip(".")
+        return f"{grouped} {value.get('unit') or ''}".strip()
+    return derived_text(value)
+
+
+@register.filter
+def told_by(row, orgs):
+    """Who told us this: the organisation, when the row names one; else how we know.
+
+    The row's `source` is an enum ("supplier_reported"); the organisation that
+    reported it is the fact a reader wants, and the update links set it.
+    """
+    row = row or {}
+    org = (orgs or {}).get(row.get("recorded_by_org_id")) if row.get("recorded_by_org_id") else None
+    if org and org.get("name"):
+        return org["name"]
+    return source_label(row.get("source"))
+
+
+@register.filter
+def distinct_count(values):
+    """How many different values a mapping or list holds (compared as text)."""
+    items = values.values() if isinstance(values, dict) else (values or [])
+    return len({str(item) for item in items})
+
+
 @register.filter
 def figure_label(key):
     """A derived figure's name, from the one place that names them.
@@ -391,8 +460,8 @@ _STATED_ROWS = (
     ("Price", "_price"),
     ("Priced per", "as_quoted_unit"),
     ("Quantity priced", "_basis"),
-    ("Sachets per pack", "base_per_pack_stated"),
-    ("Weight per sachet", "base_unit_grams_stated"),
+    ("Single units per pack", "base_per_pack_stated"),
+    ("Weight per single unit", "base_unit_grams_stated"),
     ("Pack spec source", "pack_spec_source"),
     ("Freight", "_freight"),
     ("Duties and taxes", "_duties"),
