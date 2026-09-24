@@ -12,10 +12,12 @@ seed time (`connect_labs/labs/synthetic/seed_data.py`).
 
 import copy
 import importlib.util
+import re
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from django.urls import reverse
 
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
@@ -198,10 +200,25 @@ _CHAIN = {
     ],
     "partner_entered": [
         {
+            "_why": (
+                "Tier 3. The consignment we only had their word for, entered by them once they held a "
+                "link -- `delivered`, because they know it arrived. Dated when it left, which is before "
+                "they were onboarded; what makes it tier 3 is who entered it."
+            ),
+            "operation": "shipment_record",
+            "data": {
+                "reference": "AWB-PLACEHOLDER-1",
+                "status": "delivered",
+                "quantity": "100",
+                "quantity_unit": "box",
+                "batch": "PLACEHOLDER-1",
+            },
+        },
+        {
             "_why": "Tier 3 -- seeded through the partner's own link, not here.",
             "operation": "movement_record",
             "data": {"kind": "transfer", "to_org_slug": "a-collecting-org", "quantity": "20", "quantity_unit": "box"},
-        }
+        },
     ],
 }
 
@@ -222,6 +239,22 @@ _DOCUMENT = {
         }
     ],
     "chc_chain": _CHAIN,
+    "partner_links": [
+        {
+            "_why": (
+                "Listed, not organisation-wide: a link that follows its organisation reaches only the "
+                "stores that organisation runs, and this one releases stock into a collecting partner's."
+            ),
+            "org_slug": "a-distributor-org",
+            "label": "A placeholder distributor link",
+            "coverage": "listed",
+        },
+        {
+            "org_slug": "a-collecting-org",
+            "label": "A placeholder collecting partner link",
+            "coverage": "organisation",
+        },
+    ],
 }
 
 
@@ -494,9 +527,237 @@ def test_an_operation_the_seed_cannot_place_is_refused_not_guessed(seeded):
     exist to prevent. It has to go through the partner's own link.
     """
     module, _, chain = seeded
-    row = _CHAIN["partner_entered"][0]
+    row = next(r for r in _CHAIN["partner_entered"] if r["operation"] == "movement_record")
     context = {"contract": chain["contract"], "warehouse": chain["warehouse"]}
 
     with pytest.raises(ValueError) as caught:
         module.wired(row, context, {"source": "we_recorded", "recorded_by_org_id": 1})
     assert "movement_record" in str(caught.value)
+
+
+# ---- the third tier, which only the partner's own link can write ---------
+
+
+@pytest.fixture
+def linked(access, seeded):
+    """The chain, plus the partner links and everything entered through them."""
+    module, reference, chain = seeded
+    links = module.seed_partner_links(access, _DOCUMENT, reference, chain)
+    return module, reference, chain, links
+
+
+@pytest.fixture
+def scoped(client, django_user_model, monkeypatch):
+    """A signed-in programme member looking at this programme's screens."""
+    from connect_labs.supply_chain import form_views, views  # noqa: F401  -- bind before patching
+    from connect_labs.supply_chain.api_views import _access as real_access
+
+    account = django_user_model.objects.create_user(username="ngozi", password="x", email="ngozi@dimagi.com")
+    client.force_login(account)
+
+    def _scoped(request):
+        access = real_access(request)
+        access.program_id = PROGRAM
+        return access
+
+    for module in ("form_views", "views"):
+        monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)
+        monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
+    return client
+
+
+def _visible(html):
+    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
+
+
+def _order_page(client, contract_id):
+    response = client.get(reverse("supply_chain:order_detail", args=[contract_id]))
+    assert response.status_code == 200, response.content.decode()[:2000]
+    return response.content.decode()
+
+
+def _told_by_cells(body, heading):
+    """The "Told by" cell of every row under one heading of the order page.
+
+    Found by the column the table's own header names, not by position: the
+    dispatches table carries an actions column after it and the received one
+    does not.
+    """
+    table = body.split(heading, 1)[1].split("</table>", 1)[0]
+    _, header, *rows = table.split("<tr")
+    column = [_visible(cell) for cell in re.findall(r"<th[^>]*>(.*?)</th>", header, re.S)].index("Told by")
+    cells = [[_visible(cell) for cell in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)] for row in rows]
+    return [row[column] for row in cells if len(row) > column]
+
+
+@pytest.mark.django_db
+class TestTheThirdTier:
+    def test_what_the_partner_entered_is_recorded_as_the_partner(self, linked):
+        """The whole point: `recorded_by_org` is THEIRS, not ours.
+
+        Tiers 1 and 2 differ in `source` alone and are both recorded by us.
+        This one differs in who recorded it, which is why it cannot be written
+        from the seeder at all -- and why it is not stamped here but derived
+        from the link the submission came through.
+        """
+        from connect_labs.supply_chain.models import Movement, Shipment
+
+        _, reference, _, _ = linked
+        us = reference["orgs"]["the-programme-org"]["id"]
+        them = reference["orgs"]["a-distributor-org"]["id"]
+
+        movement = Movement.objects.get(kind="transfer")
+        shipment = Shipment.objects.get()
+        for row in (movement, shipment):
+            assert row.recorded_by_org_id == them
+            assert row.recorded_by_org_id != us
+            assert row.source in ("partner_reported", "supplier_reported")
+
+    def test_one_order_carries_three_readings_and_they_are_all_different(self, linked, scoped):
+        """Section 5a, on the screen, or the environment is not worth showing.
+
+        Three rows of one order, each answering "how do we know this?"
+        differently: what they told us and we typed in, what we did ourselves,
+        and what they entered through their own link. If they collapse into
+        one reading the demo has nothing to say -- so this asserts they are
+        three, and distinct, on the rendered page.
+        """
+        _, reference, chain, _ = linked
+        us = reference["orgs"]["the-programme-org"]["name"]
+        them = reference["orgs"]["a-distributor-org"]["name"]
+
+        body = _order_page(scoped, chain["contract"]["id"])
+        second_hand = _told_by_cells(body, ">Received</h3>")
+        theirs = _told_by_cells(body, ">Shipments</h3>")
+        ours = _visible(body.split("Recorded by", 1)[1].split("</dd>", 1)[0])
+
+        assert second_hand == [f"{us}, for {them} (they told us)"]
+        assert theirs == [them]
+        assert ours.endswith(us)
+        assert len({second_hand[0], theirs[0], ours}) == 3
+
+    def test_the_partners_own_row_is_shown_as_entered_by_them(self, linked, scoped):
+        """And in their own panel, not under ours."""
+        _, reference, chain, _ = linked
+        them = reference["orgs"]["a-distributor-org"]["name"]
+
+        body = _order_page(scoped, chain["contract"]["id"])
+        assert f'data-link-updates="{them}"' in body
+        panel = _visible(body.split(f'data-link-updates="{them}"', 1)[1].split("</section>", 1)[0])
+        assert "entered by them, without signing in" in panel
+        assert "AWB-PLACEHOLDER-1" in panel
+
+    def test_a_link_covers_what_the_document_says_and_nobody_elses_rows(self, linked):
+        """A listed link names the chain's order and the stores its rows touch."""
+        from connect_labs.supply_chain.update_links.models import UpdateLink
+        from connect_labs.supply_chain.update_links.service import scope_for
+
+        _, reference, chain, links = linked
+
+        distributor = UpdateLink.objects.get(pk=links["a-distributor-org"]["id"])
+        assert distributor.coverage == "listed"
+        covered = set(scope_for(distributor).supply_points.values_list("pk", flat=True))
+        assert covered == {chain["warehouse"]["id"], chain["partner_points"]["a-collecting-org"]["id"]}
+
+        collector = UpdateLink.objects.get(pk=links["a-collecting-org"]["id"])
+        assert collector.coverage == "organisation"
+        assert set(scope_for(collector).supply_points.values_list("pk", flat=True)) == {
+            chain["partner_points"]["a-collecting-org"]["id"]
+        }
+
+    def test_what_the_partner_released_went_where_it_says(self, linked):
+        from connect_labs.supply_chain.models import Movement
+
+        _, _, chain, _ = linked
+        movement = Movement.objects.get(kind="transfer")
+        assert movement.from_supply_point_id == chain["warehouse"]["id"]
+        assert movement.to_supply_point_id == chain["partner_points"]["a-collecting-org"]["id"]
+        assert movement.quantity_unit == "box"
+
+    def test_the_release_is_dated_after_the_partner_was_onboarded(self, linked):
+        """The ordering section 5a reads off the screen: their own rows come after.
+
+        A release dated before the link existed would say the distributor
+        recorded something it had no way to record.
+        """
+        from datetime import date, timedelta
+
+        from django.utils import timezone
+
+        from connect_labs.supply_chain.models import Movement
+
+        module, _, _, _ = linked
+        onboarded = timezone.localdate() - timedelta(days=module.ONBOARDED_DAYS_AGO)
+        assert Movement.objects.get(kind="transfer").occurred_on > onboarded
+        assert isinstance(onboarded, date)
+
+
+@pytest.mark.django_db
+class TestTheLinkIsTheOnlyWayIn:
+    def test_a_link_that_follows_its_organisation_cannot_reach_another_organisations_store(self, access, seeded):
+        """Why the distributor's link is a listed one, pinned so it stays that way.
+
+        `service.scope_for` resolves an organisation link's stores as the ones
+        that organisation RUNS, so a release into a collecting partner's store
+        is refused -- and refused by a 200 carrying form errors, which a
+        seeder that did not check would read as success and seed nothing.
+        """
+        module, reference, chain = seeded
+        document = copy.deepcopy(_DOCUMENT)
+        document["partner_links"][0]["coverage"] = "organisation"
+
+        with pytest.raises(ValueError) as caught:
+            module.seed_partner_links(access, document, reference, chain)
+        assert "refused" in str(caught.value)
+
+    def test_a_tier_three_row_may_not_say_whose_word_it_is(self, access, seeded):
+        """Provenance comes from the link. A row that declared it would be us
+        saying it on the partner's behalf -- the one thing this tier rules out."""
+        module, reference, chain = seeded
+        document = copy.deepcopy(_DOCUMENT)
+        document["chc_chain"]["partner_entered"][0]["data"]["source"] = "we_recorded"
+
+        with pytest.raises(ValueError) as caught:
+            module.seed_partner_links(access, document, reference, chain)
+        # Refused as a provenance claim, by name -- not merely as a field the
+        # form happens not to have, which would refuse it for the wrong reason
+        # and stop saying anything if the form ever gained one.
+        assert "stamped by the link" in str(caught.value)
+        assert "source" in str(caught.value)
+
+    def test_an_operation_no_partner_action_produces_is_refused_by_name(self, access, seeded):
+        module, reference, chain = seeded
+        document = copy.deepcopy(_DOCUMENT)
+        document["chc_chain"]["partner_entered"][0]["operation"] = "payment_record"
+
+        with pytest.raises(ValueError) as caught:
+            module.seed_partner_links(access, document, reference, chain)
+        assert "payment_record" in str(caught.value)
+
+    def test_a_unit_the_product_is_not_counted_in_is_refused(self, access, seeded):
+        """ "packs or single units" is the form's whole defence against a
+        balance split in two by a typed unit; a document naming a third unit
+        is a document that did not mean this product."""
+        module, reference, chain = seeded
+        document = copy.deepcopy(_DOCUMENT)
+        document["chc_chain"]["partner_entered"][0]["data"]["quantity_unit"] = "pallet"
+
+        with pytest.raises(ValueError) as caught:
+            module.seed_partner_links(access, document, reference, chain)
+        assert "pallet" in str(caught.value)
+
+    def test_a_field_the_partners_form_does_not_have_is_refused_not_dropped(self, access, seeded):
+        """A posted key the form does not know is ignored in silence.
+
+        The same failure as commentary reaching a payload, one layer out: the
+        document would state a fact, the page would accept the submission, and
+        the fact would simply not be there. Checked against the form's own
+        field list so it cannot go stale.
+        """
+        module, reference, chain = seeded
+        document = copy.deepcopy(_DOCUMENT)
+        document["chc_chain"]["partner_entered"][0]["data"]["waybill_number"] = "AWB-PLACEHOLDER-2"
+
+        with pytest.raises(ValueError) as caught:
+            module.seed_partner_links(access, document, reference, chain)
+        assert "waybill_number" in str(caught.value)

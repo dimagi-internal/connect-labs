@@ -489,6 +489,11 @@ def seed_chain(access, chain, reference):
         "partner_points": partner_points,
         "reported_to_us": reported_to_us,
         "we_did": we_did,
+        # The ids this chain's rows were wired with. Returned so the tier-3
+        # step resolves the same warehouse, trade item and product this
+        # chain used, rather than working them out a second time from the
+        # document and risking a different answer.
+        "context": context,
     }
 
 
@@ -510,3 +515,257 @@ def seed_chc_chain(access, data, reference):
     actually know about this stock, and how" in one read.
     """
     return seed_chain(access, data["chc_chain"], reference)
+
+
+# ======================================================================
+# The partner seats -- and the third kind of truth
+# ======================================================================
+#
+# Tier 3 is the only one that cannot be written from here. Tiers 1 and 2
+# differ in `source` alone and both are recorded by us; tier 3 differs in
+# `recorded_by_org`, and a row this seeder wrote claiming to be the
+# distributor's would be exactly the self-assertion `identity.source_for`
+# exists to refuse. So these rows go through the partner's own link, by the
+# route a partner uses: an HTTP POST to the login-free page.
+#
+# The date of a tier-3 row is not the day it is typed. A distributor that has
+# just been given a link types up what it has been doing, and the page says
+# so ("recorded <today>" beside the day it happened). What makes section 5a
+# legible is that everything ENTERED BY THE PARTNER was entered after
+# `ONBOARDED_DAYS_AGO`, which is true of every row here by construction: they
+# are all recorded now.
+ENTERED_DAYS_AGO = 6
+# The day the goods left the supplier: after the order, before they landed.
+DISPATCHED_DAYS_AGO = 22
+
+
+def _link_host():
+    """A host name this deployment will actually accept.
+
+    `django.test.Client` sends `testserver`, which a deployed labs refuses
+    with `DisallowedHost` before the view is reached -- and the refusal names
+    the header, not the seed. Preferred is the public host, since that is the
+    one a partner types; it is used only when `ALLOWED_HOSTS` would accept it,
+    so the same call works under the test settings, where `ALLOWED_HOSTS`
+    carries `testserver` and not the public host.
+    """
+    from urllib.parse import urlparse
+
+    from django.conf import settings
+
+    allowed = list(getattr(settings, "ALLOWED_HOSTS", []) or [])
+    named = [host for host in allowed if "*" not in host]
+    preferred = urlparse(getattr(settings, "LABS_PUBLIC_URL", "") or "").hostname
+    if preferred and (not named or preferred in named or "*" in allowed):
+        return preferred
+    return named[0] if named else "testserver"
+
+
+def _basis_for(data, context):
+    """ "Packs or single units?", from whichever of the two a row states.
+
+    The partner's form deliberately does not take a unit NAME
+    (`update_links/forms.py`): a distributor typing "ctn" where the ledger
+    holds "carton" splits one balance into two that never add up. The document
+    writes quantities the way a person reads them off a sheet, so a stated
+    unit is matched against the product's own ladder here, and a unit that is
+    on neither rung is refused rather than filed under a guess.
+    """
+    if "unit_basis" in data:
+        return data.pop("unit_basis")
+    unit = data.pop("quantity_unit", None)
+    if not unit:
+        raise ValueError("this row does not say what it counted: give it a `quantity_unit` or a `unit_basis`")
+    rungs = {}
+    for basis in ("pack", "base"):
+        try:
+            rungs[_unit(basis, context)] = basis
+        except ValueError:
+            continue
+    if unit not in rungs:
+        raise ValueError(f"this product is not counted in {unit!r}; it is counted in {', '.join(sorted(rungs))}")
+    return rungs[unit]
+
+
+def _release_fields(row, context):
+    """A release, as the partner's own form asks for it.
+
+    The document says what left, how much of it and who collected it, which
+    is what a distributor knows. Which store that organisation runs, which
+    trade item the order was for and which warehouse it came out of are ours,
+    and are taken from the chain this link was minted for.
+    """
+    data = dict(row["data"])
+    kind = data.pop("kind", "transfer")
+    if kind != "transfer":
+        raise ValueError(f"a release through a link is a transfer, not {kind!r}")
+    collected_by = data.pop("to_org_slug", None)
+    if not collected_by:
+        raise ValueError("a release has to say who collected it: give the row a `to_org_slug`")
+    if collected_by not in context["partner_points"]:
+        raise ValueError(f"no store in this chain is run by {collected_by!r}")
+    return {
+        "from_supply_point": context["warehouse"]["id"],
+        "to_supply_point": context["partner_points"][collected_by]["id"],
+        "item": context["item"]["id"],
+        "quantity": data.pop("quantity", None),
+        "unit_basis": _basis_for(data, context),
+        "occurred_on": data.pop("occurred_on", None) or day(ENTERED_DAYS_AGO),
+        **data,
+    }
+
+
+def _dispatch_fields(row, context):
+    """A dispatch, as the supplier's own form asks for it.
+
+    Dated when the goods LEFT, which is before the day we received them and
+    so before the distributor held a link at all. That is not a contradiction
+    and it is worth seeing: a distributor given a link types up what it has
+    already been doing, and the page prints "recorded <today>" beside the day
+    it happened precisely for this. What makes tier 3 tier 3 is who entered
+    it, not when the thing it records took place.
+    """
+    data = dict(row["data"])
+    return {
+        "contract": context["contract"]["id"],
+        "status": data.pop("status", "dispatched"),
+        "quantity": data.pop("quantity", None),
+        "unit_basis": _basis_for(data, context),
+        "dispatched_on": data.pop("dispatched_on", None) or day(DISPATCHED_DAYS_AGO),
+        **data,
+    }
+
+
+# Which of the partner's own actions produces each operation the document
+# names. The document names OPERATIONS, as every other tier does; the page
+# behind a link offers ACTIONS, and only its own. An operation with no action
+# here is refused by name rather than written some other way -- writing it
+# any other way is writing it as us, which is the one thing tier 3 must not
+# be.
+_ENTERED = {
+    "movement_record": ("record_release", _release_fields),
+    "shipment_record": ("record_shipment", _dispatch_fields),
+}
+
+
+def entered_through_link(token, row, context):
+    """One tier-3 row, POSTed to the partner's page the way the partner does.
+
+    Not `service.submit` and not an access object of our own making. The page
+    is the write path a partner has: the token is found by keyed hash, the
+    form offers only the rows the link covers, `service.submit` checks the
+    scope again, and `_provenance` decides whose word it is FROM THE LINK.
+    Reaching past any of that to stamp the distributor's id ourselves would
+    produce a row that says "EHA Clinics" without EHA having said anything --
+    a demo of the very substitution section 5a exists to make impossible.
+
+    A refused submission is answered with a 200 and the form's errors, not an
+    exception, so a seeder that only called this would report success and seed
+    nothing. Anything but the redirect is raised, carrying the errors.
+    """
+    from django.test import Client
+    from django.urls import reverse
+
+    from connect_labs.supply_chain.update_links.forms import PUBLIC_FORMS
+
+    operation = row["operation"]
+    if operation not in _ENTERED:
+        raise ValueError(
+            f"the partner's page has no action that records {operation!r} "
+            f"(it can record: {', '.join(sorted(_ENTERED))})"
+        )
+    stated = sorted(key for key in ("source", "recorded_by_org_id") if key in row or key in row.get("data", {}))
+    if stated:
+        raise ValueError(
+            f"the {operation!r} row states {', '.join(stated)}. What the partner entered is stamped by the "
+            "link it came through -- a row that declared whose word it is would be us saying it on their "
+            "behalf, which is the whole difference this tier draws"
+        )
+
+    action, build = _ENTERED[operation]
+    fields = build(row, context)
+    unknown = sorted(set(fields) - set(PUBLIC_FORMS[action].base_fields))
+    if unknown:
+        raise ValueError(f"{action!r} has no field {', '.join(unknown)} -- check the row against the form")
+
+    response = Client().post(
+        reverse("supply_chain:update_link_public", kwargs={"token": token}),
+        {"action": action, **{f"{action}-{name}": value for name, value in fields.items() if value not in (None, "")}},
+        SERVER_NAME=_link_host(),
+    )
+    if response.status_code != 302:
+        raise ValueError(
+            f"the partner's page refused this {operation!r} row ({response.status_code}): {_why(response)}"
+        )
+    return response
+
+
+def _why(response):
+    """What the page said was wrong, from the form it re-rendered."""
+    forms = (getattr(response, "context", None) or {}).get("forms") or []
+    errors = [form.errors.as_text() for form in forms if getattr(form, "errors", None)]
+    return " / ".join(errors) or "no form errors -- the page did not accept the submission at all"
+
+
+def _listed_cover(org, chain, destinations):
+    """What a LISTED link names, worked out from the chain it is minted for.
+
+    The document cannot name rows: it is written long before any of them
+    exist. A listed link therefore covers the chain's order, the stores its
+    own organisation runs, and the stores its rows release into -- exactly
+    what it needs to record its part and nothing more. (A link that follows
+    its organisation names nothing at all, which is why this is only for the
+    other kind.)
+    """
+    points = [chain["warehouse"], *chain["partner_points"].values()]
+    covered = {point["id"]: point for point in points if point.get("managed_by_org_id") == org["id"]}
+    covered.update({point["id"]: point for point in destinations})
+    return {"contract_ids": [chain["contract"]["id"]], "supply_point_ids": sorted(covered)}
+
+
+def seed_partner_links(access, data, reference, chain):
+    """A link per partner, and the rows they entered through it.
+
+    Minted here rather than on camera so the raw tokens never reach anything
+    committed. A link that follows its ORGANISATION is how a distributor the
+    programme buys from every quarter actually holds one: an order placed next
+    month is covered without reissuing. A link that covers only what it is
+    given is how the same distributor releases stock into somebody else's
+    store -- `update_links/service.py` resolves an organisation link's stores
+    as the ones that organisation runs, so a release into a collecting
+    partner's store needs a link that names it. The document says which each
+    is; this refuses to guess between them.
+
+    Returns raw tokens. They are shown once and never stored, so this value
+    is for handing to a person -- never for writing to a file.
+    """
+    chain_document = without_commentary(data["chc_chain"])
+    entered = chain_document.get("partner_entered") or []
+    distributor_slug = chain_document["distributor_slug"]
+    context = chain["context"]
+
+    links = {}
+    for row in without_commentary(data["partner_links"]):
+        org = reference["orgs"][row["org_slug"]]
+        issue = {"org_id": org["id"], "label": row["label"], "coverage": row.get("coverage", "organisation")}
+        if issue["coverage"] != "organisation":
+            # Only the distributor's own rows name a destination, and they
+            # are the reason a listed link is asked for at all.
+            destinations = [
+                context["partner_points"][entry["data"]["to_org_slug"]]
+                for entry in entered
+                if row["org_slug"] == distributor_slug and entry.get("data", {}).get("to_org_slug")
+            ]
+            issue.update(_listed_cover(org, chain, destinations))
+        issued = op(access, "update_link_issue", data=issue)
+        links[row["org_slug"]] = {"id": issued["id"], "token": issued["token"], "url": issued["url"]}
+
+    # Tier 3 -- what the distributor recorded ITSELF, through that link. These
+    # carry the distributor's own `recorded_by_org`, so they lose the "they
+    # told us" qualifier and the "reported, not witnessed" note beside it.
+    if entered:
+        token = links[distributor_slug]["token"]
+        for row in entered:
+            entered_through_link(token, row, context)
+
+    return links
