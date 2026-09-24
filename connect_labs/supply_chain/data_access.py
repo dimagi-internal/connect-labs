@@ -825,8 +825,8 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         approval.status = status
         approval.decided_on = decided_on or date.today()
         if note:
-            approval.note = note
-        approval.save(update_fields=["status", "decided_on", "note", "updated_at"])
+            approval.decision_note = note
+        approval.save(update_fields=["status", "decided_on", "decision_note", "updated_at"])
         return _fresh(approval)
 
     def blocking_approvals(self, award):
