@@ -46,37 +46,37 @@ numbers of sachets and adding them needs the pack spec.
     <h2 class="text-base font-semibold text-gray-900">What it must be</h2>
     <dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-3 mt-3">
       <div>
-        <dt class="text-[11px] text-gray-500">Unit ladder</dt>
+        <dt class="text-[11px] text-gray-600">Unit ladder</dt>
         <dd class="text-sm mt-0.5 {% if product.base_per_pack %}text-gray-900{% else %}text-message-warning-text{% endif %}">
           {% if product.base_per_pack %}{{ product.base_per_pack|qty:product.base_unit }} / {{ product.pack_unit|unit_words }}
           {% else %}not stated{% endif %}
         </dd>
       </div>
       <div>
-        <dt class="text-[11px] text-gray-500">Unit weight</dt>
-        <dd class="text-sm mt-0.5 {% if product.base_unit_grams %}text-gray-900{% elif product.weight_and_shelf_life_apply %}text-message-warning-text{% else %}text-gray-400{% endif %}">
+        <dt class="text-[11px] text-gray-600">Unit weight</dt>
+        <dd class="text-sm mt-0.5 {% if product.base_unit_grams %}text-gray-900{% elif product.weight_and_shelf_life_apply %}text-message-warning-text{% else %}text-gray-600{% endif %}">
           {% if product.base_unit_grams %}{{ product.base_unit_grams }} g
           {% elif product.weight_and_shelf_life_apply %}not stated
           {% else %}not applicable{% endif %}
         </dd>
       </div>
       <div>
-        <dt class="text-[11px] text-gray-500">Minimum shelf life</dt>
-        <dd class="text-sm mt-0.5 {% if product.shelf_life_months_minimum %}text-gray-900{% elif product.weight_and_shelf_life_apply %}text-message-warning-text{% else %}text-gray-400{% endif %}">
+        <dt class="text-[11px] text-gray-600">Minimum shelf life</dt>
+        <dd class="text-sm mt-0.5 {% if product.shelf_life_months_minimum %}text-gray-900{% elif product.weight_and_shelf_life_apply %}text-message-warning-text{% else %}text-gray-600{% endif %}">
           {% if product.shelf_life_months_minimum %}{{ product.shelf_life_months_minimum }} months
           {% elif product.weight_and_shelf_life_apply %}not stated
           {% else %}does not expire{% endif %}
         </dd>
       </div>
       <div>
-        <dt class="text-[11px] text-gray-500">UNICEF material no.</dt>
-        <dd class="text-sm mt-0.5 tabular-nums {% if product.unicef_material_number %}text-gray-900{% else %}text-gray-400{% endif %}">
+        <dt class="text-[11px] text-gray-600">UNICEF material no.</dt>
+        <dd class="text-sm mt-0.5 tabular-nums {% if product.unicef_material_number %}text-gray-900{% else %}text-gray-600{% endif %}">
           {{ product.unicef_material_number|default:"not recorded" }}
         </dd>
       </div>
       <div class="col-span-2 sm:col-span-3 lg:col-span-1">
-        <dt class="text-[11px] text-gray-500">Specification</dt>
-        <dd class="text-sm mt-0.5 {% if product.spec_reference %}text-gray-900{% else %}text-gray-400{% endif %}">
+        <dt class="text-[11px] text-gray-600">Specification</dt>
+        <dd class="text-sm mt-0.5 {% if product.spec_reference %}text-gray-900{% else %}text-gray-600{% endif %}">
           {{ product.spec_reference|default:"no reference recorded" }}
         </dd>
       </div>
@@ -84,7 +84,7 @@ numbers of sachets and adding them needs the pack spec.
 
     {% if product.spec_requirements %}
       <div class="mt-4">
-        <div class="text-[11px] text-gray-500">Requirements every trade item is checked against</div>
+        <div class="text-[11px] text-gray-600">Requirements every trade item is checked against</div>
         <ul class="text-sm text-gray-600 list-disc list-inside mt-1">
           {% for requirement in product.spec_requirements %}
             <li>
@@ -179,7 +179,7 @@ numbers of sachets and adding them needs the pack spec.
                 {% elif "not stated" in item.spec_verdict %}
                   <span class="text-xs font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">{{ item.spec_verdict }}</span>
                 {% elif "No requirements" in item.spec_verdict %}
-                  <span class="text-xs text-gray-400">{{ item.spec_verdict }}</span>
+                  <span class="text-xs text-gray-600">{{ item.spec_verdict }}</span>
                 {% else %}
                   <span class="text-xs font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">{{ item.spec_verdict }}</span>
                 {% endif %}
@@ -259,7 +259,7 @@ numbers of sachets and adding them needs the pack spec.
                   <a class="text-brand-indigo hover:underline"
                      href="{% url 'supply_chain:procurement_round_detail' quote.round_id %}">{{ rounds|dictkey:quote.round_id|dictkey:"label"|default:quote.round_id }}</a>
                 </td>
-                <td class="px-4 py-2.5 text-gray-600">{{ quote.received_on|default:"—" }}</td>
+                <td class="px-4 py-2.5 text-gray-600">{{ quote.received_on|day|default:"—" }}</td>
                 <td class="px-4 py-2.5">
                   {% if quote.voided %}<span class="text-xs text-red-700">voided</span>
                   {% elif quote.superseded_by_quote_id %}<span class="text-xs text-amber-800">superseded</span>

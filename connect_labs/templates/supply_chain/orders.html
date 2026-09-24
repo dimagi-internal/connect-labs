@@ -106,7 +106,7 @@
           </td>
           {% endwith %}
           <td class="px-4 py-2.5 text-xs text-gray-500">
-            {% if contract.source == "we_recorded" %}Recorded by {{ orgs|dictkey:contract.recorded_by_org_id|dictkey:"name"|default:"the programme" }}{% else %}{{ contract|told_by:orgs }}{% endif %}{% if not contract.witnessed %}<div class="text-gray-400">reported, not witnessed</div>{% endif %}
+            {% if contract.source == "we_recorded" %}Recorded by {{ orgs|dictkey:contract.recorded_by_org_id|dictkey:"name"|default:"the programme" }}{% else %}{{ contract|told_by:orgs }}{% endif %}{% if not contract.witnessed %}<div class="text-gray-600">reported, not witnessed</div>{% endif %}
           </td>
           <td class="px-4 py-2.5 text-right">
             <a class="text-brand-indigo hover:underline"

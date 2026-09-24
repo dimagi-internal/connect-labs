@@ -86,7 +86,7 @@ The log says how each notice left, including when it did not: "email off" and
                 {% if sub.supply_point_name or sub.commodity_name %}
                   {{ sub.supply_point_name|default:"" }}{% if sub.supply_point_name and sub.commodity_name %} · {% endif %}{{ sub.commodity_name|default:"" }}
                 {% else %}
-                  <span class="text-gray-400">whole programme</span>
+                  <span class="text-gray-600">whole programme</span>
                 {% endif %}
               </td>
               <td class="px-4 py-2 text-gray-700">

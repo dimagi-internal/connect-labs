@@ -72,7 +72,7 @@ paragraphs of method above a one-row table.{% endcomment %}
     {% for approval in standing.approvals %}
       <div class="mt-0.5">
         Approved by <b>{{ approval.approver.name|default:"—" }}</b> ({{ approval.role|words }})
-        on {{ approval.decided_on|default:"an unrecorded date" }}{% if approval.answered_by_approver %}, through {{ approval.approver.name }}'s own link{% endif %}
+        on {{ approval.decided_on|day|default:"an unrecorded date" }}{% if approval.answered_by_approver %}, through {{ approval.approver.name }}'s own link{% endif %}
         — <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' approval.award.id %}">the award to {{ approval.supplier|default:"the supplier" }}</a>{% if approval.documents %}, with {{ approval.documents|length }} signed confirmation{{ approval.documents|length|pluralize }}{% endif %}.
       </div>
     {% endfor %}
@@ -167,8 +167,8 @@ paragraphs of method above a one-row table.{% endcomment %}
           {% comment %}Durable equipment: said once, in the demand column. Repeating
           "durable — not forecast" in every forecast column read as three findings.{% endcomment %}
           {% if point.status == "durable" %}
-          <td class="px-4 py-2.5 text-gray-400">—</td>
-          <td class="px-4 py-2.5 text-gray-400">—</td>
+          <td class="px-4 py-2.5 text-gray-600">—</td>
+          <td class="px-4 py-2.5 text-gray-600">—</td>
           {% else %}
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
             {{ point.months_of_stock|derived_text }}
@@ -176,7 +176,7 @@ paragraphs of method above a one-row table.{% endcomment %}
               <div class="text-xs text-gray-500 mt-0.5">{{ reason }}</div>
             {% endfor %}
             {% if point.min_months_of_stock %}
-              <span class="text-xs text-gray-400">
+              <span class="text-xs text-gray-600">
                 (min {{ point.min_months_of_stock }} / max {{ point.max_months_of_stock }})
               </span>
             {% endif %}

@@ -113,7 +113,7 @@ unconfirmed figures on the right.
       {% for row in quote|stated_rows %}
         <div class="flex items-baseline gap-3 px-4 py-2.5">
           <dt class="w-44 shrink-0 text-xs text-gray-500">{{ row.label }}</dt>
-          <dd class="text-sm {% if row.value %}text-gray-900{% else %}text-gray-400 italic{% endif %}">
+          <dd class="text-sm {% if row.value %}text-gray-900{% else %}text-gray-600 italic{% endif %}">
             {% if row.value %}{{ row.value }}{% else %}not stated{% endif %}
           </dd>
         </div>
@@ -133,7 +133,7 @@ unconfirmed figures on the right.
             <dt class="w-44 shrink-0 text-xs text-gray-500">{{ key|figure_label:commodity }}</dt>
             <dd class="text-sm">
               {% if figure.unconfirmed %}
-                <span class="text-gray-400">Unconfirmed</span>
+                <span class="text-gray-600">Unconfirmed</span>
               {% else %}
                 <span class="text-gray-900 font-medium tabular-nums">{{ figure|figure_text }}</span>
               {% endif %}

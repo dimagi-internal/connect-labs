@@ -15,6 +15,9 @@ why_brief: supply-test-kits.why_brief.yaml
 scenes:
 - id: the-specification-is-on-the-product
   actions:
+  - kind: hold
+    seconds: 1.0
+    note: let the product page paint before the frame
   - kind: wait_for
     target: Requirements every trade item is checked against
   - kind: scroll_to
@@ -251,6 +254,9 @@ scenes:
   - kind: goto
     target: ${aqualytic_link}
     note: Aqualytic's own link — no labs login
+  - kind: hold
+    seconds: 1.0
+    note: let Aqualytic's own page settle before the frame
   - kind: wait_for
     target: Updates for Aqualytic
   - kind: hold
@@ -293,6 +299,9 @@ scenes:
     as a PDF.'
 - id: hauwa-places-the-order
   actions:
+  - kind: hold
+    seconds: 1.0
+    note: 'the award as it now stands: Place order live, the gate lifted'
   - kind: wait_for
     target: own link
   - kind: hover
@@ -379,6 +388,9 @@ scenes:
   - kind: goto
     target: ${update_link}
     note: Harmattan's standing link — it needs no labs login and already covers the new order
+  - kind: hold
+    seconds: 1.0
+    note: let Harmattan's own page settle before the frame
   - kind: wait_for
     target: Updates for Harmattan Health Supplies
   - kind: hold

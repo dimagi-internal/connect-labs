@@ -37,13 +37,31 @@ the award, so the page says so where the order button would otherwise be.
   {% if award.rationale %}
     <p class="text-sm text-gray-800 mt-2 max-w-3xl"><span class="text-gray-500">Why:</span> {{ award.rationale }}</p>
   {% endif %}
+  {% comment %}What was actually awarded, in figures: the offer's own money,
+  read from the comparison rather than recomputed, and the awarded kit against
+  the specification it was chosen for. The award stated a kit, a decider and a
+  reason above its own "Place order" button, and no quantity, price or total --
+  so the decision could not be checked against the offer it came from.{% endcomment %}
+  {% if awarded_row %}
+    <div class="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+      {% if round_quantity %}<span class="text-gray-800">{{ round_quantity }}</span>{% endif %}
+      {% for column in awarded_columns %}
+        {% with cell=awarded_row.figures|dictkey:column.key %}
+          {% if not cell.unconfirmed and cell.amount is not None %}
+            <span class="text-gray-800"><span class="text-gray-500">{{ column.label }}</span> <span class="tabular-nums">{{ cell|money_text }}</span></span>
+          {% endif %}
+        {% endwith %}
+      {% endfor %}
+    </div>
+    {% include "supply_chain/procurement/_specification.html" with specification=awarded_row.specification %}
+  {% endif %}
 </div>
 
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden mb-4">
   <div class="px-4 py-2.5 border-b border-gray-100 flex items-baseline justify-between">
     <span>
       <span class="text-xs font-semibold text-gray-600">Approvals</span>
-      <span class="text-xs text-gray-400 ml-2">agreement this award needs from somebody other than the decider</span>
+      <span class="text-xs text-gray-600 ml-2">agreement this award needs from somebody other than the decider</span>
     </span>
     <a href="{% url 'supply_chain:approval_request' award.id %}" class="text-xs text-brand-indigo hover:underline">+ Ask for an approval</a>
   </div>
@@ -76,7 +94,7 @@ the award, so the page says so where the order button would otherwise be.
                 {% for document in approval.documents %}
                   <div class="text-xs text-gray-600 mt-0.5">
                     <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:document_open' document.id %}" target="_blank" rel="noopener noreferrer">{{ document.title|default:document.filename|default:"document" }}</a>
-                    <span class="text-gray-400">{{ document.kind|words }}</span>
+                    <span class="text-gray-600">{{ document.kind|words }}</span>
                   </div>
                 {% endfor %}
               </td>
@@ -133,7 +151,7 @@ the award, so the page says so where the order button would otherwise be.
     {% endcomment %}
     {% if blocking %}
       <button type="button" disabled aria-disabled="true" aria-describedby="order-blocked"
-              class="px-3 py-1.5 text-sm rounded-md border border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed">Place order</button>
+              class="px-3 py-1.5 text-sm rounded-md border border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed">Place order</button>
     {% else %}
       <a href="{% url 'supply_chain:contract_create' %}?award={{ award.id }}" class="px-3 py-1.5 text-sm rounded-md bg-brand-indigo text-white hover:opacity-90">Place order</a>
     {% endif %}
