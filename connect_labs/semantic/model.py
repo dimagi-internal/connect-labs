@@ -156,20 +156,51 @@ def indicator_prefix(indicator: Any) -> str:
     return m.group(0).upper() if m else ""
 
 
+def _declared_series(indicators_doc: dict[str, Any]) -> tuple[str, ...]:
+    declared = (indicators_doc or {}).get("series")
+    if isinstance(declared, list) and declared:
+        return tuple(str(s).upper() for s in declared)
+    return ()
+
+
+def indicator_series(indicators_doc: dict[str, Any], meta: dict[str, Any] | None) -> str:
+    """The family one indicator belongs to.
+
+    In order: the indicator's own `meta.series`; its id's letter prefix, when the
+    registry declares a family of that name (`Q03` in a registry declaring `[Q]`);
+    and otherwise, in a registry declaring exactly ONE family, that family. The
+    last rule is what lets ids be plain slugs -- `mortality` in a registry that
+    declares `series: [KMC]` -- rather than codes whose letters double as a family.
+
+    A registry that declares nothing falls back to the prefix, which is how records
+    saved before `series:` existed still resolve.
+    """
+    meta = meta or {}
+    explicit = meta.get("series")
+    if explicit:
+        return str(explicit).upper()
+    prefix = indicator_prefix(meta.get("indicator"))
+    declared = _declared_series(indicators_doc)
+    if prefix in declared:
+        return prefix
+    if len(declared) == 1:
+        return declared[0]
+    return prefix
+
+
 def series_prefixes(indicators_doc: dict[str, Any]) -> tuple[str, ...]:
     """The indicator families a registry carries, in the order they first appear.
 
     Declared (`indicators_doc.series`) when the registry says so; otherwise read off
-    each indicator's own id. There is no fixed list: KMC's C and N are just the two
-    it happens to have.
+    each indicator's own id. There is no fixed list.
     """
-    declared = (indicators_doc or {}).get("series")
-    if isinstance(declared, list) and declared:
-        return tuple(str(s).upper() for s in declared)
+    declared = _declared_series(indicators_doc)
+    if declared:
+        return declared
     out: list[str] = []
     for m in (indicators_doc or {}).get("measures") or []:
-        ind = (m.get("meta") or {}).get("indicator") if isinstance(m, dict) else None
-        prefix = indicator_prefix(ind) if ind else ""
-        if prefix and prefix not in out:
-            out.append(prefix)
+        meta = m.get("meta") if isinstance(m, dict) else None
+        name = indicator_series(indicators_doc, meta) if meta and meta.get("indicator") else ""
+        if name and name not in out:
+            out.append(name)
     return tuple(out)

@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 
 from connect_labs.benchmarks.models import BenchmarkCohort
-from connect_labs.benchmarks.publish import publish_benchmark
+from connect_labs.benchmarks.publish import _primary_series_name, publish_benchmark
 from connect_labs.workflow.templates import resolve_snapshot_contract
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,14 @@ def run_history(wda, workflow_id: int, state_key: str) -> list[dict]:
                 continue
             payload = ((run.snapshot or {}).get("state") or {}).get(state_key) or {}
             by_opp = {}
-            for name, block in [("C", payload)] + sorted((payload.get("series") or {}).items()):
+            # The primary family is keyed by its own name -- the one the publisher
+            # reads it back under -- not a fixed letter. It used to be "C", which
+            # silently emptied every trend the day the primary family was renamed.
+            primary = _primary_series_name(payload.get("cMeasures")) or _primary_series_name(
+                [{"indicator": k} for entry in payload.get("byOpp") or [] for k in (entry.get("ind") or {})]
+            )
+            blocks = ([(primary, payload)] if primary else []) + sorted((payload.get("series") or {}).items())
+            for name, block in blocks:
                 cells = {}
                 for entry in (block or {}).get("byOpp") or []:
                     if entry.get("opp") is not None:
