@@ -202,10 +202,10 @@ class TestRunHistoryIsAProjection:
     def test_dotted_paths_are_picked_out(self):
         from connect_labs.workflow.snapshot_runtime import project_state
 
-        state = {"snapshot": {"programInd": {"C09": {"value": 0.5}}, "meta": {"as_of": "2026-09-06"}}}
+        state = {"snapshot": {"programInd": {"pct_healthy_growth": {"value": 0.5}}, "meta": {"as_of": "2026-09-06"}}}
         got = project_state(state, ["snapshot.programInd", "snapshot.meta.as_of", "snapshot.cases"])
         assert got == {
-            "snapshot.programInd": {"C09": {"value": 0.5}},
+            "snapshot.programInd": {"pct_healthy_growth": {"value": 0.5}},
             "snapshot.meta.as_of": "2026-09-06",
             "snapshot.cases": None,
         }

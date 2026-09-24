@@ -47,34 +47,34 @@ def test_the_render_reads_the_programme_report_and_grades_nothing():
         "series=N&scopes=programme",
     ):
         assert gone not in src, f"the worker review must not carry {gone!r}"
-    assert "P.byFLW" in src and "P.series" in src
+    assert "P.byFLW" in src and "P.cMeasures" in src
 
 
 def test_the_scorecard_shares_the_programme_reports_header_and_the_indicators_table_is_gone():
     """Same fifteen columns, same groups, same order as the programme page, with
     the worker's row under the programme, organisation and opportunity rows; the
-    C-series table that used to sit beside the cases is gone (too cluttered)."""
+    full indicator table that used to sit beside the cases is gone (too cluttered)."""
     src = RENDER.read_text()
     assert "SCORECARD_GROUPS" in src and "function ScorecardHead" in src
     assert ">Indicators<" not in src and "Indicators\n" not in src.split("Scorecard")[0]
     block = src[src.index("var SCORECARD = [") : src.index("];", src.index("var SCORECARD = ["))]
-    ids = re.findall(r"id: '(N\d\d)'", block)
+    ids = re.findall(r"id: '([a-z0-9_]+)'", block)
     assert ids == [
-        "N01",
-        "N02",
-        "N03",
-        "N05",
-        "N06",
-        "N07",
-        "N08",
-        "N09",
-        "N09",
-        "N10",
-        "N11",
-        "N12",
-        "N13",
-        "N14",
-        "N15",
+        "total_cases",
+        "registered_cases",
+        "started_cases",
+        "median_gestational_age",
+        "median_birthweight",
+        "visits_per_case",
+        "pct_enrolled_within_3d",
+        "pct_slow_growth",
+        "pct_slow_growth",
+        "pct_healthy_growth",
+        "pct_fast_growth",
+        "pct_incomplete_growth_data",
+        "mortality",
+        "weight_rounding_rate",
+        "pct_impossible_weight_changes",
     ]
     # case-level labels drop the aggregate words
     assert "caseLabel: 'GA'" in block and "caseLabel: 'BW'" in block
@@ -107,7 +107,7 @@ def test_the_render_stays_in_the_es5_dialect_the_runner_transpiles():
 def test_cases_get_a_growth_chart_and_the_audit_is_scoped_to_the_worker():
     src = RENDER.read_text()
     assert "function GrowthChart" in src
-    assert "15 g/kg/day" in src, "the reference line is the C13 target"
+    assert "15 g/kg/day" in src, "the reference line is the early growth rate's target"
     assert "postmenstrual age" in src, "with gestational age known, the axis a preterm standard uses"
     assert "expected loss" in src, "a first-week loss is explained, not painted red"
     flat = re.sub(r"\s+", "", src)
@@ -254,3 +254,31 @@ def test_the_case_panel_says_loading_or_failed_instead_of_a_bare_dash():
     assert src.count("live('—')") >= 5, "every live-only fact must go through live()"
     assert "'weight series not loaded'" in src and "'loading weighings…'" in src
     assert "[502, 503, 504]" in src, "a gateway error is retried before it is reported"
+
+
+def _legacy_block(path):
+    src = path.read_text()
+    start = src.index("  var LEGACY_ID = {")
+    end = src.index("  function fromLegacyIds(p) {")
+    body_end = src.index("\n  }\n", src.index("    return Object.assign({}, p, {", end)) + 4
+    return src[start:end] + src[end:body_end]
+
+
+def test_it_reads_a_pre_2004_run_through_the_programme_reports_own_translation():
+    """This page reads the programme report's SAVED runs, and a run saved before
+    the indicator set was unified carries C/N codes. Renders cannot import one
+    another, so the translation is a copy -- and two copies that drift would show
+    one run's figures under different names on the two pages."""
+    programme = RENDER.parent / "kmc_programme_metrics_render.js"
+    assert "fromLegacyIds(report.payload" in RENDER.read_text()
+    assert _legacy_block(RENDER) == _legacy_block(programme)
+
+
+def test_the_programme_row_reads_the_programme_cells():
+    """The scorecard's first row is the programme. When the scorecard stopped
+    reading `P.series.N`, the object it reads lost its `programme` key and the
+    row rendered blank on every worker."""
+    src = RENDER.read_text()
+    block = src[src.index("  var SC = {") : src.index("};", src.index("  var SC = {"))]
+    assert "programme: P.programInd" in block
+    assert "scorecardRow('Programme', SC && SC.programme)" in src

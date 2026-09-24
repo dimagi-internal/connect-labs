@@ -107,16 +107,19 @@ def test_an_llo_running_both_hardware_types_is_marked_unverified():
     assert real_conflicts <= UNVERIFIED_SCALE_LLOS
 
 
-# ── the scorecard: the N series off the payload, not a second fetch ──────────
+# ── the scorecard: off the payload, not a second fetch ────────────────────────
 
 
 def test_the_scorecard_reads_the_payload_and_fetches_nothing_itself():
-    """The N series used to be a tab that queried the semantic endpoint live, with
-    its own grader in this file. It is now graded by the builder alongside the
-    headline series, from the same rows, into `payload.series.N` -- so a saved run
-    carries it and the live view cannot disagree with it."""
+    """The scorecard used to be a tab that queried the semantic endpoint live, with
+    its own grader in this file. It is graded by the builder, from the same rows
+    as everything else on the page -- so a saved run carries it and the live view
+    cannot disagree with it. Since #2004 there is one indicator set, so the
+    scorecard reads the same cells as the tiles and the organisation rows."""
     src = RENDER.read_text()
-    assert "P.series" in src, "the scorecard must come off the payload"
+    assert (
+        "measures: P.cMeasures" in src and "programme: P.programInd" in src
+    ), "the scorecard must come off the payload's one indicator set"
     assert "/semantic/" not in src, "the render must not query the semantic endpoint itself"
     for gone in ("function loadNSeries", "function nBandOf", "function nCell"):
         assert gone not in src, f"{gone} is the second grader this replaced"
@@ -128,10 +131,24 @@ def test_the_scorecard_is_neals_table_column_for_column():
     share and the growth-quality shares."""
     src = RENDER.read_text()
     block = src[src.index("var SCORECARD = [") : src.index("];", src.index("var SCORECARD = ["))]
-    ids = re.findall(r"id: '(N\d\d)'", block)
+    ids = re.findall(r"id: '([a-z0-9_]+)'", block)
     assert ids == [
-        "N01", "N02", "N03", "N05", "N06", "N07", "N08", "N09", "N09", "N10", "N11", "N12", "N13", "N14", "N15",
-    ]  # fmt: skip
+        "total_cases",
+        "registered_cases",
+        "started_cases",
+        "median_gestational_age",
+        "median_birthweight",
+        "visits_per_case",
+        "pct_enrolled_within_3d",
+        "pct_slow_growth",
+        "pct_slow_growth",
+        "pct_healthy_growth",
+        "pct_fast_growth",
+        "pct_incomplete_growth_data",
+        "mortality",
+        "weight_rounding_rate",
+        "pct_impossible_weight_changes",
+    ]
     assert "denOnly: true" in block, "Qual N is the shared denominator, shown as a count"
 
 
@@ -153,7 +170,7 @@ def test_a_value_under_its_minimum_denominator_reads_insufficient_not_a_number()
 
 
 def test_a_not_credible_figure_is_marked_not_erased():
-    """N13 shares C14's credibility verdict. A non-credible recorder's mortality is
+    """Mortality carries the LLO credibility verdict. A non-credible recorder's mortality is
     shown greyed with the reason, never blanked -- blanking hides under-recording."""
     src = RENDER.read_text()
     assert "'notcredible'" in src
@@ -172,7 +189,7 @@ def test_no_top_level_declaration_appears_twice():
 
     It happened. #1467 re-inserted lines 1415-1501 -- byFLW, programInd,
     mortalityCredible and the selLLO/selOpp/selInd useState trio -- after the
-    N-series block, byte for byte. Nine duplicated declarations reached main while
+    scorecard block, byte for byte. Nine duplicated declarations reached main while
     the deployed workflow (render v5) had exactly one of each, so a sync would have
     pushed it live.
 
@@ -191,3 +208,32 @@ def test_no_top_level_declaration_appears_twice():
     names = re.findall(r"^  (?:var|let|const|function)\s+([A-Za-z_$][\w$]*)", src, re.M)
     dupes = sorted({n for n in names if names.count(n) > 1})
     assert not dupes, f"declared more than once at the top level of WorkflowUI: {dupes}"
+
+
+# ── runs saved before the indicator set was unified (#2004) ─────────────────
+
+
+def test_a_pre_2004_run_keeps_only_the_indicators_whose_definition_did_not_change():
+    """A completed run is write-protected, so an old run is translated on read.
+    Carrying a code across is a claim that the number means the same thing under
+    its new name -- true for every scorecard (N) id and for the four workbook ids
+    that were the scorecard's rule under another name, false for the rest (a
+    one-visit "started", a flat growth band). Mapping one of those would chart a
+    retired definition on today's axis without a word."""
+    src = RENDER.read_text()
+    block = src[src.index("  var LEGACY_ID = {") : src.index("  var LEGACY_CODE")]
+    mapped = dict(re.findall(r"([CN]\d\d): '([a-z0-9_]+)'", block))
+    assert {k for k in mapped if k.startswith("N")} == {f"N{i:02d}" for i in range(1, 16)}
+    assert {k for k in mapped if k.startswith("C")} == {"C01", "C05", "C28", "C31"}
+    assert "legacyIds: true" in src and "P.legacyIds ?" in src, "the page must say an old run is partial"
+
+
+def test_an_old_runs_mortality_tile_falls_back_to_its_own_cell():
+    """A pre-2004 run carries no pooled-over-credible mortality (its pool was the
+    workbook's rule, dropped as not comparable), so the undrilled tile must read
+    the programme cell rather than render blank."""
+    src = RENDER.read_text()
+    body = src[src.index("  function tileEntry(id) {") :]
+    body = body[: body.index("\n  }\n")]
+    assert "mortalityCredible.ind)" in body and "return entryOf(scopeInd, id);" in body
+    assert "'all organisations'" in src

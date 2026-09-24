@@ -34,7 +34,7 @@ def test_both_pipelines_carry_baby_case_id():
 
 
 def test_case_properties_carries_form_names():
-    """Without form_names, REGISTERED and STARTED collapse and C01/C02/C05 are identical."""
+    """Without form_names, REGISTERED and STARTED collapse and registered, started and total cases are identical."""
     assert "form_names" in _field_names(CASE_PROPERTIES_SCHEMA)
 
 

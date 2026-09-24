@@ -1801,12 +1801,12 @@ class TestSnapshotInputsAcceptsABuilderSpec:
         self._validate(
             {
                 "builder": "semantic_snapshot",
-                "series": "C",
+                "series": "KMC",
                 "scopes": ["programme", "flw"],
                 "pipelines": ["children", "visits"],
                 "case_index": {"pipeline": "children", "fields": ["entity_id"]},
                 "visits_pipeline": "visits",
-                "credibility": {"C14": "mortality_recording_credible"},
+                "credibility": {"mortality": "mortality_recording_credible"},
                 "min_denominator_default": 25,
                 "workers": False,
             }
@@ -1816,7 +1816,7 @@ class TestSnapshotInputsAcceptsABuilderSpec:
         from connect_labs.mcp.tool_registry import MCPToolError
 
         with pytest.raises(MCPToolError) as exc:
-            self._validate({"builder": "does_not_exist", "series": "C"})
+            self._validate({"builder": "does_not_exist", "series": "KMC"})
         assert "not a registered builder" in str(exc.value)
         assert "semantic_snapshot" in str(exc.value)
 
@@ -1833,7 +1833,7 @@ class TestSnapshotInputsAcceptsABuilderSpec:
         from connect_labs.mcp.tool_registry import MCPToolError
 
         with pytest.raises(MCPToolError) as exc:
-            self._validate({"series": "C", "scopes": ["programme"]})
+            self._validate({"series": "KMC", "scopes": ["programme"]})
         assert "series" in str(exc.value)
 
     def test_every_allowed_spec_key_is_actually_consumed(self):

@@ -40,7 +40,7 @@ def _wda(monkeypatch):
 def _build(**context):
     with pytest.raises(snapshot_builders.SnapshotBuilderError, match="could not be read"):
         snapshot_builders.semantic_snapshot(
-            spec={"series": ["C"]},
+            spec={"series": ["KMC"]},
             pipelines={},
             opportunity_id=10013,
             context={"definition_id": 5626, "access_token": "tok", "opportunity_ids": [10013, 10014], **context},

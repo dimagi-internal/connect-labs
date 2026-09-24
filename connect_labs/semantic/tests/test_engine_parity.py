@@ -8,12 +8,17 @@ rollup -- all nine scopes, suppression gates on -- over a fixture spread across
 three opportunities, six workers, two LLOs and three cohort months:
 
   1. The shipped KMC registry, now declaring its model explicitly, returns exactly
-     the rows the KMC-shaped engine returned. `fixtures/kmc_rollup_golden.json` was
-     produced by the engine BEFORE it was made generic, and is compared value for
-     value (floats to 1e-12, for cross-version Postgres arithmetic).
+     the rows in `fixtures/kmc_rollup_golden.json`, compared value for value
+     (floats to 1e-12, for cross-version Postgres arithmetic). The file was first
+     produced by the engine BEFORE it was made generic; it was regenerated once,
+     deliberately, when #2004 merged the C and N indicator sets into one.
   2. The same registry in the pre-model LEGACY shape (bare `entity: baby`, no
-     visit_columns / pipelines / value_column / defaults) -- the shape of the live
-     record 19784 -- returns the same rows, through the shim.
+     visit_columns / pipelines / value_column / defaults / series) -- the shape of
+     a record saved before the model existed, as live record 19784 was -- returns
+     the same rows, through the shim. Dropping `series` and `defaults` changes
+     how ids group into families and where a cell is graded "insufficient", not
+     one computed value: both act after the rows (test_series_family.py covers an
+     undeclared registry's families).
   3. The two compile to the same SQL.
 
 Runs whenever Postgres is reachable (SEMANTIC_TEST_DSN, defaulting to the CI
@@ -104,7 +109,8 @@ def test_the_shipped_kmc_registry_does_not_lean_on_the_shim():
     props, inds = load_registry("kmc")
     model = resolve_model(props, inds)
     assert model.shimmed == (), f"registry/kmc still relies on legacy.py for {model.shimmed}"
-    assert model.min_denominator == 25 and model.value_column == "weight_g"
+    # 20, the compute spec's floor, since #2004 (the workbook's was 25)
+    assert model.min_denominator == 20 and model.value_column == "weight_g"
 
 
 def test_the_shim_applies_only_to_a_document_that_predates_the_model():
