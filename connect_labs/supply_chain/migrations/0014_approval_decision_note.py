@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("supply_chain", "0012_seed_alert_beat_task"),
+        ("supply_chain", "0013_contract_payment_terms"),
     ]
 
     operations = [
