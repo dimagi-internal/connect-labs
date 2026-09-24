@@ -450,3 +450,55 @@ class TestAnAwardRecordsThePersonWhoDecided:
         )
         client_in_programme.post(self._compare(world), {"quote_id": quote["id"], "rationale": "cheaper"})
         assert Award.objects.get(quote_id=quote["id"]).decided_by == "Amina Bello"
+
+
+class TestCheckAlertsNow:
+    """A new alert could only be seen working five minutes later, at the next
+    beat. "Check now" runs the same pass for this programme, on demand."""
+
+    def _subscribe(self, da):
+        # A commodity with no ration table: `commodity_course_undefined` is true of it.
+        op(da, "commodity_upsert", data={"slug": "rutf", "name": "RUTF", "base_unit": "sachet"})
+        return op(
+            da,
+            "alert_subscription_create",
+            data={"check_kinds": ["commodity_course_undefined"], "recipient_email": "stores@example.org"},
+        )
+
+    def test_the_alerts_page_offers_it(self, client_in_programme):
+        body = client_in_programme.get(reverse("supply_chain:alerts")).content.decode()
+        assert reverse("supply_chain:alert_check_now") in body
+        assert "Check now" in body
+
+    def test_it_finds_what_is_new_logs_it_and_says_so(self, client_in_programme, da):
+        from connect_labs.supply_chain.alerts.models import AlertNotice
+
+        sub = self._subscribe(da)
+        response = client_in_programme.post(reverse("supply_chain:alert_check_now"), follow=True)
+        body = response.content.decode()
+        assert AlertNotice.objects.filter(
+            subscription_id=sub["id"], subject_kind="commodity_course_undefined"
+        ).exists()
+        assert "Checked now:" in body and "new notice" in body
+        assert "No ration table" in body  # in the log, as words
+
+    def test_asking_twice_reports_nothing_new_the_second_time(self, client_in_programme, da):
+        from connect_labs.supply_chain.alerts.models import AlertNotice
+
+        self._subscribe(da)
+        client_in_programme.post(reverse("supply_chain:alert_check_now"))
+        body = client_in_programme.post(reverse("supply_chain:alert_check_now"), follow=True).content.decode()
+        assert "nothing new since the last check" in body
+        assert AlertNotice.objects.filter(program_id=PROGRAM).count() == 1
+
+    def test_it_runs_only_this_programmes_subscriptions(self, client_in_programme, da):
+        from connect_labs.supply_chain.alerts.models import AlertNotice
+
+        elsewhere = SupplyDataAccess(access_token="unused", program_id=PROGRAM + 7, caller=SYSTEM)
+        other = self._subscribe(elsewhere)
+        self._subscribe(da)
+        client_in_programme.post(reverse("supply_chain:alert_check_now"))
+        assert not AlertNotice.objects.filter(subscription_id=other["id"]).exists()
+
+    def test_it_is_not_a_get(self, client_in_programme):
+        assert client_in_programme.get(reverse("supply_chain:alert_check_now")).status_code == 405

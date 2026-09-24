@@ -21,10 +21,21 @@ The log says how each notice left, including when it did not: "email off" and
     </p>
   </div>
   {% if has_program_context %}
-    <a href="{% url 'supply_chain:alert_create' %}"
-       class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-      <i class="fa-solid fa-plus mr-1"></i> New alert
-    </a>
+    <div class="flex items-center gap-2">
+      {% comment %}Beat runs every five minutes; this runs the same pass for this
+      programme now, so a new alert can be seen working.{% endcomment %}
+      <form method="post" action="{% url 'supply_chain:alert_check_now' %}">
+        {% csrf_token %}
+        <button type="submit" title="Evaluate this programme's alerts now, the same way the five-minute check does"
+                class="px-4 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">
+          <i class="fa-solid fa-rotate mr-1"></i> Check now
+        </button>
+      </form>
+      <a href="{% url 'supply_chain:alert_create' %}"
+         class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+        <i class="fa-solid fa-plus mr-1"></i> New alert
+      </a>
+    </div>
   {% endif %}
 </div>
 
