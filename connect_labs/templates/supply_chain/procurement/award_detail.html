@@ -79,14 +79,14 @@ the award, so the page says so where the order button would otherwise be.
                 {% endfor %}
               </td>
               <td class="px-4 py-2 text-gray-700">{{ approval.role|words|capfirst }}</td>
-              <td class="px-4 py-2 text-gray-600 tabular-nums">{{ approval.requested_on }}</td>
+              <td class="px-4 py-2 text-gray-600 tabular-nums whitespace-nowrap">{{ approval.requested_on }}</td>
               <td class="px-4 py-2">
                 {% if approval.status == "approved" %}
                   <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-success text-message-success-text">approved</span>
-                  <span class="text-xs text-gray-500">{{ approval.decided_on }}</span>
+                  <span class="text-xs text-gray-500 whitespace-nowrap">{{ approval.decided_on }}</span>
                 {% elif approval.status == "declined" %}
                   <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-800">declined</span>
-                  <span class="text-xs text-gray-500">{{ approval.decided_on }}</span>
+                  <span class="text-xs text-gray-500 whitespace-nowrap">{{ approval.decided_on }}</span>
                 {% else %}
                   <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-warning text-message-warning-text">requested</span>
                 {% endif %}
