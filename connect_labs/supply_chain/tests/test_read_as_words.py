@@ -425,7 +425,9 @@ class TestTheOrderShowsWhatCameThroughTheLink:
         body = client_in_programme.get(
             reverse("supply_chain:order_detail", args=[chain["contract"]["id"]])
         ).content.decode()
-        assert "Through Harmattan Health Supplies" in body
+        assert "Recorded through the update link held by Harmattan Health Supplies" in body
+        assert "Supplies's" not in body, "a possessive on a name ending in s"
+        assert "nobody asked" not in body, "an opinion on a screen of facts"
         assert "CHC-1 is confirmed" in body
 
     def test_received_goods_with_no_dispatch_are_not_nothing(self, client_in_programme, chain):
