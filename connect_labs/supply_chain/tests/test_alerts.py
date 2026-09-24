@@ -161,6 +161,28 @@ class TestSubscriptionOperations:
                 data={"check_kinds": ["stock_stockout"], "recipient_user_id": colleague.pk},
             )
 
+    @pytest.mark.parametrize(
+        "name, email, shown",
+        [
+            ("Amina Bello", "amina@example.org", "Amina Bello"),
+            # Sign-in writes the login handle into `name` when Connect gives no
+            # first or last name, so "Sends to" read "amina" -- a login, not a person.
+            ("amina", "amina@example.org", "amina@example.org"),
+            ("", "amina@example.org", "amina@example.org"),
+            ("amina", None, "amina"),
+        ],
+    )
+    def test_the_recipient_is_said_by_name_then_email_then_login(self, django_user_model, name, email, shown):
+        me = django_user_model.objects.create(username="amina", email=email, name=name)
+        mine = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
+        mine.user = me
+        sub = op(
+            mine,
+            "alert_subscription_create",
+            data={"check_kinds": ["stock_stockout"], "recipient_user_id": me.pk},
+        )
+        assert sub["recipient"] == shown
+
     def test_the_filters_must_be_this_programmes_own(self, da, other_da, rutf):
         elsewhere = _worker(other_da, "w-elsewhere", "elsewhere")
         with pytest.raises(ValueError, match="supply point"):
