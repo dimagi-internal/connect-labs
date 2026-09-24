@@ -90,8 +90,10 @@ def _expected_inbound(program_id, points, item=None, as_of=None):
     one nobody owes anything, and the page said the second about both.
 
     What is still to come is the order page's own "Still outstanding" -- the
-    three-way match -- so the two screens cannot disagree about it. An order
-    whose shortfall another order was placed to cover is not waited on.
+    three-way match -- so the two screens cannot disagree about it. On an
+    order paid in advance that is what is awaited, not what was refused on
+    arrival: refused goods are owed back, not on their way. An order whose
+    shortfall another order was placed to cover is not waited on.
     """
     from connect_labs.supply_chain.fulfilment.services.match import three_way_match
 
@@ -108,7 +110,9 @@ def _expected_inbound(program_id, points, item=None, as_of=None):
     by_point: dict[int, list] = {}
     for contract in contracts:
         match = three_way_match(contract)
-        outstanding = match["outstanding"]
+        outstanding = (
+            match["awaiting_delivery"] if match.get("awaiting_delivery") is not None else match["outstanding"]
+        )
         if outstanding is None or match["covered_by"]:
             continue
         if isinstance(outstanding, Quantity) and outstanding.amount <= 0:
