@@ -3,6 +3,8 @@ import re
 from django import template
 from django.urls import reverse
 
+from connect_labs.supply_chain.values import money_digits, quantity_digits, unit_noun
+
 register = template.Library()
 
 
@@ -108,18 +110,37 @@ SOURCE_LABELS = {
 
 @register.filter
 def money(value):
-    """A decimal string with thousands separators: "410000" -> "410,000".
+    """An amount by the one money rule (values.money_digits): "410000" -> "410,000.00".
 
-    Only the digits before the point are grouped, and the decimals are kept
-    exactly as stored -- money is never rounded for display here.
+    Grouped, two decimals, more only when the stored figure has them -- so two
+    different per-unit prices never read the same.
     """
-    text = str(value if value is not None else "")
-    whole, dot, fraction = text.partition(".")
-    sign = "-" if whole.startswith("-") else ""
-    digits = whole.lstrip("-")
-    if not digits.isdigit():
-        return text
-    return f"{sign}{int(digits):,}{dot}{fraction}"
+    return money_digits(value)
+
+
+@register.filter
+def qty(value, unit=None):
+    """A quantity and its unit as a person writes them: "3 jerry cans", "1 carton".
+
+    `{{ line.quantity|qty:line.quantity_unit }}`. The number follows the one
+    quantity rule (values.quantity_digits) and the unit is pluralised on the
+    number as it displays. With no unit, just the number.
+    """
+    if value is None or value == "":
+        return "—"
+    return f"{quantity_digits(value)} {unit_noun(unit, value)}".strip()
+
+
+@register.filter
+def unit_words(unit):
+    """A unit on its own, as a word: "per {{ unit|unit_words }}" -> "per jerry can"."""
+    return unit_noun(unit)
+
+
+@register.filter
+def unit_plural(unit):
+    """A unit as a plural noun: "{{ unit|unit_plural }} per course" -> "sachets per course"."""
+    return unit_noun(unit, 2)
 
 
 @register.filter
@@ -131,7 +152,7 @@ def _fact_text(value):
     if isinstance(value, dict):
         if "kind" in value and isinstance(value.get("owed_by"), dict):
             # A document a consignment still needs: what it is, and who to ask.
-            kind = str(value["kind"]).replace("_", " ").capitalize()
+            kind = words(value["kind"]).capitalize()
             return f"{kind} — owed by {value['owed_by'].get('name') or '—'}"
         if "name" in value:
             return str(value["name"])
@@ -148,7 +169,7 @@ def _fact_text(value):
         # A stored enum ("at_customs") reached the checks list as the raw
         # value; say it in words. Only snake_case lowercase is touched, so a
         # name or a reference is never rewritten.
-        return value.replace("_", " ")
+        return words(value)
     return str(value)
 
 
@@ -197,8 +218,11 @@ def figure_text(cell):
         # Not a gap either: durable equipment is never consumed.
         return "durable — not forecast"
     amount = cell.get("amount")
-    unit = cell.get("unit") or cell.get("currency") or ""
-    return f"{amount} {unit}".strip()
+    if cell.get("currency"):
+        return money_text(cell)
+    if amount in (None, ""):
+        return "—"
+    return qty(amount, cell.get("unit"))
 
 
 @register.filter
@@ -382,15 +406,52 @@ def buyer_label(value):
     return BUYER_LABELS.get(value, humanise(value))
 
 
-def _grouped(amount, places):
-    from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+# Every vocabulary value that humanise() alone would word badly. The rest --
+# "at_customs", "certificate_of_analysis", "customs_fee" -- read fine with the
+# underscores taken out, and fall through to that. One mapping for every
+# vocabulary in records.py, because a code means the same thing wherever it
+# lands; `words` is the one filter a template uses to put any of them on a page.
+VOCAB_LABELS = {
+    **BUYER_LABELS,
+    **SOURCE_LABELS,
+    **CHECK_LABELS,
+    # how a quote is priced
+    "per_base_unit": "per single unit",
+    "per_pack": "per pack",
+    "per_lot_total": "for the whole lot",
+    "per_metric_tonne": "per metric tonne",
+    "trade_item_confirmed": "confirmed from the trade item",
+    # included / excluded / not stated
+    "not_specified": "not stated",
+    # what is given for the goods
+    "priced": "bought",
+    "in_kind": "donated in kind",
+    "bundled": "bundled in another cost",
+    # when it is paid
+    "on_delivery": "on delivery",
+    "advance": "in advance",
+    # where stock rests
+    "user_held": "held by a field worker",
+    "supplier_site": "supplier's site",
+    # how a count was taken
+    "self_reported": "self-reported",
+    # a three-way match
+    "over_invoiced": "billed beyond what arrived",
+    "part_received": "part received",
+    "part_paid": "part paid",
+}
 
-    try:
-        number = Decimal(str(amount))
-    except (InvalidOperation, ValueError):
-        return str(amount)
-    quantum = Decimal(1).scaleb(-places)
-    return f"{number.quantize(quantum, rounding=ROUND_HALF_UP):,.{places}f}"
+
+@register.filter
+def words(value):
+    """Any vocabulary value as words: "programme_org" -> "the programme",
+    "stock_below_minimum" -> "Below its own minimum", "at_customs" -> "at customs".
+
+    Use `|words|capfirst` where it starts a sentence or a cell.
+    """
+    if value is None or value == "":
+        return ""
+    return VOCAB_LABELS.get(value, humanise(value))
 
 
 @register.filter
@@ -398,7 +459,7 @@ def money_text(cell):
     """A money cell as a person writes money: "USD 18,000.00", never "18000.0000"."""
     if not isinstance(cell, dict) or cell.get("amount") in (None, ""):
         return figure_text(cell)
-    return f"{cell.get('currency') or ''} {_grouped(cell['amount'], 2)}".strip()
+    return f"{cell.get('currency') or ''} {money_digits(cell['amount'])}".strip()
 
 
 @register.filter
@@ -409,10 +470,7 @@ def quantity_text(value):
     counted cartons; "3,033.33" says the same thing a reader can take in.
     """
     if isinstance(value, dict) and value.get("amount") not in (None, ""):
-        grouped = _grouped(value["amount"], 2)
-        if "." in grouped:
-            grouped = grouped.rstrip("0").rstrip(".")
-        return f"{grouped} {value.get('unit') or ''}".strip()
+        return qty(value["amount"], value.get("unit"))
     return derived_text(value)
 
 
@@ -483,12 +541,12 @@ def _basis_phrase(basis, amount):
     """
     if not basis or basis == "not_specified":
         return ""
-    words = str(basis).replace("_", " ")
+    said = words(basis)
     # `if amount` is false for 0, so freight quoted at zero read as "amount
     # not given" -- an unknown. Free freight and a waived duty are real facts
     # with their own basis flag, and keeping a known zero apart from an
     # unknown is the thing this domain is built around.
-    return f"{words}, {amount}" if amount is not None else f"{words}, amount not given"
+    return f"{said}, {money_digits(amount)}" if amount is not None else f"{said}, amount not given"
 
 
 @register.filter
@@ -497,15 +555,13 @@ def stated_rows(quote):
     quote = quote or {}
     amount, currency = quote.get("as_quoted_amount"), quote.get("as_quoted_currency")
     computed = {
-        "_price": f"{currency} {amount}" if amount else "",
+        "_price": f"{currency} {money_digits(amount)}" if amount else "",
         "_basis": (
-            f"{quote.get('quantity_basis')} {humanise(quote.get('quantity_basis_unit'))}"
-            if quote.get("quantity_basis")
-            else ""
+            qty(quote.get("quantity_basis"), quote.get("quantity_basis_unit")) if quote.get("quantity_basis") else ""
         ),
         "_freight": _basis_phrase(quote.get("freight_basis"), quote.get("freight_amount")),
         "_duties": _basis_phrase(quote.get("duties_basis"), quote.get("duties_amount")),
-        "_moq": f"{quote.get('moq')} {humanise(quote.get('moq_unit'))}" if quote.get("moq") else "",
+        "_moq": qty(quote.get("moq"), quote.get("moq_unit")) if quote.get("moq") else "",
     }
     rows = []
     for label, key in _STATED_ROWS:
@@ -518,7 +574,7 @@ def stated_rows(quote):
         # the round table and missed here, which is why "not_stated" reached
         # the quote page.
         if key in ("as_quoted_unit", "pack_spec_source"):
-            value = humanise(value)
+            value = words(value)
         rows.append({"label": label, "value": value})
     return rows
 

@@ -629,7 +629,7 @@ class TestThePublicPage:
             },
         )
         body = client.get(_url(issued["token"])).content.decode()
-        assert re.search(r"AWB-9 — 40 carton, dispatched", body)
+        assert re.search(r"AWB-9 — 40 cartons, dispatched", body)
 
     def test_unknown_expired_and_revoked_look_identical(self, client, da, issued):
         unknown = client.get(_url("definitely-not-a-token"))

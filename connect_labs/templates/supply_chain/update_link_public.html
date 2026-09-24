@@ -1,5 +1,5 @@
 {% extends 'supply_chain/_update_link_shell.html' %}
-{% load crispy_forms_tags %}
+{% load crispy_forms_tags supply_chain_extras %}
 
 {% comment %}
 No icon font here: base.html gets Font Awesome from the vendors JS bundle, and
@@ -44,11 +44,11 @@ own prefix so seven of them cannot collide.
             <span class="ml-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">{{ contract.get_status_display }}</span>
           </div>
           <div class="text-sm text-gray-600">
-            {% if contract.item %}{{ contract.item.name }}{% else %}{{ contract.commodity.name }}{% endif %}{% if contract.quantity %} · {{ contract.quantity.normalize }} {{ contract.quantity_unit }}{% endif %}
+            {% if contract.item %}{{ contract.item.name }}{% else %}{{ contract.commodity.name }}{% endif %}{% if contract.quantity %} · {{ contract.quantity|qty:contract.quantity_unit }}{% endif %}
           </div>
           {% for shipment in contract.shipments.all %}
             <div class="text-xs text-gray-500 mt-0.5">
-              <span class="text-gray-400">↳</span> {{ shipment.reference|default:"Dispatch" }} —{% for line in shipment.lines.all %} {{ line.quantity.normalize }} {{ line.quantity_unit }},{% endfor %} {{ shipment.get_status_display }}{% if shipment.expected_on %}, expected {{ shipment.expected_on|date:"j M" }}{% endif %}
+              <span class="text-gray-400">↳</span> {{ shipment.reference|default:"Dispatch" }} —{% for line in shipment.lines.all %} {{ line.quantity|qty:line.quantity_unit }},{% endfor %} {{ shipment.get_status_display }}{% if shipment.expected_on %}, expected {{ shipment.expected_on|date:"j M" }}{% endif %}
             </div>
           {% endfor %}
         </div>
