@@ -183,10 +183,12 @@ class TestTheOrderPage:
         for label in ("Buyer", "Status", "Recorded by"):
             assert label in labels
         assert "· Dimagi" not in _visible(header)
-        # The fulfilment status is a pill like the cover's "Bundled in setup fee".
-        pill = re.search(r'<span class="([^"]*rounded-full[^"]*)"[^>]*>\s*short', header).group(1)
+        # The fulfilment status is a pill; how it was paid for is a plain tag, so the
+        # two no longer read as two statuses (iteration 4).
+        assert re.search(r'<span class="[^"]*rounded-full[^"]*"[^>]*>\s*short', header)
         cover_header = _page(scoped, "order_detail", played["cover"]["id"]).split("Edit order", 1)[0]
-        assert re.search(rf'<span class="{re.escape(pill)}"[^>]*>\s*Bundled in setup fee', cover_header)
+        tag = re.search(r'<span class="([^"]*)"[^>]*>\s*Bundled in setup fee', cover_header).group(1)
+        assert "rounded-full" not in tag and "bg-gray-100" in tag
 
     def test_a_receipt_the_programme_took_down_names_who_told_it(self, scoped, da, world):
         cover = _cover(da, world, received=False)

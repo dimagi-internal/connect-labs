@@ -49,3 +49,21 @@ class TestTheStockScreens:
 def test_the_order_header_shows_when_it_was_signed(scoped, played):
     text = _visible(_page(scoped, "order_detail", played["order"]["id"]))
     assert "Signed 15 Jul 2026" in text
+
+
+class TestIterationFourPolish:
+    def test_the_fill_table_drops_a_column_that_repeats_received(self, scoped, played):
+        body = _page(scoped, "order_detail", played["order"]["id"])
+        section = body.split('id="fulfilment"', 1)[1].split("</section>", 1)[0]
+        assert "Counts toward it" not in section
+        assert "700 packets received" in _visible(section)
+
+    def test_the_stock_method_is_folded_away(self, scoped, played):
+        body = _page(scoped, "stock")
+        assert "<summary" in body and "How cover is measured" in body
+        assert "Demand is read from the consumption movements" in body
+
+    def test_the_course_statement_leads_the_item_page(self, scoped, played):
+        body = _page(scoped, "item_detail", played["item"]["id"])
+        line = body.split("is one full course", 1)[0].rsplit("<p ", 1)[1]
+        assert "font-semibold" in line

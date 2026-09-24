@@ -29,13 +29,18 @@ one of them would destroy the only signal it had.
     {{ network.summary.never_reported }} {% if network.summary.never_reported == 1 %}has{% else %}have{% endif %} no count yet
   </span>
 </div>
-<p class="text-xs text-gray-600 mb-4">
+{% comment %}How the figures are worked out, a click away: open by default it was two
+paragraphs of method above a one-row table.{% endcomment %}
+<details class="text-xs text-gray-600 mb-4">
+<summary class="cursor-pointer text-gray-700">How cover is measured</summary>
+<p class="mt-1">
   Cover is measured against each point's own minimum and maximum months of
   stock, so "below its band" means below what this programme set. Goods in
   transit are excluded: they are real, but they are not cover.
   Each point is topped up to its maximum; below its minimum it is overdue.
   A point with none above it in the network is restocked by reordering from its supplier.
 </p>
+</details>
 
 {% if items|length > 1 %}
   <div class="flex items-center gap-2 mb-4 text-sm">
@@ -230,12 +235,15 @@ one of them would destroy the only signal it had.
   </div>
 </div>
 
-<p class="text-xs text-gray-600 mt-3">
+<details class="text-xs text-gray-600 mt-3">
+<summary class="cursor-pointer text-gray-700">Where demand comes from</summary>
+<p class="mt-1">
   Demand is read from the consumption movements on each store's ledger, whoever
   recorded them — a Connect visit, a partner's report or a clerk's entry. A store that dispenses nothing itself, such as
   a distributor's warehouse, is rated on what it releases to other supply points. A worker's reported figure is kept beside
   the ledger rather than overwriting it; moving the ledger takes a deliberate
   override with a reason.
 </p>
+</details>
 {% endif %}
 {% endblock %}
