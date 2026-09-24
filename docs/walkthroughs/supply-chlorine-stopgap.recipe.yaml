@@ -225,19 +225,19 @@ scenes:
     must_succeed: true
     timeout_ms: 30000
   - kind: wait_for
-    target: Chosen
+    target: css:td span.bg-green-100:has-text('Awarded')
     must_succeed: true
   - kind: hover
-    target: text:Chosen
+    target: css:td span.bg-green-100:has-text('Awarded')
     seconds: 2.0
-    note: Harmattan chosen over the cheaper quote
+    note: Harmattan awarded over the cheaper quote
   concept_claim: Awarding from the comparison takes a written reason and the name of the person deciding,
-    and can go to a quote that is not the cheapest; the comparison then marks the chosen quote.
+    and can go to a quote that is not the cheapest; the comparison then marks the awarded quote.
   design_intent: The award is a decision a named person made for a stated reason, not a click an account
     made.
   show: On the comparison Ngozi passes over Gidan Ruwa Traders' cheaper quote, ranked first, types her
     own name as the decider and her reason beside Harmattan's quote, awards it, and the comparison marks
-    Harmattan Chosen.
+    Harmattan Awarded.
   url: /supply/procurement/tenders/${tender_id}/compare/?commodity=dispenser-chlorine&program_id=10603
 - id: the-regulators-approval-rests-on-the-registration
   actions:
@@ -527,11 +527,6 @@ scenes:
     note: what the ledger holds now
     seconds: 2.0
     target: text:Sahel CHI — Kano chlorine store
-  - kind: hover
-    note: what it was before the goods received note
-    seconds: 2.5
-    say: before
-    target: css:[data-cover-before]
   - kind: hover
     note: better than it was, still under its floor
     seconds: 2.0
