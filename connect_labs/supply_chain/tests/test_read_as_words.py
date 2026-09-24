@@ -238,6 +238,34 @@ class TestTheComparison:
         ]
 
 
+class TestTheRoundsQuotes:
+    """Three co-pack quotes differing only by price, told apart by nothing but the price."""
+
+    def _quotes_table(self, client, chain):
+        response = client.get(reverse("supply_chain:procurement_round_detail", args=[chain["round"]["id"]]))
+        assert response.status_code == 200
+        body = response.content.decode()
+        start = body.index(">Quotes<")
+        return body[start : body.index("</table>", start)]
+
+    def test_each_quote_names_its_trade_item_and_contents(self, client_in_programme, chain):
+        table = self._quotes_table(client_in_programme, chain)
+        assert "Kaduna co-pack" in table
+        assert "Lagoon co-pack" in table
+        assert "2 sachets ors + 10 tablets zinc" in table
+
+    def test_the_commodity_is_named_not_slugged(self, client_in_programme, chain):
+        table = self._quotes_table(client_in_programme, chain)
+        assert "ORS/zinc co-pack" in table
+        assert "ors-zinc-copack" not in table
+        assert "ors zinc copack" not in table
+
+    def test_prices_read_as_money(self, client_in_programme, chain):
+        table = self._quotes_table(client_in_programme, chain)
+        assert "USD 0.60" in table
+        assert "per_base_unit" not in table
+
+
 class TestTheOrder:
     def _page(self, client, chain):
         response = client.get(reverse("supply_chain:order_detail", args=[chain["contract"]["id"]]))

@@ -110,6 +110,18 @@ class RoundDetailView(_Base):
             o["days_waiting"] = None if o.get("responded") else _days_waiting(o.get("sent_on"))
         context["outreach"] = outreach
         context["quotes"] = self.op("quote_list", round_id=round_id)
+        # Each quote's trade item, by name and -- for a kit -- contents. Three
+        # co-pack quotes from one distributor read as the same offer three
+        # times, told apart only by price.
+        items = {}
+        for quote in context["quotes"]:
+            item_id = quote.get("item_id")
+            if item_id and item_id not in items:
+                items[item_id] = self.op("item_get", item_id=item_id)
+        context["quotes"] = [
+            {**quote, "item": items.get(quote.get("item_id")) if quote.get("item_id") else None}
+            for quote in context["quotes"]
+        ]
         # Rows showed "Supplier #2". An id is not a supplier to anyone
         # reading the page, and the name is one list call away.
         context["supplier_names"] = {s["id"]: s["name"] for s in self.op("supplier_list")}
