@@ -1,0 +1,152 @@
+gaps:
+- id: G1
+  type: CAPABILITY
+  detail: 'On the deployed build the update-link forms are refused (CSRF 403) in real
+    browsers because Referrer-Policy no-referrer makes Chrome send Origin: null. The
+    fix is on branch ddd/supply-test-kits and is not live.'
+  resolved: 'Referrer policy fixed in #1972 (merged and deployed 2026-09-24).'
+  claim_ref: S5
+  proposed_action: Merge and deploy the branch, then re-render the supplier scenes.
+- id: G2
+  type: CAPABILITY
+  detail: The deployed comparison shows the two kits as two identical supplier rows
+    with no item name and no specification outcome, and prices a diagnostic per course.
+    Fixed on the branch, not live.
+  resolved: 'Per-row spec outcome, item names and no course figures for a diagnostic:
+    PR #1980.'
+  claim_ref: S2
+  proposed_action: Merge and deploy the branch, then re-render the comparison scene.
+- id: G3
+  type: CAPABILITY
+  detail: The deployed stock page shows the balance only in kits; the tests equivalent
+    is on the branch, not live.
+  resolved: Stock restated in base units on main (#1975); shown on the stock page.
+  claim_ref: S6
+  proposed_action: Merge and deploy the branch, then re-render the stock scene.
+- id: G4
+  type: RESEARCH
+  detail: 'The specification figures (50 tests per kit, detect 0.2 mg/L, read at 2
+    mg/L) are illustrative; the technical partner''s real requirements were not in
+    the interview. (Entering requirements in the browser now exists: PR #1980.)'
+  claim_ref: S1
+  proposed_action: Get the partner's actual specification sheet.
+- id: G5
+  type: RESEARCH
+  detail: The two-kit scenario (one distributor offering two kits of the same composition,
+    the cheaper one out of range) is illustrative; the interview does not say the
+    distributor offered more than one test kit or that a non-compliant kit was ever
+    proposed.
+  claim_ref: S2
+  proposed_action: Ask the programme team how many kit options the distributor offered
+    and why one was chosen.
+- id: G6
+  type: CAPABILITY
+  detail: 'The technical partner cannot record its own approval: there is no approver-facing
+    link, so the procurement lead records the answer after it arrives by email. The
+    record is now held, but the ask and the answer still travel outside it.'
+  resolved: 'Approver update link: the approver records its own answer, attributed
+    to it (PR #1980).'
+  claim_ref: S3
+  proposed_action: Extend the supplier update link pattern to an approver link that
+    lets the partner approve or decline the specific award.
+spine:
+- id: S1
+  claim: The technical partner's test-kit specification lives on the product itself,
+    as requirements every trade item is checked against — tests per kit and the free-chlorine
+    range the kit must read.
+  status: grounded
+  evidence:
+  - ref: EV-001
+    kind: documented
+  - ref: EV-003
+    kind: documented
+  - ref: EV-015
+    kind: assumed
+  rationale: The interview says test kits are specified by the technical partner;
+    the domain already stores spec_requirements on a commodity and item spec attributes,
+    so the specification becomes data rather than an attachment.
+- id: S2
+  claim: The distributor's two kits hold the same contents, so they are compared side
+    by side on the same per-test and per-kit basis, and the specification check states
+    which kit fails and which requirement it fails.
+  status: grounded
+  evidence:
+  - ref: EV-004
+    kind: documented
+  - ref: EV-007
+    kind: documented
+  - ref: EV-009
+    kind: implemented
+  - ref: EV-013
+    kind: implemented
+  rationale: Kits rank against each other only when their components match (the domain's
+    kit composition rule); the spec check names the failing field, value and rationale.
+    The product states the failure and does not re-rank, so the buyer sees the cheaper
+    kit is non-compliant.
+- id: S3
+  claim: The procurement lead awards the compliant kit with a stated reason, and asks
+    the technical partner to confirm it; until the partner answers, no order can be
+    placed against the award, and the refusal names who has not answered.
+  status: grounded
+  evidence:
+  - ref: EV-005
+    kind: documented
+  - ref: EV-010
+    kind: implemented
+  rationale: G5 makes a third-party approval a record between the award and the contract,
+    and contract_create refuses an award with a pending approval — a stated fact,
+    not advice.
+- id: S4
+  claim: Once the technical partner's approval is recorded, the order is placed on
+    the quote's terms, invoiced and paid, and the payment reads as not yet confirmed
+    by the distributor.
+  status: grounded
+  evidence:
+  - ref: EV-010
+    kind: implemented
+  - ref: EV-016
+    kind: implemented
+  - ref: EV-006
+    kind: documented
+  - ref: EV-008
+    kind: documented
+  rationale: The award page offers the order only after approval; the three-way match
+    and payment records follow the ordinary fulfilment path, and G8 adds whether the
+    payee has confirmed the money arrived.
+- id: S5
+  claim: The distributor confirms the order and the payment and records the kits into
+    its warehouse through a private update link, with no labs login and every entry
+    marked as reported by the distributor.
+  status: grounded
+  evidence:
+  - ref: EV-002
+    kind: documented
+  - ref: EV-006
+    kind: documented
+  - ref: EV-011
+    kind: implemented
+  - ref: EV-012
+    kind: implemented
+  rationale: Every status update is chased by email today; the update link (G7) lets
+    the distributor record its own updates, scoped to this order and warehouse only.
+- id: S6
+  claim: The kits arrive in stock at the distributor's warehouse, and the stock position
+    reads both in kits and in the tests they hold — 20 kits is 1,000 tests.
+  status: grounded
+  evidence:
+  - ref: EV-003
+    kind: documented
+  - ref: EV-008
+    kind: documented
+  - ref: EV-013
+    kind: implemented
+  rationale: A receipt is the event that creates stock on the ledger; the kit's pack
+    size (50 tests per kit) is the bridge between how the store counts and how the
+    programme plans.
+problem: A programme buying chlorine test kits through an in-country distributor chases
+  every step by email or WhatsApp — the technical partner's confirmation of the product,
+  the order, whether the distributor received the payment, and whether the kits arrived
+  — so none of it sits in one record the team can check, and the partner's specification
+  is never held beside the kits the distributor offers.
+narrative_slug: supply-test-kits
+schema_version: 1

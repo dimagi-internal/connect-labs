@@ -1,0 +1,50 @@
+{% comment %}
+A repeating block of rows with Django's add-a-row idiom (see item_form.html):
+clone the empty form, swap __prefix__ for the next index, bump TOTAL_FORMS.
+Takes `formset`, `rows_id`, `columns` (a grid-template-columns value),
+`add_label`.
+{% endcomment %}
+<div x-data="{ count: {{ formset.total_form_count }} }">
+  {{ formset.management_form }}
+  {% if formset.non_form_errors %}
+    <p class="text-xs text-red-700 mb-2">{{ formset.non_form_errors|join:" " }}</p>
+  {% endif %}
+  <div id="{{ rows_id }}" class="space-y-3">
+    {% for row in formset %}
+      <div class="grid grid-cols-1 gap-x-4 gap-y-2 items-start rounded-md border border-gray-200 bg-gray-50/40 px-3 py-3"
+           style="grid-template-columns: {{ columns }};">
+        {% for hidden in row.hidden_fields %}{{ hidden }}{% endfor %}
+        {% for field in row.visible_fields %}
+          {% if field.name != "DELETE" %}
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.errors %}<p class="mt-1 text-xs text-red-700">{{ field.errors|join:" " }}</p>{% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+        <label class="flex items-center gap-1.5 text-xs text-gray-500 pt-6 whitespace-nowrap">
+          {{ row.DELETE }} Remove
+        </label>
+      </div>
+    {% endfor %}
+  </div>
+  <template id="{{ rows_id }}-empty">
+    <div class="grid grid-cols-1 gap-x-4 gap-y-2 items-start rounded-md border border-gray-200 bg-gray-50/40 px-3 py-3"
+         style="grid-template-columns: {{ columns }};">
+      {{ formset.empty_form.as_div }}
+    </div>
+  </template>
+  <button type="button"
+          @click="
+            const tpl = document.getElementById('{{ rows_id }}-empty');
+            const host = document.createElement('div');
+            host.appendChild(tpl.content.cloneNode(true));
+            host.innerHTML = host.innerHTML.replaceAll('__prefix__', count);
+            document.getElementById('{{ rows_id }}').appendChild(host.firstElementChild);
+            document.querySelector('[name={{ formset.prefix }}-TOTAL_FORMS]').value = ++count;
+          "
+          class="mt-3 text-sm text-brand-indigo hover:underline">
+    {{ add_label }}
+  </button>
+</div>

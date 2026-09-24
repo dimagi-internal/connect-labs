@@ -27,7 +27,7 @@ excludes it and reassembles it, the same way `RoundForm` handles
 `delivery_point`.
 """
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from crispy_forms.layout import Column, Field, Fieldset, Layout, Row
 from django import forms
@@ -306,8 +306,10 @@ class ItemForm(KeyedUpsertForm):
             "gpc_brick",
             "one_course_is",
             "stock_class",
+            "components_per",
         ]
         widgets = {
+            "components_per": forms.Select(attrs=SELECT),
             "one_course_is": forms.Select(attrs=SELECT),
             "stock_class": forms.Select(attrs=SELECT),
             "sku": forms.TextInput(attrs={**INPUT, "placeholder": _("the manufacturer's own code")}),
@@ -344,8 +346,13 @@ class ItemForm(KeyedUpsertForm):
             "gpc_brick": _("GPC brick"),
             "one_course_is": _("Is one of these a full course?"),
             "stock_class": _("Used up, or kept?"),
+            "components_per": _("The contents below are what is in one…"),
         }
         help_texts = {
+            "components_per": _(
+                "A co-pack's contents are what one co-pack holds; a test kit's are what one kit holds. "
+                "Only matters for a kit."
+            ),
             "base_per_pack": _("As the manufacturer states it, not as the product assumes. This is the whole point."),
             "gtin_base": _("Checked against its GS1 check digit. A mistyped one is refused, not stored."),
             "one_course_is": _(
@@ -386,6 +393,16 @@ class ItemForm(KeyedUpsertForm):
         )
         set_choices(
             self,
+            "components_per",
+            [
+                ("base", _("Smallest unit (one co-pack, one packet)")),
+                ("pack", _("Pack (one kit, one carton)")),
+            ],
+            # Not required: a post that omits it leaves the item as it was.
+            required=False,
+        )
+        set_choices(
+            self,
             "stock_class",
             [("consumable", _("Consumable — used up")), ("durable", _("Durable — kept and moved, not consumed"))],
             # Not required: a post that omits it leaves the item as it was.
@@ -410,6 +427,7 @@ class ItemForm(KeyedUpsertForm):
                     Column("one_course_is"),
                     css_class="grid md:grid-cols-3 gap-x-6",
                 ),
+                Field("components_per"),
                 css_class="pt-2",
             ),
             Fieldset(
@@ -480,6 +498,101 @@ class ComponentLineForm(forms.Form):
 # No minimum: an ordinary trade item has no components, and that is the
 # common case. `extra=0` for the reason RoundLineFormSet gives.
 ComponentLineFormSet = forms.formset_factory(ComponentLineForm, extra=0, min_num=0, can_delete=True)
+
+
+def spec_value(text):
+    """A typed figure as the number it is, or the text it is.
+
+    Requirements and stated figures are compared as decimals
+    (compliance._as_decimal), so either would check; a number is kept as a
+    number so the API reads 50, not "50", the way the seeders and agents
+    write it.
+    """
+    text = (text or "").strip()
+    try:
+        number = Decimal(text)
+    except (InvalidOperation, ValueError):
+        return text
+    if not number.is_finite():
+        return text
+    return int(number) if number == number.to_integral_value() and "." not in text else float(number)
+
+
+class RequirementLineForm(forms.Form):
+    """One requirement every trade item of a product is checked against.
+
+    The rule the check runs (a figure, a comparison, a value and its unit) and
+    the sentence a person reads (the rationale) -- "must still read at the
+    2 mg/L dispenser dose" is what a technical partner actually wrote.
+    """
+
+    field = forms.SlugField(
+        label=_("Figure"),
+        max_length=64,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. range_max_mg_per_l")}),
+        help_text=_("The name each trade item states its figure under."),
+    )
+    operator = forms.ChoiceField(label=_("Must be"), widget=forms.Select(attrs=SELECT))
+    value = forms.CharField(label=_("Value"), max_length=64, widget=forms.TextInput(attrs=INPUT))
+    unit = forms.CharField(
+        label=_("Unit"), max_length=32, required=False, widget=forms.TextInput(attrs={**INPUT, "placeholder": "mg/L"})
+    )
+    rationale = forms.CharField(
+        label=_("Why, in words"),
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. must still read at the 2 mg/L dose")}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from connect_labs.supply_chain.procurement.services.compliance import OPERATORS
+
+        labels = {
+            ">=": _("at least"),
+            "<=": _("at most"),
+            ">": _("more than"),
+            "<": _("less than"),
+            "==": _("exactly"),
+        }
+        set_choices(self, "operator", [(op, f"{op}  {labels.get(op, '')}") for op in OPERATORS])
+
+    def requirement(self) -> dict:
+        data = self.cleaned_data
+        row = {"field": data["field"], "operator": data["operator"], "value": spec_value(data["value"])}
+        if data.get("unit"):
+            row["unit"] = data["unit"].strip()
+        if data.get("rationale"):
+            row["rationale"] = data["rationale"].strip()
+        return row
+
+
+RequirementLineFormSet = forms.formset_factory(RequirementLineForm, extra=0, min_num=0, can_delete=True)
+
+
+class StatedFigureLineForm(forms.Form):
+    """One figure a manufacturer states -- for the item, or a product inside it.
+
+    What the specification check reads: the kit's own range, the reagent
+    tablet's shelf life. A component's figure is held on that component, so a
+    kit holding two formulations of one product cannot confuse them.
+    """
+
+    applies_to = forms.ChoiceField(label=_("Stated for"), required=False, widget=forms.Select(attrs=SELECT))
+    field = forms.SlugField(
+        label=_("Figure"),
+        max_length=64,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. range_max_mg_per_l")}),
+    )
+    value = forms.CharField(label=_("Stated value"), max_length=64, widget=forms.TextInput(attrs=INPUT))
+
+    def __init__(self, *args, targets=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        # "item" rather than "": the item itself is a real answer, not an empty one.
+        set_choices(self, "applies_to", [("item", _("This item itself"))] + list(targets), required=False)
+
+
+StatedFigureLineFormSet = forms.formset_factory(StatedFigureLineForm, extra=0, min_num=0, can_delete=True)
 
 
 class SupplierForm(ScopedForm):

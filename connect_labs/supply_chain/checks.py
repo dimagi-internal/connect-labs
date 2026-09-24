@@ -192,28 +192,11 @@ def _sourcing(access, as_of):
     return out
 
 
-# Categories where a "course" is a thing: something dispensed to a patient
-# over a number of days, so that sachets-per-day times days-per-course is a
-# meaningful quantity. Equipment and consumables are not -- an infant scale
-# is not administered over eight weeks -- so a missing ration table on one
-# is not a gap, it is a category that has no such concept.
-#
-# Derived from the category rather than stored per commodity or guessed from
-# the name: which categories have a course is a fact about the category. An
-# UNSET category is still flagged, because a blank field is not evidence that
-# a course does not apply, and staying quiet would hide a real gap on every
-# commodity created before anyone filled it in.
-_CATEGORIES_WITHOUT_A_COURSE = frozenset({"equipment", "consumable", "diagnostic"})
-
-
-def course_applies_to_category(category) -> bool:
-    """Whether a ration table is a meaningful thing for this category.
-
-    Public because the catalogue page asks the same question, and a page that
-    warns about a missing fact the feed does not consider missing is two
-    answers to one question.
-    """
-    return (category or "") not in _CATEGORIES_WITHOUT_A_COURSE
+# Which categories have a course lives in records.py, beside the rest of the
+# domain's vocabulary, so the comparison can ask it too without importing
+# this module (which imports the comparison). Re-exported under its old name
+# because the catalogue page imports it from here.
+course_applies_to_category = records.course_applies_to_category
 
 
 def _course_applies(commodity) -> bool:
@@ -292,6 +275,8 @@ def _catalogue(access, as_of):
             }
             if item.is_kit:
                 facts["components"] = checked["components"]
+                # Which unit those parts fill: "in each kit", "in each co-pack".
+                facts["components_in_each"] = item.components_unit
             out.append(
                 _check(
                     "item_fails_specification",

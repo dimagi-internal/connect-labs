@@ -251,3 +251,61 @@ STOCK_CLASSES = ("consumable", "durable")
 # is never paid for the goods. Stored free-text on `Supplier.type` (no
 # migration needed to widen it); the schema and the form both read this list.
 SUPPLIER_TYPES = ("manufacturer", "distributor", "trader", "donor")
+
+
+# Which rung of an item's unit ladder its kit components describe. A co-pack's
+# components are what ONE CO-PACK holds (its base unit: 2 sachets + 10
+# tablets); a chlorine test kit's are what ONE KIT holds (its pack: 50 reagent
+# tablets for 50 tests). Stated per item, because nothing in a component list
+# says which, and reading it the wrong way round is off by the pack size.
+COMPONENTS_PER = ("base", "pack")
+
+
+def infer_components_per(components, *, pack_unit, base_per_pack) -> str:
+    """The level to assume for components stored before the level was stated.
+
+    The rule, used only by migration 0017 for rows that pre-date the field:
+    the components describe the PACK when the item has a pack unit, more than
+    one base unit to the pack, and at least one component quantity is a whole
+    multiple of that pack size -- 50 reagent tablets in a kit of 50 tests is
+    one per test, and nothing a single test holds comes in fifty. Otherwise
+    they describe the base unit, which is what every kit written before this
+    (the co-packs) meant. A new item is asked; this only guesses for old ones.
+    """
+    from decimal import Decimal, InvalidOperation
+
+    if not pack_unit or not base_per_pack or int(base_per_pack) <= 1:
+        return "base"
+    pack = Decimal(int(base_per_pack))
+    for component in components or []:
+        try:
+            quantity = Decimal(str(component.get("quantity")))
+        except (InvalidOperation, TypeError, ValueError):
+            continue
+        if quantity > 0 and quantity % pack == 0:
+            return "pack"
+    return "base"
+
+
+# Categories where a "course" is a thing: something dispensed to a patient
+# over a number of days, so that sachets-per-day times days-per-course is a
+# meaningful quantity. Equipment and consumables are not -- an infant scale
+# is not administered over eight weeks -- so a missing ration table on one
+# is not a gap, it is a category that has no such concept.
+#
+# Derived from the category rather than stored per commodity or guessed from
+# the name: which categories have a course is a fact about the category. An
+# UNSET category is still flagged, because a blank field is not evidence that
+# a course does not apply, and staying quiet would hide a real gap on every
+# commodity created before anyone filled it in.
+_CATEGORIES_WITHOUT_A_COURSE = frozenset({"equipment", "consumable", "diagnostic"})
+
+
+def course_applies_to_category(category) -> bool:
+    """Whether a ration table is a meaningful thing for this category.
+
+    Public because the catalogue page, the checks feed and the comparison all
+    ask the same question, and a page that warns about a missing fact the
+    feed does not consider missing is two answers to one question.
+    """
+    return (category or "") not in _CATEGORIES_WITHOUT_A_COURSE

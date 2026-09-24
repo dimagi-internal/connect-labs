@@ -64,4 +64,15 @@ __prefix__ for the next index, bump TOTAL_FORMS.
     + Add a product inside
   </button>
 </div>
+
+{% if stated %}
+<div class="pt-4 border-t border-gray-100 mt-4">
+  <h2 class="text-sm font-semibold text-gray-900">What the manufacturer states</h2>
+  <p class="text-xs text-gray-500 mt-0.5 mb-3 max-w-2xl">
+    The figures the specification check reads — for this item itself, or for a product
+    inside the kit. Use the figure names the product's requirements use.
+  </p>
+  {% include "supply_chain/_line_formset.html" with formset=stated rows_id="stated-rows" columns="minmax(0,1.6fr) minmax(0,1.4fr) minmax(0,1fr) auto" add_label="+ Add a stated figure" %}
+</div>
+{% endif %}
 {% endblock %}

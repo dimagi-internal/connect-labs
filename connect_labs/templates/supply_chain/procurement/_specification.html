@@ -1,0 +1,20 @@
+{% comment %}
+One offer against the product's specification, set under the supplier's name.
+A statement, not a ranking input: a failing offer stays where its price puts
+it, and this says which requirement it fails -- whether it is still worth
+buying is the buyer's call, and the award freezes this beside their reason.
+{% endcomment %}
+{% if specification %}
+  <div class="mt-1 text-xs font-normal">
+    {% if specification.outcome == "fail" %}
+      <span class="font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">Spec: {{ specification.summary }}</span>
+      {% for failure in specification.failures %}
+        <div class="text-red-700 mt-1 max-w-xs">{{ failure }}</div>
+      {% endfor %}
+    {% elif specification.outcome == "pass" %}
+      <span class="font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">Spec: {{ specification.summary }}</span>
+    {% else %}
+      <span class="font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">Spec: {{ specification.summary }}</span>
+    {% endif %}
+  </div>
+{% endif %}

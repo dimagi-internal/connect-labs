@@ -1,0 +1,19 @@
+{% extends "supply_chain/operation_form.html" %}
+
+{% comment %}
+A product, and the requirements every trade item of it is checked against --
+the technical partner's specification, as rows the check can run.
+{% endcomment %}
+
+{% block extra_fields %}
+{% if requirements %}
+<div class="pt-4 border-t border-gray-100">
+  <h2 class="text-sm font-semibold text-gray-900">Requirements every trade item is checked against</h2>
+  <p class="text-xs text-gray-500 mt-0.5 mb-3 max-w-2xl">
+    One row per requirement: the figure each trade item states, what it must be, and why
+    in words. The reason is what people read; the rule is what the check runs.
+  </p>
+  {% include "supply_chain/_line_formset.html" with formset=requirements rows_id="requirement-rows" columns="minmax(0,1.4fr) minmax(0,1fr) minmax(0,0.8fr) minmax(0,0.7fr) minmax(0,2fr) auto" add_label="+ Add a requirement" %}
+</div>
+{% endif %}
+{% endblock %}

@@ -15,7 +15,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.supply_chain.models import Contract, SupplyPoint
+from connect_labs.supply_chain.models import AwardApproval, Contract, SupplyPoint
 from connect_labs.supply_chain.operations import ID, _data_with, obj, register_operation
 from connect_labs.supply_chain.update_links import tokens
 from connect_labs.supply_chain.update_links.models import UpdateLink
@@ -28,6 +28,8 @@ _ISSUE_DATA = _data_with(
     org_id=ID,
     contract_ids={"type": "array", "items": ID, "uniqueItems": True},
     supply_point_ids={"type": "array", "items": ID, "uniqueItems": True},
+    # Approvals asked of this organisation, which it may then answer itself.
+    approval_ids={"type": "array", "items": ID, "uniqueItems": True},
     # Bounded, because a link nobody remembers issuing is the one that gets
     # misused. Ninety days covers a procurement cycle; a longer relationship
     # gets a fresh link, which is also a moment to check the scope still fits.
@@ -44,6 +46,7 @@ def public_url(raw_token) -> str:
 def serialize_link(link) -> dict:
     contracts = list(link.contracts.all())
     points = list(link.supply_points.all())
+    approvals = list(link.approvals.select_related("award__supplier"))
     return {
         "id": link.pk,
         "program_id": link.program_id,
@@ -54,6 +57,11 @@ def serialize_link(link) -> dict:
         "contracts": [{"id": c.pk, "reference": c.reference, "status": c.status} for c in contracts],
         "supply_point_ids": [p.pk for p in points],
         "supply_points": [{"id": p.pk, "name": p.name} for p in points],
+        "approval_ids": [a.pk for a in approvals],
+        "approvals": [
+            {"id": a.pk, "award_id": a.award_id, "role": a.role, "status": a.status, "supplier": a.award.supplier.name}
+            for a in approvals
+        ],
         "token_hint": link.token_hint,
         "state": link.state,
         "expires_at": link.expires_at.isoformat(),
@@ -69,7 +77,7 @@ def _links(access):
     return (
         UpdateLink.objects.filter(program_id=access._require_program())
         .select_related("org")
-        .prefetch_related("contracts", "supply_points")
+        .prefetch_related("contracts", "supply_points", "approvals")
     )
 
 
@@ -98,8 +106,25 @@ def update_link_issue(access, data):
 
     contract_ids = list(data.get("contract_ids") or [])
     point_ids = list(data.get("supply_point_ids") or [])
-    if not contract_ids and not point_ids:
-        raise ValueError("a link has to cover at least one contract or supply point")
+    approval_ids = list(data.get("approval_ids") or [])
+    if not contract_ids and not point_ids and not approval_ids:
+        raise ValueError("a link has to cover at least one contract, supply point or approval")
+    approvals = list(
+        AwardApproval.objects.filter(award__round__program_id=program_id, pk__in=approval_ids).select_related(
+            "approver_org"
+        )
+    )
+    missing = sorted(set(approval_ids) - {a.pk for a in approvals})
+    if missing:
+        raise ValueError(f"approval {', '.join(map(str, missing))} does not exist in this programme")
+    for approval in approvals:
+        # An approver answers for itself. A link that could answer an approval
+        # asked of somebody else would let one party speak for another.
+        if approval.approver_org_id != org.pk:
+            raise ValueError(
+                f"approval {approval.pk} was asked of {approval.approver_org.name}, not {org.name}: "
+                "only the organisation asked can answer it"
+            )
 
     contracts = list(Contract.objects.filter(program_id=program_id, pk__in=contract_ids))
     missing = sorted(set(contract_ids) - {c.pk for c in contracts})
@@ -122,6 +147,7 @@ def update_link_issue(access, data):
     )
     link.contracts.set(contracts)
     link.supply_points.set(points)
+    link.approvals.set(approvals)
     return {**serialize_link(link), "token": raw, "url": public_url(raw)}
 
 

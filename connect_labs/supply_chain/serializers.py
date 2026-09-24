@@ -105,6 +105,8 @@ def item(obj) -> dict:
         "components": obj.components,
         "is_kit": obj.is_kit,
         "one_course_is": obj.one_course_is,
+        "components_per": obj.components_per,
+        "components_unit": obj.components_unit,
         "stock_class": obj.stock_class,
         "is_durable": obj.is_durable,
         "reference_scope": _reference_scope(obj.scope_key),
@@ -221,6 +223,8 @@ def approval(obj) -> dict:
         "decided_on": _date(obj.decided_on),
         "note": obj.note,
         "decision_note": obj.decision_note,
+        "decision_source": obj.decision_source,
+        "decision_recorded_by_org_id": obj.decision_recorded_by_org_id,
         "document_ids": [doc.pk for doc in obj.documents.all()],
         "rests_on_document_id": obj.rests_on_document_id,
     }
