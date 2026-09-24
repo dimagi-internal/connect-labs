@@ -166,7 +166,7 @@ Read it as: *of eligible babies who didn't exit early, the percentage whose weig
 
 - `{CUBE}.eligible` means "the baby's `eligible` property". `{c09_numerator}` means "the numerator measure above".
 - The notation is borrowed from [Cube](https://cube.dev), so other tools can read the same file, but nothing runs Cube. Labs compiles it itself.
-- Indicator IDs must start with **C** or **N**, the two series the engine knows about.
+- The letters an indicator ID starts with name its **series**: KMC uses C and N, and `visit_quality` uses Q. A report asks for one series at a time. A registry can list its series explicitly (`series: [C, N]`); otherwise they're read off the IDs.
 
 The `meta` block controls how the figure is shown:
 
@@ -175,7 +175,7 @@ The `meta` block controls how the figure is shown:
 | `indicator`, `title`, `plain`, `unit` | The ID, the name, the plain-English explanation in the definition popup, and the unit |
 | `direction` | `higher` or `lower` is better; `mid2` means both too low and too high are bad (as with mortality); `none` means no colour |
 | `bands` | Colour cutoffs. `[60, 40]` with `higher` means green at 60 or more, red below 40, amber between. `mid2` takes two pairs, inner and outer. |
-| `min_denominator` | The fewest babies needed to show a figure. Below it the cell shows `n<25`. |
+| `min_denominator` | The fewest entities (babies, on KMC) needed to show a figure. Below it the cell shows `n<25`, or whatever the minimum is. Indicators without one use the registry's `defaults.min_denominator` (25 on KMC, 5 on `visit_quality`). |
 | `inputs` | The questions the indicator needs. If an opportunity's app never asks one, the figure is **n/a**, not 0. |
 | `scope_note`, `prominence`, `category`, `benchmarkable`, `flw_applicable` | Captions, placement on the page, grouping, whether it can be benchmarked across opportunities, whether it makes sense per worker |
 
@@ -199,9 +199,9 @@ These are facts the data itself can't tell you. That's why they live in the regi
 Labs checks every registry before saving it:
 
 - every reference resolves;
-- indicator expressions use only allowed SQL;
+- **every piece of SQL** (indicators, properties, aggregates, series rules, visit columns, the cohort date) uses only allow-listed functions, with no subqueries, no references to other tables, and no comments;
+- constants are numbers, and every name is a plain identifier (a `word_match` word is letters, digits and `_` only);
 - nothing is circular;
-- the model's names are plain identifiers and its SQL uses only allowed functions (a `word_match` word is letters, digits and `_` only);
 - the whole registry compiles at **every** level it can have (programme, opportunity, worker, month, each level by month, single entity — and the LLO levels when it has an `llo_map`; a registry without one simply has no LLO level).
 
 Validation doesn't run the SQL, so **it catches a broken definition, not a wrong number.**
@@ -304,9 +304,9 @@ Work down this list. Most problems are caught by the first three steps.
 2. **Which definitions is the report using?** `workflow_get` shows the bound registry: a record ID, or the built-in file if the report isn't bound. Every saved run also records which registry graded it. A common mistake is editing one registry while the report reads another.
 3. **Is it the same date?** Live numbers are "as of today". A saved run's are as of its end date. To compare with a saved run, recompute as of that date (`workflow_preview_as_of`, or `as_of=YYYY-MM-DD` on the semantic endpoint).
 4. **Read the definition.** Ask Claude to *explain* the indicator: every property in its chain and every constant.
-5. **Look at the babies behind it.** The semantic endpoint can return **one row per baby** (`scopes=case`, narrowed to one worker with `flw=<opportunity>::<username>`). Each row shows whether that baby is in the denominator (1/0) and the numerator. Pick three babies and check them by hand against the rule. This is usually where the answer is.
+5. **Look at the rows behind it.** The semantic endpoint can return **one row per entity**, meaning per baby on KMC or per beneficiary on `visit_quality` (`scopes=case`, narrowed to one worker with `flw=<opportunity>::<username>`). Each row shows whether that entity is in the denominator (1/0) and the numerator. Pick three and check them by hand against the rule. This is usually where the answer is.
 6. **Check the inputs.** An **n/a** means the opportunity's `app_asks` says its app doesn't ask a question the indicator needs. If that's wrong, the fix is in `deployment.app_asks`, not the indicator. (A stale `app_asks` entry once hid two organisations' C16, at 72% and 95%.)
-7. **Check Layer 1.** If a property looks wrong for every baby, the form answer may not be reaching it. Ask for `pipeline_sql` and check that the question's form paths, **including the fallbacks**, are all there. Missing fallback paths are the most common cause of an indicator that is plausibly but consistently low.
+7. **Check Layer 1.** If a property looks wrong for every entity, the form answer may not be reaching it. Ask for `pipeline_sql` and check that the question's form paths, **including the fallbacks**, are all there. Missing fallback paths are the most common cause of an indicator that is plausibly but consistently low.
 8. **Try a fix before saving it.** A candidate registry can be evaluated against real data without binding it: the semantic endpoint takes `registry_id=<candidate>`. Save a copy with the change, compare, then apply the change to the real one.
 
 Known ways numbers have gone wrong before, so you can recognise them:
@@ -314,7 +314,7 @@ Known ways numbers have gone wrong before, so you can recognise them:
 | Symptom | Cause |
 | --- | --- |
 | Some indicators consistently low compared with the old report | Layer 1 missing some of a question's form paths |
-| Babies counted twice | Duplicate cached copies of visits, or a baby keyed by case ID alone rather than opportunity + case |
+| Entities counted twice | Duplicate cached copies of visits, or an entity keyed by its ID alone rather than opportunity + ID (the engine always keys on both) |
 | Everything green | Colour bands written as fractions (0.6) for a percentage value (60) |
 | An organisation's figure missing at LLO level | Its opportunity isn't in `llo_map` |
 | n/a where the app does ask the question | Stale `app_asks` |
@@ -332,20 +332,9 @@ A report is on the semantic layer when:
 2. its numbers come from the engine, either the semantic endpoint (`/api/<id>/semantic/`) or a saved run graded by the `semantic_snapshot` builder;
 3. its page has no indicator logic of its own. It only displays and grades what comes back.
 
-### If the report is KMC-shaped
+### Step 1: describe the data (the model)
 
-"KMC-shaped" means: one row per baby, a weight series, organisations, and the KMC form markers. Then conversion is configuration, not code:
-
-1. **Pipelines.** The report needs a `children` pipeline (one row per baby) and, for weights, a `visits` pipeline. The existing KMC pipelines are shared publicly and can be reused.
-2. **Registry.** Bind to the existing KMC registry (see [Managing registries](#managing-registries-across-programmes)) rather than creating a new one. Create a new one only if the definitions really differ, with `semantic_registry_create` and `seed_from: kmc`.
-3. **Bind.** `workflow_update_definition` with `registry_source: {registry_id: N}`. Or create the report from a KMC template with `registry_source` set, so it binds to that registry instead of seeding a copy of its own.
-4. **Page.** Either use the KMC templates' pages, which already read from the engine, or fetch `/api/<id>/semantic/?series=C&scopes=opportunity,flw` and grade the rows. The definition popup reads `/api/<id>/indicator-definitions/`.
-5. **Saved runs.** To get a weekly trend, set `snapshot_inputs` to `{builder: semantic_snapshot, series, scopes, case_index, credibility, …}` (`case_index.date_fields` names the fields that date a case; default `reg_date`, `first_visit_date`). Copy it from the KMC Programme Report. Then [rebuild history](reports-with-claude.md#rebuild-the-trend-after-a-definition-change).
-6. **Prove it.** Before switching anyone over, compare the new numbers with the old report on the same date, at every level, for every indicator. That's how KMC was converted, and the comparison found seven real defects, each invisible on its own. Keep the old report until it matches.
-
-### If the report is not KMC-shaped
-
-Declare its [model](#the-model) instead of pretending to be KMC:
+Every registry starts by saying what it counts. Answer these questions in the registry's [model](#the-model):
 
 | Question | Where it goes |
 | --- | --- |
@@ -353,12 +342,26 @@ Declare its [model](#the-model) instead of pretending to be KMC:
 | Which month does a row belong to? | `entity.cohort_date` (defaults to a `first_visit` aggregate) |
 | Which extra per-visit columns do the rules need? | `visit_columns` (`word_match`, `sql` or `column`) |
 | Which of the report's pipelines feed it? | `pipelines: {entity, extra_fields}` |
-| Is there a per-entity reading series? | `weight_series` with its `value_column` — or leave it out |
-| Are there organisations? | `llo_map` in the deployment facts — or leave it out |
+| Is there a per-entity reading series (weights, MUAC…)? | `weight_series` with its `value_column`, or leave it out |
+| Are there organisations? | `llo_map` in the deployment facts, or leave it out |
 | What is the minimum denominator? | `defaults.min_denominator` in the indicators document |
 
-`registry/visit_quality` is the template to copy. The engine does not care what the IDs start with, what the entity
-is called or whether there are weights; explanations say "beneficiaries" when the entity is a beneficiary.
+Start by copying the registry closest to your data. Copy `visit_quality` for anything counted per beneficiary from ordinary Connect visit columns. Copy `kmc` for a per-baby programme with a weight series. The engine doesn't care what the entity is called, what the indicator IDs start with, or whether there's a series. Explanations use your entity's own noun.
+
+### Step 2: convert the report
+
+These steps are the same for any programme:
+
+1. **Pipelines.** The report needs the pipeline named in `pipelines.entity`, with one row per visit and the fields your rules read. If you have a series, it also needs the pipelines named in `pipelines.extra_fields`. Check with `pipeline_preview` that every column comes back filled in.
+2. **Registry.** If a registry for this indicator family already exists, bind to it (see [Managing registries](#managing-registries-across-programmes)). Otherwise create one with `semantic_registry_create`: `seed_from: kmc` or `seed_from: visit_quality` to start from an example, or supply your own documents. Validation runs on every save.
+3. **Bind.** `workflow_update_definition` with `registry_source: {registry_id: N}`. Or create the report from a template with `registry_source` set, so it binds to that registry instead of seeding a copy of its own.
+4. **Page.** The page fetches `/api/<id>/semantic/?series=<prefix>&scopes=opportunity,flw` and grades the rows. The KMC Opportunity Report is a working example. The definitions popup reads `/api/<id>/indicator-definitions/`. The KMC templates' pages are built for KMC. A non-KMC registry needs its own page. There isn't a generic "indicator report" template yet.
+5. **Saved runs.** For a weekly trend, set `snapshot_inputs` to `{builder: semantic_snapshot, series, scopes, case_index, credibility, …}`. `case_index.date_fields` names the fields that date a case; the default is KMC's `reg_date` and `first_visit_date`, so set it for other data. Copy the rest from the KMC Programme Report. Then [rebuild history](reports-with-claude.md#rebuild-the-trend-after-a-definition-change).
+6. **Prove it.** Before switching anyone over, compare the new numbers with the old report on the same date, at every level, for every indicator. That's how KMC was converted, and the comparison found seven real defects, each invisible on its own. Keep the old report until it matches.
+
+!!! note "Registries saved before the model existed"
+    The live KMC records were saved before the model sections existed. For those registries, and only those, Labs
+    supplies KMC's values. A new registry must declare its model. Nothing is quietly assumed to be KMC.
 
 ### Worked example: how KMC was converted
 
