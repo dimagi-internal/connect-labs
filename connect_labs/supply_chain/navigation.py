@@ -50,6 +50,8 @@ TAB_FOR_VIEW = {
     "supply_chain:alert_create": "supply_chain:alerts",
     "supply_chain:alert_edit": "supply_chain:alerts",
     "supply_chain:update_link_issue": "supply_chain:update_links",
+    # The movements behind a balance are the stock page read one level down.
+    "supply_chain:movements": "supply_chain:stock",
 }
 
 

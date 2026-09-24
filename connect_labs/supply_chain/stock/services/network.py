@@ -125,6 +125,8 @@ def _expected_inbound(program_id, points, item=None, as_of=None):
                 "contract_id": contract.pk,
                 "reference": contract.reference,
                 "supplier": {"id": contract.supplier_id, "name": contract.supplier.name},
+                # What is on its way, so an empty store still says what it is short of.
+                "item_name": contract.item.name if contract.item_id else "",
                 "outstanding": outstanding,
                 "expected_on": expected_on,
                 "overdue": expected_on is not None and expected_on < today,
