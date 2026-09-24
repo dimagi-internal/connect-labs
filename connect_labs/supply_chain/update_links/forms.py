@@ -27,6 +27,7 @@ from connect_labs.supply_chain.models import AwardApproval, Contract, Item, Paym
 from connect_labs.supply_chain.update_links.models import COVERAGE_LISTED, COVERAGE_ORGANISATION
 from connect_labs.supply_chain.update_links.operations import DEFAULT_EXPIRY_DAYS, MAX_EXPIRY_DAYS
 from connect_labs.supply_chain.update_links.service import CONFIRMABLE, SUPPLIER_SHIPMENT_STATUSES
+from connect_labs.supply_chain.values import quantity_digits, unit_noun
 
 __all__ = [
     "UpdateLinkIssueForm",
@@ -226,7 +227,12 @@ class UpdateLinkIssueForm(forms.Form):
 class _OrderChoice(forms.ModelChoiceField):
     def label_from_instance(self, obj):
         what = obj.item.name if obj.item_id else obj.commodity.name
-        quantity = f", {obj.quantity.normalize():f} {obj.quantity_unit}" if obj.quantity is not None else ""
+        # The one quantity rule: "120 units", never "120 unit".
+        quantity = (
+            f", {quantity_digits(obj.quantity)} {unit_noun(obj.quantity_unit, obj.quantity)}"
+            if obj.quantity is not None
+            else ""
+        )
         return f"{obj.reference or f'Order {obj.pk}'} — {what}{quantity}"
 
 
@@ -279,6 +285,11 @@ class PublicForm(forms.Form):
     # Only an organisation receiving goods takes this action. On a link that
     # follows its organisation, not offered to one that receives nothing.
     for_receivers = False
+    # Only where the link covers an order somebody pays for. A donation or a
+    # purchase paid out of a setup fee has no payment to confirm, and a link
+    # over only those listed "confirm a payment was received" as unavailable
+    # "right now" -- as if one might come (the dispenser import).
+    for_priced = False
     # What the banner calls the record this action made: "Recorded: dispatch ...".
     done_noun = ""
 
@@ -381,6 +392,7 @@ class ConfirmPaymentForm(PublicForm):
     title = _("Confirm a payment was received")
     intro = _("Tell the programme team a payment they recorded has reached you.")
     submit_label = _("Confirm payment received")
+    for_priced = True
     done_noun = _("payment confirmation")
 
     payment = _PaymentChoice(label=_("Payment"), queryset=Payment.objects.none(), widget=forms.Select(attrs=SELECT))
