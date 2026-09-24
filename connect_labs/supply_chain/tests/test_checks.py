@@ -648,3 +648,91 @@ class TestCourseAppliesToTheCommodity:
         )
         found = [c for c in _read(da)["checks"] if c["kind"] == "commodity_course_undefined"]
         assert len(found) == 1
+
+
+class TestCover:
+    """Months of stock and the consumption rate behind it, as the checks see them."""
+
+    def _store_with_dispensing(self, da, dispensed):
+        """A store left holding 20 cartons of 144 sachets after (days_ago, sachets) dispensed."""
+        item = op(
+            da,
+            "item_upsert",
+            data={
+                "sku": "harmattan",
+                "name": "Harmattan RUTF",
+                "commodity_slug": "rutf",
+                "base_unit": "sachet",
+                "pack_unit": "carton",
+                "base_per_pack": 144,
+            },
+        )
+        store = op(
+            da,
+            "supply_point_upsert",
+            data={
+                "slug": "store",
+                "name": "District store",
+                "kind": "regional_store",
+                "min_months_of_stock": "3",
+                "max_months_of_stock": "6",
+                "source": "we_recorded",
+            },
+        )
+        total = sum(sachets for _, sachets in dispensed)
+        op(
+            da,
+            "movement_record",
+            data={
+                "kind": "receipt",
+                "occurred_on": (TODAY - timedelta(days=400)).isoformat(),
+                "commodity_slug": "rutf",
+                "item_id": item["id"],
+                "to_supply_point_id": store["id"],
+                "quantity": str(total + 20 * 144),
+                "quantity_unit": "sachet",
+                "source": "we_recorded",
+            },
+        )
+        for days_ago, sachets in dispensed:
+            op(
+                da,
+                "movement_record",
+                data={
+                    "kind": "consumption",
+                    "occurred_on": (TODAY - timedelta(days=days_ago)).isoformat(),
+                    "commodity_slug": "rutf",
+                    "item_id": item["id"],
+                    "from_supply_point_id": store["id"],
+                    "quantity": str(sachets),
+                    "quantity_unit": "sachet",
+                    "source": "connect_visit",
+                },
+            )
+        return store, item
+
+    def test_below_minimum_states_months_of_stock_at_the_precision_the_stock_page_shows(self, da, rutf_without_course):
+        """0.2967031336795968793423739877 months is false precision on counted
+        cartons, and it is what the checks page and every alert email printed."""
+        self._store_with_dispensing(da, [(days, 700) for days in range(3, 90, 7)])
+        check = next(c for c in _read(da)["checks"] if c["kind"] == "stock_below_minimum")
+        months = check["facts"]["months_of_stock"]
+        assert len(months.split(".")[-1]) <= 2, months
+
+    def test_the_consumption_rate_is_averaged_over_its_window_not_over_all_history(self, da, rutf_without_course):
+        """Dispensing from a year ago is not this month's rate.
+
+        With no as-of date the window had no end, so it had no start either:
+        every consumption movement ever recorded was summed and then divided by
+        the window's ninety days. A store with a long history read far busier
+        than it is -- and fell below its minimum on stock that would last.
+        """
+        store, item = self._store_with_dispensing(
+            da,
+            [(300, 30_000)] + [(days, 100) for days in range(1, 90, 7)],
+        )
+        plan = op(da, "resupply_plan", supply_point_id=store["id"], item_id=item["id"])
+        amc = plan["amc"]
+        # 13 weekly dispensings of 100 sachets in the last 90 days: 1300 / 90 * 30.
+        assert amc["unit"] == "sachet"
+        assert abs(float(amc["amount"]) - 1300 / 90 * 30) < 1, amc

@@ -1,0 +1,155 @@
+gaps:
+- id: G1
+  type: CAPABILITY
+  detail: The distributor is paid up front, but three-way match assumes payment follows
+    delivery. Before any carton arrives the order reads "billed beyond what arrived
+    600 cartons" and "safe to pay now 0 USD", and invoice_over_billed fires on an
+    arrangement the programme chose deliberately. There is no way to record an invoice
+    as an advance or pro-forma.
+  claim_ref: S2
+  proposed_action: Add an advance/pro-forma marker to an invoice (or a prepaid payment
+    term on the contract) so billed-ahead-of-goods is stated as the agreed terms,
+    while the match still reports what has and has not arrived.
+- id: G2
+  type: CAPABILITY
+  detail: The distributor's warehouse has no consumption rate — its outflow is releases
+    to partners (transfers), and average monthly consumption counts only consumption
+    movements — so the programme's own reorder point at the warehouse cannot be derived.
+    The resupply figure exists only at the partner's store.
+  claim_ref: S5
+  proposed_action: Derive an intermediate store's rate from its issues and transfers
+    out, as LMIS practice does, so the warehouse gets months of stock and a reorder
+    quantity.
+spine:
+- id: S0
+  claim: One screen shows where the whole co-pack chain stands — the round, the orders,
+    what has been received and invoiced, and what needs an answer — as counts derived
+    from records rather than a status somebody typed.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply_chain/views.py — DomainHomeView renders the chain summary
+      (source, order, deliver) and the open-check counts
+    kind: implemented
+  - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §0 — CHC ran
+      through one distributor that offered options, was ordered from and paid, and
+      held and released stock
+    kind: documented
+  rationale: The programme's first question on any given day is "where is the order",
+    and today it is answered by asking. A chain view built from records answers it
+    without a message thread.
+- id: S1
+  claim: A co-pack is one SKU with declared contents (2 ORS sachets + 10 zinc tablets),
+    and co-packs are ranked against each other only when their contents match.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply_chain/procurement/services/comparison.py — _separate_differing_kits
+      refuses to rank any kit when the comparable kits' compositions differ ("kit
+      composition differs")
+    kind: implemented
+  - ref: connect_labs/supply_chain/models.py — Item.components (migration 0006_item_kits)
+    kind: implemented
+  - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G1 — the distributor
+      prices per co-pack, and two suppliers' co-packs could not be shown to hold the
+      same contents
+    kind: documented
+  rationale: Two co-packs at two prices are not the same product at two prices if
+    one holds twice the ORS. The comparison has to know what is inside the kit before
+    it can say which is cheaper.
+- id: S2
+  claim: The programme places the order and records its payment against the distributor's
+    invoice, with the programme organisation as buyer of record, and the order page
+    shows that the payment ran ahead of the goods.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply_chain/fulfilment/operations.py — contract_update, invoice_record,
+      payment_record; contract_match derives ordered · received · invoiced · paid
+    kind: implemented
+  - ref: docs/superpowers/specs/2026-09-11-rutf-procurement-design.md §17 — buyer
+      of record
+    kind: documented
+  rationale: For CHC the programme itself buys, and pays the distributor before any
+    carton exists. The record has to say both, and it has to keep saying that the
+    money is ahead of the goods until the goods arrive.
+- id: S3
+  claim: The distributor, with no labs login, confirms the order and that the payment
+    arrived, and records the batch it received and inspected into its warehouse —
+    each through the ordinary operation, marked as reported by the distributor.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply_chain/update_links/service.py — confirm_order, confirm_payment,
+      record_receipt run contract_update, payment_confirm and receipt_record with
+      source=supplier_reported and recorded_by_org set from the link
+    kind: implemented
+  - ref: connect_labs/supply_chain/models.py — Payment.confirmed_by_payee_on (G8)
+    kind: implemented
+  - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G7, G8 — "all
+      our updates need to be asked via email/WhatsApp"; the distributor confirming
+      payment received is on every tab
+    kind: documented
+  rationale: The updates the programme chases today are facts only the distributor
+    holds. A link scoped to one order and two stores lets the distributor put them
+    on the record the moment they happen, attributed to the distributor rather than
+    retyped by us.
+- id: S4
+  claim: A standing alert subscription tells the programme when a partner's store
+    falls below its own minimum, and the fact that fires it is a derived check, not
+    a judgement.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply_chain/alerts/service.py — every five minutes, runs the
+      checks and emails only the checks that are new for each subscription
+    kind: implemented
+  - ref: connect_labs/supply_chain/checks.py — stock_below_minimum from months of
+      stock against the supply point's own min band
+    kind: implemented
+  - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G6 — "real-time
+      alerts on stock movements and low stock alerts"
+    kind: documented
+  rationale: Low stock is currently discovered when a partner calls. A subscription
+    turns the same derived fact the checks page already shows into a message that
+    arrives unasked.
+- id: S5
+  claim: A partner's stock take, recorded as an override with its reason, moves the
+    ledger; when that drops the store below its minimum the resupply plan states how
+    much to send to bring it back to its maximum.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply_chain/stock/services/posting.py — post_override writes
+      the compensating adjustment movement
+    kind: implemented
+  - ref: connect_labs/supply_chain/stock/services/resupply.py — months of stock, status
+      and resupply quantity from on-hand, average monthly consumption and the point's
+      min/max
+    kind: implemented
+  - ref: docs/superpowers/specs/2026-09-11-rutf-procurement-design.md §20 — overrides
+      are first-class; resupply_quantity = max_months x amc − on_hand
+    kind: documented
+  rationale: The programme reordered off the distributor's sheet by eye. The same
+    arithmetic, done on records with the policy stored on the store, gives a number
+    anyone can check.
+- id: S6
+  claim: The partner collects the resupply quantity from the distributor's warehouse,
+    the distributor records the release through its link, and the partner's store
+    is back inside its band.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply_chain/update_links/service.py — record_release runs movement_record
+      kind=transfer between two supply points the link covers
+    kind: implemented
+  - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §1 — LLOs collecting
+      is a transfer to the LLO's point
+    kind: documented
+  rationale: The collection closes the loop the alert opened, and it is recorded by
+    the party that handed the cartons over.
+problem: 'The programme buys ORS/zinc co-packs, vitamin A and dewormer for its community
+  health workers through one in-country distributor. The distributor finds manufacturers,
+  offers product options, is paid up front, pays the manufacturers, receives and inspects
+  the cartons into a warehouse it runs for the programme, and releases stock to the
+  local partners who collect it. Every step of that chain reaches the programme second-hand
+  and late: order confirmations, "we received your payment", "the batch is in", what
+  was released and what is left are all asked for by email or WhatsApp, and the stock
+  picture lives in the distributor''s own spreadsheet. Two co-packs offered at two
+  prices cannot be compared unless someone checks what is inside each one, and nobody
+  is told when a partner''s store runs low until the partner says so.'
+narrative_slug: supply-chc-copacks
+schema_version: 1

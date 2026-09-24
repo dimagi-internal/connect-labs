@@ -6,15 +6,18 @@ have no labs account, so the labs shell (navigation, programme picker, user
 menu) would be furniture they cannot use.
 
 And one reason of its own: the token is in this page's URL. So this document
-loads no analytics script, sends no referrer, and is never indexed. It uses
-the labs stylesheet and typeface, so it still looks like the supply screens.
+loads no analytics script, sends no referrer to any other site, and is never
+indexed. It uses the labs stylesheet and typeface, so it still looks like the
+supply screens. The referrer policy is same-origin, not no-referrer: under
+no-referrer a browser posts its forms with `Origin: null`, which CSRF refuses,
+so no supplier could ever submit one. Keep this and views._private in step.
 {% endcomment %}
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
-  <meta name="referrer" content="no-referrer">
+  <meta name="referrer" content="same-origin">
   <title>{% block title %}Supply updates{% endblock %}</title>
   {% include 'favicon.html' %}
   <link rel="stylesheet" href="{% static 'bundles/css/vendors.css' %}">

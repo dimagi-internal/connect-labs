@@ -111,6 +111,7 @@
               <td class="font-medium">
                 <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
                    class="text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
+                {% if row.item_name %}<div class="text-sm font-normal text-gray-700">{{ row.item_name }}</div>{% endif %}
                 {% include "supply_chain/procurement/_composition.html" with composition=row.composition %}
               </td>
               {% for column in comparison.columns %}
@@ -166,6 +167,7 @@
       <h3 class="font-semibold mb-2">
         <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
            class="text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
+        {% if row.item_name %}<span class="text-sm font-normal text-gray-700">· {{ row.item_name }}</span>{% endif %}
       </h3>
       {% include "supply_chain/procurement/_composition.html" with composition=row.composition %}
       {% for column in comparison.columns %}
