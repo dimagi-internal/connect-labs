@@ -65,7 +65,7 @@ from connect_labs.supply_chain.models import (
 from connect_labs.supply_chain.procurement.services.comparison import compare_round
 from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
 from connect_labs.supply_chain.stock.services import network, soh
-from connect_labs.supply_chain.values import Unconfirmed, decimal_string
+from connect_labs.supply_chain.values import Quantity, Unconfirmed, decimal_string
 
 # Every check this module can run, and its category. Declared so a client can
 # enumerate what it may receive without waiting to encounter one, and so a new
@@ -776,7 +776,10 @@ def _stock(access, as_of, opportunity_id=None):
                         as_of=as_of,
                     )
                 )
-            elif variance.amount != 0:
+            # None when the count cannot be matched to the point's own item (a
+            # count by commodity at a store holding several items): nothing to
+            # compare, which is not a crash of the whole checks list.
+            elif isinstance(variance, Quantity) and variance.amount != 0:
                 out.append(
                     _check(
                         "stock_variance",
