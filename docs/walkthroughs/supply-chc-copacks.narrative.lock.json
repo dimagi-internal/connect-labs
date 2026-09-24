@@ -15,9 +15,9 @@
     "tunde-records-the-collection",
     "back-inside-its-band"
   ],
-  "fetched_at": "2026-09-23T23:55:39.076814+00:00",
+  "fetched_at": "2026-09-24T04:08:13.124337+00:00",
   "name": "supply-chc-copacks",
-  "narrative": "Amara runs procurement for the Connect Child Health Programme, and every co-pack her community health workers hand out comes through one distributor, Harmattan Health Supplies. Amara opens the programme's supply overview to see where this year's co-pack round stands. Amara sees that Harmattan offered three co-packs, and that she set aside the one holding four ORS sachets, because the protocol co-pack is two ORS sachets and ten zinc tablets. Amara compares the two co-packs that hold the same contents, and they are the only two the comparison will rank. Amara places the co-pack order with Harmattan, with her own programme as the buyer of record. Amara pays Harmattan's invoice up front, and the order page shows the money now ahead of the goods. Tunde, Harmattan's orders manager, opens the programme's link with no login, confirms the order and confirms the payment arrived. Tunde's warehouse team opens and inspects the batch, and Tunde records what they accepted and what they refused through the same link. Amara reads Harmattan's updates on the order without having asked for any of them. Amara subscribes to an alert for co-pack stock falling below a store's minimum. Amara records the month-end stock take from Sahel Community Health Initiative's store, which finds fewer co-packs than the ledger expected. Amara reads the check the stock take tripped: Sahel's store is now below its own minimum. Amara reads the resupply plan, which states how many cartons bring Sahel's store back to its maximum. Tunde records Sahel collecting exactly that from the warehouse, through the link. Amara sees Sahel's store back inside its band, with nobody having sent a single chasing message.",
+  "narrative": "Amara runs procurement for the Connect Child Health Programme, and every co-pack her community health workers hand out comes through one distributor, Harmattan Health Supplies. Amara opens the programme's supply overview to see where this year's co-pack round stands — one open round with Harmattan, the draft co-pack order beside two placed ones, and what is still waiting for an answer. Amara opens the round, which states what it buys — the protocol co-pack, two ORS sachets and ten zinc tablets, with vitamin A and the dewormer — and finds Harmattan's three co-pack offers against it, one of them the cheapest and holding four sachets. Amara compares the co-packs: the two holding the protocol contents are ranked on landed cost for the round, the Kaduna Pharma Works co-pack first and marked chosen, and the cheaper four-sachet co-pack is refused a ranking because its contents are not what the round buys. Amara opens the draft co-pack order, confirms her own programme is the buyer, and moves it from draft to placed. Amara pays Harmattan's invoice in full by bank transfer, in advance as the order's terms say, and the order page reads it that way — paid in advance, awaiting delivery of 30,000 co-packs. Tunde opens the link the programme gave Harmattan — no login — confirms the co-pack order, and confirms the payment reached Harmattan's account. Tunde's team opens every carton of batch KPW-2609 at the Kano warehouse; Tunde records 596 cartons accepted and 4 refused for punctured sachets, through the same link. Amara opens the co-pack order and finds everything Harmattan recorded through its link — the order confirmed, the payment received, 596 cartons accepted and 4 refused — and the 4 refused cartons, already paid for, shown as 120 USD recoverable from Harmattan. Amara creates an alert for co-pack stock falling below a store's minimum or running out, sent to her as it happens. Amara records the month-end stock take Sahel Community Health Initiative sent from its Wudil store — 170 cartons on the shelf — as an override, noting the outreach-day handouts not yet synced. Amara opens the checks and finds the one the stock take tripped — Sahel's Wudil store is at 2.8 months of co-packs against its own three-month minimum. Amara reads the resupply plan for the network — Sahel dispenses about 3,000 co-packs a month, holds 170 cartons, and needs 194 cartons to reach its six-month maximum. Sahel's driver collects 194 cartons from the Kano warehouse, and Tunde records the release from the warehouse to Sahel's store through Harmattan's link. Amara opens the stock page and finds Sahel's store back at six months of co-packs, inside its band, and Harmattan's warehouse, rated on what it releases to partners, stating the quantity to reorder.",
   "personas": {
     "amara": {
       "color": "#3B4FD8",
@@ -58,10 +58,10 @@
         }
       ],
       "id": "three-co-packs-one-set-aside",
-      "narrative": "Amara opens the round and finds Harmattan's three co-pack options; she opens the cheapest, the one she set aside, and reads why — it holds four ORS sachets where the protocol co-pack holds two.",
+      "narrative": "Amara opens the round, which states what it buys — the protocol co-pack, two ORS sachets and ten zinc tablets, with vitamin A and the dewormer — and finds Harmattan's three co-pack offers against it, one of them the cheapest and holding four sachets.",
       "persona": "amara",
       "provenance": "S1",
-      "title": "Three co-packs, and one holds different contents"
+      "title": "The round states the contents it buys"
     },
     {
       "features": [
@@ -72,10 +72,10 @@
         }
       ],
       "id": "two-co-packs-ranked-like-with-like",
-      "narrative": "Amara compares the two co-packs that hold two ORS sachets and ten zinc tablets, and the comparison ranks them on landed cost for the round, the Kaduna Pharma Works co-pack first, the one already marked as chosen.",
+      "narrative": "Amara compares the co-packs: the two holding the protocol contents are ranked on landed cost for the round, the Kaduna Pharma Works co-pack first and marked chosen, and the cheaper four-sachet co-pack is refused a ranking because its contents are not what the round buys.",
       "persona": "amara",
       "provenance": "S1",
-      "title": "Only co-packs with the same contents are ranked"
+      "title": "The co-pack with other contents is refused a ranking"
     },
     {
       "features": [
@@ -100,10 +100,10 @@
         }
       ],
       "id": "amara-pays-up-front",
-      "narrative": "Amara pays Harmattan's invoice in full by bank transfer, and the order page now shows the money ahead of the goods — paid for 600 cartons, none received yet.",
+      "narrative": "Amara pays Harmattan's invoice in full by bank transfer, in advance as the order's terms say, and the order page reads it that way — paid in advance, awaiting delivery of 30,000 co-packs.",
       "persona": "amara",
       "provenance": "S2",
-      "title": "Amara pays before a carton exists"
+      "title": "Amara pays in advance, as agreed"
     },
     {
       "features": [
@@ -147,7 +147,7 @@
         }
       ],
       "id": "amara-reads-harmattan-updates",
-      "narrative": "Amara opens the co-pack order and finds Harmattan's confirmation, the payment confirmed as received, and 596 cartons in the warehouse with 4 refused — each marked as told by Harmattan.",
+      "narrative": "Amara opens the co-pack order and finds everything Harmattan recorded through its link — the order confirmed, the payment received, 596 cartons accepted and 4 refused — and the 4 refused cartons, already paid for, shown as 120 USD recoverable from Harmattan.",
       "persona": "amara",
       "provenance": "S3",
       "title": "Amara reads the updates she never asked for"
@@ -231,12 +231,12 @@
         }
       ],
       "id": "back-inside-its-band",
-      "narrative": "Amara opens the stock page and finds Sahel's store back at six months of co-packs, inside its band, and the warehouse down by exactly what Sahel collected.",
+      "narrative": "Amara opens the stock page and finds Sahel's store back at six months of co-packs, inside its band, and Harmattan's warehouse, rated on what it releases to partners, stating the quantity to reorder.",
       "persona": "amara",
       "provenance": "S6",
-      "title": "Sahel's store is back inside its band"
+      "title": "Sahel is back in band, and the warehouse says when to reorder"
     }
   ],
   "slug": "supply-chc-copacks",
-  "version": 1
+  "version": 2
 }
