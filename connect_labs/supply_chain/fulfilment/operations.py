@@ -523,8 +523,8 @@ def contract_landed_cost(access, contract_id, compare_buyers=False):
         "payment_terms advance reads as paid_in_advance until goods arrive, reports awaiting_delivery and "
         "advance_state (unpaid | part_paid | paid, from the payments recorded, never the terms alone), and "
         "reports what was paid for and refused (or never delivered, once closed) as recoverable -- "
-        "never as over-invoiced. refused is what was refused on arrival, in the order's unit; when it is not zero, still_to_arrive is what has not arrived at all "
-        "(outstanding stays ordered less accepted)."
+        "never as over-invoiced. refused is what was refused on arrival, in the order's unit; when it is "
+        "not zero, still_to_arrive is what has not arrived at all (outstanding stays ordered less accepted)."
     ),
     input_schema=obj({"contract_id": ID}, required=("contract_id",)),
 )
