@@ -64,12 +64,34 @@ each run by a different implementing partner:
 
 All four end 2026-10-30 and are live now.
 
-The supply-domain organisations are **the same organisations**, not lookalikes:
-each is upserted with its `connect_organization_id` set to the real Connect
-org above, so the distributor confirming a dispatch and the partner delivering
-the visits are one record, and `identity.py` attributes what they record to
-them rather than to us. This is what makes the partner seat in §4 mean
-anything — it is EHA's own organisation, reached through EHA's own link.
+**Which of these can be bound to its Connect organisation, and which cannot.**
+`org_upsert` takes a `connect_organization_id`, and binding is what "lets that
+partner's own staff sign in and record their own shipments, receipts and stock
+counts". An earlier draft of this section said all four would be bound. That
+was wrong, and the correction is worth keeping rather than quietly fixing.
+
+Connect's `/export/opp_org_program_list/` returns only the organisations the
+polling account is a **member of** — sixteen of them. None of the four
+partners is among them; `pulse/models.py` documents this directly, which is
+why Pulse keys on slug and takes partner *names* from the LLO Directory
+instead. The nearest hit is `connect-nigeria` / "Solina ECD Nigeria", which is
+Solina's ECD organisation rather than its CHC one: binding to it would be
+wrong, not approximate.
+
+So the demo binds what it truly can and leaves the rest unbound:
+
+| Organisation | Bound? |
+|---|---|
+| The programme's own, `dimagi-chc-rct` | Yes — it is in the export |
+| The four partners | No — reached through their update links; we record on their behalf until they are bound |
+
+This is the true state of the world, and it makes §5a structural rather than
+staged. A bound organisation's staff record for themselves; an unbound one is
+recorded *on behalf of*. That is precisely the second-hand-versus-their-own
+distinction the demo exists to show, and it now has a cause in the data model
+rather than a choice in the seed. If the partners' Connect ids can be
+obtained later, adding them is one field per organisation in the Drive
+document and no code change at all.
 
 Cloned with the two-phase `profile` → `generate` workflow
 (`docs/synthetic-kmc-clone-runbook.md`). Phase 1 builds a **statistical
