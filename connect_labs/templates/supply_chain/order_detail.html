@@ -306,7 +306,7 @@ partner's name (the IPTSc render).
   <div id="match" class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100">
       <span class="text-xs font-semibold text-gray-600">Ordered · received{% if contract.consideration == "priced" %} · invoiced{% endif %}</span>
-      <span class="text-xs text-gray-400 ml-2">{{ match.status|humanise }}{% if match.payment_terms == "advance" and match.status != "paid_in_advance" %} · {% if match.advance_state == "unpaid" %}payable{% else %}paid{% endif %} in advance{% endif %}</span>
+      <span class="text-xs text-gray-400 ml-2">{% if match.still_to_arrive and match.still_to_arrive.amount == "0" %}all arrived, some refused{% else %}{{ match.status|humanise }}{% endif %}{% if match.payment_terms == "advance" and match.status != "paid_in_advance" %} · {% if match.advance_state == "unpaid" %}payable{% else %}paid{% endif %} in advance{% endif %}</span>
     </div>
     <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
@@ -335,15 +335,22 @@ partner's name (the IPTSc render).
             <td class="px-4 py-2 text-right tabular-nums">{{ cover.quantity|qty:cover.quantity_unit }}</td>
           </tr>
         {% endfor %}
-        {% comment %}On an order paid in advance, refused goods are owed back, not
-        still to come: "Still outstanding 200" above "nothing more to come" was
-        the same 200 read two ways. Outstanding there is what is awaited.{% endcomment %}
-        {% if match.payment_terms == "advance" and match.awaiting_delivery and match.refused.amount and match.refused.amount != "0" %}
+        {% comment %}
+        Refused is not outstanding. 118 accepted and 2 refused of 120 read
+        "Still outstanding 2" beside the note refusing exactly those two, as if
+        they were still on their way (the dispenser import); on an order paid in
+        advance the same 200 read two ways. Refused goods arrived; what has not
+        arrived at all is its own row.
+        {% endcomment %}
+        {% if match.still_to_arrive %}
           <tr><td class="px-4 py-2 text-gray-600">Refused on arrival</td>
               <td class="px-4 py-2 text-right tabular-nums">{{ match.refused|figure_text }}</td></tr>
-        {% endif %}
+          <tr><td class="px-4 py-2 text-gray-600">Still to arrive</td>
+              <td class="px-4 py-2 text-right tabular-nums">{% if match.payment_terms == "advance" and match.awaiting_delivery %}{{ match.awaiting_delivery|figure_text }}{% elif match.still_to_arrive.amount == "0" %}nothing{% else %}{{ match.still_to_arrive|figure_text }}{% endif %}</td></tr>
+        {% else %}
         <tr><td class="px-4 py-2 text-gray-600">Still outstanding</td>
             <td class="px-4 py-2 text-right tabular-nums">{% if outstanding_after_cover %}{{ outstanding_after_cover|figure_text }}{% elif match.payment_terms == "advance" and match.awaiting_delivery %}{{ match.awaiting_delivery|figure_text }}{% else %}{{ match.outstanding|figure_text }}{% endif %}</td></tr>
+        {% endif %}
         {% comment %}
         Billing is a bought order's business. A donation or a purchase paid out
         of a setup fee has no invoice to match and nothing to pay, and five rows
@@ -412,6 +419,39 @@ partner's name (the IPTSc render).
     </p>
   </div>
 </div>
+
+{% if where_now %}
+<div id="where-now" class="bg-white border border-gray-200 rounded-lg overflow-hidden mt-3">
+  <div class="px-4 py-2.5 border-b border-gray-100">
+    <span class="text-xs font-semibold text-gray-600">Where they are now</span>
+    <span class="text-xs text-gray-400 ml-2">equipment is kept and moved, not used up</span>
+  </div>
+  {% if where_now.points %}
+  <table class="min-w-full text-sm">
+    <tbody class="divide-y divide-gray-100">
+      {% for point in where_now.points %}
+        <tr>
+          <td class="px-4 py-2 text-gray-700">{{ point.name }} <span class="text-xs text-gray-400">{{ point.kind|humanise }}</span></td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ point.on_hand|figure_text }}</td>
+        </tr>
+      {% endfor %}
+      {% if where_now.total %}
+        <tr class="bg-gray-50">
+          <td class="px-4 py-2 font-semibold text-brand-indigo">Held across {{ where_now.points|length }} place{{ where_now.points|length|pluralize }}</td>
+          <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">{{ where_now.total|figure_text }}</td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="px-4 py-2.5 text-sm text-gray-500">None of it is held anywhere yet.</p>
+  {% endif %}
+  <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
+    The ledger balance for {{ item.name }} at each place that holds it.
+    {% if where_now.other_orders %}Other orders of the same item are in these figures too.{% else %}This is the only order of it, so these are its units.{% endif %}
+  </p>
+</div>
+{% endif %}
 
 <h3 class="text-sm font-semibold text-gray-900 mt-6 mb-2">Shipments</h3>
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">

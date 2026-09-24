@@ -244,6 +244,7 @@ class UpdateLinkPublicView(View):
         # "Record goods received". On a listed link the issuer chose the
         # orders, and every one of them can be received against.
         receives = scope.received.exists() or not scope.follows_org
+        priced = scope.contracts.filter(consideration="priced").exists()
         forms = [
             form
             for form in forms
@@ -253,6 +254,7 @@ class UpdateLinkPublicView(View):
                 and supplier_link
                 and (supplies or not form.for_suppliers)
                 and (receives or not form.for_receivers)
+                and (priced or not form.for_priced)
             )
             or form is bound
         ]

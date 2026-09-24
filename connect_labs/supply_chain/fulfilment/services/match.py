@@ -229,6 +229,8 @@ def three_way_match(contract) -> dict:
     if status == "part_received" and covered_by:
         status = "shortfall_covered"
 
+    still_to_arrive = _still_to_arrive(contract, ordered, received, refused)
+
     return {
         "contract_id": contract.pk,
         "currency": contract.currency,
@@ -236,6 +238,7 @@ def three_way_match(contract) -> dict:
         "received": received,
         "invoiced": invoiced,
         "outstanding": shortfall,
+        "still_to_arrive": still_to_arrive,
         "over_invoiced": over_invoiced,
         "billed_amount": Money(billed, contract.currency),
         "paid_amount": Money(paid, contract.currency),
@@ -249,6 +252,26 @@ def three_way_match(contract) -> dict:
         "status": status,
         "matches": status == "fully_received" and _is_zero(over_invoiced),
     }
+
+
+def _still_to_arrive(contract, ordered, received, refused):
+    """What has not arrived at all, once refused goods are set apart.
+
+    `outstanding` is ordered less accepted, and so counts refused goods as if
+    they were still on their way: 118 accepted and 2 refused of 120 read
+    "Still outstanding 2" beside a goods-received note refusing exactly those
+    two (the dispenser import). Refused goods DID arrive; whether they are
+    replaced is a separate question the record does not answer. None when
+    nothing was refused, or when the figures cannot be stated in one unit --
+    the card then shows `outstanding` as it always has.
+    """
+    if not all(isinstance(q, Quantity) for q in (ordered, received, refused)) or refused.amount == 0:
+        return None
+    accepted = ledger.convert(received.amount, received.unit, ordered.unit, contract.item)
+    set_apart = ledger.convert(refused.amount, refused.unit, ordered.unit, contract.item)
+    if isinstance(accepted, Unconfirmed) or isinstance(set_apart, Unconfirmed):
+        return None
+    return Quantity(max(ordered.amount - accepted.amount - set_apart.amount, ZERO), ordered.unit)
 
 
 def _in_unit(figure, unit, item):
