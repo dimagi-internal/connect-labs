@@ -239,3 +239,18 @@ def test_a_failed_row_fetch_is_not_reported_as_an_empty_cohort():
     src = RENDER.read_text()
     assert "r.ok ? r.json() : { rows: [] }" not in src, "a failed fetch still looks like absent data"
     assert "status: 'error'" in src, "the row fetches need a failure state of their own"
+
+
+def test_the_case_panel_says_loading_or_failed_instead_of_a_bare_dash():
+    """The panel opens from the report's case index, before the live rows land.
+
+    Its live-only facts (discharge, skin-to-skin, danger signs, referrals, alive)
+    and its four weight cards used to read "—" / "needs two weighings" both while
+    the rows were in flight and after they failed -- a finished-looking page with
+    no data. A gateway 502 mid-deploy was final, too.
+    """
+    src = RENDER.read_text()
+    assert "function live(v)" in src and "childState.status === 'loading'" in src
+    assert src.count("live('—')") >= 5, "every live-only fact must go through live()"
+    assert "'weight series not loaded'" in src and "'loading weighings…'" in src
+    assert "[502, 503, 504]" in src, "a gateway error is retried before it is reported"
