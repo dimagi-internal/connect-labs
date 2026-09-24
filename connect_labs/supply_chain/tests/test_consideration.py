@@ -183,6 +183,7 @@ class TestTheScreens:
         body = scoped.get(reverse("supply_chain:order_detail", args=[bought["id"]])).content.decode()
         assert "Bought by" in body
 
+
 class TestTheMatchSaysWhatHappened:
     """What the order page's match panel said about a donation on its way.
 
