@@ -17,6 +17,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from django.test import Client
 from django.urls import reverse
 
 from connect_labs.labs.access.scopes import SYSTEM
@@ -761,3 +762,76 @@ class TestTheLinkIsTheOnlyWayIn:
         with pytest.raises(ValueError) as caught:
             module.seed_partner_links(access, document, reference, chain)
         assert "waybill_number" in str(caught.value)
+
+    def test_the_refusal_still_says_why_where_no_test_client_is_watching(self, access, seeded, monkeypatch):
+        """The seed runs in a `manage.py shell`, and so must its diagnostics.
+
+        `response.context` is filled from the `template_rendered` signal, which
+        is only ever SENT by the instrumented renderer `setup_test_environment()`
+        installs. Under pytest it is there; in a shell on the deployment it is
+        not, so a `_why` that read it would be articulate here and silent on the
+        one run that matters.
+
+        That environment is reproduced rather than described: the renderer is
+        put back to the uninstrumented one the deployment uses, which is what
+        makes `response.context` `None`. A test that only exercised `_why`
+        under pytest would prove nothing at all about the shell.
+        """
+        from django.template.base import PartialTemplate, Template
+        from django.test.utils import _TestState
+
+        # The renderers `setup_test_environment()` swapped out, put back. They
+        # are the ones a deployment runs, and the instrumented pair it installed
+        # are the only thing that sends `template_rendered` at all.
+        saved = _TestState.saved_data
+        monkeypatch.setattr(Template, "_render", saved.template_render, raising=True)
+        monkeypatch.setattr(PartialTemplate, "_render", saved.partial_template_render, raising=True)
+
+        module, reference, chain = seeded
+        document = copy.deepcopy(_DOCUMENT)
+        document["partner_links"][0]["coverage"] = "organisation"
+
+        # The environment really is the shell's: nothing is recording context.
+        probe = Client().post(reverse("supply_chain:update_link_public", kwargs={"token": "not-a-token"}))
+        assert probe.context is None
+
+        with pytest.raises(ValueError) as caught:
+            module.seed_partner_links(access, document, reference, chain)
+
+        message = str(caught.value)
+        assert "to_supply_point" in message
+        assert "not one of the available choices" in message
+
+
+def test_the_refusal_is_read_off_the_page_and_nothing_else():
+    """Both shapes the page prints, out of a response that has ONLY content.
+
+    The stub carries no `context` at all, which is the second half of the
+    point: a `_why` that reached for one would raise here rather than quietly
+    work in tests and go silent in a shell. It is also the shape of what the
+    page actually renders -- crispy gives a field's error an id naming the
+    field, and the page heads a refusal of the whole submission "Not saved:".
+    """
+    module = _load_seed_remote()
+
+    class _JustAPage:
+        content = (
+            b'<p id="error_1_id_record_release-to_supply_point" class="text-red-500 text-xs italic">'
+            b"<strong>Select a valid choice. That choice is not one of the available choices.</strong></p>"
+            b'<p class="text-sm text-red-800"><strong>Not saved:</strong> '
+            b"this link does not cover that supply point &#x27;the far store&#x27;</p>"
+        )
+
+    assert module._why(_JustAPage()) == (
+        "to_supply_point: Select a valid choice. That choice is not one of the available choices. / "
+        "this link does not cover that supply point 'the far store'"
+    )
+
+
+def test_a_page_that_printed_no_error_says_so_rather_than_nothing():
+    module = _load_seed_remote()
+
+    class _Blank:
+        content = b"<html><body>Bad Request (400)</body></html>"
+
+    assert "no error" in module._why(_Blank())
