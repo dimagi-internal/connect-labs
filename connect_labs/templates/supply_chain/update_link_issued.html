@@ -48,12 +48,21 @@ stored, so it cannot be shown again.
 
     <div>
       <h2 class="text-sm font-semibold text-gray-900 mb-1">What it covers</h2>
+      {% if link.follows_org %}
+        <p class="text-sm text-gray-700 mb-1">
+          Everything involving {{ link.org_name }} in this programme, including orders created after today.
+          {% if link.contracts or link.supply_points or link.approvals %}Today that is:{% else %}Nothing involves them yet — it will as soon as something does.{% endif %}
+        </p>
+      {% endif %}
       <ul class="text-sm text-gray-700 space-y-0.5">
         {% for contract in link.contracts %}
           <li><i class="fa-solid fa-file-contract text-gray-400 mr-1"></i>Order {{ contract.reference|default:contract.id }}</li>
         {% endfor %}
         {% for point in link.supply_points %}
           <li><i class="fa-solid fa-warehouse text-gray-400 mr-1"></i>{{ point.name }}</li>
+        {% endfor %}
+        {% for approval in link.approvals %}
+          <li><i class="fa-solid fa-circle-check text-gray-400 mr-1"></i>Approval of the award to {{ approval.supplier }}</li>
         {% endfor %}
       </ul>
     </div>

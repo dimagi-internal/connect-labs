@@ -536,9 +536,12 @@ def approval_decide(
         if getattr(access, "user", None) is not None or getattr(access, "request", None) is not None:
             raise ValueError("an answer is the approver's own word only through the approver's own link")
         from connect_labs.supply_chain.update_links.models import UpdateLink
+        from connect_labs.supply_chain.update_links.service import scope_for
 
         link = UpdateLink.objects.filter(pk=via_update_link_id, program_id=access.program_id).first()
-        if link is None or not link.is_usable or not link.approvals.filter(pk=approval_id).exists():
+        # The link's scope as it stands now: named approvals on a listed link,
+        # every approval asked of its organisation on one that follows it.
+        if link is None or not link.is_usable or not scope_for(link).approvals.filter(pk=approval_id).exists():
             raise ValueError(f"update link {via_update_link_id} does not cover approval {approval_id}")
         source, recorded_by = "partner_reported", link.org_id
     return record(

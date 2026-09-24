@@ -6,12 +6,22 @@ admin page that shows this table cannot be used to act as the supplier. The
 hash is an HMAC under the deployment's secret rather than a bare SHA-256, so a
 leaked table cannot even be used to test guesses offline.
 
-**Scope is a list of rows, not a filter.** A link names the contracts and the
-supply points it covers, one by one. "Everything this supplier supplies" would
-be a rule evaluated at request time, and a rule is exactly what widens silently
-when a new contract is created against the same supplier. A link covers what
-the person issuing it could see when they issued it, and nothing that appears
-later.
+**Scope is a list of rows by default, and a rule only when asked for.** A
+link normally names the contracts, supply points and approvals it covers, one
+by one: it covers what the person issuing it could see when they issued it, and
+nothing that appears later.
+
+That was wrong for a partner. An LLO receives goods on a cover order created
+AFTER its link was issued, could not record that receipt, and the programme
+officer ended up recording it for them. So a link can instead be issued to
+follow its organisation (`coverage="organisation"`): everything involving that
+organisation in this programme, now and later, resolved LIVE at every request
+(`service.scope_for`). It widens as new orders are created -- which is exactly
+why it is a separate, explicit choice made on the issue screen and shown on the
+links list, never what a list of rows quietly turns into. The rule is narrow
+and relational: orders the organisation supplies, buys or receives at a store
+it runs; stores it runs; approvals asked of it. Nothing of another
+organisation's, and nothing in another programme.
 
 Imported by `supply_chain.models` so Django registers them with the app.
 """
@@ -22,11 +32,21 @@ from django.utils import timezone
 
 from connect_labs.supply_chain.models import AwardApproval, Contract, SupplyPoint, TimestampedModel
 
+COVERAGE_LISTED = "listed"
+COVERAGE_ORGANISATION = "organisation"
+COVERAGE = (
+    (COVERAGE_LISTED, "Only the orders, supply points and approvals named"),
+    (COVERAGE_ORGANISATION, "Everything involving the organisation, including new orders"),
+)
+
 
 class UpdateLink(TimestampedModel):
     program_id = models.IntegerField(db_index=True)
     org = models.ForeignKey("labs.LabsOrg", on_delete=models.PROTECT, related_name="supply_update_links")
     label = models.CharField(max_length=255, blank=True, default="")
+    # "listed": the join tables below are the scope. "organisation": they are
+    # empty and the scope is worked out afresh at each request.
+    coverage = models.CharField(max_length=16, default=COVERAGE_LISTED, choices=COVERAGE)
 
     contracts = models.ManyToManyField(Contract, blank=True, related_name="update_links")
     supply_points = models.ManyToManyField(SupplyPoint, blank=True, related_name="update_links")
@@ -54,6 +74,10 @@ class UpdateLink(TimestampedModel):
 
     def __str__(self):
         return self.label or f"update link {self.pk}"
+
+    @property
+    def follows_org(self) -> bool:
+        return self.coverage == COVERAGE_ORGANISATION
 
     @property
     def is_revoked(self) -> bool:

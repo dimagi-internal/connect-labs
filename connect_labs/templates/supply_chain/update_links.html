@@ -16,8 +16,10 @@ apart. The token is shown once, when the link is issued.
     <p class="text-sm text-gray-500 mt-1 max-w-2xl">
       A private link lets one organisation — a supplier, a partner holding our stock — confirm orders and
       payments and record dispatches, receipts, stock counts and releases without a labs login. It covers
-      only the orders and supply points it was issued for, and everything recorded through it is marked
-      as reported by that organisation.
+      either only the orders and supply points it was issued for, or everything involving that
+      organisation in the programme, including orders created later. Either way it can only take the
+      organisation's own part, and everything recorded through it is marked as reported by that
+      organisation.
     </p>
   </div>
   {% if has_program_context %}
@@ -61,7 +63,13 @@ apart. The token is shown once, when the link is issued.
                     {{ link.label|default:"" }}{% if link.label %} · {% endif %}<code>{{ link.token_hint }}…</code>
                   </div>
                 </td>
-                <td class="px-4 py-2 text-gray-700">
+                <td class="px-4 py-2 text-gray-700" data-coverage="{{ link.coverage }}">
+                  {% if link.follows_org %}
+                    <div class="text-gray-900">Everything involving {{ link.org_name }}</div>
+                    <div class="text-xs text-gray-500 mb-1">including orders created after it was issued · today:</div>
+                  {% else %}
+                    <div class="text-xs text-gray-500 mb-1">Only these</div>
+                  {% endif %}
                   {% for contract in link.contracts %}
                     <div>
                       <a href="{% url 'supply_chain:order_detail' contract.id %}" class="text-brand-indigo hover:underline">{% if contract.reference %}{{ contract.reference }}{% else %}Order {{ contract.id }}{% endif %}</a>
@@ -71,6 +79,12 @@ apart. The token is shown once, when the link is issued.
                   {% for point in link.supply_points %}
                     <div><i class="fa-solid fa-warehouse text-gray-400 mr-1"></i>{{ point.name }}</div>
                   {% endfor %}
+                  {% for approval in link.approvals %}
+                    <div><i class="fa-solid fa-circle-check text-gray-400 mr-1"></i>Approval of the award to {{ approval.supplier }}</div>
+                  {% endfor %}
+                  {% if link.follows_org and not link.contracts and not link.supply_points and not link.approvals %}
+                    <div class="text-xs text-gray-400">nothing yet</div>
+                  {% endif %}
                 </td>
                 <td class="px-4 py-2 text-gray-700 whitespace-nowrap">
                   {% if link.state == "active" %}
