@@ -17,6 +17,7 @@ from decimal import Decimal
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Layout, Row
 from django import forms
+from django.core.validators import URLValidator
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -569,9 +570,13 @@ class RecordAnswerForm(PublicForm):
         max_length=1000,
         widget=forms.Textarea(attrs={**INPUT, "rows": 2, "class": "base-input !h-auto min-h-16 py-2"}),
     )
+    # What document_attach will take: http(s) only, and no longer than
+    # Document.external_url holds.
     document_url = forms.URLField(
         label=_("Link to your signed confirmation (optional)"),
         required=False,
+        max_length=1024,
+        validators=[URLValidator(schemes=["http", "https"])],
         widget=forms.URLInput(attrs={**INPUT, "placeholder": "https://"}),
     )
 

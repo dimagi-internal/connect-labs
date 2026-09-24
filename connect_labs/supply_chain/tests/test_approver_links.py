@@ -170,6 +170,34 @@ class TestTheApproverAnswers:
         assert document.external_url.endswith("confirmation.pdf")
         assert document.recorded_by_org_id == world["aqualytic"]["id"]
 
+    def test_a_failed_attachment_undoes_the_answer(self, issued, world):
+        """The answer, its letter, the submission and the audit event land
+        together or not at all: a decided approval with no record of who
+        decided it, or how, is the one outcome this page must never leave."""
+        with pytest.raises(ValueError):
+            service.submit(
+                _link(issued),
+                "record_answer",
+                {
+                    "approval": AwardApproval.objects.get(pk=world["technical"]["id"]),
+                    "status": "approved",
+                    "document_url": "ftp://files.example/confirmation.pdf",
+                },
+            )
+        assert AwardApproval.objects.get(pk=world["technical"]["id"]).status == "requested"
+        assert not UpdateLinkSubmission.objects.exists()
+
+    @pytest.mark.parametrize(
+        "url", ["ftp://files.example/confirmation.pdf", "https://files.example/" + "a" * 1100 + ".pdf"]
+    )
+    def test_the_form_refuses_a_link_the_document_cannot_hold(self, url):
+        from django.core.exceptions import ValidationError
+
+        from connect_labs.supply_chain.update_links.forms import RecordAnswerForm
+
+        with pytest.raises(ValidationError):
+            RecordAnswerForm.base_fields["document_url"].clean(url)
+
     def test_another_approval_on_the_same_award_is_out_of_scope(self, issued, world):
         with pytest.raises(service.OutOfScope):
             service.submit(

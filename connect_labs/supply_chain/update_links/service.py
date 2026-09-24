@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -543,8 +544,15 @@ def link_access(link):
     return SupplyDataAccess(program_id=link.program_id, caller=SYSTEM)
 
 
+@transaction.atomic
 def submit(link, action, data) -> dict:
-    """Carry out one action through its ordinary operation. Returns the operation's result."""
+    """Carry out one action through its ordinary operation. Returns the operation's result.
+
+    One transaction: the write, whatever follows it (an attached letter), the
+    submission and the audit event land together or not at all. The public
+    view answers a refusal with a normal page, which would otherwise commit a
+    half-done write under ATOMIC_REQUESTS.
+    """
     link = UpdateLink.objects.select_related("org").filter(pk=link.pk).first()
     if link is None or not link.is_usable:
         raise OutOfScope("this link is no longer valid")
