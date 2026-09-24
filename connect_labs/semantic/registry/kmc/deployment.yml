@@ -220,6 +220,20 @@ app_asks:
     reg_date: true
     self_referral_visits: true
     weights: true
+  # PIPN Aug-26. Added to the live record (19784) by hand and never to this file,
+  # so re-seeding from here would have dropped it; copied from the record on
+  # 2026-09-24 when #2004 re-seeded it.
+  2166:
+    birth_weight_g: true
+    danger_visits: true
+    days_discharge_to_reg: true
+    discharge_visits: true
+    enrollment_weight_g: true
+    kmc_hours_mean: true
+    referral_visits: true
+    reg_date: true
+    self_referral_visits: true
+    weights: true
   10013:
     birth_weight_g: true
     danger_visits: true
