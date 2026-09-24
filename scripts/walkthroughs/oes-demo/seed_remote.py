@@ -28,8 +28,33 @@ from connect_labs.supply_chain.identity import WITNESSED_SOURCES
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.values import Money, decimal_string
 
-PROGRAMME_ID = 10610
-SUPPLY_ONLY_PROGRAMME_ID = 10671
+# Three chains, three programs -- plus the supply-only organisation's own.
+#
+# `SupplyDataAccess.scope_key` is "the program, always", and it governs the
+# CATALOGUE as well as the ledger: commodities, items and suppliers are
+# per-program, not shared. CHC is Connect program 217 under `dimagi-chc-rct`,
+# RUTF is program 263 under `dimagi-ng-rutf`, and the chlorine chain is not an
+# opportunity at all yet -- which is the whole point of its beat. One scope
+# holding all three would put chlorine in the CHC catalogue and RUTF's
+# supplier register in with ORS: a program on screen that corresponds to
+# nothing real. See the design, section 1a.
+CHC_PROGRAM_ID = 10610
+RUTF_PROGRAM_ID = 10672
+CHLORINE_PROGRAM_ID = 10673
+SUPPLY_ONLY_PROGRAM_ID = 10671
+
+# Which section of the Drive document each scope is seeded from. The first
+# three keys are the names the document's `portfolio.program_slugs` already
+# uses, so the portfolio resolves to program ids through this map rather than
+# through a second one that could disagree with it. The supply-only
+# organisation is deliberately NOT in that portfolio: it is a different
+# organisation's program, not one of this operation's three chains.
+SCOPES = {
+    "chc": {"program_id": CHC_PROGRAM_ID, "section": "chc_chain"},
+    "rutf": {"program_id": RUTF_PROGRAM_ID, "section": "rutf_rounds"},
+    "chlorine": {"program_id": CHLORINE_PROGRAM_ID, "section": "chlorine_blocked"},
+    "supply_only": {"program_id": SUPPLY_ONLY_PROGRAM_ID, "section": "supply_only"},
+}
 
 
 def op(access, name, **payload):
@@ -40,8 +65,15 @@ def access_for(program_id):
     return SupplyDataAccess(access_token="oes-demo-seed", program_id=program_id, caller=SYSTEM)
 
 
-def seed_reference(access, data):
-    """The organisations and products the chain is made of.
+def seed_orgs(access, data):
+    """The organisations, which belong to no program in particular.
+
+    `upsert_org` is the one reference write in this domain that is NOT
+    program-scoped, and says why: "An organisation is the same organisation
+    in every program it appears in, and scoping it per program is what
+    produced three registries of the same thing." So these are seeded once
+    and shared by all four scopes, and the `access` here only carries the
+    call -- any scope's would do.
 
     Organisations are upserted by slug and carry `connect_organization_id`,
     so the supply domain's EHA and Connect's EHA are one organisation. A
@@ -72,12 +104,141 @@ def seed_reference(access, data):
         if connect_organization_slug:
             org_data["connect_organization_slug"] = connect_organization_slug
         orgs[row["slug"]] = op(access, "org_upsert", data=org_data)
+    return orgs
 
-    commodities = {}
-    for row in data["commodities"]:
-        commodities[row["slug"]] = op(access, "commodity_upsert", data=row)
 
-    return {"orgs": orgs, "commodities": commodities}
+def seed_catalogue(access, data, commodity_slugs=None):
+    """This scope's products -- and only this scope's.
+
+    `commodity_slugs` is the whole point of the split. The catalogue is
+    program-scoped, so seeding the document's seven products into every
+    scope would put chlorine in the CHC catalogue and RUTF in with ORS, and
+    every product picker in the program would then offer things that program
+    has never bought.
+
+    Order is the document's, which matters for a kit: `_kit_components`
+    refuses a component that is not already a product in the same catalogue,
+    so a co-pack's contents have to be upserted before the co-pack. The
+    document lists them that way and this does not resort them.
+    """
+    rows = data["commodities"]
+    if commodity_slugs is not None:
+        wanted = set(commodity_slugs)
+        rows = [row for row in rows if row["slug"] in wanted]
+    return {row["slug"]: op(access, "commodity_upsert", data=row) for row in rows}
+
+
+def seed_reference(access, data, commodity_slugs=None):
+    """The organisations and products one scope's chain is made of.
+
+    Two halves with two different scopes, which is why they are separate
+    functions above: organisations are labs-wide and shared, the catalogue is
+    this program's alone.
+
+    **Seeding one of this demo's four scopes goes through `seed_scopes`, not
+    here.** Omitting `commodity_slugs` seeds the WHOLE document catalogue into
+    this one program, which is right only for a caller that has exactly one
+    scope and means all of it. Using it for the CHC or supply-only program is
+    how chlorine ends up in the CHC picker.
+    """
+    return {
+        "orgs": seed_orgs(access, data),
+        "commodities": seed_catalogue(access, data, commodity_slugs),
+    }
+
+
+def _commodities_named(value, found):
+    """Every product slug anywhere in a document section."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "commodity_slug" and isinstance(item, str):
+                found.add(item)
+            elif key == "commodity_slugs" and isinstance(item, list):
+                found.update(slug for slug in item if isinstance(slug, str))
+            else:
+                _commodities_named(item, found)
+    elif isinstance(value, list):
+        for item in value:
+            _commodities_named(item, found)
+    return found
+
+
+def commodities_for(section, catalogue):
+    """The products one chain needs: the ones it names, and their contents.
+
+    Derived from the section rather than listed per scope in the document,
+    so the split cannot drift from the chain it describes: a round that gains
+    a line gains its product in the same edit.
+
+    A kit's components come with it. They are products in their own right and
+    `_kit_components` refuses one that is not in the same catalogue, so a
+    co-pack seeded without its ORS sachet is a co-pack whose specification
+    can never be checked -- and "no requirement to fail" reads as a pass.
+
+    A product the section names and the document does not define is refused
+    rather than skipped: the chain would otherwise be seeded against a
+    catalogue that is missing exactly the thing it is about.
+    """
+    by_slug = {row["slug"]: row for row in catalogue}
+    wanted, pending = set(), sorted(_commodities_named(section, set()))
+    while pending:
+        slug = pending.pop()
+        if slug in wanted:
+            continue
+        row = by_slug.get(slug)
+        if row is None:
+            raise ValueError(
+                f"this chain names the product {slug!r}, which the document's `commodities` does "
+                "not define; add it there or correct the chain"
+            )
+        wanted.add(slug)
+        pending.extend(component["commodity_slug"] for component in row.get("components") or [])
+    return wanted
+
+
+def seed_scopes(data):
+    """One program per chain, each with its own catalogue.
+
+    The organisations are seeded first and once, because they are not
+    program-scoped (`seed_orgs`). Everything else here is per scope: the
+    access object, the catalogue, and -- once the chain seeders run against
+    it -- the items, suppliers and the ledger itself.
+
+    This seeds REFERENCE data only. The CHC chain is seeded by
+    `seed_chc_chain` against the scope named "chc"; RUTF and chlorine have
+    their own tasks and their own sections, so until those land their scopes
+    hold a catalogue and no chain. That is the correct intermediate state: a
+    program with the right products and nothing bought yet is exactly what a
+    chain about to be seeded looks like.
+    """
+    # Every section resolved, and every product it names found, BEFORE the
+    # first write: a document missing its chlorine section should not leave a
+    # half-seeded environment that looks like a working one.
+    sections = {}
+    for name, scope in SCOPES.items():
+        section = data.get(scope["section"])
+        if section is None:
+            raise ValueError(
+                f"the seed document has no {scope['section']!r} section, which is what the "
+                f"{name!r} program is seeded from"
+            )
+        sections[name] = (section, commodities_for(section, data["commodities"]))
+
+    scopes, orgs = {}, None
+    for name, scope in SCOPES.items():
+        section, slugs = sections[name]
+        access = access_for(scope["program_id"])
+        if orgs is None:
+            orgs = seed_orgs(access, data)
+        commodities = seed_catalogue(access, data, slugs)
+        scopes[name] = {
+            "name": name,
+            "program_id": scope["program_id"],
+            "access": access,
+            "section": section,
+            "reference": {"orgs": orgs, "commodities": commodities},
+        }
+    return scopes
 
 
 # ======================================================================
@@ -214,7 +375,7 @@ def _wire_receipt(data, context):
     that is what somebody reads off a delivery note. `receipt_record` wants
     them as a line against a contract, at a supply point, on a date -- none
     of which the document can know, because it is written once and seeded
-    into whatever programme is standing.
+    into whatever program is standing.
     """
     line = {key: data.pop(key) for key in _RECEIPT_LINE_FIELDS if key in data}
     line["item_id"] = context["item"]["id"]
@@ -257,7 +418,7 @@ def _wire_payment(data, context):
     """A settlement, against the bill it settles.
 
     The document names the payment and not the invoice, because from the
-    programme's side the fact is "we paid this". The invoice exists so the
+    program's side the fact is "we paid this". The invoice exists so the
     payment has something to be a settlement OF -- an amount paid against
     nothing cannot be shown as outstanding or cleared.
     """
@@ -348,7 +509,7 @@ def _supply_point(access, row, reference, stamp):
 def seed_chain(access, chain, reference):
     """One procurement, from the round to the stock sitting in the warehouse.
 
-    Shared by the programme's own CHC chain and by the supply-only
+    Shared by the program's own CHC chain and by the supply-only
     organisation's, because the document gives them the same shape: they
     differ in what they carry, not in how they are built. The difference that
     matters -- the supply-only chain has no opportunity binding and no
@@ -357,15 +518,17 @@ def seed_chain(access, chain, reference):
     """
     chain = without_commentary(chain)
     orgs = reference["orgs"]
-    programme_org = orgs[chain["programme_org_slug"]]
+    # The document's own key still reads `programme_org_slug`; it is data in
+    # Drive, so it is left as written rather than churned by a rename here.
+    program_org = orgs[chain["programme_org_slug"]]
     distributor = orgs[chain["distributor_slug"]]
 
     # Tier 2 in the design's table: our own hand, first-hand. Everything the
-    # programme itself does carries this, and `witnessed` is true of it.
-    ours = {"source": "we_recorded", "recorded_by_org_id": programme_org["id"]}
+    # program itself does carries this, and `witnessed` is true of it.
+    ours = {"source": "we_recorded", "recorded_by_org_id": program_org["id"]}
     # Tier 1: our hand, their word. The spreadsheet world, told honestly --
     # `told_by_for` renders it "Dimagi, for EHA Clinics (they told us)".
-    their_word = {"source": "partner_reported", "recorded_by_org_id": programme_org["id"]}
+    their_word = {"source": "partner_reported", "recorded_by_org_id": program_org["id"]}
 
     supplier = supplier_for_org(access, distributor)
 
@@ -502,7 +665,7 @@ def seed_chain(access, chain, reference):
 def seed_chc_chain(access, data, reference):
     """The CHC chain as it ran, carrying all three kinds of truth.
 
-    The programme buys from the distributor; the distributor pays the
+    The program buys from the distributor; the distributor pays the
     manufacturers, holds the goods and releases them to the collecting
     partners. The rows are deliberately split three ways:
 
@@ -717,7 +880,7 @@ def _why(response):
     ever SENT by the instrumented renderer `setup_test_environment()` installs
     -- so it is there under pytest and is `None` in a `manage.py shell` on the
     deployment. Reading it would have made this helper articulate in tests and
-    silent on the one run that matters: the seed against a real programme,
+    silent on the one run that matters: the seed against a real program,
     refused by a scope or a form, which is the entire reason it exists.
 
     Two shapes, because the page prints two: a field's own error, which crispy
@@ -757,7 +920,7 @@ def seed_partner_links(access, data, reference, chain):
 
     Minted here rather than on camera so the raw tokens never reach anything
     committed. A link that follows its ORGANISATION is how a distributor the
-    programme buys from every quarter actually holds one: an order placed next
+    program buys from every quarter actually holds one: an order placed next
     month is covered without reissuing. A link that covers only what it is
     given is how the same distributor releases stock into somebody else's
     store -- `update_links/service.py` resolves an organisation link's stores
