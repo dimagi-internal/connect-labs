@@ -20,3 +20,19 @@
   border: 0 solid #fff;
   color: #7d7d7d;
 }
+
+/*
+ * A single select that already has a value keeps its text input on a line of
+ * its own while it has focus. Leaving the field (a mousedown on the button
+ * below) drops that line, the form shifts up under the pointer, and the click
+ * lands nowhere: the first "Record order" after picking "Delivered to" did
+ * nothing. Hold the input out of the flow until the user actually types, when
+ * the dropdown opens and it comes back.
+ */
+.ts-wrapper.single.has-items.input-active:not(.dropdown-active)
+  .ts-control
+  > input {
+  left: -10000px;
+  opacity: 0;
+  position: absolute;
+}

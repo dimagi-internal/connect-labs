@@ -334,3 +334,30 @@ class TestTheAwardPage:
         body = scoped.get(reverse("supply_chain:update_link_issue")).content.decode()
         assert 'name="approvals"' in body
         assert "Aqualytic (technical)" in body
+
+
+class TestTheIssuedLinkSaysWhatItCovers:
+    """The issued page listed the link's orders and supply points and never its
+    approvals, so an approver's link read as covering nothing
+    (supply-test-kits walkthrough, 2026-09-24)."""
+
+    def test_it_names_the_approval_the_product_and_the_supplier(self, issued):
+        from django.template.loader import render_to_string
+
+        assert issued["approvals"][0]["product"] == "Lumen FC-50 kit"
+        body = render_to_string("supply_chain/update_link_issued.html", {"link": issued})
+        assert "Their technical approval of the Lumen FC-50 kit awarded to Harmattan Health Supplies" in body
+        assert "no labs account" in body
+
+
+class TestReceiptUnitsOnALink:
+    def test_counted_in_uses_the_products_own_units(self, da):
+        from types import SimpleNamespace
+
+        from connect_labs.supply_chain.update_links.forms import UNIT_BASIS, _unit_choices
+
+        kit = SimpleNamespace(pack_unit="kit", base_unit="test", base_per_pack=50)
+        assert _unit_choices(SimpleNamespace(items=[kit])) == [("pack", "Kits (50 tests each)"), ("base", "Tests")]
+        other = SimpleNamespace(pack_unit="carton", base_unit="sachet", base_per_pack=150)
+        assert _unit_choices(SimpleNamespace(items=[kit, other])) == UNIT_BASIS
+        assert _unit_choices(None) == UNIT_BASIS

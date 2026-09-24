@@ -296,7 +296,7 @@ class TestTheStockPage:
 
     def test_one_supply_point_is_singular(self, scoped, played):
         text = _visible(_page(scoped, "stock"))
-        assert "1 supply point · 1 has never reported" in text
+        assert "1 supply point · 1 has no count yet" in text
 
     def test_a_kit_leads_with_the_packets_it_is_counted_in(self, scoped, played):
         body = _page(scoped, "stock")

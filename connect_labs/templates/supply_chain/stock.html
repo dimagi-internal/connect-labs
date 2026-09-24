@@ -26,7 +26,7 @@ one of them would destroy the only signal it had.
   <h2 class="text-lg font-semibold text-brand-indigo">Stock across the network</h2>
   <span class="text-sm text-gray-500">
     {{ network.summary.points }} supply point{{ network.summary.points|pluralize }} ·
-    {{ network.summary.never_reported }} {% if network.summary.never_reported == 1 %}has{% else %}have{% endif %} never reported
+    {{ network.summary.never_reported }} {% if network.summary.never_reported == 1 %}has{% else %}have{% endif %} no count yet
   </span>
 </div>
 <p class="text-xs text-gray-500 mb-4">
@@ -63,7 +63,7 @@ one of them would destroy the only signal it had.
       <tr>
         <th class="text-left px-4 py-2">Supply point</th>
         <th class="text-left px-4 py-2">Ledger says</th>
-        <th class="text-left px-4 py-2">Reported</th>
+        <th class="text-left px-4 py-2" title="What somebody counted on the shelf, kept beside the ledger">Last count</th>
         <th class="text-left px-4 py-2" title="What a store dispenses; for a store that only releases to others, what it releases">Demand / month</th>
         <th class="text-left px-4 py-2">Months of stock</th>
         <th class="text-left px-4 py-2">To reach its maximum</th>
@@ -94,7 +94,8 @@ one of them would destroy the only signal it had.
             {% else %}
               {{ point.on_hand|figure_text }}</a>
               {% if point.on_hand_in_base %}
-                <div class="text-xs text-gray-500">{{ point.on_hand_in_base|figure_text }}</div>
+                {% comment %}The same balance in the unit the programme plans in (tests, doses) -- said, not whispered.{% endcomment %}
+                <div class="text-sm text-gray-700">= {{ point.on_hand_in_base|figure_text }}</div>
               {% endif %}
             {% endif %}
             {% for reason in point.on_hand|unconfirmed_reasons %}
@@ -116,7 +117,7 @@ one of them would destroy the only signal it had.
               {{ point.reported|figure_text }}
               <div class="text-xs text-gray-500">{{ point.reported_kind|words|capfirst }} · {{ point.reported_on }}</div>
             {% else %}
-              <span class="text-gray-400">never</span>
+              <span class="text-gray-400">no count yet</span>
             {% endif %}
           </td>
           <td class="px-4 py-2.5 tabular-nums text-gray-600">

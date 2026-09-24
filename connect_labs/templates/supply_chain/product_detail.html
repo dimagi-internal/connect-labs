@@ -90,8 +90,8 @@ numbers of sachets and adding them needs the pack spec.
             <li>
               {% comment %}The rationale is the sentence a person reads; the rule is the check behind it.{% endcomment %}
               {% if requirement.rationale %}<span class="text-gray-900">{{ requirement.rationale|capfirst }}</span>
-                <span class="text-gray-500">({{ requirement.field|words }} {{ requirement.operator }} {{ requirement.value }}{% if requirement.unit %} {{ requirement.unit }}{% endif %})</span>
-              {% else %}{{ requirement.field|words }} {{ requirement.operator }} {{ requirement.value }}{% if requirement.unit %} {{ requirement.unit }}{% endif %}{% endif %}
+                <span class="text-gray-500">({{ requirement|requirement_text }})</span>
+              {% else %}{{ requirement|requirement_text }}{% endif %}
             </li>
           {% endfor %}
         </ul>

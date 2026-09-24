@@ -63,7 +63,7 @@ from connect_labs.supply_chain.models import (
     Shipment,
 )
 from connect_labs.supply_chain.procurement.services.comparison import compare_round
-from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
+from connect_labs.supply_chain.procurement.services.compliance import failing_requirements, kit_spec_verdict
 from connect_labs.supply_chain.stock.services import network, soh
 from connect_labs.supply_chain.values import Quantity, Unconfirmed, decimal_string
 
@@ -268,11 +268,14 @@ def _catalogue(access, as_of):
         )
         verdict = checked["verdict"]
         if "fail" in verdict.lower():
-            facts = {
-                "verdict": verdict,
-                "requirements": item.commodity.spec_requirements,
-                "stated": item.spec_attributes,
-            }
+            # Which requirement fails, in words. The raw requirement list and
+            # stated figures were printed here before, and the reader had to
+            # work out the failing one from a dump.
+            fails = failing_requirements(item.spec_attributes, item.commodity.spec_requirements)
+            for part in checked["components"]:
+                if "fail" in (part.get("verdict") or "").lower():
+                    fails.append(f"{part['commodity_slug']} inside it: {part['verdict']}")
+            facts = {"verdict": verdict, "fails": fails}
             if item.is_kit:
                 facts["components"] = checked["components"]
                 # Which unit those parts fill: "in each kit", "in each co-pack".
