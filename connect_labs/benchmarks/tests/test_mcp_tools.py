@@ -1054,3 +1054,31 @@ def test_auto_publish_without_a_source_workflow_is_refused(monkeypatch):
         benchmarks_cohort_update(user=_user(), cohort_id=cohort.pk, auto_publish_on_completion=True)
     cohort.refresh_from_db()
     assert cohort.auto_publish_on_completion is False
+
+
+def test_run_history_keys_the_primary_family_by_its_own_name():
+    """The primary family used to be filed under a hard-coded "C". The
+    publisher reads it back under the name its catalog states, so any other
+    name emptied every trend without an error."""
+    from connect_labs.benchmarks.mcp_tools import _run_history
+
+    run = _StubRun(
+        is_completed=True,
+        period_end="2026-09-20",
+        snapshot={
+            "state": {
+                "snapshot": {
+                    "cMeasures": [{"id": "mortality", "indicator": "mortality", "series": "KMC"}],
+                    "byOpp": [{"opp": 500, "ind": {"mortality": {"id": "mortality", "value": 5.8, "n": 100}}}],
+                }
+            }
+        },
+    )
+
+    class _WDA:
+        def list_runs(self, definition_id):
+            return [run]
+
+    out = _run_history(_WDA(), 1, "snapshot")
+    assert out[0]["byOpp"]["KMC"][500]["mortality"]["value"] == 5.8
+    assert "C" not in out[0]["byOpp"]

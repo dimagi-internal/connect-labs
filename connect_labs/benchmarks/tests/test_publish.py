@@ -636,3 +636,11 @@ class TestTheCountGuardSurvivesAnExplicitOverride:
         )
         published = set(BenchmarkValue.objects.filter(publication=pub).values_list("indicator_id", flat=True))
         assert "C13" in published
+
+
+def test_the_primary_family_is_named_by_its_catalog_not_by_its_ids():
+    """Slug ids carry no family in their letters; the catalog entry does."""
+    measures = [{"indicator": "mortality", "series": "KMC"}, {"indicator": "pct_slow_growth", "series": "KMC"}]
+    assert publish_module._primary_series_name(measures) == "KMC"
+    # a catalog frozen before entries stated their family still resolves by prefix
+    assert publish_module._primary_series_name([{"indicator": "C14"}, {"indicator": "C15"}]) == "C"
