@@ -1,6 +1,18 @@
 {
-  "build_order": [],
-  "fetched_at": "2026-09-24T00:28:44.744483+00:00",
+  "build_order": [
+    "the-donated-chlorine-is-ninety-days-late",
+    "the-donation-owes-nothing-but-its-arrival",
+    "ngozi-points-the-alert-at-clearwater",
+    "ngozi-files-the-registration-beside-the-quote",
+    "ngozi-awards-the-stop-gap",
+    "the-regulators-approval-rests-on-the-registration",
+    "place-order-waits-for-northstar",
+    "northstar-says-yes-and-the-order-goes-through",
+    "the-stop-gap-reaches-kano",
+    "clearwater-has-already-been-told",
+    "the-stop-gap-bridges-but-does-not-replace"
+  ],
+  "fetched_at": "2026-09-24T11:19:07.706330+00:00",
   "name": "supply-chlorine-stopgap",
   "narrative": "Ngozi starts at the checks, where ClearWater Action's donated chlorine is ninety days past the date it was promised and the Sahel CHI store in Kano that refills the dispensers sits under its two-month floor. She opens the donation and reads it as ClearWater gave it: in kind, nothing to pay, 400 jerry cans still to arrive. Instead of chasing ClearWater again, she points an alert at their supply desk's email, so the store falling below its minimum or their shipment passing its date reaches them straight from the record. For a stop-gap she has asked Harmattan Health Supplies for nationally registered chlorine, and she checks their quote: Aquaguard at 1.25%, 90 jerry cans within a week, the product's registration certificate filed beside the quotation. She awards the stop-gap to Harmattan and writes down why. She records the regulator's approval, which rests on that registration certificate, and asks Northstar Fund, which pays for the programme, to approve the spend; until Northstar answers, the award cannot be ordered. When she tries to place the order before Northstar has answered, the order screen refuses it and names Northstar's pending approval. Northstar says yes, Ngozi records their answer and places the order again, and this time it goes through, with a price the donation never had. When the jerry cans reach Kano she records Sahel CHI's goods received note, and the 90 cans enter the store's ledger. Ngozi checks the alerts and sees that ClearWater's supply desk has already been emailed both facts, the store below its minimum and their shipment overdue. Last she reads the Kano store: its cover rises to just under two months, still below its floor, so the stop-gap bridges the gap and ClearWater's 400 jerry cans are what will close it.",
   "personas": {
@@ -8,6 +20,7 @@
       "color": "#2563EB",
       "intro": "Ngozi keeps chlorine in the community dispensers across Kano, and this morning the donor's consignment is three months late and the store is running down.",
       "name": "Ngozi",
+      "org": "",
       "role": "Supply lead, Safe Water Programme"
     }
   },
@@ -77,88 +90,88 @@
     {
       "features": [
         {
-          "description": "product_registration is a document kind that can be attached to a quote.",
+          "description": "product_registration is a document kind that can be uploaded against a quote from the quote page.",
           "id": "product-registration-document-kind",
-          "verify": "pytest connect_labs/supply_chain/tests -k document_attach attaches kind=product_registration to a quote_id"
+          "verify": "Playwright: + Attach document on /supply/procurement/quotes/<id>/, kind Product registration, upload a PDF; the quote page lists it"
         },
         {
-          "description": "The quote page lists the documents attached to the quote with their kind and title.",
+          "description": "The quote page lists the documents attached to the quote with their kind and title, each opening the stored file.",
           "id": "quote-evidence-panel",
-          "verify": "Playwright: /supply/procurement/quotes/<id>/ shows 'product registration' under 'Evidence for this quote'"
+          "verify": "Playwright: /supply/procurement/quotes/<id>/ shows the registration under 'Evidence for this quote'"
         }
       ],
-      "id": "harmattan-quotes-a-registered-product",
-      "narrative": "For a stop-gap she has asked Harmattan Health Supplies for nationally registered chlorine, and she checks their quote: Aquaguard at 1.25%, 90 jerry cans within a week, the product's registration certificate filed beside the quotation.",
+      "id": "ngozi-files-the-registration-beside-the-quote",
+      "narrative": "For a stop-gap she has asked Harmattan Health Supplies for nationally registered chlorine. Their quote reads Aquaguard at 1.25%, 90 jerry cans within a week, and she files the product's registration certificate beside the quotation.",
       "persona": "ngozi",
       "provenance": "S3",
-      "title": "Harmattan quotes a registered product"
+      "title": "Ngozi files the registration certificate beside Harmattan's quote"
     },
     {
       "features": [
         {
-          "description": "award_create requires a rationale and freezes the comparison snapshot at the moment of decision.",
+          "description": "award_create requires a rationale and records decided_by as the person named on the comparison, not the account recording it.",
           "id": "award-with-rationale",
-          "verify": "pytest connect_labs/supply_chain/tests -k award_create asserts an empty rationale is refused"
+          "verify": "pytest connect_labs/supply_chain/tests -k award asserts an empty rationale is refused and decided_by is stored as given"
         },
         {
-          "description": "/supply/procurement/awards/<id>/ shows who decided, when, and why, with the approvals and orders against the award.",
-          "id": "award-page",
-          "verify": "Playwright: after Award, the award page shows 'Why:' followed by the typed rationale"
+          "description": "After an award the comparison marks the chosen quote Chosen and links the award above the table.",
+          "id": "comparison-marks-the-award",
+          "verify": "Playwright: after Award the comparison row shows 'Chosen' and an 'award N to Harmattan Health Supplies' link"
         }
       ],
       "id": "ngozi-awards-the-stop-gap",
-      "narrative": "She awards the stop-gap to Harmattan and writes down why.",
+      "narrative": "She awards the stop-gap to Harmattan in her own name and writes down why.",
       "persona": "ngozi",
       "provenance": "S4",
-      "title": "Ngozi awards the stop-gap and writes down why"
+      "title": "Ngozi awards the stop-gap in her own name and writes down why"
     },
     {
       "features": [
+        {
+          "description": "/supply/procurement/awards/<id>/ shows who decided, when and why, with the approvals and orders against the award.",
+          "id": "award-page",
+          "verify": "Playwright: the award page shows 'Decided <date> by Ngozi Eze' and 'Why:' with the typed rationale"
+        },
         {
           "description": "approval_request records an approver organisation in the role technical, funder or regulatory, starting as requested.",
           "id": "award-approval-roles",
           "verify": "pytest connect_labs/supply_chain/tests -k approval_request asserts status requested and role regulatory"
         },
         {
+          "description": "An approval can rest on a document already on file; the award page links it under the approver as Rests on.",
+          "id": "approval-rests-on-document",
+          "verify": "Playwright: the regulator's row on the award page reads 'Rests on Product registration — Aquaguard 1.25% …'"
+        },
+        {
           "description": "approval_decide records approved or declined with a date, once per row.",
           "id": "approval-decide",
           "verify": "Playwright: 'Record their answer' then Approved; the award page shows 'approved' for the regulator"
-        },
-        {
-          "description": "award_detail hides \"Place an order\" and names each pending or declined approval while blocking_approvals is non-empty.",
-          "id": "blocking-banner",
-          "verify": "Playwright: after requesting a funder approval, the award page shows 'This award cannot be ordered yet: Northstar Fund (funder)'"
-        },
-        {
-          "description": "award_awaiting_approval reports each requested approval with its approver, role and requested_on.",
-          "id": "award-awaiting-approval-check",
-          "verify": "pytest connect_labs/supply_chain/tests -k award_awaiting_approval asserts the approver name in the facts"
         }
       ],
-      "id": "two-answers-stand-between-the-award-and-an-order",
-      "narrative": "She records the regulator's approval, which rests on that registration certificate, and asks Northstar Fund, which pays for the programme, to approve the spend; until Northstar answers, the award cannot be ordered.",
+      "id": "the-regulators-approval-rests-on-the-registration",
+      "narrative": "On the award she records the regulator's approval, resting on the registration certificate she has just filed.",
       "persona": "ngozi",
       "provenance": "S4",
-      "title": "Two answers stand between the award and an order"
+      "title": "The regulator's approval rests on that certificate"
     },
     {
       "features": [
         {
-          "description": "contract_create against an award with a requested or declined approval raises an error naming the approval, the approver, the role and requested_on.",
-          "id": "contract-create-refusal",
-          "verify": "pytest connect_labs/supply_chain/tests -k approval asserts contract_create raises naming the pending approver"
+          "description": "award_detail shows Place order disabled while an approval is requested or declined, with a reason naming each approver, role and the date it was asked.",
+          "id": "blocking-banner",
+          "verify": "Playwright: after requesting a funder approval the award page shows a disabled Place order and 'Place order is waiting on the funder approval from Northstar Fund'"
         },
         {
-          "description": "/supply/orders/new/?award=<id> opens on the awarded supplier, product, trade item, quantity and price.",
-          "id": "order-form-prefill",
-          "verify": "Playwright: the order form opened from an award shows Harmattan Health Supplies and 90 jerry_can prefilled"
+          "description": "contract_create against an award with a requested or declined approval is refused naming the approval, so the disabled button cannot be bypassed.",
+          "id": "contract-create-refusal",
+          "verify": "pytest connect_labs/supply_chain/tests -k approval asserts contract_create raises naming the pending approver"
         }
       ],
-      "id": "the-order-is-refused",
-      "narrative": "When she tries to place the order before Northstar has answered, the order screen refuses it and names Northstar's pending approval.",
+      "id": "place-order-waits-for-northstar",
+      "narrative": "Then she asks Northstar Fund, which pays for the programme, to approve the spend, and Place order greys out, naming the answer it is waiting for.",
       "persona": "ngozi",
       "provenance": "S4",
-      "title": "The order is refused until Northstar answers"
+      "title": "Place order waits for Northstar"
     },
     {
       "features": [
@@ -174,7 +187,7 @@
         }
       ],
       "id": "northstar-says-yes-and-the-order-goes-through",
-      "narrative": "Northstar says yes, Ngozi records their answer and places the order again, and this time it goes through, with a price the donation never had.",
+      "narrative": "Northstar says yes, Ngozi records their answer, Place order comes back, and the order goes through with a price the donation never had.",
       "persona": "ngozi",
       "provenance": "S4",
       "title": "Northstar says yes and the order goes through"
@@ -201,18 +214,18 @@
     {
       "features": [
         {
-          "description": "The alerts page lists each notice with the check kind, the record it is about, the alert that found it and its delivery, including the address it was sent to.",
+          "description": "The alerts page lists each notice with the check it found, the record it is about, the alert that found it and its delivery, including the address it was sent to.",
           "id": "alert-sent-log",
-          "verify": "Playwright: /supply/alerts/ sent log shows 'stock_below_minimum' and 'shipment_overdue' rows for the ClearWater alert"
+          "verify": "Playwright: /supply/alerts/ sent log shows 'Below its own minimum' and 'Shipment past its expected date' rows for the ClearWater alert"
         },
         {
-          "description": "send_supply_alerts runs every five minutes, emailing only checks that are new for each subscription.",
-          "id": "alert-beat",
-          "verify": "pytest connect_labs/supply_chain/tests -k run_alerts asserts a check that stays true is sent once"
+          "description": "Check now runs the same pass the five-minute beat runs, for this programme, and a check that stays true is sent once.",
+          "id": "alert-check-now",
+          "verify": "pytest connect_labs/supply_chain/tests -k TestCheckAlertsNow asserts the button runs this programme and a repeat run sends nothing new"
         }
       ],
       "id": "clearwater-has-already-been-told",
-      "narrative": "Ngozi checks the alerts and sees that ClearWater's supply desk has already been emailed both facts, the store below its minimum and their shipment overdue.",
+      "narrative": "Rather than wait for the next run she checks the alerts now, and the sent log shows ClearWater's supply desk has been emailed both facts: the store below its minimum and their shipment overdue.",
       "persona": "ngozi",
       "provenance": "S2",
       "title": "ClearWater has already been told"
@@ -238,5 +251,5 @@
     }
   ],
   "slug": "supply-chlorine-stopgap",
-  "version": 0
+  "version": 3
 }
