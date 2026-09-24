@@ -361,7 +361,7 @@ scenes:
     seconds: 3.0
   - kind: click
     must_succeed: true
-    target: css:a[href*='stock/movements']
+    target: css:td[data-ledger] a
     note: she opens the balance
   - kind: wait_for
     must_succeed: true
