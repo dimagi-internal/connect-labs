@@ -24,12 +24,12 @@ one of them would destroy the only signal it had.
 
 <div class="flex items-baseline gap-3 mb-1">
   <h2 class="text-lg font-semibold text-brand-indigo">Stock across the network</h2>
-  <span class="text-sm text-gray-500">
+  <span class="text-sm text-gray-600">
     {{ network.summary.points }} supply point{{ network.summary.points|pluralize }} ·
     {{ network.summary.never_reported }} {% if network.summary.never_reported == 1 %}has{% else %}have{% endif %} never reported
   </span>
 </div>
-<p class="text-xs text-gray-500 mb-4">
+<p class="text-xs text-gray-600 mb-4">
   Cover is measured against each point's own minimum and maximum months of
   stock, so "below its band" means below what this programme set. Goods in
   transit are excluded: they are real, but they are not cover.
@@ -64,7 +64,7 @@ one of them would destroy the only signal it had.
         <th class="text-left px-4 py-2">Reported</th>
         <th class="text-left px-4 py-2" title="What a store dispenses; for a store that only releases to others, what it releases">Demand / month</th>
         <th class="text-left px-4 py-2">Months of stock</th>
-        <th class="text-left px-4 py-2">Send</th>
+        <th class="text-left px-4 py-2">Suggested resupply</th>
         <th class="text-left px-4 py-2">Against its band</th>
       </tr>
     </thead>
@@ -84,7 +84,7 @@ one of them would destroy the only signal it had.
             the pack, the one unit the column shares. The figure links to the
             movements behind it, so a balance can be traced to its receipts.
             {% endcomment %}
-            <a class="hover:underline" title="The movements behind this balance"
+            <a class="font-semibold text-brand-indigo hover:underline" title="The movements behind this balance"
                href="{% url 'supply_chain:movements' %}?supply_point_id={{ point.supply_point_id }}{% if point.item_id %}&amp;item_id={{ point.item_id }}{% endif %}">
             {% if point.counted_in_base and point.on_hand_in_base %}
               {{ point.on_hand_in_base|figure_text }}</a>
@@ -98,15 +98,21 @@ one of them would destroy the only signal it had.
             {% for reason in point.on_hand|unconfirmed_reasons %}
               <div class="text-xs text-orange-700 mt-0.5">{{ reason }}</div>
             {% endfor %}
+            {% if point.item_name %}<div class="text-xs text-gray-600">{{ point.item_name }}</div>{% endif %}
           </td>
           <td class="px-4 py-2.5 tabular-nums">
             {% if point.reported %}
               {{ point.reported|figure_text }}
               <div class="text-xs text-gray-500">{{ point.reported_kind|words|capfirst }} · {{ point.reported_on }}</div>
             {% else %}
-              <span class="text-gray-400">never</span>
+              <span class="text-gray-600">never</span>
             {% endif %}
           </td>
+          {% if point.no_consumption_yet and point.status != "durable" %}
+          {% comment %}Demand, months, resupply and band all wait on the same missing
+          rate: one neutral cell, not three "Unconfirmed" and a "cannot be assessed".{% endcomment %}
+          <td colspan="4" class="px-4 py-2.5 text-gray-600">No consumption yet — cover can't be computed</td>
+          {% else %}
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
             {{ point.amc|quantity_text }}{% if point.amc.amount %} <span class="text-xs text-gray-500">{% if point.amc_basis == "releases" %}releases{% else %}dispensed{% endif %} a month</span>{% endif %}
             {% if point.amc_in_display_unit %}<div class="text-xs text-gray-500">(= {{ point.amc_in_display_unit|quantity_text }})</div>{% endif %}
@@ -159,9 +165,10 @@ one of them would destroy the only signal it had.
               Naming one of them here would be a guess; the reason is already
               spelled out in the columns to the left.
               {% endcomment %}
-              <span class="text-xs text-gray-400">cannot be assessed</span>
+              <span class="text-xs text-gray-600">cannot be assessed</span>
             {% endif %}
           </td>
+          {% endif %}
         </tr>
       {% empty %}
         <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">
@@ -173,7 +180,7 @@ one of them would destroy the only signal it had.
   </div>
 </div>
 
-<p class="text-xs text-gray-500 mt-3">
+<p class="text-xs text-gray-600 mt-3">
   Consumption is derived from Connect visits, not keyed by a clerk — the field
   record is the consumption record. A store that dispenses nothing itself, such as
   a distributor's warehouse, is rated on what it releases to other supply points. A worker's reported figure is kept beside

@@ -92,15 +92,30 @@ def scope_for(link) -> Scope:
     programmes (which nothing does today) could not carry a link with it.
     """
     program_id = link.program_id
-    contracts = Contract.objects.filter(program_id=program_id, update_links=link).select_related(
-        "commodity", "item", "supplier"
-    )
     points = SupplyPoint.objects.filter(program_id=program_id, update_links=link)
+    point_ids = list(points.values_list("pk", flat=True))
+
+    # The orders named on the link, plus every order delivered to one of its
+    # stores that the link's organisation RECEIVES -- it is the buyer, or it
+    # runs that store. A partner that buys a shortfall locally after its link
+    # was issued can then record the goods arriving (the IPTSc render), without
+    # a new link. An order it supplies is never added this way: sending goods
+    # to a store is not the same as being told what arrived there.
+    receiving = Q(buyer_org_id=link.org_id) | Q(delivery_supply_point__managed_by_org_id=link.org_id)
+    delivered = (
+        Contract.objects.filter(program_id=program_id, delivery_supply_point_id__in=point_ids)
+        .filter(receiving)
+        .exclude(supplier__org_id=link.org_id)
+    )
+    named = Contract.objects.filter(program_id=program_id, update_links=link)
+    contracts = Contract.objects.filter(program_id=program_id).filter(
+        Q(pk__in=named.values("pk")) | Q(pk__in=delivered.values("pk"))
+    )
+    contracts = contracts.select_related("commodity", "item", "supplier")
 
     # Products the link can name: what its contracts are for, and what has
     # ever rested at its supply points. Not the programme's catalogue -- the
     # link reads nothing outside its scope, product names included.
-    point_ids = list(points.values_list("pk", flat=True))
     item_ids = set(contracts.exclude(item=None).values_list("item_id", flat=True))
     item_ids |= set(
         Movement.objects.filter(program_id=program_id)
@@ -538,6 +553,11 @@ def updates_for_contract(contract) -> list[dict]:
     Asked of the database: a submission carries the order it touched, so this
     is one query however many links and submissions the programme has.
     """
+    # The link page's own words for each action ("Record a dispatch"), so the
+    # order page does not call the same thing "record shipment". Imported here:
+    # the forms module imports this one.
+    from connect_labs.supply_chain.update_links.forms import PUBLIC_FORMS
+
     submissions = UpdateLinkSubmission.objects.filter(
         link__program_id=contract.program_id, contract=contract
     ).select_related("link__org")
@@ -545,7 +565,9 @@ def updates_for_contract(contract) -> list[dict]:
         {
             "org": submission.link.org.name,
             "org_id": submission.link.org_id,
-            "title": submission.action.replace("_", " "),
+            "title": str(
+                getattr(PUBLIC_FORMS.get(submission.action), "title", "") or submission.action.replace("_", " ")
+            ),
             "detail": describe(submission),
             "at": submission.submitted_at,
         }

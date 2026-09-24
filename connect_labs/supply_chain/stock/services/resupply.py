@@ -28,6 +28,11 @@ DEFAULT_WINDOW_DAYS = 90
 DURABLE = NotForecast("durable — not forecast: it is held and moved, never consumed")
 
 
+# Said when a point has never dispensed anything. A constant so the stock page
+# can recognise it and say it once rather than in every forecast column.
+NO_CONSUMPTION_YET = "nothing has been dispensed from here yet, so there is no consumption rate"
+
+
 def _is_durable(item) -> bool:
     return item is not None and getattr(item, "stock_class", "consumable") == "durable"
 
@@ -58,7 +63,7 @@ def average_monthly_consumption(program_id, supply_point, item=None, as_of=None,
     in_window = demand.between(start, end)
     earliest = demand.order_by("occurred_on").values_list("occurred_on", flat=True).first()
     if earliest is None:
-        return unconfirmed("nothing has been dispensed from here yet, so there is no consumption rate")
+        return unconfirmed(NO_CONSUMPTION_YET)
 
     observed_days = min(window_days, (end - earliest).days + 1)
     if observed_days < MINIMUM_WINDOW_DAYS:

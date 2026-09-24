@@ -43,26 +43,28 @@ sachets are in the carton, and neither does a balance.
     <dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-3 mt-3">
       <div>
         <dt class="text-[11px] text-gray-500">Packed</dt>
-        <dd class="text-sm mt-0.5 tabular-nums {% if item.base_per_pack %}text-gray-900{% else %}text-message-warning-text{% endif %}">
+        <dd class="text-sm mt-0.5 tabular-nums {% if item.base_per_pack %}text-gray-900{% else %}text-gray-500{% endif %}">
           {% if item.base_per_pack %}{{ item.base_per_pack }} {{ item.base_unit|default:product.base_unit|unit_plural }}
-            / {{ item.pack_unit|default:product.pack_unit|unit_words }}{% else %}not stated{% endif %}
+            / {{ item.pack_unit|default:product.pack_unit|unit_words }}{% else %}not recorded{% endif %}
         </dd>
       </div>
+      {% comment %}Only when recorded: "Packs per case: not recorded" beside "50 packets /
+      carton" read as a contradiction (the IPTSc render).{% endcomment %}
+      {% if item.pack_per_case %}
       <div>
         <dt class="text-[11px] text-gray-500">Packs per case</dt>
-        <dd class="text-sm mt-0.5 tabular-nums {% if item.pack_per_case %}text-gray-900{% else %}text-gray-400{% endif %}">
-          {{ item.pack_per_case|default:"not recorded" }}
-        </dd>
+        <dd class="text-sm mt-0.5 tabular-nums text-gray-900">{{ item.pack_per_case }}</dd>
       </div>
+      {% endif %}
       <div>
         <dt class="text-[11px] text-gray-500">Unit weight</dt>
-        <dd class="text-sm mt-0.5 tabular-nums {% if item.base_unit_grams %}text-gray-900{% else %}text-message-warning-text{% endif %}">
-          {% if item.base_unit_grams %}{{ item.base_unit_grams }} g{% else %}not stated{% endif %}
+        <dd class="text-sm mt-0.5 tabular-nums {% if item.base_unit_grams %}text-gray-900{% else %}text-gray-500{% endif %}">
+          {% if item.base_unit_grams %}{{ item.base_unit_grams }} g{% else %}not recorded{% endif %}
         </dd>
       </div>
       <div>
         <dt class="text-[11px] text-gray-500">Shelf life</dt>
-        <dd class="text-sm mt-0.5 tabular-nums {% if item.shelf_life_months %}text-gray-900{% else %}text-gray-400{% endif %}">
+        <dd class="text-sm mt-0.5 tabular-nums {% if item.shelf_life_months %}text-gray-900{% else %}text-gray-500{% endif %}">
           {% if item.shelf_life_months %}{{ item.shelf_life_months }} months{% else %}not recorded{% endif %}
         </dd>
       </div>
@@ -75,7 +77,7 @@ sachets are in the carton, and neither does a balance.
       <div>
         <dt class="text-[11px] text-gray-500">Against the spec</dt>
         <dd class="text-sm mt-0.5">
-          {% if item.spec_verdict %}{{ item.spec_verdict }}{% else %}<span class="text-gray-400">no product to check against</span>{% endif %}
+          {% if item.spec_verdict %}{{ item.spec_verdict }}{% else %}<span class="text-gray-500">no product to check against</span>{% endif %}
         </dd>
       </div>
     </dl>
@@ -87,13 +89,13 @@ sachets are in the carton, and neither does a balance.
         {% else %}
           One {{ item.base_unit|default:product.base_unit|default:"unit"|unit_words }} is one full course
         {% endif %}
-        <span class="text-gray-500">— so its cost per course needs no ration table.</span>
+        <span class="text-gray-500">— so its cost per course needs no conversion.</span>
       </p>
     {% endif %}
 
     {% if item.is_kit %}
       <div class="mt-4">
-        <div class="text-[11px] text-gray-500">What is inside — one {{ item.components_unit|unit_words }} holds</div>
+        <h2 class="text-base font-semibold text-gray-900">What is inside — one {{ item.components_unit|unit_words }} holds</h2>
         <div class="overflow-x-auto mt-1" tabindex="0" role="region" aria-label="Table, scrolls sideways">
           <table class="min-w-[32rem] w-full text-sm">
             <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
@@ -155,8 +157,8 @@ sachets are in the carton, and neither does a balance.
       {% else %}
         <p class="text-sm text-gray-500 mt-0.5 max-w-2xl">
           None recorded. Without a GTIN, a carton arriving in a store is
-          matched to this row by name — which is how two manufacturers' RUTF
-          ends up counted as one.
+          matched to this row by name — which is how two manufacturers' products
+          end up counted as one.
         </p>
       {% endif %}
     </div>

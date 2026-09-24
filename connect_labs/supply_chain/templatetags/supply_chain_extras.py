@@ -494,6 +494,36 @@ def told_by(row, orgs):
     return source_label(row.get("source"))
 
 
+@register.simple_tag
+def told_by_for(row, orgs, tellers):
+    """Who told us, naming the party whose word it is when somebody else wrote it down.
+
+    `tellers` maps a reported source to the organisation that reports it on
+    this record ({"partner_reported": "SCHI", ...}). A receipt the programme
+    took down from a partner read just "Dimagi", which hid that it was the
+    partner's word: it now reads "Dimagi, for SCHI (they told us)".
+    """
+    row = row or {}
+    recorded = told_by(row, orgs)
+    teller = (tellers or {}).get(row.get("source"))
+    org = (orgs or {}).get(row.get("recorded_by_org_id")) if row.get("recorded_by_org_id") else None
+    if teller and org and org.get("name") and org["name"] != teller:
+        return f"{org['name']}, for {teller} (they told us)"
+    return recorded
+
+
+@register.filter
+def possessive(name):
+    """ "Harmattan Health Supplies" -> "Harmattan Health Supplies'"; "SCHI" -> "SCHI's"."""
+    from django.utils.html import escape
+    from django.utils.safestring import mark_safe
+
+    name = str(name or "")
+    # Escaped here and the apostrophe left literal: autoescaping it would put
+    # "&#x27;" in the page source where a test or a reader looks for "'".
+    return mark_safe(escape(name) + ("'" if name.endswith(("s", "S")) else "'s"))
+
+
 @register.filter
 def buyer_comparison(by_buyer):
     """What the per-buyer landed totals actually establish, and no more.
@@ -521,6 +551,17 @@ def buyer_comparison(by_buyer):
     else:
         state = "same"
     return {"state": state, "unconfirmed": unconfirmed}
+
+
+@register.filter
+def same_total(by_buyer):
+    """The one landed total when every buyer's is confirmed and equal, else None.
+
+    So the page can say it once: three identical rows said one thing three times.
+    """
+    if buyer_comparison(by_buyer)["state"] != "same":
+        return None
+    return next(iter(dict(by_buyer).values()))
 
 
 def _as_number(amount):
