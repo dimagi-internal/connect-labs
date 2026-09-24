@@ -19,6 +19,7 @@ from connect_labs.supply_chain.alerts.forms import AlertSubscriptionForm
 from connect_labs.supply_chain.alerts.models import AlertSubscription
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
+from connect_labs.supply_chain.templatetags.supply_chain_extras import check_readout
 from connect_labs.supply_chain.views import OperationBase
 
 
@@ -38,6 +39,11 @@ class AlertListView(OperationBase):
                 # Who it went to, by name where the alert has one; the address
                 # it was sent to stays beside it, because that is what was used.
                 notice["sent_to_name"] = recipients.get(notice["subscription_id"]) or notice["sent_to"]
+                # The figure that made it true, as the checks page says it: "2.8 months
+                # of stock · minimum 3". A log row reading only "Below its own minimum"
+                # did not say how far below (the CHC render).
+                if notice["kind"] == "check":
+                    notice["readout"] = check_readout({"kind": notice["subject_kind"], "facts": notice["facts"]})
                 notice["detected"] = parse_datetime(notice["detected_at"])
         return context
 

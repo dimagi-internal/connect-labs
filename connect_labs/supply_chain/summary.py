@@ -45,7 +45,9 @@ def _source(access, commodity=None):
 
     comparable = total = 0
     provisional = False
-    for round_ in rounds.filter(status__in=("open", "closed")):
+    # An awarded round was still evaluated: leaving it out read "Evaluation 0
+    # of 0 comparable" beside "Award 3" on the round those awards came from.
+    for round_ in rounds.filter(status__in=("open", "closed", "awarded")):
         for line in round_.lines or []:
             slug = line.get("commodity_slug")
             if commodity is not None and slug != commodity.slug:

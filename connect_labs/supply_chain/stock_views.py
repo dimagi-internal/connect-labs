@@ -411,14 +411,17 @@ class StockCountRecordView(OperationFormView):
     operation = "stock_count_record"
     form_class = StockCountForm
     title = "Record a count"
+    # The intro said a count never replaces the ledger, above a form whose
+    # third option is "Replace the ledger with this count" (the CHC render).
     intro = (
-        "What somebody says is actually there. Kept beside the ledger balance rather than replacing "
-        "it — the variance between the two is the finding, and overwriting one destroys it."
+        "What somebody says is actually there. Usually kept beside the ledger, so any difference shows "
+        "up; recorded as an override, it replaces the ledger's figure — for a count you trust over the "
+        "records, with the reason in the notes."
     )
     submit_label = "Record count"
     footnote = (
-        "An override additionally writes a compensating adjustment, so the ledger keeps agreeing with "
-        "the working figure while remaining the authority. The other two kinds move nothing."
+        "An override writes the difference into the ledger as an adjustment, so the two agree afterwards "
+        "and the adjustment says why. The other two kinds move nothing."
     )
 
     template_name = "supply_chain/stock_count_form.html"

@@ -91,7 +91,7 @@ The log says how each notice left, including when it did not: "email off" and
               </td>
               <td class="px-4 py-2 text-gray-700">
                 {{ sub.recipient }}
-                {% if sub.recipient_email %}<div class="text-xs text-gray-500">{% if sub.recipient_name %}{{ sub.recipient_email }} · {% endif %}outside labs</div>{% endif %}
+                {% if sub.recipient_email %}<div class="text-xs text-gray-500">{% if sub.recipient_name %}{{ sub.recipient_email }} · {% endif %}by email</div>{% endif %}
               </td>
               <td class="px-4 py-2 text-gray-700">
                 {% if sub.cadence == "daily_digest" %}once a day{% else %}as it happens{% endif %}
@@ -147,6 +147,7 @@ The log says how each notice left, including when it did not: "email off" and
               <td class="px-4 py-2">
                 {% if notice.kind == "check" %}
                   <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs">{{ notice.subject_kind|check_label }}</span>
+                  {% if notice.readout %}<div class="text-xs text-gray-600 mt-0.5">{{ notice.readout }}</div>{% endif %}
                 {% else %}
                   <span class="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-xs">{{ notice.subject_kind|words|capfirst }}</span>
                   <span class="text-xs text-gray-600">{{ notice.facts.quantity|qty:notice.facts.quantity_unit }}</span>

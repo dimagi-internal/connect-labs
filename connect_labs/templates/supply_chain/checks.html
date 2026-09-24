@@ -21,8 +21,8 @@ the record it is about, because that is where it gets answered.
   </div>
   <h2 class="text-lg font-semibold text-brand-indigo">What the record cannot answer, or disagrees with itself about</h2>
   <p class="text-sm text-gray-600 max-w-3xl">
-    {{ checks.count }} check{{ checks.count|pluralize }}. Each is a fact nobody supplied, two records that
-    disagree, or a figure past a bound your own data sets. None is ranked and none says what to do.
+    {{ checks.count }} check{{ checks.count|pluralize }}. Each is something nobody has told us yet, two
+    records that disagree, or a figure past a limit you set. None is ranked and none says what to do.
   </p>
   <div class="flex flex-wrap gap-2 mt-3 text-sm">
     <a href="{% url 'supply_chain:checks' %}"
@@ -80,7 +80,7 @@ the record it is about, because that is where it gets answered.
 {% empty %}
   <div class="bg-white border border-brand-border-light rounded-lg px-5 py-4">
     <p class="text-sm font-semibold text-gray-900">Nothing to report{% if kind or category %} of this kind{% endif %}.</p>
-    <p class="text-sm text-gray-500 mt-0.5">Every check is read from the records as they stand{% if as_of %} at {{ as_of }}{% endif %}: nothing is missing, nothing disagrees, nothing is past a bound.</p>
+    <p class="text-sm text-gray-500 mt-0.5">Every check is read from the records as they stand{% if as_of %} at {{ as_of }}{% endif %}: nothing is missing, nothing disagrees, nothing is past a limit.</p>
   </div>
 {% endfor %}
 
