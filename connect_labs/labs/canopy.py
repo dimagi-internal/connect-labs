@@ -13,11 +13,12 @@ Two things here are load-bearing and easy to get wrong:
   asserting "this is a real person on labs", and canopy believes it because it
   verified our signature. Taking the subject from anything the caller supplies
   would let any caller be anybody.
-* the visitor arrives as a canopy **contact**, not as a canopy account, and that
-  is the whole point: a contact reaches the agents this site was allowed to
-  offer and their own conversations with it, and nothing else in canopy. We
-  deliberately do not claim ``email_verified``, which is canopy's trigger for
-  resolving a visitor to a real canopy account — see ``_why_no_email_verified``.
+* ``email_verified: true`` on the signed-in user's address is what lets canopy
+  recognise them. Canopy lets a visitor in as their own canopy account only if
+  exactly one canopy user holds that address verified AND is a member of the
+  workspace this site is registered in; anyone else arrives as a **contact**,
+  who reaches only the agents this site offers and their own conversations with
+  it. Canopy never creates an account from this. See ``assertion_for``.
 
 Canopy's own requirements, worth knowing before debugging a 401: EdDSA/ES256/
 RS256 only (never HMAC — the key is public, so a symmetric algorithm would let
@@ -112,26 +113,6 @@ def panel_context(
     }
 
 
-def _why_no_email_verified() -> None:
-    """Documentation, not code.
-
-    Canopy resolves a visitor to their existing canopy ACCOUNT when the
-    assertion carries ``email_verified: true`` for an address on a domain the
-    site is allowed to resolve. Labs does not claim it, for two reasons:
-
-    1. **It would not be true of labs' own knowledge.** A labs ``User`` is
-       created from Connect's OAuth identity, so the address was verified by
-       Connect, at some point, for some purpose. Restating that as "labs
-       verified this email" to obtain a stronger grant is exactly the kind of
-       laundered claim the signing scheme exists to prevent.
-    2. **Nothing needs it.** A contact can hold a conversation and declare the
-       page it is looking at, so the panel works the same either way. Resolving
-       to accounts would only split labs' users into two classes by email
-       domain — and canopy grants a site only the *setter's own* domain, so with
-       three Dimagi domains it cannot even be configured by one person.
-    """
-
-
 def assertion_for(user) -> str:
     """A signed statement that ``user`` is a real person on labs, right now."""
     if not is_configured():
@@ -150,9 +131,8 @@ def assertion_for(user) -> str:
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(seconds=ASSERTION_TTL_SECONDS)).timestamp()),
             "jti": str(uuid.uuid4()),
-            # Descriptive only: canopy records these and matches on neither. They
-            # are what a person sees in the agent's own listing of who it spoke
-            # to, which is the only reason to send them.
+            # `name` is descriptive: it is what a person sees in the agent's own
+            # listing of who it spoke to.
             #
             # `get_display_name`, not `get_full_name`: labs' User replaces
             # first_name/last_name with a single `name` ("First and last name do
@@ -160,6 +140,14 @@ def assertion_for(user) -> str:
             # accessor reads two fields that are None here.
             "name": user.get_display_name(),
             "email": user.email or "",
+            # The address came from Connect's OAuth identity, which is how this
+            # person signed in to labs — so vouching for it is vouching for our
+            # own signed-in user, which is what this signature is for. Canopy
+            # uses it to let a member of the site's workspace arrive as their
+            # own canopy account (their chats, their access) instead of as an
+            # anonymous contact; for anyone else it changes nothing. Never
+            # claimed for an empty address.
+            "email_verified": bool(user.email),
         },
         settings.CANOPY_SIGNING_KEY,
         algorithm="EdDSA",

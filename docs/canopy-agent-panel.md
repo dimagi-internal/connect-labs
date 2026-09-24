@@ -80,15 +80,15 @@ that option for us (canopy-web#922). If the mint starts 403ing with no
 `X-CSRFToken` on the request, that binding is what broke, and the `{% csrf_token %}`
 at `base.html:76` is what it reads.
 
-**Visitors are canopy *contacts*, not canopy accounts.** Labs deliberately does
-not claim `email_verified`, which is canopy's trigger for resolving a visitor to
-a real canopy account. Two reasons, both in `canopy._why_no_email_verified`: a
-labs `User` comes from Connect's OAuth identity, so restating that as "labs
-verified this email" would launder a claim to obtain a stronger grant; and
-nothing needs it, because a contact can declare its page (canopy-web#925) and the
-page picks the agent's capability (below). Do not reach for `resolvable_domains` —
-canopy grants a site only the *setter's own* domain, so three Dimagi domains would
-need three people.
+**A member of the workspace arrives as themselves.** Labs signs the visitor's
+address with `email_verified: true` (it came from Connect's OAuth identity, which
+is how they signed in). Canopy turns that into the person's own canopy account
+only if exactly one canopy user holds that address verified AND is a member of
+the workspace connect-labs is registered in — so they see their own chats and act
+with their own access. Everyone else arrives as a canopy *contact*, which reaches
+only the agents this site offers and their own conversations. Canopy never
+creates an account from an assertion, and there is no domain list to configure
+on either side.
 
 **The page's resource picks what the agent may do.** A conversation on a labs page
 runs in whichever capability of the agent's published interface names that page's
