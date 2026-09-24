@@ -41,6 +41,8 @@ graph LR
     definitions of its own. It shows the Programme Report's figures. Other reports calculate their numbers either
     on the report page (Claude can change those) or inside Labs' own code (only a developer can change those).
     Ask Claude *"How does this report calculate its numbers, and can you change that?"* before you plan a change.
+    The engine isn't KMC-specific. Any programme's report can be moved onto indicator definitions. See
+    [Converting an existing report](semantic-layer.md#converting-an-existing-report).
 
 ---
 
