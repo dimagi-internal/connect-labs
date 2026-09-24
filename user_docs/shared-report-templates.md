@@ -19,7 +19,7 @@ By default, a report created from a template gets its **own copy** of all three.
 - a page fix has to be pushed to each copy after every Labs release, and a missed copy quietly shows an older page;
 - a new setting added to the template reaches none of the existing copies;
 - pipelines copied per opportunity drift apart, and each one reads and caches the data separately;
-- indicator definitions copied per opportunity drift apart, so "C09" means slightly different things in different places.
+- indicator definitions copied per opportunity drift apart, so "mortality" means slightly different things in different places.
 
 In September 2026 the real and demo KMC reports held four copies of the same page between them. The shared approach replaced that.
 
@@ -148,7 +148,7 @@ KMC has 12 opportunities across several organisations and Connect programmes, an
 - **Created in one step** with `benchmarks_create_opp_reports` over the 12-member *KMC programme peers* cohort, naming the **KMC Programme Report** (workflow 19778 in production) as the source.
 - **Page:** all 12 follow the deployed `kmc_opp_report` template. A Labs release updates all 12 at once, and none can be edited on its own.
 - **Pipelines:** all 12 reference the Programme Report's pipelines rather than holding copies, so the visit data is read and cached once.
-- **Indicator definitions:** all 12 are bound to the Programme Report's registry, the shared **KMC indicators** record, so an edit to C09 reaches all 12, the Programme Report and the Worker Review on the next load.
+- **Indicator definitions:** all 12 are bound to the Programme Report's registry, the shared **KMC indicators** record, so an edit to `mortality` reaches all 12, the Programme Report and the Worker Review on the next load.
 - **Loading data on open:** the template sets `warm_cache_on_read`. An Opportunity Report never streams its pipelines; it asks the semantic layer for its figures. With this setting, opening it loads that opportunity's visit data if nobody else has recently. It is best effort: if loading fails, the page reports a cold or partial cache instead. The multi-opportunity Programme Report does not do this, so opening it never triggers a download of every opportunity.
 - **When a thirteenth opportunity joins**, the steps are the ones in [Keeping it healthy](#keeping-it-healthy): add it to the cohort and the registry, re-run the fan-out, create a run.
 
