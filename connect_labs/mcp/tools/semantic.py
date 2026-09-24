@@ -145,6 +145,7 @@ def semantic_registry_validate(user, properties_doc: dict, indicators_doc: dict,
         },
         "additionalProperties": False,
     },
+    is_write=True,
 )
 def semantic_registry_create(
     user,
@@ -215,6 +216,7 @@ def semantic_registry_create(
         "required": ["registry_id"],
         "additionalProperties": False,
     },
+    is_write=True,
 )
 def semantic_registry_update(
     user,
