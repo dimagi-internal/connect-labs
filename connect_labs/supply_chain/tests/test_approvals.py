@@ -122,7 +122,15 @@ class TestAnApprovalIsRequestedAndDecided:
         )
         assert decided["status"] == "approved"
         assert decided["decided_on"] == TODAY.isoformat()
-        assert decided["note"] == "use until the donor arrives"
+        assert decided["decision_note"] == "use until the donor arrives"
+
+    def test_the_answer_does_not_overwrite_what_was_asked(self, da, world):
+        # The request's note is the record of what the approver was asked to
+        # agree to. Writing the answer over it lost the question.
+        approval = _request(da, world, note="90 jerry cans of stop-gap chlorine")
+        decided = op(da, "approval_decide", approval_id=approval["id"], status="approved", note="approved by email")
+        assert decided["note"] == "90 jerry cans of stop-gap chlorine"
+        assert decided["decision_note"] == "approved by email"
 
     def test_a_decision_is_approved_or_declined_not_requested_again(self, da, world):
         approval = _request(da, world)
@@ -263,6 +271,13 @@ class TestTheAwardPage:
         assert "requested" in body
         assert reverse("supply_chain:approval_request", args=[world["award"]["id"]]) in body
         assert reverse("supply_chain:approval_decide", args=[approval["id"]]) in body
+
+    def test_it_shows_what_was_asked_and_what_they_answered(self, scoped, da, world):
+        approval = _request(da, world, note="90 jerry cans of stop-gap chlorine")
+        op(da, "approval_decide", approval_id=approval["id"], status="approved", note="approved by email")
+        body = scoped.get(reverse("supply_chain:award_detail", args=[world["award"]["id"]])).content.decode()
+        assert "90 jerry cans of stop-gap chlorine" in body
+        assert "approved by email" in body
 
     def test_it_says_an_order_cannot_be_placed_yet(self, scoped, da, world):
         _request(da, world)

@@ -76,6 +76,7 @@ the award, so the page says so where the order button would otherwise be.
                 {% else %}
                   <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-warning text-message-warning-text">requested</span>
                 {% endif %}
+                {% if approval.decision_note %}<div class="text-xs text-gray-500 mt-0.5">{{ approval.decision_note }}</div>{% endif %}
               </td>
               <td class="px-4 py-2 text-right whitespace-nowrap">
                 {% if approval.status == "requested" %}
