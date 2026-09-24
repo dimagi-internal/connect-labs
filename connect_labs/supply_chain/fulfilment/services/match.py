@@ -85,6 +85,24 @@ def _advance(contract, ordered, received, rejected, paid):
     return awaiting, recoverable
 
 
+def _advance_state(contract, ordered, billed, paid):
+    """unpaid | part_paid | paid -- what the payments recorded say, never the terms alone.
+
+    Advance terms say when the order is to be paid, not that it was: an order
+    on advance terms with nothing paid read as "paid in advance". Measured
+    against the order's value where the price allows it, else against what
+    has been billed.
+    """
+    if paid <= 0:
+        return "unpaid"
+    due = billed
+    if isinstance(ordered, Quantity):
+        value = _value_of(contract, ordered)
+        if isinstance(value, Money):
+            due = max(value.amount, billed)
+    return "paid" if paid >= due else "part_paid"
+
+
 def _invoiced(contract):
     rows = contract.invoices.exclude(status="rejected").values("quantity_unit").annotate(total=Sum("quantity_billed"))
     return {row["quantity_unit"]: (row["total"] or ZERO) for row in rows if row["quantity_unit"]}
@@ -165,14 +183,24 @@ def three_way_match(contract) -> dict:
 
     payable = _payable_now(contract, received, billed, paid)
 
-    awaiting = recoverable = None
+    # What was refused on arrival, in the order's unit where it converts. Its
+    # own figure because on an order paid in advance it is neither received
+    # nor still to come -- it is owed back.
+    rejected_by_unit = _rejected(contract)
+    refused = _in_order_unit(rejected_by_unit, contract.item, unit) if any(rejected_by_unit.values()) else None
+    if refused is None and unit is not None:
+        refused = Quantity(ZERO, unit)
+
+    awaiting = recoverable = advance_state = None
+    if contract.payment_terms == "advance":
+        advance_state = _advance_state(contract, ordered, billed, paid)
     if contract.payment_terms == "advance" and isinstance(ordered, Quantity) and isinstance(received, Quantity):
         # Billed and paid ahead of the goods is the agreement, not a
         # discrepancy: never "over invoiced" on quantity, and never "safe to
         # pay 0" -- what the reader needs is what is still coming and what
         # is owed back.
-        rejected = _in_order_unit(_rejected(contract), contract.item, unit)
-        if isinstance(rejected, Unconfirmed) or not any(_rejected(contract).values()):
+        rejected = refused
+        if isinstance(rejected, Unconfirmed) or not any(rejected_by_unit.values()):
             rejected = Quantity(ZERO, ordered.unit)
         awaiting, recoverable = _advance(contract, ordered, received, rejected, paid)
         over_invoiced = None
@@ -214,6 +242,8 @@ def three_way_match(contract) -> dict:
         "payable_now": payable,
         "payment_terms": contract.payment_terms,
         "awaiting_delivery": awaiting,
+        "advance_state": advance_state,
+        "refused": refused,
         "recoverable": recoverable,
         "covered_by": covered_by,
         "status": status,

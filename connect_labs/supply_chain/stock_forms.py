@@ -601,18 +601,14 @@ class StockCountForm(ProvenancedForm):
             self,
             "kind",
             [
-                ("self_reported", _("Somebody reported it")),
-                ("physical_count", _("Physically counted")),
-                ("override", _("Set by hand, overriding both")),
+                ("self_reported", _("Reported to us, kept beside the ledger")),
+                ("physical_count", _("Physically counted, kept beside the ledger")),
+                ("override", _("Replace the ledger with this count")),
             ],
         )
         self.helper.layout = Layout(
-            Row(
-                Column("supply_point"),
-                Column("counted_on"),
-                Column("kind"),
-                css_class="grid md:grid-cols-3 gap-x-6",
-            ),
+            Row(Column("supply_point"), Column("counted_on"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Field("kind"),
             Row(Column("commodity"), Column("item"), Column("batch"), css_class="grid md:grid-cols-3 gap-x-6"),
             Row(Column("quantity"), Column("quantity_unit"), css_class="grid md:grid-cols-2 gap-x-6"),
             Field("reason"),

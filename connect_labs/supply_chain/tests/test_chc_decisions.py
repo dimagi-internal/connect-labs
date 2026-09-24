@@ -163,6 +163,139 @@ class TestAdvancePayment:
         assert "Paid in advance" in body
 
 
+def _invoice_only(da, contract):
+    return op(
+        da,
+        "invoice_record",
+        data={
+            "contract_id": contract["id"],
+            "amount": "18000.00",
+            "quantity_billed": "30000",
+            "quantity_unit": "co-pack",
+            "source": "supplier_reported",
+        },
+    )
+
+
+def _refuse_four_cartons(da, contract):
+    op(
+        da,
+        "receipt_record",
+        data={
+            "contract_id": contract["id"],
+            "supply_point_id": _warehouse_id(da),
+            "received_on": TODAY.isoformat(),
+            "source": "supplier_reported",
+            "lines": [
+                {
+                    "item_id": contract["item_id"],
+                    "quantity_accepted": "0",
+                    "quantity_rejected": "4",
+                    "rejection_reason": "punctured",
+                    "quantity_unit": "carton",
+                }
+            ],
+        },
+    )
+
+
+def _match_panel(body):
+    """The ordered/received panel only, so a label elsewhere on the page cannot pass a test."""
+    start = body.index("Ordered · received")
+    return body[start : body.index("Shipments", start)]
+
+
+class TestAdvanceWordsFollowPayments:
+    """ "Paid in advance" printed on an order with USD 0.00 paid read as paid."""
+
+    def test_nothing_paid_is_unpaid(self, da, chain):
+        order = _fresh_order(da, chain, payment_terms="advance")
+        _invoice_only(da, order)
+        assert op(da, "contract_match", contract_id=order["id"])["advance_state"] == "unpaid"
+
+    def test_part_paid_and_paid(self, da, chain):
+        order = _fresh_order(da, chain, payment_terms="advance")
+        invoice = _invoice_only(da, order)
+        pay = {"invoice_id": invoice["id"], "paid_on": TODAY.isoformat(), "source": "we_recorded"}
+        op(da, "payment_record", data={**pay, "amount": "6000.00"})
+        assert op(da, "contract_match", contract_id=order["id"])["advance_state"] == "part_paid"
+        op(da, "payment_record", data={**pay, "amount": "12000.00"})
+        assert op(da, "contract_match", contract_id=order["id"])["advance_state"] == "paid"
+
+    def test_on_delivery_orders_have_no_advance_state(self, da, chain):
+        order = _fresh_order(da, chain)
+        assert op(da, "contract_match", contract_id=order["id"])["advance_state"] is None
+
+    def test_the_page_says_payable_not_paid_when_nothing_is_paid(self, client_in_programme, da, chain):
+        order = _fresh_order(da, chain, payment_terms="advance")
+        _invoice_only(da, order)
+        panel = _match_panel(
+            client_in_programme.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
+        )
+        assert "payable in advance" in panel
+        assert "paid in advance" not in panel.lower()
+        assert "To pay in advance" in panel
+        assert "nothing paid yet" in panel
+        assert "USD 18,000.00" in panel
+
+    def test_the_page_keeps_paid_in_advance_once_paid(self, client_in_programme, da, chain):
+        order = _fresh_order(da, chain, payment_terms="advance")
+        _invoice_and_pay(da, order)
+        panel = _match_panel(
+            client_in_programme.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
+        )
+        assert "paid in advance" in panel[: panel.index("</div>")]
+        assert "Paid in advance" in panel
+        assert "nothing paid yet" not in panel
+
+
+class TestTheMatchHeaderDoesNotRepeatItself:
+    def test_paid_before_delivery_says_paid_in_advance_once(self, client_in_programme, da, chain):
+        order = _fresh_order(da, chain, payment_terms="advance")
+        _invoice_and_pay(da, order)
+        panel = _match_panel(
+            client_in_programme.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
+        )
+        header = panel[: panel.index("</div>")]
+        assert header.lower().count("paid in advance") == 1
+
+
+class TestRefusedGoodsOnAnAdvanceOrder:
+    """ "Still outstanding 200" sat above "nothing more to come" when the 200 were refused."""
+
+    def test_the_match_states_what_was_refused(self, da, chain):
+        contract = _advance_order(da, chain)
+        _invoice_and_pay(da, contract)
+        _refuse_four_cartons(da, contract)
+        match = op(da, "contract_match", contract_id=contract["id"])
+        assert match["refused"] == {"amount": "200", "unit": "co-pack"}
+
+    def test_refused_is_its_own_row_and_outstanding_is_what_is_still_to_come(self, client_in_programme, da, chain):
+        contract = _advance_order(da, chain)
+        _invoice_and_pay(da, contract)
+        _refuse_four_cartons(da, contract)
+        panel = _match_panel(
+            client_in_programme.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
+        )
+        assert "Refused on arrival" in panel
+        refused_row = panel[panel.index("Refused on arrival") :]
+        assert "200 co-packs" in refused_row[: refused_row.index("</tr>")]
+        outstanding_row = panel[panel.index("Still outstanding") :]
+        assert "0 co-packs" in outstanding_row[: outstanding_row.index("</tr>")]
+        assert "200 co-packs" not in outstanding_row[: outstanding_row.index("</tr>")]
+        assert "nothing more to come" in panel
+
+    def test_on_delivery_orders_keep_outstanding_as_ordered_less_received(self, client_in_programme, da, chain):
+        panel = _match_panel(
+            client_in_programme.get(
+                reverse("supply_chain:order_detail", args=[chain["contract"]["id"]])
+            ).content.decode()
+        )
+        assert "Refused on arrival" not in panel
+        outstanding_row = panel[panel.index("Still outstanding") :]
+        assert "200 co-packs" in outstanding_row[: outstanding_row.index("</tr>")]
+
+
 def _warehouse_id(da):
     return next(p["id"] for p in op(da, "supply_point_list") if p["slug"] == "wh")
 
@@ -398,10 +531,84 @@ class TestARoundStatesTheContentsItBuys:
         )
         comparison = op(da, "round_compare", round_id=round_.pk, commodity_slug="ors-zinc-copack")
         assert comparison["comparable_count"] == 2
-        refused = [row for row in comparison["blocked"] if row["item_name"] == "Four-sachet co-pack"]
+        refused = [row for row in comparison["not_comparable"] if row["item_name"] == "Four-sachet co-pack"]
         assert len(refused) == 1
         reasons = refused[0]["figures"]["landed_total_for_round_quantity"]["unconfirmed"]
         assert any("not the contents this round buys" in reason for reason in reasons)
+
+    def test_other_contents_are_terminal_not_missing_info(self, da, chain):
+        round_ = self._round_with_a_four_sachet_offer(da, chain)
+        comparison = op(da, "round_compare", round_id=round_.pk, commodity_slug="ors-zinc-copack")
+        assert [row["item_name"] for row in comparison["not_comparable"]] == ["Four-sachet co-pack"]
+        assert all(row["item_name"] != "Four-sachet co-pack" for row in comparison["blocked"])
+        # Nothing to ask anyone: the contents are what they are.
+        assert comparison["not_comparable"][0]["questions"] == []
+        # Every other offer is complete, so the ranking is not provisional.
+        assert comparison["provisional"] is False
+        questions = op(da, "round_outstanding_questions", round_id=round_.pk, commodity_slug="ors-zinc-copack")
+        assert all(entry["quote_id"] != comparison["not_comparable"][0]["quote_id"] for entry in questions)
+
+    def test_the_comparison_page_files_it_as_not_comparable(self, client_in_programme, da, chain):
+        round_ = self._round_with_a_four_sachet_offer(da, chain)
+        url = reverse("supply_chain:procurement_comparison", args=[round_.pk]) + "?commodity=ors-zinc-copack"
+        body = client_in_programme.get(url).content.decode()
+        assert "Not comparable — different contents" in body
+        section = body[body.index("Not comparable — different contents") :]
+        assert "Four-sachet co-pack" in section
+        assert "4 sachets ors" in section
+        assert "2 sachets ors" in section
+        assert "Ask the supplier" not in section
+        assert "Needs info" not in body
+        assert "PROVISIONAL" not in body
+
+    def _round_with_a_four_sachet_offer(self, da, chain):
+        from connect_labs.supply_chain.models import Round
+
+        round_ = Round.objects.get(pk=chain["round"]["id"])
+        round_.lines = [
+            {
+                **round_.lines[0],
+                "components": [
+                    {"commodity_slug": "ors", "quantity": "2", "base_unit": "sachet"},
+                    {"commodity_slug": "zinc", "quantity": "10", "base_unit": "tablet"},
+                ],
+            }
+        ]
+        round_.save(update_fields=["lines"])
+        four = op(
+            da,
+            "item_upsert",
+            data={
+                "sku": "four",
+                "name": "Four-sachet co-pack",
+                "commodity_slug": "ors-zinc-copack",
+                "base_unit": "co-pack",
+                "pack_unit": "carton",
+                "base_per_pack": 40,
+                "components": [
+                    {"commodity_slug": "ors", "quantity": 4, "base_unit": "sachet"},
+                    {"commodity_slug": "zinc", "quantity": 10, "base_unit": "tablet"},
+                ],
+            },
+        )
+        op(
+            da,
+            "quote_record",
+            data={
+                "round_id": round_.pk,
+                "commodity_slug": "ors-zinc-copack",
+                "supplier_id": chain["quotes"][0]["supplier_id"],
+                "item_id": four["id"],
+                "as_quoted_amount": "0.55",
+                "as_quoted_unit": "per_base_unit",
+                "quantity_basis": "30000",
+                "quantity_basis_unit": "co-pack",
+                "pack_spec_source": "trade_item_confirmed",
+                "freight_basis": "included",
+                "duties_basis": "included",
+            },
+        )
+        return round_
 
     def test_the_round_page_says_what_it_buys(self, client_in_programme, chain):
         from connect_labs.supply_chain.models import Round
@@ -422,3 +629,71 @@ class TestARoundStatesTheContentsItBuys:
         ).content.decode()
         assert "What this round buys" in body
         assert "2 sachet ORS + 10 tablet Zinc" in body
+
+
+class TestARoundIsAwardedOnceEveryLineIs:
+    """A round with every line awarded read "open" nine days past its deadline."""
+
+    def _two_line_round(self, da, chain, status="open"):
+        from connect_labs.supply_chain.models import Round
+
+        round_ = op(
+            da,
+            "round_create",
+            data={
+                "label": "Two lines",
+                "delivery_point": {"city": "Kano"},
+                "lines": [
+                    {"commodity_slug": "ors-zinc-copack", "quantity": "30000", "quantity_unit": "co-pack"},
+                    {"commodity_slug": "ors", "quantity": "1000", "quantity_unit": "sachet"},
+                ],
+            },
+        )
+        Round.objects.filter(pk=round_["id"]).update(status=status)
+        supplier_id = chain["quotes"][0]["supplier_id"]
+        quotes = {}
+        for slug, unit, basis in (("ors-zinc-copack", "co-pack", "30000"), ("ors", "sachet", "1000")):
+            quotes[slug] = op(
+                da,
+                "quote_record",
+                data={
+                    "round_id": round_["id"],
+                    "commodity_slug": slug,
+                    "supplier_id": supplier_id,
+                    "as_quoted_amount": "0.60",
+                    "as_quoted_unit": "per_base_unit",
+                    "quantity_basis": basis,
+                    "quantity_basis_unit": unit,
+                    "freight_basis": "included",
+                    "duties_basis": "included",
+                },
+            )
+        return round_, quotes
+
+    def _award(self, da, round_, quote):
+        op(da, "award_create", round_id=round_["id"], quote_id=quote["id"], rationale="the one we chose")
+
+    def test_a_single_line_round_is_awarded_by_its_award(self, da, chain):
+        assert op(da, "round_get", round_id=chain["round"]["id"])["status"] == "awarded"
+
+    def test_it_stays_open_while_a_line_is_unawarded(self, da, chain):
+        round_, quotes = self._two_line_round(da, chain)
+        self._award(da, round_, quotes["ors-zinc-copack"])
+        assert op(da, "round_get", round_id=round_["id"])["status"] == "open"
+        self._award(da, round_, quotes["ors"])
+        assert op(da, "round_get", round_id=round_["id"])["status"] == "awarded"
+
+    def test_a_closed_round_stays_closed(self, da, chain):
+        round_, quotes = self._two_line_round(da, chain, status="closed")
+        self._award(da, round_, quotes["ors-zinc-copack"])
+        self._award(da, round_, quotes["ors"])
+        assert op(da, "round_get", round_id=round_["id"])["status"] == "closed"
+
+    def test_the_overview_and_round_page_say_awarded(self, client_in_programme, chain):
+        overview = client_in_programme.get(reverse("supply_chain:home")).content.decode()
+        row = overview[overview.index(">CHC<") :]
+        assert "awarded" in row[: row.index("</tr>")].lower()
+        page = client_in_programme.get(
+            reverse("supply_chain:procurement_round_detail", args=[chain["round"]["id"]])
+        ).content.decode()
+        assert "Status: Awarded" in page

@@ -124,6 +124,16 @@ def _ratio(numerator: Quantity, denominator: Quantity, item):
     return numerator.amount / restated.amount
 
 
+def restocked_from(supply_point) -> str:
+    """ "supply_point" when another point in the programme sends to this one, else "supplier".
+
+    The resupply quantity is the same arithmetic either way; what differs is
+    who acts on it. The top of a network -- a distributor's central warehouse
+    -- is restocked by an order to its supplier, not a transfer.
+    """
+    return "supply_point" if supply_point.parent_id else "supplier"
+
+
 def plan(program_id, supply_point, item=None, as_of=None, window_days=DEFAULT_WINDOW_DAYS) -> dict:
     """Everything a resupply decision needs, each figure honest about itself.
 

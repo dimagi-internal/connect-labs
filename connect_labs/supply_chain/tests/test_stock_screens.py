@@ -512,6 +512,22 @@ class TestThePayloadBoundary:
         assert payload["commodity_slug"] == "rutf"
         assert "commodity_id" not in payload
 
+    def test_the_kinds_of_count_say_what_each_does_to_the_ledger(self, rutf, store):
+        """ "Set by hand, overriding both" named neither what was overridden nor
+        that it moves the ledger, and a three-column row cut it to "overriding b"."""
+        from connect_labs.labs.access.scopes import SYSTEM
+        from connect_labs.supply_chain.data_access import SupplyDataAccess
+        from connect_labs.supply_chain.stock_forms import StockCountForm
+
+        access = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
+        form = StockCountForm(access=access)
+        labels = dict(form.fields["kind"].choices)
+        assert labels["override"] == "Replace the ledger with this count"
+        assert labels["self_reported"] == "Reported to us, kept beside the ledger"
+        assert labels["physical_count"] == "Physically counted, kept beside the ledger"
+        first_row = form.helper.layout.fields[0]
+        assert "kind" not in [getattr(col, "fields", [None])[0] for col in first_row.fields]
+
 
 class TestTheScreensAreReachable:
     def test_an_order_offers_a_dispatch_and_a_receipt(self, scoped, contract):

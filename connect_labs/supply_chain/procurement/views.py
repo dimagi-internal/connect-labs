@@ -46,6 +46,7 @@ from connect_labs.supply_chain.forms import (
 from connect_labs.supply_chain.fulfilment_forms import DocumentForm
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.values import unit_noun
 
 
 def _days_waiting(sent_on):
@@ -110,6 +111,27 @@ class RoundDetailView(_Base):
             o["days_waiting"] = None if o.get("responded") else _days_waiting(o.get("sent_on"))
         context["outreach"] = outreach
         context["quotes"] = self.op("quote_list", round_id=round_id)
+        # Each quote's trade item, by name and -- for a kit -- contents. Three
+        # co-pack quotes from one distributor read as the same offer three
+        # times, told apart only by price.
+        items = {}
+        for quote in context["quotes"]:
+            item_id = quote.get("item_id")
+            if item_id and item_id not in items:
+                items[item_id] = self.op("item_get", item_id=item_id)
+        commodities = {c["slug"]: c for c in self.op("commodity_list")}
+        context["quotes"] = [
+            {
+                **quote,
+                "item": items.get(quote.get("item_id")) if quote.get("item_id") else None,
+                "priced_per": _priced_per(
+                    quote,
+                    items.get(quote.get("item_id")) if quote.get("item_id") else None,
+                    commodities.get(quote.get("commodity_slug")),
+                ),
+            }
+            for quote in context["quotes"]
+        ]
         # Rows showed "Supplier #2". An id is not a supplier to anyone
         # reading the page, and the name is one list call away.
         context["supplier_names"] = {s["id"]: s["name"] for s in self.op("supplier_list")}
@@ -201,6 +223,39 @@ class QuoteDetailView(_Base):
         return context
 
 
+def _priced_per(quote, item, commodity) -> str | None:
+    """The unit a price is per, as the product names it: "per co-pack", not "per base unit".
+
+    None when the basis is not a unit of the product (a lot total), so the
+    template falls back to the basis in words.
+    """
+    field = {"per_base_unit": "base_unit", "per_pack": "pack_unit"}.get(quote.get("as_quoted_unit"))
+    if field is None:
+        return None
+    unit = (item or {}).get(field) or (commodity or {}).get(field)
+    return f"per {unit_noun(unit)}" if unit else None
+
+
+def table_columns(comparison) -> list:
+    """The ranked table's columns, with the landed total shown once when it is one figure.
+
+    "Landed total (as quoted)" and "Landed total (this round)" differ only
+    when a quote was priced on another quantity. When every ranked row has the
+    same figure in both, the second column repeated the first and pushed the
+    award marker off the right edge of a 1280px screen.
+    """
+    columns = list(comparison.get("columns") or [])
+    rows = comparison.get("comparable") or []
+    as_quoted, this_round = "landed_total_as_quoted", "landed_total_for_round_quantity"
+    if rows and all(
+        (row.get("figures") or {}).get(as_quoted) == (row.get("figures") or {}).get(this_round)
+        and (row.get("figures") or {}).get(this_round, {}).get("amount") is not None
+        for row in rows
+    ):
+        columns = [column for column in columns if column.get("key") != as_quoted]
+    return columns
+
+
 def _commodity_names(commodities) -> dict:
     """slug -> name, tolerating anything that is not a list of commodity rows."""
     if not isinstance(commodities, list):
@@ -270,6 +325,7 @@ class ComparisonView(_Base):
                     items[item_id] = self.op("item_get", item_id=item_id)
                 context["set_aside"].append({"quote": quote, "item": items.get(item_id)})
         context["comparison"] = comparison
+        context["table_columns"] = table_columns(comparison) if comparison else []
         # ranked_by is a bare figure key (e.g. "landed_total_for_round_quantity");
         # its human label already lives on the matching column (pricing.py's
         # FIGURE_LABELS, formatted with this commodity's own unit nouns), so look

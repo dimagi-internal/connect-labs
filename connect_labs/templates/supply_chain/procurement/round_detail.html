@@ -130,7 +130,7 @@
     <thead class="bg-gray-50">
       <tr>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Commodity</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Commodity · trade item</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">As quoted</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Received</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pack spec source</th>
@@ -144,9 +144,16 @@
           <a href="{% url 'supply_chain:procurement_quote_detail' q.id %}"
              class="font-medium text-brand-indigo hover:underline">{{ supplier_names|dictkey:q.supplier_id|default:"Supplier" }}</a>
         </td>
-        <td class="px-4 py-2 text-sm text-gray-600">{{ q.commodity_slug|humanise }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">
+          {{ commodity_names|dictkey:q.commodity_slug|default:q.commodity_slug }}
+          {% if q.item %}
+            <div class="text-gray-700">{{ q.item.name }}</div>
+            {% include "supply_chain/procurement/_composition.html" with composition=q.item.components unit=q.item.components_unit %}
+          {% endif %}
+        </td>
         <td class="px-4 py-2 text-sm text-gray-600 tabular-nums">
-          {{ q.as_quoted_currency }} {{ q.as_quoted_amount|qty:q.as_quoted_unit }}
+          {% if q.as_quoted_amount %}{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}{% else %}no price{% endif %}
+          <div class="text-xs text-gray-500">{{ q.priced_per|default:q.as_quoted_unit|words }}</div>
         </td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ q.received_on|default:"—" }}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ q.pack_spec_source|humanise|default:"not stated" }}</td>

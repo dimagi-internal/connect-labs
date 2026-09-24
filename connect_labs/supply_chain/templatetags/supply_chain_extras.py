@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 
 from django import template
 from django.urls import reverse
@@ -187,6 +188,62 @@ def fact_rows(facts):
     only spells them out. A client wanting to word them does so itself.
     """
     return [(str(key).replace("_", " "), _fact_text(value)) for key, value in (facts or {}).items()]
+
+
+# Fact keys that are references to a record, and the page that record is read on.
+_FACT_REFERENCES = {
+    "round_id": ("round", "supply_chain:procurement_round_detail"),
+    "supplier_id": ("supplier", "supply_chain:supplier_detail"),
+    "contract_id": ("order", "supply_chain:order_detail"),
+}
+
+# A check against a bound, and the two facts that say it in one line.
+_READOUTS = {"stock_below_minimum": ("months_of_stock", "min_months_of_stock")}
+
+
+@register.filter
+def check_readout(check):
+    """A threshold check as one plain line: "2.8 months of stock · minimum 3"."""
+    keys = _READOUTS.get((check or {}).get("kind"))
+    facts = (check or {}).get("facts") or {}
+    if not keys or facts.get(keys[0]) in (None, ""):
+        return ""
+    value, bound = (facts.get(key) for key in keys)
+    line = f"{quantity_digits(value)} months of stock"
+    return f"{line} · minimum {quantity_digits(bound)}" if bound not in (None, "") else line
+
+
+@register.filter
+def check_rows(check, refs=None):
+    """A check's facts as rows a person reads: related records by name, linked.
+
+    `refs` maps "round" / "supplier" / "order" to {id: name}. "round id 33"
+    and "supplier id 88" were the raw facts; the page has the names one list
+    call away. A fact the readout already says is not repeated.
+    """
+    refs = refs or {}
+    facts = (check or {}).get("facts") or {}
+    said = set(_READOUTS.get((check or {}).get("kind"), ())) if check_readout(check) else set()
+    rows = []
+    for key, value in facts.items():
+        if key in said:
+            continue
+        if key in _FACT_REFERENCES and value not in (None, ""):
+            noun, url_name = _FACT_REFERENCES[key]
+            name = (refs.get(noun) or {}).get(value)
+            rows.append({"label": noun, "text": name or f"{noun} {value}", "href": reverse(url_name, args=[value])})
+            continue
+        if key == "supplier" and isinstance(value, dict) and value.get("id"):
+            rows.append(
+                {
+                    "label": "supplier",
+                    "text": _fact_text(value),
+                    "href": reverse("supply_chain:supplier_detail", args=[value["id"]]),
+                }
+            )
+            continue
+        rows.append({"label": str(key).replace("_", " "), "text": _fact_text(value), "href": None})
+    return rows
 
 
 @register.filter
@@ -477,6 +534,19 @@ def quantity_text(value):
     """
     if isinstance(value, dict) and value.get("amount") not in (None, ""):
         return qty(value["amount"], value.get("unit"))
+    return derived_text(value)
+
+
+@register.filter
+def whole_quantity_text(value):
+    """A rate in whole units: "3,033 co-packs", not "3,033.33" -- a demand averaged
+    over counted cartons has no meaningful fraction of a co-pack."""
+    if isinstance(value, dict) and value.get("amount") not in (None, ""):
+        try:
+            whole = Decimal(str(value["amount"])).quantize(Decimal("1"), rounding="ROUND_HALF_UP")
+        except (ArithmeticError, ValueError):
+            return quantity_text(value)
+        return qty(str(whole), value.get("unit"))
     return derived_text(value)
 
 
