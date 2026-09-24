@@ -623,3 +623,85 @@ class TestPickers:
         assert "Zenith Clearing" in first
         assert "The regulator" in select.split('<optgroup label="Every organisation">', 1)[1]
         assert "data-tomselect" in select
+
+
+class TestTheQuotePageAsksNoCourseOfAConsumable:
+    """The comparison stopped offering per-course figures, and stopped asking
+    for a treatment protocol, for a category that has no course. The page for
+    one quote kept doing both -- "USD per course: Unconfirmed" against
+    water-treatment chlorine, and an internal question nobody could close. One
+    rule, from the same place, on both screens."""
+
+    def _quote_on(self, da, world, slug, name, category):
+        op(
+            da,
+            "commodity_upsert",
+            data={
+                "slug": slug,
+                "name": name,
+                "category": category,
+                "base_unit": "L",
+                "pack_unit": "jerry_can",
+                "base_per_pack": 20,
+            },
+        )
+        round_ = op(
+            da,
+            "round_create",
+            data={
+                "label": f"{name} round",
+                "delivery_point": {"city": "Kano"},
+                "lines": [{"commodity_slug": slug, "quantity": "600", "quantity_unit": "jerry_can"}],
+            },
+        )
+        return op(
+            da,
+            "quote_record",
+            data={
+                "round_id": round_["id"],
+                "commodity_slug": slug,
+                "supplier_id": world["supplier"]["id"],
+                "as_quoted_amount": "4.00",
+                "as_quoted_unit": "per_pack",
+                "quantity_basis": "600",
+                "quantity_basis_unit": "jerry_can",
+            },
+        )
+
+    def _page(self, client, quote):
+        return client.get(reverse("supply_chain:procurement_quote_detail", args=[quote["id"]])).content.decode()
+
+    def test_a_consumable_quote_shows_no_course_figure_and_asks_no_protocol(self, client_in_programme, da, world):
+        quote = self._quote_on(da, world, "dispenser-chlorine", "Dispenser chlorine solution", "consumable")
+        body = self._page(client_in_programme, quote)
+        assert "USD per course" not in body
+        assert "USD per child treated" not in body
+        assert "course definition" not in body
+        assert "treatment protocol" not in body
+        # The rest of the derivation is still there.
+        assert "USD per pack" in body
+
+    def test_the_operation_agrees_with_the_page(self, da, world):
+        quote = self._quote_on(da, world, "dispenser-chlorine", "Dispenser chlorine solution", "consumable")
+        detail = op(da, "quote_get", quote_id=quote["id"])
+        assert not {"usd_per_course", "usd_per_child_treated"} & set(detail["figures"])
+        assert "course_definition" not in {q["key"] for q in detail["missing"]}
+
+    def test_a_therapeutic_food_quote_still_shows_and_asks_them(self, client_in_programme, da, world):
+        quote = self._quote_on(da, world, "rutf-paste", "RUTF paste", "therapeutic_food")
+        body = self._page(client_in_programme, quote)
+        assert "USD per course" in body
+        assert "USD per child treated" in body
+        assert "treatment protocol" in body
+
+
+class TestApprovalDatesDoNotWrap:
+    def test_the_asked_and_answered_dates_are_nowrap(self, client_in_programme, da, world):
+        approval = _ask(da, world)
+        op(da, "approval_decide", approval_id=approval["id"], status="approved", decided_on="2026-09-24")
+        body = client_in_programme.get(reverse("supply_chain:award_detail", args=[world["award"]["id"]])).content
+        body = body.decode()
+        asked = re.search(r"<td[^>]*>\s*2026-09-01\s*</td>", body).group(0)
+        assert "whitespace-nowrap" in asked
+        answered = re.search(r"<span[^>]*>\s*2026-09-24\s*</span>", body).group(0)
+        assert "whitespace-nowrap" in answered
