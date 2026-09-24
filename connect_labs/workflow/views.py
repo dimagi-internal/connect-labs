@@ -3375,6 +3375,7 @@ def semantic_explain_api(request, definition_id):
       download    1 to send md/sql/json as an attachment
     """
     from connect_labs.semantic.explain import UnknownIndicator, explain, to_markdown, to_sql
+    from connect_labs.semantic.legacy import DEFAULT_REGISTRY_NAME
     from connect_labs.semantic.runtime import SemanticRuntimeError
     from connect_labs.semantic.workflow_binding import resolve_registry_for
     from connect_labs.workflow.data_access import SemanticRegistryDataAccess
@@ -3419,9 +3420,11 @@ def semantic_explain_api(request, definition_id):
             except Exception as exc:
                 return JsonResponse({"error": f"{ind}: {type(exc).__name__}: {exc}"}, status=400)
         label = (
-            f"registry {registry_source.get('registry_id')}" if registry_source.get("registry_id") else "registry kmc"
+            f"registry {registry_source.get('registry_id')}"
+            if registry_source.get("registry_id")
+            else f"registry {registry_source.get('name') or DEFAULT_REGISTRY_NAME}"
         )
-        stem = f"kmc-indicators-{definition_id}"
+        stem = f"indicators-{definition_id}"
         if fmt == "md":
             resp = HttpResponse(to_markdown(out, registry_label=label), content_type="text/markdown; charset=utf-8")
             if download:
@@ -3455,8 +3458,8 @@ def semantic_indicators_api(request, definition_id):
     executable; this is the door.
 
     Query params:
-      series  one indicator family -- "N" (the demo compute spec) or "C" (the
-              workbook's). Omitted returns the registry as written, which is both.
+      series  one indicator family, by its prefix (KMC: "C" the workbook's, "N" the
+              demo compute spec). Omitted returns the registry as written.
       scopes  comma-separated. Several scopes come back from ONE pass via
               GROUPING SETS, which is the only version where pushing this into SQL
               is an improvement: per-scope calls re-run the whole Layer 1
@@ -3468,6 +3471,7 @@ def semantic_indicators_api(request, definition_id):
               still needs titles, units, directions and bands to render them, and
               the render no longer keeps a copy of those.
     """
+    from connect_labs.semantic.legacy import DEFAULT_REGISTRY_NAME
     from connect_labs.semantic.runtime import SemanticRuntimeError, evaluate, filter_to_series, measure_catalog
     from connect_labs.semantic.workflow_binding import resolve_registry_for
     from connect_labs.workflow.data_access import SemanticRegistryDataAccess
@@ -3579,7 +3583,7 @@ def semantic_indicators_api(request, definition_id):
                     "deployment": _deployment_facts_for_render(deployment),
                     "catalog_only": True,
                     "series": series or "all",
-                    "registry": registry_source or {"name": "kmc"},
+                    "registry": registry_source or {"name": DEFAULT_REGISTRY_NAME},
                     "registry_fallback": registry_fallback,
                     "row_count": 0,
                 }
@@ -3593,7 +3597,7 @@ def semantic_indicators_api(request, definition_id):
 
         try:
             pipeline_config, extra_fields = build_evaluate_inputs(
-                definition, lambda: PipelineDataAccess(request=request)
+                definition, lambda: PipelineDataAccess(request=request), props_doc=props_doc
             )
         except SemanticBindingError as exc:
             # Still a reportable 400 naming WHICH pipeline could not be read, not an
@@ -3643,7 +3647,7 @@ def semantic_indicators_api(request, definition_id):
         # and there are two ways for that to differ from what was asked for.
         #
         # COLD -- nothing cached -- produces a full table of zeros, which reads as
-        # "this programme has no babies" rather than "nothing has been cached yet".
+        # "this programme has no cases" rather than "nothing has been cached yet".
         #
         # PARTIAL is the dangerous one, and it used to be silent. Production expires
         # cached visits after an hour and nothing refills them together, so a

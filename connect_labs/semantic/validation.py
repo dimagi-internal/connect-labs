@@ -25,8 +25,8 @@ from __future__ import annotations
 from typing import Any
 
 from connect_labs.semantic.compiler import (
-    SCOPES,
     RegistryError,
+    available_scopes,
     compile_indicator_sql,
     deployment_literal_problems,
     validate,
@@ -94,7 +94,10 @@ def validate_registry(
 
     # 2. It has to COMPILE at every scope, with the gates attached. See the module
     #    docstring: scope-dependent SQL is exactly what slipped through before.
-    for scope in SCOPES:
+    #    "Every scope" is every scope this registry CAN have: LLO grouping is
+    #    optional, and a registry that declares no llo_map has no llo scopes (the
+    #    compiler refuses them by name if asked) -- it is not an invalid registry.
+    for scope in available_scopes(llo_map):
         try:
             compile_indicator_sql(
                 props_doc,

@@ -11,7 +11,19 @@ from __future__ import annotations
 
 import pytest
 
-from connect_labs.semantic.layer1 import MARKER_BOOLEANS, build_visit_sql
+from connect_labs.semantic.layer1 import build_visit_sql
+from connect_labs.semantic.runtime import load_registry
+
+# Layer 1's derived columns are the REGISTRY's (`visit_columns`); these tests run
+# the shipped KMC registry's, which carry the marker booleans.
+KMC_PROPS = load_registry("kmc")[0]
+WORD_MATCHES = {
+    c["name"]: (c["word_match"]["column"], c["word_match"]["word"])
+    for c in KMC_PROPS["visit_columns"]
+    if "word_match" in c
+}
+# Every Layer-1 column the KMC visit columns read.
+KMC_VISIT_INPUTS = sorted({col for col, _word in WORD_MATCHES.values()} | {"ebf_visits", "form_names"})
 
 # A miniature stand-in for the engine: enough shape to exercise the rewrites,
 # with a multi-path COALESCE so the "every path survives" test means something.
@@ -41,13 +53,13 @@ def _gen(schema, opportunity_id):
 
 def test_every_extraction_path_survives():
     """The whole point: nothing in the pipeline's expressions is dropped."""
-    sql = build_visit_sql({}, [10042, 10016], generate_sql_preview=_gen)
+    sql = build_visit_sql({}, [10042, 10016], generate_sql_preview=_gen, props_doc=KMC_PROPS)
     for path in ("'p1'", "'p2'", "'p3'", "'r1'", "'r2'", "'k1'"):
         assert path in sql, f"path {path} was lost in the rewrite"
 
 
 def test_widens_to_every_requested_opportunity():
-    sql = build_visit_sql({}, [10042, 10016, 10014], generate_sql_preview=_gen)
+    sql = build_visit_sql({}, [10042, 10016, 10014], generate_sql_preview=_gen, props_doc=KMC_PROPS)
     assert "opportunity_id IN (10042,10016,10014)" in sql
     assert "opportunity_id = 10042 AND pipeline_id" not in sql
 
@@ -59,26 +71,26 @@ def test_dedupes_across_cache_partitions():
     DISTINCT ON, opp 10042's rows were counted from two partitions and every
     denominator inflated.
     """
-    sql = build_visit_sql({}, [10042], generate_sql_preview=_gen)
+    sql = build_visit_sql({}, [10042], generate_sql_preview=_gen, props_doc=KMC_PROPS)
     assert "DISTINCT ON (opportunity_id, visit_id)" in sql
     # The freshest copy wins, not the lowest pipeline id -- see the freshness test below.
     assert "ORDER BY opportunity_id, visit_id, expires_at DESC, pipeline_id" in sql
 
 
 def test_selects_opportunity_id_which_the_extraction_omits():
-    sql = build_visit_sql({}, [10042], generate_sql_preview=_gen)
+    sql = build_visit_sql({}, [10042], generate_sql_preview=_gen, props_doc=KMC_PROPS)
     assert "opportunity_id,\npipeline_id,\nvisit_id," in sql
 
 
 def test_marker_booleans_use_the_pipelines_own_word_test():
-    sql = build_visit_sql({}, [10042], generate_sql_preview=_gen)
-    for name, (col, word) in MARKER_BOOLEANS.items():
+    sql = build_visit_sql({}, [10042], generate_sql_preview=_gen, props_doc=KMC_PROPS)
+    for name, (col, word) in WORD_MATCHES.items():
         assert f"(x.{col} ~* '\\y{word}\\y') AS {name}" in sql
 
 
 def test_no_opportunities_is_an_error():
     with pytest.raises(ValueError, match="at least one opportunity"):
-        build_visit_sql({}, [], generate_sql_preview=_gen)
+        build_visit_sql({}, [], generate_sql_preview=_gen, props_doc=KMC_PROPS)
 
 
 # ---------------------------------------------------------------------------
@@ -103,13 +115,15 @@ FILTERED_EXTRACTION = {
 
 
 def test_declared_row_filters_are_reapplied_to_the_widened_where():
-    sql = build_visit_sql({}, [10042, 10016], generate_sql_preview=lambda s, o: FILTERED_EXTRACTION)
+    sql = build_visit_sql(
+        {}, [10042, 10016], generate_sql_preview=lambda s, o: FILTERED_EXTRACTION, props_doc=KMC_PROPS
+    )
     assert "WHERE opportunity_id IN (10042,10016) AND visit_count > 0 AND status IN ('approved', 'over_limit')" in sql
 
 
 def test_no_declared_filters_leaves_the_rewrite_unchanged():
     # Every KMC pipeline before this change declared none; their SQL must not move.
-    sql = build_visit_sql({}, [10042, 10016], generate_sql_preview=_gen)
+    sql = build_visit_sql({}, [10042, 10016], generate_sql_preview=_gen, props_doc=KMC_PROPS)
     assert "WHERE opportunity_id IN (10042,10016) AND visit_count > 0\nORDER BY" in sql
 
 
@@ -138,14 +152,14 @@ def test_rejected_and_pending_visits_never_reach_the_metrics():
         )
     # Every column Layer 1's marker booleans read, so the SQL is the shape a KMC
     # pipeline produces -- values are irrelevant, only which rows survive.
-    marker_cols = sorted({col for col, _word in MARKER_BOOLEANS.values()} | {"ebf_visits", "form_names"})
+    marker_cols = KMC_VISIT_INPUTS
     config = AnalysisPipelineConfig(
         grouping_key="username",
         fields=[FieldComputation(name=c, path="form.@name") for c in marker_cols],
         filters={"status": ["approved", "over_limit"]},
     )
     config.pipeline_id = pipeline
-    sql = build_visit_sql(config, [opp])
+    sql = build_visit_sql(config, [opp], props_doc=KMC_PROPS)
     with connection.cursor() as cur:
         cur.execute(f"SELECT visit_id FROM ({sql}) q ORDER BY visit_id")
         got = [r[0] for r in cur.fetchall()]
@@ -184,12 +198,12 @@ def test_the_freshest_copy_of_a_visit_wins_and_half_written_copies_are_ignored()
             form_json={"form": {"@name": "Record Visit Details"}},
             visit_date="2026-09-01",
         )
-    marker_cols = sorted({col for col, _word in MARKER_BOOLEANS.values()} | {"ebf_visits", "form_names"})
+    marker_cols = KMC_VISIT_INPUTS
     config = AnalysisPipelineConfig(
         grouping_key="username", fields=[FieldComputation(name=c, path="form.@name") for c in marker_cols]
     )
     config.pipeline_id = 99
-    sql = build_visit_sql(config, [opp])
+    sql = build_visit_sql(config, [opp], props_doc=KMC_PROPS)
     with connection.cursor() as cur:
         cur.execute(f"SELECT pipeline_id FROM ({sql}) q")
         got = [r[0] for r in cur.fetchall()]
@@ -202,6 +216,7 @@ def test_a_worker_filter_is_applied_in_the_scan_and_a_computed_key_is_not():
         [10042, 10016],
         generate_sql_preview=_gen,
         visit_filter={"opportunity_id": 10042, "username": "o'brien", "baby_case_id": "B1"},
+        props_doc=KMC_PROPS,
     )
     where = sql[sql.index("WHERE opportunity_id IN") : sql.index("ORDER BY")]
     assert "opportunity_id = 10042" in where and "username = 'o''brien'" in where, "escaped, in the scan"
@@ -240,12 +255,14 @@ def test_one_workers_evaluation_scans_only_that_workers_visits():
                 form_json={"form": {"@name": "Record Visit Details"}},
                 visit_date="2026-09-01",
             )
-    marker_cols = sorted({col for col, _word in MARKER_BOOLEANS.values()} | {"ebf_visits", "form_names"})
+    marker_cols = KMC_VISIT_INPUTS
     config = AnalysisPipelineConfig(
         grouping_key="username", fields=[FieldComputation(name=c, path="form.@name") for c in marker_cols]
     )
     config.pipeline_id = 1
-    sql = build_visit_sql(config, [opp], visit_filter={"opportunity_id": opp, "username": "flw_a"})
+    sql = build_visit_sql(
+        config, [opp], visit_filter={"opportunity_id": opp, "username": "flw_a"}, props_doc=KMC_PROPS
+    )
     with connection.cursor() as cur:
         cur.execute(f"SELECT visit_id, username FROM ({sql}) q ORDER BY visit_id")
         assert cur.fetchall() == [("90000", "flw_a"), ("90001", "flw_a")]

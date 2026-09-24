@@ -43,9 +43,11 @@ from connect_labs.semantic import cohorts, gates
 
 # `grade`'s answer when a measure has no row at all.
 _NODATA = "nodata"
-# Used only when a measure declares no `min_denominator` of its own and the spec
-# names no default. The KMC render's own fallback was 25 (`var MIN_DEN = 25`).
-_MIN_DEN_FALLBACK = 25
+# The minimum-denominator precedence: the measure's own `min_denominator`, then the
+# spec's `min_denominator_default`, then the REGISTRY's `defaults.min_denominator`
+# (passed to `build` as `registry_min_denominator`). There is no engine-wide
+# number: KMC's 25 -- its render's `var MIN_DEN = 25` -- is declared in its
+# indicators document, and supplied by `legacy.py` for records saved before it was.
 # The render joins an FLW's (opportunity, username) with this. It is the selection
 # identity for the worker table, so it has to match exactly.
 FLW_SEP = "::"
@@ -70,7 +72,8 @@ def band_of(direction: str | None, bands: Any, value: Any) -> str:
     if direction == "mid2":
         # Two-sided. Guard the SHAPE: a one-dimensional band here would read as
         # 'unbanded', which is the single outcome a two-sided mortality band exists
-        # to prevent (under ~2% means deaths are not recorded, not that babies live).
+        # to prevent (KMC mortality: under ~2% means deaths are not recorded, not
+        # that babies live).
         if not bands or not isinstance(bands[0], (list, tuple)) or len(bands[0]) != 2:
             return "unbanded"
         if bands[0][0] <= x <= bands[0][1]:
@@ -114,7 +117,7 @@ def pool(
         return out
     out["n"] = int(den)
     pct = 100.0 * num / den
-    min_den = measure.get("min_denominator") or min_denominator_default or _MIN_DEN_FALLBACK
+    min_den = measure.get("min_denominator") or min_denominator_default
     if min_den and den < min_den:
         out["band"] = "insufficient"
         return out
@@ -182,7 +185,7 @@ def grade(
     if rawf != rawf:
         return out
 
-    min_den = measure.get("min_denominator") or min_denominator_default or _MIN_DEN_FALLBACK
+    min_den = measure.get("min_denominator") or min_denominator_default
     if out["n"] and min_den and out["n"] < min_den:
         out["band"] = "insufficient"
         return out
@@ -241,6 +244,17 @@ def case_rows(pipelines: dict, spec: dict, llo_map: dict[int, str]) -> list[dict
     return out
 
 
+# Which fields of a case-index record date the case (first present wins). Spec,
+# `case_index: {date_fields: [...]}`; the default is the field pair every existing
+# case index carries.
+_DEFAULT_CASE_DATE_FIELDS = ("reg_date", "first_visit_date")
+
+
+def case_date_fields(spec: dict) -> tuple[str, ...]:
+    fields = ((spec or {}).get("case_index") or {}).get("date_fields")
+    return tuple(str(f) for f in fields) if isinstance(fields, list) and fields else _DEFAULT_CASE_DATE_FIELDS
+
+
 def resolve_credibility(spec: dict, settings: dict) -> dict[str, dict]:
     """indicator -> credibility table, from the spec's mapping onto registry settings.
 
@@ -263,6 +277,7 @@ def build(
     visit_rows: list[dict] | None = None,
     extra_series: dict[str, list[dict]] | None = None,
     as_of: str | None = None,
+    registry_min_denominator: int | None = None,
 ) -> dict:
     """Assemble the saved-run payload from evaluated semantic rows.
 
@@ -270,15 +285,19 @@ def build(
     monthly trend counts them by VISIT month -- activity -- which is a different
     grouping from the cohort month the semantic rows are built on, so it cannot
     come out of `evaluate()` and is counted here instead.
+
+    `registry_min_denominator` is the registry's `defaults.min_denominator` (see
+    `model.resolve_model`); the spec's `min_denominator_default` still wins over it.
     """
     llo_map = deployment.get("llo_map") or {}
     settings = deployment.get("settings") or {}
     credibility = resolve_credibility(spec, settings)
+    min_den_default = spec.get("min_denominator_default") or registry_min_denominator
     grade_kw = {
         "llo_map": llo_map,
         "deployment": deployment,
         "credibility": credibility,
-        "min_denominator_default": spec.get("min_denominator_default"),
+        "min_denominator_default": min_den_default,
     }
 
     by_scope: dict[str, list[dict]] = {}
@@ -394,11 +413,7 @@ def build(
         credible_rows = [r for r in llo_rows if not table or table.get(r.get("llo")) is True]
         names = [r.get("llo") for r in credible_rows if r.get("llo")]
         pooled_over_credible[ind_id] = {
-            "ind": (
-                pool(m, credible_rows, min_denominator_default=spec.get("min_denominator_default"))
-                if credible_rows
-                else None
-            ),
+            "ind": (pool(m, credible_rows, min_denominator_default=min_den_default) if credible_rows else None),
             "llos": names,
             "of": len(llo_rows),
         }
@@ -450,7 +465,7 @@ def build(
             return None
 
     # Visits counted by the month they HAPPENED in, per drill scope. The render's
-    # trend tab draws "babies started" (a cohort-month measure, from the semantic
+    # trend tab draws "<entities> started" (a cohort-month measure, from the semantic
     # rows) against "visits" (activity that month, from the visit rows); the two
     # are different groupings on purpose, and the second one is only derivable here.
     visit_rows = visit_rows or []
@@ -497,9 +512,7 @@ def build(
                 else:
                     ok = r is not None and (not table or bool(drilled_llo and table.get(drilled_llo) is True))
                     rows = [r] if ok else []
-                pooled[m["indicator"]] = (
-                    pool(m, rows, min_denominator_default=spec.get("min_denominator_default")) if rows else None
-                )
+                pooled[m["indicator"]] = pool(m, rows, min_denominator_default=min_den_default) if rows else None
             out.append(
                 {
                     "month": k,
@@ -561,16 +574,17 @@ def build(
         entry["monthly"], entry["monthlyByScope"] = _monthly_by_scope(catalog=entry["measures"])
 
     # Activity by ISO week (Monday-start), per drill scope: visits that happened
-    # and babies registered in the week, cut at `as_of` so a run for a past week
+    # and entities registered in the week, cut at `as_of` so a run for a past week
     # shows nothing after its own date. This is the ACTIVITY half of the trend tab;
     # the indicator half is the series of saved runs (one point per run, each
     # computed as of its period end), which the run-history API serves and which no
     # single evaluation could produce. Cohort-month indicator lines are NOT drawn
-    # any more: an intake cohort's figures move for weeks after intake as babies
+    # any more: an intake cohort's figures move for weeks after intake as entities
     # mature into each gate, so the newest months always read as a collapse.
     # Worker scope is deliberately absent: hundreds of keys x weeks would not fit
     # the payload cap, and the worker drill has its own workflow.
     cut = str(as_of)[:10] if as_of else None
+    date_fields = case_date_fields(spec)
 
     def _week_of(d) -> str | None:
         try:
@@ -593,7 +607,7 @@ def build(
         for c in cases:
             if not case_pred(c):
                 continue
-            d = str(c.get("reg_date") or c.get("first_visit_date") or "")[:10]
+            d = str(next((c.get(f) for f in date_fields if c.get(f)), None) or "")[:10]
             if not d or (cut and d > cut):
                 continue
             w = _week_of(d)
