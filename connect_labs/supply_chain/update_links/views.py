@@ -15,8 +15,8 @@ ordinary ones, through `service.submit`. What stands in for a login:
     cannot be used to learn which guesses were ever real;
   - a per-address budget for bad tokens and a per-link budget for writes;
   - Django's CSRF protection on every form;
-  - no analytics script, no referrer, no caching and no indexing, because the
-    token is in the URL.
+  - no analytics script, no referrer to other sites, no caching and no
+    indexing, because the token is in the URL.
 """
 
 from urllib.parse import urlencode
@@ -155,7 +155,12 @@ def _count(key, window) -> int:
 def _private(response):
     """Headers for a page whose URL is a credential."""
     response["X-Robots-Tag"] = "noindex, nofollow"
-    response["Referrer-Policy"] = "no-referrer"
+    # Same-origin, not no-referrer: the token must never reach another site,
+    # but under no-referrer a browser serialises a form POST's Origin as
+    # "null", Django's CSRF check refuses it, and every submission on the
+    # page is a 403. The test client sends no Origin, which is how that
+    # shipped; test_a_browser_can_submit_the_form_it_was_given replays it.
+    response["Referrer-Policy"] = "same-origin"
     response["Cache-Control"] = "no-store"
     return response
 

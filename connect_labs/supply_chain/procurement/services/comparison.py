@@ -61,6 +61,10 @@ class ComparisonRow:
     # What one unit of the quoted trade item holds, when it is a kit; empty
     # for an ordinary item and None when the quote names no item at all.
     composition: list | None = None
+    # The trade item quoted, by name. One distributor offering several options
+    # is one supplier with several rows, and without this they read as the
+    # same name twice, told apart only by the price being compared.
+    item_name: str = ""
 
 
 @dataclass
@@ -126,6 +130,7 @@ class Comparison:
                 ],
                 "questions": [{"key": f.key, "question": f.question, "audience": f.audience} for f in row.questions],
                 "composition": row.composition,
+                "item_name": row.item_name,
             }
 
         return {
@@ -329,6 +334,7 @@ def compare_round(
             # suppliers for our own missing ration table.
             is_comparable=not any(isinstance(figures[key], Unconfirmed) for key in COMPARABILITY_FIELDS),
             composition=_composition(item) if quote.item_id else None,
+            item_name=item.name if item is not None else "",
         )
         (comparable if row.is_comparable else blocked).append(row)
 

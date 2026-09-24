@@ -301,6 +301,15 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         # SupplyPoint deletes can work either.
         SupplyPoint.objects.filter(program_id=program_id).update(parent=None, managed_by_org=None)
 
+        # Links and alerts reach the programme's rows through join tables and
+        # nullable FKs, so no cascade below takes them: a link would outlive
+        # its contracts, still listed as working and still accepted at its URL.
+        # Imported here: both apps import this module.
+        from connect_labs.supply_chain.alerts.models import AlertSubscription
+        from connect_labs.supply_chain.update_links.models import UpdateLink
+
+        drop("update links", UpdateLink.objects.filter(program_id=program_id))
+        drop("alert subscriptions", AlertSubscription.objects.filter(program_id=program_id))
         drop("documents", Document.objects.filter(program_id=program_id))
         drop("stock counts", StockCount.objects.filter(program_id=program_id))
         drop("distributions", Distribution.objects.filter(program_id=program_id))
