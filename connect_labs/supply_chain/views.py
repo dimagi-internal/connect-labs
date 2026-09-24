@@ -578,7 +578,21 @@ class OrderDetailView(OperationBase):
         # arrived and never where.
         context["supply_points"] = {p["id"]: p["name"] for p in self.op("supply_point_list")}
         context["invoices"] = self.op("invoice_list", contract_id=contract_id)
-        context["documents"] = self.op("document_list", contract_id=contract_id)
+        # The order's evidence includes what was filed against its consignments:
+        # four import documents on file read "Nothing attached" here (the
+        # dispenser import), because they hang off the shipment.
+        documents = self.op("document_list", contract_id=contract_id)
+        seen = {d["id"] for d in documents}
+        for shipment in context["shipments"]:
+            filed = self.op("document_list", shipment_id=shipment["id"])
+            kinds = {d["kind"] for d in filed}
+            required = shipment.get("required_documents") or []
+            shipment["required_on_file"] = sum(1 for e in required if e.get("kind") in kinds)
+            for document in filed:
+                if document["id"] not in seen:
+                    seen.add(document["id"])
+                    documents.append({**document, "shipment_reference": shipment.get("reference")})
+        context["documents"] = documents
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
         context["link_updates"] = _link_updates(contract_id)

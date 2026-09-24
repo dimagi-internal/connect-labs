@@ -200,6 +200,19 @@ class TestRefusedIsNotOutstanding:
         assert "Still outstanding 2" not in card
         assert "all arrived, some refused" in card
 
+    def test_an_order_whose_every_unit_arrived_reads_received(self, da, world):
+        from connect_labs.supply_chain.models import Contract
+
+        _receive(da, world)
+        assert op(da, "contract_match", contract_id=world["order"]["id"])["status"] == "arrived_with_refusals"
+        assert Contract.objects.get(pk=world["order"]["id"]).status == "received"
+
+    def test_an_order_still_short_stays_part_received(self, da, world):
+        from connect_labs.supply_chain.models import Contract
+
+        _receive(da, world, accepted="100", rejected="5")
+        assert Contract.objects.get(pk=world["order"]["id"]).status == "part_received"
+
     def test_an_order_still_short_says_how_many_are_still_to_arrive(self, scoped, da, world):
         _receive(da, world, accepted="100", rejected="5")
         card = _card(_order_page(scoped, world), "match")
@@ -281,3 +294,94 @@ class TestTheDistributorsLink:
         body = _visible(_order_page(scoped, world))
         assert "update link held by Harmattan Health Supplies" in body
         assert "Supplies's" not in body
+
+
+class TestTheOrdersEvidence:
+    def _shipment(self, da, world):
+        org = op(da, "org_upsert", data={"slug": "courier", "name": "A courier"})["id"]
+        shipment = op(
+            da,
+            "shipment_record",
+            data={
+                "contract_id": world["order"]["id"],
+                "reference": "AWB-9",
+                "status": "at_customs",
+                "source": "we_recorded",
+                "required_documents": [
+                    {"kind": "airway_bill", "owed_by_org_id": org},
+                    {"kind": "packing_list", "owed_by_org_id": org},
+                ],
+            },
+        )
+        op(
+            da,
+            "document_attach",
+            data={
+                "kind": "airway_bill",
+                "title": "Airway bill AWB-9",
+                "external_url": "https://files.example.org/awb-9.pdf",
+                "shipment_id": shipment["id"],
+                "source": "document",
+            },
+        )
+        return shipment
+
+    def test_documents_filed_against_a_shipment_are_the_orders_evidence_too(self, scoped, da, world):
+        self._shipment(da, world)
+        body = _visible(_order_page(scoped, world))
+        assert "Airway bill AWB-9" in body
+        assert "shipment AWB-9" in body
+        assert "Nothing attached" not in body
+
+    def test_a_consignment_with_its_own_list_reports_that_list(self, scoped, da, world):
+        self._shipment(da, world)
+        body = _visible(_order_page(scoped, world))
+        assert "1 of 2 documents on file" in body
+
+
+class TestReadBackNamesTheRecord:
+    def test_the_link_and_the_order_say_goods_received_and_release(self, scoped, client, da, world):
+        from connect_labs.supply_chain.models import Contract, Item, SupplyPoint
+        from connect_labs.supply_chain.update_links import service
+
+        issued = op(
+            da,
+            "update_link_issue",
+            data={
+                "org_id": world["distributor"],
+                "contract_ids": [world["order"]["id"]],
+                "supply_point_ids": [world["warehouse"], world["dawaki"]],
+            },
+        )
+        link = UpdateLink.objects.get(pk=issued["id"])
+        service.submit(
+            link,
+            "record_receipt",
+            {
+                "contract": Contract.objects.get(pk=world["order"]["id"]),
+                "supply_point": SupplyPoint.objects.get(pk=world["warehouse"]),
+                "quantity_accepted": 118,
+                "quantity_rejected": 2,
+                "rejection_reason": "cracked",
+                "unit_basis": "base",
+            },
+        )
+        service.submit(
+            link,
+            "record_release",
+            {
+                "from_supply_point": SupplyPoint.objects.get(pk=world["warehouse"]),
+                "to_supply_point": SupplyPoint.objects.get(pk=world["dawaki"]),
+                "item": Item.objects.get(pk=world["item"]["id"]),
+                "quantity": 60,
+                "unit_basis": "base",
+                "reference": "REL-1",
+            },
+        )
+        token = issued["url"].rstrip("/").rsplit("/", 1)[-1]
+        page = _visible(client.get(reverse("supply_chain:update_link_public", args=[token])).content.decode())
+        assert "Release — REL-1: 60 units from Harmattan warehouse to Dawaki project site" in page
+        assert "Goods received —" in page
+        assert "Record a release —" not in page
+        order = _visible(_order_page(scoped, world))
+        assert "Goods received" in order and "record receipt" not in order.lower()

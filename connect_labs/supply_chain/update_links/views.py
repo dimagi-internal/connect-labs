@@ -264,7 +264,7 @@ class UpdateLinkPublicView(View):
         recent = [
             {
                 "action": submission.action,
-                "title": getattr(PUBLIC_FORMS.get(submission.action), "title", submission.action),
+                "title": service.record_noun(submission.action),
                 "detail": service.describe(submission),
                 "at": submission.submitted_at,
             }

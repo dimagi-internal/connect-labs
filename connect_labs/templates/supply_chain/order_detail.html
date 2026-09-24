@@ -504,7 +504,12 @@ partner's name (the IPTSc render).
             <td class="px-4 py-2 text-gray-600">{{ line.expiry|default:"—" }}</td>
             <td class="px-4 py-2 tabular-nums">{{ line.quantity|qty:line.quantity_unit }}</td>
             <td class="px-4 py-2">
-              {% if shipment.has_certificate %}
+              {% comment %}A consignment with its own list of documents is judged by that
+              list, the way the checks read it; "none" in amber beside four import
+              documents on file read as a gap that was not there.{% endcomment %}
+              {% if shipment.required_documents %}
+                <span class="text-xs {% if shipment.required_on_file == shipment.required_documents|length %}text-teal-700{% else %}text-amber-800{% endif %}">{{ shipment.required_on_file }} of {{ shipment.required_documents|length }} documents on file</span>
+              {% elif shipment.has_certificate %}
                 <span class="text-xs text-teal-700">on file</span>
               {% else %}
                 <span class="text-xs text-amber-800">none</span>
@@ -543,7 +548,7 @@ partner's name (the IPTSc render).
             </td>
             <td colspan="3" class="px-4 py-2 text-xs text-gray-500">no lines recorded</td>
             <td class="px-4 py-2">
-              {% if shipment.has_certificate %}<span class="text-xs text-teal-700">on file</span>{% else %}<span class="text-xs text-amber-800">none</span>{% endif %}
+              {% if shipment.required_documents %}<span class="text-xs {% if shipment.required_on_file == shipment.required_documents|length %}text-teal-700{% else %}text-amber-800{% endif %}">{{ shipment.required_on_file }} of {{ shipment.required_documents|length }} documents on file</span>{% elif shipment.has_certificate %}<span class="text-xs text-teal-700">on file</span>{% else %}<span class="text-xs text-amber-800">none</span>{% endif %}
             </td>
             <td class="px-4 py-2 text-xs text-gray-500">{{ shipment|told_by:orgs }}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
@@ -711,7 +716,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
       {% for document in documents %}
         <li class="py-1.5 flex items-baseline gap-2">
           <span class="text-gray-900">{% if document.title %}{{ document.title }}{% else %}{{ document.kind|words|capfirst }}{% endif %}</span>
-          <span class="text-xs text-gray-500">{{ document.kind|words|capfirst }}</span>
+          <span class="text-xs text-gray-500">{{ document.kind|words|capfirst }}{% if document.shipment_reference %} · shipment {{ document.shipment_reference }}{% endif %}</span>
           <span class="text-xs text-gray-400 ml-auto">
             {% if document.is_stored %}stored{% else %}linked{% endif %} · {{ document.source|source_label }}
           </span>

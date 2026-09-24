@@ -78,7 +78,10 @@ the record it is about, because that is where it gets answered.
     </ul>
   </div>
 {% empty %}
-  <p class="text-sm text-gray-500">Nothing to report{% if kind or category %} of this kind{% endif %}.</p>
+  <div class="bg-white border border-brand-border-light rounded-lg px-5 py-4">
+    <p class="text-sm font-semibold text-gray-900">Nothing to report{% if kind or category %} of this kind{% endif %}.</p>
+    <p class="text-sm text-gray-500 mt-0.5">Every check is read from the records as they stand{% if as_of %} at {{ as_of }}{% endif %}: nothing is missing, nothing disagrees, nothing is past a bound.</p>
+  </div>
 {% endfor %}
 
 {% endif %}

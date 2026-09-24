@@ -257,10 +257,14 @@ scenes:
     must_succeed: true
     target: css:form button[type=submit]:has-text('Save')
     timeout_ms: 30000
+  - kind: goto
+    target: /supply/shipments/${shipment_id}/
   - kind: wait_for
-    target: css:span:has-text('Ordered · received')
-  - kind: hold
-    seconds: 1.0
+    target: css:span:has-text('Charges paid to land it')
+  - kind: hover
+    seconds: 1.8
+    note: the consignment now cleared, both charges itemised with their payees
+    target: css:td:has-text('Clearing')
   concept_claim: A charge is recorded against the consignment with its kind and payee,
     so what landing a donation cost is kept beside it rather than in a contract price
     that does not exist.
@@ -403,12 +407,12 @@ scenes:
   - kind: wait_for
     target: css:h2:has-text('Recorded through this link')
   - kind: scroll_to
-    target: css:h2:has-text('Recorded through this link')
+    target: css:h2:has-text('Record an update')
   - kind: hold
     seconds: 1.0
   - kind: hover
     seconds: 1.6
-    target: css:li:has-text('Rimi project site')
+    target: css:li:has-text('HHS-REL-119')
   - kind: snapshot
     note: the link's own record, the goods-received note and both releases, each as Harmattan reported it
   concept_claim: A release from the warehouse to a site is recorded by the distributor
