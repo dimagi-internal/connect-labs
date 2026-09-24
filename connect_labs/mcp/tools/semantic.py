@@ -127,7 +127,7 @@ def semantic_registry_validate(user, properties_doc: dict, indicators_doc: dict,
 @register(
     name="semantic_registry_create",
     description=(
-        "Create a semantic registry. Pass `seed_from` (e.g. 'kmc') to copy one of the "
+        "Create a semantic registry. Pass `seed_from` ('kmc', 'visit_quality') to copy one of the "
         "built-in on-disk registries as the starting point, or supply the documents "
         "directly. Refuses anything that does not validate."
     ),
@@ -373,16 +373,17 @@ def _indicator_index(record) -> list[dict]:
 @register(
     name="semantic_registry_explain",
     description=(
-        "The exact logic behind an indicator, read from the registry with nothing hidden: "
-        "the compiled measure expression, its numerator/denominator components, the Layer-2 "
+        "The exact logic behind an indicator, read from the registry with nothing hidden: the"
+        " compiled measure expression, its numerator/denominator components, the Layer-2 "
         "property chain it depends on in evaluation order with every constant substituted, "
-        "the per-baby aggregates and weight-series window derivations it touches, and the "
-        "section-2 cutoffs used. The full compiled statement for the scope comes back ONCE, "
-        "beside the indicators (Layer 1, the pipeline rows, is a named placeholder -- read "
-        "that schema with pipeline_get). Pass an indicator id (N15, C14), a measure name "
-        "(n15), or several. This is how a second engine reproduces a number instead of "
-        "trusting its label. Omit `indicators` for an INDEX of every top-level indicator -- "
-        "id, title and one-line definition -- then ask again by id for the ones you want; the "
+        "the per-entity aggregates and (when the registry declares a reading series) the "
+        "series window derivations it touches, and the constants used. The full compiled "
+        "statement for the scope comes back ONCE, beside the indicators (Layer 1, the "
+        "pipeline rows, is a named placeholder -- read that schema with pipeline_get). Pass "
+        "an indicator id (N15, C14, Q02), a measure name (n15), or several. This is how a "
+        "second engine reproduces a number instead of trusting its label. Omit `indicators` "
+        "for an INDEX of every top-level indicator -- id, title and one-line definition -- "
+        "then ask again by id for the ones you want; the "
         "chains are far too big to return all at once."
     ),
     input_schema={

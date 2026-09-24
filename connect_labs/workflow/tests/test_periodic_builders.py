@@ -113,7 +113,7 @@ def captured(monkeypatch):
     monkeypatch.setattr(wf_data_access, "WorkflowDataAccess", _DAO)
     monkeypatch.setattr(wf_data_access, "PipelineDataAccess", _DAO)
     monkeypatch.setattr(wf_data_access, "SemanticRegistryDataAccess", _DAO)
-    monkeypatch.setattr(workflow_binding, "build_evaluate_inputs", lambda d, f: ({}, {}))
+    monkeypatch.setattr(workflow_binding, "build_evaluate_inputs", lambda d, f, **kw: ({}, {}))
     monkeypatch.setattr(
         workflow_binding, "resolve_registry_for", lambda d, registry_access_factory=None: ({}, {}, {}, {}, {}, "x")
     )

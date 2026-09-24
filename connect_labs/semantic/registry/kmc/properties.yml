@@ -21,7 +21,47 @@
 # lines ~560-680. Constants match that file exactly.
 
 version: 1
-entity: baby
+
+# ---------------------------------------------------------------------------
+# The MODEL: what one row of `props` is, and where its visit rows come from. The
+# engine used to know all of this as constants (connect_labs/semantic/model.py);
+# KMC now declares it like any other registry. Records saved before this section
+# existed get these same values from connect_labs/semantic/legacy.py -- this file
+# must never need that.
+# ---------------------------------------------------------------------------
+entity:
+  name: baby # also names the row key, baby_id = opportunity_id|baby_case_id
+  plural: babies
+  key: baby_case_id
+  # Registration, falling back to the first visit. reg_date is a FILTERed MIN, so a
+  # baby whose rows never carried one aggregates to NULL; truncating reg_date alone
+  # dropped those cases out of every month.
+  cohort_date: 'COALESCE(reg_date, first_visit::timestamp)'
+
+# Derived per-visit columns Layer 1 adds. The pipeline emits the markers as strings
+# and applies them as `contains_word` at aggregation time; at visit level the same
+# test is materialised so the aggregates below can just count them.
+visit_columns:
+  - name: child_alive_no
+    word_match: { column: death_visits, word: 'no' }
+  - name: danger_sign_yes
+    word_match: { column: danger_visits, word: 'yes' }
+  - name: referred_yes
+    word_match: { column: referral_visits, word: 'yes' }
+  - name: self_referral_yes
+    word_match: { column: self_referral_visits, word: 'yes' }
+  - name: ebf_recorded
+    sql: 'ebf_visits IS NOT NULL'
+  - name: form_name
+    column: form_names
+
+# Layer 1 is generated from the `children` pipeline. The per-visit weight is NOT in
+# it: the dashboard reads the series from a second pipeline ("KMC Weight Series"),
+# whose `weight_g` has its own fallback paths.
+pipelines:
+  entity: children
+  extra_fields:
+    weight_g: visits
 
 constants:
   ELIG_DAYS: 28 # eligibility gate, days from FIRST VISIT
@@ -168,6 +208,7 @@ aggregates:
 # multiple readings on one day before iterating, so `weight_days` does too).
 # ---------------------------------------------------------------------------
 weight_series:
+  value_column: weight_g # the Layer-1 column the series reads
   day_collapse: 'AVG(weight_g)' # one reading per (baby, day)
   valid: 'weight_g BETWEEN :WMIN AND :WMAX'
   # The demo compute spec's series is the ENROLMENT weight at reg_date plus every

@@ -55,6 +55,7 @@ def semantic_snapshot(
     spec. Nothing here knows what KMC is.
     """
     from connect_labs.semantic import snapshot as snap
+    from connect_labs.semantic.model import resolve_model, series_prefixes
     from connect_labs.semantic.runtime import evaluate, filter_to_series, measure_catalog
     from connect_labs.semantic.workflow_binding import build_evaluate_inputs, registry_binding, resolve_registry_for
     from connect_labs.workflow.data_access import PipelineDataAccess, SemanticRegistryDataAccess, WorkflowDataAccess
@@ -90,22 +91,27 @@ def semantic_snapshot(
     if definition is None:
         raise SnapshotBuilderError(f"workflow {definition_id} could not be read")
 
-    pipeline_config, extra_fields = build_evaluate_inputs(
-        definition, lambda: PipelineDataAccess(request=request, access_token=access_token, **scope)
-    )
-
     props_doc, full_registry, llo_map, reg_settings, deployment, _source = resolve_registry_for(
         definition,
         registry_access_factory=lambda: SemanticRegistryDataAccess(
             request=request, access_token=access_token, **scope
         ),
     )
+    # Which pipelines feed Layer 1 is the registry's own model, so it is resolved
+    # first.
+    pipeline_config, extra_fields = build_evaluate_inputs(
+        definition,
+        lambda: PipelineDataAccess(request=request, access_token=access_token, **scope),
+        props_doc=props_doc,
+    )
+    model = resolve_model(props_doc, full_registry)
 
     # `series` is one family or several. The FIRST is the primary -- it drives
     # programInd / byLLO / byOpp / byFLW / the trend -- and every further one is
     # graded from the SAME rows into `payload.series[<name>]`, so a template can
     # carry its headline registry and a scorecard registry from one evaluation.
-    declared = spec.get("series") or "C"
+    # Undeclared means the registry's first family, whatever it is called.
+    declared = spec.get("series") or (series_prefixes(full_registry) or ("",))[0]
     series_list = [str(x).upper() for x in (declared if isinstance(declared, list) else [declared])]
     primary = series_list[0]
 
@@ -140,8 +146,8 @@ def semantic_snapshot(
     # The pipeline cache is all-time, so the case index and the visit rows must be
     # cut at the same date the evaluation was. Without this a run for a past week
     # reported today's case and visit counts in its banner and let the drill open
-    # babies who had not been registered yet.
-    cases = cut_as_of(cases, ("reg_date", "first_visit_date"), as_of_date)
+    # cases that had not been registered yet.
+    cases = cut_as_of(cases, snap.case_date_fields(spec), as_of_date)
     visits = cut_as_of(visits, ("visit_date",), as_of_date)
 
     meta = {
@@ -174,6 +180,7 @@ def semantic_snapshot(
         visit_rows=visits,
         extra_series=extra_series,
         as_of=as_of_date,
+        registry_min_denominator=model.min_denominator,
     )
     return wrap_for_runner(payload, spec.get("state_key"))
 

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from connect_labs.semantic.legacy import DEFAULT_REGISTRY_NAME
+
 
 class SemanticBindingError(Exception):
     """A workflow cannot be evaluated, with a caller-reportable reason.
@@ -70,26 +72,41 @@ def resolve_registry_for(definition, registry_access_factory=None, registry_id_o
     return props_doc, full_registry, llo_map, settings, deployment, source
 
 
-def build_evaluate_inputs(definition, pipeline_access_factory) -> tuple[Any, dict[str, Any] | None]:
+def build_evaluate_inputs(
+    definition, pipeline_access_factory, *, props_doc: dict[str, Any]
+) -> tuple[Any, dict[str, Any] | None]:
     """Return `(pipeline_config, extra_fields)` for `semantic.runtime.evaluate`.
 
-    The ENTITY pipeline is the one Layer 1 is generated from — it carries the fallback
-    path lists, which are the expensive part and the thing a hand-written extraction
-    has repeatedly lost.
+    Which pipelines those are is the registry's `pipelines` model:
 
-    The per-visit WEIGHT is not in it. The entity pipeline carries the registration
-    fields and the visit markers; the weight series is its own pipeline, and
-    properties.yml is written against a `weight_g` column. Without `extra_fields` the
-    compiled SQL fails with `column "weight_g" does not exist`, hinting at the entity
-    pipeline's list-valued `weights`, which is a different thing.
+      entity        the alias of the pipeline Layer 1 is generated from. It carries
+                    the fallback path lists, which are the expensive part and the
+                    thing a hand-written extraction has repeatedly lost.
+      extra_fields  column -> alias of another pipeline that supplies it. KMC's
+                    per-visit WEIGHT is not in its entity pipeline -- the weight
+                    series is its own pipeline -- and its properties are written
+                    against a `weight_g` column; without this the compiled SQL
+                    fails with `column "weight_g" does not exist`.
+
+    An extra-field pipeline the workflow does not carry is skipped, as it always
+    was: the compile then names the missing column.
     """
+    from connect_labs.semantic.model import resolve_model
+
+    model = resolve_model(props_doc)
     sources = getattr(definition, "pipeline_sources", None) or []
-    entity_source = next((s for s in sources if s.get("alias") == "children"), None)
+    alias = model.entity_pipeline
+    if not alias:
+        raise SemanticBindingError(
+            "the registry declares no entity pipeline (properties_doc.pipelines.entity), so there is "
+            "nothing to generate Layer 1 from"
+        )
+    entity_source = next((s for s in sources if s.get("alias") == alias), None)
     # Checked BEFORE any data access is constructed. Constructing one needs an OAuth
     # token, so doing it first turns "this workflow has no entity pipeline" — a
     # reportable 400 — into a 500 about credentials.
     if not entity_source:
-        raise SemanticBindingError("workflow has no entity pipeline source (alias 'children')")
+        raise SemanticBindingError(f"workflow has no entity pipeline source (alias {alias!r})")
 
     pipeline_access = pipeline_access_factory()
     # A source may name where its pipeline lives -- a synthetic workflow on a real
@@ -113,15 +130,16 @@ def build_evaluate_inputs(definition, pipeline_access_factory) -> tuple[Any, dic
         # extraction the semantic layer compiles over is the extraction the dashboard's
         # own pipeline runs — the entire reason Layer 1 is generated, not hand-written.
         pipeline_config = pipeline_access._schema_to_config(pipeline_def.schema, entity_source["pipeline_id"])
-        extra_fields = None
-        visit_source = next((s for s in sources if s.get("alias") == "visits"), None)
-        if visit_source:
-            visit_def = pipeline_access.get_definition(visit_source["pipeline_id"])
-            if visit_def and visit_def.schema:
-                visit_config = pipeline_access._schema_to_config(visit_def.schema, visit_source["pipeline_id"])
-                # Keyed by the column properties.yml expects, which is also the
+        extra_fields: dict[str, Any] = {}
+        for column, source_alias in model.extra_fields.items():
+            source = next((s for s in sources if s.get("alias") == source_alias), None)
+            if not source:
+                continue
+            source_def = pipeline_access.get_definition(source["pipeline_id"])
+            if source_def and source_def.schema:
+                # Keyed by the column the registry expects, which is also the
                 # field's own name in that pipeline.
-                extra_fields = {"weight_g": visit_config}
+                extra_fields[column] = pipeline_access._schema_to_config(source_def.schema, source["pipeline_id"])
     except SemanticBindingError:
         raise
     except Exception as exc:
@@ -129,7 +147,7 @@ def build_evaluate_inputs(definition, pipeline_access_factory) -> tuple[Any, dic
     finally:
         pipeline_access.close()
 
-    return pipeline_config, extra_fields
+    return pipeline_config, extra_fields or None
 
 
 def registry_binding(definition) -> dict:
@@ -147,7 +165,7 @@ def registry_binding(definition) -> dict:
         return {"source": "record", **source}
     return {
         "source": "disk",
-        "name": source.get("name") or "kmc",
+        "name": source.get("name") or DEFAULT_REGISTRY_NAME,
         "note": (
             "Unbound: computes from the on-disk registry, which changes only on a deploy. "
             "Edits to a registry record do not reach this workflow until it is bound to one "

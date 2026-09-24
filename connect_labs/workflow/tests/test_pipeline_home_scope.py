@@ -92,13 +92,14 @@ class TestAHomeOverrideReachesProductionFromASyntheticScope:
 
 class TestEveryWorkflowReadHonoursTheSources:
     def test_the_semantic_layer_reads_the_referenced_entity_pipeline(self):
-        from connect_labs.semantic.workflow_binding import build_evaluate_inputs
+        from connect_labs.semantic.runtime import load_registry
+        from connect_labs.semantic.workflow_binding import SemanticBindingError, build_evaluate_inputs
 
         definition = MagicMock(pipeline_sources=SOURCES)
         access = MagicMock()
         access.get_definition.return_value = None
-        with pytest.raises(Exception):
-            build_evaluate_inputs(definition, lambda: access)
+        with pytest.raises(SemanticBindingError):
+            build_evaluate_inputs(definition, lambda: access, props_doc=load_registry("kmc")[0])
         access.use_sources.assert_called_once_with(SOURCES)
 
     def test_the_visit_cache_hands_the_sources_to_its_pipeline_runs(self):
