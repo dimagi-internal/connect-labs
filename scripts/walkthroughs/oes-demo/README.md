@@ -1,9 +1,9 @@
 # OES demo environment
 
 Seeds the environment shown on the Operation End Starvation call: the
-programme team's CHC and RUTF supply chains, the four partner organisations
-reachable through their own links, and a second organisation that uses supply
-without Connect's verified delivery.
+program team's CHC, RUTF and chlorine supply chains, the four partner
+organisations reachable through their own links, and a second organisation
+that uses supply without Connect's verified delivery.
 
 Design: `docs/superpowers/specs/2026-09-24-oes-demo-environment-design.md`.
 
@@ -14,21 +14,61 @@ Set `LABS_SYNTHETIC_GDRIVE_SA_KEY` and pass the folder id:
 
     python scripts/walkthroughs/oes-demo/ensure_demo.py --drive-folder <folder-id>
 
-## Programmes
+## Programs: three chains, three of them, and why
 
-| Programme | What                                                                      |
-| --------- | ------------------------------------------------------------------------- |
-| 10610     | The programme team's own: CHC and RUTF, with verified delivery            |
-| 10671     | The supply-only organisation: no opportunity binding, no user-held points |
+`SupplyDataAccess.scope_key` is "the program, always", and it governs the
+**catalogue** as well as the ledger -- commodities, items and suppliers are
+per-program. CHC, RUTF and chlorine are three different real things, so they
+get three programs. One scope holding all three would put chlorine in the CHC
+catalogue and RUTF's supplier register in with ORS: a program on screen that
+corresponds to nothing real. Design section 1a.
 
-Confirmed free via the `connect_labs` MCP `synthetic_env_list()` tool before
-use (neither id appears in any registered synthetic environment).
+| Program | Scope         | Document section   | Behind it in Connect                            |
+| ------- | ------------- | ------------------ | ----------------------------------------------- |
+| 10610   | `chc`         | `chc_chain`        | program 217, org `dimagi-chc-rct`               |
+| 10672   | `rutf`        | `rutf_rounds`      | program 263, org `dimagi-ng-rutf`               |
+| 10673   | `chlorine`    | `chlorine_blocked` | **nothing -- it is not an opportunity yet**     |
+| 10671   | `supply_only` | `supply_only`      | nothing: no opportunity binding, no user points |
+
+The first three scope names are the ones the document's
+`portfolio.program_slugs` uses, so the portfolio resolves through `SCOPES`
+rather than through a second map that could disagree with it. The supply-only
+organisation is a different organisation's program and is deliberately not in
+that portfolio.
+
+All four ids confirmed free two ways before use: the `connect_labs` MCP
+`synthetic_env_list()` tool (none appears in any registered synthetic
+environment) and `grep -rhoE "PROGRAM[A-Z_]* *= *10[0-9]{3}"
+connect_labs/supply_chain/tests/*.py`, because the supply test suite holds raw
+program ids that no registry knows about -- `10611`, which an earlier draft
+used, is one of them.
+
+## Each scope gets only its own products
+
+`seed_scopes` seeds the organisations once -- `upsert_org` is the one
+reference write here that is not program-scoped, because "an organisation is
+the same organisation in every program it appears in" -- and then seeds each
+scope's **catalogue separately**.
+
+Which products a scope gets is derived from its own section by
+`commodities_for`, not listed per scope in the document, so the split cannot
+drift from the chain it describes: a round that gains a line gains its product
+in the same edit. A kit brings its components with it, because
+`_kit_components` refuses a component that is not a product in the same
+catalogue -- a co-pack seeded without its ORS sachet is one whose
+specification can never be checked, and "no requirement to fail" reads as a
+pass.
+
+`seed_scopes` seeds reference data only. The CHC chain is seeded against the
+`chc` scope by `seed_chc_chain`; RUTF and chlorine have their own sections and
+their own tasks, so until those land their scopes hold a catalogue and no
+chain. That is the right intermediate state, not an omission.
 
 ## Organisations
 
 Organisations are upserted by slug, one row per partner, and carry
 `connect_organization_id` where the partner's Connect organisation is known
--- today, only the programme's own org (`dimagi-chc-rct`). The four
+-- today, only the program's own org (`dimagi-chc-rct`). The four
 implementing/distributing partners are not bound: Connect's export only
 returns organisations the polling account belongs to, and these partners are
 not among them.
@@ -82,8 +122,8 @@ After a seed, the order page carries all three and they must not read alike:
 
 | Row            | Reads                                           |
 | -------------- | ----------------------------------------------- |
-| the order      | the programme's name alone -- we placed it      |
-| goods received | "⟨programme⟩, for ⟨distributor⟩ (they told us)" |
+| the order      | the program's name alone -- we placed it        |
+| goods received | "⟨program⟩, for ⟨distributor⟩ (they told us)"   |
 | the dispatch   | the distributor's name alone -- they entered it |
 
 `test_oes_demo_provenance.py` renders that page and asserts the three are
