@@ -123,10 +123,10 @@ scenes:
     timeout_ms: 30000
   - kind: wait_for
     target: css:text=Paid in advance
-  - kind: scroll_to
-    target: css:text=Ordered · received · invoiced
+  - kind: scroll
+    value: '520'
   - kind: hold
-    seconds: 2.0
+    seconds: 2.5
   - kind: snapshot
     note: paid in advance, awaiting delivery of the whole order
   concept_claim: Recording the payment on an order paid in advance shows it as paid in advance and awaiting
@@ -218,15 +218,15 @@ scenes:
   - kind: scroll
     value: top
   - kind: hold
-    seconds: 3.0
-    note: what Harmattan recorded through its link, nobody asked
-  - kind: snapshot
-    note: the link's updates, listed on the order
-  - kind: scroll_to
-    target: css:text=Recoverable from the supplier
-  - kind: hold
     seconds: 2.5
-    note: 'paid for and refused: 120 USD recoverable'
+    note: what Harmattan recorded through its link, nobody asked
+  - kind: scroll
+    value: '300'
+  - kind: hold
+    seconds: 3.0
+    note: 'the link''s updates above, and paid for and refused: 120 USD recoverable'
+  - kind: snapshot
+    note: the link's updates and the recoverable amount, in one frame
   concept_claim: The order page lists the distributor's link updates (order confirmed, payment received,
     receipt) and reports the refused cartons of an advance order as an amount recoverable from the supplier.
   show: 'The order page — the ''Through Harmattan Health Supplies''s update link'' panel (order confirmed,
@@ -295,7 +295,7 @@ scenes:
     value: carton
   - kind: fill
     target: css:#id_reason
-    value: Sahel CHI month-end stock take. 24 cartons short of the ledger — handed out at outreach days,
+    value: Sahel CHI stock take. 24 cartons short of the ledger — handed out at outreach days,
       visits not yet synced.
   - kind: select
     target: css:#id_source
@@ -318,18 +318,27 @@ scenes:
 - id: the-check-trips
   actions:
   - kind: wait_for
-    target: css:text=Below its own minimum
-  - kind: scroll_to
-    target: css:text=Below its own minimum
+    target: css:text=Sent log
   - kind: hold
-    seconds: 2.5
+    seconds: 1.5
+  - kind: click
+    must_succeed: true
+    target: role:button:Check now
+    timeout_ms: 30000
+  - kind: wait_for
+    target: css:td a:has-text('Sahel CHI store')
+    timeout_ms: 60000
+  - kind: scroll_to
+    target: css:h2:has-text('Sent log')
+  - kind: hold
+    seconds: 3.0
   - kind: snapshot
-    note: the derived fact the alert sends
-  concept_claim: The checks page lists stock_below_minimum for Sahel CHI store, with its months of stock
-    and its minimum.
-  show: The checks page, "Below its own minimum", Sahel CHI store, Wudil — months of stock 2.8 against
-    min 3.
-  url: /supply/checks/
+    note: the notice the stock take tripped, sent to Amara
+  concept_claim: The alert's sent log records a 'Below its own minimum' notice for Sahel CHI store, found
+    after the stock take and sent to the subscriber.
+  show: The alerts page — Check now, then the sent log's row for Sahel CHI store, Wudil, 'Below its own
+    minimum', under the co-pack alert, marked sent.
+  url: /supply/alerts/
 - id: the-resupply-plan-names-the-quantity
   actions:
   - kind: wait_for
@@ -386,8 +395,6 @@ scenes:
   actions:
   - kind: wait_for
     target: css:text=Stock across the network
-  - kind: scroll
-    value: bottom
   - kind: hold
     seconds: 3.0
   - kind: snapshot
