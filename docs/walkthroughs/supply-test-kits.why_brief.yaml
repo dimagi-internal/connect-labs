@@ -97,9 +97,9 @@ spine:
     and contract_create refuses an award with a pending approval — a stated fact,
     not advice.
 - id: S4
-  claim: Once the technical partner's approval is recorded, the order is placed on
-    the quote's terms, invoiced and paid, and the payment reads as not yet confirmed
-    by the distributor.
+  claim: Once the technical partner has answered through its own link, with its signed
+    confirmation attached, the award's disabled Place order becomes live and the order
+    is placed on the quote's terms, its Incoterm stated in words.
   status: grounded
   evidence:
   - ref: EV-010
@@ -110,13 +110,13 @@ spine:
     kind: documented
   - ref: EV-008
     kind: documented
-  rationale: The award page offers the order only after approval; the three-way match
-    and payment records follow the ordinary fulfilment path, and G8 adds whether the
-    payee has confirmed the money arrived.
+  rationale: The award page offers the order only after approval, so the approval
+    is the moment the purchase is released; the order carries the award, so the quote's
+    terms travel into the commitment.
 - id: S5
-  claim: The distributor confirms the order and the payment and records the kits into
-    its warehouse through a private update link, with no labs login and every entry
-    marked as reported by the distributor.
+  claim: The distributor confirms the order and records the kits into its warehouse
+    through its own standing update link, with no labs login and every entry marked
+    as reported by the distributor.
   status: grounded
   evidence:
   - ref: EV-002
@@ -128,10 +128,12 @@ spine:
   - ref: EV-012
     kind: implemented
   rationale: Every status update is chased by email today; the update link (G7) lets
-    the distributor record its own updates, scoped to this order and warehouse only.
+    the distributor record its own updates, on a link that follows the organisation
+    so each new order is covered without issuing another.
 - id: S6
   claim: The kits arrive in stock at the distributor's warehouse, and the stock position
-    reads both in kits and in the tests they hold — 20 kits is 1,000 tests.
+    reads both in kits and in the tests they hold — 20 kits is 1,000 tests — of the
+    kit that meets the specification and that the technical partner approved.
   status: grounded
   evidence:
   - ref: EV-003
