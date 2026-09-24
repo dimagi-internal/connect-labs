@@ -1781,7 +1781,7 @@ pipelines: { entity: visits } # + extra_fields: {<column>: <pipeline alias>} to 
 # weight_series: {...}               # optional per-entity reading series (KMC's weights); needs value_column
 ```
 
-Two examples ship: `registry/visit_quality` (per beneficiary, generic Connect visit columns, series Q, no LLOs) and `registry/kmc` (per baby, weight series, LLOs, series C/N). Copy the closer one. Indicator IDs can start with any letters: the letters name the series, or you list them in `indicators_doc.series`.
+Two examples ship: `registry/visit_quality` (per beneficiary, generic Connect visit columns, series Q, no LLOs) and `registry/kmc` (per baby, weight series, LLOs, one family `KMC` with slug ids such as `mortality`). Copy the closer one. `indicators_doc.series` declares the family; in a registry declaring one, every indicator belongs to it whatever its id looks like. With several, an indicator names its family by `meta.series` or an id prefix.
 
 ### Tools
 
@@ -1798,7 +1798,7 @@ Registry writes only succeed from the record's **home scope** (the organisation,
 ### Render contract
 
 ```
-GET /labs/workflow/api/<workflow_id>/semantic/?series=<prefix>&scopes=opportunity,flw
+GET /labs/workflow/api/<workflow_id>/semantic/?scopes=opportunity,flw[&series=<family>]
     [&as_of=YYYY-MM-DD] [&flw=<opportunity_id>::<username>] [&catalog_only=1] [&registry_id=<candidate>]
 → { rows: [{scope, opportunity_id?, username?, llo?, cohort_month?, case_id?, n_cases,
             <measure>, <measure>_numerator, <measure>_denominator, <measure>_suppressed?, anyrec_<input>?}],

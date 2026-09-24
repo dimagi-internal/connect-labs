@@ -50,9 +50,147 @@ function WorkflowUI({
   var live = _live[0];
   var setLive = _live[1];
 
+  // ── Runs saved before the indicator set was unified (#2004) ────────────────
+  // Until 2026-09 the registry carried two families with coded ids -- the
+  // workbook's C01..C31 and the demo compute spec's N01..N15 -- and a saved run
+  // froze both: C at the top level, N under `series.N`. The set is one family of
+  // named indicators now, and a completed run is write-protected, so an old run
+  // is translated HERE, on read. Only an indicator whose definition did not
+  // change carries across: every N id, plus the workbook ids that were the same
+  // rule under another name. The rest -- the workbook's growth, loss-to-follow-up
+  // and care figures, computed on a one-visit "started" -- are not comparable
+  // with today's and are left out rather than shown under a name that now means
+  // something else. The page says so (`P.legacyIds`).
+  var LEGACY_ID = {
+    N01: 'total_cases',
+    N02: 'registered_cases',
+    N03: 'started_cases',
+    N04: 'cumulative_svns_reached',
+    N05: 'median_gestational_age',
+    N06: 'median_birthweight',
+    N07: 'visits_per_case',
+    N08: 'pct_enrolled_within_3d',
+    N09: 'pct_slow_growth',
+    N10: 'pct_healthy_growth',
+    N11: 'pct_fast_growth',
+    N12: 'pct_incomplete_growth_data',
+    N13: 'mortality',
+    N14: 'weight_rounding_rate',
+    N15: 'pct_impossible_weight_changes',
+    C01: 'registered_cases',
+    C05: 'total_cases',
+    C28: 'birth_copy_rate',
+    C31: 'weight_rounding_rate',
+  };
+  var LEGACY_CODE = /^[CN]\d\d$/;
+  function legacyCells(ind) {
+    if (!ind) return ind;
+    var out = {};
+    Object.keys(ind).forEach(function (k) {
+      if (!LEGACY_CODE.test(k)) {
+        out[k] = ind[k];
+        return;
+      }
+      var to = LEGACY_ID[k];
+      if (to && !(to in out)) out[to] = Object.assign({}, ind[k], { id: to });
+    });
+    return out;
+  }
+  function fromLegacyIds(p) {
+    var N = p.series && p.series.N;
+    if (!N) return p;
+    // N first: where a workbook id and a scorecard id name the same rule, the
+    // scorecard's cell is the one graded with today's thresholds.
+    function merge(cInd, nInd) {
+      var out = legacyCells(nInd || {});
+      var c = legacyCells(cInd || {});
+      Object.keys(c).forEach(function (k) {
+        if (!(k in out)) out[k] = c[k];
+      });
+      return out;
+    }
+    function tally(entry, ind) {
+      var reds = 0;
+      var yellows = 0;
+      Object.keys(ind).forEach(function (k) {
+        if (ind[k] && ind[k].band === 'red') reds++;
+        if (ind[k] && ind[k].band === 'yellow') yellows++;
+      });
+      return Object.assign({}, entry, {
+        ind: ind,
+        reds: reds,
+        yellows: yellows,
+      });
+    }
+    function find(list, field, value) {
+      return (list || []).filter(function (x) {
+        return String(x[field]) === String(value);
+      })[0];
+    }
+    function rollup(cList, nList, field) {
+      return (cList || []).map(function (e) {
+        var n = find(nList, field, e[field]);
+        var out = tally(e, merge(e.ind, n && n.ind));
+        if (e.opps)
+          out.opps = e.opps.map(function (o) {
+            var no = find(N.byOpp, 'opp', o.opp);
+            return tally(o, merge(o.ind, no && no.ind));
+          });
+        return out;
+      });
+    }
+    function months(cList, nList) {
+      return (cList || nList || []).map(function (pt) {
+        var n = find(nList, 'month', pt.month);
+        var c = find(cList, 'month', pt.month);
+        return Object.assign({}, pt, {
+          ind: merge(c && c.ind, n && n.ind),
+          pooled: legacyCells((n && n.pooled) || {}),
+        });
+      });
+    }
+    var byScope = {};
+    var nByScope = N.monthlyByScope || {};
+    Object.keys(p.monthlyByScope || nByScope).forEach(function (k) {
+      byScope[k] = months((p.monthlyByScope || {})[k], nByScope[k]);
+    });
+    var seen = {};
+    var measures = []
+      .concat(N.measures || [], p.cMeasures || [])
+      .map(function (m) {
+        var to = LEGACY_ID[m.indicator];
+        return to ? Object.assign({}, m, { id: to, indicator: to }) : null;
+      })
+      .filter(function (m) {
+        if (!m || seen[m.indicator]) return false;
+        seen[m.indicator] = true;
+        return true;
+      });
+    return Object.assign({}, p, {
+      legacyIds: true,
+      cMeasures: measures,
+      programInd: merge(p.programInd, N.programme),
+      byLLO: rollup(p.byLLO, N.byLLO, 'llo'),
+      byOpp: rollup(p.byOpp, N.byOpp, 'opp'),
+      byFLW: rollup(p.byFLW, N.byFLW, 'key'),
+      // The old pooled figure is the workbook's one-visit mortality: not
+      // comparable, so the headline falls back to the scope's own cell.
+      pooledOverCredible: {},
+      credibility: legacyCells(p.credibility || {}),
+      monthly: months(p.monthly, N.monthly),
+      monthlyByScope: byScope,
+      series: {},
+    });
+  }
+
   // THE payload. Null only while a live preview is in flight or has failed.
   var payload = snapshot || live.payload;
-  var P = payload || {};
+  var P = React.useMemo(
+    function () {
+      return fromLegacyIds(payload || {});
+    },
+    [payload],
+  );
 
   // The (opportunity, worker) key separator. Declared up here, above every memo
   // that builds one: `var` hoists as undefined.
@@ -87,15 +225,22 @@ function WorkflowUI({
   // Case count for a rollup row. The payload's rollups carry indicator results,
   // not case rows (byFLW carries positions into the case index), so reading
   // `rows.length` renders a confident 0 next to a Started column reading 606.
-  // C01's denominator IS every case in the group; fall through to it.
+  // total_cases' denominator IS every case in the group; fall through to it.
   function caseCount(g) {
     if (g && g.rows && g.rows.length) return g.rows.length;
-    if (g && g.ind && g.ind['C01'] && typeof g.ind['C01'].n === 'number')
-      return g.ind['C01'].n;
+    if (
+      g &&
+      g.ind &&
+      g.ind['total_cases'] &&
+      typeof g.ind['total_cases'].n === 'number'
+    )
+      return g.ind['total_cases'].n;
     return '—';
   }
 
-  var MIN_DEN = 25;
+  // The registry's `defaults.min_denominator` (spec section 0), for a measure
+  // that declares none of its own.
+  var MIN_DEN = 20;
 
   // ── Fetch the live payload ────────────────────────────────────────────────
   // The scope the page is viewing, forwarded so the server resolves the same
@@ -617,56 +762,94 @@ function WorkflowUI({
   // row banded `insufficient` still contributes to the pool while storing no
   // value), keyed by indicator, in the {ind, llos, of} shape the card reads.
   var mortalityCredible = (P.pooledOverCredible &&
-    P.pooledOverCredible['C14']) || {
+    P.pooledOverCredible['mortality']) || {
     ind: null,
     llos: [],
     of: 0,
   };
 
-  // ── Neal's scorecard ───────────────────────────────────────────────────────
-  // His compute spec's §5 table, column for column, from the N series the builder
-  // grades alongside the headline C series. `Qual N` is the shared denominator of
-  // the four growth-quality columns, which the spec prints as its own column.
-  var SC = (P.series && P.series.N) || null;
+  // ── The scorecard ─────────────────────────────────────────────────────────
+  // The compute spec's §5 table, column for column. `Qual N` is the shared
+  // denominator of the four growth-quality columns, which the spec prints as its
+  // own column. It reads the same cells as everything else on the page: there is
+  // one indicator set.
+  var SC = {
+    measures: P.cMeasures || [],
+    programme: P.programInd || null,
+    byLLO: P.byLLO || [],
+    byOpp: P.byOpp || [],
+    byFLW: P.byFLW || [],
+  };
   var SCORECARD = [
-    { id: 'N01', label: 'Total', title: 'Total cases' },
-    { id: 'N02', label: 'Reg', title: 'Registered (C01)' },
-    { id: 'N03', label: 'Started', title: 'Started (C02)' },
-    { id: 'N05', label: 'Med GA', title: 'Median gestational age, weeks' },
-    { id: 'N06', label: 'Med BW', title: 'Median birthweight, g' },
-    { id: 'N07', label: 'Visits/case', title: 'Mean visits per case (C24)' },
+    { id: 'total_cases', label: 'Total', title: 'Total cases' },
+    { id: 'registered_cases', label: 'Reg', title: 'Registered' },
     {
-      id: 'N08',
-      label: '%1st\u22643d',
-      title: '% first visit within 3 days of discharge (C16)',
+      id: 'started_cases',
+      label: 'Started',
+      title: 'Started \u2014 two or more follow-up visits',
     },
     {
-      id: 'N09',
+      id: 'median_gestational_age',
+      label: 'Med GA',
+      title: 'Median gestational age, weeks',
+    },
+    {
+      id: 'median_birthweight',
+      label: 'Med BW',
+      title: 'Median birthweight, g',
+    },
+    {
+      id: 'visits_per_case',
+      label: 'Visits/case',
+      title: 'Mean visits per case',
+    },
+    {
+      id: 'pct_enrolled_within_3d',
+      label: '%1st\u22643d',
+      title: '% first visit within 3 days of discharge',
+    },
+    {
+      id: 'pct_slow_growth',
       label: 'Qual N',
       title:
         'Qualifying SVNs \u2014 the shared denominator of the four growth-quality columns',
       denOnly: true,
     },
-    { id: 'N09', label: '%slow', title: '% slow growth, of qualifying SVNs' },
     {
-      id: 'N10',
+      id: 'pct_slow_growth',
+      label: '%slow',
+      title: '% slow growth, of qualifying SVNs',
+    },
+    {
+      id: 'pct_healthy_growth',
       label: '%healthy',
       title: '% healthy growth, of qualifying SVNs',
     },
-    { id: 'N11', label: '%fast', title: '% fast growth, of qualifying SVNs' },
     {
-      id: 'N12',
+      id: 'pct_fast_growth',
+      label: '%fast',
+      title: '% fast growth, of qualifying SVNs',
+    },
+    {
+      id: 'pct_incomplete_growth_data',
       label: '%incompl',
       title: '% incomplete growth data, of qualifying SVNs',
     },
     {
-      id: 'N13',
+      id: 'mortality',
       label: 'Mortality',
-      title:
-        'Mortality (C14) \u2014 shown only where death recording is credible',
+      title: 'Mortality \u2014 shown only where death recording is credible',
     },
-    { id: 'N14', label: 'Round%', title: 'Weight rounding rate (C31)' },
-    { id: 'N15', label: '%imposs', title: '% impossible weight changes (C27)' },
+    {
+      id: 'weight_rounding_rate',
+      label: 'Round%',
+      title: 'Weight rounding rate',
+    },
+    {
+      id: 'pct_impossible_weight_changes',
+      label: '%imposs',
+      title: '% impossible weight changes',
+    },
   ];
   var N_BY_ID = React.useMemo(
     function () {
@@ -708,7 +891,7 @@ function WorkflowUI({
           ? nCount(v)
           : m.unit === 'wks'
             ? String(Math.round(v * 10) / 10)
-            : c.id === 'N07'
+            : c.id === 'visits_per_case'
               ? v.toFixed(1)
               : nCount(v);
     if (e.band === 'notcredible')
@@ -977,6 +1160,7 @@ function WorkflowUI({
       var cancelled = false;
       // Paths are under the snapshot's own state key (`state.snapshot.*`), and
       // the page's scope travels the same way the preview fetch sends it.
+      // `series.N.*` is only on runs saved before #2004; see fromLegacyIds.
       var keys = [
         'programInd',
         'byLLO',
@@ -1022,8 +1206,9 @@ function WorkflowUI({
   // live run as of today, a saved one via the history (deduplicated by date).
   var historyPoints = React.useMemo(
     function () {
-      // The scorecard's N cells for the same scope, merged in beside the C cells
-      // so a tile or trend can chart either series. Ids never collide (C.. / N..).
+      // A run saved before #2004 froze the scorecard under `series.N`; its cells
+      // are merged in and translated to today's ids, keeping only those whose
+      // definition did not change (legacyCells). A current run has no series.N.
       function scorecardCellsOf(st) {
         if (oppFilter) {
           var o = (st['series.N.byOpp'] || []).filter(function (x) {
@@ -1040,15 +1225,17 @@ function WorkflowUI({
         return st['series.N.programme'] || null;
       }
       function cellsOf(st) {
-        var c = cCellsOf(st);
-        var n = st ? scorecardCellsOf(st) : null;
+        var c = legacyCells(cCellsOf(st));
+        var n = st ? legacyCells(scorecardCellsOf(st)) : null;
         if (!n) return c;
+        // The scorecard's cell first: where a workbook id named the same rule,
+        // it is the one graded with today's thresholds.
         var out = {};
-        Object.keys(c || {}).forEach(function (k) {
-          out[k] = c[k];
-        });
         Object.keys(n).forEach(function (k) {
-          if (!(k in out)) out[k] = n[k];
+          out[k] = n[k];
+        });
+        Object.keys(c || {}).forEach(function (k) {
+          if (!(k in out)) out[k] = c[k];
         });
         return out;
       }
@@ -1071,8 +1258,10 @@ function WorkflowUI({
           ind[k] = st.programInd[k];
         });
         // Undrilled mortality is the pooled-over-credible figure, as the headline.
-        var pc = st.pooledOverCredible && st.pooledOverCredible.C14;
-        if (pc && pc.ind) ind.C14 = pc.ind;
+        // (A pre-#2004 run pooled the workbook's C14, which is not today's
+        // mortality; it is keyed C14 and so falls away in legacyCells.)
+        var pc = st.pooledOverCredible && st.pooledOverCredible.mortality;
+        if (pc && pc.ind) ind.mortality = pc.ind;
         return ind;
       }
       var byDate = {};
@@ -1102,9 +1291,6 @@ function WorkflowUI({
         byOpp: P.byOpp,
         pooledOverCredible: P.pooledOverCredible,
         meta: P.meta,
-        'series.N.programme': SC && SC.programme,
-        'series.N.byLLO': SC && SC.byLLO,
-        'series.N.byOpp': SC && SC.byOpp,
       };
       var ownDate =
         (P.meta && P.meta.as_of) ||
@@ -1159,12 +1345,12 @@ function WorkflowUI({
   // the pipeline (its own cache partition, grouped its own way), while every
   // indicator on the page counts Layer 2's per-baby rows, keyed
   // (opportunity, baby_case_id) and skipping a null key. Measured 2026-09-11 on
-  // the real cohort: the subline read 8,850 while C05 -- and Neal's workbook,
-  // exactly -- said 8,823. A header that contradicts its own scorecard is read
-  // as the page being wrong, and it was the header that was wrong.
-  // `fallback` covers a saved run from before the scorecard carried C05.
+  // the real cohort: the subline read 8,850 while the total-cases indicator --
+  // and Neal's workbook, exactly -- said 8,823. A header that contradicts its own
+  // scorecard is read as the page being wrong, and it was the header that was
+  // wrong. `fallback` covers a saved run from before the scorecard carried it.
   function totalCases(ind, fallback) {
-    var e = ind && ind['C05'];
+    var e = ind && ind['total_cases'];
     if (e && e.n !== null && e.n !== undefined) return e.n;
     return fallback;
   }
@@ -1951,7 +2137,7 @@ function WorkflowUI({
   // One page, one table. The headline tiles carry a week-on-week delta, the
   // organisations table is Neal's scorecard with last-visit and attention
   // columns, and the charts sit under it: activity by week off this payload,
-  // indicators over time off the saved-run history. The full C-series is a
+  // indicators over time off the saved-run history. Every indicator is a
   // collapsed panel, not a second table. One level down, the same shape
   // repeats for an organisation with its workers as the one table.
 
@@ -2047,62 +2233,40 @@ function WorkflowUI({
   // Value from this payload for the scope in hand; delta against the previous
   // saved report in the same scope, off the history the charts already use.
   var TILES = [
-    { id: 'C02', label: 'Started cases', count: true, sub: '' },
     {
-      id: 'N10',
+      id: 'started_cases',
+      label: 'Started cases',
+      count: true,
+      sub: 'two or more visits',
+    },
+    {
+      id: 'pct_healthy_growth',
       label: 'Healthy growth',
       pct: true,
       target: 0.7,
       sub: 'target 70% · of qualifying babies',
     },
     {
-      id: 'C13',
+      id: 'mean_early_growth_rate',
       label: 'Early growth rate',
       unit: 'g/kg/day',
       target: 15,
       sub: 'target 15',
     },
-    { id: 'C14', label: 'Mortality', pct: true, target: 0.04, sub: '' },
+    { id: 'mortality', label: 'Mortality', pct: true, target: 0.04, sub: '' },
     {
-      id: 'C15',
+      id: 'lost_by_day_28',
       label: 'Lost by day 28',
       pct: true,
       target: 0.1,
       sub: 'target 10%',
     },
   ];
-  // The N-series cells for the scope in hand -- the scorecard's own rows.
-  function nScopeInd() {
-    if (!SC) return null;
-    if (oppFilter) {
-      var o = (SC.byOpp || []).filter(function (x) {
-        return String(x.opp) === String(oppFilter);
-      })[0];
-      return o ? o.ind : null;
-    }
-    if (selLLO) {
-      var l = (SC.byLLO || []).filter(function (x) {
-        return x.llo === selLLO;
-      })[0];
-      return l ? l.ind : null;
-    }
-    return SC.programme || null;
-  }
-  // Started reads the scorecard's N03 (the demo compute spec: two or more
-  // visits) when the payload carries it, so the tile and the table agree. The
-  // workbook's C02 (one follow-up) is the fallback for an older run.
+  // Undrilled mortality is the figure pooled over the credible recorders.
   function tileEntry(id) {
-    if (id === 'C14' && !selLLO && !oppFilter) return mortalityCredible.ind;
-    if (id.charAt(0) === 'N') return entryOf(nScopeInd(), id);
-    if (id === 'C02') {
-      var n = nScopeInd();
-      if (n && n.N03) return n.N03;
-    }
+    if (id === 'mortality' && !selLLO && !oppFilter)
+      return mortalityCredible.ind;
     return entryOf(scopeInd, id);
-  }
-  function tileId(t) {
-    if (t.id === 'C02' && nScopeInd() && nScopeInd().N03) return 'N03';
-    return t.id;
   }
   function tileValue(t, e) {
     if (!e || e.value === null || e.value === undefined) return '—';
@@ -2112,9 +2276,6 @@ function WorkflowUI({
     return Number(e.value).toFixed(1);
   }
   function tileDelta(t) {
-    // The run history projects the C-series only; a delta for the spec's
-    // started count against the workbook's would compare two definitions.
-    if (t.id === 'C02' && tileId(t) === 'N03') return '';
     if (historyPoints.length < 2) return '';
     var prev = historyPoints[historyPoints.length - 2];
     var cur = historyPoints[historyPoints.length - 1];
@@ -2142,7 +2303,7 @@ function WorkflowUI({
     return (d > 0 ? '+' : '−') + s + since;
   }
   function Tiles() {
-    var started = tileEntry('C02');
+    var started = tileEntry('started_cases');
     var pctOfTarget =
       !selLLO && started.value
         ? Math.min(100, (started.value / 25000) * 100)
@@ -2153,27 +2314,24 @@ function WorkflowUI({
           var e = tileEntry(t.id);
           var band = e && BAND_WORD[e.band] ? e.band : null;
           var sub = t.sub;
-          if (t.id === 'C14')
+          if (t.id === 'mortality')
             sub =
               selLLO || oppFilter
                 ? 'two-sided'
                 : mortalityCredible.llos && mortalityCredible.llos.length
                   ? mortalityCredible.llos.join(' + ') + ' only'
                   : 'no credible recorder';
-          if (t.id === 'C02')
+          if (t.id === 'started_cases')
             sub =
-              (tileId(t) === 'N03' ? 'two or more visits' : 'one follow-up') +
+              t.sub +
               (pctOfTarget !== null ? ' · of 25,000 target by Q1 2027' : '');
           return (
             <div
               key={t.id}
               className="bg-white border border-gray-200 rounded-xl px-4 pt-3 pb-3"
             >
-              <div className="flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                <span className="truncate">{t.label}</span>
-                <span className="font-mono font-normal normal-case tracking-normal text-gray-300">
-                  {tileId(t)}
-                </span>
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 truncate">
+                {t.label}
               </div>
               <div className="mt-1 text-2xl font-bold text-gray-900 tabular-nums">
                 {tileValue(t, e)}
@@ -2193,7 +2351,7 @@ function WorkflowUI({
                   </span>
                 ) : null}
               </div>
-              {pctOfTarget !== null && t.id === 'C02' ? (
+              {pctOfTarget !== null && t.id === 'started_cases' ? (
                 <div className="mt-2 h-1.5 rounded bg-gray-100 overflow-hidden">
                   <div
                     className="h-full rounded bg-indigo-600"
@@ -2563,10 +2721,30 @@ function WorkflowUI({
             </div>
             <ActivityChart weeks={weekly} />
           </div>
-          <SmallTrend id="N10" label="Healthy growth" pct={true} target={0.7} />
-          <SmallTrend id="C13" label="Growth rate" pct={false} target={15} />
-          <SmallTrend id="C14" label="Mortality" pct={true} target={0.04} />
-          <SmallTrend id="C15" label="Lost by d28" pct={true} target={0.1} />
+          <SmallTrend
+            id="pct_healthy_growth"
+            label="Healthy growth"
+            pct={true}
+            target={0.7}
+          />
+          <SmallTrend
+            id="mean_early_growth_rate"
+            label="Growth rate"
+            pct={false}
+            target={15}
+          />
+          <SmallTrend
+            id="mortality"
+            label="Mortality"
+            pct={true}
+            target={0.04}
+          />
+          <SmallTrend
+            id="lost_by_day_28"
+            label="Lost by d28"
+            pct={true}
+            target={0.1}
+          />
         </div>
         <p className="mt-2 text-xs text-gray-400">
           Activity is counted in the week it happened, to {dateLbl(asOf)}. Each
@@ -2744,7 +2922,10 @@ function WorkflowUI({
     var rows = sortRows(
       'org',
       byLLO.slice().sort(function (a, b) {
-        return (entryOf(b.ind, 'C01').n || 0) - (entryOf(a.ind, 'C01').n || 0);
+        return (
+          (entryOf(b.ind, 'total_cases').n || 0) -
+          (entryOf(a.ind, 'total_cases').n || 0)
+        );
       }),
       function (l, key) {
         if (key === 'name') return String(l.llo || '').toLowerCase();
@@ -2880,14 +3061,19 @@ function WorkflowUI({
           var reds = Object.keys(o.ind || {}).filter(function (k) {
             return o.ind[k].band === 'red';
           }).length;
-          return chip(oppLabel(o.opp), o.opp, reds, entryOf(o.ind, 'C01').n);
+          return chip(
+            oppLabel(o.opp),
+            o.opp,
+            reds,
+            entryOf(o.ind, 'total_cases').n,
+          );
         })}
       </div>
     );
   }
 
   // The workers table: the SAME scorecard as the organisations table, one row
-  // per worker, with the worker's cells from the N-series byFLW.
+  // per worker, with the worker's own cells from byFLW.
   function FLWTable() {
     if (!scopeLLO) return null;
     var oppSet = {};
@@ -3652,7 +3838,7 @@ function WorkflowUI({
         <summary className="px-4 py-3 text-sm font-semibold text-gray-700 cursor-pointer flex items-center justify-between">
           <span>All programme indicators · {scopeName}</span>
           <span className="text-xs font-normal text-gray-400">
-            value, n and band for the full C-series · click a row for its
+            value, n and band for every indicator · click a row for its
             definition
           </span>
         </summary>
@@ -3848,6 +4034,16 @@ function WorkflowUI({
             {live.cache.cold_cache_hint}
           </div>
         )}
+
+      {P.legacyIds ? (
+        <div className="px-4 py-3 text-sm bg-slate-50 text-slate-700 border border-slate-200 rounded-xl">
+          This report was saved before the KMC indicators became one set
+          (September 2026). Only the indicators whose definition did not change
+          are shown; the early growth rate, loss to follow-up and care figures
+          were computed differently then and are left blank rather than compared
+          with today&apos;s.
+        </div>
+      ) : null}
 
       {selLLO ? <OppChips /> : null}
 

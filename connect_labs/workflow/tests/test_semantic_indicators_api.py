@@ -46,18 +46,18 @@ def test_it_passes_the_series_and_scopes_straight_through(client, django_user_mo
         wda.return_value.get_definition.return_value = _Def()
         pda.return_value.get_definition.return_value = _Pipe()
         pda.return_value._schema_to_config.return_value = object()
-        ev.return_value = [{"scope": "programme", "n_cases": 2, "n03": 2}]
+        ev.return_value = [{"scope": "programme", "n_cases": 2, "started_cases": 2}]
 
-        resp = client.get(_url(1), {"series": "N", "scopes": "programme,flw"})
+        resp = client.get(_url(1), {"series": "KMC", "scopes": "programme,flw"})
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body["series"] == "N"
+    assert body["series"] == "KMC"
     assert body["scopes"] == ["programme", "flw"]
     assert body["row_count"] == 1
 
     kwargs = ev.call_args.kwargs
-    assert kwargs["series"] == "N"
+    assert kwargs["series"] == "KMC"
     assert kwargs["scopes"] == ["programme", "flw"]
 
 
@@ -106,7 +106,7 @@ def test_a_registry_or_sql_failure_is_reported_rather_than_swallowed(client, dja
         pda.return_value._schema_to_config.return_value = object()
         ev.side_effect = SemanticRuntimeError('semantic query failed: column "x" does not exist')
 
-        resp = client.get(_url(1), {"series": "N"})
+        resp = client.get(_url(1), {"series": "KMC"})
 
     assert resp.status_code == 400
     assert 'column "x" does not exist' in resp.json()["error"]
@@ -146,7 +146,7 @@ def test_the_schema_is_converted_to_a_pipeline_config_before_evaluation(client, 
         pda.return_value.get_definition.return_value = _Pipe()
         pda.return_value._schema_to_config.return_value = sentinel
         ev.return_value = []
-        resp = client.get(_url(1), {"series": "N"})
+        resp = client.get(_url(1), {"series": "KMC"})
 
     assert resp.status_code == 200
     pda.return_value._schema_to_config.assert_called_once()
@@ -188,7 +188,7 @@ def test_the_weight_series_pipeline_is_supplied_as_an_extra_field(client, django
         pda.return_value.get_definition.return_value = _Pipe()
         pda.return_value._schema_to_config.side_effect = [entity_cfg, visit_cfg]
         ev.return_value = []
-        resp = client.get(_url(1), {"series": "N"})
+        resp = client.get(_url(1), {"series": "KMC"})
 
     assert resp.status_code == 200
     kwargs = ev.call_args.kwargs
@@ -224,8 +224,8 @@ def test_a_cold_cache_is_reported_rather_than_shown_as_zeros(client, django_user
         wda.return_value.get_definition.return_value = _Def()
         pda.return_value.get_definition.return_value = _Pipe()
         pda.return_value._schema_to_config.return_value = object()
-        ev.return_value = [{"scope": "programme", "n_cases": 0, "n03": 0}]
-        resp = client.get(_url(1), {"series": "N"})
+        ev.return_value = [{"scope": "programme", "n_cases": 0, "started_cases": 0}]
+        resp = client.get(_url(1), {"series": "KMC"})
 
     body = resp.json()
     assert body["cold_cache"] is True
@@ -279,9 +279,9 @@ def test_real_data_is_not_mislabelled_as_a_cold_cache(client, django_user_model)
         wda.return_value.get_definition.return_value = _Def()
         pda.return_value.get_definition.return_value = _Pipe()
         pda.return_value._schema_to_config.return_value = object()
-        ev.return_value = [{"scope": "programme", "n_cases": 8718, "n03": 4168}]
+        ev.return_value = [{"scope": "programme", "n_cases": 8718, "started_cases": 4168}]
         _cache_visits(10042)
-        resp = client.get(_url(1), {"series": "N"})
+        resp = client.get(_url(1), {"series": "KMC"})
 
     body = resp.json()
     assert body["cold_cache"] is False
@@ -320,7 +320,7 @@ def test_a_partial_cache_is_reported_rather_than_silently_understated(client, dj
         ev.return_value = [{"scope": "programme", "n_cases": 608}]
         # Only one of the three is cached; the other two have nothing.
         _cache_visits(10042)
-        resp = client.get(_url(1), {"series": "N"})
+        resp = client.get(_url(1), {"series": "KMC"})
 
     body = resp.json()
     assert body["cold_cache"] is False, "some data is present, so this is not cold"
@@ -353,7 +353,7 @@ def test_an_expired_cache_entry_does_not_count_as_present(client, django_user_mo
         pda.return_value._schema_to_config.return_value = object()
         ev.return_value = [{"scope": "programme", "n_cases": 0}]
         _cache_visits(10042, expired=True)
-        resp = client.get(_url(1), {"series": "N"})
+        resp = client.get(_url(1), {"series": "KMC"})
 
     body = resp.json()
     assert body["cold_cache"] is True
@@ -370,8 +370,8 @@ def test_it_supplies_the_deployment_facts_the_compiler_cannot_derive(client, dja
       * `scopes=...,llo` raised RegistryError -> HTTP 400. The LLO drill could not
         be served at all.
       * `_suppression_columns` returns "" on falsy settings, so NO suppression
-        column was emitted for any scope. C14 would have published a mortality
-        figure for LLOs the workbook says do not record deaths credibly -- and it
+        column was emitted for any scope. mortality would have been published
+        for LLOs the workbook says do not record deaths credibly -- and it
         renders as an ordinary red band, not as an absence.
 
     Asserting on the call kwargs rather than the SQL is deliberate: the compiler
@@ -397,7 +397,7 @@ def test_it_supplies_the_deployment_facts_the_compiler_cannot_derive(client, dja
         pda.return_value._schema_to_config.return_value = object()
         ev.return_value = []
 
-        resp = client.get(_url(1), {"series": "C", "scopes": "programme,opportunity,llo,flw,month"})
+        resp = client.get(_url(1), {"series": "KMC", "scopes": "programme,opportunity,llo,flw,month"})
 
     assert resp.status_code == 200
     kwargs = ev.call_args.kwargs
@@ -428,7 +428,7 @@ def test_catalog_only_returns_the_display_contract_without_running_anything(clie
     client.force_login(user)
 
     with patch("connect_labs.semantic.runtime.evaluate") as ev:
-        resp = client.get(_url(1), {"series": "C", "catalog_only": "1"})
+        resp = client.get(_url(1), {"series": "KMC", "catalog_only": "1"})
 
     assert resp.status_code == 200
     body = resp.json()
@@ -438,27 +438,39 @@ def test_catalog_only_returns_the_display_contract_without_running_anything(clie
     ev.assert_not_called(), "catalog_only must not touch the query path"
 
     inds = {m["indicator"] for m in body["measures"]}
-    assert len(inds) == 22, f"the C-series is 22 indicators, got {len(inds)}"
-    assert "C09" in inds and "C14" in inds
-    assert not any(str(i).startswith("N") for i in inds), "series=C must not leak N-series measures"
+    assert len(inds) == 24, f"the KMC set is 24 indicators, got {len(inds)}"
+    assert "pct_growth_computable" in inds and "mortality" in inds
 
-    c09 = next(m for m in body["measures"] if m["indicator"] == "C09")
-    assert c09["unit"] == "%"
-    assert c09["direction"] == "higher"
+    computable = next(m for m in body["measures"] if m["indicator"] == "pct_growth_computable")
+    assert computable["unit"] == "%"
+    assert computable["direction"] == "higher"
     # Percent-unit bands, matching the percent-unit value the sql produces.
-    assert c09["bands"] == [60, 40]
+    assert computable["bands"] == [75, 55]
 
 
-def test_catalog_only_without_a_series_carries_both(client, django_user_model):
+def test_catalog_only_refuses_a_retired_series_letter(client, django_user_model):
+    """`series=C` and `series=N` named the two families KMC had before #2004. A
+    caller still asking for one must be told, not handed the whole set or nothing."""
+    user = django_user_model.objects.create_user(username="cat3", password="p")
+    client.force_login(user)
+
+    for retired in ("C", "N"):
+        resp = client.get(_url(1), {"series": retired, "catalog_only": "1"})
+        assert resp.status_code == 400
+        assert "unknown indicator series" in resp.json()["error"]
+
+
+def test_catalog_only_without_a_series_carries_every_indicator(client, django_user_model):
     user = django_user_model.objects.create_user(username="cat2", password="p")
     client.force_login(user)
 
-    resp = client.get(_url(1), {"catalog_only": "1"})
+    everything = client.get(_url(1), {"catalog_only": "1"})
+    the_family = client.get(_url(1), {"series": "KMC", "catalog_only": "1"})
 
-    assert resp.status_code == 200
-    inds = {m["indicator"] for m in resp.json()["measures"]}
-    assert any(str(i).startswith("C") for i in inds)
-    assert any(str(i).startswith("N") for i in inds)
+    assert everything.status_code == 200
+    inds = {m["indicator"] for m in everything.json()["measures"]}
+    assert len(inds) == 24
+    assert inds == {m["indicator"] for m in the_family.json()["measures"]}
 
 
 # --- warm on read -----------------------------------------------------------
@@ -499,7 +511,7 @@ def _call_semantic(client, definition, *, cache_fill=None):
         pda.return_value._schema_to_config.return_value = object()
         ev.return_value = [{"scope": "opportunity", "n_cases": 5}]
         ensure.side_effect = cache_fill or (lambda *a, **k: {"failed": []})
-        resp = client.get(_url(definition.id), {"series": "N", "opportunity_id": 523})
+        resp = client.get(_url(definition.id), {"series": "KMC", "opportunity_id": 523})
     return resp, ensure
 
 

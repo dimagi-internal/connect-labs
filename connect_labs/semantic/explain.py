@@ -361,6 +361,13 @@ def _quantity(m: dict[str, Any], labels: dict[str, str], model: RegistryModel) -
     return _words(inner), []
 
 
+def _min_denominator(meta: dict[str, Any], model: RegistryModel) -> int | None:
+    """The floor a reader is told about: the indicator's own, else the registry's
+    `defaults.min_denominator` -- the same fallback the grader applies, so the
+    definition cannot promise a number the report withholds."""
+    return meta.get("min_denominator") or model.min_denominator
+
+
 def _how(
     top: dict[str, Any], by_name: dict[str, dict[str, Any]], labels: dict[str, str], model: RegistryModel
 ) -> dict[str, Any] | None:
@@ -368,6 +375,7 @@ def _how(
     expr = top.get("sql") or ""
     refs = [r for r in re.findall(r"\{([a-z0-9_]+)\}", expr) if r in by_name]
     meta = top.get("meta") or {}
+    floor = _min_denominator(meta, model)
 
     def side(name):
         m = by_name[name]
@@ -375,8 +383,8 @@ def _how(
         return what, _conditions([f["sql"] for f in (m.get("filters") or [])] + extra, labels)
 
     shown_when = None
-    if meta.get("min_denominator"):
-        shown_when = f"at least {meta['min_denominator']} in the base"
+    if floor:
+        shown_when = f"at least {floor} in the base"
     if len(refs) == 2 and "NULLIF" in expr:
         num_what, num_where = side(refs[0])
         den_what, den_where = side(refs[1])
@@ -390,7 +398,7 @@ def _how(
     if len(refs) == 1 and expr.strip() == "{" + refs[0] + "}":
         what, where = side(refs[0])
         if shown_when:
-            shown_when = f"at least {meta['min_denominator']} {model.entity_plural}"
+            shown_when = f"at least {floor} {model.entity_plural}"
         return {
             "kind": "value",
             "base": {"what": model.entity_plural, "where": where},
@@ -413,7 +421,7 @@ def english(registry: dict[str, Any], props_doc: dict[str, Any], indicator: str)
     unit = meta.get("unit") or ""
     expr = top.get("sql") or ""
     refs = [r for r in re.findall(r"\{([a-z0-9_]+)\}", expr) if r in by_name]
-    model = resolve_model(props_doc)
+    model = resolve_model(props_doc, registry)
     parts = {r: _component_words(by_name[r], model.entity_plural) for r in refs}
     labels = _labels(props_doc)
 
@@ -430,8 +438,8 @@ def english(registry: dict[str, Any], props_doc: dict[str, Any], indicator: str)
     definition = definition[0].upper() + definition[1:]
     if unit and unit not in ("%", "n"):
         definition = definition.rstrip(".") + f" ({unit})."
-    if meta.get("min_denominator"):
-        definition += f" Shown only when the denominator is at least {meta['min_denominator']}."
+    if floor := _min_denominator(meta, model):
+        definition += f" Shown only when the denominator is at least {floor}."
 
     props = {p["name"]: p for p in props_doc.get("properties") or []}
     aggs = {a["name"]: a for a in props_doc.get("aggregates") or []}

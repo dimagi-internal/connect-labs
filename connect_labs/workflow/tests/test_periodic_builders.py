@@ -139,7 +139,7 @@ def captured(monkeypatch):
 
 def _run_builder(period_end):
     return semantic_snapshot(
-        spec={"series": "C", "scopes": ["programme"], "state_key": "snapshot"},
+        spec={"series": "KMC", "scopes": ["programme"], "state_key": "snapshot"},
         pipelines={},
         opportunity_id=10,
         context={"definition_id": 1, "opportunity_ids": [10], "period_end": period_end},

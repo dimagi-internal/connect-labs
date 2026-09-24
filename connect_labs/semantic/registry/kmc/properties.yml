@@ -17,8 +17,9 @@
 # - Every expression is portable Postgres over NAMED COLUMNS — no JSONB, no paths.
 #   Layer 1 (paths -> columns) stays in the pipeline schema, per Scout's precedent.
 #
-# Parity target: connect_labs/workflow/templates/kmc_programme_metrics_render.js
-# lines ~560-680. Constants match that file exactly.
+# DEFINITIONS: one set, Neal Lesh's KMC compute spec (v3, 2026-09) where it rules
+# and the workbook's rules re-based onto it where the spec has no counterpart. They
+# are working definitions and are expected to change -- see indicators.yml.
 
 version: 1
 
@@ -64,30 +65,18 @@ pipelines:
     weight_g: visits
 
 constants:
-  ELIG_DAYS: 28 # eligibility gate, days from FIRST VISIT
-  # Neal's demo compute spec (2026-09-05, "Connect KMC - demo metrics") sets THREE
-  # maturity gates rather than one, all measured from the first VISIT:
-  #   outcome 28 . growth/visits 42 . completion 90
-  # ELIG_DAYS above stays 28 and keeps every C0x/C1x indicator exactly where it was
-  # (PARITY.md's 5,698 checks depend on it). These are additive, and only the N-series
-  # measures below use them.
+  # Maturity, measured from the first VISIT (spec section 2): a baby counts toward
+  # an outcome once 28 days have passed, toward growth and visits once 42 have,
+  # and toward completion once 90 have.
   MATURITY_OUTCOME_DAYS: 28
   MATURITY_GROWTH_DAYS: 42
   MATURITY_COMPLETION_DAYS: 90
+  STARTED_MIN_VISITS: 2 # started = 2 or more follow-up visits (spec 2b)
   GA_MIN: 20 # gestational age plausible range, weeks (spec section 2)
   GA_MAX: 45
-  SWING: 0.3 # max fractional change between consecutive weights (render js: SWING = 0.3)
-  GROWTH_LO_DAY: 21 # early-growth window, lower bound (days from first visit)
-  GROWTH_HI_DAY: 35 # early-growth window, upper bound
-  PLAUSIBLE_LO: 10 # g/kg/day - PROVISIONAL, not the workbook's definition
-  PLAUSIBLE_HI: 20 # g/kg/day - PROVISIONAL
   WMIN: 250 # implausible weight floor (g). 250, not 400: these are preterm
   # babies and a 400g floor silently discards real low-birth-weight readings.
   WMAX: 8000 # implausible weight ceiling (g)
-  # Neal's demo compute spec, section 2 ("all cutoffs -- no magic numbers in code").
-  # Read only by the *_spec properties below, which the N-series measures use; the
-  # C-series keeps the workbook rules above.
-  STARTED_MIN_VISITS: 2 # started = num_visits >= 2 (spec 2b)
   SERIES_WINDOW_DAYS: 21 # growth window: first 21 days of the measured series
   VELOCITY_MIN_SPAN: 5 # velocity needs >=2 in-window weigh-days spanning >=5 days
   THIN_MIN_DAYS: 3 # thin: <3 measured weigh-days
@@ -135,7 +124,7 @@ aggregates:
     means: "The form's own count of days from hospital discharge to registration."
     sql: 'MIN(days_discharge_to_reg) FILTER (WHERE days_discharge_to_reg IS NOT NULL)'
   # The RAW discharge date, which Layer 1 extracts and this stage used to drop.
-  # Dropping it forced C16/C17 onto `days_discharge_to_reg` -- a value the FORM
+  # Dropping it forced the enrolment indicators onto `days_discharge_to_reg` -- a value the FORM
   # pre-computes (child_age_at_reg_discharge_date) rather than one we derive. Two
   # apps never populate that field at all, so EHA and GHI scored 0% coverage while
   # holding real discharge dates for 35% and 46% of their cases.
@@ -169,7 +158,7 @@ aggregates:
     label: 'Visits recording breastfeeding'
     means: 'Visits that recorded exclusive breastfeeding.'
     sql: 'COUNT(*) FILTER (WHERE ebf_recorded)'
-  # Registration vs follow-up. Without this C01/C02/C05 are mathematically
+  # Registration vs follow-up. Without this registered/started/total are mathematically
   # identical, because every case is in the table BECAUSE it has a visit.
   - name: n_reg_forms
     label: 'Registration forms'
@@ -183,7 +172,7 @@ aggregates:
     label: 'Forms with a name'
     means: 'Visits whose form name is known.'
     sql: 'COUNT(*) FILTER (WHERE form_name IS NOT NULL)'
-  # C31 is a sum over weight READINGS, not over day-collapsed days. The render code
+  # weight_rounding_rate is a sum over weight READINGS, not over day-collapsed days. The render code
   # reads n_weight_readings straight off the pipeline and counts round values over the
   # RAW weights array, so both must be computed here before the day collapse -- using
   # n_weight_days here would silently change the denominator of the rounding rate.
@@ -211,11 +200,11 @@ weight_series:
   value_column: weight_g # the Layer-1 column the series reads
   day_collapse: 'AVG(weight_g)' # one reading per (baby, day)
   valid: 'weight_g BETWEEN :WMIN AND :WMAX'
-  # The demo compute spec's series is the ENROLMENT weight at reg_date plus every
-  # visit weight (same-day visit wins; an enrolment weight within 1 g of birth
-  # weight is a re-entry, not a measurement). It enters as a SEED reading:
-  # is_seed = TRUE, never paired with a visit reading, and every C-series
-  # expression below filters it out, so the workbook series is unchanged.
+  # The series is the ENROLMENT weight at reg_date plus every visit weight
+  # (same-day visit wins; an enrolment weight within 1 g of birth weight is a
+  # re-entry, not a measurement). It enters as a SEED reading: is_seed = TRUE,
+  # never paired with a visit reading. It counts toward "thin" (n_measured_days)
+  # and nothing else -- velocity and the impossible-step check read visits only.
   seed_reading:
     day: reg_date
     value: enrollment_weight_g
@@ -226,29 +215,13 @@ weight_series:
     - name: n_measured_days
       sql: 'COUNT(*)'
       # measured weigh-days INCLUDING the enrolment reading -- the spec's "thin"
-    - name: weight_span_days
-      sql: 'MAX(day) FILTER (WHERE NOT is_seed) - MIN(day) FILTER (WHERE NOT is_seed)'
     - name: first_weight_g
       sql: 'ROUND((ARRAY_AGG(w ORDER BY day ASC) FILTER (WHERE NOT is_seed))[1])'
     - name: last_weight_g
       sql: 'ROUND((ARRAY_AGG(w ORDER BY day DESC) FILTER (WHERE NOT is_seed))[1])'
-    # |w[i] - w[i-1]| > SWING * w[i-1] on ANY consecutive pair -> inconsistent.
-    # The JS breaks out of the loop on the first offender; bool_and is equivalent.
-    - name: no_implausible_swing
-      sql: 'BOOL_AND(is_seed OR prev_w IS NULL OR ABS(w - prev_w) <= :SWING * prev_w)'
-    # Early growth: w0 is the first reading, w28 the LAST reading whose age falls
-    # in the window. Matches the JS, which overwrites w28 on each in-window hit.
-    - name: growth_w0
-      sql: '(ARRAY_AGG(w ORDER BY day ASC) FILTER (WHERE NOT is_seed))[1]'
-    - name: growth_w0_day
-      sql: '(ARRAY_AGG(day ORDER BY day ASC) FILTER (WHERE NOT is_seed))[1]'
-    - name: growth_w28
-      sql: '(ARRAY_AGG(w ORDER BY day DESC) FILTER (WHERE NOT is_seed AND age_days BETWEEN :GROWTH_LO_DAY AND :GROWTH_HI_DAY))[1]'
-    - name: growth_w28_day
-      sql: '(ARRAY_AGG(day ORDER BY day DESC) FILTER (WHERE NOT is_seed AND age_days BETWEEN :GROWTH_LO_DAY AND :GROWTH_HI_DAY))[1]'
-    # --- Demo compute spec (section 2b): the first SERIES_WINDOW_DAYS days of the
-    # measured series, counted from the first weighing (series_day), not from the
-    # first visit. Velocity = (last - first) / span / (mean / 1000) over that window.
+    # Spec section 2b: the first SERIES_WINDOW_DAYS days of the measured series,
+    # counted from the first weighing (series_day), not from the first visit.
+    # Velocity = (last - first) / span / (mean / 1000) over that window.
     - name: win_n
       sql: 'COUNT(*) FILTER (WHERE NOT is_seed AND series_day <= :SERIES_WINDOW_DAYS)'
     - name: win_first_w
@@ -260,18 +233,14 @@ weight_series:
     - name: win_mean_w
       sql: 'AVG(w) FILTER (WHERE NOT is_seed AND series_day <= :SERIES_WINDOW_DAYS)'
     # An impossible STEP is a per-pair rate in g/kg/day -- the change between two
-    # consecutive weighings divided by the earlier weight in kg and by the days
-    # between them -- outside IMPOSSIBLE_LO..HI, checked only inside the window and
-    # only between weighings 1-90 days apart. The enrolment weight is not in this
-    # series, so the spec's enrolment->visit-1 exclusion holds by construction.
-    # A step's g/kg/day is taken per kg of the MEAN of its two readings -- the spec's
-    # "(per mean weight)" convention, as its velocity uses. Per kg of the PREVIOUS
-    # reading, which this used, overstates every gain (the smaller weight is the
-    # divisor) and ran 2-6 points high on every LLO. Verified 2026-09-11 against
-    # Neal's v3 section 5 on real data: with the pair mean, %impossible matched to
-    # one decimal on all seven rows (PIPN 9.3, EHA 4.2 vs 4.3, NAMA 15.9 vs 15.7,
-    # GHI 3.1, Kikapu 42.5, BERI 12.2, All 10.0). His prose does not say which
-    # weight; his numbers do.
+    # consecutive weighings divided by the MEAN of the two readings in kg and by
+    # the days between them -- outside IMPOSSIBLE_LO..HI, checked only inside the
+    # window and only between weighings 1-90 days apart. The enrolment weight is
+    # not in this series, so the spec's enrolment->visit-1 exclusion holds by
+    # construction. Per kg of the PREVIOUS reading overstated every gain and ran
+    # 2-6 points high on every LLO; with the pair mean, %impossible matched Neal's
+    # v3 section 5 to one decimal on all seven rows (verified 2026-09-11: PIPN 9.3,
+    # EHA 4.2 vs 4.3, NAMA 15.9 vs 15.7, GHI 3.1, Kikapu 42.5, BERI 12.2, All 10.0).
     - name: any_impossible_step
       sql: >-
         BOOL_OR(NOT is_seed AND prev_day IS NOT NULL
@@ -282,7 +251,7 @@ weight_series:
                     NOT BETWEEN :IMPOSSIBLE_LO AND :IMPOSSIBLE_HI)
 
 # ---------------------------------------------------------------------------
-# The workbook's Layer 2 properties.
+# Layer 2: the per-baby properties every indicator is built from.
 # ---------------------------------------------------------------------------
 properties:
   - name: registered
@@ -290,14 +259,25 @@ properties:
     means: 'The baby has a registration form.'
     type: bool
     sql: 'CASE WHEN n_form_names > 0 THEN n_reg_forms >= 1 ELSE num_visits >= 1 END'
-    notes: 'Registration form exists. Falls back to the old rule for apps whose export carries no form name, rather than reporting every baby unregistered.'
+    notes: 'Registration form exists. Falls back to any visit for apps whose export carries no form name, rather than reporting every baby unregistered.'
+
+  - name: followup_visits
+    label: 'Follow-up visits'
+    means: 'Number of follow-up visits, not counting registration.'
+    type: int
+    sql: 'CASE WHEN n_form_names > 0 THEN n_followups ELSE num_visits END'
 
   - name: started
     label: 'Started'
-    means: 'The baby has at least one follow-up visit after registration.'
+    means: 'The baby has at least 2 follow-up visits.'
     type: bool
-    sql: 'CASE WHEN n_form_names > 0 THEN n_followups >= 1 ELSE num_visits >= 1 END'
-    notes: 'At least one follow-up visit after registration.'
+    sql: 'followup_visits >= :STARTED_MIN_VISITS'
+    notes: >-
+      Spec 2b. The workbook counted a single follow-up. A baby seen once is
+      therefore outside every indicator gated on started -- including mortality,
+      where it matters: on prod run 21114 (2026-09-20) the rule drops 388 babies
+      from the mortality denominator, 69 of whom died. Chosen deliberately
+      (#2004); revisit with the spec.
 
   - name: days_since_first_visit
     label: 'Days since first visit'
@@ -311,12 +291,25 @@ properties:
     type: int
     sql: 'ROUND(EXTRACT(EPOCH FROM (last_visit::timestamp - first_visit::timestamp)) / 86400)::int'
 
-  - name: eligible
-    label: 'Eligible (28 days)'
+  - name: eligible_28d
+    label: 'Followed 28+ days'
     means: 'Started, and the first visit was at least 28 days before the report date.'
     type: bool
-    sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :ELIG_DAYS'
-    notes: '28 days from FIRST VISIT, not reg_date. Workbook section 4.1 anchor decision.'
+    sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_OUTCOME_DAYS'
+    notes: 'Maturity anchors on the first VISIT, not reg_date: a baby registered 40 days ago but first visited 20 days ago is not eligible.'
+
+  - name: eligible_42d
+    label: 'Followed 42+ days'
+    means: 'Started, and the first visit was at least 42 days before the report date.'
+    type: bool
+    sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_GROWTH_DAYS'
+
+  - name: eligible_90d
+    label: 'Followed 90+ days'
+    means: 'Started, and the first visit was at least 90 days before the report date.'
+    type: bool
+    sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_COMPLETION_DAYS'
+    notes: 'The completion gate. No indicator reads it yet: completion waits on its definition.'
 
   - name: died
     label: 'Died'
@@ -328,69 +321,14 @@ properties:
     label: 'Outcome known'
     means: 'The baby died, or was still being seen at least 28 days after the first visit. Otherwise the baby is lost to follow-up.'
     type: bool
-    sql: 'died OR (days_first_to_last IS NOT NULL AND days_first_to_last >= :ELIG_DAYS)'
-    notes: "Case-properties tab verbatim: died, or seen at least 28 days after first visit. FALSE means lost to follow-up. Reading it as 'child_alive was ever recorded' makes it true for nearly every case and reports C15 as ~0."
-
-  - name: early_exit
-    label: 'Died early'
-    means: 'The baby died within 28 days of the first visit.'
-    type: bool
-    sql: 'died AND days_first_to_last IS NOT NULL AND days_first_to_last < :ELIG_DAYS'
-    notes: "Died before its eligibility date. The death visit's own date is not carried at entity stage, but a death is recorded AT a visit, so a died case whose last visit precedes day 28 died before eligibility. Deliberate under-count rather than a guess at the death date."
+    sql: 'died OR (days_first_to_last IS NOT NULL AND days_first_to_last >= :MATURITY_OUTCOME_DAYS)'
+    notes: "Died, or seen at least 28 days after the first visit. FALSE means lost to follow-up. Reading it as 'child_alive was ever recorded' makes it true for nearly every case."
 
   - name: n_weights
     label: 'Days weighed'
     means: 'Number of distinct days with a valid weight reading.'
     type: int
     sql: 'COALESCE(n_weight_days, 0)'
-
-  - name: weight_computable
-    label: 'Enough weights'
-    means: 'At least two weighing days, at least 7 days apart.'
-    type: bool
-    sql: 'COALESCE(n_weight_days, 0) >= 2 AND COALESCE(weight_span_days, 0) >= 7'
-
-  - name: weight_consistent
-    label: 'Weights consistent'
-    means: 'Enough weights, and no day-to-day jump of more than 30 percent.'
-    type: bool
-    sql: 'weight_computable AND COALESCE(no_implausible_swing, TRUE)'
-
-  - name: early_g_per_kg_day
-    label: 'Early weight gain (g/kg/day)'
-    means: 'Weight gained per kilogram per day, from the first weighing to the last weighing 21 to 35 days after the first visit.'
-    type: number
-    sql: >-
-      CASE WHEN weight_computable
-                AND growth_w28 IS NOT NULL
-                AND growth_w28_day <> growth_w0_day
-                AND (growth_w28_day::date - growth_w0_day::date) > 0
-           THEN (growth_w28 - growth_w0) / (growth_w0 / 1000.0)
-                / (growth_w28_day::date - growth_w0_day::date)
-           ELSE NULL END
-
-  - name: weight_gain_data_sufficient
-    label: 'Weight gain measurable'
-    means: 'Early weight gain can be calculated and the weights are consistent.'
-    type: bool
-    sql: 'early_g_per_kg_day IS NOT NULL AND weight_consistent'
-
-  - name: growth_class
-    label: 'Growth class (unbanded)'
-    means: 'Slow, plausible or fast early weight gain, using one range for every baby (10 to 20 g/kg/day).'
-    type: categorical
-    sql: >-
-      CASE WHEN NOT weight_gain_data_sufficient THEN NULL
-           WHEN early_g_per_kg_day < :PLAUSIBLE_LO THEN 'slow'
-           WHEN early_g_per_kg_day > :PLAUSIBLE_HI THEN 'fast'
-           ELSE 'plausible' END
-    notes: "PROVISIONAL. The workbook's bands are birth-weight-band-specific and that table does not exist yet; the UI labels this provisional."
-
-  # -------------------------------------------------------------------------
-  # Neal's demo spec, additive. The C-series above is unchanged and keeps its
-  # parity guarantee; everything from here down is read only by the N-series
-  # measures in indicators.yml.
-  # -------------------------------------------------------------------------
 
   - name: days_to_enrolment
     label: 'Days from discharge to enrolment'
@@ -402,30 +340,32 @@ properties:
         days_discharge_to_reg
       )
     notes: >-
-      Neal Lesh's compute spec derives this: "enrolled_within_3d = 0 <= (reg_date -
-      hospital_discharge_date in days) <= 3". We instead read the form's own
-      child_age_at_reg_discharge_date, a CALCULATED field two of the six apps never
-      write -- so EHA and GHI reported 0% coverage while carrying discharge dates on
-      35% and 46% of cases, and PIPN computed C16 over the 18% of cases holding the
-      pre-computed field rather than the 51% holding a real date (96.5% against his
-      66%). Computes from the dates first and falls back to the reported value, so
-      coverage is a superset of what either source gives alone.
+      The spec derives this from the two dates. The form's own
+      child_age_at_reg_discharge_date is a CALCULATED field two of the six apps
+      never write, so reading it alone gave EHA and GHI 0% coverage while they
+      carried discharge dates on 35% and 46% of cases. Dates first, the reported
+      value as a fallback: coverage is a superset of either source alone.
 
   - name: has_discharge_date
     label: 'Discharge date known'
     means: 'The hospital discharge date is recorded, so time to enrolment can be measured.'
     type: bool
     sql: 'days_to_enrolment IS NOT NULL'
-    notes: 'The denominator condition for the within-3-days metric.'
+
+  - name: enrolled_within_3d
+    label: 'Enrolled within 3 days'
+    means: 'Registered 0 to 3 days after hospital discharge.'
+    type: bool
+    sql: >-
+      CASE WHEN days_to_enrolment IS NULL THEN NULL
+           ELSE days_to_enrolment >= 0 AND days_to_enrolment <= 3 END
+    notes: 'The spec rule is 0 <= days <= 3. Without the lower bound a case registered BEFORE its recorded discharge -- a data error, not early enrolment -- counted as on time.'
 
   - name: gestational_age_plausible
     label: 'Gestational age (weeks)'
     means: 'Gestational age at birth, when it is between 20 and 45 weeks; otherwise treated as missing.'
     sql: 'CASE WHEN gestational_age_wks BETWEEN :GA_MIN AND :GA_MAX THEN gestational_age_wks END'
-    notes: >-
-      Gestational age at birth in weeks, null outside the plausible window (spec
-      section 2: 20-45). N05 takes its median. Layer 1 has carried the raw column
-      since the pipeline migration; the metric had no input before that.
+
   - name: birthweight_band
     label: 'Birthweight band'
     means: "The baby's birthweight group: under 1000 g, 1000-1499, 1500-1999, 2000-2499, or 2500 g and over. Missing when birthweight is missing or outside 250-8000 g."
@@ -438,13 +378,12 @@ properties:
            WHEN birth_weight_g < 2000 THEN '1500-1999'
            WHEN birth_weight_g < 2500 THEN '2000-2499'
            ELSE '2500+' END
-    notes: "Null when birth weight is missing or implausible. A missing birthweight EXCLUDES a case from the growth-quality denominator; it does not make it 'incomplete'."
+    notes: "A missing birthweight EXCLUDES a baby from the growth denominator; it does not make it 'incomplete'."
 
-  # The plausible early-growth range is BIRTH-WEIGHT-BAND SPECIFIC. growth_class
-  # above uses a flat 10-20 marked PROVISIONAL precisely because this table did
-  # not exist; it does now. A flat band is wrong at both ends - it calls a healthy
-  # 2,500g baby fast (real ceiling 18) and a struggling sub-1,000g baby plausible
-  # (real floor 9).
+  # The plausible early-growth range is birthweight-band specific (spec section 3).
+  # A flat 10-20 g/kg/day, which an earlier version carried as provisional, calls a
+  # healthy 2,500 g baby fast (real ceiling 18) and a struggling sub-1,000 g baby
+  # plausible (real floor 9).
   - name: growth_plausible_lo
     label: 'Lowest plausible gain for the band'
     means: "The slowest early weight gain (g/kg/day) expected for the baby's birthweight band."
@@ -463,54 +402,7 @@ properties:
            WHEN '<1000' THEN 30 WHEN '1000-1499' THEN 28 WHEN '1500-1999' THEN 24
            WHEN '2000-2499' THEN 20 WHEN '2500+' THEN 18 ELSE NULL END
 
-  - name: growth_class_banded
-    label: 'Growth class (by band)'
-    means: "Slow, plausible or fast early weight gain, judged against the range for the baby's birthweight band."
-    type: categorical
-    sql: >-
-      CASE WHEN NOT weight_gain_data_sufficient THEN NULL
-           WHEN birthweight_band IS NULL THEN NULL
-           WHEN early_g_per_kg_day < growth_plausible_lo THEN 'slow'
-           WHEN early_g_per_kg_day > growth_plausible_hi THEN 'fast'
-           ELSE 'plausible' END
-    notes: 'The banded counterpart of growth_class. Computed only when the case is sufficient AND banded, so slow/plausible/fast plus not-sufficient partition the qualifying set exactly.'
-
-  # -------------------------------------------------------------------------
-  # The demo compute spec's OWN definitions (sections 2 and 2b), suffixed _spec.
-  # Neal's section 5 numbers are computed with these; the N-series measures read
-  # them. The C-series properties above are untouched and keep their parity.
-  #   started      = at least STARTED_MIN_VISITS visits (the C-series says >= 1)
-  #   velocity     = first 21 days of the measured series, mean-weight denominator
-  #   sufficient   = computable AND NOT thin AND NOT inconsistent AND NOT impossible
-  #   growth_class = the band-specific plausible range, on the spec velocity
-  # -------------------------------------------------------------------------
-  - name: visits_spec
-    label: 'Follow-up visits'
-    means: 'Number of follow-up visits, not counting registration.'
-    type: int
-    sql: 'CASE WHEN n_form_names > 0 THEN n_followups ELSE num_visits END'
-    notes: "The spec's num_visits counts visit submissions, not the registration form."
-
-  - name: started_spec
-    label: 'Started (2+ visits)'
-    means: 'The baby has at least 2 follow-up visits.'
-    type: bool
-    sql: 'visits_spec >= :STARTED_MIN_VISITS'
-    notes: 'Spec 2b: started = num_visits >= 2.'
-
-  - name: eligible_28d_spec
-    label: 'Followed 28+ days'
-    means: 'Started (2+ visits), and the first visit was at least 28 days before the report date.'
-    type: bool
-    sql: 'started_spec AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_OUTCOME_DAYS'
-
-  - name: eligible_42d_spec
-    label: 'Followed 42+ days'
-    means: 'Started (2+ visits), and the first visit was at least 42 days before the report date.'
-    type: bool
-    sql: 'started_spec AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_GROWTH_DAYS'
-
-  - name: velocity_spec
+  - name: early_velocity
     label: 'Early weight gain (g/kg/day)'
     means: 'Weight gained per kilogram per day over the 21 days after the first weighing. Needs at least 2 weighings at least 5 days apart.'
     type: number
@@ -520,7 +412,13 @@ properties:
                 AND win_mean_w > 0
            THEN (win_last_w - win_first_w) / win_span_days / (win_mean_w / 1000.0)
            ELSE NULL END
-    notes: 'Spec 2b early_g_per_kg_day: (last_in_window - first) / days / (mean_in_window / 1000); null under 2 in-window points or a span under 5 days.'
+    notes: 'Spec 2b: (last_in_window - first) / days / (mean_in_window / 1000); null under 2 in-window points or a span under 5 days.'
+
+  - name: velocity_computable
+    label: 'Weight gain computable'
+    means: 'Early weight gain could be calculated.'
+    type: bool
+    sql: 'early_velocity IS NOT NULL'
 
   - name: flag_thin
     label: 'Too few weighings'
@@ -540,61 +438,29 @@ properties:
     type: bool
     sql: 'COALESCE(any_impossible_step, FALSE)'
 
-  - name: computable_spec
-    label: 'Weight gain computable'
-    means: 'Early weight gain could be calculated.'
-    type: bool
-    sql: 'velocity_spec IS NOT NULL'
-
-  - name: sufficient_spec
+  - name: growth_data_sufficient
     label: 'Good weight data'
     means: 'Weight gain computable, with at least 3 weighing days and no inconsistent or impossible readings.'
     type: bool
-    sql: 'computable_spec AND NOT flag_thin AND NOT flag_inconsistent AND NOT flag_impossible'
+    sql: 'velocity_computable AND NOT flag_thin AND NOT flag_inconsistent AND NOT flag_impossible'
 
-  - name: growth_class_spec
+  - name: growth_class
     label: 'Growth class'
     means: "Slow, plausible or fast early weight gain, judged against the range for the baby's birthweight band. Blank when the weight data is incomplete."
     type: categorical
     sql: >-
-      CASE WHEN NOT sufficient_spec THEN NULL
+      CASE WHEN NOT growth_data_sufficient THEN NULL
            WHEN birthweight_band IS NULL THEN NULL
-           WHEN velocity_spec < growth_plausible_lo THEN 'slow'
-           WHEN velocity_spec > growth_plausible_hi THEN 'fast'
+           WHEN early_velocity < growth_plausible_lo THEN 'slow'
+           WHEN early_velocity > growth_plausible_hi THEN 'fast'
            ELSE 'plausible' END
 
-  - name: qualifying_spec
+  - name: growth_qualifying
     label: 'Qualifies for growth review'
     means: 'Followed 42+ days with 2+ visits, birthweight band known, and early weight gain computable. The shared base for the four growth shares, which add up to 100 percent.'
     type: bool
-    sql: 'eligible_42d_spec AND birthweight_band IS NOT NULL AND computable_spec'
-    notes: 'Spec v3 section 3: qualifying SVN = eligible_42d AND birthweight_band is not null AND weight_gain_data_computable. Babies with no computable velocity are DISCARDED before the growth question is asked -- not counted as incomplete. The one denominator of N09-N12, which partition it and sum to 100. (v1 omitted the computable gate, which counted no-data babies against healthy growth: PIPN read 59 percent instead of 72.)'
-
-  - name: eligible_28d
-    label: 'Eligible (28 days)'
-    means: 'Started, and the first visit was at least 28 days before the report date.'
-    type: bool
-    sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_OUTCOME_DAYS'
-
-  - name: eligible_42d
-    label: 'Eligible (42 days)'
-    means: 'Started, and the first visit was at least 42 days before the report date.'
-    type: bool
-    sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_GROWTH_DAYS'
-    notes: 'Growth and visits-per-case maturity. A case registered 40 days ago but first visited 20 days ago is NOT eligible - maturity anchors on the first VISIT.'
-
-  - name: eligible_90d
-    label: 'Eligible (90 days)'
-    means: 'Started, and the first visit was at least 90 days before the report date.'
-    type: bool
-    sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_COMPLETION_DAYS'
-
-  - name: qualifying_svn
-    label: 'Qualifies for growth review (workbook)'
-    means: 'Eligible at 42 days with a known birthweight band.'
-    type: bool
-    sql: 'eligible_42d AND birthweight_band IS NOT NULL'
-    notes: 'The single shared denominator for the four growth-quality shares, which sum to 100% over it.'
+    sql: 'eligible_42d AND birthweight_band IS NOT NULL AND velocity_computable'
+    notes: 'Spec v3 section 3. Babies with no computable velocity are DISCARDED before the growth question is asked, not counted as incomplete; pct_growth_computable reports how many that is. (v1 omitted the computable gate, which counted no-data babies against healthy growth: PIPN read 59 percent instead of 72.)'
 
   - name: ever_danger_sign
     label: 'Danger sign recorded'
@@ -613,18 +479,6 @@ properties:
     means: 'Number of visits that recorded a self-referral.'
     type: int
     sql: 'COALESCE(self_referral_visits, 0)'
-
-  - name: enrolled_within_3d
-    label: 'Enrolled within 3 days'
-    means: 'Registered 0 to 3 days after hospital discharge.'
-    type: bool
-    sql: >-
-      CASE WHEN days_to_enrolment IS NULL THEN NULL
-           ELSE days_to_enrolment >= 0 AND days_to_enrolment <= 3 END
-    notes: >-
-      Neal's rule is 0 <= days <= 3. The lower bound was missing, so a case
-      registered BEFORE its recorded discharge -- a data error, not early
-      enrolment -- counted as on time.
 
   - name: enrollment_is_birth_copy
     label: 'Enrolment weight copies birthweight'

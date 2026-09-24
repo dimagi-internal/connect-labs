@@ -45,18 +45,21 @@ GOLDEN = Path(__file__).resolve().parent / "fixtures" / "kmc_rollup_golden.json"
 
 # baby -> (opportunity, worker, start offset in days, has a registration date)
 ASSIGN = {
-    "b1": (1, "flw1", 0, True),
-    "b2": (1, "flw1", 0, True),
-    "b3": (1, "flw2", 31, False),
-    "b10": (1, "flw2", 0, True),
-    "b4": (2, "flw3", 0, True),
-    "b5": (2, "flw3", 45, True),
-    "b6": (2, "flw1", 60, True),  # same username as opp 1's flw1: a DIFFERENT worker
-    "b11": (2, "flw4", 31, True),
-    "b7": (3, "flw5", 0, True),
-    "b8": (3, "flw5", 31, True),
-    "b9": (3, "flw6", 70, False),
-    "b12": (3, "flw6", 0, True),
+    "h1": (1, "flw1", 0, True),
+    "s1": (1, "flw1", 0, True),
+    "d2": (1, "flw1", 31, True),
+    "d1": (1, "flw2", 31, False),
+    "f1": (1, "flw2", 0, True),
+    "i1": (2, "flw3", 0, True),
+    "k1": (2, "flw3", 45, True),
+    "u1": (2, "flw1", 60, True),  # same username as opp 1's flw1: a DIFFERENT worker
+    "x1": (2, "flw4", 31, True),
+    "l1": (2, "flw4", 0, True),
+    "p1": (3, "flw5", 0, True),
+    "p2": (3, "flw5", 31, True),
+    "g1": (3, "flw5", 45, True),
+    "n1": (3, "flw6", 70, False),
+    "m1": (3, "flw6", 0, True),
 }
 
 TABLE = "parity_visits"
@@ -88,13 +91,13 @@ def fixture_rows() -> list[tuple]:
                 alive == "no",
                 danger == "yes",
                 ref == "yes",
-                baby in ("b2", "b4"),  # self-referral on two babies' visits
+                baby in ("s1", "p2"),  # self-referral on two babies' visits
                 off % 2 == 0,  # ebf recorded on even-day visits
                 form,
                 d2r,
                 bw,
                 ew,
-                34.0 if baby != "b5" else 50.0,  # b5: implausible gestational age
+                34.0 if baby != "g1" else 50.0,  # g1: implausible gestational age
                 4.0 + (off % 3),
                 dt.datetime.combine(reg, dt.time()) if has_reg else None,
                 dt.datetime.combine(reg - dt.timedelta(days=d2), dt.time()) if d2 is not None else None,
@@ -106,12 +109,12 @@ def fixture_rows() -> list[tuple]:
     for off, w, form in ((0, 1480, "Registration"), (12, 1600, "Follow-up"), (30, 1850, "Follow-up")):
         day = base + dt.timedelta(days=10 + off)
         rows.append(
-            ("b1", dt.datetime.combine(day, dt.time()), w, False, False, False, False, True, form)
+            ("h1", dt.datetime.combine(day, dt.time()), w, False, False, False, False, True, form)
             + (1.0, 1480.0, 1480.0, 33.0, 5.0, dt.datetime(2026, 1, 11), None, 2, "flw3")
         )
     # After the as-of date: must not exist for the report.
     rows.append(
-        ("b1", dt.datetime(2026, 9, 1), 2600, True, True, True, True, True, "Follow-up")
+        ("h1", dt.datetime(2026, 9, 1), 2600, True, True, True, True, True, "Follow-up")
         + (None, None, None, None, None, None, None, 1, "flw1")
     )
     # No case id: excluded from every entity.

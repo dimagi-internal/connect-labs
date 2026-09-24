@@ -102,8 +102,8 @@ pipelines:
 and the indicators document can set defaults:
 
 ```yaml
-defaults: { min_denominator: 25 }   # the floor for an indicator that sets none of its own
-series: [C, N]                      # the indicator families; otherwise read off the indicator IDs
+defaults: { min_denominator: 20 }   # the floor for an indicator that sets none of its own
+series: [KMC]                       # the indicator family (or families)
 ```
 
 `visit_quality` answers the same questions differently: one row per **beneficiary** keyed by `entity_id`,
@@ -117,8 +117,8 @@ those, Labs supplies KMC's values; a registry that declares `entity:` as a mappi
 
 ```yaml
 constants:
-  ELIG_DAYS: 28          # a baby is eligible 28 days after their first visit
-  SWING: 0.3             # a weight change over 30% between readings is implausible
+  MATURITY_OUTCOME_DAYS: 28   # a baby counts toward outcomes 28 days after their first visit
+  STARTED_MIN_VISITS: 2       # "started" means two or more follow-up visits
 aggregates:              # one value per baby, over all their visits
   - name: death_visits
     label: 'Visits recording death'
@@ -128,45 +128,53 @@ weight_series:           # optional: how the day-by-day weight series is cleaned
   day_collapse: 'AVG(weight_g)'
   valid: 'weight_g BETWEEN :WMIN AND :WMAX'
   derived:
-    - name: no_implausible_swing
-      sql: 'BOOL_AND(is_seed OR prev_w IS NULL OR ABS(w - prev_w) <= :SWING * prev_w)'
+    - name: win_n        # weighings in the first 21 days of the series
+      sql: 'COUNT(*) FILTER (WHERE NOT is_seed AND series_day <= :SERIES_WINDOW_DAYS)'
 properties:              # yes/no or numeric facts about each baby
-  - name: eligible
-    label: 'Eligible (28 days)'
+  - name: eligible_28d
+    label: 'Followed 28+ days'
     type: bool
-    sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :ELIG_DAYS'
+    sql: 'started AND first_visit IS NOT NULL AND days_since_first_visit >= :MATURITY_OUTCOME_DAYS'
 ```
 
-- **Constants** are named numbers. Writing `:ELIG_DAYS` anywhere means 28, and changing the constant changes every rule that uses it.
+- **Constants** are named numbers. Writing `:MATURITY_OUTCOME_DAYS` anywhere means 28, and changing the constant changes every rule that uses it.
 - **Aggregates** summarise a baby's visits: how many there were, the first visit date, how many recorded a death.
-- **The weight series** (optional — a registry without one has no series steps at all) turns raw readings into one clean value per day, then works out things like "was there an implausible swing?" and "what did the baby weigh around day 28?"
-- **Properties** are built from the above and from each other. Labs works out the order: `eligible` needs `started`, so `started` is computed first.
+- **The weight series** (optional — a registry without one has no series steps at all) turns raw readings into one clean value per day, then works out things like "was there an impossible jump between weighings?" and "how fast did the baby gain over the first 21 days?"
+- **Properties** are built from the above and from each other. Labs works out the order: `eligible_28d` needs `started`, so `started` is computed first.
 
 ### Indicators (Layer 3)
 
 Every indicator is three measures:
 
 ```yaml
-  - name: c09                    # the value
-    title: '% with sufficient weight data'
+  - name: lost_by_day_28                  # the value
+    title: Loss to follow-up by day 28
     type: number
-    sql: '100.0 * {c09_numerator} / NULLIF({c09_denominator}, 0)'
-    meta: { indicator: C09, direction: higher, bands: [60, 40],
-            min_denominator: 25, inputs: [weights], unit: '%' }
-  - name: c09_numerator          # what's counted
+    sql: '100.0 * {lost_by_day_28_numerator} / NULLIF({lost_by_day_28_denominator}, 0)'
+    meta: { indicator: lost_by_day_28, direction: lower, bands: [10, 25],
+            unit: '%', flw_applicable: true }
+  - name: lost_by_day_28_numerator        # what's counted
     type: count
-    filters: [{ sql: '{CUBE}.weight_gain_data_sufficient' },
-              { sql: '{CUBE}.eligible AND NOT {CUBE}.early_exit' }]
-  - name: c09_denominator        # what it's out of
+    filters: [{ sql: 'NOT {CUBE}.outcome_known' }, { sql: '{CUBE}.eligible_28d' }]
+  - name: lost_by_day_28_denominator      # what it's out of
     type: count
-    filters: [{ sql: '{CUBE}.eligible AND NOT {CUBE}.early_exit' }]
+    filters: [{ sql: '{CUBE}.eligible_28d' }]
 ```
 
-Read it as: *of eligible babies who didn't exit early, the percentage whose weight gain data is sufficient.*
+Read it as: *of started babies followed for 28 days or more, the percentage whose outcome is unknown.*
 
-- `{CUBE}.eligible` means "the baby's `eligible` property". `{c09_numerator}` means "the numerator measure above".
+- `{CUBE}.eligible_28d` means "the baby's `eligible_28d` property". `{lost_by_day_28_numerator}` means "the numerator measure above".
 - The notation is borrowed from [Cube](https://cube.dev), so other tools can read the same file, but nothing runs Cube. Labs compiles it itself.
-- The letters an indicator ID starts with name its **series**: KMC uses C and N, and `visit_quality` uses Q. A report asks for one series at a time. A registry can list its series explicitly (`series: [C, N]`); otherwise they're read off the IDs.
+- An indicator's ID is a plain name and its measure's name. A registry declares its **family** in `series:` (KMC's is `KMC`, `visit_quality`'s is `Q`), and every indicator belongs to it. A registry with several families says which each indicator is in, with `meta.series` or an ID prefix naming the family, and a report can ask for one family at a time.
+
+!!! note "KMC's indicators are working definitions"
+    KMC has one set of 24 indicators. It used to have two, the workbook's (C01–C31) and the demo compute spec's
+    (N01–N15), which disagreed on when a baby counts as started and how growth is judged. Neal Lesh wrote both; the
+    compute spec was his later attempt to make them make sense, so its rules now apply everywhere: started means two
+    or more follow-up visits, outcomes wait 28 days and growth 42, growth is judged against the baby's birthweight
+    band, and a figure needs 20 babies behind it. The workbook indicators the spec never covered were kept and moved
+    onto the same rules; each says so in its note. Expect these to keep changing. Reports saved before the change
+    show only the indicators whose definition did not change.
 
 The `meta` block controls how the figure is shown:
 
@@ -175,11 +183,11 @@ The `meta` block controls how the figure is shown:
 | `indicator`, `title`, `plain`, `unit` | The ID, the name, the plain-English explanation in the definition popup, and the unit |
 | `direction` | `higher` or `lower` is better; `mid2` means both too low and too high are bad (as with mortality); `none` means no colour |
 | `bands` | Colour cutoffs. `[60, 40]` with `higher` means green at 60 or more, red below 40, amber between. `mid2` takes two pairs, inner and outer. |
-| `min_denominator` | The fewest entities (babies, on KMC) needed to show a figure. Below it the cell shows `n<25`, or whatever the minimum is. Indicators without one use the registry's `defaults.min_denominator` (25 on KMC, 5 on `visit_quality`). |
+| `min_denominator` | The fewest entities (babies, on KMC) needed to show a figure. Below it the cell shows `n<20`, or whatever the minimum is. Indicators without one use the registry's `defaults.min_denominator` (20 on KMC, 5 on `visit_quality`). |
 | `inputs` | The questions the indicator needs. If an opportunity's app never asks one, the figure is **n/a**, not 0. |
 | `scope_note`, `prominence`, `category`, `benchmarkable`, `flw_applicable` | Captions, placement on the page, grouping, whether it can be benchmarked across opportunities, whether it makes sense per worker |
 
-The indicators document also has **suppression rules**. For example, C14 (mortality) at LLO level depends on whether that LLO records deaths credibly.
+The indicators document also has **suppression rules**. For example, `mortality` at LLO level depends on whether that LLO records deaths credibly.
 
 ### Deployment facts
 
@@ -216,9 +224,9 @@ You rarely need the SQL, but it's the final answer to "what exactly does this co
 
 | You want | Ask Claude for | What it uses |
 | --- | --- | --- |
-| One indicator's full logic, in words and SQL | *"Explain C09 on this report, including the SQL."* | `semantic_registry_explain` |
+| One indicator's full logic, in words and SQL | *"Explain lost_by_day_28 on this report, including the SQL."* | `semantic_registry_explain` |
 | A list of every indicator with one-line definitions | *"List every indicator in this report's registry."* | `semantic_registry_explain` with no indicators |
-| The indicator definitions as a download | Open `/labs/workflow/api/<id>/indicator-definitions/?indicators=C09&format=sql` (or `format=md`) | The report's definitions endpoint |
+| The indicator definitions as a download | Open `/labs/workflow/api/<id>/indicator-definitions/?indicators=lost_by_day_28&format=sql` (or `format=md`) | The report's definitions endpoint |
 | Layer 1: how the answers are read from forms | *"Show me the SQL for the children pipeline."* | `pipeline_sql` |
 
 For one indicator, `semantic_registry_explain` returns:
@@ -233,7 +241,7 @@ In that statement, Layer 1 appears as a placeholder named `pipeline_visit_rows`.
 
 ### Reading it
 
-The compiled statement is one long query built from named steps (*CTEs*). Here's the shape, trimmed from the real output for C09 and C14 at opportunity level:
+The compiled statement is one long query built from named steps (*CTEs*). Here's the shape, trimmed from the real output for `lost_by_day_28` and `mortality` at opportunity level:
 
 ```sql
 WITH visits_all AS (
@@ -248,7 +256,7 @@ weight_days     AS ( ... one weight per baby per day ... ),
 weight_seq      AS ( ... each day next to the previous one (LAG), days since first visit ... ),
 weight_agg      AS (SELECT baby_id,
     COUNT(*) FILTER (WHERE NOT is_seed) AS n_weight_days,
-    BOOL_AND(is_seed OR prev_w IS NULL OR ABS(w - prev_w) <= 0.3 * prev_w) AS no_implausible_swing,
+    COUNT(*) FILTER (WHERE NOT is_seed AND series_day <= 21) AS win_n,
     ... FROM weight_seq GROUP BY baby_id),
 
 -- ── One row per baby: aggregates over their visits ──────────────────
@@ -263,19 +271,18 @@ base_m AS (SELECT v.*, w.*,
 -- ── Layer 2: properties, one step per dependency level ──────────────
 props_0 AS (SELECT base_m.*, (death_visits > 0) AS died, ... FROM base_m),
 props_1 AS (SELECT props_0.*,
-    (started AND first_visit IS NOT NULL AND days_since_first_visit >= 28) AS eligible, ...
+    (started AND first_visit IS NOT NULL AND days_since_first_visit >= 28) AS eligible_28d, ...
     FROM props_0),
 props_2 AS (...), props_3 AS (...),
 props AS (SELECT * FROM props_3)
 
 -- ── Layer 3: indicators, grouped by the chosen level ────────────────
 SELECT props.opportunity_id, COUNT(*) AS n_cases,
-    100.0 * (COUNT(*) FILTER (WHERE props.weight_gain_data_sufficient
-                                AND props.eligible AND NOT props.early_exit))
-          / NULLIF(COUNT(*) FILTER (WHERE props.eligible AND NOT props.early_exit), 0) AS c09,
-    COUNT(*) FILTER (WHERE ...) AS c09_numerator,
-    COUNT(*) FILTER (WHERE ...) AS c09_denominator,
-    BOOL_OR(props.llo IS NULL OR props.llo NOT IN ('PIPN', 'EHA')) AS c14_suppressed,
+    100.0 * (COUNT(*) FILTER (WHERE NOT props.outcome_known AND props.eligible_28d))
+          / NULLIF(COUNT(*) FILTER (WHERE props.eligible_28d), 0) AS lost_by_day_28,
+    COUNT(*) FILTER (WHERE ...) AS lost_by_day_28_numerator,
+    COUNT(*) FILTER (WHERE ...) AS lost_by_day_28_denominator,
+    BOOL_OR(props.llo IS NULL OR props.llo NOT IN ('PIPN', 'EHA')) AS mortality_suppressed,
     MAX(CASE WHEN COALESCE(props.n_weights, 0) > 0 THEN 1 ELSE 0 END) AS anyrec_weights
 FROM props GROUP BY props.opportunity_id
 ```
@@ -283,7 +290,7 @@ FROM props GROUP BY props.opportunity_id
 How to read it, top to bottom:
 
 1. **`visits`**: every visit up to the "as of" date. If a number differs from a saved run, check the date first.
-2. **`weight_*`**: the cleaned weight series, one row per baby. The constants (250, 8000, 0.3) are filled in, so you can see exactly which readings were dropped.
+2. **`weight_*`**: the cleaned weight series, one row per baby. The constants (250, 8000, 21) are filled in, so you can see exactly which readings were dropped.
 3. **`visit_agg` / `base_m`**: one row per baby, keyed by *opportunity + case*, because the same case ID appears in more than one opportunity. This is also where the baby gets its LLO from `llo_map`. An opportunity missing from `llo_map` gets no LLO.
 4. **`props_0`, `props_1`, …**: each property is a column, `(<its rule>) AS <its name>`. Each step can use the columns from the steps before it.
 5. **The final `SELECT`**: each indicator is a `COUNT(*) FILTER (WHERE …)` over the babies. The `GROUP BY` is the level: `opportunity_id` here, `llo` for organisations, `(opportunity_id, username)` for workers, nothing at all for the whole programme. A multi-level report asks for several levels at once (`GROUPING SETS`) and labels each row with its level.
@@ -305,7 +312,7 @@ Work down this list. Most problems are caught by the first three steps.
 3. **Is it the same date?** Live numbers are "as of today". A saved run's are as of its end date. To compare with a saved run, recompute as of that date (`workflow_preview_as_of`, or `as_of=YYYY-MM-DD` on the semantic endpoint).
 4. **Read the definition.** Ask Claude to *explain* the indicator: every property in its chain and every constant.
 5. **Look at the rows behind it.** The semantic endpoint can return **one row per entity**, meaning per baby on KMC or per beneficiary on `visit_quality` (`scopes=case`, narrowed to one worker with `flw=<opportunity>::<username>`). Each row shows whether that entity is in the denominator (1/0) and the numerator. Pick three and check them by hand against the rule. This is usually where the answer is.
-6. **Check the inputs.** An **n/a** means the opportunity's `app_asks` says its app doesn't ask a question the indicator needs. If that's wrong, the fix is in `deployment.app_asks`, not the indicator. (A stale `app_asks` entry once hid two organisations' C16, at 72% and 95%.)
+6. **Check the inputs.** An **n/a** means the opportunity's `app_asks` says its app doesn't ask a question the indicator needs. If that's wrong, the fix is in `deployment.app_asks`, not the indicator. (A stale `app_asks` entry once hid two organisations' within-3-days figure, at 72% and 95%.)
 7. **Check Layer 1.** If a property looks wrong for every entity, the form answer may not be reaching it. Ask for `pipeline_sql` and check that the question's form paths, **including the fallbacks**, are all there. Missing fallback paths are the most common cause of an indicator that is plausibly but consistently low.
 8. **Try a fix before saving it.** A candidate registry can be evaluated against real data without binding it: the semantic endpoint takes `registry_id=<candidate>`. Save a copy with the change, compare, then apply the change to the real one.
 
@@ -355,7 +362,7 @@ These steps are the same for any programme:
 1. **Pipelines.** The report needs the pipeline named in `pipelines.entity`, with one row per visit and the fields your rules read. If you have a series, it also needs the pipelines named in `pipelines.extra_fields`. Check with `pipeline_preview` that every column comes back filled in.
 2. **Registry.** If a registry for this indicator family already exists, bind to it (see [Managing registries](#managing-registries-across-programmes)). Otherwise create one with `semantic_registry_create`: `seed_from: kmc` or `seed_from: visit_quality` to start from an example, or supply your own documents. Validation runs on every save.
 3. **Bind.** `workflow_update_definition` with `registry_source: {registry_id: N}`. Or create the report from a template with `registry_source` set, so it binds to that registry instead of seeding a copy of its own.
-4. **Page.** The page fetches `/api/<id>/semantic/?series=<prefix>&scopes=opportunity,flw` and grades the rows. The KMC Opportunity Report is a working example. The definitions popup reads `/api/<id>/indicator-definitions/`. The KMC templates' pages are built for KMC. A non-KMC registry needs its own page. There isn't a generic "indicator report" template yet.
+4. **Page.** The page fetches `/api/<id>/semantic/?scopes=opportunity,flw` (add `&series=<family>` if the registry has several) and grades the rows. The KMC Opportunity Report is a working example. The definitions popup reads `/api/<id>/indicator-definitions/`. The KMC templates' pages are built for KMC. A non-KMC registry needs its own page. There isn't a generic "indicator report" template yet.
 5. **Saved runs.** For a weekly trend, set `snapshot_inputs` to `{builder: semantic_snapshot, series, scopes, case_index, credibility, …}`. `case_index.date_fields` names the fields that date a case; the default is KMC's `reg_date` and `first_visit_date`, so set it for other data. Copy the rest from the KMC Programme Report. Then [rebuild history](reports-with-claude.md#rebuild-the-trend-after-a-definition-change).
 6. **Prove it.** Before switching anyone over, compare the new numbers with the old report on the same date, at every level, for every indicator. That's how KMC was converted, and the comparison found seven real defects, each invisible on its own. Keep the old report until it matches.
 
@@ -411,7 +418,7 @@ Only people working from the home scope can edit, and anyone with access there c
 **4. Make "add the opportunity to the registry" part of onboarding.**
 Adding an opportunity to a KMC programme needs two entries in `deployment`:
 
-- `llo_map` (opportunity → organisation). Without it, the opportunity's babies have no organisation: they're missing from LLO views and treated as not credible for C14.
+- `llo_map` (opportunity → organisation). Without it, the opportunity's babies have no organisation: they're missing from LLO views and treated as not credible for mortality.
 - `app_asks` (which questions its app asks). Without it, the input checks fail *open*: an indicator shows 0% where it should say n/a.
 
 Neither mistake produces an error. Put both on the opportunity launch checklist, and check the new opportunity's column on the Opportunity Report before telling anyone it's live.

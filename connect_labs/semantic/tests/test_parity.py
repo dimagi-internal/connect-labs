@@ -1,15 +1,21 @@
 """EXECUTE the compiled SQL and prove it equals an independent implementation.
 
-This is the claim the whole approach rests on: moving Layer 2 and Layer 3 out of
-the browser and into SQL must not move the numbers. So the same fixture cases go
-through both paths -- the compiled SQL against real Postgres, and a hand-written
-reference implementation below -- and every indicator must agree.
+The claim the semantic layer rests on: the numbers a report shows are the numbers
+its definitions say. So the same fixture babies go through two paths -- the
+compiled SQL against real Postgres, and a hand-written Python port of the rules
+below -- and every one of the 24 KMC indicators must agree.
 
-The reference started as a faithful port of kmc_programme_metrics_render.js.
-Where the registry now deliberately follows Neal Lesh's compute spec instead of
-the JavaScript, the port follows the SPEC and says so at the divergence. The
-JavaScript was never validated against anything; it is the thing being replaced,
-not the authority. Divergences are marked `DELIBERATE DIVERGENCE`.
+The reference is written from the RULES, not from the registry's SQL: Neal Lesh's
+KMC compute spec (v3) where it rules, and the workbook indicators re-based onto it
+(#2004). Deriving it from the YAML would prove only that the YAML agrees with
+itself. It used to port the browser dashboard's JavaScript; that engine is gone,
+and so is the workbook-vs-spec split that made two sets of rules necessary.
+
+Every fixture baby exists to put one rule on a boundary, so that moving the rule
+moves a number: a baby with exactly one follow-up (the started threshold), one
+first seen 35 days before the report (the 42-day growth gate), one whose only
+third weigh-day is the enrolment reading (thin), one whose weight step is legal
+per kg of the pair mean and impossible per kg of the earlier reading.
 
 Skipped when no Postgres is reachable; the structural tests in test_compiler.py
 still run everywhere.
@@ -29,9 +35,27 @@ from connect_labs.semantic.tests.pg import connect_or_skip
 psycopg2 = pytest.importorskip("psycopg2")
 
 REGISTRY = Path(__file__).resolve().parents[1] / "registry" / "kmc"
-ELIG, SWING = 28, 0.25
-LO, HI = 21, 35
-PLAUSIBLE_LO, PLAUSIBLE_HI = 10, 20
+
+# The rules, restated for the reference (spec sections 2, 2b and 3).
+AS_OF = 200  # report date, days after 2026-01-01
+AS_OF_SQL = f"(DATE '2026-01-01' + {AS_OF})"
+STARTED_MIN = 2  # follow-up visits, registration excluded
+MATURITY_OUTCOME, MATURITY_GROWTH = 28, 42  # days from the FIRST VISIT
+WMIN, WMAX = 250, 8000
+WINDOW = 21  # days from the first MEASURED weighing
+VELOCITY_MIN_SPAN = 5
+THIN_MIN_DAYS = 3
+INCONSISTENT_RATIO = 0.6
+IMPOSSIBLE = (-20, 45)  # g/kg/day, per kg of the MEAN of the pair
+IMPOSSIBLE_GAP = (1, 90)
+GA_RANGE = (20, 45)
+BANDS = [  # (upper bound exclusive, name, plausible lo, plausible hi)
+    (1000, "<1000", 9, 30),
+    (1500, "1000-1499", 6, 28),
+    (2000, "1500-1999", 6, 24),
+    (2500, "2000-2499", 5, 20),
+    (math.inf, "2500+", 0, 18),
+]
 
 
 @pytest.fixture(scope="module")
@@ -41,77 +65,94 @@ def conn():
     c.close()
 
 
-# ── The fixture: visits, chosen to exercise each branch ──────────────────────
-# (baby, day_offset, weight_g, alive, danger, referred, form_name, ...)
+# ── The fixture: one baby per rule boundary ─────────────────────────────────
+# (baby, day_offset, weight_g, alive, danger, referred, form_name,
+#  days_discharge_to_reg, birth_weight_g, enrollment_weight_g)
+# The registration row carries the registration fields; follow-ups leave them None.
+R, F = "Registration", "Follow-up"
 VISITS = [
-    # b1 — registered, started, eligible, clean growth ~14 g/kg/d, survives
-    ("b1", 0, 1500, "yes", "no", "no", "Registration", 2.0, 1500.0, 1.0),
-    ("b1", 10, 1650, "yes", "no", "no", "Follow-up", None, None, None),
-    ("b1", 28, 1900, "yes", "no", "no", "Follow-up", None, None, None),
-    ("b1", 40, 2100, "yes", "no", "no", "Follow-up", None, None, None),
-    # b2 — died before day 28 -> early_exit, outcome_known
-    ("b2", 0, 1200, "yes", "yes", "yes", "Registration", 5.0, 1200.0, 3.0),
-    ("b2", 9, 1150, "no", "yes", "yes", "Follow-up", None, None, None),
-    # b3 — lost to follow-up: eligible by age, last visit < 28d, alive
-    ("b3", 0, 1400, "yes", "no", "no", "Registration", 1.0, 1400.0, 1.0),
-    ("b3", 5, 1420, "yes", "no", "no", "Follow-up", None, None, None),
-    # b4 — implausible swing -> weight_consistent false
-    ("b4", 0, 1300, "yes", "no", "no", "Registration", 0.0, 1300.0, 2.0),
-    ("b4", 12, 3000, "yes", "no", "no", "Follow-up", None, None, None),
-    ("b4", 30, 3100, "yes", "no", "no", "Follow-up", None, None, None),
-    # b5 — only one weight day -> not computable
-    ("b5", 0, 1600, "yes", "no", "no", "Registration", 9.0, 1600.0, 4.0),
-    ("b5", 33, 1600, "yes", "no", "no", "Follow-up", None, None, None),
-    # b6 — registration only, never started
-    ("b6", 0, None, "yes", "no", "no", "Registration", None, None, None),
-    # b8 — last visit at day 29: outcome_known flips if the eligibility gate moves
-    # off 28. Without a case straddling the gate the parity test cannot detect a
-    # changed constant, and "SQL matches JS" would be a weaker claim than it reads.
-    ("b8", 0, 1550, "yes", "no", "no", "Registration", 2.0, 1550.0, 1.0),
-    ("b8", 29, 1800, "yes", "no", "no", "Follow-up", None, None, None),
-    # b9 — first visit carries NO weight, so the first weighing is 6 days later.
-    # Anchoring the growth window on the first WEIGHT instead of the first VISIT
-    # shifts w28 selection and silently changes C09-C13. Every other fixture baby is
-    # weighed on its first visit, which is exactly why real data caught this and the
-    # fixture did not.
-    # Weights on days 10 and 44 only. Anchored on the FIRST VISIT (day 0) both ages
-    # are 10 and 44 -- outside the [21,35] window -- so early growth is NULL and the
-    # baby is not weight_gain_data_sufficient. Anchored on the first WEIGHT (day 10)
-    # the second reading lands at age 34, inside the window, and the baby wrongly
-    # counts toward C09-C13. The reading has to cross the boundary for the anchor to
-    # matter; an earlier version of this case kept both readings in-window under both
-    # anchors and therefore proved nothing.
-    ("b9", 0, None, "yes", "no", "no", "Registration", 1.0, 1500.0, 1.0),
-    ("b9", 10, 1500, "yes", "no", "no", "Follow-up", None, None, None),
-    ("b9", 44, 1700, "yes", "no", "no", "Follow-up", None, None, None),
-    # b7 — birth-copy: enrolment weight == birth weight
-    ("b7", 0, 1700, "yes", "no", "no", "Registration", 3.0, 1700.0, 1700.0),
-    ("b7", 14, 1850, "yes", "no", "no", "Follow-up", None, None, None),
-    ("b7", 31, 2000, "yes", "no", "no", "Follow-up", None, None, None),
-    # b10 -- the two sources DISAGREE. The app's own days_discharge_to_reg says 1
-    # day (within 3); the real interval reg_date - hospital_discharge_date is 6.
-    # Neal derives the interval, so this baby must NOT count as enrolled in 3 days.
-    ("b10", 0, 1450, "yes", "no", "no", "Registration", 1.0, 1450.0, 1.0),
-    ("b10", 15, 1600, "yes", "no", "no", "Follow-up", None, None, None),
-    ("b10", 32, 1750, "yes", "no", "no", "Follow-up", None, None, None),
-    # b11 -- the EHA/GHI shape: a discharge date but NO days_discharge_to_reg,
-    # because those two apps never write the calculated field. Under the old
-    # mapping this baby was invisible to C16; derived, it is enrolled within 3 days.
-    ("b11", 0, 1350, "yes", "no", "no", "Registration", None, 1350.0, 1.0),
-    ("b11", 16, 1500, "yes", "no", "no", "Follow-up", None, None, None),
-    ("b11", 33, 1650, "yes", "no", "no", "Follow-up", None, None, None),
-    # b12 -- registered BEFORE the recorded discharge, so the interval is negative.
-    # Neal's lower bound excludes it. Without the `>= 0` an impossible interval
-    # reads as excellent performance, which is the failure mode worth pinning.
-    ("b12", 0, 1500, "yes", "no", "no", "Registration", None, 1500.0, 1.0),
-    ("b12", 17, 1650, "yes", "no", "no", "Follow-up", None, None, None),
-    ("b12", 34, 1800, "yes", "no", "no", "Follow-up", None, None, None),
+    # h1 -- healthy growth: 11.3 g/kg/d over days 0-21, inside 6-24 for its band.
+    # Enrolment weight == birthweight, so it is a birth copy and not a seed reading.
+    ("h1", 0, 1500, "yes", "no", "no", R, 2.0, 1500.0, 1500.0),
+    ("h1", 7, 1600, "yes", "no", "no", F, None, None, None),
+    ("h1", 14, 1750, "yes", "no", "no", F, None, None, None),
+    ("h1", 21, 1900, "yes", "no", "no", F, None, None, None),
+    ("h1", 35, 2100, "yes", "no", "no", F, None, None, None),
+    # s1 -- slow growth (2.4 g/kg/d against a floor of 6); a danger sign, referred.
+    ("s1", 0, 1200, "yes", "no", "no", R, 1.0, 1200.0, 1250.0),
+    ("s1", 10, 1230, "yes", "yes", "yes", F, None, None, None),
+    ("s1", 20, 1260, "yes", "no", "no", F, None, None, None),
+    ("s1", 40, 1400, "yes", "no", "no", F, None, None, None),
+    # f1 -- fast growth (19.0 g/kg/d against a ceiling of 18); a danger sign, NOT referred.
+    ("f1", 0, 2600, "yes", "no", "no", R, None, 2600.0, 2650.0),
+    ("f1", 7, 3000, "yes", "yes", "no", F, None, None, None),
+    ("f1", 14, 3400, "yes", "no", "no", F, None, None, None),
+    ("f1", 30, 3500, "yes", "no", "no", F, None, None, None),
+    # i1 -- thin: two measured weigh-days and the enrolment reading is a re-entry
+    # (== birthweight), so there is no third day. Computable, not sufficient.
+    ("i1", 0, 1500, "yes", "no", "no", R, None, 1500.0, 1500.0),
+    ("i1", 8, 1600, "yes", "no", "no", F, None, None, None),
+    ("i1", 50, None, "yes", "no", "no", F, None, None, None),
+    # k1 -- the SEED READING decides thin. No weight at registration; the enrolment
+    # weight (1400, not a copy of 1700) is a third measured day, so the baby is
+    # sufficient and healthy. Ignore the seed and it reads thin -> incomplete.
+    ("k1", 0, None, "yes", "no", "no", R, None, 1700.0, 1400.0),
+    ("k1", 5, 1450, "yes", "no", "no", F, None, None, None),
+    ("k1", 15, 1550, "yes", "no", "no", F, None, None, None),
+    # x1 -- inconsistent: first weighing 1300 < 0.6 x 2400.
+    ("x1", 0, 1300, "yes", "no", "no", R, None, 2400.0, 2300.0),
+    ("x1", 7, 1400, "yes", "no", "no", F, None, None, None),
+    ("x1", 14, 1500, "yes", "no", "no", F, None, None, None),
+    # p1 -- a step ON the pair-mean boundary: +450 g in 6 days is 43.5 g/kg/d per kg
+    # of the pair mean (legal) and 50 per kg of the earlier reading (impossible).
+    ("p1", 0, 1500, "yes", "no", "no", R, None, 1500.0, 1520.0),
+    ("p1", 6, 1950, "yes", "no", "no", F, None, None, None),
+    ("p1", 13, 2050, "yes", "no", "no", F, None, None, None),
+    ("p1", 20, 2150, "yes", "no", "no", F, None, None, None),
+    # p2 -- a plainly impossible step (+800 g in 5 days, ~73 g/kg/d).
+    ("p2", 0, 1800, "yes", "no", "no", R, None, 1800.0, 1800.0),
+    ("p2", 5, 2600, "yes", "no", "no", F, None, None, None),
+    ("p2", 12, 2700, "yes", "no", "no", F, None, None, None),
+    # n1 -- no computable velocity: the only in-window pair is 3 days apart.
+    # Discarded before the growth question; counted by pct_growth_computable.
+    ("n1", 0, 1500, "yes", "no", "no", R, None, 1500.0, 1600.0),
+    ("n1", 3, 1510, "yes", "no", "no", F, None, None, None),
+    ("n1", 30, 1700, "yes", "no", "no", F, None, None, None),
+    # m1 -- first seen 35 days before the report: eligible at 28 days, not at 42.
+    ("m1", 165, 1500, "yes", "no", "no", R, 0.0, 1500.0, 1600.0),
+    ("m1", 172, 1600, "yes", "no", "no", F, None, None, None),
+    ("m1", 180, 1700, "yes", "no", "no", F, None, None, None),
+    ("m1", 190, 1800, "yes", "no", "no", F, None, None, None),
+    # d1 -- died after ONE follow-up: not started, so outside mortality. The 2+ rule
+    # is chosen deliberately (#2004); this baby is what moves if it changes.
+    ("d1", 0, 1200, "yes", "no", "no", R, None, 1200.0, 1210.0),
+    ("d1", 9, 1150, "no", "no", "no", F, None, None, None),
+    # d2 -- died after two follow-ups: in mortality's numerator. Danger sign, referred.
+    ("d2", 0, 1300, "yes", "no", "no", R, None, 1300.0, 1310.0),
+    ("d2", 10, 1350, "yes", "yes", "yes", F, None, None, None),
+    ("d2", 20, 1300, "no", "no", "no", F, None, None, None),
+    # l1 -- lost to follow-up: alive, last seen 12 days after the first visit.
+    ("l1", 0, 1400, "yes", "no", "no", R, None, 1400.0, 1450.0),
+    ("l1", 5, 1420, "yes", "no", "no", F, None, None, None),
+    ("l1", 12, 1450, "yes", "no", "no", F, None, None, None),
+    # g1 -- last visit at day 29: outcome known only because 29 >= 28. Carries an
+    # implausible gestational age and an out-of-range reading (a raw reading all the
+    # same, for the rounding rate; not a weigh-day).
+    ("g1", 0, 1550, "yes", "no", "no", R, 4.0, 1550.0, 1560.0),
+    ("g1", 10, 9000, "yes", "no", "no", F, None, None, None),
+    ("g1", 29, 1800, "yes", "no", "no", F, None, None, None),
+    # u1 -- registration only, never started.
+    ("u1", 0, None, "yes", "no", "no", R, None, None, None),
 ]
 
-# Days between hospital discharge and registration, per baby. Babies absent from
-# this map have no recorded discharge date -- the sparse real-world shape, where
-# coverage runs 18%-66% across the six LLOs.
-DISCHARGE_TO_REG = {"b10": 6, "b11": 2, "b12": -1}
+# Days from hospital discharge to registration, where a discharge DATE is recorded.
+# The dates beat the app's own field: h1's app says 2 but the dates say 6.
+DISCHARGE_TO_REG = {"h1": 6, "s1": 2, "k1": -1, "x1": 0, "p1": 3, "l1": 1, "m1": 1}
+# Per-baby recorded values that vary, so the means and medians are not trivial.
+GESTATIONAL_AGE = {"h1": 32, "s1": 30, "f1": 38, "i1": 34, "k1": 33, "x1": 36, "p1": 31, "p2": 35}
+GESTATIONAL_AGE.update({"n1": 29, "m1": 34, "d1": 28, "d2": 27, "l1": 33, "g1": 50})
+KMC_HOURS = {"h1": 6.0, "s1": 2.5, "f1": 8.0, "d2": 3.0, "l1": 1.5, "g1": 5.0, "x1": 4.0}
+SELF_REFERRAL_VISITS = {("h1", 7), ("l1", 5), ("l1", 12), ("g1", 10)}
 
 DDL = """
 DROP TABLE IF EXISTS fixture_visits;
@@ -127,15 +168,20 @@ CREATE TEMP TABLE fixture_visits (
 """
 
 
+def _reg_day(baby):
+    return min(off for b, off, *_ in VISITS if b == baby)
+
+
 def _load(conn):
     conn.rollback()
     cur = conn.cursor()
     cur.execute(DDL)
     for baby, off, w, alive, danger, ref, form, d2r, bw, ew in VISITS:
+        reg = _reg_day(baby)
         cur.execute(
             "INSERT INTO fixture_visits VALUES (%s, DATE '2026-01-01' + %s, %s, %s, %s, %s,"
-            " false, true, %s, %s, %s, %s, 34.0, 4.0, DATE '2026-01-01',"
-            " DATE '2026-01-01' - %s::int, 1, 'flw1')",
+            " %s, true, %s, %s, %s, %s, %s, %s, DATE '2026-01-01' + %s,"
+            " DATE '2026-01-01' + %s - %s::int, 1, 'flw1')",
             (
                 baby,
                 off,
@@ -143,184 +189,216 @@ def _load(conn):
                 alive == "no",
                 danger == "yes",
                 ref == "yes",
+                (baby, off) in SELF_REFERRAL_VISITS,
                 form,
                 d2r,
                 bw,
                 ew,
+                GESTATIONAL_AGE.get(baby),
+                KMC_HOURS.get(baby),
+                reg,
+                reg,
                 DISCHARGE_TO_REG.get(baby),
             ),
         )
     conn.commit()
 
 
-# ── A faithful port of the render-code logic ─────────────────────────────────
+# ── The reference: the rules, in Python ──────────────────────────────────────
 
 
-def _js_properties(as_of_offset=200):
-    """Mirror kmc_programme_metrics_render.js lines ~575-670."""
-    babies: dict[str, dict] = {}
+def _band(bw):
+    if bw is None or not (WMIN <= bw <= WMAX):
+        return None
+    return next((name, lo, hi) for upper, name, lo, hi in BANDS if bw < upper)
+
+
+def _median(values):
+    """The interpolated median (what PERCENTILE_CONT(0.5) is)."""
+    v = sorted(values)
+    if not v:
+        return None
+    mid = (len(v) - 1) / 2
+    lo, hi = math.floor(mid), math.ceil(mid)
+    return v[lo] + (v[hi] - v[lo]) * (mid - lo)
+
+
+def _babies():
+    out: dict[str, dict] = {}
     for baby, off, w, alive, danger, ref, form, d2r, bw, ew in VISITS:
-        b = babies.setdefault(
-            baby,
-            {
-                "days": {},
-                "forms": [],
-                "visits": 0,
-                "deaths": 0,
-                "danger": 0,
-                "ref": 0,
-                "d2r": None,
-                "bw": None,
-                "ew": None,
-            },
-        )
-        b["visits"] += 1
-        b["forms"].append(form)
-        if alive == "no":
-            b["deaths"] += 1
-        if danger == "yes":
-            b["danger"] += 1
-        if ref == "yes":
-            b["ref"] += 1
-        if d2r is not None:
-            b["d2r"] = d2r
-        if bw is not None:
-            b["bw"] = bw
-        if ew is not None:
-            b["ew"] = ew
-        b.setdefault("offs", []).append(off)
-        b["n_raw"] = b.get("n_raw", 0) + (1 if w is not None else 0)
-        b["n_raw_round"] = b.get("n_raw_round", 0) + (1 if w is not None and w % 100 == 0 else 0)
-        if w is not None and 400 <= w <= 8000:
-            b["days"][off] = w
-
-    out = {}
-    for name, b in babies.items():
-        d = {}
-        n_reg = sum(1 for f in b["forms"] if "regist" in f.lower())
-        n_fu = len(b["forms"]) - n_reg
-        d["registered"] = n_reg >= 1
-        d["started"] = n_fu >= 1
-        first, last = min(b["offs"]), max(b["offs"])
-        d["days_since_first_visit"] = as_of_offset - first
-        d["days_first_to_last"] = last - first
-        d["eligible"] = d["started"] and d["days_since_first_visit"] >= ELIG
-        d["died"] = b["deaths"] > 0
-        d["outcome_known"] = d["died"] or d["days_first_to_last"] >= ELIG
-        d["early_exit"] = d["died"] and d["days_first_to_last"] < ELIG
-        ws = [(k, b["days"][k]) for k in sorted(b["days"])]
-        d["n_weights"] = len(ws)
-        span = (ws[-1][0] - ws[0][0]) if len(ws) >= 2 else 0
-        d["weight_computable"] = len(ws) >= 2 and span >= 7
-        consistent = d["weight_computable"]
-        for i in range(1, len(ws)):
-            if abs(ws[i][1] - ws[i - 1][1]) > SWING * ws[i - 1][1]:
-                consistent = False
-                break
-        d["weight_consistent"] = consistent
-        d["early_g_per_kg_day"] = None
-        if d["weight_computable"]:
-            w0 = ws[0]
-            w28 = None
-            for day, wv in ws:
-                if LO <= (day - first) <= HI:
-                    w28 = (day, wv)
-            if w28 and w28[0] != w0[0]:
-                dd = w28[0] - w0[0]
-                if dd > 0:
-                    d["early_g_per_kg_day"] = (w28[1] - w0[1]) / (w0[1] / 1000) / dd
-        d["weight_gain_data_sufficient"] = d["early_g_per_kg_day"] is not None and d["weight_consistent"]
-        d["growth_class"] = None
-        if d["weight_gain_data_sufficient"]:
-            g = d["early_g_per_kg_day"]
-            d["growth_class"] = "slow" if g < PLAUSIBLE_LO else ("fast" if g > PLAUSIBLE_HI else "plausible")
-        d["n_weight_readings"] = b["n_raw"]
-        d["n_weights_round_100_raw"] = b["n_raw_round"]
-        d["ever_danger_sign"] = b["danger"] > 0
-        d["referred"] = b["ref"] > 0
-        d["num_visits"] = b["visits"]
-        # DELIBERATE DIVERGENCE from the JavaScript, per Neal Lesh's compute spec:
-        # the interval is DERIVED from the discharge date and only falls back to
-        # the app's calculated field, and the rule carries a lower bound.
-        hdd = DISCHARGE_TO_REG.get(name)
-        dte = float(hdd) if hdd is not None else b["d2r"]
-        d["days_to_enrolment"] = dte
-        d["has_discharge_date"] = dte is not None
-        d["enrolled_within_3d"] = None if dte is None else (0 <= dte <= 3)
-        d["days_discharge_to_reg"] = b["d2r"]
-        d["enrollment_is_birth_copy"] = None if b["bw"] is None or b["ew"] is None else abs(b["bw"] - b["ew"]) < 1
-        out[name] = d
+        b = out.setdefault(baby, {"rows": [], "d2r": None, "bw": None, "ew": None})
+        b["rows"].append((off, w, alive, danger, ref, form))
+        b["d2r"] = d2r if d2r is not None else b["d2r"]
+        b["bw"] = bw if bw is not None else b["bw"]
+        b["ew"] = ew if ew is not None else b["ew"]
     return out
 
 
-def _js_indicators(props):
+def _weight_series(rows, bw, ew, reg_day):
+    """Measured weigh-days (one per day, averaged), plus whether the enrolment
+    reading counts as a further measured day."""
+    by_day: dict[int, list[float]] = {}
+    for off, w, *_ in rows:
+        if w is not None and WMIN <= w <= WMAX:
+            by_day.setdefault(off, []).append(w)
+    measured = [(d, sum(ws) / len(ws)) for d, ws in sorted(by_day.items())]
+    seed = (
+        ew is not None
+        and WMIN <= ew <= WMAX
+        and not (bw is not None and abs(ew - bw) < 1)  # a copy of birthweight is a re-entry
+        and reg_day not in by_day  # a visit weighed the same day wins
+    )
+    return measured, seed
+
+
+def _properties(as_of=AS_OF):
+    out = {}
+    for name, b in _babies().items():
+        rows, bw = b["rows"], b["bw"]
+        offs = [r[0] for r in rows]
+        first, last = min(offs), max(offs)
+        followups = sum(1 for r in rows if "regist" not in r[5].lower())
+        p = {"registered": any("regist" in r[5].lower() for r in rows), "followup_visits": followups}
+        p["started"] = followups >= STARTED_MIN
+        since = as_of - first
+        p["eligible_28d"] = p["started"] and since >= MATURITY_OUTCOME
+        p["eligible_42d"] = p["started"] and since >= MATURITY_GROWTH
+        p["died"] = any(r[2] == "no" for r in rows)
+        p["outcome_known"] = p["died"] or (last - first) >= MATURITY_OUTCOME
+
+        measured, seed = _weight_series(rows, bw, b["ew"], _reg_day(name))
+        p["n_measured_days"] = len(measured) + (1 if seed else 0)
+        velocity, impossible = None, False
+        if measured:
+            anchor = measured[0][0]
+            window = [(d, w) for d, w in measured if d - anchor <= WINDOW]
+            span = window[-1][0] - window[0][0]
+            mean = sum(w for _, w in window) / len(window)
+            if len(window) >= 2 and span >= VELOCITY_MIN_SPAN and mean > 0:
+                velocity = (window[-1][1] - window[0][1]) / span / (mean / 1000)
+            for (d0, w0), (d1, w1) in zip(measured, measured[1:]):
+                gap = d1 - d0
+                if d1 - anchor <= WINDOW and IMPOSSIBLE_GAP[0] <= gap <= IMPOSSIBLE_GAP[1] and w0 > 0:
+                    rate = (w1 - w0) / (((w1 + w0) / 2) / 1000) / gap
+                    if not IMPOSSIBLE[0] <= rate <= IMPOSSIBLE[1]:
+                        impossible = True
+        first_w = round(measured[0][1]) if measured else None
+        p["velocity"] = velocity
+        p["computable"] = velocity is not None
+        p["impossible"] = impossible
+        p["thin"] = p["n_measured_days"] < THIN_MIN_DAYS
+        p["inconsistent"] = bw is not None and first_w is not None and first_w < INCONSISTENT_RATIO * bw
+        p["sufficient"] = p["computable"] and not (p["thin"] or p["inconsistent"] or impossible)
+        band = _band(bw)
+        p["banded"] = band is not None
+        p["growth_class"] = None
+        if p["sufficient"] and band:
+            _, lo, hi = band
+            p["growth_class"] = "slow" if velocity < lo else ("fast" if velocity > hi else "plausible")
+        p["qualifying"] = p["eligible_42d"] and p["banded"] and p["computable"]
+
+        p["danger"] = any(r[3] == "yes" for r in rows)
+        p["referred"] = any(r[4] == "yes" for r in rows)
+        p["self_referrals"] = sum(1 for r in rows if (name, r[0]) in SELF_REFERRAL_VISITS)
+        p["kmc_hours"] = KMC_HOURS.get(name)
+        ga = GESTATIONAL_AGE.get(name)
+        p["ga"] = ga if ga is not None and GA_RANGE[0] <= ga <= GA_RANGE[1] else None
+        p["bw"] = bw
+        dated = DISCHARGE_TO_REG.get(name)
+        dte = float(dated) if dated is not None else b["d2r"]
+        p["days_to_enrolment"] = dte
+        p["has_discharge"] = dte is not None
+        p["within_3d"] = dte is not None and 0 <= dte <= 3
+        p["birth_copy"] = None if bw is None or b["ew"] is None else abs(bw - b["ew"]) < 1
+        raw = [r[1] for r in rows if r[1] is not None]
+        p["readings"], p["round_readings"] = len(raw), sum(1 for w in raw if w % 100 == 0)
+        out[name] = p
+    return out
+
+
+def _indicators(props):
     rows = list(props.values())
 
-    def ratio(numf, denf):
-        den = [r for r in rows if denf(r)]
-        if not den:
-            return None
-        return 100.0 * len([r for r in den if numf(r)]) / len(den)
+    def count(f):
+        return float(sum(1 for r in rows if f(r)))
 
-    def mean(valf, denf):
-        vals = [valf(r) for r in rows if denf(r)]
-        vals = [v for v in vals if isinstance(v, (int, float))]
+    def pct(num, den):
+        base = [r for r in rows if den(r)]
+        return 100.0 * sum(1 for r in base if num(r)) / len(base) if base else None
+
+    def mean(val, den):
+        vals = [val(r) for r in rows if den(r) and val(r) is not None]
         return sum(vals) / len(vals) if vals else None
 
-    def median_days():
-        """Upper median, mirroring the compiled ARRAY_AGG index exactly."""
-        vals = sorted(r["days_to_enrolment"] for r in rows if r["started"] and r["has_discharge_date"])
-        if not vals:
-            return None
-        return float(vals[int(len(vals) // 2)])
+    def qual(r):
+        return r["qualifying"]
 
+    matured = [r for r in rows if r["eligible_42d"]]
     return {
-        "C01": float(len([r for r in rows if r["registered"]])),
-        "C02": float(len([r for r in rows if r["started"]])),
-        "C05": float(len(rows)),
-        "C07": ratio(lambda r: r["weight_computable"], lambda r: r["eligible"] and not r["early_exit"]),
-        "C08": ratio(lambda r: r["weight_consistent"], lambda r: r["weight_computable"]),
-        "C09": ratio(lambda r: r["weight_gain_data_sufficient"], lambda r: r["eligible"] and not r["early_exit"]),
-        "C10": ratio(lambda r: r["growth_class"] == "plausible", lambda r: r["weight_gain_data_sufficient"]),
-        "C13": mean(lambda r: r["early_g_per_kg_day"], lambda r: r["weight_gain_data_sufficient"]),
-        "C14": ratio(lambda r: r["died"], lambda r: r["eligible"] and r["outcome_known"]),
-        "C15": ratio(lambda r: not r["outcome_known"], lambda r: r["eligible"]),
-        "C16": ratio(lambda r: r["enrolled_within_3d"], lambda r: r["started"] and r["has_discharge_date"]),
-        "C17": median_days(),
-        "C20": ratio(lambda r: r["ever_danger_sign"], lambda r: r["eligible"]),
-        "C24": mean(lambda r: r["num_visits"], lambda r: r["started"]),
-        "C28": ratio(lambda r: r["enrollment_is_birth_copy"], lambda r: r["enrollment_is_birth_copy"] is not None),
-        # C31 is sum-over-sum across RAW weight readings, not a case ratio.
-        "C31": (
-            100.0 * sum(r["n_weights_round_100_raw"] for r in rows) / sum(r["n_weight_readings"] for r in rows)
-            if sum(r["n_weight_readings"] for r in rows)
-            else None
+        "total_cases": float(len(rows)),
+        "registered_cases": count(lambda r: r["registered"]),
+        "started_cases": count(lambda r: r["started"]),
+        "cumulative_svns_reached": count(lambda r: r["started"]),
+        "median_gestational_age": _median([r["ga"] for r in rows if r["ga"] is not None]),
+        "median_birthweight": _median([r["bw"] for r in rows if r["bw"] is not None]),
+        "visits_per_case": sum(r["followup_visits"] for r in matured) / len(matured) if matured else None,
+        "pct_enrolled_within_3d": pct(lambda r: r["within_3d"], lambda r: r["started"] and r["has_discharge"]),
+        "median_days_to_enrolment": _median(
+            [r["days_to_enrolment"] for r in rows if r["started"] and r["has_discharge"]]
         ),
+        "lost_by_day_28": pct(lambda r: not r["outcome_known"], lambda r: r["eligible_28d"]),
+        "pct_slow_growth": pct(lambda r: r["growth_class"] == "slow", qual),
+        "pct_healthy_growth": pct(lambda r: r["growth_class"] == "plausible", qual),
+        "pct_fast_growth": pct(lambda r: r["growth_class"] == "fast", qual),
+        "pct_incomplete_growth_data": pct(lambda r: r["growth_class"] is None, qual),
+        "mean_early_growth_rate": mean(lambda r: r["velocity"], lambda r: r["qualifying"] and r["sufficient"]),
+        "pct_growth_computable": pct(qual, lambda r: r["eligible_42d"] and r["banded"]),
+        "mortality": pct(lambda r: r["died"], lambda r: r["eligible_28d"] and r["outcome_known"]),
+        "danger_sign_incidence": pct(lambda r: r["danger"], lambda r: r["eligible_28d"]),
+        "pct_danger_signs_referred": pct(lambda r: r["referred"], lambda r: r["eligible_28d"] and r["danger"]),
+        "self_referrals_per_100": mean(lambda r: r["self_referrals"] * 100, lambda r: r["eligible_28d"]),
+        "mean_kmc_hours": mean(lambda r: r["kmc_hours"], lambda r: r["eligible_28d"]),
+        "weight_rounding_rate": 100.0 * sum(r["round_readings"] for r in rows) / sum(r["readings"] for r in rows),
+        "pct_impossible_weight_changes": pct(lambda r: r["impossible"], lambda r: r["computable"]),
+        "birth_copy_rate": pct(lambda r: r["birth_copy"], lambda r: r["birth_copy"] is not None),
     }
 
 
-def test_sql_matches_the_reference_implementation(conn):
+def _programme_row(conn):
     props_doc = yaml.safe_load((REGISTRY / "properties.yml").read_text())
     registry = yaml.safe_load((REGISTRY / "indicators.yml").read_text())
     _load(conn)
-
-    visit_sql = "SELECT * FROM fixture_visits"
     sql = compile_indicator_sql(
-        props_doc,
-        registry,
-        visit_sql,
-        scope="programme",
-        as_of="(DATE '2026-01-01' + 200)",
+        props_doc, registry, "SELECT * FROM fixture_visits", scope="programme", as_of=AS_OF_SQL
     )
     cur = conn.cursor()
     cur.execute(sql)
     cols = [c.name for c in cur.description]
-    row = dict(zip(cols, cur.fetchone()))
+    return dict(zip(cols, cur.fetchone()))
 
-    expected = _js_indicators(_js_properties())
+
+def test_the_reference_covers_every_indicator_and_every_growth_branch():
+    """A parity check over a fixture that leaves an indicator empty proves nothing
+    about it, and a growth share that is always 0 cannot catch a moved boundary."""
+    props = _properties()
+    ind = _indicators(props)
+    registry = yaml.safe_load((REGISTRY / "indicators.yml").read_text())
+    assert set(ind) == {m["meta"]["indicator"] for m in registry["measures"] if m.get("meta")}
+    assert all(v is not None for v in ind.values()), {k for k, v in ind.items() if v is None}
+    classes = {p["growth_class"] for p in props.values() if p["qualifying"]}
+    assert classes == {"slow", "plausible", "fast", None}, classes
+    for share in ("pct_slow_growth", "pct_healthy_growth", "pct_fast_growth", "pct_incomplete_growth_data"):
+        assert 0 < ind[share] < 100, share
+    for rate in ("mortality", "lost_by_day_28", "pct_impossible_weight_changes", "pct_growth_computable"):
+        assert 0 < ind[rate] < 100, rate
+
+
+def test_sql_matches_the_reference_implementation(conn):
+    row = _programme_row(conn)
+    expected = _indicators(_properties())
     mismatches = []
     for ind, want in expected.items():
-        got = row.get(ind.lower())
+        got = row.get(ind)
         if want is None and got is None:
             continue
         if want is None or got is None:
@@ -340,7 +418,7 @@ def test_denominators_are_reported_alongside_values(conn):
         registry,
         "SELECT * FROM fixture_visits",
         scope="programme",
-        as_of="(DATE '2026-01-01' + 200)",
+        as_of=AS_OF_SQL,
     )
     cur = conn.cursor()
     cur.execute(sql)
@@ -363,7 +441,7 @@ def test_rollup_equals_per_scope_queries(conn):
     registry = yaml.safe_load((REGISTRY / "indicators.yml").read_text())
     _load(conn)
     visit_sql = "SELECT * FROM fixture_visits"
-    as_of = "(DATE '2026-01-01' + 200)"
+    as_of = AS_OF_SQL
     scopes = ["programme", "opportunity", "flw", "month"]
 
     per_scope = {}
@@ -414,7 +492,7 @@ def test_every_declared_scope_actually_executes(conn):
     registry = yaml.safe_load((REGISTRY / "indicators.yml").read_text())
     _load(conn)
     cur = conn.cursor()
-    as_of = "(DATE '2026-01-01' + 200)"
+    as_of = AS_OF_SQL
 
     for scope in SCOPES:
         needs_llo = "llo" in SCOPES[scope]
@@ -476,7 +554,7 @@ def test_every_scope_executes_with_the_suppression_gates_on(conn):
             registry,
             "SELECT * FROM fixture_visits",
             scope=scope,
-            as_of="(DATE '2026-01-01' + 200)",
+            as_of=AS_OF_SQL,
             llo_map=llo_map,
             settings=settings,
         )
@@ -490,7 +568,7 @@ def test_every_scope_executes_with_the_suppression_gates_on(conn):
 
 
 def test_suppression_marks_the_non_credible_llo(conn):
-    """C14 must come back flagged for an LLO the settings say is not credible.
+    """Mortality must come back flagged for an LLO the settings say is not credible.
 
     The registry declared these rules and the compiler ignored them, so a
     mortality figure would have been published for an LLO the workbook says does
@@ -507,13 +585,13 @@ def test_suppression_marks_the_non_credible_llo(conn):
             registry,
             "SELECT * FROM fixture_visits",
             scope="llo",
-            as_of="(DATE '2026-01-01' + 200)",
+            as_of=AS_OF_SQL,
             llo_map={1: "GHI"},
             settings={"mortality_recording_credible": {"PIPN": True, "GHI": False}},
         )
     )
     cols = [c.name for c in cur.description]
     row = dict(zip(cols, cur.fetchone()))
-    assert "c14_suppressed" in cols, "suppression column was not emitted"
-    assert row["c14_suppressed"] is True, "GHI is not credible but C14 came back unsuppressed"
-    assert row["c14"] is not None, "the value is still computed -- suppression is display, not deletion"
+    assert "mortality_suppressed" in cols, "suppression column was not emitted"
+    assert row["mortality_suppressed"] is True, "GHI is not credible but mortality came back unsuppressed"
+    assert row["mortality"] is not None, "the value is still computed -- suppression is display, not deletion"

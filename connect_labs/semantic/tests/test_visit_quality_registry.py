@@ -312,8 +312,11 @@ def test_the_explanation_speaks_of_beneficiaries_not_babies(registry):
         texts.append(str(e["english"]))
     blob = " ".join(texts)
     assert "bab" not in blob.lower()
+    # The floor is the registry's `defaults.min_denominator`: the definition names the
+    # same one the grader withholds below, though Q02 declares none of its own.
     assert english(inds, props, "Q02")["definition"] == (
         "The number of beneficiaries where visited twice, as a percentage of the number of beneficiaries."
+        " Shown only when the denominator is at least 5."
     )
     how = english(inds, props, "Q05")["how"]
     assert how["base"]["what"] == "beneficiaries" and how["value"] == "average visits per beneficiary"

@@ -1,9 +1,21 @@
 # KMC Layer 3 — the indicator registry, in Cube measure syntax.
 #
-# Converted verbatim from the JavaScript closures in
-# connect_labs/workflow/templates/kmc_programme_metrics_render.js (var IND, ~line 684).
-# Those closures cannot be diffed as data, cannot be read from Python, and have to be
-# hand-resynced with the repo. Expressed here they are readable by both engines.
+# ONE indicator set. There used to be two -- the workbook's C-series and Neal
+# Lesh's demo compute spec's N-series -- and a caller picked one by prefix. Neal
+# wrote both; the spec (v3, 2026-09) is his later attempt to make them make sense,
+# so it wins wherever they differed (#2004):
+#   started      2+ follow-up visits (the workbook said 1+)
+#   maturity     28 days for outcomes, 42 for growth and visits, 90 for completion
+#   growth       the spec's velocity and sufficiency rules, and birthweight-band
+#                classes (the workbook's flat 10-20 g/kg/day is gone)
+#   floor        a minimum denominator of 20 (the workbook said 25)
+#   medians      true medians (PERCENTILE_CONT)
+# The workbook indicators the spec never covered are kept and re-based onto the
+# same rules, and say so in their `note`.
+#
+# THESE ARE WORKING DEFINITIONS. They will keep changing as the programme learns;
+# each carries its own caveats. Ids are plain names and carry no provenance -- add
+# an indicator by appending one, never by reusing a name.
 #
 # NOTATION: Cube (cube.dev) measure syntax, restricted to Cube's REAL measure types --
 # count, count_distinct, count_distinct_approx, sum, avg, min, max, number. No
@@ -26,946 +38,609 @@ description: >-
   whatever scope the caller selects -- programme, LLO, opportunity, FLW or month.
 
 # The floor a measure is graded against when it declares no min_denominator of its
-# own (and the workflow's snapshot spec names none). 25 is the KMC render's own
-# `var MIN_DEN = 25`; it used to be an engine constant.
+# own: below it a cell reads "insufficient volume" rather than a number (spec 0).
 defaults:
-  min_denominator: 25
+  min_denominator: 20
 
-# The indicator families, in order: the workbook's C-series, then Neal Lesh's demo
-# compute spec's N-series. They answer different questions and disagree on
-# maturity and growth bands by design, so a caller asks for one by prefix.
-series: [C, N]
+# One family. Declared, because ids are names rather than codes and a name's
+# letters say nothing about which family it is in.
+series: [KMC]
 
 measures:
   # ── Scale ────────────────────────────────────────────────────────────────
-  - name: c01
-    title: Registered cases
+  - name: total_cases
+    title: Total cases
     type: number
-    sql: '{c01_numerator}'
+    sql: '{total_cases_numerator}'
     meta:
       {
-        indicator: C01,
+        indicator: total_cases,
+        plain: 'Every baby with any registration or visit record.',
         category: Scale,
         prominence: Top,
         unit: n,
         direction: none,
       }
-  - name: c01_numerator
+  - name: total_cases_numerator
+    type: count
+  - name: total_cases_denominator
+    type: count
+
+  - name: registered_cases
+    title: Registered
+    type: number
+    sql: '{registered_cases_numerator}'
+    meta:
+      {
+        indicator: registered_cases,
+        plain: 'Babies with a registration form.',
+        category: Scale,
+        prominence: Top,
+        unit: n,
+        direction: none,
+      }
+  - name: registered_cases_numerator
     type: count
     filters: [{ sql: '{CUBE}.registered' }]
-  - name: c01_denominator
+  - name: registered_cases_denominator
     type: count
 
-  - name: c02
-    title: Started cases
+  - name: started_cases
+    title: Started
     type: number
-    sql: '{c02_numerator}'
+    sql: '{started_cases_numerator}'
     meta:
       {
-        indicator: C02,
-        plain: 'Started cases: babies with at least one follow-up visit after registration (the workbook rule; the scorecard N03 requires two visits).',
+        indicator: started_cases,
+        plain: 'Babies with two or more follow-up visits (registration excluded).',
         category: Scale,
         prominence: Top,
         unit: n,
         direction: none,
       }
-  - name: c02_numerator
+  - name: started_cases_numerator
     type: count
     filters: [{ sql: '{CUBE}.started' }]
-  - name: c02_denominator
+  - name: started_cases_denominator
     type: count
 
-  - name: c05
+  - name: cumulative_svns_reached
     title: Cumulative SVNs reached
     type: number
-    sql: '{c05_numerator}'
+    sql: '{cumulative_svns_reached_numerator}'
     meta:
       {
-        indicator: C05,
+        indicator: cumulative_svns_reached,
+        plain: 'The running total of started babies by registration month; the snapshot value equals total started.',
         category: Scale,
         prominence: Top,
         unit: n,
         direction: none,
       }
-  - name: c05_numerator
+  - name: cumulative_svns_reached_numerator
     type: count
-  - name: c05_denominator
+    filters: [{ sql: '{CUBE}.started' }]
+  - name: cumulative_svns_reached_denominator
     type: count
 
-  - name: c06
+  # ── Case mix ─────────────────────────────────────────────────────────────
+  - name: median_gestational_age
+    title: Median gestational age (wks)
+    type: number
+    sql: '{median_gestational_age_numerator}'
+    meta:
+      {
+        indicator: median_gestational_age,
+        plain: 'Median gestational age at birth in weeks, over babies with a plausible value (20 to 45 weeks).',
+        category: Case mix,
+        prominence: Top,
+        unit: wks,
+        direction: none,
+      }
+  - name: median_gestational_age_numerator
+    type: number
+    sql: 'PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {CUBE}.gestational_age_plausible)'
+  - name: median_gestational_age_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.gestational_age_plausible IS NOT NULL' }]
+
+  - name: median_birthweight
+    title: Median birthweight (g)
+    type: number
+    sql: '{median_birthweight_numerator}'
+    meta:
+      {
+        indicator: median_birthweight,
+        plain: 'Median birthweight in grams, over babies with a recorded birthweight.',
+        category: Case mix,
+        prominence: Top,
+        unit: g,
+        direction: none,
+      }
+  - name: median_birthweight_numerator
+    type: number
+    sql: 'PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {CUBE}.birth_weight_g)'
+  - name: median_birthweight_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.birth_weight_g IS NOT NULL' }]
+
+  # ── Follow-up ────────────────────────────────────────────────────────────
+  - name: visits_per_case
     title: Mean visits per case
     type: number
-    sql: '{c06_numerator}'
+    sql: '{visits_per_case_numerator} / NULLIF({visits_per_case_denominator}, 0)'
     meta:
       {
-        indicator: C06,
-        category: Scale,
-        prominence: Lower,
+        indicator: visits_per_case,
+        plain: 'Mean number of follow-up visits per baby, over babies whose first visit was at least 42 days ago.',
+        category: Follow-up,
+        prominence: Top,
         unit: n,
-        direction: none,
-        note: 'Identical in definition to C24; both are kept for parity with the workbook.',
-      }
-  - name: c06_numerator
-    type: avg
-    sql: '{CUBE}.num_visits'
-    filters: [{ sql: '{CUBE}.started' }]
-  - name: c06_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.started' }]
-
-  # ── Program quality ──────────────────────────────────────────────────────
-  - name: c07
-    title: '% with computable weight gain'
-    type: number
-    sql: '100.0 * {c07_numerator} / NULLIF({c07_denominator}, 0)'
-    meta:
-      {
-        indicator: C07,
-        inputs: [weights],
-        category: Program quality,
-        prominence: Lower,
-        unit: '%',
         direction: higher,
-        bands: [75, 55],
-        min_denominator: 25,
-      }
-  - name: c07_numerator
-    type: count
-    filters:
-      [
-        { sql: '{CUBE}.weight_computable' },
-        { sql: '{CUBE}.eligible AND NOT {CUBE}.early_exit' },
-      ]
-  - name: c07_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.eligible AND NOT {CUBE}.early_exit' }]
-
-  - name: c08
-    title: '% with consistent weight gain'
-    type: number
-    sql: '100.0 * {c08_numerator} / NULLIF({c08_denominator}, 0)'
-    meta:
-      {
-        indicator: C08,
-        inputs: [weights],
-        category: Program quality,
-        prominence: Lower,
-        unit: '%',
-        direction: higher,
-        bands: [80, 60],
-        min_denominator: 25,
-      }
-  - name: c08_numerator
-    type: count
-    filters:
-      [{ sql: '{CUBE}.weight_consistent' }, { sql: '{CUBE}.weight_computable' }]
-  - name: c08_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.weight_computable' }]
-
-  - name: c09
-    title: '% with sufficient weight data'
-    type: number
-    sql: '100.0 * {c09_numerator} / NULLIF({c09_denominator}, 0)'
-    meta:
-      {
-        indicator: C09,
-        plain: 'Share of eligible babies (first visit at least 28 days ago, not an early death) whose weight series is computable and consistent, so an early growth rate can be trusted.',
-        inputs: [weights],
-        category: Program quality,
-        prominence: Top,
-        unit: '%',
-        direction: higher,
-        bands: [60, 40],
-        min_denominator: 25,
-      }
-  - name: c09_numerator
-    type: count
-    filters:
-      [
-        { sql: '{CUBE}.weight_gain_data_sufficient' },
-        { sql: '{CUBE}.eligible AND NOT {CUBE}.early_exit' },
-      ]
-  - name: c09_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.eligible AND NOT {CUBE}.early_exit' }]
-
-  - name: c10
-    title: '% plausible growth'
-    type: number
-    sql: '100.0 * {c10_numerator} / NULLIF({c10_denominator}, 0)'
-    meta:
-      {
-        indicator: C10,
-        inputs: [weights],
-        category: Program quality,
-        prominence: Top,
-        unit: '%',
-        tbd_input: growth_class thresholds are TBD in the workbook,
-        direction: higher,
-        bands: [70, 50],
-        min_denominator: 25,
-      }
-  - name: c10_numerator
-    type: count
-    filters:
-      [
-        { sql: "{CUBE}.growth_class = 'plausible'" },
-        { sql: '{CUBE}.weight_gain_data_sufficient' },
-      ]
-  - name: c10_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.weight_gain_data_sufficient' }]
-
-  - name: c11
-    title: '% slow growth'
-    type: number
-    sql: '100.0 * {c11_numerator} / NULLIF({c11_denominator}, 0)'
-    meta:
-      {
-        indicator: C11,
-        inputs: [weights],
-        category: Program quality,
-        prominence: Top,
-        unit: '%',
-        tbd_input: growth_class thresholds are TBD in the workbook,
-        direction: lower,
-        bands: [15, 30],
-        min_denominator: 25,
-      }
-  - name: c11_numerator
-    type: count
-    filters:
-      [
-        { sql: "{CUBE}.growth_class = 'slow'" },
-        { sql: '{CUBE}.weight_gain_data_sufficient' },
-      ]
-  - name: c11_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.weight_gain_data_sufficient' }]
-
-  - name: c12
-    title: '% fast growth'
-    type: number
-    sql: '100.0 * {c12_numerator} / NULLIF({c12_denominator}, 0)'
-    meta:
-      {
-        indicator: C12,
-        inputs: [weights],
-        category: Program quality,
-        prominence: Lower,
-        unit: '%',
-        tbd_input: growth_class thresholds are TBD in the workbook,
-        direction: mid,
-        bands: [15, 30],
-        min_denominator: 25,
-      }
-  - name: c12_numerator
-    type: count
-    filters:
-      [
-        { sql: "{CUBE}.growth_class = 'fast'" },
-        { sql: '{CUBE}.weight_gain_data_sufficient' },
-      ]
-  - name: c12_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.weight_gain_data_sufficient' }]
-
-  - name: c13
-    title: Mean early growth rate
-    type: number
-    sql: '{c13_numerator}'
-    meta: {
-        indicator: C13,
-        # A mean growth rate says nothing about how big an opportunity is -- a
-        # 50-case and a 2,000-case opportunity can both report 14.0 g/kg/day --
-        # so it is publishable as an anonymised peer figure. Declared here
-        # rather than inferred from the unit, which cannot tell a mean from a
-        # count.
-        benchmarkable: true,
-        plain: 'Mean early growth rate in g per kg per day over babies with sufficient weight data: first weighing to the last weighing 21 to 35 days after the first visit, per kg of the first weight.',
-        inputs: [weights],
-        category: Program quality,
-        prominence: Top,
-        unit: g/kg/d,
-        direction: higher,
-        bands: [15, 13],
-        min_denominator: 25,
-      }
-  - name: c13_numerator
-    type: avg
-    sql: '{CUBE}.early_g_per_kg_day'
-    filters: [{ sql: '{CUBE}.weight_gain_data_sufficient' }]
-  - name: c13_denominator
-    type: count
-    filters:
-      [
-        {
-          sql: '{CUBE}.weight_gain_data_sufficient AND {CUBE}.early_g_per_kg_day IS NOT NULL',
-        },
-      ]
-
-  # ── Performance ──────────────────────────────────────────────────────────
-  - name: c14
-    title: Mortality
-    type: number
-    sql: '100.0 * {c14_numerator} / NULLIF({c14_denominator}, 0)'
-    # scope_note is quoted: unquoted commas inside this flow mapping once split it into
-    # three keys, and the caveat shipped as "All LLOs pooled" plus two junk meta keys.
-    meta:
-      {
-        indicator: C14,
-        plain: 'Deaths as a share of eligible babies whose outcome is known. Two-sided: under about 2 percent usually means deaths are not being recorded. The headline pools only the organisations that record deaths credibly.',
-        scope_note: 'All LLOs pooled, including the four the workbook says do not record deaths credibly. The headline card above is PIPN + EHA only, and reads higher because non-recorders add denominator without deaths.',
-        category: Performance,
-        prominence: Top,
-        unit: '%',
-        direction: mid2,
-        bands: [[4, 12], [2, 16]],
-        min_denominator: 25,
-        note: 'TWO-SIDED. Implausibly low means under-recording. Gated by the
-          Targets and settings credibility flag - see suppression below.',
-      }
-  - name: c14_numerator
-    type: count
-    filters:
-      [
-        { sql: '{CUBE}.died' },
-        { sql: '{CUBE}.eligible AND {CUBE}.outcome_known' },
-      ]
-  - name: c14_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.eligible AND {CUBE}.outcome_known' }]
-
-  - name: c15
-    title: Loss to follow-up by day 28
-    type: number
-    sql: '100.0 * {c15_numerator} / NULLIF({c15_denominator}, 0)'
-    meta:
-      {
-        indicator: C15,
-        plain: 'Eligible babies (first visit at least 28 days ago) whose outcome is unknown: neither died nor seen at least 28 days after the first visit.',
-        category: Performance,
-        prominence: Top,
-        unit: '%',
-        direction: lower,
-        bands: [10, 25],
-        min_denominator: 25,
+        bands: [4, 3],
+        bands_source: 'derived from the spec section 5 table (observed 3.1-4.3 visits/case) - PROVISIONAL',
         flw_applicable: true,
       }
-  - name: c15_numerator
+  - name: visits_per_case_numerator
+    type: sum
+    sql: 'CASE WHEN {CUBE}.eligible_42d THEN {CUBE}.followup_visits ELSE 0 END'
+  - name: visits_per_case_denominator
     type: count
-    filters: [{ sql: 'NOT {CUBE}.outcome_known' }, { sql: '{CUBE}.eligible' }]
-  - name: c15_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.eligible' }]
+    filters: [{ sql: '{CUBE}.eligible_42d' }]
 
-  - name: c16
-    title: '% enrolled within 3 days'
+  - name: pct_enrolled_within_3d
+    title: '% first visit within 3 days of discharge'
     type: number
-    sql: '100.0 * {c16_numerator} / NULLIF({c16_denominator}, 0)'
+    sql: '100.0 * {pct_enrolled_within_3d_numerator} / NULLIF({pct_enrolled_within_3d_denominator}, 0)'
     meta:
       {
-        indicator: C16,
-        plain: 'Share of started babies with a hospital discharge date whose registration fell 0 to 3 days after discharge.',
+        indicator: pct_enrolled_within_3d,
+        plain: 'Share of started babies with a hospital discharge date whose registration fell 0 to 3 days after discharge. Footnoted where under 45 percent of started babies carry a discharge date.',
         inputs: [days_discharge_to_reg],
         min_input_coverage: 0.45,
-        coverage_denominator: c02,
-        category: Performance,
+        coverage_denominator: started_cases,
+        category: Follow-up,
         prominence: Top,
         unit: '%',
         direction: higher,
         bands: [50, 30],
-        min_denominator: 25,
+        bands_source: 'the workbook thresholds (0.5/0.3), rescaled fraction to percent',
+        flw_applicable: true,
       }
-  - name: c16_numerator
+  - name: pct_enrolled_within_3d_numerator
     type: count
     filters:
       [
         { sql: '{CUBE}.enrolled_within_3d' },
         { sql: '{CUBE}.started AND {CUBE}.has_discharge_date' },
       ]
-  - name: c16_denominator
+  - name: pct_enrolled_within_3d_denominator
     type: count
     filters: [{ sql: '{CUBE}.started AND {CUBE}.has_discharge_date' }]
 
-  - name: c17
+  - name: median_days_to_enrolment
     title: Median days to enrolment
     type: number
-    sql: >-
-      (ARRAY_AGG({CUBE}.days_to_enrolment ORDER BY {CUBE}.days_to_enrolment)
-         FILTER (WHERE {CUBE}.started AND {CUBE}.has_discharge_date)
-      )[FLOOR({c17_denominator} / 2.0) + 1]
+    sql: '{median_days_to_enrolment_numerator}'
     meta:
       {
-        indicator: C17,
+        indicator: median_days_to_enrolment,
+        plain: 'Median days from hospital discharge to registration, over started babies with a discharge date.',
         inputs: [days_discharge_to_reg],
-        category: Performance,
+        category: Follow-up,
         prominence: Lower,
         unit: d,
         direction: lower,
         bands: [3, 7],
-        min_denominator: 25,
-        note:
-          "Cube has no median measure type, so this is type:number with SQL -
-          still inside Cube's vocabulary, no extension. Deliberately reproduces
-          the JS UPPER median (mv[floor(n/2)] on a 0-indexed sorted array)
-          rather than PERCENTILE_CONT, so the two engines agree exactly. The
-          upper-median choice is itself worth revisiting - see PARITY.md.",
+        note: 'A workbook indicator re-based on the spec rules: started is 2+ visits, and it is a true median (the workbook took the upper of the two middle values).',
       }
-  - name: c17_denominator
+  - name: median_days_to_enrolment_numerator
+    type: number
+    sql: >-
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {CUBE}.days_to_enrolment)
+        FILTER (WHERE {CUBE}.started AND {CUBE}.has_discharge_date)
+  - name: median_days_to_enrolment_denominator
     type: count
     filters: [{ sql: '{CUBE}.started AND {CUBE}.has_discharge_date' }]
 
-  - name: c19
-    title: '% of danger-sign cases referred'
+  - name: lost_by_day_28
+    title: Loss to follow-up by day 28
     type: number
-    sql: '100.0 * {c19_numerator} / NULLIF({c19_denominator}, 0)'
+    sql: '100.0 * {lost_by_day_28_numerator} / NULLIF({lost_by_day_28_denominator}, 0)'
     meta:
       {
-        indicator: C19,
-        inputs: [referred],
-        category: Performance,
-        prominence: Top,
-        unit: '%',
-        direction: mid,
-        bands: null,
-        min_denominator: 25,
-      }
-  - name: c19_numerator
-    type: count
-    filters:
-      [
-        { sql: '{CUBE}.referred' },
-        { sql: '{CUBE}.eligible AND {CUBE}.ever_danger_sign' },
-      ]
-  - name: c19_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.eligible AND {CUBE}.ever_danger_sign' }]
-
-  - name: c20
-    title: Danger-sign incidence
-    type: number
-    sql: '100.0 * {c20_numerator} / NULLIF({c20_denominator}, 0)'
-    meta:
-      {
-        indicator: C20,
-        inputs: [ever_danger_sign],
-        category: Performance,
-        prominence: Lower,
-        unit: '%',
-        direction: mid,
-        bands: null,
-        min_denominator: 25,
-      }
-  - name: c20_numerator
-    type: count
-    filters: [{ sql: '{CUBE}.ever_danger_sign' }, { sql: '{CUBE}.eligible' }]
-  - name: c20_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.eligible' }]
-
-  - name: c21
-    title: Self-referrals per 100 cases
-    type: number
-    sql: '{c21_numerator}'
-    meta:
-      {
-        indicator: C21,
-        inputs: [self_referral_count],
-        category: Performance,
-        prominence: Lower,
-        unit: '/100',
-        direction: higher,
-        bands: null,
-        min_denominator: 25,
-      }
-  - name: c21_numerator
-    type: avg
-    sql: '{CUBE}.self_referral_count * 100'
-    filters: [{ sql: '{CUBE}.eligible' }]
-  - name: c21_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.eligible' }]
-
-  - name: c23
-    title: Mean skin-to-skin hours
-    type: number
-    sql: '{c23_numerator}'
-    meta:
-      {
-        indicator: C23,
-        inputs: [kmc_hours_mean],
-        category: Performance,
-        prominence: Lower,
-        unit: h,
-        direction: higher,
-        bands: null,
-        min_denominator: 25,
-      }
-  - name: c23_numerator
-    type: avg
-    sql: '{CUBE}.kmc_hours_mean'
-    filters: [{ sql: '{CUBE}.eligible' }]
-  - name: c23_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.eligible AND {CUBE}.kmc_hours_mean IS NOT NULL' }]
-
-  - name: c24
-    title: Mean visits per started case
-    type: number
-    sql: '{c24_numerator}'
-    meta:
-      {
-        indicator: C24,
-        category: Performance,
-        prominence: Lower,
-        unit: n,
-        direction: higher,
-        bands: null,
-        min_denominator: 25,
-        flw_applicable: true,
-      }
-  - name: c24_numerator
-    type: avg
-    sql: '{CUBE}.num_visits'
-    filters: [{ sql: '{CUBE}.started' }]
-  - name: c24_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.started' }]
-
-  # ── Data quality ─────────────────────────────────────────────────────────
-  - name: c28
-    title: Birth-copy rate
-    type: number
-    sql: '100.0 * {c28_numerator} / NULLIF({c28_denominator}, 0)'
-    meta:
-      {
-        indicator: C28,
-        inputs: [birth_weight_g, enrollment_weight_g],
-        category: Data quality,
+        indicator: lost_by_day_28,
+        plain: 'Started babies whose first visit was at least 28 days ago and whose outcome is unknown: neither died nor seen at least 28 days after the first visit.',
+        category: Follow-up,
         prominence: Top,
         unit: '%',
         direction: lower,
-        bands: [10, 20],
-        min_denominator: 25,
+        bands: [10, 25],
         flw_applicable: true,
+        note: 'A workbook indicator re-based on the spec rules. Started is 2+ visits, so a baby lost after a single follow-up is outside the denominator; on prod that reads about 4 points lower than the workbook rule.',
       }
-  - name: c28_numerator
+  - name: lost_by_day_28_numerator
     type: count
     filters:
-      [
-        { sql: '{CUBE}.enrollment_is_birth_copy' },
-        { sql: '{CUBE}.enrollment_is_birth_copy IS NOT NULL' },
-      ]
-  - name: c28_denominator
+      [{ sql: 'NOT {CUBE}.outcome_known' }, { sql: '{CUBE}.eligible_28d' }]
+  - name: lost_by_day_28_denominator
     type: count
-    filters: [{ sql: '{CUBE}.enrollment_is_birth_copy IS NOT NULL' }]
+    filters: [{ sql: '{CUBE}.eligible_28d' }]
 
-  - name: c31
-    title: Weight rounding rate
-    type: number
-    sql: '100.0 * {c31_numerator} / NULLIF({c31_denominator}, 0)'
-    meta:
-      {
-        indicator: C31,
-        inputs: [weights],
-        category: Data quality,
-        prominence: Top,
-        unit: '%',
-        direction: lower,
-        bands: null,
-        min_denominator: 100,
-        flw_applicable: true,
-        note:
-          'Sum-over-sum, not a case count: the denominator is weight READINGS.
-          min_denominator is therefore 100 readings, per the workbook.',
-      }
-  - name: c31_numerator
-    type: sum
-    sql: '{CUBE}.n_weights_round_100_raw'
-  - name: c31_denominator
-    type: sum
-    sql: '{CUBE}.n_weight_readings'
-
-  # ═════════════════════════════════════════════════════════════════════════
-  # N-SERIES — Neal Lesh's demo compute spec, 2026-09-05
-  # ("Connect KMC — demo metrics: compute spec & replication check").
-  #
-  # A REDUCTION of the C-series above, not a replacement: 15 metrics chosen for
-  # the demo dashboards, dropping the peak-month family and adding weight data
-  # quality. Kept as its own series so the C-series retains the parity guarantee
-  # in PARITY.md (5,698 checks, 0 mismatches) while these follow the spec where
-  # it differs.
-  #
-  # THE TWO RULES THAT GOVERN EVERY NUMBER HERE (spec section 0):
-  #   1. Valid data = status IN ('approved','over_limit'). over_limit is
-  #      legitimate paid work mislabelled by a platform glitch; excluding it
-  #      undercounts visits, started cases and weight series by 40-130%. That is
-  #      enforced upstream in the generator and profiler, not here.
-  #   2. Every metric carries value + numerator_n + denominator_n, and one below
-  #      its minimum denominator (20) reads "insufficient volume" rather than a
-  #      number. The numerator/denominator/value triple IS that rule, structural.
-  #
-  # Two differences from the C-series are real and deliberate: maturity is
-  # 28/42/90 rather than a single 28, and the growth bands are birth-weight-band
-  # specific rather than the flat 10-20 the C-series still carries (marked
-  # PROVISIONAL there, because this table did not exist when it was written).
-  # ═════════════════════════════════════════════════════════════════════════
-
-  - name: n01
-    title: Total cases
-    type: number
-    sql: '{n01_numerator}'
-    meta:
-      {
-        indicator: N01,
-        plain: 'Total cases: every baby with any registration or visit record.',
-        category: Scale,
-        prominence: Top,
-        unit: n,
-        direction: none,
-        note: 'Every case carrying any registration or visit.',
-      }
-  - name: n01_numerator
-    type: count
-  - name: n01_denominator
-    type: count
-  - name: n02
-    title: Registered
-    type: number
-    sql: '{n02_numerator}'
-    meta:
-      {
-        indicator: N02,
-        plain: 'Registered: babies with a registration form.',
-        category: Scale,
-        prominence: Top,
-        unit: n,
-        direction: none,
-      }
-  - name: n02_numerator
-    type: count
-    filters: [{ sql: '{CUBE}.registered' }]
-  - name: n02_denominator
-    type: count
-  - name: n03
-    title: Started
-    type: number
-    sql: '{n03_numerator}'
-    meta:
-      {
-        indicator: N03,
-        plain: 'Started: babies with two or more visit submissions (registration excluded).',
-        category: Scale,
-        prominence: Top,
-        unit: n,
-        direction: none,
-      }
-  - name: n03_numerator
-    type: count
-    filters: [{ sql: '{CUBE}.started_spec' }]
-  - name: n03_denominator
-    type: count
-  - name: n04
-    title: Cumulative SVNs reached
-    type: number
-    sql: '{n04_numerator}'
-    meta:
-      {
-        indicator: N04,
-        plain: 'Cumulative SVNs reached: the running total of started babies by registration month; the snapshot value equals total started.',
-        category: Scale,
-        prominence: Top,
-        unit: n,
-        direction: none,
-        note: 'Snapshot value equals total started; the trend is its running total by registration month.',
-      }
-  - name: n04_numerator
-    type: count
-    filters: [{ sql: '{CUBE}.started_spec' }]
-  - name: n04_denominator
-    type: count
-  - name: n05
-    title: Median gestational age (wks)
-    type: number
-    sql: '{n05_numerator}'
-    meta:
-      {
-        indicator: N05,
-        plain: 'Median gestational age at birth in weeks, over babies with a plausible value (20 to 45 weeks).',
-        category: Case mix,
-        prominence: Top,
-        unit: wks,
-        direction: none,
-        min_denominator: 20,
-      }
-  - name: n05_numerator
-    type: number
-    sql: 'PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {CUBE}.gestational_age_plausible)'
-  - name: n05_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.gestational_age_plausible IS NOT NULL' }]
-  - name: n06
-    title: Median birthweight (g)
-    type: number
-    sql: '{n06_numerator}'
-    meta:
-      {
-        indicator: N06,
-        plain: 'Median birthweight in grams, over babies with a recorded birthweight.',
-        category: Case mix,
-        prominence: Top,
-        unit: g,
-        direction: none,
-        min_denominator: 20,
-      }
-  - name: n06_numerator
-    type: number
-    sql: 'PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {CUBE}.birth_weight_g)'
-  - name: n06_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.birth_weight_g IS NOT NULL' }]
-  - name: n07
-    title: Mean visits per case
-    type: number
-    sql: '{n07_numerator} / NULLIF({n07_denominator}, 0)'
-    meta:
-      {
-        indicator: N07,
-        plain: 'Mean number of visit submissions per baby, over babies whose first visit was at least 42 days ago.',
-        category: Performance,
-        prominence: Top,
-        unit: n,
-        direction: higher,
-        bands: [4, 3],
-        bands_source: 'derived from the spec section 5 table (observed 3.1-4.3 visits/case) - PROVISIONAL',
-        min_denominator: 20,
-        flw_applicable: true,
-        note: 'Over eligible_42d cases. The C-series C24 uses the 28-day gate.',
-      }
-  - name: n07_numerator
-    type: sum
-    sql: 'CASE WHEN {CUBE}.eligible_42d_spec THEN {CUBE}.visits_spec ELSE 0 END'
-  - name: n07_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.eligible_42d_spec' }]
-  - name: n08
-    title: '% first visit within 3 days of discharge'
-    type: number
-    sql: '100.0 * {n08_numerator} / NULLIF({n08_denominator}, 0)'
-    meta:
-      {
-        indicator: N08,
-        plain: 'Share of started babies with a hospital discharge date whose registration fell 0 to 3 days after discharge. Footnote any organisation where under 45 percent of babies carry a discharge date.',
-        category: Performance,
-        prominence: Top,
-        unit: '%',
-        direction: higher,
-        bands: [50, 30],
-        bands_source: 'the workbook C16 thresholds (0.5/0.3), rescaled fraction to percent',
-        min_denominator: 20,
-        flw_applicable: true,
-        note: 'Footnote any LLO where under 45% of cases carry a discharge date - thin, biased denominator.',
-      }
-  - name: n08_numerator
-    type: count
-    filters:
-      [
-        { sql: '{CUBE}.enrolled_within_3d' },
-        { sql: '{CUBE}.started_spec AND {CUBE}.has_discharge_date' },
-      ]
-  - name: n08_denominator
-    type: count
-    filters: [{ sql: '{CUBE}.started_spec AND {CUBE}.has_discharge_date' }]
-  - name: n09
+  # ── Growth quality ───────────────────────────────────────────────────────
+  # The four shares below have ONE denominator, the qualifying babies (42+ days,
+  # birthweight band known, velocity computable), and sum to 100.
+  - name: pct_slow_growth
     title: '% slow growth'
     type: number
-    sql: '100.0 * {n09_numerator} / NULLIF({n09_denominator}, 0)'
+    sql: '100.0 * {pct_slow_growth_numerator} / NULLIF({pct_slow_growth_denominator}, 0)'
     meta:
       {
-        indicator: N09,
-        plain: 'Share of qualifying babies (first visit at least 42 days ago, birthweight band known, and an early growth velocity that can be computed) whose early weight velocity is below the plausible range for their birthweight band. N09 to N12 share one denominator and sum to 100.',
+        indicator: pct_slow_growth,
+        plain: 'Share of qualifying babies (first visit at least 42 days ago, birthweight band known, early growth velocity computable) whose velocity is below the plausible range for their birthweight band.',
+        inputs: [weights],
         category: Growth quality,
         prominence: Top,
         unit: '%',
         direction: lower,
         bands: [15, 30],
-        bands_source: 'the workbook C11 thresholds (0.15/0.3), rescaled. PROVISIONAL: C11 is of-assessable and this is of-qualifying, so the denominators differ',
-        min_denominator: 20,
-        flw_applicable: false,
-        note: 'Share of QUALIFYING SVNs (eligible_42d AND banded AND velocity computable). Babies with no computable velocity are discarded, not counted. N09-N12 share one denominator and sum to 100%.',
+        bands_source: 'the workbook thresholds (0.15/0.3), rescaled - PROVISIONAL',
       }
-  - name: n09_numerator
+  - name: pct_slow_growth_numerator
     type: count
     filters:
-      [{ sql: "{CUBE}.qualifying_spec AND {CUBE}.growth_class_spec = 'slow'" }]
-  - name: n09_denominator
+      [{ sql: "{CUBE}.growth_qualifying AND {CUBE}.growth_class = 'slow'" }]
+  - name: pct_slow_growth_denominator
     type: count
-    filters: [{ sql: '{CUBE}.qualifying_spec' }]
-  - name: n10
+    filters: [{ sql: '{CUBE}.growth_qualifying' }]
+
+  - name: pct_healthy_growth
     title: '% healthy growth'
     type: number
-    sql: '100.0 * {n10_numerator} / NULLIF({n10_denominator}, 0)'
+    sql: '100.0 * {pct_healthy_growth_numerator} / NULLIF({pct_healthy_growth_denominator}, 0)'
     meta:
       {
-        indicator: N10,
-        plain: 'Share of qualifying babies whose early weight velocity is within the plausible range for their birthweight band (healthy growth) -- a rate among babies whose growth could actually be measured.',
+        indicator: pct_healthy_growth,
+        plain: 'Share of qualifying babies whose early velocity is within the plausible range for their birthweight band.',
+        inputs: [weights],
         category: Growth quality,
         prominence: Top,
         unit: '%',
         direction: higher,
         bands: [70, 50],
-        bands_source: 'the workbook C10 thresholds (0.7/0.5), rescaled. PROVISIONAL: C10 is of-assessable and this is of-qualifying, so the denominators differ',
-        min_denominator: 20,
-        flw_applicable: false,
-        note: 'Share of QUALIFYING SVNs (eligible_42d AND banded AND velocity computable). Babies with no computable velocity are discarded, not counted. N09-N12 share one denominator and sum to 100%.',
+        bands_source: 'the workbook thresholds (0.7/0.5), rescaled - PROVISIONAL',
       }
-  - name: n10_numerator
+  - name: pct_healthy_growth_numerator
     type: count
     filters:
       [
         {
-          sql: "{CUBE}.qualifying_spec AND {CUBE}.growth_class_spec = 'plausible'",
+          sql: "{CUBE}.growth_qualifying AND {CUBE}.growth_class = 'plausible'",
         },
       ]
-  - name: n10_denominator
+  - name: pct_healthy_growth_denominator
     type: count
-    filters: [{ sql: '{CUBE}.qualifying_spec' }]
-  - name: n11
+    filters: [{ sql: '{CUBE}.growth_qualifying' }]
+
+  - name: pct_fast_growth
     title: '% fast growth'
     type: number
-    sql: '100.0 * {n11_numerator} / NULLIF({n11_denominator}, 0)'
+    sql: '100.0 * {pct_fast_growth_numerator} / NULLIF({pct_fast_growth_denominator}, 0)'
     meta:
       {
-        indicator: N11,
-        plain: 'Share of qualifying babies whose early weight velocity is above the plausible range for their birthweight band.',
+        indicator: pct_fast_growth,
+        plain: 'Share of qualifying babies whose early velocity is above the plausible range for their birthweight band.',
+        inputs: [weights],
         category: Growth quality,
         prominence: Top,
         unit: '%',
         direction: lower,
         bands: [15, 30],
-        bands_source: 'the workbook C12 thresholds (0.15/0.3), rescaled. PROVISIONAL: same denominator caveat as n09 and n10',
-        min_denominator: 20,
-        flw_applicable: false,
-        note: 'Share of QUALIFYING SVNs (eligible_42d AND banded AND velocity computable). Babies with no computable velocity are discarded, not counted. N09-N12 share one denominator and sum to 100%.',
+        bands_source: 'the workbook thresholds (0.15/0.3), rescaled - PROVISIONAL',
       }
-  - name: n11_numerator
+  - name: pct_fast_growth_numerator
     type: count
     filters:
-      [{ sql: "{CUBE}.qualifying_spec AND {CUBE}.growth_class_spec = 'fast'" }]
-  - name: n11_denominator
+      [{ sql: "{CUBE}.growth_qualifying AND {CUBE}.growth_class = 'fast'" }]
+  - name: pct_fast_growth_denominator
     type: count
-    filters: [{ sql: '{CUBE}.qualifying_spec' }]
-  - name: n12
+    filters: [{ sql: '{CUBE}.growth_qualifying' }]
+
+  - name: pct_incomplete_growth_data
     title: '% incomplete growth data'
     type: number
-    sql: '100.0 * {n12_numerator} / NULLIF({n12_denominator}, 0)'
+    sql: '100.0 * {pct_incomplete_growth_data_numerator} / NULLIF({pct_incomplete_growth_data_denominator}, 0)'
     meta:
       {
-        indicator: N12,
-        plain: 'Share of qualifying babies whose weight series is present but unreliable -- thin (under 3 weigh-days), inconsistent (first visit weight under 60 percent of birthweight) or containing an impossible step -- so no growth class is assigned. Babies with no computable velocity are not counted here: they were discarded from the denominator.',
+        indicator: pct_incomplete_growth_data,
+        plain: 'Share of qualifying babies whose weight series is present but unreliable -- thin (under 3 weigh-days), inconsistent (first visit weight under 60 percent of birthweight) or containing an impossible step -- so no growth class is assigned.',
+        inputs: [weights],
         category: Growth quality,
         prominence: Top,
         unit: '%',
         direction: lower,
         bands: [25, 45],
-        bands_source: 'derived from the v3 spec section 5 table (observed 10-50 percent incomplete, All 16) - PROVISIONAL',
-        min_denominator: 20,
-        flw_applicable: false,
-        note: 'Qualifying cases with no growth class, i.e. computable but not sufficient. NOT the discarded no-velocity babies and NOT missing-birthweight babies. Inside the N09-N12 100%.',
+        bands_source: 'derived from the spec section 5 table (observed 10-50 percent) - PROVISIONAL',
       }
-  - name: n12_numerator
+  - name: pct_incomplete_growth_data_numerator
     type: count
     filters:
-      [{ sql: '{CUBE}.qualifying_spec AND {CUBE}.growth_class_spec IS NULL' }]
-  - name: n12_denominator
+      [{ sql: '{CUBE}.growth_qualifying AND {CUBE}.growth_class IS NULL' }]
+  - name: pct_incomplete_growth_data_denominator
     type: count
-    filters: [{ sql: '{CUBE}.qualifying_spec' }]
-  - name: n13
-    title: Mortality
+    filters: [{ sql: '{CUBE}.growth_qualifying' }]
+
+  - name: mean_early_growth_rate
+    title: Mean early growth rate
     type: number
-    sql: '100.0 * {n13_numerator} / NULLIF({n13_denominator}, 0)'
+    sql: '{mean_early_growth_rate_numerator}'
+    meta: {
+        indicator: mean_early_growth_rate,
+        # A mean growth rate says nothing about how big an opportunity is, so it
+        # is publishable as an anonymised peer figure. Declared rather than
+        # inferred from the unit, which cannot tell a mean from a count.
+        benchmarkable: true,
+        plain: 'Mean early growth velocity in g per kg per day over the qualifying babies with good weight data: the first 21 days of the weight series, per kg of the mean weight.',
+        inputs: [weights],
+        category: Growth quality,
+        prominence: Top,
+        unit: g/kg/d,
+        direction: higher,
+        bands: [15, 13],
+        bands_source: 'the workbook targets, set for its own velocity (first weighing to day 21-35, per kg of the first weight) - PROVISIONAL on this one',
+        note: 'A workbook indicator re-based on the spec velocity, over the same babies the growth classes judge.',
+      }
+  - name: mean_early_growth_rate_numerator
+    type: avg
+    sql: '{CUBE}.early_velocity'
+    filters:
+      [{ sql: '{CUBE}.growth_qualifying AND {CUBE}.growth_data_sufficient' }]
+  - name: mean_early_growth_rate_denominator
+    type: count
+    filters:
+      [{ sql: '{CUBE}.growth_qualifying AND {CUBE}.growth_data_sufficient' }]
+
+  - name: pct_growth_computable
+    title: '% with computable growth'
+    type: number
+    sql: '100.0 * {pct_growth_computable_numerator} / NULLIF({pct_growth_computable_denominator}, 0)'
     meta:
       {
-        indicator: N13,
-        plain: 'Deaths as a share of babies whose first visit was at least 28 days ago and whose outcome is known (died, or seen at least 28 days after the first visit). Two-sided: implausibly low means under-recording. Shown only where death recording is credible.',
+        indicator: pct_growth_computable,
+        plain: 'Share of babies followed 42+ days with a known birthweight band whose early growth velocity can be computed at all -- the babies the growth shares are about. The rest are discarded before growth is judged.',
+        inputs: [weights],
+        category: Growth quality,
+        prominence: Lower,
+        unit: '%',
+        direction: higher,
+        bands: [75, 55],
+        note: 'A workbook indicator re-based on the spec rules. It is what the growth shares leave out, so a high healthy-growth share over few computable babies is visible for what it is.',
+      }
+  - name: pct_growth_computable_numerator
+    type: count
+    # growth_qualifying already implies both denominator terms; they are written out
+    # anyway, per the registry's rule that a numerator names its whole denominator.
+    filters:
+      [
+        { sql: '{CUBE}.growth_qualifying' },
+        { sql: '{CUBE}.eligible_42d AND {CUBE}.birthweight_band IS NOT NULL' },
+      ]
+  - name: pct_growth_computable_denominator
+    type: count
+    filters:
+      [{ sql: '{CUBE}.eligible_42d AND {CUBE}.birthweight_band IS NOT NULL' }]
+
+  # ── Outcome ──────────────────────────────────────────────────────────────
+  - name: mortality
+    title: Mortality
+    type: number
+    sql: '100.0 * {mortality_numerator} / NULLIF({mortality_denominator}, 0)'
+    meta:
+      {
+        indicator: mortality,
+        plain: 'Deaths as a share of started babies whose first visit was at least 28 days ago and whose outcome is known. Two-sided: under about 2 percent usually means deaths are not being recorded. Shown only where death recording is credible.',
+        scope_note: 'All LLOs pooled, including those that do not record deaths credibly. A figure gated to the credible recorders reads higher, because non-recorders add denominator without deaths.',
         category: Outcome,
         prominence: Top,
         unit: '%',
         direction: mid2,
         bands: [[4, 12], [2, 16]],
-        bands_source: 'the workbook C14 two-sided thresholds, rescaled. Two-sided is the point: the spec says implausibly LOW mortality (under about 2 percent) means under-recording rather than survival, and the lower bound encodes exactly that',
-        min_denominator: 20,
-        flw_applicable: false,
-        note: 'Two-sided: implausibly LOW (under ~2%) usually means under-recording, not survival. Shown only where death recording is credible.',
+        note: 'Started is 2+ visits, so a baby who died before a second visit is outside the denominator. On prod run 21114 that is 388 babies, 69 of whom died: 5.8 percent here against 6.5 percent on the 1+ rule. Chosen deliberately (#2004).',
       }
-  - name: n13_numerator
+  - name: mortality_numerator
+    type: count
+    filters:
+      [{ sql: '{CUBE}.died AND {CUBE}.eligible_28d AND {CUBE}.outcome_known' }]
+  - name: mortality_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.eligible_28d AND {CUBE}.outcome_known' }]
+
+  # ── Care ─────────────────────────────────────────────────────────────────
+  - name: danger_sign_incidence
+    title: Danger-sign incidence
+    type: number
+    sql: '100.0 * {danger_sign_incidence_numerator} / NULLIF({danger_sign_incidence_denominator}, 0)'
+    meta:
+      {
+        indicator: danger_sign_incidence,
+        plain: 'Share of started babies followed 28+ days with at least one visit recording a danger sign.',
+        inputs: [ever_danger_sign],
+        category: Care,
+        prominence: Lower,
+        unit: '%',
+        direction: mid,
+        bands: null,
+        note: 'A workbook indicator re-based on the spec rules (started is 2+ visits).',
+      }
+  - name: danger_sign_incidence_numerator
+    type: count
+    filters:
+      [{ sql: '{CUBE}.ever_danger_sign' }, { sql: '{CUBE}.eligible_28d' }]
+  - name: danger_sign_incidence_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.eligible_28d' }]
+
+  - name: pct_danger_signs_referred
+    title: '% of danger-sign cases referred'
+    type: number
+    sql: '100.0 * {pct_danger_signs_referred_numerator} / NULLIF({pct_danger_signs_referred_denominator}, 0)'
+    meta:
+      {
+        indicator: pct_danger_signs_referred,
+        plain: 'Share of started babies followed 28+ days with a danger sign who were referred.',
+        inputs: [referred],
+        category: Care,
+        prominence: Top,
+        unit: '%',
+        direction: mid,
+        bands: null,
+        note: 'A workbook indicator re-based on the spec rules (started is 2+ visits).',
+      }
+  - name: pct_danger_signs_referred_numerator
     type: count
     filters:
       [
-        {
-          sql: '{CUBE}.died AND {CUBE}.eligible_28d_spec AND {CUBE}.outcome_known',
-        },
+        { sql: '{CUBE}.referred' },
+        { sql: '{CUBE}.eligible_28d AND {CUBE}.ever_danger_sign' },
       ]
-  - name: n13_denominator
+  - name: pct_danger_signs_referred_denominator
     type: count
-    filters: [{ sql: '{CUBE}.eligible_28d_spec AND {CUBE}.outcome_known' }]
-  - name: n14
-    title: Weight rounding rate
+    filters: [{ sql: '{CUBE}.eligible_28d AND {CUBE}.ever_danger_sign' }]
+
+  - name: self_referrals_per_100
+    title: Self-referrals per 100 cases
     type: number
-    sql: '100.0 * {n14_numerator} / NULLIF({n14_denominator}, 0)'
+    sql: '{self_referrals_per_100_numerator}'
     meta:
       {
-        indicator: N14,
+        indicator: self_referrals_per_100,
+        plain: 'Visits recording a self-referral per 100 started babies followed 28+ days.',
+        inputs: [self_referral_count],
+        category: Care,
+        prominence: Lower,
+        unit: '/100',
+        direction: higher,
+        bands: null,
+        note: 'A workbook indicator re-based on the spec rules (started is 2+ visits).',
+      }
+  - name: self_referrals_per_100_numerator
+    type: avg
+    sql: '{CUBE}.self_referral_count * 100'
+    filters: [{ sql: '{CUBE}.eligible_28d' }]
+  - name: self_referrals_per_100_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.eligible_28d' }]
+
+  - name: mean_kmc_hours
+    title: Mean skin-to-skin hours
+    type: number
+    sql: '{mean_kmc_hours_numerator}'
+    meta:
+      {
+        indicator: mean_kmc_hours,
+        plain: 'Mean daily hours of skin-to-skin care reported, over started babies followed 28+ days.',
+        inputs: [kmc_hours_mean],
+        category: Care,
+        prominence: Lower,
+        unit: h,
+        direction: higher,
+        bands: null,
+        note: 'A workbook indicator re-based on the spec rules (started is 2+ visits).',
+      }
+  - name: mean_kmc_hours_numerator
+    type: avg
+    sql: '{CUBE}.kmc_hours_mean'
+    filters: [{ sql: '{CUBE}.eligible_28d' }]
+  - name: mean_kmc_hours_denominator
+    type: count
+    filters:
+      [{ sql: '{CUBE}.eligible_28d AND {CUBE}.kmc_hours_mean IS NOT NULL' }]
+
+  # ── Data quality ─────────────────────────────────────────────────────────
+  - name: weight_rounding_rate
+    title: Weight rounding rate
+    type: number
+    sql: '100.0 * {weight_rounding_rate_numerator} / NULLIF({weight_rounding_rate_denominator}, 0)'
+    meta:
+      {
+        indicator: weight_rounding_rate,
         plain: 'Weight readings that are exact multiples of 100 g, as a share of all visit weight readings. High values mean coarse or estimated readings rather than a scale read.',
+        inputs: [weights],
         category: Data quality,
         prominence: Top,
         unit: '%',
         direction: lower,
         bands: [25, 50],
-        bands_source: 'derived from the spec section 5 table (observed 14-99 percent rounding; the spec calls high values coarse or estimated rather than a real scale read) - PROVISIONAL',
+        bands_source: 'derived from the spec section 5 table (observed 14-99 percent) - PROVISIONAL',
         min_denominator: 100,
         flw_applicable: true,
-        note: 'Sum-over-sum over weight READINGS, not cases - min_denominator is 100 readings. High means coarse or estimated values rather than a real scale read.',
+        note: 'Sum-over-sum over weight READINGS, not babies, so the floor is 100 readings.',
       }
-  - name: n14_numerator
+  - name: weight_rounding_rate_numerator
     type: sum
     sql: '{CUBE}.n_weights_round_100_raw'
-  - name: n14_denominator
+  - name: weight_rounding_rate_denominator
     type: sum
     sql: '{CUBE}.n_weight_readings'
-  - name: n15
+
+  - name: pct_impossible_weight_changes
     title: '% impossible weight changes'
     type: number
-    sql: '100.0 * {n15_numerator} / NULLIF({n15_denominator}, 0)'
+    sql: '100.0 * {pct_impossible_weight_changes_numerator} / NULLIF({pct_impossible_weight_changes_denominator}, 0)'
     meta:
       {
-        indicator: N15,
-        plain: 'Babies with at least one impossible weight step (a visit-to-visit change outside minus 20 to plus 45 g per kg per day, between weighings 1 to 90 days apart, inside the first 21 days of the visit series), as a share of babies whose velocity is computable.',
+        indicator: pct_impossible_weight_changes,
+        plain: 'Babies with at least one impossible weight step (a visit-to-visit change outside minus 20 to plus 45 g per kg per day, between weighings 1 to 90 days apart, inside the first 21 days of the series), as a share of babies whose velocity is computable.',
+        inputs: [weights],
         category: Data quality,
         prominence: Top,
         unit: '%',
         direction: lower,
         bands: [5, 15],
         bands_source: 'derived from the spec section 5 table (observed 3.2-42.5 percent) - PROVISIONAL',
-        min_denominator: 20,
         flw_applicable: true,
-        note: 'Over cases whose growth is computable at all.',
       }
-  - name: n15_numerator
+  - name: pct_impossible_weight_changes_numerator
     type: count
-    filters: [{ sql: '{CUBE}.flag_impossible AND {CUBE}.computable_spec' }]
-  - name: n15_denominator
+    filters: [{ sql: '{CUBE}.flag_impossible AND {CUBE}.velocity_computable' }]
+  - name: pct_impossible_weight_changes_denominator
     type: count
-    filters: [{ sql: '{CUBE}.computable_spec' }]
+    filters: [{ sql: '{CUBE}.velocity_computable' }]
+
+  - name: birth_copy_rate
+    title: Birth-copy rate
+    type: number
+    sql: '100.0 * {birth_copy_rate_numerator} / NULLIF({birth_copy_rate_denominator}, 0)'
+    meta:
+      {
+        indicator: birth_copy_rate,
+        plain: 'Babies whose enrolment weight is identical to their birthweight, suggesting it was copied rather than measured.',
+        inputs: [birth_weight_g, enrollment_weight_g],
+        category: Data quality,
+        prominence: Top,
+        unit: '%',
+        direction: lower,
+        bands: [10, 20],
+        flw_applicable: true,
+      }
+  - name: birth_copy_rate_numerator
+    type: count
+    filters:
+      [
+        { sql: '{CUBE}.enrollment_is_birth_copy' },
+        { sql: '{CUBE}.enrollment_is_birth_copy IS NOT NULL' },
+      ]
+  - name: birth_copy_rate_denominator
+    type: count
+    filters: [{ sql: '{CUBE}.enrollment_is_birth_copy IS NOT NULL' }]
 
   # ── Input-availability gates ─────────────────────────────────────────────
   # Not indicators (no `meta`), so they are emitted as columns but never treated
   # as one. They reproduce the render's inputState(): an indicator whose input the
   # scope never records must read n/a, not 0. At programme level every input
   # exists somewhere, so this only bites on a drill -- 268 of 5,302 per-FLW checks
-  # disagreed until these were added, all on C20/C21.
+  # disagreed until these were added, all on the danger-sign and self-referral
+  # indicators.
   #
   # `max` over a 0/1 expression, staying inside Cube's measure vocabulary.
   # ZERO_IS_ABSENT fields (referred, ever_danger_sign, self_referral_count) test
@@ -1004,12 +679,11 @@ measures:
     sql: 'CASE WHEN {CUBE}.enrollment_weight_g IS NOT NULL THEN 1 ELSE 0 END'
 
 # ---------------------------------------------------------------------------
-# Suppression -- the channel the workbook needs and Neal's schema does not yet have.
-# These are NOT bands. They decide whether a computed number may be shown at all.
-# Source: kmc_metrics_framework.xlsx, "Targets & settings" rows 6-8.
+# Suppression: whether a computed number may be shown at all. NOT bands.
+# Source: kmc_metrics_framework.xlsx, "Targets & settings".
 # ---------------------------------------------------------------------------
 suppression:
-  - indicator: C14
+  - indicator: mortality
     setting: mortality_recording_credible
     scope: llo
     when_false: not_credible
@@ -1017,7 +691,3 @@ suppression:
       Pooling every LLO reads LOWER than the credible recorders alone, because
       non-recorders add denominator without deaths. Render greyed with the caveat
       rather than blank: a blank cell reads as "no data", which is wrong.
-  - indicator: C18
-    setting: completion_recording_credible
-    scope: llo
-    when_false: not_credible

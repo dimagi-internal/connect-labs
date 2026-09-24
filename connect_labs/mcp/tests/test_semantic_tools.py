@@ -76,9 +76,9 @@ def test_explaining_everything_returns_an_index_a_client_can_actually_receive(au
     assert len(json.dumps(content)) < _CLIENT_RESULT_LIMIT_CHARS, "the index is too big to return in one result"
     # Every top-level indicator is named, so nothing is hidden by the summary.
     named = {row["indicator"] for row in content["indicators"]}
-    assert {"C01", "C14", "N15"} <= named
+    assert {"total_cases", "mortality", "pct_impossible_weight_changes"} <= named
     # ...as one line each, not a chain, and with no compiled statement per row.
-    row = next(r for r in content["indicators"] if r["indicator"] == "C14")
+    row = next(r for r in content["indicators"] if r["indicator"] == "mortality")
     assert row["title"] == "Mortality"
     # Both readings: the authored wording, and the one rendered from the SQL so it
     # cannot drift from the number.
@@ -92,17 +92,17 @@ def test_explaining_everything_returns_an_index_a_client_can_actually_receive(au
 def test_naming_indicators_returns_their_full_chain(auth_user, kmc_record):
     _, raw = auth_user
 
-    data = _explain(raw, kmc_record, {"registry_id": 5500, "indicators": ["C14"]})
+    data = _explain(raw, kmc_record, {"registry_id": 5500, "indicators": ["mortality"]})
 
     assert data["result"]["isError"] is False, data
     content = data["result"]["structuredContent"]
     explanation = content["indicators"][0]
-    assert explanation["indicator"] == "C14"
+    assert explanation["indicator"] == "mortality"
     # The chain a second engine needs to reproduce the number.
     assert explanation["expression"]["compiled"]
-    assert [c["name"] for c in explanation["components"]] == ["c14_numerator", "c14_denominator"]
-    assert {p["name"] for p in explanation["properties"]} >= {"died", "eligible", "outcome_known"}
-    assert explanation["constants"]["ELIG_DAYS"] == 28
+    assert [c["name"] for c in explanation["components"]] == ["mortality_numerator", "mortality_denominator"]
+    assert {p["name"] for p in explanation["properties"]} >= {"died", "eligible_28d", "outcome_known"}
+    assert explanation["constants"]["MATURITY_OUTCOME_DAYS"] == 28
 
 
 @pytest.mark.django_db
@@ -114,7 +114,11 @@ def test_the_compiled_statement_comes_back_once_not_once_per_indicator(auth_user
     """
     _, raw = auth_user
 
-    data = _explain(raw, kmc_record, {"registry_id": 5500, "indicators": ["C14", "C15", "N15"]})
+    data = _explain(
+        raw,
+        kmc_record,
+        {"registry_id": 5500, "indicators": ["mortality", "lost_by_day_28", "pct_impossible_weight_changes"]},
+    )
 
     content = data["result"]["structuredContent"]
     assert "pipeline_visit_rows" in content["compiled_sql"]
@@ -128,7 +132,7 @@ def test_the_compiled_statement_comes_back_once_not_once_per_indicator(auth_user
 def test_the_scope_still_decides_what_the_statement_groups_by(auth_user, kmc_record):
     _, raw = auth_user
 
-    data = _explain(raw, kmc_record, {"registry_id": 5500, "indicators": ["C14"], "scope": "llo"})
+    data = _explain(raw, kmc_record, {"registry_id": 5500, "indicators": ["mortality"], "scope": "llo"})
 
     content = data["result"]["structuredContent"]
     assert content["scope"] == "llo"
@@ -139,7 +143,7 @@ def test_the_scope_still_decides_what_the_statement_groups_by(auth_user, kmc_rec
 def test_an_unknown_indicator_is_still_a_clean_not_found(auth_user, kmc_record):
     _, raw = auth_user
 
-    data = _explain(raw, kmc_record, {"registry_id": 5500, "indicators": ["C99"]})
+    data = _explain(raw, kmc_record, {"registry_id": 5500, "indicators": ["no_such_indicator"]})
 
     assert data["result"]["isError"] is True
     assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
@@ -157,21 +161,21 @@ class TestSetIndicatorMeta:
             "version": 1,
             "measures": [
                 {
-                    "name": "c13",
+                    "name": "mean_early_growth_rate",
                     "type": "number",
                     "title": "Growth",
-                    "sql": "{c13_numerator}",
-                    "meta": {"indicator": "C13", "unit": "g/kg/d", "category": "Program quality"},
+                    "sql": "{mean_early_growth_rate_numerator}",
+                    "meta": {"indicator": "mean_early_growth_rate", "unit": "g/kg/d", "category": "Growth quality"},
                 },
-                {"name": "c13_numerator", "type": "avg", "sql": "{CUBE}.early_g_per_kg_day"},
+                {"name": "mean_early_growth_rate_numerator", "type": "avg", "sql": "{CUBE}.early_velocity"},
                 {
-                    "name": "c15",
+                    "name": "lost_by_day_28",
                     "type": "number",
                     "title": "LTFU",
-                    "sql": "{c15_numerator}",
-                    "meta": {"indicator": "C15", "unit": "%", "category": "Performance"},
+                    "sql": "{lost_by_day_28_numerator}",
+                    "meta": {"indicator": "lost_by_day_28", "unit": "%", "category": "Follow-up"},
                 },
-                {"name": "c15_numerator", "type": "count"},
+                {"name": "lost_by_day_28_numerator", "type": "count"},
             ],
         }
 
@@ -210,17 +214,21 @@ class TestSetIndicatorMeta:
         return next(m["meta"] for m in doc["measures"] if (m.get("meta") or {}).get("indicator") == indicator)
 
     def test_it_sets_the_key_and_touches_nothing_else(self, monkeypatch):
-        _, doc = self._patched(monkeypatch, {"C13": {"benchmarkable": True}})
-        assert self._meta(doc, "C13")["benchmarkable"] is True
+        _, doc = self._patched(monkeypatch, {"mean_early_growth_rate": {"benchmarkable": True}})
+        assert self._meta(doc, "mean_early_growth_rate")["benchmarkable"] is True
         # every other key on the same indicator survives...
-        assert self._meta(doc, "C13")["unit"] == "g/kg/d"
+        assert self._meta(doc, "mean_early_growth_rate")["unit"] == "g/kg/d"
         # ...and so does every other indicator, untouched.
-        assert self._meta(doc, "C15") == {"indicator": "C15", "unit": "%", "category": "Performance"}
+        assert self._meta(doc, "lost_by_day_28") == {
+            "indicator": "lost_by_day_28",
+            "unit": "%",
+            "category": "Follow-up",
+        }
         assert len(doc["measures"]) == 4
 
     def test_a_null_removes_a_key(self, monkeypatch):
-        _, doc = self._patched(monkeypatch, {"C13": {"unit": None}})
-        assert "unit" not in self._meta(doc, "C13")
+        _, doc = self._patched(monkeypatch, {"mean_early_growth_rate": {"unit": None}})
+        assert "unit" not in self._meta(doc, "mean_early_growth_rate")
 
     def test_an_unknown_indicator_is_refused_not_created(self, monkeypatch):
         """A typo in an indicator id would otherwise write a meta block that
@@ -250,5 +258,7 @@ class TestSetIndicatorMeta:
 
         monkeypatch.setattr(tools, "_access", lambda *a, **k: _Access())
         monkeypatch.setattr(tools, "_summary", lambda r: {"id": 1})
-        tools.semantic_registry_set_indicator_meta(user=None, registry_id=1, patches={"C13": {"benchmarkable": True}})
+        tools.semantic_registry_set_indicator_meta(
+            user=None, registry_id=1, patches={"mean_early_growth_rate": {"benchmarkable": True}}
+        )
         assert record.indicators_doc == original, "the record it read was mutated in place"

@@ -658,17 +658,17 @@ def _payload(as_of):
         "state": {
             "snapshot": {
                 "meta": {"as_of": as_of, "cases": 8823},
-                "programInd": {"C01": cell(8776, 8776)},
-                "byLLO": [{"llo": "PIPN", "ind": {"C01": cell(5389, 5389)}, "n": 5399, "opps": [1, 2]}],
+                "programInd": {"total_cases": cell(8776, 8776)},
+                "byLLO": [{"llo": "PIPN", "ind": {"total_cases": cell(5389, 5389)}, "n": 5399, "opps": [1, 2]}],
                 "byOpp": [{"opp": 524, "ind": {}}],
                 "byFLW": [{"key": "a"}] * 50,
                 "cases": [{"entity_id": i} for i in range(500)],
                 "monthly": [1, 2, 3],
                 "series": {
-                    "N": {
-                        "measures": [{"indicator": "N10"}],
-                        "programme": {"N10": cell(65.0, 4924)},
-                        "byLLO": [{"llo": "PIPN", "ind": {"N10": cell(72.0, 3238)}, "n": 5399}],
+                    "Q": {
+                        "measures": [{"indicator": "Q02"}],
+                        "programme": {"Q02": cell(65.0, 4924)},
+                        "byLLO": [{"llo": "PIPN", "ind": {"Q02": cell(72.0, 3238)}, "n": 5399}],
                         "byOpp": [{"opp": 524}],
                         "byFLW": [{"key": "a"}] * 50,
                     }
@@ -715,11 +715,11 @@ class TestPreviewAsOf:
 
         out = hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10)
 
-        assert out["programme"]["C01"]["value"] == 8776
+        assert out["programme"]["total_cases"]["value"] == 8776
         assert out["byLLO"][0]["llo"] == "PIPN"
-        n = out["series"]["N"]
-        assert n["programme"]["N10"]["value"] == 65.0
-        assert n["byLLO"][0]["ind"]["N10"] == {"id": "x", "value": 72.0, "n": 3238, "band": "green"}
+        n = out["series"]["Q"]
+        assert n["programme"]["Q02"]["value"] == 65.0
+        assert n["byLLO"][0]["ind"]["Q02"] == {"id": "x", "value": 72.0, "n": 3238, "band": "green"}
         assert out["cache"] == {"cold_cache": False, "partial_cache": False}
 
     def test_it_drops_the_bulk_a_comparison_does_not_need(self, monkeypatch):
@@ -732,7 +732,7 @@ class TestPreviewAsOf:
 
         for heavy in ("cases", "byFLW", "monthly", "byOpp"):
             assert heavy not in out
-        assert "byFLW" not in out["series"]["N"] and "byOpp" not in out["series"]["N"]
+        assert "byFLW" not in out["series"]["Q"] and "byOpp" not in out["series"]["Q"]
 
     def test_opportunity_cells_are_available_on_request(self, monkeypatch):
         dao = _DAO(_Definition())
@@ -741,7 +741,7 @@ class TestPreviewAsOf:
         out = hr.preview_as_of(dao, 1, as_of=date(2026, 9, 10), opportunity_id=10, include_opportunities=True)
 
         assert out["byOpp"] == [{"opp": 524, "ind": {}}]
-        assert out["series"]["N"]["byOpp"] == [{"opp": 524}]
+        assert out["series"]["Q"]["byOpp"] == [{"opp": 524}]
 
     def test_an_ineligible_workflow_is_refused(self, monkeypatch):
         # A preview of a builder that ignores the date would show today's figures

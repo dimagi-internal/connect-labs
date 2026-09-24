@@ -9,10 +9,9 @@ shipped `deployment.yml`, not against a fixture written to agree with it.
 Two distinct failures were live, and only one of them was loud:
 
   * `scopes=...,llo` raised RegistryError -> HTTP 400. Visible immediately.
-  * `_suppression_columns` returns "" on falsy settings, so every C-series response
-    carried NO suppression columns. C14 published a mortality figure for LLOs the
-    workbook says do not record deaths credibly, and it looked exactly like a real
-    red band.
+  * `_suppression_columns` returns "" on falsy settings, so every response carried
+    NO suppression columns. Mortality was published for LLOs the workbook says do
+    not record deaths credibly, and it looked exactly like a real red band.
 """
 
 from __future__ import annotations
@@ -54,42 +53,12 @@ def test_deployment_facts_load(deployment):
     }, "every suppression rule in indicators.yml names one of these settings"
 
 
-def test_the_registry_computes_exactly_the_indicators_the_render_did(registry):
-    """22, the same 22. The swap is 1:1, so deleting the JS engine loses nothing.
-
-    The other eleven (C03, C04, C18, C22, C25-C27, C29, C30, C32, C33) are declared
-    by the workbook and computed by NEITHER engine; the render lists them under
-    NOT_COMPUTABLE and this registry simply has no measure for them.
-    """
-    computed = {
-        m["meta"]["indicator"]
-        for m in registry["measures"]
-        if m.get("meta") and str(m["meta"].get("indicator", "")).startswith("C")
-    }
-    assert computed == {
-        "C01",
-        "C02",
-        "C05",
-        "C06",
-        "C07",
-        "C08",
-        "C09",
-        "C10",
-        "C11",
-        "C12",
-        "C13",
-        "C14",
-        "C15",
-        "C16",
-        "C17",
-        "C19",
-        "C20",
-        "C21",
-        "C23",
-        "C24",
-        "C28",
-        "C31",
-    }
+def test_every_suppression_rule_gates_an_indicator_the_registry_computes(registry):
+    """A rule naming an indicator the registry does not compute is skipped by the
+    compiler by design -- so a rule left behind by a rename gates nothing, silently."""
+    computed = {m["meta"]["indicator"] for m in registry["measures"] if m.get("meta")}
+    orphans = [r["indicator"] for r in registry.get("suppression") or [] if r["indicator"] not in computed]
+    assert not orphans, f"suppression rules for indicators this registry does not compute: {orphans}"
 
 
 def test_every_suppression_rule_has_a_setting_table(registry, deployment):
@@ -109,8 +78,8 @@ def test_llo_map_covers_every_opportunity_the_registry_is_run_over(deployment):
         assert opp in llo_map, f"opportunity {opp} has no LLO"
 
 
-def test_the_c_series_compiles_at_every_scope_with_the_shipped_facts(props_doc, registry, deployment):
-    """The regression: this raised RegistryError, so `series=C` could not be served."""
+def test_the_registry_compiles_at_every_scope_with_the_shipped_facts(props_doc, registry, deployment):
+    """The regression: this raised RegistryError, so the llo scope could not be served."""
     llo_map, settings = deployment
     sql = compile_rollup_sql(
         props_doc,
@@ -124,7 +93,7 @@ def test_the_c_series_compiles_at_every_scope_with_the_shipped_facts(props_doc, 
     assert "cohort_month" in sql
 
 
-def test_without_the_facts_the_c_series_does_not_compile(props_doc, registry):
+def test_without_the_facts_the_llo_scope_does_not_compile(props_doc, registry):
     """Pinning the failure the wiring fixes, so a regression is loud rather than quiet."""
     with pytest.raises(RegistryError):
         compile_rollup_sql(props_doc, registry, "SELECT 1", scopes=ALL_SCOPES)
@@ -134,16 +103,11 @@ def test_suppression_columns_are_actually_emitted(props_doc, registry, deploymen
     """The silent half. No settings -> no columns -> an ungated mortality figure."""
     llo_map, settings = deployment
     sql = compile_rollup_sql(props_doc, registry, "SELECT 1", scopes=ALL_SCOPES, llo_map=llo_map, settings=settings)
-    assert "c14_suppressed" in sql, "the gate the workbook exists to enforce"
+    assert "mortality_suppressed" in sql, "the gate the workbook exists to enforce"
     assert "'PIPN'" in sql and "'EHA'" in sql, "the credible pair drives the NOT IN"
 
-    # C18 declares a rule but the registry does not COMPUTE C18 -- it is one of the
-    # eleven the workbook declares and neither engine derives -- so the compiler
-    # skips it by design. Asserting its column would pin a bug, not a behaviour.
-    assert "c18_suppressed" not in sql
-
     without = compile_rollup_sql(props_doc, registry, "SELECT 1", scopes=["programme"], settings=None)
-    assert "c14_suppressed" not in without, "the unwired endpoint emitted exactly this"
+    assert "mortality_suppressed" not in without, "the unwired endpoint emitted exactly this"
 
 
 def test_completion_credibility_is_an_allow_list_not_a_deny_list(deployment):
@@ -153,8 +117,10 @@ def test_completion_credibility_is_an_allow_list_not_a_deny_list(deployment):
     `COMPLETION_CREDIBLE[llo] !== false`, so every LLO except GHI is credible. The
     compiler builds `credible = [k for k, v in table.items() if v]` and suppresses
     everything outside it -- so that dict ported verbatim yields an EMPTY credible
-    set and `TRUE AS c18_suppressed`, withholding C18 from all six LLOs instead of
-    one. Nothing on screen distinguishes the two.
+    set and a completion gate TRUE for everyone, withholding completion from all six
+    LLOs instead of one. Nothing on screen distinguishes the two. (No indicator reads
+    this setting yet -- completion waits on its definition -- but the table is kept
+    right for the day one does.)
     """
     _, settings = deployment
     completion = settings["completion_recording_credible"]
@@ -178,10 +144,10 @@ def test_mortality_credibility_stays_the_workbook_pair(deployment):
 def test_bands_are_in_the_same_units_as_the_sql_that_produces_the_value(registry):
     """A band is graded against the value, so it must be in that value's units.
 
-    The C-series was copied out of the render, where `evaluate` returns a RATIO
-    (num/den) and `fmt` multiplies by 100 at display time. The registry's sql does
-    the scaling itself -- `100.0 * {num} / NULLIF({den}, 0)` -- so the value is
-    already a percentage, and the bands came across unconverted: C09 graded a value
+    The workbook's indicators were copied out of the render, where `evaluate` returns
+    a RATIO (num/den) and `fmt` multiplies by 100 at display time. The registry's sql
+    does the scaling itself -- `100.0 * {num} / NULLIF({den}, 0)` -- so the value is
+    already a percentage, and the bands came across unconverted: one graded a value
     of 60.0 against a threshold of 0.6.
 
     Nothing failed. `nBandOf` does `x >= b[0]`, so 60.0 >= 0.6 and every percentage
@@ -189,10 +155,7 @@ def test_bands_are_in_the_same_units_as_the_sql_that_produces_the_value(registry
     figure reads green. That is the exact failure `measure_catalog`'s docstring says
     serving the catalog alongside the rows exists to prevent -- "a band cannot drift
     from the measure it grades" -- and it was live in the shipped registry, unreached
-    only because no client rendered the C-series yet.
-
-    The N-series, which IS rendered, had it right: N13 and C14 are the same mortality
-    measure and N13's bands were exactly 100x C14's.
+    only because no client rendered those indicators yet.
 
     A genuine sub-1% threshold would trip this. That is intended: it should be an
     explicit decision, not a silent unit change.
@@ -211,15 +174,11 @@ def test_bands_are_in_the_same_units_as_the_sql_that_produces_the_value(registry
     assert not offenders, f"bands look like fractions but the value is a percentage: {offenders}"
 
 
-def test_the_two_mortality_measures_agree_on_their_band():
-    """C14 and N13 are the same measure. They disagreed by exactly 100x."""
+def test_mortality_is_graded_on_the_percent_scale():
+    """There were two mortality measures and they disagreed by exactly 100x."""
     reg = yaml.safe_load((REGISTRY / "indicators.yml").read_text())
-    bands = {
-        m["meta"]["indicator"]: m["meta"].get("bands")
-        for m in reg["measures"]
-        if (m.get("meta") or {}).get("indicator") in ("C14", "N13")
-    }
-    assert bands["C14"] == bands["N13"] == [[4, 12], [2, 16]]
+    [mort] = [m for m in reg["measures"] if (m.get("meta") or {}).get("indicator") == "mortality"]
+    assert mort["meta"]["bands"] == [[4, 12], [2, 16]]
 
 
 # ── the monthly trend follows the drill ──────────────────────────────────────
@@ -296,38 +255,40 @@ def test_all_eight_scopes_compile_in_one_pass(props_doc, registry, deployment):
 def test_the_catalog_distinguishes_counts_from_means():
     """`unit` alone does not decide how a value is printed.
 
-    C01, C02 and C05 are counts. C06 and C24 share their unit ('n') and are MEANS.
-    The render's old `IND` said so via `kind`; formatting a mean as an integer drops
-    a real decimal and reads as a value rather than a bug.
+    The case counts are counts. Visits per case shares their unit ('n') and is a
+    RATIO of a sum over a count; formatting a mean as an integer drops a real decimal
+    and reads as a value rather than a bug.
 
     Every indicator's own measure is `type: number` — it divides two others — so the
     distinction lives on its numerator. But only when the indicator IS its numerator:
-    C09's numerator is a `count` too (it counts cases), and C09 is a percentage.
+    a rate's numerator is a `count` too (it counts cases), and it is a percentage.
     """
-    from connect_labs.semantic.runtime import filter_to_series, load_registry, measure_catalog
+    from connect_labs.semantic.runtime import load_registry, measure_catalog
 
     _, reg = load_registry("kmc")
-    cat = {m["indicator"]: m for m in measure_catalog(filter_to_series(reg, "C"))}
+    cat = {m["indicator"]: m for m in measure_catalog(reg)}
 
     assert {i: cat[i]["kind"] for i in cat if cat[i]["unit"] == "n"} == {
-        "C01": "count",
-        "C02": "count",
-        "C05": "count",
-        "C06": "mean",
-        "C24": "mean",
+        "total_cases": "count",
+        "registered_cases": "count",
+        "started_cases": "count",
+        "cumulative_svns_reached": "count",
+        # sum / count, written out: not the indicator's own numerator
+        "visits_per_case": None,
     }
-    for ratio in ("C07", "C09", "C31"):
+    assert cat["mean_early_growth_rate"]["kind"] == "mean"
+    for ratio in ("pct_growth_computable", "pct_healthy_growth", "weight_rounding_rate"):
         assert cat[ratio]["kind"] is None, f"{ratio} is a rate, not a {cat[ratio]['kind']}"
 
 
 def test_the_catalog_carries_prominence():
-    """The render groups headline indicators from this; without it all 22 read equal."""
-    from connect_labs.semantic.runtime import filter_to_series, load_registry, measure_catalog
+    """The render groups headline indicators from this; without it all 24 read equal."""
+    from connect_labs.semantic.runtime import load_registry, measure_catalog
 
     _, reg = load_registry("kmc")
-    cat = {m["indicator"]: m for m in measure_catalog(filter_to_series(reg, "C"))}
-    assert cat["C09"]["prominence"] == "Top"
-    assert cat["C06"]["prominence"] == "Lower"
+    cat = {m["indicator"]: m for m in measure_catalog(reg)}
+    assert cat["mortality"]["prominence"] == "Top"
+    assert cat["pct_growth_computable"]["prominence"] == "Lower"
     assert all(m["prominence"] for m in cat.values()), "every indicator needs a prominence"
 
 
@@ -336,7 +297,7 @@ def test_filtering_to_a_series_keeps_the_availability_gates():
 
     The reachability walk cannot find them: they carry no `meta`, so they are not
     roots, and no indicator's sql references them — they are read ALONGSIDE a value,
-    not inside it. So `series=C` came back with no `anyrec_*` columns at all, and a
+    not inside it. So a filtered request came back with no `anyrec_*` columns at all, and a
     caller had no way to tell "the app never asked this question" from "the answer
     is 0". A worker who logged no danger signs has not achieved a 0% danger-sign
     rate. That distinction was worth 268 of 5,302 per-FLW checks when it was ported.
@@ -347,7 +308,7 @@ def test_filtering_to_a_series_keeps_the_availability_gates():
     all_gates = {m["name"] for m in reg["measures"] if m.get("gate")}
     assert all_gates, "the registry must mark its gates explicitly, not by name prefix"
 
-    for series, expected_indicators in (("C", 22), ("N", 15)):
+    for series, expected_indicators in (("KMC", 24),):
         kept = filter_to_series(reg, series)
         names = {m["name"] for m in kept["measures"]}
         assert all_gates <= names, f"series={series} dropped gates: {sorted(all_gates - names)}"
@@ -373,7 +334,7 @@ def test_the_shipped_registry_passes_its_own_grammar(props_doc, registry):
     """The allowlist has to describe the registry we actually have.
 
     First draft rejected 62 fragments in the shipped file — measure references read
-    as brace structs, and it had no room for C17's array-indexed median or N06's
+    as brace structs, and it had no room for an array-indexed median or an
     ordered-set aggregate. A grammar that fails the corpus it governs is a grammar
     nobody can turn on.
     """
@@ -402,7 +363,7 @@ def test_legitimate_expressions_still_pass(props_doc, registry):
         "100.0 * {CUBE}.registered",
         "CASE WHEN {CUBE}.registered THEN 1 ELSE 0 END",
         "COALESCE({CUBE}.n_weights, 0) > 0",
-        "100.0 * {c09_numerator} / NULLIF({c09_denominator}, 0)",
+        "100.0 * {pct_healthy_growth_numerator} / NULLIF({pct_healthy_growth_denominator}, 0)",
     ):
         assert _probe(props_doc, registry, fragment) == [], fragment
 
