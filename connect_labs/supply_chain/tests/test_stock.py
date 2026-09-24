@@ -315,6 +315,35 @@ class TestAnOverrideWithNoTradeItemNamed:
         assert movement.quantity == Decimal("-10")
         assert ledger.balance(PROGRAM, store, item=specified_item) == Quantity(Decimal("80"), "carton")
 
+    def test_it_never_adopts_an_item_of_another_commodity(self, rutf, store):
+        """The one item a point holds is only the counted item when it is the
+        same commodity. A store that has only held zinc must not have a RUTF
+        stock take posted against the zinc."""
+        from connect_labs.supply_chain.stock.services import posting
+
+        zinc = Commodity.objects.create(
+            scope_key=scope_key(program_id=PROGRAM), slug="zinc", name="Zinc", base_unit="tablet"
+        )
+        zinc_item = Item.objects.create(
+            scope_key=scope_key(program_id=PROGRAM), sku="zinc-20mg", name="Zinc 20 mg", commodity=zinc
+        )
+        _move("receipt", zinc, 100, "tablet", item=zinc_item, to=store)
+        count = StockCount.objects.create(
+            program_id=PROGRAM,
+            supply_point=store,
+            commodity=rutf,
+            kind="override",
+            counted_on=TODAY,
+            quantity=Decimal("0"),
+            quantity_unit="tablet",
+            reason="stock take",
+            source="partner_reported",
+        )
+
+        movement = posting.post_override(count, PROGRAM)
+
+        assert movement is None or movement.item_id != zinc_item.pk
+
 
 class TestResupply:
     def _dispense_daily(self, rutf, item, worker, days, per_day, end=TODAY):

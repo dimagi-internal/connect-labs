@@ -137,7 +137,12 @@ def post_override(count, program_id):
     # The count may not name a trade item -- the form leaves it optional -- but a
     # point that has only ever held one item can still be added up across its
     # packs and single units. Resolve it the way every other reader does.
-    item = count.item or ledger.sole_item(program_id, count.supply_point)
+    # Only an item of the counted commodity: a store that has only ever held
+    # zinc says nothing about which RUTF was counted.
+    item = count.item
+    if item is None:
+        sole = ledger.sole_item(program_id, count.supply_point)
+        item = sole if sole is not None and sole.commodity_id == count.commodity_id else None
     balance = ledger.balance(program_id, count.supply_point, item=item, unit=count.quantity_unit)
     if isinstance(balance, Unconfirmed):
         raise ValueError("cannot override stock on hand here: " + "; ".join(balance.reasons))
