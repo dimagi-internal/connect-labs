@@ -159,14 +159,15 @@ def test_a_not_credible_indicator_is_withheld_rather_than_banded():
 
 
 def test_a_gated_indicator_with_no_flag_is_withheld_rather_than_banded():
-    """Only the C family carries the registry's suppression rule — filter_to_series
-    drops the C measures, and with them the rule's target, when the N scorecard is
-    asked for. So N13 (mortality: C14 under another name) arrives with no flag at
-    all, and a page that cannot establish credibility must not band the figure."""
+    """A gated indicator whose row carries no suppression flag -- the bound
+    registry has no rule for it -- cannot have its credibility established, so
+    the page must not band the figure. Before #2004 that was the scorecard's
+    mortality on every opportunity; the list still guards any registry without
+    the rule."""
     assert DEFINITION["config"]["credibility_gated_indicators"] == sorted(
         PROGRAMME_SNAPSHOT_INPUTS["credibility"]
     ), "the gated list must be the programme report's own map, not a second copy"
-    assert "N13" in DEFINITION["config"]["credibility_gated_indicators"]
+    assert "mortality" in DEFINITION["config"]["credibility_gated_indicators"]
     body = _grade_cell_body()
     assert "'unverifiable'" in body
     assert body.index("isGated(") < body.index(
@@ -186,3 +187,13 @@ def test_a_withheld_figure_is_never_marked_on_the_peer_bars():
     for band in ("notcredible", "unverifiable", "insufficient", "notinapp"):
         assert band not in body, f"{band} must not be publishable"
     assert "'green'" in body and "'yellow'" in body and "'red'" in body
+
+
+def test_there_is_one_indicator_set_and_no_series_switch():
+    """The Scorecard (N) / Workbook (C) toggle chose between two families. There
+    is one now (#2004): no switch, no `series=` on the fetch, and peers are looked
+    up under each measure's own family rather than a letter from the URL."""
+    src = RENDER.read_text()
+    assert "SeriesSwitch" not in src and "Workbook (C)" not in src
+    assert "'series='" not in src and "qp('series')" not in src
+    assert "byFamily[m.series]" in src

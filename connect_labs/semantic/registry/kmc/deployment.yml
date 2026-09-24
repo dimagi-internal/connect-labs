@@ -8,13 +8,13 @@
 #
 #   settings  The workbook's "Targets & settings" tab — typed human judgements about
 #             whether an LLO records a thing credibly. These are GATES, not
-#             decoration: C14 must not publish a mortality figure for an LLO the
+#             decoration: mortality must not publish a figure for an LLO the
 #             workbook says does not record deaths credibly, which would read as a
 #             real red band rather than an absent measurement.
 #
 # Both lived only inside kmc_programme_metrics_render.js (`LLO_OF`,
 # `MORTALITY_CREDIBLE`, `COMPLETION_CREDIBLE`). The endpoint never had them, so
-# `series=C` could not serve the `llo` scope and — worse, silently — emitted no
+# the endpoint could not serve the `llo` scope and — worse, silently — emitted no
 # suppression columns at all. Held here as data so both engines read one copy.
 
 version: 1
@@ -59,7 +59,7 @@ llo_map:
 # allow-list and ports as-is. `COMPLETION_CREDIBLE = {GHI: false}` is a DENY-list
 # -- the render reads it as `COMPLETION_CREDIBLE[llo] !== false`, so everyone
 # except GHI is credible. Copied verbatim it would have compiled to an empty
-# credible set and `TRUE AS c18_suppressed`: C18 withheld from all six LLOs
+# credible set and `TRUE AS <completion>_suppressed`: completion withheld from all six LLOs
 # instead of one, with nothing on screen to say so. Written out in full here so
 # the convention is the compiler's, not the render's.
 settings:
@@ -89,7 +89,7 @@ settings:
 # they travel with the record and are editable without a deploy.
 #
 # Values are measured, not inferred -- see the provenance note that accompanied
-# APP_ASKS in gates.py: per-opportunity C16 denominators read live on 2026-09-08
+# APP_ASKS in gates.py: per-opportunity within-3-days denominators read live on 2026-09-08
 # against a warm cache, agreeing across workflows 5476 and 5456, with
 # 10020/10021/10022 corroborated from their source bundles' app_structure.json.
 # 14 of the 22 opportunities have at least one field their app does not ask, so a

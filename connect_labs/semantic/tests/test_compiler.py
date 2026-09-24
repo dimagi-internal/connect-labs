@@ -1,9 +1,8 @@
-"""The registry compiles, validates, and produces the numbers the JS produces.
+"""The KMC registry compiles, validates, and is shaped the way its definitions say.
 
-The last part is the point. A compiler that emits plausible SQL proves nothing;
-these tests execute it against a real Postgres fixture and assert the indicator
-values equal what kmc_programme_metrics_render.js computes in the browser for the
-same cases. Parity is the whole claim of the new approach.
+These are the STATIC checks -- the registry's structure and the compiled SQL's
+shape. test_parity.py executes the SQL against an independent implementation of
+the same rules.
 """
 
 from __future__ import annotations
@@ -43,40 +42,56 @@ def test_every_measure_type_is_real_cube(registry):
         assert m["type"] in CUBE_MEASURE_TYPES, f"{m['name']} uses {m['type']}"
 
 
-def test_all_22_live_indicators_present(registry):
-    """The C-series, pinned. Scoped to C-prefixed ids because the registry now also
-    carries the N-series (Neal's demo spec) as a SEPARATE series — the two are pinned
-    by their own tests so neither can silently absorb the other."""
-    ids = {
-        m["meta"]["indicator"]
-        for m in registry["measures"]
-        if m.get("meta") and str(m["meta"]["indicator"]).startswith("C")
-    }
-    expected = {
-        "C01",
-        "C02",
-        "C05",
-        "C06",
-        "C07",
-        "C08",
-        "C09",
-        "C10",
-        "C11",
-        "C12",
-        "C13",
-        "C14",
-        "C15",
-        "C16",
-        "C17",
-        "C19",
-        "C20",
-        "C21",
-        "C23",
-        "C24",
-        "C28",
-        "C31",
-    }
-    assert ids == expected
+# The one KMC indicator set (#2004), pinned. There used to be two -- the workbook's
+# C-series and Neal Lesh's compute spec's N-series, each pinned by its own test so
+# neither could absorb the other. They are one set now, with plain names for ids.
+KMC_INDICATORS = {
+    "total_cases",
+    "registered_cases",
+    "started_cases",
+    "cumulative_svns_reached",
+    "median_gestational_age",
+    "median_birthweight",
+    "visits_per_case",
+    "pct_enrolled_within_3d",
+    "median_days_to_enrolment",
+    "lost_by_day_28",
+    "pct_slow_growth",
+    "pct_healthy_growth",
+    "pct_fast_growth",
+    "pct_incomplete_growth_data",
+    "mean_early_growth_rate",
+    "pct_growth_computable",
+    "mortality",
+    "danger_sign_incidence",
+    "pct_danger_signs_referred",
+    "self_referrals_per_100",
+    "mean_kmc_hours",
+    "weight_rounding_rate",
+    "pct_impossible_weight_changes",
+    "birth_copy_rate",
+}
+
+
+def test_the_kmc_indicator_set_is_exactly_the_agreed_one(registry):
+    """All 24, and nothing else. Adding an indicator means adding it here too."""
+    ids = {m["meta"]["indicator"] for m in registry["measures"] if m.get("meta")}
+    assert ids == KMC_INDICATORS
+
+
+def test_an_indicator_id_is_its_measure_name(registry):
+    """No codes: the id a report, a benchmark and a conversation use is the name."""
+    for m in registry["measures"]:
+        if m.get("meta"):
+            assert m["meta"]["indicator"] == m["name"]
+
+
+def test_the_registry_declares_one_family(registry):
+    """Ids are names, so their letters cannot name a family; it is declared."""
+    from connect_labs.semantic.model import series_prefixes
+
+    assert registry["series"] == ["KMC"]
+    assert series_prefixes(registry) == ("KMC",)
 
 
 def test_every_indicator_carries_its_denominator(registry):
@@ -108,10 +123,10 @@ def test_rejects_a_type_outside_cube(props_doc):
 
 def test_number_measures_inline_their_siblings(registry):
     compiled = compile_measures(registry)
-    c09 = compiled["c09"]
-    assert "COUNT(*) FILTER" in c09  # numerator inlined
-    assert "NULLIF" in c09  # denominator guarded
-    assert "{" not in c09  # every reference resolved
+    rate = compiled["pct_healthy_growth"]
+    assert "COUNT(*) FILTER" in rate  # numerator inlined
+    assert "NULLIF" in rate  # denominator guarded
+    assert "{" not in rate  # every reference resolved
 
 
 def test_compiles_for_every_intrinsic_scope(props_doc, registry):
@@ -119,7 +134,7 @@ def test_compiles_for_every_intrinsic_scope(props_doc, registry):
         sql = compile_indicator_sql(props_doc, registry, "SELECT 1", scope=scope)
         assert "WITH visits_all AS" in sql
         assert "{CUBE}" not in sql  # no unresolved placeholders
-        assert ":ELIG_DAYS" not in sql  # constants substituted
+        assert ":MATURITY_OUTCOME_DAYS" not in sql  # constants substituted
 
 
 def test_llo_scope_without_a_map_is_refused(props_doc, registry):
@@ -160,7 +175,7 @@ def test_suppression_emits_a_column_per_rule(props_doc, registry):
         llo_map={10042: "PIPN", 1487: "GHI"},
         settings={"mortality_recording_credible": {"PIPN": True, "GHI": False}},
     )
-    assert "c14_suppressed" in sql
+    assert "mortality_suppressed" in sql
     assert "'PIPN'" in sql  # the credible list drives the NOT IN
 
 
@@ -174,32 +189,14 @@ def test_unknown_scope_is_loud(props_doc, registry):
         compile_indicator_sql(props_doc, registry, "SELECT 1", scope="galaxy")
 
 
-def test_the_N_series_is_nreal_lesh_demo_spec_exactly(registry):
-    """Neal's demo compute spec (2026-09-05), pinned as its own set: all fifteen.
-
-    N05 (median gestational age) was held back until Layer 1 carried its column
-    (`gestational_age_wks`, from gestational_age_at_birth_lmp); the pipeline has it
-    now, so the scorecard is complete.
-    """
-    ids = {
-        m["meta"]["indicator"]
-        for m in registry["measures"]
-        if m.get("meta") and str(m["meta"]["indicator"]).startswith("N")
-    }
-    assert ids == {f"N{i:02d}" for i in range(1, 16)}
-
-
 def test_the_growth_quality_shares_share_one_denominator(registry):
-    """N09-N12 are shares OF QUALIFYING SVNs and sum to 100% over that set. If any one
-    of them drifted onto its own denominator they would stop summing and nobody reading
-    the dashboard would be able to tell."""
+    """The four growth shares are shares OF QUALIFYING SVNs and sum to 100% over that
+    set. If any one of them drifted onto its own denominator they would stop summing
+    and nobody reading the dashboard would be able to tell."""
     by_name = {m["name"]: m for m in registry["measures"]}
-    dens = {by_name[f"n{i:02d}_denominator"]["filters"][0]["sql"] for i in (9, 10, 11, 12)}
-    assert len(dens) == 1, f"growth-quality shares disagree on their denominator: {dens}"
-    # qualifying_spec since the N-series moved onto the demo compute spec's own
-    # definitions (started = 2 visits, 21-day window); the invariant is the SHARED
-    # denominator, not its name.
-    assert "qualifying" in dens.pop()
+    shares = ("pct_slow_growth", "pct_healthy_growth", "pct_fast_growth", "pct_incomplete_growth_data")
+    dens = {by_name[f"{s}_denominator"]["filters"][0]["sql"] for s in shares}
+    assert dens == {"{CUBE}.growth_qualifying"}, f"growth-quality shares disagree on their denominator: {dens}"
 
 
 def test_a_qualifying_svn_must_have_a_computable_velocity():
@@ -207,10 +204,10 @@ def test_a_qualifying_svn_must_have_a_computable_velocity():
     weight_gain_data_computable.
 
     v1 of the spec -- and this registry until 2026-09-10 -- left out the third
-    term. That kept every baby with no usable weight series in the N09-N12
+    term. That kept every baby with no usable weight series in the growth-share
     denominator and counted it as "incomplete", so it read as poor growth: PIPN's
     healthy-growth share came out at 59 percent against v3's 72, and GHI's at 26
-    against 39. Nothing caught it, because nothing pinned the N-series to the spec;
+    against 39. Nothing caught it, because nothing pinned the shares to the spec;
     this does.
 
     Pinned against properties.yml, which seeds the live registry record -- so a
@@ -219,9 +216,9 @@ def test_a_qualifying_svn_must_have_a_computable_velocity():
     import yaml as _yaml
 
     props = {p["name"]: p for p in _yaml.safe_load((REGISTRY / "properties.yml").read_text())["properties"]}
-    sql = props["qualifying_spec"]["sql"]
-    for term in ("eligible_42d_spec", "birthweight_band IS NOT NULL", "computable_spec"):
-        assert term in sql, f"qualifying_spec is missing {term!r}: {sql}"
+    sql = props["growth_qualifying"]["sql"]
+    for term in ("eligible_42d", "birthweight_band IS NOT NULL", "velocity_computable"):
+        assert term in sql, f"growth_qualifying is missing {term!r}: {sql}"
 
 
 def test_incomplete_growth_data_is_only_the_unreliable_qualifying_cases(registry):
@@ -233,25 +230,25 @@ def test_incomplete_growth_data_is_only_the_unreliable_qualifying_cases(registry
     or has no band, and qualifying has already excluded no-band. Without the
     computable term the same expression swept the discarded no-data babies back
     into "incomplete". So the numerator and the denominator's definition are pinned
-    together -- change either alone and N09-N12 stop partitioning the right set.
+    together -- change either alone and the four shares stop partitioning the right set.
     """
     import yaml as _yaml
 
     by_name = {m["name"]: m for m in registry["measures"]}
-    num = by_name["n12_numerator"]["filters"][0]["sql"]
-    assert "qualifying_spec" in num and "growth_class_spec IS NULL" in num
+    num = by_name["pct_incomplete_growth_data_numerator"]["filters"][0]["sql"]
+    assert "growth_qualifying" in num and "growth_class IS NULL" in num
 
     props = {p["name"]: p for p in _yaml.safe_load((REGISTRY / "properties.yml").read_text())["properties"]}
-    growth = props["growth_class_spec"]["sql"]
-    assert "NOT sufficient_spec THEN NULL" in growth
+    growth = props["growth_class"]["sql"]
+    assert "NOT growth_data_sufficient THEN NULL" in growth
     assert "birthweight_band IS NULL THEN NULL" in growth
-    assert "computable_spec" in props["qualifying_spec"]["sql"]
+    assert "velocity_computable" in props["growth_qualifying"]["sql"]
 
 
 def test_the_banded_growth_table_is_neals_not_a_flat_guess(registry):
-    """The C-series still carries a flat PLAUSIBLE_LO/HI 10-20 marked PROVISIONAL. The
-    N-series must use the per-birthweight-band table, because a flat band is wrong at
-    both ends: it calls a healthy 2,500g baby fast (real ceiling 18) and a struggling
+    """Growth classes use the per-birthweight-band table. The flat 10-20 g/kg/day the
+    workbook carried as PROVISIONAL is gone, because a flat band is wrong at both
+    ends: it calls a healthy 2,500g baby fast (real ceiling 18) and a struggling
     sub-1,000g baby plausible (real floor 9)."""
     import yaml as _yaml
 
@@ -267,7 +264,10 @@ def test_the_banded_growth_table_is_neals_not_a_flat_guess(registry):
     ]:
         assert f"'{band}' THEN {l}" in lo, f"{band} floor"
         assert f"'{band}' THEN {h}" in hi, f"{band} ceiling"
-    assert "PLAUSIBLE_LO" not in by_name["growth_class_banded"]["sql"]
+    assert "PLAUSIBLE_LO" not in by_name["growth_class"]["sql"]
+    assert "growth_plausible_lo" in by_name["growth_class"]["sql"]
+    constants = _yaml.safe_load((REGISTRY / "properties.yml").read_text())["constants"]
+    assert "PLAUSIBLE_LO" not in constants and "PLAUSIBLE_HI" not in constants, "the flat band is back"
 
 
 def test_no_compiled_sql_contains_a_bare_percent_operator():
@@ -344,7 +344,7 @@ def test_a_seed_reading_is_declared_as_data_and_never_pairs_with_a_visit(props_d
     1 g of birth weight dropped as a re-entry. That is `weight_series.seed_reading`,
     registry data. The seed reading must count as a measured day (the spec's "thin"
     rule) but never form a pair with a visit reading (the spec excludes the
-    enrolment->visit-1 rebound), and the C-series must not see it at all."""
+    enrolment->visit-1 rebound), and velocity must not see it at all."""
     sql = compile_indicator_sql(props_doc, registry, "SELECT 1")
     readings = sql[sql.index("weight_readings AS") : sql.index("weight_days AS")]
     assert "UNION ALL" in readings and "TRUE AS is_seed" in readings
@@ -355,8 +355,7 @@ def test_a_seed_reading_is_declared_as_data_and_never_pairs_with_a_visit(props_d
     assert "PARTITION BY wd.baby_id, wd.is_seed ORDER BY wd.day) AS prev_w" in seq
     assert "PARTITION BY wd.baby_id, wd.is_seed ORDER BY wd.day) AS prev_day" in seq
     # the window anchors on the first MEASURED weighing -- the spec's "first 21
-    # days of the VISIT weight series" -- not on the seed; the C-series
-    # expressions exclude the seed too
+    # days of the VISIT weight series" -- not on the seed
     assert "MIN(wd.day) FILTER (WHERE NOT wd.is_seed) OVER (PARTITION BY wd.baby_id))::int AS series_day" in seq
     agg = sql[sql.index("weight_agg AS") : sql.index("visit_agg AS")]
     assert "COUNT(*) FILTER (WHERE NOT is_seed) AS n_weight_days" in agg
@@ -376,18 +375,20 @@ def test_a_registry_without_a_seed_reading_compiles_as_before(props_doc, registr
 
 def test_explain_returns_the_whole_chain_behind_an_indicator(props_doc, registry):
     """A second engine has to be able to read the exact logic behind a number. For
-    N15 that is the measure expression, its numerator/denominator, flag_impossible ->
-    any_impossible_step (a weight-series derivation), the constants it substitutes,
-    and a compiled statement -- in evaluation order, with no database."""
+    pct_impossible_weight_changes that is the measure expression, its
+    numerator/denominator, flag_impossible -> any_impossible_step (a weight-series
+    derivation), the constants it substitutes, and a compiled statement -- in
+    evaluation order, with no database."""
     from connect_labs.semantic.explain import UnknownIndicator, explain
 
-    out = explain(props_doc, registry, "N15", llo_map={10042: "BERI"})
-    assert out["indicator"] == "N15" and out["measure"] == "n15"
-    assert {c["name"] for c in out["components"]} == {"n15_numerator", "n15_denominator"}
+    ind = "pct_impossible_weight_changes"
+    out = explain(props_doc, registry, ind, llo_map={10042: "BERI"})
+    assert out["indicator"] == ind and out["measure"] == ind
+    assert {c["name"] for c in out["components"]} == {f"{ind}_numerator", f"{ind}_denominator"}
     names = [p["name"] for p in out["properties"]]
-    assert "flag_impossible" in names and "computable_spec" in names and "velocity_spec" in names
-    # evaluation order: velocity_spec before computable_spec before sufficient chain
-    assert names.index("velocity_spec") < names.index("computable_spec")
+    assert "flag_impossible" in names and "velocity_computable" in names and "early_velocity" in names
+    # evaluation order: early_velocity before velocity_computable
+    assert names.index("early_velocity") < names.index("velocity_computable")
     derived = {d["name"] for d in out["weight_series"]["derived"]}
     assert "any_impossible_step" in derived and "win_mean_w" in derived
     assert out["constants"]["IMPOSSIBLE_LO"] == -20 and out["constants"]["IMPOSSIBLE_HI"] == 45
@@ -395,13 +396,12 @@ def test_explain_returns_the_whole_chain_behind_an_indicator(props_doc, registry
     # constants are substituted in the SQL a reader sees
     assert ":IMPOSSIBLE_LO" not in "".join(d["sql"] for d in out["weight_series"]["derived"])
     assert "NOT BETWEEN -20 AND 45" in "".join(d["sql"] for d in out["weight_series"]["derived"])
-    assert "FILTER (WHERE (props.flag_impossible AND props.computable_spec))" in out["expression"]["compiled"]
+    assert "FILTER (WHERE (props.flag_impossible AND props.velocity_computable))" in out["expression"]["compiled"]
     assert "pipeline_visit_rows" in out["compiled_sql"] and "any_impossible_step" in out["compiled_sql"]
-    # ids resolve case-insensitively and by measure name
-    assert explain(props_doc, registry, "n15")["measure"] == "n15"
-    assert explain(props_doc, registry, "c14")["indicator"] == "C14"
+    # ids resolve case-insensitively
+    assert explain(props_doc, registry, "MORTALITY")["indicator"] == "mortality"
     with pytest.raises(UnknownIndicator):
-        explain(props_doc, registry, "N99")
+        explain(props_doc, registry, "no_such_indicator")
 
 
 def test_the_case_scope_groups_by_baby(props_doc, registry):
@@ -439,33 +439,34 @@ def test_a_visit_filter_is_pushed_below_layer_2(props_doc, registry):
 def test_every_indicator_has_english_rendered_from_its_sql(props_doc, registry):
     """A programme manager reads the definition; an agent reads the SQL; both must
     come from the same registry so they cannot disagree. The mechanical sentence
-    is rendered from the measure, so it exists for every indicator; the authored
-    `plain` (the demo compute spec's wording) exists for the whole N-series."""
+    is rendered from the measure, so it exists for every indicator, and so does an
+    authored `plain`."""
     from connect_labs.semantic.explain import english, explain, to_markdown, to_sql
 
     tops = [m for m in registry["measures"] if (m.get("meta") or {}).get("indicator")]
     for m in tops:
         en = english(registry, props_doc, m["name"])
         assert en["definition"] and en["definition"][0].isupper(), m["name"]
-        if m["meta"]["indicator"].startswith("N"):
-            assert en["plain"], f"{m['meta']['indicator']} has no authored plain-English definition"
-    n15 = english(registry, props_doc, "n15")
-    assert "as a percentage of" in n15["definition"] and "computable spec" in n15["definition"]
-    assert any(r["name"] == "flag_impossible" for r in n15["reads"])
-    n07 = english(registry, props_doc, "n07")
-    assert n07["definition"].startswith("The sum of visits spec over babies where eligible 42d spec, divided by")
+        assert en["plain"], f"{m['meta']['indicator']} has no authored plain-English definition"
+    imp = english(registry, props_doc, "pct_impossible_weight_changes")
+    assert "as a percentage of" in imp["definition"] and "velocity computable" in imp["definition"]
+    assert any(r["name"] == "flag_impossible" for r in imp["reads"])
+    vpc = english(registry, props_doc, "visits_per_case")
+    assert vpc["definition"].startswith("The sum of followup visits over babies where eligible 42d, divided by")
 
-    exps = [explain(props_doc, registry, i) for i in ("N15", "C14")]
+    exps = [explain(props_doc, registry, i) for i in ("pct_impossible_weight_changes", "mortality")]
     md = to_markdown(exps, registry_label="test")
-    assert "## N15" in md and "## C14" in md and "```sql" in md and "flag_impossible" in md
+    assert "## pct_impossible_weight_changes" in md and "## mortality" in md
+    assert "```sql" in md and "flag_impossible" in md
     sql = to_sql(exps, registry_label="test")
-    assert sql.startswith("-- Indicator definitions") and "pipeline_visit_rows" in sql and "-- N15" in sql
+    assert sql.startswith("-- Indicator definitions") and "pipeline_visit_rows" in sql
+    assert "-- pct_impossible_weight_changes" in sql
 
 
 def test_every_count_share_counts_only_rows_inside_its_denominator(registry):
     """A share's numerator must be a subset of its denominator.
 
-    Four N-series numerators were not: N09-N11 counted every case with a growth
+    Four numerators once were not: slow/healthy/fast growth counted every case with a growth
     class and N13 every death, each over a narrower denominator. So babies whose
     first visit was under 42 days ago were counted as slow / healthy / fast
     without being in the qualifying set, and deaths among unstarted or immature
@@ -478,7 +479,7 @@ def test_every_count_share_counts_only_rows_inside_its_denominator(registry):
     The convention this enforces is the one the rest of the registry already
     follows: write a count numerator as `<every denominator term> AND <event>`.
     It checks count-over-count shares only -- medians, means and sums carry their
-    filter inside the aggregate (e.g. `CASE WHEN eligible_42d_spec THEN ...`).
+    filter inside the aggregate (e.g. `CASE WHEN eligible_42d THEN ...`).
     """
     by_name = {m["name"]: m for m in registry["measures"]}
     leaks = []

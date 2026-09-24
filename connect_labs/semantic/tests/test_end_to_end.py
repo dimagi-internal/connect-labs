@@ -197,7 +197,7 @@ def test_the_whole_chain_runs_and_returns_banded_numbers(visit_cache):
         [OPP],
         extra_fields={"weight_g": _config(VISIT_SCHEMA, VISIT_PIPELINE)},
         registry_name="kmc",
-        series="N",
+        series="KMC",
         scopes=["programme", "opportunity", "flw"],
         as_of="'2026-04-01'",
     )
@@ -208,9 +208,9 @@ def test_the_whole_chain_runs_and_returns_banded_numbers(visit_cache):
     programme = [r for r in rows if r["scope"] == "programme"][0]
     assert programme["n_cases"] == 2
     # value AND denominator, the registry's structural rule
-    assert "n03" in programme and "n03_denominator" in programme
+    assert "started_cases" in programme and "started_cases_denominator" in programme
     # the weight column resolved — this is bug 3's assertion
-    assert "n14" in programme, "the weight-rounding metric needs the weight series"
+    assert "weight_rounding_rate" in programme, "the weight-rounding metric needs the weight series"
 
 
 def test_the_single_scope_path_executes_too(visit_cache):
@@ -222,7 +222,7 @@ def test_the_single_scope_path_executes_too(visit_cache):
         [OPP],
         extra_fields={"weight_g": _config(VISIT_SCHEMA, VISIT_PIPELINE)},
         registry_name="kmc",
-        series="N",
+        series="KMC",
         scope="programme",
         as_of="'2026-04-01'",
     )
@@ -240,7 +240,7 @@ def test_layer1_is_built_from_BOTH_pipelines(visit_cache):
             _config(ENTITY_SCHEMA, ENTITY_PIPELINE),
             [OPP],
             registry_name="kmc",
-            series="N",
+            series="KMC",
             scope="programme",
             as_of="'2026-04-01'",
         )

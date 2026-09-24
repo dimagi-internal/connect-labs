@@ -379,7 +379,7 @@ def test_preview_passes_the_date_through_and_returns_the_cells(user, monkeypatch
     def fake_preview(dao, did, **kw):
         seen["did"] = did
         seen.update(kw)
-        return {"as_of": kw["as_of"].isoformat(), "series": {"N": {"programme": {"N10": {"value": 65.0}}}}}
+        return {"as_of": kw["as_of"].isoformat(), "programInd": {"pct_healthy_growth": {"value": 65.0}}}
 
     monkeypatch.setattr(history_rebuild, "preview_as_of", fake_preview)
 
@@ -387,7 +387,7 @@ def test_preview_passes_the_date_through_and_returns_the_cells(user, monkeypatch
         user=user, definition_id=5626, program_id=176, as_of="2026-09-10", include_opportunities=True
     )
 
-    assert out["series"]["N"]["programme"]["N10"]["value"] == 65.0
+    assert out["programInd"]["pct_healthy_growth"]["value"] == 65.0
     assert seen["did"] == 5626
     assert seen["as_of"].isoformat() == "2026-09-10"
     assert seen["program_id"] == 176 and seen["opportunity_id"] is None

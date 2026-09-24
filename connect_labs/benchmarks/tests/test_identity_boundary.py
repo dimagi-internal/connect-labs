@@ -21,8 +21,8 @@ def _value(**kwargs):
     )
     defaults = {
         "publication": pub,
-        "series": "N",
-        "indicator_id": "N08",
+        "series": "KMC",
+        "indicator_id": "pct_enrolled_within_3d",
         "period": None,
         "peer_index": 3,
         "value": 50.4,
@@ -37,7 +37,13 @@ def test_to_public_never_emits_the_source_opportunity():
     assert "opportunity_id" not in public
     # Nor under any other spelling, and not as a stray value.
     assert 874 not in public.values()
-    assert public == {"series": "N", "indicator_id": "N08", "period": None, "peer_index": 3, "value": 50.4}
+    assert public == {
+        "series": "KMC",
+        "indicator_id": "pct_enrolled_within_3d",
+        "period": None,
+        "peer_index": 3,
+        "value": 50.4,
+    }
 
 
 def test_to_public_is_clean_for_a_series_point_too():
@@ -80,6 +86,6 @@ def test_the_default_manager_never_fires_an_audit_event(monkeypatch):
     )
     _value()
     assert list(BenchmarkValue.objects.all())
-    assert list(BenchmarkValue.objects.filter(series="N"))
+    assert list(BenchmarkValue.objects.filter(series="KMC"))
     assert [v.to_public() for v in BenchmarkValue.objects.all()]
     assert events == [], "an ordinary read left an identified-read audit trail"

@@ -26,11 +26,16 @@ OPPS = [500 + i for i in range(6)]
 MONTHS = ("2026-01", "2026-02")
 
 _REGISTRY = load_registry("kmc")[1]
+# A SECOND real registry, standing in for a further family. KMC has one family
+# now; the `series[<name>]` mechanism still has to publish, and its catalog must be
+# a real one for the same reason the primary's is.
+_FURTHER = load_registry("visit_quality")[1]
 
 
 def _catalog(series: str, indicator_ids) -> list[dict]:
     """The REAL frozen catalog for these indicators: registry meta, units included."""
-    catalog = [m for m in measure_catalog(filter_to_series(_REGISTRY, series)) if m["indicator"] in indicator_ids]
+    registry = _REGISTRY if series == "KMC" else _FURTHER
+    catalog = [m for m in measure_catalog(filter_to_series(registry, series)) if m["indicator"] in indicator_ids]
     assert len(catalog) == len(indicator_ids), f"registry no longer defines all of {indicator_ids}"
     return catalog
 
@@ -67,16 +72,18 @@ def _rows(c_measures, n_measures, opps, months) -> list[dict]:
     return rows
 
 
-def build_snapshot(c_ids=("C01", "C15"), n_ids=("N08",), opps=OPPS, months=MONTHS) -> dict:
-    """A real graded payload: `snapshot.build()` over real registry measures."""
-    c_measures = _catalog("C", c_ids)
-    n_measures = _catalog("N", n_ids) if n_ids else []
+def build_snapshot(c_ids=("total_cases", "lost_by_day_28"), n_ids=("Q02",), opps=OPPS, months=MONTHS) -> dict:
+    """A real graded payload: `snapshot.build()` over real registry measures.
+
+    `c_ids` are the primary family (KMC); `n_ids` a further family (Q)."""
+    c_measures = _catalog("KMC", c_ids)
+    n_measures = _catalog("Q", n_ids) if n_ids else []
     return semantic_snapshot.build(
         spec={},
         rows=_rows(c_measures, n_measures, opps, months),
         measures=c_measures,
         deployment={"llo_map": {o: "LLO One" for o in opps}, "app_asks": {}, "asks_as": {}, "settings": {}},
-        extra_series={"N": n_measures} if n_measures else None,
+        extra_series={"Q": n_measures} if n_measures else None,
         as_of="2026-09-11",
     )
 
@@ -89,10 +96,10 @@ SNAPSHOT = build_snapshot()
 SHAPE_THAT_NEVER_EXISTED = {
     "as_of": "2026-09-11",
     "series": {
-        "N": {
-            "measures": [{"indicator": "N08", "id": "n08", "unit": "%"}],
+        "Q": {
+            "measures": [{"indicator": "Q02", "id": "q02", "unit": "%"}],
             "opportunity": {
-                "N08": [
+                "Q02": [
                     {"opportunity_id": 500 + i, "value": 50.0 + i, "denominator": 100, "suppressed": False}
                     for i in range(6)
                 ]
@@ -110,7 +117,7 @@ def _cohort(members=OPPS):
     return cohort
 
 
-def _history(indicator_ids=("C15",), series="C", opps=OPPS, reports=2, first_report=None, dates=None):
+def _history(indicator_ids=("lost_by_day_28",), series="KMC", opps=OPPS, reports=2, first_report=None, dates=None):
     """The source workflow's completed runs, oldest first — where a SERIES now
     comes from. Reports are taken at SHARED CALENDAR DATES, as the real ones are.
 
@@ -152,21 +159,21 @@ def test_the_fixture_is_the_real_builders_own_shape():
     assert SNAPSHOT["byOpp"], "the builder emits no byOpp"
     entry = SNAPSHOT["byOpp"][0]
     assert set(entry) >= {"opp", "llo", "ind", "n"}
-    cell = entry["ind"]["C15"]
+    cell = entry["ind"]["lost_by_day_28"]
     assert set(cell) >= {"id", "n", "value", "band"}, f"graded cell shape changed: {cell}"
     assert [k for k in SNAPSHOT["monthlyByScope"] if k.startswith("opp:")], "no per-opportunity monthly scope"
     assert SNAPSHOT["monthlyByScope"]["opp:500"][0]["month"] == "2026-01"
     assert "ind" in SNAPSHOT["monthlyByScope"]["opp:500"][0]
-    assert set(SNAPSHOT["series"]["N"]) >= {"measures", "byOpp"}
+    assert set(SNAPSHOT["series"]["Q"]) >= {"measures", "byOpp"}
     # And the keys the dead publisher read are NOT there, in either scope.
-    assert "opportunity" not in SNAPSHOT["series"]["N"]
-    assert "opportunity_month" not in SNAPSHOT["series"]["N"]
+    assert "opportunity" not in SNAPSHOT["series"]["Q"]
+    assert "opportunity_month" not in SNAPSHOT["series"]["Q"]
 
 
 def test_a_snapshot_shape_the_builder_never_emits_raises_rather_than_publishing_nothing():
     cohort = _cohort()
     with pytest.raises(SnapshotShapeError):
-        _publish(cohort, snapshot=SHAPE_THAT_NEVER_EXISTED, benchmarkable_indicator_ids={"N08"})
+        _publish(cohort, snapshot=SHAPE_THAT_NEVER_EXISTED, benchmarkable_indicator_ids={"Q02"})
     assert BenchmarkPublication.objects.count() == 0
     assert BenchmarkValue.objects.count() == 0
 
@@ -175,25 +182,27 @@ def test_a_snapshot_shape_the_builder_never_emits_raises_rather_than_publishing_
 
 
 def test_a_raw_count_indicator_is_never_published():
-    """C01 `unit: n` IS the opportunity's case count. Twelve anonymous bars would
+    """total_cases `unit: n` IS the opportunity's case count. Twelve anonymous bars would
     be twelve case counts, and the programme report lists those by name."""
     pub = _publish(_cohort())
-    assert BenchmarkValue.objects.filter(publication=pub, indicator_id="C01").count() == 0
-    assert "C:C01" in pub.withheld_indicator_ids
+    assert BenchmarkValue.objects.filter(publication=pub, indicator_id="total_cases").count() == 0
+    assert "KMC:total_cases" in pub.withheld_indicator_ids
 
 
 def test_a_rate_indicator_is_published():
     pub = _publish(_cohort())
-    published = BenchmarkValue.objects.filter(publication=pub, indicator_id="C15")
+    published = BenchmarkValue.objects.filter(publication=pub, indicator_id="lost_by_day_28")
     assert published.filter(period__isnull=True).count() == len(OPPS)
-    assert "C:C15" not in pub.withheld_indicator_ids
+    assert "KMC:lost_by_day_28" not in pub.withheld_indicator_ids
 
 
 def test_an_explicit_allow_list_narrows_what_is_published():
     """A caller may decide indicator by indicator; the default is still to withhold."""
-    pub = _publish(_cohort(), benchmarkable_indicator_ids={"C15"})
-    assert set(BenchmarkValue.objects.filter(publication=pub).values_list("indicator_id", flat=True)) == {"C15"}
-    assert "N:N08" in pub.withheld_indicator_ids
+    pub = _publish(_cohort(), benchmarkable_indicator_ids={"lost_by_day_28"})
+    assert set(BenchmarkValue.objects.filter(publication=pub).values_list("indicator_id", flat=True)) == {
+        "lost_by_day_28"
+    }
+    assert "Q:Q02" in pub.withheld_indicator_ids
 
 
 def test_a_cell_the_grader_withheld_never_becomes_an_observation():
@@ -222,11 +231,11 @@ def test_it_writes_point_and_series_values():
     pub = _publish(_cohort())
     points = BenchmarkValue.objects.filter(publication=pub, period__isnull=True)
     series = BenchmarkValue.objects.filter(publication=pub, period__isnull=False)
-    # C15 and N08 have a point each per opportunity. The SERIES comes from the
+    # lost_by_day_28 and Q02 have a point each per opportunity. The SERIES comes from the
     # saved runs, so only the indicator the history carries has one.
     assert points.count() == 2 * len(OPPS)
     assert series.count() == len(OPPS) * 2
-    assert set(series.values_list("indicator_id", flat=True)) == {"C15"}
+    assert set(series.values_list("indicator_id", flat=True)) == {"lost_by_day_28"}
     # Each opportunity's own WEEK OF DELIVERING, not the report date and not
     # the report's ordinal. Every opportunity in the fixture starts 2026-01-01,
     # so the reports of 2026-01-28 and 2026-02-28 are its weeks 3 and 8.
@@ -235,9 +244,9 @@ def test_it_writes_point_and_series_values():
 
 def test_the_published_values_are_the_graded_cells_own_values():
     pub = _publish(_cohort())
-    expected = sorted(e["ind"]["C15"]["value"] for e in SNAPSHOT["byOpp"])
+    expected = sorted(e["ind"]["lost_by_day_28"]["value"] for e in SNAPSHOT["byOpp"])
     got = sorted(
-        BenchmarkValue.objects.filter(publication=pub, indicator_id="C15", period__isnull=True).values_list(
+        BenchmarkValue.objects.filter(publication=pub, indicator_id="lost_by_day_28", period__isnull=True).values_list(
             "value", flat=True
         )
     )
@@ -290,11 +299,12 @@ def test_an_indicator_present_only_in_the_series_scope_is_still_published():
     would silently skip it -- zero rows, no exception, no log."""
     snapshot = build_snapshot()
     for entry in snapshot["byOpp"]:
-        entry["ind"].pop("C15")
+        entry["ind"].pop("lost_by_day_28")
     pub = _publish(_cohort(), snapshot=snapshot)
-    series = BenchmarkValue.objects.filter(publication=pub, indicator_id="C15", period__isnull=False)
+    series = BenchmarkValue.objects.filter(publication=pub, indicator_id="lost_by_day_28", period__isnull=False)
     assert series.count() == len(OPPS) * 2
-    assert BenchmarkValue.objects.filter(publication=pub, indicator_id="C15", period__isnull=True).count() == 0
+    points = BenchmarkValue.objects.filter(publication=pub, indicator_id="lost_by_day_28", period__isnull=True)
+    assert points.count() == 0
 
 
 def test_tie_salt_varies_per_indicator(monkeypatch):
@@ -334,7 +344,7 @@ def test_tie_salt_varies_per_indicator(monkeypatch):
 
     # Two rate indicators in the PRIMARY family, so both have point and monthly
     # data -- each call site must have received one distinct salt per indicator.
-    _publish(_cohort(), snapshot=build_snapshot(c_ids=("C14", "C15"), n_ids=()))
+    _publish(_cohort(), snapshot=build_snapshot(c_ids=("mortality", "lost_by_day_28"), n_ids=()))
 
     assert len(point_salts) == 2
     assert len(set(point_salts)) == 2
@@ -400,7 +410,7 @@ class TestSeriesRunOnEachOpportunitysOwnTenure:
         snapshot["monthlyByScope"] = {}  # weekly is the precise origin; drop the fallback
         pub = _publish(_cohort(), snapshot=snapshot, history=_history(dates=["2026-01-12", "2026-03-09"]))
         weeks = {}
-        for v in BenchmarkValue.objects.filter(publication=pub, indicator_id="C15").exclude(period=None):
+        for v in BenchmarkValue.objects.filter(publication=pub, indicator_id="lost_by_day_28").exclude(period=None):
             weeks.setdefault(v.period, set()).add(v.opportunity_id)
         # Each group reached week 1 on a different date: the January starters at
         # the 12 Jan report, the March starters at the 9 Mar one. Both are W1.
@@ -442,7 +452,7 @@ class TestSeriesRunOnEachOpportunitysOwnTenure:
         # Report 0 is 28 Jan (values 40+i), report 1 is 26 Jan (values 41+i).
         # Both are week 3; the 28th is the later one, so 40+i must survive.
         pub = _publish(cohort, history=_history(dates=["2026-01-28", "2026-01-26", "2026-02-28"]))
-        rows = BenchmarkValue.objects.filter(publication=pub, indicator_id="C15").exclude(period=None)
+        rows = BenchmarkValue.objects.filter(publication=pub, indicator_id="lost_by_day_28").exclude(period=None)
         seen = set()
         for row in rows:
             key = (row.period, row.opportunity_id)
@@ -487,14 +497,14 @@ class TestTheTenureOriginIsTheOpportunitysOwnFirstActivity:
         assert publish_module.opportunity_starts(snapshot) == {}
 
 
-class TestAScorecardFamilyCanBeTrendedToo:
-    """The series is drawn per FAMILY from the history, so a scorecard indicator
-    trends exactly as a headline one does."""
+class TestAFurtherFamilyCanBeTrendedToo:
+    """The series is drawn per FAMILY from the history, so an indicator in a
+    further family (`series[<name>]`) trends exactly as a primary one does."""
 
-    def test_a_scorecard_indicator_publishes_a_series(self):
-        pub = _publish(_cohort(), history=_history(indicator_ids=("N08",), series="N", reports=3))
-        series = BenchmarkValue.objects.filter(publication=pub, series="N").exclude(period=None)
-        assert series.exists(), "the scorecard family published points but no series"
+    def test_a_further_family_indicator_publishes_a_series(self):
+        pub = _publish(_cohort(), history=_history(indicator_ids=("Q02",), series="Q", reports=3))
+        series = BenchmarkValue.objects.filter(publication=pub, series="Q").exclude(period=None)
+        assert series.exists(), "the further family published points but no series"
         assert set(series.values_list("period", flat=True)) == {"W3", "W8", "W12"}
 
     def test_no_history_means_points_and_no_series(self):
@@ -552,45 +562,45 @@ class TestBenchmarkableIsAPropertyOfTheIndicator:
         ]
 
     def test_a_declared_mean_is_publishable_even_though_it_is_not_a_rate(self):
-        cat = self._cat(("C13", "g/kg/d", "mean", True), ("C15", "%", None, None))
-        assert "C13" in resolve_benchmarkable_ids(cat)
+        cat = self._cat(("mean_early_growth_rate", "g/kg/d", "mean", True), ("lost_by_day_28", "%", None, None))
+        assert "mean_early_growth_rate" in resolve_benchmarkable_ids(cat)
 
     def test_declaring_one_indicator_does_not_withhold_every_other(self):
         """The unit rule is the floor and a declaration adjusts it. Treated as a
         pure allow-list, adding `benchmarkable: true` to a single indicator
         would silently stop publishing every rate in the registry."""
-        cat = self._cat(("C13", "g/kg/d", "mean", True), ("C15", "%", None, None))
-        assert resolve_benchmarkable_ids(cat) == {"C13", "C15"}
+        cat = self._cat(("mean_early_growth_rate", "g/kg/d", "mean", True), ("lost_by_day_28", "%", None, None))
+        assert resolve_benchmarkable_ids(cat) == {"mean_early_growth_rate", "lost_by_day_28"}
 
     def test_a_rate_can_be_withheld_by_declaring_it_false(self):
-        cat = self._cat(("C15", "%", None, False), ("C16", "%", None, None))
-        assert resolve_benchmarkable_ids(cat) == {"C16"}
+        cat = self._cat(("lost_by_day_28", "%", None, False), ("pct_enrolled_within_3d", "%", None, None))
+        assert resolve_benchmarkable_ids(cat) == {"pct_enrolled_within_3d"}
 
     def test_a_registry_that_declares_nothing_is_exactly_the_old_unit_rule(self):
-        cat = self._cat(("C13", "g/kg/d", "mean", None), ("C15", "%", None, None))
-        assert resolve_benchmarkable_ids(cat) == {"C15"}
+        cat = self._cat(("mean_early_growth_rate", "g/kg/d", "mean", None), ("lost_by_day_28", "%", None, None))
+        assert resolve_benchmarkable_ids(cat) == {"lost_by_day_28"}
 
     def test_a_count_is_refused_even_when_it_declares_itself_benchmarkable(self):
         """The one rule a registry edit must not be able to switch off. The
         registry is editable with no deploy; opportunity sizes are visible on
         the programme report, so a published count names the opportunity."""
-        cat = self._cat(("C01", "n", "count", True), ("C13", "g/kg/d", "mean", True))
+        cat = self._cat(("total_cases", "n", "count", True), ("mean_early_growth_rate", "g/kg/d", "mean", True))
         out = resolve_benchmarkable_ids(cat)
-        assert "C01" not in out
-        assert "C13" in out
+        assert "total_cases" not in out
+        assert "mean_early_growth_rate" in out
 
     def test_a_count_is_refused_under_the_fallback_too(self):
-        cat = self._cat(("N01", "%", "count", None), ("C15", "%", None, None))
-        assert resolve_benchmarkable_ids(cat) == {"C15"}
+        cat = self._cat(("started_cases", "%", "count", None), ("lost_by_day_28", "%", None, None))
+        assert resolve_benchmarkable_ids(cat) == {"lost_by_day_28"}
 
 
 def test_the_real_kmc_registry_now_benchmarks_the_growth_rate():
-    """End to end over the REAL catalog, not a fixture: C13 is declared and
+    """End to end over the REAL catalog, not a fixture: mean_early_growth_rate is declared and
     reaches the allow-list, and the counts stay out."""
-    cat = _catalog("C", ("C13", "C01", "C15"))
+    cat = _catalog("KMC", ("mean_early_growth_rate", "total_cases", "lost_by_day_28"))
     out = resolve_benchmarkable_ids(cat)
-    assert "C13" in out, "the registry declaration did not reach the publisher"
-    assert "C01" not in out, "a case count became benchmarkable"
+    assert "mean_early_growth_rate" in out, "the registry declaration did not reach the publisher"
+    assert "total_cases" not in out, "a case count became benchmarkable"
 
 
 def test_a_declared_indicator_reaches_the_PUBLISHER_not_just_the_helper():
@@ -601,12 +611,12 @@ def test_a_declared_indicator_reaches_the_PUBLISHER_not_just_the_helper():
     unit tests above call the resolver directly and cannot see that."""
     pub = _publish(
         _cohort(),
-        snapshot=build_snapshot(c_ids=("C13", "C01", "C15")),
-        history=_history(indicator_ids=("C13",)),
+        snapshot=build_snapshot(c_ids=("mean_early_growth_rate", "total_cases", "lost_by_day_28")),
+        history=_history(indicator_ids=("mean_early_growth_rate",)),
     )
     published = set(BenchmarkValue.objects.filter(publication=pub).values_list("indicator_id", flat=True))
-    assert "C13" in published, "the registry's declaration did not survive the publisher"
-    assert "C01" not in published, "a case count was published"
+    assert "mean_early_growth_rate" in published, "the registry's declaration did not survive the publisher"
+    assert "total_cases" not in published, "a case count was published"
 
 
 class TestTheCountGuardSurvivesAnExplicitOverride:
@@ -617,25 +627,25 @@ class TestTheCountGuardSurvivesAnExplicitOverride:
     def test_an_override_naming_a_count_does_not_publish_it(self):
         pub = _publish(
             _cohort(),
-            snapshot=build_snapshot(c_ids=("C01", "C15")),
-            history=_history(indicator_ids=("C01", "C15")),
-            benchmarkable_indicator_ids={"C01", "C15"},
+            snapshot=build_snapshot(c_ids=("total_cases", "lost_by_day_28")),
+            history=_history(indicator_ids=("total_cases", "lost_by_day_28")),
+            benchmarkable_indicator_ids={"total_cases", "lost_by_day_28"},
         )
         published = set(BenchmarkValue.objects.filter(publication=pub).values_list("indicator_id", flat=True))
-        assert "C01" not in published, "an explicit override published a case count"
-        assert "C15" in published, "the override did not widen anything at all"
+        assert "total_cases" not in published, "an explicit override published a case count"
+        assert "lost_by_day_28" in published, "the override did not widen anything at all"
 
     def test_an_override_can_still_add_a_non_rate(self):
         """The whole point of the override: publish a mean the unit rule missed,
         without editing a shared registry."""
         pub = _publish(
             _cohort(),
-            snapshot=build_snapshot(c_ids=("C13", "C15")),
-            history=_history(indicator_ids=("C13",)),
-            benchmarkable_indicator_ids={"C13"},
+            snapshot=build_snapshot(c_ids=("mean_early_growth_rate", "lost_by_day_28")),
+            history=_history(indicator_ids=("mean_early_growth_rate",)),
+            benchmarkable_indicator_ids={"mean_early_growth_rate"},
         )
         published = set(BenchmarkValue.objects.filter(publication=pub).values_list("indicator_id", flat=True))
-        assert "C13" in published
+        assert "mean_early_growth_rate" in published
 
 
 def test_the_primary_family_is_named_by_its_catalog_not_by_its_ids():
