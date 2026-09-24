@@ -163,6 +163,128 @@ class TestAdvancePayment:
         assert "Paid in advance" in body
 
 
+def _invoice_only(da, contract):
+    return op(
+        da,
+        "invoice_record",
+        data={
+            "contract_id": contract["id"],
+            "amount": "18000.00",
+            "quantity_billed": "30000",
+            "quantity_unit": "co-pack",
+            "source": "supplier_reported",
+        },
+    )
+
+
+def _refuse_four_cartons(da, contract):
+    op(
+        da,
+        "receipt_record",
+        data={
+            "contract_id": contract["id"],
+            "supply_point_id": _warehouse_id(da),
+            "received_on": TODAY.isoformat(),
+            "source": "supplier_reported",
+            "lines": [
+                {
+                    "item_id": contract["item_id"],
+                    "quantity_accepted": "0",
+                    "quantity_rejected": "4",
+                    "rejection_reason": "punctured",
+                    "quantity_unit": "carton",
+                }
+            ],
+        },
+    )
+
+
+def _match_panel(body):
+    """The ordered/received panel only, so a label elsewhere on the page cannot pass a test."""
+    start = body.index("Ordered · received")
+    return body[start : body.index("Shipments", start)]
+
+
+class TestAdvanceWordsFollowPayments:
+    """ "Paid in advance" printed on an order with USD 0.00 paid read as paid."""
+
+    def test_nothing_paid_is_unpaid(self, da, chain):
+        order = _fresh_order(da, chain, payment_terms="advance")
+        _invoice_only(da, order)
+        assert op(da, "contract_match", contract_id=order["id"])["advance_state"] == "unpaid"
+
+    def test_part_paid_and_paid(self, da, chain):
+        order = _fresh_order(da, chain, payment_terms="advance")
+        invoice = _invoice_only(da, order)
+        pay = {"invoice_id": invoice["id"], "paid_on": TODAY.isoformat(), "source": "we_recorded"}
+        op(da, "payment_record", data={**pay, "amount": "6000.00"})
+        assert op(da, "contract_match", contract_id=order["id"])["advance_state"] == "part_paid"
+        op(da, "payment_record", data={**pay, "amount": "12000.00"})
+        assert op(da, "contract_match", contract_id=order["id"])["advance_state"] == "paid"
+
+    def test_on_delivery_orders_have_no_advance_state(self, da, chain):
+        order = _fresh_order(da, chain)
+        assert op(da, "contract_match", contract_id=order["id"])["advance_state"] is None
+
+    def test_the_page_says_payable_not_paid_when_nothing_is_paid(self, client_in_programme, da, chain):
+        order = _fresh_order(da, chain, payment_terms="advance")
+        _invoice_only(da, order)
+        panel = _match_panel(
+            client_in_programme.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
+        )
+        assert "payable in advance" in panel
+        assert "paid in advance" not in panel.lower()
+        assert "To pay in advance" in panel
+        assert "nothing paid yet" in panel
+        assert "USD 18,000.00" in panel
+
+    def test_the_page_keeps_paid_in_advance_once_paid(self, client_in_programme, da, chain):
+        order = _fresh_order(da, chain, payment_terms="advance")
+        _invoice_and_pay(da, order)
+        panel = _match_panel(
+            client_in_programme.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
+        )
+        assert "· paid in advance" in panel
+        assert "Paid in advance" in panel
+        assert "nothing paid yet" not in panel
+
+
+class TestRefusedGoodsOnAnAdvanceOrder:
+    """ "Still outstanding 200" sat above "nothing more to come" when the 200 were refused."""
+
+    def test_the_match_states_what_was_refused(self, da, chain):
+        contract = _advance_order(da, chain)
+        _invoice_and_pay(da, contract)
+        _refuse_four_cartons(da, contract)
+        match = op(da, "contract_match", contract_id=contract["id"])
+        assert match["refused"] == {"amount": "200", "unit": "co-pack"}
+
+    def test_refused_is_its_own_row_and_outstanding_is_what_is_still_to_come(self, client_in_programme, da, chain):
+        contract = _advance_order(da, chain)
+        _invoice_and_pay(da, contract)
+        _refuse_four_cartons(da, contract)
+        panel = _match_panel(
+            client_in_programme.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
+        )
+        assert "Refused on arrival" in panel
+        refused_row = panel[panel.index("Refused on arrival") :]
+        assert "200 co-packs" in refused_row[: refused_row.index("</tr>")]
+        outstanding_row = panel[panel.index("Still outstanding") :]
+        assert "0 co-packs" in outstanding_row[: outstanding_row.index("</tr>")]
+        assert "200 co-packs" not in outstanding_row[: outstanding_row.index("</tr>")]
+        assert "nothing more to come" in panel
+
+    def test_on_delivery_orders_keep_outstanding_as_ordered_less_received(self, client_in_programme, da, chain):
+        panel = _match_panel(
+            client_in_programme.get(
+                reverse("supply_chain:order_detail", args=[chain["contract"]["id"]])
+            ).content.decode()
+        )
+        assert "Refused on arrival" not in panel
+        outstanding_row = panel[panel.index("Still outstanding") :]
+        assert "200 co-packs" in outstanding_row[: outstanding_row.index("</tr>")]
+
+
 def _warehouse_id(da):
     return next(p["id"] for p in op(da, "supply_point_list") if p["slug"] == "wh")
 
