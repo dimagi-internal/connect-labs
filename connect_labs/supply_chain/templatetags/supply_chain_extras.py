@@ -489,10 +489,41 @@ def told_by(row, orgs):
 
 
 @register.filter
-def distinct_count(values):
-    """How many different values a mapping or list holds (compared as text)."""
-    items = values.values() if isinstance(values, dict) else (values or [])
-    return len({str(item) for item in items})
+def buyer_comparison(by_buyer):
+    """What the per-buyer landed totals actually establish, and no more.
+
+    {"state": "unknown" | "differ" | "same", "unconfirmed": [buyer, ...]}.
+
+    `unknown` whenever ANY buyer's total is unconfirmed: a missing figure
+    cannot be said to equal or differ from the others, and "none are payable"
+    is exactly what an unconfirmed duty does not tell you (CodeRabbit on
+    #1975). `differ` only when two CONFIRMED totals differ; `same` only when
+    every total is confirmed and they all agree -- which says they cost the
+    same, not why.
+    """
+    cells = dict(by_buyer or {})
+    unconfirmed = [buyer for buyer, cell in cells.items() if not isinstance(cell, dict) or "amount" not in cell]
+    confirmed = {
+        (cell.get("currency"), _as_number(cell.get("amount")))
+        for buyer, cell in cells.items()
+        if buyer not in unconfirmed
+    }
+    if len(confirmed) > 1:
+        state = "differ"
+    elif unconfirmed or not confirmed:
+        state = "unknown"
+    else:
+        state = "same"
+    return {"state": state, "unconfirmed": unconfirmed}
+
+
+def _as_number(amount):
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        return Decimal(str(amount))
+    except (InvalidOperation, ValueError):
+        return amount
 
 
 @register.filter

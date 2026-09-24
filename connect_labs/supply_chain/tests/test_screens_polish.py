@@ -17,6 +17,7 @@ from django.urls import reverse
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.templatetags.supply_chain_extras import buyer_comparison
 
 pytestmark = pytest.mark.django_db
 
@@ -126,3 +127,68 @@ class TestDonorSuppliers:
         op(da, "supplier_create", data={"name": "Water For All", "type": "donor"})
         body = client_in_programme.get(reverse("supply_chain:contract_create")).content.decode()
         assert "Water For All (donor)" in body
+
+
+class TestThePerBuyerPanelSaysWhatIsKnown:
+    """CodeRabbit on #1975: the panel claimed different amounts from totals that
+    were equal, and "none are payable" from totals that were unconfirmed."""
+
+    def test_equal_confirmed_totals_are_said_to_be_the_same_and_nothing_more(self):
+        cell = {"amount": "2400", "currency": "USD"}
+        assert buyer_comparison({"programme_org": cell, "partner_org": dict(cell), "agency": dict(cell)}) == {
+            "state": "same",
+            "unconfirmed": [],
+        }
+
+    def test_the_same_amount_written_two_ways_is_the_same(self):
+        compared = buyer_comparison(
+            {
+                "programme_org": {"amount": "2400", "currency": "USD"},
+                "agency": {"amount": "2400.00", "currency": "USD"},
+            }
+        )
+        assert compared["state"] == "same"
+
+    def test_any_unconfirmed_total_means_it_cannot_be_said(self):
+        cell = {"amount": "2400", "currency": "USD"}
+        compared = buyer_comparison(
+            {"programme_org": cell, "partner_org": {"unconfirmed": ["duty rate not known"]}, "agency": cell}
+        )
+        assert compared == {"state": "unknown", "unconfirmed": ["partner_org"]}
+
+    def test_confirmed_totals_that_differ_are_said_to_differ(self):
+        compared = buyer_comparison(
+            {
+                "programme_org": {"amount": "2400", "currency": "USD"},
+                "partner_org": {"amount": "2760", "currency": "USD"},
+                "agency": {"unconfirmed": ["x"]},
+            }
+        )
+        assert compared == {"state": "differ", "unconfirmed": ["agency"]}
+
+    def test_the_order_page_never_infers_none_payable_from_unconfirmed_totals(self, client_in_programme, da, world):
+        order = op(
+            da,
+            "contract_create",
+            data={
+                "supplier_id": world["supplier"]["id"],
+                "commodity_slug": "chlorine",
+                "buyer_of_record": "partner_org",
+                "buyer_org_id": world["us"]["id"],
+                "reference": "CL-9",
+                "quantity": "600",
+                "quantity_unit": "jerry_can",
+                "unit_price": "4.00",
+                "unit_price_unit": "per_pack",
+                "currency": "USD",
+                "freight_basis": "included",
+                "duties_basis": "not_specified",
+                "vat_basis": "not_specified",
+                "source": "we_recorded",
+            },
+        )
+        body = client_in_programme.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
+        panel = body.split("The same order, per buyer", 1)[1][:4000]
+        assert "none are payable" not in panel
+        assert "costing different amounts" not in panel
+        assert "cannot be said yet" in panel

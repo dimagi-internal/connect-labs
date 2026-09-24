@@ -228,13 +228,23 @@ was ordered. Before, the page showed this order's half and a link to the other.
       </table>
       </div>
       <p class="text-xs text-gray-500 mt-2">
-        {% if landed.by_buyer|distinct_count > 1 %}
-          Duty and VAT fall on whoever imports, so this is the same goods at the
-          same price costing different amounts.
-        {% else %}
-          Duty and VAT fall on whoever imports; here none are payable, so it
-          costs the same whoever buys.
-        {% endif %}
+        {% comment %}Only what the figures establish: never "they differ" when they
+        are equal, and never "none are payable" from totals that are unconfirmed
+        (CodeRabbit on #1975).{% endcomment %}
+        {% with compared=landed.by_buyer|buyer_comparison %}
+          Duty and VAT fall on whoever imports.
+          {% if compared.state == "differ" %}
+            Under the buyers whose totals are known, the same goods at the same price cost different amounts.
+          {% elif compared.state == "same" %}
+            Every buyer's total is known and they are the same.
+          {% endif %}
+          {% if compared.unconfirmed %}
+            {% if compared.state == "differ" %}The rest cannot be compared yet:{% else %}Whether it costs more or less under another buyer cannot be said yet:{% endif %}
+            the total is unconfirmed when
+            {% for buyer in compared.unconfirmed %}{{ buyer|buyer_label }}{% if not forloop.last %}{% if forloop.revcounter == 2 %} or {% else %}, {% endif %}{% endif %}{% endfor %}
+            imports.
+          {% endif %}
+        {% endwith %}
         {% if contract.duty_relief_claimed and not contract.duty_relief_evidenced %}
           A relief is claimed here with no exemption document attached, which is
           why the figure above is unconfirmed rather than a bargain.
