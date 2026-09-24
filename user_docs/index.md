@@ -40,6 +40,10 @@ graph LR
 | [Coverage Maps](coverage-maps.md)     | Interactive map of delivery unit boundaries and service point locations       |
 | [Reports with Claude](reports-with-claude.md) | Build and change reports and indicator definitions by talking to Claude |
 | [The Semantic Layer](semantic-layer.md) | How indicator definitions work, reading their SQL, and managing them across programmes |
+| [Benchmarks](benchmarks.md) | Show each opportunity how it compares with anonymous peers, today and over time |
+| [Shared Report Templates](shared-report-templates.md) | Keep many per-opportunity reports in step from one template, one set of pipelines and one registry |
+| [Cross-Programme Reports](cross-program-rollups.md) | Roll opportunities from different Connect programmes up into one report |
+| [Weekly Trends and Saved Runs](weekly-trends-and-snapshots.md) | How trend lines come from saved runs, and how to build and repair the history |
 | [AI Features](ai-features.md)         | AI assistants embedded throughout Labs for editing, reviewing, and analysis   |
 
 These features work together. A common flow: review visits with **Audit**, create follow-up **Tasks** for flagged workers, and monitor outcomes in a **Workflow** dashboard.
