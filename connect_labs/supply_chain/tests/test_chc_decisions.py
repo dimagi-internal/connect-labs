@@ -618,3 +618,71 @@ class TestARoundStatesTheContentsItBuys:
         ).content.decode()
         assert "What this round buys" in body
         assert "2 sachet ORS + 10 tablet Zinc" in body
+
+
+class TestARoundIsAwardedOnceEveryLineIs:
+    """A round with every line awarded read "open" nine days past its deadline."""
+
+    def _two_line_round(self, da, chain, status="open"):
+        from connect_labs.supply_chain.models import Round
+
+        round_ = op(
+            da,
+            "round_create",
+            data={
+                "label": "Two lines",
+                "delivery_point": {"city": "Kano"},
+                "lines": [
+                    {"commodity_slug": "ors-zinc-copack", "quantity": "30000", "quantity_unit": "co-pack"},
+                    {"commodity_slug": "ors", "quantity": "1000", "quantity_unit": "sachet"},
+                ],
+            },
+        )
+        Round.objects.filter(pk=round_["id"]).update(status=status)
+        supplier_id = chain["quotes"][0]["supplier_id"]
+        quotes = {}
+        for slug, unit, basis in (("ors-zinc-copack", "co-pack", "30000"), ("ors", "sachet", "1000")):
+            quotes[slug] = op(
+                da,
+                "quote_record",
+                data={
+                    "round_id": round_["id"],
+                    "commodity_slug": slug,
+                    "supplier_id": supplier_id,
+                    "as_quoted_amount": "0.60",
+                    "as_quoted_unit": "per_base_unit",
+                    "quantity_basis": basis,
+                    "quantity_basis_unit": unit,
+                    "freight_basis": "included",
+                    "duties_basis": "included",
+                },
+            )
+        return round_, quotes
+
+    def _award(self, da, round_, quote):
+        op(da, "award_create", round_id=round_["id"], quote_id=quote["id"], rationale="the one we chose")
+
+    def test_a_single_line_round_is_awarded_by_its_award(self, da, chain):
+        assert op(da, "round_get", round_id=chain["round"]["id"])["status"] == "awarded"
+
+    def test_it_stays_open_while_a_line_is_unawarded(self, da, chain):
+        round_, quotes = self._two_line_round(da, chain)
+        self._award(da, round_, quotes["ors-zinc-copack"])
+        assert op(da, "round_get", round_id=round_["id"])["status"] == "open"
+        self._award(da, round_, quotes["ors"])
+        assert op(da, "round_get", round_id=round_["id"])["status"] == "awarded"
+
+    def test_a_closed_round_stays_closed(self, da, chain):
+        round_, quotes = self._two_line_round(da, chain, status="closed")
+        self._award(da, round_, quotes["ors-zinc-copack"])
+        self._award(da, round_, quotes["ors"])
+        assert op(da, "round_get", round_id=round_["id"])["status"] == "closed"
+
+    def test_the_overview_and_round_page_say_awarded(self, client_in_programme, chain):
+        overview = client_in_programme.get(reverse("supply_chain:home")).content.decode()
+        row = overview[overview.index(">CHC<") :]
+        assert "awarded" in row[: row.index("</tr>")].lower()
+        page = client_in_programme.get(
+            reverse("supply_chain:procurement_round_detail", args=[chain["round"]["id"]])
+        ).content.decode()
+        assert "Status: Awarded" in page
