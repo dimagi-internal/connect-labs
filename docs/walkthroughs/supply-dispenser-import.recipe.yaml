@@ -1,6 +1,6 @@
 base_url: https://labs.connect.dimagi.com
 narrative_locked: true
-narrative_locked_at: '2026-09-23T23:49:08.636022+00:00'
+narrative_locked_at: '2026-09-24T14:00:00+00:00'
 review_mode: autonomous
 video_viewport_width: 1440
 video_viewport_height: 900
@@ -13,6 +13,8 @@ tagline: A donated import, from customs to the sites that hold it
 why_brief: supply-dispenser-import.why_brief.yaml
 scenes:
 - id: the-checks-list-says-the-import-is-stuck
+  role: overview
+  url: /supply/checks/?program_id=10604
   actions:
   - kind: wait_for
     target: css:h2:has-text('What the record cannot answer')
@@ -27,7 +29,7 @@ scenes:
     target: css:a:has-text('Shipment past its expected date')
   - kind: hover
     note: the missing-documents check, naming who owes each
-    say: documents
+    say: not on file
     seconds: 2.0
     target: css:a:has-text('Documents it needs, not on file')
   concept_claim: A late import and its missing documents are stated by the record
@@ -35,46 +37,20 @@ scenes:
     dispensers are stuck.
   design_intent: 'Open on the problem, not on a form: the list reads as facts, grouped
     by kind, each linking to the consignment. The two entries for one consignment
-    are the reason the rest of the demo happens.'
-  role: overview
+    are the question the rest of the demo answers, and the list comes back at the end.'
   show: 'The programme''s checks list at /supply/checks/. Two entries are about the
-    same ClearWater Action consignment: one says it is past its expected date and
-    not received, the other lists the import documents that are not on file and the
-    organisation that owes each.'
-  url: /supply/checks/?program_id=10604
-- id: the-consignment-and-who-owes-what
+    same ClearWater Action consignment, KEX-AWB-40981: one says it is past its expected
+    date and not received, the other lists the three import documents that are not
+    on file and the organisation that owes each.'
+- id: uploading-clearwaters-papers
+  url: /supply/shipments/${shipment_id}/
   actions:
   - kind: wait_for
     target: css:span:has-text('Documents it needs')
-  - kind: hold
-    seconds: 1.2
   - kind: hover
-    say: on file
-    seconds: 1.2
-    target: css:li:has-text('Airway bill') span:has-text('on file')
-  - kind: hover
-    say: who owes it
+    say: who owes
     seconds: 1.4
     target: css:li:has-text('Packing list') span:has-text('owed by')
-  - kind: hover
-    seconds: 1.4
-    target: css:li:has-text('Customs declaration') span:has-text('owed by')
-  - kind: snapshot
-    note: the checklist with owners, the late banner above it
-  concept_claim: Each required document is listed against the consignment with its
-    status and the organisation that owes it, so a follow-up goes to the right party.
-  design_intent: 'The checklist is the page''s centre of gravity: one row per document,
-    a clear on-file or outstanding chip, and the owing organisation in the same line.'
-  show: 'The shipment page for the consignment: status at customs and in transit (not
-    counted as stock), a warning that it is past its expected date, and the "Documents
-    it needs" checklist — airway bill on file, owed by Kestrel Express Couriers; packing
-    list and commercial invoice outstanding, owed by ClearWater Action; customs declaration
-    outstanding, owed by Lagoon Clearing & Forwarding.'
-  url: /supply/shipments/${shipment_id}/
-- id: attaching-the-donors-documents
-  actions:
-  - kind: wait_for
-    target: css:span:has-text('Documents it needs')
   - kind: click
     must_succeed: true
     say: packing list
@@ -84,9 +60,9 @@ scenes:
   - kind: fill
     target: css:#id_title
     value: Packing list CWA-PL-0412
-  - kind: fill
-    target: css:#id_external_url
-    value: https://files.example.org/clearwater/CWA-PL-0412.pdf
+  - kind: upload
+    target: css:#id_upload
+    value: ${files_dir}/packing-list-CWA-PL-0412.pdf
   - kind: click
     must_succeed: true
     target: css:form button[type=submit]:has-text('Attach')
@@ -94,7 +70,7 @@ scenes:
   - kind: wait_for
     target: css:li:has-text('Packing list') span:has-text('on file')
   - kind: hold
-    seconds: 1.0
+    seconds: 0.8
   - kind: click
     must_succeed: true
     say: commercial invoice
@@ -104,13 +80,13 @@ scenes:
   - kind: fill
     target: css:#id_title
     value: Commercial invoice CWA-CI-0412 (value for customs only)
-  - kind: fill
-    target: css:#id_external_url
-    value: https://files.example.org/clearwater/CWA-CI-0412.pdf
+  - kind: upload
+    target: css:#id_upload
+    value: ${files_dir}/commercial-invoice-CWA-CI-0412.pdf
   - kind: hold
-    seconds: 1.0
+    seconds: 1.2
   - kind: snapshot
-    note: the attach form opened from the commercial-invoice row, kind already chosen, filled in
+    note: the attach form opened from the commercial-invoice line, naming the line it fills, the file chosen
   - kind: click
     must_succeed: true
     target: css:form button[type=submit]:has-text('Attach')
@@ -118,18 +94,20 @@ scenes:
   - kind: wait_for
     target: css:li:has-text('Commercial invoice') span:has-text('on file')
   - kind: hold
-    seconds: 1.2
-  concept_claim: Attaching a document from its checklist line files it as that kind
+    seconds: 1.0
+  concept_claim: Uploading a document from its checklist line files it as that kind
     against this consignment and marks the line on file.
-  design_intent: 'Start from the outstanding line, not from a blank form: the kind
-    is pre-selected, so the only thing typed is what the document is and where it
-    lives.'
-  show: From the packing-list row's Attach link, the attach form opens with the document
-    kind already chosen; Halima gives it a title and the link to the file, attaches
-    it, and is back on the consignment with that line on file. She does the same for
-    the commercial invoice.
+  design_intent: 'Start from the outstanding line, not from a blank form: the form
+    says which line it fills and who owes it, the kind is already chosen, and the
+    only things added are a title and the file itself.'
+  show: 'On the consignment page Halima reads the "Documents it needs" checklist, each
+    line naming who owes it, then uses the packing list''s Attach link: the form opens
+    saying it fills the "Packing list" line owed by ClearWater Action, with that kind
+    already chosen; she gives it a title, uploads the PDF and attaches it. She does
+    the same for the commercial invoice. The frame is the commercial invoice''s form
+    with its file chosen.'
+- id: the-checklist-is-complete
   url: /supply/shipments/${shipment_id}/
-- id: the-declaration-clears-the-check
   actions:
   - kind: wait_for
     target: css:span:has-text('Documents it needs')
@@ -142,40 +120,35 @@ scenes:
   - kind: fill
     target: css:#id_title
     value: Customs declaration LCF-2026-7731
-  - kind: fill
-    target: css:#id_external_url
-    value: https://files.example.org/lagoon/LCF-2026-7731.pdf
+  - kind: upload
+    target: css:#id_upload
+    value: ${files_dir}/customs-declaration-LCF-2026-7731.pdf
   - kind: click
     must_succeed: true
     target: css:form button[type=submit]:has-text('Attach')
     timeout_ms: 30000
   - kind: wait_for
     target: css:li:has-text('Customs declaration') span:has-text('on file')
+  - kind: scroll_to
+    target: css:span:has-text('Documents it needs')
   - kind: hold
-    seconds: 1.2
-  - kind: goto
-    say: checks list
-    target: /supply/checks/
-  - kind: wait_for
-    target: css:h2:has-text('What the record cannot answer')
-  - kind: hold
-    seconds: 1.5
+    seconds: 1.0
   - kind: hover
-    seconds: 1.5
-    target: css:a:has-text('Shipment past its expected date')
+    say: every document
+    seconds: 1.6
+    target: css:li:has-text('Customs declaration') span:has-text('on file')
   - kind: snapshot
-    note: the missing-documents entry gone; the lateness entry remains
-  concept_claim: Once every required document is attached, the missing-documents check
-    stops reporting the consignment, because the checklist and the check read the
-    same rule.
-  design_intent: 'The payoff of the paperwork beat is subtraction: an entry leaving
-    the checks list, with the lateness entry still there because the goods have not
-    moved yet.'
-  show: Halima attaches the customs declaration from its row; the checklist now has
-    nothing outstanding. Back on the checks list, the missing-documents entry for
-    the consignment is gone and only the lateness entry remains.
-  url: /supply/shipments/${shipment_id}/
+    note: the checklist with all four documents on file
+  concept_claim: Once the last required document is uploaded, the consignment's checklist
+    has nothing outstanding, each line linking to the file that satisfies it.
+  design_intent: 'The paperwork beat ends on a complete list: four lines, four on-file
+    chips, four files one click away. No separate "done" state to maintain.'
+  show: Halima uploads the customs declaration the clearing agent sent, from its own
+    line. The consignment page's checklist now shows the airway bill, packing list,
+    commercial invoice and customs declaration all on file, each with its title and
+    who owed it.
 - id: paying-to-land-it
+  url: /supply/shipments/${shipment_id}/
   actions:
   - kind: wait_for
     target: css:span:has-text('Charges paid to land it')
@@ -200,9 +173,17 @@ scenes:
   - kind: fill
     target: css:#id_amount
     value: '410000'
-  - kind: fill
-    target: css:#id_currency
+  - kind: click
+    target: css:.ts-wrapper:has(#id_currency-ts-control) .ts-control
+  - kind: press
+    value: Backspace
+    note: clear the order's own currency before choosing naira
+  - kind: type
     value: NGN
+  - kind: hold
+    seconds: 0.8
+  - kind: press
+    value: Enter
   - kind: fill
     target: css:#id_fx_rate_to_usd
     value: '0.00065'
@@ -236,9 +217,17 @@ scenes:
   - kind: fill
     target: css:#id_amount
     value: '185000'
-  - kind: fill
-    target: css:#id_currency
+  - kind: click
+    target: css:.ts-wrapper:has(#id_currency-ts-control) .ts-control
+  - kind: press
+    value: Backspace
+    note: clear the order's own currency before choosing naira
+  - kind: type
     value: NGN
+  - kind: hold
+    seconds: 0.8
+  - kind: press
+    value: Enter
   - kind: fill
     target: css:#id_fx_rate_to_usd
     value: '0.00065'
@@ -255,313 +244,240 @@ scenes:
     timeout_ms: 30000
   - kind: wait_for
     target: css:td:has-text('Clearing')
-  - kind: hold
-    seconds: 1.5
-  concept_claim: A charge is recorded against the consignment with its kind and payee,
-    and the shipment page itemises every charge paid to land it.
-  design_intent: 'Payee is the point: these are paid to customs and a clearing agent,
-    not to the donor, and the form says so in its help text.'
-  show: 'The Record a charge form, twice: a customs fee paid to Port customs (duty
-    account) and a clearing charge paid to Lagoon Clearing & Forwarding, each in naira
-    with its rate to dollars and the date paid. The consignment''s "Charges paid to
-    land it" panel then lists both, each naming its payee. The frame is the clearing
-    charge''s form, filled in; the itemised result is the next scene.'
-  url: /supply/shipments/${shipment_id}/
-- id: what-landing-a-donation-cost
-  actions:
-  - kind: wait_for
-    target: css:span:has-text('Landed cost')
-  - kind: hold
-    seconds: 1.2
-  - kind: hover
-    say: not bought
-    seconds: 1.4
-    target: css:td:has-text('Goods')
-  - kind: hover
-    say: itemised
-    seconds: 1.4
-    target: css:td:has-text('Customs fee')
-  - kind: hover
-    seconds: 1.6
-    target: css:td:has-text('Charges to land it')
-  - kind: snapshot
-    note: in-kind landed cost with the itemised charges
-  concept_claim: For a donated order, landed cost states that the goods were not purchased
-    instead of reporting a missing price, and still itemises every charge paid to
-    land them.
-  design_intent: 'Two different kinds of "no number": not purchased is a statement,
-    not a gap, and sits beside real money that was paid.'
-  show: The order page for ClearWater Action's in-kind order. Its landed-cost panel
-    reads "not purchased (in kind)" for goods, freight, duty and VAT, then lists the
-    customs fee and the clearing charge with their payees and a charges-to-land-it
-    total in dollars.
-  url: /supply/orders/${contract_id}/
-- id: arrival-and-the-two-broken-units
-  actions:
-  - kind: wait_for
-    target: css:a:has-text('Update status')
   - kind: click
     must_succeed: true
-    say: clears
+    say: cleared
     target: css:a:has-text('Update status')
   - kind: wait_for
     target: css:#id_status
   - kind: select
     target: css:#id_status
-    value: delivered
+    value: cleared
   - kind: click
     must_succeed: true
     target: css:form button[type=submit]:has-text('Save')
     timeout_ms: 30000
   - kind: wait_for
-    target: css:a:has-text('Record a receipt')
+    target: css:span:has-text('Ordered · received')
+  - kind: hold
+    seconds: 1.0
+  concept_claim: A charge is recorded against the consignment with its kind and payee,
+    so what landing a donation cost is kept beside it rather than in a contract price
+    that does not exist.
+  design_intent: 'Payee is the point: these are paid to customs and a clearing agent,
+    not to the donor, and the form says so.'
+  show: 'The Record a charge form, twice: a customs fee paid to Port customs (duty
+    account) and a clearing charge paid to Lagoon Clearing & Forwarding, each in naira
+    with its rate to dollars and the date paid. Then Halima moves the consignment
+    to cleared. The frame is the clearing charge''s form, filled in.'
+- id: harmattan-receives-and-refuses-two
+  url: ${distributor_link_path}
+  actions:
+  - kind: wait_for
+    target: css:summary:has-text('Record goods received')
+  - kind: hover
+    say: own link
+    seconds: 1.4
+    target: css:h2:has-text('What this link covers')
   - kind: click
     must_succeed: true
-    say: goods-received note
-    target: css:a:has-text('Record a receipt')
-  - kind: wait_for
-    target: css:#id_supply_point-ts-control
-  - kind: click
-    target: css:#id_supply_point-ts-control
-  - kind: type
-    value: Harmattan
-  - kind: hold
-    seconds: 0.8
-    note: let the picker filter to what was typed before choosing
-  - kind: press
-    value: Enter
+    target: css:summary:has-text('Record goods received')
+  - kind: select
+    target: css:#id_record_receipt-contract
+    value: ${contract_id}
+  - kind: select
+    target: css:#id_record_receipt-supply_point
+    value: ${warehouse_id}
+  - kind: select
+    target: css:#id_record_receipt-shipment
+    value: ${shipment_id}
   - kind: fill
-    target: css:#id_received_on
+    target: css:#id_record_receipt-received_on
     value: ${today}
   - kind: fill
-    target: css:#id_reference
+    say: goods-received note
+    target: css:#id_record_receipt-reference
     value: HHS-GRN-2231
-  - kind: select
-    target: css:#id_source
-    value: partner_reported
-  - kind: click
-    target: css:#id_lines-0-item-ts-control
-  - kind: type
-    value: ClearWater
-  - kind: hold
-    seconds: 0.8
-    note: let the picker filter to what was typed before choosing
-  - kind: press
-    value: Enter
   - kind: fill
-    target: css:#id_lines-0-quantity
+    target: css:#id_record_receipt-quantity_accepted
     value: '118'
   - kind: fill
-    target: css:#id_lines-0-quantity_unit
-    value: unit
-  - kind: fill
     say: refuses two
-    target: css:#id_lines-0-quantity_rejected
+    target: css:#id_record_receipt-quantity_rejected
     value: '2'
+  - kind: select
+    target: css:#id_record_receipt-unit_basis
+    value: base
   - kind: fill
-    say: reason
-    target: css:#id_lines-0-rejection_reason
+    say: cracked
+    target: css:#id_record_receipt-rejection_reason
     value: Tap housing cracked in transit; unit leaks
-  - kind: click
-    must_succeed: true
-    target: css:form button[type=submit]:has-text('Record receipt')
-    timeout_ms: 30000
-  - kind: wait_for
-    target: css:td:has-text('HHS-GRN-2231')
-  - kind: scroll_to
-    target: css:td:has-text('HHS-GRN-2231')
   - kind: hold
-    seconds: 1.5
-  - kind: snapshot
-    note: the goods-received note with 118 accepted, 2 refused and the reason
-  concept_claim: A goods-received note records accepted and refused units separately,
-    with a reason for the refusal, and only the accepted units count as received.
-  design_intent: The rejection is typed where it happened, on the line, with a reason
-    the donor will ask for; provenance says Harmattan told us, not that we counted.
-  show: 'Halima moves the consignment to delivered, then records Harmattan''s goods-received
-    note: 118 accepted at the Harmattan warehouse and 2 refused because their tap
-    housings cracked in transit, marked as reported by a partner. The order''s received
-    table shows the note with the refused units and their reason.'
-  url: /supply/shipments/${shipment_id}/
-- id: releasing-to-the-project-sites
-  actions:
-  - kind: wait_for
-    target: css:#id_kind
-  - kind: select
-    say: release notes
-    target: css:#id_kind
-    value: transfer
-  - kind: fill
-    target: css:#id_occurred_on
-    value: ${today}
-  - kind: click
-    target: css:#id_from_supply_point-ts-control
-  - kind: type
-    value: Harmattan
-  - kind: hold
-    seconds: 0.8
-    note: let the picker filter to what was typed before choosing
-  - kind: press
-    value: Enter
-  - kind: click
-    say: Dawaki
-    target: css:#id_to_supply_point-ts-control
-  - kind: type
-    value: Dawaki
-  - kind: hold
-    seconds: 0.8
-    note: let the picker filter to what was typed before choosing
-  - kind: press
-    value: Enter
-  - kind: click
-    target: css:#id_commodity-ts-control
-  - kind: type
-    value: Chlorine dispenser
-  - kind: hold
-    seconds: 0.8
-    note: let the picker filter to what was typed before choosing
-  - kind: press
-    value: Enter
-  - kind: click
-    target: css:#id_item-ts-control
-  - kind: type
-    value: ClearWater
-  - kind: hold
-    seconds: 0.8
-    note: let the picker filter to what was typed before choosing
-  - kind: press
-    value: Enter
-  - kind: fill
-    target: css:#id_quantity
-    value: '60'
-  - kind: fill
-    target: css:#id_quantity_unit
-    value: unit
-  - kind: fill
-    target: css:#id_reference
-    value: HHS-REL-118
-  - kind: select
-    target: css:#id_source
-    value: partner_reported
-  - kind: click
-    must_succeed: true
-    target: css:form button[type=submit]:has-text('Post it')
-    timeout_ms: 30000
-  - kind: goto
-    target: /supply/stock/movements/new/
-  - kind: wait_for
-    target: css:#id_kind
-  - kind: select
-    target: css:#id_kind
-    value: transfer
-  - kind: fill
-    target: css:#id_occurred_on
-    value: ${today}
-  - kind: click
-    target: css:#id_from_supply_point-ts-control
-  - kind: type
-    value: Harmattan
-  - kind: hold
-    seconds: 0.8
-    note: let the picker filter to what was typed before choosing
-  - kind: press
-    value: Enter
-  - kind: click
-    say: Rimi
-    target: css:#id_to_supply_point-ts-control
-  - kind: type
-    value: Rimi
-  - kind: hold
-    seconds: 0.8
-    note: let the picker filter to what was typed before choosing
-  - kind: press
-    value: Enter
-  - kind: click
-    target: css:#id_commodity-ts-control
-  - kind: type
-    value: Chlorine dispenser
-  - kind: hold
-    seconds: 0.8
-    note: let the picker filter to what was typed before choosing
-  - kind: press
-    value: Enter
-  - kind: click
-    target: css:#id_item-ts-control
-  - kind: type
-    value: ClearWater
-  - kind: hold
-    seconds: 0.8
-    note: let the picker filter to what was typed before choosing
-  - kind: press
-    value: Enter
-  - kind: fill
-    target: css:#id_quantity
-    value: '50'
-  - kind: fill
-    target: css:#id_quantity_unit
-    value: unit
-  - kind: fill
-    target: css:#id_reference
-    value: HHS-REL-119
-  - kind: select
-    target: css:#id_source
-    value: partner_reported
-  - kind: click
-    must_succeed: true
-    target: css:form button[type=submit]:has-text('Post it')
-    timeout_ms: 30000
-  - kind: wait_for
-    target: css:h2:has-text('Stock across the network')
-  - kind: hover
     seconds: 1.2
-    target: css:tr:has-text('Dawaki project site') td:nth-child(2)
-  - kind: hover
-    seconds: 1.2
-    target: css:tr:has-text('Rimi project site') td:nth-child(2)
   - kind: snapshot
-    note: both releases landed — each site's ledger balance, the warehouse's remainder
-  concept_claim: A release from the warehouse to a site is a transfer in the same
-    ledger, so durable equipment moves between named supply points like any other
+    note: Harmattan's goods-received note on its own link, 118 accepted, 2 refused with the reason
+  - kind: click
+    must_succeed: true
+    target: css:form:has(input[value=record_receipt]) button[type=submit]
+    timeout_ms: 30000
+  - kind: wait_for
+    target: css:h2:has-text('Recorded through this link')
+  - kind: hold
+    seconds: 1.2
+  concept_claim: The distributor records what arrived through its own update link,
+    accepted and refused separately with a reason, and only the accepted units become
     stock.
-  design_intent: 'The same ledger for equipment as for consumables: out of one named
-    place and into another, with the document it answers to.'
-  show: 'The Post a movement form, twice: a transfer out of the Harmattan warehouse
-    into the Dawaki project site (60) and one into the Rimi project site (50), each
-    with Harmattan''s release-note number and marked as reported by a partner. After
-    the second post the stock page shows the warehouse, Dawaki and Rimi balances.'
-  url: /supply/stock/movements/new/
-- id: where-the-dispensers-are
+  design_intent: 'The page is Harmattan''s, not the programme''s: it covers one order
+    and three places, needs no login, and marks everything as reported by Harmattan.
+    The refusal is typed on the line, with the reason the donor will ask for.'
+  show: 'Harmattan Health Supplies'' own update link, no labs login. Under "What this
+    link covers" it lists the ClearWater order and consignment and its three supply
+    points. It opens "Record goods received" and fills it: the order, received at
+    the Harmattan warehouse, from the consignment, note HHS-GRN-2231, 118 accepted
+    and 2 rejected in single units, because the tap housings cracked in transit.'
+- id: harmattan-releases-to-the-sites
+  url: ${distributor_link_path}
   actions:
   - kind: wait_for
-    target: text:Kept or used up
+    target: css:summary:has-text('Record a release')
+  - kind: click
+    must_succeed: true
+    say: Dawaki
+    target: css:summary:has-text('Record a release')
+  - kind: select
+    target: css:#id_record_release-from_supply_point
+    value: ${warehouse_id}
+  - kind: select
+    target: css:#id_record_release-to_supply_point
+    value: ${dawaki_id}
+  - kind: select
+    target: css:#id_record_release-item
+    value: ${item_id}
+  - kind: fill
+    target: css:#id_record_release-occurred_on
+    value: ${today}
+  - kind: fill
+    target: css:#id_record_release-quantity
+    value: '60'
+  - kind: select
+    target: css:#id_record_release-unit_basis
+    value: base
+  - kind: fill
+    target: css:#id_record_release-reference
+    value: HHS-REL-118
+  - kind: click
+    must_succeed: true
+    target: css:form:has(input[value=record_release]) button[type=submit]
+    timeout_ms: 30000
+  - kind: wait_for
+    target: css:h2:has-text('Recorded through this link')
+  - kind: click
+    must_succeed: true
+    say: Rimi
+    target: css:summary:has-text('Record a release')
+  - kind: select
+    target: css:#id_record_release-from_supply_point
+    value: ${warehouse_id}
+  - kind: select
+    target: css:#id_record_release-to_supply_point
+    value: ${rimi_id}
+  - kind: select
+    target: css:#id_record_release-item
+    value: ${item_id}
+  - kind: fill
+    target: css:#id_record_release-occurred_on
+    value: ${today}
+  - kind: fill
+    target: css:#id_record_release-quantity
+    value: '50'
+  - kind: select
+    target: css:#id_record_release-unit_basis
+    value: base
+  - kind: fill
+    target: css:#id_record_release-reference
+    value: HHS-REL-119
+  - kind: click
+    must_succeed: true
+    target: css:form:has(input[value=record_release]) button[type=submit]
+    timeout_ms: 30000
+  - kind: wait_for
+    target: css:h2:has-text('Recorded through this link')
+  - kind: scroll_to
+    target: css:h2:has-text('Recorded through this link')
+  - kind: hold
+    seconds: 1.0
+  - kind: hover
+    seconds: 1.6
+    target: css:li:has-text('Rimi project site')
+  - kind: snapshot
+    note: the link's own record, the goods-received note and both releases, each as Harmattan reported it
+  concept_claim: A release from the warehouse to a site is recorded by the distributor
+    through its link as a transfer in the same ledger, so durable equipment moves
+    between named supply points like any other stock.
+  design_intent: 'Two releases, one per site, each with the release-note number Harmattan
+    uses; the link keeps its own read-back of everything recorded through it, so
+    the distributor can see what the programme now sees.'
+  show: 'On the same link Harmattan records two releases out of its warehouse: 60 dispensers
+    to the Dawaki project site (HHS-REL-118) and 50 to the Rimi project site (HHS-REL-119).
+    Under "Recorded through this link" the page reads back the goods-received note
+    and both releases, newest first.'
+- id: the-checks-list-is-clear
+  url: /supply/checks/?program_id=10604
+  actions:
+  - kind: wait_for
+    target: css:h2:has-text('What the record cannot answer')
   - kind: hold
     seconds: 1.2
   - kind: hover
-    say: durable
-    seconds: 1.5
-    target: text:Durable — kept and moved, not forecast
-  - kind: scroll_to
-    target: text:What is inside
-  - kind: hold
-    seconds: 1.5
-    note: the dispenser and its spare-parts set, one kit
-  - kind: scroll_to
-    say: balance
-    target: text:Where it is now
-  - kind: hold
-    seconds: 1.5
-  - kind: hover
-    seconds: 1.5
-    target: css:tr:has-text('Dawaki project site')
+    say: nothing left
+    seconds: 2.0
+    target: text:Nothing to report
   - kind: snapshot
-    note: where each dispenser is, by site, for an item marked durable
-  concept_claim: A durable item is marked as kept and moved rather than forecast, and
-    its page gives the ledger balance at each site that holds it.
-  design_intent: The closing frame answers the question Halima started with — where
-    are the dispensers — and shows the product refusing a meaningless number rather
-    than inventing one.
-  show: The dispenser's own page in the catalogue. It is marked "Durable — kept and
-    moved, not forecast", lists what one unit holds (the dispenser and its spare-parts
-    set), and under "Where it is now" gives the ledger balance at the Harmattan
-    warehouse and the Dawaki and Rimi project sites.
-  url: /supply/catalogue/items/${item_id}/
+    note: the checks list that opened the story, with nothing left for the consignment
+  concept_claim: The checks that said the import was stuck clear themselves once the
+    documents are on file and the goods are received, because they are derived from
+    the same records rather than closed by hand.
+  design_intent: 'The callback to the opening frame: the same list, the same heading,
+    now empty. Nobody ticked anything off; the record stopped disagreeing with itself.'
+  show: 'The checks list from the opening, now reading 0 checks and "Nothing to report".
+    The lateness entry went when Harmattan''s note received the consignment, and the
+    missing-documents entry when the last document was uploaded.'
+- id: the-import-reconciles
+  url: /supply/orders/${contract_id}/
+  actions:
+  - kind: wait_for
+    target: css:span:has-text('Ordered · received')
+  - kind: scroll_to
+    target: css:#cost
+  - kind: hold
+    seconds: 1.0
+  - kind: hover
+    say: donated
+    seconds: 1.4
+    target: css:#match td:has-text('Ordered')
+  - kind: hover
+    say: refused
+    seconds: 1.6
+    target: css:#match td:has-text('Refused on arrival')
+  - kind: hover
+    say: cost to land
+    seconds: 1.4
+    target: css:#cost td:has-text('Charges to land it')
+  - kind: hover
+    say: held
+    seconds: 1.8
+    target: css:#where-now td:has-text('Held across')
+  - kind: snapshot
+    note: the order reconciled on one screen, what came, what was refused, what it cost to land, where it is now
+  concept_claim: A donated import reconciles on its order, with the units accepted and
+    refused on arrival and none still to come, the charges paid to land them, and
+    where each accepted unit is held now.
+  design_intent: 'The closing frame is arithmetic a funder can check: 120 in, 2 refused,
+    118 held across three named places, and the only money spent is the landing charges.
+    Equipment gets no months-of-stock figure.'
+  show: 'ClearWater Action''s in-kind order CWA-DISP-2026-01. Its cost panel says
+    the goods were donated and lists the customs fee and the clearing charge with
+    their payees and a total. "Ordered · received" reads 120 ordered, 118 received,
+    2 refused on arrival and nothing still to arrive. "Where they are now" gives the
+    Harmattan warehouse, the Dawaki project site and the Rimi project site, held across
+    three places.'

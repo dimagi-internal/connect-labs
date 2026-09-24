@@ -377,7 +377,12 @@ def seed(s: Seeder) -> dict:
         "shipment_id": shipment,
         "item_id": item,
         "warehouse_id": warehouse,
+        "dawaki_id": sites["dawaki"],
+        "rimi_id": sites["rimi"],
         "distributor_link_path": _link_path(link),
+        # Where the documents uploaded on camera live. Absolute and machine-
+        # specific, which is why it is an output rather than a recipe literal.
+        "files_dir": str(HERE / "files"),
         # Dates typed on camera: today's, so a re-render never files a receipt
         # or a charge in the past relative to the consignment it closes.
         "today": today.isoformat(),
