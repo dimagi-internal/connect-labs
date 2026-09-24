@@ -375,7 +375,7 @@ class TestPlaceOrderWhileAnApprovalIsPending:
         button = body.split("Place order</button>", 1)[0].rsplit("<button", 1)[1]
         assert "disabled" in button
         assert "regulatory approval from <b>The regulator</b>" in body
-        assert "asked 2026-09-01 and not yet answered" in body
+        assert "asked 1 Sep 2026 and not yet answered" in body
         assert reverse("supply_chain:contract_create") + "?award=" not in body
 
     def test_once_approved_it_is_a_link(self, client_in_programme, da, world):
@@ -701,9 +701,9 @@ class TestApprovalDatesDoNotWrap:
         op(da, "approval_decide", approval_id=approval["id"], status="approved", decided_on="2026-09-24")
         body = client_in_programme.get(reverse("supply_chain:award_detail", args=[world["award"]["id"]])).content
         body = body.decode()
-        asked = re.search(r"<td[^>]*>\s*2026-09-01\s*</td>", body).group(0)
+        asked = re.search(r"<td[^>]*>\s*1 Sep 2026\s*</td>", body).group(0)
         assert "whitespace-nowrap" in asked
-        answered = re.search(r"<span[^>]*>\s*2026-09-24\s*</span>", body).group(0)
+        answered = re.search(r"<span[^>]*>\s*24 Sep 2026\s*</span>", body).group(0)
         assert "whitespace-nowrap" in answered
 
 
@@ -860,7 +860,7 @@ class TestTheChecksPageReadsAsSentences:
 
     def test_the_category_definition_is_dark_enough_to_read(self, client_in_programme, da):
         body = self._page(client_in_programme, da)
-        chip = re.search(r'<span class="([^"]*)">— past a bound you set</span>', body)
+        chip = re.search(r'<span class="([^"]*)">— a figure past a limit you set</span>', body)
         assert chip, "the threshold chip carries its definition"
         assert "text-gray-600" in chip.group(1)
         assert "text-gray-400" not in chip.group(1)
@@ -936,9 +936,9 @@ class TestTheOrderPageSaysWhichAwardItWasPlacedAgainst:
         order = self._order(da, world, award_id=world["award"]["id"], round_id=world["round"]["id"])
         body = client_in_programme.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
         text = re.sub(r"\s+([,.;)])", r"\1", re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)))
-        assert "Against the award to Sahel Chemicals, decided 2026-09-02 by Amina Bello" in text
+        assert "Against the award to Sahel Chemicals, decided 2 Sep 2026 by Amina Bello" in text
         assert reverse("supply_chain:award_detail", args=[world["award"]["id"]]) in body
-        assert "The regulator (Regulatory) approved 2026-09-10" in text
+        assert "The regulator (Regulatory) approved 10 Sep 2026" in text
 
     def test_an_order_placed_without_an_award_says_nothing_of_one(self, client_in_programme, da, world):
         order = self._order(da, world)

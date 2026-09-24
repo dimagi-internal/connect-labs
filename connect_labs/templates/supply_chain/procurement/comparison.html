@@ -75,7 +75,7 @@
     <span class="font-semibold text-gray-900">Awarded</span>
     {% for award in awards %}
       <a class="ml-2 text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award.id %}">
-        award {{ award.id }}{% for row in comparison.all_rows %}{% if row.quote_id == award.quote_id %} to {{ row.supplier_name }}{% endif %}{% endfor %}{% if award.decided_on %}, {{ award.decided_on }}{% endif %}</a>{% if not forloop.last %} ·{% endif %}
+        award {{ award.id }}{% for row in comparison.all_rows %}{% if row.quote_id == award.quote_id %} to {{ row.supplier_name }}{% endif %}{% endfor %}{% if award.decided_on %}, {{ award.decided_on|day }}{% endif %}</a>{% if not forloop.last %} ·{% endif %}
     {% endfor %}
     <span class="text-xs text-gray-500 ml-2">— approvals and the order are on the award.</span>
   </div>
@@ -94,6 +94,9 @@
       {% if ranked_by_label %}Ranked by {{ ranked_by_label }}{% else %}Not yet ranked{% endif %}
     </p>
   </div>
+  {% if folded_columns %}
+    <p class="text-xs text-gray-500 mb-2">{{ folded_columns|join:" and " }} {{ folded_columns|length|pluralize:"is,are" }} the same as {{ first_column_label }} here, so {{ folded_columns|length|pluralize:"it is,they are" }} not repeated.</p>
+  {% endif %}
   <div class="table-container flex flex-col gap-2 mb-1">
     <div class="w-full overflow-x-auto">
       <table class="base-table">
@@ -220,6 +223,10 @@
           <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
              class="font-medium text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
           {% if row.item_name %}<span class="text-gray-700">· {{ row.item_name }}</span>{% endif %}
+          {% comment %}Its price, so "cheaper, but not what the round buys" can be read here and not taken on trust.{% endcomment %}
+          {% with first=comparison.columns.0 %}{% with cell=row.figures|dictkey:first.key %}{% if cell and cell.amount is not None and not cell.unconfirmed %}
+            <span class="text-gray-500">· {{ first.label }}: {{ cell|money_text }}</span>
+          {% endif %}{% endwith %}{% endwith %}
           {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
         </div>
       {% endfor %}

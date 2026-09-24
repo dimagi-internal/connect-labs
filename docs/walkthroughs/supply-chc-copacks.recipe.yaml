@@ -23,11 +23,11 @@ scenes:
     seconds: 2.0
   - kind: snapshot
     note: the open round and the contracts, each with its buyer of record and status
-  concept_claim: The supply overview shows the round, each contract with its buyer of record and status,
-    and the open checks as counts derived from records.
+  concept_claim: The supply overview shows the round, each contract with its buyer of record and status, and the
+    open checks as counts derived from records.
   role: overview
-  show: The supply overview for the synthetic CHC programme — the chain counts (source, order, deliver),
-    the one open round, and the contracts table with CHC-2026-01 in draft.
+  show: The supply overview for the synthetic CHC programme — the chain counts (source, order, deliver), the one
+    open round, and the contracts table with CHC-2026-01 in draft.
   url: /supply/?program_id=${program_id}
 - id: three-co-packs-one-set-aside
   actions:
@@ -37,15 +37,15 @@ scenes:
     seconds: 2.5
     note: 'the round names the contents it buys: 2 ORS sachets + 10 zinc tablets'
   - kind: scroll_to
-    target: css:h2:has-text('Quotes')
+    target: css:tr:has-text('Kaduna Pharma Works ORS/zinc co-pack')
   - kind: hold
     seconds: 2.0
   - kind: snapshot
     note: the three co-pack offers against the round's stated contents
-  concept_claim: The round page states the contents its co-pack line buys (2 ORS sachets + 10 zinc tablets)
-    and lists the distributor's three co-pack quotes against it.
-  show: 'The round page: ''What this round buys'' naming the co-pack line''s contents (2 sachet ORS +
-    10 tablet zinc), then the quotes table with Harmattan''s three co-pack offers.'
+  concept_claim: The round page states the contents its co-pack line buys (2 ORS sachets + 10 zinc tablets) and
+    lists the distributor's three co-pack quotes against it.
+  show: 'The round page: ''What this round buys'' naming the co-pack line''s contents (2 sachet ORS + 10 tablet
+    zinc), then the quotes table with Harmattan''s three co-pack offers.'
   url: /supply/procurement/rounds/${round_id}/
 - id: two-co-packs-ranked-like-with-like
   actions:
@@ -60,14 +60,16 @@ scenes:
     seconds: 2.5
   - kind: snapshot
     note: the four-sachet co-pack refused a ranking, and why
-  concept_claim: The comparison ranks the two co-pack quotes whose contents match the round's (2 ORS sachets
-    + 10 zinc tablets) and refuses to rank the four-sachet co-pack, naming the difference in contents
-    as the reason.
-  show: 'The co-pack comparison: two ranked rows (Kaduna Pharma Works first, marked Chosen), then the
-    four-sachet co-pack under ''Needs info'' refused a ranking — its contents are not what the round buys.'
+  concept_claim: The comparison ranks the two co-pack quotes whose contents match the round's (2 ORS sachets + 10
+    zinc tablets) and refuses to rank the four-sachet co-pack, naming the difference in contents as the reason.
+  show: 'The co-pack comparison: two ranked rows (Kaduna Pharma Works first, marked Chosen), then the four-sachet
+    co-pack under ''Needs info'' refused a ranking — its contents are not what the round buys.'
   url: /supply/procurement/rounds/${round_id}/compare/?commodity=ors-zinc-copack
 - id: amara-places-the-order
   actions:
+  - kind: hold
+    seconds: 1.0
+    note: the page as it stands before the act
   - kind: wait_for
     target: css:text=Bought by
   - kind: hold
@@ -86,8 +88,6 @@ scenes:
     value: ${placed_on}
   - kind: hold
     seconds: 1.5
-  - kind: snapshot
-    note: the order form, placed and signed, before it is saved
   - kind: click
     must_succeed: true
     target: role:button:Save changes
@@ -100,13 +100,16 @@ scenes:
     seconds: 2.0
   - kind: snapshot
     note: the order, now placed, bought by the programme
-  concept_claim: Placing the order changes the contract's status from draft to placed, with the programme
-    organisation as buyer of record.
-  show: The order page (draft, bought by Connect Child Health Programme as programme org), then Edit order
-    → status Placed → Save.
+  concept_claim: Placing the order changes the contract's status from draft to placed, with the programme organisation
+    as buyer of record.
+  show: The order page (draft, bought by Connect Child Health Programme as programme org), then Edit order → status
+    Placed → Save.
   url: /supply/orders/${copack_order_id}/
 - id: amara-pays-up-front
   actions:
+  - kind: hold
+    seconds: 1.0
+    note: the page as it stands before the act
   - kind: wait_for
     target: css:#id_paid_on
   - kind: fill
@@ -123,27 +126,28 @@ scenes:
     value: We set this up ourselves
   - kind: hold
     seconds: 1.5
-  - kind: snapshot
-    note: the transfer, filled in, before it is recorded
   - kind: click
     must_succeed: true
     target: role:button:Record payment
     timeout_ms: 30000
   - kind: wait_for
     target: css:text=Paid in advance
-  - kind: scroll
-    value: '520'
+  - kind: scroll_to
+    target: css:td:has-text('Paid in advance')
   - kind: hold
     seconds: 2.5
   - kind: snapshot
     note: paid in advance, awaiting delivery of the whole order
-  concept_claim: Recording the payment on an order paid in advance shows it as paid in advance and awaiting
-    delivery of the whole order, not as billed beyond what arrived.
-  show: The payment form for invoice HHS-INV-2026-014 — paid five days ago, USD 18,000.00, bank transfer,
-    reference — then the order page reading 'Paid in advance — awaiting delivery of 30,000 co-packs'.
+  concept_claim: Recording the payment on an order paid in advance shows it as paid in advance and awaiting delivery
+    of the whole order, not as billed beyond what arrived.
+  show: The payment form for invoice HHS-INV-2026-014 — paid five days ago, USD 18,000.00, bank transfer, reference
+    — then the order page reading 'Paid in advance — awaiting delivery of 30,000 co-packs'.
   url: /supply/invoices/${invoice_id}/payments/new/
 - id: tunde-confirms-order-and-payment
   actions:
+  - kind: hold
+    seconds: 1.0
+    note: the page as it stands before the act
   - kind: wait_for
     target: css:text=Updates for Harmattan Health Supplies
   - kind: hold
@@ -179,10 +183,10 @@ scenes:
     timeout_ms: 30000
   - kind: hold
     seconds: 2.0
-  concept_claim: Through the update link, the distributor confirms the order and records the date it received
-    the payment, both recorded as supplier reported.
-  show: The public update-link page for Harmattan — covers CHC-2026-01, the warehouse and Sahel's store;
-    Confirm this order; then confirm the payment received today.
+  concept_claim: Through the update link, the distributor confirms the order and records the date it received the
+    payment, both recorded as supplier reported.
+  show: The public update-link page for Harmattan — covers CHC-2026-01, the warehouse and Sahel's store; Confirm
+    this order; then confirm the payment received today.
   url: ${update_link_path}
 - id: tunde-records-the-inspected-batch
   actions:
@@ -222,10 +226,10 @@ scenes:
     timeout_ms: 30000
   - kind: hold
     seconds: 2.0
-  concept_claim: The link's goods-received form records accepted and rejected cartons with a rejection
-    reason, batch and expiry into the distributor's warehouse.
-  show: The "Record goods received" form on the link — order CHC-2026-01, received at Harmattan warehouse,
-    Kano, 596 accepted, 4 rejected with reason, batch and expiry.
+  concept_claim: The link's goods-received form records accepted and rejected cartons with a rejection reason, batch
+    and expiry into the distributor's warehouse.
+  show: The "Record goods received" form on the link — order CHC-2026-01, received at Harmattan warehouse, Kano,
+    596 accepted, 4 rejected with reason, batch and expiry.
 - id: amara-reads-harmattan-updates
   actions:
   - kind: wait_for
@@ -235,21 +239,24 @@ scenes:
   - kind: hold
     seconds: 2.5
     note: what Harmattan recorded through its own link
-  - kind: scroll
-    value: '300'
+  - kind: scroll_to
+    target: css:td:has-text('Recoverable from the supplier')
   - kind: hold
     seconds: 3.0
     note: 'the link''s updates above, and paid for and refused: 120 USD recoverable'
   - kind: snapshot
     note: the link's updates and the recoverable amount, in one frame
-  concept_claim: The order page lists the distributor's link updates (order confirmed, payment received,
-    receipt) and reports the refused cartons of an advance order as an amount recoverable from the supplier.
-  show: 'The order page — the ''Recorded through the update link held by Harmattan Health Supplies'' panel (order confirmed,
-    payment received, GRN-HHS-0923 596 accepted / 4 rejected), then the match panel: recoverable from
+  concept_claim: The order page lists the distributor's link updates (order confirmed, payment received, receipt)
+    and reports the refused cartons of an advance order as an amount recoverable from the supplier.
+  show: 'The order page — the ''Recorded through the update link held by Harmattan Health Supplies'' panel (order
+    confirmed, payment received, GRN-HHS-0923 596 accepted / 4 rejected), then the match panel: recoverable from
     the supplier 120 USD.'
   url: /supply/orders/${copack_order_id}/
 - id: amara-subscribes-to-low-stock
   actions:
+  - kind: hold
+    seconds: 1.0
+    note: the page as it stands before the act
   - kind: wait_for
     target: css:#id_label
   - kind: fill
@@ -264,18 +271,16 @@ scenes:
   - kind: click
     target: css:#id_commodity-ts-dropdown .option:has-text('ORS/zinc co-pack')
   - kind: click
-    note: to Amara's own address, by name -- not to the login filming this
+    note: to her own address, by name
     target: css:input[name=recipient][value=email]
   - kind: fill
     target: css:#id_recipient_email
-    value: amara.bello@chp-programme.example
+    value: amara.bello@dimagi-ai.com
   - kind: fill
     target: css:#id_recipient_name
     value: Amara Bello
   - kind: hold
     seconds: 1.0
-  - kind: snapshot
-    note: the alert, filled in, before it is created
   - kind: click
     must_succeed: true
     target: role:button:Create alert
@@ -286,13 +291,16 @@ scenes:
     seconds: 2.0
   - kind: snapshot
     note: the alert, standing
-  concept_claim: An alert subscription watching stock_below_minimum and stock_stockout for the co-pack
-    is saved for the programme.
-  show: The new-alert form — label, the two stock checks ticked, product ORS/zinc co-pack, sent to Amara
-    Bello at her address, as it happens — then the alerts list with the subscription.
+  concept_claim: An alert subscription watching stock_below_minimum and stock_stockout for the co-pack is saved
+    for the programme.
+  show: The new-alert form — label, the two stock checks ticked, product ORS/zinc co-pack, sent to Amara Bello at
+    her address, as it happens — then the alerts list with the subscription.
   url: /supply/alerts/new/
 - id: sahel-stock-take-comes-in-short
   actions:
+  - kind: hold
+    seconds: 1.0
+    note: the page as it stands before the act
   - kind: wait_for
     target: css:#id_supply_point-ts-control
   - kind: click
@@ -321,8 +329,7 @@ scenes:
     value: carton
   - kind: fill
     target: css:#id_reason
-    value: Sahel CHI stock take. 24 cartons short of the ledger — handed out at outreach days,
-      visits not yet synced.
+    value: Sahel CHI stock take. 24 cartons short of the ledger — handed out at outreach days, visits not yet synced.
   - kind: select
     target: css:#id_source
     value: A partner told us
@@ -336,11 +343,11 @@ scenes:
     timeout_ms: 30000
   - kind: hold
     seconds: 2.0
-  concept_claim: Recording the partner's stock take as an override sets the store's co-pack balance to
-    the counted 170 cartons.
-  show: The record-a-count form — Sahel CHI store, today, "Replace the ledger with this count", the co-pack
-    and its Kaduna Pharma Works trade item, 170 carton, notes, "A partner told us" — with the ledger's
-    194 cartons stated beside it, and the count 24 fewer.
+  concept_claim: Recording the partner's stock take as an override sets the store's co-pack balance to the counted
+    170 cartons.
+  show: The record-a-count form — Sahel CHI store, today, "Replace the ledger with this count", the co-pack and
+    its Kaduna Pharma Works trade item, 170 carton, notes, "A partner told us" — with the ledger's 194 cartons stated
+    beside it, and the count 24 fewer.
   url: /supply/stock/counts/new/
 - id: the-check-trips
   actions:
@@ -361,26 +368,32 @@ scenes:
     seconds: 3.0
   - kind: snapshot
     note: the notice the stock take tripped, sent to Amara
-  concept_claim: The alert's sent log records a 'Below its own minimum' notice for Sahel CHI store, found
-    after the stock take and sent to the subscriber.
-  show: The alerts page — Check now, then the sent log's row for Sahel CHI store, Wudil, 'Below its own
-    minimum', under the co-pack alert, marked sent.
+  concept_claim: The alert's sent log records a 'Below its own minimum' notice for Sahel CHI store, found after
+    the stock take and sent to the subscriber.
+  show: The alerts page — Check now, then the sent log's row for Sahel CHI store, Wudil, 'Below its own minimum',
+    under the co-pack alert, marked sent.
   url: /supply/alerts/
 - id: the-resupply-plan-names-the-quantity
   actions:
   - kind: wait_for
     target: css:text=Stock across the network
+  - kind: scroll_to
+    target: css:td:has-text('Sahel CHI store, Wudil')
   - kind: hold
     seconds: 3.0
   - kind: snapshot
     note: how much to send, and why
-  concept_claim: The stock page states Sahel's consumption per month, months of stock, the below-minimum
-    band and a send quantity of 194 cartons.
-  show: The stock network table — Sahel CHI store 170 carton, 3033 co-pack/month, 2.80 (min 3 / max 6),
-    send 194 carton, BELOW MIN; the warehouse holding 720 cartons.
-  url: /supply/stock/
+  concept_claim: The stock page states Sahel's consumption per month, months of stock, the below-minimum band and
+    a send quantity of 194 cartons.
+  show: The stock network, filtered to the Kaduna Pharma Works co-pack — the warehouse and six partner stores; Sahel
+    CHI store 170 cartons, about 3,033 co-packs a month, 2.80 months (min 3 / max 6), 194 cartons to send, BELOW
+    MIN, the others within their band.
+  url: /supply/stock/?item_id=${copack_item_id}
 - id: tunde-records-the-collection
   actions:
+  - kind: hold
+    seconds: 1.0
+    note: the page as it stands before the act
   - kind: wait_for
     target: css:text=Updates for Harmattan Health Supplies
   - kind: click
@@ -413,21 +426,24 @@ scenes:
   - kind: hold
     seconds: 2.5
     note: the release, recorded as reported by Harmattan
-  concept_claim: The link's release form records a transfer of 194 cartons from the distributor's warehouse
-    to the partner's store.
-  show: The "Record a release" form on the link — from Harmattan warehouse, Kano to Sahel CHI store, Wudil,
-    194 cartons, batch KPW-2609, release note.
+  concept_claim: The link's release form records a transfer of 194 cartons from the distributor's warehouse to the
+    partner's store.
+  show: The "Record a release" form on the link — from Harmattan warehouse, Kano to Sahel CHI store, Wudil, 194
+    cartons, batch KPW-2609, release note.
   url: ${update_link_path}
 - id: back-inside-its-band
   actions:
   - kind: wait_for
     target: css:text=Stock across the network
+  - kind: scroll_to
+    target: css:td:has-text('Sahel CHI store, Wudil')
   - kind: hold
     seconds: 3.0
   - kind: snapshot
     note: the loop closed
-  concept_claim: After the release the Sahel store reads six months of stock, inside its band, and the
-    warehouse — rated on its releases — shows its own months of stock and a send quantity.
-  show: The stock network table after the release — Sahel CHI store 364 carton, 6.00 months, inside its
-    band; the Harmattan warehouse rated on releases, with its months of stock and a send quantity.
-  url: /supply/stock/
+  concept_claim: After the release the Sahel store reads six months of stock, inside its band, and the warehouse
+    — rated on its releases — shows its own months of stock and a send quantity.
+  show: The same filtered table after the release — Sahel CHI store 364 cartons, 6.00 months, within its band; the
+    Harmattan warehouse, rated on its releases to all six partner stores, with its months of stock and the quantity to
+    reorder.
+  url: /supply/stock/?item_id=${copack_item_id}

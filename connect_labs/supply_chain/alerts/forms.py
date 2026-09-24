@@ -17,10 +17,13 @@ from connect_labs.supply_chain.models import Commodity, SupplyPoint
 
 __all__ = ["AlertSubscriptionForm", "check_kind_choices"]
 
+# What kind of finding each is, in words a procurement lead uses. "a fact
+# nobody supplied" and "past a bound in your own data" read as machine output
+# beside "stock below minimum" (the CHC render, iteration 4).
 _CATEGORY_WORDS = {
-    "missing": _("a fact nobody supplied"),
+    "missing": _("something nobody has told us yet"),
     "conflict": _("two records disagree"),
-    "threshold": _("past a bound in your own data"),
+    "threshold": _("a figure past a limit you set"),
 }
 
 _CADENCE_LABELS = {
@@ -35,9 +38,9 @@ def check_kind_choices():
 
     order = {category: index for index, category in enumerate(CATEGORIES)}
     kinds = sorted(KIND_CATEGORIES.items(), key=lambda pair: (order.get(pair[1], 99), pair[0]))
-    return [
-        (kind, f"{kind.replace('_', ' ')} — {_CATEGORY_WORDS.get(category, category)}") for kind, category in kinds
-    ]
+    from connect_labs.supply_chain.templatetags.supply_chain_extras import check_label
+
+    return [(kind, f"{check_label(kind)} — {_CATEGORY_WORDS.get(category, category)}") for kind, category in kinds]
 
 
 class _PointChoice(forms.ModelChoiceField):
@@ -86,7 +89,7 @@ class AlertSubscriptionForm(forms.Form):
     )
     recipient = forms.ChoiceField(
         label=_("Send to"),
-        choices=[("me", _("Me")), ("email", _("An email address — a colleague, a partner, a donor"))],
+        choices=[("me", _("Me")), ("email", _("An email address"))],
         initial="me",
         widget=forms.RadioSelect,
     )
@@ -94,7 +97,10 @@ class AlertSubscriptionForm(forms.Form):
         label=_("Email address"),
         required=False,
         widget=forms.EmailInput(attrs={**INPUT, "placeholder": "stores@example.org"}),
-        help_text=_("They need no labs account. The email carries the facts and links; the links need one."),
+        help_text=_(
+            "Anyone with an address: you, a colleague, a partner or a donor. The email carries the facts "
+            "and a link to each record."
+        ),
     )
     recipient_name = forms.CharField(
         label=_("Their name"),
@@ -140,7 +146,7 @@ class AlertSubscriptionForm(forms.Form):
         if getattr(user, "email", ""):
             self.fields["recipient"].choices = [
                 ("me", _("Me (%(email)s)") % {"email": user.email}),
-                ("email", _("An email address — a colleague, a partner, a donor")),
+                ("email", _("An email address")),
             ]
         # Someone else's alert: offer to leave its recipient alone, and make
         # that the default, so changing its cadence does not quietly move it

@@ -53,8 +53,8 @@ unconfirmed figures on the right.
         · <span class="text-amber-800">no trade item named</span>
       {% endif %}
       · quoted
-      {% if quote.received_on %}{{ quote.received_on }}{% else %}on a date the sheet did not give{% endif %}
-      {% for o in outreach %}{% if o.sent_on %}· asked {{ o.sent_on }}{% endif %}{% endfor %}
+      {% if quote.received_on %}{{ quote.received_on|day }}{% else %}on a date the sheet did not give{% endif %}
+      {% for o in outreach %}{% if o.sent_on %}· asked {{ o.sent_on|day }}{% endif %}{% endfor %}
     </p>
   </div>
   <div class="flex items-center gap-2">

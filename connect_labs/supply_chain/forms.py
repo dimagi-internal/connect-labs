@@ -219,12 +219,25 @@ class CurrencyField(forms.ChoiceField):
         return super().to_python(value).strip().upper()
 
 
+def _plain_decimal(value: Decimal) -> Decimal:
+    """The same number without trailing zeros, and never in exponent form ("3E+4")."""
+    normal = value.normalize()
+    return normal.quantize(Decimal(1)) if normal == normal.to_integral_value() else normal
+
+
 class ScopedForm(forms.ModelForm):
     """A ModelForm that knows whose data it may offer in its dropdowns."""
 
     def __init__(self, *args, access=None, **kwargs):
         self.access = access
         super().__init__(*args, **kwargs)
+        # A stored decimal is shown as a person wrote it: "30000", not
+        # "30000.0000" -- the column's scale printed four places on every
+        # quantity and price an edit form opened with (the CHC render).
+        for name, field in self.fields.items():
+            value = self.initial.get(name)
+            if isinstance(field, forms.DecimalField) and isinstance(value, Decimal) and value.is_finite():
+                self.initial[name] = _plain_decimal(value)
         self.helper = FormHelper(self)
         # The page shell draws the card and the buttons, so crispy renders the
         # fields and nothing else.
