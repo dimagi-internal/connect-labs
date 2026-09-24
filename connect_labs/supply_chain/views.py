@@ -346,6 +346,18 @@ def _link_updates(contract_id):
     return service.updates_for_contract(contract) if contract is not None else []
 
 
+def _amount(figure):
+    """A derived quantity's amount as a Decimal, or None when it is not one."""
+    from decimal import Decimal, InvalidOperation
+
+    if not isinstance(figure, dict) or figure.get("amount") is None:
+        return None
+    try:
+        return Decimal(str(figure["amount"]))
+    except (InvalidOperation, ValueError):
+        return None
+
+
 class OrderDetailView(OperationBase):
     """One order, with the two derivations that decide whether to pay it.
 
@@ -356,6 +368,54 @@ class OrderDetailView(OperationBase):
     """
 
     template_name = "supply_chain/order_detail.html"
+
+    def _fulfilment(self, contract, match):
+        """How an order that ran short was filled: this order plus each order covering it.
+
+        One view of the whole answer to "did the 700 arrive" -- the distributor's
+        450 and the partner's 250 -- where the page otherwise showed only this
+        order's own half and a link to the other. Only for an order something
+        covers; for any other it would restate the match card beside it.
+        Received is summed only when every source reports it in the order's
+        own unit, and is otherwise left out rather than added across units.
+        """
+        if not match.get("covered_by"):
+            return None
+        unit = contract.get("quantity_unit")
+        suppliers = {s["id"]: s["name"] for s in self.op("supplier_list")}
+        sources = [
+            {
+                "contract_id": contract["id"],
+                "reference": contract.get("reference") or f"order {contract['id']}",
+                "supplier": suppliers.get(contract["supplier_id"], ""),
+                "role": "this order — what it delivered",
+                "contributes": match.get("received"),
+                "received": match.get("received"),
+            }
+        ]
+        for cover in match["covered_by"]:
+            cover_match = self.op("contract_match", contract_id=cover["contract_id"])
+            sources.append(
+                {
+                    "contract_id": cover["contract_id"],
+                    "reference": cover.get("reference") or f"order {cover['contract_id']}",
+                    "supplier": cover["supplier"]["name"],
+                    "role": "covers the shortfall",
+                    "contributes": {"amount": cover.get("quantity"), "unit": cover.get("quantity_unit")},
+                    "received": cover_match.get("received"),
+                }
+            )
+        received = [_amount(s["received"]) for s in sources]
+        same_unit = all(isinstance(s["received"], dict) and s["received"].get("unit") == unit for s in sources)
+        total = sum(received) if same_unit and None not in received else None
+        from connect_labs.supply_chain.values import decimal_string
+
+        return {
+            "ordered": match.get("ordered"),
+            "sources": sources,
+            "received_total": {"amount": decimal_string(total), "unit": unit} if total is not None else None,
+            "complete": total is not None and total >= (_amount(match.get("ordered")) or 0),
+        }
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -373,6 +433,7 @@ class OrderDetailView(OperationBase):
         context["contract"] = contract
         context["landed"] = self.op("contract_landed_cost", contract_id=contract_id, compare_buyers=True)
         context["match"] = self.op("contract_match", contract_id=contract_id)
+        context["fulfilment"] = self._fulfilment(contract, context["match"])
         # The short order this one covers, by the reference people use for it.
         if contract.get("covers_shortfall_of_id"):
             context["covers"] = self.op("contract_get", contract_id=contract["covers_shortfall_of_id"])

@@ -253,6 +253,10 @@ class ContractForm(ProvenancedForm):
         basis = [(value, str(value).replace("_", " ").capitalize()) for value in records.BASIS]
         for name in ("freight_basis", "duties_basis", "vat_basis"):
             set_choices(self, name, basis)
+        # Required for a bought order only -- enforced in clean(), which knows
+        # how the goods were paid for.
+        for name in self.PRICED_ONLY:
+            self.fields[name].required = False
         set_choices(
             self,
             "status",
@@ -335,9 +339,20 @@ class ContractForm(ProvenancedForm):
     def clean_currency(self):
         return (self.cleaned_data.get("currency") or "").strip().upper()
 
+    # Asked of a bought order only. A donation or a purchase paid out of a
+    # setup fee has no currency to price it in and nobody paying to land it,
+    # and requiring the four made a partner's local purchase unrecordable
+    # without inventing answers (the IPTSc walkthrough).
+    PRICED_ONLY = ("currency", "freight_basis", "duties_basis", "vat_basis")
+
     def clean(self):
         cleaned = super().clean()
-        if cleaned.get("consideration") not in (None, "", "priced") and cleaned.get("unit_price") is not None:
+        priced = cleaned.get("consideration") in (None, "", "priced")
+        if priced:
+            for name in self.PRICED_ONLY:
+                if not cleaned.get(name) and name not in self.errors:
+                    self.add_error(name, _("This field is required."))
+        if not priced and cleaned.get("unit_price") is not None:
             # Said on the field rather than left to the operation's refusal,
             # which would land as a banner over twenty fields.
             self.add_error("unit_price", _("Goods that are not bought have no unit price."))
