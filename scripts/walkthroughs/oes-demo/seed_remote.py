@@ -107,7 +107,32 @@ def seed_orgs(access, data):
     return orgs
 
 
-def seed_catalogue(access, data, commodity_slugs=None):
+def _catalogue_slice(commodity_slugs):
+    """Which products a scope gets -- and there is no "all of them" default.
+
+    `commodity_slugs` is keyword-only and required on both seeders below, so
+    the call that used to put every chain's products into one program is now
+    a `TypeError` at the call site rather than a quietly wrong demo. `None`
+    is refused here for the same reason: a permissive value would be the
+    default in everything but name, and it was a default that made the wrong
+    call the easy one. (The plan's own Task 5 code block still contains that
+    call.)
+
+    Seeding by hand rather than through `seed_scopes` is fine -- it just has
+    to say which products, which is one call to `commodities_for`.
+    """
+    if commodity_slugs is None:
+        raise ValueError(
+            "a scope's catalogue needs the products that scope's chain names: pass "
+            "commodity_slugs=commodities_for(section, data['commodities']), or seed every scope "
+            "at once with seed_scopes(data). There is deliberately no 'all of them' default -- "
+            "one catalogue holding every chain's products is the thing this split exists to "
+            "prevent, and it is how chlorine ends up in the CHC picker"
+        )
+    return set(commodity_slugs)
+
+
+def seed_catalogue(access, data, *, commodity_slugs):
     """This scope's products -- and only this scope's.
 
     `commodity_slugs` is the whole point of the split. The catalogue is
@@ -121,29 +146,27 @@ def seed_catalogue(access, data, commodity_slugs=None):
     so a co-pack's contents have to be upserted before the co-pack. The
     document lists them that way and this does not resort them.
     """
-    rows = data["commodities"]
-    if commodity_slugs is not None:
-        wanted = set(commodity_slugs)
-        rows = [row for row in rows if row["slug"] in wanted]
+    wanted = _catalogue_slice(commodity_slugs)
+    rows = [row for row in data["commodities"] if row["slug"] in wanted]
     return {row["slug"]: op(access, "commodity_upsert", data=row) for row in rows}
 
 
-def seed_reference(access, data, commodity_slugs=None):
+def seed_reference(access, data, *, commodity_slugs):
     """The organisations and products one scope's chain is made of.
 
     Two halves with two different scopes, which is why they are separate
     functions above: organisations are labs-wide and shared, the catalogue is
     this program's alone.
 
-    **Seeding one of this demo's four scopes goes through `seed_scopes`, not
-    here.** Omitting `commodity_slugs` seeds the WHOLE document catalogue into
-    this one program, which is right only for a caller that has exactly one
-    scope and means all of it. Using it for the CHC or supply-only program is
-    how chlorine ends up in the CHC picker.
+    Seeding one of this demo's four scopes goes through `seed_scopes`. This
+    is for a caller with exactly one, and it still has to say which products
+    that one holds -- the slice is checked here, before the organisations are
+    written, so a call that does not say leaves nothing behind.
     """
+    commodity_slugs = _catalogue_slice(commodity_slugs)
     return {
         "orgs": seed_orgs(access, data),
-        "commodities": seed_catalogue(access, data, commodity_slugs),
+        "commodities": seed_catalogue(access, data, commodity_slugs=commodity_slugs),
     }
 
 
@@ -230,7 +253,7 @@ def seed_scopes(data):
         access = access_for(scope["program_id"])
         if orgs is None:
             orgs = seed_orgs(access, data)
-        commodities = seed_catalogue(access, data, slugs)
+        commodities = seed_catalogue(access, data, commodity_slugs=slugs)
         scopes[name] = {
             "name": name,
             "program_id": scope["program_id"],

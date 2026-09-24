@@ -82,7 +82,7 @@ def _run_seed_reference():
     module = _load_seed_remote()
     fake_op = _FakeOp()
     module.op = fake_op  # `seed_reference` calls the module-level `op` name at call time
-    result = module.seed_reference(access=object(), data=_DOCUMENT)
+    result = module.seed_reference(access=object(), data=_DOCUMENT, commodity_slugs=["a-product"])
     return result, fake_op
 
 
@@ -326,3 +326,50 @@ def test_a_missing_document_section_is_refused_by_the_name_of_its_scope():
     with pytest.raises(ValueError) as caught:
         module.seed_scopes(document)
     assert "chlorine_blocked" in str(caught.value) and "chlorine" in str(caught.value)
+
+
+# ---- and the wrong call is refused rather than discouraged --------------
+#
+# The split is only worth having if the call that undoes it is hard to make.
+# A defaulted `commodity_slugs` made "seed every chain's products into this
+# one program" the SHORTEST call in the module, and the plan's own Task 5
+# code block still contains it. These two pin that it now fails, and fails
+# before anything is written.
+
+
+def test_seeding_a_catalogue_without_saying_which_products_is_refused_at_the_call_site():
+    """`commodity_slugs` is keyword-only and has no default.
+
+    Mutated it back to `commodity_slugs=None` on both seeders and watched
+    this go red: with a default, the call below succeeds and quietly seeds
+    the whole document into one program.
+    """
+    module = _load_seed_remote()
+    module.op = _FakeOp()
+
+    with pytest.raises(TypeError) as caught:
+        module.seed_reference(object(), _SCOPED_DOCUMENT)
+    assert "commodity_slugs" in str(caught.value)
+
+    with pytest.raises(TypeError) as caught:
+        module.seed_catalogue(object(), _SCOPED_DOCUMENT)
+    assert "commodity_slugs" in str(caught.value)
+
+
+def test_asking_for_every_product_by_passing_none_is_refused_before_anything_is_written():
+    """`None` is not a back door to the default that was just removed.
+
+    A permissive value is a default in everything but name. The refusal
+    happens before `seed_orgs`, so a call that does not say which products
+    leaves nothing behind -- checked by asserting the fake `op` recorded no
+    write at all, not merely that the catalogue was empty.
+    """
+    module = _load_seed_remote()
+    fake_op = _FakeOp()
+    module.op = fake_op
+
+    with pytest.raises(ValueError) as caught:
+        module.seed_reference(object(), _SCOPED_DOCUMENT, commodity_slugs=None)
+
+    assert "seed_scopes" in str(caught.value) and "commodities_for" in str(caught.value)
+    assert fake_op.calls == []

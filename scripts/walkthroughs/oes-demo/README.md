@@ -59,6 +59,13 @@ catalogue -- a co-pack seeded without its ORS sachet is one whose
 specification can never be checked, and "no requirement to fail" reads as a
 pass.
 
+`commodity_slugs` is a **required keyword argument** on both `seed_reference`
+and `seed_catalogue`, and `None` is refused rather than read as "all of them".
+There is no default because a default made the wrong call the shortest one:
+seeding a single scope without saying which products puts every chain's
+products in one program's pickers. Seeding one scope by hand is still fine --
+it takes one call to `commodities_for`.
+
 `seed_scopes` seeds reference data only. The CHC chain is seeded against the
 `chc` scope by `seed_chc_chain`; RUTF and chlorine have their own sections and
 their own tasks, so until those land their scopes hold a catalogue and no
