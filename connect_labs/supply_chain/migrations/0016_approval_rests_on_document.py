@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("supply_chain", "0014_link_submission_snapshot"),
+        ("supply_chain", "0015_link_submission_snapshot"),
     ]
 
     operations = [
