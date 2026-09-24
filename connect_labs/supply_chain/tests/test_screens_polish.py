@@ -1042,3 +1042,38 @@ class TestAFigureHeaderNamesItsUnitInWords:
         ).content.decode()
         assert "USD per jerry can" in body
         assert "USD per pack<" not in body
+
+
+class TestACheckSaysWhatItsAgeCountsFrom:
+    """The checks list read "40 days since 2026-08-15" and "19 days since
+    2026-09-05": two ages, two dates, and nothing to say that one is the
+    dispatch and the other the date the consignment was expected. And a
+    documents check owed entirely by other organisations read "Ours to
+    answer" -- which is true only in the sense that we are the ones chasing."""
+
+    def _check(self, kind, audience="internal", days=19, since="2026-09-05"):
+        return {"kind": kind, "audience": audience, "days_open": days, "since": since, "facts": {}}
+
+    def test_a_late_shipment_is_aged_past_its_expected_date(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import check_age
+
+        assert check_age(self._check("shipment_overdue")) == "19 days past the expected date, 2026-09-05"
+
+    def test_outstanding_documents_are_aged_from_the_dispatch(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import check_age
+
+        check = self._check("shipment_documents_outstanding", days=1, since="2026-08-15")
+        assert check_age(check) == "1 day since dispatch, 2026-08-15"
+
+    def test_a_kind_without_a_phrase_still_reads(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import check_age
+
+        assert check_age(self._check("stock_variance", days=3)) == "3 days since 2026-09-05"
+        assert check_age({"kind": "stock_variance", "days_open": None}) == ""
+
+    def test_documents_owed_by_others_are_ours_to_chase(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import check_audience
+
+        assert check_audience(self._check("shipment_documents_outstanding")) == "Ours to chase"
+        assert check_audience(self._check("award_not_contracted")) == "Ours to answer"
+        assert check_audience(self._check("shipment_overdue", audience="supplier")) == ("Only the supplier can answer")

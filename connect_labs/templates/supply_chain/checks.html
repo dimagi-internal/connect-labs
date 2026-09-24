@@ -53,9 +53,9 @@ the record it is about, because that is where it gets answered.
                 <span class="font-medium text-gray-900">{{ check.subject.label }}</span>
               {% endif %}
             {% endwith %}
-            <span class="text-xs text-gray-500">{{ check.audience|audience_label }}</span>
+            <span class="text-xs text-gray-500">{{ check|check_audience }}</span>
             {% if check.days_open is not None %}
-              <span class="text-xs text-gray-500 tabular-nums">{{ check.days_open }} day{{ check.days_open|pluralize }} since {{ check.since }}</span>
+              <span class="text-xs text-gray-500 tabular-nums">{{ check|check_age }}</span>
             {% endif %}
           </div>
           {% with readout=check|check_readout %}

@@ -553,9 +553,11 @@ class RecordReceiptForm(PublicForm):
 
     def rows(self):
         return [
+            # The order and the dispatch each take a full row: their labels
+            # carry a reference AND a name, and half a row cut the name off.
             "contract",
-            _pair("supply_point", "shipment"),
-            _pair("received_on", "reference"),
+            "shipment",
+            _triple("supply_point", "received_on", "reference"),
             _triple("quantity_accepted", "quantity_rejected", "unit_basis"),
             "rejection_reason",
             _pair("batch", "expiry"),
@@ -607,7 +609,7 @@ class RecordStockCountForm(PublicForm):
 class RecordReleaseForm(PublicForm):
     action = "record_release"
     title = _("Record a release")
-    intro = _("Stock handed over from one place to another — a partner collecting from your warehouse.")
+    intro = _("Stock handed over from one place to another — sent out to a site, or collected from your warehouse.")
     submit_label = _("Record release")
     done_noun = _("release")
 

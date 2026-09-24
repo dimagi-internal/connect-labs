@@ -24,7 +24,7 @@ from django.utils import timezone
 
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
-from connect_labs.supply_chain.models import Contract, Movement, Receipt, Shipment, StockCount
+from connect_labs.supply_chain.models import Contract, Item, Movement, Receipt, Shipment, StockCount
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.update_links import forms, service, tokens
 from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission
@@ -680,6 +680,11 @@ class TestThePublicPage:
         )
         body = client.get(_url(issued["token"]) + "?done=record_release").content.decode()
         assert "30 cartons from EHA warehouse to LLO store" in body
+        # The read-back says when the release happened, not only when it was
+        # typed in, and what was released.
+        assert "to LLO store on 2026-09-21" in body
+        item_name = Item.objects.get(pk=world["item"]["id"]).name
+        assert f"on 2026-09-21 ({item_name})" in body
 
     def test_posting_an_action_writes_and_redirects_back(self, client, issued, world):
         response = client.post(
