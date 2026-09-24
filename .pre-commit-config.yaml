@@ -28,7 +28,10 @@ repos:
     hooks:
       - id: prettier
         args: ['--tab-width', '2', '--single-quote']
-        exclude: 'connect_labs/templates/'
+        # Mirror .prettierignore here. Prettier 4 exits 1 ("No files matching the
+        # given patterns") when every file pre-commit hands it is ignored, so a
+        # commit touching only user_docs/ or CLAUDE.md failed the hook.
+        exclude: '^(connect_labs/templates/|user_docs/|CLAUDE\.md$|connect_labs/static/supply/geo/)'
 
   - repo: https://github.com/adamchainz/django-upgrade
     rev: '1.32.0'
