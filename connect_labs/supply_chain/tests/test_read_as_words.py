@@ -193,9 +193,49 @@ class TestTheComparison:
 
     def test_the_chosen_offer_is_marked_and_not_offered_again(self, client_in_programme, chain):
         body = self._page(client_in_programme, chain)
-        assert "Chosen" in body
         # One Award form left: the offer not chosen.
         assert body.count('name="rationale"') == 1
+
+    def test_the_awarded_offer_is_marked_beside_its_name(self, client_in_programme, chain):
+        # At 1280px the rightmost column ran off the page, and the marker with it.
+        body = self._page(client_in_programme, chain)
+        table = body[body.index("<table") : body.index("</table>")]
+        supplier_cell = table[table.index("Kaduna co-pack") :]
+        supplier_cell = supplier_cell[: supplier_cell.index("</td>")]
+        assert "Awarded" in supplier_cell
+        other = table[table.index("Lagoon co-pack") :]
+        assert "Awarded" not in other[: other.index("</td>")]
+
+    def test_identical_landed_totals_are_one_column(self, client_in_programme, chain):
+        body = self._page(client_in_programme, chain)
+        head = body[body.index("<thead") : body.index("</thead>")]
+        assert "Landed total (as quoted)" not in head
+        assert head.count("Landed total") == 1
+
+    def test_differing_landed_totals_stay_two_columns(self):
+        from connect_labs.supply_chain.procurement.views import table_columns
+
+        columns = [
+            {"key": "landed_total_as_quoted", "label": "Landed total (as quoted)"},
+            {"key": "landed_total_for_round_quantity", "label": "Landed total (this round)"},
+        ]
+        same = {"amount": "18000", "currency": "USD"}
+        rows = [
+            {"figures": {"landed_total_as_quoted": same, "landed_total_for_round_quantity": same}},
+            {
+                "figures": {
+                    "landed_total_as_quoted": {"amount": "9000", "currency": "USD"},
+                    "landed_total_for_round_quantity": same,
+                }
+            },
+        ]
+        assert [c["key"] for c in table_columns({"columns": columns, "comparable": rows})] == [
+            "landed_total_as_quoted",
+            "landed_total_for_round_quantity",
+        ]
+        assert [c["key"] for c in table_columns({"columns": columns, "comparable": rows[:1]})] == [
+            "landed_total_for_round_quantity"
+        ]
 
 
 class TestTheOrder:
