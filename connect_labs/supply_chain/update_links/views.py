@@ -78,8 +78,9 @@ class UpdateLinkIssueView(OperationFormView):
     intro = (
         "A private link one organisation can use without a labs login — a supplier to confirm orders "
         "and payments, record dispatches, receipts, stock counts and releases; an approver to give its "
-        "own answer on an approval asked of it. It covers the orders, supply points and approvals you "
-        "tick here, and nothing else. Whatever they record is marked as theirs."
+        "own answer on an approval asked of it. It covers either the orders, supply points and approvals "
+        "you tick here and nothing else, or everything involving the organisation — including orders "
+        "created after today, such as a partner's cover order. Whatever they record is marked as theirs."
     )
     submit_label = "Issue link"
     footnote = (
@@ -238,11 +239,21 @@ class UpdateLinkPublicView(View):
         # supplier's own actions (confirm, dispatch, move a dispatch along) are
         # not its to take, so they are not offered or listed as unavailable.
         supplies = scope.supplied.exists()
+        # The same the other way round, on a link that follows its
+        # organisation: a supplier that receives nothing is not offered
+        # "Record goods received". On a listed link the issuer chose the
+        # orders, and every one of them can be received against.
+        receives = scope.received.exists() or not scope.follows_org
         forms = [
             form
             for form in forms
             if (form.for_approvers and approver_link)
-            or (not form.for_approvers and supplier_link and (supplies or not form.for_suppliers))
+            or (
+                not form.for_approvers
+                and supplier_link
+                and (supplies or not form.for_suppliers)
+                and (receives or not form.for_receivers)
+            )
             or form is bound
         ]
         done_action = self.request.GET.get("done", "")

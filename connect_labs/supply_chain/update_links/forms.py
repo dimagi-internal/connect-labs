@@ -24,6 +24,7 @@ from django.utils.translation import gettext_lazy as _
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.forms import DATE, INPUT, SEARCHABLE, SELECT
 from connect_labs.supply_chain.models import AwardApproval, Contract, Item, Payment, Shipment, SupplyPoint
+from connect_labs.supply_chain.update_links.models import COVERAGE_LISTED, COVERAGE_ORGANISATION
 from connect_labs.supply_chain.update_links.operations import DEFAULT_EXPIRY_DAYS, MAX_EXPIRY_DAYS
 from connect_labs.supply_chain.update_links.service import CONFIRMABLE, SUPPLIER_SHIPMENT_STATUSES
 
@@ -97,6 +98,27 @@ class UpdateLinkIssueForm(forms.Form):
             "reported by this organisation."
         ),
     )
+    coverage = forms.ChoiceField(
+        label=_("What it covers"),
+        choices=[
+            (COVERAGE_LISTED, _("Only the orders, supply points and approvals ticked below")),
+            (
+                COVERAGE_ORGANISATION,
+                _("Everything involving this organisation in this programme, including new orders"),
+            ),
+        ],
+        initial=COVERAGE_LISTED,
+        # Not choosing is choosing the narrow one: a link only widens when
+        # somebody asked it to.
+        required=False,
+        widget=forms.RadioSelect,
+        help_text=_(
+            "Everything means: orders it supplies, buys, or receives at a store it runs; the stores it "
+            "runs; approvals asked of it — worked out afresh each time the link is opened, so an order "
+            "created next month is covered without a new link. It can still only take its own part: "
+            "dispatch what it supplies, record what it receives."
+        ),
+    )
     contracts = _ContractChoices(
         label=_("Orders it covers"),
         queryset=Contract.objects.none(),
@@ -163,10 +185,21 @@ class UpdateLinkIssueForm(forms.Form):
                 .select_related("approver_org", "award__supplier", "award__quote__item", "award__commodity")
                 .order_by("-requested_on")
             )
-        self.helper = _tidy(self, _pair("org", "label"), "contracts", "supply_points", "approvals", "expires_in_days")
+        self.helper = _tidy(
+            self, _pair("org", "label"), "coverage", "contracts", "supply_points", "approvals", "expires_in_days"
+        )
 
     def clean(self):
         cleaned = super().clean()
+        if cleaned.get("coverage") == COVERAGE_ORGANISATION:
+            if cleaned.get("contracts") or cleaned.get("supply_points") or cleaned.get("approvals"):
+                raise forms.ValidationError(
+                    _(
+                        "A link that covers everything involving the organisation names nothing itself — "
+                        "untick the orders, supply points and approvals, or choose “Only the ones ticked”."
+                    )
+                )
+            return cleaned
         if not cleaned.get("contracts") and not cleaned.get("supply_points") and not cleaned.get("approvals"):
             raise forms.ValidationError(
                 _("Pick at least one order, supply point or approval — a link has to cover something.")
@@ -176,6 +209,7 @@ class UpdateLinkIssueForm(forms.Form):
     def payload(self) -> dict:
         data = {
             "org_id": self.cleaned_data["org"].pk,
+            "coverage": self.cleaned_data.get("coverage") or COVERAGE_LISTED,
             "contract_ids": [c.pk for c in self.cleaned_data.get("contracts") or []],
             "supply_point_ids": [p.pk for p in self.cleaned_data.get("supply_points") or []],
             "approval_ids": [a.pk for a in self.cleaned_data.get("approvals") or []],
@@ -242,6 +276,9 @@ class PublicForm(forms.Form):
     # dispatching, moving a dispatch along. Not offered on a receiving
     # partner's link at all.
     for_suppliers = False
+    # Only an organisation receiving goods takes this action. On a link that
+    # follows its organisation, not offered to one that receives nothing.
+    for_receivers = False
     # What the banner calls the record this action made: "Recorded: dispatch ...".
     done_noun = ""
 
@@ -422,6 +459,7 @@ class RecordReceiptForm(PublicForm):
         "reject is kept on the record with the reason, and never counts as stock."
     )
     submit_label = _("Record receipt")
+    for_receivers = True
     done_noun = _("receipt")
 
     contract = _OrderChoice(label=_("Order"), queryset=Contract.objects.none(), widget=forms.Select(attrs=SELECT))
@@ -458,9 +496,11 @@ class RecordReceiptForm(PublicForm):
 
     def limit_to_scope(self, scope):
         if scope is not None:
-            self.fields["contract"].queryset = scope.contracts.exclude(status__in=("closed", "cancelled"))
+            self.fields["contract"].queryset = scope.received.exclude(status__in=("closed", "cancelled"))
             self.fields["supply_point"].queryset = scope.supply_points
-            self.fields["shipment"].queryset = scope.shipments.exclude(status__in=("delivered", "lost"))
+            self.fields["shipment"].queryset = scope.shipments.filter(contract__in=scope.received).exclude(
+                status__in=("delivered", "lost")
+            )
 
     def rows(self):
         return [
