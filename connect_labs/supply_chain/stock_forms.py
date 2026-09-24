@@ -37,6 +37,7 @@ from connect_labs.supply_chain.forms import (
     SEARCHABLE,
     SELECT,
     TEXTAREA,
+    currency_select,
     set_choices,
     to_payload,
 )
@@ -262,6 +263,20 @@ class RequiredDocumentForm(ProvenancedForm):
         }
 
 
+def _programme_payees(access):
+    """Organisations this programme has paid a landing charge to, most used first."""
+    from django.db.models import Count
+
+    program_id = getattr(access, "program_id", None)
+    if not program_id:
+        return []
+    return list(
+        LabsOrg.objects.filter(supply_charges__shipment__contract__program_id=program_id)
+        .annotate(times=Count("supply_charges"))
+        .order_by("-times", "name")
+    )
+
+
 class ChargeForm(ProvenancedForm):
     """Money paid to land a consignment, to somebody who is not the supplier."""
 
@@ -302,9 +317,23 @@ class ChargeForm(ProvenancedForm):
             "kind",
             [(value, str(value).replace("_", " ").capitalize()) for value in records.CHARGE_KINDS],
         )
-        # Organisations are labs-wide, so this picker is deliberately unscoped.
+        # Organisations are labs-wide -- the master registry, every org that
+        # ever answered an EOI -- so the whole list is a long scroll for a
+        # clearing agent. Whoever this programme has paid to land goods before
+        # comes first; the rest stay reachable by typing, never removed.
+        payees = _programme_payees(self.access)
         self.fields["payee_org"].queryset = LabsOrg.objects.order_by("name")
-        self.fields["payee_org"].empty_label = _("Select an organisation…")
+        self.fields["payee_org"].empty_label = _("Type to search organisations…")
+        if payees:
+            everyone = [
+                (org.pk, org.name) for org in LabsOrg.objects.exclude(pk__in=[p.pk for p in payees]).order_by("name")
+            ]
+            self.fields["payee_org"].choices = [
+                ("", self.fields["payee_org"].empty_label),
+                (_("Paid before in this programme"), [(org.pk, org.name) for org in payees]),
+                (_("Every organisation"), everyone),
+            ]
+        currency_select(self, "currency")
         self.helper.layout = Layout(
             Row(Column("kind"), Column("payee_org"), css_class="grid md:grid-cols-2 gap-x-6"),
             Row(
@@ -363,6 +392,24 @@ class ReceiptForm(ProvenancedForm):
         )
 
 
+class DurableAwareSelect(forms.Select):
+    """An item picker whose options say which items are durable equipment.
+
+    A dispenser has no batch and no expiry. The movement form hides those two
+    fields while a durable item is chosen (a few lines of script in
+    operation_form.html, keyed on `data-durable-hides`), and clean() drops
+    them regardless, so a durable movement never carries a batch someone
+    typed out of habit.
+    """
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex=subindex, attrs=attrs)
+        instance = getattr(value, "instance", None)
+        if instance is not None and getattr(instance, "is_durable", False):
+            option["attrs"]["data-durable"] = "1"
+        return option
+
+
 class MovementForm(ProvenancedForm):
     """One posting to the append-only ledger.
 
@@ -392,7 +439,7 @@ class MovementForm(ProvenancedForm):
             "from_supply_point": forms.Select(attrs=SEARCHABLE),
             "to_supply_point": forms.Select(attrs=SEARCHABLE),
             "commodity": forms.Select(attrs=SEARCHABLE),
-            "item": forms.Select(attrs=SEARCHABLE),
+            "item": DurableAwareSelect(attrs={**SEARCHABLE, "data-durable-hides": "batch expiry"}),
             "batch": forms.TextInput(attrs=INPUT),
             "expiry": forms.DateInput(attrs=DATE),
             "quantity": forms.NumberInput(attrs={**INPUT, "step": "any"}),
@@ -459,6 +506,12 @@ class MovementForm(ProvenancedForm):
 
     def clean(self):
         cleaned = super().clean()
+        item = cleaned.get("item")
+        if item is not None and item.is_durable:
+            # Equipment is not batched and does not expire: not asked for on the
+            # screen, and not recorded if typed before the item was chosen.
+            cleaned["batch"] = ""
+            cleaned["expiry"] = None
         kind, quantity = cleaned.get("kind"), cleaned.get("quantity")
         if quantity is not None and quantity < 0 and kind not in records.SIGNED_MOVEMENT_KINDS:
             # The sign of every other kind is fixed by what the kind MEANS, in

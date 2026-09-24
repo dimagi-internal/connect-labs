@@ -37,6 +37,7 @@ from connect_labs.supply_chain.forms import (
     SEARCHABLE,
     SELECT,
     ScopedForm,
+    currency_select,
     set_choices,
     to_payload,
 )
@@ -284,6 +285,7 @@ class ContractForm(ProvenancedForm):
             required=False,
         )
 
+        currency_select(self, "currency")
         self.helper.layout = Layout(
             Row(Column("supplier"), Column("commodity"), Column("item"), css_class="grid md:grid-cols-3 gap-x-6"),
             Fieldset(
@@ -430,6 +432,7 @@ class InvoiceForm(ProvenancedForm):
             "status",
             [(value, str(value).replace("_", " ").capitalize()) for value in records.INVOICE_STATUSES],
         )
+        currency_select(self, "currency")
         self.helper.layout = Layout(
             Row(Column("reference"), Column("issued_on"), Column("status"), css_class="grid md:grid-cols-3 gap-x-6"),
             Row(Column("amount"), Column("currency"), css_class="grid md:grid-cols-2 gap-x-6"),
@@ -464,6 +467,7 @@ class PaymentForm(ProvenancedForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        currency_select(self, "currency")
         self.helper.layout = Layout(
             Row(Column("paid_on"), Column("amount"), Column("currency"), css_class="grid md:grid-cols-3 gap-x-6"),
             Row(Column("method"), Column("reference"), css_class="grid md:grid-cols-2 gap-x-6"),

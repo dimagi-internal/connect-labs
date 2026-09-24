@@ -113,6 +113,30 @@ upload -- a message that describes the symptom and not the cause.
     <p class="text-xs text-gray-500 mt-3 max-w-2xl">{{ footnote }}</p>
   {% endif %}
 </form>
+{% comment %}
+A select marked data-durable-hides="batch expiry" hides those fields while the
+chosen option is data-durable: a dispenser has no batch and no expiry, so the
+form does not ask. Here, after the form, so the fields exist when it runs.
+{% endcomment %}
+<script>
+  (function () {
+    document.querySelectorAll("select[data-durable-hides]").forEach(function (select) {
+      var names = select.getAttribute("data-durable-hides").split(/\s+/);
+      function apply() {
+        var option = select.options[select.selectedIndex];
+        var durable = !!(option && option.getAttribute("data-durable") === "1");
+        names.forEach(function (name) {
+          var wrapper = document.getElementById("div_id_" + name);
+          if (wrapper) { wrapper.hidden = durable; }
+          var input = document.getElementById("id_" + name);
+          if (input && durable) { input.value = ""; }
+        });
+      }
+      select.addEventListener("change", apply);
+      apply();
+    });
+  })();
+</script>
 
 {% endif %}
 {% endblock %}
