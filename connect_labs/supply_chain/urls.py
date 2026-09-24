@@ -140,6 +140,16 @@ urlpatterns = [
         name="approval_request",
     ),
     path(
+        "procurement/approvals/<int:approval_id>/documents/new/",
+        procurement_views.ApprovalDocumentAttachView.as_view(),
+        name="approval_document_attach",
+    ),
+    path(
+        "procurement/quotes/<int:quote_id>/documents/new/",
+        procurement_views.QuoteDocumentAttachView.as_view(),
+        name="quote_document_attach",
+    ),
+    path(
         "procurement/approvals/<int:approval_id>/decide/",
         procurement_views.ApprovalDecideView.as_view(),
         name="approval_decide",
@@ -171,6 +181,7 @@ urlpatterns = [
         stock_views.ReceiptRecordView.as_view(),
         name="receipt_record",
     ),
+    path("documents/<int:document_id>/", views.document_open, name="document_open"),
     path("shipments/<int:shipment_id>/", views.ShipmentDetailView.as_view(), name="shipment_detail"),
     path("shipments/<int:shipment_id>/status/", stock_views.ShipmentStatusView.as_view(), name="shipment_status"),
     path(

@@ -73,16 +73,12 @@ checks feed cannot disagree about what is outstanding.
               {% if line.documents %}
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-success text-message-success-text">on file</span>
                 {% for document in line.documents %}
-                  {% if document.external_url %}
-                    <a class="text-xs text-brand-indigo hover:underline" href="{{ document.external_url }}" target="_blank" rel="noopener noreferrer">{{ document.title|default:"view" }}</a>
-                  {% else %}
-                    <span class="text-xs text-gray-600">{{ document.title|default:"stored" }}</span>
-                  {% endif %}
+                  <a class="text-xs text-brand-indigo hover:underline" href="{% url 'supply_chain:document_open' document.id %}" target="_blank" rel="noopener noreferrer">{{ document.title|default:document.filename|default:"open" }}</a>
                 {% endfor %}
               {% else %}
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-warning text-message-warning-text">outstanding</span>
                 <a class="text-xs text-brand-indigo hover:underline"
-                   href="{% url 'supply_chain:shipment_document_attach' shipment.id %}?kind={{ line.kind }}">Attach</a>
+                   href="{% url 'supply_chain:shipment_document_attach' shipment.id %}?kind={{ line.kind }}">Attach document</a>
               {% endif %}
               <form method="post" action="{% url 'supply_chain:shipment_unrequire_document' shipment.id %}" class="inline">
                 {% csrf_token %}

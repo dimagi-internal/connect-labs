@@ -595,6 +595,8 @@ was ordered. Before, the page showed this order's half and a link to the other.
           <span class="text-xs text-gray-400 ml-auto">
             {% if document.is_stored %}stored{% else %}linked{% endif %} · {{ document.source|source_label }}
           </span>
+          <a href="{% url 'supply_chain:document_open' document.id %}" target="_blank" rel="noopener noreferrer"
+             class="text-xs text-brand-indigo hover:underline">Open</a>
         </li>
       {% endfor %}
     </ul>

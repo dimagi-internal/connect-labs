@@ -769,3 +769,20 @@ class SupplierDetailView(OperationBase):
                 supplies.append({**claim, "slug": slug, "name": commodity["name"]})
         context["supplies"] = supplies
         return context
+
+
+@login_required
+def document_open(request, document_id):
+    """Open one document: its link, or a short-lived signed URL to the stored file.
+
+    Signed on the click rather than stored, because a stored file lives in a
+    private bucket and a signed URL expires. Scoped through the programme's
+    data access, so a document id from another programme is a 404.
+    """
+    from django.shortcuts import redirect
+
+    try:
+        url = _access(request).document_url(int(document_id))
+    except ValueError as error:
+        raise Http404(str(error)) from error
+    return redirect(url)
