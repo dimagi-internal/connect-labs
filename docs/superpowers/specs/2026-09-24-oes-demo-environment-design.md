@@ -39,72 +39,72 @@ front of OES, click around in, and answer hard questions from.
 
 ## 1. What is being built
 
-One org, modelled as if the programme team had been running on this domain all
+One org, modelled as if the program team had been running on this domain all
 along, plus a second org that uses only half of it.
 
 | Piece | Source of data | Status |
 |---|---|---|
-| CHC delivery side — four partner opportunities | Synthetic **clone** of programme 217 | Build now |
+| CHC delivery side — four partner opportunities | Synthetic **clone** of program 217 | Build now |
 | CHC supply side — the ORS/zinc, vitamin A, dewormer chain | **Seeded** from Drive-hosted data | Build now |
 | Partner seats — distributor and collecting LLO | Update links over the seeded chain | Build now |
 | Third org — supply, no verified delivery | Seeded, no `opportunity_id` on its points | Build now |
 | RUTF — rounds 1 and 2 | **Generated** new | Blocked, see §7 |
 
-## 1a. Three programmes, and a portfolio across them
+## 1a. Three programs, and a portfolio across them
 
 An earlier draft of this document put CHC, RUTF and chlorine into ONE labs
-supply programme because it was convenient for the seeder. That was wrong, and
+supply program because it was convenient for the seeder. That was wrong, and
 the product owner caught it. They are three different things:
 
 | Chain | In Connect | Supply scope |
 |---|---|---|
-| CHC basket | programme 217, org `dimagi-chc-rct` | its own |
-| RUTF | programme 263, org `dimagi-ng-rutf` | its own |
+| CHC basket | program 217, org `dimagi-chc-rct` | its own |
+| RUTF | program 263, org `dimagi-ng-rutf` | its own |
 | Chlorine / safe water | **nothing — it is not an opportunity yet** | its own |
 
-`SupplyDataAccess.scope_key` is "the programme, always", and it governs the
+`SupplyDataAccess.scope_key` is "the program, always", and it governs the
 catalogue as well as the ledger: commodities, items and suppliers are
-per-programme, not shared. So one scope holding all three would have put
+per-program, not shared. So one scope holding all three would have put
 chlorine in the CHC catalogue and RUTF's supplier register in with ORS — a
-programme on screen that corresponds to nothing real.
+program on screen that corresponds to nothing real.
 
 Modelling it correctly also makes the chlorine case stronger. Its supply scope
-has **no Connect programme behind it at all**, because the delivery programme
+has **no Connect program behind it at all**, because the delivery program
 does not exist yet. A team can track a procurement before there is anything to
 deliver with — which is exactly the position the chlorine is in.
 
 ### The consequence: there is no view across them
 
-Every surface in the domain stops at one programme, by construction. So
+Every surface in the domain stops at one program, by construction. So
 "how is this operation doing" cannot be asked at all today — not badly, not at
 all. That is the gap this section closes.
 
-### A portfolio is a named set of programmes
+### A portfolio is a named set of programs
 
-Deliberately a *set of programmes*, not a property of one: a programme belongs
+Deliberately a *set of programs*, not a property of one: a program belongs
 to as many portfolios as somebody finds useful, and adding one to a portfolio
 grants nothing.
 
-**Access is the load-bearing part.** Supply is programme-scoped for a reason,
-and a portfolio must never become a way to see a programme you could not
+**Access is the load-bearing part.** Supply is program-scoped for a reason,
+and a portfolio must never become a way to see a program you could not
 otherwise reach. So:
 
-- the view renders only the portfolio's programmes that the viewer can already
+- the view renders only the portfolio's programs that the viewer can already
   reach, from `labs.context.get_org_data(request)["programs"]` — the same
-  source the programme picker uses;
+  source the program picker uses;
 - when some are hidden it **says so** rather than silently shortening the
   list. A portfolio that shows two of three chains without mentioning the
   third misrepresents the operation, which is the one thing this view exists
   not to do.
 
-**A portfolio is not programme-scoped, and every other model in
+**A portfolio is not program-scoped, and every other model in
 `supply_chain` is.** That is a real exception and it is stated here so nobody
 later "fixes" it by adding a `program_id`. It carries no supply data of its
-own — only names and a list of programme ids.
+own — only names and a list of program ids.
 
 ### What the master view shows
 
-One row per programme, each keeping its own units, because there is no
+One row per program, each keeping its own units, because there is no
 conversion between a carton of co-pack and a jerry can of chlorine and the
 domain already refuses to invent one:
 
@@ -123,14 +123,14 @@ so it inherits the same restraint.
 ### Why this outlives the demo
 
 The same shape answers OES's actual job. Theirs is a portfolio of
-*implementers'* programmes rather than their own three, and the question —
+*implementers'* programs rather than their own three, and the question —
 what is each one running, and what is in trouble — is identical. Building it
 for one org is the honest first version of the thing approach B would have
 needed.
 
 ## 2. The CHC delivery side — clone, do not copy
 
-Programme **217, "CHC - NG - RCT - Aug 2026"**, four active opportunities,
+Program **217, "CHC - NG - RCT - Aug 2026"**, four active opportunities,
 each run by a different implementing partner:
 
 | Opp | Partner | Connect org slug |
@@ -160,7 +160,7 @@ So the demo binds what it truly can and leaves the rest unbound:
 
 | Organisation | Bound? |
 |---|---|
-| The programme's own, `dimagi-chc-rct` | Yes — it is in the export |
+| The program's own, `dimagi-chc-rct` | Yes — it is in the export |
 | The four partners | No — reached through their update links; we record on their behalf until they are bound |
 
 This is the true state of the world, and it makes §5a structural rather than
@@ -193,10 +193,10 @@ generating machine never needs DB access.
 
 ## 3. The CHC supply side
 
-The chain from the gap analysis, as it actually ran: the programme buys from
+The chain from the gap analysis, as it actually ran: the program buys from
 EHA; EHA pays the manufacturers, receives and inspects, holds the goods in its
 warehouse, and releases them to the implementing partners, who collect. EHA
-keeps a live stock-movement sheet and the programme reorders off it.
+keeps a live stock-movement sheet and the program reorders off it.
 
 That maps onto the four opportunities exactly, and the mapping is the point:
 **EHA is both the distributor and one of the four implementers.** One org,
@@ -234,14 +234,14 @@ cost one design conversation:
 | `scripts/walkthroughs/<demo>/seed.py` | All **supply** data: orgs, commodities, quotes, awards, orders, stock | Committed, public |
 
 The two are unrelated despite both being called "synthetic". The existing
-supply seeders register their programmes with `"gdrive_folder_id": "none"`
+supply seeders register their programs with `"gdrive_folder_id": "none"`
 precisely because supply data does not come from Drive. The new loader closes
 that gap for the supply side without touching the fixture store.
 
 ## 5a. Two kinds of truth, and they are already modelled
 
 There are two quite different things in this demo that look alike: what the
-programme team believes about a supply chain and types in, and what the
+program team believes about a supply chain and types in, and what the
 organisation running it entered itself. They must not read the same, and in
 this domain they already do not.
 
@@ -249,7 +249,7 @@ Every record below the contract carries two independent facts:
 `recorded_by_org` (who typed it) and `source` (how they knew it), drawn from
 `records.SOURCES`. `Provenanced.witnessed` is true only for `we_recorded` and
 `document` — "a missing source is weaker than a partner's claim, not
-stronger" — and `identity.source_for()` refuses to let a non-programme caller
+stronger" — and `identity.source_for()` refuses to let a non-program caller
 claim first-hand knowledge at all.
 
 The case worth showing is the one where *we* write down what *they* told us.
@@ -266,7 +266,7 @@ The demo therefore seeds three tiers deliberately:
 
 Seeded so that **one order carries all three**, with the second-hand rows
 above the point at which EHA was given its link and its own rows below.
-That single screen answers the question an OES programme officer actually
+That single screen answers the question an OES program officer actually
 has — *what do we really know about our implementers' stock, and how do we
 know it* — and it answers it without flattering the data. Onboarding a
 partner visibly upgrades the evidentiary status of the record; nothing else
@@ -328,10 +328,10 @@ call, because saying it is more credible than not being asked.
 
 ## 7. RUTF — blocked, and how it slots in
 
-**Resolved 2026-09-24.** Organisation `dimagi-ng-rutf` (377), programme **263**
+**Resolved 2026-09-24.** Organisation `dimagi-ng-rutf` (377), program **263**
 "RUTF - NG - Program 1 - Sept 26", opportunity **2230** "RUTF - NG - CBI - P1 -
 Sept 26" — 849 visits, ending 2027-02-28. It was absent from Pulse because
-Pulse lists only programmes carrying visits, and from Connect's org export
+Pulse lists only programs carrying visits, and from Connect's org export
 because that returns only organisations the polling account belongs to.
 
 Because it just started, there is nothing to clone, so it is **generated**
@@ -344,7 +344,7 @@ compared) are described in the RUTF procurement design and are the opening
 beat of the sequence in §8.
 
 **Slot-in contract:** the RUTF delivery data is one additional labs-only
-opportunity registered under the same demo programme. No other piece of this
+opportunity registered under the same demo program. No other piece of this
 design depends on it, so it can land after the rest without rework.
 
 ## 8. The sequence on the call
@@ -361,7 +361,7 @@ does it survive without Connect.*
 | 4 | The decision, frozen | Award with figures and spec verdict | Who decided, why, at what price, against which specification |
 | 5 | The gate | Award, Place order disabled | No purchase until the technical partner confirms |
 | 6 | Hand to the partner | EHA's login-free link | Their implementers' suppliers have no logins and never will |
-| 7 | It arrives | Receipt: batch, expiry, landed cost | Shelf life against programme timeline |
+| 7 | It arrives | Receipt: batch, expiry, landed cost | Shelf life against program timeline |
 | 8 | The second basket | CHC: ORS/zinc, vitamin A, dewormer | Same machinery, different commodity |
 | 8a | **How do we know?** | One order's rows: ours second-hand, ours first-hand, theirs | What we actually know about an implementer's stock, and how — see §5a. Onboarding the partner upgrades the record in front of them |
 | 8b | **Blocked, and no date** | Safe-water store: chlorine owed, not counted as cover, arrival unknown | §6a. A funder's first question is what you are waiting on and when it lands. Sometimes the honest answer is "we do not know", and the product says so rather than going quiet |
