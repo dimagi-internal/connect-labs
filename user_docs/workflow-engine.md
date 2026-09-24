@@ -199,13 +199,14 @@ This applies to all column types — worker name, organisation, opportunity, cas
 
 On the programme report's worker table, sorting ranks **all** workers across the full dataset before the "first 25" display cut is applied. This means the top 25 you see after sorting are the true top 25 for that indicator across the whole programme, not just the top 25 among the busiest workers.
 
-#### Looking up what an indicator means
+#### One set of indicators on all KMC reports
 
-!!! tip "Want to change a definition, not just read it?"
-    See [Reports with Claude](reports-with-claude.md#change-what-an-indicator-means).
+The KMC reports now use **one unified set of 24 indicators** across the Programme Report, Opportunity Report, and Worker Review. Previously, two overlapping sets existed — a workbook set (labelled C) and a demo scorecard set (labelled N) — which sometimes disagreed on when a baby counted as "started" and how growth was judged. That split has been retired.
 
-Click any **indicator column heading** on the KMC Programme Report, KMC Opportunity Report, or KMC Worker Review to open a definition popup for that indicator. The popup shows, in order from top to bottom:
+All 24 indicators now follow the same rules:
 
-- A **plain-English sentence** describing what the indicator measures
-- **How it's counted** — which babies the indicator is *out of*, what it *counts* among them, and when it is shown (for example: out of babies who qualify for growth review, counts those whose growth class is fast, shown when at least 20 qualify)
-- **Terms** — each concept the indicator relies on, explained in plain words (for example: "Qualifies for growth review: followed 42+ days with 2+ visits, birthweight band known, and early weight gain computable")
+- **"Started"** means two or more follow-up visits.
+- **Outcome indicators** wait 28 days after the first visit before counting a baby.
+- **Growth indicators** wait 42 days.
+- **Growth** is judged against the baby's birthweight band.
+- A figure requires at least 20
