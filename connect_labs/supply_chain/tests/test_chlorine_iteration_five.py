@@ -171,3 +171,12 @@ class TestExpiryTypedOnAReceiptIsShown:
         stopgap = store["order"]("HHS-PO-1", "90")
         receipt = store["receive"](stopgap, "GRN-KANO-0431", "90", 0, batch="AQ-2609-14", expiry="2027-09-24")
         assert "batch AQ-2609-14, expires 24 Sep 2027" in _describe_receipt(receipt["id"])
+
+
+class TestTheAwardedStripSaysWhoAndWhy:
+    """The narration says "in her own name, and writes down why"; the page the scene ends on said neither."""
+
+    def test_the_comparison_names_the_decider_and_the_reason(self, client_in_programme, world):
+        url = reverse("supply_chain:procurement_comparison", args=[world["round"]["id"]])
+        text = _text(client_in_programme.get(url + "?commodity=chlorine").content.decode())
+        assert "Why: registered locally" in text
