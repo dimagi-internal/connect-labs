@@ -273,7 +273,8 @@ class TestACoveredShortOrderHasNothingOutstanding:
     def test_the_card_shows_the_cover_and_nothing_still_outstanding(self, scoped, played):
         body = _page(scoped, "order_detail", played["order"]["id"])
         card = _visible(body.split('id="match"', 1)[1].split("</table>", 1)[0])
-        assert "Received 450 packets" in card
+        # "on this order": the cover's 250 is received on the other one (iteration 2).
+        assert "Received on this order 450 packets" in card
         assert re.search(r"Covered by SCHI-LP-0921 from Tamarind Pharmacy Wholesale 250 packets", card)
         assert "Still outstanding 0 packets" in card
         assert "Still outstanding 250" not in card
@@ -290,9 +291,10 @@ class TestACoveredShortOrderHasNothingOutstanding:
 
 class TestTheStockPage:
     def test_no_consumption_rate_is_not_painted_as_a_warning(self, scoped, played):
+        # Said once, across the forecast columns (iteration 2), and never orange.
         body = _page(scoped, "stock")
-        assert "nothing has been dispensed" in body
-        assert not re.search(r"text-orange-700[^>]*>\s*nothing has been dispensed", body)
+        assert "No consumption yet" in body
+        assert not re.search(r"text-orange-700[^>]*>\s*No consumption yet", body)
 
     def test_one_supply_point_is_singular(self, scoped, played):
         text = _visible(_page(scoped, "stock"))
