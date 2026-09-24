@@ -20,13 +20,13 @@ renders as plain text rather than a link that goes nowhere.
                   hover:bg-message-info focus-visible:outline-2 focus-visible:outline-offset-[-2px]
                   focus-visible:outline-brand-indigo transition-colors">
           <div class="text-[11px] font-medium tracking-wide text-gray-500">{{ stage.label }}</div>
-          <div class="{% if stage.value == "per commodity" or stage.value == "Unconfirmed" %}text-sm text-gray-400 mt-1.5{% else %}text-2xl font-semibold text-brand-indigo tabular-nums leading-tight mt-0.5 group-hover:text-brand-deep-purple{% endif %}">{{ stage.value }}</div>
+          <div class="{% if stage.value == "per commodity" or stage.value == "Unconfirmed" %}text-sm text-gray-600 mt-1.5{% else %}text-2xl font-semibold text-brand-indigo tabular-nums leading-tight mt-0.5 group-hover:text-brand-deep-purple{% endif %}">{{ stage.value }}</div>
           {% if stage.sub %}<div class="text-xs text-gray-500 mt-0.5">{{ stage.sub }}</div>{% endif %}
         </a>
       {% else %}
         <div class="flex-1 min-w-[9rem] px-4 py-3 border-r border-brand-border-light/60 last:border-r-0">
           <div class="text-[11px] font-medium tracking-wide text-gray-500">{{ stage.label }}</div>
-          <div class="{% if stage.value == "per commodity" or stage.value == "Unconfirmed" %}text-sm text-gray-400 mt-1.5{% else %}text-2xl font-semibold text-brand-indigo tabular-nums leading-tight mt-0.5{% endif %}">{{ stage.value }}</div>
+          <div class="{% if stage.value == "per commodity" or stage.value == "Unconfirmed" %}text-sm text-gray-600 mt-1.5{% else %}text-2xl font-semibold text-brand-indigo tabular-nums leading-tight mt-0.5{% endif %}">{{ stage.value }}</div>
           {% if stage.sub %}<div class="text-xs text-gray-500 mt-0.5">{{ stage.sub }}</div>{% endif %}
         </div>
       {% endif %}

@@ -90,7 +90,7 @@ own arithmetic -- so it appears here as a group, not as a footnote.
                     {% if point.min_months_of_stock or point.max_months_of_stock %}
                       {{ point.min_months_of_stock|default:"—" }}–{{ point.max_months_of_stock|default:"—" }} mo
                     {% else %}
-                      <span class="text-gray-400">not set</span>
+                      <span class="text-gray-600">not set</span>
                     {% endif %}
                   </td>
                   <td class="px-4 py-2 text-gray-600 text-xs">{{ point.source|humanise }}</td>
