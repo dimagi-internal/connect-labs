@@ -66,12 +66,12 @@ class SnapshotShapeError(RuntimeError):
 
 
 def _series_prefix(indicator_id) -> str:
-    """The series an indicator belongs to: the letter prefix of its id (C01 -> C).
+    """The letter prefix of an id (C01 -> C): the family of a catalog frozen
+    before catalog entries stated their own `series`.
 
-    This is `runtime.filter_to_series`' own rule -- a series IS the prefix -- and
-    it is needed because the graded payload does not name its primary family
-    anywhere: `cMeasures`, `byOpp` and `monthlyByScope` sit unlabelled at the top
-    level while the FURTHER families are keyed by name under `series`.
+    Needed because the graded payload does not name its primary family anywhere:
+    `cMeasures`, `byOpp` and `monthlyByScope` sit unlabelled at the top level while
+    the FURTHER families are keyed by name under `series`.
     """
     out = []
     for ch in str(indicator_id or ""):
@@ -82,8 +82,12 @@ def _series_prefix(indicator_id) -> str:
 
 
 def _primary_series_name(measures) -> str | None:
-    """The one series `cMeasures` describes, or None if it is empty or mixed."""
-    names = {_series_prefix(m.get("indicator")) for m in measures or []}
+    """The one series `cMeasures` describes, or None if it is empty or mixed.
+
+    A catalog entry states its family (`series`) since ids stopped having to be
+    codes; one frozen before that carries none, and its id's prefix still names it.
+    """
+    names = {m.get("series") or _series_prefix(m.get("indicator")) for m in measures or []}
     names.discard("")
     return names.pop() if len(names) == 1 else None
 

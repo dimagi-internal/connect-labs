@@ -42,7 +42,7 @@ import yaml
 from connect_labs.semantic.compiler import compile_indicator_sql, compile_rollup_sql
 from connect_labs.semantic.layer1 import build_visit_sql
 from connect_labs.semantic.legacy import DEFAULT_REGISTRY_NAME
-from connect_labs.semantic.model import indicator_prefix, series_prefixes
+from connect_labs.semantic.model import indicator_series, series_prefixes
 
 logger = logging.getLogger(__name__)
 
@@ -221,8 +221,7 @@ def filter_to_series(registry: dict[str, Any], series: str) -> dict[str, Any]:
     series = series.upper()
     # Which families exist is the registry's to say (`series:`, or the prefixes of
     # its own indicator ids) -- there is no fixed list. A caller asking for one must
-    # not silently receive another's columns: KMC's C and N answer different
-    # questions and disagree on maturity and growth bands by design.
+    # not silently receive another family's columns.
     known = series_prefixes(registry)
     if series not in known:
         raise SemanticRuntimeError(f"unknown indicator series {series!r}; known: {known}")
@@ -230,9 +229,7 @@ def filter_to_series(registry: dict[str, Any], series: str) -> dict[str, Any]:
     by_name = {m["name"]: m for m in registry.get("measures", []) if m.get("name")}
 
     roots = [
-        m
-        for m in registry.get("measures", [])
-        if m.get("meta") and indicator_prefix(m["meta"].get("indicator")) == series
+        m for m in registry.get("measures", []) if m.get("meta") and indicator_series(registry, m["meta"]) == series
     ]
 
     reachable: set[str] = set()
@@ -308,6 +305,10 @@ def measure_catalog(registry: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "id": m["name"],
                 "indicator": meta.get("indicator"),
+                # The family, stated. Readers of a frozen catalog (the benchmark
+                # publisher) used to re-derive it from the id's letters, which only
+                # works while ids are codes.
+                "series": indicator_series(registry, meta),
                 "title": m.get("title"),
                 "category": meta.get("category"),
                 # Which indicators are headline rather than supporting. The render
