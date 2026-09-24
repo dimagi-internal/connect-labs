@@ -1,7 +1,7 @@
 """Alerts in a browser: who is told about what, and what they were told.
 
 One page lists the subscriptions and the sent log side by side, because the
-question a person arrives with is usually "did EvAc get told?", and the answer
+question a person arrives with is usually "was the donor told?", and the answer
 is a row in the log next to the subscription that produced it.
 """
 

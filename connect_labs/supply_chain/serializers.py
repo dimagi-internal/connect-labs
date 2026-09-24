@@ -220,6 +220,7 @@ def approval(obj) -> dict:
         "requested_on": _date(obj.requested_on),
         "decided_on": _date(obj.decided_on),
         "note": obj.note,
+        "decision_note": obj.decision_note,
         "document_ids": [doc.pk for doc in obj.documents.all()],
     }
 

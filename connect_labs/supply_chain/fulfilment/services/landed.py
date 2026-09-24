@@ -65,20 +65,23 @@ def _line_total(contract):
     )
 
 
-def _extra(basis, amount, label):
+def _extra(basis, amount, label, currency):
     """A cost line stated as a basis plus, sometimes, an amount.
 
     `included` means it is already inside the price, so it adds nothing.
     `excluded` with an amount adds it. `excluded` with no amount, or
     `not_specified`, is the honest gap -- and saying so is what turns it into
     a question somebody can answer.
+
+    Every line is in the contract's currency. Money defaults to USD, so a
+    line built without one read "Freight 0 USD" under "Goods 612000 NGN".
     """
     if basis == "included":
-        return Money(ZERO)
+        return Money(ZERO, currency)
     if basis == "excluded":
         if amount is None:
             return unconfirmed(f"{label} is excluded but no amount was given")
-        return Money(amount)
+        return Money(amount, currency)
     return unconfirmed(f"the contract does not say whether {label} is included")
 
 
@@ -102,7 +105,7 @@ def _tax_line(contract, basis, amount, label):
         )
 
     if buyer == "agency":
-        return Money(ZERO)
+        return Money(ZERO, contract.currency)
 
     if buyer == "partner_org" and contract.duty_relief_claimed:
         if not contract.duty_relief_document_id:
@@ -110,9 +113,9 @@ def _tax_line(contract, basis, amount, label):
                 f"{label} is claimed to be relieved because the buyer is resident, but no "
                 "exemption document is attached -- the relief is asserted, not evidenced"
             )
-        return Money(ZERO)
+        return Money(ZERO, contract.currency)
 
-    return _extra(basis, amount, label)
+    return _extra(basis, amount, label, contract.currency)
 
 
 def charges(contract):
@@ -189,7 +192,7 @@ def landed_total(contract):
         }
 
     goods = _line_total(contract)
-    freight = _extra(contract.freight_basis, contract.freight_amount, "freight")
+    freight = _extra(contract.freight_basis, contract.freight_amount, "freight", contract.currency)
     duty = _tax_line(contract, contract.duties_basis, contract.duties_amount, "import duty")
     vat = _tax_line(contract, contract.vat_basis, contract.vat_amount, "VAT")
 

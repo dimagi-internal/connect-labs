@@ -456,3 +456,4 @@ targeting-snapshot-*.zip
 # name. No .html at the repo ROOT is source -- every real template lives under
 # templates/ or static/ -- so the whole level is ignored.
 /*.html
+scripts/walkthroughs/supply-chlorine-stopgap/outputs.json

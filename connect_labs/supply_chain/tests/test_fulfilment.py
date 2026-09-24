@@ -256,6 +256,25 @@ class TestLandedCost:
         assert "unconfirmed" in costed["landed_total"]
         assert any("freight" in r for r in costed["landed_total"]["unconfirmed"])
 
+    def test_every_cost_line_is_in_the_contract_currency(self, da, setup):
+        # A naira order read "Goods 612000 NGN / Freight 0 USD / Import duty 0
+        # USD": the lines a basis resolves (included, or relieved) came back in
+        # the Money default rather than the currency the contract is priced in.
+        contract = _contract(
+            da,
+            setup,
+            currency="NGN",
+            unit_price="6800",
+            freight_basis="included",
+            freight_amount=None,
+            duties_basis="excluded",
+            duties_amount="15000",
+            vat_basis="included",
+        )
+        costed = op(da, "contract_landed_cost", contract_id=contract["id"])
+        for line in ("goods", "freight", "duty", "vat", "landed_total"):
+            assert costed[line]["currency"] == "NGN", line
+
     def test_the_landed_total_always_names_the_buyer_it_assumed(self, da, setup):
         contract = _contract(da, setup, duties_basis="included", vat_basis="included")
         costed = op(da, "contract_landed_cost", contract_id=contract["id"])
