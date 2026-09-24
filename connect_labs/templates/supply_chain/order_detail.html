@@ -15,6 +15,16 @@ figure here can go stale.
   </div>
 {% else %}
 
+{% comment %}
+The labs header is fixed, 4rem tall (layouts/header.html, h-16). Without a
+scroll margin an anchored scroll lands a section's heading -- once the order's
+own title -- underneath it. Plain CSS rather than a utility class: a Tailwind
+class this build has not seen ships purged.
+{% endcomment %}
+<style>
+  #order-page h2, #order-page h3, #order-page section, #order-page [id] { scroll-margin-top: 5rem; }
+</style>
+<div id="order-page">
 <div class="mb-4">
   <div class="text-xs text-gray-500">
     <a class="hover:underline" href="{% url 'supply_chain:orders' %}">Orders</a> ›
@@ -25,6 +35,11 @@ figure here can go stale.
        class="text-brand-indigo hover:underline">{{ suppliers|dictkey:contract.supplier_id|dictkey:"name" }}</a>{% if contract.quantity %} ·
     {{ contract.quantity|qty:contract.quantity_unit }}{% endif %}
   </h2>
+  {% if item or contract.delivery_supply_point_id %}
+    <p class="text-sm text-gray-700">
+      {% if item %}<a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:item_detail' item.id %}">{{ item.name }}</a>{% endif %}{% if item and contract.delivery_supply_point_id %} · {% endif %}{% if contract.delivery_supply_point_id %}to {{ supply_points|dictkey:contract.delivery_supply_point_id|default:"a supply point" }}{% endif %}
+    </p>
+  {% endif %}
   <p class="text-sm text-gray-600">
     {% if contract.consideration == "in_kind" %}Donated to{% else %}Bought by{% endif %}
     <b>{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record|buyer_label }}</b>
@@ -44,10 +59,13 @@ figure here can go stale.
     {% elif contract.consideration == "bundled" %}
       <span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-900">Bundled in setup fee</span>
     {% endif %}
+    {% if contract.source %}<span class="text-gray-500">· {{ contract|told_by:orgs }}</span>{% endif %}
   </p>
   <div class="flex flex-wrap gap-2 mt-3">
     <a href="{% url 'supply_chain:contract_edit' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit order</a>
+    {% if contract.consideration == "priced" %}
     <a href="{% url 'supply_chain:invoice_record' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record an invoice</a>
+    {% endif %}
     <a href="{% url 'supply_chain:shipment_record' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record a dispatch</a>
     <a href="{% url 'supply_chain:receipt_record' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record a receipt</a>
     <a href="{% url 'supply_chain:document_attach' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Attach a document</a>
@@ -110,28 +128,41 @@ was ordered. Before, the page showed this order's half and a link to the other.
 </section>
 {% endif %}
 
-{% if link_updates %}
-<div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-3">
+{% comment %}
+One panel per organisation's link, each listing only what came through it. One
+panel headed by whoever wrote last put the distributor's dispatch under the
+partner's name (the IPTSc render).
+{% endcomment %}
+{% for panel in link_updates %}
+<section data-link-updates="{{ panel.org }}" class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-3">
   <div class="px-4 py-2.5 border-b border-gray-100">
-    <span class="text-xs font-semibold text-gray-600">Through {{ link_updates.0.org }}'s update link</span>
+    <span class="text-xs font-semibold text-gray-600">Through {{ panel.org }}'s update link</span>
     <span class="text-xs text-gray-400 ml-2">recorded by them, no login, nobody asked</span>
   </div>
   <ul class="divide-y divide-gray-100">
-    {% for update in link_updates %}
+    {% for update in panel.updates %}
       <li class="px-4 py-2 text-sm text-gray-700 flex justify-between gap-4">
         <span>{{ update.title|capfirst }}{% if update.detail %}<span class="text-gray-500"> — {{ update.detail }}</span>{% endif %}</span>
         <span class="text-xs text-gray-500 whitespace-nowrap">{{ update.at|date:"j M Y, H:i" }}</span>
       </li>
     {% endfor %}
   </ul>
-</div>
-{% endif %}
+</section>
+{% endfor %}
 
 <div class="grid gap-3 md:grid-cols-2">
-  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+  <div id="cost" class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100">
-      <span class="text-xs font-semibold text-gray-600">Landed cost</span>
-      <span class="text-xs text-gray-400 ml-2">assuming {{ landed.buyer_of_record|buyer_label }} imports</span>
+      {% comment %}"Landed cost, assuming a local partner imports" read oddly over a
+      local purchase paid out of a setup fee: nothing was priced or imported.{% endcomment %}
+      {% if contract.consideration == "priced" %}
+        <span class="text-xs font-semibold text-gray-600">Landed cost</span>
+        <span class="text-xs text-gray-400 ml-2">assuming {{ landed.buyer_of_record|buyer_label }} imports</span>
+      {% elif landed.charges %}
+        <span class="text-xs font-semibold text-gray-600">Landed cost</span>
+      {% else %}
+        <span class="text-xs font-semibold text-gray-600">Cost</span>
+      {% endif %}
     </div>
     <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
@@ -254,7 +285,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
     {% endif %}
   </div>
 
-  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+  <div id="match" class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100">
       <span class="text-xs font-semibold text-gray-600">Ordered · received{% if contract.consideration == "priced" %} · invoiced{% endif %}</span>
       <span class="text-xs text-gray-400 ml-2">{{ match.status|humanise }}{% if match.payment_terms == "advance" %} · paid in advance{% endif %}</span>
@@ -270,19 +301,24 @@ was ordered. Before, the page showed this order's half and a link to the other.
         <tr><td class="px-4 py-2 text-gray-600">Invoiced</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ match.invoiced|figure_text }}</td></tr>
         {% endif %}
-        <tr><td class="px-4 py-2 text-gray-600">Still outstanding</td>
-            <td class="px-4 py-2 text-right tabular-nums">{{ match.outstanding|figure_text }}</td></tr>
-        {% if match.covered_by %}
+        {% comment %}
+        Covered, the rest is not outstanding: "Still outstanding 250" under a
+        table reading "700 received" contradicted it (the IPTSc render). Each
+        cover is its own row, and what is still outstanding is what the covers
+        leave. Received stays this order's own figure.
+        {% endcomment %}
+        {% for cover in match.covered_by %}
           <tr class="bg-blue-50">
-            <td class="px-4 py-2 text-gray-700" colspan="2">
-              Shortfall covered by
-              {% for cover in match.covered_by %}
-                <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' cover.contract_id %}">{{ cover.reference|default:"order" }}</a>
-                <span class="text-xs text-gray-500">({{ cover.quantity|qty:cover.quantity_unit }} from {{ cover.supplier.name }})</span>{% if not forloop.last %},{% endif %}
-              {% endfor %}
+            <td class="px-4 py-2 text-gray-700">
+              Covered by
+              <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' cover.contract_id %}">{{ cover.reference|default:"another order" }}</a>
+              <span class="text-xs text-gray-500">from {{ cover.supplier.name }}</span>
             </td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ cover.quantity|qty:cover.quantity_unit }}</td>
           </tr>
-        {% endif %}
+        {% endfor %}
+        <tr><td class="px-4 py-2 text-gray-600">Still outstanding</td>
+            <td class="px-4 py-2 text-right tabular-nums">{% if outstanding_after_cover %}{{ outstanding_after_cover|figure_text }}{% else %}{{ match.outstanding|figure_text }}{% endif %}</td></tr>
         {% comment %}
         Billing is a bought order's business. A donation or a purchase paid out
         of a setup fee has no invoice to match and nothing to pay, and five rows
@@ -501,10 +537,18 @@ was ordered. Before, the page showed this order's half and a link to the other.
   </div>
 </div>
 
+{% comment %}
+Billing is a bought order's business: a donation or a purchase paid out of a
+setup fee said "nothing to bill or pay" and still offered to record an invoice.
+The section stays only if one was somehow recorded, so it is not hidden.
+{% endcomment %}
+{% if contract.consideration == "priced" or invoices %}
 <div class="flex items-baseline justify-between mt-6 mb-2">
   <h3 class="text-sm font-semibold text-gray-900">Invoices</h3>
+  {% if contract.consideration == "priced" %}
   <a href="{% url 'supply_chain:invoice_record' contract.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Record an invoice</a>
+  {% endif %}
 </div>
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
@@ -579,6 +623,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
   </table>
   </div>
 </div>
+{% endif %}
 
 <div class="flex items-baseline justify-between mt-6 mb-2">
   <h3 class="text-sm font-semibold text-gray-900">Evidence</h3>
@@ -602,10 +647,18 @@ was ordered. Before, the page showed this order's half and a link to the other.
     </ul>
   {% else %}
     <p class="text-sm text-gray-500">
-      Nothing attached. Two figures on this page depend on a document existing:
-      the duty relief, and each batch's conformity.
+      Nothing attached.
+      {% comment %}Only the figures this page actually shows: a bundled or donated
+      order has no duty figure for a document to evidence.{% endcomment %}
+      {% if contract.consideration == "priced" %}
+        Two figures on this page depend on a document existing: the duty relief,
+        and each batch's conformity.
+      {% elif shipments %}
+        Each batch's conformity on this page depends on a certificate being attached.
+      {% endif %}
     </p>
   {% endif %}
+</div>
 </div>
 {% endif %}
 {% endblock %}

@@ -312,6 +312,39 @@ class OrdersView(OperationBase):
 
     template_name = "supply_chain/orders.html"
 
+    def _progress(self, contracts):
+        """{contract id: {"received", "due_on"}} -- which orders need attention, at a glance.
+
+        Received is what was accepted against the order in its own unit, from
+        one `receipt_list` for the programme rather than a match per row; a
+        line in another unit is left out rather than added across units. Due
+        is the signed date plus the promised lead time, when both exist.
+        """
+        from datetime import date, timedelta
+        from decimal import Decimal
+
+        units = {c["id"]: c.get("quantity_unit") for c in contracts}
+        received: dict[int, Decimal] = {}
+        for receipt in self.op("receipt_list"):
+            contract_id = receipt.get("contract_id")
+            if contract_id not in units:
+                continue
+            for line in receipt.get("lines") or []:
+                if line.get("quantity_unit") == units[contract_id] and line.get("quantity_accepted"):
+                    received[contract_id] = received.get(contract_id, Decimal(0)) + Decimal(line["quantity_accepted"])
+        progress = {}
+        for contract in contracts:
+            due_on = None
+            if contract.get("signed_on") and contract.get("promised_lead_time_days") is not None:
+                due_on = date.fromisoformat(contract["signed_on"]) + timedelta(
+                    days=contract["promised_lead_time_days"]
+                )
+            got = received.get(contract["id"], Decimal(0))
+            # Due only matters while something is still to come.
+            waiting = contract.get("quantity") is not None and got < Decimal(contract["quantity"])
+            progress[contract["id"]] = {"received": got, "due_on": due_on if waiting else None}
+        return progress
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["has_program_context"] = has_program_context(self.request)
@@ -326,6 +359,7 @@ class OrdersView(OperationBase):
                     context["references"][contract["id"]]
                 )
         context["covered_by"] = covered_by
+        context["progress"] = self._progress(context["contracts"])
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
         return context
@@ -343,7 +377,14 @@ def _link_updates(contract_id):
     from connect_labs.supply_chain.update_links import service
 
     contract = Contract.objects.filter(pk=contract_id).first()
-    return service.updates_for_contract(contract) if contract is not None else []
+    updates = service.updates_for_contract(contract) if contract is not None else []
+    # One panel per organisation, each listing only what came through ITS
+    # link. A single panel headed by whoever wrote last put the distributor's
+    # dispatch under the partner's name (the IPTSc render).
+    panels: dict[int, dict] = {}
+    for update in updates:
+        panels.setdefault(update["org_id"], {"org": update["org"], "updates": []})["updates"].append(update)
+    return list(panels.values())
 
 
 def _amount(figure):
@@ -356,6 +397,31 @@ def _amount(figure):
         return Decimal(str(figure["amount"]))
     except (InvalidOperation, ValueError):
         return None
+
+
+def _outstanding_after_cover(match):
+    """What is still outstanding once the orders covering a shortfall are counted.
+
+    None when nothing covers the order, or when a cover is in another unit and
+    cannot be subtracted -- the card then shows the order's own figure rather
+    than an arithmetic across units. Never below zero: a cover larger than the
+    gap leaves nothing outstanding, not a negative.
+    """
+    from decimal import Decimal
+
+    from connect_labs.supply_chain.values import decimal_string
+
+    covers = match.get("covered_by") or []
+    outstanding = match.get("outstanding")
+    remaining = _amount(outstanding)
+    if not covers or remaining is None:
+        return None
+    unit = outstanding.get("unit")
+    for cover in covers:
+        if cover.get("quantity") is None or cover.get("quantity_unit") != unit:
+            return None
+        remaining -= Decimal(str(cover["quantity"]))
+    return {"amount": decimal_string(max(remaining, Decimal(0))), "unit": unit}
 
 
 class OrderDetailView(OperationBase):
@@ -434,6 +500,14 @@ class OrderDetailView(OperationBase):
         context["landed"] = self.op("contract_landed_cost", contract_id=contract_id, compare_buyers=True)
         context["match"] = self.op("contract_match", contract_id=contract_id)
         context["fulfilment"] = self._fulfilment(contract, context["match"])
+        context["outstanding_after_cover"] = _outstanding_after_cover(context["match"])
+        # The trade item, by name, for the header: the page said who and how many
+        # but never what.
+        context["item"] = (
+            next((i for i in self.op("item_list") if i["id"] == contract["item_id"]), None)
+            if contract.get("item_id")
+            else None
+        )
         # The short order this one covers, by the reference people use for it.
         if contract.get("covers_shortfall_of_id"):
             context["covers"] = self.op("contract_get", contract_id=contract["covers_shortfall_of_id"])
@@ -542,6 +616,48 @@ class StockView(OperationBase):
                 if v is not None
             },
         )
+        return context
+
+
+class MovementsView(OperationBase):
+    """The movements behind one supply point's balance, newest first.
+
+    What the stock page's ledger figure is made of: "700 packets" is the two
+    receipts of 450 and 250, and a reader could not see that anywhere. Read
+    through `movement_list`, which the API already offered; nothing here
+    derives a figure of its own.
+    """
+
+    template_name = "supply_chain/movements.html"
+
+    @staticmethod
+    def _id(value):
+        try:
+            return int(value) if value else None
+        except ValueError:
+            raise Http404("not a record id")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+        if not context["has_program_context"]:
+            return context
+        point_id = self._id(self.request.GET.get("supply_point_id"))
+        item_id = self._id(self.request.GET.get("item_id"))
+        points = {p["id"]: p for p in self.op("supply_point_list", include_inactive=True)}
+        if point_id is not None and point_id not in points:
+            raise Http404(f"no supply point {point_id} in this programme")
+        context["point"] = points.get(point_id)
+        context["points"] = {pk: p["name"] for pk, p in points.items()}
+        context["item"] = next((i for i in self.op("item_list") if i["id"] == item_id), None) if item_id else None
+        context["movements"] = self.op(
+            "movement_list",
+            **{k: v for k, v in (("supply_point_id", point_id), ("item_id", item_id)) if v is not None},
+        )
+        # Each receipt by the note number people use for it, and its order.
+        receipts = self.op("receipt_list", supply_point_id=point_id) if point_id is not None else []
+        context["receipts"] = {r["id"]: r for r in receipts}
+        context["references"] = {c["id"]: c["reference"] or f"order {c['id']}" for c in self.op("contract_list")}
         return context
 
 
