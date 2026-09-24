@@ -9,7 +9,7 @@ Three tables, each answering one question:
                      minutes, while letting one that clears and comes back be
                      news again.
   AlertNotice        every fact that was due to go out, and whether it did.
-                     The log a person reads to answer "did EvAc get told?",
+                     The log a person reads to answer "was the donor told?",
                      and the queue a daily digest drains.
 
 Imported by `supply_chain.models` so Django registers them with the app.
@@ -48,7 +48,7 @@ class AlertSubscription(TimestampedModel):
     The recipient is a labs user OR an email address, never both and never
     neither -- a database constraint, because a subscription nobody can
     receive is a row that looks like it is working. The email address is how
-    an outside party (EvAc, a donor) is told, and it needs no labs account.
+    an outside party (a donor, a partner) is told, and it needs no labs account.
     """
 
     program_id = models.IntegerField(db_index=True)

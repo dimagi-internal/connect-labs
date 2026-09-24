@@ -105,7 +105,7 @@ def _subscribe(da, **data):
 
 class TestSubscriptionOperations:
     def test_a_subscription_names_what_to_watch_and_who_hears(self, da):
-        sub = _subscribe(da, check_kinds=["stock_below_minimum"], label="Low stock to EvAc")
+        sub = _subscribe(da, check_kinds=["stock_below_minimum"], label="Low stock to the donor")
         assert sub["check_kinds"] == ["stock_below_minimum"]
         assert sub["recipient_email"] == "stores@example.org"
         assert sub["cadence"] == "immediate"
