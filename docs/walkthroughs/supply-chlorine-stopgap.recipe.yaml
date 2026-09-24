@@ -1,6 +1,6 @@
 base_url: https://labs.connect.dimagi.com
 narrative_locked: true
-narrative_locked_at: '2026-09-23T23:59:00.858015+00:00'
+narrative_locked_at: '2026-09-24T00:28:44.614155+00:00'
 prewarm: true
 review_mode: autonomous
 setup:
@@ -30,6 +30,10 @@ scenes:
   - kind: hold
     note: and the Kano store under its own two-month floor
     seconds: 2.5
+  - kind: hover
+    note: cursor off the cards
+    seconds: 1.0
+    target: text:What the record cannot answer
   concept_claim: The checks page reports ClearWater's in-kind consignment as ninety
     days past both its promised lead time and its shipment's expected date, and the
     Kano store as below its own two-month minimum, with no one having entered a lateness
@@ -46,27 +50,25 @@ scenes:
   - kind: wait_for
     target: In kind — donated
   - kind: hover
-    note: every cost line reads not purchased — nothing is missing, there was never
-      a price
+    note: 'every cost line reads not purchased: there was never a price to find'
     seconds: 2.0
     target: text:Landed total
   - kind: hover
     note: 400 jerry cans promised, none received
     seconds: 2.0
     target: text:Still outstanding
-  - kind: scroll_to
-    target: css:table:has-text('CWA-DON-2026-02/1')
-  - kind: hold
-    note: the planned shipment, ninety days past its date
+  - kind: hover
+    note: the donation, ninety days past its promised lead time
     seconds: 2.0
+    target: text:90 days past the promised lead time
   concept_claim: An in-kind order shows every cost line as "not purchased (in kind)"
-    instead of Unconfirmed, while its ordered and outstanding quantities and its overdue
-    shipment are tracked on the same page.
+    instead of Unconfirmed, while its ordered and outstanding quantities and its lateness
+    are shown on the same page.
   design_intent: A donation is a real supply line with no price. Saying so stops the
     missing-cost check from crying wolf for ever.
   show: Ngozi opens ClearWater's donated order and reads its landed cost as not purchased
-    rather than missing, the 400 jerry cans still outstanding, and the planned shipment
-    ninety days past its date.
+    rather than missing, the 400 jerry cans still outstanding, and the note that it
+    is ninety days past its promised lead time.
   url: /supply/orders/${late_contract_id}/?program_id=10603
 - id: ngozi-points-the-alert-at-clearwater
   actions:
@@ -128,6 +130,10 @@ scenes:
   - kind: wait_for
     target: What they stated
   - kind: hover
+    note: NGN 6,800 a jerry can, as they stated it
+    seconds: 1.5
+    target: text:NGN 6800
+  - kind: hover
     note: 90 jerry cans at NGN 6,800 each
     seconds: 1.5
     target: text:Quantity priced
@@ -159,6 +165,9 @@ scenes:
     say: why
     target: css:input[name=rationale]
     value: Only registered 1.25% chlorine available within a week
+  - kind: hold
+    note: the reason, written before the award is made
+    seconds: 1.5
   - kind: click
     must_succeed: true
     target: css:form:has(input[name=rationale]) button:has-text('Award')
@@ -184,7 +193,7 @@ scenes:
   show: Ngozi reads Harmattan's row in the comparison, types her reason, awards it,
     and opens the award she just made.
   url: /supply/procurement/rounds/${round_id}/compare/?commodity=dispenser-chlorine&program_id=10603
-- id: the-registration-is-the-regulators-answer
+- id: two-answers-stand-between-the-award-and-an-order
   actions:
   - kind: click
     must_succeed: true
@@ -218,9 +227,6 @@ scenes:
   - kind: select
     target: css:#id_status
     value: approved
-  - kind: fill
-    target: css:#id_note
-    value: The registration certificate is the regulator's approval of this product
   - kind: click
     must_succeed: true
     target: role:button:Record the answer
@@ -228,18 +234,8 @@ scenes:
   - kind: wait_for
     target: approved
   - kind: hold
-    seconds: 2.0
-  concept_claim: A regulatory approval is recorded against the award as requested
-    and then approved, with the registration it rests on named in its note, and it
-    appears on the award page as approved.
-  design_intent: A licence is one of the three reasons an award may need someone else's
-    yes; here the evidence already exists, so the approval is recorded with it and
-    closed.
-  show: On the award Ngozi asks for the National Products Registration Agency's approval
-    in the regulatory role, citing registration WTP-04-1187 on Harmattan's quote,
-    and records it approved.
-- id: the-funder-has-to-agree
-  actions:
+    note: the regulator's approval, resting on the registration
+    seconds: 1.5
   - kind: click
     must_succeed: true
     target: text:+ Ask for an approval
@@ -270,14 +266,17 @@ scenes:
   - kind: hold
     note: where the order button was, the name of the approval still outstanding
     seconds: 2.5
-  concept_claim: Once a funder approval is requested, the award page replaces the
-    order link with a notice naming the funder and the date it was asked, and the
-    award reads as awaiting approval.
-  design_intent: The funder's agreement is a condition, so the page shows it where
-    the next step would otherwise be.
-  show: Ngozi asks Northstar Fund for its approval in the funder role, and the award
-    page now says, where the order button was, that it cannot be ordered until Northstar
-    answers.
+  concept_claim: 'An award carries approvals by role: a regulatory approval recorded
+    as approved with the registration it rests on in its note, and a funder approval
+    still requested, which replaces the order link with a notice naming the funder
+    and the date it was asked.'
+  design_intent: A licence and a funder's agreement are two of the three reasons an
+    award may need someone else's yes; one is already evidenced, the other is still
+    outstanding, and only the outstanding one stands in the way.
+  show: On the award Ngozi records the National Products Registration Agency's approval
+    in the regulatory role, citing registration WTP-04-1187 on Harmattan's quote,
+    then asks Northstar Fund for its approval in the funder role, and the award page
+    says, where the order button was, that it cannot be ordered until Northstar answers.
 - id: the-order-is-refused
   actions:
   - kind: wait_for
@@ -336,6 +335,9 @@ scenes:
     must_succeed: true
     target: role:button:Record the answer
     timeout_ms: 30000
+  - kind: hold
+    note: Northstar approved; the order link is back
+    seconds: 2.0
   - kind: click
     must_succeed: true
     target: text:+ Place an order against this award
@@ -386,17 +388,18 @@ scenes:
     pattern: /orders/(\d+)/
     source: url
     var: stopgap_contract_id
-  - kind: hold
-    note: placed, against the award, bought by the programme
-    seconds: 2.0
+  - kind: hover
+    note: a price the donation never had
+    seconds: 2.5
+    target: text:Landed total
   concept_claim: Recording the funder's approval restores the order link on the award
-    page, and the same order that was refused is then accepted and opens as a placed
-    order against the award.
+    page, and an order against the award is then accepted and opens as a placed order
+    with a landed cost.
   design_intent: The control releases the moment the condition is met, with nothing
     else to reset.
-  show: Ngozi records Northstar Fund's answer as approved, the order link comes back,
-    and she places the order for 90 jerry cans delivered to the Kano store within
-    seven days.
+  show: Ngozi records Northstar Fund's answer as approved, sees the order link come
+    back, places the order for 90 jerry cans delivered to the Kano store within seven
+    days, and reads its landed cost.
   url: /supply/procurement/awards/${award_id}/?program_id=10603
 - id: the-stop-gap-reaches-kano
   actions:
@@ -445,11 +448,13 @@ scenes:
   - kind: wait_for
     must_succeed: true
     target: GRN-KANO-0431
-  - kind: scroll_to
-    target: css:table:has-text('GRN-KANO-0431')
-  - kind: hold
-    note: 90 jerry cans accepted into the Kano store
+  - kind: hover
+    seconds: 1.0
+    target: text:Ordered · received · invoiced
+  - kind: hover
+    note: 90 jerry cans received into the Kano store
     seconds: 2.0
+    target: text:Received
   concept_claim: Recording a goods received note against the order posts the accepted
     jerry cans into the Kano store's ledger and moves the order from placed to received.
   design_intent: Stock exists only once someone at the store says it arrived; the
@@ -458,46 +463,19 @@ scenes:
     jerry cans of Aquaguard, batch and expiry) as a partner's report, and the order
     shows them received.
   url: /supply/orders/${stopgap_contract_id}/receipts/new/?program_id=10603
-- id: the-stop-gap-bridges-but-does-not-replace
-  actions:
-  - kind: wait_for
-    target: Stock across the network
-  - kind: hover
-    note: 150 jerry cans now, against 80 a month
-    seconds: 2.5
-    target: text:Sahel CHI — Kano chlorine store
-  - kind: hover
-    note: better than it was, still under its floor
-    seconds: 2.5
-    target: text:BELOW MIN
-  concept_claim: After the receipt, the stock page recomputes the Kano store's months
-    of stock from its ledger and its own consumption and still marks it below its
-    two-month minimum.
-  design_intent: Showing the store still under its floor keeps the late donation the
-    thing the programme is waiting on, which is exactly what the donor has been told.
-  show: 'Ngozi reads the Kano store on the stock page: what the ledger holds now,
-    its monthly consumption, its months of stock against its two-to-four-month band,
-    still marked below its minimum.'
-  url: /supply/stock/?program_id=10603
 - id: clearwater-has-already-been-told
   actions:
   - kind: wait_for
     target: Sent log
-  # Alerts go out on a five-minute beat, and this take reaches here about three
-  # minutes after the alert was created. Waiting out the rest of the beat is
-  # the honest way to film what the donor was actually sent: the log is only
-  # read once the run that emailed it has happened.
   - kind: hold
-    seconds: 150
     note: the five-minute alert run, waited out rather than faked
+    seconds: 150
   - kind: goto
     target: /supply/alerts/?program_id=10603
   - kind: wait_for
-    seconds: 60
     must_succeed: true
+    seconds: 60
     target: css:section:has(h2:has-text('Sent log')) tbody tr:has-text('stock_below_minimum')
-  - kind: scroll_to
-    target: Sent log
   - kind: hover
     note: the store below its minimum, found by her alert
     seconds: 2.5
@@ -515,3 +493,28 @@ scenes:
     and ClearWater''s overdue shipment, each found by the alert she created and sent
     to ClearWater''s supply desk.'
   url: /supply/alerts/?program_id=10603
+- id: the-stop-gap-bridges-but-does-not-replace
+  actions:
+  - kind: wait_for
+    target: Stock across the network
+  - kind: hover
+    note: 150 jerry cans now, against 80 a month
+    seconds: 2.0
+    target: text:Sahel CHI — Kano chlorine store
+  - kind: hover
+    note: better than it was, still under its floor
+    seconds: 2.0
+    target: text:BELOW MIN
+  - kind: hover
+    note: cursor off the badge
+    seconds: 1.5
+    target: text:MONTHS OF STOCK
+  concept_claim: After the receipt, the stock page recomputes the Kano store's months
+    of stock from its ledger and its own consumption and still marks it below its
+    two-month minimum.
+  design_intent: Showing the store still under its floor keeps the late donation the
+    thing the programme is waiting on, which is exactly what the donor has been told.
+  show: 'Ngozi reads the Kano store on the stock page: what the ledger holds now,
+    its monthly consumption, its months of stock against its two-to-four-month band,
+    still marked below its minimum.'
+  url: /supply/stock/?program_id=10603
