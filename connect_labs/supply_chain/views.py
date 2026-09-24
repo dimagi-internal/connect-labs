@@ -741,7 +741,47 @@ class StockView(OperationBase):
                 and on_hand.get("amount") not in (None, "")
                 and (float(on_hand["amount"]) <= 0)
             )
+        item = next((i for i in context["items"] if i["id"] == context["item_id"]), None)
+        context["standing"] = self._standing(item) if item else None
         return context
+
+    def _standing(self, item) -> dict:
+        """Why this stock is the right stock: the item against its specification, and who agreed to it.
+
+        A balance of a trade item says how much; it does not say the kit on
+        the shelf is the one the technical partner specified and confirmed.
+        Read from the records that already say so -- the product's
+        requirements and the approvals on awards for this item -- never stored.
+        """
+        from connect_labs.supply_chain.procurement.views import approvals_as_read
+
+        products = self.op("commodity_list")
+        product = next((p for p in products if p["slug"] == item["commodity_slug"]), None) or {}
+        requirements = product.get("spec_requirements") or []
+        verdict = ""
+        if requirements:
+            verdict = kit_spec_verdict(
+                item.get("spec_attributes"),
+                requirements,
+                item.get("components"),
+                {p["slug"]: p.get("spec_requirements") or [] for p in products},
+            )["verdict"]
+        quotes = {q["id"]: q for q in self.op("quote_list")}
+        suppliers = {s["id"]: s["name"] for s in self.op("supplier_list")}
+        approvals = []
+        for award in self.op("award_list"):
+            if (quotes.get(award["quote_id"]) or {}).get("item_id") != item["id"]:
+                continue
+            for approval in approvals_as_read(self.op, award["id"]):
+                if approval["status"] == "approved":
+                    approvals.append({**approval, "award": award, "supplier": suppliers.get(award["supplier_id"])})
+        return {
+            "item": item,
+            "product": product,
+            "verdict": verdict,
+            "meets": bool(verdict) and verdict.startswith("Meets"),
+            "approvals": approvals,
+        }
 
 
 class MovementsView(OperationBase):

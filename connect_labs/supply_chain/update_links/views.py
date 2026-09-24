@@ -106,7 +106,7 @@ class UpdateLinkIssueView(OperationFormView):
     )
 
     def breadcrumb(self, **kwargs):
-        return [{"label": "Supplier links", "href": reverse("supply_chain:update_links")}, {"label": self.title}]
+        return [{"label": "Update links", "href": reverse("supply_chain:update_links")}, {"label": self.title}]
 
     def cancel_href(self, **kwargs):
         return reverse("supply_chain:update_links")
@@ -319,7 +319,7 @@ class UpdateLinkPublicView(View):
         if form_class is None:
             raise Http404("no such action")
         scope = service.scope_for(self.link)
-        form = form_class(request.POST, scope=scope)
+        form = form_class(request.POST, request.FILES, scope=scope)
         if not form.is_valid():
             return self._render(scope, bound=form)
 
