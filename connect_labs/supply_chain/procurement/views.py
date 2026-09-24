@@ -46,6 +46,7 @@ from connect_labs.supply_chain.forms import (
 from connect_labs.supply_chain.fulfilment_forms import DocumentForm
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.values import unit_noun
 
 
 def _days_waiting(sent_on):
@@ -118,8 +119,17 @@ class RoundDetailView(_Base):
             item_id = quote.get("item_id")
             if item_id and item_id not in items:
                 items[item_id] = self.op("item_get", item_id=item_id)
+        commodities = {c["slug"]: c for c in self.op("commodity_list")}
         context["quotes"] = [
-            {**quote, "item": items.get(quote.get("item_id")) if quote.get("item_id") else None}
+            {
+                **quote,
+                "item": items.get(quote.get("item_id")) if quote.get("item_id") else None,
+                "priced_per": _priced_per(
+                    quote,
+                    items.get(quote.get("item_id")) if quote.get("item_id") else None,
+                    commodities.get(quote.get("commodity_slug")),
+                ),
+            }
             for quote in context["quotes"]
         ]
         # Rows showed "Supplier #2". An id is not a supplier to anyone
@@ -211,6 +221,19 @@ class QuoteDetailView(_Base):
                 for slug in [part.get("commodity_slug")]
             )
         return context
+
+
+def _priced_per(quote, item, commodity) -> str | None:
+    """The unit a price is per, as the product names it: "per co-pack", not "per base unit".
+
+    None when the basis is not a unit of the product (a lot total), so the
+    template falls back to the basis in words.
+    """
+    field = {"per_base_unit": "base_unit", "per_pack": "pack_unit"}.get(quote.get("as_quoted_unit"))
+    if field is None:
+        return None
+    unit = (item or {}).get(field) or (commodity or {}).get(field)
+    return f"per {unit_noun(unit)}" if unit else None
 
 
 def table_columns(comparison) -> list:

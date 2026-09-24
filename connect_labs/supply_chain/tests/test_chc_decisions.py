@@ -244,9 +244,20 @@ class TestAdvanceWordsFollowPayments:
         panel = _match_panel(
             client_in_programme.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
         )
-        assert "· paid in advance" in panel
+        assert "paid in advance" in panel[: panel.index("</div>")]
         assert "Paid in advance" in panel
         assert "nothing paid yet" not in panel
+
+
+class TestTheMatchHeaderDoesNotRepeatItself:
+    def test_paid_before_delivery_says_paid_in_advance_once(self, client_in_programme, da, chain):
+        order = _fresh_order(da, chain, payment_terms="advance")
+        _invoice_and_pay(da, order)
+        panel = _match_panel(
+            client_in_programme.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
+        )
+        header = panel[: panel.index("</div>")]
+        assert header.lower().count("paid in advance") == 1
 
 
 class TestRefusedGoodsOnAnAdvanceOrder:

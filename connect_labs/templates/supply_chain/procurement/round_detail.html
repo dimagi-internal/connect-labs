@@ -153,7 +153,7 @@
         </td>
         <td class="px-4 py-2 text-sm text-gray-600 tabular-nums">
           {% if q.as_quoted_amount %}{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}{% else %}no price{% endif %}
-          <div class="text-xs text-gray-500">{{ q.as_quoted_unit|words }}</div>
+          <div class="text-xs text-gray-500">{{ q.priced_per|default:q.as_quoted_unit|words }}</div>
         </td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ q.received_on|default:"—" }}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ q.pack_spec_source|humanise|default:"not stated" }}</td>
