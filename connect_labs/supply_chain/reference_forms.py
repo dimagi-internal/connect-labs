@@ -538,6 +538,7 @@ class SupplierForm(ScopedForm):
                 ("manufacturer", _("Manufacturer")),
                 ("distributor", _("Distributor")),
                 ("trader", _("Trader")),
+                ("donor", _("Donor — supplies in kind, not paid for the goods")),
             ],
         )
         set_choices(
