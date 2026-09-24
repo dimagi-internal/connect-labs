@@ -16,16 +16,18 @@ See docs/superpowers/specs/2026-09-24-oes-demo-environment-design.md.
 """
 
 from datetime import timedelta
-from decimal import Decimal
 
 from django.utils import timezone
 
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
+from connect_labs.supply_chain.fulfilment.services.landed import landed_total
+from connect_labs.supply_chain.identity import WITNESSED_SOURCES
 from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.values import Money, decimal_string
 
 PROGRAMME_ID = 10610
-SUPPLY_ONLY_PROGRAMME_ID = 10611
+SUPPLY_ONLY_PROGRAMME_ID = 10671
 
 
 def op(access, name, **payload):
@@ -148,28 +150,33 @@ def supplier_for_org(access, org, kind="distributor"):
     )
 
 
-def _order_value(quote, contract):
-    """What the order is worth, from the price that was actually quoted.
+def _goods_value(access, contract):
+    """What the goods on this order are worth -- the domain's own figure.
 
-    The Drive document carries no invoice value and says why: we do not hold
-    the real supplier prices, and "inventing them and calling them real would
-    be worse than saying so". So the figure the demo shows is ARITHMETIC over
-    the quoted price and the ordered quantity, not a number anyone made up --
-    which is the only kind of money this demo is entitled to display.
+    Not a second cost rule. The order page's goods line is
+    `landed.landed_total(contract)["goods"]`, and an invoice computed any
+    other way could disagree with the number printed beside it on a screen
+    whose entire argument is that it will not show a cost it cannot defend.
+    An earlier version of this seeder multiplied the quote out itself and
+    refused two bases that `landed` happily multiplies, which is exactly that
+    divergence.
 
-    A basis we cannot multiply is refused rather than guessed: a wrong total
-    on a screen whose whole argument is "it will not compute a landed cost it
-    cannot defend" would undo the point of the demo.
+    The Drive document holds no invoice value and says why: we do not hold
+    the real supplier prices. The contract's unit price is the price the
+    award was made at, so this is arithmetic over a stated figure rather than
+    a number anyone invented.
+
+    Anything but a `Money` is refused rather than coerced: `Unconfirmed` means
+    the order cannot say what its goods cost, and `NotCosted` means they were
+    not bought at all. Neither can be billed for.
     """
-    amount = Decimal(str(quote["as_quoted_amount"]))
-    basis = quote.get("as_quoted_unit")
-    if basis == "per_lot_total":
-        return amount
-    if basis == "per_pack":
-        return amount * Decimal(str(contract["quantity"]))
+    goods = landed_total(access.get_contract(contract["id"]))["goods"]
+    if isinstance(goods, Money):
+        return decimal_string(goods.amount)
+    reason = " ".join(getattr(goods, "reasons", ())) or getattr(goods, "reason", str(goods))
     raise ValueError(
-        f"cannot work out what this order is worth from a price quoted {basis!r}: "
-        "state the invoice amount in the seed document instead"
+        f"this order cannot be billed: {reason}. State the invoice amount in the seed "
+        "document, or give the contract a unit price this figure can be worked out from"
     )
 
 
@@ -268,17 +275,30 @@ _WIRING = {
 }
 
 
-def wired(row, context, stamp):
+def wired(row, context, stamp, *, may_witness=True):
     """A document row's partial `data`, with the ids only this run knows.
 
     `stamp` is the provenance the tier asserts -- who wrote the row down and
-    how they knew. It is applied as a DEFAULT so a row can say something
-    sharper about itself, and it is applied here rather than left to
+    how they knew. It is applied here rather than left to
     `identity.stamp_provenance` because this seeder runs as SYSTEM with no
     user and no request: there is nobody for the stamping layer to resolve,
-    so it deliberately leaves the payload alone. A row that arrived here with
-    no provenance would be refused by the schema, which is the right way
-    round.
+    so it deliberately leaves the payload alone. A row that reached an
+    operation with no provenance would be refused by the schema, which is the
+    right way round.
+
+    Two rules about where provenance may come from, both refusals:
+
+      - it is declared BESIDE the operation, never inside `data`. `data` is
+        the fact; `source` is how we knew it. One place to write it means one
+        place to check it -- and a `source` buried in a payload would have
+        slipped past the check below, because it was spread over the tier's
+        own stamp.
+      - a row under `reported_to_us` may not claim a WITNESSED source. That
+        tier is somebody else's word with our hand on it, and a row there
+        saying `we_recorded` would read on screen as something we saw, which
+        is the exact inversion section 5a exists to prevent. The document
+        declares a source on every row, so without this the tier headings
+        would be labels carrying no enforcement at all.
     """
     operation = row["operation"]
     wire = _WIRING.get(operation)
@@ -287,9 +307,24 @@ def wired(row, context, stamp):
             f"the seed does not know how to attach {operation!r} to this chain; "
             f"add it to _WIRING (known: {', '.join(sorted(_WIRING))})"
         )
-    data = {**stamp, **row["data"]}
+
+    in_payload = sorted(key for key in ("source", "recorded_by_org_id") if key in row["data"])
+    if in_payload:
+        raise ValueError(
+            f"the {operation!r} row states {', '.join(in_payload)} inside its `data`. Provenance is "
+            "declared beside the operation, not in the payload, so there is one place to read it "
+            "and one place to check it"
+        )
+
+    data = {**row["data"], **stamp}
     if row.get("source"):
         data["source"] = row["source"]
+    if not may_witness and data["source"] in WITNESSED_SOURCES:
+        raise ValueError(
+            f"the {operation!r} row is under `reported_to_us` and claims {data['source']!r}, which "
+            "asserts first-hand knowledge. What a partner told us is not something we saw: use "
+            "'partner_reported' or 'supplier_reported', or move the row to `we_did`"
+        )
     return wire(data, context)
 
 
@@ -408,7 +443,7 @@ def seed_chain(access, chain, reference):
             **ours,
             "contract_id": contract["id"],
             "issued_on": day(INVOICED_DAYS_AGO),
-            "amount": str(_order_value(awarded_quote, contract_row)),
+            "amount": _goods_value(access, contract),
             "currency": contract_row["currency"],
             "quantity_billed": contract_row["quantity"],
             "quantity_unit": contract_row["quantity_unit"],
@@ -428,7 +463,8 @@ def seed_chain(access, chain, reference):
     # that the goods had landed and read us a stock figure off its own sheet;
     # we typed both in. Our hand, their word, and the screen says so.
     reported_to_us = [
-        op(access, row["operation"], data=wired(row, context, their_word)) for row in chain["reported_to_us"]
+        op(access, row["operation"], data=wired(row, context, their_word, may_witness=False))
+        for row in chain["reported_to_us"]
     ]
 
     # Tier 2 -- what we did ourselves, and therefore witnessed.

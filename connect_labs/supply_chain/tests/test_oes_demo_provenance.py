@@ -10,6 +10,7 @@ below is an invented placeholder. The real ones live in Drive and are read at
 seed time (`connect_labs/labs/synthetic/seed_data.py`).
 """
 
+import copy
 import importlib.util
 from decimal import Decimal
 from pathlib import Path
@@ -18,8 +19,11 @@ import pytest
 
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
+from connect_labs.supply_chain.fulfilment.services.landed import landed_total
+from connect_labs.supply_chain.identity import WITNESSED_SOURCES
 from connect_labs.supply_chain.models import Payment, Receipt, StockCount
 from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.values import Money
 
 PROGRAM = 10629
 _SEED_REMOTE_PATH = Path(__file__).resolve().parents[3] / "scripts" / "walkthroughs" / "oes-demo" / "seed_remote.py"
@@ -310,11 +314,19 @@ class TestTheChainCarriesItsProvenance:
         assert line.quantity_unit == "box"
         assert str(line.quantity_accepted) == "100.0000"
 
-    def test_the_money_is_the_quoted_price_times_what_was_ordered(self, seeded):
-        """No invoice value is invented: the document holds none and says so."""
+    def test_the_invoice_bills_exactly_what_the_order_page_says_the_goods_cost(self, access, seeded):
+        """One cost rule, not two.
+
+        No invoice value is invented -- the document holds none and says so --
+        and the figure is not worked out here either. It is
+        `landed.landed_total(contract)["goods"]`, the same call the order page
+        makes, so the invoice and the goods line beside it cannot disagree.
+        """
         _, _, chain = seeded
 
         # 100 boxes at the quoted 10.00 per pack.
+        goods = landed_total(access.get_contract(chain["contract"]["id"]))["goods"]
+        assert goods == Money(Decimal("1000"), "USD")
         assert chain["invoice"]["amount"] == "1000"
         assert Payment.objects.get(pk=chain["we_did"][0]["id"]).amount == Decimal("1000")
 
@@ -345,6 +357,65 @@ class TestTheChainCarriesItsProvenance:
         assert unstated.source == "partner_reported"
 
 
+def _tier_one_row(source=None, data=None):
+    row = {
+        "operation": "stock_count_record",
+        "data": data if data is not None else {"kind": "self_reported", "quantity": "1", "quantity_unit": "box"},
+    }
+    if source is not None:
+        row["source"] = source
+    return row
+
+
+_WIRING_CONTEXT = {"warehouse": {"id": 1}, "commodity": {"slug": "a-product"}, "item": {"id": 2}}
+_THEIR_WORD = {"source": "partner_reported", "recorded_by_org_id": 3}
+
+
+@pytest.mark.parametrize("claimed", sorted(WITNESSED_SOURCES))
+def test_a_tier_one_row_cannot_claim_we_saw_it_ourselves(claimed):
+    """The dangerous direction, and the one the real document could take.
+
+    Every row in the Drive document states its own `source`, so the tier's
+    stamp is always shadowed in production -- which means `reported_to_us`
+    is a heading with no force unless something checks what its rows claim.
+    A row there saying `we_recorded` would render as witnessed, inverting the
+    very distinction section 5a exists to draw.
+    """
+    module = _load_seed_remote()
+
+    with pytest.raises(ValueError) as caught:
+        module.wired(_tier_one_row(claimed), _WIRING_CONTEXT, _THEIR_WORD, may_witness=False)
+
+    message = str(caught.value)
+    assert "stock_count_record" in message and claimed in message
+    assert "reported_to_us" in message
+
+
+def test_a_tier_one_row_may_still_pass_on_a_suppliers_word():
+    """The refusal is about first-hand claims, not about disagreeing with us."""
+    module = _load_seed_remote()
+
+    data = module.wired(_tier_one_row("supplier_reported"), _WIRING_CONTEXT, _THEIR_WORD, may_witness=False)
+    assert data["source"] == "supplier_reported"
+
+
+@pytest.mark.parametrize("key", ["source", "recorded_by_org_id"])
+def test_provenance_inside_a_rows_payload_is_refused(key):
+    """One route in, so there is one thing to check.
+
+    `data` is the fact; `source` is how we knew it. A `source` spread out of
+    a payload used to land on top of the tier's stamp -- a second, silent
+    override beside the deliberate one, and one the witnessed check would
+    then have been reading rather than the row's own claim.
+    """
+    module = _load_seed_remote()
+    row = _tier_one_row(data={"kind": "self_reported", "quantity": "1", "quantity_unit": "box", key: "we_recorded"})
+
+    with pytest.raises(ValueError) as caught:
+        module.wired(row, _WIRING_CONTEXT, _THEIR_WORD, may_witness=False)
+    assert key in str(caught.value)
+
+
 def test_a_row_that_states_its_own_source_keeps_it():
     """The tier is a default, not an override.
 
@@ -369,6 +440,49 @@ def test_a_row_that_states_its_own_source_keeps_it():
     data = module.wired(row, context, {"source": "partner_reported", "recorded_by_org_id": 3})
     assert data["source"] == "supplier_reported"
     assert data["recorded_by_org_id"] == 3
+
+
+@pytest.mark.django_db
+def test_the_chain_itself_refuses_a_second_hand_row_that_claims_first_hand(access):
+    """The guard is wired at the tier-1 call site, not merely available.
+
+    `wired()` only refuses a witnessed claim when it is told which tier it is
+    filling. Testing `wired` alone cannot tell whether `seed_chain` passes
+    `may_witness=False`, so this drives the whole seeder over a document
+    whose `reported_to_us` contains exactly the row section 5a must never
+    show. Mutated the call site back to the plain `wired(row, context,
+    their_word)` and watched this go red.
+    """
+    document = copy.deepcopy(_DOCUMENT)
+    document["chc_chain"]["reported_to_us"][1]["source"] = "we_recorded"
+
+    module = _load_seed_remote()
+    reference = module.seed_reference(access, document)
+
+    with pytest.raises(ValueError) as caught:
+        module.seed_chc_chain(access, document, reference)
+    assert "reported_to_us" in str(caught.value)
+
+
+@pytest.mark.django_db
+def test_a_price_per_single_unit_is_billed_the_way_the_domain_bills_it(access):
+    """The seam where the two cost rules actually diverged.
+
+    `landed._line_total` multiplies `per_pack`, `per_base_unit` AND
+    `per_metric_tonne`. The seeder's own arithmetic multiplied only the first
+    and refused the other two -- so on this document it would have raised
+    where the order page would have shown a goods line perfectly happily.
+    """
+    document = copy.deepcopy(_DOCUMENT)
+    document["chc_chain"]["quotes"][0]["as_quoted_unit"] = "per_base_unit"
+
+    module = _load_seed_remote()
+    reference = module.seed_reference(access, document)
+    chain = module.seed_chc_chain(access, document, reference)
+
+    goods = landed_total(access.get_contract(chain["contract"]["id"]))["goods"]
+    assert goods == Money(Decimal("1000"), "USD")
+    assert chain["invoice"]["amount"] == "1000"
 
 
 @pytest.mark.django_db

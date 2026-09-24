@@ -19,7 +19,7 @@ Set `LABS_SYNTHETIC_GDRIVE_SA_KEY` and pass the folder id:
 | Programme | What                                                                      |
 | --------- | ------------------------------------------------------------------------- |
 | 10610     | The programme team's own: CHC and RUTF, with verified delivery            |
-| 10611     | The supply-only organisation: no opportunity binding, no user-held points |
+| 10671     | The supply-only organisation: no opportunity binding, no user-held points |
 
 Confirmed free via the `connect_labs` MCP `synthetic_env_list()` tool before
 use (neither id appears in any registered synthetic environment).
