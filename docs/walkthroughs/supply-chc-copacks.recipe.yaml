@@ -219,7 +219,7 @@ scenes:
     value: top
   - kind: hold
     seconds: 2.5
-    note: what Harmattan recorded through its link, nobody asked
+    note: what Harmattan recorded through its own link
   - kind: scroll
     value: '300'
   - kind: hold
@@ -229,7 +229,7 @@ scenes:
     note: the link's updates and the recoverable amount, in one frame
   concept_claim: The order page lists the distributor's link updates (order confirmed, payment received,
     receipt) and reports the refused cartons of an advance order as an amount recoverable from the supplier.
-  show: 'The order page — the ''Through Harmattan Health Supplies''s update link'' panel (order confirmed,
+  show: 'The order page — the ''Recorded through the update link held by Harmattan Health Supplies'' panel (order confirmed,
     payment received, GRN-HHS-0923 596 accepted / 4 rejected), then the match panel: recoverable from
     the supplier 120 USD.'
   url: /supply/orders/${copack_order_id}/
@@ -278,7 +278,7 @@ scenes:
     value: ${today}
   - kind: select
     target: css:#id_kind
-    value: Set by hand, overriding both
+    value: override
   - kind: click
     target: css:#id_commodity-ts-control
   - kind: click
@@ -312,7 +312,7 @@ scenes:
     seconds: 2.0
   concept_claim: Recording the partner's stock take as an override sets the store's co-pack balance to
     the counted 170 cartons.
-  show: The record-a-count form — Sahel CHI store, today, "Set by hand, overriding both", the co-pack
+  show: The record-a-count form — Sahel CHI store, today, "Replace the ledger with this count", the co-pack
     and its Kaduna Pharma Works trade item, 170 carton, notes, "A partner told us".
   url: /supply/stock/counts/new/
 - id: the-check-trips
