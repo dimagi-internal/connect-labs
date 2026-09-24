@@ -31,6 +31,7 @@ from connect_labs.supply_chain.procurement.services.pricing import (
     FIGURE_FIELDS,
     FIGURE_LABELS,
     compute_figures,
+    figure_nouns,
 )
 from connect_labs.supply_chain.procurement.services.questions import (
     INTERNAL,
@@ -414,10 +415,7 @@ def compare_round(
     comparison this app exists to refuse.
     """
     items_by_id = items_by_id or {}
-    nouns = {
-        "base_unit": commodity.base_unit or "unit",
-        "pack_unit": commodity.pack_unit or "pack",
-    }
+    nouns = figure_nouns(commodity.base_unit, commodity.pack_unit)
 
     comparable: list[ComparisonRow] = []
     blocked: list[ComparisonRow] = []

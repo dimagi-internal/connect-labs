@@ -10,6 +10,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.shortcuts import redirect
 from django.urls import reverse
+from django.utils import dateformat, timezone
 from django.utils.dateparse import parse_datetime
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -71,8 +72,41 @@ class AlertCheckNowView(View):
                     f"Checked now: {found} new notice{'s' if found != 1 else ''}{sent}. They are in the log below.",
                 )
             else:
-                messages.info(request, "Checked now: nothing new since the last check.")
+                messages.info(request, _nothing_new(service.found_so_far(_access(request).program_id)))
         return redirect("supply_chain:alerts")
+
+
+# How a notice left, in the log's own words for it (alerts.html, Delivery).
+_NOT_SENT = {
+    "pending": "in the next digest",
+    "email_disabled": "not sent — email is off",
+    "no_address": "not sent — no address",
+}
+
+
+def _nothing_new(found) -> str:
+    """ "Nothing new", with what is already true: the notices these alerts found before.
+
+    "Nothing new since the last check" sat directly above the log rows it had
+    found, and read as a contradiction. This says how many there are and how
+    each left -- sent, and when, or not sent and why -- in the log's words. It
+    never claims a notice was sent that the log records as not sent.
+    """
+    total = found["total"]
+    if not total:
+        return "Checked now: nothing new — these alerts have not found anything yet."
+    by_delivery = found["by_delivery"]
+    latest = found["latest_sent_at"]
+    when = dateformat.format(timezone.localtime(latest), "j M Y, H:i") if latest else ""
+    sent = by_delivery.get("queued", 0)
+    if sent == total:
+        if total == 1:
+            return f"Checked now: nothing new — the notice these alerts found was already sent ({when})."
+        return f"Checked now: nothing new — the {total} notices these alerts found were already sent (latest {when})."
+    parts = [f"{sent} sent (latest {when})"] if sent else []
+    parts += [f"{by_delivery[status]} {words}" for status, words in _NOT_SENT.items() if by_delivery.get(status)]
+    noun = "notice" if total == 1 else "notices"
+    return f"Checked now: nothing new — these alerts have found {total} {noun} before: {'; '.join(parts)}."
 
 
 class _AlertScreen(OperationFormView):

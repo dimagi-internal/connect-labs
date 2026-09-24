@@ -130,7 +130,7 @@ unconfirmed figures on the right.
       {% for key, figure in detail.figures.items %}
         <div class="px-4 py-2.5">
           <div class="flex items-baseline gap-3">
-            <dt class="w-44 shrink-0 text-xs text-gray-500">{{ key|figure_label }}</dt>
+            <dt class="w-44 shrink-0 text-xs text-gray-500">{{ key|figure_label:commodity }}</dt>
             <dd class="text-sm">
               {% if figure.unconfirmed %}
                 <span class="text-gray-400">Unconfirmed</span>
@@ -176,7 +176,7 @@ unconfirmed figures on the right.
         <h2 class="text-sm font-semibold text-gray-900">Evidence for this quote</h2>
         <a href="{% url 'supply_chain:quote_document_attach' quote.id %}" class="text-xs text-brand-indigo hover:underline">+ Attach document</a>
       </div>
-      <p class="text-xs text-gray-500 mt-0.5">The quotation itself, or the pro-forma invoice a price came off.</p>
+      <p class="text-xs text-gray-500 mt-0.5">Documents filed with this offer — the quotation, a pro-forma invoice, the product's registration or certificate.</p>
     </header>
     {% if documents %}
       <ul class="divide-y divide-brand-border-light/70">
@@ -191,7 +191,8 @@ unconfirmed figures on the right.
       </ul>
     {% else %}
       <p class="px-4 py-6 text-sm text-gray-500">
-        Nothing attached yet — the quotation, or the pro-forma invoice its price came off, belongs here.
+        Nothing attached yet. A document attached here — the quotation, a pro-forma invoice, the product's
+        registration or certificate — is filed with this offer.
       </p>
     {% endif %}
   </section>
@@ -199,7 +200,7 @@ unconfirmed figures on the right.
   <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
     <header class="px-4 py-2.5 border-b border-brand-border-light">
       <h2 class="text-sm font-semibold text-gray-900">On file for {{ supplier.name }}</h2>
-      <p class="text-xs text-gray-500 mt-0.5">Belongs to the company rather than to this offer — a certification, a registration.</p>
+      <p class="text-xs text-gray-500 mt-0.5">The company's own standing documents — its trading licence, a GDP certificate — recorded against the supplier, not against any one offer.</p>
     </header>
     {% if supplier_documents %}
       <ul class="divide-y divide-brand-border-light/70">
