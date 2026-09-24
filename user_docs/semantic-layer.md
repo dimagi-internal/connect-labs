@@ -447,4 +447,8 @@ For KMC reports created before the shared record existed, or created from a temp
 
 - [Reports with Claude](reports-with-claude.md): the task-by-task guide to changing reports
 - [Workflow Engine](workflow-engine.md): what each report shows
+- [Benchmarks](benchmarks.md): anonymous peer comparisons computed from these definitions
+- [Shared Report Templates](shared-report-templates.md): many per-opportunity reports sharing one page, one set of pipelines and one registry
+- [Cross-Programme Reports](cross-program-rollups.md): one report over opportunities in different Connect programmes
+- [Weekly Trends and Saved Runs](weekly-trends-and-snapshots.md): how saved runs make a trend, and rebuilding history
 - `connect_labs/semantic/PARITY.md` in the repository: how parity with the old report was proven

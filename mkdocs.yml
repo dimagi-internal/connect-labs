@@ -31,6 +31,10 @@ nav:
   - For Power Users:
       - Reports with Claude: reports-with-claude.md
       - The Semantic Layer: semantic-layer.md
+      - Benchmarks: benchmarks.md
+      - Shared Report Templates: shared-report-templates.md
+      - Cross-Programme Reports: cross-program-rollups.md
+      - Weekly Trends and Saved Runs: weekly-trends-and-snapshots.md
       - Connect MCP: connect-mcp.md
       - Connect Safe Mode: connect-safe-mode.md
 
