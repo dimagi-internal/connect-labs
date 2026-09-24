@@ -105,13 +105,28 @@ spine:
 - id: S7
   claim: Stock at the partner's store shows all 700 packets available — 700 courses
     — from the two receipts.
-  status: gap
+  status: grounded
   evidence:
+  - ref: EV-015
+    kind: implemented
   - ref: EV-014
     kind: assumed
   rationale: Stock is the ledger of receipts; if both purchases are received into
     the same store as the same packet, the balance is the programme's real answer
     to "can the partner treat 700 children".
+- id: S8
+  claim: The partner records the covering order's 250-packet receipt through its own
+    update link, issued once to cover everything involving it, without the programme
+    re-issuing a link or keying the receipt for it.
+  status: grounded
+  evidence:
+  - ref: EV-016
+    kind: implemented
+  - ref: EV-002
+    kind: documented
+  rationale: The interview's complaint was that every update had to be chased; a link
+    that follows the organisation keeps the party who counted the goods as the one
+    who records them, even for an order created after the link was issued.
 problem: When the programme's IPTSc order for 700 three-day treatment packets arrives
   250 packets short and the local partner buys the rest from its own vendor out of
   its setup fee, the programme team has no single record that says the order was short,
