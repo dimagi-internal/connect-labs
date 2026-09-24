@@ -3,10 +3,16 @@
 The story: a technical partner (Aqualytic) specifies free-chlorine test kits;
 the in-country distributor (Harmattan Health Supplies) quotes two kits of the
 same composition; one meets the specification and one does not. Everything
-AFTER the quotes -- the award, the technical partner's approval, the order,
-the invoice and payment, the supplier's update link and what the distributor
-records through it -- is performed ON CAMERA by the walkthrough, so this
-script deliberately stops at "two quotes are in".
+AFTER the quotes -- the award, the technical partner's approval and its own
+update link, the order, and what the distributor records through its link --
+is performed ON CAMERA by the walkthrough, so this script deliberately stops
+at "two quotes are in".
+
+One thing is set up here rather than filmed: Harmattan's standing update
+link, which follows the organisation (coverage `organisation`) so it covers
+the order placed on camera without being reissued -- the way a distributor
+the programme buys from every quarter actually holds one. Its URL goes to
+the outputs map only (gitignored); the raw token is never committed.
 
 THIS REPOSITORY IS PUBLIC. Every organisation, product, manufacturer and
 price below is invented. No real supplier, partner or funder is named.
@@ -424,6 +430,19 @@ def seed(mcp: Mcp) -> dict:
     quote_lumen = quote(lumen, "38.00")
     quote_brightwell = quote(brightwell, "29.50")
 
+    # Harmattan's standing link: everything involving Harmattan in this
+    # programme, now and later -- so the order placed on camera is on it.
+    link = mcp.op(
+        "update_link_issue",
+        data={
+            "org_id": harmattan["id"],
+            "coverage": "organisation",
+            "label": "Harmattan — everything it supplies and stores",
+            "expires_in_days": 30,
+        },
+    )
+    update_link = "/supply/u/" + link["token"] + "/"
+
     return {
         "program_id": PROGRAMME_ID,
         "round_id": round_["id"],
@@ -436,6 +455,7 @@ def seed(mcp: Mcp) -> dict:
         "harmattan_org_id": harmattan["id"],
         "aqualytic_org_id": aqualytic["id"],
         "programme_org_id": programme_org["id"],
+        "update_link": update_link,
         # The day the take is filmed. The award is decided today, so every
         # date typed after it on camera must be today too, not a fixed day
         # that falls before it on the next day's take.

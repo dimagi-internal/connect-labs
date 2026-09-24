@@ -122,7 +122,7 @@ def _caller_user(access):
 @register_operation(
     name="update_link_issue",
     summary=(
-        "Issue a supplier update link: a signed, expiring, revocable URL that lets ONE organisation with "
+        "Issue an update link: a signed, expiring, revocable URL that lets ONE organisation with "
         "no labs login confirm orders and payments, record dispatches and receipts, and record stock "
         "counts and releases — for exactly the contracts and supply points named here, and nothing "
         "else; or, with coverage='organisation', for everything involving that organisation in this "
@@ -206,7 +206,7 @@ def _create(access, program_id, org, data, coverage, contracts, points, approval
 @register_operation(
     name="update_link_list",
     summary=(
-        "List this programme's supplier update links — whose each is, what it covers, when it expires, "
+        "List this programme's update links — whose each is, what it covers, when it expires, "
         "whether it has been revoked, and how often it has been used. Never includes a token."
     ),
     input_schema=obj({"include_inactive": {"type": "boolean"}}),
@@ -221,7 +221,7 @@ def update_link_list(access, include_inactive=True):
 @register_operation(
     name="update_link_revoke",
     summary=(
-        "Revoke a supplier update link. It stops working at once and cannot be re-enabled — issue a new "
+        "Revoke an update link. It stops working at once and cannot be re-enabled — issue a new "
         "one instead. What was recorded through it stays, attributed to the organisation."
     ),
     input_schema=obj({"link_id": ID}, required=("link_id",)),
