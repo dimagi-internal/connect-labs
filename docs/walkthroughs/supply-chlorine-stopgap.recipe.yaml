@@ -513,8 +513,6 @@ scenes:
     target: css:section:has(h2:has-text('Sent log')) tbody tr:has-text('Below its own minimum')
     must_succeed: true
     seconds: 60
-  - kind: scroll_to
-    target: Sent log
   - kind: hover
     target: css:section:has(h2:has-text('Sent log')) tbody tr:has-text('Below its own minimum')
     seconds: 2.5

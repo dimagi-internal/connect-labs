@@ -1,151 +1,115 @@
+gaps: []
 narrative_slug: supply-chlorine-stopgap
+problem: 'The programme''s dispenser chlorine comes free, in kind, from a donor NGO, and the donor''s
+  latest consignment is about three months late. Today the team only learns that by chasing the donor
+  on email and WhatsApp, and the store that refills the community dispensers is already under its two-month
+  floor. The obvious fix, buying nationally registered chlorine from the in-country distributor as a stop-gap,
+  needs the funder''s agreement before any money moves, and the product has to be registered and at the
+  concentration the dispensers are dosed for. None of those facts lived anywhere a person could point
+  to: the donation had no price, so every cost figure read as missing; nothing noticed a promised date
+  had passed; the registration certificate sat in an email; the funder''s approval was a conversation,
+  not something that could stop an order; and the donor heard the store was running low only when somebody
+  remembered to tell them.'
 schema_version: 1
-problem: >-
-  The programme's dispenser chlorine comes free, in kind, from a donor NGO, and the donor's
-  latest consignment is about three months late. Today the team only learns that by chasing
-  the donor on email and WhatsApp, and the store that refills the community dispensers is
-  already under its two-month floor. The obvious fix, buying nationally registered chlorine
-  from the in-country distributor as a stop-gap, needs the funder's agreement before any
-  money moves, and the product has to be registered and at the concentration the dispensers
-  are dosed for. None of those facts lived anywhere a person could point to: the donation
-  had no price, so every cost figure read as missing; nothing noticed a promised date had
-  passed; the registration certificate sat in an email; the funder's approval was a
-  conversation, not something that could stop an order; and the donor heard the store was
-  running low only when somebody remembered to tell them.
 spine:
-- id: S0
-  claim: >-
-    A late donation shows up in the record by itself: once a shipment's expected date or a
-    contract's promised lead time has passed with nothing received, the checks name the
-    supplier, the expected date and how many days late it is.
-  status: grounded
+- claim: 'A late donation shows up in the record by itself: once a shipment''s expected date or a contract''s
+    promised lead time has passed with nothing received, the checks name the supplier, the expected date
+    and how many days late it is.'
   evidence:
-  - ref: "docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G3 — shipment_overdue and contract_delivery_overdue, carrying days_late, expected_on and the supplier"
-    kind: documented
-  - ref: "connect_labs/supply_chain/checks.py — _late_shipments and _contract_lateness"
-    kind: implemented
-  - ref: "The requirements interview, Chlorine tab — the donor's chlorine is about three months late"
-    kind: documented
-  rationale: >-
-    The interview's first complaint on every tab was that every status update has to be
-    asked for. A date the record already holds is enough to say a delivery is late, so
-    nobody should have to notice it by counting weeks.
-- id: S1
-  claim: >-
-    A donation is recorded as in kind, so it reads "not purchased" instead of an
-    unconfirmed cost, while its quantity, promised dates, shipments and receipts are
-    tracked exactly like a purchase.
+  - kind: documented
+    ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G3 — shipment_overdue and contract_delivery_overdue,
+      carrying days_late, expected_on and the supplier
+  - kind: implemented
+    ref: connect_labs/supply_chain/checks.py — _late_shipments and _contract_lateness
+  - kind: documented
+    ref: The requirements interview, Chlorine tab — the donor's chlorine is about three months late
+  id: S0
+  rationale: The interview's first complaint on every tab was that every status update has to be asked
+    for. A date the record already holds is enough to say a delivery is late, so nobody should have to
+    notice it by counting weeks.
   status: grounded
+- claim: A donation is recorded as in kind, so it reads "not purchased" instead of an unconfirmed cost,
+    while its quantity, promised dates, shipments and receipts are tracked exactly like a purchase.
   evidence:
-  - ref: "docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G2 — Contract.consideration priced | in_kind | bundled"
-    kind: documented
-  - ref: "connect_labs/supply_chain/fulfilment/services/landed.py — landed total reports not purchased (in kind)"
-    kind: implemented
-  rationale: >-
-    Without it a donated contract raises contract_cost_unconfirmed for ever, and a cost
-    that was never going to exist is reported as missing, which trains people to ignore the
-    missing-fact checks.
-- id: S2
-  claim: >-
-    The programme can point an alert at an outside party by email address, so the donor is
-    told when the store drops below its own minimum or the donor's shipment passes its date,
-    stated as a fact with a link and no advice.
+  - kind: documented
+    ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G2 — Contract.consideration priced
+      | in_kind | bundled
+  - kind: implemented
+    ref: connect_labs/supply_chain/fulfilment/services/landed.py — landed total reports not purchased
+      (in kind)
+  id: S1
+  rationale: Without it a donated contract raises contract_cost_unconfirmed for ever, and a cost that
+    was never going to exist is reported as missing, which trains people to ignore the missing-fact checks.
   status: grounded
+- claim: The programme can point an alert at an outside party by email address, so the donor is told when
+    the store drops below its own minimum or the donor's shipment passes its date, stated as a fact with
+    a link and no advice.
   evidence:
-  - ref: "docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G6 — AlertSubscription, recipient may be an outside email; only NEW checks are sent"
-    kind: documented
-  - ref: "connect_labs/supply_chain/alerts/service.py — detect_checks and deliver, on a five-minute beat"
-    kind: implemented
-  - ref: "The requirements interview, Chlorine tab — low-stock alerts are the signal to ask the donor for more"
-    kind: documented
-  rationale: >-
-    For chlorine the low-stock alert is not an internal nudge, it is the message the donor
-    needs. Sending the derived fact straight to them replaces the chase.
-- id: S3
-  claim: >-
-    The stop-gap quote carries its product registration certificate as evidence beside the
-    quotation itself, and the product meets the concentration the dispensers are dosed for.
+  - kind: documented
+    ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G6 — AlertSubscription, recipient
+      may be an outside email; only NEW checks are sent
+  - kind: implemented
+    ref: connect_labs/supply_chain/alerts/service.py — detect_checks and deliver, on a five-minute beat
+  - kind: documented
+    ref: The requirements interview, Chlorine tab — low-stock alerts are the signal to ask the donor for
+      more
+  id: S2
+  rationale: For chlorine the low-stock alert is not an internal nudge, it is the message the donor needs.
+    Sending the derived fact straight to them replaces the chase.
   status: grounded
+- claim: The stop-gap quote carries its product registration certificate as evidence beside the quotation
+    itself, and the product meets the concentration the dispensers are dosed for.
   evidence:
-  - ref: "docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G4 — product_registration added to DOCUMENT_KINDS"
-    kind: documented
-  - ref: "connect_labs/templates/supply_chain/procurement/quote_detail.html — Evidence for this quote"
-    kind: implemented
-  - ref: "connect_labs/supply_chain/procurement/services/compliance.py — spec_requirements checked against the item's stated available chlorine"
-    kind: implemented
-  rationale: >-
-    The stop-gap is only acceptable because the product is nationally registered. Keeping
-    the certificate on the quote means the award can be defended from the record, not from
-    somebody's inbox.
-- id: S4
-  claim: >-
-    An award that needs a third party's agreement cannot become an order until they say yes:
-    while the funder's approval is pending the order is refused and the refusal names whose
-    answer is outstanding, and once it is approved the order goes through.
+  - kind: documented
+    ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G4 — product_registration added
+      to DOCUMENT_KINDS
+  - kind: implemented
+    ref: connect_labs/templates/supply_chain/procurement/quote_detail.html — Evidence for this quote
+  - kind: implemented
+    ref: connect_labs/supply_chain/procurement/services/compliance.py — spec_requirements checked against
+      the item's stated available chlorine
+  - kind: implemented
+    ref: 'connect_labs/supply_chain/procurement/views.py — QuoteDocumentAttachView: + Attach document
+      on the quote page uploads the file to the labs document bucket (#1981)'
+  id: S3
+  rationale: The stop-gap is only acceptable because the product is nationally registered. Keeping the
+    certificate on the quote means the award can be defended from the record, not from somebody's inbox.
   status: grounded
+- claim: 'An award that needs a third party''s agreement cannot become an order until they say yes: while
+    the funder''s approval is pending the order is refused and the refusal names whose answer is outstanding,
+    and once it is approved the order goes through.'
   evidence:
-  - ref: "docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G5 — AwardApproval (technical, funder, regulatory); contract_create refused while pending or declined"
-    kind: documented
-  - ref: "connect_labs/supply_chain/data_access.py — blocking_approvals and _require_approved_award"
-    kind: implemented
-  - ref: "connect_labs/templates/supply_chain/procurement/award_detail.html — the blocking banner where the order button would be"
-    kind: implemented
-  rationale: >-
-    The funder approving the use of stop-gap chlorine is a condition, not a courtesy. Making
-    it a record that blocks the order turns a conversation into a control, and the refusal
-    is a statement of fact rather than a recommendation.
-- id: S5
-  claim: >-
-    When the stop-gap arrives, the goods received note puts it into the store's ledger and
-    the store's cover is recomputed against its own minimum, so the team can see it bridges
-    the gap without replacing the donation.
+  - kind: documented
+    ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G5 — AwardApproval (technical,
+      funder, regulatory); contract_create refused while pending or declined
+  - kind: implemented
+    ref: connect_labs/supply_chain/data_access.py — blocking_approvals and _require_approved_award
+  - kind: implemented
+    ref: connect_labs/templates/supply_chain/procurement/award_detail.html — the blocking banner where
+      the order button would be
+  - kind: implemented
+    ref: connect_labs/supply_chain/procurement/operations.py — award_create refuses an empty rationale
+      and stores decided_by as the person named on the comparison form
+  - kind: implemented
+    ref: connect_labs/templates/supply_chain/procurement/award_detail.html — Place order shown disabled
+      with the reason naming each pending approval; rests_on links the document an approval was granted
+      against
+  id: S4
+  rationale: The funder approving the use of stop-gap chlorine is a condition, not a courtesy. Making
+    it a record that blocks the order turns a conversation into a control, and the refusal is a statement
+    of fact rather than a recommendation.
   status: grounded
+- claim: When the stop-gap arrives, the goods received note puts it into the store's ledger and the store's
+    cover is recomputed against its own minimum, so the team can see it bridges the gap without replacing
+    the donation.
   evidence:
-  - ref: "docs/superpowers/specs/2026-09-11-rutf-procurement-design.md §19 — ledger, months of stock against the supply point's own band"
-    kind: documented
-  - ref: "connect_labs/supply_chain/stock/services/resupply.py — plan(): AMC, months of stock, below_min"
-    kind: implemented
-  rationale: >-
-    A stop-gap sized to what the funder can approve is not a resupply. Showing the store
-    still under its floor after it lands keeps the donor's late consignment the thing the
-    programme is waiting on, which is exactly what the alert tells the donor.
-gaps:
-- id: G1
-  type: CAPABILITY
-  claim_ref: S3
-  detail: >-
-    There is no browser path to attach a document to a quote or to an approval. The quote
-    page says to call document_attach; the registration on the stop-gap quote can only be
-    filed through the API, and an approval's evidence is not shown on the award page at all.
-  proposed_action: >-
-    Add "Attach a document" to the quote page (and to each approval row), and list an
-    approval's documents on the award page.
-- id: G2
-  type: CAPABILITY
-  claim_ref: S3
-  detail: >-
-    Uploading a stored document (content_base64) fails on the deployed labs: the default
-    storage bucket answers HeadObject with a 403. Only linked documents (external_url) work.
-  proposed_action: >-
-    Pin DJANGO_AWS_STORAGE_BUCKET_NAME in the task definitions to a labs-owned bucket the
-    task role can read and write; today it defaults to production Connect's media bucket.
-- id: G3
-  type: CAPABILITY
-  claim_ref: S5
-  detail: >-
-    Average monthly consumption counts every consumption movement ever recorded and divides
-    by the 90-day window whenever no as-of date is given, which is every live screen. A
-    store with more than 90 days of history reports an inflated rate and too little cover.
-  proposed_action: >-
-    Anchor the window at today when as_of is unset, so the window the figure claims is the
-    window it counts.
-  resolved: Fixed in PR #1972 (the window is anchored at today when no as_of is given).
-- id: G4
-  type: CAPABILITY
-  claim_ref: S4
-  detail: >-
-    Recording an approver's answer overwrites the note that recorded what was asked, so the
-    request's own wording is lost once the answer is in.
-  proposed_action: >-
-    Keep the answer's note beside the request's (a decision_note field), rather than in
-    place of it.
+  - kind: documented
+    ref: docs/superpowers/specs/2026-09-11-rutf-procurement-design.md §19 — ledger, months of stock against
+      the supply point's own band
+  - kind: implemented
+    ref: 'connect_labs/supply_chain/stock/services/resupply.py — plan(): AMC, months of stock, below_min'
+  id: S5
+  rationale: A stop-gap sized to what the funder can approve is not a resupply. Showing the store still
+    under its floor after it lands keeps the donor's late consignment the thing the programme is waiting
+    on, which is exactly what the alert tells the donor.
+  status: grounded
