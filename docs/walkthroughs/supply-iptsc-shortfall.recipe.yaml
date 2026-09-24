@@ -171,18 +171,16 @@ scenes:
   actions:
   - kind: wait_for
     target: text:past the promised lead time
-  - kind: scroll
-    value: '520'
   - kind: hold
-    note: the dispatch Musa reported and the receipt Hauwa recorded, each marked with
-      who told us
+    note: the late banner — days past the promised lead time, 250 packets still to arrive
     seconds: 2.0
   - kind: scroll
-    value: top
+    value: '380'
   - kind: hold
-    note: the order header and the late banner, days past the promised lead time, with
-      700 ordered, 450 received and 250 still outstanding — the frame the scene ends on
-    seconds: 3.0
+    note: the banner, the dispatch Musa reported and the receipt Hauwa recorded, and the
+      ordered/received card with 700 ordered, 450 received and the due date passed — the
+      frame the scene ends on
+    seconds: 3.5
   concept_claim: The order page derives 700 ordered, 450 received and 250 outstanding
     from the receipt, and shows the order as past its promised lead time.
   design_intent: Shortfall and lateness are both derived from records, so neither
@@ -363,28 +361,36 @@ scenes:
   actions:
   - kind: wait_for
     target: text:SCHI district store
-  - kind: hold
-    note: the same row as the opening scene, now 700 packets, and no order left expected or overdue
-    seconds: 3.0
   - kind: click
     must_succeed: true
     target: css:td[data-ledger] a
-    note: she opens the balance
+    note: she opens the store's balance
   - kind: wait_for
     must_succeed: true
     target: text:What moved in and out of
   - kind: hold
-    note: the two receipts behind the balance, 450 from Harmattan on IPTSC-PO-0715 and 250 from
-      Tamarind on SCHI-LP-0921, adding up to the balance of 700 packets
+    note: the two receipts, 450 from Harmattan on IPTSC-PO-0715 and 250 from Tamarind on
+      SCHI-LP-0921, and the balance they add up to
+    seconds: 3.0
+  - kind: click
+    must_succeed: true
+    target: css:a.rounded-md:text-is('Stock')
+    note: back to the network view she opened on
+  - kind: wait_for
+    must_succeed: true
+    target: text:Stock across the network
+  - kind: hold
+    note: the opening frame answered — the SCHI district store at 700 packets, nothing expected
+      or overdue beside it
     seconds: 3.5
-  concept_claim: The stock page shows the SCHI district store holding 700 packets with
-    no order still expected, and its balance opens onto the two receipts it is made of,
-    450 and 250.
-  design_intent: Close on the opening frame, answered — the empty store with a late
-    order is now 700 packets, 700 three-day courses, and the balance shows where each
-    one came from.
-  show: Ngozi returns to Stock across the network. The SCHI district store that opened
-    the story at 0 now reads 700 packets, with nothing left expected or overdue. She
-    opens the balance to the movements behind it — SCHI-GRN-0922, 450 packets on
-    IPTSC-PO-0715, and SCHI-GRN-0923, 250 packets on SCHI-LP-0921.
+  concept_claim: The SCHI district store's balance opens onto the two receipts it is made of,
+    450 and 250, and the stock page shows the store holding 700 packets with no order still
+    expected.
+  design_intent: Close on the opening frame, answered — the empty store with a late order
+    now reads 700 packets, 700 three-day courses, after the viewer has seen where each one
+    came from.
+  show: Ngozi opens the SCHI district store's balance to the movements behind it —
+    SCHI-GRN-0922, 450 packets from Harmattan on IPTSC-PO-0715, and SCHI-GRN-0923, 250
+    packets from Tamarind on SCHI-LP-0921 — then returns to Stock across the network, where
+    the store that opened the story at 0 reads 700 packets with nothing expected or overdue.
   url: /supply/stock/?program_id=${program_id}
