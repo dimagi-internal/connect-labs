@@ -1,22 +1,4 @@
 gaps:
-- id: G1
-  type: CAPABILITY
-  detail: 'The distributor cannot yet record its own goods-received and release notes
-    through its supplier update link on the deployed build: the public form''s Referrer-Policy
-    made browsers send Origin: null, which Django''s CSRF check refuses over HTTPS.
-    Until the fix (PR #1972) is deployed, the programme officer records the distributor''s
-    notes, marked as reported by a partner.'
-  claim_ref: S5
-  proposed_action: Deploy the strict-origin fix, then move the arrival and release
-    beats to the distributor's own update link.
-- id: G2
-  type: CAPABILITY
-  detail: The network stock view could not compute a balance for an item that takes
-    its units from its product (display unit read from item.pack_unit only), so durable
-    sites read Unconfirmed. Fixed on the supply-dispenser-import branch; the demo item states its own units
-    so the deployed build shows the balance.
-  claim_ref: S7
-  proposed_action: Deploy the network display-unit fix.
 - id: G3
   type: DECISION
   detail: '"Which site has which dispenser" could mean individual units (serial numbers)
@@ -74,8 +56,9 @@ spine:
     agent. "Follow up with the donor when needed" only becomes actionable when the
     record says who owes what.
 - id: S2
-  claim: Attaching a document satisfies its line on the checklist, and the outstanding
-    check clears once nothing is owed.
+  claim: Uploading a document from its checklist line files it as that kind against
+    the consignment, and the outstanding-documents check stops reporting the consignment
+    once every line is on file.
   status: grounded
   evidence:
   - ref: connect_labs/supply_chain/checks.py — _outstanding_documents
@@ -113,45 +96,57 @@ spine:
   rationale: Without this an in-kind contract raises "cost unconfirmed" for ever,
     and cost data that was never going to exist is reported as missing.
 - id: S5
-  claim: When the consignment reaches the distributor's warehouse, the goods-received
-    note records what was accepted and what was refused, with the reason, and only
-    the accepted units become stock.
+  claim: 'The distributor records the arrival itself, through its own update link:
+    the goods-received note states what was accepted and what was refused, with the
+    reason, only the accepted units become stock, and the consignment reads as delivered.'
   status: grounded
   evidence:
   - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §1 — receipt
       quantity_accepted / quantity_rejected / rejection_reason
     kind: documented
-  - ref: connect_labs/supply_chain/stock_forms.py — BatchLineForm (Refused, Why refused)
+  - ref: connect_labs/supply_chain/update_links/forms.py — RecordReceiptForm (Accepted,
+      Rejected, Why any were rejected)
     kind: implemented
-  rationale: The dispensers are checked on arrival for breakage. A refused unit that
-    is silently counted as stock is a dispenser a site will be promised and never
-    get.
+  - ref: connect_labs/supply_chain/fulfilment/repository.py — a receipt against a
+      dispatch marks it delivered
+    kind: implemented
+  rationale: The dispensers are checked for breakage at the distributor's warehouse,
+    by the distributor. Its own note, marked as reported by it, replaces the email
+    the programme officer would otherwise chase; a refused unit silently counted as
+    stock is a dispenser a site will be promised and never get.
 - id: S6
-  claim: Releasing dispensers from the warehouse to project sites moves them through
-    the same ledger, so which site holds how many is a balance.
+  claim: The distributor's release notes move dispensers from its warehouse to the
+    project sites through the same ledger, recorded through its own update link, so
+    which site holds how many is a balance.
   status: grounded
   evidence:
   - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G8 — durable
       items still move through the ledger
     kind: documented
-  - ref: connect_labs/supply_chain/stock_forms.py — MovementForm (transfer)
+  - ref: connect_labs/supply_chain/update_links/forms.py — RecordReleaseForm (a transfer
+      between the link's supply points)
     kind: implemented
   rationale: Durable equipment is not consumed, but it is moved; "which site has which
     dispenser" is still a question the ledger answers.
 - id: S7
-  claim: The stock view marks dispensers as durable and gives no consumption rate,
-    months of stock or resupply figure for them, while still showing the balance at
-    each site.
+  claim: 'The order reconciles the import on one screen: 120 donated, the units accepted
+    and refused on arrival with nothing still to come, what landing them cost, and
+    how many each place holds now — with no months-of-stock figure for equipment nobody
+    consumes.'
   status: grounded
   evidence:
   - ref: docs/superpowers/specs/2026-09-23-supply-field-use-cases.md §2 G8 — Item.stock_class
       durable
     kind: documented
-  - ref: connect_labs/templates/supply_chain/stock.html — status "durable", NotForecast
-      cells
+  - ref: connect_labs/templates/supply_chain/order_detail.html — Refused on arrival
+      / Still to arrive; Where they are now
     kind: implemented
-  rationale: A months-of-stock figure for equipment nobody consumes is a made-up number,
-    and a resupply suggestion built on it would be worse.
+  - ref: connect_labs/supply_chain/tests/test_dispenser_reconciliation.py
+    kind: implemented
+  rationale: 'The import is finished when its numbers add up: what was sent, what
+    was refused and why, and where every accepted unit is. Split across three screens,
+    nobody reconciles it; a months-of-stock figure for equipment would be a made-up
+    number.'
 problem: The chlorine programme's supply officer is responsible for dispensers that
   are durable equipment, donated in kind by a donor NGO and imported by courier. Getting
   them to the project sites means chasing import documents that several different

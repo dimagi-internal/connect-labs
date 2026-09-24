@@ -297,15 +297,15 @@ class ChargeForm(ProvenancedForm):
             "payee_org": _("Paid to"),
             "amount": _("Amount"),
             "currency": _("Currency"),
-            "fx_rate_to_usd": _("USD per unit of that currency"),
+            "fx_rate_to_usd": _("Rate to USD"),
             "paid_on": _("Paid on"),
             "note": _("Note"),
         }
         help_texts = {
             "payee_org": _("Customs, a clearing agent, a haulier — never the supplier; that is the contract price."),
             "fx_rate_to_usd": _(
-                "Only for a charge not in the order's currency. Without it the landed total cannot add "
-                "this charge, and says so."
+                "Dollars per one unit of the charge's currency (naira: about 0.00065). Only for a charge "
+                "not in the order's currency; without it the landed total cannot add this charge, and says so."
             ),
             "paid_on": _("Leave empty if it has been assessed but not yet paid."),
         }

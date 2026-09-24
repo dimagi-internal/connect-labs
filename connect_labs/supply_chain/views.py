@@ -514,6 +514,33 @@ class OrderDetailView(OperationBase):
         )
         return award, approvals_as_read(self.op, award_id)
 
+    def _where_now(self, contract, item):
+        """Where durable equipment from this order is held now, by supply point.
+
+        Equipment is kept and moved, never used up, so after it arrives the
+        question an order leaves is "where did it go": the dispenser import
+        closed on the item page to answer it, away from the order that says
+        how many came and how many were refused. The ledger holds the item,
+        not the order, so the panel says so when other orders of the same item
+        also feed those balances. Only points holding something; None for any
+        item that is used up, where cover and resupply are the stock page's.
+        """
+        if not item or item.get("stock_class") != "durable":
+            return None
+        points = [
+            p
+            for p in self.op("network_stock", item_id=item["id"])["points"]
+            if _amount(p.get("on_hand")) not in (None, 0)
+        ]
+        units = {p["on_hand"].get("unit") for p in points}
+        total = None
+        if points and len(units) == 1:
+            from connect_labs.supply_chain.values import decimal_string
+
+            total = {"amount": decimal_string(sum(_amount(p["on_hand"]) for p in points)), "unit": units.pop()}
+        others = [c for c in self.op("contract_list") if c.get("item_id") == item["id"] and c["id"] != contract["id"]]
+        return {"points": points, "total": total, "other_orders": len(others)}
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["has_program_context"] = has_program_context(self.request)
@@ -540,6 +567,8 @@ class OrderDetailView(OperationBase):
             else None
         )
         context["award"], context["award_approvals"] = self._award(contract)
+
+        context["where_now"] = self._where_now(contract, context["item"])
         # The short order this one covers, by the reference people use for it.
         if contract.get("covers_shortfall_of_id"):
             context["covers"] = self.op("contract_get", contract_id=contract["covers_shortfall_of_id"])
@@ -549,7 +578,21 @@ class OrderDetailView(OperationBase):
         # arrived and never where.
         context["supply_points"] = {p["id"]: p["name"] for p in self.op("supply_point_list")}
         context["invoices"] = self.op("invoice_list", contract_id=contract_id)
-        context["documents"] = self.op("document_list", contract_id=contract_id)
+        # The order's evidence includes what was filed against its consignments:
+        # four import documents on file read "Nothing attached" here (the
+        # dispenser import), because they hang off the shipment.
+        documents = self.op("document_list", contract_id=contract_id)
+        seen = {d["id"] for d in documents}
+        for shipment in context["shipments"]:
+            filed = self.op("document_list", shipment_id=shipment["id"])
+            kinds = {d["kind"] for d in filed}
+            required = shipment.get("required_documents") or []
+            shipment["required_on_file"] = sum(1 for e in required if e.get("kind") in kinds)
+            for document in filed:
+                if document["id"] not in seen:
+                    seen.add(document["id"])
+                    documents.append({**document, "shipment_reference": shipment.get("reference")})
+        context["documents"] = documents
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
         context["link_updates"] = _link_updates(contract_id)

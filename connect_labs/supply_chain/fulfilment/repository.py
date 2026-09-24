@@ -284,6 +284,7 @@ class FulfilmentRepositoryMixin:
         mapping = {
             "part_received": "part_received",
             "fully_received": "received",
+            "arrived_with_refusals": "received",
             "over_received": "received",
             "over_invoiced": "part_received",
         }

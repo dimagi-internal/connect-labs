@@ -475,6 +475,8 @@ def _describe_movement(rid):
     if movement is None:
         return ""
     text = _quantity(movement.quantity, movement.quantity_unit)
+    if movement.reference:
+        text = f"{movement.reference}: {text}"
     if movement.from_supply_point and movement.to_supply_point:
         text += f" from {movement.from_supply_point.name} to {movement.to_supply_point.name}"
     if movement.batch:
@@ -589,6 +591,25 @@ def _contract_of(operation, result_id):
     return None
 
 
+# What each action leaves on the record, as a reader names it. The read-back
+# rows were titled by the form's verb ("Record a release — ..."), which read
+# as a log of button presses rather than of what exists now.
+RECORD_NOUNS = {
+    "record_answer": "Answer",
+    "confirm_order": "Order confirmed",
+    "confirm_payment": "Payment confirmed",
+    "record_shipment": "Dispatch",
+    "update_shipment": "Dispatch update",
+    "record_receipt": "Goods received",
+    "record_stock_count": "Stock count",
+    "record_release": "Release",
+}
+
+
+def record_noun(action: str) -> str:
+    return RECORD_NOUNS.get(action, action.replace("_", " ").capitalize())
+
+
 def updates_for_contract(contract) -> list[dict]:
     """Every submission through any link that touched this order, newest first.
 
@@ -606,7 +627,7 @@ def updates_for_contract(contract) -> list[dict]:
         {
             "org": submission.link.org.name,
             "org_id": submission.link.org_id,
-            "title": submission.action.replace("_", " "),
+            "title": record_noun(submission.action),
             "detail": describe(submission),
             "at": submission.submitted_at,
         }

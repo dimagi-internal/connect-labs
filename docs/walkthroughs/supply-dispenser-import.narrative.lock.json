@@ -1,18 +1,17 @@
 {
   "build_order": [
     "the-checks-list-says-the-import-is-stuck",
-    "the-consignment-and-who-owes-what",
-    "attaching-the-donors-documents",
-    "the-declaration-clears-the-check",
+    "uploading-clearwaters-papers",
+    "the-checklist-is-complete",
     "paying-to-land-it",
-    "what-landing-a-donation-cost",
-    "arrival-and-the-two-broken-units",
-    "releasing-to-the-project-sites",
-    "where-the-dispensers-are"
+    "harmattan-receives-and-refuses-two",
+    "harmattan-releases-to-the-sites",
+    "the-checks-list-is-clear",
+    "the-import-reconciles"
   ],
-  "fetched_at": "2026-09-23T23:49:50.221309+00:00",
+  "fetched_at": "2026-09-24T13:06:17.143272+00:00",
   "name": "supply-dispenser-import",
-  "narrative": "Halima Yusuf runs supply for the chlorine programme, and the dispensers ClearWater Action is donating are somewhere between the airport and the project sites. She starts on the checks list, which tells her without anyone being asked that the dispenser consignment is late and that some of its import documents are not on file. She opens the consignment and reads its checklist: each document it needs to clear customs, whether it is on file, and who owes it. ClearWater has emailed its packing list and commercial invoice, so Halima attaches both straight onto their lines. The clearing agent sends the customs declaration, Halima attaches it, and the missing-documents entry drops off the checks list. She records the customs fee and the clearing agent's charge against the consignment, each with the organisation it was paid to. On the order she reads what landing a donation cost: the goods were not bought, and the two charges are itemised with their payees. The consignment clears and reaches Harmattan Health Supplies' warehouse, where inspection refuses two cracked dispensers, and Halima records the goods-received note with the reason. She posts Harmattan's release notes moving dispensers out to the Dawaki and Rimi project sites. Finally she checks where the dispensers are: each site's holding is a balance in the ledger, marked durable, with no months-of-stock figure pretending they get used up.",
+  "narrative": "Halima runs supply for the chlorine programme, and the checks list tells her, without anyone being asked, that ClearWater Action's dispenser consignment is past its expected date and that three of its import documents are not on file. She opens the consignment, whose checklist names who owes each document, and uploads the packing list and commercial invoice ClearWater emailed straight onto their lines. When the clearing agent sends the customs declaration, she uploads it the same way, and the consignment has every document it needs. She records the customs fee and the clearing agent's charge, each paid to someone other than the donor, and marks the consignment cleared. At its warehouse, Harmattan Health Supplies opens its own update link, with no login, and records the goods-received note: 118 accepted and 2 refused because their tap housings cracked in transit. Through the same link it records the release notes that send 60 dispensers to the Dawaki project site and 50 to Rimi. Back on the checks list that opened the story, nothing is left to report about the consignment. On the order the import reconciles: 120 donated, 118 accepted and 2 refused with nothing still to come, the two charges it took to land them, and every accepted dispenser held at the warehouse, Dawaki or Rimi, kept and moved rather than forecast.",
   "personas": {
     "halima": {
       "color": "#0F766E",
@@ -26,7 +25,7 @@
     {
       "features": [],
       "id": "the-checks-list-says-the-import-is-stuck",
-      "narrative": "Halima starts on the checks list, which tells her without anyone being asked that the dispenser consignment is late and that some of its import documents are not on file.",
+      "narrative": "Halima runs supply for the chlorine programme, and the checks list tells her, without anyone being asked, that ClearWater Action's dispenser consignment is past its expected date and that three of its import documents are not on file.",
       "persona": "halima",
       "provenance": "S0",
       "title": "The checks list says the dispenser import is stuck"
@@ -34,116 +33,102 @@
     {
       "features": [
         {
-          "description": "Shipment page lists every required document with on-file/outstanding status and the owing organisation.",
-          "id": "shipment-checklist",
-          "verify": "GET /supply/shipments/<id>/ shows four checklist rows; Airway bill \"on file\" owed by Kestrel Express Couriers; Packing list, Commercial invoice owed by ClearWater Action and Customs declaration owed by Lagoon Clearing & Forwarding marked \"outstanding\"."
+          "description": "Attach link on an outstanding checklist line opens the attach form naming that line and its owner, with the kind pre-selected; the uploaded file is stored and the line reads on file.",
+          "id": "attach-from-checklist",
+          "verify": "After uploading, GET /supply/shipments/<id>/ shows Packing list and Commercial invoice \"on file\" with their titles; Customs declaration still \"outstanding\"."
         }
       ],
-      "id": "the-consignment-and-who-owes-what",
-      "narrative": "She opens the consignment and reads its checklist: each document it needs to clear customs, whether it is on file, and who owes it.",
+      "id": "uploading-clearwaters-papers",
+      "narrative": "She opens the consignment, whose checklist names who owes each document, and uploads the packing list and commercial invoice ClearWater emailed straight onto their lines.",
       "persona": "halima",
       "provenance": "S1",
-      "title": "The consignment shows each document and who owes it"
+      "title": "Halima uploads ClearWater's papers onto their checklist lines"
     },
     {
       "features": [
         {
-          "description": "Attach link on an outstanding checklist row opens the attach form with that kind pre-selected; saving files it against the shipment.",
-          "id": "attach-from-checklist",
-          "verify": "After attaching, GET /supply/shipments/<id>/ shows Packing list and Commercial invoice \"on file\" with their titles linked; Customs declaration still \"outstanding\"."
+          "description": "With every required document attached, the checklist has nothing outstanding and each line links to its file.",
+          "id": "checklist-complete",
+          "verify": "GET /supply/shipments/<id>/ shows all four checklist lines \"on file\" and no \"outstanding\" chip."
         }
       ],
-      "id": "attaching-the-donors-documents",
-      "narrative": "ClearWater has emailed its packing list and commercial invoice, so Halima attaches both straight onto their lines.",
+      "id": "the-checklist-is-complete",
+      "narrative": "When the clearing agent sends the customs declaration, she uploads it the same way, and the consignment has every document it needs.",
       "persona": "halima",
       "provenance": "S2",
-      "title": "Halima attaches ClearWater's packing list and commercial invoice"
+      "title": "The customs declaration completes the checklist"
     },
     {
       "features": [
         {
-          "description": "shipment_documents_outstanding stops reporting a shipment once every required document is attached.",
-          "id": "check-clears",
-          "verify": "GET /supply/checks/ lists no \"Documents it needs, not on file\" entry for the consignment, while \"Shipment past its expected date\" still lists it."
-        }
-      ],
-      "id": "the-declaration-clears-the-check",
-      "narrative": "The clearing agent sends the customs declaration, Halima attaches it, and the missing-documents entry drops off the checks list.",
-      "persona": "halima",
-      "provenance": "S2",
-      "title": "The customs declaration comes in and the missing-documents check clears"
-    },
-    {
-      "features": [
-        {
-          "description": "Record a charge on a shipment with kind, payee organisation, amount, currency, FX rate and date paid.",
+          "description": "Record a charge on a shipment with kind, payee organisation, amount, currency, rate to USD and date paid.",
           "id": "charge-record",
-          "verify": "GET /supply/shipments/<id>/ \"Charges paid to land it\" lists Customs fee to Port customs (duty account) 410000 NGN and Clearing to Lagoon Clearing & Forwarding 185000 NGN."
+          "verify": "GET /supply/shipments/<id>/ lists a Customs fee paid to Port customs (duty account) and a Clearing charge paid to Lagoon Clearing & Forwarding; the status reads cleared."
         }
       ],
       "id": "paying-to-land-it",
-      "narrative": "She records the customs fee and the clearing agent's charge against the consignment, each with the organisation it was paid to.",
+      "narrative": "She records the customs fee and the clearing agent's charge, each paid to someone other than the donor, and marks the consignment cleared.",
       "persona": "halima",
       "provenance": "S3",
-      "title": "Halima records the customs fee and the clearing charge"
+      "title": "Halima records what it cost to land the donation"
     },
     {
       "features": [
         {
-          "description": "Landed cost for an in-kind contract reads \"not purchased (in kind)\" and itemises shipment charges with payees and a USD total.",
-          "id": "landed-cost-in-kind",
-          "verify": "GET /supply/orders/<id>/ Landed cost panel shows \"not purchased (in kind)\" for Goods and a \"Charges to land it\" row with a USD amount, with Customs fee and Clearing rows naming their payees; no \"Unconfirmed\" in the panel."
+          "description": "The distributor's update link records a goods-received note against the order and the consignment, accepted and rejected separately with a reason, marked as reported by the distributor.",
+          "id": "receipt-through-link",
+          "verify": "After submitting, the order page lists receipt HHS-GRN-2231 at the Harmattan warehouse told by Harmattan Health Supplies with 118 accepted and 2 refused, and the shipment reads delivered."
         }
       ],
-      "id": "what-landing-a-donation-cost",
-      "narrative": "On the order she reads what landing a donation cost: the goods were not bought, and the two charges are itemised with their payees.",
-      "persona": "halima",
-      "provenance": "S4",
-      "title": "The order shows what landing a donation cost"
-    },
-    {
-      "features": [
-        {
-          "description": "Receipt form records accepted and refused quantities with a reason; order page shows the note.",
-          "id": "receipt-with-rejection",
-          "verify": "GET /supply/orders/<id>/ Received table has HHS-GRN-2231 with Accepted 118 unit and Refused 2 with \"Tap housing cracked in transit\"; Received figure 118 unit."
-        }
-      ],
-      "id": "arrival-and-the-two-broken-units",
-      "narrative": "The consignment clears and reaches Harmattan Health Supplies' warehouse, where inspection refuses two cracked dispensers, and Halima records the goods-received note with the reason.",
+      "id": "harmattan-receives-and-refuses-two",
+      "narrative": "At its warehouse, Harmattan Health Supplies opens its own update link, with no login, and records the goods-received note: 118 accepted and 2 refused because their tap housings cracked in transit.",
       "persona": "halima",
       "provenance": "S5",
-      "title": "The dispensers reach the warehouse and two are refused"
+      "title": "Harmattan records the arrival and refuses two cracked units"
     },
     {
       "features": [
         {
-          "description": "A transfer movement from the warehouse supply point to a project site supply point for the dispenser item.",
-          "id": "transfer-to-site",
-          "verify": "movement_list for programme 10604 includes two transfers from Harmattan warehouse, to Dawaki project site (60 unit) and to Rimi project site (50 unit), references HHS-REL-118/119."
+          "description": "The link's Record a release form posts a transfer between two of the link's supply points in the ledger, marked as reported by the distributor.",
+          "id": "release-through-link",
+          "verify": "GET /supply/stock/ shows Dawaki project site 60 units and Rimi project site 50 units; the link page lists both releases under Recorded through this link."
         }
       ],
-      "id": "releasing-to-the-project-sites",
-      "narrative": "She posts Harmattan's release notes moving dispensers out to the Dawaki and Rimi project sites.",
+      "id": "harmattan-releases-to-the-sites",
+      "narrative": "Through the same link it records the release notes that send 60 dispensers to the Dawaki project site and 50 to Rimi.",
       "persona": "halima",
       "provenance": "S6",
-      "title": "Harmattan's releases move dispensers out to the project sites"
+      "title": "Harmattan releases dispensers to the project sites"
     },
     {
       "features": [
         {
-          "description": "Stock page shows a ledger balance for each site holding a durable item and \"durable — not forecast\" for consumption, months of stock and resupply.",
-          "id": "durable-not-forecast",
-          "verify": "GET /supply/stock/ rows for Harmattan warehouse (8 unit), Dawaki project site (60 unit) and Rimi project site (50 unit) show a numeric \"Ledger says\" and \"durable — not forecast\"; status badge \"durable\"."
+          "description": "The lateness and missing-documents checks are derived from the records, so they stop reporting a consignment once it is received and its documents are on file.",
+          "id": "checks-clear",
+          "verify": "GET /supply/checks/ for the programme lists no check about KEX-AWB-40981."
         }
       ],
-      "id": "where-the-dispensers-are",
-      "narrative": "Finally she checks where the dispensers are: each site's holding is a balance in the ledger, marked durable, with no months-of-stock figure pretending they get used up.",
+      "id": "the-checks-list-is-clear",
+      "narrative": "Back on the checks list that opened the story, nothing is left to report about the consignment.",
+      "persona": "halima",
+      "provenance": "S0",
+      "title": "The checks list has nothing left to report"
+    },
+    {
+      "features": [
+        {
+          "description": "The order's match card states what was refused on arrival apart from what is still outstanding, and a durable item's order shows where its units are held now, per supply point, with a total.",
+          "id": "order-reconciles",
+          "verify": "GET /supply/orders/<id>/ shows Refused on arrival 2 units, Still outstanding 0 units, and Where they are now: Harmattan warehouse 8, Dawaki project site 60, Rimi project site 50, held across 3 places 118 units."
+        }
+      ],
+      "id": "the-import-reconciles",
+      "narrative": "On the order the import reconciles: 120 donated, 118 accepted and 2 refused with nothing still to come, the two charges it took to land them, and every accepted dispenser held at the warehouse, Dawaki or Rimi, kept and moved rather than forecast.",
       "persona": "halima",
       "provenance": "S7",
-      "title": "Each site holds its dispensers, marked durable and not forecast"
+      "title": "The import reconciles on its order"
     }
   ],
   "slug": "supply-dispenser-import",
-  "version": 1
+  "version": 3
 }

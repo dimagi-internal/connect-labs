@@ -367,8 +367,10 @@ class TestTheShipmentPage:
     def test_an_airway_bill_is_not_a_certificate(self, scoped, da, world):
         # The order page's Certificate column read "on file" for any attached
         # document, while the checks list -- counting only certificates --
-        # said "no certificate on file" about the same consignment.
-        shipment = _shipment(da, world)
+        # said "no certificate on file" about the same consignment. (A
+        # consignment with its own document list is judged by that list
+        # instead -- see test_dispenser_reconciliation.)
+        shipment = _shipment(da, world, required=[])
         op(
             da,
             "document_attach",
