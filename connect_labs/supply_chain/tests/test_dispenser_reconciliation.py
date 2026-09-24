@@ -196,14 +196,15 @@ class TestRefusedIsNotOutstanding:
         _receive(da, world)
         card = _card(_order_page(scoped, world), "match")
         assert "Refused on arrival 2 units" in card
-        assert "Still to arrive nothing" in card
-        assert "Still outstanding" not in card
+        assert "Still outstanding 0 units" in card
+        assert "Still outstanding 2" not in card
         assert "all arrived, some refused" in card
 
     def test_an_order_still_short_says_how_many_are_still_to_arrive(self, scoped, da, world):
         _receive(da, world, accepted="100", rejected="5")
         card = _card(_order_page(scoped, world), "match")
-        assert "Still to arrive 15 units" in card
+        assert "Refused on arrival 5 units" in card
+        assert "Still outstanding 15 units" in card
         assert "all arrived" not in card
 
 
