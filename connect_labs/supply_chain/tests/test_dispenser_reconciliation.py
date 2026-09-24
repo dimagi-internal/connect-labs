@@ -199,6 +199,9 @@ class TestRefusedIsNotOutstanding:
         assert "Still outstanding 0 units" in card
         assert "Still outstanding 2" not in card
         assert "all arrived, some refused" in card
+        # The receipt calls the 118 accepted; the card said "Received 118"
+        # beside "Refused on arrival 2", which read as 118 of 120 arriving.
+        assert "Accepted 118 units" in card and "Received 118" not in card
 
     def test_an_order_whose_every_unit_arrived_reads_received(self, da, world):
         from connect_labs.supply_chain.models import Contract
@@ -381,6 +384,10 @@ class TestReadBackNamesTheRecord:
         token = issued["url"].rstrip("/").rsplit("/", 1)[-1]
         page = _visible(client.get(reverse("supply_chain:update_link_public", args=[token])).content.decode())
         assert "Release — REL-1: 60 units from Harmattan warehouse to Dawaki project site" in page
+        # The link answers "where are they now" for the places it covers: the
+        # release is shown landing, not only being typed in.
+        assert "Dawaki project site — holds 60 units" in page
+        assert "Harmattan warehouse — holds 58 units" in page
         assert "Goods received —" in page
         assert "Record a release —" not in page
         order = _visible(_order_page(scoped, world))

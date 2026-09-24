@@ -504,6 +504,8 @@ def contract_landed_cost(access, contract_id, compare_buyers=False):
                 **charge,
                 "amount": figure(charge["amount"]),
                 "paid_on": charge["paid_on"].isoformat() if charge["paid_on"] else None,
+                "fx_rate_to_usd": f"{charge['fx_rate_to_usd'].normalize():f}" if charge["fx_rate_to_usd"] else None,
+                "restated": figure(charge["restated"]) if charge["restated"] else None,
             }
             for charge in costed["charges"]
         ],

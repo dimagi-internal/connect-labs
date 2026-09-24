@@ -197,7 +197,7 @@ partner's name (the IPTSc render).
 <section data-link-updates="{{ panel.org }}" class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-3">
   <div class="px-4 py-2.5 border-b border-gray-100">
     <span class="text-xs font-semibold text-gray-600">Recorded through the update link held by {{ panel.org }}</span>
-    <span class="text-xs text-gray-400 ml-2">entered by them, without a labs login</span>
+    <span class="text-xs text-gray-400 ml-2">entered by them, without signing in</span>
   </div>
   <ul class="divide-y divide-gray-100">
     {% for update in panel.updates %}
@@ -244,7 +244,7 @@ partner's name (the IPTSc render).
         line of their own either, and five rows each reading "bundled in setup
         fee" said one fact five times (the IPTSc walkthrough).
         {% endcomment %}
-        <tr><td class="px-4 py-2 text-gray-600">Goods and landing</td>
+        <tr><td class="px-4 py-2 text-gray-600">Goods</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.goods|figure_text }}</td></tr>
         {% endif %}
         {% for charge in landed.charges %}
@@ -257,10 +257,15 @@ partner's name (the IPTSc render).
               {{ charge.kind|humanise|capfirst }}
               <span class="text-xs text-gray-400">to {{ charge.payee.name }}</span>
             </td>
-            <td class="px-4 py-2 text-right tabular-nums">{{ charge.amount|figure_text }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">
+              {{ charge.amount|figure_text }}
+              {% if charge.restated %}
+                <div class="text-xs text-gray-500">{{ charge.restated|figure_text }} at {{ charge.fx_rate_to_usd }} USD per {{ charge.amount.currency }}</div>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
-        {% if landed.charges %}
+        {% if landed.charges and contract.consideration == "priced" %}
           <tr><td class="px-4 py-2 text-gray-600">Charges to land it</td>
               <td class="px-4 py-2 text-right tabular-nums">{{ landed.charges_total|figure_text }}</td></tr>
         {% endif %}
@@ -294,13 +299,11 @@ partner's name (the IPTSc render).
     {% if contract.consideration != "priced" %}
     <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
       {% if contract.consideration == "bundled" %}
-        These goods were paid for inside another cost, such as a setup fee, so
-        there is no unit price to find and nothing is missing.
+        Bundled: paid for inside another cost, such as a setup fee, so no unit price is recorded.
       {% else %}
-        These goods were donated, so there is no price to find and nothing is
-        missing.
+        Donated: no purchase price is recorded.
       {% endif %}
-      The shipments and receipts below are the whole record of them.
+      The shipments and receipts below are the record of them.
     </p>
     {% else %}
     <div class="px-4 py-2.5 border-t border-gray-100">
@@ -364,7 +367,7 @@ partner's name (the IPTSc render).
       <tbody class="divide-y divide-gray-100">
         <tr><td class="px-4 py-2 text-gray-600">Ordered</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ match.ordered|figure_text }}</td></tr>
-        <tr><td class="px-4 py-2 text-gray-600">{% if match.covered_by %}Received on this order{% else %}Received{% endif %}</td>
+        <tr><td class="px-4 py-2 text-gray-600">{% if match.covered_by %}Received on this order{% elif match.refused and match.refused.amount != "0" %}Accepted{% else %}Received{% endif %}</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ match.received|figure_text }}</td></tr>
         {% if contract_late %}
           {% comment %}Beside the shortfall, so how much and how late read together.{% endcomment %}
@@ -464,7 +467,7 @@ partner's name (the IPTSc render).
     </div>
     <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
       {% if contract.consideration != "priced" %}
-        Nothing to bill or pay: what matters here is what arrived.
+        Not purchased: nothing is billed or paid against this order.
       {% elif match.payment_terms == "advance" %}
         Paid before delivery, as agreed. What was paid for and refused on arrival — or never
         delivered, once the order is closed — is owed back.
@@ -548,7 +551,7 @@ partner's name (the IPTSc render).
             <td class="px-4 py-2">
               {{ shipment.status|words|capfirst }}
               {% if shipment.is_in_transit %}
-                <div class="text-xs text-amber-800">in transit — not counted as stock</div>
+                <div class="text-xs text-amber-800">not received yet, so not counted as stock</div>
               {% endif %}
               {% with late=late_shipments|dictkey:shipment.id %}
                 {% if late %}

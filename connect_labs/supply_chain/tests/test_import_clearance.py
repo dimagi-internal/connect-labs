@@ -287,6 +287,26 @@ class TestChargesAreInTheLandedCost:
         landed = op(da, "contract_landed_cost", contract_id=world["contract"]["id"])
         assert Decimal(landed["charges_total"]["amount"]) == Decimal("247")
 
+    def test_a_converted_charge_carries_its_rate_and_what_it_came_to(self, da, world):
+        # "NGN 410,000" over "USD 386.75" with no rate between them was the one
+        # sum on the order a reader could not check.
+        shipment = _shipment(da, world)
+        _charge(da, shipment, world["customs"], currency="NGN", amount="380000", fx_rate_to_usd="0.00065")
+        _charge(da, shipment, world["agent"], kind="clearing", amount="120.50")
+        charges = op(da, "contract_landed_cost", contract_id=world["contract"]["id"])["charges"]
+        assert charges[0]["fx_rate_to_usd"] == "0.00065"
+        assert Decimal(charges[0]["restated"]["amount"]) == Decimal("247")
+        assert charges[0]["restated"]["currency"] == "USD"
+        # Paid in the order's own currency: nothing to restate.
+        assert charges[1]["restated"] is None and charges[1]["fx_rate_to_usd"] is None
+
+    def test_the_order_page_shows_the_rate_beside_a_converted_charge(self, scoped, da, world):
+        shipment = _shipment(da, world)
+        _charge(da, shipment, world["customs"], currency="NGN", amount="380000", fx_rate_to_usd="0.00065")
+        body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
+        landed = body.split("Landed cost", 1)[1].split("Ordered", 1)[0]
+        assert "USD 247.00 at 0.00065 USD per NGN" in landed
+
     def test_goods_given_in_kind_still_show_what_landing_them_cost(self, da, world):
         from connect_labs.supply_chain.models import Contract
 

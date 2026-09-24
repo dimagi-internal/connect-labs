@@ -30,7 +30,7 @@ checks feed cannot disagree about what is outstanding.
   </h2>
   <p class="text-sm text-gray-600">
     {{ shipment.status|humanise }}
-    {% if shipment.is_in_transit %}<span class="text-amber-800">· in transit — not counted as stock</span>{% endif %}
+    {% if shipment.is_in_transit %}<span class="text-amber-800">· not received yet, so not counted as stock</span>{% endif %}
     {% if shipment.dispatched_on %} · dispatched {{ shipment.dispatched_on }}{% endif %}
     {% if shipment.expected_on %} · expected {{ shipment.expected_on }}{% endif %}
     {% if shipment.carrier %} · {{ shipment.carrier }}{% endif %}
@@ -58,7 +58,11 @@ checks feed cannot disagree about what is outstanding.
       <span>
         <span class="text-xs font-semibold text-gray-600">Documents it needs</span>
         {% if checklist %}
-          <span class="text-xs text-gray-400 ml-2">{{ outstanding_count }} of {{ checklist|length }} outstanding</span>
+          {% if outstanding_count %}
+            <span class="text-xs text-gray-600 ml-2">{{ outstanding_count }} of {{ checklist|length }} outstanding</span>
+          {% else %}
+            <span class="text-xs text-gray-600 ml-2">all {{ checklist|length }} on file</span>
+          {% endif %}
         {% endif %}
       </span>
       <a href="{% url 'supply_chain:shipment_require_document' shipment.id %}" class="text-xs text-brand-indigo hover:underline">+ Require one</a>
@@ -66,26 +70,34 @@ checks feed cannot disagree about what is outstanding.
     {% if checklist %}
       <ul class="divide-y divide-gray-100">
         {% for line in checklist %}
-          <li class="px-4 py-2.5 text-sm flex flex-wrap items-baseline gap-x-3">
-            <span class="font-medium text-gray-900">{{ line.kind|humanise|capfirst }}</span>
-            <span class="text-xs text-gray-500">owed by {{ line.owed_by.name|default:"—" }}</span>
-            <span class="ml-auto flex items-baseline gap-3">
+          {% comment %}Two rows per line, so every status chip and every file link sits in the same column whatever the title's length.{% endcomment %}
+          <li class="px-4 py-2.5 text-sm">
+            <div class="flex items-baseline justify-between gap-3">
+              <span class="font-medium text-gray-900">{{ line.kind|humanise|capfirst }}</span>
               {% if line.documents %}
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-success text-message-success-text">on file</span>
-                {% for document in line.documents %}
-                  <a class="text-xs text-brand-indigo hover:underline" href="{% url 'supply_chain:document_open' document.id %}" target="_blank" rel="noopener noreferrer">{{ document.title|default:document.filename|default:"open" }}</a>
-                {% endfor %}
               {% else %}
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-warning text-message-warning-text">outstanding</span>
-                <a class="text-xs text-brand-indigo hover:underline"
-                   href="{% url 'supply_chain:shipment_document_attach' shipment.id %}?kind={{ line.kind }}">Attach document</a>
               {% endif %}
-              <form method="post" action="{% url 'supply_chain:shipment_unrequire_document' shipment.id %}" class="inline">
-                {% csrf_token %}
-                <input type="hidden" name="kind" value="{{ line.kind }}">
-                <button type="submit" class="text-xs text-gray-400 hover:text-gray-700" title="No longer needed">Remove</button>
-              </form>
-            </span>
+            </div>
+            <div class="flex items-baseline justify-between gap-3 mt-1">
+              <span class="text-xs text-gray-500">owed by {{ line.owed_by.name|default:"—" }}</span>
+              <span class="flex items-baseline gap-3 text-right">
+                {% if line.documents %}
+                  {% for document in line.documents %}
+                    <a class="text-xs text-brand-indigo hover:underline" href="{% url 'supply_chain:document_open' document.id %}" target="_blank" rel="noopener noreferrer">{{ document.title|default:document.filename|default:"open" }}</a>
+                  {% endfor %}
+                {% else %}
+                  <a class="text-xs text-brand-indigo hover:underline"
+                     href="{% url 'supply_chain:shipment_document_attach' shipment.id %}?kind={{ line.kind }}">Attach document</a>
+                {% endif %}
+                <form method="post" action="{% url 'supply_chain:shipment_unrequire_document' shipment.id %}" class="inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="kind" value="{{ line.kind }}">
+                  <button type="submit" class="text-xs text-gray-400 hover:text-gray-700" title="No longer needed">Remove</button>
+                </form>
+              </span>
+            </div>
           </li>
         {% endfor %}
       </ul>
