@@ -222,6 +222,7 @@ def approval(obj) -> dict:
         "note": obj.note,
         "decision_note": obj.decision_note,
         "document_ids": [doc.pk for doc in obj.documents.all()],
+        "rests_on_document_id": obj.rests_on_document_id,
     }
 
 

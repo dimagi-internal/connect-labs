@@ -53,7 +53,7 @@
     {% for line in buys %}
       <li class="px-4 py-2 text-sm text-gray-800 flex flex-wrap justify-between gap-2">
         <span>{{ line.name }}{% if line.contents %} <span class="text-gray-500">— one unit holds {{ line.contents }}</span>{% endif %}</span>
-        <span class="tabular-nums text-gray-600">{{ line.quantity }} {{ line.unit }}</span>
+        <span class="tabular-nums text-gray-600">{{ line.quantity|qty:line.unit }}</span>
       </li>
     {% endfor %}
   </ul>
@@ -146,7 +146,7 @@
         </td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ q.commodity_slug|humanise }}</td>
         <td class="px-4 py-2 text-sm text-gray-600 tabular-nums">
-          {{ q.as_quoted_currency }} {{ q.as_quoted_amount }} {{ q.as_quoted_unit|humanise }}
+          {{ q.as_quoted_currency }} {{ q.as_quoted_amount|qty:q.as_quoted_unit }}
         </td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ q.received_on|default:"—" }}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ q.pack_spec_source|humanise|default:"not stated" }}</td>

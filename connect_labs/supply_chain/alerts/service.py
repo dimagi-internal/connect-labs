@@ -373,13 +373,15 @@ def render_email(subscription, notices) -> tuple[str, str, str]:
     return subject, text, html
 
 
-def deliver(now) -> int:
-    """Send what is due. Returns the number of emails queued."""
+def deliver(now, program_id=None) -> int:
+    """Send what is due -- for one programme when named. Returns the number of emails queued."""
     pending = (
         AlertNotice.objects.filter(delivery="pending", subscription__active=True)
         .select_related("subscription__recipient_user")
         .order_by("detected_at", "pk")
     )
+    if program_id is not None:
+        pending = pending.filter(program_id=program_id)
     batches = defaultdict(list)
     subscriptions = {}
     for notice in pending:
@@ -411,8 +413,15 @@ def deliver(now) -> int:
     return emails
 
 
-def run_alerts(now=None) -> dict:
-    """One full pass: detect for every active subscription, then deliver."""
+def run_alerts(now=None, program_id=None) -> dict:
+    """One full pass: detect for every active subscription, then deliver.
+
+    `program_id` narrows the pass to one programme's subscriptions -- the
+    "Check now" button on /supply/alerts/, so a person can see a new alert
+    work without waiting for beat. Same detection, same new-only diff, same
+    log, same lock: a check already reported is not reported again because it
+    was asked for twice, and a press during a beat run waits its turn.
+    """
     from connect_labs.supply_chain.checks import run_checks
     from connect_labs.supply_chain.data_access import SupplyDataAccess
 
@@ -422,7 +431,14 @@ def run_alerts(now=None) -> dict:
         return {"skipped": True}
     try:
         by_program = defaultdict(list)
-        for subscription in AlertSubscription.objects.filter(active=True).order_by("pk"):
+        active = AlertSubscription.objects.filter(active=True).order_by("pk")
+        # `only` rather than `program_id` below: the loop that follows binds
+        # program_id to each programme in turn, and delivery must not then be
+        # narrowed to whichever programme happened to come last.
+        only = program_id
+        if only is not None:
+            active = active.filter(program_id=only)
+        for subscription in active:
             by_program[subscription.program_id].append(subscription)
 
         new_checks = new_movements = 0
@@ -441,7 +457,7 @@ def run_alerts(now=None) -> dict:
             for subscription in subscriptions:
                 new_checks += detect_checks(subscription, found, now)
                 new_movements += detect_movements(subscription, now)
-        emails = deliver(now)
+        emails = deliver(now, program_id=only)
         return {
             "programmes": len(by_program),
             "subscriptions": sum(len(s) for s in by_program.values()),

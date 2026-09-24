@@ -67,7 +67,7 @@
             <div class="text-xs text-gray-500">{{ contract.buyer_of_record|humanise }}</div>
           </td>
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
-            {{ contract.quantity }} {{ contract.quantity_unit }}
+            {{ contract.quantity|qty:contract.quantity_unit }}
           </td>
           <td class="px-4 py-2.5">
             {{ contract.status|humanise|capfirst }}

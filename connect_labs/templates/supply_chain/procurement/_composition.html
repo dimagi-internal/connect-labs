@@ -1,10 +1,10 @@
-{% comment %}
+{% load supply_chain_extras %}{% comment %}
 What one unit of a kit holds, set under the supplier's name so two offers'
 contents can be read side by side. Kits are ranked only against kits holding
 the same contents; this is the line that shows why two were not.
 {% endcomment %}
 {% if composition %}
   <div class="text-xs font-normal text-gray-500 mt-0.5">
-    kit: {% for part in composition %}{{ part.quantity }} {{ part.base_unit }} {{ part.commodity_slug }}{% if not forloop.last %} + {% endif %}{% endfor %}
+    kit: {% for part in composition %}{{ part.quantity|qty:part.base_unit }} {{ part.commodity_slug }}{% if not forloop.last %} + {% endif %}{% endfor %}
   </div>
 {% endif %}

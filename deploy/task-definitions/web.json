@@ -23,6 +23,14 @@
           "value": "labs-jj-audit-archive"
         },
         {
+          "name": "DJANGO_AWS_STORAGE_BUCKET_NAME",
+          "value": "labs-jj-exports-dev-858923557655-us-east-1-an"
+        },
+        {
+          "name": "AWS_DEFAULT_REGION",
+          "value": "us-east-1"
+        },
+        {
           "name": "UMAMI_HOST_URL",
           "value": "https://labs.connect.dimagi.com/umami"
         },

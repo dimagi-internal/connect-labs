@@ -51,7 +51,7 @@ heard 12 Jun" is the record.
             <td class="px-4 py-2.5">
               <a class="font-medium text-brand-indigo hover:underline"
                  href="{% url 'supply_chain:supplier_detail' supplier.id %}">{{ supplier.name }}</a>
-              {% if supplier.type %}<div class="text-xs text-gray-500">{{ supplier.type|humanise }}</div>{% endif %}
+              {% if supplier.type == "donor" %}<div class="text-xs text-blue-900">Donor — supplies in kind</div>{% elif supplier.type %}<div class="text-xs text-gray-500">{{ supplier.type|words|capfirst }}</div>{% endif %}
             </td>
             <td class="px-4 py-2.5 text-gray-700">
               {{ supplier.city|default:supplier.country|default:"—" }}

@@ -491,6 +491,9 @@ _DATE = {"type": "string", "format": "date"}
                 role={"enum": list(records.APPROVAL_ROLES)},
                 requested_on=_DATE,
                 note={"type": "string"},
+                # A document already on file that the approval rests on -- a
+                # product registration under a regulatory approval.
+                rests_on_document_id=ID,
             )
         },
         required=("data",),
@@ -513,13 +516,18 @@ def approval_request(access, data):
             "status": {"enum": ["approved", "declined"]},
             "decided_on": _DATE,
             "note": {"type": "string"},
+            "rests_on_document_id": ID,
         },
         required=("approval_id", "status"),
     ),
     is_write=True,
 )
-def approval_decide(access, approval_id, status, decided_on=None, note=None):
-    return record(access.decide_approval(approval_id, status, decided_on=decided_on, note=note))
+def approval_decide(access, approval_id, status, decided_on=None, note=None, rests_on_document_id=None):
+    return record(
+        access.decide_approval(
+            approval_id, status, decided_on=decided_on, note=note, rests_on_document_id=rests_on_document_id
+        )
+    )
 
 
 @register_operation(

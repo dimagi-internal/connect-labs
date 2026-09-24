@@ -282,6 +282,30 @@ class ShipmentDocumentAttachView(_UnderAShipment):
             initial["kind"] = kind
         return initial
 
+    def checklist_line(self):
+        """The required-documents line this attach fills, when it came from one."""
+        kind = self.request.GET.get("kind") or self.request.POST.get("kind")
+        if not kind:
+            return None
+        return next((e for e in self.shipment().required_documents or [] if e.get("kind") == kind), None)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        line = self.checklist_line()
+        if line is not None:
+            from connect_labs.labs.models import LabsOrg
+            from connect_labs.supply_chain.templatetags.supply_chain_extras import words
+
+            shipment = self.shipment()
+            owed_by = LabsOrg.objects.filter(pk=line.get("owed_by_org_id")).values_list("name", flat=True).first()
+            context["intro"] = (
+                f"This fills the “{words(line['kind']).capitalize()}” line on the checklist for shipment "
+                f"{shipment.reference or shipment.pk}"
+                + (f", owed by {owed_by}" if owed_by else "")
+                + ". Upload the file or link to where it lives."
+            )
+        return context
+
     def fixed(self, **kwargs):
         return {"data": {"shipment_id": int(kwargs["shipment_id"])}}
 

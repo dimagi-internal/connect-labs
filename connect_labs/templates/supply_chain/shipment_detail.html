@@ -73,16 +73,12 @@ checks feed cannot disagree about what is outstanding.
               {% if line.documents %}
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-success text-message-success-text">on file</span>
                 {% for document in line.documents %}
-                  {% if document.external_url %}
-                    <a class="text-xs text-brand-indigo hover:underline" href="{{ document.external_url }}" target="_blank" rel="noopener noreferrer">{{ document.title|default:"view" }}</a>
-                  {% else %}
-                    <span class="text-xs text-gray-600">{{ document.title|default:"stored" }}</span>
-                  {% endif %}
+                  <a class="text-xs text-brand-indigo hover:underline" href="{% url 'supply_chain:document_open' document.id %}" target="_blank" rel="noopener noreferrer">{{ document.title|default:document.filename|default:"open" }}</a>
                 {% endfor %}
               {% else %}
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-warning text-message-warning-text">outstanding</span>
                 <a class="text-xs text-brand-indigo hover:underline"
-                   href="{% url 'supply_chain:shipment_document_attach' shipment.id %}?kind={{ line.kind }}">Attach</a>
+                   href="{% url 'supply_chain:shipment_document_attach' shipment.id %}?kind={{ line.kind }}">Attach document</a>
               {% endif %}
               <form method="post" action="{% url 'supply_chain:shipment_unrequire_document' shipment.id %}" class="inline">
                 {% csrf_token %}
@@ -118,7 +114,7 @@ checks feed cannot disagree about what is outstanding.
                   <div class="text-xs text-gray-500">to {{ orgs|dictkey:charge.payee_org_id|dictkey:"name" }}{% if charge.paid_on %} · paid {{ charge.paid_on }}{% else %} · not yet paid{% endif %}</div>
                 </td>
                 <td class="px-4 py-2 text-right tabular-nums">
-                  {{ charge.amount|money }} {{ charge.currency }}
+                  {{ charge.currency }} {{ charge.amount|money }}
                   {% if charge.fx_rate_to_usd %}<div class="text-xs text-gray-400">at {{ charge.fx_rate_to_usd }} USD</div>{% endif %}
                 </td>
               </tr>
@@ -154,7 +150,7 @@ checks feed cannot disagree about what is outstanding.
           <tr>
             <td class="px-4 py-2 text-gray-700">{{ line.batch|default:"—" }}</td>
             <td class="px-4 py-2 text-gray-600">{{ line.expiry|default:"—" }}</td>
-            <td class="px-4 py-2 tabular-nums">{{ line.quantity }} {{ line.quantity_unit }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ line.quantity|qty:line.quantity_unit }}</td>
           </tr>
         {% empty %}
           <tr><td colspan="3" class="px-4 py-4 text-center text-gray-500">No lines recorded on the dispatch.</td></tr>

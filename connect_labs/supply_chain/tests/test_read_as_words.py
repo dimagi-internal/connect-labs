@@ -381,7 +381,7 @@ class TestTheStockPageSpeaksInPacks:
                 },
             )
         body = client_in_programme.get(reverse("supply_chain:stock")).content.decode()
-        assert " carton a month" in body or " carton)" in body
+        assert " cartons a month" in body or " cartons)" in body or " carton)" in body
 
 
 class TestAlertChips:
