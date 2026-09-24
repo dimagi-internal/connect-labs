@@ -454,7 +454,11 @@ function WorkflowUI({
       return f.key === selKey;
     })[0] || null;
   var nFLW = nByKey[selKey] || null;
-  var SC = { byLLO: P.byLLO || [], byOpp: P.byOpp || [] };
+  var SC = {
+    programme: P.programInd || null,
+    byLLO: P.byLLO || [],
+    byOpp: P.byOpp || [],
+  };
   var lloRow =
     flw && SC
       ? (SC.byLLO || []).filter(function (r) {

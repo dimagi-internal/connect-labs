@@ -272,3 +272,13 @@ def test_it_reads_a_pre_2004_run_through_the_programme_reports_own_translation()
     programme = RENDER.parent / "kmc_programme_metrics_render.js"
     assert "fromLegacyIds(report.payload" in RENDER.read_text()
     assert _legacy_block(RENDER) == _legacy_block(programme)
+
+
+def test_the_programme_row_reads_the_programme_cells():
+    """The scorecard's first row is the programme. When the scorecard stopped
+    reading `P.series.N`, the object it reads lost its `programme` key and the
+    row rendered blank on every worker."""
+    src = RENDER.read_text()
+    block = src[src.index("  var SC = {") : src.index("};", src.index("  var SC = {"))]
+    assert "programme: P.programInd" in block
+    assert "scorecardRow('Programme', SC && SC.programme)" in src

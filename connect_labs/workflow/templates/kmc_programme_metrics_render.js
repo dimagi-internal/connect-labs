@@ -2262,9 +2262,11 @@ function WorkflowUI({
       sub: 'target 10%',
     },
   ];
-  // Undrilled mortality is the figure pooled over the credible recorders.
+  // Undrilled mortality is the figure pooled over the credible recorders --
+  // when the payload carries one. A run saved before #2004 does not (its pool
+  // was the workbook's rule), so the tile falls back to the scope's own cell.
   function tileEntry(id) {
-    if (id === 'mortality' && !selLLO && !oppFilter)
+    if (id === 'mortality' && !selLLO && !oppFilter && mortalityCredible.ind)
       return mortalityCredible.ind;
     return entryOf(scopeInd, id);
   }
@@ -2318,9 +2320,11 @@ function WorkflowUI({
             sub =
               selLLO || oppFilter
                 ? 'two-sided'
-                : mortalityCredible.llos && mortalityCredible.llos.length
-                  ? mortalityCredible.llos.join(' + ') + ' only'
-                  : 'no credible recorder';
+                : !mortalityCredible.ind
+                  ? 'all organisations'
+                  : mortalityCredible.llos && mortalityCredible.llos.length
+                    ? mortalityCredible.llos.join(' + ') + ' only'
+                    : 'no credible recorder';
           if (t.id === 'started_cases')
             sub =
               t.sub +
