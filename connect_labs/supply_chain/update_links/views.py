@@ -201,6 +201,18 @@ class UpdateLinkPublicView(View):
 
     def _render(self, scope, bound=None, status=200):
         forms = self._forms(scope, bound)
+        done_action = self.request.GET.get("done", "")
+        if done_action not in PUBLIC_FORMS:
+            done_action = ""
+        recent = [
+            {
+                "action": submission.action,
+                "title": getattr(PUBLIC_FORMS.get(submission.action), "title", submission.action),
+                "detail": service.describe(submission),
+                "at": submission.submitted_at,
+            }
+            for submission in UpdateLinkSubmission.objects.filter(link=self.link)[:10]
+        ]
         context = {
             "link": self.link,
             "org": self.link.org,
@@ -209,14 +221,14 @@ class UpdateLinkPublicView(View):
             "forms": [form for form in forms if form.is_available() or form is bound],
             "unavailable": [form for form in forms if not form.is_available() and form is not bound],
             "bound_action": bound.action if bound is not None else "",
-            "done": PUBLIC_FORMS.get(self.request.GET.get("done", "")),
-            "recent": [
-                {
-                    "title": getattr(PUBLIC_FORMS.get(submission.action), "title", submission.action),
-                    "at": submission.submitted_at,
-                }
-                for submission in UpdateLinkSubmission.objects.filter(link=self.link)[:10]
-            ],
+            "done": PUBLIC_FORMS.get(done_action),
+            "recent": recent,
+            # What the submission just made put on the record, read back from
+            # the row it produced -- the confirmation a supplier (or anyone
+            # watching) can check against what they meant to send.
+            "done_detail": (
+                recent[0]["detail"] if recent and done_action and recent[0]["action"] == done_action else ""
+            ),
             "expires_on": timezone.localtime(self.link.expires_at).date(),
         }
         return _private(render(self.request, self.template_name, context, status=status))

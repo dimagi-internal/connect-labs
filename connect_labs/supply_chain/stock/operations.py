@@ -448,6 +448,7 @@ def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_d
                         "on_hand_in_base",
                         "reported",
                         "amc",
+                        "amc_in_display_unit",
                         "months_of_stock",
                         "days_to_stockout",
                         "resupply_quantity",
