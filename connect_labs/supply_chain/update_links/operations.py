@@ -17,8 +17,12 @@ from django.utils import timezone
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.models import AwardApproval, Contract, SupplyPoint
 from connect_labs.supply_chain.operations import ID, _data_with, obj, register_operation
-from connect_labs.supply_chain.update_links import tokens
-from connect_labs.supply_chain.update_links.models import UpdateLink
+from connect_labs.supply_chain.update_links import service, tokens
+from connect_labs.supply_chain.update_links.models import (
+    COVERAGE_LISTED,
+    COVERAGE_ORGANISATION,
+    UpdateLink,
+)
 
 DEFAULT_EXPIRY_DAYS = 30
 MAX_EXPIRY_DAYS = 90
@@ -26,6 +30,12 @@ MAX_EXPIRY_DAYS = 90
 _ISSUE_DATA = _data_with(
     ("org_id",),
     org_id=ID,
+    # "listed" (the default): exactly the rows named below, and nothing that
+    # appears later. "organisation": everything involving the organisation in
+    # this programme, resolved afresh at every request -- orders it supplies,
+    # buys or receives at a store it runs; stores it runs; approvals asked of
+    # it -- including orders created after the link was issued.
+    coverage={"enum": [COVERAGE_LISTED, COVERAGE_ORGANISATION]},
     contract_ids={"type": "array", "items": ID, "uniqueItems": True},
     supply_point_ids={"type": "array", "items": ID, "uniqueItems": True},
     # Approvals asked of this organisation, which it may then answer itself.
@@ -44,15 +54,29 @@ def public_url(raw_token) -> str:
 
 
 def serialize_link(link) -> dict:
-    contracts = list(link.contracts.all())
-    points = list(link.supply_points.all())
-    approvals = list(link.approvals.select_related("award__supplier"))
+    """The link, and what it covers NOW.
+
+    For a listed link that is the rows it names. For one that follows its
+    organisation it is the live scope at this moment -- the same rows the page
+    behind the link would offer -- so the list shows what it reaches today.
+    """
+    if link.follows_org:
+        scope = service.scope_for(link)
+        contracts = list(scope.contracts.order_by("-created_at"))
+        points = list(scope.supply_points.order_by("name"))
+        approvals = list(scope.approvals)
+    else:
+        contracts = list(link.contracts.all())
+        points = list(link.supply_points.all())
+        approvals = list(link.approvals.select_related("award__supplier"))
     return {
         "id": link.pk,
         "program_id": link.program_id,
         "org_id": link.org_id,
         "org_name": link.org.name,
         "label": link.label,
+        "coverage": link.coverage,
+        "follows_org": link.follows_org,
         "contract_ids": [c.pk for c in contracts],
         "contracts": [{"id": c.pk, "reference": c.reference, "status": c.status} for c in contracts],
         "supply_point_ids": [p.pk for p in points],
@@ -92,7 +116,11 @@ def _caller_user(access):
         "Issue a supplier update link: a signed, expiring, revocable URL that lets ONE organisation with "
         "no labs login confirm orders and payments, record dispatches and receipts, and record stock "
         "counts and releases — for exactly the contracts and supply points named here, and nothing "
-        "else. Every write behind it goes through the ordinary operations as supplier_reported by that "
+        "else; or, with coverage='organisation', for everything involving that organisation in this "
+        "programme, now and later (orders it supplies, buys or receives at a store it runs; stores it "
+        "runs; approvals asked of it), resolved at every request. Actions stay role-appropriate: only "
+        "the supplier on an order can confirm or dispatch it; only a buyer or receiving store can record "
+        "a receipt. Every write behind it goes through the ordinary operations, attributed to that "
         "organisation. The raw token is in this response only; it is never stored or shown again."
     ),
     input_schema=obj({"data": _ISSUE_DATA}, required=("data",)),
@@ -107,6 +135,16 @@ def update_link_issue(access, data):
     contract_ids = list(data.get("contract_ids") or [])
     point_ids = list(data.get("supply_point_ids") or [])
     approval_ids = list(data.get("approval_ids") or [])
+    coverage = data.get("coverage") or COVERAGE_LISTED
+    if coverage == COVERAGE_ORGANISATION:
+        # One or the other, never both: a link that follows its organisation
+        # AND names rows would leave nobody sure which of the two it obeys.
+        if contract_ids or point_ids or approval_ids:
+            raise ValueError(
+                "a link that covers everything involving the organisation names no orders, supply points or "
+                "approvals of its own — leave them out, or issue a listed link instead"
+            )
+        return _create(access, program_id, org, data, coverage, [], [], [])
     if not contract_ids and not point_ids and not approval_ids:
         raise ValueError("a link has to cover at least one contract, supply point or approval")
     approvals = list(
@@ -135,10 +173,15 @@ def update_link_issue(access, data):
     if missing:
         raise ValueError(f"supply point {', '.join(map(str, missing))} does not exist in this programme")
 
+    return _create(access, program_id, org, data, coverage, contracts, points, approvals)
+
+
+def _create(access, program_id, org, data, coverage, contracts, points, approvals):
     raw = tokens.new_token()
     link = UpdateLink.objects.create(
         program_id=program_id,
         org=org,
+        coverage=coverage,
         label=data.get("label") or "",
         token_hash=tokens.hash_token(raw),
         token_hint=tokens.hint(raw),
