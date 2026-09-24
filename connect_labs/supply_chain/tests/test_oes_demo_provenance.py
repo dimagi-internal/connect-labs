@@ -270,11 +270,26 @@ class _Recorded:
         return call_operation(name, access, payload)
 
 
+def _reference(module, access, document):
+    """This document's one chain, in this one scope.
+
+    `seed_reference` has no "every product in the document" default: the
+    catalogue is program-scoped, so a caller seeding one scope says which
+    products that scope holds. `commodities_for` is what says it, and it is
+    the same derivation `seed_scopes` uses.
+    """
+    return module.seed_reference(
+        access,
+        document,
+        commodity_slugs=module.commodities_for(document["chc_chain"], document["commodities"]),
+    )
+
+
 @pytest.fixture
 def seeded(access):
     module = _load_seed_remote()
     module.op = _Recorded()
-    reference = module.seed_reference(access, _DOCUMENT)
+    reference = _reference(module, access, _DOCUMENT)
     return module, reference, module.seed_chc_chain(access, _DOCUMENT, reference)
 
 
@@ -491,7 +506,7 @@ def test_the_chain_itself_refuses_a_second_hand_row_that_claims_first_hand(acces
     document["chc_chain"]["reported_to_us"][1]["source"] = "we_recorded"
 
     module = _load_seed_remote()
-    reference = module.seed_reference(access, document)
+    reference = _reference(module, access, document)
 
     with pytest.raises(ValueError) as caught:
         module.seed_chc_chain(access, document, reference)
@@ -511,7 +526,7 @@ def test_a_price_per_single_unit_is_billed_the_way_the_domain_bills_it(access):
     document["chc_chain"]["quotes"][0]["as_quoted_unit"] = "per_base_unit"
 
     module = _load_seed_remote()
-    reference = module.seed_reference(access, document)
+    reference = _reference(module, access, document)
     chain = module.seed_chc_chain(access, document, reference)
 
     goods = landed_total(access.get_contract(chain["contract"]["id"]))["goods"]
