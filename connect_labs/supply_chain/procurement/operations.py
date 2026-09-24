@@ -311,7 +311,8 @@ def round_outstanding_questions(access, round_id, commodity_slug):
     name="award_create",
     summary=(
         "Award a round to a quote. Requires a rationale and freezes the "
-        "comparison as it stood at the moment of decision."
+        "comparison as it stood at the moment of decision. Once every line of a draft or open round "
+        "has an award, the round's status becomes awarded; a closed round is left as it is."
     ),
     input_schema=obj(
         {
