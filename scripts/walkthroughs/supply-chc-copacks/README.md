@@ -18,7 +18,7 @@ What each scene performs:
 
 Every date is relative to the render day, including the ones the scenes type. The chain took about a week in the world and is filmed in minutes, so each act is entered with the day it happened (`placed_on`, `paid_on`, `payment_received_on`, `received_on` in `.realized.json`): signed and confirmed six days ago, paid five days ago, the payment seen arriving four days ago, the goods received yesterday, the stock take and the release today. The order page and the link page read those days, not the minute they were typed.
 
-Amara's low-stock alert goes to her own address by name, not to the login the render uses.
+Amara's low-stock alert goes to her by name, at an invented `.example` address that never delivers (labs sends real email), not to the login the render uses.
 
 On any day this gives:
 
