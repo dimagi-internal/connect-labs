@@ -49,6 +49,7 @@ _VOCABULARIES = (
     records.PAYMENT_TERMS,
     records.STOCK_CLASSES,
     records.SUPPLIER_TYPES,
+    records.COMPONENTS_PER,
     tuple(CHECK_LABELS),
     # The units and pricing bases the seed below uses.
     ("jerry_can", "per_base_unit", "per_pack", "per_lot_total", "per_metric_tonne"),
@@ -192,7 +193,7 @@ def world(da):
         },
     )
     award = op(da, "award_create", round_id=round_["id"], quote_id=quote["id"], rationale="registered locally")
-    op(
+    approval = op(
         da,
         "approval_request",
         data={
@@ -202,6 +203,56 @@ def world(da):
             "requested_on": (TODAY - timedelta(days=3)).isoformat(),
         },
     )
+    # A kit stated per pack, with a requirement on its product and a figure
+    # stated for a product inside it: the specification editors and the
+    # "one kit holds" line render these.
+    op(da, "commodity_upsert", data={"slug": "dpd1_reagent", "name": "DPD No. 1 tablet", "base_unit": "tablet"})
+    op(
+        da,
+        "commodity_upsert",
+        data={
+            "slug": "test_kit",
+            "name": "Free chlorine test kit",
+            "category": "diagnostic",
+            "base_unit": "test",
+            "pack_unit": "kit",
+            "base_per_pack": 50,
+            "spec_requirements": [
+                {
+                    "field": "range_max_mg_per_l",
+                    "operator": ">=",
+                    "value": 2.0,
+                    "unit": "mg/L",
+                    "rationale": "reads the dose",
+                }
+            ],
+        },
+    )
+    kit = op(
+        da,
+        "item_upsert",
+        data={
+            "sku": "kit-50",
+            "name": "Kit of 50",
+            "commodity_slug": "test_kit",
+            "base_unit": "test",
+            "pack_unit": "kit",
+            "base_per_pack": 50,
+            "components_per": "pack",
+            "spec_attributes": {"range_max_mg_per_l": 1.5},
+            "components": [
+                {
+                    "commodity_slug": "dpd1_reagent",
+                    "quantity": "50",
+                    "base_unit": "tablet",
+                    "spec_attributes": {"shelf_life_months": 24},
+                }
+            ],
+        },
+    )
+    # The approver's own link, answered through, so its page and the award's
+    # attribution line render with an answer on them.
+    approver_link = op(da, "update_link_issue", data={"org_id": regulator["id"], "approval_ids": [approval["id"]]})
     store = op(
         da,
         "supply_point_upsert",
@@ -365,6 +416,9 @@ def world(da):
         "supplier": supplier,
         "donor": donor,
         "item": item,
+        "kit": kit,
+        "approval": approval,
+        "approver_link": approver_link,
     }
 
 
@@ -401,6 +455,11 @@ PAGES = [
     ("shipment_document_attach", lambda w: [w["shipment"]["id"]]),
     ("charge_record", lambda w: [w["shipment"]["id"]]),
     ("approval_request", lambda w: [w["award"]["id"]]),
+    ("approval_decide", lambda w: [w["approval"]["id"]]),
+    ("product_edit", lambda w: ["test_kit"]),
+    ("product_detail", lambda w: ["test_kit"]),
+    ("item_detail", lambda w: [w["kit"]["id"]]),
+    ("item_edit", lambda w: [w["kit"]["id"]]),
     ("supplier_create", lambda w: []),
     ("supplier_edit", lambda w: [w["donor"]["id"]]),
     ("item_edit", lambda w: [w["item"]["id"]]),
@@ -425,6 +484,31 @@ def test_the_comparison_reads_as_words(client_in_programme, world):
     response = client_in_programme.get(url)
     assert response.status_code == 200
     assert raw_codes_in(response.content.decode()) == []
+
+
+def test_the_approvers_own_page_reads_as_words(client, world):
+    """The one page an outside organisation reads with no labs account."""
+    url = reverse("supply_chain:update_link_public", args=[world["approver_link"]["token"]])
+    response = client.get(url)
+    assert response.status_code == 200
+    assert "Record your answer" in response.content.decode()
+    assert raw_codes_in(response.content.decode()) == []
+
+
+def test_the_answered_award_reads_as_words(client_in_programme, world):
+    from connect_labs.supply_chain.models import AwardApproval
+    from connect_labs.supply_chain.update_links import service
+    from connect_labs.supply_chain.update_links.models import UpdateLink
+
+    service.submit(
+        UpdateLink.objects.get(pk=world["approver_link"]["id"]),
+        "record_answer",
+        {"approval": AwardApproval.objects.get(pk=world["approval"]["id"]), "status": "approved", "note": "ok"},
+    )
+    response = client_in_programme.get(reverse("supply_chain:award_detail", args=[world["award"]["id"]]))
+    body = response.content.decode()
+    assert "own link" in body
+    assert raw_codes_in(body) == []
 
 
 def test_the_detector_finds_a_code_and_ignores_attributes():

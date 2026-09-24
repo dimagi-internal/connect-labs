@@ -142,7 +142,10 @@ def three_way_match(contract) -> dict:
         else:
             outstanding = ordered.amount - restated.amount
             shortfall = Quantity(outstanding, ordered.unit)
-            if outstanding > 0:
+            if outstanding > 0 and restated.amount == 0:
+                # Nothing has arrived. "Part received" said something had.
+                status = "not_received"
+            elif outstanding > 0:
                 status = "part_received"
             elif outstanding == 0:
                 status = "fully_received"

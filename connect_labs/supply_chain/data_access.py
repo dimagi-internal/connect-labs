@@ -817,7 +817,16 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
             raise ValueError(f"document {document_id} does not exist in this programme")
         return document
 
-    def decide_approval(self, approval_id, status, decided_on=None, note=None, rests_on_document_id=None):
+    def decide_approval(
+        self,
+        approval_id,
+        status,
+        decided_on=None,
+        note=None,
+        rests_on_document_id=None,
+        source=None,
+        recorded_by_org_id=None,
+    ):
         """Approved or declined, once.
 
         A reversal is a new request, so the refusal stays on the record: an
@@ -836,7 +845,18 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         approval.decided_on = decided_on or date.today()
         if note:
             approval.decision_note = note
-        approval.save(update_fields=["status", "decided_on", "decision_note", "updated_at"])
+        approval.decision_source = source or "we_recorded"
+        approval.decision_recorded_by_org_id = recorded_by_org_id
+        approval.save(
+            update_fields=[
+                "status",
+                "decided_on",
+                "decision_note",
+                "decision_source",
+                "decision_recorded_by_org",
+                "updated_at",
+            ]
+        )
         if rests_on_document_id is not None:
             approval.rests_on_document = self._approval_rests_on(rests_on_document_id)
             approval.save(update_fields=["rests_on_document", "updated_at"])
@@ -879,15 +899,14 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         for approval in self.blocking_approvals(award):
             if approval.status == "requested":
                 raise ValueError(
-                    f"award {award.pk} is awaiting approval {approval.pk} from {approval.approver_org.name} "
-                    f"({approval.role}, requested {approval.requested_on}); an order cannot be placed against "
-                    "it until that approval is decided"
+                    f"the award to {award.supplier.name} is awaiting {approval.approver_org.name}'s "
+                    f"{approval.role} approval (asked {approval.requested_on}); an order cannot be placed "
+                    "against it until they have answered"
                 )
             if approval.status == "declined":
                 raise ValueError(
-                    f"award {award.pk} was declined under approval {approval.pk} by "
-                    f"{approval.approver_org.name} ({approval.role}, on {approval.decided_on}); an order "
-                    "cannot rest on it"
+                    f"the award to {award.supplier.name} was declined by {approval.approver_org.name} "
+                    f"({approval.role} approval, on {approval.decided_on}); an order cannot rest on it"
                 )
         return award
 

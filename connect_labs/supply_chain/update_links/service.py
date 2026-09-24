@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -30,7 +31,15 @@ from connect_labs.audit_trail.models import Action
 from connect_labs.audit_trail.service import record as audit_record
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain import scopes as synthetic_scopes
-from connect_labs.supply_chain.models import Contract, Item, Movement, Payment, Shipment, SupplyPoint
+from connect_labs.supply_chain.models import (
+    AwardApproval,
+    Contract,
+    Item,
+    Movement,
+    Payment,
+    Shipment,
+    SupplyPoint,
+)
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission
 from connect_labs.supply_chain.values import money_digits, quantity_digits, quantity_phrase
@@ -66,6 +75,8 @@ class Scope:
     items: object
     shipments: object
     payments: object
+    # Approvals asked of the link's organisation, for it to answer itself.
+    approvals: object = None
 
 
 def scope_for(link) -> Scope:
@@ -95,7 +106,10 @@ def scope_for(link) -> Scope:
     items = Item.objects.filter(pk__in=item_ids).select_related("commodity")
     shipments = Shipment.objects.filter(contract__in=contracts).select_related("contract")
     payments = Payment.objects.filter(invoice__contract__in=contracts).select_related("invoice__contract")
-    return Scope(link, contracts, points, items, shipments, payments)
+    approvals = AwardApproval.objects.filter(
+        award__round__program_id=program_id, update_links=link, approver_org_id=link.org_id
+    ).select_related("award__supplier", "award__quote__item", "award__commodity", "approver_org")
+    return Scope(link, contracts, points, items, shipments, payments, approvals)
 
 
 def _require(queryset, obj, what):
@@ -291,7 +305,53 @@ def _record_release(scope, data):
     return "movement_record", {"data": {**movement, **_provenance(scope.link)}}, Action.CREATE
 
 
+def _record_answer(scope, data):
+    """The approver's own answer, through `approval_decide` as its own word."""
+    approval = _require(scope.approvals, data.get("approval"), "approval")
+    status = data.get("status")
+    if status not in ("approved", "declined"):
+        raise ValueError(f"an answer is approved or declined, not {status!r}")
+    if not approval.is_pending:
+        raise ValueError(f"this approval was already {approval.status} on {approval.decided_on}")
+    payload = _drop_empty(
+        {
+            "approval_id": approval.pk,
+            "status": status,
+            "note": (data.get("note") or "").strip(),
+            "via_update_link_id": scope.link.pk,
+        }
+    )
+    return "approval_decide", payload, Action.UPDATE
+
+
+def _attach_answer_document(link, data, result):
+    """A link to the approver's signed letter, held against the approval it records."""
+    url = (data.get("document_url") or "").strip()
+    if not url or not isinstance(result, dict):
+        return
+    call_operation(
+        "document_attach",
+        link_access(link),
+        {
+            "data": {
+                "kind": "other",
+                "title": f"{link.org.name}'s answer",
+                "external_url": url,
+                "approval_id": result["id"],
+                "source": "partner_reported",
+                "recorded_by_org_id": link.org_id,
+            }
+        },
+    )
+
+
+# What an action does after its one operation, when it has a second record to
+# keep. Separate from the handlers because those only describe a write.
+AFTER = {"record_answer": _attach_answer_document}
+
+
 ACTIONS = {
+    "record_answer": _record_answer,
     "confirm_order": _confirm_order,
     "confirm_payment": _confirm_payment,
     "record_shipment": _record_shipment,
@@ -376,7 +436,22 @@ def _describe_shipment(rid):
     return f"{name}: {'; '.join(parts)} — {status}" if parts else f"{name} is {status}"
 
 
+def _describe_approval(rid):
+    approval = (
+        AwardApproval.objects.filter(pk=rid)
+        .select_related("award__supplier", "award__quote__item", "award__commodity")
+        .first()
+    )
+    if approval is None or approval.is_pending:
+        return ""
+    award = approval.award
+    what = award.quote.item.name if award.quote.item_id else award.commodity.name
+    text = f"{approval.status} {what}, awarded to {award.supplier.name}, on {approval.decided_on.isoformat()}"
+    return f"{text}: “{approval.decision_note}”" if approval.decision_note else text
+
+
 _DESCRIBERS = {
+    "approval_decide": _describe_approval,
     "receipt_record": _describe_receipt,
     "movement_record": _describe_movement,
     "stock_count_record": _describe_count,
@@ -469,8 +544,15 @@ def link_access(link):
     return SupplyDataAccess(program_id=link.program_id, caller=SYSTEM)
 
 
+@transaction.atomic
 def submit(link, action, data) -> dict:
-    """Carry out one action through its ordinary operation. Returns the operation's result."""
+    """Carry out one action through its ordinary operation. Returns the operation's result.
+
+    One transaction: the write, whatever follows it (an attached letter), the
+    submission and the audit event land together or not at all. The public
+    view answers a refusal with a normal page, which would otherwise commit a
+    half-done write under ATOMIC_REQUESTS.
+    """
     link = UpdateLink.objects.select_related("org").filter(pk=link.pk).first()
     if link is None or not link.is_usable:
         raise OutOfScope("this link is no longer valid")
@@ -480,6 +562,8 @@ def submit(link, action, data) -> dict:
 
     operation, payload, audit_action = handler(scope_for(link), data)
     result = call_operation(operation, link_access(link), payload)
+    if action in AFTER:
+        AFTER[action](link, data, result)
 
     result_id = result.get("id") if isinstance(result, dict) else None
     now = timezone.now()

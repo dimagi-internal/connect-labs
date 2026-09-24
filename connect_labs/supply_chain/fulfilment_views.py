@@ -107,6 +107,20 @@ class ContractCreateView(_ContractScreen):
                     unit_price_unit=quote.as_quoted_unit,
                     currency=quote.as_quoted_currency,
                 )
+            # And the terms the price was quoted on. Without them the order
+            # opened on "not specified" freight and duties, so an order placed
+            # straight from the award read as costed on terms nobody agreed --
+            # and the landed cost it showed was not the one that was awarded.
+            for field in ("freight_basis", "duties_basis"):
+                if getattr(quote, field) and getattr(quote, field) != "not_specified":
+                    initial[field] = getattr(quote, field)
+            for field in ("freight_amount", "duties_amount"):
+                if getattr(quote, field) is not None:
+                    initial[field] = getattr(quote, field)
+            if quote.incoterm:
+                initial["incoterm"] = quote.incoterm
+            if quote.lead_time_days is not None:
+                initial["promised_lead_time_days"] = quote.lead_time_days
         return initial
 
     def get_context_data(self, **kwargs):
