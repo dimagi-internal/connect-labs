@@ -567,6 +567,23 @@ class TestThePublicPage:
         assert response["X-Robots-Tag"] == "noindex, nofollow"
         assert response["Referrer-Policy"] == "same-origin"
 
+    def test_each_dispatch_says_how_much_it_carried(self, client, da, issued, world):
+        """A supplier who has just recorded a dispatch saw it listed with a
+        reference and a status but not the quantity it had typed."""
+        op(
+            da,
+            "shipment_record",
+            data={
+                "contract_id": world["contract"]["id"],
+                "reference": "AWB-9",
+                "status": "dispatched",
+                "source": "supplier_reported",
+                "lines": [{"quantity": "40", "quantity_unit": "carton"}],
+            },
+        )
+        body = client.get(_url(issued["token"])).content.decode()
+        assert re.search(r"AWB-9 — 40 carton, dispatched", body)
+
     def test_unknown_expired_and_revoked_look_identical(self, client, da, issued):
         unknown = client.get(_url("definitely-not-a-token"))
         UpdateLink.objects.filter(pk=issued["id"]).update(expires_at=timezone.now() - timedelta(seconds=1))
