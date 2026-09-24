@@ -459,85 +459,101 @@ scenes:
 - id: the-stop-gap-reaches-kano
   actions:
   - kind: wait_for
-    target: css:#id_supply_point-ts-control
+    target: What this link covers
+  - kind: hover
+    target: text:HHS-PO-0147
+    seconds: 2.0
+    say: link
+    note: the stop-gap order, on Sahel CHI's own link the moment it was placed
   - kind: click
-    target: css:#id_supply_point-ts-control
-  - kind: type
-    value: Sahel
-  - kind: click_menu
-    say: Kano
-    target: css:#id_supply_point-ts-dropdown .option:has-text('Sahel CHI')
-  - kind: fill
-    target: css:#id_received_on
-    value: ${today}
+    target: css:summary:has-text('Record goods received')
+    must_succeed: true
+  - kind: select
+    say: order
+    target: css:#id_record_receipt-contract
+    value: ${stopgap_contract_id}
+  - kind: select
+    target: css:#id_record_receipt-supply_point
+    value: ${store_id}
   - kind: fill
     say: note
-    target: css:#id_reference
+    target: css:#id_record_receipt-reference
     value: GRN-KANO-0431
-  - kind: select
-    target: css:#id_source
-    value: partner_reported
-  - kind: click
-    target: css:#id_lines-0-item-ts-control
-  - kind: type
-    value: Aquaguard
-  - kind: click_menu
-    target: css:#id_lines-0-item-ts-dropdown .option:has-text('Aquaguard')
-  - kind: fill
-    target: css:#id_lines-0-batch
-    value: AQ-2609-14
-  - kind: fill
-    target: css:#id_lines-0-expiry
-    value: ${stopgap_expiry}
   - kind: fill
     say: '90'
-    target: css:#id_lines-0-quantity
+    target: css:#id_record_receipt-quantity_accepted
     value: '90'
+  - kind: select
+    target: css:#id_record_receipt-unit_basis
+    value: pack
   - kind: fill
-    target: css:#id_lines-0-quantity_unit
-    value: jerry_can
+    say: batch
+    target: css:#id_record_receipt-batch
+    value: AQ-2609-14
+  - kind: fill
+    say: expiry
+    target: css:#id_record_receipt-expiry
+    value: ${stopgap_expiry}
+  - kind: hold
+    note: the filled goods received note, before it is recorded
+    seconds: 1.5
   - kind: click
     must_succeed: true
-    target: role:button:Record receipt
+    target: css:form:has(input[value='record_receipt']) button[type='submit']
     timeout_ms: 30000
   - kind: wait_for
     must_succeed: true
-    target: GRN-KANO-0431
+    target: 'Recorded: receipt GRN-KANO-0431'
+  - kind: scroll
+    value: top
   - kind: hover
-    note: the order now reads received
-    seconds: 1.5
-    target: text:Ordered · received · invoiced
-  - kind: hover
-    note: GRN-KANO-0431, 90 jerry cans accepted into the Kano store
+    target: 'text:Recorded: receipt GRN-KANO-0431'
     seconds: 2.5
-    target: css:tr:has-text('GRN-KANO-0431')
-  concept_claim: Recording a goods received note against the order posts the accepted jerry cans into
-    the Kano store's ledger and moves the order from placed to received.
-  design_intent: Stock exists only once someone at the store says it arrived; the partner's note is that
-    fact.
-  show: Ngozi records the goods received note Sahel CHI sent from the Kano store (90 jerry cans of Aquaguard,
-    batch and expiry) as a partner's report, and the order shows them received.
-  url: /supply/orders/${stopgap_contract_id}/receipts/new/?program_id=10603
+    note: 90 jerry cans accepted, batch and expiry, in Sahel CHI's name
+  concept_claim: Through its own organisation-wide update link, with no labs login, the receiving partner
+    records the goods received note against an order placed after the link was issued, with batch and
+    expiry, and the page confirms the receipt it recorded in the partner's name.
+  design_intent: 'Stock exists only once someone at the store says it arrived: the partner says it
+    itself, so the record credits the partner rather than the programme officer who used to type it in.'
+  show: Sahel CHI's storekeeper opens the store's own update link, finds the stop-gap order already listed
+    on it, records the goods received note for 90 jerry cans of Aquaguard with batch and expiry, and the
+    page confirms the receipt recorded in Sahel CHI's name.
+  url: ${partner_link_path}
 - id: the-stop-gap-bridges-but-does-not-replace
   actions:
   - kind: wait_for
     target: Stock across the network
   - kind: hover
-    note: 150 jerry cans now, against 80 a month
+    note: what the ledger holds now
     seconds: 2.0
     target: text:Sahel CHI — Kano chlorine store
   - kind: hover
+    note: what it was before the goods received note
+    seconds: 2.5
+    say: before
+    target: css:[data-cover-before]
+  - kind: hover
     note: better than it was, still under its floor
     seconds: 2.0
+    say: floor
     target: text:BELOW MIN
   - kind: hover
-    note: cursor off the badge
+    note: ClearWater's 400 jerry cans, owed and overdue, beside the balance and not counted in it
+    seconds: 3.0
+    say: ClearWater
+    target: text:from ClearWater Action
+  - kind: hover
+    note: cursor off the figures
     seconds: 1.5
     target: text:MONTHS OF STOCK
   concept_claim: After the receipt, the stock page recomputes the Kano store's months of stock from its
-    ledger and its own consumption and still marks it below its two-month minimum.
-  design_intent: Showing the store still under its floor keeps the late donation the thing the programme
-    is waiting on, which is exactly what the donor has been told.
-  show: 'Ngozi reads the Kano store on the stock page: what the ledger holds now, its monthly consumption,
-    its months of stock against its two-to-four-month band, still marked below its minimum.'
+    ledger and its own consumption, says what it was before the latest goods received note, still marks
+    it below its two-month minimum, and lists the donor's outstanding consignment beside the balance
+    without counting it as cover.
+  design_intent: Showing the rise and the floor together, with the late donation named beside them,
+    keeps the donation the thing the programme is waiting on, which is exactly what the donor has been
+    told.
+  show: 'Ngozi reads the Kano store on the stock page: what the ledger holds now against its monthly
+    consumption, what its cover was before the goods received note, still marked below its minimum, and
+    ClearWater''s 400 jerry cans listed beside the balance as expected and overdue.'
   url: /supply/stock/?program_id=10603
