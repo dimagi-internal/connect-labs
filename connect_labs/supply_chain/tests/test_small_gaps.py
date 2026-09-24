@@ -457,7 +457,7 @@ class TestTheScreens:
         _receive(da, world, short, "450")
         cover = _contract(da, world, world["local"], "250", covers_shortfall_of_id=short["id"])
         body = scoped.get(reverse("supply_chain:order_detail", args=[short["id"]])).content.decode()
-        assert "Shortfall covered by" in body
+        assert "Covered by" in body
         assert reverse("supply_chain:order_detail", args=[cover["id"]]) in body
         covering = scoped.get(reverse("supply_chain:order_detail", args=[cover["id"]])).content.decode()
         assert "Covers the shortfall on" in covering
@@ -571,7 +571,7 @@ class TestWhatTheIptscRenderStillShowed:
     def test_a_bundled_order_has_no_billing_rows_and_one_cost_line(self, scoped, da, world):
         _, cover = _short_and_covered(da, world)
         body = scoped.get(reverse("supply_chain:order_detail", args=[cover["id"]])).content.decode()
-        cards = _visible(body.split("Landed cost", 1)[1].split(">Shipments<", 1)[0])
+        cards = _visible(body.split('id="cost"', 1)[1].split(">Shipments<", 1)[0])
         assert cards.lower().count("bundled in setup fee") == 1
         for row in ("Invoiced", "Billed", "Paid", "Safe to pay now", "Freight", "Import duty"):
             assert row not in cards, row

@@ -66,11 +66,18 @@
             </div>
             <div class="text-xs text-gray-500">{{ contract.buyer_of_record|humanise }}</div>
           </td>
+          {% with progress=progress|dictkey:contract.id %}
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
             {{ contract.quantity|qty:contract.quantity_unit }}
+            {% comment %}What arrived against what was ordered, so an order that needs
+            attention shows as one without opening it.{% endcomment %}
+            {% if contract.quantity %}
+              <div class="text-xs text-gray-500">{{ progress.received|qty }} of {{ contract.quantity|qty:contract.quantity_unit }} received</div>
+            {% endif %}
           </td>
           <td class="px-4 py-2.5">
             {{ contract.status|humanise|capfirst }}
+            {% if progress.due_on %}<div class="text-xs text-gray-500">due {{ progress.due_on|date:"j M Y" }}</div>{% endif %}
             {% comment %}
             The two halves of a covered shortfall, named on both rows: a short
             order read "part received" here with nothing saying the rest had
@@ -85,6 +92,7 @@
               <div class="text-xs text-gray-500">covers {{ references|dictkey:contract.covers_shortfall_of_id }}</div>
             {% endif %}
           </td>
+          {% endwith %}
           <td class="px-4 py-2.5 text-xs text-gray-500">
             {{ contract.source|humanise }}{% if not contract.witnessed %}<div class="text-gray-400">reported, not witnessed</div>{% endif %}
           </td>

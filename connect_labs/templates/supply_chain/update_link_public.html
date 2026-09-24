@@ -22,7 +22,7 @@ own prefix so seven of them cannot collide.
 
 {% if done %}
   <div class="flex items-center gap-2 p-4 mb-4 rounded-lg border-[0.5px] bg-message-success text-message-success-text border-message-success-border">
-    <span>Recorded: {{ done.title|lower }}{% if done_detail %} — {{ done_detail }}{% endif %}. The programme team can see it now.</span>
+    <span>{{ done_sentence }} The programme team can see it now.</span>
   </div>
 {% endif %}
 
@@ -66,7 +66,9 @@ own prefix so seven of them cannot collide.
           </div>
           {% for shipment in contract.shipments.all %}
             <div class="text-xs text-gray-500 mt-0.5">
-              <span class="text-gray-400">↳</span> {{ shipment.reference|default:"Dispatch" }} —{% for line in shipment.lines.all %} {{ line.quantity|qty:line.quantity_unit }},{% endfor %} {{ shipment.get_status_display }}{% if shipment.expected_on %}, expected {{ shipment.expected_on|date:"j M" }}{% endif %}
+              {% comment %}When it left and with whom, when recorded; once delivered, the
+              day it arrived rather than the day it was expected.{% endcomment %}
+              <span class="text-gray-400">↳</span> {{ shipment.reference|default:"Dispatch" }} —{% for line in shipment.lines.all %} {{ line.quantity|qty:line.quantity_unit }},{% endfor %}{% if shipment.status != "delivered" %} {{ shipment.get_status_display }}{% if shipment.dispatched_on or shipment.carrier %},{% endif %}{% endif %}{% if shipment.dispatched_on %} left {{ shipment.dispatched_on|date:"j M" }}{% endif %}{% if shipment.carrier %} via {{ shipment.carrier }}{% endif %}{% if shipment.status == "delivered" %}{% if shipment.dispatched_on or shipment.carrier %},{% endif %}{% with received=shipment.receipts.all.0 %} {{ shipment.get_status_display }}{% if received %} {{ received.received_on|date:"j M" }}{% endif %}{% endwith %}{% elif shipment.expected_on %}, expected {{ shipment.expected_on|date:"j M" }}{% endif %}
             </div>
           {% endfor %}
         </div>

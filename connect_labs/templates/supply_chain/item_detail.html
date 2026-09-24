@@ -18,16 +18,15 @@ sachets are in the carton, and neither does a balance.
     <a href="{% url 'supply_chain:product_detail' product.slug %}" class="text-brand-indigo hover:underline">{{ product.name }}</a>
   {% endif %}
   <span class="mx-1.5 text-gray-300">/</span>
-  <span class="text-gray-700">{{ item.sku }}</span>
+  <span class="text-gray-700">{{ item.name }}</span>
 </nav>
 
 <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{{ item.name }}</h1>
-    <p class="text-sm text-gray-600 mt-1">
-      <code class="text-xs bg-gray-50 border border-brand-border-light rounded px-1.5 py-0.5">{{ item.sku }}</code>
-      {% if item.manufacturer %}<span class="ml-1">made by {{ item.manufacturer }}</span>{% endif %}
-    </p>
+    {% comment %}The code sits with the other identifiers below, not as a chip under
+    the name: a slug read as the item's title (the IPTSc render).{% endcomment %}
+    {% if item.manufacturer %}<p class="text-sm text-gray-600 mt-1">made by {{ item.manufacturer }}</p>{% endif %}
   </div>
   <div class="flex items-center gap-3">
     <span class="px-2.5 py-1 rounded-full text-xs font-medium
@@ -137,6 +136,11 @@ sachets are in the carton, and neither does a balance.
         this number, not the product's.
       </p>
     {% endif %}
+
+    <div class="mt-4">
+      <div class="text-[11px] text-gray-500">Our code for it</div>
+      <p class="text-sm text-gray-800 mt-0.5">{{ item.sku }}</p>
+    </div>
 
     <div class="mt-4">
       <div class="text-[11px] text-gray-500">GS1 keys</div>
