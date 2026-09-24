@@ -113,12 +113,9 @@ class TestTheAssertion:
         assert claims["sub"] == str(user.pk)
         assert "@" not in claims["sub"]
 
-    def test_it_does_not_claim_a_verified_email(self, configured, user):
-        """`email_verified` is canopy's trigger for resolving a visitor to a real
-        canopy ACCOUNT. Labs knows the address came from Connect's OAuth
-        identity, which is not the same as labs having verified it — restating it
-        to obtain a stronger grant is the laundered claim signing exists to stop.
-        """
+    def test_it_vouches_for_the_signed_in_users_email(self, configured, user):
+        """`email_verified` is how canopy recognises a member of the site's
+        workspace as their own canopy account rather than a contact."""
         claims = jwt.decode(
             canopy.assertion_for(user),
             configured,
@@ -126,7 +123,19 @@ class TestTheAssertion:
             audience="https://labs.example.invalid/canopy",
         )
 
-        assert "email_verified" not in claims
+        assert claims["email"] == user.email
+        assert claims["email_verified"] is True
+
+    def test_it_never_vouches_for_an_empty_address(self, configured, user):
+        user.email = ""
+        claims = jwt.decode(
+            canopy.assertion_for(user),
+            configured,
+            algorithms=["EdDSA"],
+            audience="https://labs.example.invalid/canopy",
+        )
+
+        assert claims["email_verified"] is False
 
     def test_it_expires_inside_canopys_cap(self, configured, user):
         claims = jwt.decode(
