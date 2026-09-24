@@ -88,8 +88,10 @@ single run was one warm sample.
 
 ## Still open
 
-- No server-side endpoint compiles and runs the registry per request; the run
-  carries computed results. That needs a labs deploy.
+- ~~No server-side endpoint compiles and runs the registry per request.~~ Done:
+  `semantic_indicators_api` (`/labs/workflow/api/<id>/semantic/`) evaluates the
+  bound registry per request, and the `semantic_snapshot` builder grades saved runs
+  from the same engine.
 - C18/C22 stay uncomputed pending the workbook's completion-gate definition.
 - C17 reproduces the render's UPPER median (`mv[floor(n/2)]`) deliberately, for
   parity. Whether that is the right statistic is a question for the workbook.

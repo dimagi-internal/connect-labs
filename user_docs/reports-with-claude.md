@@ -32,6 +32,10 @@ graph LR
     **Meaning goes in the indicator definitions, looks go on the page, data goes in the pipeline.**
     If you want to change *what a number means*, don't ask for a change to the page. Change the definition.
 
+!!! info "Want the detail?"
+    [The Semantic Layer](semantic-layer.md) explains how indicator definitions are stored and compiled, how to read the
+    SQL behind a number, how to convert a report, and how to manage definitions across programmes.
+
 !!! note "Which reports use indicator definitions today?"
     Only two: the **KMC Programme Report** and the **KMC Opportunity Report**. The **KMC Worker Review** has no
     definitions of its own. It shows the Programme Report's figures. Other reports calculate their numbers either
