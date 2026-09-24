@@ -66,10 +66,31 @@ seeding a single scope without saying which products puts every chain's
 products in one program's pickers. Seeding one scope by hand is still fine --
 it takes one call to `commodities_for`.
 
-`seed_scopes` seeds reference data only. The CHC chain is seeded against the
-`chc` scope by `seed_chc_chain`; RUTF and chlorine have their own sections and
-their own tasks, so until those land their scopes hold a catalogue and no
-chain. That is the right intermediate state, not an omission.
+`seed_scopes` seeds reference data only. The chains go in afterwards --
+`seed_chc_chain` against the `chc` scope, `seed_supply_only` against
+`supply_only` -- and RUTF and chlorine have their own sections and their own
+tasks, so until those land their scopes hold a catalogue and no chain. That is
+the right intermediate state, not an omission.
+
+## The second organisation, and the honest close
+
+`seed_supply_only` seeds an implementer that buys through us and runs its own
+last mile: it gets comparable quotes, a defensible landed cost, the approval
+gate and the stock ledger, and it gets no claim that a commodity reached a
+beneficiary. Beat 9 of the design's sequence.
+
+That stop is **data, not code**. `summary._deliver()` keys off exactly two
+things -- a supply point's `opportunity_id` and `kind="user_held"` -- and the
+document's `supply_only` section carries neither, so the chain ends at the
+last store on its own. `seed_supply_only` therefore goes through the same
+`seed_chain` as the CHC chain and does nothing to suppress delivery: there is
+no branch to get wrong, and nothing staged for the screen.
+
+The consequence is that this is one section of one Drive document away from
+lying. If `supply_only` ever gains an `opportunity_id` or a user-held point,
+the close starts claiming reach it does not have --
+`test_supply_without_delivery.py` fails when it does, and the fix is the
+document, not the seeder.
 
 ## Organisations
 
