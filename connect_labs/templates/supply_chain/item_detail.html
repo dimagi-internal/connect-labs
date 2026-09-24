@@ -42,7 +42,7 @@ sachets are in the carton, and neither does a balance.
     <h2 class="text-base font-semibold text-gray-900">How it is packed and identified</h2>
     <dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-3 mt-3">
       <div>
-        <dt class="text-[11px] text-gray-500">Packed</dt>
+        <dt class="text-[11px] text-gray-600">Packed</dt>
         <dd class="text-sm mt-0.5 tabular-nums {% if item.base_per_pack %}text-gray-900{% else %}text-gray-500{% endif %}">
           {% if item.base_per_pack %}{{ item.base_per_pack }} {{ item.base_unit|default:product.base_unit|unit_plural }}
             / {{ item.pack_unit|default:product.pack_unit|unit_words }}{% else %}not recorded{% endif %}
@@ -52,30 +52,30 @@ sachets are in the carton, and neither does a balance.
       carton" read as a contradiction (the IPTSc render).{% endcomment %}
       {% if item.pack_per_case %}
       <div>
-        <dt class="text-[11px] text-gray-500">Packs per case</dt>
+        <dt class="text-[11px] text-gray-600">Packs per case</dt>
         <dd class="text-sm mt-0.5 tabular-nums text-gray-900">{{ item.pack_per_case }}</dd>
       </div>
       {% endif %}
       <div>
-        <dt class="text-[11px] text-gray-500">Unit weight</dt>
+        <dt class="text-[11px] text-gray-600">Unit weight</dt>
         <dd class="text-sm mt-0.5 tabular-nums {% if item.base_unit_grams %}text-gray-900{% else %}text-gray-500{% endif %}">
           {% if item.base_unit_grams %}{{ item.base_unit_grams }} g{% else %}not recorded{% endif %}
         </dd>
       </div>
       <div>
-        <dt class="text-[11px] text-gray-500">Shelf life</dt>
+        <dt class="text-[11px] text-gray-600">Shelf life</dt>
         <dd class="text-sm mt-0.5 tabular-nums {% if item.shelf_life_months %}text-gray-900{% else %}text-gray-500{% endif %}">
           {% if item.shelf_life_months %}{{ item.shelf_life_months }} months{% else %}not recorded{% endif %}
         </dd>
       </div>
       <div>
-        <dt class="text-[11px] text-gray-500">Kept or used up</dt>
+        <dt class="text-[11px] text-gray-600">Kept or used up</dt>
         <dd class="text-sm mt-0.5 text-gray-900">
           {% if item.is_durable %}Durable — kept and moved, not forecast{% else %}Consumable{% endif %}
         </dd>
       </div>
       <div>
-        <dt class="text-[11px] text-gray-500">Against the spec</dt>
+        <dt class="text-[11px] text-gray-600">Against the spec</dt>
         <dd class="text-sm mt-0.5">
           {% if item.spec_verdict %}{{ item.spec_verdict }}{% else %}<span class="text-gray-500">no product to check against</span>{% endif %}
         </dd>
@@ -141,17 +141,17 @@ sachets are in the carton, and neither does a balance.
     {% endif %}
 
     <div class="mt-4">
-      <div class="text-[11px] text-gray-500">Our code for it</div>
+      <div class="text-[11px] text-gray-600">Our code for it</div>
       <p class="text-sm text-gray-800 mt-0.5">{{ item.sku }}</p>
     </div>
 
     <div class="mt-4">
-      <div class="text-[11px] text-gray-500">GS1 keys</div>
+      <div class="text-[11px] text-gray-600">GS1 keys</div>
       {% if item.gtins %}
         <ul class="mt-1 flex flex-wrap gap-x-6 gap-y-1">
           {% for gtin in item.gtins %}
             <li class="text-sm tabular-nums text-gray-800">
-              {{ gtin.value }} <span class="text-gray-400 text-xs">{{ gtin.level }}</span>
+              {{ gtin.value }} <span class="text-gray-600 text-xs">{{ gtin.level }}</span>
             </li>
           {% endfor %}
         </ul>
@@ -166,7 +166,7 @@ sachets are in the carton, and neither does a balance.
 
     {% if item.spec_attributes %}
       <div class="mt-4">
-        <div class="text-[11px] text-gray-500">Stated specification</div>
+        <div class="text-[11px] text-gray-600">Stated specification</div>
         <dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2 mt-1">
           {% for key, value in item.spec_attributes.items %}
             <div>
@@ -211,7 +211,7 @@ sachets are in the carton, and neither does a balance.
                 <a class="text-brand-indigo hover:underline"
                    href="{% url 'supply_chain:procurement_quote_detail' quote.id %}">quote {{ quote.id }}</a>
                 · {{ rounds|dictkey:quote.round_id|dictkey:"label"|default:"round" }}
-                {% if quote.received_on %}· {{ quote.received_on }}{% endif %}
+                {% if quote.received_on %}· {{ quote.received_on|day }}{% endif %}
               </div>
             </li>
           {% endfor %}
@@ -294,7 +294,7 @@ sachets are in the carton, and neither does a balance.
                     {{ point.reported|figure_text }}
                     <div class="text-xs text-gray-500">{{ point.reported_kind|humanise }} · {{ point.reported_on }}</div>
                   {% else %}
-                    <span class="text-gray-400">never</span>
+                    <span class="text-gray-600">never</span>
                   {% endif %}
                 </td>
               </tr>
@@ -327,7 +327,7 @@ sachets are in the carton, and neither does a balance.
             {% else %}
               <span class="text-gray-800">{{ document.title|default:document.kind|humanise }}</span>
             {% endif %}
-            <span class="text-xs text-gray-500">· {{ document.kind|humanise }}{% if document.issued_on %} · {{ document.issued_on }}{% endif %}</span>
+            <span class="text-xs text-gray-500">· {{ document.kind|humanise }}{% if document.issued_on %} · {{ document.issued_on|day }}{% endif %}</span>
           </li>
         {% endfor %}
       </ul>

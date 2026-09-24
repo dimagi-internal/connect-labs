@@ -50,9 +50,79 @@ TAB_FOR_VIEW = {
     "supply_chain:alert_create": "supply_chain:alerts",
     "supply_chain:alert_edit": "supply_chain:alerts",
     "supply_chain:update_link_issue": "supply_chain:update_links",
+    "supply_chain:update_link_revoke": "supply_chain:update_links",
     # The movements behind a balance are the stock page read one level down.
     "supply_chain:movements": "supply_chain:stock",
+    # Everything below was missing, so each of these screens un-highlighted the
+    # whole nav -- the same fault the quote page above was fixed for. The
+    # approval-request screen is the one a walkthrough caught; the rest were
+    # found by closing the set (see tests/test_navigation_tabs.py), which is
+    # what stops the next screen re-opening the hole.
+    "supply_chain:product_create": "supply_chain:catalogue",
+    "supply_chain:product_edit": "supply_chain:catalogue",
+    "supply_chain:item_create": "supply_chain:catalogue",
+    "supply_chain:item_edit": "supply_chain:catalogue",
+    "supply_chain:supplier_create": "supply_chain:suppliers",
+    "supply_chain:supplier_edit": "supply_chain:suppliers",
+    "supply_chain:org_create": "supply_chain:suppliers",
+    "supply_chain:org_edit": "supply_chain:suppliers",
+    "supply_chain:org_merge": "supply_chain:suppliers",
+    "supply_chain:procurement_round_create": "supply_chain:procurement_round_board",
+    "supply_chain:procurement_round_edit": "supply_chain:procurement_round_board",
+    "supply_chain:procurement_round_open": "supply_chain:procurement_round_board",
+    "supply_chain:procurement_round_close": "supply_chain:procurement_round_board",
+    "supply_chain:procurement_outreach_log": "supply_chain:procurement_round_board",
+    "supply_chain:procurement_outreach_reply": "supply_chain:procurement_round_board",
+    "supply_chain:procurement_outreach_delete": "supply_chain:procurement_round_board",
+    "supply_chain:procurement_quote_void": "supply_chain:procurement_round_board",
+    "supply_chain:procurement_quote_correct": "supply_chain:procurement_round_board",
+    "supply_chain:quote_document_attach": "supply_chain:procurement_round_board",
+    # Asking for an approval, attaching its letter and answering it are all
+    # read from the award, which sits under Sourcing.
+    "supply_chain:approval_request": "supply_chain:procurement_round_board",
+    "supply_chain:approval_document_attach": "supply_chain:procurement_round_board",
+    "supply_chain:approval_decide": "supply_chain:procurement_round_board",
+    # Placing the order is the first Orders screen, not the last Sourcing one.
+    "supply_chain:contract_create": "supply_chain:orders",
+    "supply_chain:contract_edit": "supply_chain:orders",
+    "supply_chain:invoice_record": "supply_chain:orders",
+    "supply_chain:invoice_edit": "supply_chain:orders",
+    "supply_chain:charge_record": "supply_chain:orders",
+    "supply_chain:payment_record": "supply_chain:orders",
+    "supply_chain:payment_confirm": "supply_chain:orders",
+    "supply_chain:document_attach": "supply_chain:orders",
+    "supply_chain:shipment_record": "supply_chain:orders",
+    "supply_chain:shipment_status": "supply_chain:orders",
+    "supply_chain:shipment_document_attach": "supply_chain:orders",
+    "supply_chain:shipment_require_document": "supply_chain:orders",
+    "supply_chain:shipment_unrequire_document": "supply_chain:orders",
+    "supply_chain:receipt_record": "supply_chain:orders",
+    "supply_chain:supply_point_create": "supply_chain:network",
+    "supply_chain:supply_point_edit": "supply_chain:network",
+    "supply_chain:movement_record": "supply_chain:stock",
+    "supply_chain:stock_count_record": "supply_chain:stock",
+    "supply_chain:distribution_record": "supply_chain:distribution",
+    "supply_chain:alert_check_now": "supply_chain:alerts",
+    "supply_chain:alert_delete": "supply_chain:alerts",
 }
+
+# Addresses that render no supply nav at all, so there is no tab to keep
+# current. Held as a named set rather than left out, so the test that closes
+# the set above can tell "deliberately has no nav" from "forgotten".
+VIEWS_WITHOUT_TABS = frozenset(
+    {
+        # JSON, not a page.
+        "supply_chain:api_operations",
+        "supply_chain:api_operation",
+        # Streams a stored file back.
+        "supply_chain:document_open",
+        # A supplier's own login-free page: deliberately no programme chrome,
+        # because the person reading it is not in the programme.
+        "supply_chain:update_link_public",
+        # Local sign-in shim, mounted only under DEBUG.
+        "supply_chain:dev_login",
+    }
+)
 
 
 def supply_tabs(request) -> list[dict]:

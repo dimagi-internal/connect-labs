@@ -57,13 +57,13 @@ stored, so it cannot be shown again.
       {% endif %}
       <ul class="text-sm text-gray-700 space-y-0.5">
         {% for contract in link.contracts %}
-          <li><i class="fa-solid fa-file-contract text-gray-400 mr-1"></i>Order {{ contract.reference|default:contract.id }}</li>
+          <li><i class="fa-solid fa-file-contract text-gray-600 mr-1"></i>Order {{ contract.reference|default:contract.id }}</li>
         {% endfor %}
         {% for point in link.supply_points %}
-          <li><i class="fa-solid fa-warehouse text-gray-400 mr-1"></i>{{ point.name }}</li>
+          <li><i class="fa-solid fa-warehouse text-gray-600 mr-1"></i>{{ point.name }}</li>
         {% endfor %}
         {% for approval in link.approvals %}
-          <li><i class="fa-solid fa-circle-check text-gray-400 mr-1"></i>Their {{ approval.role|words }} approval of the {{ approval.product }} awarded to {{ approval.supplier }} — {{ approval.status|words }}</li>
+          <li><i class="fa-solid fa-circle-check text-gray-600 mr-1"></i>Their {{ approval.role|words }} approval of the {{ approval.product }} awarded to {{ approval.supplier }} — {{ approval.status|words }}</li>
         {% endfor %}
       </ul>
     </div>

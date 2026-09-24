@@ -155,13 +155,13 @@
           {% if q.as_quoted_amount %}{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}{% else %}no price{% endif %}
           <div class="text-xs text-gray-500">{{ q.priced_per|default:q.as_quoted_unit|words }}</div>
         </td>
-        <td class="px-4 py-2 text-sm text-gray-600">{{ q.received_on|default:"—" }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ q.received_on|day|default:"—" }}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ q.pack_spec_source|humanise|default:"not stated" }}</td>
         <td class="px-4 py-2 text-sm">
           {% if q.voided %}
-            <span class="text-xs text-gray-400">voided</span>
+            <span class="text-xs text-gray-600">voided</span>
           {% elif q.superseded_by_quote_id %}
-            <span class="text-xs text-gray-400">superseded</span>
+            <span class="text-xs text-gray-600">superseded</span>
           {% else %}
             <a href="{% url 'supply_chain:procurement_quote_detail' q.id %}"
                class="text-sm text-brand-indigo hover:underline">Detail</a>
