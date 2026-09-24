@@ -165,9 +165,11 @@
       </table>
     </div>
   </div>
-{% else %}
+{% elif comparison.blocked %}
   <p class="text-gray-500 mb-4">Nothing is comparable yet. Every quote is missing something —
   the questions below are the whole job right now.</p>
+{% else %}
+  <p class="text-gray-500 mb-4">Nothing is comparable: no offer holds the contents this round buys.</p>
 {% endif %}
 
 {% if set_aside %}
@@ -183,6 +185,33 @@
             {% include "supply_chain/procurement/_composition.html" with composition=entry.item.components unit=entry.item.components_unit %}
           {% endif %}
           <div class="text-gray-700 mt-1">{{ entry.quote.void_reason }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+{% if comparison.not_comparable %}
+  {% comment %}
+  Terminal, not missing information: filed under "Needs info" with a question
+  for the supplier, an offer holding other contents read as if an answer could
+  make it comparable, and it made the ranking above read as provisional.
+  {% endcomment %}
+  <section class="mt-6 mb-4">
+    <h2 class="text-lg font-semibold text-gray-900 mb-2">
+      Not comparable — different contents
+    </h2>
+    {% if comparison.round_contents %}
+      <p class="text-sm text-gray-600 mb-2">This round buys</p>
+      {% include "supply_chain/procurement/_composition.html" with composition=comparison.round_contents unit="" %}
+    {% endif %}
+    <div class="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 mt-2">
+      {% for row in comparison.not_comparable %}
+        <div class="px-4 py-3 text-sm">
+          <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
+             class="font-medium text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
+          {% if row.item_name %}<span class="text-gray-700">· {{ row.item_name }}</span>{% endif %}
+          {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
         </div>
       {% endfor %}
     </div>

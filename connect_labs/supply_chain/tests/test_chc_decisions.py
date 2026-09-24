@@ -520,10 +520,84 @@ class TestARoundStatesTheContentsItBuys:
         )
         comparison = op(da, "round_compare", round_id=round_.pk, commodity_slug="ors-zinc-copack")
         assert comparison["comparable_count"] == 2
-        refused = [row for row in comparison["blocked"] if row["item_name"] == "Four-sachet co-pack"]
+        refused = [row for row in comparison["not_comparable"] if row["item_name"] == "Four-sachet co-pack"]
         assert len(refused) == 1
         reasons = refused[0]["figures"]["landed_total_for_round_quantity"]["unconfirmed"]
         assert any("not the contents this round buys" in reason for reason in reasons)
+
+    def test_other_contents_are_terminal_not_missing_info(self, da, chain):
+        round_ = self._round_with_a_four_sachet_offer(da, chain)
+        comparison = op(da, "round_compare", round_id=round_.pk, commodity_slug="ors-zinc-copack")
+        assert [row["item_name"] for row in comparison["not_comparable"]] == ["Four-sachet co-pack"]
+        assert all(row["item_name"] != "Four-sachet co-pack" for row in comparison["blocked"])
+        # Nothing to ask anyone: the contents are what they are.
+        assert comparison["not_comparable"][0]["questions"] == []
+        # Every other offer is complete, so the ranking is not provisional.
+        assert comparison["provisional"] is False
+        questions = op(da, "round_outstanding_questions", round_id=round_.pk, commodity_slug="ors-zinc-copack")
+        assert all(entry["quote_id"] != comparison["not_comparable"][0]["quote_id"] for entry in questions)
+
+    def test_the_comparison_page_files_it_as_not_comparable(self, client_in_programme, da, chain):
+        round_ = self._round_with_a_four_sachet_offer(da, chain)
+        url = reverse("supply_chain:procurement_comparison", args=[round_.pk]) + "?commodity=ors-zinc-copack"
+        body = client_in_programme.get(url).content.decode()
+        assert "Not comparable — different contents" in body
+        section = body[body.index("Not comparable — different contents") :]
+        assert "Four-sachet co-pack" in section
+        assert "4 sachets ors" in section
+        assert "2 sachets ors" in section
+        assert "Ask the supplier" not in section
+        assert "Needs info" not in body
+        assert "PROVISIONAL" not in body
+
+    def _round_with_a_four_sachet_offer(self, da, chain):
+        from connect_labs.supply_chain.models import Round
+
+        round_ = Round.objects.get(pk=chain["round"]["id"])
+        round_.lines = [
+            {
+                **round_.lines[0],
+                "components": [
+                    {"commodity_slug": "ors", "quantity": "2", "base_unit": "sachet"},
+                    {"commodity_slug": "zinc", "quantity": "10", "base_unit": "tablet"},
+                ],
+            }
+        ]
+        round_.save(update_fields=["lines"])
+        four = op(
+            da,
+            "item_upsert",
+            data={
+                "sku": "four",
+                "name": "Four-sachet co-pack",
+                "commodity_slug": "ors-zinc-copack",
+                "base_unit": "co-pack",
+                "pack_unit": "carton",
+                "base_per_pack": 40,
+                "components": [
+                    {"commodity_slug": "ors", "quantity": 4, "base_unit": "sachet"},
+                    {"commodity_slug": "zinc", "quantity": 10, "base_unit": "tablet"},
+                ],
+            },
+        )
+        op(
+            da,
+            "quote_record",
+            data={
+                "round_id": round_.pk,
+                "commodity_slug": "ors-zinc-copack",
+                "supplier_id": chain["quotes"][0]["supplier_id"],
+                "item_id": four["id"],
+                "as_quoted_amount": "0.55",
+                "as_quoted_unit": "per_base_unit",
+                "quantity_basis": "30000",
+                "quantity_basis_unit": "co-pack",
+                "pack_spec_source": "trade_item_confirmed",
+                "freight_basis": "included",
+                "duties_basis": "included",
+            },
+        )
+        return round_
 
     def test_the_round_page_says_what_it_buys(self, client_in_programme, chain):
         from connect_labs.supply_chain.models import Round
