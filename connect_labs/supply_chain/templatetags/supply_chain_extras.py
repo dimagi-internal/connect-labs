@@ -1,3 +1,5 @@
+import re
+
 from django import template
 from django.urls import reverse
 
@@ -91,6 +93,40 @@ def check_href(check):
     return ""
 
 
+_ENUM = re.compile(r"[a-z]+(?:_[a-z]+)+")
+
+# How a record came to be known, in the words the forms use to ask it.
+SOURCE_LABELS = {
+    "we_recorded": "we recorded it",
+    "partner_reported": "a partner told us",
+    "supplier_reported": "the supplier told us",
+    "commcare_form": "a CommCare form",
+    "connect_visit": "a Connect visit",
+    "document": "a document",
+}
+
+
+@register.filter
+def money(value):
+    """A decimal string with thousands separators: "410000" -> "410,000".
+
+    Only the digits before the point are grouped, and the decimals are kept
+    exactly as stored -- money is never rounded for display here.
+    """
+    text = str(value if value is not None else "")
+    whole, dot, fraction = text.partition(".")
+    sign = "-" if whole.startswith("-") else ""
+    digits = whole.lstrip("-")
+    if not digits.isdigit():
+        return text
+    return f"{sign}{int(digits):,}{dot}{fraction}"
+
+
+@register.filter
+def source_label(source):
+    return SOURCE_LABELS.get(source, str(source or "").replace("_", " "))
+
+
 def _fact_text(value):
     if isinstance(value, dict):
         if "kind" in value and isinstance(value.get("owed_by"), dict):
@@ -108,6 +144,11 @@ def _fact_text(value):
         return "; ".join(_fact_text(v) for v in value) or "none"
     if value is None or value == "":
         return "—"
+    if isinstance(value, str) and _ENUM.fullmatch(value):
+        # A stored enum ("at_customs") reached the checks list as the raw
+        # value; say it in words. Only snake_case lowercase is touched, so a
+        # name or a reference is never rewritten.
+        return value.replace("_", " ")
     return str(value)
 
 

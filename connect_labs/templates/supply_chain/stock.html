@@ -74,7 +74,7 @@ one of them would destroy the only signal it had.
           <td class="px-4 py-2.5">
             <div class="font-medium text-gray-900">{{ point.name }}</div>
             <div class="text-xs text-gray-500">
-              {{ point.kind }}{% if point.admin_area %} · {{ point.admin_area }}{% endif %}
+              {{ point.kind|humanise }}{% if point.admin_area %} · {{ point.admin_area }}{% endif %}
             </div>
           </td>
           <td class="px-4 py-2.5 tabular-nums">

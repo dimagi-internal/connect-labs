@@ -979,6 +979,7 @@ def test_an_order_links_out_to_the_supplier_it_is_with(client, sophie, monkeypat
         "contract_match": {"lines": [], "payable_now": None},
         "shipment_list": [],
         "receipt_list": [],
+        "supply_point_list": [],
         "invoice_list": [],
         "document_list": [],
         "org_list": [{"id": 2, "name": "Dimagi", "slug": "dimagi"}],

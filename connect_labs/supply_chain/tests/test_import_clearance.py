@@ -469,3 +469,72 @@ class TestTheShipmentScreens:
         assert response.status_code == 302, response.content.decode()[:2000]
         (check,) = _outstanding(da)
         assert "packing_list" not in [d["kind"] for d in check["facts"]["outstanding"]]
+
+
+class TestTheScreensSpeakPlainly:
+    """Database values that reached the dispenser-import walkthrough's screens."""
+
+    def _receive(self, da, world):
+        store = op(
+            da,
+            "supply_point_upsert",
+            data={"slug": "wh", "name": "Distributor warehouse", "kind": "central_store", "source": "we_recorded"},
+        )
+        op(
+            da,
+            "receipt_record",
+            data={
+                "contract_id": world["contract"]["id"],
+                "supply_point_id": store["id"],
+                "received_on": "2026-09-20",
+                "source": "partner_reported",
+                "lines": [
+                    {
+                        "quantity_accepted": "38",
+                        "quantity_rejected": "2",
+                        "rejection_reason": "cracked",
+                        "quantity_unit": "dispenser",
+                    }
+                ],
+            },
+        )
+        return store
+
+    def test_the_checks_page_says_where_a_shipment_is_in_words(self, scoped, da, world):
+        _shipment(da, world)
+        body = scoped.get(reverse("supply_chain:checks")).content.decode()
+        assert "at_customs" not in body
+        assert "at customs" in body
+
+    def test_the_order_page_says_who_told_us_and_where_it_was_received(self, scoped, da, world):
+        _shipment(da, world)
+        self._receive(da, world)
+        body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
+        received = body.split(">Received<", 1)[1].split(">Invoices<", 1)[0]
+        assert "partner_reported" not in received
+        assert "a partner told us" in received
+        assert "Distributor warehouse" in received
+        assert "2 dispenser" in received
+
+    def test_a_donated_order_is_not_bought_and_its_landed_total_is_what_landing_it_cost(self, scoped, da, world):
+        from connect_labs.supply_chain.models import Contract
+
+        Contract.objects.filter(pk=world["contract"]["id"]).update(
+            consideration="in_kind", unit_price=None, unit_price_unit=""
+        )
+        shipment = _shipment(da, world)
+        _charge(da, shipment, world["agent"], kind="clearing", amount="120.50")
+        body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
+        assert "Bought by" not in body
+        assert "Donated to" in body
+        landed = body.split("Landed cost", 1)[1].split("Ordered", 1)[0]
+        total = landed.split("Landed total", 1)[1]
+        assert "120.5" in total
+        assert "goods donated" in total
+
+    def test_the_shipment_page_says_how_we_know_and_formats_money(self, scoped, da, world):
+        shipment = _shipment(da, world)
+        _charge(da, shipment, world["customs"], amount="410000", currency="NGN", fx_rate_to_usd="0.00065")
+        body = scoped.get(reverse("supply_chain:shipment_detail", args=[shipment["id"]])).content.decode()
+        assert "told by supplier reported" not in body
+        assert "410,000" in body
