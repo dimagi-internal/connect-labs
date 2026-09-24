@@ -22,7 +22,9 @@ four screens and an id held in your head.
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{{ supplier.name }}</h1>
     <p class="text-sm text-gray-600 mt-1">
-      {% if supplier.type %}{{ supplier.type|humanise }}{% endif %}
+      {% if supplier.type == "donor" %}<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-900">Donor</span>
+        supplies in kind — ships and is received from, never paid for the goods
+      {% elif supplier.type %}{{ supplier.type|words|capfirst }}{% endif %}
       {% if supplier.city %}· {{ supplier.city }}{% elif supplier.country %}· {{ supplier.country }}{% endif %}
     </p>
   </div>
@@ -206,8 +208,8 @@ four screens and an id held in your head.
                 {% endif %}
               </td>
               <td class="px-4 py-2.5 tabular-nums">
-                {% if quote.as_quoted_amount %}{{ quote.as_quoted_currency }} {{ quote.as_quoted_amount }}{% else %}—{% endif %}
-                <div class="text-xs text-gray-500">{{ quote.as_quoted_unit|humanise }}</div>
+                {% if quote.as_quoted_amount %}{{ quote.as_quoted_currency }} {{ quote.as_quoted_amount|money }}{% else %}—{% endif %}
+                <div class="text-xs text-gray-500">{{ quote.as_quoted_unit|words }}</div>
               </td>
               <td class="px-4 py-2.5 tabular-nums">
                 {{ quote.figures.usd_per_base_unit|figure_text }}
@@ -273,8 +275,8 @@ four screens and an id held in your head.
             <span class="ml-auto text-xs text-gray-500">bought by {{ contract.buyer_of_record|humanise }}</span>
           </div>
           <div class="text-sm text-gray-700 mt-1 tabular-nums">
-            {% if contract.quantity %}{{ contract.quantity }} {{ contract.quantity_unit|humanise }}{% endif %}
-            {% if contract.unit_price %}at {{ contract.currency }} {{ contract.unit_price }} {{ contract.unit_price_unit|humanise }}{% endif %}
+            {% if contract.quantity %}{{ contract.quantity|qty:contract.quantity_unit }}{% endif %}
+            {% if contract.unit_price %}at {{ contract.currency }} {{ contract.unit_price|qty:contract.unit_price_unit }}{% endif %}
             {% if contract.signed_on %}<span class="text-gray-500">· signed {{ contract.signed_on }}</span>{% endif %}
           </div>
           <div class="text-xs text-gray-500 mt-1">

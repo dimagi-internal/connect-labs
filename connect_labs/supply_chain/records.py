@@ -245,3 +245,9 @@ ONE_COURSE_IS = ("", "base_unit", "pack")
 # scale -- so consumption-rate figures are refused for it rather than
 # computed from nothing.
 STOCK_CLASSES = ("consumable", "durable")
+
+# What a supplier is to us. `donor` is the one that supplies in kind: a donor
+# NGO ships, is received from and is followed up with like any supplier, but
+# is never paid for the goods. Stored free-text on `Supplier.type` (no
+# migration needed to widen it); the schema and the form both read this list.
+SUPPLIER_TYPES = ("manufacturer", "distributor", "trader", "donor")

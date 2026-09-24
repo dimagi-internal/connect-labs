@@ -248,7 +248,9 @@ class Supplier(TimestampedModel):
         ordering = ["name"]
 
     def __str__(self):
-        return self.name
+        # Said in every picker: a donor supplies in kind, so choosing one for a
+        # priced order is the mistake worth making visible at the choice.
+        return f"{self.name} (donor)" if self.type == "donor" else self.name
 
 
 # ======================================================================
