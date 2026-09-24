@@ -330,12 +330,18 @@ scenes:
     seconds: 1.0
   - kind: press
     value: Enter
+  - kind: press
+    note: leave the picker before saving
+    value: Tab
   - kind: click
     must_succeed: true
     target: role:button:Record order
     timeout_ms: 30000
   - kind: wait_for
-    target: Landed cost
+    must_succeed: true
+    note: the saved order page, not the form
+    seconds: 30
+    target: text:Record an invoice
   - kind: hold
     seconds: 2.0
   - kind: snapshot
