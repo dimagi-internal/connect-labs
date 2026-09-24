@@ -198,6 +198,42 @@ This is also the most direct expression of OES's stated transparency
 principle available in the product, and it costs nothing to build: it is
 seed-data choice, not code.
 
+## 6a. Chlorine: the chain that is blocked, with no date
+
+The third thing an implementer's supply chain does is fail to arrive, and a
+demo that only shows goods flowing is not describing anyone's real week.
+
+Evidence Action donates the chlorine in kind and imports it. The import was
+due in December and is behind, and **nobody knows when it will land**. So the
+order carries a quantity, a donor and no promised lead time — which is the
+honest state, not missing data.
+
+Most of this is already built and correct. `consideration` has `in_kind`
+beside `priced` and `bundled`, so a donation is a first-class order. The stock
+page already shows what is owed but not arrived, and refuses to count it as
+cover; `_expected_inbound` argues the case in its own docstring: *"a
+consignment ninety days late has proved it is not cover. But a store whose
+donor still owes it 400 jerry cans is not in the same position as one nobody
+owes anything, and the page said the second about both."*
+
+**What is not built is the case where the date itself is unknown.**
+`expected_on` is `signed_on + promised_lead_time_days`, and the template
+renders the date behind `{% if expected.expected_on %}`. With no lead time
+ever promised the sentence simply stops:
+
+> expected: 400 jerry cans from Evidence Action · not counted as cover
+
+It never says that nobody knows when. There is no test covering that branch.
+Silence there reads as "fine", when the truth is "we are blocked and we
+cannot tell you until when" — the single most important fact in the chlorine
+story, and the one a funder asks first.
+
+The fix is small: when `expected_on` is absent, say so plainly rather than
+trailing off after the supplier's name. It earns its place in the sequence
+because an implementer who reports "blocked, date unknown" is being more
+useful than one who reports nothing, and the product should make that
+distinction visible rather than flatten it.
+
 ## 6. The third org
 
 An implementer that uses the supply domain and runs its own last mile.
@@ -214,10 +250,11 @@ call, because saying it is more credible than not being asked.
 
 ## 7. RUTF — blocked, and how it slots in
 
-The live RUTF opportunity is not reachable from this account yet. It is absent
-from Pulse (which lists only programmes carrying visits — consistent with one
-that just started), absent from this repository, and the `Connect-RUTF`
-programme visible from labs is a tracker-import, not the live engagement.
+**Resolved 2026-09-24.** Organisation `dimagi-ng-rutf` (377), programme **263**
+"RUTF - NG - Program 1 - Sept 26", opportunity **2230** "RUTF - NG - CBI - P1 -
+Sept 26" — 849 visits, ending 2027-02-28. It was absent from Pulse because
+Pulse lists only programmes carrying visits, and from Connect's org export
+because that returns only organisations the polling account belongs to.
 
 Because it just started, there is nothing to clone, so it is **generated**
 rather than profiled: a small opportunity built from a manifest, sized to the
@@ -248,6 +285,7 @@ does it survive without Connect.*
 | 7 | It arrives | Receipt: batch, expiry, landed cost | Shelf life against programme timeline |
 | 8 | The second basket | CHC: ORS/zinc, vitamin A, dewormer | Same machinery, different commodity |
 | 8a | **How do we know?** | One order's rows: ours second-hand, ours first-hand, theirs | What we actually know about an implementer's stock, and how — see §5a. Onboarding the partner upgrades the record in front of them |
+| 8b | **Blocked, and no date** | Safe-water store: chlorine owed, not counted as cover, arrival unknown | §6a. A funder's first question is what you are waiting on and when it lands. Sometimes the honest answer is "we do not know", and the product says so rather than going quiet |
 | 9 | The third org | Supply-only network | Chain ends at the last store — honest about the loss |
 | 10 | The contrast | Our org: user-held points, consumption | With Connect the ledger runs to the worker and reconciles against verified visits |
 
