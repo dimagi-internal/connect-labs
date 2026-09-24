@@ -262,6 +262,35 @@ class TestAKitCanBeOneCourse:
         assert "unconfirmed" in comparison["comparable"][0]["figures"]["usd_per_course"]
 
 
+class TestTheNetworkSaysHowManyKits:
+    """Stock is counted in whole kits, and the network view reported only
+    cartons: 700 IPTSc packets -- 700 courses -- read "14 carton"."""
+
+    def test_the_balance_is_also_given_in_kits(self, da, catalogue, scoped):
+        kit = _kit(da, "A", 10, one_course_is="base_unit")
+        store = op(
+            da,
+            "supply_point_upsert",
+            data={"slug": "store", "name": "District store", "kind": "regional_store", "source": "we_recorded"},
+        )
+        op(
+            da,
+            "receipt_record",
+            data={
+                "commodity_slug": "ors-zinc",
+                "supply_point_id": store["id"],
+                "received_on": "2026-09-01",
+                "source": "we_recorded",
+                "lines": [{"item_id": kit["id"], "quantity_accepted": "700", "quantity_unit": "co_pack"}],
+            },
+        )
+        row = op(da, "network_stock")["points"][0]
+        assert row["on_hand"] == {"amount": "14", "unit": "carton"}
+        assert row["on_hand_in_base"] == {"amount": "700", "unit": "co_pack"}
+        body = scoped.get(reverse("supply_chain:stock")).content.decode()
+        assert "700 co_pack" in body
+
+
 def _no_ration_table(da):
     return {
         c["subject"]["label"] for c in op(da, "checks_list")["checks"] if c["kind"] == "commodity_course_undefined"

@@ -64,14 +64,29 @@
             <div class="text-gray-900">
               {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record }}
             </div>
-            <div class="text-xs text-gray-500">{{ contract.buyer_of_record }}</div>
+            <div class="text-xs text-gray-500">{{ contract.buyer_of_record|humanise }}</div>
           </td>
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
             {{ contract.quantity }} {{ contract.quantity_unit }}
           </td>
-          <td class="px-4 py-2.5">{{ contract.status }}</td>
+          <td class="px-4 py-2.5">
+            {{ contract.status|humanise|capfirst }}
+            {% comment %}
+            The two halves of a covered shortfall, named on both rows: a short
+            order read "part received" here with nothing saying the rest had
+            been bought elsewhere.
+            {% endcomment %}
+            {% with covers=covered_by|dictkey:contract.id %}
+              {% if covers %}
+                <div class="text-xs text-message-success-text">shortfall covered by {{ covers|join:", " }}</div>
+              {% endif %}
+            {% endwith %}
+            {% if contract.covers_shortfall_of_id %}
+              <div class="text-xs text-gray-500">covers {{ references|dictkey:contract.covers_shortfall_of_id }}</div>
+            {% endif %}
+          </td>
           <td class="px-4 py-2.5 text-xs text-gray-500">
-            {{ contract.source }}{% if not contract.witnessed %}<div class="text-gray-400">reported, not witnessed</div>{% endif %}
+            {{ contract.source|humanise }}{% if not contract.witnessed %}<div class="text-gray-400">reported, not witnessed</div>{% endif %}
           </td>
           <td class="px-4 py-2.5 text-right">
             <a class="text-brand-indigo hover:underline"

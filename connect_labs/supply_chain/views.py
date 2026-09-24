@@ -318,6 +318,14 @@ class OrdersView(OperationBase):
         if not context["has_program_context"]:
             return context
         context["contracts"] = self.op("contract_list")
+        context["references"] = {c["id"]: c["reference"] or f"order {c['id']}" for c in context["contracts"]}
+        covered_by: dict[int, list] = {}
+        for contract in context["contracts"]:
+            if contract.get("covers_shortfall_of_id") and contract.get("status") != "cancelled":
+                covered_by.setdefault(contract["covers_shortfall_of_id"], []).append(
+                    context["references"][contract["id"]]
+                )
+        context["covered_by"] = covered_by
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
         return context

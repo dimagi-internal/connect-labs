@@ -465,6 +465,16 @@ class TestTheScreens:
         # By the reference people use for it, not by a database id.
         assert short["reference"] in covering
 
+    def test_the_orders_list_says_a_short_order_is_covered_and_by_what(self, scoped, da, world):
+        short = _contract(da, world, world["main"], "700", reference="IPTSC-PO-1")
+        _receive(da, world, short, "450")
+        _contract(da, world, world["local"], "250", reference="LOCAL-1", covers_shortfall_of_id=short["id"])
+        body = scoped.get(reverse("supply_chain:orders")).content.decode()
+        assert "Part received" in body
+        assert "shortfall covered by LOCAL-1" in body
+        assert "covers IPTSC-PO-1" in body
+        assert "part_received" not in body
+
     def test_billing_that_matches_what_arrived_is_not_called_billed_beyond_it(self, scoped, da, world):
         order = _contract(da, world, world["main"], "700")
         _receive(da, world, order, "450")
