@@ -24,7 +24,7 @@ SUPPLY_TABS = (
     # After the chain, because they cut across it: who is told when something
     # in it changes, and how a supplier records its own part.
     ("supply_chain:alerts", "Alerts"),
-    ("supply_chain:update_links", "Supplier links"),
+    ("supply_chain:update_links", "Update links"),
 )
 
 # Pages that belong under a tab without being it, so the tab still reads as

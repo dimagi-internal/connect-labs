@@ -107,7 +107,7 @@ own prefix so seven of them cannot collide.
       <span class="text-base font-semibold text-gray-900">{{ form.title }}</span>
       <span class="block text-sm text-gray-500 mt-0.5">{{ form.intro }}</span>
     </summary>
-    <form method="post" class="border-t border-brand-border-light">
+    <form method="post" class="border-t border-brand-border-light"{% if form.is_multipart %} enctype="multipart/form-data"{% endif %}>
       {% csrf_token %}
       <input type="hidden" name="action" value="{{ form.action }}">
       {% if form.non_field_errors %}

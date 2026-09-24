@@ -20,29 +20,28 @@ scenes:
   - kind: scroll_to
     target: text:+ Add a requirement
   - kind: click
-    note: a third row
     target: text:+ Add a requirement
-  - kind: fill
+    note: a third row
+  - kind: select
     target: css:#id_requirements-2-field
     value: range_max_mg_per_l
+    say: Range maximum
+    note: picked from the figures the catalogue knows, in words
   - kind: select
     target: css:#id_requirements-2-operator
     value: '>='
   - kind: fill
-    say: dose
     target: css:#id_requirements-2-value
     value: '2.0'
   - kind: fill
-    target: css:#id_requirements-2-unit
-    value: mg/L
-  - kind: fill
     target: css:#id_requirements-2-rationale
     value: must still read at the 2 mg/L dispenser dose
+    say: dose
   - kind: hold
     seconds: 1.2
   - kind: click
-    must_succeed: true
     target: role:button:Save changes
+    must_succeed: true
     timeout_ms: 30000
   - kind: wait_for
     target: What you can actually order
@@ -51,52 +50,45 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the three requirements, the dose one just added
-  concept_claim: A requirement typed into the product form is saved on the product, which then lists all
-    three requirements every trade item is checked against.
+    note: the three requirements, the dose one just added, its unit filled from the figure
+  concept_claim: A requirement whose figure is picked by name from the catalogue's known figures is saved
+    on the product with its unit filled in, and the product then lists all three requirements every trade
+    item is checked against.
   design_intent: The specification is data on the product, not a PDF in an email — so the later spec check
     has something to check against.
   full_page: false
   role: overview
-  show: Hauwa edits the Free chlorine test kit product, adds a requirement row — range max at least 2.0
-    mg/L, must still read at the 2 mg/L dispenser dose — saves, and the product lists Aqualytic's three
-    requirements against the reference AQ-TK-1.
+  show: Hauwa edits the Free chlorine test kit product, adds a requirement row, picks "Range maximum (mg/L)"
+    from the figures the catalogue knows, sets it to at least 2.0 with the reason — must still read at
+    the 2 mg/L dispenser dose — saves, and the product lists Aqualytic's three requirements against AQ-TK-1.
   url: /supply/catalogue/chlorine-test-kit/edit/?program_id=${program_id}
 - id: two-kits-side-by-side
   actions:
   - kind: wait_for
-    target: Ranked by
+    target: 'Spec: 1 of 3 fail'
   - kind: hold
+    seconds: 1.5
+    note: two offers, same contents, cheaper first
+  - kind: hover
+    target: 'text:Spec: 1 of 3 fail'
     seconds: 2.0
-  - kind: snapshot
-    note: two offers from one distributor, same contents, ranked by price
-  concept_claim: The comparison ranks both kits because their contents match, names the kit on each row
-    with a per-test and per-kit price, cheaper first, and notes under the Brightwell row that it fails
-    1 of its 3 requirements.
-  design_intent: Kits are only ranked against kits of the same composition, so the per-test price is a
-    fair comparison.
-  full_page: false
-  show: Hauwa opens the round's comparison and reads the two Harmattan offers ranked by landed total,
-    each row naming its kit, its contents, its price per test and per kit, and whether it meets the specification
-    — the Brightwell row noting that its 1.5 mg/L range maximum fails.
-  url: /supply/procurement/rounds/${round_id}/compare/?commodity=chlorine-test-kit&program_id=${program_id}
-- id: the-check-names-the-failing-kit
-  actions:
-  - kind: wait_for
-    target: Fails the commodity specification
+    note: the failing requirement, in words, under the Brightwell row
+    say: 1.5 mg/L
   - kind: hold
-    note: 1 of 3 fail; stated range max 1.5 against a 2.0 requirement
-    seconds: 2.5
+    seconds: 1.5
   - kind: snapshot
-    note: the spec check naming the kit and the requirement it fails
-  concept_claim: The checks page names the Brightwell kit as failing 1 of 3 requirements and shows its
-    stated 1.5 mg/L range maximum against the 2.0 mg/L requirement.
-  design_intent: The product states the failure and does not re-rank or advise — the buyer decides with
-    the fact in front of her.
+    note: two kits ranked by price; the cheaper one fails its range
+  concept_claim: The comparison ranks both kits because their contents match, names the kit on each row
+    with a per-test and per-kit price, ranked by landed total, cheapest first, and states under the Brightwell
+    row that it fails 1 of 3 requirements because its range maximum is 1.5 mg/L.
+  design_intent: Kits are only ranked against kits of the same composition, and the specification outcome
+    is stated beside the price — the product does not re-rank or advise; the buyer decides with the fact
+    in front of her.
   full_page: false
-  show: Hauwa opens the checks and reads the one open check — the Brightwell kit fails the specification,
-    1 of 3, with its stated range maximum of 1.5 beside the 2.0 requirement.
-  url: /supply/checks/?program_id=${program_id}
+  show: 'Hauwa opens the round''s comparison: Harmattan''s two kits ranked by landed total, each naming
+    its kit, its contents and its price per test and per kit — and under the cheaper Brightwell row, "Spec:
+    1 of 3 fail" with the failing requirement in words: its range maximum is 1.5 mg/L, short of 2.0.'
+  url: /supply/procurement/rounds/${round_id}/compare/?commodity=chlorine-test-kit&program_id=${program_id}
 - id: hauwa-awards-the-compliant-kit
   actions:
   - kind: wait_for
@@ -132,8 +124,8 @@ scenes:
     seconds: 1.5
   - kind: snapshot
     note: the award, its reason, nothing yet asked of anyone
-  concept_claim: Posting a reason on the Lumen row of the comparison records an award with that reason,
-    and the comparison then links to the award.
+  concept_claim: Pressing Award on the Lumen row of the comparison, with a reason typed into that row,
+    records an award with that reason, and the comparison then links to the award.
   design_intent: The award is a decision with a reason, frozen beside the comparison — not a purchase.
   show: On the comparison Hauwa types her reason into the Lumen kit's row — only kit that reads the 2
     mg/L dispenser dose — presses Award, and opens the award.
@@ -174,12 +166,12 @@ scenes:
     timeout_ms: 30000
   - kind: wait_for
     target: cannot be ordered yet
-  concept_claim: The approval request on the award names Aqualytic as the approver, its role as technical
-    partner, and the note saying what it is asked to confirm, before the request is recorded.
+  concept_claim: The approval request Hauwa records on the award names Aqualytic as approver, its role
+    as technical partner, and a note saying what it is asked to confirm.
   design_intent: The approver is a third party, not the decider; the request says what they are asked
     to agree to.
-  show: From the award Hauwa asks for an approval — Aqualytic, as technical partner, asked to confirm the
-    Lumen kit meets AQ-TK-1 before anything is bought — and records the request.
+  show: From the award Hauwa asks for an approval — Aqualytic, as technical partner, asked to confirm
+    the Lumen kit meets AQ-TK-1 before anything is bought — and records the request.
 - id: the-order-waits-for-aqualytic
   actions:
   - kind: scroll_to
@@ -203,94 +195,123 @@ scenes:
 - id: hauwa-gives-aqualytic-a-link
   actions:
   - kind: wait_for
+    target: Update links
+  - kind: hold
+    seconds: 1.5
+    note: Harmattan's standing link is already here
+  - kind: click
+    target: role:link:Issue a link
+    must_succeed: true
+  - kind: wait_for
     target: Issue an update link
   - kind: click
     target: css:#id_org ~ .ts-wrapper .ts-control
   - kind: type
     value: Aqualytic
   - kind: hold
-    note: let the picker filter
     seconds: 1.0
+    note: let the picker filter
   - kind: press
     value: Enter
   - kind: fill
     target: css:#id_label
     value: Aqualytic — Lumen FC-50 confirmation
   - kind: click
-    note: the one approval asked of Aqualytic
     target: css:input[name=approvals]
+    note: the one approval asked of Aqualytic
+    say: question
   - kind: click
-    must_succeed: true
     target: role:button:Issue link
+    must_succeed: true
     timeout_ms: 30000
   - kind: wait_for
     target: Link issued for Aqualytic
-  - attr: value
-    kind: capture
-    pattern: https?://[^/]+(/supply/u/[^/]+/)
+  - kind: capture
     source: element
     target: css:#issued-link
+    attr: value
+    pattern: https?://[^/]+(/supply/u/[^/]+/)
     var: aqualytic_link
   - kind: hold
     seconds: 1.5
+  - kind: click
+    target: role:link:Done
+    note: back to the programme's update links
+  - kind: wait_for
+    target: Aqualytic — Lumen FC-50 confirmation
+  - kind: hold
+    seconds: 2.0
   - kind: snapshot
-    note: a link that covers one approval
-  concept_claim: An update link issued to Aqualytic covers exactly the approval asked of it and is shown
-    once.
+    note: 'two links, two scopes: Harmattan''s standing one and Aqualytic''s one question'
+  concept_claim: An update link issued to Aqualytic covers exactly the approval asked of it, is shown
+    once, and then sits on the Update links page beside Harmattan's standing link, each with its own scope.
   design_intent: The approver answers the question itself, so the answer is its word, not ours.
-  show: Hauwa issues an update link to Aqualytic that covers only its pending technical approval on the
-    Lumen award, and the link is shown once to send.
-  url: /supply/links/new/?program_id=${program_id}
+  show: Hauwa opens Update links, where Harmattan's standing link already sits, issues a link to Aqualytic
+    that covers only its pending technical approval on the Lumen award, and returns to the list where
+    the two links show their different scopes.
+  url: /supply/links/?program_id=${program_id}
 - id: kemi-answers-for-aqualytic
   actions:
   - kind: goto
-    note: Aqualytic's own link — no labs login
     target: ${aqualytic_link}
+    note: Aqualytic's own link — no labs login
   - kind: wait_for
     target: Updates for Aqualytic
   - kind: hold
-    note: what Aqualytic is asked to confirm
     seconds: 1.5
+    note: what Aqualytic is asked to confirm
   - kind: click
     target: css:summary:has-text('Record your answer')
   - kind: select
-    say: approves
     target: css:#id_record_answer-status
     value: approved
+    say: approves
   - kind: fill
     target: css:#id_record_answer-note
     value: 'Lumen FC-50 meets AQ-TK-1: 50 tests, reads 0.1 to 3.5 mg/L.'
+  - kind: upload
+    target: css:#id_record_answer-document_file
+    value: scripts/walkthroughs/supply-test-kits/aqualytic-aq-tk-1-confirmation.pdf
+    say: signed
+    note: the signed confirmation, from Kemi's own machine
   - kind: hold
-    note: Aqualytic's answer, in its own words
     seconds: 1.5
+    note: Aqualytic's answer, in its own words, with its letter
   - kind: click
-    must_succeed: true
     target: role:button:Record my answer
+    must_succeed: true
     timeout_ms: 30000
   - kind: wait_for
+    target: 'text:Recorded: answer'
     must_succeed: true
     seconds: 30
-    target: 'text:Recorded: answer'
   - kind: hold
     seconds: 2.0
   - kind: snapshot
     note: recorded as Aqualytic's own answer
   concept_claim: Through its own link, with no labs login, Aqualytic records its approval of the Lumen
-    kit, and the page confirms it was recorded.
+    kit with a note and an uploaded signed confirmation, and the page confirms it was recorded.
   design_intent: The gate is cleared by the party it waits on, not by the buyer it gates.
   show: 'Kemi opens Aqualytic''s link, reads what she is asked to confirm — the Lumen FC-50 kit awarded
-    to Harmattan — and records her answer: approved, with a note and a link to her signed confirmation.'
+    to Harmattan — and records her answer: approved, in her own words, uploading her signed confirmation
+    as a PDF.'
 - id: hauwa-places-the-order
   actions:
   - kind: wait_for
     target: own link
   - kind: hover
-    note: the answer is Aqualytic's own
-    seconds: 1.5
     target: text:own link
-  - kind: click
-    must_succeed: true
+    seconds: 1.5
+    note: the answer is Aqualytic's own, with its signed letter
+    say: own link
+  - kind: hover
     target: role:link:Place order
+    seconds: 1.5
+    note: the button that was disabled is live
+    say: Place order
+  - kind: click
+    target: role:link:Place order
+    must_succeed: true
   - kind: wait_for
     target: New order
   - kind: select
@@ -301,8 +322,8 @@ scenes:
   - kind: type
     value: Dimagi
   - kind: hold
-    note: let the picker filter to the typed name
     seconds: 1.0
+    note: let the picker filter to the typed name
   - kind: press
     value: Enter
   - kind: fill
@@ -317,222 +338,74 @@ scenes:
   - kind: select
     target: css:#id_vat_basis
     value: included
-  - kind: select
-    note: Harmattan is paid before the kits ship
-    target: css:#id_payment_terms
-    value: advance
-  - kind: scroll_to
-    note: 'the quote''s terms, already filled: DAP, freight and duties included, 21 days'
-    target: css:#id_incoterm
-  - kind: hold
-    seconds: 2.0
   - kind: click
     target: css:#id_delivery_supply_point ~ .ts-wrapper .ts-control
   - kind: type
     value: Harmattan
   - kind: hold
-    note: let the picker filter to the typed name
     seconds: 1.0
+    note: let the picker filter to the typed name
   - kind: press
     value: Enter
   - kind: press
-    note: leave the picker before saving
     value: Tab
+    note: leave the picker before saving
   - kind: click
-    must_succeed: true
     target: role:button:Record order
+    must_succeed: true
     timeout_ms: 30000
   - kind: wait_for
-    must_succeed: true
-    note: the saved order page, not the form
-    seconds: 30
     target: text:Record an invoice
-  - kind: hold
+    must_succeed: true
+    seconds: 30
+    note: the saved order page, not the form
+  - kind: hover
+    target: css:[data-incoterm]
     seconds: 2.0
+    note: DAP, in words
+    say: delivered at place
+  - kind: hold
+    seconds: 1.5
   - kind: snapshot
-    note: the placed order, 20 kits, landed cost
-  concept_claim: An order opened from the approved award arrives prefilled with the quoted supplier, kit,
-    quantity, price, Incoterm, freight and duties basis and lead time, and saves as a placed order of
-    20 kits.
-  design_intent: The order carries the award, so the quote's terms travel into the commitment.
-  show: Hauwa opens the order from the award — supplier, kit, twenty kits at 38 dollars, delivered at
-    place with freight and duties included and a 21-day lead time, all filled from the quote — confirms
-    those terms, sets who is buying, the reference, the date, that it is placed and that it is delivered
-    to Harmattan's Kano warehouse, and records it.
+    note: the placed order, 20 kits, DAP in words, against the approved award
+  concept_claim: Once Aqualytic has approved through its own link, the award's Place order button is enabled,
+    and an order opened from it arrives prefilled with the quoted kit, quantity, price, freight included,
+    Incoterm and lead time, and saves as a placed order of 20 kits whose header explains DAP in words.
+  design_intent: 'The approval is what releases the order: the same button, disabled a moment ago, is
+    now live — and the order carries the award, so the quote''s terms travel into the commitment.'
+  show: 'Back on the award, Aqualytic''s approval reads as given through its own link with the signed
+    letter attached, and Place order — disabled until now — is live. Hauwa places the order: twenty Lumen
+    kits at 38 dollars, filled from the quote, delivered to Harmattan''s Kano warehouse, and the order
+    header reads "DAP — delivered at place: the supplier pays freight to the named place".'
   url: /supply/procurement/awards/${award_id}/?program_id=${program_id}
-- id: hauwa-pays-harmattan
-  actions:
-  - kind: click
-    must_succeed: true
-    target: css:a[href$='/invoices/new/']
-  - kind: wait_for
-    target: Invoice number
-  - kind: fill
-    say: invoice
-    target: css:#id_reference
-    value: HHS-INV-0412
-  - kind: fill
-    target: css:#id_issued_on
-    value: ${today}
-  - kind: fill
-    target: css:#id_amount
-    value: '760.00'
-  - kind: fill
-    target: css:#id_quantity_billed
-    value: '20'
-  - kind: fill
-    target: css:#id_quantity_unit
-    value: kit
-  - kind: select
-    target: css:#id_source
-    value: supplier_reported
-  - kind: click
-    must_succeed: true
-    target: role:button:Record invoice
-    timeout_ms: 30000
-  - kind: wait_for
-    target: HHS-INV-0412
-  - kind: click
-    must_succeed: true
-    target: css:a[href*='/payments/new/']
-  - kind: wait_for
-    target: Record a payment
-  - kind: fill
-    target: css:#id_paid_on
-    value: ${today}
-  - kind: fill
-    target: css:#id_amount
-    value: '760.00'
-  - kind: fill
-    say: transfer
-    target: css:#id_method
-    value: bank transfer
-  - kind: fill
-    target: css:#id_reference
-    value: TRF-88213
-  - kind: click
-    must_succeed: true
-    target: role:button:Record payment
-    timeout_ms: 30000
-  - kind: wait_for
-    target: not confirmed by the payee
-  - kind: scroll_to
-    note: 'the invoice row and the payment line: paid, not confirmed by the payee'
-    target: text:+ Record an invoice
-  - kind: hold
-    seconds: 2.0
-  - kind: snapshot
-    note: paid, and not yet confirmed by Harmattan
-  concept_claim: Recording an invoice and a full payment against the order shows the payment as not yet
-    confirmed by the payee.
-  design_intent: 'We paid is not they received it: the payee''s confirmation is its own fact.'
-  full_page: false
-  show: On the order Hauwa records Harmattan's invoice for 760 dollars and twenty kits, then the bank
-    transfer against it, and the payment line reads not confirmed by the payee.
-- id: hauwa-issues-a-link
-  actions:
-  - kind: wait_for
-    target: Issue an update link
-  - kind: click
-    target: css:#id_org ~ .ts-wrapper .ts-control
-  - kind: type
-    value: Harmattan
-  - kind: hold
-    note: let the picker filter to the typed name
-    seconds: 1.0
-  - kind: press
-    value: Enter
-  - kind: fill
-    target: css:#id_label
-    value: Harmattan — test kit order
-  - kind: click
-    note: this one order
-    target: css:input[name=contracts]
-  - kind: click
-    note: and its Kano warehouse
-    target: css:input[name=supply_points]
-  - kind: click
-    must_succeed: true
-    target: role:button:Issue link
-    timeout_ms: 30000
-  - kind: wait_for
-    target: Link issued for Harmattan Health Supplies
-  - attr: value
-    kind: capture
-    pattern: https?://[^/]+(/supply/u/[^/]+/)
-    source: element
-    target: css:#issued-link
-    var: update_link
-  - kind: hold
-    seconds: 2.0
-  - kind: click
-    note: back to the programme's links -- Aqualytic's and Harmattan's, each with its own scope
-    target: role:link:Done
-  - kind: wait_for
-    target: Harmattan — test kit order
-  - kind: hold
-    seconds: 2.0
-  - kind: snapshot
-    note: two links, two scopes
-  concept_claim: Issuing an update link for Harmattan scoped to one order and one warehouse shows the
-    link once, and the programme's list of links then holds it beside Aqualytic's, each with its own scope.
-  design_intent: A link covers the rows it was issued for and nothing else, and needs no labs account.
-  show: Hauwa issues a supplier update link for Harmattan Health Supplies covering order PO-TK-2026-01
-    and Harmattan's Kano warehouse, copies the link shown once to send, and returns to the list where it
-    sits beside Aqualytic's link to its one question.
-  url: /supply/links/new/?program_id=${program_id}
-- id: ibrahim-confirms-order-and-payment
+- id: ibrahim-receives-the-kits
   actions:
   - kind: goto
-    note: the link Hauwa just issued, opened as Harmattan would — it needs no labs login
     target: ${update_link}
+    note: Harmattan's standing link — it needs no labs login and already covers the new order
   - kind: wait_for
     target: Updates for Harmattan Health Supplies
   - kind: hold
-    note: what this link covers — one order, one warehouse
     seconds: 1.5
   - kind: click
     target: css:summary:has-text('Confirm an order')
   - kind: click
-    must_succeed: true
     target: role:button:Confirm this order
+    must_succeed: true
     timeout_ms: 30000
+    say: confirms
   - kind: wait_for
-    seconds: 30
     target: 'text:Recorded: order confirmation'
-  - kind: click
-    target: css:summary:has-text('Confirm a payment was received')
-  - kind: fill
-    target: css:#id_confirm_payment-received_on
-    value: ${today}
-  - kind: click
-    must_succeed: true
-    target: role:button:Confirm payment received
-    timeout_ms: 30000
-  - kind: wait_for
-    must_succeed: true
     seconds: 30
-    target: 'text:Recorded: payment confirmation'
-  - kind: hold
-    seconds: 2.0
-  - kind: snapshot
-    note: order confirmed and payment confirmed by Harmattan
-  concept_claim: From the update link, with no labs login, the distributor confirms the order and confirms
-    the payment was received, and the page's forms submit from an ordinary browser with no labs session.
-  design_intent: The status updates chased by email become the supplier's own entries.
-  show: Ibrahim opens Harmattan's update page, sees the one order and warehouse it covers, confirms the
-    order, then confirms the payment was received.
-- id: ibrahim-receives-the-kits
-  actions:
   - kind: click
     target: css:summary:has-text('Record goods received')
   - kind: fill
     target: css:#id_record_receipt-reference
     value: GRN-HHS-1108
   - kind: fill
-    say: twenty
     target: css:#id_record_receipt-quantity_accepted
     value: '20'
+    say: twenty
   - kind: select
     target: css:#id_record_receipt-unit_basis
     value: pack
@@ -543,43 +416,54 @@ scenes:
     target: css:#id_record_receipt-expiry
     value: '2028-08-31'
   - kind: hold
-    note: twenty kits accepted, in packs, with batch and expiry
-    seconds: 1.5
+    seconds: 1.2
+    note: twenty kits accepted, with batch and expiry
   - kind: click
-    must_succeed: true
     target: role:button:Record receipt
+    must_succeed: true
     timeout_ms: 30000
   - kind: wait_for
+    target: 'text:Recorded: receipt'
     must_succeed: true
     seconds: 30
-    target: 'text:Recorded: receipt'
   - kind: scroll_to
     target: text:Recorded through this link
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the receipt, recorded as Harmattan's own entry
-  concept_claim: Recording a receipt of 20 kits through the link posts a receipt movement of 20 kits —
-    the pack unit, not tests — into the warehouse, marked as reported by Harmattan.
-  design_intent: A receipt is the event that creates stock; the unit comes off the kit's own ladder, never
-    typed.
+    note: the confirmation and the receipt, recorded as Harmattan's own entries
+  concept_claim: Through Harmattan's standing link, with no labs login, the distributor confirms the new
+    order and records a receipt of 20 kits into its Kano warehouse, both marked as reported by Harmattan.
+  design_intent: The status updates chased by email become the distributor's own entries, on a link that
+    follows the organisation rather than one issued per order.
   full_page: false
-  show: On the same page Ibrahim records goods received against the order at the Kano warehouse — twenty
-    kits accepted, counted in packs, with the batch and expiry.
+  show: Ibrahim opens Harmattan's standing update link, which already covers the order just placed, confirms
+    it, and when the kits reach the Kano warehouse records twenty kits received with the batch and expiry.
 - id: stock-in-kits-and-tests
   actions:
   - kind: wait_for
     target: Stock across the network
+  - kind: hover
+    target: css:[data-standing]
+    seconds: 2.5
+    note: 'which kit: meets AQ-TK-1, approved by Aqualytic'
+    say: approved
+  - kind: hover
+    target: css:[data-ledger]
+    seconds: 2.0
+    note: 20 kits = 1,000 tests
+    say: thousand tests
   - kind: hold
-    note: 20 kit, and the tests they hold
-    seconds: 3.0
+    seconds: 1.5
   - kind: snapshot
-    note: the balance in kits and tests
-  concept_claim: The stock page shows the Kano warehouse holding 20 kits and restates that balance as
-    1000 tests from the kit's 50-tests-per-kit pack size.
-  design_intent: The store counts kits and the programme plans in tests; the item's pack size is the only
-    bridge between them.
+    note: the balance in kits and tests, of the kit Aqualytic approved against AQ-TK-1
+  concept_claim: The stock page for the Lumen kit states that it meets the AQ-TK-1 specification and was
+    approved by Aqualytic through its own link, and shows the Kano warehouse holding 20 kits, restated
+    as 1,000 tests.
+  design_intent: The store counts kits and the programme plans in tests; the balance is only worth planning
+    on because the line above it says this is the kit the technical partner specified and confirmed.
   full_page: false
-  show: Hauwa opens stock for the Lumen kit and reads Harmattan's Kano warehouse — twenty kits on the
-    ledger, the same balance restated as a thousand tests.
+  show: 'Hauwa opens stock for the Lumen kit: a line above the table reads that it meets all three requirements
+    of AQ-TK-1 and was approved by Aqualytic through its own link, and Harmattan''s Kano warehouse holds
+    twenty kits — a thousand tests.'
   url: /supply/stock/?item_id=${item_lumen_id}&program_id=${program_id}

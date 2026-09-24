@@ -54,7 +54,6 @@ class this build has not seen ships purged.
         {% if contract.consideration == "in_kind" %}Donated to{% else %}Bought by{% endif %}
         <b>{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record|buyer_label }}</b>
         <span class="text-gray-600">— buyer of record: {{ contract.buyer_of_record|buyer_label }}</span>
-        {% if contract.incoterm %}<span class="text-gray-600"> · {{ contract.incoterm }}</span>{% endif %}
       </dd>
     </div>
     <div>
@@ -88,6 +87,13 @@ class this build has not seen ships purged.
           <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-900">Bundled in setup fee</span>
         {% endif %}
       </dd>
+    </div>
+    {% endif %}
+    {% if contract.incoterm %}
+    {% comment %}The delivery term in words: who pays to move the goods, and to where.{% endcomment %}
+    <div>
+      <dt class="text-[11px] text-gray-500">Delivery term</dt>
+      <dd class="text-gray-900" data-incoterm>{{ contract.incoterm|incoterm_words }}</dd>
     </div>
     {% endif %}
     {% if contract.source %}

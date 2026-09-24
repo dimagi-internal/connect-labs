@@ -17,7 +17,7 @@ from decimal import Decimal
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Layout, Row
 from django import forms
-from django.core.validators import URLValidator
+from django.core.validators import FileExtensionValidator, URLValidator
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -653,6 +653,12 @@ class RecordReleaseForm(PublicForm):
         return self.fields["from_supply_point"].queryset.count() >= 2 and self.fields["item"].queryset.exists()
 
 
+ANSWER_FILE_EXTENSIONS = ["pdf", "png", "jpg", "jpeg"]
+# The document store's own ceiling (fulfilment.repository.MAX_UPLOAD_BYTES),
+# said here so an oversized file is refused on the form, not after it is read.
+ANSWER_FILE_MAX_BYTES = 12 * 1024 * 1024
+
+
 class RecordAnswerForm(PublicForm):
     action = "record_answer"
     title = _("Record your answer")
@@ -678,10 +684,22 @@ class RecordAnswerForm(PublicForm):
         max_length=1000,
         widget=forms.Textarea(attrs={**INPUT, "rows": 2, "class": "base-input !h-auto min-h-16 py-2"}),
     )
+    # The signed confirmation itself, uploaded from the approver's own
+    # machine: most approvers have a signed PDF on their desk and nowhere to
+    # host it. A document or an image only -- this page needs no login.
+    document_file = forms.FileField(
+        label=_("Your signed confirmation (optional)"),
+        required=False,
+        validators=[FileExtensionValidator(ANSWER_FILE_EXTENSIONS)],
+        widget=forms.ClearableFileInput(
+            attrs={"class": "text-sm", "accept": ",".join(f".{e}" for e in ANSWER_FILE_EXTENSIONS)}
+        ),
+        help_text=_("A PDF or a photo of the signed letter."),
+    )
     # What document_attach will take: http(s) only, and no longer than
     # Document.external_url holds.
     document_url = forms.URLField(
-        label=_("Link to your signed confirmation (optional)"),
+        label=_("…or a link to it"),
         required=False,
         max_length=1024,
         validators=[URLValidator(schemes=["http", "https"])],
@@ -693,7 +711,29 @@ class RecordAnswerForm(PublicForm):
             self.fields["approval"].queryset = scope.approvals.filter(status="requested")
 
     def rows(self):
-        return [_pair("approval", "status"), "note", "document_url"]
+        return [_pair("approval", "status"), "note", "document_file", "document_url"]
+
+    def clean(self):
+        cleaned = super().clean()
+        upload = cleaned.get("document_file")
+        if upload and cleaned.get("document_url"):
+            self.add_error("document_url", _("Upload the confirmation or link to it, not both."))
+        if upload and upload.size > ANSWER_FILE_MAX_BYTES:
+            self.add_error("document_file", _("This file is too large. Link to it instead."))
+        return cleaned
+
+    def payload(self) -> dict:
+        import base64
+
+        data = {k: v for k, v in self.cleaned_data.items() if k != "document_file"}
+        upload = self.cleaned_data.get("document_file")
+        if upload:
+            # The bytes, not a Django file: the attach operation is the same
+            # whoever calls it, and only a browser has an UploadedFile.
+            data["document_filename"] = upload.name
+            data["document_content_type"] = upload.content_type or "application/octet-stream"
+            data["document_content_base64"] = base64.b64encode(upload.read()).decode()
+        return data
 
     def is_available(self):
         return self.fields["approval"].queryset.exists()

@@ -410,18 +410,28 @@ def _record_answer(scope, data):
 
 
 def _attach_answer_document(link, data, result):
-    """A link to the approver's signed letter, held against the approval it records."""
+    """The approver's signed letter -- uploaded, or linked -- held against the approval it records."""
     url = (data.get("document_url") or "").strip()
-    if not url or not isinstance(result, dict):
+    content = data.get("document_content_base64") or ""
+    if not (url or content) or not isinstance(result, dict):
         return
+    where = (
+        {
+            "filename": data.get("document_filename") or "confirmation",
+            "content_type": data.get("document_content_type") or "application/octet-stream",
+            "content_base64": content,
+        }
+        if content
+        else {"external_url": url}
+    )
     call_operation(
         "document_attach",
         link_access(link),
         {
             "data": {
                 "kind": "other",
-                "title": f"{link.org.name}'s answer",
-                "external_url": url,
+                "title": f"{link.org.name}'s signed confirmation",
+                **where,
                 "approval_id": result["id"],
                 "source": "partner_reported",
                 "recorded_by_org_id": link.org_id,

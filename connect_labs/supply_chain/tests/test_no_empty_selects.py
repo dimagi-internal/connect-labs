@@ -80,7 +80,7 @@ def every_form_class():
 # their querysets as explicit kwargs rather than reading an access object.
 # The rows are covered through their formsets below.
 NOT_A_SCREEN = {"ScopedForm", "ProvenancedForm", "KeyedUpsertForm", "PublicForm"}
-LINE_FORMS = {"RoundLineForm", "BatchLineForm", "DistributionLineForm", "ComponentLineForm"}
+LINE_FORMS = {"RoundLineForm", "BatchLineForm", "DistributionLineForm", "ComponentLineForm", "RequirementLineForm"}
 
 
 def build(form_class):

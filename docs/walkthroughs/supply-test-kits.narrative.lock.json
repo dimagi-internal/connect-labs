@@ -2,22 +2,18 @@
   "build_order": [
     "the-specification-is-on-the-product",
     "two-kits-side-by-side",
-    "the-check-names-the-failing-kit",
     "hauwa-awards-the-compliant-kit",
     "hauwa-asks-aqualytic",
     "the-order-waits-for-aqualytic",
     "hauwa-gives-aqualytic-a-link",
     "kemi-answers-for-aqualytic",
     "hauwa-places-the-order",
-    "hauwa-pays-harmattan",
-    "hauwa-issues-a-link",
-    "ibrahim-confirms-order-and-payment",
     "ibrahim-receives-the-kits",
     "stock-in-kits-and-tests"
   ],
-  "fetched_at": "2026-09-24T12:12:22.946220+00:00",
+  "fetched_at": "2026-09-24T14:31:46.540277+00:00",
   "name": "supply-test-kits",
-  "narrative": "Hauwa runs procurement for a chlorine programme, and she has to buy test kits to a specification she did not write. Hauwa opens the test kit and types in the requirement Aqualytic, the technical partner, cares most about: the kit must still read at the 2 mg/L dispenser dose. Harmattan Health Supplies, the distributor, has quoted two kits with the same fifty reagent tablets and comparator, and Hauwa lines them up side by side, per test and per kit, with the cheaper Brightwell kit ranked first under a red specification badge. Before she trusts the price she reads the specification check, which names the Brightwell kit and the one requirement it fails: its range stops at 1.5 mg/L. Hauwa awards the Lumen kit that meets all three, writing down why, and asks Aqualytic to confirm it. Hauwa goes to place the order and cannot: it waits on Aqualytic's answer. Hauwa sends Aqualytic a private link to that one question. Kemi at Aqualytic opens it with no labs login and approves the Lumen kit in her own words. Hauwa sees Aqualytic's answer on the award, marked as given through Aqualytic's own link, and places the order on the terms Harmattan quoted. Hauwa records Harmattan's invoice and the bank transfer, which sits marked as not yet confirmed by the payee, and issues Harmattan a private link to this one order and its Kano warehouse. Ibrahim at Harmattan opens the link, confirms the order, and confirms the money arrived. When the kits reach the warehouse Ibrahim records twenty kits received. Hauwa opens the stock and reads the warehouse's balance in kits and in the tests they hold.",
+  "narrative": "Hauwa has to buy chlorine test kits to a specification she did not write, and today that specification lives in an emailed PDF nobody checks a quote against. She opens the test kit, picks Range maximum from the figures the catalogue already knows, and records the requirement Aqualytic cares most about: the kit must still read at the 2 mg/L dispenser dose. Harmattan Health Supplies, the distributor, has quoted two kits with the same fifty reagent tablets and comparator. Side by side, per test and per kit, the cheaper Brightwell kit ranks first, and its row says it fails one of Aqualytic's three requirements: its range stops at 1.5 mg/L. Hauwa awards the Lumen kit that meets all three requirements, and writes down why. She asks Aqualytic, as the technical partner, to confirm the Lumen kit meets AQ-TK-1 before anything is bought. Place order is disabled: the order waits on Aqualytic's answer, and the page says so. Hauwa sends Aqualytic a private update link to that one question. On Update links it sits beside Harmattan's standing link to everything Harmattan supplies. Kemi at Aqualytic opens the link with no labs login, approves the Lumen kit in her own words, and uploads her signed confirmation. Back on the award, Aqualytic's approval reads as given through its own link, with the signed letter beside it, and Place order, disabled until now, is live. Hauwa places the order on the terms Harmattan quoted: twenty kits, delivered at place to its Kano warehouse. Ibrahim at Harmattan opens Harmattan's own link, which already covers the new order, confirms it, and when the kits reach the Kano warehouse records twenty received. Hauwa opens the stock: Harmattan's warehouse holds twenty kits, a thousand tests, of the Lumen kit that meets AQ-TK-1 and that Aqualytic approved.",
   "personas": {
     "hauwa": {
       "color": "#4F46E5",
@@ -45,9 +41,9 @@
     {
       "features": [
         {
-          "description": "The product form edits spec_requirements as rows (figure, must be, value, unit, why) through commodity_upsert.",
-          "id": "product-requirements-editor",
-          "verify": "pytest: posting requirements-TOTAL_FORMS with a range_max_mg_per_l row saves it on Commodity.spec_requirements"
+          "description": "The requirement editor offers the figures trade items already state, in words (\"Range maximum (mg/L)\"), and fills the unit from the picked figure.",
+          "id": "product-requirement-picker",
+          "verify": "pytest: the product edit page offers <option value=\"range_max_mg_per_l\"> labelled \"Range maximum (mg/L)\", and posting it with no unit saves unit mg/L"
         },
         {
           "description": "The product page lists each requirement with its reason in words and the rule after it.",
@@ -56,7 +52,7 @@
         }
       ],
       "id": "the-specification-is-on-the-product",
-      "narrative": "Hauwa opens the free chlorine test kit and types in the requirement Aqualytic cares most about: the kit must still read at the 2 mg/L dispenser dose.",
+      "narrative": "Hauwa has to buy chlorine test kits to a specification she did not write, and today that specification lives in an emailed PDF nobody checks a quote against. She opens the test kit, picks Range maximum from the figures the catalogue already knows, and records the requirement Aqualytic cares most about: the kit must still read at the 2 mg/L dispenser dose.",
       "persona": "hauwa",
       "provenance": "S1",
       "title": "Hauwa puts Aqualytic's requirement on the kit"
@@ -80,21 +76,7 @@
         }
       ],
       "id": "two-kits-side-by-side",
-      "narrative": "Hauwa lines up Harmattan's two kits — the same fifty reagent tablets and comparator in each — and compares them per test and per kit, with the cheaper Brightwell kit ranked first and a red specification badge under it.",
-      "persona": "hauwa",
-      "provenance": "S2",
-      "title": "Harmattan's two kits, side by side"
-    },
-    {
-      "features": [
-        {
-          "description": "checks_list emits item_fails_specification for an item whose stated attribute fails a requirement, with the verdict and the stated values.",
-          "id": "check-item-fails-spec",
-          "verify": "pytest: checks_list returns kind item_fails_specification for brightwell-pc50 with facts.verdict \"1 of 3 fail\""
-        }
-      ],
-      "id": "the-check-names-the-failing-kit",
-      "narrative": "Before she trusts the price, Hauwa reads the specification check: it names the Brightwell kit as failing 1 of its 3 requirements — its range stops at 1.5 mg/L.",
+      "narrative": "Harmattan Health Supplies, the distributor, has quoted two kits with the same fifty reagent tablets and comparator. Side by side, per test and per kit, the cheaper Brightwell kit ranks first, and its row says it fails one of Aqualytic's three requirements: its range stops at 1.5 mg/L.",
       "persona": "hauwa",
       "provenance": "S2",
       "title": "The cheaper kit fails one requirement"
@@ -127,7 +109,7 @@
         }
       ],
       "id": "hauwa-asks-aqualytic",
-      "narrative": "Hauwa asks Aqualytic to confirm the kit, as the technical partner.",
+      "narrative": "She asks Aqualytic, as the technical partner, to confirm the Lumen kit meets AQ-TK-1 before anything is bought.",
       "persona": "hauwa",
       "provenance": "S3",
       "title": "Hauwa asks Aqualytic to confirm the kit"
@@ -141,7 +123,7 @@
         }
       ],
       "id": "the-order-waits-for-aqualytic",
-      "narrative": "Hauwa goes to place the order and cannot: it waits on Aqualytic's answer.",
+      "narrative": "Place order is disabled: the order waits on Aqualytic's answer, and the page says so.",
       "persona": "hauwa",
       "provenance": "S3",
       "title": "The order waits for Aqualytic"
@@ -152,10 +134,15 @@
           "description": "update_link_issue accepts approval_ids for approvals asked of the link's organisation and refuses others.",
           "id": "approver-link-issue",
           "verify": "pytest: issuing a link to Aqualytic with Northstar's approval raises 'asked of Northstar Fund'"
+        },
+        {
+          "description": "The links screen is called \"Update links\" in the tab, the page and the breadcrumbs, because approvers use it as well as suppliers.",
+          "id": "update-links-named",
+          "verify": "pytest: the links page says \"Update links\" and not \"Supplier links\""
         }
       ],
       "id": "hauwa-gives-aqualytic-a-link",
-      "narrative": "Hauwa sends Aqualytic a private link to that one question.",
+      "narrative": "Hauwa sends Aqualytic a private update link to that one question. On Update links it sits beside Harmattan's standing link to everything Harmattan supplies.",
       "persona": "hauwa",
       "provenance": "S3",
       "title": "Hauwa sends Aqualytic the question"
@@ -171,10 +158,15 @@
           "description": "The link refuses any approval it was not issued for.",
           "id": "approver-scope-refusal",
           "verify": "pytest: submitting record_answer for Northstar's approval raises OutOfScope"
+        },
+        {
+          "description": "The approver's answer form accepts the signed confirmation as an uploaded PDF or image, stored against the approval as the approver's document.",
+          "id": "approver-uploads-confirmation",
+          "verify": "pytest: a multipart post with record_answer-document_file stores a Document with a storage_key on the approval, recorded by the approver org"
         }
       ],
       "id": "kemi-answers-for-aqualytic",
-      "narrative": "Kemi at Aqualytic opens it with no labs login and approves the Lumen kit in her own words.",
+      "narrative": "Kemi at Aqualytic opens the link with no labs login, approves the Lumen kit in her own words, and uploads her signed confirmation.",
       "persona": "kemi",
       "provenance": "S3",
       "title": "Kemi approves the kit for Aqualytic"
@@ -190,41 +182,18 @@
           "description": "Submitting the form creates a placed contract linked to the award.",
           "id": "order-created",
           "verify": "pytest: contract_list returns a contract with award_id and status placed"
+        },
+        {
+          "description": "The order header explains its Incoterm in words.",
+          "id": "order-incoterm-in-words",
+          "verify": "pytest: an order with incoterm DAP shows \"DAP — delivered at place: the supplier pays freight to the named place\""
         }
       ],
       "id": "hauwa-places-the-order",
-      "narrative": "Hauwa sees Aqualytic's answer on the award, marked as given through Aqualytic's own link, and places the order on the terms Harmattan quoted.",
+      "narrative": "Back on the award, Aqualytic's approval reads as given through its own link, with the signed letter beside it, and Place order, disabled until now, is live. Hauwa places the order on the terms Harmattan quoted: twenty kits, delivered at place to its Kano warehouse.",
       "persona": "hauwa",
       "provenance": "S4",
-      "title": "Aqualytic has answered; Hauwa places the order"
-    },
-    {
-      "features": [
-        {
-          "description": "The order page lists each payment with whether the payee has confirmed it.",
-          "id": "payment-unconfirmed-line",
-          "verify": "Playwright: order page shows \"Paid 760 USD\" and \"not confirmed by the payee\""
-        }
-      ],
-      "id": "hauwa-pays-harmattan",
-      "narrative": "Hauwa records Harmattan's invoice and the bank transfer, which sits marked as not yet confirmed by the payee.",
-      "persona": "hauwa",
-      "provenance": "S4",
-      "title": "Hauwa records the invoice and the transfer"
-    },
-    {
-      "features": [
-        {
-          "description": "update_link_issue creates a link for one org scoped to the chosen contracts and supply points and shows the raw URL once.",
-          "id": "update-link-issue",
-          "verify": "pytest: update_link_issue returns url and contracts [PO-TK-2026-01] and supply_points [Harmattan warehouse, Kano]"
-        }
-      ],
-      "id": "hauwa-issues-a-link",
-      "narrative": "Hauwa issues Harmattan a private link to this one order and its Kano warehouse.",
-      "persona": "hauwa",
-      "provenance": "S5",
-      "title": "Hauwa gives Harmattan a link to this order"
+      "title": "Aqualytic has said yes; Place order goes live"
     },
     {
       "features": [
@@ -234,24 +203,10 @@
           "verify": "pytest: POST confirm_order through the link sets Contract.status confirmed"
         },
         {
-          "description": "The confirm_payment action sets Payment.confirmed_by_payee_on.",
-          "id": "link-confirm-payment",
-          "verify": "pytest: POST confirm_payment sets confirmed_by_payee_on to the received date"
-        },
-        {
           "description": "The public page's referrer policy lets a browser send a same-origin Origin so its forms pass CSRF.",
           "id": "link-csrf-browser",
           "verify": "pytest: the public page does not send Referrer-Policy no-referrer and a CSRF-enforced POST with the site Origin returns 302"
-        }
-      ],
-      "id": "ibrahim-confirms-order-and-payment",
-      "narrative": "Ibrahim at Harmattan opens the link with no labs login, confirms the order, and confirms the money arrived.",
-      "persona": "ibrahim",
-      "provenance": "S5",
-      "title": "Ibrahim confirms the order and the money"
-    },
-    {
-      "features": [
+        },
         {
           "description": "The record_receipt action creates a Receipt at the scoped supply point and a receipt movement of the accepted quantity in the pack unit.",
           "id": "link-record-receipt",
@@ -259,10 +214,10 @@
         }
       ],
       "id": "ibrahim-receives-the-kits",
-      "narrative": "When the kits reach the warehouse, Ibrahim records twenty kits received.",
+      "narrative": "Ibrahim at Harmattan opens Harmattan's own link, which already covers the new order, confirms it, and when the kits reach the Kano warehouse records twenty received.",
       "persona": "ibrahim",
       "provenance": "S5",
-      "title": "Ibrahim records twenty kits into the warehouse"
+      "title": "Ibrahim confirms the order and receives the kits"
     },
     {
       "features": [
@@ -270,15 +225,20 @@
           "description": "network_stock returns on_hand_in_base_units restated through the item's base_per_pack and the stock page shows it under the pack figure.",
           "id": "stock-base-unit-equivalent",
           "verify": "pytest: network_stock for a 20-kit balance returns on_hand_in_base_units {\"amount\": \"1000\", \"unit\": \"test\"}"
+        },
+        {
+          "description": "The stock page, filtered to one trade item, states the specification the item meets and the approvals given on its awards.",
+          "id": "stock-item-standing",
+          "verify": "pytest: the stock page for the Lumen kit shows \"specification AQ-TK-1: meets all\" and \"Approved by Aqualytic\""
         }
       ],
       "id": "stock-in-kits-and-tests",
-      "narrative": "Hauwa opens the stock and reads the warehouse's balance in kits and in the tests they hold.",
+      "narrative": "Hauwa opens the stock: Harmattan's warehouse holds twenty kits, a thousand tests, of the Lumen kit that meets AQ-TK-1 and that Aqualytic approved.",
       "persona": "hauwa",
       "provenance": "S6",
-      "title": "Hauwa reads the warehouse in kits and tests"
+      "title": "Twenty kits, a thousand tests, of the kit Aqualytic approved"
     }
   ],
   "slug": "supply-test-kits",
-  "version": 2
+  "version": 3
 }

@@ -48,6 +48,31 @@ one of them would destroy the only signal it had.
   </div>
 {% endif %}
 
+{% if standing %}
+  {% comment %}Which kit this is and why it is the right one: the specification it meets
+  and who confirmed it. The balance below is only worth planning on if this line holds.{% endcomment %}
+  <div class="mb-4 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700" data-standing>
+    <div>
+      <span class="font-semibold text-gray-900">{{ standing.item.name }}</span>
+      {% if standing.verdict %}
+        {% if standing.meets %}<span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-800">meets its specification</span>{% else %}<span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-800">{{ standing.verdict|lower }}</span>{% endif %}
+      {% endif %}
+    </div>
+    {% if standing.verdict %}
+      <div class="mt-0.5">
+        Against the {{ standing.product.name }} specification{% if standing.product.spec_reference %} {{ standing.product.spec_reference }}{% endif %}: {{ standing.verdict|lower }} of its requirements.
+      </div>
+    {% endif %}
+    {% for approval in standing.approvals %}
+      <div class="mt-0.5">
+        Approved by <b>{{ approval.approver.name|default:"—" }}</b> ({{ approval.role|words }})
+        on {{ approval.decided_on|default:"an unrecorded date" }}{% if approval.answered_by_approver %}, through {{ approval.approver.name }}'s own link{% endif %}
+        — <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' approval.award.id %}">the award to {{ approval.supplier|default:"the supplier" }}</a>{% if approval.documents %}, with {{ approval.documents|length }} signed confirmation{{ approval.documents|length|pluralize }}{% endif %}.
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   {% comment %}
   A scroll container is not focusable by default, so a keyboard-only user

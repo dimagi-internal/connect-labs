@@ -28,6 +28,7 @@ from connect_labs.supply_chain.reference_forms import (
     RequirementLineFormSet,
     StatedFigureLineFormSet,
     SupplierForm,
+    figure_choices,
 )
 
 
@@ -76,7 +77,10 @@ class _ProductScreen(OperationFormView):
 
     def requirement_formset(self, data=None):
         return RequirementLineFormSet(
-            data, initial=None if data else self.initial_requirements(), prefix="requirements"
+            data,
+            initial=None if data else self.initial_requirements(),
+            prefix="requirements",
+            form_kwargs={"figures": figure_choices(self.op("commodity_list"), self.op("item_list"))},
         )
 
     def get_context_data(self, **kwargs):
