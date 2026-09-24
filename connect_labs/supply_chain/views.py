@@ -295,6 +295,13 @@ class ChecksView(OperationBase):
         for check in checks["checks"]:
             groups.setdefault(check["kind"], []).append(check)
         context["checks"] = checks
+        # Names for the records the facts refer to by id, so a card reads
+        # "round CHC" and links to it rather than "round id 33".
+        context["refs"] = {
+            "round": {r["id"]: r.get("label") or f"round {r['id']}" for r in self.op("round_list")},
+            "supplier": {s["id"]: s["name"] for s in self.op("supplier_list")},
+            "order": {c["id"]: c.get("reference") or f"order {c['id']}" for c in self.op("contract_list")},
+        }
         context["groups"] = [
             {"kind": kind_name, "category": checks["kinds"][kind_name], "items": items}
             for kind_name, items in groups.items()
