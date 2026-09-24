@@ -3,9 +3,13 @@
 Stated in values.py and nowhere else; these pin what they say.
 """
 
+from datetime import date, datetime
+
 import pytest
 
+from connect_labs.supply_chain import values
 from connect_labs.supply_chain.templatetags.supply_chain_extras import (
+    day,
     figure_text,
     money,
     money_text,
@@ -112,3 +116,29 @@ class TestCheckFacts:
         }
         sub = order_stages(order)[0]["sub"]
         assert sub == "1 bought by the programme, 1 bought by a local partner"
+
+
+class TestTheOneDateRule:
+    """`|day` is the one date rule, and there is only one of it.
+
+    Two PRs that were each green alone landed a `day` filter each; Python kept
+    the later one, which wrote its own format and so could not follow
+    values.DAY_FORMAT. These pin that the filter a template gets is the one
+    that reads the rule.
+    """
+
+    @pytest.mark.parametrize(
+        "raw",
+        ["2026-09-06", date(2026, 9, 6), datetime(2026, 9, 6, 14, 30)],
+    )
+    def test_a_date_however_it_arrives_reads_by_the_rule(self, raw):
+        assert day(raw) == "6 Sep 2026"
+
+    def test_it_follows_the_rule_rather_than_a_format_of_its_own(self, monkeypatch):
+        monkeypatch.setattr(values, "DAY_FORMAT", "Y-m-d")
+        assert day("2026-09-06") == "2026-09-06"
+
+    def test_what_is_not_a_date_passes_through(self):
+        assert day("not a date") == "not a date"
+        assert day(None) is None
+        assert day("") == ""
