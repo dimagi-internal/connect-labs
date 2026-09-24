@@ -475,6 +475,22 @@ class TestTheScreens:
         assert "covers IPTSC-PO-1" in body
         assert "part_received" not in body
 
+    def test_a_bundled_order_says_it_was_paid_for_elsewhere_not_that_it_was_not_bought(self, scoped, da, world):
+        """SCHI did pay for the 250 packets -- out of its setup fee. "These goods
+        were not bought" is true of a donation and false of this."""
+        bundled = _contract(
+            da,
+            world,
+            world["local"],
+            "250",
+            consideration="bundled",
+            unit_price=None,
+            unit_price_unit=None,
+        )
+        body = scoped.get(reverse("supply_chain:order_detail", args=[bundled["id"]])).content.decode()
+        assert "were not bought" not in body
+        assert "paid for inside another cost" in body
+
     def test_billing_that_matches_what_arrived_is_not_called_billed_beyond_it(self, scoped, da, world):
         order = _contract(da, world, world["main"], "700")
         _receive(da, world, order, "450")

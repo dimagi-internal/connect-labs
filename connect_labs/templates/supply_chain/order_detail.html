@@ -120,8 +120,14 @@ figure here can go stale.
     {% endif %}
     {% if contract.consideration != "priced" %}
     <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
-      These goods were not bought, so there is no price to find and nothing is
-      missing. The shipments and receipts below are the whole record of them.
+      {% if contract.consideration == "bundled" %}
+        These goods were paid for inside another cost, such as a setup fee, so
+        there is no unit price to find and nothing is missing.
+      {% else %}
+        These goods were donated, so there is no price to find and nothing is
+        missing.
+      {% endif %}
+      The shipments and receipts below are the whole record of them.
     </p>
     {% else %}
     <div class="px-4 py-2.5 border-t border-gray-100">
