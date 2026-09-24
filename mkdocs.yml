@@ -30,6 +30,7 @@ nav:
       - AI Features: ai-features.md
   - For Power Users:
       - Reports with Claude: reports-with-claude.md
+      - The Semantic Layer: semantic-layer.md
       - Connect MCP: connect-mcp.md
       - Connect Safe Mode: connect-safe-mode.md
 

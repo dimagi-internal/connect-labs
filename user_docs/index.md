@@ -39,6 +39,7 @@ graph LR
 | [Custom Analysis](custom-analysis.md) | Program-specific dashboards for KMC, MBW, nutrition, and SAM tracking         |
 | [Coverage Maps](coverage-maps.md)     | Interactive map of delivery unit boundaries and service point locations       |
 | [Reports with Claude](reports-with-claude.md) | Build and change reports and indicator definitions by talking to Claude |
+| [The Semantic Layer](semantic-layer.md) | How indicator definitions work, reading their SQL, and managing them across programmes |
 | [AI Features](ai-features.md)         | AI assistants embedded throughout Labs for editing, reviewing, and analysis   |
 
 These features work together. A common flow: review visits with **Audit**, create follow-up **Tasks** for flagged workers, and monitor outcomes in a **Workflow** dashboard.
