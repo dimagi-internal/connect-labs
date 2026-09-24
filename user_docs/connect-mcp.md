@@ -113,6 +113,49 @@ In a regular session, you can use `workflow_sync_from_template_file` to push a l
 
 ---
 
+## KMC Reports — Unified Indicator Set
+
+!!! note "Recent change"
+    KMC reports were updated to use a single set of 24 indicators. If you work with KMC data, read this section before interpreting any figures.
+
+KMC reports previously used two overlapping sets of indicators — a workbook series and a demo scorecard series — which applied different rules for counting babies and judging outcomes. Those two sets have been merged into one.
+
+### What the unified rules are
+
+- **"Started" KMC** means a baby has two or more follow-up visits.
+- **Outcome figures** are only calculated from babies whose first visit was at least 28 days ago.
+- **Growth figures** are only calculated from babies whose first visit was at least 42 days ago.
+- **Growth** is judged against the baby's birthweight band.
+- Any figure with fewer than 20 babies behind it is not shown.
+
+These rules now apply consistently across all KMC indicators.
+
+### Indicators kept from the workbook series
+
+Several workbook indicators were not covered by the old scorecard rules. These are kept and now follow the same unified rules above:
+
+- Loss to follow-up
+- Early growth rate
+- Median days to enrolment
+- Danger signs
+- Referrals and self-referrals
+- KMC hours
+- Birth-copy rate
+- Percentage of babies with computable growth
+
+!!! warning "Working definitions"
+    These indicators are still being refined. Each indicator's definition note says so where it applies. Treat them as working figures, not final metrics.
+
+### What you will notice in the reports
+
+- Indicators now have plain descriptive names instead of codes such as C14 or N13.
+- The **Scorecard (N) / Workbook (C)** toggle on the opportunity report is gone — there is only one view now.
+- Mortality figures are no longer automatically withheld on the opportunity report.
+- Three headline figures have changed values because they now use the unified rules instead of the old scorecard rules.
+- **Reports saved before this update** will show only the indicators whose definition did not change. A note on the report explains this.
+
+---
+
 ## More Information
 
 - **[Reports with Claude](reports-with-claude.md)** — plain-English guide to changing reports, pipelines and indicator definitions through the MCP
