@@ -19,6 +19,7 @@ one existing at all: a claimed duty relief, and a batch's conformity.
 
 import base64
 import hashlib
+import logging
 from datetime import UTC, datetime
 
 from django.core.files.base import ContentFile
@@ -37,6 +38,8 @@ from connect_labs.supply_chain.models import (
     ShipmentLine,
 )
 from connect_labs.supply_chain.stock.services import posting
+
+logger = logging.getLogger(__name__)
 
 # Generous for a scanned certificate, small enough that a JSON body carrying
 # one cannot exhaust the web tier. Anything larger belongs in Drive with an
@@ -446,7 +449,17 @@ class FulfilmentRepositoryMixin:
                 )
             filename = data.get("filename") or "document"
             key = f"supply/{self._require_program()}/{data['kind']}/{hashlib.sha256(raw).hexdigest()[:16]}-{filename}"
-            fields["storage_key"] = default_storage.save(key, ContentFile(raw))
+            try:
+                fields["storage_key"] = default_storage.save(key, ContentFile(raw))
+            except Exception as error:
+                # A file store that refuses the write (a missing bucket, a
+                # role without PutObject) used to surface as a 500 on the
+                # attach screen. Say what happened and what still works.
+                logger.exception("supply document upload failed for %s", key)
+                raise ValueError(
+                    "The file store refused this upload, so nothing was saved. "
+                    "Attach it with a link to where it lives instead, and tell whoever runs labs."
+                ) from error
             fields["sha256"] = hashlib.sha256(raw).hexdigest()
             fields["size_bytes"] = len(raw)
 

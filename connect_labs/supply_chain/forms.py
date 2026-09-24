@@ -381,13 +381,44 @@ class ReasonForm(forms.Form):
 # ---- approvals ---------------------------------------------------------
 
 
+def _rests_on_field(form):
+    """An optional picker of this programme's documents, registrations first.
+
+    What a regulatory approval rests on is usually a product registration
+    already on file; offering every document the programme holds, with the
+    registrations at the top, lets the other cases through without making the
+    common one hunt.
+    """
+    from django.db.models import Case, IntegerField, Value, When
+
+    from connect_labs.supply_chain.models import Document
+    from connect_labs.supply_chain.templatetags.supply_chain_extras import words
+
+    field = form.fields["rests_on_document"]
+    field.required = False
+    field.queryset = (
+        Document.objects.filter(program_id=form.access.program_id)
+        .annotate(
+            first=Case(When(kind="product_registration", then=Value(0)), default=Value(1), output_field=IntegerField())
+        )
+        .order_by("first", "kind", "title", "pk")
+        if form.access is not None and form.access.program_id
+        else Document.objects.none()
+    )
+    field.empty_label = _("None — it rests on nothing on file")
+    field.label_from_instance = lambda document: " — ".join(
+        part for part in (words(document.kind).capitalize(), document.title or document.filename) if part
+    )
+
+
 class ApprovalRequestForm(ScopedForm):
     """Ask a third party to agree to an award before it becomes an order."""
 
     class Meta:
         model = AwardApproval
-        fields = ["approver_org", "role", "requested_on", "note"]
+        fields = ["approver_org", "role", "requested_on", "note", "rests_on_document"]
         widgets = {
+            "rests_on_document": forms.Select(attrs=SEARCHABLE),
             "approver_org": forms.Select(attrs=SEARCHABLE),
             "role": forms.Select(attrs=SELECT),
             "requested_on": forms.DateInput(attrs=DATE),
@@ -398,8 +429,13 @@ class ApprovalRequestForm(ScopedForm):
             "role": _("As what"),
             "requested_on": _("Asked on"),
             "note": _("What was asked"),
+            "rests_on_document": _("Rests on"),
         }
         help_texts = {
+            "rests_on_document": _(
+                "A document already on file it is granted against — for a regulatory approval, the "
+                "product registration. The approver's own letter is attached to the approval itself."
+            ),
             "approver_org": _("Not the person deciding the award — somebody whose agreement it needs."),
             "role": _("Technical: confirms the product. Funder: approves the use of funds. Regulatory: a licence."),
         }
@@ -420,7 +456,9 @@ class ApprovalRequestForm(ScopedForm):
                 Column("approver_org"), Column("role"), Column("requested_on"), css_class="grid md:grid-cols-3 gap-x-6"
             ),
             Field("note"),
+            Field("rests_on_document"),
         )
+        _rests_on_field(self)
 
 
 class ApprovalDecisionForm(ScopedForm):
@@ -428,13 +466,19 @@ class ApprovalDecisionForm(ScopedForm):
 
     class Meta:
         model = AwardApproval
-        fields = ["status", "decided_on", "note"]
+        fields = ["status", "decided_on", "note", "rests_on_document"]
         widgets = {
+            "rests_on_document": forms.Select(attrs=SEARCHABLE),
             "status": forms.Select(attrs=SELECT),
             "decided_on": forms.DateInput(attrs=DATE),
             "note": forms.Textarea(attrs=TEXTAREA),
         }
-        labels = {"status": _("Their answer"), "decided_on": _("Answered on"), "note": _("Note")}
+        labels = {
+            "status": _("Their answer"),
+            "decided_on": _("Answered on"),
+            "note": _("Note"),
+            "rests_on_document": _("Rests on"),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -445,7 +489,11 @@ class ApprovalDecisionForm(ScopedForm):
         self.helper.layout = Layout(
             Row(Column("status"), Column("decided_on"), css_class="grid md:grid-cols-2 gap-x-6"),
             Field("note"),
+            Field("rests_on_document"),
         )
+        _rests_on_field(self)
+        if self.instance and self.instance.rests_on_document_id:
+            self.fields["rests_on_document"].initial = self.instance.rests_on_document_id
 
 
 # ---- quotes ------------------------------------------------------------

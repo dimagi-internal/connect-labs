@@ -448,6 +448,14 @@ class AwardApproval(TimestampedModel):
     # to be written over the request's note, which lost the question.
     note = models.TextField(blank=True, default="")
     decision_note = models.TextField(blank=True, default="")
+    # What the approval rests on, when that is a document already on file: a
+    # regulator's approval granted against a product registration. Distinct
+    # from the documents attached TO the approval (Document.approval), which
+    # are the approver's own letter or email. Optional, and a pointer rather
+    # than a copy, so the approval and the registration cannot disagree.
+    rests_on_document = models.ForeignKey(
+        "Document", null=True, blank=True, on_delete=models.SET_NULL, related_name="approvals_resting_on"
+    )
 
     class Meta:
         ordering = ["requested_on", "id"]
