@@ -41,9 +41,10 @@ SOURCE = "supplier_reported"
 # what an order looks like before anything has left.
 SUPPLIER_SHIPMENT_STATUSES = ("dispatched", "in_transit", "at_customs", "cleared", "delivered", "lost")
 
-# An order the supplier can still confirm. Anything later has already moved
-# past confirmation, and "confirming" a received order would move it back.
-CONFIRMABLE = ("draft", "placed")
+# An order the supplier can confirm: one we placed. A draft is not an order
+# yet -- a supplier confirming it would be accepting something nobody sent --
+# and anything later has already moved past confirmation.
+CONFIRMABLE = ("placed",)
 
 
 class OutOfScope(ValueError):
@@ -154,6 +155,8 @@ def _drop_empty(data):
 
 def _confirm_order(scope, data):
     contract = _require(scope.contracts, data.get("contract"), "order")
+    if contract.status == "draft":
+        raise ValueError(f"order {contract} has not been placed yet, so there is nothing to confirm")
     if contract.status not in CONFIRMABLE:
         raise ValueError(f"order {contract} is already {contract.status.replace('_', ' ')}")
     # A status change, not a new record: who recorded the order stays who

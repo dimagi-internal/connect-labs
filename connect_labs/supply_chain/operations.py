@@ -372,6 +372,7 @@ _CONTRACT_DATA = _data_with(
     delivery_supply_point_id=ID,
     promised_lead_time_days=_NON_NEGATIVE_INT,
     consideration={"enum": list(records.CONSIDERATIONS)},
+    payment_terms={"enum": list(records.PAYMENT_TERMS)},
     # Nullable because un-naming it is a real edit: the covering order was
     # recorded against the wrong short one.
     covers_shortfall_of_id=NULLABLE_ID,

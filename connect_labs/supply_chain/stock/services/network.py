@@ -164,6 +164,7 @@ def network_stock(
                 "reported_on": count.counted_on if count else None,
                 "reported_kind": count.kind if count else None,
                 "amc": plan["amc"],
+                "amc_basis": plan["amc_basis"],
                 # The same rate in the unit the balance is shown in, so "170
                 # carton" and "3,033 co-pack a month" can be compared by eye.
                 "amc_in_display_unit": _restated(plan["amc"], display_unit, for_conversion),

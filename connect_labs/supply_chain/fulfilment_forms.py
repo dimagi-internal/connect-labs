@@ -105,6 +105,7 @@ class ContractForm(ProvenancedForm):
             "signed_on",
             "status",
             "consideration",
+            "payment_terms",
             "currency",
             "quantity",
             "quantity_unit",
@@ -132,6 +133,7 @@ class ContractForm(ProvenancedForm):
             "signed_on": forms.DateInput(attrs=DATE),
             "status": forms.Select(attrs=SELECT),
             "consideration": forms.Select(attrs=SELECT),
+            "payment_terms": forms.Select(attrs=SELECT),
             "currency": forms.TextInput(attrs={**INPUT, "placeholder": "USD", "maxlength": 3}),
             "quantity": forms.NumberInput(attrs={**INPUT, "step": "any", "placeholder": "500"}),
             "quantity_unit": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. carton")}),
@@ -159,6 +161,7 @@ class ContractForm(ProvenancedForm):
             "signed_on": _("Signed on"),
             "status": _("Status"),
             "consideration": _("Paid for how"),
+            "payment_terms": _("When it is paid"),
             "currency": _("Currency"),
             "quantity": _("Quantity"),
             "quantity_unit": _("Unit"),
@@ -190,6 +193,11 @@ class ContractForm(ProvenancedForm):
             "covers_shortfall_of": _(
                 "When this order buys what another could not deliver — the main supplier sent 450 of 700 "
                 "and a partner bought the rest locally. That order then reads as covered, by name."
+            ),
+            "payment_terms": _(
+                "Paid in advance when the supplier is paid before it delivers — a distributor who buys "
+                "from manufacturers for you. The order then reads what is still owed to you, not a bill "
+                "ahead of the goods."
             ),
             "consideration": _(
                 "Only a bought order has a price. A donation, or goods paid for out of a setup fee, "
@@ -262,6 +270,15 @@ class ContractForm(ProvenancedForm):
             # donated, and the model's own default -- priced -- then applies.
             required=False,
         )
+        set_choices(
+            self,
+            "payment_terms",
+            [
+                ("on_delivery", _("On delivery — we pay for what arrived")),
+                ("advance", _("Paid in advance — before the goods arrive")),
+            ],
+            required=False,
+        )
 
         self.helper.layout = Layout(
             Row(Column("supplier"), Column("commodity"), Column("item"), css_class="grid md:grid-cols-3 gap-x-6"),
@@ -278,7 +295,7 @@ class ContractForm(ProvenancedForm):
                     Column("status"),
                     css_class="grid md:grid-cols-3 gap-x-6",
                 ),
-                Field("consideration"),
+                Row(Column("consideration"), Column("payment_terms"), css_class="grid md:grid-cols-2 gap-x-6"),
                 Row(
                     Column("quantity"),
                     Column("quantity_unit"),

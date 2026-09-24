@@ -516,6 +516,11 @@ class Contract(SourcedModel):
     # and receipts -- the whole physical chain -- and no price that will ever
     # exist. Treating them as priced reported that absence as a gap forever.
     consideration = models.CharField(max_length=16, default="priced", choices=_choices(records.CONSIDERATIONS))
+    # Paid on delivery (the default) or in advance. Under advance terms the
+    # three-way match reads a payment ahead of the goods as the agreement it
+    # is, and what is paid for but refused or never delivered as money owed
+    # back -- rather than "billed beyond what arrived" and "safe to pay 0".
+    payment_terms = models.CharField(max_length=16, default="on_delivery", choices=_choices(records.PAYMENT_TERMS))
     # The order this one buys the shortfall of: the main supplier delivered
     # 450 of 700, and a partner bought the other 250 locally. The short order
     # then reads as covered, by name, rather than as open for ever.
