@@ -368,6 +368,13 @@ class OrdersView(OperationBase):
                 )
         context["covered_by"] = covered_by
         context["progress"] = self._progress(context["contracts"])
+        # Lateness from the same check the order page reads, so the list and the
+        # page cannot disagree: "due 29 Aug" here beside "26 days past the
+        # promised lead time" there read as two different orders.
+        context["late"] = {
+            c["subject"]["id"]: c for c in self.op("checks_list", kinds=["contract_delivery_overdue"])["checks"]
+        }
+        context["item_names"] = {i["id"]: i["name"] for i in self.op("item_list")}
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
         return context
@@ -430,6 +437,25 @@ def _outstanding_after_cover(match):
             return None
         remaining -= Decimal(str(cover["quantity"]))
     return {"amount": decimal_string(max(remaining, Decimal(0))), "unit": unit}
+
+
+def _tellers(contract, points, orgs, suppliers):
+    """Whose word a reported row on this order is: {source: organisation name}.
+
+    A partner's is the organisation that runs the store the goods go to, else
+    a buyer that is not the programme; a supplier's is the supplier. Lets a
+    receipt the programme took down from a partner say so, rather than read
+    as the programme's own.
+    """
+    point = next((p for p in points if p["id"] == contract.get("delivery_supply_point_id")), None)
+    partner_id = (point or {}).get("managed_by_org_id")
+    if partner_id is None and contract.get("buyer_of_record") != "programme_org":
+        partner_id = contract.get("buyer_org_id")
+    supplier = suppliers.get(contract.get("supplier_id")) or {}
+    tellers = {"supplier_reported": (orgs.get(supplier.get("org_id")) or {}).get("name") or supplier.get("name")}
+    if partner_id is not None and orgs.get(partner_id):
+        tellers["partner_reported"] = orgs[partner_id]["name"]
+    return {source: name for source, name in tellers.items() if name}
 
 
 class OrderDetailView(OperationBase):
@@ -576,7 +602,8 @@ class OrderDetailView(OperationBase):
         context["receipts"] = self.op("receipt_list", contract_id=contract_id)
         # Where each receipt landed, by name: the received table said what
         # arrived and never where.
-        context["supply_points"] = {p["id"]: p["name"] for p in self.op("supply_point_list")}
+        points = self.op("supply_point_list")
+        context["supply_points"] = {p["id"]: p["name"] for p in points}
         context["invoices"] = self.op("invoice_list", contract_id=contract_id)
         # The order's evidence includes what was filed against its consignments:
         # four import documents on file read "Nothing attached" here (the
@@ -595,6 +622,7 @@ class OrderDetailView(OperationBase):
         context["documents"] = documents
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
+        context["tellers"] = _tellers(contract, points, context["orgs"], context["suppliers"])
         context["link_updates"] = _link_updates(contract_id)
         # Lateness, read from the checks rather than recomputed here, so this
         # page and the checks feed cannot disagree about whether it is late.
@@ -603,6 +631,10 @@ class OrderDetailView(OperationBase):
         context["contract_late"] = next(
             (c for c in late if c["kind"] == "contract_delivery_overdue" and c["subject"]["id"] == contract_id), None
         )
+        if context["contract_late"]:
+            from datetime import date
+
+            context["contract_due_on"] = date.fromisoformat(context["contract_late"]["facts"]["expected_on"])
         context["late_shipments"] = {
             c["subject"]["id"]: c
             for c in late
@@ -691,6 +723,24 @@ class StockView(OperationBase):
                 if v is not None
             },
         )
+        from connect_labs.supply_chain.stock.services.resupply import NO_CONSUMPTION_YET
+
+        # What each balance is a balance of, and whether the point has ever
+        # dispensed: with no consumption, demand, months, resupply and band are
+        # one fact, said once.
+        names = {i["id"]: i["name"] for i in context["items"]}
+        for point in context["network"].get("points") or []:
+            point["item_name"] = names.get(point.get("item_id"))
+            amc = point.get("amc")
+            point["no_consumption_yet"] = isinstance(amc, dict) and NO_CONSUMPTION_YET in (
+                amc.get("unconfirmed") or []
+            )
+            on_hand = point.get("on_hand")
+            point["stocked_out"] = (
+                isinstance(on_hand, dict)
+                and on_hand.get("amount") not in (None, "")
+                and (float(on_hand["amount"]) <= 0)
+            )
         return context
 
 
@@ -732,7 +782,23 @@ class MovementsView(OperationBase):
         # Each receipt by the note number people use for it, and its order.
         receipts = self.op("receipt_list", supply_point_id=point_id) if point_id is not None else []
         context["receipts"] = {r["id"]: r for r in receipts}
-        context["references"] = {c["id"]: c["reference"] or f"order {c['id']}" for c in self.op("contract_list")}
+        contracts = self.op("contract_list")
+        context["references"] = {c["id"]: c["reference"] or f"order {c['id']}" for c in contracts}
+        # A receipt has no supply point it came FROM -- it came from a supplier.
+        # "—" hid Harmattan and Tamarind behind the one column that should name them.
+        suppliers = {s["id"]: s["name"] for s in self.op("supplier_list")}
+        context["received_from"] = {
+            c["id"]: suppliers.get(c.get("supplier_id")) for c in contracts if c.get("supplier_id") in suppliers
+        }
+        # The page says "a balance is these movements added up": show the sum it
+        # means, from the same ledger read the stock page uses, in the unit the rows
+        # share. Only for one item at one point -- across items there is no one sum.
+        context["balance"] = None
+        if point_id is not None and item_id is not None and context["movements"]:
+            units = {m.get("quantity_unit") for m in context["movements"]}
+            unit = units.pop() if len(units) == 1 else None
+            on_hand = self.op("stock_on_hand", supply_point_id=point_id, item_id=item_id, unit=unit)
+            context["balance"] = on_hand.get("ledger")
         return context
 
 

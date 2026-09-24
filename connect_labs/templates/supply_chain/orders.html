@@ -15,12 +15,16 @@
     <i class="fa-solid fa-plus mr-1"></i> New order
   </a>
 </div>
-<p class="text-xs text-gray-500 mb-4">
-  An award is a decision; a contract is a commitment. They are separate because
-  the organisation that decides is often not the one that buys — and because import
-  duty and VAT fall on whoever imports, the buyer of record changes the landed
-  cost rather than just the paperwork.
-</p>
+{% comment %}Behind a disclosure, so the table sits directly under its heading.{% endcomment %}
+<details class="text-xs text-gray-600 mb-4">
+  <summary class="cursor-pointer text-brand-indigo">About orders</summary>
+  <p class="mt-1">
+    An award is a decision; a contract is a commitment. They are separate because
+    the organisation that decides is often not the one that buys — and because import
+    duty and VAT fall on whoever imports, the buyer of record changes the landed
+    cost rather than just the paperwork.
+  </p>
+</details>
 
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   {% comment %}
@@ -74,10 +78,18 @@
             {% if contract.quantity %}
               <div class="text-xs text-gray-500">{{ progress.received|qty }} of {{ contract.quantity|qty:contract.quantity_unit }} received</div>
             {% endif %}
+            {% if contract.item_id %}
+              <div class="text-xs text-gray-600">{{ item_names|dictkey:contract.item_id }}</div>
+            {% endif %}
           </td>
           <td class="px-4 py-2.5">
             {{ contract.status|humanise|capfirst }}
             {% if progress.due_on %}<div class="text-xs text-gray-500">due {{ progress.due_on|date:"j M Y" }}</div>{% endif %}
+            {% with overdue=late|dictkey:contract.id %}
+              {% if overdue %}
+                <div class="text-xs font-semibold text-message-warning-text">{{ overdue.facts.days_late }} day{{ overdue.facts.days_late|pluralize }} past due</div>
+              {% endif %}
+            {% endwith %}
             {% comment %}
             The two halves of a covered shortfall, named on both rows: a short
             order read "part received" here with nothing saying the rest had
@@ -94,7 +106,7 @@
           </td>
           {% endwith %}
           <td class="px-4 py-2.5 text-xs text-gray-500">
-            {{ contract.source|humanise }}{% if not contract.witnessed %}<div class="text-gray-400">reported, not witnessed</div>{% endif %}
+            {% if contract.source == "we_recorded" %}Recorded by {{ orgs|dictkey:contract.recorded_by_org_id|dictkey:"name"|default:"the programme" }}{% else %}{{ contract|told_by:orgs }}{% endif %}{% if not contract.witnessed %}<div class="text-gray-400">reported, not witnessed</div>{% endif %}
           </td>
           <td class="px-4 py-2.5 text-right">
             <a class="text-brand-indigo hover:underline"

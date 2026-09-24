@@ -336,9 +336,11 @@ def seed(s: Seeder) -> dict:
         },
     )
 
-    # Two update links, one per outside party, each scoped to exactly what that
-    # party reports on: the distributor says what it dispatched against the
-    # order; the partner says what reached its store.
+    # Two update links, one per outside party. The distributor's names the one
+    # order it dispatches against. The partner's is issued as "Everything
+    # involving" SCHI: resolved at every request, so the local purchase it
+    # makes later (scene 6) is on its link the moment it exists, and only
+    # receipts are offered on it -- SCHI buys and receives, it does not supply.
     distributor_link = _link_path(
         s.op(
             "update_link_issue",
@@ -355,9 +357,8 @@ def seed(s: Seeder) -> dict:
             "update_link_issue",
             data={
                 "org_id": schi,
-                "contract_ids": [order["id"]],
-                "supply_point_ids": [store["id"]],
-                "label": "SCHI — IPTSc receipts at the district store",
+                "coverage": "organisation",
+                "label": "SCHI — everything involving us",
                 "expires_in_days": 30,
             },
         )
