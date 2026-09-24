@@ -548,7 +548,15 @@ def _describe_approval(rid):
     award = approval.award
     what = award.quote.item.name if award.quote.item_id else award.commodity.name
     text = f"{approval.status} {what}, awarded to {award.supplier.name}, on {day_text(approval.decided_on)}"
-    return f"{text}: “{approval.decision_note}”" if approval.decision_note else text
+    if approval.decision_note:
+        # The approver's words as written, less a closing full stop the
+        # sentence around them supplies.
+        text = f"{text}: “{approval.decision_note.strip().rstrip('.')}”"
+    # The signed letter it rests on, by name: the approver can see it arrived.
+    letters = [d.filename or d.title for d in approval.documents.all() if d.filename or d.title]
+    if letters:
+        text = f"{text}, with the signed confirmation {', '.join(letters)}"
+    return text
 
 
 _DESCRIBERS = {

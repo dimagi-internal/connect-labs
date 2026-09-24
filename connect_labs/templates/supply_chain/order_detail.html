@@ -121,7 +121,11 @@ class this build has not seen ships purged.
         {% for approval in award_approvals %}
           <li>
             {{ approval.approver.name|default:"—" }} ({{ approval.role|words|capfirst }})
-            {% if approval.status == "approved" %}approved {{ approval.decided_on|day|default:"undated" }}{% elif approval.status == "declined" %}declined {{ approval.decided_on|day|default:"undated" }}{% else %}asked {{ approval.requested_on|day }}, not yet answered{% endif %}
+            {% if approval.status == "approved" %}approved {{ approval.decided_on|day|default:"undated" }}{% elif approval.status == "declined" %}declined {{ approval.decided_on|day|default:"undated" }}{% else %}asked {{ approval.requested_on|day }}, not yet answered{% endif %}{% if approval.status != "requested" and approval.answered_by_approver %}, through {{ approval.approver.name }}'s own link{% endif %}
+            {% comment %}The letter the answer rests on, openable from the order it released.{% endcomment %}
+            {% for document in approval.documents %}
+              — <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:document_open' document.id %}" target="_blank" rel="noopener noreferrer">{{ document.title|default:document.filename|default:"signed confirmation" }}</a>
+            {% endfor %}
           </li>
         {% endfor %}
       </ul>
@@ -238,10 +242,12 @@ partner's name (the IPTSc render).
         {% if contract.consideration == "priced" %}
         <tr><td class="px-4 py-2 text-gray-600">Goods</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.goods|figure_text }}</td></tr>
+        {% comment %}A cost the supplier's price already carries is "included in the price", not
+        a zero: USD 0.00 of freight on a delivered order reads as free delivery.{% endcomment %}
         <tr><td class="px-4 py-2 text-gray-600">Freight</td>
-            <td class="px-4 py-2 text-right tabular-nums">{{ landed.freight|figure_text }}</td></tr>
+            <td class="px-4 py-2 text-right tabular-nums" data-freight>{% if contract.freight_basis == "included" %}<span class="text-gray-600">included in the price</span>{% else %}{{ landed.freight|figure_text }}{% endif %}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">Import duty</td>
-            <td class="px-4 py-2 text-right tabular-nums">{{ landed.duty|figure_text }}</td></tr>
+            <td class="px-4 py-2 text-right tabular-nums">{% if contract.duties_basis == "included" %}<span class="text-gray-600">included in the price</span>{% else %}{{ landed.duty|figure_text }}{% endif %}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">VAT</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.vat|figure_text }}</td></tr>
         {% else %}

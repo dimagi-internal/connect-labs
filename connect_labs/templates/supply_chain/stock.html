@@ -18,7 +18,7 @@ one of them would destroy the only signal it had.
 <div class="flex flex-wrap items-center justify-end gap-2 mb-3">
   <a href="{% url 'supply_chain:stock_count_record' %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record a count</a>
   <a href="{% url 'supply_chain:movement_record' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-    <i class="fa-solid fa-plus mr-1"></i> Post a movement
+    <i class="fa-solid fa-plus mr-1"></i> Record stock in or out
   </a>
 </div>
 
@@ -65,7 +65,8 @@ paragraphs of method above a one-row table.{% endcomment %}
     </div>
     {% if standing.verdict %}
       <div class="mt-0.5">
-        Against the {{ standing.product.name }} specification{% if standing.product.spec_reference %} {{ standing.product.spec_reference }}{% endif %}: {{ standing.verdict|lower }} of its requirements.
+        {% if standing.meets %}Meets all {{ standing.product.spec_requirements|length }} requirements of{% else %}{{ standing.verdict|capfirst }} of the requirements of{% endif %}
+        {% if standing.product.spec_reference %}{{ standing.product.spec_reference }}{% else %}the {{ standing.product.name }} specification{% endif %}.
       </div>
     {% endif %}
     {% for approval in standing.approvals %}
@@ -97,7 +98,7 @@ paragraphs of method above a one-row table.{% endcomment %}
         <th class="text-left px-4 py-2" title="What a store dispenses; for a store that only releases to others, what it releases">Demand / month</th>
         <th class="text-left px-4 py-2">Months of stock</th>
         <th class="text-left px-4 py-2">To reach its maximum</th>
-        <th class="text-left px-4 py-2">Against its band</th>
+        <th class="text-left px-4 py-2" title="Against the minimum and maximum months of stock this programme set for the point">Enough stock?</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-100">
