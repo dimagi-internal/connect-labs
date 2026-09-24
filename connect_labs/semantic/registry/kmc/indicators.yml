@@ -299,13 +299,13 @@ measures:
     title: Mortality
     type: number
     sql: '100.0 * {c14_numerator} / NULLIF({c14_denominator}, 0)'
+    # scope_note is quoted: unquoted commas inside this flow mapping once split it into
+    # three keys, and the caveat shipped as "All LLOs pooled" plus two junk meta keys.
     meta:
       {
         indicator: C14,
         plain: 'Deaths as a share of eligible babies whose outcome is known. Two-sided: under about 2 percent usually means deaths are not being recorded. The headline pools only the organisations that record deaths credibly.',
-        scope_note: All LLOs pooled,
-        including the four the workbook says do not record deaths credibly. The headline card above is PIPN + EHA only,
-        and reads higher because non-recorders add denominator without deaths.,
+        scope_note: 'All LLOs pooled, including the four the workbook says do not record deaths credibly. The headline card above is PIPN + EHA only, and reads higher because non-recorders add denominator without deaths.',
         category: Performance,
         prominence: Top,
         unit: '%',
