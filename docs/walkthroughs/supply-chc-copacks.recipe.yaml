@@ -80,8 +80,14 @@ scenes:
     note: draft to placed
     target: css:#id_status
     value: Placed
+  - kind: fill
+    note: the day it was signed with Harmattan
+    target: css:#id_signed_on
+    value: ${placed_on}
   - kind: hold
     seconds: 1.5
+  - kind: snapshot
+    note: the order form, placed and signed, before it is saved
   - kind: click
     must_succeed: true
     target: role:button:Save changes
@@ -105,7 +111,7 @@ scenes:
     target: css:#id_paid_on
   - kind: fill
     target: css:#id_paid_on
-    value: ${today}
+    value: ${paid_on}
   - kind: fill
     target: css:#id_method
     value: bank transfer
@@ -117,6 +123,8 @@ scenes:
     value: We set this up ourselves
   - kind: hold
     seconds: 1.5
+  - kind: snapshot
+    note: the transfer, filled in, before it is recorded
   - kind: click
     must_succeed: true
     target: role:button:Record payment
@@ -131,8 +139,8 @@ scenes:
     note: paid in advance, awaiting delivery of the whole order
   concept_claim: Recording the payment on an order paid in advance shows it as paid in advance and awaiting
     delivery of the whole order, not as billed beyond what arrived.
-  show: The payment form for invoice HHS-INV-2026-014 — paid on today, 18000 USD, bank transfer, reference
-    — then the order page reading 'Paid in advance — awaiting delivery of 30000 co-pack'.
+  show: The payment form for invoice HHS-INV-2026-014 — paid five days ago, USD 18,000.00, bank transfer,
+    reference — then the order page reading 'Paid in advance — awaiting delivery of 30,000 co-packs'.
   url: /supply/invoices/${invoice_id}/payments/new/
 - id: tunde-confirms-order-and-payment
   actions:
@@ -144,6 +152,10 @@ scenes:
     target: css:summary:has-text('Confirm an order')
   - kind: wait_for
     target: role:button:Confirm this order
+  - kind: fill
+    note: the day Harmattan accepted it
+    target: css:#id_confirm_order-confirmed_on
+    value: ${placed_on}
   - kind: hold
     seconds: 1.0
   - kind: click
@@ -156,7 +168,7 @@ scenes:
     target: css:summary:has-text('Confirm a payment was received')
   - kind: fill
     target: css:#id_confirm_payment-received_on
-    value: ${today}
+    value: ${payment_received_on}
   - kind: hold
     seconds: 1.0
   - kind: snapshot
@@ -179,6 +191,9 @@ scenes:
   - kind: select
     target: css:#id_record_receipt-supply_point
     value: Harmattan warehouse, Kano
+  - kind: fill
+    target: css:#id_record_receipt-received_on
+    value: ${received_on}
   - kind: fill
     target: css:#id_record_receipt-reference
     value: GRN-HHS-0923
@@ -248,8 +263,19 @@ scenes:
     target: css:#id_commodity-ts-control
   - kind: click
     target: css:#id_commodity-ts-dropdown .option:has-text('ORS/zinc co-pack')
+  - kind: click
+    note: to Amara's own address, by name -- not to the login filming this
+    target: css:input[name=recipient][value=email]
+  - kind: fill
+    target: css:#id_recipient_email
+    value: amara.bello@chp-programme.example
+  - kind: fill
+    target: css:#id_recipient_name
+    value: Amara Bello
   - kind: hold
     seconds: 1.0
+  - kind: snapshot
+    note: the alert, filled in, before it is created
   - kind: click
     must_succeed: true
     target: role:button:Create alert
@@ -262,8 +288,8 @@ scenes:
     note: the alert, standing
   concept_claim: An alert subscription watching stock_below_minimum and stock_stockout for the co-pack
     is saved for the programme.
-  show: The new-alert form — label, the two stock checks ticked, product ORS/zinc co-pack, send to me,
-    as it happens — then the alerts list with the subscription.
+  show: The new-alert form — label, the two stock checks ticked, product ORS/zinc co-pack, sent to Amara
+    Bello at her address, as it happens — then the alerts list with the subscription.
   url: /supply/alerts/new/
 - id: sahel-stock-take-comes-in-short
   actions:
@@ -313,7 +339,8 @@ scenes:
   concept_claim: Recording the partner's stock take as an override sets the store's co-pack balance to
     the counted 170 cartons.
   show: The record-a-count form — Sahel CHI store, today, "Replace the ledger with this count", the co-pack
-    and its Kaduna Pharma Works trade item, 170 carton, notes, "A partner told us".
+    and its Kaduna Pharma Works trade item, 170 carton, notes, "A partner told us" — with the ledger's
+    194 cartons stated beside it, and the count 24 fewer.
   url: /supply/stock/counts/new/
 - id: the-check-trips
   actions:

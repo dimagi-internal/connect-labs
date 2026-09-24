@@ -354,12 +354,12 @@ class TestTheUpdateLinkPage:
     def test_a_dispatch_line_says_when_it_left_and_how(self, client, world):
         _dispatch(world)
         text = _visible(_public(client, world["distributor_token"]))
-        assert "HHS-WB-3310 — 450 packets, dispatched, left 19 Sep via Kano Freight, expected 22 Sep" in text
+        assert "HHS-WB-3310 — 450 packets, dispatched, left 19 Sep 2026 via Kano Freight, expected 22 Sep 2026" in text
 
     def test_a_delivered_dispatch_says_when_it_arrived_not_when_it_was_expected(self, client, world):
         _receive(world, _dispatch(world))
         text = _visible(_public(client, world["partner_token"]))
-        assert "HHS-WB-3310 — 450 packets, left 19 Sep via Kano Freight, delivered 24 Sep" in text
+        assert "HHS-WB-3310 — 450 packets, left 19 Sep 2026 via Kano Freight, delivered 24 Sep 2026" in text
         assert "expected 22 Sep" not in text
 
     def test_the_banner_is_a_sentence_about_the_dispatch(self, client, world):

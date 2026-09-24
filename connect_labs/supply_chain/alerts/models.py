@@ -74,6 +74,10 @@ class AlertSubscription(TimestampedModel):
         related_name="supply_alert_subscriptions",
     )
     recipient_email = models.EmailField(blank=True, default="")
+    # Who the address belongs to, when the person subscribing says so. Only
+    # for an email recipient -- a labs user already has a name. Without it the
+    # alerts list and the sent log named an address, not the person it tells.
+    recipient_name = models.CharField(max_length=255, blank=True, default="")
     cadence = models.CharField(max_length=16, default="immediate", choices=_choices(CADENCES))
     active = models.BooleanField(default=True)
     created_by = models.ForeignKey(
@@ -124,7 +128,7 @@ class AlertSubscription(TimestampedModel):
             if name and name != user.username:
                 return name
             return user.email or user.username
-        return self.recipient_email
+        return self.recipient_name or self.recipient_email
 
 
 class AlertCheckState(models.Model):

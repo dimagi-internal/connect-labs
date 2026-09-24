@@ -592,6 +592,10 @@ class StockCountForm(ProvenancedForm):
         self.fields["supply_point"].queryset = self.in_program(SupplyPoint).order_by("name")
         self.fields["commodity"].queryset = self.scoped(Commodity).order_by("name")
         self.fields["item"].queryset = self.scoped(Item).order_by("name")
+        # The trade item by its name. "(kpw-orszinc-copack)" after it wrapped
+        # the chosen item onto three lines, and the ledger note beside "Found"
+        # repeated the slug.
+        self.fields["item"].label_from_instance = lambda item: item.name
         self.fields["supply_point"].empty_label = _("Select a supply point…")
         self.fields["commodity"].empty_label = _("Select a product…")
         self.fields["item"].empty_label = _("Not recorded")

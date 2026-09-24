@@ -1,0 +1,87 @@
+{% extends 'supply_chain/operation_form.html' %}
+
+{% comment %}
+The count form, with the ledger's balance said beside "Found".
+
+A count is kept beside the ledger, or -- as an override -- replaces it. Either
+way the person recording it was comparing against a figure the form never
+showed: a stock take that came in 24 cartons short was 24 short of a number
+nobody on screen could see, and an override replaced a balance without saying
+what it replaced. The balances come from the view (ledger_balances); this only
+picks the one for the point and trade item chosen and says it. It states
+figures. It does not suggest a count or ask for agreement with the ledger.
+{% endcomment %}
+
+{% block extra_fields %}
+  {{ ledger_balances|json_script:"ledger-balances" }}
+  <script>
+    (function () {
+      var data = JSON.parse(document.getElementById("ledger-balances").textContent || "{}");
+      var point = document.getElementById("id_supply_point");
+      var item = document.getElementById("id_item");
+      var kind = document.getElementById("id_kind");
+      var quantity = document.getElementById("id_quantity");
+      var unit = document.getElementById("id_quantity_unit");
+      var anchor = document.getElementById("div_id_quantity");
+      if (!point || !quantity || !anchor) { return; }
+
+      var row = anchor.closest(".grid") || anchor;
+      var note = document.createElement("p");
+      note.id = "ledger-now";
+      note.className = "text-sm text-gray-700 bg-gray-50 border border-brand-border-light rounded-md px-3 py-2";
+      note.hidden = true;
+      row.parentNode.insertBefore(note, row.nextSibling);
+
+      function label(select) {
+        var option = select && select.options[select.selectedIndex];
+        return option && option.value ? option.textContent.trim() : "";
+      }
+      function digits(n) {
+        return Number(n).toLocaleString("en-GB", { maximumFractionDigits: 2 });
+      }
+      function sameUnit(typed, figure) {
+        var t = (typed || "").trim().toLowerCase();
+        return !t || t === figure.unit.toLowerCase() || t === figure.plural.toLowerCase();
+      }
+
+      function render() {
+        if (!point.value) { note.hidden = true; return; }
+        var key = point.value + ":" + (item && item.value ? item.value : "");
+        var figure = data[key];
+        var where = label(point);
+        var what = item && item.value ? label(item) : "";
+        note.hidden = false;
+        if (!figure) {
+          note.textContent = "The ledger has no " + (what || "stock") + " at " + where + " yet.";
+          return;
+        }
+        if (!figure.known) {
+          note.textContent = "The ledger cannot give one figure for " + where + ": " + figure.reasons.join("; ") + ".";
+          return;
+        }
+        var text = "The ledger holds " + figure.text + (what ? " of " + what : "") + " at " + where + ".";
+        var found = quantity.value === "" ? null : Number(quantity.value);
+        if (found !== null && !isNaN(found) && sameUnit(unit && unit.value, figure)) {
+          var diff = found - Number(figure.amount);
+          var n = Math.abs(diff);
+          var noun = n === 1 ? figure.unit : figure.plural;
+          if (diff === 0) {
+            text += " This count agrees with it.";
+          } else {
+            text += " This count is " + digits(n) + " " + noun + (diff < 0 ? " fewer." : " more.");
+          }
+          if (kind && kind.value === "override") {
+            text += " As an override it replaces the ledger's " + digits(figure.amount) + " with " + digits(found) + ".";
+          } else if (kind && kind.value) {
+            text += " It is kept beside the ledger, which stays at " + digits(figure.amount) + ".";
+          }
+        }
+        note.textContent = text;
+      }
+
+      [point, item, kind].forEach(function (el) { if (el) { el.addEventListener("change", render); } });
+      [quantity, unit].forEach(function (el) { if (el) { el.addEventListener("input", render); } });
+      render();
+    })();
+  </script>
+{% endblock %}
