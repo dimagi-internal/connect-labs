@@ -79,8 +79,8 @@ scenes:
   - kind: snapshot
     note: two kits ranked by price; the cheaper one fails its range
   concept_claim: The comparison ranks both kits because their contents match, names the kit on each row
-    with a per-test and per-kit price, cheaper first, and states under the Brightwell row that it fails
-    1 of 3 requirements because its range maximum is 1.5 mg/L.
+    with a per-test and per-kit price, ranked by landed total, cheapest first, and states under the Brightwell
+    row that it fails 1 of 3 requirements because its range maximum is 1.5 mg/L.
   design_intent: Kits are only ranked against kits of the same composition, and the specification outcome
     is stated beside the price — the product does not re-rank or advise; the buyer decides with the fact
     in front of her.
@@ -124,8 +124,8 @@ scenes:
     seconds: 1.5
   - kind: snapshot
     note: the award, its reason, nothing yet asked of anyone
-  concept_claim: Posting a reason on the Lumen row of the comparison records an award with that reason,
-    and the comparison then links to the award.
+  concept_claim: Pressing Award on the Lumen row of the comparison, with a reason typed into that row,
+    records an award with that reason, and the comparison then links to the award.
   design_intent: The award is a decision with a reason, frozen beside the comparison — not a purchase.
   show: On the comparison Hauwa types her reason into the Lumen kit's row — only kit that reads the 2
     mg/L dispenser dose — presses Award, and opens the award.
@@ -166,8 +166,8 @@ scenes:
     timeout_ms: 30000
   - kind: wait_for
     target: cannot be ordered yet
-  concept_claim: The approval request on the award names Aqualytic as the approver, its role as technical
-    partner, and the note saying what it is asked to confirm, before the request is recorded.
+  concept_claim: The approval request Hauwa records on the award names Aqualytic as approver, its role
+    as technical partner, and a note saying what it is asked to confirm.
   design_intent: The approver is a third party, not the decider; the request says what they are asked
     to agree to.
   show: From the award Hauwa asks for an approval — Aqualytic, as technical partner, asked to confirm
@@ -369,8 +369,8 @@ scenes:
   - kind: snapshot
     note: the placed order, 20 kits, DAP in words, against the approved award
   concept_claim: Once Aqualytic has approved through its own link, the award's Place order button is enabled,
-    and an order opened from it arrives prefilled with the quoted kit, quantity, price, Incoterm and lead
-    time, and saves as a placed order of 20 kits whose header explains DAP in words.
+    and an order opened from it arrives prefilled with the quoted kit, quantity, price, freight included,
+    Incoterm and lead time, and saves as a placed order of 20 kits whose header explains DAP in words.
   design_intent: 'The approval is what releases the order: the same button, disabled a moment ago, is
     now live — and the order carries the award, so the quote''s terms travel into the commitment.'
   show: 'Back on the award, Aqualytic''s approval reads as given through its own link with the signed
