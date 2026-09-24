@@ -427,6 +427,100 @@ class TestTheOrderShowsWhatCameThroughTheLink:
         assert "No dispatch was recorded" in body
 
 
+class TestTheStockPageSaysSendOrReorder:
+    """A point restocked from its supplier reorders; one restocked from another point is sent to."""
+
+    @pytest.fixture
+    def points(self, da, chain):
+        item_id = chain["contract"]["item_id"]
+        warehouse = next(p for p in op(da, "supply_point_list") if p["slug"] == "wh")
+        child = op(
+            da,
+            "supply_point_upsert",
+            data={
+                "slug": "child",
+                "name": "Child store",
+                "kind": "regional_store",
+                "parent_supply_point_id": warehouse["id"],
+                "min_months_of_stock": "3",
+                "max_months_of_stock": "6",
+                "source": "we_recorded",
+            },
+        )
+        op(
+            da,
+            "supply_point_upsert",
+            data={
+                "slug": "wh",
+                "name": "Harmattan warehouse",
+                "kind": "central_store",
+                "min_months_of_stock": "2",
+                "max_months_of_stock": "6",
+                "source": "we_recorded",
+            },
+        )
+        op(
+            da,
+            "movement_record",
+            data={
+                "kind": "transfer",
+                "occurred_on": "2026-07-01",
+                "commodity_slug": "ors-zinc-copack",
+                "item_id": item_id,
+                "from_supply_point_id": warehouse["id"],
+                "to_supply_point_id": child["id"],
+                "quantity": "100",
+                "quantity_unit": "carton",
+                "source": "we_recorded",
+            },
+        )
+        for day, amount in (("2026-08-01", "1500"), ("2026-09-01", "1501")):
+            op(
+                da,
+                "movement_record",
+                data={
+                    "kind": "consumption",
+                    "occurred_on": day,
+                    "commodity_slug": "ors-zinc-copack",
+                    "item_id": item_id,
+                    "from_supply_point_id": child["id"],
+                    "quantity": amount,
+                    "quantity_unit": "co-pack",
+                    "source": "connect_visit",
+                },
+            )
+        return {"warehouse": warehouse, "child": child, "item_id": item_id}
+
+    def _row(self, body, name):
+        row = body[body.index(name) :]
+        return row[: row.index("</tr>")]
+
+    def test_the_operations_say_where_a_point_is_restocked_from(self, da, points):
+        rows = {p["name"]: p for p in op(da, "network_stock")["points"]}
+        assert rows["Harmattan warehouse"]["restocked_from"] == "supplier"
+        assert rows["Child store"]["restocked_from"] == "supply_point"
+        plan = op(da, "resupply_plan", supply_point_id=points["warehouse"]["id"], item_id=points["item_id"])
+        assert plan["restocked_from"] == "supplier"
+
+    def test_the_page_says_reorder_for_the_top_of_the_chain_and_send_below_it(self, client_in_programme, points):
+        body = client_in_programme.get(reverse("supply_chain:stock")).content.decode()
+        assert "to reorder" in self._row(body, "Harmattan warehouse")
+        assert "to send" in self._row(body, "Child store")
+        assert "to reorder" not in self._row(body, "Child store")
+
+    def test_the_policy_is_stated_once(self, client_in_programme, points):
+        body = client_in_programme.get(reverse("supply_chain:stock")).content.decode()
+        assert body.count("Each point is topped up to its maximum") == 1
+
+    def test_demand_is_in_whole_units(self, client_in_programme, points):
+        row = self._row(client_in_programme.get(reverse("supply_chain:stock")).content.decode(), "Child store")
+        import re
+
+        demand = re.search(r"([0-9][0-9,.]*) co-packs <span[^>]*>dispensed a month", row)
+        assert demand, row
+        assert "." not in demand.group(1)
+
+
 class TestTheStockPageSpeaksInPacks:
     def test_the_rate_is_also_given_in_the_unit_the_stock_is_counted_in(self, client_in_programme, da, chain):
         store = op(

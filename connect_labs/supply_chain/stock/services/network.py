@@ -157,6 +157,10 @@ def network_stock(
                 # What the figures are of, when the point holds one item: a
                 # check that says "below its minimum" should say of what.
                 "item": for_conversion,
+                # Where the point is restocked from: another point in this
+                # programme sends to it; a point with none above it reorders
+                # from its supplier.
+                "restocked_from": resupply.restocked_from(point),
                 "kind": point.kind,
                 "connect_username": point.connect_username,
                 "admin_area": point.admin_area,
