@@ -24,7 +24,7 @@ the award, so the page says so where the order button would otherwise be.
   <h2 class="text-lg font-semibold text-brand-indigo">
     Awarded to
     <a href="{% url 'supply_chain:supplier_detail' supplier.id %}" class="text-brand-indigo hover:underline">{{ supplier.name }}</a>
-    <span class="text-sm font-normal text-gray-600">— {{ award.commodity_slug|humanise }}</span>
+    <span class="text-sm font-normal text-gray-600">— {{ awarded_item|default:award.commodity_slug|words }}</span>
   </h2>
   <p class="text-sm text-gray-600">
     Decided {{ award.decided_on|default:"undated" }}{% if award.decided_by %} by {{ award.decided_by }}{% endif %}
@@ -91,6 +91,11 @@ the award, so the page says so where the order button would otherwise be.
                   <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-warning text-message-warning-text">requested</span>
                 {% endif %}
                 {% if approval.decision_note %}<div class="text-xs text-gray-500 mt-0.5">{{ approval.decision_note }}</div>{% endif %}
+                {% if approval.status != "requested" %}
+                  <div class="text-xs text-gray-500 mt-0.5">
+                    {% if approval.answered_by_approver %}Answered by {{ approval.approver.name }} through {{ approval.approver.name }}'s own link{% else %}Recorded by the programme team{% endif %}
+                  </div>
+                {% endif %}
               </td>
               <td class="px-4 py-2 text-right whitespace-nowrap">
                 {% if approval.status == "requested" %}

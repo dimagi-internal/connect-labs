@@ -94,7 +94,7 @@ sachets are in the carton, and neither does a balance.
 
     {% if item.is_kit %}
       <div class="mt-4">
-        <div class="text-[11px] text-gray-500">What is inside — one {{ item.base_unit|default:product.base_unit|default:"kit"|unit_words }} holds</div>
+        <div class="text-[11px] text-gray-500">What is inside — one {{ item.components_unit|unit_words }} holds</div>
         <div class="overflow-x-auto mt-1" tabindex="0" role="region" aria-label="Table, scrolls sideways">
           <table class="min-w-[32rem] w-full text-sm">
             <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">

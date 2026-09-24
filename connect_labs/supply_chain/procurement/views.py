@@ -666,6 +666,8 @@ class AwardDetailView(_Base):
         approvals = self.op("approval_list", award_id=award.pk)
         orgs = {o["id"]: o for o in self.op("org_list")}
         context["award"] = detail
+        # The heading named the product's slug; what was awarded is a kit.
+        context["awarded_item"] = award.quote.item.name if award.quote.item_id else None
         context["supplier"] = self.op("supplier_get", supplier_id=detail["supplier_id"])
         context["round"] = self.op("round_get", round_id=detail["round_id"])
         # Each approval with its evidence: the documents attached to it (the
@@ -677,6 +679,9 @@ class AwardDetailView(_Base):
                 "approver": orgs.get(a["approver_org_id"]),
                 "documents": [documents[i] for i in a.get("document_ids") or [] if i in documents],
                 "rests_on": documents.get(a.get("rests_on_document_id")),
+                # Answered by the approver itself, through its own link.
+                "answered_by_approver": a.get("decision_source") == "partner_reported"
+                and a.get("decision_recorded_by_org_id") == a["approver_org_id"],
             }
             for a in approvals
         ]

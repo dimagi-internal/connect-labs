@@ -5,6 +5,6 @@ the same contents; this is the line that shows why two were not.
 {% endcomment %}
 {% if composition %}
   <div class="text-xs font-normal text-gray-500 mt-0.5">
-    kit: {% for part in composition %}{{ part.quantity|qty:part.base_unit }} {{ part.commodity_slug }}{% if not forloop.last %} + {% endif %}{% endfor %}
+    {% if unit %}one {{ unit|unit_words }} holds{% else %}kit{% endif %}: {% for part in composition %}{{ part.quantity|qty:part.base_unit }} {{ part.commodity_slug }}{% if not forloop.last %} + {% endif %}{% endfor %}
   </div>
 {% endif %}

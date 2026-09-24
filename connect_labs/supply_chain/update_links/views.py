@@ -74,12 +74,12 @@ class UpdateLinkListView(OperationBase):
 class UpdateLinkIssueView(OperationFormView):
     operation = "update_link_issue"
     form_class = UpdateLinkIssueForm
-    title = "Issue a supplier update link"
+    title = "Issue an update link"
     intro = (
-        "A private link one organisation can use without a labs login to confirm orders and payments, "
-        "record dispatches and receipts, and record stock counts and releases — for the orders and "
-        "supply points you tick here, and nothing else. Whatever they record is marked as reported "
-        "by them."
+        "A private link one organisation can use without a labs login — a supplier to confirm orders "
+        "and payments, record dispatches, receipts, stock counts and releases; an approver to give its "
+        "own answer on an approval asked of it. It covers the orders, supply points and approvals you "
+        "tick here, and nothing else. Whatever they record is marked as theirs."
     )
     submit_label = "Issue link"
     footnote = (
@@ -201,6 +201,16 @@ class UpdateLinkPublicView(View):
 
     def _render(self, scope, bound=None, status=200):
         forms = self._forms(scope, bound)
+        # An approver link covers approvals and nothing else, so the supplier
+        # actions are neither offered nor listed as unavailable -- they are not
+        # this organisation's to take -- and the other way round.
+        approver_link = scope.approvals is not None and scope.approvals.exists()
+        supplier_link = scope.contracts.exists() or scope.supply_points.exists()
+        forms = [
+            form
+            for form in forms
+            if (form.for_approvers and approver_link) or (not form.for_approvers and supplier_link) or form is bound
+        ]
         done_action = self.request.GET.get("done", "")
         if done_action not in PUBLIC_FORMS:
             done_action = ""
@@ -218,6 +228,7 @@ class UpdateLinkPublicView(View):
             "org": self.link.org,
             "contracts": list(scope.contracts.prefetch_related("shipments")),
             "supply_points": list(scope.supply_points),
+            "approvals": list(scope.approvals) if scope.approvals is not None else [],
             "forms": [form for form in forms if form.is_available() or form is bound],
             "unavailable": [form for form in forms if not form.is_available() and form is not bound],
             "bound_action": bound.action if bound is not None else "",

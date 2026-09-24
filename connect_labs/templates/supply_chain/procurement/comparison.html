@@ -112,7 +112,8 @@
                 <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
                    class="text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
                 {% if row.item_name %}<div class="text-sm font-normal text-gray-700">{{ row.item_name }}</div>{% endif %}
-                {% include "supply_chain/procurement/_composition.html" with composition=row.composition %}
+                {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
+                {% include "supply_chain/procurement/_specification.html" with specification=row.specification %}
               </td>
               {% for column in comparison.columns %}
                 {% with cell=row.figures|dictkey:column.key %}
@@ -179,7 +180,7 @@
              class="font-medium text-brand-indigo hover:underline">{{ entry.item.name|default:entry.quote.supplier_id }}</a>
           <span class="text-gray-500">· {{ entry.quote.as_quoted_currency }} {{ entry.quote.as_quoted_amount|money }}</span>
           {% if entry.item.components %}
-            {% include "supply_chain/procurement/_composition.html" with composition=entry.item.components %}
+            {% include "supply_chain/procurement/_composition.html" with composition=entry.item.components unit=entry.item.components_unit %}
           {% endif %}
           <div class="text-gray-700 mt-1">{{ entry.quote.void_reason }}</div>
         </div>
@@ -199,7 +200,8 @@
            class="text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
         {% if row.item_name %}<span class="text-sm font-normal text-gray-700">· {{ row.item_name }}</span>{% endif %}
       </h3>
-      {% include "supply_chain/procurement/_composition.html" with composition=row.composition %}
+      {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
+      {% include "supply_chain/procurement/_specification.html" with specification=row.specification %}
       {% for column in comparison.columns %}
         {% with cell=row.figures|dictkey:column.key %}
           {% if cell.unconfirmed %}
