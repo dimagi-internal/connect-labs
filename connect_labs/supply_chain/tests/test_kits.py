@@ -262,6 +262,39 @@ class TestAKitCanBeOneCourse:
         assert "unconfirmed" in comparison["comparable"][0]["figures"]["usd_per_course"]
 
 
+def _no_ration_table(da):
+    return {
+        c["subject"]["label"] for c in op(da, "checks_list")["checks"] if c["kind"] == "commodity_course_undefined"
+    }
+
+
+class TestACourseCarriedByTheKitIsNotAMissingRationTable:
+    """The IPTSc walkthrough's checks page asked for a ration table for the
+    tablets inside a packet that is itself the course. Nobody buys, stocks or
+    dispenses those tablets on their own; the packet carries the course."""
+
+    def test_neither_the_kit_nor_its_parts_ask_for_one_when_the_kit_is_the_course(self, da, catalogue):
+        _kit(da, "A", 10, one_course_is="base_unit")
+        flagged = _no_ration_table(da)
+        assert "ORS/zinc co-pack" not in flagged
+        assert "ORS" not in flagged
+        assert "Zinc 20 mg" not in flagged
+
+    def test_they_still_do_when_the_kit_does_not_say_it_is_the_course(self, da, catalogue):
+        _kit(da, "A", 10)
+        assert {"ORS/zinc co-pack", "ORS"} <= _no_ration_table(da)
+
+    def test_the_catalogue_page_agrees_with_the_feed(self, scoped, da, catalogue):
+        _kit(da, "A", 10, one_course_is="base_unit")
+        body = scoped.get(reverse("supply_chain:catalogue")).content.decode()
+        assert "No ration table" not in body
+
+    def test_a_part_also_bought_on_its_own_still_needs_its_ration_table(self, da, catalogue):
+        _kit(da, "A", 10, one_course_is="base_unit")
+        op(da, "item_upsert", data={"sku": "ORS-LOOSE", "name": "ORS sachet", "commodity_slug": "ors"})
+        assert "ORS" in _no_ration_table(da)
+
+
 # ---- screens --------------------------------------------------------------
 
 

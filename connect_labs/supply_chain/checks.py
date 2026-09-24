@@ -220,9 +220,43 @@ def _course_applies(commodity) -> bool:
     return course_applies_to_category(commodity.category)
 
 
+def courses_carried_by_kits(items) -> set:
+    """Products whose course a kit already states, so a ration table adds nothing.
+
+    `items` are trade items as dicts with `commodity_slug`, `components` and
+    `one_course_is` -- the wire shape, so the catalogue pages can ask with the
+    item list they already hold and cannot disagree with this feed.
+
+    A kit whose item says it IS one course carries the course for its own
+    product -- when every trade item of that product says so -- and for the
+    products inside it that are never bought as items of their own: the
+    tablets inside a three-day packet are not stocked, priced or dispensed
+    apart from the packet. A part that is also sold loose keeps needing its
+    ration table, because that loose item has no course to borrow.
+    """
+    items = list(items)
+    loose = {item["commodity_slug"] for item in items if not item.get("components")}
+    by_product: dict[str, list] = {}
+    for item in items:
+        by_product.setdefault(item["commodity_slug"], []).append(item)
+    carried = {slug for slug, own in by_product.items() if all(item.get("one_course_is") for item in own)}
+    for item in items:
+        if item.get("one_course_is"):
+            carried |= {c["commodity_slug"] for c in item.get("components") or [] if c["commodity_slug"] not in loose}
+    return carried
+
+
 def _catalogue(access, as_of):
     out = []
+    carried = courses_carried_by_kits(
+        {"commodity_slug": slug, "components": components, "one_course_is": one_course_is}
+        for slug, components, one_course_is in Item.objects.filter(scope_key=access.scope_key).values_list(
+            "commodity__slug", "components", "one_course_is"
+        )
+    )
     for commodity in Commodity.objects.filter(scope_key=access.scope_key):
+        if commodity.slug in carried:
+            continue
         if _course_applies(commodity) and not (commodity.course_definition or {}).get("base_units_per_course"):
             out.append(
                 _check(
