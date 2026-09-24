@@ -457,3 +457,4 @@ targeting-snapshot-*.zip
 # templates/ or static/ -- so the whole level is ignored.
 /*.html
 scripts/walkthroughs/supply-chlorine-stopgap/outputs.json
+scripts/walkthroughs/oes-demo/outputs.json
