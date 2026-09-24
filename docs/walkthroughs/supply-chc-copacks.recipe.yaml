@@ -54,8 +54,8 @@ scenes:
   - kind: hold
     seconds: 2.5
     note: two co-packs with the round's contents, ranked; the chosen one marked
-  - kind: scroll_to
-    target: css:text=not the contents this round buys
+  - kind: scroll
+    value: bottom
   - kind: hold
     seconds: 2.5
   - kind: snapshot
@@ -81,17 +81,19 @@ scenes:
     target: css:#id_status
     value: Placed
   - kind: hold
-    seconds: 1.0
-  - kind: snapshot
-    note: Placed chosen, about to save
+    seconds: 1.5
   - kind: click
     must_succeed: true
     target: role:button:Save changes
     timeout_ms: 30000
   - kind: wait_for
     target: css:text=Bought by
+  - kind: scroll
+    value: top
   - kind: hold
-    seconds: 1.5
+    seconds: 2.0
+  - kind: snapshot
+    note: the order, now placed, bought by the programme
   concept_claim: Placing the order changes the contract's status from draft to placed, with the programme
     organisation as buyer of record.
   show: The order page (draft, bought by Connect Child Health Programme as programme org), then Edit order
@@ -114,9 +116,7 @@ scenes:
     target: css:#id_source
     value: We set this up ourselves
   - kind: hold
-    seconds: 1.0
-  - kind: snapshot
-    note: the payment, filled in
+    seconds: 1.5
   - kind: click
     must_succeed: true
     target: role:button:Record payment
@@ -127,6 +127,8 @@ scenes:
     target: css:text=Ordered · received · invoiced
   - kind: hold
     seconds: 2.0
+  - kind: snapshot
+    note: paid in advance, awaiting delivery of the whole order
   concept_claim: Recording the payment on an order paid in advance shows it as paid in advance and awaiting
     delivery of the whole order, not as billed beyond what arrived.
   show: The payment form for invoice HHS-INV-2026-014 — paid on today, 18000 USD, bank transfer, reference
@@ -213,14 +215,17 @@ scenes:
   actions:
   - kind: wait_for
     target: css:text=update link
+  - kind: scroll
+    value: top
   - kind: hold
-    seconds: 2.5
+    seconds: 3.0
     note: what Harmattan recorded through its link, nobody asked
+  - kind: snapshot
+    note: the link's updates, listed on the order
   - kind: scroll_to
     target: css:text=Recoverable from the supplier
   - kind: hold
-    seconds: 2.0
-  - kind: snapshot
+    seconds: 2.5
     note: 'paid for and refused: 120 USD recoverable'
   concept_claim: The order page lists the distributor's link updates (order confirmed, payment received,
     receipt) and reports the refused cartons of an advance order as an amount recoverable from the supplier.
@@ -344,6 +349,8 @@ scenes:
     target: css:text=Updates for Harmattan Health Supplies
   - kind: click
     target: css:summary:has-text('Record a release')
+  - kind: scroll_to
+    target: css:summary:has-text('Record a release')
   - kind: select
     target: css:#id_record_release-from_supply_point
     value: Harmattan warehouse, Kano
@@ -368,7 +375,8 @@ scenes:
     target: role:button:Record release
     timeout_ms: 30000
   - kind: hold
-    seconds: 2.0
+    seconds: 2.5
+    note: the release, recorded as reported by Harmattan
   concept_claim: The link's release form records a transfer of 194 cartons from the distributor's warehouse
     to the partner's store.
   show: The "Record a release" form on the link — from Harmattan warehouse, Kano to Sahel CHI store, Wudil,
@@ -378,6 +386,8 @@ scenes:
   actions:
   - kind: wait_for
     target: css:text=Stock across the network
+  - kind: scroll
+    value: bottom
   - kind: hold
     seconds: 3.0
   - kind: snapshot
