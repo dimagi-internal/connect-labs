@@ -133,6 +133,41 @@ def qty(value, unit=None):
     return f"{quantity_digits(value)} {unit_noun(unit, value)}".strip()
 
 
+# Incoterms 2020, as a buyer needs them read: who pays to move the goods, and
+# to where. A three-letter code is a contract term most of the programme team
+# cannot expand from memory; the order says it once, in words, beside the code.
+INCOTERMS = {
+    "EXW": ("ex works", "we collect from the supplier's premises and pay all the freight"),
+    "FCA": ("free carrier", "the supplier hands the goods to our carrier at the named place"),
+    "CPT": ("carriage paid to", "the supplier pays freight to the named place"),
+    "CIP": ("carriage and insurance paid to", "the supplier pays freight and insurance to the named place"),
+    "DAP": ("delivered at place", "the supplier pays freight to the named place"),
+    "DPU": ("delivered at place unloaded", "the supplier pays freight to the named place and unloads there"),
+    "DDP": ("delivered duty paid", "the supplier pays freight and import duties to the named place"),
+    "FAS": ("free alongside ship", "the supplier delivers alongside our vessel at the named port"),
+    "FOB": ("free on board", "the supplier loads the goods onto our vessel at the named port"),
+    "CFR": ("cost and freight", "the supplier pays sea freight to the named port"),
+    "CIF": ("cost, insurance and freight", "the supplier pays sea freight and insurance to the named port"),
+}
+
+
+@register.filter
+def incoterm_words(incoterm):
+    """An Incoterm with what it means: "DAP — delivered at place: the supplier pays freight to the named place".
+
+    The code may carry its named place ("DAP Kano"), which is kept as written.
+    A term that is not one of the eleven is shown as typed, never guessed at.
+    """
+    text = str(incoterm or "").strip()
+    if not text:
+        return ""
+    code = text.split()[0].upper().strip(".,")
+    if code not in INCOTERMS:
+        return text
+    name, meaning = INCOTERMS[code]
+    return f"{text} — {name}: {meaning}"
+
+
 @register.filter
 def unit_words(unit):
     """A unit on its own, as a word: "per {{ unit|unit_words }}" -> "per jerry can"."""
