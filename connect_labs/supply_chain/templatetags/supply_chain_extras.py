@@ -96,6 +96,7 @@ def check_href(check):
 
 
 _ENUM = re.compile(r"[a-z]+(?:_[a-z]+)+")
+_DECIMAL = re.compile(r"-?\d+\.\d+")
 
 # How a record came to be known, in the words the forms use to ask it.
 SOURCE_LABELS = {
@@ -165,6 +166,11 @@ def _fact_text(value):
         return "; ".join(_fact_text(v) for v in value) or "none"
     if value is None or value == "":
         return "—"
+    if isinstance(value, str) and _DECIMAL.fullmatch(value):
+        # A derived quantity ("83.7209") by the one quantity rule. Only a
+        # value with a point: whole numbers here are as often ids as counts,
+        # and "contract 1,157" would be wrong.
+        return quantity_digits(value)
     if isinstance(value, str) and _ENUM.fullmatch(value):
         # A stored enum ("at_customs") reached the checks list as the raw
         # value; say it in words. Only snake_case lowercase is touched, so a
@@ -327,7 +333,7 @@ def order_stages(order):
         _cell(
             "Contract",
             order["contract"]["count"],
-            ", ".join(f"{n} {buyer.replace('_', ' ')}" for buyer, n in buyers.items()) or None,
+            ", ".join(f"{n} bought by {buyer_label(buyer)}" for buyer, n in buyers.items()) or None,
             orders,
         ),
         _cell(

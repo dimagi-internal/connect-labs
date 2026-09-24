@@ -86,3 +86,29 @@ class TestWords:
     )
     def test_a_code_reads_as_words(self, code, said):
         assert words(code) == said
+
+
+class TestCheckFacts:
+    def test_a_derived_quantity_in_a_fact_is_rounded_and_an_id_is_not_grouped(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import fact_rows
+
+        rows = dict(fact_rows({"outstanding": "83.7209", "contract_id": 1157, "status": "at_customs"}))
+        assert rows["outstanding"] == "83.72"
+        assert rows["contract id"] == "1157"
+        assert rows["status"] == "at customs"
+
+    def test_the_home_chain_says_who_bought_in_words(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import order_stages
+
+        order = {
+            "contract": {
+                "count": 2,
+                "by_buyer_of_record": {"programme_org": 1, "partner_org": 1},
+                "without_reference": 0,
+            },
+            "dispatched": {"shipments": 0, "in_transit": 0},
+            "received": {"receipts": 0},
+            "invoiced": {"count": 0, "unpaid": 0},
+        }
+        sub = order_stages(order)[0]["sub"]
+        assert sub == "1 bought by the programme, 1 bought by a local partner"
