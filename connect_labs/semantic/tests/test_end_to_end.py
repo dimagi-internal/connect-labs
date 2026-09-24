@@ -196,6 +196,7 @@ def test_the_whole_chain_runs_and_returns_banded_numbers(visit_cache):
         _config(ENTITY_SCHEMA, ENTITY_PIPELINE),
         [OPP],
         extra_fields={"weight_g": _config(VISIT_SCHEMA, VISIT_PIPELINE)},
+        registry_name="kmc",
         series="N",
         scopes=["programme", "opportunity", "flw"],
         as_of="'2026-04-01'",
@@ -220,6 +221,7 @@ def test_the_single_scope_path_executes_too(visit_cache):
         _config(ENTITY_SCHEMA, ENTITY_PIPELINE),
         [OPP],
         extra_fields={"weight_g": _config(VISIT_SCHEMA, VISIT_PIPELINE)},
+        registry_name="kmc",
         series="N",
         scope="programme",
         as_of="'2026-04-01'",
@@ -237,6 +239,7 @@ def test_layer1_is_built_from_BOTH_pipelines(visit_cache):
         evaluate(
             _config(ENTITY_SCHEMA, ENTITY_PIPELINE),
             [OPP],
+            registry_name="kmc",
             series="N",
             scope="programme",
             as_of="'2026-04-01'",

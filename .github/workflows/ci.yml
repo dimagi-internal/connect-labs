@@ -255,6 +255,12 @@ jobs:
       CELERY_BROKER_URL: 'redis://localhost:6379/0'
       REDIS_URL: 'redis://localhost:6379/0'
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+      # The semantic layer's parity and execution tests (connect_labs/semantic/tests)
+      # EXECUTE compiled SQL over raw psycopg2 against this same service. Named
+      # explicitly rather than left to their default, and REQUIRED: locally they skip
+      # without a Postgres, but here a skipped parity suite would read as a pass.
+      SEMANTIC_TEST_DSN: 'host=127.0.0.1 port=5432 user=postgres password=postgres dbname=postgres'
+      SEMANTIC_TEST_REQUIRE_DB: '1'
       # Deliberately fake: pydantic-ai agent construction requires the var to
       # exist (funder_dashboard agent tests), but unit tests must never be able
       # to reach the real API — a test that actually calls Anthropic should

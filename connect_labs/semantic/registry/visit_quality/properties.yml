@@ -1,0 +1,95 @@
+# Visit quality -- Layer 2, one row per BENEFICIARY.
+#
+# A deliberately small, programme-neutral registry over the columns EVERY Connect
+# visit carries (labs_raw_visit_cache's base columns, which any visit-level
+# pipeline's extraction selects): entity_id, username, visit_date, status, flagged.
+# No weight series, no LLO grouping, no form paths.
+#
+# It exists to prove the engine is general -- that KMC (registry/kmc) is one
+# example rather than the shape the engine assumes. Every model section is
+# declared here; nothing comes from connect_labs/semantic/legacy.py.
+
+version: 1
+
+entity:
+  name: beneficiary # row key: beneficiary_id = opportunity_id|entity_id
+  plural: beneficiaries
+  key: entity_id # the Connect entity a visit is delivered to
+  cohort_date: first_visit # the month a beneficiary was first visited
+
+# Derived per-visit columns added to every Layer-1 row.
+visit_columns:
+  - { name: is_approved, word_match: { column: status, word: approved } }
+  - { name: is_rejected, word_match: { column: status, word: rejected } }
+  - { name: is_flagged, sql: 'COALESCE(flagged, FALSE)' }
+
+# One pipeline, nothing merged in from others.
+pipelines:
+  entity: visits
+
+constants:
+  REPEAT_VISITS: 2 # "visited at least twice"
+  STALE_DAYS: 30 # "seen recently": last visit within this many days of the report date
+
+aggregates:
+  - name: num_visits
+    label: 'Visits'
+    means: 'Number of visits delivered to the beneficiary.'
+    sql: 'COUNT(*)'
+  - name: first_visit
+    label: 'First visit date'
+    means: "Date of the beneficiary's first visit."
+    sql: 'MIN(visit_date)'
+  - name: last_visit
+    label: 'Last visit date'
+    means: "Date of the beneficiary's most recent visit."
+    sql: 'MAX(visit_date)'
+  - name: approved_visits
+    label: 'Approved visits'
+    means: 'Visits whose status is approved.'
+    sql: 'COUNT(*) FILTER (WHERE is_approved)'
+  - name: rejected_visits
+    label: 'Rejected visits'
+    means: 'Visits whose status is rejected.'
+    sql: 'COUNT(*) FILTER (WHERE is_rejected)'
+  - name: flagged_visits
+    label: 'Flagged visits'
+    means: 'Visits Connect flagged for review.'
+    sql: 'COUNT(*) FILTER (WHERE is_flagged)'
+
+properties:
+  - name: visited_twice
+    label: 'Visited at least twice'
+    means: 'The beneficiary received at least 2 visits.'
+    type: bool
+    sql: 'num_visits >= :REPEAT_VISITS'
+
+  - name: any_flagged
+    label: 'Any flagged visit'
+    means: "At least one of the beneficiary's visits was flagged."
+    type: bool
+    sql: 'flagged_visits > 0'
+
+  - name: any_rejected
+    label: 'Any rejected visit'
+    means: "At least one of the beneficiary's visits was rejected."
+    type: bool
+    sql: 'rejected_visits > 0'
+
+  - name: all_approved
+    label: 'Every visit approved'
+    means: "Every one of the beneficiary's visits is approved."
+    type: bool
+    sql: 'approved_visits = num_visits'
+
+  - name: days_since_last_visit
+    label: 'Days since last visit'
+    means: "Days from the beneficiary's most recent visit to the report date."
+    type: int
+    sql: 'FLOOR(EXTRACT(EPOCH FROM ((:as_of)::timestamp - last_visit::timestamp)) / 86400)::int'
+
+  - name: seen_recently
+    label: 'Seen recently'
+    means: 'The most recent visit was within 30 days of the report date.'
+    type: bool
+    sql: 'days_since_last_visit <= :STALE_DAYS'

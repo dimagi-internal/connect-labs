@@ -41,16 +41,12 @@ import yaml
 
 from connect_labs.semantic.compiler import compile_indicator_sql, compile_rollup_sql
 from connect_labs.semantic.layer1 import build_visit_sql
+from connect_labs.semantic.legacy import DEFAULT_REGISTRY_NAME
+from connect_labs.semantic.model import indicator_prefix, series_prefixes
 
 logger = logging.getLogger(__name__)
 
 REGISTRY_ROOT = Path(__file__).resolve().parent / "registry"
-
-# Indicator prefixes the registry carries. "C" is the workbook's original series,
-# "N" is Neal Lesh's demo compute spec. A caller asking for one must not silently
-# receive the other's columns: they answer different questions and disagree on
-# maturity and growth bands by design.
-SERIES_PREFIXES = ("C", "N")
 
 # A measure references another as `{other_measure}` inside its sql. `{CUBE}` is the
 # cube self-reference, not a measure, and must not be followed.
@@ -61,7 +57,7 @@ class SemanticRuntimeError(RuntimeError):
     """Raised when the registry cannot be loaded or the query cannot run."""
 
 
-def load_registry(name: str = "kmc") -> tuple[dict[str, Any], dict[str, Any]]:
+def load_registry(name: str) -> tuple[dict[str, Any], dict[str, Any]]:
     """(properties_doc, indicators_doc) for a registry directory."""
     root = REGISTRY_ROOT / name
     if not root.is_dir():
@@ -74,7 +70,7 @@ def load_registry(name: str = "kmc") -> tuple[dict[str, Any], dict[str, Any]]:
     return props, inds
 
 
-def load_deployment(name: str = "kmc") -> tuple[dict[Any, str], dict[str, dict[Any, bool]]]:
+def load_deployment(name: str) -> tuple[dict[Any, str], dict[str, dict[Any, bool]]]:
     """(llo_map, settings) for a registry directory; empty pair when undeclared.
 
     The compiler needs both and can derive neither. `llo` is not a column on a visit
@@ -91,7 +87,7 @@ def load_deployment(name: str = "kmc") -> tuple[dict[Any, str], dict[str, dict[A
     return facts["llo_map"], facts["settings"]
 
 
-def load_deployment_facts(name: str = "kmc") -> dict[str, Any]:
+def load_deployment_facts(name: str) -> dict[str, Any]:
     """Every deployment fact for an on-disk registry: llo_map, settings, app_asks, asks_as."""
     root = REGISTRY_ROOT / name / "deployment.yml"
     if not root.is_file():
@@ -159,7 +155,8 @@ def resolve_registry(
     One resolver for both worlds, because a caller should not have to care which
     one it got:
 
-      ``None`` / ``{}``          the built-in on-disk registry ("kmc")
+      ``None`` / ``{}``          the default on-disk registry (legacy.DEFAULT_REGISTRY_NAME:
+                                 every unbound workflow predates records and is KMC)
       ``{"name": "kmc"}``        a named on-disk registry
       ``{"registry_id": 41}``    a live record, edited without a deploy
 
@@ -172,7 +169,7 @@ def resolve_registry(
     registry_id = source.get("registry_id")
 
     if registry_id is None:
-        name = source.get("name") or "kmc"
+        name = source.get("name") or DEFAULT_REGISTRY_NAME
         props, inds = load_registry(name)
         facts = load_deployment_facts(name)
         return props, inds, facts["llo_map"], facts["settings"], facts
@@ -222,15 +219,20 @@ def filter_to_series(registry: dict[str, Any], series: str) -> dict[str, Any]:
     belongs to a series that was not asked for.
     """
     series = series.upper()
-    if series not in SERIES_PREFIXES:
-        raise SemanticRuntimeError(f"unknown indicator series {series!r}; known: {SERIES_PREFIXES}")
+    # Which families exist is the registry's to say (`series:`, or the prefixes of
+    # its own indicator ids) -- there is no fixed list. A caller asking for one must
+    # not silently receive another's columns: KMC's C and N answer different
+    # questions and disagree on maturity and growth bands by design.
+    known = series_prefixes(registry)
+    if series not in known:
+        raise SemanticRuntimeError(f"unknown indicator series {series!r}; known: {known}")
 
     by_name = {m["name"]: m for m in registry.get("measures", []) if m.get("name")}
 
     roots = [
         m
         for m in registry.get("measures", [])
-        if m.get("meta") and str(m["meta"].get("indicator", "")).upper().startswith(series)
+        if m.get("meta") and indicator_prefix(m["meta"].get("indicator")) == series
     ]
 
     reachable: set[str] = set()
@@ -360,7 +362,7 @@ def evaluate(
     *,
     visit_sql: str | None = None,
     extra_fields: dict[str, Any] | None = None,
-    registry_name: str = "kmc",
+    registry_name: str | None = None,
     registry_documents: tuple[dict[str, Any], dict[str, Any]] | None = None,
     series: str | None = None,
     scope: str = "programme",
@@ -383,11 +385,12 @@ def evaluate(
     the registry as written, which is both.
 
     ``extra_fields`` adds per-visit columns drawn from ANOTHER pipeline, keyed by the
-    column name. KMC needs it: the entity pipeline carries the registration fields and
-    the visit markers, but the per-visit WEIGHT lives in a separate weight-series
-    pipeline, and properties.yml is written against a `weight_g` column. Without it
-    the compiled SQL fails with `column "weight_g" does not exist`, hinting at the
-    entity pipeline's list-valued `weights` — a different thing entirely.
+    column name -- the registry's `pipelines.extra_fields` (see
+    `workflow_binding.build_evaluate_inputs`). KMC needs it: its per-visit weight
+    lives in a separate weight-series pipeline.
+
+    The registry is ``registry_documents`` (a record's two documents) or the on-disk
+    ``registry_name``; one of them is required -- there is no default registry here.
     """
     if visit_sql is None and not opportunity_ids:
         raise SemanticRuntimeError("evaluate() needs at least one opportunity id")
@@ -399,8 +402,10 @@ def evaluate(
     # would disagree silently.
     if registry_documents is not None:
         props_doc, registry = registry_documents
-    else:
+    elif registry_name:
         props_doc, registry = load_registry(registry_name)
+    else:
+        raise SemanticRuntimeError("evaluate() needs registry_documents or a registry_name")
     if series:
         registry = filter_to_series(registry, series)
 
@@ -429,7 +434,11 @@ def evaluate(
             )
         try:
             visit_sql = build_visit_sql(
-                pipeline_schema, opportunity_ids, extra_fields=extra_fields, visit_filter=visit_filter
+                pipeline_schema,
+                opportunity_ids,
+                extra_fields=extra_fields,
+                visit_filter=visit_filter,
+                props_doc=props_doc,
             )
         except SemanticRuntimeError:
             raise
@@ -473,7 +482,7 @@ def evaluate(
 
     logger.info(
         "[semantic] evaluating registry=%s series=%s scopes=%s opps=%d",
-        registry_name,
+        registry_name or "(documents)",
         series or "all",
         scopes or [scope],
         len(opportunity_ids),

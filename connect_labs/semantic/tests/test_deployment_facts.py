@@ -42,7 +42,7 @@ def registry():
 
 @pytest.fixture(scope="module")
 def deployment():
-    return load_deployment()
+    return load_deployment("kmc")
 
 
 def test_deployment_facts_load(deployment):
@@ -306,7 +306,7 @@ def test_the_catalog_distinguishes_counts_from_means():
     """
     from connect_labs.semantic.runtime import filter_to_series, load_registry, measure_catalog
 
-    _, reg = load_registry()
+    _, reg = load_registry("kmc")
     cat = {m["indicator"]: m for m in measure_catalog(filter_to_series(reg, "C"))}
 
     assert {i: cat[i]["kind"] for i in cat if cat[i]["unit"] == "n"} == {
@@ -324,7 +324,7 @@ def test_the_catalog_carries_prominence():
     """The render groups headline indicators from this; without it all 22 read equal."""
     from connect_labs.semantic.runtime import filter_to_series, load_registry, measure_catalog
 
-    _, reg = load_registry()
+    _, reg = load_registry("kmc")
     cat = {m["indicator"]: m for m in measure_catalog(filter_to_series(reg, "C"))}
     assert cat["C09"]["prominence"] == "Top"
     assert cat["C06"]["prominence"] == "Lower"
@@ -343,7 +343,7 @@ def test_filtering_to_a_series_keeps_the_availability_gates():
     """
     from connect_labs.semantic.runtime import filter_to_series, load_registry, measure_catalog
 
-    _, reg = load_registry()
+    _, reg = load_registry("kmc")
     all_gates = {m["name"] for m in reg["measures"] if m.get("gate")}
     assert all_gates, "the registry must mark its gates explicitly, not by name prefix"
 

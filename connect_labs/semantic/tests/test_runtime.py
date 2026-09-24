@@ -26,7 +26,7 @@ pytestmark = pytest.mark.django_db
 
 def test_the_registry_loads():
     props, inds = load_registry("kmc")
-    assert props["entity"] == "baby"
+    assert props["entity"]["name"] == "baby"
     assert inds["cube"] == "kmc_case"
 
 
@@ -69,7 +69,7 @@ def test_an_unknown_series_is_refused():
 
 def test_evaluate_refuses_a_call_it_cannot_build_layer1_for():
     with pytest.raises(SemanticRuntimeError, match="pipeline_schema"):
-        evaluate(None, [1], visit_sql=None)
+        evaluate(None, [1], visit_sql=None, registry_name="kmc")
 
 
 # ── execution against Postgres ───────────────────────────────────────────────
@@ -128,6 +128,7 @@ def test_the_N_series_actually_runs_and_returns_rows(fixture_visits):
         None,
         [10042],
         visit_sql=fixture_visits,
+        registry_name="kmc",
         series="N",
         scope="programme",
         as_of="'2026-04-01'",
@@ -148,6 +149,7 @@ def test_several_scopes_come_back_from_ONE_pass(fixture_visits):
         None,
         [10042],
         visit_sql=fixture_visits,
+        registry_name="kmc",
         series="N",
         scopes=["programme", "opportunity", "flw"],
         as_of="'2026-04-01'",
@@ -169,7 +171,7 @@ def test_a_failing_query_raises_a_readable_error_not_a_raw_driver_traceback(db):
 
     with pytest.raises(SemanticRuntimeError, match="semantic query failed"):
         with transaction.atomic():
-            evaluate(None, [10042], visit_sql="SELECT * FROM no_such_relation", series="N")
+            evaluate(None, [10042], visit_sql="SELECT * FROM no_such_relation", registry_name="kmc", series="N")
 
 
 def test_selecting_a_series_does_not_drag_in_the_other_series_parts():
@@ -251,14 +253,16 @@ def test_evaluate_refuses_the_raw_schema_dict_by_name():
     "An internal error occurred".
     """
     with pytest.raises(SemanticRuntimeError, match="AnalysisPipelineConfig"):
-        evaluate({"fields": [], "terminal_stage": "entity"}, [10042], series="N")
+        evaluate({"fields": [], "terminal_stage": "entity"}, [10042], registry_name="kmc", series="N")
 
 
 def test_the_case_scope_returns_one_row_per_baby_and_a_worker_filter_narrows_it(fixture_visits):
     """The fixture has two babies under two workers. Unfiltered, the case scope
     yields both; filtered to one worker, only theirs -- and a rate at case scope is
     the baby's own contribution (a 0/100 with a 0/1 denominator)."""
-    rows = evaluate(None, [10042], visit_sql=fixture_visits, series="N", scopes=["case"], as_of="'2026-04-01'")
+    rows = evaluate(
+        None, [10042], visit_sql=fixture_visits, registry_name="kmc", series="N", scopes=["case"], as_of="'2026-04-01'"
+    )
     assert len(rows) == 2
     assert {r["username"] for r in rows} == {"asha", "ravi"}
     assert all(r["case_id"] for r in rows)
@@ -269,6 +273,7 @@ def test_the_case_scope_returns_one_row_per_baby_and_a_worker_filter_narrows_it(
         None,
         [10042],
         visit_sql=fixture_visits,
+        registry_name="kmc",
         series="N",
         scopes=["case"],
         as_of="'2026-04-01'",

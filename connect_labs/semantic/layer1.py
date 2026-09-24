@@ -20,21 +20,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-# Raw marker columns the pipeline emits as strings, mapped to the booleans
-# properties.yml consumes. The pipeline applies these as `filter_value` with
-# filter_op `contains_word` at aggregation time; at visit level we materialise the
-# same test so Layer 2 can just count them.
-MARKER_BOOLEANS: dict[str, tuple[str, str]] = {
-    "child_alive_no": ("death_visits", "no"),
-    "danger_sign_yes": ("danger_visits", "yes"),
-    "referred_yes": ("referral_visits", "yes"),
-    "self_referral_yes": ("self_referral_visits", "yes"),
-}
-
+from connect_labs.semantic.model import resolve_model
 
 # `visit_filter` keys that are real columns of labs_raw_visit_cache, and so can be
-# applied in the extraction's own WHERE. A computed key (baby_case_id) cannot; the
-# compiler applies it after Layer 1, as it applies every key.
+# applied in the extraction's own WHERE. A computed key (a registry's entity key)
+# cannot; the compiler applies it after Layer 1, as it applies every key.
 _SCAN_FILTER_COLUMNS = ("opportunity_id", "username")
 
 
@@ -55,6 +45,7 @@ def build_visit_sql(
     generate_sql_preview=None,
     extra_fields: dict[str, Any] | None = None,
     visit_filter: dict[str, Any] | None = None,
+    props_doc: dict[str, Any],
 ) -> str:
     """Return the visit-level SQL for a set of opportunities.
 
@@ -65,8 +56,8 @@ def build_visit_sql(
       2. de-duplicates across cache partitions -- `labs_raw_visit_cache` is keyed
          by (opportunity, pipeline), so the same visit is present once per
          pipeline that has cached it, and counting it twice inflates everything,
-      3. adds `opportunity_id` (the extraction does not select it) and the marker
-         booleans above,
+      3. adds `opportunity_id` (the extraction does not select it) and the
+         registry's `visit_columns` (see `visit_columns_sql`),
       4. merges fields from OTHER pipelines via `extra_fields`,
       5. applies `visit_filter`'s base-column keys (opportunity, worker) in the scan.
 
@@ -79,8 +70,9 @@ def build_visit_sql(
     rows are dropped before the extraction runs. It is the same set: every cached
     copy of a visit carries the same worker.
 
-    (4) is not a convenience. The KMC dashboard reads its weight series from a
-    SECOND pipeline ("KMC Weight Series", 5109) whose `weight_g` has five fallback
+    (4) is not a convenience -- which pipelines supply which fields is the
+    registry's `pipelines` model. KMC's case: the dashboard reads its weight series
+    from a SECOND pipeline ("KMC Weight Series", 5109) whose `weight_g` has five fallback
     paths, while the case pipeline's `weights` has six -- the extra
     `form.case.update.child_weight_visit`. Deriving the series from the case
     pipeline therefore produces a different set of readings, which changes
@@ -144,12 +136,38 @@ def build_visit_sql(
         extra_cols = ",\n" + ",\n".join(parts)
     ex = ex.replace("\nFROM labs_raw_visit_cache", extra_cols + "\nFROM labs_raw_visit_cache", 1)
 
-    markers = ",\n  ".join(f"(x.{col} ~* '\\y{word}\\y') AS {name}" for name, (col, word) in MARKER_BOOLEANS.items())
+    # The visit columns are spliced into Layer 1, which runs BEFORE the compiler's
+    # own validation gets to look at the statement -- so they are checked here too.
+    from connect_labs.semantic.compiler import model_problems
+
+    problems = model_problems(props_doc)
+    if problems:
+        raise ValueError("registry model does not validate:\n  " + "\n  ".join(problems))
+    extra = visit_columns_sql(resolve_model(props_doc).visit_columns)
     return f"""SELECT
-  x.*,
-  {markers},
-  (x.ebf_visits IS NOT NULL) AS ebf_recorded,
-  x.form_names AS form_name
+  x.*{extra}
 FROM (
 {ex}
 ) x"""
+
+
+def visit_columns_sql(columns) -> str:
+    """The registry's per-visit derived columns, as comma-led `<expr> AS <name>` terms.
+
+    A `word_match` is the pipeline's own `contains_word` test, materialised per
+    visit (`x.col ~* '\\y<word>\\y'`); the engine writes the regex anchors itself
+    because the word is structured data the validator restricts to [A-Za-z0-9_] --
+    fragments may not carry a backslash at all. A `sql` column is a row-level
+    Layer-2 fragment over Layer-1 columns; a `column` is a plain alias.
+    """
+    from connect_labs.semantic.compiler import fragment_columns, qualify_columns
+
+    terms = []
+    for col in columns:
+        if col.kind == "word_match":
+            terms.append(f"(x.{col.column} ~* '\\y{col.word}\\y') AS {col.name}")
+        elif col.kind == "sql":
+            terms.append(f"({qualify_columns(col.sql, 'x', fragment_columns(col.sql))}) AS {col.name}")
+        else:
+            terms.append(f"x.{col.column} AS {col.name}")
+    return "".join(f",\n  {t}" for t in terms)

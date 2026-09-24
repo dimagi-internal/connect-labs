@@ -25,6 +25,17 @@ description: >-
   One row per baby (see properties.yml). Measures are evaluated with GROUP BY over
   whatever scope the caller selects -- programme, LLO, opportunity, FLW or month.
 
+# The floor a measure is graded against when it declares no min_denominator of its
+# own (and the workflow's snapshot spec names none). 25 is the KMC render's own
+# `var MIN_DEN = 25`; it used to be an engine constant.
+defaults:
+  min_denominator: 25
+
+# The indicator families, in order: the workbook's C-series, then Neal Lesh's demo
+# compute spec's N-series. They answer different questions and disagree on
+# maturity and growth bands by design, so a caller asks for one by prefix.
+series: [C, N]
+
 measures:
   # ── Scale ────────────────────────────────────────────────────────────────
   - name: c01
