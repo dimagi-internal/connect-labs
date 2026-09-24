@@ -160,6 +160,19 @@ def network_stock(
                 "opportunity_id": point.opportunity_id,
                 "on_hand": on_hand,
                 "on_hand_in_base": on_hand_in_base,
+                # Counted whole in its single unit -- a kit, or an item one of
+                # which is a course -- so the single unit is the figure to lead
+                # with: "700 packets" is the answer, "14 cartons" the packing.
+                "counted_in_base": bool(
+                    for_conversion is not None
+                    and (
+                        (for_conversion.is_kit and for_conversion.components_per == "base")
+                        or for_conversion.one_course_is == "base_unit"
+                    )
+                ),
+                # The one item behind the balance, when there is one, so the
+                # figure can link to the movements that make it up.
+                "item_id": for_conversion.pk if for_conversion is not None else None,
                 "reported": Quantity(count.quantity, count.quantity_unit) if count else None,
                 "reported_on": count.counted_on if count else None,
                 "reported_kind": count.kind if count else None,

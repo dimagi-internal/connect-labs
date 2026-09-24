@@ -169,7 +169,7 @@ class TestTheScreens:
         contract = _contract(da, parties, consideration="in_kind")
         body = scoped.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         assert "not purchased (in kind)" in body
-        assert "Unconfirmed" not in body.split("Landed cost", 1)[1].split("Ordered", 1)[0]
+        assert "Unconfirmed" not in body.split('id="cost"', 1)[1].split("Ordered", 1)[0]
 
     def test_a_donation_is_not_headed_as_bought(self, scoped, da, parties):
         # The header read "Bought by <org>" over a donation whose every cost

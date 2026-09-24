@@ -77,6 +77,11 @@ class Scope:
     payments: object
     # Approvals asked of the link's organisation, for it to answer itself.
     approvals: object = None
+    # The orders the link's organisation SUPPLIES, as opposed to receives. A
+    # partner's link covers the order so it can record what reached its store;
+    # offering it "Record a dispatch" asked the partner to speak for the
+    # distributor (the IPTSc render).
+    supplied: object = None
 
 
 def scope_for(link) -> Scope:
@@ -109,7 +114,26 @@ def scope_for(link) -> Scope:
     approvals = AwardApproval.objects.filter(
         award__round__program_id=program_id, update_links=link, approver_org_id=link.org_id
     ).select_related("award__supplier", "award__quote__item", "award__commodity", "approver_org")
-    return Scope(link, contracts, points, items, shipments, payments, approvals)
+    supplied = contracts.filter(
+        pk__in=[c.pk for c in contracts.select_related("delivery_supply_point") if _supplies(c, link.org_id)]
+    )
+    return Scope(link, contracts, points, items, shipments, payments, approvals, supplied)
+
+
+def _supplies(contract, org_id) -> bool:
+    """Whether the organisation is the one sending the goods on this order.
+
+    The supplier's own organisation, when the supplier names one. Otherwise
+    anyone who is not on the receiving end -- the buyer, or whoever runs the
+    store it is delivered to -- since a link issued to one of those is a
+    partner's, the same reading `_provenance` makes of it.
+    """
+    if contract.supplier.org_id is not None:
+        return contract.supplier.org_id == org_id
+    receives = contract.buyer_org_id == org_id or (
+        contract.delivery_supply_point is not None and contract.delivery_supply_point.managed_by_org_id == org_id
+    )
+    return not receives
 
 
 def _require(queryset, obj, what):
@@ -168,7 +192,7 @@ def _drop_empty(data):
 
 
 def _confirm_order(scope, data):
-    contract = _require(scope.contracts, data.get("contract"), "order")
+    contract = _require(scope.supplied, data.get("contract"), "order")
     if contract.status == "draft":
         raise ValueError(f"order {contract} has not been placed yet, so there is nothing to confirm")
     if contract.status not in CONFIRMABLE:
@@ -188,7 +212,7 @@ def _confirm_payment(scope, data):
 
 
 def _record_shipment(scope, data):
-    contract = _require(scope.contracts, data.get("contract"), "order")
+    contract = _require(scope.supplied, data.get("contract"), "order")
     status = data.get("status") or "dispatched"
     if status not in SUPPLIER_SHIPMENT_STATUSES:
         raise ValueError(f"a dispatch cannot be recorded as {status!r}")
@@ -219,7 +243,7 @@ def _record_shipment(scope, data):
 
 
 def _update_shipment(scope, data):
-    shipment = _require(scope.shipments, data.get("shipment"), "dispatch")
+    shipment = _require(scope.shipments.filter(contract__in=scope.supplied), data.get("shipment"), "dispatch")
     status = data.get("status")
     if status not in SUPPLIER_SHIPMENT_STATUSES:
         raise ValueError(f"a dispatch cannot be moved to {status!r}")
@@ -520,6 +544,7 @@ def updates_for_contract(contract) -> list[dict]:
     return [
         {
             "org": submission.link.org.name,
+            "org_id": submission.link.org_id,
             "title": submission.action.replace("_", " "),
             "detail": describe(submission),
             "at": submission.submitted_at,

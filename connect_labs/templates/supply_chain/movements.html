@@ -1,0 +1,77 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+The movements behind a supply point's balance: what the stock page's ledger
+figure is made of. Newest first. Every class here is one the stock page already
+uses, so nothing ships purged.
+{% endcomment %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+    <p class="text-sm text-amber-900">Stock is programme-scoped.</p>
+  </div>
+{% else %}
+
+<div class="text-xs text-gray-500">
+  <a class="hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a> › movements
+</div>
+<div class="flex items-baseline gap-3 mb-1">
+  <h2 class="text-lg font-semibold text-brand-indigo">
+    {% if point %}What moved in and out of {{ point.name }}{% else %}Every movement{% endif %}
+  </h2>
+  {% if item %}<span class="text-sm text-gray-500">{{ item.name }}</span>{% endif %}
+</div>
+<p class="text-xs text-gray-500 mb-4">
+  The ledger is append-only: a balance is these movements added up, and a
+  correction is another movement naming its cause, never an edit.
+</p>
+
+<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+  <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+  <table class="min-w-[44rem] w-full text-sm">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+      <tr>
+        <th class="text-left px-4 py-2">Date</th>
+        <th class="text-left px-4 py-2">What</th>
+        <th class="text-left px-4 py-2">From</th>
+        <th class="text-left px-4 py-2">To</th>
+        <th class="text-left px-4 py-2">Batch</th>
+        <th class="text-left px-4 py-2">Quantity</th>
+        <th class="text-left px-4 py-2">Told by</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for movement in movements %}
+        <tr>
+          <td class="px-4 py-2.5 text-gray-600">{{ movement.occurred_on }}</td>
+          <td class="px-4 py-2.5">
+            {{ movement.kind|words|capfirst }}
+            {% with receipt=receipts|dictkey:movement.caused_by.receipt_id %}
+              {% if receipt %}
+                <div class="text-xs text-gray-500">
+                  {{ receipt.reference|default:"goods received note" }}{% if receipt.contract_id %} ·
+                  <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' receipt.contract_id %}">{{ references|dictkey:receipt.contract_id }}</a>{% endif %}
+                </div>
+              {% elif movement.reference %}
+                <div class="text-xs text-gray-500">{{ movement.reference }}</div>
+              {% endif %}
+            {% endwith %}
+          </td>
+          <td class="px-4 py-2.5 text-gray-600">{{ points|dictkey:movement.from_supply_point_id|default:"—" }}</td>
+          <td class="px-4 py-2.5 text-gray-600">{{ points|dictkey:movement.to_supply_point_id|default:"—" }}</td>
+          <td class="px-4 py-2.5 text-gray-600">{{ movement.batch|default:"—" }}</td>
+          <td class="px-4 py-2.5 tabular-nums">{{ movement.quantity|qty:movement.quantity_unit }}</td>
+          <td class="px-4 py-2.5 text-xs text-gray-500">{{ movement.source|source_label }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">Nothing has moved here yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -171,6 +171,34 @@ def _not_valid(request, status=404):
     return _private(render(request, "supply_chain/update_link_invalid.html", status=status))
 
 
+def _done_sentence(form_class, detail) -> str:
+    """The banner after a write, as a sentence about the record it made.
+
+    "Recorded: dispatch HHS-WB-3310, 450 packets, batch DP-2608-A." rather
+    than "Recorded: record a dispatch — HHS-WB-3310: ..." -- the action's own
+    label echoed back. Built from the read-back of the row, so it repeats what
+    the programme holds. Starts with "Recorded:" whatever the action.
+    """
+    if form_class is None:
+        return ""
+    noun = str(form_class.done_noun or form_class.title).lower()
+    if form_class.action == "record_shipment" and detail.endswith(" — dispatched"):
+        # The noun already says it left; "— dispatched" after it says it twice.
+        detail = detail[: -len(" — dispatched")]
+    head, colon, rest = detail.partition(": ")
+    if colon and head and " " not in head:
+        # A reference, then what it carried: "HHS-WB-3310: 450 packets".
+        text = f"{noun} {head}, {rest}"
+    elif colon and head.lower() == noun:
+        # A dispatch with no reference reads back as "Dispatch: 450 packets".
+        text = f"{noun}, {rest}"
+    elif detail:
+        text = f"{noun} — {detail}"
+    else:
+        text = noun
+    return f"Recorded: {text.rstrip('.')}."
+
+
 @method_decorator(never_cache, name="dispatch")
 class UpdateLinkPublicView(View):
     template_name = "supply_chain/update_link_public.html"
@@ -206,10 +234,16 @@ class UpdateLinkPublicView(View):
         # this organisation's to take -- and the other way round.
         approver_link = scope.approvals is not None and scope.approvals.exists()
         supplier_link = scope.contracts.exists() or scope.supply_points.exists()
+        # A partner's link covers an order to record what reached it; the
+        # supplier's own actions (confirm, dispatch, move a dispatch along) are
+        # not its to take, so they are not offered or listed as unavailable.
+        supplies = scope.supplied.exists()
         forms = [
             form
             for form in forms
-            if (form.for_approvers and approver_link) or (not form.for_approvers and supplier_link) or form is bound
+            if (form.for_approvers and approver_link)
+            or (not form.for_approvers and supplier_link and (supplies or not form.for_suppliers))
+            or form is bound
         ]
         done_action = self.request.GET.get("done", "")
         if done_action not in PUBLIC_FORMS:
@@ -226,7 +260,7 @@ class UpdateLinkPublicView(View):
         context = {
             "link": self.link,
             "org": self.link.org,
-            "contracts": list(scope.contracts.prefetch_related("shipments")),
+            "contracts": list(scope.contracts.prefetch_related("shipments__lines", "shipments__receipts")),
             "supply_points": list(scope.supply_points),
             "approvals": list(scope.approvals) if scope.approvals is not None else [],
             "forms": [form for form in forms if form.is_available() or form is bound],
@@ -237,8 +271,9 @@ class UpdateLinkPublicView(View):
             # What the submission just made put on the record, read back from
             # the row it produced -- the confirmation a supplier (or anyone
             # watching) can check against what they meant to send.
-            "done_detail": (
-                recent[0]["detail"] if recent and done_action and recent[0]["action"] == done_action else ""
+            "done_sentence": _done_sentence(
+                PUBLIC_FORMS.get(done_action),
+                recent[0]["detail"] if recent and done_action and recent[0]["action"] == done_action else "",
             ),
             "expires_on": timezone.localtime(self.link.expires_at).date(),
         }

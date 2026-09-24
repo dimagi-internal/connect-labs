@@ -87,6 +87,9 @@ scenes:
   - kind: fill
     target: css:#id_record_shipment-batch
     value: DP-2608-A
+  - kind: hold
+    note: the filled dispatch form, before it is recorded
+    seconds: 1.5
   - kind: click
     must_succeed: true
     target: css:form:has(input[value='record_shipment']) button[type='submit']
@@ -137,6 +140,9 @@ scenes:
   - kind: fill
     target: css:#id_record_receipt-batch
     value: DP-2608-A
+  - kind: hold
+    note: the filled goods received form, before it is recorded
+    seconds: 1.5
   - kind: click
     must_succeed: true
     target: css:form:has(input[value='record_receipt']) button[type='submit']
@@ -159,11 +165,13 @@ scenes:
   actions:
   - kind: wait_for
     target: text:past the promised lead time
+  - kind: scroll
+    value: top
   - kind: hold
-    note: the late banner and the three-way match side by side
+    note: the order header and the late banner, days past the promised lead time
     seconds: 2.5
-  - kind: scroll_to
-    target: css:h3:has-text('Shipments')
+  - kind: scroll
+    value: '520'
   - kind: hold
     note: the dispatch Musa reported and the receipt Hauwa recorded, each marked with
       who told us
@@ -244,7 +252,7 @@ scenes:
     value: partner_reported
   - kind: hold
     note: the whole order, complete, before it is recorded
-    seconds: 1.0
+    seconds: 1.5
   - kind: click
     must_succeed: true
     target: role:button:Record order
@@ -279,7 +287,7 @@ scenes:
     target: "css:#id_supply_point-ts-dropdown .option:has-text('SCHI district store')"
   - kind: fill
     target: css:#id_received_on
-    value: '2026-09-22'
+    value: ${today}
   - kind: fill
     target: css:#id_reference
     value: SCHI-GRN-0923
@@ -310,9 +318,9 @@ scenes:
   - kind: hold
     note: the badge, the cost card that says nothing is missing, and 250 received
     seconds: 2.0
-  - kind: scroll_to
-    target: css:h3:has-text('Received')
-    note: the 250-packet receipt line itself, so this frame is not the order page scene 6 ended on
+  - kind: scroll
+    value: '180'
+    note: the order title, its bundled cost and the 250-packet receipt line together, so this frame is not the order page scene 6 ended on
   - kind: hold
     seconds: 2.0
   concept_claim: After the receipt, the covering order's landed cost reads "bundled

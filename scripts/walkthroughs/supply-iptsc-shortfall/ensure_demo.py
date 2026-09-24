@@ -65,7 +65,11 @@ except ImportError:  # pragma: no cover - depends on the caller's interpreter
 
 from scripts.walkthroughs._mcp_client import call, session, token  # noqa: E402
 
-PROGRAMME_ID = 10602
+# `IPTSC_PROGRAMME_ID` films a take in a FRESH labs-only programme instead:
+# registered here if it is not yet, and never purged. That is the way to render
+# when the ECS purge is unavailable (no AWS session), since a take cannot be
+# filmed on top of the previous one's dispatches and receipts.
+PROGRAMME_ID = int(os.environ.get("IPTSC_PROGRAMME_ID", "10602"))
 OUT = HERE / ".run_ids.json"
 
 # Lead time and signing date put the distributor's order past due on the day
@@ -101,6 +105,33 @@ class Seeder:
         if isinstance(result, dict) and set(result) == {"value"}:
             return result["value"]
         return result
+
+
+def ensure_registered(s: Seeder) -> None:
+    """A programme other than the default must be a registered labs-only scope.
+
+    Every `synthetic_create_labs_only` call mints a new opportunity, so only
+    register when the programme is not reachable yet.
+    """
+    _, is_error = call(s.c, s.h, "supply_chain_chain_summary", {"program_id": PROGRAMME_ID})
+    if not is_error:
+        return
+    result, is_error = call(
+        s.c,
+        s.h,
+        "synthetic_create_labs_only",
+        {
+            "label": f"IPTSc shortfall walkthrough take ({PROGRAMME_ID})",
+            "gdrive_folder_id": "none",
+            "org_name": "Sahel Community Health Initiative",
+            "program_name": "IPTSc shortfall (synthetic)",
+            "program_id": PROGRAMME_ID,
+            "allowed_domains": ["@dimagi.com", "@dimagi-ai.com"],
+            "notes": "DDD narrative supply-iptsc-shortfall; supply data only",
+        },
+    )
+    if is_error:
+        raise SystemExit(f"could not register programme {PROGRAMME_ID}: {result}")
 
 
 def purge_via_ecs() -> None:
@@ -334,6 +365,9 @@ def seed(s: Seeder) -> dict:
 
     return {
         "program_id": PROGRAMME_ID,
+        # The render's own date, so a receipt typed on camera is dated with the
+        # one recorded through the partner's link (which has no date field).
+        "today": time.strftime("%Y-%m-%d"),
         "order_id": order["id"],
         "item_id": item["id"],
         "store_id": store["id"],
@@ -357,6 +391,8 @@ def main() -> None:
     args = parser.parse_args()
     with httpx.Client(timeout=600) as client:
         s = Seeder(client)
+        if PROGRAMME_ID != 10602:
+            ensure_registered(s)
         if not args.no_reset and s.op("contract_list"):
             purge_via_ecs()
         realized = seed(s)
