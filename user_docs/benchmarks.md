@@ -57,7 +57,7 @@ The trend's horizontal axis is **each opportunity's own weeks of delivering**, c
 
 Every figure passes through the same checks, in the same place, before it is stored:
 
-- **Only rate-shaped indicators.** An indicator is published if its unit is `%` or per-100. The registry can adjust that per indicator with `benchmarkable: true` or `benchmarkable: false` in the indicator's `meta` (KMC marks its mean growth rate, C13, as benchmarkable: a growth rate says nothing about size). **An indicator whose value is a count is never published**, whatever the registry says.
+- **Only rate-shaped indicators.** An indicator is published if its unit is `%` or per-100. The registry can adjust that per indicator with `benchmarkable: true` or `benchmarkable: false` in the indicator's `meta` (KMC marks its mean early growth rate, `mean_early_growth_rate`, as benchmarkable: a growth rate says nothing about size). **An indicator whose value is a count is never published**, whatever the registry says.
 - **Only figures that would be shown anyway.** A figure the report hides or greys out (too few cases, the app never asks the question, the organisation is marked as not recording it credibly) is not published.
 - **Denominators are never published.** Knowing that a rate is "out of 1,692 babies" would identify the opportunity.
 - **Peers are re-shuffled for each indicator.** Peer order is by value within one indicator, so a bar can't be followed from one chart to the next to build up a profile of one opportunity.
@@ -131,14 +131,14 @@ To change a setting later, use `benchmarks_cohort_update`, then **republish**: s
 
 ## Worked example: KMC
 
-KMC runs 12 opportunities across several organisations and Connect programmes. All of them compute the same C and N indicators from one [shared registry](semantic-layer.md#managing-registries-across-programmes).
+KMC runs 12 opportunities across several organisations and Connect programmes. All of them compute the same set of 24 KMC indicators from one [shared registry](semantic-layer.md#managing-registries-across-programmes).
 
 - **The source report** is the KMC Programme Report, which spans all 12 opportunities even though they sit in different Connect programmes ([how](cross-program-rollups.md)). Its saved runs are weekly.
 - **The cohort** is *KMC programme peers*, owned by the `dimagi-kmc` organisation, with the 12 opportunities as members. A second cohort mirrors it over the 12 synthetic (demo) KMC opportunities.
 - **Disclosure settings are off** on both (`min_peers` 1, `min_denominator` 0, `require_complete_series` false), decided on 2026-09-18: the cohort has no competitive-leakage concern and publishes no personal data, and the floors were withholding exactly the early and late weeks the trends exist to show. With complete series required, only 5 of the 12 opportunities kept a line.
 - **It follows the report.** The cohort's source report is the Programme Report, with automatic republishing on, so saving a weekly run refreshes every member's peer figures.
 - **Each of the 12 opportunities has a KMC Opportunity Report**, created in one step with `benchmarks_create_opp_reports`, sharing the Programme Report's pipelines and registry. Its **Against its peers** section shows one card per indicator: bars for today, lines for how it got there.
-- **What is published:** the rate-shaped C and N indicators, plus C13 (mean early growth rate), which the registry marks benchmarkable. Counts such as C01 (registered cases) never are.
+- **What is published:** the rate-shaped KMC indicators, plus `mean_early_growth_rate`, which the registry marks benchmarkable. Counts such as `registered_cases` never are.
 
 The order KMC was set up in is the order to follow elsewhere: shared registry → one report across all the opportunities → weekly saved runs with history rebuilt → cohort → publish → set it to follow the report → one opportunity report per member.
 
