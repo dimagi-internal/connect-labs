@@ -107,7 +107,7 @@ the award, so the page says so where the order button would otherwise be.
     <div class="px-4 py-3 text-sm text-message-warning-text bg-message-warning border-b border-message-warning-border/50">
       This award cannot be ordered yet:
       {% for approval in blocking %}
-        {{ approval.approver.name }} ({{ approval.role }})
+        {{ approval.approver.name }} ({{ approval.role|words }})
         {% if approval.status == "declined" %}declined on {{ approval.decided_on }}{% else %}has not answered since {{ approval.requested_on }}{% endif %}{% if not forloop.last %}; {% endif %}
       {% endfor %}.
     </div>

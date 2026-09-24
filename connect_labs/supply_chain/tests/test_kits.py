@@ -288,7 +288,7 @@ class TestTheNetworkSaysHowManyKits:
         assert row["on_hand"] == {"amount": "14", "unit": "carton"}
         assert row["on_hand_in_base"] == {"amount": "700", "unit": "co_pack"}
         body = scoped.get(reverse("supply_chain:stock")).content.decode()
-        assert "700 co_pack" in body
+        assert "700 co packs" in body
 
 
 def _no_ration_table(da):

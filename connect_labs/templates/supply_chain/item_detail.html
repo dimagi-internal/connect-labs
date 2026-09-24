@@ -45,8 +45,8 @@ sachets are in the carton, and neither does a balance.
       <div>
         <dt class="text-[11px] text-gray-500">Packed</dt>
         <dd class="text-sm mt-0.5 tabular-nums {% if item.base_per_pack %}text-gray-900{% else %}text-message-warning-text{% endif %}">
-          {% if item.base_per_pack %}{{ item.base_per_pack }} {{ item.base_unit|default:product.base_unit }}s
-            / {{ item.pack_unit|default:product.pack_unit }}{% else %}not stated{% endif %}
+          {% if item.base_per_pack %}{{ item.base_per_pack }} {{ item.base_unit|default:product.base_unit|unit_plural }}
+            / {{ item.pack_unit|default:product.pack_unit|unit_words }}{% else %}not stated{% endif %}
         </dd>
       </div>
       <div>
@@ -84,9 +84,9 @@ sachets are in the carton, and neither does a balance.
     {% if item.one_course_is %}
       <p class="mt-3 text-sm text-gray-700">
         {% if item.one_course_is == "pack" %}
-          One {{ item.pack_unit|default:product.pack_unit|default:"pack" }} is one full course
+          One {{ item.pack_unit|default:product.pack_unit|default:"pack"|unit_words }} is one full course
         {% else %}
-          One {{ item.base_unit|default:product.base_unit|default:"unit" }} is one full course
+          One {{ item.base_unit|default:product.base_unit|default:"unit"|unit_words }} is one full course
         {% endif %}
         <span class="text-gray-500">— so its cost per course needs no ration table.</span>
       </p>
@@ -94,7 +94,7 @@ sachets are in the carton, and neither does a balance.
 
     {% if item.is_kit %}
       <div class="mt-4">
-        <div class="text-[11px] text-gray-500">What is inside — one {{ item.base_unit|default:product.base_unit|default:"kit" }} holds</div>
+        <div class="text-[11px] text-gray-500">What is inside — one {{ item.base_unit|default:product.base_unit|default:"kit"|unit_words }} holds</div>
         <div class="overflow-x-auto mt-1" tabindex="0" role="region" aria-label="Table, scrolls sideways">
           <table class="min-w-[32rem] w-full text-sm">
             <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
@@ -111,7 +111,7 @@ sachets are in the carton, and neither does a balance.
                     <a class="text-brand-indigo hover:underline"
                        href="{% url 'supply_chain:product_detail' component.commodity_slug %}">{{ component.name }}</a>
                   </td>
-                  <td class="px-3 py-1.5 tabular-nums">{{ component.quantity }} {{ component.base_unit }}</td>
+                  <td class="px-3 py-1.5 tabular-nums">{{ component.quantity|qty:component.base_unit }}</td>
                   <td class="px-3 py-1.5 {% if 'fail' in component.verdict %}text-message-error-text{% elif 'not stated' in component.verdict %}text-message-warning-text{% else %}text-gray-700{% endif %}">
                     {{ component.verdict }}
                   </td>
@@ -130,10 +130,10 @@ sachets are in the carton, and neither does a balance.
 
     {% if item.differs_from_product %}
       <p class="mt-3 text-sm text-orange-800 bg-orange-50 border border-orange-200 rounded px-3 py-2 max-w-2xl">
-        Packed {{ item.base_per_pack }} to the {{ item.pack_unit|default:product.pack_unit }} where
+        Packed {{ item.base_per_pack }} to the {{ item.pack_unit|default:product.pack_unit|unit_words }} where
         <a class="underline" href="{% url 'supply_chain:product_detail' product.slug %}">{{ product.name }}</a>
         says {{ product.base_per_pack }}. Often legitimate — but every price
-        quoted per {{ item.pack_unit|default:product.pack_unit }} has to be divided by
+        quoted per {{ item.pack_unit|default:product.pack_unit|unit_words }} has to be divided by
         this number, not the product's.
       </p>
     {% endif %}
@@ -197,9 +197,9 @@ sachets are in the carton, and neither does a balance.
               <a class="text-brand-indigo hover:underline"
                  href="{% url 'supply_chain:supplier_detail' quote.supplier_id %}">{{ suppliers|dictkey:quote.supplier_id|dictkey:"name"|default:"—" }}</a>
               <span class="tabular-nums">
-                — {% if quote.as_quoted_amount %}{{ quote.as_quoted_currency }} {{ quote.as_quoted_amount }}{% else %}no price{% endif %}
+                — {% if quote.as_quoted_amount %}{{ quote.as_quoted_currency }} {{ quote.as_quoted_amount|money }}{% else %}no price{% endif %}
               </span>
-              <span class="text-gray-500">{{ quote.as_quoted_unit|humanise }}</span>
+              <span class="text-gray-500">{{ quote.as_quoted_unit|words }}</span>
               <div class="text-xs text-gray-500">
                 <a class="text-brand-indigo hover:underline"
                    href="{% url 'supply_chain:procurement_quote_detail' quote.id %}">quote {{ quote.id }}</a>
@@ -212,7 +212,7 @@ sachets are in the carton, and neither does a balance.
       {% else %}
         <p class="px-5 py-5 text-sm text-gray-500 max-w-lg">
           No quote has named this trade item. A quote that names only the
-          product cannot be turned into a per&#8209;{{ item.base_unit|default:product.base_unit|default:"unit" }}
+          product cannot be turned into a per&#8209;{{ item.base_unit|default:product.base_unit|default:"unit"|unit_words }}
           price, so this is worth asking for.
         </p>
       {% endif %}
@@ -230,8 +230,8 @@ sachets are in the carton, and neither does a balance.
                  href="{% url 'supply_chain:order_detail' contract.id %}">{{ contract.reference|default:"contract" }} {{ contract.id }}</a>
               <span class="text-gray-500">· {{ contract.status|humanise }}</span>
               <div class="text-xs text-gray-500">
-                {% if contract.quantity %}{{ contract.quantity }} {{ contract.quantity_unit|humanise }}{% endif %}
-                {% if contract.unit_price %}at {{ contract.currency }} {{ contract.unit_price }}{% endif %}
+                {% if contract.quantity %}{{ contract.quantity|qty:contract.quantity_unit }}{% endif %}
+                {% if contract.unit_price %}at {{ contract.currency }} {{ contract.unit_price|money }}{% endif %}
               </div>
             </li>
           {% endfor %}

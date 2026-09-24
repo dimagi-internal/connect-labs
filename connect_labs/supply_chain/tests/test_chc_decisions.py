@@ -151,7 +151,7 @@ class TestAdvancePayment:
         _invoice_and_pay(da, order)
         body = client_in_programme.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
         assert "Paid in advance" in body
-        assert "awaiting delivery of 30000 co-pack" in body
+        assert "awaiting delivery of 30,000 co-packs" in body
         assert "Safe to pay now" not in body
         assert "Billed beyond what arrived" not in body
 

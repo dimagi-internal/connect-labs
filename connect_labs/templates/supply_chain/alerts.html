@@ -64,10 +64,10 @@ The log says how each notice left, including when it did not: "email off" and
               <td class="px-4 py-2">
                 <div class="flex flex-wrap gap-1">
                   {% for kind in sub.check_kinds %}
-                    <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs" title="{{ kind }}">{{ kind|check_label }}</span>
+                    <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs">{{ kind|check_label }}</span>
                   {% endfor %}
                   {% for kind in sub.movement_kinds %}
-                    <span class="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-xs">{{ kind }} movements</span>
+                    <span class="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-xs">{{ kind|words|capfirst }} movements</span>
                   {% endfor %}
                 </div>
               </td>
@@ -135,14 +135,14 @@ The log says how each notice left, including when it did not: "email off" and
               <td class="px-4 py-2 text-gray-700 whitespace-nowrap">{{ notice.detected|date:"j M Y, H:i" }}</td>
               <td class="px-4 py-2">
                 {% if notice.kind == "check" %}
-                  <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs" title="{{ notice.subject_kind }}">{{ notice.subject_kind|check_label }}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs">{{ notice.subject_kind|check_label }}</span>
                 {% else %}
-                  <span class="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-xs">{{ notice.subject_kind }}</span>
-                  <span class="text-xs text-gray-600">{{ notice.facts.quantity }} {{ notice.facts.quantity_unit }}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-xs">{{ notice.subject_kind|words|capfirst }}</span>
+                  <span class="text-xs text-gray-600">{{ notice.facts.quantity|qty:notice.facts.quantity_unit }}</span>
                 {% endif %}
               </td>
               <td class="px-4 py-2">
-                <a href="{{ notice.record_url }}" class="text-brand-indigo hover:underline">{{ notice.subject.label|default:notice.subject.type }}</a>
+                <a href="{{ notice.record_url }}" class="text-brand-indigo hover:underline">{% if notice.subject.label %}{{ notice.subject.label }}{% else %}{{ notice.subject.type|words|capfirst }}{% endif %}</a>
                 {% if notice.since %}<div class="text-xs text-gray-500">since {{ notice.since }}</div>{% endif %}
               </td>
               <td class="px-4 py-2 text-gray-700">{{ notice.subscription_name }}</td>

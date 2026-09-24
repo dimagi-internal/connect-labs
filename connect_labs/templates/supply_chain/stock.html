@@ -89,7 +89,7 @@ one of them would destroy the only signal it had.
           <td class="px-4 py-2.5 tabular-nums">
             {% if point.reported %}
               {{ point.reported|figure_text }}
-              <div class="text-xs text-gray-500">{{ point.reported_kind }} · {{ point.reported_on }}</div>
+              <div class="text-xs text-gray-500">{{ point.reported_kind|words|capfirst }} · {{ point.reported_on }}</div>
             {% else %}
               <span class="text-gray-400">never</span>
             {% endif %}
@@ -98,6 +98,12 @@ one of them would destroy the only signal it had.
             {{ point.amc|quantity_text }}{% if point.amc.amount %} <span class="text-xs text-gray-500">{% if point.amc_basis == "releases" %}releases{% else %}dispensed{% endif %} a month</span>{% endif %}
             {% if point.amc_in_display_unit %}<div class="text-xs text-gray-500">(= {{ point.amc_in_display_unit|quantity_text }})</div>{% endif %}
           </td>
+          {% comment %}Durable equipment: said once, in the demand column. Repeating
+          "durable — not forecast" in every forecast column read as three findings.{% endcomment %}
+          {% if point.status == "durable" %}
+          <td class="px-4 py-2.5 text-gray-400">—</td>
+          <td class="px-4 py-2.5 text-gray-400">—</td>
+          {% else %}
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
             {{ point.months_of_stock|derived_text }}
             {% for reason in point.months_of_stock|unconfirmed_reasons %}
@@ -115,6 +121,7 @@ one of them would destroy the only signal it had.
               <div class="text-xs text-orange-700 mt-0.5">{{ reason }}</div>
             {% endfor %}
           </td>
+          {% endif %}
           <td class="px-4 py-2.5">
             {% if point.status == "ok" %}
               <span class="text-xs font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">within</span>

@@ -1,23 +1,23 @@
-{% autoescape off %}{% comment %}
+{% load supply_chain_extras %}{% autoescape off %}{% comment %}
 Facts and links only. No advice, no ranking (design doc section 22): what to
 do about a check is the reader's decision, or an agent's.
 {% endcomment %}Supply alert — {{ name }}
 {% if checks %}
 New checks ({{ checks|length }})
 {% for notice in checks %}
-- {{ notice.subject_kind }} ({{ notice.subject.category }})
-  About: {{ notice.subject.type|default:"record" }} {{ notice.subject.id }} — {{ notice.subject.label }}
+- {{ notice.subject_kind|words }} ({{ notice.subject.category|category_label }})
+  About: {{ notice.subject.type|default:"record"|words }} {{ notice.subject.id }} — {{ notice.subject.label }}
   {% if notice.since %}True since: {{ notice.since|date:"Y-m-d" }}
-  {% endif %}{% for key, value in notice.facts.items %}{{ key }}: {{ value }}
+  {% endif %}{% for key, value in notice.facts|fact_rows %}{{ key|capfirst }}: {{ value }}
   {% endfor %}Record: {{ notice.record_url }}
 {% endfor %}{% endif %}{% if movements %}
 Movements recorded ({{ movements|length }})
 {% for notice in movements %}
-- {{ notice.subject_kind }}: {{ notice.facts.quantity }} {{ notice.facts.quantity_unit }} of {{ notice.facts.commodity }}{% if notice.facts.batch %}, batch {{ notice.facts.batch }}{% endif %}
+- {{ notice.subject_kind|words|capfirst }}: {{ notice.facts.quantity|qty:notice.facts.quantity_unit }} of {{ notice.facts.commodity }}{% if notice.facts.batch %}, batch {{ notice.facts.batch }}{% endif %}
   {% if notice.facts.from %}From: {{ notice.facts.from }}
   {% endif %}{% if notice.facts.to %}To: {{ notice.facts.to }}
   {% endif %}On: {{ notice.facts.occurred_on }}
-  Source: {{ notice.facts.source }}{% if notice.facts.recorded_by %} ({{ notice.facts.recorded_by }}){% endif %}
+  Source: {{ notice.facts.source|source_label }}{% if notice.facts.recorded_by %} ({{ notice.facts.recorded_by }}){% endif %}
   Record: {{ notice.record_url }}
 {% endfor %}{% endif %}
 --

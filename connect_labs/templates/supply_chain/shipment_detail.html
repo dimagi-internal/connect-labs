@@ -118,7 +118,7 @@ checks feed cannot disagree about what is outstanding.
                   <div class="text-xs text-gray-500">to {{ orgs|dictkey:charge.payee_org_id|dictkey:"name" }}{% if charge.paid_on %} · paid {{ charge.paid_on }}{% else %} · not yet paid{% endif %}</div>
                 </td>
                 <td class="px-4 py-2 text-right tabular-nums">
-                  {{ charge.amount|money }} {{ charge.currency }}
+                  {{ charge.currency }} {{ charge.amount|money }}
                   {% if charge.fx_rate_to_usd %}<div class="text-xs text-gray-400">at {{ charge.fx_rate_to_usd }} USD</div>{% endif %}
                 </td>
               </tr>
@@ -154,7 +154,7 @@ checks feed cannot disagree about what is outstanding.
           <tr>
             <td class="px-4 py-2 text-gray-700">{{ line.batch|default:"—" }}</td>
             <td class="px-4 py-2 text-gray-600">{{ line.expiry|default:"—" }}</td>
-            <td class="px-4 py-2 tabular-nums">{{ line.quantity }} {{ line.quantity_unit }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ line.quantity|qty:line.quantity_unit }}</td>
           </tr>
         {% empty %}
           <tr><td colspan="3" class="px-4 py-4 text-center text-gray-500">No lines recorded on the dispatch.</td></tr>
