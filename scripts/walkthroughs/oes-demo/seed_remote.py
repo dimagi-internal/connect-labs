@@ -227,12 +227,13 @@ def seed_scopes(data):
     access object, the catalogue, and -- once the chain seeders run against
     it -- the items, suppliers and the ledger itself.
 
-    This seeds REFERENCE data only. The CHC chain is seeded by
-    `seed_chc_chain` against the scope named "chc"; RUTF and chlorine have
-    their own tasks and their own sections, so until those land their scopes
-    hold a catalogue and no chain. That is the correct intermediate state: a
-    program with the right products and nothing bought yet is exactly what a
-    chain about to be seeded looks like.
+    This seeds REFERENCE data only. The chains are seeded against these
+    scopes afterwards -- `seed_chc_chain` against "chc", `seed_supply_only`
+    against "supply_only" -- and RUTF and chlorine have their own tasks and
+    their own sections, so until those land their scopes hold a catalogue and
+    no chain. That is the correct intermediate state: a program with the
+    right products and nothing bought yet is exactly what a chain about to be
+    seeded looks like.
     """
     # Every section resolved, and every product it names found, BEFORE the
     # first write: a document missing its chlorine section should not leave a
@@ -703,6 +704,39 @@ def seed_chc_chain(access, data, reference):
     actually know about this stock, and how" in one read.
     """
     return seed_chain(access, data["chc_chain"], reference)
+
+
+def seed_supply_only(data, scopes):
+    """The second organisation: supply, without Connect's verified delivery.
+
+    Same chain, same comparison, same approval gate, same stock ledger. What
+    it does not have is any binding to a Connect opportunity -- no
+    `opportunity_id` on its supply points and no user-held points -- so the
+    ledger stops at its last store and the product makes no claim that
+    anything reached a beneficiary. That is the honest answer for an
+    implementer that runs its own last mile, and most of a funder's
+    portfolio looks like this (design section 6, beat 9).
+
+    **The stop is data, not code.** `summary._deliver()` keys off exactly
+    those two fields, so this seeds the document's `supply_only` section
+    through the same `seed_chain` the CHC chain goes through and changes
+    nothing about it. There is no branch here that suppresses delivery: if
+    that section ever gained an `opportunity_id` or a `user_held` point, the
+    close would quietly start claiming reach, and that is a defect in the
+    document rather than something to guard against in this function.
+
+    Takes `scopes` rather than building its own access: this scope's
+    catalogue was already seeded from its own section by `seed_scopes`, and
+    `seed_reference(access, data)` -- which the plan's own Task 5 block
+    calls -- would put every chain's products into this one program. It no
+    longer runs at all, but the right call is still the cheaper one: take
+    the access and the reference this scope already has.
+    """
+    scope = scopes["supply_only"]
+    return {
+        "program_id": SUPPLY_ONLY_PROGRAM_ID,
+        "chain": seed_chain(scope["access"], data["supply_only"], scope["reference"]),
+    }
 
 
 # ======================================================================
