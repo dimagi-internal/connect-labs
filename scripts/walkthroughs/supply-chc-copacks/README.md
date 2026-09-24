@@ -18,7 +18,7 @@ What each scene performs:
 
 Every date is relative to the render day, including the ones the scenes type. The chain took about a week in the world and is filmed in minutes, so each act is entered with the day it happened (`placed_on`, `paid_on`, `payment_received_on`, `received_on` in `.realized.json`): signed and confirmed six days ago, paid five days ago, the payment seen arriving four days ago, the goods received yesterday, the stock take and the release today. The order page and the link page read those days, not the minute they were typed.
 
-Amara's low-stock alert goes to her own address by name (an invented `.example` address, which never delivers), not to the login the render uses.
+Amara's low-stock alert goes to her own address by name, not to the login the render uses.
 
 On any day this gives:
 
@@ -27,4 +27,5 @@ On any day this gives:
 - a send quantity of 194 cartons;
 - 364 cartons and 6.00 months after the collection;
 - the co-pack order paid in advance, 120 USD recoverable for the 4 refused cartons;
-- the warehouse rated on its releases (376 cartons over 90 days before the take, 570 after it), inside its 2–6 month band after the collection.
+- five more partner stores (Dala, Gezawa, Kura, Bichi, Rano), each dispensing weekly and about 4.5 months into its 3–6 month band, so Sahel is the one store the stock page, the alert and the send figure pick out;
+- the warehouse rated on its releases to all six stores (2,066 cartons over 90 days before the collection, 2,260 after it): about 4.0 months before and 3.4 after, inside its 2–6 month band.

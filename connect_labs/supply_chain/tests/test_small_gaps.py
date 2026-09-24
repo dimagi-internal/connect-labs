@@ -21,6 +21,7 @@ from connect_labs.supply_chain.checks import KIND_CATEGORIES, PAYMENT_CONFIRMATI
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.models import Payment
 from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.values import day_text
 
 pytestmark = pytest.mark.django_db
 
@@ -450,7 +451,7 @@ class TestTheScreens:
         assert response.status_code == 302, response.content.decode()[:2000]
         assert Payment.objects.get(pk=payment["id"]).confirmed_by_payee_on == TODAY
         body = scoped.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
-        assert f"confirmed by the payee {TODAY.isoformat()}" in body
+        assert f"confirmed by the payee {day_text(TODAY)}" in body
 
     def test_the_short_order_names_the_order_that_covers_it(self, scoped, da, world):
         short = _contract(da, world, world["main"], "700")

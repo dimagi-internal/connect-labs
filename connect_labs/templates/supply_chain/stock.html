@@ -134,7 +134,7 @@ one of them would destroy the only signal it had.
               <div class="text-sm text-gray-700 mt-1" data-expected>
                 expected: {{ expected.outstanding|figure_text }} from
                 <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' expected.contract_id %}">{{ expected.supplier.name }}</a>{% if expected.expected_on %} —
-                {% if expected.overdue %}<span class="text-orange-700">overdue since {{ expected.expected_on }}</span>{% else %}due {{ expected.expected_on }}{% endif %}{% endif %}
+                {% if expected.overdue %}<span class="text-orange-700">overdue since {{ expected.expected_on|day }}</span>{% else %}due {{ expected.expected_on|day }}{% endif %}{% endif %}
                 <span class="text-gray-600">· not counted as cover</span>
               </div>
             {% endfor %}
@@ -142,7 +142,7 @@ one of them would destroy the only signal it had.
           <td class="px-4 py-2.5 tabular-nums">
             {% if point.reported %}
               {{ point.reported|figure_text }}
-              <div class="text-xs text-gray-500">{{ point.reported_kind|words|capfirst }} · {{ point.reported_on }}</div>
+              <div class="text-xs text-gray-500">{{ point.reported_kind|words|capfirst }} · {{ point.reported_on|day }}</div>
             {% else %}
               <span class="text-gray-600">no count yet</span>
             {% endif %}

@@ -108,14 +108,14 @@ class this build has not seen ships purged.
     decided it, and each approval that award needed, read as the award page reads them.{% endcomment %}
     <p class="text-sm text-gray-600 mt-1">
       <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award.id %}">Against the award to {{ award.supplier_name|default:"the supplier" }}</a>,
-      decided {{ award.decided_on|default:"undated" }}{% if award.decided_by %} by {{ award.decided_by }}{% endif %}
+      decided {{ award.decided_on|day|default:"undated" }}{% if award.decided_by %} by {{ award.decided_by }}{% endif %}
     </p>
     {% if award_approvals %}
       <ul class="text-sm text-gray-600 mt-0.5">
         {% for approval in award_approvals %}
           <li>
             {{ approval.approver.name|default:"—" }} ({{ approval.role|words|capfirst }})
-            {% if approval.status == "approved" %}approved {{ approval.decided_on|default:"undated" }}{% elif approval.status == "declined" %}declined {{ approval.decided_on|default:"undated" }}{% else %}asked {{ approval.requested_on }}, not yet answered{% endif %}
+            {% if approval.status == "approved" %}approved {{ approval.decided_on|day|default:"undated" }}{% elif approval.status == "declined" %}declined {{ approval.decided_on|day|default:"undated" }}{% else %}asked {{ approval.requested_on|day }}, not yet answered{% endif %}
           </li>
         {% endfor %}
       </ul>
@@ -135,8 +135,8 @@ class this build has not seen ships purged.
 {% if contract_late %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning px-4 py-3 mb-3 text-sm text-message-warning-text">
     <strong>{{ contract_late.facts.days_late }} day{{ contract_late.facts.days_late|pluralize }} past the promised lead time.</strong>
-    Signed {{ contract_late.facts.signed_on }} with {{ contract_late.facts.promised_lead_time_days }} days promised,
-    so due {{ contract_late.facts.expected_on }}{% if contract_late.facts.outstanding %};
+    Signed {{ contract_late.facts.signed_on|day }} with {{ contract_late.facts.promised_lead_time_days }} days promised,
+    so due {{ contract_late.facts.expected_on|day }}{% if contract_late.facts.outstanding %};
     {{ contract_late.facts.outstanding|qty:contract_late.facts.unit }} still to arrive{% endif %}.
   </div>
 {% endif %}
@@ -555,7 +555,7 @@ partner's name (the IPTSc render).
               {% endif %}
               {% with late=late_shipments|dictkey:shipment.id %}
                 {% if late %}
-                  <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on }}</div>
+                  <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on|day }}</div>
                 {% endif %}
               {% endwith %}
             </td>
@@ -601,7 +601,7 @@ partner's name (the IPTSc render).
             <td class="px-4 py-2">{{ shipment.status|words|capfirst }}
               {% with late=late_shipments|dictkey:shipment.id %}
                 {% if late %}
-                  <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on }}</div>
+                  <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on|day }}</div>
                 {% endif %}
               {% endwith %}
             </td>
@@ -653,7 +653,7 @@ partner's name (the IPTSc render).
         {% for line in receipt.lines %}
           <tr>
             <td class="px-4 py-2 font-medium text-gray-900">{{ receipt.reference|default:receipt.id }}</td>
-            <td class="px-4 py-2 text-gray-600">{{ receipt.received_on }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ receipt.received_on|day }}</td>
             <td class="px-4 py-2 text-gray-600">{{ supply_points|dictkey:receipt.supply_point_id|default:"—" }}</td>
             <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
             <td class="px-4 py-2 tabular-nums">{{ line.quantity_accepted|qty:line.quantity_unit }}</td>
@@ -705,7 +705,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
       {% for invoice in invoices %}
         <tr>
           <td class="px-4 py-2 font-medium text-gray-900">{{ invoice.reference|default:invoice.id }}</td>
-          <td class="px-4 py-2 text-gray-600">{{ invoice.issued_on|default:"—" }}</td>
+          <td class="px-4 py-2 text-gray-600">{{ invoice.issued_on|day|default:"—" }}</td>
           <td class="px-4 py-2 text-right tabular-nums">
             {% if invoice.amount %}{{ invoice.currency }} {{ invoice.amount|money }}{% else %}—{% endif %}
           </td>
@@ -740,10 +740,10 @@ The section stays only if one was somehow recorded, so it is not hidden.
           {% endcomment %}
           <tr class="bg-gray-50/60">
             <td class="px-4 py-1.5 pl-8 text-xs text-gray-600" colspan="6">
-              Paid {{ payment.currency }} {{ payment.amount|money }} on {{ payment.paid_on }}{% if payment.method %} by {{ payment.method|words }}{% endif %}
+              Paid {{ payment.currency }} {{ payment.amount|money }} on {{ payment.paid_on|day }}{% if payment.method %} by {{ payment.method|words }}{% endif %}
               ·
               {% if payment.confirmed_by_payee_on %}
-                <span class="text-message-success-text">confirmed by the payee {{ payment.confirmed_by_payee_on }}</span>
+                <span class="text-message-success-text">confirmed by the payee {{ payment.confirmed_by_payee_on|day }}</span>
               {% else %}
                 <span class="text-message-warning-text">not confirmed by the payee</span>
               {% endif %}

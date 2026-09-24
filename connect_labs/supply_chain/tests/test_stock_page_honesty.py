@@ -21,6 +21,7 @@ from django.urls import reverse
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.values import day_text
 
 pytestmark = pytest.mark.django_db
 
@@ -229,7 +230,10 @@ class TestStockOnItsWayIsShownButNotCounted:
         assert expected["overdue"] is True
 
         text = _text(_stock_page(scoped))
-        assert f"expected: 400 jerry cans from A water donor — overdue since {days_ago(90)}" in text
+        assert (
+            f"expected: 400 jerry cans from A water donor — overdue since {day_text(date.fromisoformat(days_ago(90)))}"
+            in text
+        )
         assert "not counted as cover" in text
         assert reverse("supply_chain:order_detail", args=[late["id"]]) in _stock_page(scoped)
 
@@ -311,7 +315,9 @@ class TestStockOnItsWayIsShownButNotCounted:
         (expected,) = _row(da, world)["expected_inbound"]
         assert expected["overdue"] is False
         text = _text(_stock_page(scoped))
-        assert f"expected: 60 jerry cans from A water donor — due {days_ago(-55)}" in text
+        assert (
+            f"expected: 60 jerry cans from A water donor — due {day_text(date.fromisoformat(days_ago(-55)))}" in text
+        )
 
 
 class TestTheOrderPageOffersBillingOnlyForABoughtOrder:
