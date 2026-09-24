@@ -791,7 +791,9 @@ def _late_shipments(access, as_of):
                 subject_type="shipment",
                 subject_id=shipment.pk,
                 label=_shipment_label(shipment),
-                audience="supplier",
+                # On the road it is the supplier's to answer. Held at customs
+                # it is the clearing that is late, which the programme chases.
+                audience="internal" if shipment.status == "at_customs" else "supplier",
                 facts={
                     "days_late": (today - shipment.expected_on).days,
                     "expected_on": shipment.expected_on.isoformat(),
