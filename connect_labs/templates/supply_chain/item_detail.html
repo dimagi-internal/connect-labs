@@ -276,7 +276,14 @@ sachets are in the carton, and neither does a balance.
                   </div>
                 </td>
                 <td class="px-4 py-2.5 tabular-nums">
-                  {{ point.on_hand|figure_text }}
+                  {% comment %}The stock page's own rule: an item counted whole in its single
+                  unit (one packet is one course) leads with that unit, the packing beneath.{% endcomment %}
+                  {% if point.counted_in_base and point.on_hand_in_base %}
+                    {{ point.on_hand_in_base|figure_text }}
+                    <div class="text-xs text-gray-500">{{ point.on_hand|figure_text }}</div>
+                  {% else %}
+                    {{ point.on_hand|figure_text }}
+                  {% endif %}
                   {% for reason in point.on_hand|unconfirmed_reasons %}
                     <div class="text-xs text-orange-700 mt-0.5">{{ reason }}</div>
                   {% endfor %}

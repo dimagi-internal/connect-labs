@@ -60,7 +60,13 @@ uses, so nothing ships purged.
               {% endif %}
             {% endwith %}
           </td>
-          <td class="px-4 py-2.5 text-gray-600">{{ points|dictkey:movement.from_supply_point_id|default:"—" }}</td>
+          <td class="px-4 py-2.5 text-gray-600">
+            {% with receipt=receipts|dictkey:movement.caused_by.receipt_id %}
+              {% if movement.from_supply_point_id %}{{ points|dictkey:movement.from_supply_point_id }}
+              {% elif receipt and receipt.contract_id and received_from|dictkey:receipt.contract_id %}{{ received_from|dictkey:receipt.contract_id }} <span class="text-xs text-gray-500">(supplier)</span>
+              {% else %}—{% endif %}
+            {% endwith %}
+          </td>
           <td class="px-4 py-2.5 text-gray-600">{{ points|dictkey:movement.to_supply_point_id|default:"—" }}</td>
           <td class="px-4 py-2.5 text-gray-600">{{ movement.batch|default:"—" }}</td>
           <td class="px-4 py-2.5 tabular-nums">{{ movement.quantity|qty:movement.quantity_unit }}</td>
@@ -70,6 +76,15 @@ uses, so nothing ships purged.
         <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">Nothing has moved here yet.</td></tr>
       {% endfor %}
     </tbody>
+    {% if balance %}
+      <tfoot class="border-t border-gray-200 bg-gray-50">
+        <tr data-balance>
+          <td colspan="5" class="px-4 py-2.5 text-right font-semibold text-gray-900">Balance at {{ point.name }}</td>
+          <td class="px-4 py-2.5 tabular-nums font-semibold text-brand-indigo">{{ balance|figure_text }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    {% endif %}
   </table>
   </div>
 </div>

@@ -172,16 +172,17 @@ scenes:
   - kind: wait_for
     target: text:past the promised lead time
   - kind: scroll
-    value: top
-  - kind: hold
-    note: the order header and the late banner, days past the promised lead time
-    seconds: 2.5
-  - kind: scroll
     value: '520'
   - kind: hold
     note: the dispatch Musa reported and the receipt Hauwa recorded, each marked with
       who told us
     seconds: 2.0
+  - kind: scroll
+    value: top
+  - kind: hold
+    note: the order header and the late banner, days past the promised lead time, with
+      700 ordered, 450 received and 250 still outstanding — the frame the scene ends on
+    seconds: 3.0
   concept_claim: The order page derives 700 ordered, 450 received and 250 outstanding
     from the receipt, and shows the order as past its promised lead time.
   design_intent: Shortfall and lateness are both derived from records, so neither
@@ -286,6 +287,12 @@ scenes:
   actions:
   - kind: wait_for
     target: text:Updates for Sahel Community Health Initiative
+  - kind: wait_for
+    must_succeed: true
+    target: text:SCHI-LP-0921
+  - kind: hold
+    note: SCHI-LP-0921, created after the link was issued, already listed under the link's orders
+    seconds: 2.5
   - kind: click
     target: css:summary:has-text('Record goods received')
   - kind: select
@@ -367,7 +374,8 @@ scenes:
     must_succeed: true
     target: text:What moved in and out of
   - kind: hold
-    note: the two receipts behind the balance, 450 from IPTSC-PO-0715 and 250 from SCHI-LP-0921
+    note: the two receipts behind the balance, 450 from Harmattan on IPTSC-PO-0715 and 250 from
+      Tamarind on SCHI-LP-0921, adding up to the balance of 700 packets
     seconds: 3.5
   concept_claim: The stock page shows the SCHI district store holding 700 packets with
     no order still expected, and its balance opens onto the two receipts it is made of,

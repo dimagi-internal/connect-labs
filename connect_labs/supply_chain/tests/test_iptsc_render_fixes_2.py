@@ -248,3 +248,53 @@ class TestTheStockPage:
         assert "font-semibold" in link
         assert "text-brand-indigo" in link
         assert "stock/movements/" in link
+
+
+# ---- iteration 3: what the render still showed -------------------------------
+
+
+class TestIterationThree:
+    def test_the_partners_link_reads_the_short_order_as_covered(self, da, world):
+        from django.test import Client
+
+        issued = op(
+            da, "update_link_issue", data={"org_id": world["partner"]["id"], "coverage": "organisation", "label": "x"}
+        )
+        _receive(world, _dispatch(world))
+        _cover(da, world, received=False)
+        body = _visible(first._public(Client(), issued["token"]))
+        order = body.split("IPTSC-PO-0715", 1)[1][:60]
+        assert "short — covered by SCHI-LP-0921" in order
+        assert "part received" not in order.lower()
+
+    def test_the_distributors_link_does_not_learn_the_covers_reference(self, da, world):
+        from django.test import Client
+
+        _receive(world, _dispatch(world))
+        _cover(da, world, received=False)
+        body = _visible(first._public(Client(), world["distributor_token"]))
+        assert "SCHI-LP-0921" not in body
+        assert "short — covered by another order" in body
+
+    def test_the_item_page_counts_a_kit_in_packets(self, scoped, played):
+        body = _page(scoped, "item_detail", played["item"]["id"])
+        section = _visible(body.split("Where it is now", 1)[1].split("</table>", 1)[0])
+        assert "700 packets" in section
+
+    def test_movements_name_the_supplier_and_add_up_to_the_balance(self, scoped, played):
+        body = _page(
+            scoped,
+            "movements",
+            supply_point_id=played["store"]["id"],
+            item_id=played["item"]["id"],
+        )
+        text = _visible(body)
+        assert "Harmattan Health Supplies (supplier)" in text
+        assert "Tamarind Pharmacy Wholesale (supplier)" in text
+        foot = _visible(body.split("data-balance", 1)[1].split("</tr>", 1)[0])
+        assert "Balance at SCHI district store" in foot and "700 packets" in foot
+
+    def test_an_empty_store_reads_as_stocked_out(self, scoped, world):
+        row = _visible(_page(scoped, "stock").split('data-ledger="', 1)[1].split("</tr>", 1)[0])
+        assert "Stocked out" in row
+        assert "expected: 700 packets from Harmattan Health Supplies" in row

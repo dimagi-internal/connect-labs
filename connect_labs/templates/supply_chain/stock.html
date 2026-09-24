@@ -105,11 +105,12 @@ one of them would destroy the only signal it had.
             {% comment %}Ordered to this point and not yet here: real, owed, and not cover --
             so it is said beside the balance and never added into it.{% endcomment %}
             {% for expected in point.expected_inbound %}
-              <div class="text-xs text-gray-500 mt-0.5">
+              {% comment %}The reason a store is short, so it reads at body size, not as a caption.{% endcomment %}
+              <div class="text-sm text-gray-700 mt-1" data-expected>
                 expected: {{ expected.outstanding|figure_text }} from
                 <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' expected.contract_id %}">{{ expected.supplier.name }}</a>{% if expected.expected_on %} —
                 {% if expected.overdue %}<span class="text-orange-700">overdue since {{ expected.expected_on }}</span>{% else %}due {{ expected.expected_on }}{% endif %}{% endif %}
-                · not counted as cover
+                <span class="text-gray-600">· not counted as cover</span>
               </div>
             {% endfor %}
           </td>
@@ -124,7 +125,9 @@ one of them would destroy the only signal it had.
           {% if point.no_consumption_yet and point.status != "durable" %}
           {% comment %}Demand, months, resupply and band all wait on the same missing
           rate: one neutral cell, not three "Unconfirmed" and a "cannot be assessed".{% endcomment %}
-          <td colspan="4" class="px-4 py-2.5 text-gray-600">No consumption yet — cover can't be computed</td>
+          {% comment %}Zero on hand is a stock-out whatever the rate: saying only "cover
+          can't be computed" beside a 0 read as if the store's state were unknown.{% endcomment %}
+          <td colspan="4" class="px-4 py-2.5 text-gray-600">{% if point.stocked_out %}<span class="font-semibold text-orange-700">Stocked out</span> — nothing on hand; no consumption yet to measure cover against{% else %}No consumption yet — cover can't be computed{% endif %}</td>
           {% else %}
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
             {{ point.amc|demand_text }}{% if point.amc.amount %} <span class="text-xs text-gray-500">{% if point.amc_basis == "releases" %}releases{% else %}dispensed{% endif %} a month</span>{% endif %}
