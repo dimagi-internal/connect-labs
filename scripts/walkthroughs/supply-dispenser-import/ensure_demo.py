@@ -20,12 +20,13 @@ Two steps:
 Outputs go to `outputs.json` beside this file (gitignored): the ids the scenes
 navigate to and today's date for the dates typed on camera.
 
-No supplier update link is issued. The distributor's goods-received and
-release notes are recorded programme-side, as reported by the distributor,
-because the public update-link form could not be submitted from a browser on
-the deployed build (Referrer-Policy: no-referrer -> Origin: null -> CSRF 403; fixed by
-PR #1972). Once that fix is live the arrival
-beats can move to the distributor's own link.
+The distributor gets its own update link, covering the order and the three
+places the dispensers rest (its warehouse and the two project sites). On
+camera it records the goods-received note and the release notes through that
+link, without a labs login; the path lands in `outputs.json` and is never
+printed or committed. The documents are files: the airway bill is uploaded
+here, and the other three are uploaded on camera from their checklist lines
+(`files/` beside this script holds the invented PDFs).
 
 THIS REPOSITORY IS PUBLIC. Every organisation, person and amount here is
 invented. The chain is the one the programme team described for chlorine
@@ -236,7 +237,7 @@ def seed(s: Seeder) -> dict:
     # --- the donor, as the supplier of record for an in-kind contract -------
     supplier = s.op(
         "supplier_create",
-        data={"name": "ClearWater Action", "type": "distributor", "status": "awarded", "org_id": donor},
+        data={"name": "ClearWater Action", "type": "donor", "status": "awarded", "org_id": donor},
     )["id"]
 
     # --- what is being imported ---------------------------------------------
@@ -294,8 +295,10 @@ def seed(s: Seeder) -> dict:
         )["id"]
 
     warehouse = point("harmattan-warehouse", "Harmattan warehouse", "central_store", distributor, "Kano")
-    point("dawaki-project-site", "Dawaki project site", "facility", llo, "Kano")
-    point("rimi-project-site", "Rimi project site", "facility", llo, "Kano")
+    sites = {
+        "dawaki": point("dawaki-project-site", "Dawaki project site", "facility", llo, "Kano"),
+        "rimi": point("rimi-project-site", "Rimi project site", "facility", llo, "Kano"),
+    }
 
     # --- the in-kind order: no price, but a real physical chain --------------
     contract = s.op(
@@ -338,14 +341,33 @@ def seed(s: Seeder) -> dict:
             "source": "we_recorded",
         },
     )["id"]
+    # The courier's airway bill is already on file when the story opens: a
+    # file, uploaded, like the three Halima files on camera.
+    airway_bill = HERE / "files" / "airway-bill-KEX-AWB-40981.pdf"
     s.op(
         "document_attach",
         data={
             "kind": "airway_bill",
             "title": "Airway bill KEX-AWB-40981",
-            "external_url": "https://files.example.org/kestrel/KEX-AWB-40981.pdf",
+            "filename": airway_bill.name,
+            "content_type": "application/pdf",
+            "content_base64": base64.b64encode(airway_bill.read_bytes()).decode(),
             "shipment_id": shipment,
             "source": "document",
+        },
+    )
+
+    # Harmattan reports the arrival, the inspection and the releases itself,
+    # through a link that covers this order and the three places it can move
+    # the dispensers between -- nothing else in the programme.
+    link = s.op(
+        "update_link_issue",
+        data={
+            "org_id": distributor,
+            "contract_ids": [contract],
+            "supply_point_ids": [warehouse, sites["dawaki"], sites["rimi"]],
+            "label": "Harmattan — ClearWater dispensers",
+            "expires_in_days": 30,
         },
     )
 
@@ -355,10 +377,17 @@ def seed(s: Seeder) -> dict:
         "shipment_id": shipment,
         "item_id": item,
         "warehouse_id": warehouse,
+        "distributor_link_path": _link_path(link),
         # Dates typed on camera: today's, so a re-render never files a receipt
         # or a charge in the past relative to the consignment it closes.
         "today": today.isoformat(),
     }
+
+
+def _link_path(link: dict) -> str:
+    """The update link as a site-relative path, so the recipe's base_url applies."""
+    raw = link.get("url") or ""
+    return "/" + raw.split("://", 1)[1].split("/", 1)[1] if "://" in raw else raw
 
 
 def main() -> None:
@@ -369,7 +398,7 @@ def main() -> None:
         seeder.ensure_registered()
         outputs = seed(seeder)
     OUTPUTS.write_text(json.dumps(outputs, indent=2) + "\n")
-    print(json.dumps(outputs))
+    print(json.dumps({k: ("<redacted>" if k.endswith("_link_path") else v) for k, v in outputs.items()}))
 
 
 if __name__ == "__main__":
