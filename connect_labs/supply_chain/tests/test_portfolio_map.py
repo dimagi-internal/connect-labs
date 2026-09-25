@@ -399,3 +399,26 @@ def test_all_my_programs_adds_reachable_programs_with_supply_points_and_nothing_
 
     assert [p["program_id"] for p in only["programs"]] == [ONE]
     assert [(p["program_id"], p["in_portfolio"]) for p in everything["programs"]] == [(ONE, True), (TWO, False)]
+
+
+def test_each_place_carries_what_it_holds_of_each_commodity_and_for_how_long(client, django_user_model):
+    """The Stock colour mode reads this; it is network_stock's own figure, per item.
+
+    MUTATED: `_cover` returning {} -- the warehouse came back with no cover, red.
+    """
+    from connect_labs.supply_chain.models import Item
+
+    _sign_in(client, django_user_model, [ONE])
+    warehouse, store = _moved(ONE)
+    Item.objects.create(
+        scope_key=scope_key(program_id=ONE),
+        sku="a-sku",
+        name="An Item",
+        commodity=Commodity.objects.get(slug="a-product", scope_key=scope_key(program_id=ONE)),
+    )
+
+    points = {p["id"]: p for p in _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]["points"]}
+
+    cover = points[warehouse.pk]["cover"]["a-product"]
+    assert cover["status"] in {"unknown", "ok", "stockout", "below_min", "overstocked"}
+    assert "item_id" in cover and "months_of_stock" in cover

@@ -505,6 +505,44 @@ def ledger_balances(program_id) -> dict:
 class ConsignmentDispatchView(OperationFormView):
     operation = "consignment_dispatch"
     form_class = ConsignmentForm
+
+    def get_initial(self):
+        """What a link from the map already knows: where from, where to, what, how much.
+
+        Every value is looked up in this program before it is used, so a
+        hand-edited link can prefill nothing the form would not offer.
+        """
+        from connect_labs.supply_chain.models import Commodity, SupplyPoint
+
+        initial = super().get_initial()
+        access = _access(self.request)
+        params = self.request.GET
+        points = SupplyPoint.objects.filter(program_id=access.program_id).exclude(kind="in_transit")
+        for field in ("from_supply_point", "to_supply_point"):
+            value = params.get(field)
+            if value and value.isdigit() and points.filter(pk=int(value)).exists():
+                initial[field] = int(value)
+        commodity = Commodity.objects.filter(scope_key=access.scope_key, slug=params.get("commodity") or "").first()
+        if commodity is not None:
+            initial["commodity"] = commodity.pk
+            item = params.get("item")
+            if (
+                item
+                and item.isdigit()
+                and Item.objects.filter(pk=int(item), scope_key=access.scope_key, commodity=commodity).exists()
+            ):
+                initial["item"] = int(item)
+        quantity = params.get("quantity") or ""
+        try:
+            if quantity and float(quantity) > 0:
+                initial["quantity"] = quantity
+        except ValueError:
+            pass
+        unit = (params.get("quantity_unit") or "")[:32]
+        if unit:
+            initial["quantity_unit"] = unit
+        return initial
+
     title = "Send stock to another of our places"
     intro = (
         "Stock leaving a warehouse for a partner's office, or any one of our places for another. It "

@@ -396,6 +396,7 @@
     member: null,
     flows: true,
     network: false,
+    colour: 'attention',
   };
   // Anything read off the page -- a data-* attribute, a select's value, the
   // URL hash -- is resolved here to the matching value from the SERVER'S data,
@@ -460,6 +461,7 @@
       state.attention = s.attention === true;
       state.flows = s.flows !== false;
       state.network = s.network === true;
+      state.colour = s.colour === 'stock' ? 'stock' : 'attention';
     } catch (e) {
       /* a hand-edited hash is not worth breaking the page over */
     }
@@ -591,7 +593,99 @@
     update(true);
   }
 
+  // ---------------------------------------------------------------- stock
+  // "Where are my supplies" is a question about QUANTITY, answered one
+  // commodity at a time: a carton of co-pack and a jerry can of chlorine
+  // share no unit, so the map never compares them. With a commodity picked,
+  // a place's size is what it holds (relative to the others holding that
+  // commodity in that unit) and its colour is its cover against its own
+  // min/max band -- or grey, with the reason, where cover cannot be said.
+  var COVER = {
+    stockout: { label: 'Stocked out', color: '#ef4444' },
+    negative: { label: 'Impossible balance', color: '#a855f7' },
+    below_min: { label: 'Below its minimum', color: '#f59e0b' },
+    ok: { label: 'Within its band', color: '#22c55e' },
+    overstocked: { label: 'Above its maximum', color: '#3b82f6' },
+    unknown: { label: 'Cover cannot be said', color: '#94a3b8' },
+    durable: { label: 'Equipment', color: '#14b8a6' },
+  };
+  function coverOf(pt, slug) {
+    return (pt.cover || {})[slug || state.commodity] || null;
+  }
+  function coverLine(c) {
+    if (!c) return 'Holds none';
+    var bits = [figure(c.on_hand).text];
+    var mos = figure(c.months_of_stock);
+    if (mos.why) bits.push('cover cannot be said: ' + mos.why);
+    else if (mos.text !== '—') bits.push(mos.text + ' months of stock');
+    if (c.min_months_of_stock || c.max_months_of_stock) {
+      bits.push(
+        'band ' +
+          (c.min_months_of_stock ? fmt(c.min_months_of_stock) : '–') +
+          '–' +
+          (c.max_months_of_stock ? fmt(c.max_months_of_stock) : '–'),
+      );
+    }
+    return bits.join(' · ');
+  }
+  // Somewhere that could send some: it holds the commodity, and is not itself
+  // below its band. Above its maximum is the clearest case; cover unknown is
+  // offered too, because the map should not hide stock it cannot rate.
+  function canSpare(c) {
+    return (
+      !!c &&
+      (c.amount || 0) > 0 &&
+      ['stockout', 'negative', 'below_min'].indexOf(c.status) < 0 &&
+      spareOf(c) > 0
+    );
+  }
+  // What a place can give without dropping below its OWN minimum: its stock
+  // less its minimum months at its own rate. With no rate or no band the
+  // whole balance is offered, and the sender decides.
+  function spareOf(c) {
+    if (!c || !c.amount) return 0;
+    var months = num(c.months_of_stock);
+    var floor = num(c.min_months_of_stock);
+    if (months && months > 0 && floor !== null) {
+      return Math.max(0, Math.floor(c.amount - floor * (c.amount / months)));
+    }
+    return Math.floor(c.amount);
+  }
+  function dispatchLink(pt, params) {
+    var q = Object.keys(params)
+      .filter(function (k) {
+        return (
+          params[k] !== null && params[k] !== undefined && params[k] !== ''
+        );
+      })
+      .map(function (k) {
+        return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+      })
+      .join('&');
+    return (
+      pt.links.dispatch + (pt.links.dispatch.indexOf('?') >= 0 ? '&' : '?') + q
+    );
+  }
+
+  document.getElementById('pm-colour').addEventListener('click', function (e) {
+    var a = e.target.closest('[data-colour]');
+    if (!a) return;
+    e.preventDefault();
+    state.colour = a.dataset.colour === 'stock' ? 'stock' : 'attention';
+    // Stock means stock OF something: pick the first commodity rather than
+    // draw a map of nothing.
+    if (state.colour === 'stock' && !state.commodity)
+      state.commodity = Object.keys(commodityNames).sort()[0] || '';
+    update(false);
+  });
+
   function renderBar() {
+    Array.prototype.forEach.call(
+      document.querySelectorAll('#pm-colour [data-colour]'),
+      function (a) {
+        a.classList.toggle('pm-on', a.dataset.colour === state.colour);
+      },
+    );
     commoditySelect.value = state.commodity;
     document.getElementById('pm-layer-flows').checked = state.flows;
     document.getElementById('pm-layer-network').checked = state.network;
@@ -1159,6 +1253,114 @@
     );
   }
 
+  // What this place holds, how long it lasts, and the two things to do about
+  // it: send some on, or bring some in from the nearest place that can spare
+  // it. A consignment runs within one program, so "nearest" looks there.
+  function stockSection(pt, p) {
+    var slugs = state.commodity
+      ? [state.commodity]
+      : Object.keys(pt.cover || {});
+    if (!slugs.length || pt.kind === 'supplier_site') return '';
+    var h = '<div class="pm-sec"><h4><span>Stock and cover</span></h4>';
+    slugs.forEach(function (slug) {
+      var c = coverOf(pt, slug);
+      var tone = c ? COVER[c.status] || COVER.unknown : null;
+      h +=
+        '<div class="pm-row"><span class="pm-dot" style="margin-top:6px;background:' +
+        (tone ? tone.color : '#e5e7eb') +
+        '"></span><div class="min-w-0 w-full">' +
+        '<div class="text-gray-900">' +
+        esc(commodityNames[slug] || slug) +
+        (tone
+          ? ' <span class="pm-muted">· ' + esc(tone.label) + '</span>'
+          : '') +
+        '</div>' +
+        '<div class="pm-muted">' +
+        esc(coverLine(c)) +
+        '</div>';
+      if (canSpare(c)) {
+        h +=
+          '<a class="pm-link text-xs" href="' +
+          esc(
+            dispatchLink(pt, {
+              from_supply_point: pt.id,
+              commodity: slug,
+              item: c.item_id,
+              quantity_unit: (c.on_hand || {}).unit,
+            }),
+          ) +
+          '">' +
+          '<i class="fa-solid fa-truck-arrow-right mr-1"></i>Send some from here</a>';
+      }
+      var sources = places
+        .filter(function (o) {
+          // Not from a field worker: taking stock back off a worker is not
+          // rebalancing, it is leaving somebody's patients without.
+          return (
+            o.program_id === pt.program_id &&
+            o._key !== pt._key &&
+            o.kind !== 'user_held' &&
+            o._placed &&
+            pt._placed &&
+            canSpare(coverOf(o, slug))
+          );
+        })
+        .map(function (o) {
+          return {
+            pt: o,
+            km: km({ lat: pt.lat, lng: pt.lng }, { lat: o.lat, lng: o.lng }),
+          };
+        })
+        .sort(function (a, b) {
+          return a.km - b.km;
+        })
+        .slice(0, 3);
+      if (sources.length) {
+        var need =
+          c && c.resupply_quantity && c.resupply_quantity.amount
+            ? c.resupply_quantity
+            : null;
+        h +=
+          '<div class="pm-muted mt-1" style="font-weight:600">Bring some here' +
+          (need
+            ? ' — it needs ' + esc(figure(need).text) + ' to reach its maximum'
+            : '') +
+          '</div>';
+        sources.forEach(function (sN) {
+          var sc = coverOf(sN.pt, slug);
+          var spare = spareOf(sc);
+          var sameUnit = need && need.unit === (sc.on_hand || {}).unit;
+          var suggest = sameUnit
+            ? Math.min(spare, Math.ceil(num(need.amount) || 0))
+            : spare;
+          h +=
+            '<div class="pm-muted text-xs">' +
+            esc(fmt(Math.round(sN.km))) +
+            ' km · ' +
+            esc(sN.pt.name) +
+            ' holds ' +
+            esc(figure(sc.on_hand).text) +
+            ', can spare ' +
+            esc(fmt(spare) + ' ' + ((sc.on_hand || {}).unit || '')) +
+            ' · <a class="pm-link" href="' +
+            esc(
+              dispatchLink(pt, {
+                from_supply_point: sN.pt.id,
+                to_supply_point: pt.id,
+                commodity: slug,
+                item: sc.item_id,
+                quantity: suggest || '',
+                quantity_unit: (sc.on_hand || {}).unit,
+              }),
+            ) +
+            '">Send from there</a></div>';
+        });
+      }
+      h += '</div></div>';
+    });
+    return h + '</div>';
+  }
+
   function commoditiesSection(pt) {
     if (!pt.commodities.length && !pt.owed_commodities.length) return '';
     var rows = pt.commodities.map(function (c) {
@@ -1257,6 +1459,7 @@
         ? '<div class="pm-muted mt-1">Why not: ' + esc(onHand.why) + '</div>'
         : '') +
       '</div>';
+    h += stockSection(pt, p);
     h += commoditiesSection(pt);
 
     h +=
@@ -1788,7 +1991,37 @@
     vis.forEach(function (pt) {
       shown[pt._key] = true;
     });
+    var stockMode = state.colour === 'stock' && state.commodity;
+    var biggest = {};
+    if (stockMode) {
+      vis.forEach(function (pt) {
+        var c = coverOf(pt);
+        if (!c || !c.amount) return;
+        var unit = (c.on_hand || {}).unit || '';
+        biggest[unit] = Math.max(biggest[unit] || 0, c.amount);
+      });
+    }
     var feature = function (pt) {
+      if (stockMode) {
+        var c = coverOf(pt);
+        var unit = c && c.on_hand ? c.on_hand.unit || '' : '';
+        var share =
+          c && c.amount && biggest[unit]
+            ? Math.sqrt(c.amount / biggest[unit])
+            : 0;
+        return {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [pt._x, pt._y] },
+          properties: {
+            key: pt._key,
+            name: pt.name,
+            color: c ? (COVER[c.status] || COVER.unknown).color : '#1f2937',
+            r: pt.kind === 'user_held' ? 4 : 5 + 15 * share,
+            approx: whereIs(pt).coarse,
+            sel: state.place === pt._key,
+          },
+        };
+      }
       return {
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [pt._x, pt._y] },
@@ -2167,6 +2400,28 @@
     var row = function (swatch, label) {
       return '<div>' + swatch + label + '</div>';
     };
+    if (state.colour === 'stock' && state.commodity) {
+      document.getElementById('pm-legend').innerHTML =
+        '<div style="font-weight:600;margin-bottom:2px">' +
+        esc(commodityNames[state.commodity] || state.commodity) +
+        '</div>' +
+        ['stockout', 'below_min', 'ok', 'overstocked', 'unknown']
+          .map(function (k) {
+            return row(
+              '<span class="pm-dot" style="background:' +
+                COVER[k].color +
+                '"></span>',
+              COVER[k].label,
+            );
+          })
+          .join('') +
+        row(
+          '<span class="pm-dot" style="background:#1f2937;border:1px solid #475569"></span>',
+          'Holds none',
+        ) +
+        '<div style="opacity:.7;margin-top:3px">Size: how much it holds</div>';
+      return;
+    }
     var h = ['blocked', 'waiting', 'clear']
       .map(function (k) {
         return row(
@@ -2220,6 +2475,7 @@
   }
 
   function update(fit) {
+    renderLegend();
     renderBar();
     renderPanel();
     drawMap(fit);

@@ -225,3 +225,46 @@ def test_the_road_is_not_a_place_the_network_counts_or_checks(network):
     assert via.pk not in points
     assert via.pk not in checked
     assert summary["deliver"]["network"]["supply_points"] == 2
+
+
+def test_a_link_from_the_map_prefills_the_dispatch_and_ignores_another_programs_place(
+    client, django_user_model, network, monkeypatch
+):
+    """The map's "Send from there" link names places by id; only this program's are used.
+
+    MUTATED: the program filter dropped from get_initial -- the other program's
+    store was prefilled as the sender, red.
+    """
+    from connect_labs.supply_chain import form_views, stock_views  # noqa: F401
+    from connect_labs.supply_chain.api_views import _access as real_access
+
+    warehouse, office = network
+    elsewhere = SupplyPoint.objects.create(
+        program_id=PROGRAM + 1, slug="elsewhere", name="Elsewhere", kind="central_store", source="we_recorded"
+    )
+    client.force_login(django_user_model.objects.create_user(username="jo", password="x", email="jo@dimagi.com"))
+
+    def _scoped(request):
+        access = real_access(request)
+        access.program_id = PROGRAM
+        return access
+
+    monkeypatch.setattr("connect_labs.supply_chain.form_views.has_program_context", lambda request: True)
+    monkeypatch.setattr("connect_labs.supply_chain.form_views._access", _scoped)
+    monkeypatch.setattr("connect_labs.supply_chain.stock_views._access", _scoped)
+
+    url = reverse("supply_chain:consignment_dispatch")
+    ours = client.get(
+        url,
+        {"from_supply_point": warehouse.pk, "to_supply_point": office.pk, "commodity": "a-product", "quantity": "7"},
+    )
+    theirs = client.get(url, {"from_supply_point": elsewhere.pk})
+
+    initial = ours.context["form"].initial
+    assert (initial["from_supply_point"], initial["to_supply_point"], initial["quantity"]) == (
+        warehouse.pk,
+        office.pk,
+        "7",
+    )
+    assert initial["commodity"] == Commodity.objects.get(slug="a-product", scope_key=scope_key(program_id=PROGRAM)).pk
+    assert "from_supply_point" not in theirs.context["form"].initial
