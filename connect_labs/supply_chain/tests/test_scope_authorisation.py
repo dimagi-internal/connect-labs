@@ -183,6 +183,10 @@ def test_the_system_escape_hatch_is_greppable():
         # A supplier update link: no user, and the token is the authority. It
         # writes only rows inside the link's own scope (see its tests).
         "supply_chain/update_links/service.py",
+        # The supplier marketplace: the supplier is not a program member. It
+        # writes only the organisation's own quotes on open rounds it may see,
+        # checked against the database before every write (see its tests).
+        "supply_chain/market/service.py",
         "labs/access/scopes.py",
     }
     offenders = sorted(

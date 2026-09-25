@@ -540,6 +540,17 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         supplier.save()
         return _fresh(supplier)
 
+    def mark_supplier_reviewed(self, supplier_id: int):
+        """Say somebody on the program team has looked at a self-registered supplier."""
+        supplier = self.get_supplier(supplier_id)
+        if supplier is None:
+            raise ValueError(f"supplier {supplier_id} not found")
+        supplier.reviewed_on = date.today()
+        user = self.user if getattr(self.user, "is_authenticated", False) else None
+        supplier.reviewed_by = user
+        supplier.save(update_fields=["reviewed_on", "reviewed_by", "updated_at"])
+        return _fresh(supplier)
+
     def _edit_company(self, org, data):
         identity = {k: data[k] for k in ("name", "country") if data.get(k) not in (None, "")}
         changed = {k: v for k, v in identity.items() if getattr(org, k) != v}

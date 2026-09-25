@@ -12,6 +12,7 @@ row at all, so this registry is strictly larger than Connect's, and always will
 be. That is the correction this app exists to make.
 """
 
+from django.conf import settings
 from django.db import models
 
 from connect_labs.labs.models import LabsOrg
@@ -147,3 +148,65 @@ class OrgConnectSlug(models.Model):
 
     def __str__(self) -> str:
         return f"{self.slug} → {self.org.name}"
+
+
+class OrgMembership(models.Model):
+    """A labs user who may act for an organisation.
+
+    For an organisation Connect knows, membership is Connect's and arrives with
+    the sign-in (`membership.orgs_for`). This table is for the rest -- the
+    organisations that are "local for good": a manufacturer registering on the
+    supply marketplace has no Connect organisation and no reason to get one,
+    but its people still need to act for it.
+
+    Fact about an organisation, so it lives beside the other facts about one
+    and points at `LabsOrg` rather than adding to it.
+    """
+
+    ROLES = (("admin", "Admin"), ("member", "Member"))
+
+    org = models.ForeignKey(LabsOrg, on_delete=models.CASCADE, related_name="memberships")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="org_memberships")
+    role = models.CharField(max_length=16, choices=ROLES, default="member")
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["org", "user"], name="marketplace_one_membership_per_user")]
+        ordering = ["org__name"]
+
+    def __str__(self) -> str:
+        return f"{self.user} for {self.org}"
+
+
+class OrgInvite(models.Model):
+    """A one-time link that makes whoever opens it (signed in) a member.
+
+    An email address is recorded to say who it was meant for, and is never
+    what grants membership: a Connect account's email proves nothing about
+    who employs its holder. The token does. Only a keyed hash of it is kept,
+    exactly as update links keep theirs.
+    """
+
+    org = models.ForeignKey(LabsOrg, on_delete=models.CASCADE, related_name="invites")
+    email = models.EmailField(blank=True, default="")
+    role = models.CharField(max_length=16, choices=OrgMembership.ROLES, default="member")
+    token_hash = models.CharField(max_length=64, unique=True)
+    token_hint = models.CharField(max_length=8, blank=True, default="")
+    expires_at = models.DateTimeField()
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    accepted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    issued_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"invitation to {self.org} for {self.email or 'anyone with the link'}"

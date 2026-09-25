@@ -49,7 +49,7 @@
       {% for round in rounds %}
       <tr>
         <td class="px-4 py-2 text-sm font-medium text-gray-900">{{ round.label }}</td>
-        <td class="px-4 py-2 text-sm text-gray-600">{{ round.status|title }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ round.status|title }}{% if round.visibility == "private" %} <span class="ml-1 px-1.5 py-0.5 rounded text-xs bg-gray-100 border">Private</span>{% endif %}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ round.response_deadline|default:"not set" }}</td>
         <td class="px-4 py-2 text-sm text-gray-600">
           {% for line in round.lines %}{{ line.commodity_slug }}{% if not forloop.last %}, {% endif %}{% endfor %}

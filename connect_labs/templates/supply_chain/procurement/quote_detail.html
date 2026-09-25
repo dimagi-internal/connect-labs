@@ -39,6 +39,12 @@ unconfirmed figures on the right.
          class="text-gray-900 hover:text-brand-indigo hover:underline">{{ supplier.name }}</a>
     </h1>
     <p class="text-sm text-gray-600 mt-1">
+      {% if quote.entered_by == "supplier" %}Entered by {{ supplier.name }} themselves on the supplier marketplace.{% else %}Recorded by the program team.{% endif %}
+      {% if supplier.origin == "self_registered" and not supplier.reviewed_on %}
+        <span class="ml-1 px-2 py-0.5 rounded-full text-xs bg-message-warning text-message-warning-text border border-message-warning-border">Self-registered, not yet reviewed</span>
+      {% endif %}
+    </p>
+    <p class="text-sm text-gray-600 mt-1">
       <a href="{% url 'supply_chain:product_detail' quote.commodity_slug %}"
          class="text-brand-indigo hover:underline">{{ quote.commodity_slug|humanise }}</a>
       {% comment %}

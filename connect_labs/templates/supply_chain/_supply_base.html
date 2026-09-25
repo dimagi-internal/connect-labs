@@ -38,7 +38,7 @@ invitation evidence and so "send an invitation" is not the way to start it.
                 text-teal-700 bg-teal-50 border border-teal-200
               {% elif claim.basis == 'quoted' %}
                 text-brand-indigo bg-indigo-50 border border-indigo-200
-              {% elif claim.basis == 'named_as_manufacturer' %}
+              {% elif claim.basis == 'named_as_manufacturer' or claim.basis == 'declared' %}
                 text-gray-600 bg-gray-50 border border-gray-200
               {% else %}
                 text-amber-800 bg-amber-50 border border-amber-200
@@ -72,6 +72,11 @@ invitation evidence and so "send an invitation" is not the way to start it.
             {% endfor %}
           </ul>
 
+          {% if claim.basis == 'declared' %}
+            <p class="mt-2 text-xs text-gray-500 max-w-2xl">
+              Their own statement on the supplier marketplace, unverified. They have never quoted here.
+            </p>
+          {% endif %}
           {% if claim.basis == 'named_as_manufacturer' %}
             <p class="mt-2 text-xs text-gray-500 max-w-2xl">
               Matched on the manufacturer name typed on the trade item, which is

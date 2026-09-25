@@ -29,6 +29,7 @@ excludes it and reassembles it, the same way `RoundForm` handles
 
 from decimal import Decimal, InvalidOperation
 
+from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Field, Fieldset, Layout, Row
 from django import forms
 from django.utils.translation import gettext_lazy as _
@@ -775,3 +776,24 @@ class SupplierForm(ScopedForm):
                     % {"name": existing.name}
                 )
         return name
+
+
+class SupplierMarketInviteForm(forms.Form):
+    """Who a marketplace invitation is for. Only a note: the link is what lets them in."""
+
+    email = forms.EmailField(
+        label=_("Their email"),
+        required=False,
+        widget=forms.EmailInput(attrs=INPUT),
+        help_text=_("To remember who it was for. Anyone holding the link, signed in, can use it once."),
+    )
+
+    def __init__(self, *args, access=None, **kwargs):
+        self.access = access
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+
+    def payload(self) -> dict:
+        return to_payload(self.cleaned_data)

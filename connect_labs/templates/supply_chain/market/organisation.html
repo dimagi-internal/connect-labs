@@ -1,0 +1,89 @@
+{% extends 'supply_chain/market/_shell.html' %}
+{% block title %}{{ org.name }}{% endblock %}
+{% block body %}
+<h1 class="text-xl font-semibold mb-1">{{ org.name }}</h1>
+<p class="text-sm text-gray-600 mb-4">Your supplier profile. Every buyer on the marketplace sees the same one.</p>
+
+{% if issued %}
+  <div class="mb-4 p-4 rounded-md bg-message-success text-message-success-text border border-message-success-border text-sm">
+    <p class="font-medium mb-1">Invitation link — copy it now. It is shown once.</p>
+    <input readonly value="{{ issued }}" class="base-input w-full font-mono text-xs" onclick="this.select()">
+    <p class="mt-1">Send it to your colleague. It works once, for 30 days, and they sign in with their own Connect account to accept it.</p>
+  </div>
+{% endif %}
+
+<div class="grid md:grid-cols-2 gap-4">
+  <section class="bg-white rounded-lg shadow-sm p-5">
+    <h2 class="text-lg font-semibold mb-3">Profile</h2>
+    {% if admin %}
+      <form method="post">
+        {% csrf_token %}<input type="hidden" name="action" value="profile"><input type="hidden" name="org" value="{{ org.pk }}">
+        {% include 'supply_chain/market/_field.html' with field=profile_form.type %}
+        <div class="grid grid-cols-2 gap-x-4">
+          {% include 'supply_chain/market/_field.html' with field=profile_form.country %}
+          {% include 'supply_chain/market/_field.html' with field=profile_form.city %}
+        </div>
+        {% include 'supply_chain/market/_field.html' with field=profile_form.website %}
+        {% include 'supply_chain/market/_field.html' with field=profile_form.description %}
+        <button class="px-4 py-2 text-sm bg-brand-indigo text-white rounded-md">Save profile</button>
+      </form>
+    {% else %}
+      <dl class="text-sm space-y-1">
+        <div><dt class="inline text-gray-500">What you are:</dt> <dd class="inline">{{ profile.type|default:"—" }}</dd></div>
+        <div><dt class="inline text-gray-500">Where:</dt> <dd class="inline">{{ profile.city|default:"" }} {{ org.country }}</dd></div>
+        <div><dt class="inline text-gray-500">Website:</dt> <dd class="inline">{{ profile.website|default:"—" }}</dd></div>
+      </dl>
+      <p class="text-xs text-gray-500 mt-2">Only an admin of {{ org.name }} can change the profile.</p>
+    {% endif %}
+  </section>
+
+  <section class="bg-white rounded-lg shadow-sm p-5">
+    <h2 class="text-lg font-semibold mb-1">What you offer</h2>
+    <p class="text-xs text-gray-500 mb-3">Rounds for these come first on the marketplace, and buyers looking for them can find you even before you have quoted.</p>
+    <ul class="divide-y text-sm mb-4">
+      {% for o in offerings %}
+        <li class="py-2 flex justify-between gap-2">
+          <span><span class="font-medium">{{ o.product_name }}</span> <span class="text-gray-500">· {{ o.get_category_display }}{% if o.pack_description %} · {{ o.pack_description }}{% endif %}{% if o.unicef_material_number %} · {{ o.unicef_material_number }}{% endif %}{% if o.certifications %} · {{ o.certifications|join:", " }}{% endif %}</span></span>
+          {% if admin %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="offering_delete"><input type="hidden" name="org" value="{{ org.pk }}"><input type="hidden" name="offering" value="{{ o.pk }}"><button class="text-xs text-red-700 hover:underline">Remove</button></form>{% endif %}
+        </li>
+      {% empty %}
+        <li class="py-2 text-gray-500">Nothing yet.</li>
+      {% endfor %}
+    </ul>
+    {% if admin %}<details {% if offering_form.errors %}open{% endif %}>
+      <summary class="cursor-pointer text-sm text-brand-indigo">Add a product</summary>
+      <form method="post" class="mt-3">
+        {% csrf_token %}<input type="hidden" name="action" value="offering_add"><input type="hidden" name="org" value="{{ org.pk }}">
+        {% include 'supply_chain/market/_field.html' with field=offering_form.category %}
+        {% include 'supply_chain/market/_field.html' with field=offering_form.product_name %}
+        <div class="grid grid-cols-2 gap-x-4">
+          {% include 'supply_chain/market/_field.html' with field=offering_form.unicef_material_number %}
+          {% include 'supply_chain/market/_field.html' with field=offering_form.gtin %}
+          {% include 'supply_chain/market/_field.html' with field=offering_form.pack_description %}
+          {% include 'supply_chain/market/_field.html' with field=offering_form.base_per_pack %}
+          {% include 'supply_chain/market/_field.html' with field=offering_form.typical_lead_time_days %}
+          {% include 'supply_chain/market/_field.html' with field=offering_form.minimum_order %}
+        </div>
+        {% include 'supply_chain/market/_field.html' with field=offering_form.countries_served_text %}
+        {% include 'supply_chain/market/_field.html' with field=offering_form.certifications_text %}
+        <button class="px-4 py-2 text-sm bg-brand-indigo text-white rounded-md">Add</button>
+      </form>
+    </details>{% endif %}
+  </section>
+
+  <section class="bg-white rounded-lg shadow-sm p-5 md:col-span-2">
+    <h2 class="text-lg font-semibold mb-3">People</h2>
+    <ul class="text-sm divide-y mb-3">
+      {% for m in members %}<li class="py-1.5">{{ m.user.name|default:m.user.email|default:m.user.username }} <span class="text-gray-500">· {{ m.get_role_display }}</span></li>
+      {% empty %}<li class="py-1.5 text-gray-500">Members come through Connect for this organisation.</li>{% endfor %}
+    </ul>
+    {% if admin %}
+      <form method="post" class="flex flex-wrap items-end gap-3">
+        {% csrf_token %}<input type="hidden" name="action" value="invite"><input type="hidden" name="org" value="{{ org.pk }}">
+        <div class="grow max-w-sm">{% include 'supply_chain/market/_field.html' with field=invite_form.email %}</div>
+        <button class="mb-4 px-4 py-2 text-sm bg-brand-indigo text-white rounded-md">Create an invitation link</button>
+      </form>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

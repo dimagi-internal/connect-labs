@@ -1,0 +1,4 @@
+{% load supply_chain_extras %}{% comment %}One product line of a round, as a supplier reads it.{% endcomment %}
+<span class="font-medium">{{ line.name }}</span>
+{% if line.quantity is not None %}<span class="text-gray-600"> · {{ line.quantity|qty:line.quantity_unit }}</span>{% endif %}
+{% if line.matches %}<span class="ml-1 inline-block text-xs px-2 py-0.5 rounded-full bg-message-success text-message-success-text border border-message-success-border">Matches what you offer</span>{% endif %}

@@ -80,6 +80,48 @@ def mint_org(name: str, *, country: str = "") -> LabsOrg:
     return LabsOrg.objects.create(slug=slug, name=name, country=country)
 
 
+class OrgExists(ValueError):
+    """A new organisation was asked for under a name one already answers to."""
+
+
+def taken_by(name: str) -> LabsOrg | None:
+    """An organisation this name already refers to, however it is punctuated.
+
+    Stricter than `find_org`, for the one caller that must never create a
+    second row: a self-registration. "Acme Ltd." and "ACME Ltd" are one
+    company, and so is a name an organisation carries as its short name or an
+    alias. Compared on the normalised slug, over every organisation -- a
+    registration is rare and a duplicate is expensive to undo.
+    """
+    key = slug_for(name)
+    for org in LabsOrg.objects.only("pk", "slug", "name", "short_name", "aliases"):
+        names = [org.name, org.short_name, *(org.aliases or [])]
+        if org.slug == key or any(n and slug_for(n) == key for n in names):
+            return org
+    return None
+
+
+def mint_new_org(name: str, *, country: str = "") -> LabsOrg:
+    """A brand-new organisation, or `OrgExists` -- never an existing row.
+
+    `mint_org` returns the organisation already holding the name, which is
+    right for linking and wrong for registering: two people registering one
+    name at once would otherwise both pass the form's check and the second
+    would become an admin of the first's organisation. The unique slug is the
+    lock; losing the race is a refusal, not a merge.
+    """
+    from django.db import IntegrityError, transaction
+
+    name = (name or "").strip()
+    if taken_by(name) is not None:
+        raise OrgExists(f"“{name}” is already on file")
+    try:
+        with transaction.atomic():
+            return LabsOrg.objects.create(slug=slug_for(name), name=name, country=country)
+    except IntegrityError:
+        raise OrgExists(f"“{name}” is already on file")
+
+
 def ensure_org(name: str, *, short_name: str = "", country: str = "") -> LabsOrg:
     """Find or create the organisation this directory name refers to.
 
