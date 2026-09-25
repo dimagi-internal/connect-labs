@@ -439,6 +439,11 @@ def rebuild_history(
         from connect_labs.benchmarks.tasks import queue_auto_publish
 
         report["auto_publish_queued"] = queue_auto_publish(data_access, workflow_id=definition_id)
+        from connect_labs.workflow.hand_down import queue_hand_down
+
+        report["hand_down_queued"] = queue_hand_down(
+            data_access, workflow_id=definition_id, template_type=getattr(definition, "template_type", None)
+        )
 
     return report
 

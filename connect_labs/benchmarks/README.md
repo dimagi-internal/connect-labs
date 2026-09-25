@@ -32,7 +32,7 @@ Both KMC cohorts run with **all three off** (decided 2026-09-18: no competitive-
 
 ## The opportunity reports
 
-`benchmarks_create_opp_reports(cohort_id, source_workflow_id=…)` creates one `kmc_opp_report` per cohort member that lacks one, all following the deployed template and sharing the source report's pipelines and registry. See `connect_labs/workflow/WORKFLOW_REFERENCE.md` §12 for how they stay in step and what still needs a person.
+`benchmarks_create_opp_reports(cohort_id, source_workflow_id=…)` creates one `kmc_opp_report` per cohort member that lacks one, all following the deployed template and sharing the source report's pipelines and registry. See `connect_labs/workflow/WORKFLOW_REFERENCE.md` §12 for how they stay in step and what still needs a person. Each one also receives the source report's saved weeks, cut to its own opportunity (`workflow/hand_down.py`): the cohort's `source_workflow_id` is what tells a report which programme report to take them from. Backfill an existing history with `workflow_hand_down`.
 
 ## Live cohorts (2026-09-18)
 
