@@ -76,6 +76,20 @@ class TestBrowsingIsPublic:
         assert page.status_code == 200
         assert "Central store" in page.content.decode()
 
+    def test_a_round_whose_delivery_point_has_only_a_city_still_renders(self, client, open_round):
+        """The live CHC round's delivery point has a city and no name. A template
+        reading a missing key as a filter ARGUMENT raises, and took the page down."""
+        Round.objects.filter(pk=open_round.pk).update(delivery_point={"city": "Kano"})
+
+        assert client.get(reverse("supply_chain:market")).status_code == 200
+        assert client.get(reverse("supply_chain:market_round", args=[open_round.pk])).status_code == 200
+
+    def test_a_round_with_an_empty_delivery_point_still_renders(self, client, open_round):
+        Round.objects.filter(pk=open_round.pk).update(delivery_point={})
+
+        assert client.get(reverse("supply_chain:market")).status_code == 200
+        assert client.get(reverse("supply_chain:market_round", args=[open_round.pk])).status_code == 200
+
     def test_a_private_round_is_a_404_to_an_anonymous_visitor(self, client, open_round):
         Round.objects.filter(pk=open_round.pk).update(visibility="private")
 
