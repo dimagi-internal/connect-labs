@@ -66,6 +66,17 @@ silently lacks.
     .pm-band .pm-ok { position: absolute; top: 0; bottom: 0; background: #bbf7d0; border-radius: 999px; }
     .pm-band .pm-mark { position: absolute; top: -3px; width: 3px; height: 14px; background: #111827; border-radius: 2px; }
     .pm-note { font-size: 12px; border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
+    .pm-search { position: relative; }
+    .pm-search i { position: absolute; left: 11px; top: 9px; color: #9ca3af; font-size: 12px; }
+    .pm-search input { height: 30px; width: 260px; border: 1px solid #e5e7eb; border-radius: 999px; padding: 0 12px 0 30px; font-size: 13px; }
+    #pm-find-results { position: absolute; top: 34px; left: 0; z-index: 30; width: 340px; max-height: 360px; overflow-y: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.08); }
+    #pm-find-results button { display: block; width: 100%; text-align: left; padding: 7px 12px; font-size: 13px; }
+    #pm-find-results button:hover, #pm-find-results button.pm-on { background: #eef2ff; }
+    .pm-seg { display: inline-flex; border: 1px solid #e5e7eb; border-radius: 999px; overflow: hidden; }
+    .pm-seg a { font-size: 12.5px; padding: 5px 12px; color: #374151; background: #fff; }
+    .pm-seg a.pm-on { background: #312e81; color: #fff; }
+    .pm-layers { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .pm-layers label { background: rgba(15,23,42,.86); color: #e2e8f0; font-size: 12px; padding: 5px 9px; border-radius: 8px; display: flex; gap: 6px; align-items: center; cursor: pointer; }
     .mapboxgl-popup-content { padding: 8px 10px; font-size: 12.5px; border-radius: 8px; }
     @media (max-width: 1000px) {
       .pm-shell { grid-template-columns: 1fr; height: auto; }
@@ -85,14 +96,25 @@ silently lacks.
       <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Where the supplies are</h1>
     </div>
     <div class="pm-bar">
-      <div id="pm-programs" class="pm-bar"></div>
+      <div class="pm-search">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input id="pm-find" type="search" autocomplete="off" placeholder="Find a network member or a place…">
+        <div id="pm-find-results" hidden></div>
+      </div>
+      <select id="pm-commodity" class="pm-chip" style="padding-right:28px" aria-label="Commodity"></select>
       <button type="button" class="pm-chip" id="pm-attention"><span class="pm-dot" style="background:#ef4444"></span>Needs attention</button>
       <div class="pm-pop">
         <button type="button" class="pm-chip" id="pm-more"><i class="fa-solid fa-sliders"></i> Filters <span id="pm-more-n"></span></button>
         <div id="pm-more-panel" hidden></div>
       </div>
-      <a href="{% url 'supply_chain:portfolio' portfolio.slug %}" class="pm-chip"><i class="fa-solid fa-list"></i> Chains view</a>
     </div>
+  </div>
+  <div class="pm-bar mt-2">
+    <span class="pm-seg">
+      <a href="?" class="{% if not everything %}pm-on{% endif %}">This portfolio</a>
+      <a href="?scope=all" class="{% if everything %}pm-on{% endif %}">All my programs</a>
+    </span>
+    <div id="pm-programs" class="pm-bar"></div>
   </div>
 
   {% if map_payload.hidden %}
@@ -106,6 +128,10 @@ silently lacks.
   <div class="pm-mapwrap">
     <div id="pm-map"></div>
     <div class="pm-legend" id="pm-legend"></div>
+    <div class="pm-layers">
+      <label><input type="checkbox" id="pm-layer-flows" checked> Movement</label>
+      <label><input type="checkbox" id="pm-layer-network"> Network members</label>
+    </div>
   </div>
   <aside class="pm-side" id="pm-side" aria-label="Details"></aside>
 </div>

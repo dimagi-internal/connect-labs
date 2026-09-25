@@ -31,6 +31,8 @@ Blockers are the domain's own checks, attributed to the place they bite:
     it exists.
 """
 
+from datetime import date, timedelta
+
 from django.urls import reverse
 
 from connect_labs.labs.access.scopes import Caller
@@ -147,6 +149,76 @@ def _check_wire(check, *, point_id=None, scope=""):
     }
 
 
+# How far back the map draws movement that has already happened. Long enough
+# to show a chain's shape, short enough that last year's routes do not read
+# as this month's.
+FLOW_WINDOW_DAYS = 90
+# Movement kinds that carry stock from one place to another. A consumption, a
+# loss or an adjustment happens AT a place and has no route to draw.
+_ROUTED = ("transfer", "distribution", "issue", "return")
+
+
+def _flows(movements, since):
+    """Recent movement between two places, one entry per route and commodity.
+
+    Summed per unit within one program and one commodity -- never across
+    either, so no carton is ever added to a jerry can.
+    """
+    routes: dict[tuple, dict] = {}
+    for m in movements:
+        if m["kind"] not in _ROUTED or not (m["from_supply_point_id"] and m["to_supply_point_id"]):
+            continue
+        if not m["occurred_on"] or m["occurred_on"] < since:
+            continue
+        key = (m["from_supply_point_id"], m["to_supply_point_id"], m["commodity_slug"])
+        route = routes.setdefault(
+            key,
+            {
+                "from_supply_point_id": key[0],
+                "to_supply_point_id": key[1],
+                "commodity_slug": key[2],
+                "kinds": set(),
+                "count": 0,
+                "last_on": "",
+                "quantity": {},
+            },
+        )
+        route["kinds"].add(m["kind"])
+        route["count"] += 1
+        route["last_on"] = max(route["last_on"], m["occurred_on"])
+        amount = float(m["quantity"] or 0)
+        route["quantity"][m["quantity_unit"]] = route["quantity"].get(m["quantity_unit"], 0) + amount
+    return [{**r, "kinds": sorted(r["kinds"])} for r in routes.values()]
+
+
+def _holdings(movements, names):
+    """{supply_point_id: [commodity it has held or handled]} from the ledger.
+
+    `held` is a positive balance in at least one unit -- in minus out, the
+    ledger's own sign convention -- so the commodity filter can tell "has
+    some" from "has dealt in it".
+    """
+    balance: dict[int, dict] = {}
+    for m in movements:
+        for point_id, sign in ((m["to_supply_point_id"], 1), (m["from_supply_point_id"], -1)):
+            if not point_id:
+                continue
+            units = balance.setdefault(point_id, {}).setdefault(m["commodity_slug"], {})
+            units[m["quantity_unit"]] = units.get(m["quantity_unit"], 0) + sign * float(m["quantity"] or 0)
+    return {
+        point_id: [
+            {
+                "slug": slug,
+                "name": names.get(slug, slug),
+                "held": any(v > 0 for v in units.values()),
+                "balance": {unit: round(v, 4) for unit, v in units.items() if v},
+            }
+            for slug, units in sorted(commodities.items())
+        ]
+        for point_id, commodities in balance.items()
+    }
+
+
 def program_map(request, program_id, program) -> dict:
     """One program's places, blockers and consignments in motion."""
     access = _access(request, program_id)
@@ -158,6 +230,9 @@ def program_map(request, program_id, program) -> dict:
     contracts = {c["id"]: c for c in call_operation("contract_list", access, {})}
     shipments = {s["id"]: s for s in call_operation("shipment_list", access, {})}
     suppliers = {s["id"]: s for s in call_operation("supplier_list", access, {})}
+    movements = call_operation("movement_list", access, {"limit": 2000})
+    names = {c["slug"]: c["name"] for c in call_operation("commodity_list", access, {})}
+    holdings = _holdings(movements, names)
     # Organisations are labs-wide rather than program-scoped (org_list says
     # so), so naming the ones that manage these points reveals nothing the
     # program does not already hold. Only the ids in play are read, rather
@@ -229,6 +304,7 @@ def program_map(request, program_id, program) -> dict:
             "opportunity_id": point["opportunity_id"],
             "parent_id": point["parent_supply_point_id"],
             "managed_by": manager.get("name") or "",
+            "managed_by_org_id": point["managed_by_org_id"],
             "lat": point["latitude"],
             "lng": point["longitude"],
             # Whether the coordinates are the place itself or a stand-in (its
@@ -255,6 +331,17 @@ def program_map(request, program_id, program) -> dict:
                 for expected in row.get("expected_inbound") or []
             ],
             "checks": by_point.get(point_id, []),
+            # What it holds (or has dealt in) per the ledger, and what is owed
+            # to it -- so the commodity filter finds a store about to receive
+            # ORS as well as one holding it.
+            "commodities": holdings.get(point_id, []),
+            "owed_commodities": sorted(
+                {
+                    c["commodity_slug"]
+                    for c in contracts.values()
+                    if c["delivery_supply_point_id"] == point_id and c["status"] not in _NOT_OPEN
+                }
+            ),
             "links": {
                 "movements": reverse("supply_chain:movements") + f"{scope}&supply_point_id={point_id}",
                 "edit": reverse("supply_chain:supply_point_edit", args=[point_id]) + scope,
@@ -313,6 +400,24 @@ def program_map(request, program_id, program) -> dict:
         "program_id": program_id,
         "name": program.get("name") or f"Program {program_id}",
         "summary": call_operation("chain_summary", access, {}),
+        "commodities": [{"slug": slug, "name": name} for slug, name in sorted(names.items(), key=lambda kv: kv[1])],
+        "flows": _flows(movements, (date.today() - timedelta(days=FLOW_WINDOW_DAYS)).isoformat()),
+        # Allocated to a place and not yet moved: a distribution line with no
+        # movement, which the ledger calls committed. Drawn as on its way.
+        "committed": [
+            {
+                "distribution_id": d["id"],
+                "reference": d["reference"],
+                "from_supply_point_id": d["supply_point_id"],
+                "to_supply_point_id": line["to_supply_point_id"],
+                "quantity": line["quantity"],
+                "quantity_unit": line["quantity_unit"],
+                "since": d["distributed_on"],
+            }
+            for d in call_operation("distribution_list", access, {"limit": 500})
+            for line in d["lines"]
+            if line["movement_id"] is None
+        ],
         "checks": every,
         "orders": orders,
         "suppliers": located_suppliers,
@@ -326,9 +431,17 @@ def program_map(request, program_id, program) -> dict:
     }
 
 
-def portfolio_map(request, portfolio, reachable) -> dict:
-    """Every reachable program in the portfolio's own order, plus what is hidden."""
-    programs, hidden = [], 0
+def portfolio_map(request, portfolio, reachable, *, everything=False) -> dict:
+    """Every reachable program in the portfolio's own order, plus what is hidden.
+
+    With `everything`, every OTHER program the viewer can reach that has a
+    supply point follows the portfolio's own -- "all the supply points we know
+    about". The access rule is the same one: nothing outside `reachable` is
+    ever read.
+    """
+    from connect_labs.supply_chain.models import SupplyPoint
+
+    programs, hidden, seen = [], 0, set()
     for stated in portfolio.program_ids:
         try:
             program_id = int(stated)
@@ -338,14 +451,51 @@ def portfolio_map(request, portfolio, reachable) -> dict:
         if program_id not in reachable:
             hidden += 1
             continue
-        programs.append(program_map(request, program_id, reachable[program_id]))
+        seen.add(program_id)
+        programs.append({**program_map(request, program_id, reachable[program_id]), "in_portfolio": True})
+    if everything:
+        with_points = set(
+            SupplyPoint.objects.filter(program_id__in=list(reachable), status="active")
+            .values_list("program_id", flat=True)
+            .distinct()
+        )
+        for program_id in sorted(with_points - seen):
+            programs.append({**program_map(request, program_id, reachable[program_id]), "in_portfolio": False})
     return {
         "portfolio": {"slug": portfolio.slug, "name": portfolio.name},
         "stated": len(portfolio.program_ids),
         "hidden": hidden,
+        "everything": everything,
         "programs": programs,
+        "network": network_members(),
         "vocabulary": _vocabulary(),
     }
+
+
+def network_members() -> list[dict]:
+    """Every organisation in the directory that has a head office on the map.
+
+    The same `OrgProfile` coordinates the Pulse network page draws, with their
+    precision. Names only -- no contacts -- and the page is signed-in, which is
+    the entitlement Pulse's own network page asks for.
+    """
+    from connect_labs.marketplace.models import OrgProfile
+
+    rows = OrgProfile.objects.filter(lat__isnull=False, lon__isnull=False).select_related("org").order_by("org__name")
+    return [
+        {
+            "org_id": row.org_id,
+            "slug": row.org.slug,
+            "name": row.org.name,
+            "short": row.org.short_name,
+            "lat": row.lat,
+            "lng": row.lon,
+            "precision": row.location_precision,
+            "place": row.location_label,
+            "country": row.country_iso3,
+        }
+        for row in rows
+    ]
 
 
 def _vocabulary():

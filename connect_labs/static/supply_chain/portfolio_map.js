@@ -224,6 +224,95 @@
     });
   });
 
+  // ---------------------------------------------------------------- network
+  // Every directory organisation with a head office: the same coordinates the
+  // Pulse network page draws. Searching one and asking "what is near them" is
+  // a distance, which is a fact -- not a ranking of which store matters most.
+  var network = DATA.network || [];
+  var memberBySlug = {};
+  network.forEach(function (m) {
+    memberBySlug[m.slug] = m;
+  });
+  var commodityNames = {};
+  programs.forEach(function (p) {
+    (p.commodities || []).forEach(function (c) {
+      commodityNames[c.slug] = c.name;
+    });
+  });
+  function km(a, b) {
+    var R = 6371;
+    var rad = Math.PI / 180;
+    var dLat = (b.lat - a.lat) * rad;
+    var dLng = (b.lng - a.lng) * rad;
+    var h =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(a.lat * rad) *
+        Math.cos(b.lat * rad) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  function involves(pt, slug) {
+    return (
+      pt.owed_commodities.indexOf(slug) >= 0 ||
+      pt.commodities.some(function (c) {
+        return c.slug === slug;
+      })
+    );
+  }
+  function holds(pt, slug) {
+    return pt.commodities.some(function (c) {
+      return c.held && (!slug || c.slug === slug);
+    });
+  }
+  function holdingText(pt) {
+    var held = pt.commodities.filter(function (c) {
+      return c.held && (!state.commodity || c.slug === state.commodity);
+    });
+    if (!held.length) return '';
+    return held
+      .map(function (c) {
+        var units = Object.keys(c.balance)
+          .filter(function (u) {
+            return c.balance[u] > 0;
+          })
+          .map(function (u) {
+            return fmt(c.balance[u]) + ' ' + u;
+          });
+        return c.name + (units.length ? ' (' + units.join(', ') + ')' : '');
+      })
+      .join('; ');
+  }
+  // The stores a network member runs, by the organisation on the supply point.
+  function runBy(m) {
+    return places.filter(function (pt) {
+      return (
+        pt.managed_by_org_id === m.org_id ||
+        (pt.managed_by || '').toLowerCase() === m.name.toLowerCase()
+      );
+    });
+  }
+  function nearest(m, limit) {
+    return places
+      .filter(function (pt) {
+        // With a commodity chosen, a supply is a place HOLDING it -- one that
+        // only ever handled it, or is owed it, has nothing to give today.
+        return (
+          pt._placed &&
+          visiblePlace(pt, true) &&
+          pt.kind !== 'supplier_site' &&
+          (!state.commodity || holds(pt, state.commodity))
+        );
+      })
+      .map(function (pt) {
+        return { pt: pt, km: km(m, { lat: pt.lat, lng: pt.lng }) };
+      })
+      .sort(function (a, b) {
+        return a.km - b.km;
+      })
+      .slice(0, limit);
+  }
+
   // ---------------------------------------------------------------- state
   var state = {
     prog: null,
@@ -232,6 +321,10 @@
     kinds: [],
     orgs: [],
     q: '',
+    commodity: '',
+    member: null,
+    flows: true,
+    network: false,
   };
   (function readHash() {
     try {
@@ -241,6 +334,7 @@
       });
       if (state.prog && !progById[state.prog]) state.prog = null;
       if (state.place && !placeByKey[state.place]) state.place = null;
+      if (state.member && !memberBySlug[state.member]) state.member = null;
     } catch (e) {
       /* a hand-edited hash is not worth breaking the page over */
     }
@@ -253,8 +347,10 @@
     );
   }
 
-  function visiblePlace(pt) {
-    if (state.prog && pt.program_id !== state.prog) return false;
+  function visiblePlace(pt, acrossPrograms) {
+    if (!acrossPrograms && state.prog && pt.program_id !== state.prog)
+      return false;
+    if (state.commodity && !involves(pt, state.commodity)) return false;
     if (state.attention && pt._attn === 'clear') return false;
     if (state.kinds.length && state.kinds.indexOf(pt.kind) < 0) return false;
     if (state.orgs.length && state.orgs.indexOf(pt.managed_by || '') < 0)
@@ -264,7 +360,115 @@
   }
 
   // ---------------------------------------------------------------- top bar
+  var commoditySelect = document.getElementById('pm-commodity');
+  commoditySelect.innerHTML =
+    '<option value="">Every commodity</option>' +
+    Object.keys(commodityNames)
+      .sort(function (a, b) {
+        return commodityNames[a].localeCompare(commodityNames[b]);
+      })
+      .map(function (slug) {
+        return (
+          '<option value="' +
+          esc(slug) +
+          '">' +
+          esc(commodityNames[slug]) +
+          '</option>'
+        );
+      })
+      .join('');
+  commoditySelect.addEventListener('change', function () {
+    state.commodity = commoditySelect.value;
+    update(true);
+  });
+  ['flows', 'network'].forEach(function (layer) {
+    var box = document.getElementById('pm-layer-' + layer);
+    box.addEventListener('change', function () {
+      state[layer] = box.checked;
+      update(false);
+    });
+  });
+
+  // One search over network members and places: find a partner, then ask
+  // what supplies are nearest to them.
+  var find = document.getElementById('pm-find');
+  var findResults = document.getElementById('pm-find-results');
+  find.addEventListener('input', function () {
+    var q = find.value.trim().toLowerCase();
+    if (q.length < 2) {
+      findResults.hidden = true;
+      return;
+    }
+    var members = network
+      .filter(function (m) {
+        return (
+          (m.name + ' ' + (m.short || '') + ' ' + (m.place || ''))
+            .toLowerCase()
+            .indexOf(q) >= 0
+        );
+      })
+      .slice(0, 8);
+    var hits = places
+      .filter(function (pt) {
+        return pt._text.indexOf(q) >= 0;
+      })
+      .slice(0, 6);
+    findResults.innerHTML =
+      members
+        .map(function (m) {
+          return (
+            '<button type="button" data-member="' +
+            esc(m.slug) +
+            '"><i class="fa-solid fa-people-group mr-2" style="color:#8b5cf6"></i>' +
+            esc(m.name) +
+            ' <span class="pm-muted">· ' +
+            esc(m.place || m.country) +
+            '</span></button>'
+          );
+        })
+        .join('') +
+        hits
+          .map(function (pt) {
+            return (
+              '<button type="button" data-place="' +
+              pt._key +
+              '"><i class="fa-solid fa-warehouse mr-2" style="color:#64748b"></i>' +
+              esc(pt.name) +
+              ' <span class="pm-muted">· ' +
+              esc(progById[pt.program_id].name) +
+              '</span></button>'
+            );
+          })
+          .join('') ||
+      '<div class="pm-muted" style="padding:8px 12px">Nothing matches.</div>';
+    findResults.hidden = false;
+  });
+  findResults.addEventListener('click', function (e) {
+    var m = e.target.closest('[data-member]');
+    var pl = e.target.closest('[data-place]');
+    findResults.hidden = true;
+    find.value = '';
+    if (m) return showMember(m.dataset.member);
+    if (pl) {
+      var pt = placeByKey[pl.dataset.place];
+      state.member = null;
+      go(pt.program_id, pt._key);
+    }
+  });
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.pm-search')) findResults.hidden = true;
+  });
+  function showMember(slug) {
+    state.member = slug;
+    state.place = null;
+    state.network = true;
+    update(true);
+  }
+
   function renderBar() {
+    commoditySelect.value = state.commodity;
+    document.getElementById('pm-layer-flows').checked = state.flows;
+    document.getElementById('pm-layer-network').checked = state.network;
     document.getElementById('pm-programs').innerHTML = programs
       .map(function (p) {
         return (
@@ -767,6 +971,36 @@
     );
   }
 
+  function commoditiesSection(pt) {
+    if (!pt.commodities.length && !pt.owed_commodities.length) return '';
+    var rows = pt.commodities.map(function (c) {
+      var units = Object.keys(c.balance).map(function (u) {
+        return fmt(c.balance[u]) + ' ' + u;
+      });
+      return (
+        '<div class="pm-row"><span class="pm-dot" style="margin-top:6px;background:' +
+        (c.held ? '#22c55e' : '#cbd5e1') +
+        '"></span><div>' +
+        esc(c.name) +
+        ' <span class="pm-muted">· ' +
+        (c.held ? units.join(', ') : 'none left') +
+        '</span></div></div>'
+      );
+    });
+    pt.owed_commodities.forEach(function (slug) {
+      rows.push(
+        '<div class="pm-row"><i class="fa-solid fa-truck-fast" style="margin-top:3px;color:#0284c7"></i><div>' +
+          esc(commodityNames[slug] || slug) +
+          ' <span class="pm-muted">· on order</span></div></div>',
+      );
+    });
+    return (
+      '<div class="pm-sec"><h4><span>Commodities</span><span style="text-transform:none;letter-spacing:0;font-weight:400">per the ledger</span></h4>' +
+      rows.join('') +
+      '</div>'
+    );
+  }
+
   function placePanel(pt) {
     var p = progById[pt.program_id];
     var a = ATTN[pt._attn];
@@ -834,6 +1068,7 @@
         ? '<div class="pm-muted mt-1">Why not: ' + esc(onHand.why) + '</div>'
         : '') +
       '</div>';
+    h += commoditiesSection(pt);
 
     h +=
       '<div class="pm-sec"><h4><span>In the way here</span></h4>' +
@@ -871,8 +1106,72 @@
     return h;
   }
 
+  function memberPanel(m) {
+    var h =
+      '<div class="pm-crumbs"><button type="button" data-go="">' +
+      esc(DATA.portfolio.name) +
+      '</button> › <span>' +
+      esc(m.name) +
+      '</span></div>';
+    h +=
+      '<div class="pm-sec"><div class="flex items-center gap-2"><i class="fa-solid fa-people-group" style="color:#8b5cf6"></i>' +
+      '<span class="text-base font-semibold text-gray-900">' +
+      esc(m.name) +
+      '</span></div>' +
+      '<div class="pm-muted mt-1">Head office: ' +
+      esc(m.place || m.country) +
+      (m.precision ? ', accurate to the ' + esc(m.precision) : '') +
+      '</div></div>';
+    var run = runBy(m);
+    if (run.length) {
+      h +=
+        '<div class="pm-sec"><h4><span>Runs</span></h4>' +
+        run.map(placeRow).join('') +
+        '</div>';
+    }
+    var near = nearest(m, 10);
+    h +=
+      '<div class="pm-sec"><h4><span>Nearest supplies' +
+      (state.commodity ? ' of ' + esc(commodityNames[state.commodity]) : '') +
+      '</span><span style="text-transform:none;letter-spacing:0;font-weight:400">straight-line distance</span></h4>';
+    if (!near.length) {
+      h +=
+        '<div class="pm-muted">No place on the map' +
+        (state.commodity
+          ? ' deals in ' + esc(commodityNames[state.commodity])
+          : '') +
+        '.</div>';
+    }
+    near.forEach(function (n) {
+      var pt = n.pt;
+      var held = holdingText(pt);
+      h +=
+        '<button type="button" class="pm-row w-full text-left" data-place="' +
+        pt._key +
+        '">' +
+        '<span style="min-width:58px;font-variant-numeric:tabular-nums;color:#312e81;font-weight:600">' +
+        fmt(Math.round(n.km)) +
+        ' km</span>' +
+        '<div class="min-w-0"><div class="text-gray-900">' +
+        esc(pt.name) +
+        '</div>' +
+        '<div class="pm-muted">' +
+        esc(progById[pt.program_id].name) +
+        ' · ' +
+        esc(ATTN[pt._attn].label) +
+        '</div>' +
+        '<div class="pm-muted">' +
+        (held ? 'Holds ' + esc(held) : 'Holds nothing on the ledger') +
+        (pt.location.source !== 'recorded' ? ' · location is a stand-in' : '') +
+        '</div></div></button>';
+    });
+    return h + '</div>';
+  }
+
   function renderPanel() {
-    if (state.place && placeByKey[state.place])
+    if (state.member && memberBySlug[state.member] && !state.place)
+      side.innerHTML = memberPanel(memberBySlug[state.member]);
+    else if (state.place && placeByKey[state.place])
       side.innerHTML = placePanel(placeByKey[state.place]);
     else if (state.prog) side.innerHTML = programPanel(progById[state.prog]);
     else side.innerHTML = portfolioPanel();
@@ -880,7 +1179,10 @@
   }
   side.addEventListener('click', function (e) {
     var g = e.target.closest('[data-go]');
-    if (g) return go(g.dataset.go ? +g.dataset.go : null, null);
+    if (g) {
+      state.member = null;
+      return go(g.dataset.go ? +g.dataset.go : null, null);
+    }
     var pl = e.target.closest('[data-place]');
     if (pl) {
       var pt = placeByKey[pl.dataset.place];
@@ -925,8 +1227,66 @@
         'pm-places',
         'pm-workers',
         'pm-suppliers',
+        'pm-flows',
+        'pm-network',
+        'pm-near',
       ].forEach(function (id) {
         map.addSource(id, { type: 'geojson', data: empty() });
+      });
+      // The partner network sits underneath everything: context, not content.
+      map.addLayer({
+        id: 'pm-network',
+        type: 'circle',
+        source: 'pm-network',
+        paint: {
+          'circle-radius': ['case', ['get', 'sel'], 7, 3.5],
+          'circle-color': '#8b5cf6',
+          'circle-opacity': ['case', ['get', 'sel'], 1, 0.45],
+          'circle-stroke-color': ['case', ['get', 'sel'], '#ffffff', '#c4b5fd'],
+          'circle-stroke-width': ['case', ['get', 'sel'], 2.5, 0.6],
+        },
+      });
+      map.addLayer({
+        id: 'pm-near',
+        type: 'line',
+        source: 'pm-near',
+        paint: {
+          'line-color': '#c4b5fd',
+          'line-width': 1.2,
+          'line-dasharray': [2, 2],
+          'line-opacity': 0.8,
+        },
+      });
+      // Stock that moved, and stock committed to move. Width follows how many
+      // times a route was used in the window -- a count of movements, never a
+      // quantity, so routes carrying different commodities stay comparable.
+      map.addLayer({
+        id: 'pm-flows',
+        type: 'line',
+        source: 'pm-flows',
+        layout: { 'line-cap': 'round' },
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'type'],
+            'committed',
+            '#f59e0b',
+            'shipment',
+            '#38bdf8',
+            '#2dd4bf',
+          ],
+          'line-width': [
+            'interpolate',
+            ['linear'],
+            ['get', 'count'],
+            1,
+            2,
+            10,
+            6,
+          ],
+          'line-opacity': 0.85,
+          'line-dasharray': [0, 2, 2],
+        },
       });
       map.addLayer({
         id: 'pm-links',
@@ -1068,6 +1428,57 @@
       map.on('mouseleave', 'pm-suppliers', function () {
         popup.remove();
       });
+      // Marching dashes, so movement reads as movement.
+      var step = 0;
+      var DASHES = [
+        [0, 4, 3],
+        [0.5, 4, 2.5],
+        [1, 4, 2],
+        [1.5, 4, 1.5],
+        [2, 4, 1],
+        [2.5, 4, 0.5],
+        [3, 4, 0],
+        [0, 0.5, 3, 3.5],
+        [0, 1, 3, 3],
+        [0, 1.5, 3, 2.5],
+        [0, 2, 3, 2],
+        [0, 2.5, 3, 1.5],
+        [0, 3, 3, 1],
+        [0, 3.5, 3, 0.5],
+      ];
+      setInterval(function () {
+        step = (step + 1) % DASHES.length;
+        if (map.getLayer('pm-flows'))
+          map.setPaintProperty('pm-flows', 'line-dasharray', DASHES[step]);
+      }, 90);
+      map.on('mouseenter', 'pm-network', function (e) {
+        map.getCanvas().style.cursor = 'pointer';
+        var m = memberBySlug[e.features[0].properties.slug];
+        popup
+          .setLngLat([m.lng, m.lat])
+          .setHTML(
+            '<strong>' +
+              esc(m.name) +
+              '</strong><br><span style="color:#6b7280">Network member · ' +
+              esc(m.place || m.country) +
+              '</span>',
+          )
+          .addTo(map);
+      });
+      map.on('mouseleave', 'pm-network', function () {
+        map.getCanvas().style.cursor = '';
+        popup.remove();
+      });
+      map.on('click', 'pm-network', function (e) {
+        showMember(e.features[0].properties.slug);
+      });
+      map.on('mouseenter', 'pm-flows', function (e) {
+        var f = e.features[0].properties;
+        popup.setLngLat(e.lngLat).setHTML(f.label).addTo(map);
+      });
+      map.on('mouseleave', 'pm-flows', function () {
+        popup.remove();
+      });
       ready = true;
       drawMap(true);
     });
@@ -1206,6 +1617,144 @@
       ),
     );
 
+    // Movement: what moved in the window, what is committed to move, and what
+    // is on a truck from a supplier. Each needs both ends on the map.
+    var flows = [];
+    if (state.flows) {
+      programs.forEach(function (p) {
+        if (state.prog && p.program_id !== state.prog) return;
+        var at = function (id) {
+          var pt = id && placeByKey[p.program_id + ':' + id];
+          return pt && shown[pt._key] ? pt : null;
+        };
+        (p.flows || []).forEach(function (f) {
+          if (state.commodity && f.commodity_slug !== state.commodity) return;
+          var a = at(f.from_supply_point_id);
+          var b = at(f.to_supply_point_id);
+          if (!a || !b) return;
+          var qty = Object.keys(f.quantity)
+            .map(function (u) {
+              return fmt(f.quantity[u]) + ' ' + u;
+            })
+            .join(', ');
+          flows.push({
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: arc([a._x, a._y], [b._x, b._y]),
+            },
+            properties: {
+              type: 'flow',
+              count: f.count,
+              label:
+                '<strong>' +
+                esc(a.name) +
+                ' → ' +
+                esc(b.name) +
+                '</strong><br>' +
+                esc(commodityNames[f.commodity_slug] || f.commodity_slug) +
+                ': ' +
+                esc(qty) +
+                '<br><span style="color:#6b7280">' +
+                plural(f.count, f.kinds.join('/')) +
+                ', last ' +
+                esc(f.last_on) +
+                '</span>',
+            },
+          });
+        });
+        (p.committed || []).forEach(function (c) {
+          var a = at(c.from_supply_point_id);
+          var b = at(c.to_supply_point_id);
+          if (!a || !b) return;
+          flows.push({
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: arc([a._x, a._y], [b._x, b._y]),
+            },
+            properties: {
+              type: 'committed',
+              count: 3,
+              label:
+                '<strong>' +
+                esc(a.name) +
+                ' → ' +
+                esc(b.name) +
+                '</strong><br>Committed, not yet moved: ' +
+                esc(fmt(c.quantity) + ' ' + c.quantity_unit) +
+                '<br><span style="color:#6b7280">since ' +
+                esc(c.since) +
+                '</span>',
+            },
+          });
+        });
+        (p.moving || []).forEach(function (m) {
+          var a = at(m.from_supply_point_id);
+          var b = at(m.to_supply_point_id);
+          if (!a || !b) return;
+          flows.push({
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: arc([a._x, a._y], [b._x, b._y]),
+            },
+            properties: {
+              type: 'shipment',
+              count: 4,
+              label:
+                '<strong>' +
+                esc(m.reference || 'Shipment') +
+                '</strong> · ' +
+                esc(m.status.replace(/_/g, ' ')) +
+                '<br>' +
+                esc(m.supplier) +
+                ' → ' +
+                esc(b.name) +
+                (m.expected_on ? '<br>expected ' + esc(m.expected_on) : ''),
+            },
+          });
+        });
+      });
+    }
+    map.getSource('pm-flows').setData(fc(flows));
+
+    var member = state.member && memberBySlug[state.member];
+    map.getSource('pm-network').setData(
+      fc(
+        state.network
+          ? network.map(function (m) {
+              return {
+                type: 'Feature',
+                geometry: { type: 'Point', coordinates: [m.lng, m.lat] },
+                properties: {
+                  slug: m.slug,
+                  sel: !!member && m.slug === member.slug,
+                },
+              };
+            })
+          : [],
+      ),
+    );
+    var near = member ? nearest(member, 5) : [];
+    map.getSource('pm-near').setData(
+      fc(
+        near.map(function (n) {
+          return {
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: [
+                [member.lng, member.lat],
+                [n.pt._x, n.pt._y],
+              ],
+            },
+            properties: {},
+          };
+        }),
+      ),
+    );
+
     if (emptyNote) {
       emptyNote.remove();
       emptyNote = null;
@@ -1221,6 +1770,15 @@
       );
     }
 
+    if (fit && member) {
+      var mb = new mapboxgl.LngLatBounds();
+      mb.extend([member.lng, member.lat]);
+      near.forEach(function (n) {
+        mb.extend([n.pt._x, n.pt._y]);
+      });
+      map.fitBounds(mb, { padding: 90, maxZoom: 9, duration: 700 });
+      fit = false;
+    }
     if (fit) {
       var sel = state.place && placeByKey[state.place];
       var target =
@@ -1284,6 +1842,18 @@
       row(
         '<span style="width:16px;border-top:2px dashed #f59e0b"></span>',
         'No arrival date promised',
+      ) +
+      row(
+        '<span style="width:16px;border-top:3px solid #2dd4bf"></span>',
+        'Moved in the last 90 days',
+      ) +
+      row(
+        '<span style="width:16px;border-top:3px dashed #f59e0b"></span>',
+        'Committed, not yet moved',
+      ) +
+      row(
+        '<span class="pm-dot" style="background:#8b5cf6;opacity:.6"></span>',
+        'Network member',
       ) +
       '</details>';
     document.getElementById('pm-legend').innerHTML = h;
