@@ -1112,6 +1112,55 @@ def seed_chlorine_blocked(data, scopes):
     }
 
 
+def seed_history(access, data, reference, chain, last_mile):
+    """The months before the demo's own story: what moved, and what was dispensed.
+
+    Cover -- months of stock -- is a balance over a RATE, and a rate needs at
+    least thirty days of releases or dispensing (`resupply.py`). The chain
+    above is weeks old, so without this every place's cover reads "cannot be
+    said" and a map coloured by it is grey. These rows are the previous
+    cycle: an opening balance at the warehouse, releases to the partners, the
+    partner's runs out to its workers, and the workers dispensing.
+
+    Every row is the document's, named by place: `warehouse`, a partner's org
+    slug, or a worker's slug. Figures live in Drive, never here.
+    """
+    rows = without_commentary((data.get("chc_chain") or {}).get("history") or [])
+    if not rows:
+        return []
+    orgs = reference["orgs"]
+    program_org = orgs[chain_programme_org(data)]
+    item = chain["context"]["item"]
+    places = {"warehouse": chain["warehouse"], **chain["partner_points"], **(last_mile or {}).get("points", {})}
+
+    def place(name):
+        if name is None:
+            return None
+        if name not in places:
+            raise ValueError(f"history names {name!r}, which is no place in this chain")
+        return places[name]["id"]
+
+    posted = []
+    for row in rows:
+        data_row = {
+            "kind": row["kind"],
+            "occurred_on": day(row["days_ago"]),
+            "commodity_slug": item["commodity_slug"],
+            "item_id": item["id"],
+            "quantity": row["quantity"],
+            "quantity_unit": row["quantity_unit"],
+            "reference": row.get("reference", ""),
+            "source": row.get("source", "partner_reported"),
+            "recorded_by_org_id": program_org["id"],
+        }
+        if row.get("from") is not None:
+            data_row["from_supply_point_id"] = place(row["from"])
+        if row.get("to") is not None:
+            data_row["to_supply_point_id"] = place(row["to"])
+        posted.append(op(access, "movement_record", data=data_row))
+    return posted
+
+
 def seed_on_the_road(access, data, reference, chain):
     """Stock the distributor has sent and a partner has not yet received.
 
@@ -1214,8 +1263,18 @@ def seed_chc_last_mile(access, data, reference, chain):
                 "kind": "user_held",
                 "connect_username": worker["connect_username"],
                 "opportunity_id": opportunity_id,
-                "parent_id": store["id"],
+                # `parent_supply_point_id` is the operation's own name for it;
+                # `parent_id` was silently overridden, so the workers had no
+                # store to be restocked from.
+                "parent_supply_point_id": store["id"],
                 "managed_by_org_id": store.get("managed_by_org_id") or program_org["id"],
+                # The band the worker is managed to, when the document gives
+                # one: what lets cover read as low or fine rather than unknown.
+                **{
+                    key: worker[key]
+                    for key in ("min_months_of_stock", "max_months_of_stock")
+                    if worker.get(key) is not None
+                },
             },
         )
 

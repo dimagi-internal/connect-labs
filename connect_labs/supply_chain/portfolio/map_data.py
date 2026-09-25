@@ -223,6 +223,42 @@ def _holdings(movements, names):
     }
 
 
+def _cover(access):
+    """{supply_point_id: {commodity_slug: cover}} -- what each place holds of each commodity, and for how long.
+
+    `network_stock` reports cover for ONE item at a time (months of stock is
+    a quantity over a rate, and neither means anything summed across trade
+    items), so it is asked once per item. Where a commodity comes in several
+    items the one this place holds most of speaks for it. Every figure is the
+    operation's own -- quantity in its unit, cover or the reason there is
+    none -- so the map and the Stock page cannot disagree.
+    """
+    by_point: dict[int, dict] = {}
+    for item in call_operation("item_list", access, {}):
+        for row in call_operation("network_stock", access, {"item_id": item["id"]})["points"]:
+            on_hand = row.get("on_hand") or {}
+            try:
+                amount = float(on_hand.get("amount")) if on_hand.get("amount") is not None else None
+            except (TypeError, ValueError):
+                amount = None
+            cover = {
+                "item_id": item["id"],
+                "item_name": item.get("name") or "",
+                "on_hand": on_hand,
+                "amount": amount,
+                "status": row.get("status") or "unknown",
+                "months_of_stock": row.get("months_of_stock"),
+                "resupply_quantity": row.get("resupply_quantity"),
+                "min_months_of_stock": row.get("min_months_of_stock"),
+                "max_months_of_stock": row.get("max_months_of_stock"),
+            }
+            held = by_point.setdefault(row["supply_point_id"], {})
+            current = held.get(item["commodity_slug"])
+            if current is None or (amount or 0) > (current["amount"] or 0):
+                held[item["commodity_slug"]] = cover
+    return by_point
+
+
 def program_map(request, program_id, program) -> dict:
     """One program's places, blockers and consignments in motion."""
     access = _access(request, program_id)
@@ -238,6 +274,7 @@ def program_map(request, program_id, program) -> dict:
     on_the_road = call_operation("consignment_list", access, {"status": "dispatched"})
     names = {c["slug"]: c["name"] for c in call_operation("commodity_list", access, {})}
     holdings = _holdings(movements, names)
+    cover = _cover(access)
     # Organisations are labs-wide rather than program-scoped (org_list says
     # so), so naming the ones that manage these points reveals nothing the
     # program does not already hold. Only the ids in play are read, rather
@@ -342,6 +379,9 @@ def program_map(request, program_id, program) -> dict:
             # to it -- so the commodity filter finds a store about to receive
             # ORS as well as one holding it.
             "commodities": holdings.get(point_id, []),
+            # Per commodity: on hand in its own unit, months of stock against
+            # the place's own band, or the reason cover cannot be said.
+            "cover": cover.get(point_id, {}),
             "owed_commodities": sorted(
                 {
                     c["commodity_slug"]
@@ -350,6 +390,7 @@ def program_map(request, program_id, program) -> dict:
                 }
             ),
             "links": {
+                "dispatch": reverse("supply_chain:consignment_dispatch") + scope,
                 "movements": reverse("supply_chain:movements") + f"{scope}&supply_point_id={point_id}",
                 "edit": reverse("supply_chain:supply_point_edit", args=[point_id]) + scope,
                 "network": reverse("supply_chain:network") + scope,
