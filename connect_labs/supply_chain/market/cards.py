@@ -66,6 +66,18 @@ class TenderCard:
         return f"{self.days_left} days left"
 
     @property
+    def where(self) -> str:
+        """Where the goods can go: "to Kano or Sokoto, or collected", "collected only"."""
+        from connect_labs.supply_chain.values import destination_phrase
+
+        tender = self.listed.tender
+        places = tender.delivery_points or []
+        if not places:
+            return "collected from the supplier"
+        text = f"to {destination_phrase(places)}"
+        return f"{text}, or collected" if tender.pickup_accepted else text
+
+    @property
     def closing_soon(self) -> bool:
         return self.days_left is not None and 0 <= self.days_left <= CLOSING_SOON_DAYS
 

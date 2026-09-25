@@ -138,7 +138,11 @@ def tender(obj) -> dict:
         "label": obj.label,
         "status": obj.status,
         "lines": obj.lines,
+        "delivery_points": obj.delivery_points,
+        # The first place, for callers written when a tender had exactly one.
         "delivery_point": obj.delivery_point,
+        "pickup_accepted": obj.pickup_accepted,
+        "incoterm_requested": obj.incoterm_requested,
         "response_deadline": _date(obj.response_deadline),
         "reminder_interval_days": obj.reminder_interval_days,
         "shelf_life_months_minimum": obj.shelf_life_months_minimum,
@@ -197,6 +201,10 @@ def quote(obj) -> dict:
         "correction_reason": obj.correction_reason,
         "notes": obj.notes,
         "entered_by": obj.entered_by,
+        "delivery_mode": obj.delivery_mode,
+        "delivery_point_keys": obj.delivery_point_keys,
+        "pickup_location": obj.pickup_location,
+        "buyer_transport_amount": _num(obj.buyer_transport_amount),
     }
 
 

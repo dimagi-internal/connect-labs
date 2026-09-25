@@ -21,16 +21,22 @@ def render_initial_request(
 ) -> str:
     quantity = tender.quantity_for(commodity.slug)
     quantity_text = quantity_phrase(quantity[0], quantity[1]) if quantity else "the quantity below"
-    incoterm = (tender.delivery_point or {}).get("incoterm_requested")
+    incoterm = tender.incoterm_requested
+    places = tender.delivery_points or []
+    if places:
+        where = f"delivered to {destination_phrase(places)}" + (f" on {incoterm} terms" if incoterm else "")
+        if tender.pickup_accepted:
+            where += ", or for us to collect from you"
+    else:
+        where = "for us to collect from you"
 
     lines = [
         f"Dear {supplier.name},",
         "",
-        f"We are seeking a quotation for {quantity_text} of "
-        f"{commodity.name or commodity.slug}, delivered to {destination_phrase(tender.delivery_point)}"
-        + (f" on {incoterm} terms" if incoterm else "")
-        + ".",
+        f"We are seeking a quotation for {quantity_text} of {commodity.name or commodity.slug}, {where}.",
     ]
+    if len(places) > 1:
+        lines += ["", "Please say which of these places your price covers; you may quote a different price for each."]
     if tender.notes_to_supplier:
         lines += ["", tender.notes_to_supplier]
     lines += [

@@ -88,6 +88,13 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
         SUPPLIER,
     ),
     (
+        "own transport",
+        "pickup_transport",
+        "This bid is collected from the supplier{pickup}. Enter what our own transport will cost on "
+        "the quote -- its delivered cost cannot be compared until then.",
+        INTERNAL,
+    ),
+    (
         "exchange rate",
         "fx_rate",
         "Can you confirm the price in USD, or the exchange rate the quote assumes?",
@@ -201,13 +208,24 @@ def _always_asked_fact(key: str, context: dict) -> MissingFact:
     return _fact(key, _ALWAYS_ASKED_BY_KEY[key], context)
 
 
-def _context(commodity: Commodity, tender: Tender) -> dict:
+def _context(commodity: Commodity, tender: Tender, quote: Quote | None = None) -> dict:
+    """The words a question is written with.
+
+    `destination` is the places THIS quote's price covers when it names them,
+    else every place the tender offers -- "freight to Kano or Sokoto".
+    """
     quantity = tender.quantity_for(commodity.slug)
+    places = tender.delivery_points or []
+    keys = list(getattr(quote, "delivery_point_keys", None) or [])
+    if keys:
+        places = [p for p in places if p.get("key") in keys] or places
+    pickup = getattr(quote, "pickup_location", "") if quote is not None else ""
     return {
         "base_unit": commodity.base_unit or "unit",
         "pack_unit": commodity.pack_unit or "pack",
         "commodity": commodity.name or commodity.slug,
-        "destination": destination_phrase(tender.delivery_point),
+        "destination": destination_phrase(places),
+        "pickup": f" ({pickup})" if pickup else "",
         "quantity_phrase": quantity_phrase(quantity[0], quantity[1]) if quantity else "",
         "shelf_life": tender.shelf_life_months_minimum or commodity.shelf_life_months_minimum or "",
     }
@@ -266,7 +284,7 @@ def missing_facts(
     consulted here: a supplier who confirmed a trade item has already
     answered the pack-spec question, so no question is generated for it.
     """
-    context = _context(commodity, tender)
+    context = _context(commodity, tender, quote)
     facts: list[MissingFact] = []
     seen: set[str] = set()
     warned: set[str] = set()
@@ -316,6 +334,20 @@ def missing_facts(
     if "moq" not in seen and (quote.moq is None or quote.moq_unit is None):
         seen.add("moq")
         facts.append(_always_asked_fact("moq", context))
+
+    # A tender with several places and a delivered bid that does not say
+    # which it covers: the price is for somewhere, and the buyer cannot tell
+    # where. One place needs no answer -- there is only one it can mean.
+    delivered = getattr(quote, "delivery_mode", "delivered") != "pickup"
+    if delivered and len(tender.delivery_points or []) > 1 and not (quote.delivery_point_keys or []):
+        facts.append(
+            _fact(
+                "delivery_places",
+                "Which of our delivery places ({destination}) does this price cover? "
+                "If the price differs by place, quote each one separately.",
+                context,
+            )
+        )
 
     return facts
 

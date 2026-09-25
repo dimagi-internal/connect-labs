@@ -275,6 +275,13 @@ _QUOTE_DATA = _data_with(
     fx_rate_to_usd=MONEY,
     shelf_life_months_stated=_NON_NEGATIVE_INT,
     lead_time_days=_NON_NEGATIVE_INT,
+    # How the goods reach the buyer: delivered to the tender's places named
+    # in delivery_point_keys, or collected from pickup_location. A collected
+    # bid's buyer_transport_amount is the buyer's own transport cost.
+    delivery_mode={"enum": list(records.DELIVERY_MODES)},
+    delivery_point_keys={"type": "array", "items": {"type": "string"}},
+    pickup_location={"type": "string"},
+    buyer_transport_amount=MONEY,
 )
 
 # quote_record creates a new quote from nothing, so tender_id/commodity_slug
@@ -300,6 +307,7 @@ _QUOTE_DATA_CREATE = {**_QUOTE_DATA, "required": ["tender_id", "commodity_slug",
 # not a quote.
 _CLEARABLE_ON_CORRECTION = (
     "quantity_basis",
+    "buyer_transport_amount",
     "freight_amount",
     "duties_amount",
     "fx_rate_to_usd",
@@ -327,6 +335,20 @@ _TENDER_DATA = _data_with(
             quantity_unit={"type": "string", "minLength": 1},
         ),
     },
+    # Where the buyer will take delivery -- one or more places. A supplier's
+    # bid names the places its price covers by `key` (made from the name when
+    # not given). `delivery_point` (one place) is still accepted from callers
+    # written before a tender could have several.
+    delivery_points={
+        "type": "array",
+        "items": _data_with(
+            key={"type": "string"},
+            name={"type": "string"},
+            city={"type": "string"},
+            country={"type": "string"},
+            country_name={"type": "string"},
+        ),
+    },
     delivery_point=_data_with(
         name={"type": "string"},
         city={"type": "string"},
@@ -334,8 +356,10 @@ _TENDER_DATA = _data_with(
         country_name={"type": "string"},
         incoterm_requested={"type": "string"},
     ),
+    pickup_accepted={"type": "boolean"},
+    incoterm_requested={"type": "string"},
     reminder_interval_days=_NON_NEGATIVE_INT,
-    visibility={"enum": list(records.ROUND_VISIBILITIES)},
+    visibility={"enum": list(records.TENDER_VISIBILITIES)},
 )
 
 _ITEM_DATA = _data_with(

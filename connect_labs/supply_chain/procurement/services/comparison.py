@@ -40,7 +40,14 @@ from connect_labs.supply_chain.procurement.services.questions import (
     missing_facts,
 )
 from connect_labs.supply_chain.records import course_applies_to_category
-from connect_labs.supply_chain.values import Unconfirmed, decimal_string, merge, to_wire, unconfirmed
+from connect_labs.supply_chain.values import (
+    Unconfirmed,
+    decimal_string,
+    destination_phrase,
+    merge,
+    to_wire,
+    unconfirmed,
+)
 
 
 @dataclass(frozen=True)
@@ -78,6 +85,10 @@ class ComparisonRow:
     # Shown, never used to rank or hide: a hidden bid is a silent failure.
     entered_by: str = "program"
     supplier_awaiting_review: bool = False
+    # How this bid reaches the buyer, in words: "to Kano, Nigeria" or
+    # "collected from Our warehouse, Kano". Two bids from one supplier for
+    # two places read as two different offers, which they are.
+    delivery: str = ""
 
     @property
     def specification(self) -> dict | None:
@@ -178,6 +189,7 @@ class Comparison:
                 "specification": row.specification,
                 "entered_by": row.entered_by,
                 "supplier_awaiting_review": row.supplier_awaiting_review,
+                "delivery": row.delivery,
             }
 
         return {
@@ -407,6 +419,20 @@ def _ranking_key(comparable: list[ComparisonRow]) -> str | None:
     return "landed_total_for_tender_quantity"
 
 
+def delivery_words(quote, tender) -> str:
+    """How a bid reaches the buyer, as a reader says it."""
+    if getattr(quote, "delivery_mode", "delivered") == "pickup":
+        where = getattr(quote, "pickup_location", "") or "the supplier"
+        return f"collected from {where}"
+    places = tender.delivery_points or []
+    keys = list(getattr(quote, "delivery_point_keys", None) or [])
+    if keys:
+        places = [p for p in places if p.get("key") in keys]
+    elif len(places) > 1:
+        return "places not stated"
+    return f"to {destination_phrase(places)}" if places else ""
+
+
 def compare_tender(
     tender: Tender,
     commodity: Commodity,
@@ -457,6 +483,7 @@ def compare_tender(
             composition_key=_composition_key(item) if quote.item_id else None,
             entered_by=getattr(quote, "entered_by", "program") or "program",
             supplier_awaiting_review=bool(getattr(supplier, "awaiting_review", False)),
+            delivery=delivery_words(quote, tender),
         )
         if not course_applies:
             row.figures = {key: value for key, value in figures.items() if key not in COURSE_FIGURES}

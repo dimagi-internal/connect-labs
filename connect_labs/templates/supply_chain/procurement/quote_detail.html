@@ -39,6 +39,11 @@ unconfirmed figures on the right.
          class="text-gray-900 hover:text-brand-indigo hover:underline">{{ supplier.name }}</a>
     </h1>
     <p class="text-sm text-gray-600 mt-1">
+      {% if quote.delivery_mode == "pickup" %}
+        <span class="block">Collected from {{ quote.pickup_location|default:"the supplier" }}.
+          {% if quote.buyer_transport_amount is None %}<a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_quote_correct' quote.id %}">Enter our own transport cost</a> — until then its delivered cost is unconfirmed.{% else %}Our transport: {{ quote.as_quoted_currency }} {{ quote.buyer_transport_amount }}.{% endif %}
+        </span>
+      {% elif delivery_words %}<span class="block">Delivered {{ delivery_words }}.</span>{% endif %}
       {% if quote.entered_by == "supplier" %}Entered by {{ supplier.name }} themselves on the supplier marketplace.{% else %}Recorded by the program team.{% endif %}
       {% if supplier.origin == "self_registered" and not supplier.reviewed_on %}
         <span class="ml-1 px-2 py-0.5 rounded-full text-xs bg-message-warning text-message-warning-text border border-message-warning-border">Self-registered, not yet reviewed</span>

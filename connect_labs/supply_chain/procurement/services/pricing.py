@@ -211,10 +211,21 @@ def _extras(quote: Quote) -> Derived:
 
     from_term = dict(zip(("freight", "duties"), records.freight_and_duties_for_incoterm(quote.incoterm), strict=True))
 
-    for label, basis, amount in (
-        ("freight", quote.freight_basis, quote.freight_amount),
-        ("duties", quote.duties_basis, quote.duties_amount),
-    ):
+    # A collected bid has no supplier freight: the buyer moves the goods, so
+    # the freight is the buyer's own transport cost, entered on the quote.
+    # Until it is, the total is unconfirmed -- a collected bid must never rank
+    # as the cheapest merely because nobody has priced the trip.
+    legs = [("duties", quote.duties_basis, quote.duties_amount)]
+    if getattr(quote, "delivery_mode", "delivered") == "pickup":
+        transport = getattr(quote, "buyer_transport_amount", None)
+        if transport is None:
+            reasons.append("collected from the supplier; our own transport cost not entered")
+        else:
+            total += transport
+    else:
+        legs.insert(0, ("freight", quote.freight_basis, quote.freight_amount))
+
+    for label, basis, amount in legs:
         implied = from_term[label]
 
         if basis == "excluded" and implied == "included":

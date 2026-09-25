@@ -493,7 +493,16 @@ class Tender(TimestampedModel):
     label = models.CharField(max_length=255)
     status = models.CharField(max_length=16, default="draft", choices=_choices(("draft", "open", "closed", "awarded")))
     lines = models.JSONField(default=list, blank=True)
-    delivery_point = models.JSONField(default=dict, blank=True)
+    # Where the buyer will take delivery: one or more places, each
+    # {key, name, city, country, country_name}. A supplier's bid says which of
+    # them its price covers. One total quantity per product, not a split per
+    # place -- the buyer names the places it can use, the supplier the ones
+    # it can serve.
+    delivery_points = models.JSONField(default=list, blank=True)
+    # The buyer will also collect from the supplier. A collected bid's
+    # delivered cost includes the buyer's own transport, entered on the quote.
+    pickup_accepted = models.BooleanField(default=False, db_default=False)
+    incoterm_requested = models.CharField(max_length=16, blank=True, default="", db_default="")
     response_deadline = models.DateField(null=True, blank=True)
     reminder_interval_days = models.IntegerField(null=True, blank=True)
     shelf_life_months_minimum = models.IntegerField(null=True, blank=True)
@@ -501,7 +510,7 @@ class Tender(TimestampedModel):
     # On the supplier marketplace an open tender is public unless the program
     # says otherwise; a private one is seen only by the organisations invited.
     visibility = models.CharField(
-        max_length=16, default="public", db_default="public", choices=_choices(records.ROUND_VISIBILITIES)
+        max_length=16, default="public", db_default="public", choices=_choices(records.TENDER_VISIBILITIES)
     )
     opened_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
@@ -511,6 +520,24 @@ class Tender(TimestampedModel):
 
     def __str__(self):
         return self.label
+
+    @property
+    def delivery_point(self):
+        """The first place, for readers written when a tender had exactly one."""
+        return (self.delivery_points or [{}])[0]
+
+    @delivery_point.setter
+    def delivery_point(self, point):
+        """One place, as callers written before a tender could have several set it."""
+        point = dict(point or {})
+        incoterm = point.pop("incoterm_requested", None)
+        if incoterm:
+            self.incoterm_requested = incoterm
+        point = {k: v for k, v in point.items() if v}
+        self.delivery_points = [{"key": "main", **point}] if point else []
+
+    def point(self, key):
+        return next((p for p in self.delivery_points or [] if p.get("key") == key), None)
 
     def quantity_for(self, commodity_slug):
         """(quantity, unit) for a commodity on this tender, or None.
@@ -612,6 +639,19 @@ class Quote(TimestampedModel):
     entered_by = models.CharField(
         max_length=16, default="program", db_default="program", choices=_choices(records.QUOTE_ENTERED_BY)
     )
+    # How the goods reach the buyer on THIS bid. A supplier may bid once per
+    # option, because the price differs by where the goods go.
+    delivery_mode = models.CharField(
+        max_length=16, default="delivered", db_default="delivered", choices=_choices(records.DELIVERY_MODES)
+    )
+    # For a delivered bid: which of the tender's places the price covers.
+    delivery_point_keys = models.JSONField(default=list, blank=True)
+    # For a collected bid: where the buyer collects from.
+    pickup_location = models.CharField(max_length=255, blank=True, default="", db_default="")
+    # For a collected bid: what the buyer's own transport will cost, entered
+    # by the program team. Until it is, the delivered cost is unconfirmed --
+    # a collected bid never looks cheaper merely because freight is missing.
+    buyer_transport_amount = models.DecimalField(null=True, blank=True, **MONEY)
     entered_by_user = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
