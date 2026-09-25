@@ -240,12 +240,18 @@ def _with_holdings(program_id, scope):
     nothing about stock it was not given. Nothing held, or a holding the
     ledger cannot state in one unit, shows no figure rather than a guess.
     """
-    from connect_labs.supply_chain.models import Item
+    from connect_labs.supply_chain.models import Item, scope_key
     from connect_labs.supply_chain.stock.services import ledger
     from connect_labs.supply_chain.values import Quantity, quantity_phrase
 
     item_ids = {pk for pk in scope.contracts.values_list("item_id", flat=True) if pk}
-    items = list(Item.objects.filter(pk__in=item_ids).order_by("name"))
+    # Scoped by the link's own programme as well as by the ids. The ids come
+    # from this link's contracts and so are already confined to it; naming the
+    # scope again means a reader does not have to establish that to know this
+    # read is safe.
+    items = list(
+        Item.objects.filter(pk__in=item_ids, scope_key=scope_key(program_id=scope.link.program_id)).order_by("name")
+    )
     points = list(scope.supply_points)
     for point in points:
         held = []
