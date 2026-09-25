@@ -73,6 +73,39 @@
     parent: 'Where it is restocked from',
     country: 'Country centre',
   };
+  // Where a place is, in words. An organisation keeps stock at its own office,
+  // so a place at its organisation's office is AT that office -- a real
+  // location, not a guess. What is approximate is a location known only to
+  // a region or a country (the directory records no town for the office), a
+  // field worker drawn at the store that restocks them, or a country centre.
+  function whereIs(pt) {
+    var src = pt.location.source;
+    var prec = pt.location.precision;
+    var place =
+      ((pt.location.label || '').match(/\(([^)]+)\)\s*$/) || [])[1] || '';
+    var coarse =
+      prec === 'region' ||
+      prec === 'country' ||
+      src === 'parent' ||
+      src === 'country';
+    var text;
+    if (src === 'recorded' || !src) text = 'At its own recorded location';
+    else if (src === 'org_hq')
+      text =
+        'At ' +
+        (pt.managed_by || 'its organisation') +
+        "'s office" +
+        (place ? ', ' + place : '');
+    else if (src === 'parent')
+      text = 'Drawn at ' + (pt.location.label || 'the store that restocks it');
+    else text = 'Drawn at the centre of ' + (place || 'its country');
+    if (coarse && src === 'org_hq')
+      text +=
+        ' (the directory records only the ' +
+        prec +
+        ', so it is drawn at its centre)';
+    return { text: text, coarse: coarse };
+  }
   var PROGRAM_PALETTE = [
     '#6366f1',
     '#14b8a6',
@@ -195,7 +228,7 @@
 
   // Places sharing one coordinate -- every store a partner runs sits on its
   // head office until someone records where it is -- fan into a small ring so
-  // each stays clickable. Display only; the place's panel says it is a stand-in.
+  // each stays clickable. Display only; the place's panel says where it is.
   var stacks = {};
   function stack(o, lat, lng) {
     o._lat = lat;
@@ -1090,16 +1123,17 @@
         '<a class="pm-link" href="' +
         esc(pt.links.edit) +
         '">Record where it is</a>.</div>';
-    } else if (pt.location.source !== 'recorded') {
-      h +=
-        '<div class="pm-note" style="background:#fffbeb;border:1px solid #fde68a;color:#78350f"><i class="fa-solid fa-location-crosshairs mr-1"></i>Shown at ' +
-        esc(pt.location.label || LOCATION_LABEL[pt.location.source]) +
-        (pt.location.precision
-          ? ', accurate to the ' + esc(pt.location.precision)
-          : '') +
-        ' — not where this place really is. <a class="underline" href="' +
-        esc(pt.links.edit) +
-        '">Record its location</a>.</div>';
+    } else {
+      var where = whereIs(pt);
+      h += where.coarse
+        ? '<div class="pm-note" style="background:#fffbeb;border:1px solid #fde68a;color:#78350f"><i class="fa-solid fa-location-crosshairs mr-1"></i>' +
+          esc(where.text) +
+          '. <a class="underline" href="' +
+          esc(pt.links.edit) +
+          '">Record its address</a> to place it exactly.</div>'
+        : '<div class="pm-muted mt-2"><i class="fa-solid fa-location-dot mr-1"></i>' +
+          esc(where.text) +
+          '</div>';
     }
     h += '</div>';
 
@@ -1225,7 +1259,7 @@
         '</div>' +
         '<div class="pm-muted">' +
         (held ? 'Holds ' + esc(held) : 'Holds nothing on the ledger') +
-        (pt.location.source !== 'recorded' ? ' · location is a stand-in' : '') +
+        (whereIs(pt).coarse ? ' · location known only roughly' : '') +
         '</div></div></button>';
     });
     return h + '</div>';
@@ -1589,7 +1623,7 @@
           name: pt.name,
           color: ATTN[pt._attn].color,
           r: KIND_RADIUS[pt.kind] || 6,
-          approx: pt.location.source !== 'recorded',
+          approx: whereIs(pt).coarse,
           sel: state.place === pt._key,
         },
       };
@@ -1888,7 +1922,7 @@
       '<details><summary style="cursor:pointer;opacity:.7;list-style:none">More…</summary>' +
       row(
         '<span class="pm-dot" style="background:#94a3b8;opacity:.5"></span>',
-        'Faded: location is a stand-in',
+        'Faded: location known only roughly',
       ) +
       row(
         '<span class="pm-dot" style="background:#0b1020;border:2px solid #e2e8f0"></span>',

@@ -1,7 +1,7 @@
 """Every supply point carries a latitude and longitude, and says how it got one.
 
 The rule under test (stock/services/placement.py): a point with no coordinates
-of its own stands in at its managing organisation's head office -- Pulse's
+of its own is placed at its managing organisation's office -- Pulse's
 `OrgProfile` coordinates -- then at its parent, then at its country's centre.
 A recorded coordinate always wins and is never overwritten, and a stand-in
 echoed back unchanged is not promoted to one.
@@ -50,7 +50,7 @@ def test_a_point_with_no_location_stands_in_at_its_organisations_head_office():
     assert (point["latitude"], point["longitude"]) == HQ
     assert point["location_source"] == "org_hq"
     assert point["location_precision"] == "city"
-    assert "A Placeholder Partner head office" in point["location_label"]
+    assert point["location_label"] == "A Placeholder Partner office (Placeholder Town)"
 
 
 def test_a_duplicate_organisation_row_finds_the_directory_head_office_by_exact_name():
