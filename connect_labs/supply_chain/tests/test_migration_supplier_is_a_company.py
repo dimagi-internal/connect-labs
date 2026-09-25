@@ -1,8 +1,8 @@
-"""Migrations 0022-0023: every supplier becomes a company linked into its program.
+"""Migrations 0024-0025: every supplier becomes a company linked into its program.
 
 THIS REPOSITORY IS PUBLIC. Every company and figure here is invented.
 
-Run against the real migration graph: rolled back to 0021, rows written with
+Run against the real migration graph: rolled back to the migration before, rows written with
 the historical models, then migrated forward. The two cases that lose data if
 the fold is wrong are the ones pinned -- one company across two programs, and
 two rows for one company inside one program.
@@ -12,8 +12,8 @@ import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
-BEFORE = [("supply_chain", "0021_portfolio")]
-AFTER = [("supply_chain", "0023_supplier_is_a_company")]
+BEFORE = [("supply_chain", "0023_place_supply_points")]
+AFTER = [("supply_chain", "0025_supplier_is_a_company")]
 
 
 def _migrate(targets):
