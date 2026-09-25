@@ -15,6 +15,7 @@ from datetime import date, timedelta
 import pytest
 from django.urls import reverse
 
+from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.models import Commodity, Contract, Supplier, SupplyPoint, scope_key
 from connect_labs.supply_chain.portfolio.map_data import _attribute
 from connect_labs.supply_chain.portfolio.models import Portfolio
@@ -273,7 +274,8 @@ def test_a_supplier_is_placed_from_its_own_country_and_says_how_finely(client, d
     _sign_in(client, django_user_model, [ONE])
     store = _store(ONE, slug="a-store", lat=9.0, lng=8.0)
     contract = _order_to(store, lead_time_days=10)
-    Supplier.objects.filter(pk=contract.supplier_id).update(country="IN")
+    # A supplier's country is its company's, on the organisation (#2019).
+    LabsOrg.objects.filter(supplier_links__pk=contract.supplier_id).update(country="IN")
 
     supplier = _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]["suppliers"][0]
 
