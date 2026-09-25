@@ -1855,6 +1855,23 @@ class TestSnapshotInputsAcceptsABuilderSpec:
             assert f'spec.get("{key}")' in src, f"{key} is allowed on the spec but nothing reads spec[{key!r}]"
 
 
+def test_every_key_a_template_declares_can_be_written_back_to_a_definition():
+    """A template's semantic_snapshot spec is copied onto each definition, and
+    `workflow_update_definition` validates edits against BUILDER_SPEC_KEYS. A key
+    the template declares but the allowlist lacks makes the definition's own copy
+    uneditable -- `maturity_anchor` shipped that way and could not be patched in."""
+    from connect_labs.workflow.snapshot_builders import BUILDER_SPEC_KEYS
+    from connect_labs.workflow.templates import TEMPLATES
+
+    framework = {"builder", "pipelines", "workers", "state_keys"}
+    for key, template in TEMPLATES.items():
+        inputs = template.get("snapshot_inputs") or {}
+        if inputs.get("builder") != "semantic_snapshot":
+            continue
+        unknown = set(inputs) - framework - BUILDER_SPEC_KEYS["semantic_snapshot"]
+        assert not unknown, f"{key} declares {sorted(unknown)}, which a definition could not be patched with"
+
+
 @pytest.mark.django_db
 @patch("connect_labs.mcp.tools.workflows._validate_registry_source")
 @patch("connect_labs.mcp.tools.workflows._create_workflow_from_template")

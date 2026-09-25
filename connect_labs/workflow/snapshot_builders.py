@@ -199,7 +199,8 @@ def settles_meta(spec: dict, props_doc: dict, indicators_doc: dict) -> dict:
     """
     from connect_labs.semantic.maturity import settle_after_days
 
-    anchor = (spec or {}).get("maturity_anchor")
+    spec = spec or {}
+    anchor = spec.get("maturity_anchor")
     return {"after_days": settle_after_days(props_doc, indicators_doc), "anchor": str(anchor) if anchor else None}
 
 
@@ -327,5 +328,6 @@ BUILDER_SPEC_KEYS = {
         "credibility",
         "min_denominator_default",
         "state_key",
+        "maturity_anchor",
     },
 }
