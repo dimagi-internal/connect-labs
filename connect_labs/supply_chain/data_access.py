@@ -39,6 +39,7 @@ from connect_labs.supply_chain.models import (
     Award,
     AwardApproval,
     Commodity,
+    Consignment,
     Contract,
     Distribution,
     DistributionLine,
@@ -369,6 +370,8 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         drop("documents", Document.objects.filter(program_id=program_id))
         drop("stock counts", StockCount.objects.filter(program_id=program_id))
         drop("distributions", Distribution.objects.filter(program_id=program_id))
+        # A consignment holds its two ledger legs, so it goes before them.
+        drop("consignments", Consignment.objects.filter(program_id=program_id))
         drop("movements", movements)
         drop("invoices", Invoice.objects.filter(contract__program_id=program_id))
         drop("receipts", Receipt.objects.filter(supply_point__program_id=program_id))

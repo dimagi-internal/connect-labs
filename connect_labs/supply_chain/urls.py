@@ -266,6 +266,14 @@ urlpatterns = [
     path("stock/movements/", views.MovementsView.as_view(), name="movements"),
     path("stock/movements/new/", stock_views.MovementRecordView.as_view(), name="movement_record"),
     path("stock/counts/new/", stock_views.StockCountRecordView.as_view(), name="stock_count_record"),
+    # Our own stock on the road between two of our places. "new" before the
+    # int route, so the literal cannot be read as an id.
+    path("stock/consignments/new/", stock_views.ConsignmentDispatchView.as_view(), name="consignment_dispatch"),
+    path(
+        "stock/consignments/<int:consignment_id>/receive/",
+        stock_views.ConsignmentReceiveView.as_view(),
+        name="consignment_receive",
+    ),
     path("distribution/", views.DistributionView.as_view(), name="distribution"),
     path("distribution/new/", distribution_views.DistributionRecordView.as_view(), name="distribution_record"),
     # Alerts: who is told about what, and the log of what they were told.

@@ -12,7 +12,14 @@ module creates the parent event and lets that decide what the ledger records.
 
 from django.db import transaction
 
-from connect_labs.supply_chain.models import Distribution, DistributionLine, Movement, StockCount, SupplyPoint
+from connect_labs.supply_chain.models import (
+    Consignment,
+    Distribution,
+    DistributionLine,
+    Movement,
+    StockCount,
+    SupplyPoint,
+)
 from connect_labs.supply_chain.stock.services import posting
 
 
@@ -140,6 +147,127 @@ class StockRepositoryMixin:
                 **_columns(Movement, data),
             )
         )
+
+    # ---- consignments: our own stock on the road ---------------------------
+
+    IN_TRANSIT_SLUG = "in-transit"
+
+    def _in_transit_point(self):
+        """This program's in-transit point, created the first time goods leave.
+
+        One per program is enough: the consignment says where each lot is
+        going, so the point only has to be somewhere that is not a store.
+        """
+        point, _ = SupplyPoint.objects.get_or_create(
+            program_id=self._require_program(),
+            slug=self.IN_TRANSIT_SLUG,
+            defaults={"name": "In transit", "kind": "in_transit", "source": "we_recorded"},
+        )
+        return point
+
+    @transaction.atomic
+    def dispatch_consignment(self, data):
+        """Send stock from one of our places to another: it leaves now, arrives later.
+
+        Posts the transfer out of the sender into the in-transit point in the
+        same transaction as the consignment, so there is never a consignment
+        whose goods are still counted at the sender, nor goods on the road
+        with no consignment saying where they are going.
+        """
+        from connect_labs.supply_chain.data_access import _columns, _fresh
+
+        sender = self._require_supply_point(data["from_supply_point_id"], "sending supply point")
+        destination = self._require_supply_point(data["to_supply_point_id"], "destination supply point")
+        if sender.pk == destination.pk:
+            raise ValueError("a consignment cannot be sent to the place it leaves from")
+        if "in_transit" in (sender.kind, destination.kind):
+            raise ValueError("a consignment runs between two places stock rests, not to or from the road itself")
+        expected_on = data.get("expected_on")
+        if expected_on and str(expected_on) < str(data["dispatched_on"]):
+            raise ValueError("a consignment cannot be expected before it was dispatched")
+        via = self._in_transit_point()
+        commodity = self._require_commodity(data["commodity_slug"])
+        item = self._resolve_item(data.get("item_id"))
+        consignment = Consignment(
+            program_id=self._require_program(),
+            from_supply_point=sender,
+            to_supply_point=destination,
+            via_supply_point=via,
+            commodity=commodity,
+            item=item,
+            **_columns(Consignment, data),
+        )
+        consignment.save()
+        consignment.dispatch_movement = posting.post_consignment_leg(
+            consignment, frm=sender, to=via, quantity=consignment.quantity, occurred_on=consignment.dispatched_on
+        )
+        consignment.save(update_fields=["dispatch_movement", "updated_at"])
+        return _fresh(consignment)
+
+    @transaction.atomic
+    def receive_consignment(self, consignment_id, data):
+        """The goods arrived: move them off the road into the destination.
+
+        A short arrival is received short, and the difference is written off
+        as a `loss` from the in-transit point naming the consignment -- stock
+        lost on the road is a fact the ledger should carry, not a balance left
+        sitting on a road forever.
+        """
+        from decimal import Decimal
+
+        from connect_labs.supply_chain.data_access import _fresh
+
+        consignment = (
+            Consignment.objects.select_for_update()
+            .filter(program_id=self._require_program(), pk=consignment_id)
+            .first()
+        )
+        if consignment is None:
+            raise ValueError(f"consignment {consignment_id} does not exist in this program")
+        if not consignment.is_open:
+            raise ValueError(f"consignment {consignment_id} was already received on {consignment.received_on}")
+        received_on = data["received_on"]
+        if str(received_on) < str(consignment.dispatched_on):
+            raise ValueError("a consignment cannot arrive before it left")
+        received = Decimal(str(data.get("quantity_received", consignment.quantity)))
+        if received < 0 or received > consignment.quantity:
+            raise ValueError(
+                f"received {received} {consignment.quantity_unit}; the consignment carried {consignment.quantity}"
+            )
+        if received > 0:
+            consignment.receipt_movement = posting.post_consignment_leg(
+                consignment,
+                frm=consignment.via_supply_point,
+                to=consignment.to_supply_point,
+                quantity=received,
+                occurred_on=received_on,
+            )
+        if received < consignment.quantity:
+            posting.post_consignment_leg(
+                consignment,
+                frm=consignment.via_supply_point,
+                to=None,
+                quantity=consignment.quantity - received,
+                occurred_on=received_on,
+                kind="loss",
+            )
+        consignment.received_on = received_on
+        consignment.quantity_received = received
+        consignment.status = "received"
+        consignment.save()
+        return _fresh(consignment)
+
+    def list_consignments(self, status=None, supply_point_id=None):
+        from django.db.models import Q
+
+        qs = Consignment.objects.filter(program_id=self._require_program()).select_related(
+            "commodity", "from_supply_point", "to_supply_point"
+        )
+        if status is not None:
+            qs = qs.filter(status=status)
+        if supply_point_id is not None:
+            qs = qs.filter(Q(from_supply_point_id=supply_point_id) | Q(to_supply_point_id=supply_point_id))
+        return list(qs)
 
     # ---- counts ----------------------------------------------------------
 

@@ -37,6 +37,7 @@ from connect_labs.supply_chain.forms import (
     SEARCHABLE,
     SELECT,
     TEXTAREA,
+    ScopedForm,
     currency_select,
     set_choices,
     to_payload,
@@ -45,6 +46,7 @@ from connect_labs.supply_chain.fulfilment_forms import ProvenancedForm
 from connect_labs.supply_chain.models import (
     Charge,
     Commodity,
+    Consignment,
     Item,
     Movement,
     Receipt,
@@ -56,6 +58,8 @@ from connect_labs.supply_chain.models import (
 __all__ = [
     "BatchLineFormSet",
     "ChargeForm",
+    "ConsignmentForm",
+    "ConsignmentReceiveForm",
     "MovementForm",
     "ReceiptForm",
     "RequiredDocumentForm",
@@ -629,4 +633,135 @@ class StockCountForm(ProvenancedForm):
         # None and "" only. Asserted directly in the tests, because a count of
         # nothing is a stockout and dropping it would report the point as
         # never having been counted.
+        return data
+
+
+class ConsignmentForm(ProvenancedForm):
+    """Stock leaving one of our places for another -- on the road until received."""
+
+    class Meta:
+        model = Consignment
+        fields = [
+            "from_supply_point",
+            "to_supply_point",
+            "commodity",
+            "item",
+            "batch",
+            "quantity",
+            "quantity_unit",
+            "dispatched_on",
+            "expected_on",
+            "carrier",
+            "reference",
+        ]
+        widgets = {
+            "from_supply_point": forms.Select(attrs=SEARCHABLE),
+            "to_supply_point": forms.Select(attrs=SEARCHABLE),
+            "commodity": forms.Select(attrs=SEARCHABLE),
+            "item": forms.Select(attrs=SEARCHABLE),
+            "batch": forms.TextInput(attrs=INPUT),
+            "quantity": forms.NumberInput(attrs={**INPUT, "step": "any", "min": "0"}),
+            "quantity_unit": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. carton")}),
+            "dispatched_on": forms.DateInput(attrs=DATE),
+            "expected_on": forms.DateInput(attrs=DATE),
+            "carrier": forms.TextInput(attrs=INPUT),
+            "reference": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. a waybill number")}),
+        }
+        labels = {
+            "from_supply_point": _("Leaving"),
+            "to_supply_point": _("Going to"),
+            "commodity": _("Product"),
+            "item": _("Trade item"),
+            "batch": _("Batch"),
+            "quantity": _("Quantity"),
+            "quantity_unit": _("Unit"),
+            "dispatched_on": _("Left on"),
+            "expected_on": _("Expected on"),
+            "carrier": _("Carrier"),
+            "reference": _("Reference"),
+        }
+        help_texts = {
+            "expected_on": _("When the sender said it would arrive. Leave it empty if nobody said."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Not the road itself: a consignment runs between two places stock rests.
+        points = self.in_program(SupplyPoint).exclude(kind="in_transit").order_by("name")
+        self.fields["from_supply_point"].queryset = points
+        self.fields["to_supply_point"].queryset = points
+        self.fields["commodity"].queryset = self.scoped(Commodity).order_by("name")
+        self.fields["item"].queryset = self.scoped(Item).order_by("name")
+        self.fields["item"].empty_label = _("Not recorded")
+        self.fields["commodity"].empty_label = _("Select a product…")
+        for name in ("from_supply_point", "to_supply_point", "commodity", "quantity", "dispatched_on"):
+            self.fields[name].required = True
+        self.helper.layout = Layout(
+            Row(Column("from_supply_point"), Column("to_supply_point"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(Column("commodity"), Column("item"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(Column("quantity"), Column("quantity_unit"), Column("batch"), css_class="grid md:grid-cols-3 gap-x-6"),
+            Row(Column("dispatched_on"), Column("expected_on"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(Column("carrier"), Column("reference"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Field("source"),
+        )
+
+    def clean(self):
+        cleaned = super().clean()
+        sender, destination = cleaned.get("from_supply_point"), cleaned.get("to_supply_point")
+        if sender is not None and sender == destination:
+            self.add_error("to_supply_point", _("Pick somewhere other than where it is leaving from."))
+        quantity = cleaned.get("quantity")
+        if quantity is not None and quantity <= 0:
+            self.add_error("quantity", _("A consignment of nothing is not a consignment."))
+        left, due = cleaned.get("dispatched_on"), cleaned.get("expected_on")
+        if left and due and due < left:
+            self.add_error("expected_on", _("It cannot be expected before it left."))
+        return cleaned
+
+    def payload(self) -> dict:
+        data = to_payload(self.cleaned_data)
+        commodity = self.cleaned_data.get("commodity")
+        if commodity is not None:
+            data["commodity_slug"] = commodity.slug
+        data.pop("commodity_id", None)
+        return data
+
+
+class ConsignmentReceiveForm(ScopedForm):
+    """It arrived: when, and how much of it."""
+
+    class Meta:
+        model = Consignment
+        fields = ["received_on", "quantity_received"]
+        widgets = {
+            "received_on": forms.DateInput(attrs=DATE),
+            "quantity_received": forms.NumberInput(attrs={**INPUT, "step": "any", "min": "0"}),
+        }
+        labels = {"received_on": _("Arrived on"), "quantity_received": _("Quantity that arrived")}
+        help_texts = {
+            "quantity_received": _(
+                "Leave as sent if it all arrived. Anything less is written off as lost on the way, "
+                "naming this consignment."
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from datetime import date
+
+        self.fields["received_on"].required = True
+        self.fields["received_on"].initial = date.today()
+        if self.instance is not None and self.instance.pk:
+            self.fields["quantity_received"].initial = self.instance.quantity
+            self.fields["quantity_received"].help_text = _(
+                "It left with %(quantity)s %(unit)s. Anything less is written off as lost on the way."
+            ) % {"quantity": self.instance.quantity.normalize(), "unit": self.instance.quantity_unit}
+        self.helper.layout = Layout(
+            Row(Column("received_on"), Column("quantity_received"), css_class="grid md:grid-cols-2 gap-x-6")
+        )
+
+    def payload(self) -> dict:
+        data = {"received_on": self.cleaned_data["received_on"].isoformat()}
+        if self.cleaned_data.get("quantity_received") is not None:
+            data["quantity_received"] = str(self.cleaned_data["quantity_received"])
         return data

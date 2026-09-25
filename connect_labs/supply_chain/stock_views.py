@@ -25,6 +25,8 @@ from connect_labs.supply_chain.models import Item, Shipment
 from connect_labs.supply_chain.stock_forms import (
     BatchLineFormSet,
     ChargeForm,
+    ConsignmentForm,
+    ConsignmentReceiveForm,
     MovementForm,
     ReceiptForm,
     RequiredDocumentForm,
@@ -498,3 +500,68 @@ def ledger_balances(program_id) -> dict:
             ledger.balance(program_id, point, item=ledger.sole_item(program_id, point))
         )
     return balances
+
+
+class ConsignmentDispatchView(OperationFormView):
+    operation = "consignment_dispatch"
+    form_class = ConsignmentForm
+    title = "Send stock to another of our places"
+    intro = (
+        "Stock leaving a warehouse for a partner's office, or any one of our places for another. It "
+        "stops counting where it left at once, and does not count where it is going until it arrives."
+    )
+    submit_label = "Dispatch"
+
+    def breadcrumb(self, **kwargs):
+        return [{"label": "Stock", "href": reverse("supply_chain:stock")}, {"label": self.title}]
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:stock")
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:stock")
+
+
+class ConsignmentReceiveView(OperationFormView):
+    operation = "consignment_receive"
+    form_class = ConsignmentReceiveForm
+    title = "Record that it arrived"
+    submit_label = "Record arrival"
+
+    def consignment(self):
+        from connect_labs.supply_chain.models import Consignment
+
+        found = (
+            Consignment.objects.filter(pk=self.kwargs["consignment_id"], program_id=_access(self.request).program_id)
+            .select_related("from_supply_point", "to_supply_point")
+            .first()
+        )
+        if found is None:
+            raise Http404(f"no consignment {self.kwargs['consignment_id']} in this programme")
+        return found
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["instance"] = self.consignment()
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        c = self.consignment()
+        context["intro"] = (
+            f"{c.quantity.normalize()} {c.quantity_unit} from {c.from_supply_point.name} "
+            f"to {c.to_supply_point.name}, dispatched {c.dispatched_on}."
+        )
+        return context
+
+    def fixed(self, **kwargs):
+        return {"consignment_id": int(kwargs["consignment_id"])}
+
+    def breadcrumb(self, **kwargs):
+        return [{"label": "Stock", "href": reverse("supply_chain:stock")}, {"label": self.title}]
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:stock")
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:stock")

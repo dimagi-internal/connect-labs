@@ -63,6 +63,7 @@ STAGE_OF = {
     "payment": "order",
     "charge": "order",
     "supply_point": "deliver",
+    "consignment": "deliver",
     "distribution": "deliver",
     "movement": "deliver",
 }
@@ -119,6 +120,9 @@ def _attribute(check, contracts, shipments):
     kind, subject_id = subject.get("type"), subject.get("id")
     if kind == "supply_point":
         return subject_id
+    if kind == "consignment":
+        # Late stock bites where it is owed, not where it left.
+        return (check.get("facts") or {}).get("to_supply_point_id")
     contract_id = None
     if kind == "contract":
         contract_id = subject_id
@@ -231,6 +235,7 @@ def program_map(request, program_id, program) -> dict:
     shipments = {s["id"]: s for s in call_operation("shipment_list", access, {})}
     suppliers = {s["id"]: s for s in call_operation("supplier_list", access, {})}
     movements = call_operation("movement_list", access, {"limit": 2000})
+    on_the_road = call_operation("consignment_list", access, {"status": "dispatched"})
     names = {c["slug"]: c["name"] for c in call_operation("commodity_list", access, {})}
     holdings = _holdings(movements, names)
     # Organisations are labs-wide rather than program-scoped (org_list says
@@ -291,7 +296,9 @@ def program_map(request, program_id, program) -> dict:
 
     placed_points, unplaced = [], []
     for point_id, point in points.items():
-        if point["status"] != "active":
+        # The road itself is not a place: the in-transit point is where the
+        # ledger parks a consignment, and the consignment is drawn instead.
+        if point["status"] != "active" or point["kind"] == "in_transit":
             continue
         row = stock.get(point_id) or {}
         manager = orgs.get(point["managed_by_org_id"]) or {}
@@ -404,6 +411,23 @@ def program_map(request, program_id, program) -> dict:
         "flows": _flows(movements, (date.today() - timedelta(days=FLOW_WINDOW_DAYS)).isoformat()),
         # Allocated to a place and not yet moved: a distribution line with no
         # movement, which the ledger calls committed. Drawn as on its way.
+        # Our own stock on the road between two of our places (models.Consignment).
+        "consignments": [
+            {
+                "consignment_id": c["id"],
+                "reference": c["reference"],
+                "from_supply_point_id": c["from_supply_point_id"],
+                "to_supply_point_id": c["to_supply_point_id"],
+                "commodity_slug": c["commodity_slug"],
+                "quantity": c["quantity"],
+                "quantity_unit": c["quantity_unit"],
+                "dispatched_on": c["dispatched_on"],
+                "expected_on": c["expected_on"],
+                "overdue": bool(c["expected_on"] and c["expected_on"] < date.today().isoformat()),
+                "receive_url": reverse("supply_chain:consignment_receive", args=[c["id"]]) + scope,
+            }
+            for c in on_the_road
+        ],
         "committed": [
             {
                 "distribution_id": d["id"],
