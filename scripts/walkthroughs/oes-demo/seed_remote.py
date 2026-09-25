@@ -741,6 +741,53 @@ def tender_for(access, data):
     return op(access, "tender_create", data=data)
 
 
+# ======================================================================
+# Seeding twice leaves what seeding once did
+# ======================================================================
+#
+# A seeder gets re-run constantly: after a schema change, after somebody
+# edits the document, while iterating on a screen, when a demo needs
+# resetting an hour before a call. `ensure_demo` REFUSES to seed a scope that
+# already holds rows, and that stays as the safety net -- but refusing is not
+# convergence. It leaves the only route being a full purge, which throws away
+# the partner links and their tokens along with everything else.
+#
+# So every record this seeder writes is found before it is made, keyed on
+# something the DOCUMENT supplies rather than on a database id:
+#
+#   organisations, products, trade items, stores   upsert, by slug or SKU
+#   suppliers                                      by name
+#   rounds                                         by label
+#   orders, receipts, payments                     by reference
+#   quotes                                         by round, supplier and item
+#   awards, invoices                               one per round / per order
+#
+# **The ledger is the exception, and deliberately.** A movement, a stock
+# count and a receipt are EVENTS. Two identical receipts on one order are a
+# real thing that can happen, so they cannot be deduplicated by looking at
+# them -- there is nothing in a second one that says it is a mistake. Those
+# the document does not reference are therefore written exactly once, on the
+# run that creates the order, and a later run that FINDS the order leaves the
+# ledger alone. See `seed_chain`.
+
+
+def _found(rows, match):
+    """The first row that matches, or None. `rows` is an operation's result."""
+    return next((row for row in rows if match(row)), None)
+
+
+def by_reference(access, list_name, reference, **query):
+    """A record this scope already holds under that reference, or None.
+
+    A reference is the document's own key for a row -- a purchase order
+    number, a goods received note number, a payment reference -- and it is
+    the only identifier that survives a re-seed, because ids do not.
+    """
+    if not reference:
+        return None
+    return _found(op(access, list_name, **query), lambda row: row.get("reference") == reference)
+
+
 def seed_chain(access, chain, reference):
     """One procurement, from the round to the stock sitting in the warehouse.
 
@@ -780,8 +827,16 @@ def seed_chain(access, chain, reference):
             data={**quoted.pop("item"), "commodity_slug": quoted["commodity_slug"]},
         )
         items[item["sku"]] = item
+        # No reference on a quote, so its key is who quoted what against
+        # which round -- which is exactly what makes two of them a duplicate
+        # here, and what `round_compare` would show side by side.
+        already = _found(
+            op(access, "quote_list", round_id=round_["id"]),
+            lambda row: row.get("supplier_id") == supplier["id"] and row.get("item_id") == item["id"],
+        )
         quotes.append(
-            op(
+            already
+            or op(
                 access,
                 "quote_record",
                 data={
@@ -796,7 +851,8 @@ def seed_chain(access, chain, reference):
     awarded_index = chain["awarded_quote_index"]
     awarded_quote = chain["quotes"][awarded_index]
     awarded_item = items[awarded_quote["item"]["sku"]]
-    award = op(
+    # One award per round in this seeder, so the round IS the key.
+    award = _found(op(access, "award_list", round_id=round_["id"]), lambda row: True) or op(
         access,
         "award_create",
         tender_id=round_["id"],
@@ -814,7 +870,13 @@ def seed_chain(access, chain, reference):
 
     contract_row = dict(chain["contract"])
     buyer_slug = contract_row.pop("buyer_org_slug")
-    contract = op(
+    # The order's own purchase-order number, which is what a person would use
+    # to say "that one" and the only identifier that survives a re-seed.
+    contract = by_reference(access, "contract_list", contract_row.get("reference"))
+    # Whether the ORDER was found or made decides whether the ledger rows
+    # below are written at all -- see the block that posts them.
+    chain_is_new = contract is None
+    contract = contract or op(
         access,
         "contract_create",
         data={
@@ -836,7 +898,8 @@ def seed_chain(access, chain, reference):
         },
     )
 
-    invoice = op(
+    # One invoice per order in this seeder, so the order is the key.
+    invoice = _found(op(access, "invoice_list", contract_id=contract["id"]), lambda row: True) or op(
         access,
         "invoice_record",
         data={
@@ -859,16 +922,34 @@ def seed_chain(access, chain, reference):
         "invoice": invoice,
     }
 
-    # Tier 1 -- the spreadsheet world. The distributor told us over WhatsApp
-    # that the goods had landed and read us a stock figure off its own sheet;
-    # we typed both in. Our hand, their word, and the screen says so.
-    reported_to_us = [
-        op(access, row["operation"], data=wired(row, context, their_word, may_witness=False))
-        for row in chain["reported_to_us"]
-    ]
+    # The ledger, written exactly once: on the run that CREATED this order.
+    #
+    # Everything above has a key the document supplies, so a second run finds
+    # it. These do not, and they cannot: a receipt, a payment and a stock
+    # count are EVENTS, and two identical receipts against one order are a
+    # real thing that happens. Nothing about a second one says it is a
+    # mistake rather than a second delivery, so deduplicating them by
+    # inspection would mean this seeder deciding which real events are
+    # allowed to exist.
+    #
+    # So the order's own existence is the record of whether they have been
+    # posted. A run that finds the order leaves the ledger exactly as it is,
+    # including anything a person has added to it since -- which is the
+    # behaviour somebody re-seeding a demo they have been using actually
+    # wants.
+    reported_to_us, we_did = [], []
+    if chain_is_new:
+        # Tier 1 -- the spreadsheet world. The distributor told us over
+        # WhatsApp that the goods had landed and read us a stock figure off
+        # its own sheet; we typed both in. Our hand, their word, and the
+        # screen says so.
+        reported_to_us = [
+            op(access, row["operation"], data=wired(row, context, their_word, may_witness=False))
+            for row in chain["reported_to_us"]
+        ]
 
-    # Tier 2 -- what we did ourselves, and therefore witnessed.
-    we_did = [op(access, row["operation"], data=wired(row, context, ours)) for row in chain["we_did"]]
+        # Tier 2 -- what we did ourselves, and therefore witnessed.
+        we_did = [op(access, row["operation"], data=wired(row, context, ours)) for row in chain["we_did"]]
 
     # Tier 3 -- what the partner enters through its own link -- is seeded by
     # the partner-link step, because it has to go THROUGH the link: that is
@@ -991,8 +1072,17 @@ def seed_rutf_round_two(access, round_two):
         quoted.pop("supplier_country", None)
         quoted.pop("supplier_note", None)
         suppliers.append(supplier)
+        # Keyed on round and supplier alone, not on the trade item: these
+        # quotes deliberately identify no item -- that is what makes the
+        # first of them uncostable -- so there is nothing else to key on, and
+        # one supplier quotes a round once here.
+        already = _found(
+            op(access, "quote_list", round_id=round_["id"]),
+            lambda row, s=supplier: row.get("supplier_id") == s["id"],
+        )
         quotes.append(
-            op(
+            already
+            or op(
                 access,
                 "quote_record",
                 data={**quoted, "tender_id": round_["id"], "supplier_id": supplier["id"]},
@@ -1394,8 +1484,13 @@ def seed_awaiting_approval(access, data, reference):
             data={**quoted.pop("item"), "commodity_slug": quoted["commodity_slug"]},
         )
         items[item["sku"]] = item
+        already = _found(
+            op(access, "quote_list", round_id=round_["id"]),
+            lambda row, s=supplier, i=item: row.get("supplier_id") == s["id"] and row.get("item_id") == i["id"],
+        )
         quotes.append(
-            op(
+            already
+            or op(
                 access,
                 "quote_record",
                 data={
@@ -1408,7 +1503,7 @@ def seed_awaiting_approval(access, data, reference):
         )
 
     index = section["awarded_quote_index"]
-    award = op(
+    award = _found(op(access, "award_list", round_id=round_["id"]), lambda row: True) or op(
         access,
         "award_create",
         tender_id=round_["id"],
@@ -1419,7 +1514,16 @@ def seed_awaiting_approval(access, data, reference):
     )
 
     asked = section["approval"]
-    approval = op(
+    # An approval asked for twice reads as two approvers waiting, which would
+    # make the gate look worse than it is. Keyed on who was asked and in what
+    # role -- a second request from the SAME approver in the same role is how
+    # this domain records a reversal, so it is only a duplicate when the
+    # seeder makes it.
+    asked_of = orgs[asked["approver_org_slug"]]["id"]
+    approval = _found(
+        op(access, "approval_list", award_id=award["id"]),
+        lambda row: row.get("approver_org_id") == asked_of and row.get("role") == asked["role"],
+    ) or op(
         access,
         "approval_request",
         data={
