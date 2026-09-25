@@ -175,7 +175,7 @@ class UpdateLinkIssueForm(forms.Form):
             self.fields["contracts"].queryset = (
                 Contract.objects.filter(program_id=program_id)
                 .exclude(status__in=("closed", "cancelled"))
-                .select_related("supplier", "item", "commodity")
+                .select_related("supplier__org__supplier_profile", "item", "commodity")
                 .order_by("-created_at")
             )
             self.fields["supply_points"].queryset = SupplyPoint.objects.filter(
@@ -183,7 +183,9 @@ class UpdateLinkIssueForm(forms.Form):
             ).exclude(kind="user_held")
             self.fields["approvals"].queryset = (
                 AwardApproval.objects.filter(award__round__program_id=program_id, status="requested")
-                .select_related("approver_org", "award__supplier", "award__quote__item", "award__commodity")
+                .select_related(
+                    "approver_org", "award__supplier__org__supplier_profile", "award__quote__item", "award__commodity"
+                )
                 .order_by("-requested_on")
             )
         self.helper = _tidy(

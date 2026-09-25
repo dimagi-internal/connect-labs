@@ -158,6 +158,57 @@ class TestEditsLandWhereTheFactLives:
         assert updated["id"] == made["id"]
         assert updated["org_id"] == holder.pk
 
+    def test_rebinding_leaves_the_company_it_turned_out_to_be_alone(self):
+        # What the edit screen sends: every field, pre-filled from the OLD
+        # company. Rebinding must neither refuse on the name nor write the old
+        # company's facts over the one it turned out to be.
+        holder = LabsOrg.objects.create(slug="sahel-clinics", name="Sahel Clinics", connect_organization_id=9601)
+        SupplierProfile.objects.create(org=holder, city="Maiduguri", type="distributor")
+        made = create(CHC, name="Sahel (typed by hand)", city="Kano", type="trader")
+
+        updated = call_operation(
+            "supplier_update",
+            access(CHC),
+            {
+                "supplier_id": made["id"],
+                "data": {
+                    "name": "Sahel (typed by hand)",
+                    "type": "trader",
+                    "city": "Kano",
+                    "status": "quoting",
+                    "connect_organization_id": 9601,
+                },
+            },
+        )
+
+        assert updated["org_id"] == holder.pk
+        assert updated["status"] == "quoting"
+        holder.refresh_from_db()
+        assert holder.name == "Sahel Clinics"
+        assert SupplierProfile.objects.get(org=holder).city == "Maiduguri"
+
+    def test_a_blank_country_on_a_company_connect_names_can_be_filled(self):
+        org = LabsOrg.objects.create(slug="sahel-clinics", name="Sahel Clinics", connect_organization_id=9701)
+        made = create(CHC, org_id=org.pk)
+
+        call_operation(
+            "supplier_update",
+            access(CHC),
+            {"supplier_id": made["id"], "data": {"name": "Sahel Clinics", "country": "NG"}},
+        )
+
+        assert LabsOrg.objects.get(pk=org.pk).country == "NG"
+
+    def test_a_directory_company_is_not_renamed_here(self):
+        from connect_labs.marketplace.models import OrgProfile
+
+        org = LabsOrg.objects.create(slug="sahel-clinics", name="Sahel Clinics")
+        OrgProfile.objects.create(org=org)
+        made = create(CHC, org_id=org.pk)
+
+        with pytest.raises(ValueError, match="LLO directory"):
+            call_operation("supplier_update", access(CHC), {"supplier_id": made["id"], "data": {"name": "Sahel"}})
+
     def test_a_linked_companys_connect_id_does_not_change(self):
         org = LabsOrg.objects.create(slug="sahel-clinics", name="Sahel Clinics", connect_organization_id=9501)
         made = create(CHC, org_id=org.pk)

@@ -100,7 +100,7 @@ def _expected_inbound(program_id, points, item=None, as_of=None):
     contracts = (
         Contract.objects.filter(program_id=program_id, delivery_supply_point__in=points)
         .exclude(status__in=_NOT_EXPECTED)
-        .select_related("supplier", "item")
+        .select_related("supplier__org__supplier_profile", "item")
         .order_by("signed_on", "pk")
     )
     if item is not None:

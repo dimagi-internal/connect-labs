@@ -491,16 +491,25 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
     def update_supplier(self, supplier_id: int, data: dict):
         """Edit a supplier: the company's facts on the company, the program's on the link.
 
-        Name and country belong to the organisation, and only while Connect
-        does not name it -- Connect is authoritative for a linked organisation,
-        and supply is not the place to rename one. Setting a Connect id another
-        organisation already holds moves this program's supplier onto that
-        organisation, because that is who the supplier turns out to be.
+        Three rules about the company, each because someone else owns part of it:
+
+          * Setting a Connect id another organisation already holds MOVES this
+            program's supplier onto that organisation -- that is who the
+            supplier turns out to be. Nothing else in the edit then touches the
+            company: the facts on the form described the old one, and writing
+            them onto the organisation it turned out to be would overwrite a
+            company other programs share.
+          * A name or country Connect has set is Connect's. A blank one may be
+            filled in -- that is adding knowledge, not contradicting Connect.
+          * A company in the LLO directory is named by the directory: renaming
+            it here would make the next import treat it as gone and mint a
+            second copy under the directory's name.
         """
         supplier = self.get_supplier(supplier_id)
         if supplier is None:
             raise ValueError(f"supplier {supplier_id} not found")
         org = supplier.org
+        rebound = False
 
         connect_id = data.get("connect_organization_id")
         if connect_id and connect_id != org.connect_organization_id:
@@ -513,6 +522,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
                     )
                 supplier.org = holder
                 org = holder
+                rebound = True
             elif org.connect_organization_id is not None:
                 raise ValueError(
                     f"{org.name} is Connect organisation {org.connect_organization_id}; "
@@ -522,24 +532,35 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
                 org.connect_organization_id = connect_id
                 org.save(update_fields=["connect_organization_id", "updated_at"])
 
-        identity = {k: data[k] for k in ("name", "country") if data.get(k) not in (None, "")}
-        changed = {k: v for k, v in identity.items() if getattr(org, k) != v}
-        if changed:
-            if org.connect_organization_id is not None:
-                raise ValueError(
-                    f"{org.name} is named by Connect (organisation {org.connect_organization_id}); "
-                    "its name and country are changed there, not here"
-                )
-            for key, value in changed.items():
-                setattr(org, key, value)
-            org.save(update_fields=[*changed, "updated_at"])
-
-        fill_profile(org, data, overwrite=True)
+        if not rebound:
+            self._edit_company(org, data)
         for key in ("status", "notes"):
             if key in data:
                 setattr(supplier, key, data[key] if data[key] is not None else "")
         supplier.save()
         return _fresh(supplier)
+
+    def _edit_company(self, org, data):
+        identity = {k: data[k] for k in ("name", "country") if data.get(k) not in (None, "")}
+        changed = {k: v for k, v in identity.items() if getattr(org, k) != v}
+        # Filling a blank is adding what we know; only replacing a value
+        # somebody else set is refused.
+        replaced = {k for k in changed if getattr(org, k)}
+        if replaced and org.connect_organization_id is not None:
+            raise ValueError(
+                f"{org.name} is named by Connect (organisation {org.connect_organization_id}); "
+                "its name and country are changed there, not here"
+            )
+        if "name" in replaced and hasattr(org, "marketplace_profile"):
+            raise ValueError(
+                f"{org.name} is in the LLO directory, which names it; rename it in the directory sheet "
+                "and the next import will carry the change"
+            )
+        if changed:
+            for key, value in changed.items():
+                setattr(org, key, value)
+            org.save(update_fields=[*changed, "updated_at"])
+        fill_profile(org, data, overwrite=True)
 
     def list_orgs(self):
         return list(LabsOrg.objects.all())

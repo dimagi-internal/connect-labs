@@ -143,7 +143,7 @@ def import_directory(org_rows, contact_rows, date_rows, map_rows, *, prune: bool
 
         if prune:
             stale_orgs = list(LabsOrg.objects.filter(marketplace_profile__isnull=False).exclude(name__in=known))
-            stats["pruned_organisations"] = len(stale_orgs)
+            stats["pruned_organisations"] = 0
             stats["kept_in_use"] = 0
             for org in stale_orgs:
                 # An organisation other domains depend on -- a supplier with
@@ -155,6 +155,7 @@ def import_directory(org_rows, contact_rows, date_rows, map_rows, *, prune: bool
                 try:
                     with transaction.atomic():
                         org.delete()
+                    stats["pruned_organisations"] += 1
                 except ProtectedError:
                     OrgProfile.objects.filter(org=org).delete()
                     stats["kept_in_use"] += 1

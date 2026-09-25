@@ -357,8 +357,8 @@ def find_or_mint_supplier_org(name: str, *, country: str = "", connect_organizat
     # recorded as "Harmattan Health Supplies" under the slug `harmattan` is the
     # supplier of that name, not a second one. Only an exact name, and only
     # when it picks out one organisation: "Nutriset" and "Nutriset Nigeria"
-    # stay two, and two organisations sharing a name are not ours to choose
-    # between.
+    # stay two. When two organisations share the name, the one holding the
+    # name's own slug is the one this name has always resolved to.
     named = list(LabsOrg.objects.filter(name__iexact=name.strip())[:2])
     org = named[0] if len(named) == 1 else find_org(name)
     if org is None:

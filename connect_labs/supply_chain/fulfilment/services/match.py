@@ -223,7 +223,7 @@ def three_way_match(contract) -> dict:
             "quantity_unit": cover.quantity_unit,
         }
         for cover in contract.shortfall_covered_by.exclude(status="cancelled")
-        .select_related("supplier")
+        .select_related("supplier__org__supplier_profile")
         .order_by("pk")
     ]
     if status == "part_received" and covered_by:
