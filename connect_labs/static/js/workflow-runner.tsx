@@ -56,6 +56,17 @@ import {
   Settings,
 } from 'lucide-react';
 import { PipelineEditor } from './pipeline-editor';
+import { LabsReport } from '@/components/workflow/report';
+
+// The shared report library, for render code to use at runtime (see
+// components/workflow/report/index.ts). Published before any workflow renders,
+// and built against the SAME React the render is handed.
+declare global {
+  interface Window {
+    LabsReport?: typeof LabsReport;
+  }
+}
+window.LabsReport = LabsReport;
 
 /**
  * Create action handlers for workflow operations.

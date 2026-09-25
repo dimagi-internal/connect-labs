@@ -30,6 +30,11 @@ function WorkflowUI({
   // ES5 dialect throughout -- no arrows, no destructuring, no computed keys --
   // because nothing outside a browser can execute this file.
 
+  // The shared report library (components/workflow/report): tiles, charts,
+  // scorecard cells, formatting and sorting. The runner publishes it before any
+  // workflow renders; this page's look IS the library's look.
+  var R = window.LabsReport;
+
   var cases =
     (pipelines && pipelines.children && pipelines.children.rows) || [];
   var wrows = (pipelines && pipelines.visits && pipelines.visits.rows) || [];
@@ -745,10 +750,7 @@ function WorkflowUI({
   // Counts in a published report carry thousands separators; 37853 reads as a
   // typo next to 37,853.
   function nCount(value) {
-    if (value === null || value === undefined) return 'n/a';
-    var num = Number(value);
-    if (isNaN(num)) return String(value);
-    return Math.round(num).toLocaleString('en-US');
+    return R.nCount(value);
   }
 
   // ── Roll-ups, straight off the payload ─────────────────────────────────────
@@ -872,38 +874,14 @@ function WorkflowUI({
     [payload],
   );
   function scoreCell(c, ind) {
-    var e = ind && ind[c.id];
-    if (!e) return '\u2014';
-    if (c.denOnly) return e.n ? nCount(e.n) : '\u2014';
-    var m = N_BY_ID[c.id] || {};
-    if (e.band === 'insufficient')
-      return (
-        <span className="text-gray-400">
-          n&lt;{m.min_denominator || MIN_DEN}
-        </span>
-      );
-    if (e.value === null || e.value === undefined) return '\u2014';
-    var v = Number(e.value);
-    var text =
-      m.unit === '%'
-        ? (100 * v).toFixed(1) + '%'
-        : m.unit === 'g'
-          ? nCount(v)
-          : m.unit === 'wks'
-            ? String(Math.round(v * 10) / 10)
-            : c.id === 'visits_per_case'
-              ? v.toFixed(1)
-              : nCount(v);
-    if (e.band === 'notcredible')
-      return (
-        <span
-          className="text-slate-400"
-          title="Death recording is not credible for this organisation"
-        >
-          {text}
-        </span>
-      );
-    return text;
+    return (
+      <R.ScoreCellText
+        column={c}
+        entry={ind && ind[c.id]}
+        measure={N_BY_ID[c.id]}
+        minDenominator={MIN_DEN}
+      />
+    );
   }
 
   // Per-worker roll-up. The payload stores each worker's cases as POSITIONS into
@@ -1323,17 +1301,7 @@ function WorkflowUI({
     return l.reds > 0;
   }).length;
 
-  var BAND_CLS = {
-    green: 'bg-green-100 text-green-800',
-    yellow: 'bg-amber-100 text-amber-800',
-    red: 'bg-red-100 text-red-800',
-    unbanded: 'bg-gray-100 text-gray-500',
-    insufficient: 'bg-gray-50 text-gray-400',
-    nodata: 'bg-gray-50 text-gray-300',
-    notcredible: 'bg-slate-100 text-slate-500',
-    notinapp: 'bg-slate-100 text-slate-400 italic',
-    unrecorded: 'bg-amber-100 text-amber-900',
-  };
+  var BAND_CLS = R.BAND_CLS;
   // An indicator's entry for a scope, or a stand-in. This exists because the map is
   // no longer guaranteed complete: `evalAll` built it from the static `IND` array so
   // every id was always present, while `cIndFor` builds it from the catalog the
@@ -1469,36 +1437,10 @@ function WorkflowUI({
       cur && cur.key === key && cur.dir === 'desc' ? 'asc' : 'desc',
     );
   }
-  function blankSortValue(v) {
-    return (
-      v === null ||
-      v === undefined ||
-      v === '' ||
-      (typeof v === 'number' && isNaN(v))
-    );
-  }
   // Stable. A row with no value sits at the bottom in BOTH directions: "no
   // data" is not a low score.
   function sortRows(table, rows, valueOf) {
-    var s = sortOf(table);
-    if (!s) return rows;
-    var dir = s.dir === 'asc' ? 1 : -1;
-    return rows
-      .map(function (r, i) {
-        return { r: r, i: i, v: valueOf(r, s.key) };
-      })
-      .sort(function (a, b) {
-        var an = blankSortValue(a.v),
-          bn = blankSortValue(b.v);
-        if (an && bn) return a.i - b.i;
-        if (an) return 1;
-        if (bn) return -1;
-        if (a.v === b.v) return a.i - b.i;
-        return a.v < b.v ? -dir : dir;
-      })
-      .map(function (x) {
-        return x.r;
-      });
+    return R.sortRows(rows, sortOf(table), valueOf);
   }
   var DEF_SCOPE_LABEL = {
     programme: 'the programme',
@@ -2146,49 +2088,21 @@ function WorkflowUI({
   // collapsed panel, not a second table. One level down, the same shape
   // repeats for an organisation with its workers as the one table.
 
-  var MONTHS = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
   function dateLbl(s) {
-    if (!s) return '';
-    var p = String(s).slice(0, 10).split('-');
-    if (p.length < 3) return String(s);
-    return Number(p[2]) + ' ' + (MONTHS[Number(p[1]) - 1] || p[1]);
+    return R.dateLbl(s);
   }
   function daysBetween(a, b) {
-    var da = new Date(String(a).slice(0, 10) + 'T00:00:00Z');
-    var db = new Date(String(b).slice(0, 10) + 'T00:00:00Z');
-    if (isNaN(da.getTime()) || isNaN(db.getTime())) return null;
-    return Math.round((db - da) / 86400000);
+    return R.daysBetween(a, b);
   }
   var asOf =
     (P.meta && P.meta.as_of) ||
     (view && view.asOf ? String(view.asOf).slice(0, 10) : '') ||
     new Date().toISOString().slice(0, 10);
 
-  var BAND_WORD = { green: 'On target', yellow: 'Watch', red: 'Off target' };
-  var BAND_TEXT = {
-    green: 'text-green-700',
-    yellow: 'text-amber-700',
-    red: 'text-red-700',
-  };
-  var CELL_TINT = {
-    red: 'bg-red-50 text-red-700 font-semibold',
-    yellow: 'bg-amber-50 text-amber-800 font-semibold',
-  };
+  var BAND_WORD = R.BAND_WORD;
+  var BAND_TEXT = R.BAND_TEXT;
   function tintFor(e) {
-    return (e && CELL_TINT[e.band]) || '';
+    return R.tintFor(e);
   }
 
   // ── Scope: programme, or one organisation (optionally one opportunity) ────
@@ -2275,51 +2189,22 @@ function WorkflowUI({
       return mortalityCredible.ind;
     return entryOf(scopeInd, id);
   }
-  function tileValue(t, e) {
-    if (!e || e.value === null || e.value === undefined) return '—';
-    if (e.band === 'insufficient') return 'n<' + MIN_DEN;
-    if (t.count) return nCount(e.value);
-    if (t.pct) return (100 * e.value).toFixed(1) + '%';
-    return Number(e.value).toFixed(1);
-  }
-  function tileDelta(t) {
-    if (historyPoints.length < 2) return '';
-    var prev = historyPoints[historyPoints.length - 2];
-    var cur = historyPoints[historyPoints.length - 1];
-    var a = prev.ind && prev.ind[t.id],
-      b = cur.ind && cur.ind[t.id];
-    if (
-      !a ||
-      !b ||
-      a.value === null ||
-      a.value === undefined ||
-      b.value === null ||
-      b.value === undefined
-    )
-      return '';
-    var d = Number(b.value) - Number(a.value);
-    var since = ' since ' + dateLbl(prev.date);
-    if (t.pct) {
-      if (Math.abs(d) < 0.0005) return 'Unchanged' + since;
-      return (
-        (d > 0 ? '+' : '−') + (100 * Math.abs(d)).toFixed(1) + ' pt' + since
-      );
-    }
-    if (Math.abs(d) < 0.05) return 'Unchanged' + since;
-    var s = t.count ? nCount(Math.abs(d)) : Math.abs(d).toFixed(1);
-    return (d > 0 ? '+' : '−') + s + since;
-  }
   function Tiles() {
     var started = tileEntry('started_cases');
     var pctOfTarget =
       !selLLO && started.value
         ? Math.min(100, (started.value / 25000) * 100)
         : null;
+    // The change line compares the two newest points of the history the trend
+    // charts use, in the scope in hand.
+    var prev =
+      historyPoints.length >= 2
+        ? historyPoints[historyPoints.length - 2]
+        : null;
+    var cur = prev ? historyPoints[historyPoints.length - 1] : null;
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        {TILES.map(function (t) {
-          var e = tileEntry(t.id);
-          var band = e && BAND_WORD[e.band] ? e.band : null;
+      <R.HeadlineTiles
+        tiles={TILES.map(function (t) {
           var sub = t.sub;
           if (t.id === 'mortality')
             sub =
@@ -2334,384 +2219,39 @@ function WorkflowUI({
             sub =
               t.sub +
               (pctOfTarget !== null ? ' · of 25,000 target by Q1 2027' : '');
-          return (
-            <div
-              key={t.id}
-              className="bg-white border border-gray-200 rounded-xl px-4 pt-3 pb-3"
-            >
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 truncate">
-                {t.label}
-              </div>
-              <div className="mt-1 text-2xl font-bold text-gray-900 tabular-nums">
-                {tileValue(t, e)}
-                {t.unit ? (
-                  <span className="ml-2 text-xs font-medium text-gray-400">
-                    {t.unit}
-                  </span>
-                ) : null}
-              </div>
-              <div className="mt-1 flex items-center justify-between gap-2 text-xs text-gray-600 whitespace-nowrap">
-                <span className="truncate" title={sub}>
-                  {sub}
-                </span>
-                {band ? (
-                  <span className={'font-semibold ' + BAND_TEXT[band]}>
-                    {BAND_WORD[band]}
-                  </span>
-                ) : null}
-              </div>
-              {pctOfTarget !== null && t.id === 'started_cases' ? (
-                <div className="mt-2 h-1.5 rounded bg-gray-100 overflow-hidden">
-                  <div
-                    className="h-full rounded bg-indigo-600"
-                    style={{ width: pctOfTarget.toFixed(1) + '%' }}
-                  />
-                </div>
-              ) : null}
-              <div className="mt-1 text-xs text-gray-400 whitespace-nowrap truncate">
-                {tileDelta(t) || ' '}
-              </div>
-            </div>
-          );
+          return {
+            spec: t,
+            entry: tileEntry(t.id),
+            sub: sub,
+            progress: t.id === 'started_cases' ? pctOfTarget : null,
+            previous: prev ? prev.ind && prev.ind[t.id] : null,
+            current: cur ? (cur.ind && cur.ind[t.id]) || null : null,
+            previousDate: prev ? prev.date : null,
+            minDenominator: MIN_DEN,
+          };
         })}
-      </div>
-    );
-  }
-
-  // ── Activity by week: bars = babies registered, line = visits, ONE scale ──
-  function ActivityChart(props) {
-    var weeks = props.weeks || [];
-    var W = 720,
-      H = 200,
-      L = 42,
-      R = 12,
-      T = 14,
-      B = 28;
-    if (!weeks.length)
-      return (
-        <div className="text-xs text-gray-400 py-10 text-center">
-          No dated visits in this scope.
-        </div>
-      );
-    var max = 1;
-    weeks.forEach(function (w) {
-      max = Math.max(max, w.visits || 0, w.registered || 0);
-    });
-    var step = Math.pow(10, Math.floor(Math.log(max) / Math.LN10));
-    var top = Math.ceil(max / step) * step;
-    var iw = W - L - R,
-      ih = H - T - B;
-    var bw = iw / weeks.length;
-    function y(v) {
-      return T + ih - (v / top) * ih;
-    }
-    var ticks = [0, top / 2, top];
-    var path = weeks
-      .map(function (w, i) {
-        return (
-          (i ? 'L' : 'M') +
-          (L + i * bw + bw / 2).toFixed(1) +
-          ' ' +
-          y(w.visits || 0).toFixed(1)
-        );
-      })
-      .join(' ');
-    return (
-      <svg
-        viewBox={'0 0 ' + W + ' ' + H}
-        className="w-full h-auto block"
-        role="img"
-        aria-label="Registrations and visits by week"
-      >
-        {ticks.map(function (t) {
-          return (
-            <g key={t}>
-              <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#eeeef4" />
-              <text
-                x={L - 6}
-                y={y(t) + 4}
-                fontSize="10"
-                fill="#9ca3af"
-                textAnchor="end"
-              >
-                {nCount(t)}
-              </text>
-            </g>
-          );
-        })}
-        {weeks.map(function (w, i) {
-          var x = L + i * bw;
-          var h = ih - (y(w.registered || 0) - T);
-          return (
-            <g key={w.week}>
-              <rect
-                x={(x + bw * 0.2).toFixed(1)}
-                y={y(w.registered || 0).toFixed(1)}
-                width={(bw * 0.6).toFixed(1)}
-                height={h.toFixed(1)}
-                rx="2"
-                fill="#a5b4fc"
-              >
-                <title>
-                  {'Week of ' +
-                    dateLbl(w.week) +
-                    ': ' +
-                    nCount(w.registered) +
-                    ' registered, ' +
-                    nCount(w.visits) +
-                    ' visits'}
-                </title>
-              </rect>
-              {i % 4 === 0 || i === weeks.length - 1 ? (
-                <text
-                  x={x + bw / 2}
-                  y={H - 8}
-                  fontSize="10"
-                  fill="#9ca3af"
-                  textAnchor="middle"
-                >
-                  {dateLbl(w.week)}
-                </text>
-              ) : null}
-            </g>
-          );
-        })}
-        <path
-          d={path}
-          fill="none"
-          stroke="#4f46e5"
-          strokeWidth="2"
-          strokeLinejoin="round"
-        />
-        {weeks.map(function (w, i) {
-          return (
-            <circle
-              key={'v' + w.week}
-              cx={L + i * bw + bw / 2}
-              cy={y(w.visits || 0)}
-              r={i === weeks.length - 1 ? 4 : 2.5}
-              fill="#4f46e5"
-              stroke="#fff"
-              strokeWidth="1.5"
-            >
-              <title>
-                {'Week of ' +
-                  dateLbl(w.week) +
-                  ': ' +
-                  nCount(w.visits) +
-                  ' visits, ' +
-                  nCount(w.registered) +
-                  ' registered'}
-              </title>
-            </circle>
-          );
-        })}
-      </svg>
+      />
     );
   }
 
   // ── One indicator over the saved reports, small-multiple sized ────────────
   function SmallTrend(props) {
-    var id = props.id,
-      label = props.label,
-      pct = props.pct,
-      target = props.target;
+    var id = props.id;
     var ind = indOf(id);
-    var pts = historyPoints.map(function (p) {
-      var e = p.ind && p.ind[id];
-      if (!e || e.value === null || e.value === undefined) return null;
-      if (e.band === 'insufficient' || e.band === 'notcredible') return null;
-      return { v: Number(e.value), e: e, date: p.date, n: e.n };
-    });
-    var W = 260,
-      H = 130,
-      L = 36,
-      R = 10,
-      T = 12,
-      B = 22;
-    var n = pts.length;
-    var real = pts.filter(Boolean);
-    var cur = real.length ? real[real.length - 1].e : null;
-    var body;
-    if (history === null) {
-      // The run history is still on its way (it can take several seconds).
-      // Saying "one report so far" in the meantime reads as a fact about the
-      // data, and it is not one.
-      body = (
-        <div
-          className="relative rounded bg-gray-50 animate-pulse"
-          style={{ height: H }}
-          aria-busy="true"
-        >
-          <div className="absolute inset-x-3 top-1/2 border-t border-dashed border-gray-200" />
-          <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400">
-            Loading the trend across saved reports…
-          </div>
-        </div>
-      );
-    } else if (real.length < 2) {
-      body = (
-        <div className="text-xs text-gray-400 py-8 text-center">
-          {real.length
-            ? 'One report so far — the line builds as reports are saved weekly.'
-            : 'No report has enough cases to score this yet.'}
-        </div>
-      );
-    } else {
-      var lo = target,
-        hi = target;
-      real.forEach(function (p) {
-        lo = Math.min(lo, p.v);
-        hi = Math.max(hi, p.v);
-      });
-      if (pct) {
-        lo = Math.max(0, Math.floor((lo - 0.05) * 10) / 10);
-        hi = Math.min(1, Math.ceil((hi + 0.05) * 10) / 10);
-      } else {
-        lo = Math.floor(lo - 1);
-        hi = Math.ceil(hi + 1);
-      }
-      if (hi <= lo) hi = lo + 1;
-      var iw = W - L - R,
-        ih = H - T - B;
-      function x(i) {
-        return L + (n > 1 ? (i * iw) / (n - 1) : iw / 2);
-      }
-      function y(v) {
-        return T + ih - ((v - lo) / (hi - lo)) * ih;
-      }
-      function f(v) {
-        return pct ? Math.round(v * 100) + '%' : Number(v).toFixed(0);
-      }
-      var d = '';
-      var pen = false;
-      pts.forEach(function (p, i) {
-        if (!p) {
-          pen = false;
-          return;
-        }
-        d +=
-          (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.v).toFixed(1) + ' ';
-        pen = true;
-      });
-      var last = real[real.length - 1];
-      var lastIdx = pts.lastIndexOf(last);
-      var yTicks = [lo, (lo + hi) / 2, hi];
-      var xTicks = [0, Math.floor((n - 1) / 2), n - 1];
-      var dotColor =
-        last.e.band === 'red'
-          ? '#dc2626'
-          : last.e.band === 'yellow'
-            ? '#d97706'
-            : last.e.band === 'green'
-              ? '#15803d'
-              : '#4f46e5';
-      body = (
-        <svg
-          viewBox={'0 0 ' + W + ' ' + H}
-          className="w-full h-auto block"
-          role="img"
-          aria-label={label}
-        >
-          {yTicks.map(function (t) {
-            return (
-              <g key={t}>
-                <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#eeeef4" />
-                <text
-                  x={L - 5}
-                  y={y(t) + 3.5}
-                  fontSize="9.5"
-                  fill="#9ca3af"
-                  textAnchor="end"
-                >
-                  {f(t)}
-                </text>
-              </g>
-            );
-          })}
-          <line
-            x1={L}
-            x2={W - R}
-            y1={y(target)}
-            y2={y(target)}
-            stroke="#c3c6d3"
-            strokeDasharray="3 3"
-          />
-          <text
-            x={W - R}
-            y={y(target) - 3}
-            fontSize="9"
-            fill="#9ca3af"
-            textAnchor="end"
-          >
-            {'target ' + f(target)}
-          </text>
-          <path
-            d={d}
-            fill="none"
-            stroke="#4f46e5"
-            strokeWidth="2"
-            strokeLinejoin="round"
-          />
-          {pts.map(function (p, i) {
-            if (!p) return null;
-            var isLast = i === lastIdx;
-            return (
-              <circle
-                key={p.date}
-                cx={x(i)}
-                cy={y(p.v)}
-                r={isLast ? 4.5 : 3}
-                fill={isLast ? dotColor : '#4f46e5'}
-                stroke="#fff"
-                strokeWidth="1.5"
-              >
-                <title>
-                  {'As of ' +
-                    dateLbl(p.date) +
-                    ': ' +
-                    fmt(ind, p.e) +
-                    ' (n = ' +
-                    nCount(p.n) +
-                    ')'}
-                </title>
-              </circle>
-            );
-          })}
-          {xTicks.map(function (i) {
-            return (
-              <text
-                key={'x' + i}
-                x={x(i)}
-                y={H - 7}
-                fontSize="9.5"
-                fill="#9ca3af"
-                textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}
-              >
-                {dateLbl(historyPoints[i].date)}
-              </text>
-            );
-          })}
-        </svg>
-      );
-    }
     return (
-      <div className="bg-white border border-gray-200 rounded-xl px-4 pt-3 pb-2">
-        <div className="flex items-baseline justify-between gap-2">
-          <div
-            className="text-sm font-semibold text-gray-900 whitespace-nowrap"
-            title={ind.name + ' (' + id + ')'}
-          >
-            {label}
-          </div>
-          {cur && BAND_WORD[cur.band] ? (
-            <span className={'text-xs font-semibold ' + BAND_TEXT[cur.band]}>
-              {BAND_WORD[cur.band]}
-            </span>
-          ) : null}
-        </div>
-        {body}
-      </div>
+      <R.TrendCard
+        label={props.label}
+        title={ind.name + ' (' + id + ')'}
+        pct={props.pct}
+        target={props.target}
+        format={function (e) {
+          return fmt(ind, e);
+        }}
+        loading={history === null}
+        points={historyPoints.map(function (p) {
+          return { date: p.date, entry: (p.ind && p.ind[id]) || null };
+        })}
+      />
     );
   }
 
@@ -2722,30 +2262,7 @@ function WorkflowUI({
     return (
       <div>
         <div className="grid grid-cols-1 lg:grid-cols-6 gap-3">
-          <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl px-4 pt-3 pb-2">
-            <div className="flex items-baseline justify-between gap-2 flex-wrap">
-              <div className="text-sm font-semibold text-gray-900">
-                Registrations and visits by week
-              </div>
-              <div className="flex items-center gap-3 text-xs text-gray-500">
-                <span>
-                  <span
-                    className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle"
-                    style={{ background: '#a5b4fc' }}
-                  />
-                  Babies registered
-                </span>
-                <span>
-                  <span
-                    className="inline-block w-3 h-0.5 mr-1 align-middle"
-                    style={{ background: '#4f46e5' }}
-                  />
-                  Visits
-                </span>
-              </div>
-            </div>
-            <ActivityChart weeks={weekly} />
-          </div>
+          <R.WeeklyActivityCard weeks={weekly} className="lg:col-span-2" />
           <SmallTrend
             id="pct_healthy_growth"
             label="Healthy growth"
@@ -2822,17 +2339,7 @@ function WorkflowUI({
   // the minimum, no data) has no value to rank, so it sorts to the bottom.
   function scorecardSortValue(key, ind) {
     var c = SCORECARD[Number(String(key).slice(3))];
-    var e = c && ind && ind[c.id];
-    if (!e) return null;
-    if (c.denOnly) return e.n || null;
-    if (
-      e.band === 'insufficient' ||
-      e.band === 'nodata' ||
-      e.band === 'notinapp' ||
-      e.band === 'unrecorded'
-    )
-      return null;
-    return e.value === null || e.value === undefined ? null : Number(e.value);
+    return R.scoreSortValue(c, c && ind && ind[c.id]);
   }
   function ScorecardHead(props) {
     var lead = (props.lead || []).map(asHeadCol);
@@ -2891,53 +2398,22 @@ function WorkflowUI({
   }
   function scorecardCells(ind) {
     return SCORECARD.map(function (c, i) {
-      var e = ind && ind[c.id];
-      var tint = c.denOnly ? '' : tintFor(e);
       return (
-        <td key={i} className={'px-1.5 py-2 text-right tabular-nums ' + tint}>
-          {scoreCell(c, ind)}
-        </td>
+        <R.ScoreCell
+          key={i}
+          column={c}
+          entry={ind && ind[c.id]}
+          measure={N_BY_ID[c.id]}
+          minDenominator={MIN_DEN}
+        />
       );
     });
   }
   function ScorecardLegend(props) {
-    return (
-      <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100 flex items-center gap-4 flex-wrap">
-        <span>
-          <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-400 mr-1 align-middle" />
-          Off target
-        </span>
-        <span>
-          <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-400 mr-1 align-middle" />
-          Watch
-        </span>
-        <span>n&lt;20 = below the minimum denominator</span>
-        <span className="ml-auto">{props.right}</span>
-      </div>
-    );
+    return <R.ScorecardLegend right={props.right} minDenominator={MIN_DEN} />;
   }
   function attentionCell(reds, yellows) {
-    return (
-      <td className="px-1.5 py-2 text-right">
-        {reds ? (
-          <span
-            className="inline-block px-1.5 py-0.5 rounded-md text-xs font-semibold bg-red-100 text-red-800 text-center"
-            title={reds + ' off target · ' + (yellows || 0) + ' to watch'}
-          >
-            {reds}
-          </span>
-        ) : yellows ? (
-          <span
-            className="inline-block px-1.5 py-0.5 rounded-md text-xs font-semibold bg-amber-100 text-amber-800 text-center"
-            title={yellows + ' to watch'}
-          >
-            {yellows}
-          </span>
-        ) : (
-          <span className="text-gray-300">0</span>
-        )}
-      </td>
-    );
+    return <R.AttentionCell reds={reds} yellows={yellows} />;
   }
 
   // ── The organisations table: Neal's scorecard, plus last visit and attention ──
