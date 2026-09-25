@@ -236,6 +236,45 @@ class TestTheEndpoint:
 
 
 @pytest.mark.django_db
+class TestTheTenant:
+    """canopy-web #960: a site's name is unique only within one canopy workspace,
+    so the panel names its agent — or canopy refuses once a second workspace
+    registers a `connect-labs`."""
+
+    def test_the_mint_names_the_agent(self, configured, user, settings):
+        settings.CANOPY_AGENT_SLUG = "ace"
+        sent = {}
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return b'{"token": "t", "expires_at": ""}'
+
+        def fake_urlopen(request, timeout):
+            sent.update(json.loads(request.data))
+            return _Resp()
+
+        with mock.patch.object(canopy.urllib.request, "urlopen", fake_urlopen):
+            canopy.vouch_for(user)
+
+        assert sent["agent_slug"] == "ace"
+        assert sent["assertion"]
+
+    def test_the_panel_names_the_agent_to_the_widget(self, client, user, configured, settings):
+        settings.CANOPY_AGENT_SLUG = "ace"
+        client.force_login(user)
+
+        body = client.get(reverse("marketplace:network")).content.decode()
+
+        assert 'agent: "ace"' in body
+
+
+@pytest.mark.django_db
 class TestTheJwks:
     """Publishing a URL rather than a pasted key is what makes rotation free:
     swap the secret and canopy follows by `kid` on its next fetch."""
