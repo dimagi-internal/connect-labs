@@ -232,7 +232,7 @@ class ContractForm(ProvenancedForm):
         self.fields["item"].empty_label = _("Not decided yet")
         self.fields["buyer_org"].empty_label = _("Select an organisation…")
         self.fields["delivery_supply_point"].empty_label = _("Not recorded")
-        orders = self.in_program(Contract).select_related("supplier").order_by("-created_at")
+        orders = self.in_program(Contract).select_related("supplier__org__supplier_profile").order_by("-created_at")
         if self.instance and self.instance.pk:
             orders = orders.exclude(pk=self.instance.pk)
         self.fields["covers_shortfall_of"].queryset = orders

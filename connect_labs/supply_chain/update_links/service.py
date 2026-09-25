@@ -147,8 +147,10 @@ def scope_for(link) -> Scope:
         approvals = AwardApproval.objects.filter(
             award__round__program_id=program_id, update_links=link, approver_org_id=link.org_id
         )
-    contracts = contracts.select_related("commodity", "item", "supplier")
-    approvals = approvals.select_related("award__supplier", "award__quote__item", "award__commodity", "approver_org")
+    contracts = contracts.select_related("commodity", "item", "supplier__org__supplier_profile")
+    approvals = approvals.select_related(
+        "award__supplier__org__supplier_profile", "award__quote__item", "award__commodity", "approver_org"
+    )
 
     # Products the link can name: what its contracts are for, and what has
     # ever rested at its supply points. Not the programme's catalogue -- the
@@ -538,7 +540,7 @@ def _describe_shipment(rid):
 def _describe_approval(rid):
     approval = (
         AwardApproval.objects.filter(pk=rid)
-        .select_related("award__supplier", "award__quote__item", "award__commodity")
+        .select_related("award__supplier__org__supplier_profile", "award__quote__item", "award__commodity")
         .first()
     )
     if approval is None or approval.is_pending:

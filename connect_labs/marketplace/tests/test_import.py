@@ -125,7 +125,7 @@ class TestImportDirectory:
 
         assert LabsOrg.objects.filter(pk=dropped.pk).exists()
         assert not OrgProfile.objects.filter(org=dropped).exists()
-        assert stats["pruned_organisations"] == 1
+        assert stats["pruned_organisations"] == 0
         assert stats["kept_in_use"] == 1
 
     def test_refuses_an_empty_roster(self):

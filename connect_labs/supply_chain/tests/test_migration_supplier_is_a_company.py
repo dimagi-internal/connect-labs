@@ -89,3 +89,57 @@ def test_one_company_across_programs_and_duplicates_folded(old_apps):
     assert not Supplier.objects.filter(pk=ids["dupe"]).exists()
     assert Quote.objects.get(pk=ids["quote"]).supplier_id == ids["first"]
     assert "second" in Supplier.objects.get(pk=ids["first"]).notes
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_supplier_keeps_the_organisation_its_update_link_was_issued_to(old_apps):
+    """A link issued to "EHA Clinics Ltd" for an order of a supplier typed as
+    "EHA Clinics" must still let EHA act as the supplier afterwards."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    LabsOrg = old_apps.get_model("labs", "LabsOrg")
+    Supplier = old_apps.get_model("supply_chain", "Supplier")
+    Commodity = old_apps.get_model("supply_chain", "Commodity")
+    Contract = old_apps.get_model("supply_chain", "Contract")
+    UpdateLink = old_apps.get_model("supply_chain", "UpdateLink")
+
+    eha = LabsOrg.objects.create(slug="eha", name="EHA Clinics Ltd")
+    buyer = LabsOrg.objects.create(slug="program-team", name="Program team")
+    typed = Supplier.objects.create(scope_key="prog:10501", name="EHA Clinics", country="NG")
+    commodity = Commodity.objects.create(scope_key="prog:10501", slug="ors", name="ORS")
+    contract = Contract.objects.create(
+        program_id=10501,
+        supplier=typed,
+        commodity=commodity,
+        buyer_of_record="programme_org",
+        buyer_org=buyer,
+        source="we_recorded",
+    )
+    for org, token in ((eha, "a" * 64), (buyer, "b" * 64)):
+        link = UpdateLink.objects.create(
+            program_id=10501, org=org, token_hash=token, expires_at=timezone.now() + timedelta(days=30)
+        )
+        link.contracts.add(contract)
+
+    apps = _migrate(AFTER)
+
+    assert apps.get_model("supply_chain", "Supplier").objects.get(pk=typed.pk).org_id == eha.pk
+    assert apps.get_model("labs", "LabsOrg").objects.get(pk=eha.pk).country == "NG"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_bound_row_carries_its_connect_id_and_country_to_the_organisation(old_apps):
+    LabsOrg = old_apps.get_model("labs", "LabsOrg")
+    Supplier = old_apps.get_model("supply_chain", "Supplier")
+    org = LabsOrg.objects.create(slug="sahel", name="Sahel Clinics")
+    Supplier.objects.create(
+        scope_key="prog:10501", name="Sahel Clinics", org=org, country="NE", connect_organization_id=7301
+    )
+
+    apps = _migrate(AFTER)
+
+    migrated = apps.get_model("labs", "LabsOrg").objects.get(pk=org.pk)
+    assert migrated.country == "NE"
+    assert migrated.connect_organization_id == 7301
