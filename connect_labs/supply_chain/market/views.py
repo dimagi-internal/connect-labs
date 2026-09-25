@@ -25,7 +25,7 @@ from connect_labs.audit_trail.context import get_audit_context
 from connect_labs.marketplace import membership
 from connect_labs.marketplace.models import OrgMembership
 from connect_labs.supply_chain import records
-from connect_labs.supply_chain.market import service
+from connect_labs.supply_chain.market import cards, service
 from connect_labs.supply_chain.market.forms import BidForm, InviteForm, OfferingForm, ProfileForm, RegisterForm
 from connect_labs.supply_chain.models import SupplierOffering, SupplierProfile, fill_profile
 
@@ -74,7 +74,8 @@ def _delivered_to(round_) -> str:
 class MarketHomeView(View):
     def get(self, request):
         orgs = membership.orgs_for(request)
-        listed = service.listed_rounds(orgs)
+        everything = service.listed_rounds(orgs)
+        listed = everything
         category = request.GET.get("category", "")
         country = (request.GET.get("country") or "").strip()
         if category:
@@ -88,6 +89,10 @@ class MarketHomeView(View):
             request,
             "home.html",
             rounds=listed,
+            sections=cards.sections(listed),
+            # Across every open round, not the filtered few: the figures say what
+            # the market is, and a filter narrows the list below them.
+            headline=cards.headline(everything, service.registered_supplier_count()),
             categories=records.COMMODITY_CATEGORIES,
             category=category,
             country=country,
@@ -101,7 +106,7 @@ class MarketRoundView(View):
             listed = service.visible_round(round_id, orgs)
         except service.NotAvailable:
             raise Http404("no such round")
-        return _render(request, "round.html", listed=listed)
+        return _render(request, "round.html", listed=listed, card=cards.card_for(listed))
 
 
 # ---- bidding ------------------------------------------------------------------
