@@ -65,6 +65,29 @@ def access_for(program_id):
     return SupplyDataAccess(access_token="oes-demo-seed", program_id=program_id, caller=SYSTEM)
 
 
+# Where each supplier's goods leave from: `{supplier label or org slug: {country, city}}`,
+# read from the document's `supplier_places` by `seed_orgs`, which runs first.
+# A module global rather than a parameter threaded through every seeder,
+# because suppliers are created from six call sites and a location is a fact
+# about the supplier, not about the chain that happens to buy from it. Real
+# towns are named in Drive, never here -- this repository is public.
+_SUPPLIER_PLACES: dict = {}
+
+
+def _placed_supplier(access, supplier, key):
+    """`supplier`, with the country and city the document gives it filled in.
+
+    Only fills blanks: a supplier is a global company since #2019, so one
+    somebody has already located -- through the marketplace, or by hand --
+    keeps what they said.
+    """
+    place = _SUPPLIER_PLACES.get(key) or {}
+    missing = {field: place[field] for field in ("country", "city") if place.get(field) and not supplier.get(field)}
+    if not missing:
+        return supplier
+    return op(access, "supplier_update", supplier_id=supplier["id"], data=missing)
+
+
 def seed_orgs(access, data):
     """The organisations, which belong to no program in particular.
 
@@ -89,6 +112,8 @@ def seed_orgs(access, data):
     whenever the source document carries one, independent of whether an id
     is also known.
     """
+    _SUPPLIER_PLACES.clear()
+    _SUPPLIER_PLACES.update(without_commentary(data.get("supplier_places") or {}))
     orgs = {}
     for row in data["orgs"]:
         org_data = {
@@ -388,12 +413,13 @@ def supplier_for_org(access, org, kind="distributor"):
     """
     for existing in op(access, "supplier_list", search=org["name"]):
         if existing["name"] == org["name"]:
-            return existing
-    return op(
+            return _placed_supplier(access, existing, org["slug"])
+    created = op(
         access,
         "supplier_create",
         data={"name": org["name"], "type": kind, "status": "awarded", "org_id": org["id"]},
     )
+    return _placed_supplier(access, created, org["slug"])
 
 
 def supplier_for_label(access, label, kind="manufacturer"):
@@ -416,8 +442,9 @@ def supplier_for_label(access, label, kind="manufacturer"):
     """
     for existing in op(access, "supplier_list", search=label):
         if existing["name"] == label:
-            return existing
-    return op(access, "supplier_create", data={"name": label, "type": kind, "status": "quoting"})
+            return _placed_supplier(access, existing, label)
+    created = op(access, "supplier_create", data={"name": label, "type": kind, "status": "quoting"})
+    return _placed_supplier(access, created, label)
 
 
 def _goods_value(access, contract):

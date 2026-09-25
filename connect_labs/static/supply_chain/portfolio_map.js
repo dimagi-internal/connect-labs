@@ -229,6 +229,23 @@
   // Places sharing one coordinate -- every store a partner runs sits on its
   // head office until someone records where it is -- fan into a small ring so
   // each stays clickable. Display only; the place's panel says where it is.
+  // One organisation keeping several programs' stock at one office is ONE
+  // place on the ground: EHA's Kano warehouse holds CHC, RUTF and the
+  // supply-only chain. It is one marker listing its programs, not three dots
+  // pretending to be three buildings.
+  var sites = {};
+  places.forEach(function (pt) {
+    if (!pt._placed || pt.kind === 'user_held' || !pt.managed_by_org_id) return;
+    var k =
+      pt.managed_by_org_id + '@' + pt.lat.toFixed(4) + ',' + pt.lng.toFixed(4);
+    (sites[k] = sites[k] || []).push(pt);
+  });
+  Object.keys(sites).forEach(function (k) {
+    if (sites[k].length < 2) return;
+    sites[k].forEach(function (pt) {
+      pt._site = k;
+    });
+  });
   var stacks = {};
   function stack(o, lat, lng) {
     o._lat = lat;
@@ -236,8 +253,18 @@
     var k = lat.toFixed(4) + ',' + lng.toFixed(4);
     (stacks[k] = stacks[k] || []).push(o);
   }
+  var siteStacked = {};
   places.forEach(function (pt) {
-    if (pt._placed) stack(pt, pt.lat, pt.lng);
+    if (!pt._placed) return;
+    if (pt._site) {
+      // A site stacks once, as itself; its members share its position.
+      if (!siteStacked[pt._site]) {
+        siteStacked[pt._site] = { _site: pt._site };
+        stack(siteStacked[pt._site], pt.lat, pt.lng);
+      }
+      return;
+    }
+    stack(pt, pt.lat, pt.lng);
   });
   suppliers.forEach(function (s) {
     if (s.location) stack(s, s.location.lat, s.location.lng);
@@ -256,6 +283,13 @@
       o._y = o._lat + r * Math.sin(a);
     });
   });
+  Object.keys(siteStacked).forEach(function (k) {
+    sites[k].forEach(function (pt) {
+      pt._x = siteStacked[k]._x;
+      pt._y = siteStacked[k]._y;
+    });
+  });
+  var ATTN_ORDER = ['blocked', 'waiting', 'clear'];
 
   // ---------------------------------------------------------------- network
   // Every directory organisation with a head office: the same coordinates the
@@ -1265,7 +1299,74 @@
     return h + '</div>';
   }
 
+  var openSite = null;
+  function showSite(key) {
+    var members = sites[key].filter(function (m) {
+      return visiblePlace(m, true);
+    });
+    if (members.length === 1) return go(members[0].program_id, members[0]._key);
+    openSite = key;
+    state.place = null;
+    state.member = null;
+    renderPanel();
+    writeHash();
+  }
+  function sitePanel(key) {
+    var members = sites[key];
+    var first = members[0];
+    var h =
+      '<div class="pm-crumbs"><button type="button" data-go="">' +
+      esc(DATA.portfolio.name) +
+      '</button> › <span>' +
+      esc(first.managed_by) +
+      '</span></div>';
+    h +=
+      '<div class="pm-sec"><div class="text-base font-semibold text-gray-900">' +
+      esc(first.managed_by) +
+      '</div>' +
+      '<div class="pm-muted mt-1"><i class="fa-solid fa-location-dot mr-1"></i>' +
+      esc(whereIs(first).text) +
+      '</div>' +
+      '<div class="pm-muted mt-1">One place holding stock for ' +
+      members.length +
+      ' programs.</div></div>';
+    h +=
+      '<div class="pm-sec"><h4><span>By program</span></h4>' +
+      members
+        .map(function (pt) {
+          var held = holdingText(pt);
+          return (
+            '<button type="button" class="pm-row w-full text-left" data-place="' +
+            esc(pt._key) +
+            '">' +
+            '<span class="pm-dot" style="margin-top:6px;background:' +
+            ATTN[pt._attn].color +
+            '"></span><div class="min-w-0">' +
+            '<div class="text-gray-900">' +
+            esc(progById[pt.program_id].name) +
+            '</div>' +
+            '<div class="pm-muted">' +
+            esc(pt.name) +
+            ' · ' +
+            esc(ATTN[pt._attn].label) +
+            '</div>' +
+            (held
+              ? '<div class="pm-muted">Holds ' + esc(held) + '</div>'
+              : '') +
+            '</div></button>'
+          );
+        })
+        .join('') +
+      '</div>';
+    return h;
+  }
+
   function renderPanel() {
+    if (openSite && !state.place && !state.member && sites[openSite]) {
+      side.innerHTML = sitePanel(openSite);
+      side.scrollTop = 0;
+      return;
+    }
     if (state.member && memberBySlug[state.member] && !state.place)
       side.innerHTML = memberPanel(memberBySlug[state.member]);
     else if (state.place && placeByKey[state.place])
@@ -1288,6 +1389,7 @@
   });
 
   function go(prog, place) {
+    openSite = null;
     state.prog = prog;
     state.place = place;
     update(true);
@@ -1505,7 +1607,9 @@
           popup.remove();
         });
         map.on('click', layer, function (e) {
-          var pt = placeByKey[e.features[0].properties.key];
+          var props = e.features[0].properties;
+          if (props.site && sites[props.site]) return showSite(props.site);
+          var pt = placeByKey[props.key];
           go(pt.program_id, pt._key);
         });
       });
@@ -1628,15 +1732,42 @@
         },
       };
     };
-    map.getSource('pm-places').setData(
-      fc(
-        vis
-          .filter(function (pt) {
-            return pt.kind !== 'user_held';
-          })
-          .map(feature),
-      ),
-    );
+    var siteSeen = {};
+    var placeFeatures = [];
+    vis.forEach(function (pt) {
+      if (pt.kind === 'user_held') return;
+      if (!pt._site) return placeFeatures.push(feature(pt));
+      if (siteSeen[pt._site]) return;
+      siteSeen[pt._site] = true;
+      var members = sites[pt._site].filter(function (m) {
+        return shown[m._key];
+      });
+      // Inside one program the site is just that program's place.
+      if (members.length < 2)
+        return placeFeatures.push(feature(members[0] || pt));
+      var worst = members
+        .map(function (m) {
+          return ATTN_ORDER.indexOf(m._attn);
+        })
+        .sort()[0];
+      var f = feature(pt);
+      f.properties.color = ATTN[ATTN_ORDER[worst]].color;
+      f.properties.r =
+        Math.max.apply(
+          null,
+          members.map(function (m) {
+            return KIND_RADIUS[m.kind] || 6;
+          }),
+        ) + 2;
+      f.properties.site = pt._site;
+      f.properties.name =
+        (pt.managed_by || pt.name) + ' · ' + members.length + ' programs';
+      f.properties.sel = members.some(function (m) {
+        return state.place === m._key;
+      });
+      placeFeatures.push(f);
+    });
+    map.getSource('pm-places').setData(fc(placeFeatures));
     map.getSource('pm-workers').setData(
       fc(
         vis
