@@ -47,6 +47,7 @@
           <th class="px-4 py-3">Id</th>
           <th class="px-4 py-3">Name</th>
           <th class="px-4 py-3">Version</th>
+          <th class="px-4 py-3">Last edited (UTC)</th>
           <th class="px-4 py-3">Lives in</th>
           <th class="px-4 py-3">Families</th>
           <th class="px-4 py-3 text-right">Indicators</th>
@@ -64,6 +65,7 @@
             {% if r.description %}<div class="text-xs text-gray-500 font-normal max-w-md">{{ r.description|truncatechars:160 }}</div>{% endif %}
           </td>
           <td class="px-4 py-3">v{{ r.version }}</td>
+          <td class="px-4 py-3 whitespace-nowrap">{{ r.last_edited|date:"Y-m-d H:i"|default:"—" }}</td>
           <td class="px-4 py-3">{{ r.scope_label }}</td>
           <td class="px-4 py-3">{{ r.families }}</td>
           <td class="px-4 py-3 text-right tabular-nums">{{ r.indicator_count }}</td>

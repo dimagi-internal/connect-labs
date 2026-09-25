@@ -67,12 +67,53 @@ def _access(request, scope: dict):
     return SemanticRegistryDataAccess(request=request, **scope)
 
 
-def _summary(record) -> dict:
+def _last_edits(record_ids) -> dict:
+    """{registry id: time of its last successful create or update}, from the audit trail.
+
+    Connect's LabsRecord has no timestamps, so for a registry written before writes
+    stamped `updated_at` this is the only record of when it last changed. Every
+    labs-record write is audited with the record type, which is indexed.
+    """
+    from django.db.models import Max
+
+    from connect_labs.audit_trail.models import Action, AuditEvent, Outcome
+
+    ids = [str(i) for i in record_ids]
+    if not ids:
+        return {}
+    try:
+        rows = (
+            AuditEvent.objects.filter(
+                resource_type="semantic_registry",
+                action__in=[Action.CREATE, Action.UPDATE],
+                outcome=Outcome.SUCCESS,
+                resource_id__in=ids,
+            )
+            .values("resource_id")
+            .annotate(last=Max("occurred_at"))
+        )
+        return {int(r["resource_id"]): r["last"] for r in rows}
+    except Exception:  # a date is a nicety; the page must still render without it
+        logger.warning("could not read registry edit times from the audit trail", exc_info=True)
+        return {}
+
+
+def _last_edited(record, audited):
+    """The later of the record's own `updated_at` stamp and its last audited write."""
+    from django.utils.dateparse import parse_datetime
+
+    stamped = parse_datetime(record.updated_at) if getattr(record, "updated_at", None) else None
+    times = [t for t in (stamped, audited) if t is not None]
+    return max(times) if times else None
+
+
+def _summary(record, audited=None) -> dict:
     from connect_labs.semantic.model import series_prefixes
 
     inds = record.indicators_doc or {}
     scope = _record_scope(record)
     return {
+        "last_edited": _last_edited(record, audited),
         "id": record.id,
         "name": record.name,
         "description": record.description,
@@ -107,7 +148,8 @@ class SemanticRegistryListView(AdminRequiredMixin, TemplateView):
                     or "no scope selected (shared registries only)"
                 )
                 records = access.list_registries(include_shared=True)
-            context["registries"] = sorted((_summary(r) for r in records), key=lambda s: -s["id"])
+            edits = _last_edits([r.id for r in records])
+            context["registries"] = sorted((_summary(r, edits.get(r.id)) for r in records), key=lambda s: -s["id"])
         except Exception as exc:  # the page must say what failed, not 500
             logger.warning("semantic registry list failed", exc_info=True)
             messages.error(self.request, f"Could not list registries: {exc}")
@@ -132,7 +174,7 @@ class SemanticRegistryDetailView(AdminRequiredMixin, TemplateView):
                 record = access.get_registry(registry_id, public=True)
         if record is None:
             raise Http404(f"No semantic registry {registry_id} in this scope")
-        summary = _summary(record)
+        summary = _summary(record, _last_edits([record.id]).get(record.id))
         inds = record.indicators_doc or {}
         context["registry"] = summary
         context["indicators"] = [

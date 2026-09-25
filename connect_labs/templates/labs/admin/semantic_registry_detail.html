@@ -7,7 +7,7 @@
     <a href="{% url 'labs_admin:semantic_registries' %}{% if registry.scope_query %}?{{ registry.scope_query }}{% endif %}" class="text-blue-600 text-sm"><i class="fa-solid fa-chevron-left mr-1"></i>Semantic Registries</a>
     <h1 class="text-3xl font-bold text-gray-900 mt-2">{{ registry.name }}</h1>
     <p class="text-gray-600 mt-1">
-      Registry {{ registry.id }} · v{{ registry.version }} · lives in {{ registry.scope_label }}
+      Registry {{ registry.id }} · v{{ registry.version }} · last edited {{ registry.last_edited|date:"Y-m-d H:i"|default:"unknown" }} UTC · lives in {{ registry.scope_label }}
       · families {{ registry.families }}
       {% if registry.is_shared %}· <span class="text-amber-700 font-medium">shared</span>{% endif %}
     </p>
