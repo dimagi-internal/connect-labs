@@ -12,6 +12,7 @@ reduced to numbers, and discarded.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import random
 import re
 import statistics
@@ -751,11 +752,30 @@ def _profile_temporal(visits: list[dict]) -> dict:
 
 
 def _profile_flag_reasons(visits: list[dict]) -> dict[str, float]:
-    """Return flag_reason -> rate map for flagged visits that carry a reason."""
+    """Return flag_reason -> rate map for flagged visits that carry a reason.
+
+    The map is keyed by CANONICAL JSON, not by `str(...)`. A reason has to be a
+    string to be a dict key, but prod's `flag_reason` is a JSONField holding
+    `{"flags": [[code, message], ...]}`, and `str()` on that produces a Python
+    repr -- single quotes and all -- which is not JSON and cannot be decoded
+    back. That repr used to travel intact through `_pick_reason` into every
+    cloned visit's `flag_reason`, where labs treats the field as JSON: the
+    raw-visit cache stored the repr as a JSON string SCALAR in a JSONB column,
+    `_with_passthrough_columns`'s `json.loads` failed on the single quotes and
+    passed the raw text through, `jsonb_path_exists('$.flags[*]')` matched
+    nothing because the target was a scalar, and any `.get("flags", [])`
+    consumer raised AttributeError on a str. Every clone was broken on the one
+    axis a quality demo is about.
+
+    `sort_keys` so an unordered dict cannot produce two keys for one reason and
+    split its rate in half.
+    """
     counts: Counter[str] = Counter()
     for v in visits:
         if v.get("flagged") and v.get("flag_reason"):
-            counts[str(v["flag_reason"])] += 1
+            raw = v["flag_reason"]
+            key = raw if isinstance(raw, str) else json.dumps(raw, sort_keys=True)
+            counts[key] += 1
     total = sum(counts.values())
     return {k: round(c / total, 4) for k, c in counts.items()} if total else {}
 
