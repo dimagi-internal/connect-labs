@@ -267,3 +267,55 @@ def test_seeding_an_award_awaiting_approval_again_adds_nothing(db):
 
     grew = _grew(before, _counts())
     assert grew == {}, "second run grew: " + ", ".join(f"{n} {a}->{b}" for n, (a, b) in sorted(grew.items()))
+
+
+# ---------------------------------------------------------------------------
+# The duplicate finder. A detector that cannot detect reports a clean
+# environment in exactly the same words as a clean one.
+# ---------------------------------------------------------------------------
+
+
+def _load_finder():
+    path = _SEED_REMOTE_PATH.parent / "find_duplicates.py"
+    source = path.read_text()
+    # The file reports on import, which is what makes it runnable through
+    # `manage.py shell`. Only the grouping is wanted here.
+    namespace = {}
+    body = source.split("total, found = report()")[0]
+    exec(compile(body, str(path), "exec"), namespace)  # noqa: S102
+    return namespace
+
+
+class _Row:
+    def __init__(self, pk, key):
+        self.pk = pk
+        self._key = key
+
+
+def test_the_duplicate_finder_finds_duplicates():
+    """MUTATED: `duplicates` changed to return {} always. Red. Reverted."""
+    duplicates = _load_finder()["duplicates"]
+
+    rows = [_Row(3, "a"), _Row(1, "a"), _Row(2, "b")]
+    found = duplicates(rows, lambda r: r._key)
+
+    assert found == {"a": [1, 3]}, "two rows share a key; the lower id is kept"
+
+
+def test_the_duplicate_finder_is_quiet_when_there_is_nothing_to_find():
+    """The other side, so it cannot pass by reporting everything."""
+    duplicates = _load_finder()["duplicates"]
+
+    assert duplicates([_Row(1, "a"), _Row(2, "b")], lambda r: r._key) == {}
+
+
+def test_a_row_with_no_natural_key_is_never_a_duplicate():
+    """`<none:pk>` keys make unidentifiable rows unique by construction.
+
+    A row nobody can name is not one this script should offer to delete, and
+    two of them are not evidence of anything.
+    """
+    duplicates = _load_finder()["duplicates"]
+
+    rows = [_Row(1, "<none:1>"), _Row(2, "<none:2>")]
+    assert duplicates(rows, lambda r: r._key) == {}
