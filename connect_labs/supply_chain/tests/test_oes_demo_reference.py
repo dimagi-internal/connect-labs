@@ -836,3 +836,36 @@ def test_a_supplier_someone_has_already_located_keeps_what_they_said():
 
     assert supplier == located
     assert not [name for name, _ in fake.calls if name == "supplier_update"]
+
+
+def test_an_org_from_the_directory_is_used_as_it_is_and_never_written():
+    """Upserting a real partner would overwrite its name and notes with the demo's.
+
+    MUTATED: the `from_directory` branch removed -- the row went to org_upsert, red.
+    """
+
+    class _Directory(_FakeOp):
+        def __call__(self, access, name, **payload):
+            self.calls.append((name, payload))
+            if name == "org_list":
+                return [{"id": 41, "slug": "a-directory-partner", "name": "A Directory Partner"}]
+            return {"op": name, **payload}
+
+    fake = _Directory()
+    module = _load_seed_remote()
+    module.op = fake
+    orgs = module.seed_orgs(object(), {"orgs": [{"slug": "a-directory-partner", "from_directory": True}]})
+
+    assert orgs["a-directory-partner"]["id"] == 41
+    assert not [name for name, _ in fake.calls if name == "org_upsert"]
+
+
+def test_a_directory_org_the_directory_does_not_have_is_refused_by_name():
+    class _Empty(_FakeOp):
+        def __call__(self, access, name, **payload):
+            return [] if name == "org_list" else {"op": name, **payload}
+
+    module = _load_seed_remote()
+    module.op = _Empty()
+    with pytest.raises(ValueError, match="a-missing-partner"):
+        module.seed_orgs(object(), {"orgs": [{"slug": "a-missing-partner", "from_directory": True}]})

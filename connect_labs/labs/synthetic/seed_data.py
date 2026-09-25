@@ -52,6 +52,11 @@ def load_seed_data(folder_id: str, filename: str = DEFAULT_FILENAME, client=None
         raise SeedDataError(f"{filename} is missing required section(s): {', '.join(missing)}")
 
     for org in document["orgs"]:
+        # A `from_directory` org is not declared here at all: it IS the
+        # directory's row, read as it is and never written, so it is the real
+        # organisation by construction and cannot be a lookalike.
+        if org.get("from_directory"):
+            continue
         if "connect_organization_id" not in org:
             raise SeedDataError(
                 f"org {org.get('slug', '?')!r} has no connect_organization_id — the demo points at "
