@@ -121,6 +121,13 @@ VIEWS_WITHOUT_TABS = frozenset(
         "supply_chain:update_link_public",
         # Local sign-in shim, mounted only under DEBUG.
         "supply_chain:dev_login",
+        # The portfolio spans programmes, and every tab above reverses to a
+        # programme-scoped page. Highlighting one of them there would say
+        # something untrue about where you are, and mapping the portfolio
+        # under "Overview" would be worse -- the Overview is one programme.
+        # So it renders no supply nav and offers its way back a row at a time,
+        # each into its own programme's Overview.
+        "supply_chain:portfolio",
     }
 )
 

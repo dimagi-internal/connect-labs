@@ -1,6 +1,10 @@
+import json
 import random
 
+import pytest
+
 from connect_labs.labs.synthetic.generator.fixtures.manifest import FlwPersona, MeanStddev
+from connect_labs.labs.synthetic.generator.fixtures.profiler import _profile_flag_reasons
 from connect_labs.labs.synthetic.generator.fixtures.status import decide_visit_status
 
 
@@ -115,3 +119,84 @@ def test_over_limit_never_displaces_a_flagged_or_anomalous_visit():
         decide_visit_status(persona=_p(1.0), has_anomaly=False, rng=rng, over_limit_rate=0.5) for _ in range(50)
     ]
     assert all(s.status in {"pending", "rejected"} for s in flagged)
+
+
+# --------------------------------------------------------------------------------------
+# flag_reason TYPE (#task-7 C2)
+#
+# Prod stores flag_reason as a JSONField holding {"flags": [[code, message], ...]}, and
+# every labs consumer decodes it as JSON. A clone that carries a *rendering* of that
+# structure instead of the structure breaks all of them at once, and does it on the one
+# axis a quality demo exists to show. These pin the type, not just the content.
+
+
+def _flagging_persona():
+    return FlwPersona(
+        id="x",
+        archetype="struggling",
+        accuracy_distribution=MeanStddev(mean=0.6, stddev=0.05),
+        completeness_distribution=MeanStddev(mean=0.6, stddev=0.05),
+        flag_rate=1.0,
+    )
+
+
+def _first_reason(distribution):
+    rng = random.Random(0)
+    for _ in range(50):
+        s = decide_visit_status(
+            persona=_flagging_persona(),
+            has_anomaly=False,
+            rng=rng,
+            flag_reason_distribution=distribution,
+        )
+        if s.flag_reason:
+            return s.flag_reason
+    raise AssertionError("never flagged")
+
+
+def test_flag_reason_from_json_key_is_a_dict_not_a_string():
+    """A distribution keyed by canonical JSON yields prod's STRUCTURE."""
+    key = json.dumps({"flags": [["pending_task", "Worker has an incomplete assigned task."]]})
+    reason = _first_reason({key: 1.0})
+    assert isinstance(reason, dict), f"expected dict, got {type(reason).__name__}: {reason!r}"
+    # The thing every consumer does, and the thing that used to raise AttributeError.
+    assert [f for f, _ in reason.get("flags", [])] == ["pending_task"]
+    # And it survives the labs ingest path, which re-encodes then decodes it.
+    assert json.loads(json.dumps(reason)) == reason
+
+
+def test_flag_reason_from_legacy_repr_key_is_recovered():
+    """Bundles profiled before the fix key by repr(dict); regenerate, don't re-profile."""
+    key = "{'flags': [['pending_task', 'Worker has an incomplete assigned task.']]}"
+    with pytest.raises(ValueError):
+        json.loads(key)  # the defect, pinned: this key is not JSON
+    reason = _first_reason({key: 1.0})
+    assert isinstance(reason, dict)
+    assert reason["flags"] == [["pending_task", "Worker has an incomplete assigned task."]]
+
+
+@pytest.mark.parametrize("key", ["only-reason", "GPS outside service area", "123", "duration"])
+def test_plain_string_reasons_are_left_alone(key):
+    """A reason that is genuinely a human string stays that string, uncoerced.
+
+    "123" is the one that matters: json.loads would turn it into an int.
+    """
+    assert _first_reason({key: 1.0}) == key
+
+
+def test_profiler_keys_the_distribution_by_json_not_repr():
+    """The root cause, at its source."""
+    reason = {"flags": [["pending_task", "Worker has an incomplete assigned task."]]}
+    dist = _profile_flag_reasons([{"flagged": True, "flag_reason": reason}])
+    (key,) = dist
+    assert json.loads(key) == reason, f"key is not JSON-decodable: {key!r}"
+    assert "'" not in key, f"key is a Python repr, not JSON: {key!r}"
+
+
+def test_profiler_does_not_split_one_reason_across_key_orderings():
+    """Unordered dicts must collapse to one key, or a reason's rate is halved."""
+    a = {"flags": [["pending_task", "m"]], "extra": 1}
+    b = {"extra": 1, "flags": [["pending_task", "m"]]}
+    dist = _profile_flag_reasons([{"flagged": True, "flag_reason": a}, {"flagged": True, "flag_reason": b}])
+    assert len(dist) == 1
+    assert next(iter(dist.values())) == 1.0

@@ -1,0 +1,47 @@
+# The CHC clone cohort for the OES demo environment.
+#
+# Clones the four active implementing partners of Connect program 217
+# ("CHC - NG - RCT - Aug 2026") into the labs-only program that already holds
+# the CHC supply chain, so the demo shows a funder four partners whose delivery
+# shapes differ from one another. Nothing is copied: each clone is generated
+# from aggregate statistics measured off the real opportunity.
+#
+# Two phases over one file (docs/synthetic-kmc-clone-runbook.md):
+#
+#   1. Profile against production -- the only prod-touching step. Needs a
+#      Connect export-scope token for a user who is a member of program 217's
+#      organisation; the labs MCP identity is not one, so run it locally:
+#
+#        CONNECT_OAUTH_TOKEN=... LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID=... \
+#          make manage CMD="synthetic_profile_opps \
+#            --spec scripts/walkthroughs/oes-demo/chc-clone.yaml \
+#            --base-url https://connect.dimagi.com"
+#
+#      It rewrites bundle_root below to the Drive run folder it created, and it
+#      rewrites this whole file, so these comments have to be restored by hand
+#      after a re-profile.
+#
+#   2. Generate LOCALLY, register server-side. A cohort this size drops the MCP
+#      transport mid-run, so generation never runs server-side:
+#
+#        make manage CMD="synthetic_generate_opps --spec <this file> --no-register"
+#
+#      then, per printed `source_opp -> gdrive_folder_id` line, one
+#      synthetic_create_labs_only over the connect_labs MCP.
+#
+# program_name / org_name must stay equal to what labs-only opportunity 10073
+# ("CHC basket -- Dimagi (OES demo)") is registered with. The labs org tree
+# derives its org node from org_name (labs/synthetic/org_tree.py), so a
+# different name here would make program 10610 appear twice in the picker --
+# once under the supply chain's org and once under the clones'.
+program_id: 10610
+program_name: CHC basket (Dimagi)
+org_name: Dimagi
+bundle_root: gdrive:16U43C7kBVfYk-1u_Fa6XUXZJIPdoKKRR
+curate: false
+mirror: false
+opportunity_ids:
+  - 2154
+  - 2155
+  - 2156
+  - 2157
