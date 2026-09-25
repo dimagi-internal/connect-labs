@@ -45,6 +45,41 @@ def slug_for(name: str) -> str:
     return base[:SLUG_MAX].rstrip("-")
 
 
+def _slot_for(name: str) -> tuple[str, LabsOrg | None]:
+    """The slug this name owns, and the organisation already holding it, if any.
+
+    Two different names normalised onto one slug — which truncation makes
+    likely for long names — do not share a row: the newcomer gets its own,
+    suffixed slug rather than being folded into an organisation it is not.
+    """
+    slug = slug_for(name)
+    org = LabsOrg.objects.filter(slug=slug).first()
+    if org is not None and org.name.strip().lower() != name.lower():
+        digest = hashlib.sha1(name.encode("utf-8")).hexdigest()[:6]
+        slug = f"{slug[: SLUG_MAX - 7]}-{digest}"
+        org = LabsOrg.objects.filter(slug=slug).first()
+    return slug, org
+
+
+def find_org(name: str) -> LabsOrg | None:
+    """The organisation this name already refers to, or None. Writes nothing.
+
+    The read half of `ensure_org`, for callers that must not rename an
+    organisation on the way past -- supply links a supplier to a company, and
+    a company Connect names is not supply's to rename.
+    """
+    return _slot_for((name or "").strip())[1]
+
+
+def mint_org(name: str, *, country: str = "") -> LabsOrg:
+    """A new organisation for a name `find_org` found nothing for."""
+    name = (name or "").strip()
+    slug, existing = _slot_for(name)
+    if existing is not None:
+        return existing
+    return LabsOrg.objects.create(slug=slug, name=name, country=country)
+
+
 def ensure_org(name: str, *, short_name: str = "", country: str = "") -> LabsOrg:
     """Find or create the organisation this directory name refers to.
 
@@ -53,16 +88,7 @@ def ensure_org(name: str, *, short_name: str = "", country: str = "") -> LabsOrg
     import should add knowledge, never subtract it.
     """
     name = (name or "").strip()
-    slug = slug_for(name)
-
-    org = LabsOrg.objects.filter(slug=slug).first()
-    if org is not None and org.name.strip().lower() != name.lower():
-        # Two different names normalised onto one slug — which truncation makes
-        # likely for long names. Give the newcomer its own row rather than
-        # folding it into an organisation it is not.
-        digest = hashlib.sha1(name.encode("utf-8")).hexdigest()[:6]
-        slug = f"{slug[: SLUG_MAX - 7]}-{digest}"
-        org = LabsOrg.objects.filter(slug=slug).first()
+    slug, org = _slot_for(name)
 
     if org is None:
         return LabsOrg.objects.create(slug=slug, name=name, short_name=short_name, country=country)

@@ -93,8 +93,8 @@ def chain(da):
 
     a = kit("a", "Kaduna co-pack", 2)
     b = kit("b", "Lagoon co-pack", 2)
-    supplier = op(da, "supplier_create", data={"name": "Harmattan Health Supplies", "type": "distributor"})
     distributor = op(da, "org_upsert", data={"slug": "harmattan-words", "name": "Harmattan Health Supplies"})
+    supplier = op(da, "supplier_create", data={"org_id": distributor["id"], "type": "distributor"})
     ours = op(da, "org_upsert", data={"slug": "programme-words", "name": "Child Health Programme"})
     round_ = op(
         da,

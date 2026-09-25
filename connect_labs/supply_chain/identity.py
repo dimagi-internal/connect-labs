@@ -332,3 +332,45 @@ def stamp_provenance(access, operation, payload: dict) -> dict:
     if derived is not None:
         data.setdefault("source", derived)
     return {**payload, "data": data}
+
+
+def find_or_mint_supplier_org(name: str, *, country: str = "", connect_organization_id=None):
+    """The company a supplier's name and Connect id describe, minting one if none.
+
+    Resolved the way `LabsOrg` says identity resolves: the Connect id first,
+    because it is the identity; then the one organisation with exactly this
+    name; then the organisation the name's slug already belongs to. Failing
+    all three, a new organisation -- "local for good" in the procurement
+    design's words: a manufacturer that quotes us has no reason to be a
+    Connect org, and is a complete organisation without one. A minted
+    organisation carries a Connect id only when the caller gave one.
+    """
+    from connect_labs.marketplace.identity import find_org, mint_org
+
+    if connect_organization_id:
+        linked = LabsOrg.objects.filter(connect_organization_id=connect_organization_id).first()
+        if linked is not None:
+            return linked
+    if not (name or "").strip():
+        raise ValueError("a supplier needs a name, or the id of the organisation it is")
+    # The same name exactly (ignoring case) is the same company -- an org
+    # recorded as "Harmattan Health Supplies" under the slug `harmattan` is the
+    # supplier of that name, not a second one. Only an exact name, and only
+    # when it picks out one organisation: "Nutriset" and "Nutriset Nigeria"
+    # stay two, and two organisations sharing a name are not ours to choose
+    # between.
+    named = list(LabsOrg.objects.filter(name__iexact=name.strip())[:2])
+    org = named[0] if len(named) == 1 else find_org(name)
+    if org is None:
+        org = mint_org(name, country=country)
+    if connect_organization_id and org.connect_organization_id not in (None, connect_organization_id):
+        # Same name, different Connect identity: two organisations, and
+        # which one was meant is not ours to guess.
+        raise ValueError(
+            f"“{org.name}” is already Connect organisation {org.connect_organization_id}, "
+            f"not {connect_organization_id} -- name the organisation by its id instead"
+        )
+    if connect_organization_id and org.connect_organization_id is None:
+        org.connect_organization_id = connect_organization_id
+        org.save(update_fields=["connect_organization_id", "updated_at"])
+    return org

@@ -237,18 +237,18 @@ class TestAddingATradeItem:
 
 
 class TestAddingASupplier:
-    def test_a_supplier_is_created_in_this_programme(self, scoped):
+    def test_a_supplier_is_created_in_this_program(self, scoped):
         response = scoped.post(
             reverse("supply_chain:supplier_create"),
             {"name": "Northwind Foods", "type": "manufacturer", "status": "identified", "country": "ng", "city": ""},
         )
         assert response.status_code == 302
-        made = Supplier.objects.get(name="Northwind Foods")
+        made = Supplier.objects.get(org__name="Northwind Foods")
         assert made.scope_key == SCOPE
         assert made.country == "NG", "stored upper case, so 'ng' and 'NG' are one country"
 
     def test_the_same_name_twice_is_refused(self, scoped):
-        Supplier.objects.create(scope_key=SCOPE, name="Northwind Foods")
+        Supplier.objects.enrol(scope_key=SCOPE, name="Northwind Foods")
         response = scoped.post(
             reverse("supply_chain:supplier_create"),
             {"name": "  northwind foods  ", "status": "identified", "country": ""},
@@ -257,7 +257,7 @@ class TestAddingASupplier:
         assert Supplier.objects.filter(scope_key=SCOPE).count() == 1
 
     def test_a_near_match_is_allowed_because_it_is_often_a_real_second_company(self, scoped):
-        Supplier.objects.create(scope_key=SCOPE, name="Nutriset")
+        Supplier.objects.enrol(scope_key=SCOPE, name="Nutriset")
         response = scoped.post(
             reverse("supply_chain:supplier_create"),
             {"name": "Nutriset Nigeria", "status": "identified", "country": ""},
@@ -266,7 +266,7 @@ class TestAddingASupplier:
         assert Supplier.objects.filter(scope_key=SCOPE).count() == 2
 
     def test_editing_a_supplier_saves_and_stays_on_the_same_row(self, scoped):
-        supplier = Supplier.objects.create(scope_key=SCOPE, name="Northwind Foods", status="identified")
+        supplier = Supplier.objects.enrol(scope_key=SCOPE, name="Northwind Foods", status="identified")
         response = scoped.post(
             reverse("supply_chain:supplier_edit", args=[supplier.pk]),
             {"name": "Northwind Foods", "type": "manufacturer", "status": "quoting", "country": "NG", "city": "Kano"},
@@ -279,12 +279,27 @@ class TestAddingASupplier:
         assert Supplier.objects.filter(scope_key=SCOPE).count() == 1, "an edit is not a second supplier"
 
     def test_a_supplier_from_another_programme_is_not_found(self, scoped):
-        theirs = Supplier.objects.create(scope_key="prog:99999", name="Theirs")
+        theirs = Supplier.objects.enrol(scope_key="prog:99999", name="Theirs")
         assert scoped.get(reverse("supply_chain:supplier_edit", args=[theirs.pk])).status_code == 404
+
+    def test_the_edit_screen_opens_with_the_companys_details(self, scoped):
+        """Name, type and country are the company's, not model fields on the
+        program's supplier -- so the form has to be handed them, or an edit
+        opens blank and saving it would clear them."""
+        supplier = Supplier.objects.enrol(
+            scope_key=SCOPE, name="Northwind Foods", type="manufacturer", country="NG", city="Kano"
+        )
+        response = scoped.get(reverse("supply_chain:supplier_edit", args=[supplier.pk]))
+        form = response.context["form"]
+        assert form["name"].value() == "Northwind Foods"
+        assert form["type"].value() == "manufacturer"
+        assert form["country"].value() == "NG"
+        assert form["city"].value() == "Kano"
+        assert "every program that buys from them" in response.content.decode()
 
     def test_contacts_survive_an_edit_that_does_not_show_them(self, scoped):
         """The form omits `contacts`, so the operation must not clear them."""
-        supplier = Supplier.objects.create(
+        supplier = Supplier.objects.enrol(
             scope_key=SCOPE,
             name="Northwind Foods",
             status="identified",
@@ -315,7 +330,7 @@ class TestTheScreensAreReachable:
         assert reverse("supply_chain:item_edit", args=[item.pk]) in body
 
     def test_the_supplier_directory_and_a_supplier_offer_their_screens(self, scoped):
-        supplier = Supplier.objects.create(scope_key=SCOPE, name="Northwind Foods")
+        supplier = Supplier.objects.enrol(scope_key=SCOPE, name="Northwind Foods")
         directory = scoped.get(reverse("supply_chain:suppliers")).content.decode()
         assert reverse("supply_chain:supplier_create") in directory
 

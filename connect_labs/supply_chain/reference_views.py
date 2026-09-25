@@ -383,7 +383,11 @@ class SupplierUpdateView(_ScopedInstanceMixin, _SupplierScreen):
     model = Supplier
     lookup_kwarg = "supplier_id"
     missing = "no such supplier in this programme"
-    footnote = "Contacts and qualifications are left as they are — this screen only writes what it shows."
+    footnote = (
+        "The name, type, country, city and Connect binding are the company's, so a change here shows in "
+        "every program that buys from them; the status and notes are this program's own. Contacts and "
+        "qualifications are left as they are — this screen only writes what it shows."
+    )
 
     def fixed(self, **kwargs):
         return {"supplier_id": int(kwargs["supplier_id"])}

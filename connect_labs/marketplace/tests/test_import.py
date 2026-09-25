@@ -107,6 +107,27 @@ class TestImportDirectory:
         import_directory([ORG_HEADER, ORGS[1]], [CONTACT_HEADER], [DATE_HEADER], [MAP_HEADER], prune=True)
         assert [o.name for o in LabsOrg.objects.all()] == ["Harbourside Health Initiative"]
 
+    def test_prune_keeps_an_organisation_that_is_also_a_supplier(self):
+        """Dropping out of the directory ends its directory profile, not the company.
+
+        A supplier is a company, and quotes, orders and payments hang off it.
+        The prune used to delete the organisation outright, which a supplier
+        link now protects -- so it crashed the whole import. It keeps the
+        organisation and drops only what the directory put there.
+        """
+        from connect_labs.supply_chain.models import Supplier
+
+        import_directory(ORGS, CONTACTS, DATES, MAPPING)
+        dropped = LabsOrg.objects.exclude(name="Harbourside Health Initiative").get()
+        Supplier.objects.enrol("prog:10501", org=dropped)
+
+        stats = import_directory([ORG_HEADER, ORGS[1]], [CONTACT_HEADER], [DATE_HEADER], [MAP_HEADER], prune=True)
+
+        assert LabsOrg.objects.filter(pk=dropped.pk).exists()
+        assert not OrgProfile.objects.filter(org=dropped).exists()
+        assert stats["pruned_organisations"] == 1
+        assert stats["kept_in_use"] == 1
+
     def test_refuses_an_empty_roster(self):
         """An empty read is a failed read, not an empty directory."""
         with pytest.raises(ValueError, match="refusing"):

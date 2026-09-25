@@ -209,7 +209,7 @@ class ContractForm(ProvenancedForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["supplier"].queryset = self.scoped(Supplier).order_by("name")
+        self.fields["supplier"].queryset = self.scoped(Supplier).select_related("org", "org__supplier_profile")
         self.fields["commodity"].queryset = self.scoped(Commodity).order_by("name")
         self.fields["item"].queryset = self.scoped(Item).order_by("name")
         self.fields["delivery_supply_point"].queryset = self.in_program(SupplyPoint).order_by("name")
@@ -221,7 +221,7 @@ class ContractForm(ProvenancedForm):
         in_programme = (
             set(self.in_program(SupplyPoint).exclude(managed_by_org=None).values_list("managed_by_org_id", flat=True))
             | set(self.in_program(Contract).exclude(buyer_org=None).values_list("buyer_org_id", flat=True))
-            | set(self.scoped(Supplier).exclude(org=None).values_list("org_id", flat=True))
+            | set(self.scoped(Supplier).values_list("org_id", flat=True))
         )
         self.fields["buyer_org"].queryset = LabsOrg.objects.annotate(
             _in_programme=Case(When(pk__in=in_programme, then=Value(0)), default=Value(1))

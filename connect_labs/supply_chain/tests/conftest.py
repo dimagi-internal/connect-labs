@@ -20,7 +20,8 @@ from decimal import Decimal
 
 import pytest
 
-from connect_labs.supply_chain.models import Commodity, Item, Quote, Round
+from connect_labs.labs.models import LabsOrg
+from connect_labs.supply_chain.models import Commodity, Item, Quote, Round, Supplier, SupplierProfile
 
 SCOPE = "prog:10501"
 
@@ -54,6 +55,22 @@ def _rutf(**overrides) -> Commodity:
 RUTF = _rutf()
 
 
+def _wrap_supplier(data: dict, record_id=None):
+    """An unsaved supplier: the company on an unsaved organisation and profile.
+
+    A supplier's name, country, type and contacts are its company's, not the
+    program's link to it, so a fixture's company facts land on the
+    organisation and its profile and the rest on the link.
+    """
+    org = LabsOrg(name=data.get("name", ""), country=data.get("country", ""))
+    profile_fields = {k: data[k] for k in ("type", "city", "contacts", "qualifications") if k in data}
+    org.supplier_profile = SupplierProfile(**profile_fields)
+    link = {k: data[k] for k in ("status", "notes", "scope_key") if k in data}
+    if record_id is not None:
+        link["id"] = record_id
+    return Supplier(org=org, **link)
+
+
 def wrap(model, data: dict, record_id=None):
     """An unsaved `model` instance from a plain dict, with database types.
 
@@ -67,6 +84,8 @@ def wrap(model, data: dict, record_id=None):
     `commodity_slug` is resolved to a commodity object, because that is a
     relation now rather than a string on a blob.
     """
+    if model is Supplier:
+        return _wrap_supplier(data, record_id)
     by_name = {f.name: f for f in model._meta.fields}
     attnames = {f.attname for f in model._meta.fields}
     # The services read `superseded_by_quote_id`, which is a property over a

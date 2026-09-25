@@ -401,7 +401,7 @@ class OutreachForm(ScopedForm):
         # Scoped, not `Supplier.objects.all()`: an unscoped queryset offers
         # every supplier in the database and is a cross-programme leak.
         self.fields["supplier"].queryset = (
-            Supplier.objects.filter(scope_key=self.access.scope_key).order_by("name")
+            Supplier.objects.filter(scope_key=self.access.scope_key).select_related("org", "org__supplier_profile")
             if self.access
             else Supplier.objects.none()
         )
@@ -608,7 +608,7 @@ class ApprovalRequestForm(ScopedForm):
             .values_list("approver_org_id", flat=True)
         )
         if scope:
-            found |= set(Supplier.objects.filter(scope_key=scope).exclude(org=None).values_list("org_id", flat=True))
+            found |= set(Supplier.objects.filter(scope_key=scope).values_list("org_id", flat=True))
         return found
 
 
@@ -793,7 +793,12 @@ class QuoteForm(ScopedForm):
 
     def scoped_to_programme(self, model):
         scope = getattr(self.access, "scope_key", None) if self.access else None
-        return model.objects.filter(scope_key=scope).order_by("name") if scope else model.objects.none()
+        if not scope:
+            return model.objects.none()
+        # A supplier's name is its organisation's; the model's own ordering
+        # already sorts by it, and "name" is no longer a column to order on.
+        found = model.objects.filter(scope_key=scope)
+        return found if model is Supplier else found.order_by("name")
 
     def figures_layout(self):
         """Everything except who quoted, which a correction does not ask again."""
