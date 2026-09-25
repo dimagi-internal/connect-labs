@@ -74,7 +74,7 @@
   <section class="bg-white border border-brand-border-light rounded-[10px] p-5 md:col-span-2">
     <h2 class="text-lg font-semibold text-brand-deep-purple mb-3">People</h2>
     <ul class="text-sm divide-y mb-3">
-      {% for m in members %}<li class="py-1.5">{{ m.user.name|default:m.user.email|default:m.user.username }} <span class="text-gray-500">· {{ m.get_role_display }}</span></li>
+      {% for m in members %}<li class="py-1.5">{% firstof m.user.name m.user.email m.user.username %} <span class="text-gray-500">· {{ m.get_role_display }}</span></li>
       {% empty %}<li class="py-1.5 text-gray-500">Members come through Connect for this organisation.</li>{% endfor %}
     </ul>
     {% if admin %}
