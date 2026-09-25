@@ -13,6 +13,10 @@ from connect_labs.workflow.templates.kmc_image_audit import AGENT_FOR_SCALE, OPP
 from connect_labs.workflow.templates.kmc_programme_metrics import DEFINITION, SCALE_AGENT_BY_LLO, UNVERIFIED_SCALE_LLOS
 
 RENDER = Path(__file__).resolve().parents[1] / "templates" / "kmc_programme_metrics_render.js"
+# The shared report library the render draws its cells and charts with.
+LIBRARY = Path(__file__).resolve().parents[3] / "components" / "workflow" / "report"
+LIBRARY_SCORECARD = LIBRARY / "Scorecard.tsx"
+LIBRARY_CHARTS = LIBRARY / "Charts.tsx"
 
 
 # ── the ES5 constraint ───────────────────────────────────────────────────────
@@ -163,18 +167,23 @@ def test_the_render_does_not_keep_its_own_copy_of_the_registry():
 
 
 def test_a_value_under_its_minimum_denominator_reads_insufficient_not_a_number():
-    """The spec's rule 0.2, and the reason every measure ships a denominator."""
+    """The spec's rule 0.2, and the reason every measure ships a denominator.
+
+    The cell is drawn by the shared report library's ScoreCellText; its
+    behaviour is pinned by components/workflow/report/report.test.js."""
     src = RENDER.read_text()
-    assert "'insufficient'" in src
-    assert "n&lt;" in src
+    assert "<R.ScoreCellText" in src and "<R.ScoreCell" in src
+    lib = LIBRARY_SCORECARD.read_text()
+    assert "'insufficient'" in lib
+    assert "n&lt;" in lib
 
 
 def test_a_not_credible_figure_is_marked_not_erased():
     """Mortality carries the LLO credibility verdict. A non-credible recorder's mortality is
     shown greyed with the reason, never blanked -- blanking hides under-recording."""
-    src = RENDER.read_text()
-    assert "'notcredible'" in src
-    assert "Death recording is not credible" in src
+    lib = LIBRARY_SCORECARD.read_text()
+    assert "'notcredible'" in lib
+    assert "Death recording is not credible" in lib
 
 
 # ── one declaration per name ─────────────────────────────────────────────────
@@ -243,12 +252,18 @@ def test_the_trends_say_they_are_loading_rather_than_one_report_so_far():
     """The run history takes seconds to arrive. Until it does there is one point
     (this run), and the charts read "One report so far" -- a statement about the
     data that is false on a report with 71 saved runs. `history` is null until the
-    fetch settles; the trends and their caption must say they are loading."""
+    fetch settles; the trends and their caption must say they are loading.
+
+    The chart is the shared library's TrendCard, which shows its loading state
+    when handed `points={null}` (pinned in components/workflow/report/report.test.js)."""
     src = RENDER.read_text()
     body = src[src.index("  function SmallTrend(props) {") :]
-    body = body[: body.index("One report so far")]
-    assert "history === null" in body, "the loading branch must come before the one-report message"
-    assert "Loading the trend" in body
+    body = body[: body.index("  function ChartsRow() {")]
+    assert "<R.TrendCard" in body
+    assert "history === null" in body and "? null" in body, "a history still loading must reach the card as null"
+    lib = LIBRARY_CHARTS.read_text()
+    assert lib.index("history === null") < lib.index("One report so far")
+    assert "Loading the trend" in lib
     assert "loading the saved reports" in src
     effect = src[src.index("var defId =") :]
     assert effect.index("setHistory([])") < effect.index(
