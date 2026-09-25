@@ -142,6 +142,12 @@ def publish_run(
     # inside the one being published: a saved run is one point of a trend.
     history = run_history(wda, workflow_id, state_key)
 
+    # A snapshot saved before snapshots recorded when their figures settle
+    # (`meta.settles`) is given the rule from the workflow's own bound registry.
+    settle_after_days = None
+    if not (meta.get("settles") or {}):
+        settle_after_days = registry_settle_after_days(wda, definition)
+
     return publish_benchmark(
         cohort,
         snapshot=graded_payload,
@@ -152,7 +158,37 @@ def publish_run(
         as_of=as_of,
         published_by=published_by,
         benchmarkable_indicator_ids=benchmarkable_indicator_ids,
+        settle_after_days=settle_after_days,
     )
+
+
+def registry_settle_after_days(wda, definition) -> int | None:
+    """The settle window of the registry `definition` is bound to, or None.
+
+    Best effort, like the history read: without it an old snapshot's lines are
+    simply not cut, which is how they were drawn before, not a failed publication.
+    """
+    if definition is None:
+        return None
+    from connect_labs.semantic.maturity import settle_after_days
+    from connect_labs.semantic.workflow_binding import resolve_registry_for
+    from connect_labs.workflow.data_access import SemanticRegistryDataAccess
+
+    try:
+        props_doc, full_registry, *_rest = resolve_registry_for(
+            definition,
+            registry_access_factory=lambda: SemanticRegistryDataAccess(
+                access_token=getattr(wda, "access_token", None),
+                opportunity_id=getattr(wda, "opportunity_id", None),
+                program_id=getattr(wda, "program_id", None),
+            ),
+        )
+        return settle_after_days(props_doc, full_registry)
+    except Exception:  # noqa: BLE001 -- see docstring
+        logger.warning(
+            "could not read the settle window for workflow %s", getattr(definition, "id", None), exc_info=True
+        )
+        return None
 
 
 def cohorts_following(workflow_id) -> list:
