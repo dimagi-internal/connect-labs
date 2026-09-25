@@ -184,6 +184,7 @@ Two further improvements that you will notice on the Worker Review page:
 
 - **The page now loads in seconds rather than minutes.** It was previously recomputing data for all of the report's opportunities on every load and discarding the result. That wasted work has been removed.
 - **The red "Another pipeline run for this opportunity is already in progress" banner should no longer appear.** That banner was a side effect of the same unnecessary recompute colliding with the programme report. With the recompute removed, the banner no longer fires.
+- **The per-case table fills in on the first load.** Previously, the table could appear blank when the page first opened and only populate after a manual reload. Cases now appear immediately. If a worker's visits genuinely cannot be loaded, the page says so and offers a **Retry** button rather than showing a silent empty table.
 
 !!! note "Cases table and growth chart briefly unavailable after a recent update"
     A short-lived issue caused the Worker Review page to show **"Could not load this worker's cases"** in place of the cases table and growth chart — even for workers who had data. This affected both the table and the progress indicator that streams case rows as they load. Both have been corrected and the page displays case data as expected again.
@@ -205,8 +206,4 @@ The KMC reports now use **one unified set of 24 indicators** across the Programm
 
 All 24 indicators now follow the same rules:
 
-- **"Started"** means two or more follow-up visits.
-- **Outcome indicators** wait 28 days after the first visit before counting a baby.
-- **Growth indicators** wait 42 days.
-- **Growth** is judged against the baby's birthweight band.
-- A figure requires at least 20
+- **
