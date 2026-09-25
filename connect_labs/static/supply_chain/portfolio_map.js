@@ -326,15 +326,69 @@
     flows: true,
     network: false,
   };
+  // Anything read off the page -- a data-* attribute, a select's value, the
+  // URL hash -- is resolved here to the matching value from the SERVER'S data,
+  // and only that is kept. So nothing a visitor can type or put in a link ever
+  // reaches the HTML this script builds, escaped or not.
+  function pick(list, value) {
+    for (var i = 0; i < list.length; i++)
+      if (String(list[i]) === String(value)) return list[i];
+    return null;
+  }
+  var knownKinds = uniqValues(
+    places.map(function (p) {
+      return p.kind;
+    }),
+  );
+  var knownOrgs = uniqValues(
+    places.map(function (p) {
+      return p.managed_by || '';
+    }),
+  );
+  function uniqValues(xs) {
+    return xs.filter(function (x, i) {
+      return xs.indexOf(x) === i;
+    });
+  }
+  function canonProg(v) {
+    return pick(
+      Object.keys(progById).map(function (k) {
+        return progById[k].program_id;
+      }),
+      v,
+    );
+  }
+  function canonPlace(v) {
+    return pick(Object.keys(placeByKey), v);
+  }
+  function canonMember(v) {
+    return pick(Object.keys(memberBySlug), v);
+  }
+  function canonCommodity(v) {
+    return pick(Object.keys(commodityNames), v) || '';
+  }
+  function canonList(known, values) {
+    return (Array.isArray(values) ? values : [])
+      .map(function (v) {
+        return pick(known, v);
+      })
+      .filter(function (v) {
+        return v !== null;
+      });
+  }
   (function readHash() {
     try {
       var s = JSON.parse(decodeURIComponent(location.hash.slice(1)) || '{}');
-      Object.keys(state).forEach(function (k) {
-        if (s[k] !== undefined) state[k] = s[k];
-      });
-      if (state.prog && !progById[state.prog]) state.prog = null;
-      if (state.place && !placeByKey[state.place]) state.place = null;
-      if (state.member && !memberBySlug[state.member]) state.member = null;
+      state.prog = canonProg(s.prog);
+      state.place = canonPlace(s.place);
+      state.member = canonMember(s.member);
+      state.commodity = canonCommodity(s.commodity);
+      state.kinds = canonList(knownKinds, s.kinds);
+      state.orgs = canonList(knownOrgs, s.orgs);
+      state.q = typeof s.q === 'string' ? s.q : '';
+      state.attention = s.attention === true;
+      state.flows = s.flows !== false;
+      state.network = s.network === true;
     } catch (e) {
       /* a hand-edited hash is not worth breaking the page over */
     }
@@ -378,7 +432,7 @@
       })
       .join('');
   commoditySelect.addEventListener('change', function () {
-    state.commodity = commoditySelect.value;
+    state.commodity = canonCommodity(commoditySelect.value);
     update(true);
   });
   ['flows', 'network'].forEach(function (layer) {
@@ -431,7 +485,7 @@
           .map(function (pt) {
             return (
               '<button type="button" data-place="' +
-              pt._key +
+              esc(pt._key) +
               '"><i class="fa-solid fa-warehouse mr-2" style="color:#64748b"></i>' +
               esc(pt.name) +
               ' <span class="pm-muted">· ' +
@@ -448,9 +502,9 @@
     var pl = e.target.closest('[data-place]');
     findResults.hidden = true;
     find.value = '';
-    if (m) return showMember(m.dataset.member);
+    if (m) return showMember(canonMember(m.dataset.member));
     if (pl) {
-      var pt = placeByKey[pl.dataset.place];
+      var pt = placeByKey[canonPlace(pl.dataset.place)];
       state.member = null;
       go(pt.program_id, pt._key);
     }
@@ -459,6 +513,7 @@
     if (!e.target.closest('.pm-search')) findResults.hidden = true;
   });
   function showMember(slug) {
+    if (!slug) return;
     state.member = slug;
     state.place = null;
     state.network = true;
@@ -501,7 +556,7 @@
     .addEventListener('click', function (e) {
       var b = e.target.closest('[data-prog]');
       if (!b) return;
-      var id = +b.dataset.prog;
+      var id = canonProg(b.dataset.prog);
       go(state.prog === id ? null : id, null);
     });
   document
@@ -571,12 +626,20 @@
   }
   morePanel.addEventListener('change', function (e) {
     var t = e.target;
-    if (!t.dataset.f) return;
-    var cur = state[t.dataset.f];
-    state[t.dataset.f] = t.checked
-      ? cur.concat([t.value])
+    var field =
+      t.dataset.f === 'kinds'
+        ? 'kinds'
+        : t.dataset.f === 'orgs'
+          ? 'orgs'
+          : null;
+    if (!field) return;
+    var value = pick(field === 'kinds' ? knownKinds : knownOrgs, t.value);
+    if (value === null) return;
+    var cur = state[field];
+    state[field] = t.checked
+      ? cur.concat([value])
       : cur.filter(function (v) {
-          return v !== t.value;
+          return v !== value;
         });
     update(false);
   });
@@ -733,7 +796,7 @@
     if (pt)
       return (
         '<button type="button" class="pm-link" data-place="' +
-        pt._key +
+        esc(pt._key) +
         '"><i class="fa-solid fa-location-dot mr-1"></i>' +
         esc(pt.name) +
         '</button>'
@@ -852,7 +915,7 @@
       ' → ' +
       (to
         ? '<button type="button" class="pm-link" data-place="' +
-          to._key +
+          esc(to._key) +
           '">' +
           esc(to.name) +
           '</button>'
@@ -866,7 +929,7 @@
     var a = ATTN[pt._attn];
     return (
       '<button type="button" class="pm-row w-full text-left" data-place="' +
-      pt._key +
+      esc(pt._key) +
       '">' +
       '<span class="pm-dot" style="margin-top:6px;background:' +
       a.color +
@@ -1147,7 +1210,7 @@
       var held = holdingText(pt);
       h +=
         '<button type="button" class="pm-row w-full text-left" data-place="' +
-        pt._key +
+        esc(pt._key) +
         '">' +
         '<span style="min-width:58px;font-variant-numeric:tabular-nums;color:#312e81;font-weight:600">' +
         fmt(Math.round(n.km)) +
@@ -1181,11 +1244,11 @@
     var g = e.target.closest('[data-go]');
     if (g) {
       state.member = null;
-      return go(g.dataset.go ? +g.dataset.go : null, null);
+      return go(canonProg(g.dataset.go), null);
     }
     var pl = e.target.closest('[data-place]');
     if (pl) {
-      var pt = placeByKey[pl.dataset.place];
+      var pt = placeByKey[canonPlace(pl.dataset.place)];
       go(pt.program_id, pt._key);
     }
   });
@@ -1470,7 +1533,7 @@
         popup.remove();
       });
       map.on('click', 'pm-network', function (e) {
-        showMember(e.features[0].properties.slug);
+        showMember(canonMember(e.features[0].properties.slug));
       });
       map.on('mouseenter', 'pm-flows', function (e) {
         var f = e.features[0].properties;
