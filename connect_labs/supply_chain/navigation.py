@@ -128,6 +128,9 @@ VIEWS_WITHOUT_TABS = frozenset(
         # So it renders no supply nav and offers its way back a row at a time,
         # each into its own programme's Overview.
         "supply_chain:portfolio",
+        # The same portfolio laid out by place, for the same reason: it spans
+        # programs, so no one program's tab is where you are.
+        "supply_chain:portfolio_map",
     }
 )
 

@@ -177,3 +177,32 @@ class PortfolioView(TemplateView):
             "undated": sum(1 for e in consignments if not e["expected_on"]),
             "next_expected": dates[0] if dates else None,
         }
+
+
+@method_decorator(login_required, name="dispatch")
+class PortfolioMapView(TemplateView):
+    """The portfolio laid out by place: where the stock is and what blocks it.
+
+    Built from the same reachable programs and the same operations as the
+    rows above (see `map_data`), so it can show nothing the portfolio page
+    could not. The payload rides in the page as JSON and every filter is
+    applied in the browser: slicing a few hundred places needs no round trip,
+    and a filter that re-queried would be a second place for the access rule
+    to go wrong.
+    """
+
+    template_name = "supply_chain/portfolio_map.html"
+
+    def get_context_data(self, **kwargs):
+        from django.conf import settings
+
+        from connect_labs.supply_chain.portfolio.map_data import portfolio_map
+
+        context = super().get_context_data(**kwargs)
+        portfolio = Portfolio.objects.filter(slug=self.kwargs["slug"]).first()
+        if portfolio is None:
+            raise Http404(f"no portfolio named {self.kwargs['slug']!r}")
+        context["portfolio"] = portfolio
+        context["map_payload"] = portfolio_map(self.request, portfolio, reachable_programmes(self.request))
+        context["mapbox_token"] = getattr(settings, "MAPBOX_TOKEN", "") or ""
+        return context
