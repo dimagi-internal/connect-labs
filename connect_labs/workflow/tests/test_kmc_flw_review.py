@@ -282,3 +282,12 @@ def test_the_programme_row_reads_the_programme_cells():
     block = src[src.index("  var SC = {") : src.index("};", src.index("  var SC = {"))]
     assert "programme: P.programInd" in block
     assert "scorecardRow('Programme', SC && SC.programme)" in src
+
+
+def test_a_cold_case_cache_is_an_error_with_a_retry_not_a_blank_table():
+    """A cold visit cache answers 200 with rows missing. Treated as ready, the
+    table read as a worker whose cases counted for nothing."""
+    src = RENDER.read_text()
+    body = src[src.index("could not read case contributions") :]
+    body = body[: body.index("setCaseRows({ status: 'ready'")]
+    assert "cold_cache" in body and "partial_cache" in body and "throw new Error" in body
