@@ -67,8 +67,8 @@ def _world(da, suffix=""):
             "base_per_pack": 50,
         },
     )
-    supplier = op(da, "supplier_create", data={"name": f"EHA Clinics{suffix}", "type": "distributor"})
     eha = op(da, "org_upsert", data={"slug": f"eha{suffix}", "name": f"EHA Clinics{suffix}"})
+    supplier = op(da, "supplier_create", data={"org_id": eha["id"], "type": "distributor"})
     warehouse = op(
         da,
         "supply_point_upsert",

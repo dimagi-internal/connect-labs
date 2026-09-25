@@ -9,6 +9,7 @@ attributes, so no database is needed.
 from datetime import date
 from decimal import Decimal
 
+from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.models import Award, Commodity, Contract, Item, Outreach, Quote, Round, Supplier
 from connect_labs.supply_chain.procurement.services.supply_base import supply_base
 
@@ -19,7 +20,7 @@ F75 = Commodity(scope_key=SCOPE, slug="f75", name="F-75", base_unit="sachet", pa
 
 
 def supplier(pk, name, **kwargs):
-    return Supplier(pk=pk, scope_key=SCOPE, name=name, **kwargs)
+    return Supplier(pk=pk, scope_key=SCOPE, org=LabsOrg(name=name), **kwargs)
 
 
 def round_(pk, *slugs):

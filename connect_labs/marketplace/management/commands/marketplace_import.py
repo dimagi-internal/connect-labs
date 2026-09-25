@@ -24,6 +24,7 @@ import collections
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.db.models import ProtectedError
 from django.utils import timezone
 
 from connect_labs.labs.models import LabsOrg
@@ -141,9 +142,22 @@ def import_directory(org_rows, contact_rows, date_rows, map_rows, *, prune: bool
             stats["attributions"] += 1
 
         if prune:
-            stale_orgs = LabsOrg.objects.filter(marketplace_profile__isnull=False).exclude(name__in=known)
-            stats["pruned_organisations"] = stale_orgs.count()
-            stale_orgs.delete()
+            stale_orgs = list(LabsOrg.objects.filter(marketplace_profile__isnull=False).exclude(name__in=known))
+            stats["pruned_organisations"] = len(stale_orgs)
+            stats["kept_in_use"] = 0
+            for org in stale_orgs:
+                # An organisation other domains depend on -- a supplier with
+                # quotes and orders, a store's operator, a payee -- is still a
+                # company after it leaves the directory. Only the directory's
+                # own profile goes; deleting the organisation would either be
+                # refused (crashing the import) or cascade into records that
+                # are not the directory's.
+                try:
+                    with transaction.atomic():
+                        org.delete()
+                except ProtectedError:
+                    OrgProfile.objects.filter(org=org).delete()
+                    stats["kept_in_use"] += 1
 
             stats["pruned_contacts"] = OrgContact.objects.exclude(email__in=seen_emails).delete()[0]
             stats["pruned_attributions"] = OrgConnectSlug.objects.exclude(slug__in=mapped).delete()[0]

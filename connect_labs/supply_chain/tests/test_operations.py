@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 import jsonschema
 import pytest
 
+from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.models import Contract, Outreach, Quote, Supplier
 from connect_labs.supply_chain.operations import all_operations, call_operation, get_operation
 from connect_labs.supply_chain.tests.conftest import RUTF as _RUTF
@@ -59,7 +60,7 @@ def test_a_valid_payload_reaches_the_data_access():
     access = MagicMock()
     # A real (unsaved) model, because the handler serialises what it gets back
     # and a MagicMock is not JSON.
-    access.create_supplier.return_value = Supplier(id=3, name="Northwind Nutrition")
+    access.create_supplier.return_value = Supplier(id=3, org=LabsOrg(name="Northwind Nutrition"))
     call_operation("supplier_create", access, {"data": {"name": "Northwind Nutrition"}})
     assert access.create_supplier.called
 
@@ -327,16 +328,18 @@ class TestTheCreateUpdateVersusUpsertRule:
 
         assert {"commodity_upsert", "item_upsert", "supply_point_upsert", "org_upsert"} <= registered
 
-    def test_a_supplier_has_no_natural_key_and_so_has_no_upsert(self):
-        """Two companies can share a name, so an upsert keyed on one would
-        rewrite the first with the second."""
+    def test_a_supplier_is_keyed_on_its_company_and_create_links_rather_than_upserts(self):
+        """A supplier is a company linked into a program, so its key is
+        (program, company) -- never the name, which two companies can share.
+        `supplier_create` returns the existing link for that key instead of an
+        upsert rewriting it, and test_supplier_company.py pins that behaviour."""
         from connect_labs.supply_chain.models import Supplier
         from connect_labs.supply_chain.operations import all_operations
 
         constrained = {
-            field for constraint in Supplier._meta.constraints for field in getattr(constraint, "fields", ())
+            tuple(constraint.fields) for constraint in Supplier._meta.constraints if getattr(constraint, "fields", ())
         }
-        assert not constrained, "if a supplier gains a natural key, this rule changes and so should the operations"
+        assert constrained == {("scope_key", "org")}
 
         registered = set(all_operations())
         assert "supplier_upsert" not in registered

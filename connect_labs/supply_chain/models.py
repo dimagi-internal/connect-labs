@@ -258,31 +258,182 @@ class Item(TimestampedModel):
         return self.stock_class == "durable"
 
 
-class Supplier(TimestampedModel):
-    scope_key = models.CharField(max_length=64, db_index=True)
-    name = models.CharField(max_length=255)
+# Company facts a program may supply when it links a supplier. Everything
+# here lives on the organisation, not the program's link to it.
+SUPPLIER_COMPANY_FIELDS = ("name", "country", "type", "city", "contacts", "qualifications", "website", "description")
+_PROFILE_FIELDS = ("type", "city", "contacts", "qualifications", "website", "description")
+
+
+class SupplierProfile(TimestampedModel):
+    """What a company is, as a supplier -- once, for every program.
+
+    `LabsOrg` holds identity only (its docstring), so a supplier's own facts
+    live here, on a profile that points at it: the same shape as the
+    marketplace's `OrgProfile`. The name and country are the organisation's,
+    not repeated here.
+
+    These used to be columns on `Supplier`, one copy per program, because
+    #1814 scoped all reference data to the program to fix a broken
+    organisation tier in catalogues and suppliers were swept along with it.
+    A company is the same company in every program it sells to; two
+    programs buying from EHA had two EHAs with two contact lists that
+    drifted apart.
+    """
+
+    org = models.OneToOneField("labs.LabsOrg", on_delete=models.CASCADE, related_name="supplier_profile")
     # `type` rather than `kind` because the sourcing services already read
-    # supplier.type; renaming it here would buy consistency at
-    # the cost of touching working, tested code for no behavioural gain.
+    # supplier.type; renaming it would touch working code for no gain.
     type = models.CharField(max_length=32, blank=True, default="")
-    country = models.CharField(max_length=2, blank=True, default="")
     city = models.CharField(max_length=128, blank=True, default="")
-    status = models.CharField(max_length=32, blank=True, default="identified")
     contacts = models.JSONField(default=list, blank=True)
     qualifications = models.JSONField(default=list, blank=True)
-    connect_organization_id = models.IntegerField(null=True, blank=True, db_index=True)
-    org = models.ForeignKey(
-        "labs.LabsOrg", null=True, blank=True, on_delete=models.SET_NULL, related_name="supplier_profiles"
-    )
+    website = models.URLField(max_length=500, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+
+    def __str__(self):
+        return f"supplier profile of {self.org}"
+
+
+class SupplierManager(models.Manager):
+    def enrol(self, scope_key, *, org=None, **company):
+        """Link a company into a program as a supplier, and return the link.
+
+        The one way a supplier comes to exist. The company is `org` when
+        given, else the organisation `find_or_mint_supplier_org` resolves
+        from the company's name and Connect id. Its profile gains only the
+        facts it did not already have -- linking a company into a second
+        program must not overwrite what the first one knew about it. A
+        company already linked into this program returns that link: it is
+        the same supplier, not a second one.
+        """
+        from connect_labs.supply_chain.identity import find_or_mint_supplier_org
+
+        status = company.pop("status", None)
+        notes = company.pop("notes", None)
+        connect_id = company.pop("connect_organization_id", None)
+        if org is None:
+            org = find_or_mint_supplier_org(
+                company.get("name") or "", country=company.get("country") or "", connect_organization_id=connect_id
+            )
+        fill_profile(org, company)
+        link, created = self.get_or_create(scope_key=scope_key, org=org)
+        changed = []
+        if status and (created or not link.status or link.status == "identified"):
+            link.status = status
+            changed.append("status")
+        if notes and not link.notes:
+            link.notes = notes
+            changed.append("notes")
+        if changed:
+            link.save(update_fields=[*changed, "updated_at"])
+        return link
+
+
+def fill_profile(org, company: dict, *, overwrite=False):
+    """Write company facts to `org`'s supplier profile, creating it if needed.
+
+    Blank fields only, unless `overwrite` -- which is an edit, where the
+    person means to replace what is there. The organisation's own country is
+    filled the same way; its name is never touched here.
+    """
+    profile, _ = SupplierProfile.objects.get_or_create(org=org)
+    changed = []
+    for field in _PROFILE_FIELDS:
+        value = company.get(field)
+        if value is None:
+            continue
+        current = getattr(profile, field)
+        if overwrite:
+            if value != current:
+                setattr(profile, field, value)
+                changed.append(field)
+        elif value not in ("", []) and current in ("", [], None):
+            setattr(profile, field, value)
+            changed.append(field)
+    if changed:
+        profile.save(update_fields=[*changed, "updated_at"])
+    country = company.get("country")
+    if country and not org.country:
+        org.country = country
+        org.save(update_fields=["country", "updated_at"])
+    return profile
+
+
+class Supplier(TimestampedModel):
+    """A company, as a supplier to ONE program: the program's side of it.
+
+    What is genuinely per-program is small -- where this program has got
+    to with the company (`status`) and its own notes. Everything else is the
+    company's, held once on the organisation (`org`, `org.supplier_profile`)
+    and read through here, so `supplier.name` and the serialised record read
+    exactly as they did when these were columns.
+
+    The table keeps its ids, so quotes, outreach, awards, contracts and
+    documents still point at the program's supplier: a quote belongs to a
+    program, and `supplier_id` means what it always meant.
+    """
+
+    scope_key = models.CharField(max_length=64, db_index=True)
+    org = models.ForeignKey("labs.LabsOrg", on_delete=models.PROTECT, related_name="supplier_links")
+    status = models.CharField(max_length=32, blank=True, default="identified")
     notes = models.TextField(blank=True, default="")
 
+    objects = SupplierManager()
+
     class Meta:
-        ordering = ["name"]
+        ordering = ["org__name"]
+        constraints = [
+            models.UniqueConstraint(fields=["scope_key", "org"], name="supply_supplier_one_link_per_program")
+        ]
 
     def __str__(self):
         # Said in every picker: a donor supplies in kind, so choosing one for a
         # priced order is the mistake worth making visible at the choice.
         return f"{self.name} (donor)" if self.type == "donor" else self.name
+
+    @property
+    def profile(self):
+        org = self.org
+        if org.pk is None and "supplier_profile" not in org._state.fields_cache:
+            # An unsaved organisation (a test's in-memory supplier) has no
+            # profile to look up, and asking the database would raise.
+            return None
+        try:
+            return org.supplier_profile
+        except SupplierProfile.DoesNotExist:
+            return None
+
+    def _profile_value(self, field, empty):
+        profile = self.profile
+        return getattr(profile, field) if profile is not None else empty
+
+    @property
+    def name(self):
+        return self.org.name
+
+    @property
+    def country(self):
+        return self.org.country
+
+    @property
+    def connect_organization_id(self):
+        return self.org.connect_organization_id
+
+    @property
+    def type(self):
+        return self._profile_value("type", "")
+
+    @property
+    def city(self):
+        return self._profile_value("city", "")
+
+    @property
+    def contacts(self):
+        return self._profile_value("contacts", [])
+
+    @property
+    def qualifications(self):
+        return self._profile_value("qualifications", [])
 
 
 # ======================================================================

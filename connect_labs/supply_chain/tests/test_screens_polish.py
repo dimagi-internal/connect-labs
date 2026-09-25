@@ -1012,7 +1012,7 @@ class TestTheAwardControlsFitTheColumn:
         from connect_labs.supply_chain.models import Award, Quote
 
         _comparable_pair(da, world)
-        quote = Quote.objects.get(supplier__name="Second chemicals")
+        quote = Quote.objects.get(supplier__org__name="Second chemicals")
         client_in_programme.post(
             _compare_url(world),
             {"quote_id": quote.pk, "rationale": "cheaper", "decided_on": "2026-09-20", "decided_by": "Ngozi Eze"},
