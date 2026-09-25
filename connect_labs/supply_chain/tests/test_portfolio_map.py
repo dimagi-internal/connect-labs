@@ -1,4 +1,4 @@
-"""The portfolio map: the same programmes as the portfolio, laid out by place.
+"""The portfolio map: the same programs as the portfolio, laid out by place.
 
 The access gate comes first for the reason test_portfolio.py gives -- a map is
 a portfolio row with coordinates, and a row is what leaks. After it, the two
@@ -78,7 +78,7 @@ def _order_to(store, *, lead_time_days):
         program_id=store.program_id,
         supplier=supplier,
         commodity=commodity,
-        buyer_of_record="programme_org",
+        buyer_of_record="program_org",
         status="placed",
         signed_on=date.today() - timedelta(days=30),
         quantity=100,
@@ -98,7 +98,7 @@ def _url(portfolio):
 # ---------------------------------------------------------------------------
 
 
-def test_the_map_carries_only_the_programmes_the_viewer_can_already_reach(client, django_user_model):
+def test_the_map_carries_only_the_programs_the_viewer_can_already_reach(client, django_user_model):
     """MUTATED: `portfolio_map` changed to skip the `reachable` check -- red."""
     _sign_in(client, django_user_model, [ONE, TWO])
     for pid in (ONE, TWO, THREE):
@@ -109,12 +109,12 @@ def test_the_map_carries_only_the_programmes_the_viewer_can_already_reach(client
     payload = _payload(response)
 
     assert response.status_code == 200
-    assert [p["program_id"] for p in payload["programmes"]] == [ONE, TWO]
+    assert [p["program_id"] for p in payload["programs"]] == [ONE, TWO]
     assert payload["hidden"] == 1
     body = response.content.decode()
     assert NAMES[THREE] not in body
     assert f"a-store-in-{THREE}".replace("-", " ").title() not in body
-    assert "1 of this portfolio's 3 programmes is not shown" in body
+    assert "1 of this portfolio's 3 programs is not shown" in body
 
 
 def test_the_map_leaves_the_unreachable_one_out_even_with_the_layer_below_removed(
@@ -137,7 +137,7 @@ def test_the_map_leaves_the_unreachable_one_out_even_with_the_layer_below_remove
 
     payload = _payload(client.get(_url(_portfolio())))
 
-    assert [p["program_id"] for p in payload["programmes"]] == [ONE]
+    assert [p["program_id"] for p in payload["programs"]] == [ONE]
     assert "A Store Nobody Here Holds" not in json.dumps(payload)
 
 
@@ -166,23 +166,23 @@ def test_a_place_with_no_coordinates_is_listed_rather_than_dropped(client, djang
     _store(ONE, slug="a-placed-store", lat=9.05, lng=7.49)
     _store(ONE, slug="an-unplaced-store")
 
-    programme = _payload(client.get(_url(_portfolio([ONE]))))["programmes"][0]
+    program = _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]
 
-    assert [p["name"] for p in programme["points"]] == ["A Placed Store"]
-    assert [p["name"] for p in programme["unplaced"]] == ["An Unplaced Store"]
+    assert [p["name"] for p in program["points"]] == ["A Placed Store"]
+    assert [p["name"] for p in program["unplaced"]] == ["An Unplaced Store"]
     # Unplaced still carries what a placed one does: the status is the point.
-    assert programme["unplaced"][0]["status"]
-    assert programme["unplaced"][0]["links"]["edit"].endswith(f"?program_id={ONE}")
+    assert program["unplaced"][0]["status"]
+    assert program["unplaced"][0]["links"]["edit"].endswith(f"?program_id={ONE}")
 
 
 def test_coordinates_off_the_globe_are_not_drawn(client, django_user_model):
     _sign_in(client, django_user_model, [ONE])
     _store(ONE, slug="a-mistyped-store", lat=907.0, lng=8.0)
 
-    programme = _payload(client.get(_url(_portfolio([ONE]))))["programmes"][0]
+    program = _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]
 
-    assert programme["points"] == []
-    assert [p["name"] for p in programme["unplaced"]] == ["A Mistyped Store"]
+    assert program["points"] == []
+    assert [p["name"] for p in program["unplaced"]] == ["A Mistyped Store"]
 
 
 # ---------------------------------------------------------------------------
@@ -200,11 +200,11 @@ def test_an_overdue_order_is_a_blocker_on_the_store_it_is_owed_to(client, django
     store = _store(ONE, slug="a-waiting-store", lat=9.0, lng=8.0)
     _order_to(store, lead_time_days=10)
 
-    programme = _payload(client.get(_url(_portfolio([ONE]))))["programmes"][0]
-    point = programme["points"][0]
+    program = _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]
+    point = program["points"][0]
 
     assert "contract_delivery_overdue" in {c["kind"] for c in point["checks"]}
-    assert "contract_delivery_overdue" not in {c["kind"] for c in programme["unlocated_checks"]}
+    assert "contract_delivery_overdue" not in {c["kind"] for c in program["unlocated_checks"]}
     assert point["expected_inbound"][0]["overdue"] is True
     assert point["expected_inbound"][0]["order_url"].endswith(f"?program_id={ONE}")
 
