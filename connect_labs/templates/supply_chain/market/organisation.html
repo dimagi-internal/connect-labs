@@ -44,13 +44,13 @@
       {% for o in offerings %}
         <li class="py-2 flex justify-between gap-2">
           <span><span class="font-medium">{{ o.product_name }}</span> <span class="text-gray-500">· {{ o.get_category_display }}{% if o.pack_description %} · {{ o.pack_description }}{% endif %}{% if o.unicef_material_number %} · {{ o.unicef_material_number }}{% endif %}{% if o.certifications %} · {{ o.certifications|join:", " }}{% endif %}</span></span>
-          <form method="post">{% csrf_token %}<input type="hidden" name="action" value="offering_delete"><input type="hidden" name="org" value="{{ org.pk }}"><input type="hidden" name="offering" value="{{ o.pk }}"><button class="text-xs text-red-700 hover:underline">Remove</button></form>
+          {% if admin %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="offering_delete"><input type="hidden" name="org" value="{{ org.pk }}"><input type="hidden" name="offering" value="{{ o.pk }}"><button class="text-xs text-red-700 hover:underline">Remove</button></form>{% endif %}
         </li>
       {% empty %}
         <li class="py-2 text-gray-500">Nothing yet.</li>
       {% endfor %}
     </ul>
-    <details {% if offering_form.errors %}open{% endif %}>
+    {% if admin %}<details {% if offering_form.errors %}open{% endif %}>
       <summary class="cursor-pointer text-sm text-brand-indigo">Add a product</summary>
       <form method="post" class="mt-3">
         {% csrf_token %}<input type="hidden" name="action" value="offering_add"><input type="hidden" name="org" value="{{ org.pk }}">
@@ -68,13 +68,13 @@
         {% include 'supply_chain/market/_field.html' with field=offering_form.certifications_text %}
         <button class="px-4 py-2 text-sm bg-brand-indigo text-white rounded-md">Add</button>
       </form>
-    </details>
+    </details>{% endif %}
   </section>
 
   <section class="bg-white rounded-lg shadow-sm p-5 md:col-span-2">
     <h2 class="text-lg font-semibold mb-3">People</h2>
     <ul class="text-sm divide-y mb-3">
-      {% for m in members %}<li class="py-1.5">{{ m.user.get_full_name|default:m.user.username }} <span class="text-gray-500">· {{ m.get_role_display }}</span></li>
+      {% for m in members %}<li class="py-1.5">{{ m.user.name|default:m.user.email|default:m.user.username }} <span class="text-gray-500">· {{ m.get_role_display }}</span></li>
       {% empty %}<li class="py-1.5 text-gray-500">Members come through Connect for this organisation.</li>{% endfor %}
     </ul>
     {% if admin %}

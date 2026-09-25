@@ -6,12 +6,18 @@ asks for what is missing -- and the supplier sees those questions on its own
 bids page, where answering is revising the bid.
 """
 
+from decimal import Decimal
+
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from connect_labs.labs.models import LabsOrg
-from connect_labs.supply_chain.forms import COMMON_CURRENCIES, DATE, INPUT, MONEY_INPUT, SELECT, TEXTAREA
+from connect_labs.supply_chain.forms import COMMON_CURRENCIES, DATE, INPUT, MONEY_INPUT, TEXTAREA
 from connect_labs.supply_chain.models import SupplierOffering, SupplierProfile
+
+# The supply write screens style a select through crispy; these pages render
+# fields by hand, so the select carries the input class itself -- without it a
+# select renders as the browser's bare default beside styled inputs.
+PICK = {"class": "base-input"}
 
 SUPPLIER_TYPES = [
     ("manufacturer", _("Manufacturer — we make it")),
@@ -49,7 +55,7 @@ class RegisterForm(forms.Form):
         widget=forms.TextInput(attrs={**INPUT, "placeholder": "NG", "maxlength": 2}),
         help_text=_("Two letters, ISO 3166 — NG, KE, FR."),
     )
-    type = forms.ChoiceField(label=_("What you are"), choices=SUPPLIER_TYPES, widget=forms.Select(attrs=SELECT))
+    type = forms.ChoiceField(label=_("What you are"), choices=SUPPLIER_TYPES, widget=forms.Select(attrs=PICK))
     city = forms.CharField(label=_("City"), max_length=128, required=False, widget=forms.TextInput(attrs=INPUT))
     website = forms.URLField(label=_("Website"), required=False, widget=forms.URLInput(attrs=INPUT))
     description = forms.CharField(
@@ -75,10 +81,10 @@ class RegisterForm(forms.Form):
         way into an organisation already on file is an invitation from
         someone who can vouch for you, not a second registration.
         """
-        from connect_labs.marketplace.identity import find_org
+        from connect_labs.marketplace.identity import taken_by
 
         name = (self.cleaned_data.get("name") or "").strip()
-        if LabsOrg.objects.filter(name__iexact=name).exists() or find_org(name) is not None:
+        if taken_by(name) is not None:
             raise forms.ValidationError(
                 _(
                     "“%(name)s” is already on file. Ask someone there, or the buyer you work with, "
@@ -113,7 +119,7 @@ class ProfileForm(forms.ModelForm):
         model = SupplierProfile
         fields = ["type", "city", "website", "description"]
         widgets = {
-            "type": forms.Select(attrs=SELECT, choices=SUPPLIER_TYPES),
+            "type": forms.Select(attrs=PICK, choices=SUPPLIER_TYPES),
             "city": forms.TextInput(attrs=INPUT),
             "website": forms.URLInput(attrs=INPUT),
             "description": forms.Textarea(attrs=TEXTAREA),
@@ -128,7 +134,7 @@ class ProfileForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["type"] = forms.ChoiceField(
-            label=_("What you are"), choices=SUPPLIER_TYPES, widget=forms.Select(attrs=SELECT)
+            label=_("What you are"), choices=SUPPLIER_TYPES, widget=forms.Select(attrs=PICK)
         )
         if self.instance and self.instance.pk:
             self.initial.setdefault("country", self.instance.org.country)
@@ -162,7 +168,7 @@ class OfferingForm(forms.ModelForm):
             "minimum_order",
         ]
         widgets = {
-            "category": forms.Select(attrs=SELECT),
+            "category": forms.Select(attrs=PICK),
             "product_name": forms.TextInput(attrs=INPUT),
             "unicef_material_number": forms.TextInput(attrs={**INPUT, "placeholder": "S0000240"}),
             "gtin": forms.TextInput(attrs={**INPUT, "maxlength": 14}),
@@ -206,9 +212,9 @@ class BidForm(forms.Form):
     as_quoted_amount = forms.DecimalField(
         label=_("Price"), min_value=0, max_digits=18, decimal_places=4, widget=forms.NumberInput(attrs=MONEY_INPUT)
     )
-    as_quoted_unit = forms.ChoiceField(label=_("The price is"), choices=PRICE_PER, widget=forms.Select(attrs=SELECT))
+    as_quoted_unit = forms.ChoiceField(label=_("The price is"), choices=PRICE_PER, widget=forms.Select(attrs=PICK))
     as_quoted_currency = forms.ChoiceField(
-        label=_("Currency"), choices=[(c, c) for c in COMMON_CURRENCIES], widget=forms.Select(attrs=SELECT)
+        label=_("Currency"), choices=[(c, c) for c in COMMON_CURRENCIES], widget=forms.Select(attrs=PICK)
     )
     quantity_basis = forms.DecimalField(
         label=_("For a quantity of"),
@@ -231,7 +237,7 @@ class BidForm(forms.Form):
     base_unit_grams_stated = forms.IntegerField(
         label=_("Grams in one unit"), required=False, min_value=1, widget=forms.NumberInput(attrs=INPUT)
     )
-    freight_basis = forms.ChoiceField(label=_("Freight"), choices=BASIS, widget=forms.Select(attrs=SELECT))
+    freight_basis = forms.ChoiceField(label=_("Freight"), choices=BASIS, widget=forms.Select(attrs=PICK))
     freight_amount = forms.DecimalField(
         label=_("Freight charge"),
         required=False,
@@ -240,7 +246,7 @@ class BidForm(forms.Form):
         decimal_places=4,
         widget=forms.NumberInput(attrs=MONEY_INPUT),
     )
-    duties_basis = forms.ChoiceField(label=_("Import duties"), choices=BASIS, widget=forms.Select(attrs=SELECT))
+    duties_basis = forms.ChoiceField(label=_("Import duties"), choices=BASIS, widget=forms.Select(attrs=PICK))
     duties_amount = forms.DecimalField(
         label=_("Duties charge"),
         required=False,
@@ -298,24 +304,37 @@ class BidForm(forms.Form):
                 cleaned[amount] = None
         return cleaned
 
-    def payload(self) -> dict:
-        """The quote as `quote_record` takes it. Blanks are left out: not stated."""
+    def payload(self, *, replacing=False) -> dict:
+        """The quote as `quote_record` takes it. Blanks are "not stated".
+
+        For a new bid a blank is simply left out. For a revision (`replacing`)
+        every field is sent, a blank as null (or empty text): a correction
+        merges onto the previous version, so a field left out would carry the
+        old figure forward -- the supplier who cleared its freight charge would
+        find it still there.
+        """
         data = self.cleaned_data
         payload = {}
         for name, value in data.items():
-            if name.startswith("spec__") or value in (None, ""):
+            if name.startswith("spec__"):
                 continue
-            payload[name] = value.isoformat() if hasattr(value, "isoformat") else value
-        for money in ("as_quoted_amount", "freight_amount", "duties_amount", "quantity_basis", "moq"):
-            if money in payload:
-                payload[money] = format(payload[money], "f")
+            if value in (None, ""):
+                if replacing:
+                    payload[name] = "" if isinstance(self.fields[name], forms.CharField) else None
+                continue
+            if isinstance(value, Decimal):
+                payload[name] = format(value, "f")
+            elif hasattr(value, "isoformat"):
+                payload[name] = value.isoformat()
+            else:
+                payload[name] = value
         payload["pack_spec_source"] = "stated_on_quote" if payload.get("base_per_pack_stated") else "not_stated"
         stated = {
             name[len("spec__") :]: format(data[name], "f")
             for name in self.requirement_fields
             if data.get(name) is not None
         }
-        if stated:
+        if stated or replacing:
             payload["stated_spec"] = stated
         return payload
 

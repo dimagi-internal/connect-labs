@@ -46,7 +46,7 @@
 <ul class="bg-white rounded-lg shadow-sm divide-y text-sm">
   {% for q in listed.own_quotes %}
     <li class="p-3 flex flex-wrap justify-between gap-2">
-      <span>{{ q.commodity.name }} · {{ q.as_quoted_currency }} {{ q.as_quoted_amount|floatformat:"-4" }} {{ q.per_words }}</span>
+      <span>{{ q.commodity.name }} · {{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }} {{ q.per_words }}</span>
       <span class="text-gray-500">{% if q.voided %}Withdrawn{% elif q.superseded_by_id %}Replaced by a revision{% else %}Current{% endif %} · {{ q.received_on|day }}</span>
     </li>
   {% endfor %}

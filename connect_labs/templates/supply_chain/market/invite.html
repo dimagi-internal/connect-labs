@@ -7,7 +7,7 @@
   {% if signed_in %}
     <form method="post" class="mt-4">{% csrf_token %}<button class="px-4 py-2 text-sm bg-brand-indigo text-white rounded-md">Accept and join {{ invite.org.name }}</button></form>
   {% else %}
-    <a href="{% url 'labs:login' %}?next={{ request.path|urlencode }}" class="inline-block mt-4 px-4 py-2 text-sm bg-brand-indigo text-white rounded-md">Sign in with Connect to accept</a>
+    <a href="{% url 'labs:login' %}?next={% url 'supply_chain:market_invite_accept' %}" class="inline-block mt-4 px-4 py-2 text-sm bg-brand-indigo text-white rounded-md">Sign in with Connect to accept</a>
     <p class="text-xs text-gray-500 mt-2">Signing in uses a Connect account.</p>
   {% endif %}
 </div>
