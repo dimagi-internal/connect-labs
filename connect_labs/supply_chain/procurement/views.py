@@ -153,6 +153,17 @@ class TenderDetailView(_Base):
             for line in (tender.get("lines") or [])
             if isinstance(line, dict)
         ]
+        from connect_labs.labs.models import LabsOrg
+
+        tender = context.get("tender") or {}
+        owner_id = tender.get("owner_org_id")
+        if owner_id:
+            context["owner_name"] = LabsOrg.objects.filter(pk=owner_id).values_list("name", flat=True).first() or ""
+        invited_ids = tender.get("invited_org_ids") or []
+        context["invited_orgs"] = LabsOrg.objects.filter(pk__in=invited_ids).order_by("name")
+        context["invitable_orgs"] = (
+            LabsOrg.objects.filter(supplier_profile__isnull=False).exclude(pk__in=invited_ids).order_by("name")[:200]
+        )
         return context
 
 
@@ -614,6 +625,27 @@ class _TenderScreen(OperationFormView):
 
     def redirect_to(self, result):
         return reverse("supply_chain:procurement_tender_detail", args=[result["id"]])
+
+
+class _TenderInviteView(OperationActionView):
+    """Put an organisation on, or take it off, a tender's invited list -- a button on the tender."""
+
+    def fixed(self, **kwargs):
+        org = self.request.POST.get("org", "")
+        return {"tender_id": int(kwargs["tender_id"]), "org_id": int(org) if org.isdigit() else 0}
+
+    def redirect_to(self, **kwargs):
+        return reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]])
+
+
+class TenderInviteOrgView(_TenderInviteView):
+    operation = "tender_invite_org"
+    success_message = "Invited. They can now see and bid on this tender while it is restricted."
+
+
+class TenderUninviteOrgView(_TenderInviteView):
+    operation = "tender_uninvite_org"
+    success_message = "Taken off the invited list."
 
 
 class TenderCreateView(_TenderScreen):

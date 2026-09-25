@@ -514,6 +514,20 @@ class Tender(TimestampedModel):
     )
     opened_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
+    # An organisation's own listing: who publishes it, where it lives
+    # (/supply/market/t/<slug>/), what it says above the products, and its
+    # colour. All optional -- a tender without them is a program's tender, as
+    # before.
+    owner_org = models.ForeignKey(
+        "labs.LabsOrg", null=True, blank=True, on_delete=models.SET_NULL, related_name="tenders_published"
+    )
+    slug = models.SlugField(max_length=80, unique=True, null=True, blank=True)
+    brief = models.TextField(blank=True, default="", db_default="")
+    hue = models.CharField(max_length=7, blank=True, default="", db_default="")
+    # Who may see a restricted tender: these organisations, as a list the
+    # owning organisation manages -- in addition to anyone the program already
+    # invited through its outreach log.
+    invited_orgs = models.ManyToManyField("labs.LabsOrg", blank=True, related_name="tenders_invited_to")
 
     class Meta:
         ordering = ["-created_at"]
