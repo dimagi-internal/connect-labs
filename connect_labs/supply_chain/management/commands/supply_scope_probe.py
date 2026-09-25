@@ -1,4 +1,4 @@
-"""One-off probe: does organization-scoped LabsRecord CRUD round-trip?
+"""One-off probe: does organization-scoped LabsRecord CRUD tender-trip?
 
 Writes a throwaway record scoped to --organization-id, reads it back with the
 same scope, checks an unscoped client cannot see it, then deletes it.
@@ -12,7 +12,7 @@ from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClien
 
 
 class Command(BaseCommand):
-    help = "Probe whether organization-scoped LabsRecord writes round-trip."
+    help = "Probe whether organization-scoped LabsRecord writes tender-trip."
 
     def add_arguments(self, parser):
         parser.add_argument("--organization-id", required=True)

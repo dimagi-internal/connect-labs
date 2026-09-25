@@ -10,7 +10,7 @@ from datetime import date
 from decimal import Decimal
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.supply_chain.models import Award, Commodity, Contract, Item, Outreach, Quote, Round, Supplier
+from connect_labs.supply_chain.models import Award, Commodity, Contract, Item, Outreach, Quote, Supplier, Tender
 from connect_labs.supply_chain.procurement.services.supply_base import supply_base
 
 SCOPE = "prog:10501"
@@ -23,11 +23,11 @@ def supplier(pk, name, **kwargs):
     return Supplier(pk=pk, scope_key=SCOPE, org=LabsOrg(name=name), **kwargs)
 
 
-def round_(pk, *slugs):
-    return Round(pk=pk, program_id=10501, label=f"Round {pk}", lines=[{"commodity_slug": s} for s in slugs])
+def tender(pk, *slugs):
+    return Tender(pk=pk, program_id=10501, label=f"Tender {pk}", lines=[{"commodity_slug": s} for s in slugs])
 
 
-def quote(pk, supplier_id, round_id, commodity=RUTF, **kwargs):
+def quote(pk, supplier_id, tender_id, commodity=RUTF, **kwargs):
     fields = {
         "as_quoted_amount": Decimal("0.46"),
         "as_quoted_unit": "per_base_unit",
@@ -35,7 +35,7 @@ def quote(pk, supplier_id, round_id, commodity=RUTF, **kwargs):
         "received_on": date(2026, 5, 1),
     }
     fields.update(kwargs)
-    return Quote(pk=pk, supplier_id=supplier_id, round_id=round_id, commodity=commodity, **fields)
+    return Quote(pk=pk, supplier_id=supplier_id, tender_id=tender_id, commodity=commodity, **fields)
 
 
 class TestWhatCountsAsEvidence:
@@ -43,7 +43,7 @@ class TestWhatCountsAsEvidence:
         claims = supply_base(
             commodity_slug="rutf",
             suppliers=[supplier(1, "Northwind Foods")],
-            quotes=[quote(10, supplier_id=1, round_id=5)],
+            quotes=[quote(10, supplier_id=1, tender_id=5)],
         )
         assert [c.supplier_name for c in claims] == ["Northwind Foods"]
         assert claims[0].basis == "quoted"
@@ -53,7 +53,7 @@ class TestWhatCountsAsEvidence:
         claims = supply_base(
             commodity_slug="f75",
             suppliers=[supplier(1, "Northwind Foods")],
-            quotes=[quote(10, supplier_id=1, round_id=5, commodity=RUTF)],
+            quotes=[quote(10, supplier_id=1, tender_id=5, commodity=RUTF)],
         )
         assert claims == []
 
@@ -61,9 +61,9 @@ class TestWhatCountsAsEvidence:
         claims = supply_base(
             commodity_slug="rutf",
             suppliers=[supplier(1, "Northwind Foods"), supplier(2, "Harbour Nutrition")],
-            quotes=[quote(10, supplier_id=1, round_id=5)],
-            outreach=[Outreach(pk=1, round_id=5, supplier_id=2, sent_on=date(2026, 4, 28), responded=False)],
-            rounds=[round_(5, "rutf")],
+            quotes=[quote(10, supplier_id=1, tender_id=5)],
+            outreach=[Outreach(pk=1, tender_id=5, supplier_id=2, sent_on=date(2026, 4, 28), responded=False)],
+            tenders=[tender(5, "rutf")],
         )
         assert [(c.supplier_name, c.basis) for c in claims] == [
             ("Northwind Foods", "quoted"),
@@ -76,18 +76,18 @@ class TestWhatCountsAsEvidence:
         claims = supply_base(
             commodity_slug="rutf",
             suppliers=[supplier(1, "Northwind Foods")],
-            quotes=[quote(10, supplier_id=1, round_id=5)],
-            outreach=[Outreach(pk=1, round_id=5, supplier_id=1, sent_on=date(2026, 4, 28), responded=True)],
-            rounds=[round_(5, "rutf")],
+            quotes=[quote(10, supplier_id=1, tender_id=5)],
+            outreach=[Outreach(pk=1, tender_id=5, supplier_id=1, sent_on=date(2026, 4, 28), responded=True)],
+            tenders=[tender(5, "rutf")],
         )
         assert [e.kind for e in claims[0].evidence] == ["quoted"]
 
-    def test_an_invitation_on_a_round_that_never_asked_for_this_product_is_not_evidence(self):
+    def test_an_invitation_on_a_tender_that_never_asked_for_this_product_is_not_evidence(self):
         claims = supply_base(
             commodity_slug="rutf",
             suppliers=[supplier(2, "Harbour Nutrition")],
-            outreach=[Outreach(pk=1, round_id=5, supplier_id=2, sent_on=date(2026, 4, 28))],
-            rounds=[round_(5, "f75")],
+            outreach=[Outreach(pk=1, tender_id=5, supplier_id=2, sent_on=date(2026, 4, 28))],
+            tenders=[tender(5, "f75")],
         )
         assert claims == []
 
@@ -95,7 +95,7 @@ class TestWhatCountsAsEvidence:
         claims = supply_base(
             commodity_slug="rutf",
             suppliers=[supplier(1, "Northwind Foods")],
-            quotes=[quote(10, supplier_id=1, round_id=5)],
+            quotes=[quote(10, supplier_id=1, tender_id=5)],
             contracts=[Contract(pk=3, supplier_id=1, commodity=RUTF, reference="PO-114", signed_on=date(2026, 6, 2))],
         )
         assert claims[0].basis == "contracted"
@@ -110,13 +110,13 @@ class TestWhatCountsAsEvidence:
         claims = supply_base(
             commodity_slug="rutf",
             suppliers=[supplier(1, "Northwind Foods")],
-            quotes=[quote(10, supplier_id=1, round_id=5, voided=True, void_reason="sent in error")],
+            quotes=[quote(10, supplier_id=1, tender_id=5, voided=True, void_reason="sent in error")],
         )
         assert claims[0].basis == "quoted_voided"
 
     def test_a_corrected_quote_is_reported_as_superseded(self):
-        replacement = quote(11, supplier_id=1, round_id=5, version=2)
-        original = quote(10, supplier_id=1, round_id=5, superseded_by=replacement)
+        replacement = quote(11, supplier_id=1, tender_id=5, version=2)
+        original = quote(10, supplier_id=1, tender_id=5, superseded_by=replacement)
         claims = supply_base(
             commodity_slug="rutf",
             suppliers=[supplier(1, "Northwind Foods")],
@@ -125,8 +125,8 @@ class TestWhatCountsAsEvidence:
         assert claims[0].basis == "quoted_superseded"
 
     def test_a_standing_quote_outranks_the_versions_it_replaced(self):
-        replacement = quote(11, supplier_id=1, round_id=5, version=2, received_on=date(2026, 6, 20))
-        original = quote(10, supplier_id=1, round_id=5, superseded_by=replacement)
+        replacement = quote(11, supplier_id=1, tender_id=5, version=2, received_on=date(2026, 6, 20))
+        original = quote(10, supplier_id=1, tender_id=5, superseded_by=replacement)
         claims = supply_base(
             commodity_slug="rutf",
             suppliers=[supplier(1, "Northwind Foods")],
@@ -139,7 +139,7 @@ class TestWhatCountsAsEvidence:
         claims = supply_base(
             commodity_slug="rutf",
             suppliers=[],
-            quotes=[quote(10, supplier_id=99, round_id=5)],
+            quotes=[quote(10, supplier_id=99, tender_id=5)],
         )
         assert claims == []
 
@@ -212,8 +212,8 @@ class TestNarrowingToOneTradeItem:
             item_id=7,
             suppliers=[supplier(1, "Northwind Foods"), supplier(2, "Harbour Nutrition")],
             quotes=[
-                quote(10, supplier_id=1, round_id=5, item_id=7),
-                quote(11, supplier_id=2, round_id=5, item_id=None),
+                quote(10, supplier_id=1, tender_id=5, item_id=7),
+                quote(11, supplier_id=2, tender_id=5, item_id=None),
             ],
         )
         assert [c.supplier_name for c in claims] == ["Northwind Foods"]
@@ -225,17 +225,17 @@ class TestNarrowingToOneTradeItem:
             commodity_slug="rutf",
             item_id=7,
             suppliers=[supplier(2, "Harbour Nutrition")],
-            outreach=[Outreach(pk=1, round_id=5, supplier_id=2, sent_on=date(2026, 4, 28))],
-            rounds=[round_(5, "rutf")],
+            outreach=[Outreach(pk=1, tender_id=5, supplier_id=2, sent_on=date(2026, 4, 28))],
+            tenders=[tender(5, "rutf")],
         )
         assert claims == []
 
     def test_an_award_follows_the_trade_item_on_the_quote_it_accepted(self):
-        accepted = quote(10, supplier_id=1, round_id=5, item_id=7)
-        other = quote(11, supplier_id=2, round_id=5, item_id=8)
+        accepted = quote(10, supplier_id=1, tender_id=5, item_id=7)
+        other = quote(11, supplier_id=2, tender_id=5, item_id=8)
         awards = [
-            Award(pk=1, round_id=5, quote_id=10, supplier_id=1, commodity=RUTF, decided_on=date(2026, 6, 1)),
-            Award(pk=2, round_id=5, quote_id=11, supplier_id=2, commodity=RUTF, decided_on=date(2026, 6, 1)),
+            Award(pk=1, tender_id=5, quote_id=10, supplier_id=1, commodity=RUTF, decided_on=date(2026, 6, 1)),
+            Award(pk=2, tender_id=5, quote_id=11, supplier_id=2, commodity=RUTF, decided_on=date(2026, 6, 1)),
         ]
         claims = supply_base(
             commodity_slug="rutf",
@@ -258,10 +258,10 @@ class TestOrdering:
         claims = supply_base(
             commodity_slug="rutf",
             suppliers=[supplier(1, "Aaa Invited"), supplier(2, "Zzz Contracted"), supplier(3, "Mmm Quoted")],
-            quotes=[quote(10, supplier_id=3, round_id=5, received_on=date(2026, 6, 15))],
+            quotes=[quote(10, supplier_id=3, tender_id=5, received_on=date(2026, 6, 15))],
             contracts=[Contract(pk=3, supplier_id=2, commodity=RUTF, signed_on=date(2026, 1, 10))],
-            outreach=[Outreach(pk=1, round_id=5, supplier_id=1, sent_on=date(2026, 7, 1))],
-            rounds=[round_(5, "rutf")],
+            outreach=[Outreach(pk=1, tender_id=5, supplier_id=1, sent_on=date(2026, 7, 1))],
+            tenders=[tender(5, "rutf")],
         )
         assert [c.supplier_name for c in claims] == ["Zzz Contracted", "Mmm Quoted", "Aaa Invited"]
 
@@ -272,8 +272,8 @@ class TestOrdering:
             commodity_slug="rutf",
             suppliers=[supplier(1, "Aaa Quoted In March"), supplier(2, "Zzz Quoted In June")],
             quotes=[
-                quote(10, supplier_id=1, round_id=5, received_on=date(2026, 3, 1)),
-                quote(11, supplier_id=2, round_id=5, received_on=date(2026, 6, 1)),
+                quote(10, supplier_id=1, tender_id=5, received_on=date(2026, 3, 1)),
+                quote(11, supplier_id=2, tender_id=5, received_on=date(2026, 6, 1)),
             ],
         )
         assert [c.supplier_name for c in claims] == ["Zzz Quoted In June", "Aaa Quoted In March"]

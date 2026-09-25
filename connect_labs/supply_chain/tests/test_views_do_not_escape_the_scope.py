@@ -17,7 +17,7 @@ yet, and the defect it prevents is one a reviewer has to notice by eye.
 
 The rule: a query on a model that carries its own scope column must filter on
 that column. A query on a child record -- an Award, a Quote, an Invoice --
-must reach a scope through a relation (`round__program_id`). Anything else
+must reach a scope through a relation (`tender__program_id`). Anything else
 has to be named in ALLOWED below, with the reason it is safe.
 """
 

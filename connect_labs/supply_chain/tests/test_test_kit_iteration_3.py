@@ -105,7 +105,7 @@ class TestTheComparisonAndTheAward:
             da,
             "quote_record",
             data={
-                "round_id": world["award"]["round_id"],
+                "tender_id": world["award"]["tender_id"],
                 "commodity_slug": "test-kit",
                 "supplier_id": world["supplier"]["id"],
                 "item_id": world["lumen"]["id"],
@@ -120,7 +120,7 @@ class TestTheComparisonAndTheAward:
             },
         )
         body = scoped.get(
-            reverse("supply_chain:procurement_comparison", args=[world["award"]["round_id"]]) + "?commodity=test-kit"
+            reverse("supply_chain:procurement_comparison", args=[world["award"]["tender_id"]]) + "?commodity=test-kit"
         ).content.decode()
         assert "Why this offer" in body and "Decided by" in body and "<th>Award</th>" in body
         assert 'name="decided_by" value="kits2"' not in body

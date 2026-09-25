@@ -102,9 +102,9 @@ def world(da):
         "supply_point_upsert",
         data={"slug": "hhs-kano", "name": "Harmattan warehouse", "kind": "central_store", "source": "we_recorded"},
     )
-    round_ = op(
+    tender = op(
         da,
-        "round_create",
+        "tender_create",
         data={
             "label": "Chlorine test kits — Q4",
             "delivery_point": {"city": "Kano"},
@@ -117,7 +117,7 @@ def world(da):
             da,
             "quote_record",
             data={
-                "round_id": round_["id"],
+                "tender_id": tender["id"],
                 "commodity_slug": "chlorine-test-kit",
                 "supplier_id": supplier["id"],
                 "item_id": item["id"],
@@ -136,7 +136,7 @@ def world(da):
     programme = op(da, "org_upsert", data={"slug": "test-kit-programme", "name": "Test-kit programme"})
     return {
         "programme": programme,
-        "round": round_,
+        "tender": tender,
         "supplier": supplier,
         "point": point,
         "good": good,
@@ -147,7 +147,7 @@ def world(da):
 
 
 def _compare(da, world):
-    return op(da, "round_compare", round_id=world["round"]["id"], commodity_slug="chlorine-test-kit")
+    return op(da, "tender_compare", tender_id=world["tender"]["id"], commodity_slug="chlorine-test-kit")
 
 
 class TestTwoOffersFromOneSupplier:
@@ -197,7 +197,7 @@ def _award(da, world, quote):
     return op(
         da,
         "award_create",
-        round_id=world["round"]["id"],
+        tender_id=world["tender"]["id"],
         quote_id=quote["id"],
         rationale="Reads the dispenser dose",
     )
@@ -209,7 +209,7 @@ def _order(da, world, award, **terms):
         "contract_create",
         data={
             "award_id": award["id"],
-            "round_id": world["round"]["id"],
+            "tender_id": world["tender"]["id"],
             "supplier_id": world["supplier"]["id"],
             "commodity_slug": "chlorine-test-kit",
             "item_id": world["good"]["id"],
@@ -308,7 +308,7 @@ def scoped(client, django_user_model, monkeypatch):
 
 class TestTheScreens:
     def test_the_comparison_names_each_kit_and_says_which_fails(self, scoped, da, world):
-        url = reverse("supply_chain:procurement_comparison", args=[world["round"]["id"]])
+        url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]])
         body = scoped.get(url + "?commodity=chlorine-test-kit").content.decode()
         assert "Lumen FC-50 kit" in body
         assert "Brightwell PoolCheck-50 kit" in body
@@ -318,8 +318,8 @@ class TestTheScreens:
         assert "treatment protocol" not in body
         assert "USD per course" not in body
 
-    def test_the_comparison_is_titled_by_round_and_product_not_ids(self, scoped, da, world):
-        url = reverse("supply_chain:procurement_comparison", args=[world["round"]["id"]])
+    def test_the_comparison_is_titled_by_tender_and_product_not_ids(self, scoped, da, world):
+        url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]])
         body = scoped.get(url + "?commodity=chlorine-test-kit").content.decode()
         assert "Chlorine test kits — Q4" in body
         assert "Free chlorine test kit" in body

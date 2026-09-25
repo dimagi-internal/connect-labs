@@ -132,7 +132,7 @@ def supplier(obj) -> dict:
     }
 
 
-def round_(obj) -> dict:
+def tender(obj) -> dict:
     return {
         "id": obj.pk,
         "label": obj.label,
@@ -150,7 +150,7 @@ def round_(obj) -> dict:
 def outreach(obj) -> dict:
     return {
         "id": obj.pk,
-        "round_id": obj.round_id,
+        "tender_id": obj.tender_id,
         "supplier_id": obj.supplier_id,
         "channel": obj.channel,
         "sent_on": _date(obj.sent_on),
@@ -164,7 +164,7 @@ def outreach(obj) -> dict:
 def quote(obj) -> dict:
     return {
         "id": obj.pk,
-        "round_id": obj.round_id,
+        "tender_id": obj.tender_id,
         "supplier_id": obj.supplier_id,
         "item_id": obj.item_id,
         "commodity_slug": obj.commodity.slug,
@@ -203,7 +203,7 @@ def quote(obj) -> dict:
 def award(obj) -> dict:
     return {
         "id": obj.pk,
-        "round_id": obj.round_id,
+        "tender_id": obj.tender_id,
         "quote_id": obj.quote_id,
         "supplier_id": obj.supplier_id,
         "commodity_slug": obj.commodity.slug,
@@ -246,7 +246,7 @@ def _sourced(obj) -> dict:
 def contract(obj) -> dict:
     return {
         "id": obj.pk,
-        "round_id": obj.round_id,
+        "tender_id": obj.tender_id,
         "award_id": obj.award_id,
         "supplier_id": obj.supplier_id,
         "item_id": obj.item_id,

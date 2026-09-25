@@ -2,7 +2,7 @@
 {% load crispy_forms_tags %}
 
 {% comment %}
-A round's commodity lines, as a formset. Everything else on this page comes
+A tender's commodity lines, as a formset. Everything else on this page comes
 from the shared write-screen shell.
 
 The add button clones the empty form Django already renders for exactly this
@@ -13,10 +13,10 @@ Alpine is what this project bundles.
 
 {% block extra_fields %}
 <div class="pt-4 border-t border-gray-100" x-data="{ count: {{ lines.total_form_count }} }">
-  <h2 class="text-sm font-semibold text-gray-900">What this round is asking for</h2>
+  <h2 class="text-sm font-semibold text-gray-900">What this tender is asking for</h2>
   <p class="text-xs text-gray-500 mt-0.5 mb-3 max-w-2xl">
     One row per commodity. The quantity is what suppliers are quoting against, so
-    it is also what a landed total for this round is computed from.
+    it is also what a landed total for this tender is computed from.
   </p>
 
   {{ lines.management_form }}

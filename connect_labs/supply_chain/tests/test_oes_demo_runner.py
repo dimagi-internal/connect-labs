@@ -100,7 +100,7 @@ def test_the_stdin_holder_outlives_the_call_it_holds_open():
     """The session dies the moment its stdin closes.
 
     So the sleeping subprocess holding stdin open has to outlive the call, not
-    the other way round -- and because there is no purge for these programs, a
+    the other way tender -- and because there is no purge for these programs, a
     holder that expires first leaves a partial environment somebody clears by
     hand. The two numbers are one budget with a derived second, and this pins
     the direction so the next person adding a chain cannot invert it.
@@ -137,7 +137,7 @@ def test_a_call_that_times_out_still_says_how_far_the_seed_got(monkeypatch, tmp_
         raise subprocess.TimeoutExpired(
             cmd="aws ecs execute-command",
             timeout=runner.CALL_TIMEOUT_SECONDS,
-            output="seeding…\nwrote the round\n",
+            output="seeding…\nwrote the tender\n",
             stderr=b"",
         )
 
@@ -153,5 +153,5 @@ def test_a_call_that_times_out_still_says_how_far_the_seed_got(monkeypatch, tmp_
     assert "no purge" in message
     # And the partial output is carried through, whether it arrived as str or
     # bytes -- that is what says how far it got.
-    assert "wrote the round" in message
+    assert "wrote the tender" in message
     assert not runner.OUTPUTS.exists(), "a timed-out seed must not leave an outputs file behind"

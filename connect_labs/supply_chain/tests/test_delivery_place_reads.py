@@ -3,7 +3,7 @@
 THIS REPOSITORY IS PUBLIC. Every place name here is invented.
 
 Found on the supplier marketplace, which is the one supply page people
-outside the programme read: a round asking for goods in Kano rendered
+outside the programme read: a tender asking for goods in Kano rendered
 "Deliver to (not stated), Kano". The name was not stated, the city was, and
 three templates each hand-rolled the same join and got it wrong in their own
 way -- one printed a leading comma, one printed "(not stated)" beside a city

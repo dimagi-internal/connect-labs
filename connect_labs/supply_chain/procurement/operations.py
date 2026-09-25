@@ -11,7 +11,7 @@ from connect_labs.supply_chain.operations import (
     _OUTREACH_DATA_CREATE,
     _QUOTE_DATA_CORRECTION,
     _QUOTE_DATA_CREATE,
-    _ROUND_DATA,
+    _TENDER_DATA,
     ID,
     _data_with,
     figure,
@@ -19,98 +19,98 @@ from connect_labs.supply_chain.operations import (
     record,
     register_operation,
 )
-from connect_labs.supply_chain.procurement.services.comparison import COURSE_FIGURES, compare_round
+from connect_labs.supply_chain.procurement.services.comparison import COURSE_FIGURES, compare_tender
 from connect_labs.supply_chain.procurement.services.compliance import check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
 from connect_labs.supply_chain.procurement.services.questions import missing_facts
 from connect_labs.supply_chain.procurement.services.render import render_followup, render_initial_request
 from connect_labs.supply_chain.procurement.services.supply_base import supply_base, wire
 
-# ---- rounds and outreach ----------------------------------------------
+# ---- tenders and outreach ----------------------------------------------
 
 
 @register_operation(
-    name="round_list",
-    summary="List quote rounds for this programme with their status and lines.",
+    name="tender_list",
+    summary="List quote tenders for this programme with their status and lines.",
     input_schema=obj({}),
 )
-def round_list(access):
-    return [record(r) for r in access.list_rounds()]
+def tender_list(access):
+    return [record(r) for r in access.list_tenders()]
 
 
 @register_operation(
-    name="round_get",
-    summary="Fetch one round by id, with its commodity lines and delivery point.",
-    input_schema=obj({"round_id": ID}, required=("round_id",)),
+    name="tender_get",
+    summary="Fetch one tender by id, with its commodity lines and delivery point.",
+    input_schema=obj({"tender_id": ID}, required=("tender_id",)),
 )
-def round_get(access, round_id):
-    round_ = access.get_round(round_id)
-    return record(round_) if round_ else None
+def tender_get(access, tender_id):
+    tender = access.get_tender(tender_id)
+    return record(tender) if tender else None
 
 
 @register_operation(
-    name="round_create",
+    name="tender_create",
     summary=(
-        "Create a quote round in draft. Needs lines (commodity_slug, quantity, "
+        "Create a quote tender in draft. Needs lines (commodity_slug, quantity, "
         "quantity_unit) and a delivery_point before it can be opened."
     ),
-    input_schema=obj({"data": _ROUND_DATA}, required=("data",)),
+    input_schema=obj({"data": _TENDER_DATA}, required=("data",)),
     is_write=True,
 )
-def round_create(access, data):
-    return record(access.create_round(data))
+def tender_create(access, data):
+    return record(access.create_tender(data))
 
 
 @register_operation(
-    name="round_update",
-    summary="Update a round's label, lines, delivery point, deadline or notes.",
-    input_schema=obj({"round_id": ID, "data": _ROUND_DATA}, required=("round_id", "data")),
+    name="tender_update",
+    summary="Update a tender's label, lines, delivery point, deadline or notes.",
+    input_schema=obj({"tender_id": ID, "data": _TENDER_DATA}, required=("tender_id", "data")),
     is_write=True,
 )
-def round_update(access, round_id, data):
-    return record(access.update_round(round_id, data))
+def tender_update(access, tender_id, data):
+    return record(access.update_tender(tender_id, data))
 
 
 @register_operation(
-    name="round_open",
+    name="tender_open",
     summary=(
-        "Open a round for quotes. Refused unless the round has a delivery "
+        "Open a tender for quotes. Refused unless the tender has a delivery "
         "point, because suppliers will not quote without knowing where the "
         "goods go."
     ),
-    input_schema=obj({"round_id": ID}, required=("round_id",)),
+    input_schema=obj({"tender_id": ID}, required=("tender_id",)),
     is_write=True,
 )
-def round_open(access, round_id):
-    return record(access.open_round(round_id))
+def tender_open(access, tender_id):
+    return record(access.open_tender(tender_id))
 
 
 @register_operation(
-    name="round_close",
-    summary="Close a round to further quotes.",
-    input_schema=obj({"round_id": ID}, required=("round_id",)),
+    name="tender_close",
+    summary="Close a tender to further quotes.",
+    input_schema=obj({"tender_id": ID}, required=("tender_id",)),
     is_write=True,
 )
-def round_close(access, round_id):
-    return record(access.close_round(round_id))
+def tender_close(access, tender_id):
+    return record(access.close_tender(tender_id))
 
 
 @register_operation(
     name="request_render",
     summary=(
-        "Render the quote-request text for one supplier on one round. Asks "
+        "Render the quote-request text for one supplier on one tender. Asks "
         "for exactly the facts needed to make the reply comparable."
     ),
     input_schema=obj(
-        {"round_id": ID, "supplier_id": ID, "commodity_slug": {"type": "string"}},
-        required=("round_id", "supplier_id", "commodity_slug"),
+        {"tender_id": ID, "supplier_id": ID, "commodity_slug": {"type": "string"}},
+        required=("tender_id", "supplier_id", "commodity_slug"),
     ),
 )
-def request_render(access, round_id, supplier_id, commodity_slug):
-    round_ = access.get_round(round_id)
+def request_render(access, tender_id, supplier_id, commodity_slug):
+    tender = access.get_tender(tender_id)
     supplier = access.get_supplier(supplier_id)
     commodity = access.get_commodity(commodity_slug)
-    return {"text": render_initial_request(commodity, round_, supplier)}
+    return {"text": render_initial_request(commodity, tender, supplier)}
 
 
 @register_operation(
@@ -120,25 +120,25 @@ def request_render(access, round_id, supplier_id, commodity_slug):
 )
 def followup_render(access, quote_id):
     quote = access.get_quote(quote_id)
-    round_ = access.get_round(quote.round_id)
+    tender = access.get_tender(quote.tender_id)
     commodity = access.get_commodity(quote.commodity_slug)
     supplier = access.get_supplier(quote.supplier_id)
     item = access.get_item(quote.item_id) if quote.item_id else None
-    return {"text": render_followup(quote, commodity, round_, supplier, item=item)}
+    return {"text": render_followup(quote, commodity, tender, supplier, item=item)}
 
 
 @register_operation(
     name="outreach_list",
     summary="List outreach rows — who was asked, when, and whether they replied.",
-    input_schema=obj({"round_id": ID}),
+    input_schema=obj({"tender_id": ID}),
 )
-def outreach_list(access, round_id=None):
-    return [record(o) for o in access.list_outreach(round_id=round_id)]
+def outreach_list(access, tender_id=None):
+    return [record(o) for o in access.list_outreach(tender_id=tender_id)]
 
 
 @register_operation(
     name="outreach_log",
-    summary="Record that a quote request was sent to a supplier on a round.",
+    summary="Record that a quote request was sent to a supplier on a tender.",
     input_schema=obj({"data": _OUTREACH_DATA_CREATE}, required=("data",)),
     is_write=True,
 )
@@ -178,11 +178,11 @@ def outreach_delete(access, outreach_id, reason):
 
 @register_operation(
     name="quote_list",
-    summary="List quotes, optionally for one round. Includes voided and superseded versions.",
-    input_schema=obj({"round_id": ID}),
+    summary="List quotes, optionally for one tender. Includes voided and superseded versions.",
+    input_schema=obj({"tender_id": ID}),
 )
-def quote_list(access, round_id=None):
-    return [record(q) for q in access.list_quotes(round_id=round_id)]
+def quote_list(access, tender_id=None):
+    return [record(q) for q in access.list_quotes(tender_id=tender_id)]
 
 
 @register_operation(
@@ -197,11 +197,11 @@ def quote_get(access, quote_id):
     quote = access.get_quote(quote_id)
     if quote is None:
         return None
-    round_ = access.get_round(quote.round_id)
+    tender = access.get_tender(quote.tender_id)
     commodity = access.get_commodity(quote.commodity_slug)
     item = access.get_item(quote.item_id) if quote.item_id else None
-    figures = compute_figures(quote, commodity, round_, item=item).as_dict()
-    missing = missing_facts(quote, commodity, round_, item=item)
+    figures = compute_figures(quote, commodity, tender, item=item).as_dict()
+    missing = missing_facts(quote, commodity, tender, item=item)
     # The comparison's rule, applied to one quote: a category with no course
     # (a consumable, a dispenser, a test kit) has no per-course figure to be
     # unconfirmed and no treatment protocol for us to enter. Showing them here
@@ -278,36 +278,36 @@ def quote_void(access, quote_id, reason):
 
 
 @register_operation(
-    name="round_compare",
+    name="tender_compare",
     summary=(
-        "Compare every live quote on a round for one commodity. Columns report "
+        "Compare every live quote on a tender for one commodity. Columns report "
         "rankable=false where any candidate is unconfirmed, with blocked_by "
         "naming the suppliers responsible — the honest answer to 'who is "
         "cheapest' is often 'not yet, ask these questions'."
     ),
     input_schema=obj(
-        {"round_id": ID, "commodity_slug": {"type": "string"}},
-        required=("round_id", "commodity_slug"),
+        {"tender_id": ID, "commodity_slug": {"type": "string"}},
+        required=("tender_id", "commodity_slug"),
     ),
 )
-def round_compare(access, round_id, commodity_slug):
-    round_ = access.get_round(round_id)
+def tender_compare(access, tender_id, commodity_slug):
+    tender = access.get_tender(tender_id)
     commodity = access.get_commodity(commodity_slug)
-    quotes = [q for q in access.list_quotes(round_id=round_id) if q.commodity_slug == commodity_slug]
+    quotes = [q for q in access.list_quotes(tender_id=tender_id) if q.commodity_slug == commodity_slug]
     suppliers = {s.id: s for s in access.list_suppliers()}
-    return compare_round(round_, commodity, quotes, suppliers, items_by_id=access.items_by_id()).to_snapshot()
+    return compare_tender(tender, commodity, quotes, suppliers, items_by_id=access.items_by_id()).to_snapshot()
 
 
 @register_operation(
-    name="round_outstanding_questions",
-    summary="Every outstanding question on a round, grouped by supplier — the follow-up worklist.",
+    name="tender_outstanding_questions",
+    summary="Every outstanding question on a tender, grouped by supplier — the follow-up worklist.",
     input_schema=obj(
-        {"round_id": ID, "commodity_slug": {"type": "string"}},
-        required=("round_id", "commodity_slug"),
+        {"tender_id": ID, "commodity_slug": {"type": "string"}},
+        required=("tender_id", "commodity_slug"),
     ),
 )
-def round_outstanding_questions(access, round_id, commodity_slug):
-    snapshot = round_compare(access, round_id, commodity_slug)
+def tender_outstanding_questions(access, tender_id, commodity_slug):
+    snapshot = tender_compare(access, tender_id, commodity_slug)
     return [
         {"supplier_name": row["supplier_name"], "quote_id": row["quote_id"], "questions": row["questions"]}
         for row in snapshot["all_rows"]
@@ -318,13 +318,13 @@ def round_outstanding_questions(access, round_id, commodity_slug):
 @register_operation(
     name="award_create",
     summary=(
-        "Award a round to a quote. Requires a rationale and freezes the "
-        "comparison as it stood at the moment of decision. Once every line of a draft or open round "
-        "has an award, the round's status becomes awarded; a closed round is left as it is."
+        "Award a tender to a quote. Requires a rationale and freezes the "
+        "comparison as it stood at the moment of decision. Once every line of a draft or open tender "
+        "has an award, the tender's status becomes awarded; a closed tender is left as it is."
     ),
     input_schema=obj(
         {
-            "round_id": ID,
+            "tender_id": ID,
             "quote_id": ID,
             "rationale": {"type": "string", "minLength": 1},
             "decided_by": {"type": "string"},
@@ -333,36 +333,36 @@ def round_outstanding_questions(access, round_id, commodity_slug):
             # defaults to today, and may not be a day that has not come.
             "decided_on": {"type": "string", "format": "date"},
         },
-        required=("round_id", "quote_id", "rationale"),
+        required=("tender_id", "quote_id", "rationale"),
     ),
     is_write=True,
 )
-def award_create(access, round_id, quote_id, rationale, decided_by=None, decided_on=None):
+def award_create(access, tender_id, quote_id, rationale, decided_by=None, decided_on=None):
     """The decision of record — validate at least as hard as every other write.
 
     Every other write operation reference-checks what it points at
-    (_require_round, _require_commodity); award_create is the one that
+    (_require_tender, _require_commodity); award_create is the one that
     freezes a comparison_snapshot into a permanent record, so a bad
     reference here is a permanent record of the wrong thing. Three checks
-    a round-trip through round_compare would not itself catch:
+    a tender-trip through tender_compare would not itself catch:
       - the quote exists at all (a bad id would otherwise crash inside
-        round_compare on `quote.commodity_slug`, a confusing AttributeError
+        tender_compare on `quote.commodity_slug`, a confusing AttributeError
         instead of a 400 naming the missing quote);
-      - the quote belongs to THIS round -- without this, round 1 could be
-        awarded to a quote that only ever quoted on round 2, and the frozen
-        snapshot (built from round_id's own comparison) would never contain
+      - the quote belongs to THIS tender -- without this, tender 1 could be
+        awarded to a quote that only ever quoted on tender 2, and the frozen
+        snapshot (built from tender_id's own comparison) would never contain
         the quote it claims to have chosen;
       - the quote is live -- a voided or superseded quote's row is already
-        filtered out of compare_round's snapshot by `_is_live`, so awarding
+        filtered out of compare_tender's snapshot by `_is_live`, so awarding
         one would freeze a comparison that does not even list the "winner".
     """
     quote = access.get_quote(quote_id)
     if quote is None:
         raise ValueError(f"quote {quote_id} not found")
-    if quote.round_id != round_id:
+    if quote.tender_id != tender_id:
         raise ValueError(
-            f"quote {quote_id} belongs to round {quote.round_id}, not round {round_id} — "
-            "a quote can only be awarded on the round it was quoted for"
+            f"quote {quote_id} belongs to tender {quote.tender_id}, not tender {tender_id} — "
+            "a quote can only be awarded on the tender it was quoted for"
         )
     if quote.voided:
         raise ValueError(f"quote {quote_id} is voided and cannot be awarded")
@@ -372,11 +372,11 @@ def award_create(access, round_id, quote_id, rationale, decided_by=None, decided
             "award the current version instead"
         )
     decided = _decided_on(decided_on)
-    snapshot = round_compare(access, round_id, quote.commodity_slug)
+    snapshot = tender_compare(access, tender_id, quote.commodity_slug)
     return record(
         access.create_award(
             {
-                "round_id": round_id,
+                "tender_id": tender_id,
                 "quote_id": quote_id,
                 "rationale": rationale,
                 "decided_by": decided_by,
@@ -402,10 +402,10 @@ def _decided_on(value):
 @register_operation(
     name="award_list",
     summary="List awards for this programme, each with its frozen comparison snapshot and rationale.",
-    input_schema=obj({"round_id": ID}),
+    input_schema=obj({"tender_id": ID}),
 )
-def award_list(access, round_id=None):
-    return [record(a) for a in access.list_awards(round_id=round_id)]
+def award_list(access, tender_id=None):
+    return [record(a) for a in access.list_awards(tender_id=tender_id)]
 
 
 @register_operation(
@@ -429,7 +429,7 @@ def commodity_supply_base(access, commodity_slug, item_id=None):
         awards=access.list_awards(),
         contracts=access.list_contracts(),
         outreach=access.list_outreach(),
-        rounds=access.list_rounds(),
+        tenders=access.list_tenders(),
         items=access.list_items(),
         declared=_declared(access, commodity_slug),
     )
@@ -506,9 +506,9 @@ def commodity_market_offers(access, commodity_slug):
 @register_operation(
     name="tracker_import",
     summary=(
-        "Import a procurement tracker from a Google Sheet: suppliers, rounds, invitations and quotes. "
+        "Import a procurement tracker from a Google Sheet: suppliers, tenders, invitations and quotes. "
         "Records what the sheet STATES and refuses what it DERIVES — `refused` lists what it would "
-        "not guess at, and is as much the point as `imported`. Idempotent on round labels and "
+        "not guess at, and is as much the point as `imported`. Idempotent on tender labels and "
         "supplier names. The sheet must be shared with the Drive service account. Use dry_run first."
     ),
     input_schema=obj(

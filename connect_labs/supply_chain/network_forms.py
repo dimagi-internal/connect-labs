@@ -354,7 +354,7 @@ class SupplyPointForm(ScopedForm):
         # today -- `_columns` passes `parent_id` straight through and which of
         # the two wins is Django kwarg-ordering, not a documented rule. Sending
         # one key means not depending on that. TestThePayloadShape pins it,
-        # because a database round-trip cannot tell the two apart.
+        # because a database tender-trip cannot tell the two apart.
         if "parent_id" in data:
             data["parent_supply_point_id"] = data.pop("parent_id")
         return data

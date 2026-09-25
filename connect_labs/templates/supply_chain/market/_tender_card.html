@@ -2,7 +2,7 @@
 <article class="pg-card bg-white border border-brand-border-light rounded-[10px] pl-5 pr-4 sm:pl-6 sm:pr-5 pt-5 pb-4 flex flex-col gap-4 transition"
          style="--hue: {{ c.hue }}">
   <div class="flex items-start justify-between gap-3">
-    <a href="{% url 'supply_chain:market_round' c.round.pk %}" class="min-w-0 text-[17px] font-semibold text-gray-900 leading-snug hover:underline">{{ c.round.label }}</a>
+    <a href="{% url 'supply_chain:market_tender' c.tender.pk %}" class="min-w-0 text-[17px] font-semibold text-gray-900 leading-snug hover:underline">{{ c.tender.label }}</a>
     <span class="pg-chip shrink-0 inline-flex items-center gap-1.5 text-[10.5px] font-semibold tracking-wide px-2 py-1 rounded-md uppercase">
       <span class="pg-dot w-1.5 h-1.5 rounded-full"></span>{% if c.listed.invited %}Invited{% elif c.listed.matches %}Matches you{% else %}Open{% endif %}
     </span>
@@ -19,7 +19,7 @@
 
   <div class="flex flex-col gap-1.5">
     <div class="flex flex-wrap items-baseline justify-between gap-x-3 text-[12.5px]">
-      <span class="text-gray-500">{% if c.round.response_deadline %}replies by <span class="font-semibold text-gray-900">{{ c.round.response_deadline|day }}</span>{% else %}open until the buyer closes it{% endif %}</span>
+      <span class="text-gray-500">{% if c.tender.response_deadline %}replies by <span class="font-semibold text-gray-900">{{ c.tender.response_deadline|day }}</span>{% else %}open until the buyer closes it{% endif %}</span>
       <span class="{% if c.closing_soon %}pg-hue font-semibold{% else %}text-gray-500{% endif %} whitespace-nowrap">{{ c.deadline_words }}</span>
     </div>
     <div class="h-2 rounded-full bg-gray-100 overflow-hidden flex" title="{{ c.deadline_words }}">
@@ -35,14 +35,14 @@
     <span><span class="font-semibold text-gray-900">{{ c.kind }}</span></span>
     {% comment %}firstof, not |default:<variable>: a missing key in a filter ARGUMENT raises
     rather than rendering blank, and a delivery point need not carry every key.{% endcomment %}
-    <span>to {% firstof c.round.delivery_point.city c.round.delivery_point.name "a place not stated" %}{% if c.round.delivery_point.country_name %}, {{ c.round.delivery_point.country_name }}{% endif %}</span>
-    {% if c.round.shelf_life_months_minimum %}<span><span class="font-semibold text-gray-900 tabular-nums">{{ c.round.shelf_life_months_minimum }}</span> months shelf life</span>{% endif %}
+    <span>to {% firstof c.tender.delivery_point.city c.tender.delivery_point.name "a place not stated" %}{% if c.tender.delivery_point.country_name %}, {{ c.tender.delivery_point.country_name }}{% endif %}</span>
+    {% if c.tender.shelf_life_months_minimum %}<span><span class="font-semibold text-gray-900 tabular-nums">{{ c.tender.shelf_life_months_minimum }}</span> months shelf life</span>{% endif %}
   </div>
 
   <div class="border-t border-gray-100 pt-3 mt-auto flex gap-4 text-[12px] font-medium">
-    <a href="{% url 'supply_chain:market_round' c.round.pk %}" class="pg-hue hover:underline">Read the round →</a>
+    <a href="{% url 'supply_chain:market_tender' c.tender.pk %}" class="pg-hue hover:underline">Read the tender →</a>
     {% if c.listed.lines|length == 1 %}
-      <a href="{% url 'supply_chain:market_bid' c.round.pk c.listed.lines.0.commodity_slug %}" class="pg-hue hover:underline">Bid →</a>
+      <a href="{% url 'supply_chain:market_bid' c.tender.pk c.listed.lines.0.commodity_slug %}" class="pg-hue hover:underline">Bid →</a>
     {% endif %}
   </div>
 </article>

@@ -210,7 +210,7 @@ sachets are in the carton, and neither does a balance.
               <div class="text-xs text-gray-500">
                 <a class="text-brand-indigo hover:underline"
                    href="{% url 'supply_chain:procurement_quote_detail' quote.id %}">quote {{ quote.id }}</a>
-                · {{ rounds|dictkey:quote.round_id|dictkey:"label"|default:"round" }}
+                · {{ tenders|dictkey:quote.tender_id|dictkey:"label"|default:"tender" }}
                 {% if quote.received_on %}· {{ quote.received_on|day }}{% endif %}
               </div>
             </li>

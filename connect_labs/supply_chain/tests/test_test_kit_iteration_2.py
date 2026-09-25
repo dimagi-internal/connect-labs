@@ -95,9 +95,9 @@ def world(da):
     )
     supplier = op(da, "supplier_create", data={"name": "Harmattan Health Supplies"})
     aqualytic = op(da, "org_upsert", data={"slug": "aqualytic", "name": "Aqualytic"})
-    round_ = op(
+    tender = op(
         da,
-        "round_create",
+        "tender_create",
         data={
             "label": "Test kits",
             "delivery_point": {"city": "Kano"},
@@ -108,7 +108,7 @@ def world(da):
         da,
         "quote_record",
         data={
-            "round_id": round_["id"],
+            "tender_id": tender["id"],
             "commodity_slug": "test-kit",
             "supplier_id": supplier["id"],
             "item_id": lumen["id"],
@@ -117,7 +117,7 @@ def world(da):
             "incoterm": "DAP",
         },
     )
-    award = op(da, "award_create", round_id=round_["id"], quote_id=quote["id"], rationale="Reads the dose")
+    award = op(da, "award_create", tender_id=tender["id"], quote_id=quote["id"], rationale="Reads the dose")
     technical = op(
         da,
         "approval_request",

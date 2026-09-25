@@ -25,7 +25,7 @@ _SERIALIZERS = {
     models.Commodity: serializers.commodity,
     models.Item: serializers.item,
     models.Supplier: serializers.supplier,
-    models.Round: serializers.round_,
+    models.Tender: serializers.tender,
     models.Outreach: serializers.outreach,
     models.Quote: serializers.quote,
     models.Award: serializers.award,
@@ -213,7 +213,7 @@ def _data_with(_required: tuple[str, ...] = (), **properties) -> dict:
 #
 #   MONEY    — string only. A JSON number cannot carry a monetary amount without a
 #               possible silent rounding, so the contract refuses it outright rather
-#               than accept-and-round. The description is what a caller reads when its
+#               than accept-and-tender. The description is what a caller reads when its
 #               float gets rejected.
 #   QUANTITY — a decimal string OR a JSON number, because "quantity": 3 is a reasonable
 #               thing for a caller to write and rejecting it buys nothing — but positive
@@ -257,7 +257,7 @@ QUANTITY = {
 _NON_NEGATIVE_INT = {"type": "integer", "minimum": 0}
 
 _QUOTE_DATA = _data_with(
-    round_id=ID,
+    tender_id=ID,
     supplier_id=ID,
     item_id=ID,
     commodity_slug={"type": "string", "minLength": 1},
@@ -277,7 +277,7 @@ _QUOTE_DATA = _data_with(
     lead_time_days=_NON_NEGATIVE_INT,
 )
 
-# quote_record creates a new quote from nothing, so round_id/commodity_slug
+# quote_record creates a new quote from nothing, so tender_id/commodity_slug
 # must be given up front -- data_access.create_quote indexes both with `[]`.
 # quote_correct is a PARTIAL update (data_access.supersede_quote merges
 # {**existing.data, **data}): the existing record already has these, and
@@ -286,11 +286,11 @@ _QUOTE_DATA = _data_with(
 # into the record, corrupting the field the caller never meant to touch.
 # So only the create-shaped schema carries the requirement; quote_correct
 # keeps using the unrequired _QUOTE_DATA above.
-# supplier_id joined round_id and commodity_slug when quotes became a real
+# supplier_id joined tender_id and commodity_slug when quotes became a real
 # table: the column is NOT NULL because a quote nobody can attribute cannot
 # be compared, ranked or awarded. Requiring it here turns a Postgres
 # constraint violation (a 500 naming a column) into a 400 naming the field.
-_QUOTE_DATA_CREATE = {**_QUOTE_DATA, "required": ["round_id", "commodity_slug", "supplier_id"]}
+_QUOTE_DATA_CREATE = {**_QUOTE_DATA, "required": ["tender_id", "commodity_slug", "supplier_id"]}
 
 # A correction may CLEAR a figure, not only change it: a supplier revising its
 # bid from "freight excluded, 9.00" to "freight included" means there is no
@@ -316,7 +316,7 @@ _QUOTE_DATA_CORRECTION = {
     },
 }
 
-_ROUND_DATA = _data_with(
+_TENDER_DATA = _data_with(
     label={"type": "string", "minLength": 1},
     status={"enum": ["draft", "open", "closed", "awarded"]},
     lines={
@@ -374,7 +374,7 @@ _ITEM_DATA = _data_with(
 # exact failure this domain exists to refuse. See the design doc, 17.1.
 _CONTRACT_DATA = _data_with(
     (),
-    round_id=ID,
+    tender_id=ID,
     award_id=ID,
     supplier_id=ID,
     item_id=ID,
@@ -474,7 +474,7 @@ _COMMODITY_DATA = _data_with(
 )
 
 _OUTREACH_DATA = _data_with(
-    round_id=ID,
+    tender_id=ID,
     supplier_id=ID,
     channel={"enum": ["manual", "api", "mcp", "ses"]},
     responded={"type": "boolean"},
@@ -483,11 +483,11 @@ _OUTREACH_DATA = _data_with(
 
 # Same split as _QUOTE_DATA_CREATE above, for the same reason:
 # outreach_log creates a row from nothing (data_access.create_outreach
-# indexes data["round_id"]); outreach_update is a partial merge
+# indexes data["tender_id"]); outreach_update is a partial merge
 # ({**existing.data, **data}) whose own summary is "typically to record
 # that a supplier responded, and how" -- a payload that names only
 # responded/response_kind must keep working.
-_OUTREACH_DATA_CREATE = {**_OUTREACH_DATA, "required": ["round_id"]}
+_OUTREACH_DATA_CREATE = {**_OUTREACH_DATA, "required": ["tender_id"]}
 
 _SUPPLIER_DATA = _data_with(
     name={"type": "string", "minLength": 1},

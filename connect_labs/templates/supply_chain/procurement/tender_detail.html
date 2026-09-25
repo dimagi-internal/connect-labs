@@ -2,46 +2,46 @@
 {% load static i18n supply_chain_extras %}
 
 {% block supply_content %}
-{% if round %}
+{% if tender %}
 <div class="flex items-center justify-between mb-4">
   <div>
-    <h1 class="text-xl font-semibold text-gray-900">{{ round.label }}</h1>
+    <h1 class="text-xl font-semibold text-gray-900">{{ tender.label }}</h1>
     <p class="text-sm text-gray-600">
-      Status: {{ round.status|title }} — response deadline {{ round.response_deadline|default:"not set" }}
+      Status: {{ tender.status|title }} — response deadline {{ tender.response_deadline|default:"not set" }}
     </p>
     <p class="text-sm text-gray-600 mt-1">
-      {% if round.visibility == "private" %}
-        <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 border">Private</span> Only the suppliers you invite see it on the supplier marketplace.
+      {% if tender.visibility == "private" %}
+        <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 border">Restricted</span> Only the suppliers you invite see it on the supplier marketplace.
       {% else %}
-        <span class="px-2 py-0.5 rounded-full text-xs bg-message-info text-message-info-text border border-message-info-border">Public</span>
-        {% if round.status == "open" %}Listed on the <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_round' round.id %}">supplier marketplace</a>: any registered supplier can bid.{% else %}Listed on the supplier marketplace while it is open.{% endif %}
+        <span class="px-2 py-0.5 rounded-full text-xs bg-message-info text-message-info-text border border-message-info-border">Open to all suppliers</span>
+        {% if tender.status == "open" %}Listed on the <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender' tender.id %}">supplier marketplace</a>: any registered supplier can bid.{% else %}Listed on the supplier marketplace while it is open.{% endif %}
       {% endif %}
     </p>
   </div>
   <div class="flex flex-wrap items-center gap-2">
-    {% for line in round.lines %}
-    <a href="{% url 'supply_chain:procurement_comparison' round.id %}?commodity={{ line.commodity_slug }}"
+    {% for line in tender.lines %}
+    <a href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}"
        class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
       Compare {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}
     </a>
     {% endfor %}
-    <a href="{% url 'supply_chain:procurement_round_edit' round.id %}"
+    <a href="{% url 'supply_chain:procurement_tender_edit' tender.id %}"
        class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit</a>
     {% comment %}
     Opening and closing change something, so they are POSTs behind a button
     rather than links: a link that mutates is one crawler or one prefetch away
     from doing it unasked.
     {% endcomment %}
-    {% if round.status == "draft" %}
-      <form method="post" action="{% url 'supply_chain:procurement_round_open' round.id %}" class="inline">
+    {% if tender.status == "draft" %}
+      <form method="post" action="{% url 'supply_chain:procurement_tender_open' tender.id %}" class="inline">
         {% csrf_token %}
         <button type="submit"
                 class="px-3 py-1.5 text-sm rounded-md bg-message-success text-message-success-text border border-message-success-border/50 hover:brightness-95">
           Open for quotes
         </button>
       </form>
-    {% elif round.status == "open" %}
-      <form method="post" action="{% url 'supply_chain:procurement_round_close' round.id %}" class="inline">
+    {% elif tender.status == "open" %}
+      <form method="post" action="{% url 'supply_chain:procurement_tender_close' tender.id %}" class="inline">
         {% csrf_token %}
         <button type="submit"
                 class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">
@@ -55,7 +55,7 @@
 {% if buys %}
 <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-6">
   <div class="px-4 py-2.5 border-b border-brand-border-light">
-    <h2 class="text-sm font-semibold text-gray-900">What this round buys</h2>
+    <h2 class="text-sm font-semibold text-gray-900">What this tender buys</h2>
   </div>
   <ul class="divide-y divide-gray-100">
     {% for line in buys %}
@@ -70,7 +70,7 @@
 
 <div class="flex items-center justify-between mb-2">
   <h2 class="text-lg font-semibold text-gray-900">Outreach</h2>
-  <a href="{% url 'supply_chain:procurement_outreach_log' round.id %}"
+  <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Record an invitation</a>
 </div>
 <div class="bg-white rounded-lg shadow-sm overflow-hidden mb-8">
@@ -184,6 +184,6 @@
   </div>
 </div>
 {% else %}
-<p class="text-gray-500">Round not found.</p>
+<p class="text-gray-500">Tender not found.</p>
 {% endif %}
 {% endblock %}

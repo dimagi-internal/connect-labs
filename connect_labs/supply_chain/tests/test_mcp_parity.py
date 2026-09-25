@@ -190,7 +190,7 @@ def test_the_mcp_path_rejects_a_float_money_amount():
                 user=MagicMock(),
                 program_id=9,
                 data={
-                    "round_id": 1,
+                    "tender_id": 1,
                     "supplier_id": 2,
                     "commodity_slug": "rutf",
                     "as_quoted_unit": "per_pack",
@@ -212,7 +212,7 @@ def test_the_mcp_path_rejects_a_value_outside_the_enum():
                 user=MagicMock(),
                 program_id=9,
                 data={
-                    "round_id": 1,
+                    "tender_id": 1,
                     "supplier_id": 2,
                     "commodity_slug": "rutf",
                     "as_quoted_unit": "per_banana",
@@ -236,7 +236,7 @@ def test_the_mcp_path_rejects_an_undeclared_top_level_key():
                 user=MagicMock(),
                 program_id=9,
                 data={
-                    "round_id": 1,
+                    "tender_id": 1,
                     "supplier_id": 2,
                     "commodity_slug": "rutf",
                     "as_quoted_unit": "per_pack",

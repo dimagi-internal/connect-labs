@@ -166,9 +166,9 @@ def world(da):
     us = op(da, "org_upsert", data={"slug": "us", "name": "The programme"})
     customs = op(da, "org_upsert", data={"slug": "customs", "name": "Customs service"})
     regulator = op(da, "org_upsert", data={"slug": "regulator", "name": "The regulator"})
-    round_ = op(
+    tender = op(
         da,
-        "round_create",
+        "tender_create",
         data={
             "label": "Stop-gap chlorine",
             "delivery_point": {"city": "Kano"},
@@ -179,7 +179,7 @@ def world(da):
         da,
         "quote_record",
         data={
-            "round_id": round_["id"],
+            "tender_id": tender["id"],
             "commodity_slug": "chlorine",
             "supplier_id": supplier["id"],
             "item_id": item["id"],
@@ -192,7 +192,7 @@ def world(da):
             "duties_basis": "not_specified",
         },
     )
-    award = op(da, "award_create", round_id=round_["id"], quote_id=quote["id"], rationale="registered locally")
+    award = op(da, "award_create", tender_id=tender["id"], quote_id=quote["id"], rationale="registered locally")
     approval = op(
         da,
         "approval_request",
@@ -272,7 +272,7 @@ def world(da):
         da,
         "contract_create",
         data={
-            "round_id": round_["id"],
+            "tender_id": tender["id"],
             "supplier_id": supplier["id"],
             "item_id": item["id"],
             "commodity_slug": "chlorine",
@@ -411,7 +411,7 @@ def world(da):
     org_link = op(da, "update_link_issue", data={"org_id": us["id"], "coverage": "organisation"})
     return {
         "org_link": org_link,
-        "round": round_,
+        "tender": tender,
         "quote": quote,
         "award": award,
         "contract": contract,
@@ -434,8 +434,8 @@ PAGES = [
     ("suppliers", lambda w: []),
     ("supplier_detail", lambda w: [w["supplier"]["id"]]),
     ("supplier_detail", lambda w: [w["donor"]["id"]]),
-    ("procurement_round_board", lambda w: []),
-    ("procurement_round_detail", lambda w: [w["round"]["id"]]),
+    ("procurement_tender_board", lambda w: []),
+    ("procurement_tender_detail", lambda w: [w["tender"]["id"]]),
     ("procurement_quote_detail", lambda w: [w["quote"]["id"]]),
     ("award_detail", lambda w: [w["award"]["id"]]),
     ("orders", lambda w: []),
@@ -484,7 +484,7 @@ def test_no_vocabulary_code_reaches_the_page(client_in_programme, world, name, a
 
 
 def test_the_comparison_reads_as_words(client_in_programme, world):
-    url = reverse("supply_chain:procurement_comparison", args=[world["round"]["id"]]) + "?commodity=chlorine"
+    url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=chlorine"
     response = client_in_programme.get(url)
     assert response.status_code == 200
     assert raw_codes_in(response.content.decode()) == []

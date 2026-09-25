@@ -1,7 +1,7 @@
 """What a quote is still missing — the single source for every question we ask.
 
 Read in three directions (design doc section 7):
-  initial_request_facts -> the RFQ for a round, where nothing is known yet
+  initial_request_facts -> the RFQ for a tender, where nothing is known yet
   missing_facts         -> the follow-up to a supplier who answered partly
   missing_facts         -> the outstanding-questions panel on the comparison
 
@@ -21,7 +21,7 @@ Two classes of fact are missing, and both matter:
 
 Every fact also has an `audience`: most are questions for the supplier, but
 a few name something only we can fix (our own missing programme data, a
-misconfigured round, a bad enum value in our own record of a quote). Those
+misconfigured tender, a bad enum value in our own record of a quote). Those
 still get named — nothing is ever silently dropped — but tagged
 `audience="internal"` so nothing addressed to us ever gets emailed to a
 supplier by mistake. `render_followup` (services/render.py) filters on
@@ -32,7 +32,7 @@ can show both.
 import logging
 from dataclasses import dataclass
 
-from connect_labs.supply_chain.models import Commodity, Quote, Round
+from connect_labs.supply_chain.models import Commodity, Quote, Tender
 from connect_labs.supply_chain.procurement.services.compliance import NOT_STATED, check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
 from connect_labs.supply_chain.values import Unconfirmed, destination_phrase, quantity_phrase
@@ -52,7 +52,7 @@ class MissingFact:
 
 # Maps a fragment of a pricing Unconfirmed reason to (key, question, audience).
 # Ordered: the first matching rule wins, so more specific fragments come
-# before more general ones ("quantity basis" before "round is", both of which
+# before more general ones ("quantity basis" before "tender is", both of which
 # can appear in the same reason string).
 #
 # Every Unconfirmed reason pricing.py can produce is matched below — see
@@ -107,7 +107,7 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
         SUPPLIER,
     ),
     (
-        "round is",
+        "tender is",
         "quantity_basis_mismatch",
         "Can you quote for {quantity_phrase} specifically?",
         SUPPLIER,
@@ -120,8 +120,8 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
     ),
     (
         "no line for",
-        "round_configuration",
-        "This round has no line for {commodity} — add one before requesting or comparing quotes.",
+        "tender_configuration",
+        "This tender has no line for {commodity} — add one before requesting or comparing quotes.",
         INTERNAL,
     ),
     (
@@ -142,7 +142,7 @@ def audience_for_reason(reason: str) -> str:
     nothing else has to guess. The comparison uses it to decide whether an
     uncomputable figure is a supplier's gap or ours -- and an earlier version
     guessed instead, with "Unconfirmed on every row" as the test. With a
-    single quote on a round that is trivially true, so one supplier's own
+    single quote on a tender that is trivially true, so one supplier's own
     missing pack specification was reported to us as our own gap.
     """
     lowered = (reason or "").lower()
@@ -170,7 +170,7 @@ _SHELF_LIFE_QUESTION = (
     "What is the shelf life from date of manufacture, and the production date "
     "of the batch you would supply? We need at least {shelf_life} months."
 )
-# Neither the round nor the commodity is guaranteed to carry a minimum --
+# Neither the tender nor the commodity is guaranteed to carry a minimum --
 # _context()'s "shelf_life" is "" in that case, and formatting the template
 # above would put a broken sentence ("We need at least  months.") in the
 # RFQ. Used instead of _SHELF_LIFE_QUESTION whenever there is no minimum to
@@ -191,7 +191,7 @@ _ALWAYS_ASKED_BY_KEY: dict[str, str] = dict(_ALWAYS_ASKED)
 
 def _always_asked_fact(key: str, context: dict) -> MissingFact:
     """The MissingFact for one of the acceptance questions asked on every
-    quote/round regardless of what pricing or compliance found missing.
+    quote/tender regardless of what pricing or compliance found missing.
 
     shelf_life is the one whose wording depends on data that might not
     exist -- see _SHELF_LIFE_QUESTION_NO_MINIMUM.
@@ -201,15 +201,15 @@ def _always_asked_fact(key: str, context: dict) -> MissingFact:
     return _fact(key, _ALWAYS_ASKED_BY_KEY[key], context)
 
 
-def _context(commodity: Commodity, round_: Round) -> dict:
-    quantity = round_.quantity_for(commodity.slug)
+def _context(commodity: Commodity, tender: Tender) -> dict:
+    quantity = tender.quantity_for(commodity.slug)
     return {
         "base_unit": commodity.base_unit or "unit",
         "pack_unit": commodity.pack_unit or "pack",
         "commodity": commodity.name or commodity.slug,
-        "destination": destination_phrase(round_.delivery_point),
+        "destination": destination_phrase(tender.delivery_point),
         "quantity_phrase": quantity_phrase(quantity[0], quantity[1]) if quantity else "",
-        "shelf_life": round_.shelf_life_months_minimum or commodity.shelf_life_months_minimum or "",
+        "shelf_life": tender.shelf_life_months_minimum or commodity.shelf_life_months_minimum or "",
     }
 
 
@@ -250,7 +250,7 @@ def _spec_fact(field_name: str, requirement: dict) -> MissingFact:
 def missing_facts(
     quote: Quote,
     commodity: Commodity,
-    round_: Round,
+    tender: Tender,
     item=None,
 ) -> list[MissingFact]:
     """Every fact still needed before this quote could be compared honestly.
@@ -266,12 +266,12 @@ def missing_facts(
     consulted here: a supplier who confirmed a trade item has already
     answered the pack-spec question, so no question is generated for it.
     """
-    context = _context(commodity, round_)
+    context = _context(commodity, tender)
     facts: list[MissingFact] = []
     seen: set[str] = set()
     warned: set[str] = set()
 
-    figures = compute_figures(quote, commodity, round_, item=item)
+    figures = compute_figures(quote, commodity, tender, item=item)
     reasons: list[str] = []
     for figure in figures.as_dict().values():
         if isinstance(figure, Unconfirmed):
@@ -322,16 +322,16 @@ def missing_facts(
 
 def initial_request_facts(
     commodity: Commodity,
-    round_: Round,
+    tender: Tender,
 ) -> list[MissingFact]:
-    """Everything a supplier must answer for a round, before any quote exists.
+    """Everything a supplier must answer for a tender, before any quote exists.
 
     Shares its question text with missing_facts (via _QUESTION_BY_KEY and
     _spec_fact) so the two directions of the same schema cannot drift, and
     always includes the acceptance facts (shelf life, MOQ, lead time,
     validity) up front.
     """
-    context = _context(commodity, round_)
+    context = _context(commodity, tender)
     seen: set[str] = set()
     facts: list[MissingFact] = []
 
@@ -340,7 +340,7 @@ def initial_request_facts(
         ("pack_spec", _QUESTION_BY_KEY["pack_spec"]),
         # "quantity_basis_mismatch"'s wording ("Can you quote for {quantity_phrase}
         # specifically?") is the one that actually names the
-        # round's target quantity, which is what the initial ask needs to
+        # tender's target quantity, which is what the initial ask needs to
         # state up front — reused verbatim rather than authoring a third
         # wording of the same question. The fact's own key stays the plain
         # "quantity_basis": nothing has been quoted yet, so neither

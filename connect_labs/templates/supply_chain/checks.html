@@ -62,7 +62,7 @@ the record it is about, because that is where it gets answered.
             {% if readout %}<p class="text-xs text-gray-800 mt-1.5 tabular-nums">{{ readout }}</p>{% endif %}
           {% endwith %}
           {% comment %}Each fact beside its label, in words: "Promised lead time: 60 days",
-          "Outstanding: 400 jerry cans", a round or supplier by name and linked. What the
+          "Outstanding: 400 jerry cans", a tender or supplier by name and linked. What the
           header or the readout already says is left out.{% endcomment %}
           {% with rows=check|check_facts:refs %}
             {% if rows %}

@@ -17,11 +17,11 @@ the award, so the page says so where the order button would otherwise be.
 
 <div class="mb-4">
   <div class="text-xs text-gray-500">
-    <a class="hover:underline" href="{% url 'supply_chain:procurement_round_board' %}">Sourcing</a> ›
-    <a class="hover:underline" href="{% url 'supply_chain:procurement_round_detail' award.round_id %}">{{ round.label }}</a> ›
+    <a class="hover:underline" href="{% url 'supply_chain:procurement_tender_board' %}">Sourcing</a> ›
+    <a class="hover:underline" href="{% url 'supply_chain:procurement_tender_detail' award.tender_id %}">{{ tender.label }}</a> ›
     Award
   </div>
-  {% comment %}What was chosen is the heading; who supplies it follows. On a round where one
+  {% comment %}What was chosen is the heading; who supplies it follows. On a tender where one
   distributor offered two kits, "Awarded to Harmattan" did not say which.{% endcomment %}
   <h2 class="text-lg font-semibold text-gray-900">{{ awarded_item|default:award.commodity_slug|words }}</h2>
   <p class="text-sm text-gray-700">
@@ -32,7 +32,7 @@ the award, so the page says so where the order button would otherwise be.
     Decided {{ award.decided_on|day|default:"undated" }}{% if award.decided_by %} by {{ award.decided_by }}{% endif %}
     {% if award.provisional %}<span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">provisional ranking</span>{% endif %}
     · <a class="text-brand-indigo hover:underline"
-         href="{% url 'supply_chain:procurement_comparison' award.round_id %}?commodity={{ award.commodity_slug }}">the comparison it was chosen from</a>
+         href="{% url 'supply_chain:procurement_comparison' award.tender_id %}?commodity={{ award.commodity_slug }}">the comparison it was chosen from</a>
   </p>
   {% if award.rationale %}
     <p class="text-sm text-gray-800 mt-2 max-w-3xl"><span class="text-gray-500">Why:</span> {{ award.rationale }}</p>
@@ -44,7 +44,7 @@ the award, so the page says so where the order button would otherwise be.
   so the decision could not be checked against the offer it came from.{% endcomment %}
   {% if awarded_row %}
     <div class="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
-      {% if round_quantity %}<span class="text-gray-800">{{ round_quantity }}</span>{% endif %}
+      {% if tender_quantity %}<span class="text-gray-800">{{ tender_quantity }}</span>{% endif %}
       {% for column in awarded_columns %}
         {% with cell=awarded_row.figures|dictkey:column.key %}
           {% if not cell.unconfirmed and cell.amount is not None %}

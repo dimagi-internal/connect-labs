@@ -47,9 +47,9 @@ def world(da):
     supplier = op(da, "supplier_create", data={"name": "A distributor"})
     funder = op(da, "org_upsert", data={"slug": "funder", "name": "A funder"})
     us = op(da, "org_upsert", data={"slug": "us", "name": "The programme"})
-    round_ = op(
+    tender = op(
         da,
-        "round_create",
+        "tender_create",
         data={
             "label": "Stop-gap chlorine",
             "delivery_point": {"city": "Kano"},
@@ -60,7 +60,7 @@ def world(da):
         da,
         "quote_record",
         data={
-            "round_id": round_["id"],
+            "tender_id": tender["id"],
             "commodity_slug": "chlorine",
             "supplier_id": supplier["id"],
             "as_quoted_amount": "4.00",
@@ -69,8 +69,8 @@ def world(da):
             "quantity_basis_unit": "jerry_can",
         },
     )
-    award = op(da, "award_create", round_id=round_["id"], quote_id=quote["id"], rationale="registered locally")
-    return {"supplier": supplier, "funder": funder, "us": us, "round": round_, "award": award}
+    award = op(da, "award_create", tender_id=tender["id"], quote_id=quote["id"], rationale="registered locally")
+    return {"supplier": supplier, "funder": funder, "us": us, "tender": tender, "award": award}
 
 
 def _request(da, world, **extra):
@@ -93,7 +93,7 @@ def _order(da, world):
         "contract_create",
         data={
             "award_id": world["award"]["id"],
-            "round_id": world["round"]["id"],
+            "tender_id": world["tender"]["id"],
             "commodity_slug": "chlorine",
             "supplier_id": world["supplier"]["id"],
             "buyer_of_record": "programme_org",
@@ -303,7 +303,7 @@ class TestTheAwardPage:
 
     def test_the_comparison_links_to_its_awards(self, scoped, da, world):
         body = scoped.get(
-            reverse("supply_chain:procurement_comparison", args=[world["round"]["id"]]) + "?commodity=chlorine"
+            reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=chlorine"
         ).content.decode()
         assert reverse("supply_chain:award_detail", args=[world["award"]["id"]]) in body
 

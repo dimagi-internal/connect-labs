@@ -81,7 +81,7 @@ class TestShape:
         shipment_list already report; a check re-reading them would be a
         second path to the same fact, and would assert a problem where a
         shipment dispatched yesterday is not one."""
-        assert "round_awaiting_response" not in KINDS
+        assert "tender_awaiting_response" not in KINDS
         assert "shipment_stalled" not in KINDS
         assert "shipment_in_transit" not in KINDS
         assert "supplier_never_approached" not in KINDS
@@ -125,21 +125,21 @@ class TestSourcing:
         perfectly good register, and the database holds nothing that tells
         that apart from an oversight."""
         supplier = op(da, "supplier_create", data={"name": "Nutri K", "status": "identified"})
-        round_ = op(
+        tender = op(
             da,
-            "round_create",
+            "tender_create",
             data={
-                "label": "Round 2",
+                "label": "Tender 2",
                 "delivery_point": {"city": "Kano"},
                 "lines": [{"commodity_slug": "rutf", "quantity": "2000", "quantity_unit": "carton"}],
             },
         )
-        op(da, "round_open", round_id=round_["id"])
+        op(da, "tender_open", tender_id=tender["id"])
         op(
             da,
             "outreach_log",
             data={
-                "round_id": round_["id"],
+                "tender_id": tender["id"],
                 "supplier_id": supplier["id"],
                 "channel": "manual",
                 "sent_on": (TODAY - timedelta(days=3)).isoformat(),
@@ -150,7 +150,7 @@ class TestSourcing:
         assert kinds == {"commodity_course_undefined"}
 
         # The underlying facts are still readable -- just not as checks.
-        assert op(da, "outreach_list", round_id=round_["id"])[0]["responded"] is False
+        assert op(da, "outreach_list", tender_id=tender["id"])[0]["responded"] is False
         assert op(da, "supplier_list")[0]["status"] == "identified"
 
 
@@ -197,11 +197,11 @@ class TestFulfilment:
 
     def test_an_award_with_no_contract_is_flagged_against_its_award_date(self, da, rutf_without_course):
         supplier = op(da, "supplier_create", data={"name": "DABS"})
-        round_ = op(
+        tender = op(
             da,
-            "round_create",
+            "tender_create",
             data={
-                "label": "Round 1",
+                "label": "Tender 1",
                 "delivery_point": {"city": "Kano"},
                 "lines": [{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}],
             },
@@ -210,7 +210,7 @@ class TestFulfilment:
             da,
             "quote_record",
             data={
-                "round_id": round_["id"],
+                "tender_id": tender["id"],
                 "commodity_slug": "rutf",
                 "supplier_id": supplier["id"],
                 "as_quoted_amount": "52.42",
@@ -219,7 +219,7 @@ class TestFulfilment:
                 "quantity_basis_unit": "carton",
             },
         )
-        op(da, "award_create", round_id=round_["id"], quote_id=quote["id"], rationale="only comparable offer")
+        op(da, "award_create", tender_id=tender["id"], quote_id=quote["id"], rationale="only comparable offer")
 
         found = [e for e in _read(da)["checks"] if e["kind"] == "award_not_contracted"]
         assert len(found) == 1
@@ -519,21 +519,21 @@ class TestAge:
         """
         arrived = TODAY - timedelta(days=45)
         supplier = op(da, "supplier_create", data={"name": "DABS"})
-        round_ = op(
+        tender = op(
             da,
-            "round_create",
+            "tender_create",
             data={
-                "label": "Round 1",
+                "label": "Tender 1",
                 "delivery_point": {"city": "Kano"},
                 "lines": [{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}],
             },
         )
-        op(da, "round_open", round_id=round_["id"])
+        op(da, "tender_open", tender_id=tender["id"])
         op(
             da,
             "quote_record",
             data={
-                "round_id": round_["id"],
+                "tender_id": tender["id"],
                 "commodity_slug": "rutf",
                 "supplier_id": supplier["id"],
                 "as_quoted_amount": "52.42",
@@ -554,21 +554,21 @@ class TestAge:
         """`received_on` is nullable and the tracker leaves it blank where the
         sheet gave no date. An age of 0 would read as "arrived today"."""
         supplier = op(da, "supplier_create", data={"name": "DABS"})
-        round_ = op(
+        tender = op(
             da,
-            "round_create",
+            "tender_create",
             data={
-                "label": "Round 1",
+                "label": "Tender 1",
                 "delivery_point": {"city": "Kano"},
                 "lines": [{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}],
             },
         )
-        op(da, "round_open", round_id=round_["id"])
+        op(da, "tender_open", tender_id=tender["id"])
         op(
             da,
             "quote_record",
             data={
-                "round_id": round_["id"],
+                "tender_id": tender["id"],
                 "commodity_slug": "rutf",
                 "supplier_id": supplier["id"],
                 "as_quoted_amount": "52.42",

@@ -55,7 +55,7 @@ class Evidence:
     detail: str
     on: date | None = None
     quote_id: int | None = None
-    round_id: int | None = None
+    tender_id: int | None = None
     contract_id: int | None = None
     item_id: int | None = None
 
@@ -106,8 +106,8 @@ def _quote_kind(quote) -> str:
     return "quoted"
 
 
-def _commodity_on_round(round_, commodity_slug) -> bool:
-    return any((line or {}).get("commodity_slug") == commodity_slug for line in (round_.lines or []))
+def _commodity_on_tender(tender, commodity_slug) -> bool:
+    return any((line or {}).get("commodity_slug") == commodity_slug for line in (tender.lines or []))
 
 
 def supply_base(
@@ -118,7 +118,7 @@ def supply_base(
     awards=(),
     contracts=(),
     outreach=(),
-    rounds=(),
+    tenders=(),
     items=(),
     item_id: int | None = None,
     declared=(),
@@ -161,7 +161,7 @@ def supply_base(
             return False
         return record.item_id == item_id if item_id is not None else True
 
-    rounds_by_id = {r.pk: r for r in rounds}
+    tenders_by_id = {r.pk: r for r in tenders}
 
     for contract in contracts:
         if not concerns(contract):
@@ -200,7 +200,7 @@ def supply_base(
                 detail="provisional award" if award.provisional else "awarded",
                 on=award.decided_on,
                 quote_id=award.quote_id,
-                round_id=award.round_id,
+                tender_id=award.tender_id,
                 item_id=quote.item_id if quote else None,
             ),
         )
@@ -209,7 +209,7 @@ def supply_base(
     for quote in quotes:
         if not concerns(quote):
             continue
-        quoted_at_all.add((quote.supplier_id, quote.round_id))
+        quoted_at_all.add((quote.supplier_id, quote.tender_id))
         add(
             quote.supplier_id,
             Evidence(
@@ -224,20 +224,20 @@ def supply_base(
                 ),
                 on=quote.received_on,
                 quote_id=quote.pk,
-                round_id=quote.round_id,
+                tender_id=quote.tender_id,
                 item_id=quote.item_id,
             ),
         )
 
     if item_id is None:
         for invitation in outreach:
-            round_ = rounds_by_id.get(invitation.round_id)
-            if round_ is None or not _commodity_on_round(round_, commodity_slug):
+            tender = tenders_by_id.get(invitation.tender_id)
+            if tender is None or not _commodity_on_tender(tender, commodity_slug):
                 continue
             # An invitation that was answered is already represented by the
             # quote it produced. Keeping both would show "quoted" and "invited,
             # no reply" side by side about the same exchange.
-            if (invitation.supplier_id, invitation.round_id) in quoted_at_all:
+            if (invitation.supplier_id, invitation.tender_id) in quoted_at_all:
                 continue
             add(
                 invitation.supplier_id,
@@ -245,7 +245,7 @@ def supply_base(
                     kind="invited",
                     detail=("replied, no quote recorded" if invitation.responded else "no reply yet"),
                     on=invitation.sent_on,
-                    round_id=invitation.round_id,
+                    tender_id=invitation.tender_id,
                 ),
             )
 
@@ -328,7 +328,7 @@ def wire(claim: SupplyClaim) -> dict:
                 "detail": e.detail,
                 "on": e.on.isoformat() if e.on else None,
                 "quote_id": e.quote_id,
-                "round_id": e.round_id,
+                "tender_id": e.tender_id,
                 "contract_id": e.contract_id,
                 "item_id": e.item_id,
             }

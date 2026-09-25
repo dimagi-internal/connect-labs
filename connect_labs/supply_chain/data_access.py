@@ -9,7 +9,7 @@ should not ripple into 30-odd call sites.
 What it still owns, and what it deliberately does not:
 
   - **Scoping.** Reference data (commodities, items, suppliers) is
-    shared across a programme's rounds, and ideally across an organisation's
+    shared across a programme's tenders, and ideally across an organisation's
     programmes. Which of the two you get depends on the caller, so the choice
     is made here, once, via `scope_key`.
   - **Authorising that scope.** Because the labs database is the system of
@@ -17,7 +17,7 @@ What it still owns, and what it deliberately does not:
     organisation or programme. The constructor consults
     `labs/access/scopes.py` -- the same caller resolution it already uses for
     attribution, finally used to decide as well as to record.
-  - **Referential existence.** An orphan quote pointing at a round that does
+  - **Referential existence.** An orphan quote pointing at a tender that does
     not exist would never appear in any comparison -- invisible rather than
     merely wrong -- so the checks raise with the name of the thing missing.
   - **Not deduplication.** A client that submits the same quote twice can
@@ -49,11 +49,11 @@ from connect_labs.supply_chain.models import (
     Outreach,
     Quote,
     Receipt,
-    Round,
     Shipment,
     StockCount,
     Supplier,
     SupplyPoint,
+    Tender,
     fill_profile,
     scope_key,
 )
@@ -74,7 +74,7 @@ GTIN_FIELDS = ("gtin_base", "gtin_pack", "gtin_case")
 # provenance-bearing write in the domain, and it was being dropped.
 _RESOLVED = {
     "commodity_slug",
-    "round_id",
+    "tender_id",
     "supplier_id",
     "item_id",
     "quote_id",
@@ -296,7 +296,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         StockCount.objects.filter(program_id=program_id).update(adjustment_movement=None)
         movements.update(distribution=None, receipt=None, shipment=None, stock_count=None)
         Contract.objects.filter(program_id=program_id).update(duty_relief_document=None)
-        Quote.objects.filter(round__program_id=program_id).update(superseded_by=None)
+        Quote.objects.filter(tender__program_id=program_id).update(superseded_by=None)
         # Self-references are the same problem one table in: a worker's
         # holding names the store above it as its parent, so no ordering of
         # SupplyPoint deletes can work either.
@@ -319,10 +319,10 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         drop("receipts", Receipt.objects.filter(supply_point__program_id=program_id))
         drop("shipments", Shipment.objects.filter(contract__program_id=program_id))
         drop("contracts", Contract.objects.filter(program_id=program_id))
-        drop("awards", Award.objects.filter(round__program_id=program_id))
-        drop("quotes", Quote.objects.filter(round__program_id=program_id))
-        drop("outreach", Outreach.objects.filter(round__program_id=program_id))
-        drop("rounds", Round.objects.filter(program_id=program_id))
+        drop("awards", Award.objects.filter(tender__program_id=program_id))
+        drop("quotes", Quote.objects.filter(tender__program_id=program_id))
+        drop("outreach", Outreach.objects.filter(tender__program_id=program_id))
+        drop("tenders", Tender.objects.filter(program_id=program_id))
         drop("supply points", SupplyPoint.objects.filter(program_id=program_id))
         # Reference data is scoped to the programme, so purging the programme
         # purges it. This used to be guarded on the scope being a programme
@@ -349,7 +349,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         return scope_key(program_id=self.program_id)
 
     def _require_program(self) -> int:
-        """A round, quote, award or contract has no meaning outside a programme.
+        """A tender, quote, award or contract has no meaning outside a programme.
 
         Refusing is better than defaulting: a stand-in scope would make
         records written by different callers indistinguishable, which is
@@ -358,7 +358,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         if self.program_id is None:
             raise ValueError(
                 "SupplyDataAccess has no program_id: procurement and fulfilment records "
-                "(rounds, outreach, quotes, awards, contracts) require a programme scope "
+                "(tenders, outreach, quotes, awards, contracts) require a programme scope "
                 "and cannot be read or written without one"
             )
         return self.program_id
@@ -630,16 +630,16 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
     def _require_commodity(self, slug):
         return self._resolve_commodity(slug)
 
-    def _resolve_round(self, round_id):
-        if round_id is None:
+    def _resolve_tender(self, tender_id):
+        if tender_id is None:
             return None
-        found = self.get_round(round_id)
+        found = self.get_tender(tender_id)
         if found is None:
-            raise ValueError(f"round {round_id} does not exist")
+            raise ValueError(f"tender {tender_id} does not exist")
         return found
 
-    def _require_round(self, round_id):
-        return self._resolve_round(round_id)
+    def _require_tender(self, tender_id):
+        return self._resolve_tender(tender_id)
 
     def _resolve_supplier(self, supplier_id):
         if supplier_id is None:
@@ -657,71 +657,71 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
             raise ValueError(f"item {item_id} does not exist")
         return item
 
-    # ---- rounds ---------------------------------------------------------
+    # ---- tenders ---------------------------------------------------------
 
-    def _rounds(self):
-        return Round.objects.filter(program_id=self._require_program())
+    def _tenders(self):
+        return Tender.objects.filter(program_id=self._require_program())
 
-    def list_rounds(self):
-        return list(self._rounds().all())
+    def list_tenders(self):
+        return list(self._tenders().all())
 
-    def get_round(self, round_id):
-        return self._rounds().filter(pk=round_id).first()
+    def get_tender(self, tender_id):
+        return self._tenders().filter(pk=tender_id).first()
 
-    def create_round(self, data):
+    def create_tender(self, data):
         return _fresh(
-            Round.objects.create(
+            Tender.objects.create(
                 program_id=self._require_program(),
-                **{"status": "draft", **_columns(Round, data)},
+                **{"status": "draft", **_columns(Tender, data)},
             )
         )
 
-    def update_round(self, round_id, data):
-        found = self.get_round(round_id)
+    def update_tender(self, tender_id, data):
+        found = self.get_tender(tender_id)
         if found is None:
-            raise ValueError(f"round {round_id} not found")
-        for key, value in _columns(Round, data).items():
+            raise ValueError(f"tender {tender_id} not found")
+        for key, value in _columns(Tender, data).items():
             setattr(found, key, value)
         found.save()
         return _fresh(found)
 
-    def open_round(self, round_id):
-        """A round cannot open without a delivery point.
+    def open_tender(self, tender_id):
+        """A tender cannot open without a delivery point.
 
         Suppliers will not quote without knowing where the goods go, because
-        freight dominates the price -- so an open round that cannot say is
-        not a round anyone can answer.
+        freight dominates the price -- so an open tender that cannot say is
+        not a tender anyone can answer.
         """
-        found = self.get_round(round_id)
+        found = self.get_tender(tender_id)
         if found is None:
-            raise ValueError(f"round {round_id} not found")
+            raise ValueError(f"tender {tender_id} not found")
         point = found.delivery_point or {}
         if not point.get("city") and not point.get("name"):
-            raise ValueError("a round needs a delivery point before it can open")
+            raise ValueError("a tender needs a delivery point before it can open")
         found.status = "open"
         found.save(update_fields=["status", "updated_at"])
         return found
 
-    def close_round(self, round_id):
-        found = self.get_round(round_id)
+    def close_tender(self, tender_id):
+        found = self.get_tender(tender_id)
         if found is None:
-            raise ValueError(f"round {round_id} not found")
+            raise ValueError(f"tender {tender_id} not found")
         found.status = "closed"
         found.save(update_fields=["status", "updated_at"])
         return found
 
     # ---- outreach -------------------------------------------------------
 
-    def list_outreach(self, round_id=None):
-        qs = Outreach.objects.filter(round__program_id=self._require_program())
-        if round_id is not None:
-            qs = qs.filter(round_id=round_id)
+    def list_outreach(self, tender_id=None):
+        qs = Outreach.objects.filter(tender__program_id=self._require_program())
+        if tender_id is not None:
+            qs = qs.filter(tender_id=tender_id)
         return list(qs.all())
 
     def create_outreach(self, data):
         return _fresh(
             Outreach.objects.create(
-                round=self._require_round(data["round_id"]),
+                tender=self._require_tender(data["tender_id"]),
                 supplier=self._resolve_supplier(data.get("supplier_id")),
                 **_columns(Outreach, data),
             )
@@ -741,15 +741,15 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         in exactly one place (summary.py) -- so no soft-delete flag has to be
         threaded through a count that could then disagree with the rows.
         """
-        found = Outreach.objects.filter(round__program_id=self._require_program(), pk=outreach_id).first()
+        found = Outreach.objects.filter(tender__program_id=self._require_program(), pk=outreach_id).first()
         if found is None:
             raise ValueError(f"outreach {outreach_id} not found")
-        round_id, supplier_id = found.round_id, found.supplier_id
+        tender_id, supplier_id = found.tender_id, found.supplier_id
         found.delete()
-        return {"deleted": True, "outreach_id": outreach_id, "round_id": round_id, "supplier_id": supplier_id}
+        return {"deleted": True, "outreach_id": outreach_id, "tender_id": tender_id, "supplier_id": supplier_id}
 
     def update_outreach(self, outreach_id, data):
-        found = Outreach.objects.filter(round__program_id=self._require_program(), pk=outreach_id).first()
+        found = Outreach.objects.filter(tender__program_id=self._require_program(), pk=outreach_id).first()
         if found is None:
             raise ValueError(f"outreach {outreach_id} not found")
         for key, value in _columns(Outreach, data).items():
@@ -760,14 +760,14 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
     # ---- quotes ---------------------------------------------------------
 
     def _quotes(self):
-        return Quote.objects.filter(round__program_id=self._require_program()).select_related(
+        return Quote.objects.filter(tender__program_id=self._require_program()).select_related(
             "commodity", "superseded_by", "supersedes"
         )
 
-    def list_quotes(self, round_id=None):
+    def list_quotes(self, tender_id=None):
         qs = self._quotes()
-        if round_id is not None:
-            qs = qs.filter(round_id=round_id)
+        if tender_id is not None:
+            qs = qs.filter(tender_id=tender_id)
         return list(qs.all())
 
     def get_quote(self, quote_id):
@@ -776,7 +776,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
     def create_quote(self, data):
         return _fresh(
             Quote.objects.create(
-                round=self._require_round(data["round_id"]),
+                tender=self._require_tender(data["tender_id"]),
                 commodity=self._require_commodity(data["commodity_slug"]),
                 supplier=self._resolve_supplier(data.get("supplier_id")),
                 item=self._resolve_item(data.get("item_id")),
@@ -812,7 +812,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
             },
         )
         replacement = Quote.objects.create(
-            round=existing.round,
+            tender=existing.tender,
             commodity=self._resolve_commodity(data.get("commodity_slug")) or existing.commodity,
             supplier=self._resolve_supplier(data.get("supplier_id")) or existing.supplier,
             item=self._resolve_item(data.get("item_id")) or existing.item,
@@ -841,26 +841,26 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
 
     # ---- awards ---------------------------------------------------------
 
-    def list_awards(self, round_id=None):
-        qs = Award.objects.filter(round__program_id=self._require_program()).select_related("commodity")
-        if round_id is not None:
-            qs = qs.filter(round_id=round_id)
+    def list_awards(self, tender_id=None):
+        qs = Award.objects.filter(tender__program_id=self._require_program()).select_related("commodity")
+        if tender_id is not None:
+            qs = qs.filter(tender_id=tender_id)
         return list(qs.all())
 
     def get_award(self, award_id):
-        """Scoped through the round's programme, so a document cannot be
+        """Scoped through the tender's programme, so a document cannot be
         attached to another programme's award."""
-        return Award.objects.filter(round__program_id=self._require_program(), pk=award_id).first()
+        return Award.objects.filter(tender__program_id=self._require_program(), pk=award_id).first()
 
     def create_award(self, data):
         if not data.get("rationale"):
             raise ValueError("an award needs a rationale")
-        found = self._require_round(data["round_id"])
+        found = self._require_tender(data["tender_id"])
         quote = self.get_quote(data["quote_id"]) if data.get("quote_id") else None
         if data.get("quote_id") and quote is None:
             raise ValueError(f"quote {data['quote_id']} does not exist")
         award = Award.objects.create(
-            round=found,
+            tender=found,
             quote=quote,
             supplier=self._resolve_supplier(data.get("supplier_id")) or (quote.supplier if quote else None),
             commodity=self._resolve_commodity(data.get("commodity_slug")) or (quote.commodity if quote else None),
@@ -870,29 +870,29 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         return _fresh(award)
 
     @staticmethod
-    def _mark_awarded_when_complete(round_):
-        """A round whose every line has an award is awarded, and says so.
+    def _mark_awarded_when_complete(tender):
+        """A tender whose every line has an award is awarded, and says so.
 
-        The status existed and nothing set it, so a round decided line by line
+        The status existed and nothing set it, so a tender decided line by line
         still read "open" long past its deadline. Derived from the awards, not
-        set by hand; a round still missing an award on any line stays as it
-        is, and a closed round is never moved -- closing was somebody's call.
+        set by hand; a tender still missing an award on any line stays as it
+        is, and a closed tender is never moved -- closing was somebody's call.
         """
-        if round_.status not in ("draft", "open"):
+        if tender.status not in ("draft", "open"):
             return
-        wanted = {line.get("commodity_slug") for line in round_.lines or [] if isinstance(line, dict)}
+        wanted = {line.get("commodity_slug") for line in tender.lines or [] if isinstance(line, dict)}
         wanted.discard(None)
         if not wanted:
             return
-        awarded = set(Award.objects.filter(round=round_).values_list("commodity__slug", flat=True))
+        awarded = set(Award.objects.filter(tender=tender).values_list("commodity__slug", flat=True))
         if wanted <= awarded:
-            round_.status = "awarded"
-            round_.save(update_fields=["status", "updated_at"])
+            tender.status = "awarded"
+            tender.save(update_fields=["status", "updated_at"])
 
     # ---- approvals ------------------------------------------------------
 
     def list_approvals(self, award_id=None, status=None):
-        qs = AwardApproval.objects.filter(award__round__program_id=self._require_program()).select_related(
+        qs = AwardApproval.objects.filter(award__tender__program_id=self._require_program()).select_related(
             "approver_org"
         )
         if award_id is not None:
@@ -902,10 +902,10 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         return list(qs.prefetch_related("documents"))
 
     def get_approval(self, approval_id):
-        """Scoped through the award's round, so a document cannot be attached
+        """Scoped through the award's tender, so a document cannot be attached
         to another programme's approval."""
         return (
-            AwardApproval.objects.filter(award__round__program_id=self._require_program(), pk=approval_id)
+            AwardApproval.objects.filter(award__tender__program_id=self._require_program(), pk=approval_id)
             .select_related("approver_org")
             .first()
         )
@@ -1036,10 +1036,10 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
     def _contracts(self):
         return Contract.objects.filter(program_id=self._require_program()).select_related("commodity")
 
-    def list_contracts(self, round_id=None, status=None):
+    def list_contracts(self, tender_id=None, status=None):
         qs = self._contracts()
-        if round_id is not None:
-            qs = qs.filter(round_id=round_id)
+        if tender_id is not None:
+            qs = qs.filter(tender_id=tender_id)
         if status is not None:
             qs = qs.filter(status=status)
         return list(qs.all())
@@ -1066,7 +1066,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         return _fresh(
             Contract.objects.create(
                 program_id=self._require_program(),
-                round=self._resolve_round(data.get("round_id")),
+                tender=self._resolve_tender(data.get("tender_id")),
                 commodity=self._require_commodity(data["commodity_slug"]),
                 supplier=self._resolve_supplier(data.get("supplier_id")),
                 item=self._resolve_item(data.get("item_id")),

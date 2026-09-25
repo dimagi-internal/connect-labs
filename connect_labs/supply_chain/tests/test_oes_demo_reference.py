@@ -174,7 +174,7 @@ _SCOPED_DOCUMENT = {
             base_per_pack=10,
             components=[{"commodity_slug": "a-component", "quantity": 2, "base_unit": "tablet"}],
         ),
-        # `pack_unit` matters for round 2's tests below: `compute_figures`
+        # `pack_unit` matters for tender 2's tests below: `compute_figures`
         # converts a quote's `quantity_basis_unit` of "carton" against this.
         _commodity(
             "a-therapeutic-food",
@@ -262,7 +262,7 @@ def test_a_kit_brings_its_components_into_the_same_catalogue(scopes):
 
     `_kit_components` refuses a component that is not a product in the same
     catalogue, and "no requirement to fail" reads on screen as a pass. The
-    component is named by no round, so only the closure over `components`
+    component is named by no tender, so only the closure over `components`
     puts it here.
     """
     module, _, _ = scopes
@@ -469,13 +469,13 @@ def test_a_document_with_no_portfolio_section_is_refused_by_the_name_of_the_sect
 
 
 # ======================================================================
-# RUTF round 2: three suppliers, three reasons, no ranking
+# RUTF tender 2: three suppliers, three reasons, no ranking
 # ======================================================================
 #
-# Task 8's acceptance test. Round 2 (design section 7/8, beats 1-3) has to
+# Task 8's acceptance test. Tender 2 (design section 7/8, beats 1-3) has to
 # stay genuinely incomparable -- 0 of 3 quotes ranked, each blocked for a
 # DIFFERENT reason in the product's own vocabulary. Verified once by hand
-# against a rendered `/supply/procurement/rounds/<id>/compare/` response
+# against a rendered `/supply/procurement/tenders/<id>/compare/` response
 # before this test was written (see task-8-report.md): "0 of 3 comparable",
 # and the three distinct reasons below appeared verbatim on the page.
 #
@@ -484,7 +484,7 @@ def test_a_document_with_no_portfolio_section_is_refused_by_the_name_of_the_sect
 
 _ROUND_TWO = {
     "round": {
-        "label": "A Placeholder Round 2",
+        "label": "A Placeholder Tender 2",
         "delivery_point": {"city": "A Placeholder City"},
         "lines": [{"commodity_slug": "a-therapeutic-food", "quantity": "2000", "quantity_unit": "carton"}],
     },
@@ -503,8 +503,8 @@ _ROUND_TWO = {
             "quantity_basis_unit": "carton",
         },
         {
-            # Fails at the round-quantity branch of compute_figures (2,400
-            # quoted, round asks 2,000) -- and, separately, at pricing._extras
+            # Fails at the tender-quantity branch of compute_figures (2,400
+            # quoted, tender asks 2,000) -- and, separately, at pricing._extras
             # (freight basis not specified). Two reasons on purpose.
             "supplier_label": "Placeholder Supplier B",
             "commodity_slug": "a-therapeutic-food",
@@ -536,7 +536,7 @@ _ROUND_TWO = {
 }
 
 
-class _FakeOpForRoundTwo:
+class _FakeOpForTenderTwo:
     """A fake `op` that can drive `seed_rutf_round_two` with no database.
 
     Different from `_FakeOp` above: `supplier_for_label` reads the result of
@@ -558,21 +558,21 @@ class _FakeOpForRoundTwo:
         self.calls.append((name, payload))
         if name == "supplier_list":
             return []
-        if name == "round_list":
-            # An empty scope, which is what a first seed sees. `round_for`
-            # matches an existing round by label before creating one, so this
-            # is the branch that ends in `round_create` below.
+        if name == "tender_list":
+            # An empty scope, which is what a first seed sees. `tender_for`
+            # matches an existing tender by label before creating one, so this
+            # is the branch that ends in `tender_create` below.
             return []
         if name in ("supplier_create", "quote_record"):
             return {"id": self._next_id(), **payload["data"]}
-        if name == "round_create":
+        if name == "tender_create":
             return {"id": self._next_id(), **payload["data"]}
-        if name == "round_open":
-            return {"id": payload["round_id"], "status": "open"}
+        if name == "tender_open":
+            return {"id": payload["tender_id"], "status": "open"}
         raise AssertionError(f"unexpected operation {name!r}")
 
 
-def test_round_two_never_sends_the_labels_own_descriptive_fields_to_quote_record():
+def test_tender_two_never_sends_the_labels_own_descriptive_fields_to_quote_record():
     """`supplier_label`, `supplier_country` and `supplier_note` describe the
     supplier for a human reading the document. None of them is a field
     `quote_record` understands, and they are popped explicitly rather than
@@ -583,12 +583,12 @@ def test_round_two_never_sends_the_labels_own_descriptive_fields_to_quote_record
     -- this is shaped like the real document (which does carry real firm
     names in these two fields) without repeating one.
     """
-    fake_op = _FakeOpForRoundTwo()
+    fake_op = _FakeOpForTenderTwo()
     module = _load_seed_remote()
     module.op = fake_op
 
-    round_two = {
-        "round": {"label": "A Placeholder Round", "delivery_point": {"city": "A Placeholder City"}, "lines": []},
+    tender_two = {
+        "round": {"label": "A Placeholder Tender", "delivery_point": {"city": "A Placeholder City"}, "lines": []},
         "quotes": [
             {
                 "supplier_label": "A Placeholder Manufacturer",
@@ -600,7 +600,7 @@ def test_round_two_never_sends_the_labels_own_descriptive_fields_to_quote_record
         ],
     }
 
-    module.seed_rutf_round_two(object(), round_two)
+    module.seed_rutf_round_two(object(), tender_two)
 
     quote_payloads = [payload["data"] for name, payload in fake_op.calls if name == "quote_record"]
     assert len(quote_payloads) == 1
@@ -608,39 +608,39 @@ def test_round_two_never_sends_the_labels_own_descriptive_fields_to_quote_record
         assert key not in quote_payloads[0]
 
 
-def _seed_and_compare_round_two(module, seeded_scopes, round_two=_ROUND_TWO):
-    """Round 2 seeded against the real `rutf` scope, then compared for real.
+def _seed_and_compare_tender_two(module, seeded_scopes, tender_two=_ROUND_TWO):
+    """Tender 2 seeded against the real `rutf` scope, then compared for real.
 
-    Goes through `compare_round` -- the same function
+    Goes through `compare_tender` -- the same function
     `procurement/views.py`'s compare page calls -- rather than re-deriving the
     figures here, so this test would fail if the page's own comparison logic
     changed underneath it.
     """
-    from connect_labs.supply_chain.procurement.services.comparison import compare_round
+    from connect_labs.supply_chain.procurement.services.comparison import compare_tender
 
     access = seeded_scopes["rutf"]["access"]
-    seeded = module.seed_rutf_round_two(access, round_two)
+    seeded = module.seed_rutf_round_two(access, tender_two)
 
-    round_ = access.get_round(seeded["round"]["id"])
+    tender = access.get_tender(seeded["round"]["id"])
     commodity = access.get_commodity("a-therapeutic-food")
-    quotes = access.list_quotes(round_id=round_.id)
+    quotes = access.list_quotes(tender_id=tender.id)
     suppliers_by_id = {row["id"]: access.get_supplier(row["id"]) for row in seeded["suppliers"]}
-    return compare_round(round_, commodity, quotes, suppliers_by_id), seeded
+    return compare_tender(tender, commodity, quotes, suppliers_by_id), seeded
 
 
-def _round_quantity_reasons(comparison):
-    """The `landed_total_for_round_quantity` reason on each blocked row, by supplier name.
+def _tender_quantity_reasons(comparison):
+    """The `landed_total_for_tender_quantity` reason on each blocked row, by supplier name.
 
     This is the figure the comparison ranks by (`COMPARABILITY_FIELDS`,
     `ranked_by` in `comparison.py`), so it is the reason that actually keeps a
     row out of the ranking -- the one a person reading the page sees as "why
     can't I rank this".
     """
-    return {row.supplier_name: row.figures["landed_total_for_round_quantity"].reasons for row in comparison.blocked}
+    return {row.supplier_name: row.figures["landed_total_for_tender_quantity"].reasons for row in comparison.blocked}
 
 
 @pytest.mark.django_db
-def test_round_two_suppliers_quote_us_and_are_not_organisations_of_ours(scopes):
+def test_tender_two_suppliers_quote_us_and_are_not_organisations_of_ours(scopes):
     """A supplier we only have a name for -- `supplier_for_label`, not `supplier_for_org`.
 
     This used to assert `org_id is None`, and that premise died with #2019: a
@@ -661,7 +661,7 @@ def test_round_two_suppliers_quote_us_and_are_not_organisations_of_ours(scopes):
 
     module, seeded_scopes, _ = scopes
 
-    _, seeded = _seed_and_compare_round_two(module, seeded_scopes)
+    _, seeded = _seed_and_compare_tender_two(module, seeded_scopes)
 
     assert {row["name"] for row in seeded["suppliers"]} == {
         "Placeholder Supplier A",
@@ -676,7 +676,7 @@ def test_round_two_suppliers_quote_us_and_are_not_organisations_of_ours(scopes):
 
 
 @pytest.mark.django_db
-def test_round_two_is_not_comparable_and_each_quote_fails_for_a_distinct_reason(scopes):
+def test_tender_two_is_not_comparable_and_each_quote_fails_for_a_distinct_reason(scopes):
     """The acceptance test for the whole task.
 
     0 of 3 comparable, and the three reasons are DISTINCT -- each names the
@@ -686,12 +686,12 @@ def test_round_two_is_not_comparable_and_each_quote_fails_for_a_distinct_reason(
     """
     module, seeded_scopes, _ = scopes
 
-    comparison, _ = _seed_and_compare_round_two(module, seeded_scopes)
+    comparison, _ = _seed_and_compare_tender_two(module, seeded_scopes)
 
     assert comparison.comparable_count == 0
     assert len(comparison.blocked) == 3
 
-    reasons = _round_quantity_reasons(comparison)
+    reasons = _tender_quantity_reasons(comparison)
     assert reasons.keys() == {"Placeholder Supplier A", "Placeholder Supplier B", "Placeholder Supplier C"}
 
     # Three distinct failure modes, in the product's own words.
@@ -714,13 +714,13 @@ def test_supplier_a_becomes_comparable_once_it_states_a_pack_spec(scopes):
     Supplier A's whole reason for being incomparable is the missing pack
     spec (design section 7/8): once it states one the same way B and C do,
     `pricing._pack_spec` stops returning Unconfirmed and A's landed totals
-    become real numbers. If this ever went green with A still blocked, round
+    become real numbers. If this ever went green with A still blocked, tender
     2's seed data would have quietly stopped making the point the beat is
     built on.
 
     Confirmed by hand: reverting this quote back to `pack_spec_source:
-    "not_stated"` (round 2's actual seed data) makes
-    `test_round_two_is_not_comparable_and_each_quote_fails_for_a_distinct_reason`
+    "not_stated"` (tender 2's actual seed data) makes
+    `test_tender_two_is_not_comparable_and_each_quote_fails_for_a_distinct_reason`
     go red, because Supplier A would then be comparable and the assertion
     that all three are blocked would fail.
     """
@@ -737,26 +737,26 @@ def test_supplier_a_becomes_comparable_once_it_states_a_pack_spec(scopes):
         ],
     }
 
-    comparison, _ = _seed_and_compare_round_two(module, seeded_scopes, round_two=mutated)
+    comparison, _ = _seed_and_compare_tender_two(module, seeded_scopes, tender_two=mutated)
 
-    reasons = _round_quantity_reasons(comparison)
+    reasons = _tender_quantity_reasons(comparison)
     assert "Placeholder Supplier A" not in reasons
     # B and C are still blocked, for their own unrelated reasons.
     assert reasons.keys() == {"Placeholder Supplier B", "Placeholder Supplier C"}
 
 
-def test_re_seeding_does_not_drag_a_bought_round_back_onto_the_market():
-    """`round_for` made the seeder idempotent and broke the line after it.
+def test_re_seeding_does_not_drag_a_bought_tender_back_onto_the_market():
+    """`tender_for` made the seeder idempotent and broke the line after it.
 
-    `round_open` used to follow `round_create`, so it always acted on a fresh
-    draft. Once rounds were matched by label, a second run could hand an
-    ALREADY AWARDED round to the same `round_open` call -- and since the
-    supplier marketplace shipped, an open round is public. Re-seeding would
-    have re-published rounds decided weeks earlier and invited quotes for
+    `tender_open` used to follow `tender_create`, so it always acted on a fresh
+    draft. Once tenders were matched by label, a second run could hand an
+    ALREADY AWARDED tender to the same `tender_open` call -- and since the
+    supplier marketplace shipped, an open tender is public. Re-seeding would
+    have re-published tenders decided weeks earlier and invited quotes for
     goods already bought.
 
     MUTATED: `opened` reverted to opening unconditionally. This test went
-    red on the awarded round. Reverted.
+    red on the awarded tender. Reverted.
 
     Checked at the seeder rather than through a full re-seed because the
     hazard is one line's precondition, and a test that needs a whole
@@ -773,10 +773,10 @@ def test_re_seeding_does_not_drag_a_bought_round_back_onto_the_market():
 
     # A draft is opened...
     assert module.opened(object(), {"id": 1, "status": "draft"})["status"] == "open"
-    assert calls == ["round_open"]
+    assert calls == ["tender_open"]
 
     # ...and anything already decided is left exactly as it was.
     calls.clear()
     for settled in ("open", "closed", "awarded"):
         assert module.opened(object(), {"id": 1, "status": settled})["status"] == settled
-    assert calls == [], "a round that is not a draft must not be opened again"
+    assert calls == [], "a tender that is not a draft must not be opened again"

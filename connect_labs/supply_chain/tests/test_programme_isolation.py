@@ -16,7 +16,7 @@ the failure it guards against is one query out of thirty missing a filter,
 and a sample of three would have a better than even chance of missing it.
 
 Reference data (commodities, items, suppliers) is NOT here, and is not a
-leak: it is scoped by `scope_key`, shared across a programme's rounds by
+leak: it is scoped by `scope_key`, shared across a programme's tenders by
 design -- one tier, the programme -- so a row invisible from here is a row
 belonging to another programme.
 """
@@ -70,11 +70,11 @@ def theirs():
 
 
 @pytest.fixture
-def a_round(ours):
+def a_tender(ours):
     _commodity(ours)
-    return ours.create_round(
+    return ours.create_tender(
         {
-            "label": "Round 1",
+            "label": "Tender 1",
             "lines": [{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}],
             "delivery_point": {"name": "Central store, Kano"},
         }
@@ -82,22 +82,22 @@ def a_round(ours):
 
 
 class TestSourcing:
-    def test_a_round_is_invisible_to_another_programme(self, ours, theirs, a_round):
-        assert [r.pk for r in ours.list_rounds()] == [a_round.pk]
-        assert theirs.list_rounds() == []
-        assert theirs.get_round(a_round.pk) is None
+    def test_a_tender_is_invisible_to_another_programme(self, ours, theirs, a_tender):
+        assert [r.pk for r in ours.list_tenders()] == [a_tender.pk]
+        assert theirs.list_tenders() == []
+        assert theirs.get_tender(a_tender.pk) is None
 
-    def test_an_invitation_is_invisible_to_another_programme(self, ours, theirs, a_round):
+    def test_an_invitation_is_invisible_to_another_programme(self, ours, theirs, a_tender):
         supplier = _supplier(ours)
-        ours.create_outreach({"round_id": a_round.pk, "supplier_id": supplier.pk, "sent_on": "2026-04-28"})
+        ours.create_outreach({"tender_id": a_tender.pk, "supplier_id": supplier.pk, "sent_on": "2026-04-28"})
         assert len(ours.list_outreach()) == 1
         assert theirs.list_outreach() == []
 
-    def test_a_quote_is_invisible_to_another_programme(self, ours, theirs, a_round):
+    def test_a_quote_is_invisible_to_another_programme(self, ours, theirs, a_tender):
         supplier = _supplier(ours)
         quote = ours.create_quote(
             {
-                "round_id": a_round.pk,
+                "tender_id": a_tender.pk,
                 "commodity_slug": "rutf",
                 "supplier_id": supplier.pk,
                 "as_quoted_amount": Decimal("52.42"),
@@ -108,13 +108,13 @@ class TestSourcing:
         assert theirs.list_quotes() == []
         assert theirs.get_quote(quote.pk) is None
 
-    def test_another_programme_cannot_reach_into_this_one_by_round_id(self, ours, theirs, a_round):
+    def test_another_programme_cannot_reach_into_this_one_by_tender_id(self, ours, theirs, a_tender):
         """Passing the id explicitly must not bypass the scope -- that is the
         shape a leak takes when a filter is applied to the list query and
         forgotten on the by-id one."""
-        assert theirs.list_quotes(round_id=a_round.pk) == []
-        assert theirs.list_outreach(round_id=a_round.pk) == []
-        assert theirs.list_awards(round_id=a_round.pk) == []
+        assert theirs.list_quotes(tender_id=a_tender.pk) == []
+        assert theirs.list_outreach(tender_id=a_tender.pk) == []
+        assert theirs.list_awards(tender_id=a_tender.pk) == []
 
 
 class TestFulfilmentAndStock:
@@ -198,7 +198,7 @@ class TestTheScopeItselfRefuses:
         programme filter that quietly returns every programme's rows."""
         unscoped = SupplyDataAccess(access_token="unused", caller=SYSTEM)
         with pytest.raises(ValueError) as caught:
-            unscoped.list_rounds()
+            unscoped.list_tenders()
         assert "program" in str(caught.value).lower()
 
     def test_reference_data_is_not_swept_up_by_the_programme_filter(self, ours, theirs):
@@ -217,16 +217,16 @@ class TestTheDatesAndAmountsSurvive:
     above pass. These prove the writes really landed, so an empty read from
     the other programme means isolation rather than a failed write."""
 
-    def test_the_round_really_exists_under_its_own_programme(self, ours, a_round):
-        found = ours.get_round(a_round.pk)
+    def test_the_tender_really_exists_under_its_own_programme(self, ours, a_tender):
+        found = ours.get_tender(a_tender.pk)
         assert found is not None
-        assert found.label == "Round 1"
+        assert found.label == "Tender 1"
 
-    def test_the_quote_really_carries_its_figures(self, ours, a_round):
+    def test_the_quote_really_carries_its_figures(self, ours, a_tender):
         supplier = _supplier(ours)
         quote = ours.create_quote(
             {
-                "round_id": a_round.pk,
+                "tender_id": a_tender.pk,
                 "commodity_slug": "rutf",
                 "supplier_id": supplier.pk,
                 "as_quoted_amount": Decimal("52.42"),

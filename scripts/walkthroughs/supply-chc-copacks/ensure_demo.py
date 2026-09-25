@@ -102,7 +102,7 @@ def main() -> None:
         sys.exit(f"seed did not report a result (exit {result.returncode}):\n{tail}")
     realized = json.loads(match.group(1).replace("\r", "").replace("\n", ""))
     OUTPUTS.write_text(json.dumps({k: v for k, v in realized.items() if k != "purged"}, indent=2) + "\n")
-    print(f"seeded: round {realized['round_id']}, order {realized['copack_order_id']}; purged {realized['purged']}")
+    print(f"seeded: tender {realized['tender_id']}, order {realized['copack_order_id']}; purged {realized['purged']}")
     print(f"outputs → {OUTPUTS}")
 
 

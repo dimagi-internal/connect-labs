@@ -383,7 +383,7 @@ def seed(mcp: Mcp) -> dict:
     )
 
     round_ = mcp.op(
-        "round_create",
+        "tender_create",
         data={
             "label": ROUND_LABEL,
             "lines": [{"commodity_slug": "chlorine-test-kit", "quantity": "20", "quantity_unit": "kit"}],
@@ -398,7 +398,7 @@ def seed(mcp: Mcp) -> dict:
             "notes_to_supplier": "Kits to Aqualytic specification AQ-TK-1. Quote per kit, delivered Kano.",
         },
     )
-    mcp.op("round_open", round_id=round_["id"])
+    mcp.op("tender_open", tender_id=round_["id"])
 
     # Harmattan's two offers, as its sales desk sent them: per kit, delivered
     # to its own Kano warehouse, duties in. The cheaper kit is the one that
@@ -407,7 +407,7 @@ def seed(mcp: Mcp) -> dict:
         return mcp.op(
             "quote_record",
             data={
-                "round_id": round_["id"],
+                "tender_id": round_["id"],
                 "supplier_id": supplier["id"],
                 "item_id": item["id"],
                 "commodity_slug": "chlorine-test-kit",
@@ -445,7 +445,7 @@ def seed(mcp: Mcp) -> dict:
 
     return {
         "program_id": PROGRAMME_ID,
-        "round_id": round_["id"],
+        "tender_id": round_["id"],
         "quote_lumen_id": quote_lumen["id"],
         "quote_brightwell_id": quote_brightwell["id"],
         "item_lumen_id": lumen["id"],

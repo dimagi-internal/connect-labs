@@ -7,7 +7,7 @@ rows, a check is a gap or a contradiction. Keeping them apart is what lets
 the landing page carry both without either pretending to be the other.
 
 Counts, not quantities, wherever a quantity would need a unit this cannot
-know. Three rounds for three different commodities have no meaningful total
+know. Three tenders for three different commodities have no meaningful total
 quantity, and inventing one by adding cartons to vials is the failure the
 rest of this domain refuses. Pass a `commodity_slug` and the quantities come
 back too, because then the unit is knowable.
@@ -26,40 +26,40 @@ from connect_labs.supply_chain.models import (
     Outreach,
     Quote,
     Receipt,
-    Round,
     Shipment,
     SupplyPoint,
+    Tender,
 )
-from connect_labs.supply_chain.procurement.services.comparison import compare_round
+from connect_labs.supply_chain.procurement.services.comparison import compare_tender
 from connect_labs.supply_chain.stock.services import ledger, network, resupply
 from connect_labs.supply_chain.values import unconfirmed
 
 
 def _source(access, commodity=None):
     program_id = access.program_id
-    rounds = Round.objects.filter(program_id=program_id)
-    invitations = Outreach.objects.filter(round__program_id=program_id)
-    quotes = Quote.objects.filter(round__program_id=program_id, voided=False, superseded_by__isnull=True)
+    tenders = Tender.objects.filter(program_id=program_id)
+    invitations = Outreach.objects.filter(tender__program_id=program_id)
+    quotes = Quote.objects.filter(tender__program_id=program_id, voided=False, superseded_by__isnull=True)
     if commodity is not None:
         quotes = quotes.filter(commodity=commodity)
 
     comparable = total = 0
     provisional = False
-    # An awarded round was still evaluated: leaving it out read "Evaluation 0
-    # of 0 comparable" beside "Award 3" on the round those awards came from.
-    for round_ in rounds.filter(status__in=("open", "closed", "awarded")):
-        for line in round_.lines or []:
+    # An awarded tender was still evaluated: leaving it out read "Evaluation 0
+    # of 0 comparable" beside "Award 3" on the tender those awards came from.
+    for tender in tenders.filter(status__in=("open", "closed", "awarded")):
+        for line in tender.lines or []:
             slug = line.get("commodity_slug")
             if commodity is not None and slug != commodity.slug:
                 continue
             line_commodity = access.get_commodity(slug) if slug else None
             if line_commodity is None:
                 continue
-            live = [q for q in access.list_quotes(round_id=round_.pk) if q.commodity_id == line_commodity.pk]
+            live = [q for q in access.list_quotes(tender_id=tender.pk) if q.commodity_id == line_commodity.pk]
             if not live:
                 continue
-            comparison = compare_round(
-                round_,
+            comparison = compare_tender(
+                tender,
                 line_commodity,
                 live,
                 {s.pk: s for s in access.list_suppliers()},
@@ -69,12 +69,12 @@ def _source(access, commodity=None):
             total += comparison.total_count
             provisional = provisional or comparison.provisional
 
-    awards = Award.objects.filter(round__program_id=program_id)
+    awards = Award.objects.filter(tender__program_id=program_id)
     return {
         "demand": {
-            "rounds": rounds.count(),
-            "open": rounds.filter(status="open").count(),
-            "draft": rounds.filter(status="draft").count(),
+            "tenders": tenders.count(),
+            "open": tenders.filter(status="open").count(),
+            "draft": tenders.filter(status="draft").count(),
         },
         "rfq_issued": {
             "invitations": invitations.count(),

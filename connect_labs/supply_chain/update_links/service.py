@@ -140,12 +140,12 @@ def scope_for(link) -> Scope:
     if link.follows_org:
         contracts = _org_contracts(program_id, link.org_id)
         points = _org_points(program_id, link.org_id)
-        approvals = AwardApproval.objects.filter(award__round__program_id=program_id, approver_org_id=link.org_id)
+        approvals = AwardApproval.objects.filter(award__tender__program_id=program_id, approver_org_id=link.org_id)
     else:
         contracts = Contract.objects.filter(program_id=program_id, update_links=link)
         points = SupplyPoint.objects.filter(program_id=program_id, update_links=link)
         approvals = AwardApproval.objects.filter(
-            award__round__program_id=program_id, update_links=link, approver_org_id=link.org_id
+            award__tender__program_id=program_id, update_links=link, approver_org_id=link.org_id
         )
     contracts = contracts.select_related("commodity", "item", "supplier__org__supplier_profile")
     approvals = approvals.select_related(
