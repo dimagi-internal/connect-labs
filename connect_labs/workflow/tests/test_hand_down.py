@@ -166,8 +166,26 @@ class FakeRun(SimpleNamespace):
         return self.status == "completed"
 
 
+class FakeLabsAPI:
+    """`get_records` over the fake's runs, with the server's exact-match state filters."""
+
+    def __init__(self, wda):
+        self.wda = wda
+        self.queries = []
+
+    def get_records(self, experiment=None, type=None, model_class=None, **filters):
+        self.queries.append(filters)
+        return [
+            run
+            for run in self.wda.runs
+            if all((run.state or {}).get(k[len("state__") :]) == v for k, v in filters.items())
+        ]
+
+
 class FakeWDA:
-    """The four calls `write_slice` makes, over an in-memory run list."""
+    """The calls `write_slice` makes, over an in-memory run list."""
+
+    EXPERIMENT = "workflow"
 
     def __init__(self, runs=None, definitions=None):
         self.runs = list(runs or [])
@@ -175,6 +193,7 @@ class FakeWDA:
         self.deleted = []
         self.closed = False
         self._next = 100
+        self.labs_api = FakeLabsAPI(self)
 
     def list_definitions(self):
         return self.definitions
@@ -187,6 +206,7 @@ class FakeWDA:
         run = FakeRun(
             id=self._next,
             definition_id=definition_id,
+            data={"definition_id": definition_id},
             period_start=period_start,
             period_end=period_end,
             state=dict(initial_state),
@@ -273,6 +293,7 @@ class TestWritingASlice:
         own = FakeRun(
             id=1,
             definition_id=50,
+            data={"definition_id": 50},
             period_start="2026-09-07",
             period_end="2026-09-13",
             status="completed",
@@ -283,6 +304,58 @@ class TestWritingASlice:
         wda = FakeWDA(runs=[own])
         assert _write(wda, _source_run())["action"] == "created"
         assert own in wda.runs and not wda.deleted
+
+    def test_a_handed_down_run_is_found_again_by_a_string_key(self):
+        """The production API matches a query value as JSON TEXT, so a numeric
+        field cannot be filtered on; the key is a string on purpose."""
+        wda = FakeWDA()
+        _write(wda, _source_run())
+        assert wda.runs[0].state["hand_down_key"] == "50|2026-09-13"
+        wda.labs_api.queries.clear()
+        assert _write(wda, _source_run())["action"] == "unchanged"
+        assert wda.labs_api.queries == [{"state__hand_down_key": "50|2026-09-13"}], "it listed more than one week"
+
+    def test_a_backfill_reads_each_reports_hand_downs_once(self):
+        ledger = hd.Ledger(prefetch=True)
+        wda = FakeWDA()
+        for week, rid in (("2026-09-06", 8), ("2026-09-13", 9), ("2026-09-20", 10)):
+            hd.write_slice(
+                wda,
+                _receiver(),
+                _source_run(run_id=rid, end=week),
+                payload(),
+                opportunity_id=MINE,
+                source_workflow_id=19778,
+                state_key="snapshot",
+                ledger=ledger,
+            )
+        assert wda.labs_api.queries == [{"state__generated_by": "hand_down"}]
+        assert len(wda.runs) == 3
+
+    def test_a_backfill_recognises_hand_downs_written_before_the_key(self):
+        keyless = FakeRun(
+            id=7,
+            definition_id=50,
+            data={"definition_id": 50},
+            period_start="2026-09-07",
+            period_end="2026-09-13",
+            status="completed",
+            snapshot={},
+            completed_at="x",
+            state={"generated_by": "hand_down", "handed_down_from": {"run_id": 9}},
+        )
+        wda = FakeWDA(runs=[keyless])
+        out = hd.write_slice(
+            wda,
+            _receiver(),
+            _source_run(run_id=9),
+            payload(),
+            opportunity_id=MINE,
+            source_workflow_id=19778,
+            state_key="snapshot",
+            ledger=hd.Ledger(prefetch=True),
+        )
+        assert out["action"] == "unchanged" and len(wda.runs) == 1
 
     def test_a_failed_completion_leaves_no_half_written_run(self):
         wda = FakeWDA()
@@ -307,6 +380,18 @@ class TestHandingDownARun:
         ]
         assert other.runs == [], "a report following a different programme received a slice"
         assert mine.closed and other.closed
+
+    def test_a_walk_lists_each_opportunitys_workflows_once(self):
+        calls = []
+
+        def wda_for(opp):
+            calls.append(opp)
+            return FakeWDA(definitions=[_receiver()] if opp == MINE else [])
+
+        targets = hd.Receivers(wda_for, 19778)
+        for rid, week in ((8, "2026-09-06"), (9, "2026-09-13")):
+            hd.hand_down_run(wda_for, 19778, _source_run(run_id=rid, end=week), targets=targets)
+        assert sorted(calls) == sorted([MINE, OTHER])
 
     def test_a_legacy_run_is_skipped_not_failed(self):
         run = _source_run()
