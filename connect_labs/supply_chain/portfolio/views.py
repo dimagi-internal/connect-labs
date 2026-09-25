@@ -126,6 +126,7 @@ class PortfolioView(TemplateView):
         # single commodity is named, so a programme buying exactly one thing
         # gets its quantities and one buying several gets counts. What is
         # never done is a total ACROSS rows.
+        network = call_operation("network_stock", access, {})["points"]
         commodities = call_operation("commodity_list", access, {})
         commodity = commodities[0] if len(commodities) == 1 else None
         summary = call_operation(
@@ -146,7 +147,11 @@ class PortfolioView(TemplateView):
             "summary": summary,
             "checks": checks,
             "checks_by_audience": checks_by_audience(checks, scope=scope),
-            "awaited": self._awaited(access),
+            # Read ONCE and handed to both readers below. It was called twice
+            # when only `_awaited` needed it; the situation needs the same
+            # rows, and two calls could not disagree but could be slow.
+            "situation": self._situation(network),
+            "awaited": self._awaited(network),
             # Told apart from a chain that is merely quiet: a programme with a
             # catalogue and nothing bought yet is exactly what a chain about
             # to be seeded looks like, and a grid of zeroes reads as a broken
@@ -158,7 +163,115 @@ class PortfolioView(TemplateView):
             ),
         }
 
-    def _awaited(self, access) -> dict:
+    def _situation(self, rows) -> dict:
+        """Where this chain's stock actually is, and what is odd about it.
+
+        This is the page's lead, and it replaced a grid of lifecycle counts.
+        The counts were not wrong; they answered the wrong question. A funder
+        opening this asks what is GOING ON -- where the goods are, what is
+        stuck, what nobody has checked -- and a row of "RFQ issued 0 ·
+        Dispatched 0 · Distributed 0" answers none of it while occupying the
+        space that could.
+
+        **A total is offered only when one unit is in play.** Summing a
+        carton of co-pack and a jerry can of chlorine is the exact arithmetic
+        this domain refuses everywhere else, so the total is withheld the
+        moment two units appear among the places holding stock. The per-place
+        figures always stand, each in its own unit.
+
+        **Nothing here is ranked between programmes.** The exceptions are
+        each chain's own -- a store that has never counted is a fact about
+        that store -- so surfacing them says nothing about which chain
+        matters more. That distinction is what `DomainHomeView` refused, and
+        it is still refused: this sorts places within a chain by how much
+        they hold, never chains against each other.
+        """
+        from decimal import Decimal, InvalidOperation
+
+        def amount(value):
+            """A figure, or None when the domain came back Unconfirmed."""
+            if not isinstance(value, dict) or "amount" not in value:
+                return None
+            try:
+                return Decimal(str(value["amount"]))
+            except (InvalidOperation, TypeError):
+                return None
+
+        places, units, exceptions = [], set(), []
+        for row in rows:
+            held = amount(row.get("on_hand"))
+            said = amount(row.get("reported"))
+            unit = (row.get("on_hand") or {}).get("unit") or ""
+            if held:
+                units.add(unit)
+
+            # The gap between what the ledger says and what the person there
+            # says. Neither is corrected by the other -- the whole design
+            # keeps both -- so this only names the disagreement.
+            variance = None
+            if held is not None and said is not None and said != held:
+                variance = said - held
+
+            place = {
+                "name": row.get("name") or "",
+                "kind": row.get("kind") or "",
+                "held": held,
+                "unit": unit,
+                "said": said,
+                "said_on": row.get("reported_on"),
+                "variance": variance,
+                "never_counted": said is None,
+                "worker": row.get("kind") == "user_held",
+            }
+            places.append(place)
+
+            # A person holding stock who says they have none is the most
+            # actionable row in the domain, and it is not the same event as
+            # a store that simply has not been counted.
+            if said is not None and said == 0 and held:
+                exceptions.append(f"{place['name']} reports none left")
+            elif variance is not None:
+                short = "short" if variance < 0 else "more than the ledger"
+                exceptions.append(f"{place['name']} counted {abs(variance):,.0f} {short}")
+
+        never = [p for p in places if p["never_counted"]]
+        if never:
+            exceptions.append(
+                f"{len(never)} of {len(places)} places have never been counted"
+                if len(never) > 1
+                else f"{never[0]['name']} has never been counted"
+            )
+
+        # Biggest holding first. Within a chain that is a statement about
+        # where the goods are, not a judgement about where attention belongs.
+        places.sort(key=lambda p: (p["held"] is None, -(p["held"] or 0)))
+
+        # A place holding nothing records no unit, so it rendered as a bare
+        # "0" beside its neighbours' "480 cartons". Borrow the chain's unit
+        # when there is exactly one -- and only then, because "0" in a chain
+        # of cartons and jerry cans is a question this page must not answer
+        # by guessing.
+        if len(units) == 1:
+            only = next(iter(units))
+            for place in places:
+                if not place["unit"]:
+                    place["unit"] = only
+
+        held_total = sum((p["held"] or 0) for p in places)
+        return {
+            "places": places,
+            "count": len(places),
+            # One unit, or none at all: a chain holding nothing has no unit to
+            # disagree about, and saying "units differ" about an empty network
+            # would be a warning about a problem that is not there.
+            "total": held_total if len(units) <= 1 else None,
+            "unit": next(iter(units), ""),
+            "units_differ": len(units) > 1,
+            "empty": not held_total,
+            "exceptions": exceptions,
+        }
+
+    def _awaited(self, rows) -> dict:
         """What this chain is still waiting on, and how much of it has no date.
 
         Read off the network page's own `expected_inbound`, so the two cannot
@@ -168,7 +281,6 @@ class PortfolioView(TemplateView):
         a page that trails off after the supplier's name says "fine" about
         the one fact a funder asks first.
         """
-        rows = call_operation("network_stock", access, {})["points"]
         consignments = [expected for row in rows for expected in row["expected_inbound"]]
         dates = sorted(e["expected_on"] for e in consignments if e["expected_on"])
         return {
