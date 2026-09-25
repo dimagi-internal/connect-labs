@@ -129,8 +129,11 @@ class TestASliceCarriesOnlyItsOwnOpportunity:
 
 @pytest.mark.django_db
 class TestWhichReportReceivesASlice:
-    def _definition(self, config=None):
-        return SimpleNamespace(id=1, data={"config": config or {}}, template_type="kmc_opp_report")
+    def _definition(self, config=None, follows=True):
+        data = {"config": config or {}}
+        if follows:
+            data["render_source"] = {"template": "kmc_opp_report"}
+        return SimpleNamespace(id=1, data=data, template_type="kmc_opp_report")
 
     def test_a_report_naming_its_source_takes_it(self):
         assert hd.names_source(self._definition({"source_workflow_id": 19778}), 19778, MINE)
@@ -142,6 +145,15 @@ class TestWhichReportReceivesASlice:
         assert hd.names_source(self._definition(), 19778, MINE)
         assert not hd.names_source(self._definition(), 5456, MINE)
         assert not hd.names_source(self._definition(), 19778, OTHER)
+
+    def test_a_fork_with_its_own_render_does_not_follow_the_cohort(self):
+        """A workflow built from the template and then given its own page -- on prod,
+        a twin/triplet audit in opportunity 1488 -- is not an opportunity report and
+        received a slice before this rule existed. It must name a source to get one."""
+        cohort = BenchmarkCohort.objects.create(name="KMC", organization_id="x", source_workflow_id=19778)
+        cohort.members.create(opportunity_id=MINE)
+        assert not hd.names_source(self._definition(follows=False), 19778, MINE)
+        assert hd.names_source(self._definition({"source_workflow_id": 19778}, follows=False), 19778, MINE)
 
     def test_only_a_template_that_asks_for_hand_downs_receives_them(self):
         assert hd.receives_hand_down(SimpleNamespace(template_type="kmc_opp_report"))
@@ -212,7 +224,11 @@ def _source_run(run_id=9, end="2026-09-13"):
 
 
 def _receiver():
-    return SimpleNamespace(id=50, data={"config": {"source_workflow_id": 19778}}, template_type="kmc_opp_report")
+    return SimpleNamespace(
+        id=50,
+        data={"config": {"source_workflow_id": 19778}, "render_source": {"template": "kmc_opp_report"}},
+        template_type="kmc_opp_report",
+    )
 
 
 def _write(wda, source):
