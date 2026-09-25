@@ -1045,6 +1045,11 @@ class SupplierDetailView(OperationBase):
         rounds = {r["id"]: r for r in self.op("round_list")}
         context["rounds"] = rounds
 
+        # How their orders actually went: on time, in full, and how late the
+        # worst one ran. Scoped to this programme like everything else here --
+        # a supplier's record with us is not a claim about them in general.
+        context["performance"] = next((row for row in self.op("supplier_performance", supplier_id=supplier_id)), None)
+
         outreach = [o for o in self.op("outreach_list") if o["supplier_id"] == supplier_id]
         for invitation in outreach:
             invitation["round"] = rounds.get(invitation["round_id"])

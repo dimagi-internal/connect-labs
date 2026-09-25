@@ -214,3 +214,69 @@ class TestLeadTime:
         assert row["promised_days_median"] == 30
         assert row["actual_days_median"] == 40
         assert row["days_late_worst"] == 10
+
+
+# ---------------------------------------------------------------------------
+# On the page. A measure like this misleads through its presentation more
+# easily than through its arithmetic, so the screen is tested too.
+# ---------------------------------------------------------------------------
+
+import re  # noqa: E402
+
+from django.urls import reverse  # noqa: E402
+
+
+@pytest.fixture
+def screen(client, django_user_model, monkeypatch):
+    from connect_labs.supply_chain import views  # noqa: F401
+    from connect_labs.supply_chain.api_views import _access as real_access
+
+    account = django_user_model.objects.create_user(username="perf", password="x", email="perf@dimagi.com")
+    client.force_login(account)
+
+    def _scoped(request):
+        access = real_access(request)
+        access.program_id = PROGRAM
+        return access
+
+    monkeypatch.setattr("connect_labs.supply_chain.views._access", _scoped)
+    monkeypatch.setattr("connect_labs.supply_chain.views.has_program_context", lambda request: True)
+    return client
+
+
+def _page(screen, world):
+    body = screen.get(reverse("supply_chain:supplier_detail", args=[world["supplier"]["id"]])).content.decode()
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
+
+
+class TestThePageSaysWhatItCounted:
+    def test_a_rate_is_shown_as_a_count_out_of_a_count(self, screen, world):
+        """Never a bare percentage. "100%" out of one order and out of two
+        hundred are different claims and a reader cannot tell them apart."""
+        c = _order(world, signed=days_ago(40), promised_days=30)
+        _delivered(world, c, on=days_ago(15), accepted="100")
+
+        text = _page(screen, world)
+        assert "1 of 1" in text
+        assert "100%" not in text
+
+    def test_nothing_to_judge_is_not_dressed_as_a_bad_record(self, screen, world):
+        """MUTATED: the template's `{% if performance.measurable %}` was
+        removed so the zero branch rendered the grid. "0 of 0" appeared where
+        this asserts it does not. Reverted."""
+        c = _order(world, signed=days_ago(40), promised_days=None)
+        _delivered(world, c, on=days_ago(5), accepted="100")
+
+        text = _page(screen, world)
+        assert "Nothing to judge yet" in text
+        assert "0 of 0" not in text
+
+    def test_what_was_left_out_of_the_count_is_said(self, screen, world):
+        """A denominator that quietly drops orders is the other way this lies."""
+        c = _order(world, signed=days_ago(40), promised_days=30)
+        _delivered(world, c, on=days_ago(15), accepted="100")
+        _order(world, signed=days_ago(2), promised_days=60)
+
+        text = _page(screen, world)
+        assert "1 of 1" in text
+        assert "1 still on the way" in text
