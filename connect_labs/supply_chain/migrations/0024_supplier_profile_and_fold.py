@@ -7,7 +7,7 @@ blanks of that organisation's supplier profile. Two rows in one program that
 turn out to be one company are folded into one, and everything that pointed at
 the dropped row is repointed rather than deleted.
 
-The columns leave `Supplier` in 0023. They are two migrations, not one,
+The columns leave `Supplier` in 0025. They are two migrations, not one,
 because Postgres refuses to ALTER a table with pending deferred-constraint
 events in the same transaction as the rows this one rewrites.
 """
@@ -161,21 +161,21 @@ def fold(apps, schema_editor):
 def unfold(apps, schema_editor):
     """Refuse to roll back over real suppliers.
 
-    The company columns are dropped in 0023 and folded rows cannot be
+    The company columns are dropped in 0025 and folded rows cannot be
     unfolded, so a rollback with suppliers on file would lose them -- or
     fail half-way re-adding a NOT NULL column. Only an empty table (a fresh
     database, a test) may go back.
     """
     if apps.get_model("supply_chain", "Supplier").objects.exists():
         raise IrreversibleError(
-            "0022 cannot be reversed with suppliers on file: their company facts now live on the organisation"
+            "0024 cannot be reversed with suppliers on file: their company facts now live on the organisation"
         )
 
 
 class Migration(migrations.Migration):
     dependencies = [
         ("labs", "0024_workflowschedule_interval_hours"),
-        ("supply_chain", "0021_portfolio"),
+        ("supply_chain", "0023_place_supply_points"),
     ]
 
     operations = [

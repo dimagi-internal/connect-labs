@@ -1,6 +1,6 @@
 """A supplier is a company, part two: the company columns leave `Supplier`.
 
-0022 moved every company fact to the organisation and its supplier profile.
+0024 moved every company fact to the organisation and its supplier profile.
 What stays is the program's own: its status and notes, one link per company
 per program.
 """
@@ -11,7 +11,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("supply_chain", "0022_supplier_profile_and_fold"),
+        ("supply_chain", "0024_supplier_profile_and_fold"),
     ]
 
     operations = [
