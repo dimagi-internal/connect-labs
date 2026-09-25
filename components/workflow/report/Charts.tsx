@@ -197,8 +197,10 @@ export interface TrendPoint {
 
 /**
  * One indicator across saved reports, small-multiple sized. `points` is one per
- * report, oldest first. `loading` shows a placeholder: "one report so far"
- * while the history is still on its way would read as a fact about the data.
+ * report, oldest first. `loading` (or `points` of null) shows a placeholder:
+ * "one report so far" while the history is still on its way would read as a
+ * fact about the data. The header's band word still comes from the newest
+ * point in hand, so it shows while the rest loads.
  */
 export function TrendCard(props: {
   label: string;
@@ -207,6 +209,7 @@ export function TrendCard(props: {
   pct?: boolean;
   target: number;
   format: (e: Cell) => string;
+  loading?: boolean;
 }) {
   const label = props.label;
   const pct = !!props.pct;
@@ -228,7 +231,7 @@ export function TrendCard(props: {
   const real = pts.filter(Boolean) as NonNullable<(typeof pts)[number]>[];
   const cur = real.length ? real[real.length - 1].e : null;
   let body: React.ReactNode;
-  if (history === null) {
+  if (history === null || props.loading) {
     body = (
       <div
         className="relative rounded bg-gray-50 animate-pulse"

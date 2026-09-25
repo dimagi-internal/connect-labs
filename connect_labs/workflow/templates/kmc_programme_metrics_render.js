@@ -2247,13 +2247,10 @@ function WorkflowUI({
         format={function (e) {
           return fmt(ind, e);
         }}
-        points={
-          history === null
-            ? null
-            : historyPoints.map(function (p) {
-                return { date: p.date, entry: (p.ind && p.ind[id]) || null };
-              })
-        }
+        loading={history === null}
+        points={historyPoints.map(function (p) {
+          return { date: p.date, entry: (p.ind && p.ind[id]) || null };
+        })}
       />
     );
   }
