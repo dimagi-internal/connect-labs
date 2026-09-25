@@ -12,6 +12,7 @@ placeholder folder id and never reaches Drive.
 
 import base64
 import importlib.util
+import zlib
 from pathlib import Path
 
 import pytest
@@ -29,9 +30,18 @@ def _load_runner():
 
 
 def _driver_of(command):
-    """The payload back out of the command, as the worker would decode it."""
+    """The payload back out of the command, as the worker would decode it.
+
+    Decompressed as well as decoded, and deliberately by doing what the
+    command itself says rather than by knowing: base64 alone inflates by 4/3,
+    so the driver is deflated first and the command's own decoder is
+    `zlib.decompress(b64decode(...))`. If this drifts from the command, the
+    tests below stop reading the thing the worker runs.
+    """
     encoded = command.split("b64decode('")[1].split("')")[0]
-    return base64.b64decode(encoded).decode()
+    raw = base64.b64decode(encoded)
+    assert "zlib" in command, "the command no longer decompresses; this helper is out of step"
+    return zlib.decompress(raw).decode()
 
 
 def test_the_payload_is_valid_python():

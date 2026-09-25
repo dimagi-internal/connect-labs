@@ -66,6 +66,7 @@ import os
 import re
 import subprocess
 import sys
+import zlib
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -226,10 +227,15 @@ links = _seed["seed_partner_links"](chc["access"], data, chc["reference"], chc_c
 
 supply_only = _seed["seed_supply_only"](data, scopes)
 
-# The RUTF and chlorine chains are tasks 8 and 10. Their scopes already hold
-# their own catalogues (seed_scopes above); the chain seeders plug in here.
-# RUTF is wired (task 8); chlorine's still plugs in below it (task 10).
+# The other two chains. Their scopes already hold their own catalogues
+# (seed_scopes above); these seed the ledgers on top of them.
 rutf_rounds = _seed["seed_rutf_rounds"](data, scopes)
+chlorine = _seed["seed_chlorine_blocked"](data, scopes)
+
+# The last mile, after the CHC chain because it distributes stock the chain
+# put in a partner's store, and after the links because beat 10 is the
+# contrast that only reads against the partner seat beat 6 opened.
+last_mile = _seed["seed_chc_last_mile"](chc["access"], data, chc["reference"], chc_chain)
 
 # Last, because it spans what the lines above seeded: the portfolio and the
 # one address in this domain that is not programme-scoped.
@@ -244,13 +250,19 @@ print(
                 "chc": chc_chain["contract"]["id"],
                 "supply_only": supply_only["chain"]["contract"]["id"],
                 "rutf_round_one": rutf_rounds["round_one"]["contract"]["id"],
+                # Confirmed, owed, and carrying no promised date -- beat 8b.
+                "chlorine": chlorine["contract"]["id"],
             },
             "rounds": {
                 "chc": chc_chain["round"]["id"],
                 "supply_only": supply_only["chain"]["round"]["id"],
                 "rutf_round_one": rutf_rounds["round_one"]["round"]["id"],
                 "rutf_round_two": rutf_rounds["round_two"]["round"]["id"],
+                "chlorine": chlorine["round"]["id"],
             },
+            # Beat 10's field workers, so the run notes name the rows the
+            # close depends on rather than leaving them to be rediscovered.
+            "workers": sorted(last_mile["points"]),
             "partner_links": {
                 slug: {"id": link["id"], "url": link["url"]} for slug, link in links.items()
             },
@@ -272,14 +284,31 @@ def build_command(folder: str, filename: str) -> str:
         .replace("__FILENAME__", filename)
         .replace("__MARK__", MARK)
     )
-    encoded = base64.b64encode(driver.encode()).decode()
-    command = f"python manage.py shell -c \"exec(__import__('base64').b64decode('{encoded}').decode())\""
+    # Compressed before encoding, and that is the difference between this
+    # route working and not. Base64 alone INFLATES by 4/3: the driver passed
+    # 120,000 characters once the RUTF, chlorine and last-mile seeders landed,
+    # and tripped the guard below. Python source deflates about 4:1, so the
+    # same payload travels in roughly a quarter of the argv it used to.
+    #
+    # This is a change of ENCODING, not a raised limit. MAX_COMMAND still
+    # measures the real constraint -- bytes on the container's argv -- and
+    # still trips before the shell does. When it trips again, compression has
+    # no second trick and the answer really is to stop shipping source here:
+    # put seed_remote.py in the Drive folder the seed data already comes from
+    # and have the worker fetch it, which makes the payload a fixed ~2 KB
+    # whatever the seeder grows into.
+    packed = base64.b64encode(zlib.compress(driver.encode(), 9)).decode()
+    command = (
+        "python manage.py shell -c \"exec(__import__('zlib').decompress("
+        f"__import__('base64').b64decode('{packed}')).decode())\""
+    )
     if len(command) > MAX_COMMAND:
         sys.exit(
-            f"the payload is {len(command):,} characters, past the {MAX_COMMAND:,} this route can "
-            "carry (ECS exec puts it on the container's argv, which stops at 128 KiB). The seeder "
-            "has outgrown being shipped on a command line: write it to the worker's disk, or fetch "
-            "it there, instead of growing this."
+            f"the payload is {len(command):,} characters COMPRESSED, past the {MAX_COMMAND:,} this "
+            "route can carry (ECS exec puts it on the container's argv, which stops at 128 KiB). "
+            "Compression has already been spent, so there is nothing left to squeeze: fetch "
+            "seed_remote.py on the worker from the Drive folder the seed data comes from, instead "
+            "of shipping it here."
         )
     return command
 

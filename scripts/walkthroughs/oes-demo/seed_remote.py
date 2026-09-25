@@ -1014,6 +1014,138 @@ def seed_chlorine_blocked(data, scopes):
     }
 
 
+def seed_chc_last_mile(access, data, reference, chain):
+    """Beat 10: the ledger runs to the worker, and the worker answers back.
+
+    This is the close, and it only means anything against beat 9. The
+    supply-only organisation's chain stops at its last store because nothing
+    binds it to Connect -- no `opportunity_id`, no user-held points -- and
+    `summary._deliver()` reads that off the data rather than being told. Ours
+    does not stop, and this is what makes the difference real rather than
+    asserted: a field worker IS a supply point, so distributing to one is an
+    ordinary ledger movement, and the count they submit sits beside the
+    balance instead of overwriting it.
+
+    **The disagreement is the point, not a flaw in the seed.** One worker's
+    report matches, one is nine cartons short, and one is at zero. If all
+    three agreed there would be nothing to look at, and if all three differed
+    the variance would read as noise in the screen rather than as a finding
+    about a worker. `stock_on_hand` returns both figures for exactly this
+    reason, and its own summary says they routinely disagree.
+
+    **A zero is recorded, not skipped.** A worker with nothing left is a
+    stockout, which is the single most actionable row on the page --
+    `_STOCK_COUNT_DATA` takes the zero-accepting quantity here while the
+    money schemas refuse a zero, and that difference is deliberate.
+
+    The counts carry `source: connect_visit` because that is the kind of row
+    they stand for. In this environment nothing was ingested -- see the
+    document's own `_provenance_warning`, which says so in the one place a
+    reader will look before repeating it to a funder.
+    """
+    section = without_commentary(data["chc_last_mile"])
+    orgs = reference["orgs"]
+    program_org = orgs[chain_programme_org(data)]
+    ours = {"source": "we_recorded", "recorded_by_org_id": program_org["id"]}
+
+    store = chain["partner_points"][_store_org_slug(data, section)]
+    opportunity_id = section["opportunity_id"]
+    commodity_slug = section["commodity_slug"]
+    item_id = chain["context"]["item"]["id"]
+
+    # The workers first: a distribution line names where it went, and a line
+    # naming a worker who is not a supply point yet has nowhere to put the
+    # stock.
+    points = {}
+    for worker in section["workers"]:
+        points[worker["slug"]] = op(
+            access,
+            "supply_point_upsert",
+            data={
+                **ours,
+                "slug": worker["slug"],
+                "name": worker["name"],
+                "kind": "user_held",
+                "connect_username": worker["connect_username"],
+                "opportunity_id": opportunity_id,
+                "parent_id": store["id"],
+                "managed_by_org_id": store.get("managed_by_org_id") or program_org["id"],
+            },
+        )
+
+    distribution = op(
+        access,
+        "distribution_record",
+        data={
+            **ours,
+            "supply_point_id": store["id"],
+            "opportunity_id": opportunity_id,
+            "commodity_slug": commodity_slug,
+            "distributed_on": day(section["distributed_on_days_ago"]),
+            "reference": "RESUPPLY-CHC-01",
+            "lines": [
+                {
+                    "to_supply_point_id": points[worker["slug"]]["id"],
+                    "item_id": item_id,
+                    "quantity": worker["distributed"],
+                    "quantity_unit": "carton",
+                }
+                for worker in section["workers"]
+            ],
+        },
+    )
+
+    # What each worker then said. Recorded BY us against their username,
+    # because nothing was really ingested -- the honest stamp for a row this
+    # seeder wrote, with the kind it stands for named in `source`.
+    counts = [
+        op(
+            access,
+            "stock_count_record",
+            data={
+                "recorded_by_org_id": program_org["id"],
+                "source": "connect_visit",
+                "supply_point_id": points[worker["slug"]]["id"],
+                "item_id": item_id,
+                "commodity_slug": commodity_slug,
+                "kind": "self_reported",
+                "counted_on": day(section["counted_on_days_ago"]),
+                "quantity": worker["reported"],
+                "quantity_unit": "carton",
+                "opportunity_id": opportunity_id,
+                "connect_username": worker["connect_username"],
+            },
+        )
+        for worker in section["workers"]
+    ]
+
+    return {"points": points, "distribution": distribution, "counts": counts}
+
+
+def chain_programme_org(data):
+    """The org that records the programme's own rows, from the CHC chain."""
+    return data["chc_chain"]["programme_org_slug"]
+
+
+def _store_org_slug(data, section):
+    """Which partner store the resupply runs out of, by its own slug.
+
+    The document names the store by `store_slug` (a supply-point slug) but
+    `seed_chain` returns partner points keyed by ORGANISATION slug, because
+    that is the resolution a row naming `to_org_slug` needs. One lookup
+    reconciles the two rather than making the document say it twice and risk
+    the two drifting.
+    """
+    wanted = section["store_slug"]
+    for row in data["chc_chain"]["partner_points"]:
+        if row["slug"] == wanted:
+            return row["org_slug"]
+    raise ValueError(
+        f"chc_last_mile resupplies from {wanted!r}, which is not one of the CHC chain's "
+        "partner_points; name a store that exists or add it there"
+    )
+
+
 # ======================================================================
 # The partner seats -- and the third kind of truth
 # ======================================================================
