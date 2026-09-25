@@ -83,6 +83,8 @@ KIND_CATEGORIES = {
     "stock_unconfirmed": "missing",
     "stock_never_reported": "missing",
     "shipment_documents_outstanding": "missing",
+    "shipment_delivered_unevidenced": "missing",
+    "charge_paid_unevidenced": "missing",
     "award_awaiting_approval": "missing",
     "payment_unconfirmed": "missing",
     # conflict -- two records disagree
@@ -444,6 +446,7 @@ def _fulfilment(access, as_of):
     out += _late_shipments(access, as_of)
     out += _unconfirmed_payments(access, as_of)
     out += _outstanding_documents(access, as_of)
+    out += _unevidenced_deliveries(access, as_of)
 
     for shipment in uncertified:
         out.append(
@@ -454,6 +457,99 @@ def _fulfilment(access, as_of):
                 label=_shipment_label(shipment),
                 audience="supplier",
                 facts={"status": shipment.status},
+                since=shipment.dispatched_on,
+                as_of=as_of,
+            )
+        )
+    return out
+
+
+def _unevidenced_deliveries(access, as_of):
+    """Consignments recorded as delivered, and carriers paid, with no proof.
+
+    `proof_of_delivery` was one of fifteen document kinds and nothing in the
+    application read it, so a shipment reached `delivered` because somebody
+    said so and a carrier could be paid for a leg nobody had evidenced.
+
+    A POD is not a goods received note, and the difference is where money is
+    argued about. A GRN is the receiving side's own record of what it counted
+    and accepted into stock. A POD is evidence about the CARRIER -- handed
+    over at this place, on this day, signed for by this person. They describe
+    one event and routinely disagree, and the disagreement is the finding.
+
+    Two findings, in escalating order of consequence:
+
+    **Delivered with nothing on file.** The arrival is an assertion. Ours to
+    chase, because we are the ones who recorded it.
+
+    **Paid with nothing on file.** Money has left the account for a leg
+    nobody evidenced, and it is out of the door rather than merely promised.
+    `paid_on` is null while a charge is assessed, so this fires only once it
+    is actually paid -- an assessed charge is a plan, not a loss.
+
+    Neither refuses the act. A store really may take goods before the
+    paperwork catches up, and a domain that rejected the entry would simply
+    not be told about the delivery, which is worse than knowing and saying
+    the evidence is missing.
+    """
+    shipments = list(
+        Shipment.objects.filter(contract__program_id=access.program_id, status="delivered")
+        .select_related("contract__supplier__org__supplier_profile", "contract__commodity", "contract__item")
+        .prefetch_related("documents", "charges__payee_org")
+    )
+
+    out = []
+    for shipment in shipments:
+        if any(document.kind == "proof_of_delivery" for document in shipment.documents.all()):
+            continue
+
+        paid = [charge for charge in shipment.charges.all() if charge.paid_on]
+        if paid:
+            out.append(
+                _check(
+                    "charge_paid_unevidenced",
+                    subject_type="shipment",
+                    subject_id=shipment.pk,
+                    label=_shipment_label(shipment),
+                    # Ours: we paid it, and only we can produce what we were
+                    # given at the door. Asking the supplier for the carrier's
+                    # paperwork would chase the wrong party.
+                    audience="ours",
+                    facts={
+                        "status": shipment.status,
+                        "contract_id": shipment.contract_id,
+                        "paid": [
+                            {
+                                "charge_id": charge.pk,
+                                "kind": charge.kind,
+                                "amount": decimal_string(charge.amount),
+                                "currency": charge.currency,
+                                "payee": {
+                                    "id": charge.payee_org_id,
+                                    "name": charge.payee_org.name if charge.payee_org_id else None,
+                                },
+                                "paid_on": charge.paid_on.isoformat(),
+                            }
+                            for charge in paid
+                        ],
+                    },
+                    since=min(charge.paid_on for charge in paid),
+                    as_of=as_of,
+                )
+            )
+            continue
+
+        out.append(
+            _check(
+                "shipment_delivered_unevidenced",
+                subject_type="shipment",
+                subject_id=shipment.pk,
+                label=_shipment_label(shipment),
+                audience="ours",
+                facts={"status": shipment.status, "contract_id": shipment.contract_id},
+                # Dated from despatch: a Shipment records when it LEFT,
+                # not when it landed, so this counts days since it went
+                # rather than inventing an arrival date to count from.
                 since=shipment.dispatched_on,
                 as_of=as_of,
             )
