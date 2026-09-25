@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Registry {{ registry.id }} · {{ registry.name }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-6xl">
+  <div class="mb-6">
+    <a href="{% url 'labs_admin:semantic_registries' %}{% if registry.scope_query %}?{{ registry.scope_query }}{% endif %}" class="text-blue-600 text-sm"><i class="fa-solid fa-chevron-left mr-1"></i>Semantic Registries</a>
+    <h1 class="text-3xl font-bold text-gray-900 mt-2">{{ registry.name }}</h1>
+    <p class="text-gray-600 mt-1">
+      Registry {{ registry.id }} · v{{ registry.version }} · lives in {{ registry.scope_label }}
+      · families {{ registry.families }}
+      {% if registry.is_shared %}· <span class="text-amber-700 font-medium">shared</span>{% endif %}
+    </p>
+    {% if registry.description %}<p class="text-sm text-gray-500 mt-2 max-w-3xl">{{ registry.description }}</p>{% endif %}
+  </div>
+
+  {% if messages %}
+  <div class="mb-4 space-y-2">
+    {% for message in messages %}
+    <div class="px-4 py-2 rounded text-sm {% if message.tags == 'error' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">{{ message }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="bg-white shadow rounded-lg mb-6">
+    <div class="px-4 py-3 border-b border-gray-100 font-semibold text-gray-800">Indicators ({{ indicators|length }})</div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-gray-500 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-2">Id</th>
+            <th class="px-4 py-2">Title</th>
+            <th class="px-4 py-2">Category</th>
+            <th class="px-4 py-2">Unit</th>
+            <th class="px-4 py-2">Family</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for i in indicators %}
+          <tr>
+            <td class="px-4 py-2 font-mono text-xs text-gray-700">{{ i.id }}</td>
+            <td class="px-4 py-2">{{ i.title }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ i.category }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ i.unit }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ i.family }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="px-4 py-4 text-center text-gray-500">No indicators.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="space-y-3 mb-8">
+    {% for title, body in documents %}
+    <details class="bg-white shadow rounded-lg">
+      <summary class="px-4 py-3 font-semibold text-gray-800 cursor-pointer">{{ title }}</summary>
+      <pre class="px-4 pb-4 text-xs text-gray-700 overflow-x-auto max-h-[32rem]">{{ body }}</pre>
+    </details>
+    {% endfor %}
+  </div>
+
+  <div class="border-2 border-red-200 bg-red-50 rounded-lg p-4">
+    <h2 class="font-semibold text-red-800">Delete this registry</h2>
+    <p class="text-sm text-red-700 mt-1">
+      A report bound to this registry computes nothing once it is gone.
+      {% if registry.is_shared %}<strong>It is shared, so reports in other programmes may be reading it.</strong>{% endif %}
+      This cannot be undone. Type <span class="font-mono font-semibold">{{ registry.id }}</span> to confirm.
+    </p>
+    <form method="post" action="{% url 'labs_admin:semantic_registry_delete' registry.id %}" class="mt-3 flex items-center gap-2">
+      {% csrf_token %}
+      {% for key, value in registry.scope.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+      <input name="confirm_id" autocomplete="off" placeholder="{{ registry.id }}" class="border border-red-300 rounded px-2 py-1 w-32 text-sm">
+      <button type="submit" class="px-3 py-1.5 rounded bg-red-600 text-white text-sm font-medium">Delete registry</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
