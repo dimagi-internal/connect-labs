@@ -1,6 +1,5 @@
 {% extends 'supply_chain/market/_shell.html' %}
 {% load supply_chain_extras %}
-{% block title %}{% if revising %}Revise your bid{% else %}Bid{% endif %} · {{ line.name }}{% endblock %}
 {% block hero %}{% with t=line.name e=listed.round.label|upper %}{% include 'supply_chain/market/_hero.html' with eyebrow=e title=t %}{% endwith %}{% endblock %}
 
 {% block body %}

@@ -40,6 +40,16 @@
         </div>
 
         <!-- Navigation Items -->
+        {# The two sides of the marketplace. The supplier market is public, so it #}
+        {# is offered to everyone; the partners' side needs a labs sign-in.        #}
+        <div class="mt-5">
+            {% if request.user.is_authenticated %}
+                {% url 'marketplace:home' as marketplace_url %}
+                {% include "components/sidenav-items.html" with name='Marketplace' icon='handshake' target=marketplace_url namespace='marketplace' %}
+            {% endif %}
+            {% url 'supply_chain:market' as supply_market_url %}
+            {% include "components/sidenav-items.html" with name='Supply marketplace' icon='store' target=supply_market_url namespace='supply_market' %}
+        </div>
         {% if request.user.is_authenticated %}
           {% if request.org %}
             {% if request.org_membership or request.user.is_superuser %}

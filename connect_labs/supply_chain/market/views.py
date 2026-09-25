@@ -19,15 +19,21 @@ from django.db import transaction
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils.decorators import method_decorator
 from django.views import View
 
 from connect_labs.audit_trail.context import get_audit_context
+from connect_labs.labs.chrome import page_chrome
 from connect_labs.marketplace import membership
 from connect_labs.marketplace.models import OrgMembership
 from connect_labs.supply_chain import records
 from connect_labs.supply_chain.market import cards, service
 from connect_labs.supply_chain.market.forms import BidForm, InviteForm, OfferingForm, ProfileForm, RegisterForm
 from connect_labs.supply_chain.models import SupplierOffering, SupplierProfile, fill_profile
+
+# The same page options as the implementing partners' marketplace: no labs
+# context selector (the market is above programs), and the Pulse widget.
+MARKET_CHROME = method_decorator(page_chrome(labs_context=False, pulse_widget=True), name="dispatch")
 
 
 def _signed_in(request) -> bool:
@@ -71,6 +77,7 @@ def _delivered_to(round_) -> str:
     return f"{point.get('country', '')} {point.get('country_name', '')}"
 
 
+@MARKET_CHROME
 class MarketHomeView(View):
     def get(self, request):
         orgs = membership.orgs_for(request)
@@ -99,6 +106,7 @@ class MarketHomeView(View):
         )
 
 
+@MARKET_CHROME
 class MarketRoundView(View):
     def get(self, request, round_id):
         orgs = membership.orgs_for(request)
@@ -112,6 +120,7 @@ class MarketRoundView(View):
 # ---- bidding ------------------------------------------------------------------
 
 
+@MARKET_CHROME
 class _SupplierView(View):
     """Signed in, acting for an organisation with a supplier profile."""
 
@@ -129,6 +138,7 @@ class _SupplierView(View):
         return org
 
 
+@MARKET_CHROME
 class BidView(_SupplierView):
     def _line(self, listed, slug):
         for line in listed.lines:
@@ -190,6 +200,7 @@ class BidView(_SupplierView):
         return redirect(reverse("supply_chain:market_bids"))
 
 
+@MARKET_CHROME
 class ReviseView(BidView):
     def _quote(self, request, quote_id):
         try:
@@ -228,6 +239,7 @@ class ReviseView(BidView):
         return redirect(reverse("supply_chain:market_bids"))
 
 
+@MARKET_CHROME
 class WithdrawView(_SupplierView):
     def post(self, request, quote_id):
         try:
@@ -243,6 +255,7 @@ class WithdrawView(_SupplierView):
         return redirect(reverse("supply_chain:market_bids"))
 
 
+@MARKET_CHROME
 class MyBidsView(_SupplierView):
     def get(self, request):
         return _render(request, "bids.html", bids=service.own_quotes(self.orgs))
@@ -251,6 +264,7 @@ class MyBidsView(_SupplierView):
 # ---- the organisation ------------------------------------------------------------
 
 
+@MARKET_CHROME
 class RegisterView(View):
     def dispatch(self, request, *args, **kwargs):
         if not _signed_in(request):
@@ -313,6 +327,7 @@ class RegisterView(View):
         return org
 
 
+@MARKET_CHROME
 class OrganisationView(View):
     def dispatch(self, request, *args, **kwargs):
         if not _signed_in(request):
@@ -404,6 +419,7 @@ class OrganisationView(View):
 INVITE_SESSION_KEY = "market_invite_token"
 
 
+@MARKET_CHROME
 class OpenInviteView(View):
     """The link someone was sent. Swaps the token into the session and moves on.
 
@@ -437,6 +453,7 @@ def _invalid_invite(request):
     return _no_store(response)
 
 
+@MARKET_CHROME
 class AcceptInviteView(View):
     """Accepting an invitation, at an address with no token in it."""
 
