@@ -265,6 +265,65 @@ def seed_scopes(data):
     return scopes
 
 
+def seed_portfolio(data):
+    """The portfolio: a name, and which of the scopes above belong to it.
+
+    The document names its members by SCOPE SLUG -- `chc`, `rutf`,
+    `chlorine` -- rather than by program id, so the ids stay written down in
+    exactly one place (`SCOPES`) and the document cannot drift from them.
+
+    **An unknown slug is refused by name rather than skipped.** A portfolio
+    silently short by one chain, saying nothing about the one it dropped, is
+    precisely the failure the master view exists to prevent -- and a seeder
+    that produces one has put the misinformation into the data where no view
+    can correct it.
+
+    Written straight through the ORM rather than through an operation, and
+    that is a decision rather than a shortcut: every supply write goes through
+    the registry because the registry validates a payload and stamps who
+    recorded it, and both exist to protect SUPPLY DATA. A name and a list of
+    ids is neither, and a `Portfolio` carries no programme scope for an
+    operation to be called with. See its model docstring.
+    """
+    from django.urls import reverse
+
+    from connect_labs.supply_chain.portfolio.models import Portfolio
+
+    section = data.get("portfolio")
+    if section is None:
+        raise ValueError(
+            "the seed document has no 'portfolio' section, which is what the master view at "
+            "/supply/portfolios/<slug>/ is built from"
+        )
+    slugs = list(section.get("program_slugs") or [])
+    if not slugs:
+        raise ValueError("the portfolio names no programs, so there would be nothing for it to span")
+    unknown = [slug for slug in slugs if slug not in SCOPES]
+    if unknown:
+        raise ValueError(
+            f"the portfolio names {', '.join(repr(s) for s in unknown)}, which SCOPES does not "
+            f"know -- it holds {', '.join(sorted(SCOPES))}. Refusing rather than seeding a "
+            "portfolio that is short by a chain and says nothing about it."
+        )
+
+    portfolio, _ = Portfolio.objects.update_or_create(
+        slug=section["slug"],
+        defaults={
+            "name": section["name"],
+            # In the document's stated order. The master view renders its rows
+            # in it, because ranking them would be a judgement the database
+            # cannot make.
+            "program_ids": [SCOPES[slug]["program_id"] for slug in slugs],
+        },
+    )
+    return {
+        "id": portfolio.pk,
+        "slug": portfolio.slug,
+        "program_ids": portfolio.program_ids,
+        "url": reverse("supply_chain:portfolio", args=[portfolio.slug]),
+    }
+
+
 # ======================================================================
 # The chain -- and the three kinds of truth it carries
 # ======================================================================

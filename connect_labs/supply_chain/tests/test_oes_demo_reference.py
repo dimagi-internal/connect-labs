@@ -373,3 +373,88 @@ def test_asking_for_every_product_by_passing_none_is_refused_before_anything_is_
 
     assert "seed_scopes" in str(caught.value) and "commodities_for" in str(caught.value)
     assert fake_op.calls == []
+
+
+# ---- the portfolio, and the slugs it resolves through --------------------
+#
+# The document names its members by SCOPE SLUG, so `SCOPES` stays the one
+# place a program id is written down. That agreement is what these pin: a
+# second map would drift, and a slug quietly dropped would produce a
+# portfolio short by a chain -- which is exactly what the master view exists
+# to prevent.
+
+_PORTFOLIO_DOCUMENT = {
+    "portfolio": {
+        "slug": "a-placeholder-portfolio",
+        "name": "A Placeholder Portfolio",
+        "program_slugs": ["chc", "chlorine"],
+    }
+}
+
+
+@pytest.mark.django_db
+def test_the_portfolios_slugs_resolve_to_program_ids_through_the_one_scopes_map():
+    """Mutated `SCOPES["chlorine"]["program_id"]` and watched this follow it."""
+    module = _load_seed_remote()
+
+    seeded = module.seed_portfolio(_PORTFOLIO_DOCUMENT)
+
+    assert seeded["program_ids"] == [
+        module.SCOPES["chc"]["program_id"],
+        module.SCOPES["chlorine"]["program_id"],
+    ]
+    assert seeded["url"] == "/supply/portfolios/a-placeholder-portfolio/"
+
+
+@pytest.mark.django_db
+def test_seeding_the_portfolio_twice_does_not_add_a_second_one():
+    """The seed has no purge, so a second run must replace rather than double."""
+    module = _load_seed_remote()
+    from connect_labs.supply_chain.portfolio.models import Portfolio
+
+    module.seed_portfolio(_PORTFOLIO_DOCUMENT)
+    module.seed_portfolio(_PORTFOLIO_DOCUMENT)
+
+    assert Portfolio.objects.filter(slug="a-placeholder-portfolio").count() == 1
+
+
+@pytest.mark.django_db
+def test_a_program_slug_the_scopes_map_does_not_know_is_refused_by_name():
+    """Task 11's concern 5, closed.
+
+    Skipping it would seed a portfolio short by one chain, saying nothing
+    about the one it dropped -- the misinformation put into the DATA, where
+    no view can correct it. Mutated the seeder to skip unknown slugs instead:
+    the portfolio was written with one program and this went green only after
+    the refusal was restored.
+    """
+    module = _load_seed_remote()
+    from connect_labs.supply_chain.portfolio.models import Portfolio
+
+    document = {"portfolio": {**_PORTFOLIO_DOCUMENT["portfolio"], "program_slugs": ["chc", "not-a-scope"]}}
+
+    with pytest.raises(ValueError) as caught:
+        module.seed_portfolio(document)
+
+    assert "not-a-scope" in str(caught.value)
+    # Nothing written: a refusal after the write would leave the short
+    # portfolio behind and only complain about it.
+    assert not Portfolio.objects.filter(slug="a-placeholder-portfolio").exists()
+
+
+@pytest.mark.django_db
+def test_a_portfolio_naming_no_programs_at_all_is_refused():
+    module = _load_seed_remote()
+
+    with pytest.raises(ValueError) as caught:
+        module.seed_portfolio({"portfolio": {**_PORTFOLIO_DOCUMENT["portfolio"], "program_slugs": []}})
+    assert "nothing for it to span" in str(caught.value)
+
+
+@pytest.mark.django_db
+def test_a_document_with_no_portfolio_section_is_refused_by_the_name_of_the_section():
+    module = _load_seed_remote()
+
+    with pytest.raises(ValueError) as caught:
+        module.seed_portfolio({})
+    assert "'portfolio'" in str(caught.value)

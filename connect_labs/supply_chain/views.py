@@ -176,6 +176,63 @@ class CatalogueView(OperationBase):
         return context
 
 
+AUDIENCE_ORDER = ("supplier", "partner", "internal")
+
+
+def checks_by_audience(checks, *, scope=""):
+    """Where each audience's answering actually happens.
+
+    The raw feed is deliberately unranked and unworded -- that is what makes
+    it good agent surface -- so a page's job is to route, not to re-render it.
+    A supplier's questions belong beside its figures on the comparison screen;
+    ours belong on the record that is missing the fact.
+
+    Module-level rather than a method on the Overview because the portfolio
+    reads the same feed for each of its programmes, and a second copy of this
+    would be a second opinion about who can answer a question.
+
+    `scope` is appended to every destination, for a caller reading a
+    programme other than the one the session has selected: the portfolio
+    passes `?program_id=N` so a link out of a row lands in that row's
+    programme rather than in whichever one was last chosen.
+    """
+    groups = []
+    for audience in AUDIENCE_ORDER:
+        items = [c for c in checks["checks"] if c["audience"] == audience]
+        if not items:
+            continue
+        kinds = {c["kind"] for c in items}
+        groups.append(
+            {
+                "audience": audience,
+                "items": items,
+                "headline": _headline(kinds, len(items)),
+                "href": _destination(audience, items) + scope,
+            }
+        )
+    return groups
+
+
+def _headline(kinds, count):
+    """What the group is, in the words of the thing rather than the kind."""
+    if kinds == {"quote_not_comparable"}:
+        return f"{'quote' if count == 1 else 'quotes'} not yet comparable"
+    if kinds == {"commodity_course_undefined"}:
+        return "ration table not set"
+    return "open " + ("check" if count == 1 else "checks")
+
+
+def _destination(audience, items):
+    if audience == "internal":
+        return reverse("supply_chain:catalogue")
+    rounds = {c["facts"].get("round_id") for c in items if c["facts"].get("round_id")}
+    # One round involved -- go straight to its comparison. Several, and
+    # the board is the honest landing place rather than picking one.
+    if len(rounds) == 1:
+        return reverse("supply_chain:procurement_comparison", args=[rounds.pop()])
+    return reverse("supply_chain:procurement_round_board")
+
+
 class DomainHomeView(OperationBase):
     """The chain, end to end, and what the record cannot answer about it.
 
@@ -195,8 +252,6 @@ class DomainHomeView(OperationBase):
     """
 
     template_name = "supply_chain/home.html"
-
-    AUDIENCE_ORDER = ("supplier", "partner", "internal")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -222,49 +277,8 @@ class DomainHomeView(OperationBase):
 
         checks = self.op("checks_list")
         context["checks"] = checks
-        context["checks_by_audience"] = self._checks_by_audience(checks, rounds=context["rounds"])
+        context["checks_by_audience"] = checks_by_audience(checks)
         return context
-
-    # Where each audience's answering actually happens. The raw feed is
-    # deliberately unranked and unworded -- that is what makes it good agent
-    # surface -- so the page's job is to route, not to re-render it. A
-    # supplier's questions belong beside its figures on the comparison
-    # screen; ours belong on the record that is missing the fact.
-    def _checks_by_audience(self, checks, rounds):
-        first_round = rounds[0]["id"] if rounds else None
-        groups = []
-        for audience in self.AUDIENCE_ORDER:
-            items = [c for c in checks["checks"] if c["audience"] == audience]
-            if not items:
-                continue
-            kinds = {c["kind"] for c in items}
-            groups.append(
-                {
-                    "audience": audience,
-                    "items": items,
-                    "headline": self._headline(kinds, len(items)),
-                    "href": self._destination(audience, items, first_round),
-                }
-            )
-        return groups
-
-    def _headline(self, kinds, count):
-        """What the group is, in the words of the thing rather than the kind."""
-        if kinds == {"quote_not_comparable"}:
-            return f"{'quote' if count == 1 else 'quotes'} not yet comparable"
-        if kinds == {"commodity_course_undefined"}:
-            return "ration table not set"
-        return "open " + ("check" if count == 1 else "checks")
-
-    def _destination(self, audience, items, first_round):
-        if audience == "internal":
-            return reverse("supply_chain:catalogue")
-        rounds = {c["facts"].get("round_id") for c in items if c["facts"].get("round_id")}
-        # One round involved -- go straight to its comparison. Several, and
-        # the board is the honest landing place rather than picking one.
-        if len(rounds) == 1:
-            return reverse("supply_chain:procurement_comparison", args=[rounds.pop()])
-        return reverse("supply_chain:procurement_round_board")
 
 
 class ChecksView(OperationBase):

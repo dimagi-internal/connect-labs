@@ -229,6 +229,10 @@ supply_only = _seed["seed_supply_only"](data, scopes)
 # The RUTF and chlorine chains are tasks 8 and 10. Their scopes already hold
 # their own catalogues (seed_scopes above); the chain seeders plug in here.
 
+# Last, because it spans what the lines above seeded: the portfolio and the
+# one address in this domain that is not programme-scoped.
+portfolio = _seed["seed_portfolio"](data)
+
 print(
     "__MARK__"
     + json.dumps(
@@ -245,6 +249,7 @@ print(
             "partner_links": {
                 slug: {"id": link["id"], "url": link["url"]} for slug, link in links.items()
             },
+            "portfolio": portfolio,
         }
     )
     + "__MARK__"
@@ -371,6 +376,11 @@ def main() -> None:
     print("  programs      " + ", ".join(f"{name} {pid}" for name, pid in programs.items()))
     print("  orders        " + ", ".join(f"{name} {oid}" for name, oid in realized["orders"].items()))
     print(f"  partner links {len(realized['partner_links'])} (URLs carry raw tokens — in {OUTPUTS.name} only)")
+    portfolio = realized.get("portfolio") or {}
+    if portfolio:
+        # The one address here that spans programmes, and the first screen a
+        # funder is shown. Printed because it is the link to hand over.
+        print(f"  portfolio     {portfolio['url']} ({len(portfolio['program_ids'])} programs)")
     print(f"outputs → {OUTPUTS}")
 
 
