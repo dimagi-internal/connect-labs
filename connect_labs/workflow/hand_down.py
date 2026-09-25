@@ -291,25 +291,90 @@ def _period(run) -> tuple[str, str]:
     return start, end
 
 
+def hand_down_key(definition_id, period_end: str) -> str:
+    """The string a handed-down run is found by: which report, which week.
+
+    A STRING on purpose. The production labs-record API passes a query parameter
+    straight into a Django JSONField lookup, where the value arrives as text:
+    `data__definition_id=21115` compares the JSON string "21115" against the stored
+    number 21115 and silently matches nothing. A string key matches exactly, so
+    "is this week already here?" is one tiny query instead of downloading every
+    run in the opportunity -- programme snapshots included, ~5 MB each.
+    """
+    return f"{int(definition_id)}|{str(period_end)[:10]}"
+
+
+def _find_runs(wda, **state):
+    """Runs in `wda`'s scope whose state matches `state` exactly, filtered server-side."""
+    from connect_labs.workflow.data_access import WorkflowRunRecord
+
+    return wda.labs_api.get_records(
+        experiment=wda.EXPERIMENT,
+        type="workflow_run",
+        model_class=WorkflowRunRecord,
+        **{f"state__{k}": v for k, v in state.items()},
+    )
+
+
+class Ledger:
+    """Which weeks each receiving report already holds a hand-down for.
+
+    Two modes, for the two callers:
+
+    * ONE RUN (a save): look the week up by its key -- one small query per report.
+    * A HISTORY (a backfill): list each report's hand-downs ONCE, by the string
+      `generated_by` marker, and answer every week from memory. This also finds
+      runs written before the key existed, so a backfill over them is a no-op
+      rather than a second copy of every week.
+    """
+
+    def __init__(self, prefetch: bool = False):
+        self.prefetch = prefetch
+        self._by_definition: dict[int, dict[str, list]] = {}
+
+    def prior(self, wda, definition_id: int, end: str) -> list:
+        if not self.prefetch:
+            return list(_find_runs(wda, hand_down_key=hand_down_key(definition_id, end)))
+        index = self._by_definition.get(int(definition_id))
+        if index is None:
+            index = {}
+            for run in _find_runs(wda, generated_by=GENERATED_BY):
+                if int((run.data or {}).get("definition_id") or 0) != int(definition_id):
+                    continue
+                index.setdefault(str(run.period_end or "")[:10], []).append(run)
+            self._by_definition[int(definition_id)] = index
+        return list(index.get(end, []))
+
+    def replaced(self, definition_id: int, end: str, run) -> None:
+        if self.prefetch:
+            self._by_definition.setdefault(int(definition_id), {})[end] = [run]
+
+
 def write_slice(
-    wda, definition, source_run, payload: dict, *, opportunity_id: int, source_workflow_id: int, state_key: str
+    wda,
+    definition,
+    source_run,
+    payload: dict,
+    *,
+    opportunity_id: int,
+    source_workflow_id: int,
+    state_key: str,
+    ledger: Ledger | None = None,
 ) -> dict:
     """Write one opportunity's slice of `source_run` as a completed run of `definition`.
 
     Idempotent. A report that already holds this source run's slice is left alone;
     one that holds an OLDER hand-down for the same week has it replaced -- the new
     run is completed before the old one is deleted, so a failure never leaves the
-    week empty. A run the report saved itself is never touched.
+    week empty. A run the report saved itself is never touched: only runs stamped
+    `generated_by: hand_down` are ever found, let alone replaced.
     """
     from connect_labs.workflow.snapshot_builders import wrap_for_runner
 
+    ledger = ledger or Ledger()
     start, end = _period(source_run)
     source = {"workflow_id": int(source_workflow_id), "run_id": int(source_run.id), "as_of": end}
-    prior = [
-        r
-        for r in wda.list_runs(definition.id) or []
-        if str(r.period_end or "")[:10] == end and ((r.state or {}).get("handed_down_from") or {})
-    ]
+    prior = [r for r in ledger.prior(wda, definition.id, end) if (r.state or {}).get("handed_down_from")]
     if any(
         int(((r.state or {}).get("handed_down_from") or {}).get("run_id") or 0) == int(source_run.id) for r in prior
     ):
@@ -322,7 +387,11 @@ def write_slice(
         opportunity_id=opp,
         period_start=start,
         period_end=end,
-        initial_state={"generated_by": GENERATED_BY, "handed_down_from": source},
+        initial_state={
+            "generated_by": GENERATED_BY,
+            "handed_down_from": source,
+            "hand_down_key": hand_down_key(definition.id, end),
+        },
     )
     try:
         completed = wda.complete_run(run.id, wrap_for_runner(sliced, state_key), run=run)
@@ -333,6 +402,7 @@ def write_slice(
         raise
     for old in prior:
         _discard(wda, old.id)
+    ledger.replaced(definition.id, end, completed)
     return {"action": "replaced" if prior else "created", "run_id": run.id}
 
 
@@ -343,20 +413,58 @@ def _discard(wda, run_id: int) -> None:
         logger.warning("hand-down could not delete run %s", run_id, exc_info=True)
 
 
+class Receivers:
+    """The reports each opportunity's slice goes to, looked up once per opportunity.
+
+    A history walk asks about the same dozen opportunities every week; listing
+    their workflows once is the difference between 12 reads and 12 x 70.
+    """
+
+    def __init__(self, wda_for: Callable[[int], Any], source_workflow_id: int):
+        self.wda_for = wda_for
+        self.source_workflow_id = int(source_workflow_id)
+        self._found: dict[int, list] = {}
+
+    def for_opportunities(self, opportunity_ids) -> dict[int, list]:
+        missing = [int(o) for o in opportunity_ids if int(o) not in self._found]
+        if missing:
+            found = receivers(self.wda_for, self.source_workflow_id, missing)
+            for opp in missing:
+                self._found[opp] = found.get(opp, [])
+        return {int(o): self._found[int(o)] for o in opportunity_ids if self._found.get(int(o))}
+
+    def close(self) -> None:
+        for pairs in self._found.values():
+            for wda, _d in pairs:
+                wda.close()
+
+
 def hand_down_run(
-    wda_for: Callable[[int], Any], source_workflow_id: int, source_run, *, state_key: str = "snapshot"
+    wda_for: Callable[[int], Any],
+    source_workflow_id: int,
+    source_run,
+    *,
+    state_key: str = "snapshot",
+    targets: Receivers | None = None,
+    ledger: Ledger | None = None,
 ) -> list[dict]:
-    """Hand one completed programme run down to every opportunity report that follows it."""
+    """Hand one completed programme run down to every opportunity report that follows it.
+
+    `targets` and `ledger` are shared across a history walk so each opportunity's
+    reports, and each report's existing hand-downs, are read once, not once a week.
+    """
     if not getattr(source_run, "is_completed", False):
         raise HandDownError(f"run {source_run.id} is not completed")
     payload = _state_payload(source_run, state_key)
     if _is_legacy(payload):
         return [{"opportunity_id": None, "action": "skipped", "error": "run predates the unified indicator set"}]
-    opps = [_int(r.get("opp")) for r in payload.get("byOpp") or []]
+    opps = [o for o in (_int(r.get("opp")) for r in payload.get("byOpp") or []) if o is not None]
+    owned = targets is None
+    targets = targets or Receivers(wda_for, source_workflow_id)
+    ledger = ledger or Ledger()
     report: list[dict] = []
-    found = receivers(wda_for, source_workflow_id, [o for o in opps if o is not None])
     try:
-        for opp, pairs in found.items():
+        for opp, pairs in targets.for_opportunities(opps).items():
             for wda, definition in pairs:
                 try:
                     out = write_slice(
@@ -367,6 +475,7 @@ def hand_down_run(
                         opportunity_id=opp,
                         source_workflow_id=source_workflow_id,
                         state_key=state_key,
+                        ledger=ledger,
                     )
                     report.append({"opportunity_id": opp, "workflow_id": definition.id, **out, "error": None})
                 except Exception as exc:  # noqa: BLE001 -- one report must not cost the others
@@ -375,9 +484,8 @@ def hand_down_run(
                         {"opportunity_id": opp, "workflow_id": definition.id, "action": "failed", "error": str(exc)}
                     )
     finally:
-        for pairs in found.values():
-            for wda, _d in pairs:
-                wda.close()
+        if owned:
+            targets.close()
     return report
 
 
@@ -467,11 +575,21 @@ def run_hand_down(
         return make(access_token=access_token, opportunity_id=opp)
 
     report = {"runs": 0, "created": 0, "replaced": 0, "unchanged": 0, "skipped": 0, "failed": 0, "errors": []}
-    for run in runs:
-        for row in hand_down_run(wda_for, int(workflow_id), run, state_key=state_key):
-            report[row["action"] if row["action"] in report else "failed"] += 1
-            if row.get("error"):
-                report["errors"].append({"run_id": run.id, **row})
-        report["runs"] += 1
+    targets = Receivers(wda_for, int(workflow_id))
+    # A history walk reads each report's existing hand-downs once; a single run
+    # looks its one week up by key.
+    ledger = Ledger(prefetch=run_id is None)
+    try:
+        for run in runs:
+            for row in hand_down_run(
+                wda_for, int(workflow_id), run, state_key=state_key, targets=targets, ledger=ledger
+            ):
+                report[row["action"] if row["action"] in report else "failed"] += 1
+                if row.get("error"):
+                    report["errors"].append({"run_id": run.id, **row})
+            report["runs"] += 1
+            logger.info("hand-down of workflow %s: %s through %s", workflow_id, report, run.period_end)
+    finally:
+        targets.close()
     report["errors"] = report["errors"][:20]
     return report
