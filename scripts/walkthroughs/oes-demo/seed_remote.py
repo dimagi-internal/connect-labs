@@ -1295,7 +1295,28 @@ def seed_on_the_road(access, data, reference, chain):
         }
         if row.get("expected_days_ago") is not None:
             payload["expected_on"] = day(row["expected_days_ago"])
-        sent.append(op(access, "consignment_dispatch", data=payload))
+
+        # Found before it is dispatched, like everything else this seeder
+        # writes -- and this one matters more than most. A consignment MOVES
+        # stock: it takes the quantity out of the warehouse and into the
+        # programme's in-transit point. A duplicate is therefore not a spare
+        # row, it is the warehouse balance dropping a second time for goods
+        # that only ever left once, and a lorry on the map that never existed.
+        #
+        # Keyed on the document's own reference where it gives one, and on
+        # where-to-where-and-when otherwise, because a consignment leaving the
+        # same store for the same store on the same day is this seeder
+        # repeating itself rather than two real lorries.
+        already = _found(
+            op(access, "consignment_list", supply_point_id=destination["id"]),
+            lambda c, p=payload: (
+                c.get("reference") == p["reference"]
+                if p["reference"]
+                else c.get("from_supply_point_id") == p["from_supply_point_id"]
+                and c.get("dispatched_on") == p["dispatched_on"]
+            ),
+        )
+        sent.append(already or op(access, "consignment_dispatch", data=payload))
     return sent
 
 
