@@ -1276,3 +1276,31 @@ def _mark_resume_exhausted(sched, run_id: int, error: str, *, summary: str | Non
         )
     except Exception:  # noqa: BLE001
         logger.warning("[ResumeSweep] could not mark run %s resume-exhausted", run_id, exc_info=True)
+
+
+@celery_app.task
+def hand_down_task(
+    access_token: str,
+    *,
+    workflow_id: int,
+    run_id: int | None = None,
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
+) -> dict:
+    """Hand a saved programme run -- or its whole history -- down to opportunity reports.
+
+    See `connect_labs/workflow/hand_down.py`. Queued by a save, a history rebuild, and
+    the `workflow_hand_down` MCP tool; off the request thread because it writes one
+    run per opportunity, per week.
+    """
+    from connect_labs.workflow.hand_down import run_hand_down
+
+    report = run_hand_down(
+        access_token,
+        workflow_id=workflow_id,
+        run_id=run_id,
+        opportunity_id=opportunity_id,
+        program_id=program_id,
+    )
+    logger.info("hand-down (workflow %s, run %s): %s", workflow_id, run_id, report)
+    return report

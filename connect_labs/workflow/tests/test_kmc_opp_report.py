@@ -10,10 +10,45 @@ from connect_labs.workflow.templates.kmc_programme_metrics import TEMPLATE as PR
 RENDER = Path(__file__).resolve().parents[1] / "templates" / "kmc_opp_report_render.js"
 
 
-def test_the_template_is_registered_as_a_single_opp_drill_view():
+def test_the_template_is_registered_as_a_saved_runs_report():
     assert TEMPLATES["kmc_opp_report"] is TEMPLATE
-    assert TEMPLATE["supports_saved_runs"] is False, "a drill view has no moment of completion"
+    assert TEMPLATE["supports_saved_runs"] is True
+    assert TEMPLATE["receives_hand_down"] is True, "the programme report's weeks could not reach it"
     assert DEFINITION["config"]["templateType"] == "kmc_opp_report"
+
+
+def test_a_saved_run_is_graded_exactly_like_the_programme_reports():
+    """A handed-down slice and a run saved here must be the same shape, or the
+    page reads the two differently. Same builder, same spec -- a copy, so an
+    edit to one is a deliberate edit to both."""
+    assert TEMPLATE["snapshot_inputs"] == PROGRAMME_SNAPSHOT_INPUTS
+    assert TEMPLATE["snapshot_inputs"] is not PROGRAMME_SNAPSHOT_INPUTS
+    assert DEFINITION["snapshot_inputs"] is TEMPLATE["snapshot_inputs"]
+    assert PROGRAMME["hands_down_to_opportunity_reports"] is True
+
+
+def test_its_worker_table_uses_the_programmes_scorecard_columns():
+    from connect_labs.workflow.templates.kmc_programme_metrics import SCORECARD_COLUMNS, SCORECARD_GROUPS
+
+    assert DEFINITION["config"]["scorecard_columns"] is SCORECARD_COLUMNS
+    assert DEFINITION["config"]["scorecard_groups"] is SCORECARD_GROUPS
+    assert sum(g["span"] for g in SCORECARD_GROUPS) == len(SCORECARD_COLUMNS)
+
+
+def test_the_programme_renders_scorecard_is_the_same_column_list():
+    """The programme render still holds its own copy of the columns in JS. Until
+    it reads them from config too, this keeps the two from drifting: same ids,
+    same labels, same order."""
+    import re
+
+    from connect_labs.workflow.templates.kmc_programme_metrics import SCORECARD_COLUMNS
+
+    js = (RENDER.parent / "kmc_programme_metrics_render.js").read_text()
+    block = js[js.index("var SCORECARD = [") : js.index("];", js.index("var SCORECARD = ["))]
+    ids = re.findall(r"id: '([a-z0-9_]+)'", block)
+    labels = re.findall(r"label: '([^']+)'", block)
+    assert ids == [c["id"] for c in SCORECARD_COLUMNS]
+    assert [bytes(x, "utf-8").decode("unicode_escape") for x in labels] == [c["label"] for c in SCORECARD_COLUMNS]
 
 
 def test_it_is_a_single_opportunity_page_that_fetches_its_own_data():
@@ -56,10 +91,22 @@ def test_no_fetch_builds_its_url_from_the_definition_prop():
         assert "definition.id" not in chunk[:240], "a fetch addressed by the definition prop"
 
 
-def test_it_reads_its_own_figures_and_its_own_flws_from_the_semantic_layer():
+def test_it_reads_a_saved_run_off_the_run_and_a_live_one_as_a_preview():
+    """One payload, as on the programme report: a completed run's stored snapshot,
+    or the same builder's preview for a run still in progress."""
     src = RENDER.read_text()
-    assert "/semantic/" in src
-    assert "scopes=opportunity,flw" in src or "scopes=flw" in src
+    assert "view.state.snapshot" in src
+    assert "/snapshot/preview/" in src
+    assert "/semantic/" not in src, "the page must not compute its own figures any more"
+
+
+def test_the_render_grades_nothing():
+    """Every cell arrives graded by the server, credibility included
+    (semantic/snapshot.py). A second grader in the browser is how the two used to
+    disagree."""
+    src = RENDER.read_text()
+    for marker in ("function gradeCell(", "function bandOf(", "_suppressed"):
+        assert marker not in src, marker
 
 
 def test_it_reads_the_benchmark_from_the_benchmarks_api():
@@ -68,12 +115,12 @@ def test_it_reads_the_benchmark_from_the_benchmarks_api():
 
 
 def _flw_rows_body():
-    """Just the worker rows (the `gradedFlwRows` memo and the sort applied to
-    it), so an assertion about where the worker table's data comes from cannot
-    be satisfied by some unrelated part of the file."""
+    """Just the worker rows (the `workerRows` memo and the sort applied to it),
+    so an assertion about where the worker table's data comes from cannot be
+    satisfied by some unrelated part of the file."""
     src = RENDER.read_text()
-    start = src.index("var gradedFlwRows = React.useMemo(")
-    end = src.index("\n  // ══ 3", start)
+    start = src.index("var workerRows = React.useMemo(")
+    end = src.index("\n  // ══ Headline tiles", start)
     return src[start:end]
 
 
@@ -90,7 +137,7 @@ def test_the_flw_table_never_goes_through_the_benchmark_store():
     exact mutation against this version: it goes red.
     """
     body = _flw_rows_body()
-    assert "sem.rows" in body, "the worker table no longer sources from the semantic response"
+    assert "P.byFLW" in body, "the worker table no longer sources from this opportunity's snapshot"
     assert "bench" not in body, "the worker table reads the benchmark payload"
     # And the benchmark fetch itself still asks for no worker-level data.
     src = RENDER.read_text()
@@ -136,52 +183,13 @@ def test_an_empty_benchmark_is_explained_rather_than_errored():
     assert "status: 'error'" not in empty_branch
 
 
-def _grade_cell_body():
-    """Just `gradeCell`, so a branch-order assertion cannot be satisfied by some
-    unrelated part of an 900-line file."""
-    src = RENDER.read_text()
-    start = src.index("function gradeCell(")
-    return src[start : src.index("\n  function ", start)]
-
-
-def test_a_not_credible_indicator_is_withheld_rather_than_banded():
-    """`<measure>_suppressed` is the registry's own suppression rule, compiled
-    against the bound settings tables and returned on every row of the live
-    semantic endpoint. This page grades live rows, so that flag is the only form
-    the decision can reach it in — and banding a suppressed figure publishes a
-    number the system itself says is not trustworthy, to a delivery partner."""
-    body = _grade_cell_body()
-    assert "_suppressed" in body, "the compiled credibility flag is never read"
-    assert "'notcredible'" in body, "a suppressed cell is not withheld"
-    assert body.index("_suppressed") < body.index(
-        "out.band = bandOf("
-    ), "the bands are reached before the credibility flag is consulted"
-
-
-def test_a_gated_indicator_with_no_flag_is_withheld_rather_than_banded():
-    """A gated indicator whose row carries no suppression flag -- the bound
-    registry has no rule for it -- cannot have its credibility established, so
-    the page must not band the figure. Before #2004 that was the scorecard's
-    mortality on every opportunity; the list still guards any registry without
-    the rule."""
-    assert DEFINITION["config"]["credibility_gated_indicators"] == sorted(
-        PROGRAMME_SNAPSHOT_INPUTS["credibility"]
-    ), "the gated list must be the programme report's own map, not a second copy"
-    assert "mortality" in DEFINITION["config"]["credibility_gated_indicators"]
-    body = _grade_cell_body()
-    assert "'unverifiable'" in body
-    assert body.index("isGated(") < body.index(
-        "out.band = bandOf("
-    ), "a gated indicator can reach the bands without its credibility established"
-
-
 def test_a_withheld_figure_is_never_marked_on_the_peer_bars():
     """Marking our own value on a peer chart is publishing it as a comparison.
     The publisher's own PUBLISHABLE_BANDS is the rule; this mirrors it, so a
     notcredible or unverifiable cell contributes no marker."""
     src = RENDER.read_text()
     assert "function publishableValue(" in src
-    assert "own={publishableValue(mine)}" in src, "the marker bypasses the band filter"
+    assert "own={publishableValue(ind[m.indicator])}" in src, "the marker bypasses the band filter"
     body = src[src.index("function publishableValue(") :]
     body = body[: body.index("\n  function ")]
     for band in ("notcredible", "unverifiable", "insufficient", "notinapp"):

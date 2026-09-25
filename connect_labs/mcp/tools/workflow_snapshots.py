@@ -142,6 +142,14 @@ def workflow_save_snapshot(
         from connect_labs.benchmarks.tasks import queue_auto_publish
 
         queue_auto_publish(wda, workflow_id=run.definition_id, run_id=run_id)
+        from connect_labs.workflow.hand_down import queue_hand_down
+
+        queue_hand_down(
+            wda,
+            workflow_id=run.definition_id,
+            run_id=run_id,
+            template_type=getattr(built["definition"], "template_type", None),
+        )
     finally:
         wda.close()
 
@@ -237,3 +245,74 @@ def workflow_preview_snapshot(
         }
     finally:
         wda.close()
+
+
+@register(
+    name="workflow_hand_down",
+    description=(
+        "Hand a programme report's saved runs down to the opportunity reports that "
+        "follow it (connect_labs/workflow/hand_down.py). Each opportunity report "
+        "receives a completed run holding ONLY its own opportunity's slice of the "
+        "programme run -- its scorecard, workers, cases and series -- so a network "
+        "manager sees the week without access to the programme report.\n\n"
+        "This happens automatically whenever the programme report saves a run or "
+        "finishes a history rebuild. Call it to backfill: with no run_id it walks the "
+        "whole saved history (one run per week, the latest completion) in the "
+        "background and returns at once; with run_id it hands that one run down now "
+        "and returns the per-opportunity report. Idempotent: a week already handed "
+        "down from the same run is left alone, an older hand-down for the week is "
+        "replaced, and a run the opportunity report saved itself is never touched.\n\n"
+        "A receiving report must name this workflow as its source: "
+        "config.source_workflow_id, or a benchmark cohort containing its opportunity "
+        "whose source_workflow_id is this workflow. Provide exactly ONE of "
+        "opportunity_id / program_id -- the scope the PROGRAMME report is filed under."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workflow_id": {"type": "integer"},
+            "run_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "program_id": {"type": "integer"},
+        },
+        "required": ["workflow_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_hand_down(
+    user,
+    *,
+    workflow_id: int,
+    run_id: int | None = None,
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
+) -> dict[str, Any]:
+    from connect_labs.workflow.hand_down import HandDownError, run_hand_down
+
+    from ..connect_token import require_connect_token
+
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+    token = require_connect_token(user)
+    if run_id is None:
+        from connect_labs.workflow.tasks import hand_down_task
+
+        hand_down_task.delay(token, workflow_id=int(workflow_id), opportunity_id=opportunity_id, program_id=program_id)
+        return {
+            "queued": True,
+            "workflow_id": int(workflow_id),
+            "note": "the whole saved history is being handed down in the background; "
+            "the worker log carries the per-week report",
+        }
+    try:
+        report = run_hand_down(
+            token,
+            workflow_id=int(workflow_id),
+            run_id=int(run_id),
+            opportunity_id=opportunity_id,
+            program_id=program_id,
+        )
+    except HandDownError as e:
+        raise MCPToolError("NOT_FOUND", str(e)) from e
+    return {"queued": False, "workflow_id": int(workflow_id), "run_id": int(run_id), **report}
