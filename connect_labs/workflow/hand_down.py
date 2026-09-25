@@ -229,11 +229,22 @@ def _cohort_sources(opportunity_id: int) -> set[int]:
 
 
 def names_source(definition, source_workflow_id: int, opportunity_id: int) -> bool:
-    """Whether this opportunity report takes its hand-downs from `source_workflow_id`."""
+    """Whether this opportunity report takes its hand-downs from `source_workflow_id`.
+
+    The benchmark-cohort fallback applies only to a report that FOLLOWS the
+    deployed template (`render_source`), which is what `benchmarks_create_opp_reports`
+    creates. A fork of the template with its own stored render is a different page
+    that happens to share the template key -- the first one found on prod was a
+    twin/triplet audit -- and must name its source explicitly to receive anything.
+    """
+    from connect_labs.workflow.render_source import followed_template
+
     config = ((getattr(definition, "data", None) or {}).get("config")) or {}
     declared = config.get("source_workflow_id")
     if declared not in (None, ""):
         return _int(declared) == int(source_workflow_id)
+    if not followed_template(definition):
+        return False
     return int(source_workflow_id) in _cohort_sources(opportunity_id)
 
 
