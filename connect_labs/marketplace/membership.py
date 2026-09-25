@@ -31,24 +31,38 @@ from connect_labs.supply_chain.update_links import tokens
 INVITE_DAYS = 30
 
 
-def orgs_for(request) -> list[LabsOrg]:
-    """Every organisation this request's user may act for, by name."""
-    user = getattr(request, "user", None)
-    if user is None or not user.is_authenticated:
-        return []
+def _connect_orgs(request) -> Q:
+    """The organisations Connect says this user belongs to, as a filter."""
     from connect_labs.labs.context import get_org_data
     from connect_labs.supply_chain.identity import _integer_org_ids, caller_org_slugs
 
     organizations = (get_org_data(request) or {}).get("organizations") or []
     ids, slugs = _integer_org_ids(organizations), caller_org_slugs(organizations)
-    connect = Q(connect_organization_id__in=ids) | Q(
+    return Q(connect_organization_id__in=ids) | Q(
         connect_organization_id__isnull=True, connect_organization_slug__in=slugs
     )
-    return list(LabsOrg.objects.filter(connect | Q(memberships__user=user)).distinct().order_by("name"))
 
 
-def is_admin(user, org) -> bool:
-    return OrgMembership.objects.filter(org=org, user=user, role="admin").exists()
+def orgs_for(request) -> list[LabsOrg]:
+    """Every organisation this request's user may act for, by name."""
+    user = getattr(request, "user", None)
+    if user is None or not user.is_authenticated:
+        return []
+    return list(LabsOrg.objects.filter(_connect_orgs(request) | Q(memberships__user=user)).distinct().order_by("name"))
+
+
+def manages(request, org) -> bool:
+    """Whether this user may change what the organisation says about itself.
+
+    A local admin; or, for an organisation Connect knows, any of its Connect
+    members -- Connect governs who they are, and labs keeps no second opinion.
+    """
+    user = getattr(request, "user", None)
+    if user is None or not user.is_authenticated:
+        return False
+    if OrgMembership.objects.filter(org=org, user=user, role="admin").exists():
+        return True
+    return LabsOrg.objects.filter(_connect_orgs(request), pk=org.pk).exists()
 
 
 @transaction.atomic

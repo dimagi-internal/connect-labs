@@ -102,39 +102,52 @@ def _invited_round_ids(orgs) -> set[int]:
     return set(Outreach.objects.filter(supplier__org__in=orgs).values_list("round_id", flat=True))
 
 
-def _visible(orgs) -> Q:
-    return Q(status="open") & (Q(visibility="public") | Q(pk__in=_invited_round_ids(orgs)))
+def _visible_from(invited) -> Q:
+    return Q(status="open") & (Q(visibility="public") | Q(pk__in=invited))
 
 
 def listed_rounds(orgs=()) -> list[ListedRound]:
     """Every open round this visitor may see, those matching what they offer first."""
     invited = _invited_round_ids(orgs)
-    rounds = list(Round.objects.filter(_visible(orgs)).order_by("response_deadline", "-opened_at", "-pk"))
+    rounds = list(Round.objects.filter(_visible_from(invited)).order_by("response_deadline", "-opened_at", "-pk"))
+    commodities = _commodities_for(rounds)
     offerings = _offerings(orgs)
-    listed = [ListedRound(r, _lines(r, offerings), r.pk in invited) for r in rounds]
+    listed = [ListedRound(r, _lines(r, offerings, commodities), r.pk in invited) for r in rounds]
     listed.sort(key=lambda item: not item.matches)
     return listed
 
 
 def visible_round(round_id, orgs=()) -> ListedRound:
     """One round, if this visitor may see it. `NotAvailable` otherwise."""
-    found = Round.objects.filter(_visible(orgs), pk=round_id).first()
+    invited = _invited_round_ids(orgs)
+    found = Round.objects.filter(_visible_from(invited), pk=round_id).first()
     if found is None:
         raise NotAvailable("no such round")
-    listed = ListedRound(found, _lines(found, _offerings(orgs)), found.pk in _invited_round_ids(orgs))
+    listed = ListedRound(found, _lines(found, _offerings(orgs), _commodities_for([found])), found.pk in invited)
     listed.own_quotes = [_worded(q) for q in _own_quotes(orgs).filter(round=found)]
     return listed
 
 
-def _lines(round_: Round, offerings) -> list[Line]:
-    slugs = [line.get("commodity_slug") for line in round_.lines or [] if line.get("commodity_slug")]
-    commodities = {c.slug: c for c in Commodity.objects.filter(scope_key=scope_key(round_.program_id), slug__in=slugs)}
+def _commodities_for(rounds) -> dict:
+    """Every product the rounds ask for, in one query, keyed by (scope, slug)."""
+    wanted = Q()
+    for round_ in rounds:
+        slugs = [line.get("commodity_slug") for line in round_.lines or [] if line.get("commodity_slug")]
+        if slugs:
+            wanted |= Q(scope_key=scope_key(round_.program_id), slug__in=slugs)
+    if not wanted:
+        return {}
+    return {(c.scope_key, c.slug): c for c in Commodity.objects.filter(wanted).prefetch_related("items")}
+
+
+def _lines(round_: Round, offerings, commodities) -> list[Line]:
+    key = scope_key(round_.program_id)
     lines = []
     for raw in round_.lines or []:
         slug = raw.get("commodity_slug")
         if not slug:
             continue
-        commodity = commodities.get(slug)
+        commodity = commodities.get((key, slug))
         lines.append(
             Line(
                 commodity_slug=slug,
@@ -192,8 +205,16 @@ def offering_match_kind(offering: SupplierOffering, commodity: Commodity, items=
 
 
 def _own_quotes(orgs):
+    """The organisation's OWN bids: quotes it entered on the marketplace.
+
+    Not every quote against the company. A quote a program team typed in from
+    the supplier's email is that program's record -- another program's team,
+    or anyone who comes to act for the company later, must not be able to read
+    or change it through the marketplace. Bids are sealed from other programs
+    as well as from other suppliers.
+    """
     return (
-        Quote.objects.filter(supplier__org__in=orgs)
+        Quote.objects.filter(supplier__org__in=orgs, entered_by="supplier")
         .select_related("round", "commodity", "supplier__org", "item")
         .order_by("-created_at")
     )

@@ -1,4 +1,5 @@
 {% extends 'supply_chain/market/_shell.html' %}
+{% load supply_chain_extras %}
 {% block title %}My bids{% endblock %}
 {% block body %}
 <h1 class="text-xl font-semibold mb-1">My bids</h1>
@@ -11,7 +12,7 @@
         <div>
           <a href="{% url 'supply_chain:market_round' q.round_id %}" class="font-semibold text-brand-indigo hover:underline">{{ q.round.label }}</a>
           <span class="text-gray-600"> · {{ q.commodity.name }}</span>
-          <div class="text-sm mt-1">{{ q.as_quoted_currency }} {{ q.as_quoted_amount|floatformat:"-4" }} {{ q.per_words }}{% if orgs|length > 1 %} · as {{ q.supplier.name }}{% endif %}</div>
+          <div class="text-sm mt-1">{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }} {{ q.per_words }}{% if orgs|length > 1 %} · as {{ q.supplier.name }}{% endif %}</div>
         </div>
         <div class="text-sm text-right">
           {% if bid.standing == "open" %}<span class="px-2 py-0.5 rounded-full bg-message-info text-message-info-text border border-message-info-border">Round open</span>

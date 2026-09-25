@@ -39,7 +39,9 @@ urlpatterns = [
     path("market/bids/<int:quote_id>/withdraw/", market_views.WithdrawView.as_view(), name="market_withdraw"),
     path("market/register/", market_views.RegisterView.as_view(), name="market_register"),
     path("market/organisation/", market_views.OrganisationView.as_view(), name="market_organisation"),
-    path("market/invites/<str:token>/", market_views.AcceptInviteView.as_view(), name="market_invite"),
+    # "accept" before the token route, so the literal is never read as a token.
+    path("market/invites/accept/", market_views.AcceptInviteView.as_view(), name="market_invite_accept"),
+    path("market/invites/<str:token>/", market_views.OpenInviteView.as_view(), name="market_invite"),
     # the master item list is domain-level reference data, not procurement's:
     # tracking and distribution will both read it
     path("catalogue/", views.CatalogueView.as_view(), name="catalogue"),

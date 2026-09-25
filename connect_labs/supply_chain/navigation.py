@@ -144,6 +144,7 @@ VIEWS_WITHOUT_TABS = frozenset(
         "supply_chain:market_register",
         "supply_chain:market_organisation",
         "supply_chain:market_invite",
+        "supply_chain:market_invite_accept",
     }
 )
 

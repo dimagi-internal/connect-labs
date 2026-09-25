@@ -154,3 +154,22 @@ class TestWhatSuppliersSayTheyOffer:
 
         assert [o["org_name"] for o in offers] == ["Sahel Nutrition"]
         assert offers[0]["match"] == "category"
+
+
+class TestAProgramCannotTakeOverACompany:
+    def test_no_invitation_for_a_company_connect_governs(self):
+        org = LabsOrg.objects.create(slug="sahel", name="Sahel Clinics", connect_organization_id=8801)
+        supplier = Supplier.objects.enrol(SCOPE, org=org)
+
+        with pytest.raises(ValueError, match="Connect organisation"):
+            op("supplier_market_invite", supplier_id=supplier.pk)
+
+    def test_no_invitation_once_its_own_people_are_on_the_marketplace(self, django_user_model):
+        from connect_labs.marketplace.models import OrgMembership
+
+        supplier = Supplier.objects.enrol(SCOPE, name="Harmattan Health Supplies")
+        owner = django_user_model.objects.create_user(username="owner", password="x")
+        OrgMembership.objects.create(org=supplier.org, user=owner, role="admin")
+
+        with pytest.raises(ValueError, match="already has people"):
+            op("supplier_market_invite", supplier_id=supplier.pk)

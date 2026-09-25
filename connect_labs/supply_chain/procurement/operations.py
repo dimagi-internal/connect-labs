@@ -3,11 +3,13 @@
 Handlers take a SupplyDataAccess first and return JSON-serialisable dicts.
 """
 
+from django.db.models import Q
+
 from connect_labs.supply_chain import records
 from connect_labs.supply_chain.operations import (
     _OUTREACH_DATA,
     _OUTREACH_DATA_CREATE,
-    _QUOTE_DATA,
+    _QUOTE_DATA_CORRECTION,
     _QUOTE_DATA_CREATE,
     _ROUND_DATA,
     ID,
@@ -249,7 +251,7 @@ def quote_record(access, data):
         "reproducible."
     ),
     input_schema=obj(
-        {"quote_id": ID, "data": _QUOTE_DATA, "reason": {"type": "string", "minLength": 1}},
+        {"quote_id": ID, "data": _QUOTE_DATA_CORRECTION, "reason": {"type": "string", "minLength": 1}},
         required=("quote_id", "data", "reason"),
     ),
     is_write=True,
@@ -443,8 +445,16 @@ def _offers_for(access, commodity_slug):
     if commodity is None:
         return []
     items = [i for i in access.list_items() if i.commodity_id == commodity.pk]
+    gtins = {g for i in items for g in (i.gtin_base, i.gtin_pack, i.gtin_case) if g}
+    # Narrowed in the database to the offerings that could match at all, so a
+    # product page does not read every offering on the marketplace.
+    candidates = Q(gtin__in=gtins) if gtins else Q(pk__in=[])
+    if commodity.category:
+        candidates |= Q(category=commodity.category)
+    if commodity.unicef_material_number:
+        candidates |= Q(unicef_material_number=commodity.unicef_material_number)
     found = []
-    for offering in SupplierOffering.objects.select_related("profile__org"):
+    for offering in SupplierOffering.objects.filter(candidates).select_related("profile__org"):
         match = offering_match_kind(offering, commodity, items)
         if match is not None:
             found.append((offering, match))

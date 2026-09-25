@@ -182,14 +182,23 @@ class TestAnExistingSupplier:
         Supplier.objects.enrol(f"prog:{PROGRAM}", org=org, type="distributor")
         _, raw = membership.issue_invite(org, email="ops@harmattan.example")
         url = reverse("supply_chain:market_invite", args=[raw])
+        accept = reverse("supply_chain:market_invite_accept")
 
-        assert "Sign in with Connect" in client.get(url).content.decode()
+        opened = client.get(url)
+        # The token goes no further than this request: not into the Location
+        # header, and not into the sign-in link's next=.
+        assert opened.status_code == 302
+        assert opened.url == accept
+        page = client.get(accept).content.decode()
+        assert "Sign in with Connect" in page
+        assert raw not in page
 
         colleague = django_user_model.objects.create_user(username="bola", password="x")
         client.force_login(colleague)
-        assert client.post(url).status_code == 302
+        assert client.post(accept).status_code == 302
         assert OrgMembership.objects.filter(org=org, user=colleague).exists()
         assert client.get(url).status_code == 404, "an invitation works once"
+        assert client.post(accept).status_code == 404, "and cannot be accepted twice"
 
     def test_the_org_page_issues_an_invitation_link_once(self, signed_in, supplier):
         response = signed_in.post(
@@ -222,3 +231,104 @@ class TestNotYours:
         assert signed_in.post(reverse("supply_chain:market_withdraw", args=[quote.pk])).status_code == 404
         assert signed_in.get(reverse("supply_chain:market_revise", args=[quote.pk])).status_code == 404
         assert not Quote.objects.get(pk=quote.pk).voided
+
+
+class TestTheReviewFixes:
+    def test_a_quote_the_program_typed_in_is_not_the_suppliers_to_see_or_touch(self, signed_in, supplier, open_round):
+        """Another program's transcription of this company's email stays that program's."""
+        link = Supplier.objects.enrol(f"prog:{PROGRAM}", org=supplier)
+        typed = op(
+            "quote_record",
+            data={
+                "round_id": open_round.pk,
+                "commodity_slug": "rutf",
+                "supplier_id": link.pk,
+                "as_quoted_amount": "47.00",
+                "as_quoted_unit": "per_pack",
+            },
+        )
+
+        assert "47.00" not in signed_in.get(reverse("supply_chain:market_bids")).content.decode()
+        assert (
+            "47.00" not in signed_in.get(reverse("supply_chain:market_round", args=[open_round.pk])).content.decode()
+        )
+        assert signed_in.post(reverse("supply_chain:market_withdraw", args=[typed["id"]])).status_code == 404
+        assert not Quote.objects.get(pk=typed["id"]).voided
+
+    def test_revising_can_clear_a_figure(self, signed_in, supplier, open_round):
+        from connect_labs.supply_chain.market import service
+
+        first = service.bid(
+            open_round.pk,
+            "rutf",
+            org=supplier,
+            orgs=[supplier],
+            user=None,
+            data={
+                "as_quoted_amount": "52.40",
+                "as_quoted_unit": "per_pack",
+                "as_quoted_currency": "USD",
+                "freight_basis": "excluded",
+                "freight_amount": "9.00",
+            },
+        )
+
+        response = signed_in.post(
+            reverse("supply_chain:market_revise", args=[first.pk]),
+            {
+                "as_quoted_amount": "52.40",
+                "as_quoted_unit": "per_pack",
+                "as_quoted_currency": "USD",
+                "freight_basis": "included",
+                "freight_amount": "",
+                "duties_basis": "not_specified",
+            },
+        )
+
+        assert response.status_code == 302, response.content.decode()[:1500]
+        revised = Quote.objects.get(pk=Quote.objects.get(pk=first.pk).superseded_by_id)
+        assert revised.freight_basis == "included"
+        assert revised.freight_amount is None
+
+    def test_registering_a_differently_punctuated_name_is_refused(self, signed_in):
+        LabsOrg.objects.create(slug="acme-ltd", name="Acme Ltd.")
+
+        response = signed_in.post(
+            reverse("supply_chain:market_register"),
+            {"name": "ACME Ltd", "country": "NG", "type": "trader", "contact_name": "X", "contact_email": "x@e.org"},
+        )
+
+        assert response.status_code == 400
+        assert LabsOrg.objects.count() == 1
+
+    def test_opening_the_organisation_page_does_not_make_it_a_supplier(self, signed_in, user):
+        org = LabsOrg.objects.create(slug="sahel", name="Sahel Clinics")
+        OrgMembership.objects.create(org=org, user=user, role="admin")
+
+        page = signed_in.get(reverse("supply_chain:market_organisation") + f"?org={org.pk}")
+
+        assert page.status_code == 200
+        assert "not a supplier on the marketplace yet" in page.content.decode()
+        assert not SupplierProfile.objects.filter(org=org).exists()
+
+    def test_a_member_who_is_not_an_admin_cannot_change_what_the_company_offers(
+        self, client, supplier, django_user_model
+    ):
+        member = django_user_model.objects.create_user(username="kemi", password="x")
+        OrgMembership.objects.create(org=supplier, user=member, role="member")
+        client.force_login(member)
+
+        response = client.post(
+            reverse("supply_chain:market_organisation") + f"?org={supplier.pk}",
+            {"action": "offering_add", "org": supplier.pk, "category": "therapeutic_food", "product_name": "X"},
+        )
+
+        assert response.status_code == 404
+        assert not SupplierOffering.objects.exists()
+
+    def test_a_malformed_offering_id_is_a_404_not_a_500(self, signed_in, supplier):
+        response = signed_in.post(
+            reverse("supply_chain:market_organisation") + f"?org={supplier.pk}",
+            {"action": "offering_delete", "org": supplier.pk, "offering": "not-a-number"},
+        )
+        assert response.status_code == 404

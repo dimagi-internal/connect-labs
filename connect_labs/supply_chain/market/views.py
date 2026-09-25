@@ -21,6 +21,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views import View
 
+from connect_labs.audit_trail.context import get_audit_context
 from connect_labs.marketplace import membership
 from connect_labs.marketplace.models import OrgMembership
 from connect_labs.supply_chain import records
@@ -214,7 +215,7 @@ class ReviseView(BidView):
             return self._page(request, listed, line, form, org, quote=quote, status=400)
         try:
             with transaction.atomic():
-                service.revise(quote.pk, org=org, orgs=self.orgs, user=request.user, data=form.payload())
+                service.revise(quote.pk, org=org, orgs=self.orgs, user=request.user, data=form.payload(replacing=True))
         except (service.NotAvailable, service.NeedsProfile, ValueError) as refused:
             form.add_error(None, str(refused))
             return self._page(request, listed, line, form, org, quote=quote, status=400)
@@ -226,9 +227,13 @@ class WithdrawView(_SupplierView):
     def post(self, request, quote_id):
         try:
             quote = service.own_quote(quote_id, self.orgs)
-            service.withdraw(quote.pk, org=quote.supplier.org, orgs=self.orgs, user=request.user)
         except service.NotAvailable:
             raise Http404("no such bid")
+        try:
+            service.withdraw(quote.pk, org=quote.supplier.org, orgs=self.orgs, user=request.user)
+        except (service.NotAvailable, service.NeedsProfile, ValueError) as refused:
+            messages.error(request, str(refused))
+            return redirect(reverse("supply_chain:market_bids"))
         messages.success(request, "Your bid is withdrawn.")
         return redirect(reverse("supply_chain:market_bids"))
 
@@ -253,7 +258,7 @@ class RegisterView(View):
         return _render(request, "register.html", form=RegisterForm(), profileless=missing)
 
     def post(self, request):
-        from connect_labs.marketplace.identity import mint_org
+        from connect_labs.marketplace.identity import OrgExists
 
         orgs = membership.orgs_for(request)
         profile_for = request.POST.get("profile_for", "")
@@ -261,8 +266,8 @@ class RegisterView(View):
             # An organisation the person already acts for (a Connect org) that
             # has no supplier profile yet: add one, and nothing else.
             org = next((o for o in orgs if o.pk == int(profile_for)), None)
-            if org is None:
-                raise Http404("not an organisation you act for")
+            if org is None or not membership.manages(request, org):
+                raise Http404("not an organisation you manage")
             SupplierProfile.objects.get_or_create(org=org)
             return redirect(reverse("supply_chain:market_organisation") + f"?org={org.pk}")
 
@@ -271,22 +276,36 @@ class RegisterView(View):
             response = _render(request, "register.html", form=form, profileless=[])
             response.status_code = 400
             return response
-        data = form.cleaned_data
-        with transaction.atomic():
-            org = mint_org(data["name"], country=data["country"])
-            fill_profile(
-                org,
-                {
-                    "type": data["type"],
-                    "city": data.get("city", ""),
-                    "website": data.get("website", ""),
-                    "description": data.get("description", ""),
-                    "contacts": [form.contact()],
-                },
+        try:
+            with transaction.atomic():
+                org = self._register(request, form)
+        except OrgExists:
+            form.add_error(
+                "name", "That organisation is already on file. Ask someone there, or your buyer, for an invitation."
             )
-            membership.register(request.user, org)
+            response = _render(request, "register.html", form=form, profileless=[])
+            response.status_code = 400
+            return response
         messages.success(request, f"{org.name} is registered. Add what you sell, then bid on any open round.")
         return redirect(reverse("supply_chain:market_organisation") + f"?org={org.pk}")
+
+    def _register(self, request, form):
+        from connect_labs.marketplace.identity import mint_new_org
+
+        data = form.cleaned_data
+        org = mint_new_org(data["name"], country=data["country"])
+        fill_profile(
+            org,
+            {
+                "type": data["type"],
+                "city": data.get("city", ""),
+                "website": data.get("website", ""),
+                "description": data.get("description", ""),
+                "contacts": [form.contact()],
+            },
+        )
+        membership.register(request.user, org)
+        return org
 
 
 class OrganisationView(View):
@@ -299,8 +318,11 @@ class OrganisationView(View):
             if not self.orgs:
                 return redirect(reverse("supply_chain:market_register"))
             return _render(request, "choose_org.html")
-        self.profile, _ = SupplierProfile.objects.get_or_create(org=self.org)
-        self.admin = membership.is_admin(request.user, self.org)
+        # Read, never created here: opening the page must not turn an
+        # organisation into a bidding supplier. That is a choice, made by the
+        # button the page offers when there is no profile yet.
+        self.profile = SupplierProfile.objects.filter(org=self.org).first()
+        self.admin = membership.manages(request, self.org)
         return super().dispatch(request, *args, **kwargs)
 
     def _page(self, request, *, profile_form=None, offering_form=None, invite_form=None, issued=None, status=200):
@@ -322,11 +344,20 @@ class OrganisationView(View):
         return response
 
     def get(self, request):
+        if self.profile is None:
+            return _render(request, "no_profile.html", org=self.org, admin=self.admin)
         return self._page(request)
 
     def post(self, request):
         action = request.POST.get("action")
         back = redirect(reverse("supply_chain:market_organisation") + f"?org={self.org.pk}")
+        if not self.admin:
+            raise Http404("only an admin of this organisation can do that")
+        if action == "create_profile":
+            SupplierProfile.objects.get_or_create(org=self.org)
+            return back
+        if self.profile is None:
+            raise Http404("this organisation has no supplier profile")
         if action == "offering_add":
             form = OfferingForm(request.POST)
             if not form.is_valid():
@@ -337,10 +368,11 @@ class OrganisationView(View):
             messages.success(request, f"Added {offering.product_name}.")
             return back
         if action == "offering_delete":
-            SupplierOffering.objects.filter(pk=request.POST.get("offering"), profile=self.profile).delete()
+            offering_id = request.POST.get("offering", "")
+            if not offering_id.isdigit():
+                raise Http404("no such product")
+            SupplierOffering.objects.filter(pk=int(offering_id), profile=self.profile).delete()
             return back
-        if not self.admin:
-            raise Http404("only an admin of this organisation can do that")
         if action == "profile":
             form = ProfileForm(request.POST, instance=self.profile)
             if not form.is_valid():
@@ -364,31 +396,64 @@ class OrganisationView(View):
         raise Http404("unknown action")
 
 
-class AcceptInviteView(View):
-    """Opening an invitation. The token is the authority; the person must be signed in."""
+INVITE_SESSION_KEY = "market_invite_token"
 
-    def dispatch(self, request, *args, **kwargs):
-        response = super().dispatch(request, *args, **kwargs)
-        response["Cache-Control"] = "no-store"
-        response["Referrer-Policy"] = "same-origin"
-        return response
+
+class OpenInviteView(View):
+    """The link someone was sent. Swaps the token into the session and moves on.
+
+    The token must not travel further than this one request: not into the
+    sign-in page's `next=` (where it would sit in a query string the audit log
+    keeps), not into a Location header, not into the next page's URL. So the
+    first thing this does is put it in the session and redirect to an address
+    that carries nothing. The audit record of this request names the path with
+    the token redacted, as the update-link page does.
+    """
 
     def get(self, request, token):
-        invite = membership.find_invite(token)
-        if invite is None:
-            response = _render(request, "invite_invalid.html")
-            response.status_code = 404
-            return response
-        return _render(request, "invite.html", invite=invite, token=token)
+        audit = get_audit_context()
+        if audit is not None:
+            audit.path = reverse("supply_chain:market_invite", kwargs={"token": "redacted"})
+        if membership.find_invite(token) is None:
+            return _invalid_invite(request)
+        request.session[INVITE_SESSION_KEY] = token
+        return _no_store(redirect(reverse("supply_chain:market_invite_accept")))
 
-    def post(self, request, token):
+
+def _no_store(response):
+    response["Cache-Control"] = "no-store"
+    response["Referrer-Policy"] = "same-origin"
+    return response
+
+
+def _invalid_invite(request):
+    response = _render(request, "invite_invalid.html")
+    response.status_code = 404
+    return _no_store(response)
+
+
+class AcceptInviteView(View):
+    """Accepting an invitation, at an address with no token in it."""
+
+    def _invite(self, request):
+        return membership.find_invite(request.session.get(INVITE_SESSION_KEY))
+
+    def get(self, request):
+        invite = self._invite(request)
+        if invite is None:
+            return _invalid_invite(request)
+        return _no_store(_render(request, "invite.html", invite=invite))
+
+    def post(self, request):
         if not _signed_in(request):
             return _sign_in(request)
-        invite = membership.find_invite(token)
+        invite = self._invite(request)
         if invite is None:
-            response = _render(request, "invite_invalid.html")
-            response.status_code = 404
-            return response
-        membership.accept_invite(invite, request.user)
+            return _invalid_invite(request)
+        try:
+            membership.accept_invite(invite, request.user)
+        except ValueError:
+            return _invalid_invite(request)
+        request.session.pop(INVITE_SESSION_KEY, None)
         messages.success(request, f"You now act for {invite.org.name} on the marketplace.")
         return redirect(reverse("supply_chain:market_organisation") + f"?org={invite.org.pk}")
