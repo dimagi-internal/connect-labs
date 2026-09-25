@@ -319,3 +319,36 @@ def test_a_row_with_no_natural_key_is_never_a_duplicate():
 
     rows = [_Row(1, "<none:1>"), _Row(2, "<none:2>")]
     assert duplicates(rows, lambda r: r._key) == {}
+
+
+_ON_THE_ROAD = [
+    {
+        "to_org_slug": "a-partner",
+        "quantity": "10",
+        "quantity_unit": "carton",
+        "dispatched_days_ago": 6,
+        "expected_days_ago": 1,
+        "reference": "A-PLACEHOLDER-CONSIGNMENT",
+        "carrier": "A Placeholder Carrier",
+    }
+]
+
+
+def test_seeding_stock_on_the_road_again_adds_nothing(seeded):
+    """A consignment dispatched twice is two lorries that never existed.
+
+    Worse than an extra row: a consignment moves stock into the in-transit
+    point and out of the warehouse, so a second one takes the warehouse
+    balance down again for goods that only ever left once.
+    """
+    module, scopes = seeded
+    chc = scopes["chc"]
+    document = {**_DOCUMENT, "chc_chain": {**_CHAIN, "on_the_road": _ON_THE_ROAD}}
+    chain = module.seed_chain(chc["access"], _CHAIN, chc["reference"])
+    module.seed_on_the_road(chc["access"], document, chc["reference"], chain)
+    before = _counts()
+
+    module.seed_on_the_road(chc["access"], document, chc["reference"], chain)
+
+    grew = _grew(before, _counts())
+    assert grew == {}, "second run grew: " + ", ".join(f"{n} {a}->{b}" for n, (a, b) in sorted(grew.items()))
