@@ -79,13 +79,13 @@ class TestBrowsingIsPublic:
     def test_a_tender_whose_delivery_point_has_only_a_city_still_renders(self, client, open_tender):
         """The live CHC tender's delivery point has a city and no name. A template
         reading a missing key as a filter ARGUMENT raises, and took the page down."""
-        Tender.objects.filter(pk=open_tender.pk).update(delivery_point={"city": "Kano"})
+        Tender.objects.filter(pk=open_tender.pk).update(delivery_points=[{"key": "kano", "city": "Kano"}])
 
         assert client.get(reverse("supply_chain:market")).status_code == 200
         assert client.get(reverse("supply_chain:market_tender", args=[open_tender.pk])).status_code == 200
 
     def test_a_tender_with_an_empty_delivery_point_still_renders(self, client, open_tender):
-        Tender.objects.filter(pk=open_tender.pk).update(delivery_point={})
+        Tender.objects.filter(pk=open_tender.pk).update(delivery_points=[])
 
         assert client.get(reverse("supply_chain:market")).status_code == 200
         assert client.get(reverse("supply_chain:market_tender", args=[open_tender.pk])).status_code == 200

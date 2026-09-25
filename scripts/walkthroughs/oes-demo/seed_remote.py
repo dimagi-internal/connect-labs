@@ -657,7 +657,7 @@ def opened(access, round_):
     """Open a round that has not been opened, and leave any other alone.
 
     `round_open` used to follow `round_create` and so always acted on a fresh
-    draft. `round_for` broke that precondition the day it landed: it may hand
+    draft. `tender_for` broke that precondition the day it landed: it may hand
     back a round this seeder created on an earlier run, and that round may
     already be awarded -- at which point opening it again drags a bought
     round back onto the market.
@@ -674,7 +674,7 @@ def opened(access, round_):
     return op(access, "tender_open", tender_id=round_["id"])
 
 
-def round_for(access, data):
+def tender_for(access, data):
     """This scope's round with that label, or a new one.
 
     Matched by label before creating, for the same reason `supplier_for_org`
@@ -722,7 +722,7 @@ def seed_chain(access, chain, reference):
 
     supplier = _chain_supplier(access, chain, orgs)
 
-    round_ = round_for(access, chain["round"])
+    round_ = tender_for(access, chain["round"])
     # A round that received quotes was open when it received them -- but only
     # if it is still a draft. See `opened`.
     round_ = opened(access, round_)
@@ -935,7 +935,7 @@ def seed_rutf_round_two(access, round_two):
     to keep them out of the write.
     """
     round_two = without_commentary(round_two)
-    round_ = round_for(access, round_two["round"])
+    round_ = tender_for(access, round_two["round"])
     # A round that received quotes was open when it received them -- but only
     # if it is still a draft. See `opened`.
     round_ = opened(access, round_)
@@ -1024,7 +1024,7 @@ def seed_chlorine_blocked(data, scopes):
         "recorded_by_org_id": reference["orgs"][section["programme_org_slug"]]["id"],
     }
 
-    round_ = round_for(access, section["round"])
+    round_ = tender_for(access, section["round"])
     round_ = opened(access, round_)
 
     store = _supply_point(access, section["store"], reference, ours)
@@ -1223,7 +1223,7 @@ def seed_awaiting_approval(access, data, reference):
     ours = {"source": "we_recorded", "recorded_by_org_id": program_org["id"]}
 
     supplier = _chain_supplier(access, section, orgs)
-    round_ = round_for(access, section["round"])
+    round_ = tender_for(access, section["round"])
     round_ = opened(access, round_)
 
     quotes, items = [], {}

@@ -42,6 +42,7 @@ from connect_labs.supply_chain.forms import (
     ReasonForm,
     TenderForm,
     TenderLineFormSet,
+    TenderPlaceFormSet,
 )
 from connect_labs.supply_chain.fulfilment_forms import DocumentForm
 from connect_labs.supply_chain.navigation import supply_tabs
@@ -182,6 +183,15 @@ class QuoteDetailView(_Base):
             return context
 
         detail = self.op("quote_get", quote_id=quote_id)
+        from connect_labs.supply_chain.models import Quote as _Quote
+        from connect_labs.supply_chain.procurement.services.comparison import delivery_words
+
+        found = (
+            _Quote.objects.select_related("tender")
+            .filter(pk=quote_id, tender__program_id=_access(self.request).program_id)
+            .first()
+        )
+        context["delivery_words"] = delivery_words(found, found.tender) if found else ""
         if detail is None:
             raise Http404(f"no quote {quote_id} in this programme")
         context["detail"] = detail
@@ -538,17 +548,26 @@ class _TenderScreen(OperationFormView):
             form_kwargs={"commodities": self.commodities()},
         )
 
+    def place_formset(self, data=None, initial=None):
+        return TenderPlaceFormSet(data, initial=initial, prefix="places")
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        posted = self.request.method == "POST"
         if context.get("has_program_context") and "lines" not in context:
             context["lines"] = (
-                self.line_formset(self.request.POST)
-                if self.request.method == "POST"
-                else self.line_formset(initial=self.initial_lines())
+                self.line_formset(self.request.POST) if posted else self.line_formset(initial=self.initial_lines())
+            )
+        if context.get("has_program_context") and "places" not in context:
+            context["places"] = (
+                self.place_formset(self.request.POST) if posted else self.place_formset(initial=self.initial_places())
             )
         return context
 
     def initial_lines(self):
+        return []
+
+    def initial_places(self):
         return []
 
     def form_valid(self, form):
@@ -569,11 +588,20 @@ class _TenderScreen(OperationFormView):
             form.add_error(None, "A tender has to ask for at least one commodity.")
             return self.render_to_response(self.get_context_data(form=form, lines=lines))
 
+        places = self.place_formset(self.request.POST)
+        if not places.is_valid():
+            return self.render_to_response(self.get_context_data(form=form, lines=lines, places=places))
+        self._places = [
+            {k: v for k, v in row.items() if k != "DELETE" and v}
+            for row in places.cleaned_data
+            if row and not row.get("DELETE") and (row.get("name") or row.get("city"))
+        ]
+
         self._lines = kept
         return super().form_valid(form)
 
     def fixed(self, **kwargs):
-        return {"data": {"lines": getattr(self, "_lines", [])}}
+        return {"data": {"lines": getattr(self, "_lines", []), "delivery_points": getattr(self, "_places", [])}}
 
     def breadcrumb(self, **kwargs):
         return [
@@ -626,8 +654,17 @@ class TenderUpdateView(_TenderScreen):
             for line in (self._tender_instance().lines or [])
         ]
 
+    def initial_places(self):
+        return [
+            {k: point.get(k, "") for k in ("key", "name", "city", "country_name")}
+            for point in (self._tender_instance().delivery_points or [])
+        ]
+
     def fixed(self, **kwargs):
-        return {"tender_id": int(kwargs["tender_id"]), "data": {"lines": getattr(self, "_lines", [])}}
+        return {
+            "tender_id": int(kwargs["tender_id"]),
+            "data": {"lines": getattr(self, "_lines", []), "delivery_points": getattr(self, "_places", [])},
+        }
 
 
 class TenderOpenView(OperationActionView):

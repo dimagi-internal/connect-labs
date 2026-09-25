@@ -6,3 +6,4 @@ yet. Shown, never used to rank or hide -- a hidden bid is a silent failure.
 {% endcomment %}
 {% if row.entered_by == "supplier" %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-message-info text-message-info-text border border-message-info-border" title="Entered by the supplier on the marketplace, not transcribed by us">Their own entry</span>{% endif %}
 {% if row.supplier_awaiting_review %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-message-warning text-message-warning-text border border-message-warning-border" title="Registered itself on the marketplace; nobody on the team has reviewed it yet">Self-registered, not yet reviewed</span>{% endif %}
+{% if row.delivery %}<div class="text-xs font-normal text-gray-600 mt-0.5">{{ row.delivery }}</div>{% endif %}

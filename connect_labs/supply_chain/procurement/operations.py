@@ -40,7 +40,7 @@ def tender_list(access):
 
 @register_operation(
     name="tender_get",
-    summary="Fetch one tender by id, with its commodity lines and delivery point.",
+    summary="Fetch one tender by id, with its commodity lines, delivery places and whether it accepts collection.",
     input_schema=obj({"tender_id": ID}, required=("tender_id",)),
 )
 def tender_get(access, tender_id):
@@ -51,8 +51,9 @@ def tender_get(access, tender_id):
 @register_operation(
     name="tender_create",
     summary=(
-        "Create a quote tender in draft. Needs lines (commodity_slug, quantity, "
-        "quantity_unit) and a delivery_point before it can be opened."
+        "Create a tender (a request for quotes) in draft. Needs lines (commodity_slug, "
+        "quantity, quantity_unit), and delivery_points (one or more places) or "
+        "pickup_accepted=true, before it can be opened."
     ),
     input_schema=obj({"data": _TENDER_DATA}, required=("data",)),
     is_write=True,
@@ -63,7 +64,7 @@ def tender_create(access, data):
 
 @register_operation(
     name="tender_update",
-    summary="Update a tender's label, lines, delivery point, deadline or notes.",
+    summary="Update a tender's label, lines, delivery places, collection, deadline or notes.",
     input_schema=obj({"tender_id": ID, "data": _TENDER_DATA}, required=("tender_id", "data")),
     is_write=True,
 )
@@ -74,9 +75,9 @@ def tender_update(access, tender_id, data):
 @register_operation(
     name="tender_open",
     summary=(
-        "Open a tender for quotes. Refused unless the tender has a delivery "
-        "point, because suppliers will not quote without knowing where the "
-        "goods go."
+        "Open a tender for quotes. Refused unless the tender names at least one "
+        "delivery place or accepts collection from the supplier, because suppliers "
+        "will not quote without knowing where the goods go."
     ),
     input_schema=obj({"tender_id": ID}, required=("tender_id",)),
     is_write=True,

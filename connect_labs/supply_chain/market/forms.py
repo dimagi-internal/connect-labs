@@ -279,8 +279,39 @@ class BidForm(forms.Form):
     )
     notes = forms.CharField(label=_("Anything else"), required=False, widget=forms.Textarea(attrs=TEXTAREA))
 
-    def __init__(self, *args, requirements=(), **kwargs):
+    delivery_mode = forms.ChoiceField(
+        label=_("How the goods reach the buyer"),
+        choices=[("delivered", _("We deliver")), ("pickup", _("The buyer collects from us"))],
+        initial="delivered",
+        required=False,
+        widget=forms.RadioSelect,
+    )
+    delivery_point_keys = forms.MultipleChoiceField(
+        label=_("Places this price covers"),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        help_text=_("Tick every place this price is good for. If it differs by place, send a bid for each."),
+    )
+    pickup_location = forms.CharField(
+        label=_("Where the buyer collects from"),
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. Our warehouse, Kano free zone")}),
+    )
+
+    def __init__(self, *args, requirements=(), places=(), pickup_accepted=False, **kwargs):
         super().__init__(*args, **kwargs)
+        self.places = list(places or [])
+        self.pickup_accepted = pickup_accepted
+        self.fields["delivery_point_keys"].choices = [
+            (p["key"], ", ".join(x for x in (p.get("name"), p.get("city"), p.get("country_name")) if x))
+            for p in self.places
+        ]
+        if not pickup_accepted:
+            self.fields["delivery_mode"].choices = [("delivered", _("We deliver"))]
+        if not self.places:
+            self.fields["delivery_mode"].choices = [("pickup", _("The buyer collects from us"))]
+            self.fields["delivery_mode"].initial = "pickup"
         self.requirement_fields = []
         for requirement in requirements or []:
             key = requirement.get("field")
@@ -299,6 +330,20 @@ class BidForm(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
+        # Not asked when there is only one way: delivered if the tender names
+        # places, collected if it names none.
+        mode = cleaned.get("delivery_mode") or ("delivered" if self.places else "pickup")
+        cleaned["delivery_mode"] = mode
+        if mode == "pickup":
+            cleaned["delivery_point_keys"] = []
+            if not (cleaned.get("pickup_location") or "").strip():
+                self.add_error("pickup_location", _("Say where the buyer collects from."))
+        else:
+            cleaned["pickup_location"] = ""
+            if len(self.places) == 1 and not cleaned.get("delivery_point_keys"):
+                cleaned["delivery_point_keys"] = [self.places[0]["key"]]
+            if len(self.places) > 1 and not cleaned.get("delivery_point_keys"):
+                self.add_error("delivery_point_keys", _("Tick the places this price covers."))
         for basis, amount in (("freight_basis", "freight_amount"), ("duties_basis", "duties_amount")):
             if cleaned.get(basis) != "excluded" and cleaned.get(amount) is not None:
                 cleaned[amount] = None
@@ -317,6 +362,9 @@ class BidForm(forms.Form):
         payload = {}
         for name, value in data.items():
             if name.startswith("spec__"):
+                continue
+            if name == "delivery_point_keys":
+                payload[name] = list(value or [])
                 continue
             if value in (None, ""):
                 if replacing:
@@ -348,6 +396,7 @@ class BidForm(forms.Form):
         }
         for key, value in (quote.stated_spec or {}).items():
             initial[f"spec__{key}"] = value
+        initial["delivery_point_keys"] = list(quote.delivery_point_keys or [])
         return initial
 
 

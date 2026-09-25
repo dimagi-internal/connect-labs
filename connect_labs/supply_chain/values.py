@@ -293,7 +293,7 @@ def _plural_unit(unit: str, count) -> str:
     return unit_noun(unit, count)
 
 
-def destination_phrase(delivery_point: dict | None) -> str:
+def destination_phrase(delivery_point) -> str:
     """A tender's delivery point as one piece of prose: name, city, country.
 
     Single-sourced for the same reason quantity_phrase() is (see its own
@@ -305,6 +305,11 @@ def destination_phrase(delivery_point: dict | None) -> str:
     "delivered to Central store, Kano, Nigeria" in its opening line and then
     "freight to Kano, Nigeria" three times in the questions that followed.
     """
+    if isinstance(delivery_point, (list, tuple)):
+        # Several places a price can go to: "Kano, Nigeria or Sokoto, Nigeria".
+        phrases = [destination_phrase(p) for p in delivery_point]
+        phrases = [p for p in phrases if p != "the delivery point"]
+        return " or ".join(phrases) if phrases else "the delivery point"
     point = delivery_point or {}
     country = point.get("country_name") or point.get("country")
     parts = [point.get("name"), point.get("city"), country]
