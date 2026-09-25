@@ -55,6 +55,9 @@ CHECK_LABELS = {
     "item_fails_specification": "Fails the commodity specification",
     "shipment_overdue": "Shipment past its expected date",
     "shipment_documents_outstanding": "Documents it needs, not on file",
+    "shipment_delivered_unevidenced": "Recorded as delivered, with no proof of delivery",
+    "charge_paid_unevidenced": "A carrier was paid, with no proof of delivery",
+    "shipment_quantity_unaccounted": "More was despatched than has arrived",
     "award_awaiting_approval": "Awarded, awaiting approval",
     "payment_unconfirmed": "Payment not confirmed by the payee",
     "contract_delivery_overdue": "Delivery past the promised lead time",
@@ -193,6 +196,34 @@ def incoterm_words(incoterm):
         return text
     name, meaning = INCOTERMS[code]
     return f"{text} — {name}: {meaning}"
+
+
+@register.filter
+def place_text(point):
+    """A delivery point as a person would write the address.
+
+    `{{ round.delivery_point|place_text }}`.
+
+    Three templates used to join these parts by hand and each got it wrong
+    in its own way: the programme's own round list printed a leading comma
+    when the name was blank (", Kano"), and the SUPPLIER-FACING marketplace
+    printed "(not stated), Kano" -- telling an outside reader the place was
+    unknown in the same breath as naming the city. That page is the one
+    people outside the programme read, which is why this is one function now
+    rather than three expressions.
+
+    The rule: say the parts that are there, in order, and say "not stated"
+    only when none of them is. The two-letter country code is used only when
+    the country's name is missing -- a reader wants "Nigeria", but "NG" beats
+    nothing.
+    """
+    point = point or {}
+    parts = [
+        str(point.get("name") or "").strip(),
+        str(point.get("city") or "").strip(),
+        str(point.get("country_name") or "").strip() or str(point.get("country") or "").strip(),
+    ]
+    return ", ".join(part for part in parts if part) or "not stated"
 
 
 @register.filter
@@ -462,6 +493,9 @@ AGE_FROM = {
     "duty_relief_unevidenced": "since the order was signed",
     "shipment_without_certificate": "since dispatch",
     "shipment_documents_outstanding": "since dispatch",
+    "shipment_delivered_unevidenced": "since dispatch",
+    "charge_paid_unevidenced": "since it was paid",
+    "shipment_quantity_unaccounted": "since dispatch",
     "shipment_overdue": "past the expected date",
     "contract_delivery_overdue": "past the expected date",
     "payment_unconfirmed": "since payment",

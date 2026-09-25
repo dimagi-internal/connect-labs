@@ -395,18 +395,26 @@ class OrdersView(OperationBase):
         return context
 
 
-def _link_updates(contract_id):
+def _link_updates(contract_id, program_id):
     """What suppliers reported about this order through their update links.
 
     Read from the link submissions rather than an operation: they are the
     record of which link a write came through, which the rows themselves do
-    not carry. The contract was already fetched through the programme-scoped
-    `contract_get`, so this reads nothing the page could not already show.
+    not carry.
+
+    **Scoped here, not upstream.** This used to take the contract id alone
+    and look it up by bare primary key, on the reasoning -- written in this
+    docstring -- that the caller had already fetched the same contract
+    through the programme-scoped `contract_get`, so nothing new was exposed.
+    That was true of the one caller, and it made the safety of this function
+    a property of somebody else's code. The id in that filter comes off a
+    URL; the second caller to arrive with an unauthorised one would have got
+    an answer. Now it says which programme, and cannot.
     """
     from connect_labs.supply_chain.models import Contract
     from connect_labs.supply_chain.update_links import service
 
-    contract = Contract.objects.filter(pk=contract_id).first()
+    contract = Contract.objects.filter(pk=contract_id, program_id=program_id).first()
     updates = service.updates_for_contract(contract) if contract is not None else []
     # One panel per organisation, each listing only what came through ITS
     # link. A single panel headed by whoever wrote last put the distributor's
@@ -641,7 +649,7 @@ class OrderDetailView(OperationBase):
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
         context["tellers"] = _tellers(contract, points, context["orgs"], context["suppliers"])
-        context["link_updates"] = _link_updates(contract_id)
+        context["link_updates"] = _link_updates(contract_id, _access(self.request).program_id)
         # Lateness, read from the checks rather than recomputed here, so this
         # page and the checks feed cannot disagree about whether it is late.
         shipment_ids = {s["id"] for s in context["shipments"]}
@@ -1036,6 +1044,11 @@ class SupplierDetailView(OperationBase):
 
         rounds = {r["id"]: r for r in self.op("round_list")}
         context["rounds"] = rounds
+
+        # How their orders actually went: on time, in full, and how late the
+        # worst one ran. Scoped to this programme like everything else here --
+        # a supplier's record with us is not a claim about them in general.
+        context["performance"] = next((row for row in self.op("supplier_performance", supplier_id=supplier_id)), None)
 
         outreach = [o for o in self.op("outreach_list") if o["supplier_id"] == supplier_id]
         for invitation in outreach:

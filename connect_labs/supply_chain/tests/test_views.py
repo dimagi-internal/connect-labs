@@ -786,6 +786,10 @@ _CATALOGUE_RESPONSES = {
     "network_stock": {"summary": {}, "points": []},
     "commodity_supply_base": [CLAIM],
     "commodity_market_offers": [],
+    # A supplier with no orders yet against them: the page must render, and
+    # say there is nothing to judge rather than showing a zero. The real
+    # measure is tested in test_supplier_performance.
+    "supplier_performance": [],
 }
 
 
