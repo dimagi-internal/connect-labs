@@ -11,6 +11,7 @@ missing fact, because questions.py turns them into the next email.
 from dataclasses import dataclass
 from decimal import Decimal
 
+from connect_labs.supply_chain import records
 from connect_labs.supply_chain.models import Commodity, Item, Quote, Round
 from connect_labs.supply_chain.values import (
     Derived,
@@ -163,19 +164,83 @@ def _base_unit_grams(quote: Quote, item: Item | None) -> int | Derived:
 
 
 def _extras(quote: Quote) -> Derived:
-    """Freight plus duties to add to a lot total, or why that is unknowable."""
+    """Freight plus duties to add to a lot total, or why that is unknowable.
+
+    The quote's own flags speak first, and its Incoterm speaks when they are
+    silent. An Incoterm is the trade's standard statement about exactly these
+    two costs -- DDP means the seller clears the import, EXW means the buyer
+    carries everything -- so refusing to cost a DDP quote because a separate
+    `duties_basis` was left alone is a refusal about our data entry, not
+    about what the supplier told us.
+
+    Three rules. The third is not an exception to the first -- it replaces
+    it wherever the two could disagree, which is why they are written in this
+    order:
+
+      1. where only ONE of the two speaks -- a recorded basis with no
+         recognised Incoterm, or an Incoterm with no recorded basis -- that
+         one is used;
+      2. where the Incoterm is what spoke, any reason it produces says so,
+         because "excluded, read from EXW" is weaker evidence than
+         "excluded" typed by somebody reading the supplier's email, and a
+         reader chasing the gap should know which they are chasing;
+      3. where BOTH speak and they disagree IN THE DIRECTION THAT COSTS
+         MONEY, neither is used and the disagreement is reported.
+
+    The asymmetry in the third rule is the subtle part, and it was found by
+    an existing fixture rather than reasoned out in advance.
+
+    A record of "excluded" under a term that says "included" is dangerous: it
+    means somebody is about to add a cost the seller has already covered, and
+    the buyer pays twice. That is reported.
+
+    The opposite -- "included" recorded under a term that says the buyer
+    pays -- is routine and usually right. A health programme is very often
+    duty-exempt, so there is nothing to add; the schema carries
+    `duty_relief_claimed` for exactly that. It may also simply have been
+    negotiated. Either way the recorded figure adds nothing, so no total is
+    harmed by believing it, and refusing to cost a quote over it would be
+    this domain withholding a number it actually has.
+
+    Whether that exemption case deserves to be recorded as its own basis
+    rather than borrowing "included" is a real open question, and a
+    separate one from costing.
+    """
     total = Decimal("0")
     reasons: list[str] = []
+
+    from_term = dict(zip(("freight", "duties"), records.freight_and_duties_for_incoterm(quote.incoterm), strict=True))
 
     for label, basis, amount in (
         ("freight", quote.freight_basis, quote.freight_amount),
         ("duties", quote.duties_basis, quote.duties_amount),
     ):
+        implied = from_term[label]
+
+        if basis == "excluded" and implied == "included":
+            # The costly direction only: the seller's term covers this and
+            # the record says to add it on top, so believing the record bills
+            # the buyer twice. The other direction is left alone -- see the
+            # docstring.
+            reasons.append(
+                f"the quote says {label} excluded but its Incoterm {quote.incoterm} means "
+                f"{label} included; adding it would charge for it twice"
+            )
+            continue
+
+        if basis not in ("included", "excluded") and implied:
+            basis = implied
+
         if basis == "included":
             continue
         if basis == "excluded":
             if amount is None:
-                reasons.append(f"{label} excluded from the quote but no {label} amount recorded")
+                # Named as read-from-the-term where that is where it came
+                # from, so a reader chasing the gap looks in the right place:
+                # "excluded" from a bare EXW is not the same evidence as
+                # "excluded" typed by somebody reading the supplier's email.
+                via = f" (read from Incoterm {quote.incoterm})" if implied and implied == basis else ""
+                reasons.append(f"{label} excluded from the quote but no {label} amount recorded{via}")
             else:
                 total += amount
             continue

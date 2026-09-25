@@ -337,3 +337,59 @@ def course_applies_to_category(category) -> bool:
     feed does not consider missing is two answers to one question.
     """
     return (category or "") not in _CATEGORIES_WITHOUT_A_COURSE
+
+
+# Incoterms 2020: who carries the freight, and who clears the import.
+#
+# The trade's own vocabulary for the two most expensive questions about a
+# quote, and it was stored on every quote and contract while the landed cost
+# ignored it. A supplier quoting DDP has stated that duties are theirs, as
+# plainly as a buyer can be told; refusing to cost it because a separate
+# `duties_basis` flag was left alone is a refusal this domain has no business
+# making.
+#
+# Read from the SELLER's side, which is whose offer a quote is:
+#   included -- the seller's price covers it
+#   excluded -- the buyer pays it on top
+#
+# The split that matters most is DAP against DDP. They differ by import duty
+# alone, that is routinely the largest single difference between two
+# otherwise identical offers, and a buyer who reads them as the same thing
+# has underpriced the cheaper one by exactly the duty. Ariel Foods quoting
+# free-zone in the OES demo is this case, in the field.
+#
+# Deliberately NOT here: insurance. CIF and CIP oblige the seller to insure
+# and the other nine do not, which is a real difference this table does not
+# express -- because nothing in the domain costs insurance yet, and a column
+# nothing reads is a claim nobody checks. Add it with its consumer.
+INCOTERM_RESPONSIBILITY = {
+    # Seller delivers to the named place AND clears the import. The only one.
+    "DDP": ("included", "included"),
+    # Seller pays carriage to the named place; the buyer clears the import.
+    "DAP": ("included", "excluded"),
+    "DPU": ("included", "excluded"),
+    "CPT": ("included", "excluded"),
+    "CIP": ("included", "excluded"),
+    "CFR": ("included", "excluded"),
+    "CIF": ("included", "excluded"),
+    # The buyer takes over at origin and carries freight and import both.
+    "EXW": ("excluded", "excluded"),
+    "FCA": ("excluded", "excluded"),
+    "FAS": ("excluded", "excluded"),
+    "FOB": ("excluded", "excluded"),
+}
+
+
+def freight_and_duties_for_incoterm(incoterm) -> tuple[str | None, str | None]:
+    """What an Incoterm says about freight and duties, or `(None, None)`.
+
+    An Incoterm is written with the place it applies to -- "DAP Kano" -- so
+    only the first word is the term. Anything outside the eleven is returned
+    as no statement at all rather than guessed at: a term this function does
+    not know is a term whose meaning it must not invent.
+    """
+    text = str(incoterm or "").strip()
+    if not text:
+        return (None, None)
+    code = text.split()[0].upper().strip(".,")
+    return INCOTERM_RESPONSIBILITY.get(code, (None, None))

@@ -180,6 +180,33 @@ def quote(**overrides) -> Quote:
         "lead_time_days": 30,
         "validity_until": date(2026, 12, 31),
     }
+    # A caller overriding a basis means "a quote where freight (or duty) is
+    # unspecified/excluded". It does not mean "a DDP quote that contradicts
+    # itself" -- but that is what it USED to build, because the default above
+    # is a coherent DDP offer and the Incoterm was inert until pricing began
+    # reading it. Twelve tests were quietly describing impossible quotes.
+    #
+    # So the default Incoterm stands down when a basis is overridden and no
+    # Incoterm is given. A test that genuinely wants the contradiction says
+    # so by passing `incoterm` explicitly, which is the only way to get one
+    # now -- see test_incoterm_says_who_pays.
+    if {"freight_basis", "duties_basis"} & set(overrides) and "incoterm" not in overrides:
+        fields["incoterm"] = ""
+
+    # A caller overriding a basis means "a quote where freight (or duty) is
+    # unspecified or excluded". It does not mean "a DDP quote that
+    # contradicts itself" -- but that is what it used to build, because the
+    # default above is a coherent DDP offer and the Incoterm sat inert until
+    # pricing started reading it. Twelve tests were quietly describing
+    # impossible quotes.
+    #
+    # So the default Incoterm stands down when a basis is overridden and no
+    # Incoterm is given. A test that genuinely wants the contradiction asks
+    # for it by passing `incoterm`, which is now the only way to get one --
+    # see test_incoterm_says_who_pays.
+    if {"freight_basis", "duties_basis"} & set(overrides) and "incoterm" not in overrides:
+        fields["incoterm"] = ""
+
     fields.update(overrides)
     record_id = fields.pop("id", None)
     return wrap(Quote, fields, record_id=record_id)

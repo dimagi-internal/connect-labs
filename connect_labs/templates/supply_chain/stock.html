@@ -139,8 +139,22 @@ paragraphs of method above a one-row table.{% endcomment %}
               {% comment %}The reason a store is short, so it reads at body size, not as a caption.{% endcomment %}
               <div class="text-sm text-gray-700 mt-1" data-expected>
                 expected: {{ expected.outstanding|figure_text }}{% if expected.item_name and not point.item_name %} of {{ expected.item_name }}{% endif %} from
-                <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' expected.contract_id %}">{{ expected.supplier.name }}</a>{% if expected.expected_on %} —
-                {% if expected.overdue %}<span class="text-orange-700">overdue since {{ expected.expected_on|day }}</span>{% else %}due {{ expected.expected_on|day }}{% endif %}{% endif %}
+                <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' expected.contract_id %}">{{ expected.supplier.name }}</a> —
+                {% if expected.expected_on %}
+                  {% if expected.overdue %}<span class="text-orange-700">overdue since {{ expected.expected_on|day }}</span>{% else %}due {{ expected.expected_on|day }}{% endif %}
+                {% else %}
+                  {% comment %}
+                  `_expected_inbound` leaves `expected_on` empty when the order
+                  carries no signing date or no promised lead time, and it is
+                  right to: it will not invent a date nobody gave it. Saying
+                  nothing here was the mistake -- a sentence that stops after
+                  the supplier's name reads as "fine" about the fact a funder
+                  asks first. Not `text-orange-700`: that colour means overdue
+                  on this page, and a date nobody promised cannot have been
+                  missed. Unknown is a different thing from late.
+                  {% endcomment %}
+                  no arrival date has been given
+                {% endif %}
                 <span class="text-gray-600">· not counted as cover</span>
               </div>
             {% endfor %}

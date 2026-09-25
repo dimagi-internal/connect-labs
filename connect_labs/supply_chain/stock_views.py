@@ -456,15 +456,23 @@ def ledger_balances(program_id) -> dict:
     Figures only. Nothing here suggests a count; a count is what somebody
     found, and showing them the ledger is not asking them to agree with it.
     """
-    from connect_labs.supply_chain.models import Movement, SupplyPoint
+    from connect_labs.supply_chain.models import Movement, SupplyPoint, scope_key
     from connect_labs.supply_chain.stock.services import ledger
     from connect_labs.supply_chain.values import Quantity, quantity_digits, unit_noun
 
     moved = Movement.objects.for_program(program_id)
     pairs = set(moved.exclude(to_supply_point=None).values_list("to_supply_point_id", "item_id"))
     pairs |= set(moved.exclude(from_supply_point=None).values_list("from_supply_point_id", "item_id"))
-    points = SupplyPoint.objects.in_bulk({point for point, _ in pairs})
-    items = Item.objects.select_related("commodity").in_bulk({item for _, item in pairs if item})
+    # Both re-state the scope rather than trusting that `pairs` came from a
+    # programme-filtered queryset. It did -- but that is a fact about six
+    # lines above, not about these two, and a read keyed only by id is one
+    # refactor away from reading another programme's rows.
+    points = SupplyPoint.objects.filter(program_id=program_id).in_bulk({point for point, _ in pairs})
+    items = (
+        Item.objects.filter(scope_key=scope_key(program_id=program_id))
+        .select_related("commodity")
+        .in_bulk({item for _, item in pairs if item})
+    )
 
     def described(figure):
         if not isinstance(figure, Quantity):

@@ -396,6 +396,30 @@ def supplier_for_org(access, org, kind="distributor"):
     )
 
 
+def supplier_for_label(access, label, kind="manufacturer"):
+    """A supplier that is a name and nothing else -- no organisation behind it.
+
+    Sibling of `supplier_for_org`, for the case that function's docstring
+    says is the reason the two are different functions: a quote can come
+    from someone the document can only NAME, not identify. There is no
+    `LabsOrg` row this supplier IS, so unlike `supplier_for_org` this must
+    never carry an `org_id` -- inventing one would assert an organisation the
+    document does not claim.
+
+    Matched by name before creating, for the same reason `supplier_for_org`
+    matches by name: re-running the seed must not leave two suppliers of the
+    same name quoting against each other.
+
+    `kind` defaults to `manufacturer` -- the nearest fit in
+    `records.SUPPLIER_TYPES` for an unidentified quoting party that is not
+    the (already-modelled) distributor.
+    """
+    for existing in op(access, "supplier_list", search=label):
+        if existing["name"] == label:
+            return existing
+    return op(access, "supplier_create", data={"name": label, "type": kind, "status": "quoting"})
+
+
 def _goods_value(access, contract):
     """What the goods on this order are worth -- the domain's own figure.
 
@@ -589,6 +613,90 @@ def _supply_point(access, row, reference, stamp):
     return op(access, "supply_point_upsert", data=data)
 
 
+def _chain_supplier(access, chain, orgs):
+    """Who sold us this, as the chain itself says.
+
+    Two chains in this demo are sourced two different ways, and the difference
+    is real rather than a modelling convenience.
+
+    The CHC basket is bought from a DISTRIBUTOR that is also one of our
+    partners -- it pays the manufacturers, holds the goods and releases them
+    to the collecting partners. It is an organisation of ours, so it is named
+    by `distributor_slug` and gets a supplier carrying `org_id`: the two roles
+    are one body, which is what makes the partner seat at beat 6 worth
+    showing, and `update_links/service.py` decides whose word a submission is
+    by asking whether the link's organisation supplies the order.
+
+    RUTF is bought from a MANUFACTURER, which is not an organisation of ours
+    and never will be -- it quotes us and that is the whole relationship. So
+    that chain names `supplier_label` and gets a supplier with no `org_id`,
+    because inventing an organisation for it would assert something the
+    document does not claim.
+
+    Exactly one of the two keys, and the refusal names both: a chain with
+    neither is a purchase from nobody, and a chain with both is two different
+    answers to "who sold us this" with no rule for choosing.
+    """
+    label = chain.get("supplier_label")
+    slug = chain.get("distributor_slug")
+    if label and slug:
+        raise ValueError(
+            f"this chain names both supplier_label ({label!r}) and distributor_slug ({slug!r}); "
+            "they are two different answers to who sold us this, so name one"
+        )
+    if label:
+        return supplier_for_label(access, label)
+    if slug:
+        return supplier_for_org(access, orgs[slug])
+    raise ValueError(
+        "this chain names neither `supplier_label` nor `distributor_slug`, so there is nobody it " "was bought from"
+    )
+
+
+def opened(access, round_):
+    """Open a round that has not been opened, and leave any other alone.
+
+    `round_open` used to follow `round_create` and so always acted on a fresh
+    draft. `round_for` broke that precondition the day it landed: it may hand
+    back a round this seeder created on an earlier run, and that round may
+    already be awarded -- at which point opening it again drags a bought
+    round back onto the market.
+
+    That is not cosmetic. Since the supplier marketplace shipped, an OPEN
+    round is public, so re-running the seeder would have re-published rounds
+    that were decided weeks ago and invited quotes for goods already bought.
+
+    Found by the session building the portfolio map, re-seeding far more
+    often than I did.
+    """
+    if round_.get("status") != "draft":
+        return round_
+    return op(access, "round_open", round_id=round_["id"])
+
+
+def round_for(access, data):
+    """This scope's round with that label, or a new one.
+
+    Matched by label before creating, for the same reason `supplier_for_org`
+    matches by name: re-running a seeder must not leave two rounds of the
+    same label sitting beside each other. `ensure_demo` already refuses to
+    seed a scope that holds rows, and that remains the real protection -- but
+    it guards the WHOLE run, and a seeder called on its own while iterating
+    slips past it. One did, and left the programme showing "CHC basket - Q1
+    top-up" twice, both awarded.
+
+    That mattered more than a tidy list: since #2021 an open round is public
+    on the supplier marketplace, so a duplicate is not just untidy internally,
+    it is two identical requests for quotes shown to suppliers.
+    """
+    label = (data or {}).get("label")
+    if label:
+        for existing in op(access, "round_list"):
+            if existing.get("label") == label:
+                return existing
+    return op(access, "round_create", data=data)
+
+
 def seed_chain(access, chain, reference):
     """One procurement, from the round to the stock sitting in the warehouse.
 
@@ -604,7 +712,6 @@ def seed_chain(access, chain, reference):
     # The document's own key still reads `programme_org_slug`; it is data in
     # Drive, so it is left as written rather than churned by a rename here.
     program_org = orgs[chain["programme_org_slug"]]
-    distributor = orgs[chain["distributor_slug"]]
 
     # Tier 2 in the design's table: our own hand, first-hand. Everything the
     # program itself does carries this, and `witnessed` is true of it.
@@ -613,11 +720,12 @@ def seed_chain(access, chain, reference):
     # `told_by_for` renders it "Dimagi, for EHA Clinics (they told us)".
     their_word = {"source": "partner_reported", "recorded_by_org_id": program_org["id"]}
 
-    supplier = supplier_for_org(access, distributor)
+    supplier = _chain_supplier(access, chain, orgs)
 
-    round_ = op(access, "round_create", data=chain["round"])
-    # A round that received quotes was open when it received them.
-    round_ = op(access, "round_open", round_id=round_["id"])
+    round_ = round_for(access, chain["round"])
+    # A round that received quotes was open when it received them -- but only
+    # if it is still a draft. See `opened`.
+    round_ = opened(access, round_)
 
     items, quotes = {}, []
     for quoted in chain["quotes"]:
@@ -795,6 +903,383 @@ def seed_supply_only(data, scopes):
     return {
         "program_id": SUPPLY_ONLY_PROGRAM_ID,
         "chain": seed_chain(scope["access"], data["supply_only"], scope["reference"]),
+    }
+
+
+def seed_rutf_round_two(access, round_two):
+    """Round 2: open, quoted by three suppliers, and deliberately unawarded.
+
+    Not `seed_chain`. `seed_chain` awards, contracts and orders -- and round
+    2's entire point (design section 7/8, beats 1-3) is that it CANNOT yet be
+    decided: three suppliers, each incomparable for exactly one reason in the
+    product's own vocabulary, with no award and no contract to follow. Awarding
+    one here to reuse `seed_chain` would answer the question the beat exists
+    to leave open.
+
+    A round that received quotes was open when it received them -- the same
+    rule `seed_chain` applies to round 1, applied here by hand since this
+    function is not going through it.
+
+    The suppliers are named only by `supplier_label`: unlike round 1's
+    distributor, there is no organisation behind them (`supplier_for_label`),
+    and no `item_id` is ever passed -- the document's quotes name no trade
+    item, and that absence is itself part of what makes the first supplier's
+    quote incomparable. Giving the other two one would make their stated
+    `base_per_pack_stated` redundant and change which figure blocks them.
+
+    `supplier_label`, and the document's descriptive-only `supplier_country`
+    / `supplier_note` (when present -- they name real firms, so this file
+    never repeats them), are popped off before the row reaches
+    `quote_record`: none of the three is a field that operation understands,
+    and this does not rely on `_columns` silently dropping unrecognised keys
+    to keep them out of the write.
+    """
+    round_two = without_commentary(round_two)
+    round_ = round_for(access, round_two["round"])
+    # A round that received quotes was open when it received them -- but only
+    # if it is still a draft. See `opened`.
+    round_ = opened(access, round_)
+
+    quotes, suppliers = [], []
+    for quoted in round_two["quotes"]:
+        quoted = dict(quoted)
+        supplier = supplier_for_label(access, quoted.pop("supplier_label"))
+        quoted.pop("supplier_country", None)
+        quoted.pop("supplier_note", None)
+        suppliers.append(supplier)
+        quotes.append(
+            op(
+                access,
+                "quote_record",
+                data={**quoted, "round_id": round_["id"], "supplier_id": supplier["id"]},
+            )
+        )
+    return {"round": round_, "quotes": quotes, "suppliers": suppliers}
+
+
+def seed_rutf_rounds(data, scopes):
+    """The RUTF chain: round 1 (ran, comparable, awarded) and round 2 (open, not).
+
+    Takes `scopes` rather than building its own access, for the reason
+    `seed_supply_only` records in its docstring: the `rutf` scope's catalogue
+    was already seeded from its own section by `seed_scopes`, and calling
+    `seed_reference` again here would put every chain's products into this
+    one program.
+
+    Round 1 is already in exactly the shape `seed_chain` consumes, so it goes
+    straight through it -- same as the CHC chain and the supply-only one.
+    Round 2 is a different shape (no award, three anonymous suppliers) and
+    goes through `seed_rutf_round_two` instead.
+    """
+    scope = scopes["rutf"]
+    section = data["rutf_rounds"]
+    return {
+        "program_id": RUTF_PROGRAM_ID,
+        "round_one": seed_chain(scope["access"], section["round_one"], scope["reference"]),
+        "round_two": seed_rutf_round_two(scope["access"], section["round_two"]),
+    }
+
+
+def seed_chlorine_blocked(data, scopes):
+    """The chain that is blocked, with no date anybody can stand behind.
+
+    Evidence Action donates the chlorine in kind and imports it. The import
+    was due in December and is behind, and nobody knows when it will land.
+
+    This chain therefore lacks two things every other chain here has, and
+    neither absence is an untidiness to be finished off later.
+
+    **No quotes and no award.** Nothing was competed, because an in-kind
+    donation is not a purchase, and an award would record a decision that was
+    never made. The round is still here, because the DEMAND is real -- 400
+    jerry cans are needed -- and demand going unmet is the thing the screen
+    exists to show. A round with no award is not a half-finished sourcing
+    exercise; it is an accurate account of one that has not happened.
+
+    **No `promised_lead_time_days`.** `stock/services/network.py`
+    `_expected_inbound` derives `expected_on` from `signed_on` plus a promised
+    lead time, and with neither it returns None -- correctly, because there is
+    no date to return. The stock page says so in words rather than trailing
+    off after the donor's name. Adding a lead time here to make the row look
+    complete would delete the only beat this chain exists for (design
+    section 6a, beat 8b).
+
+    Takes `scopes` rather than building its own access, for the reason
+    `seed_supply_only` records: this scope's catalogue was seeded from its own
+    section by `seed_scopes`, and calling `seed_reference` again would put
+    every chain's products into this one program.
+    """
+    scope = scopes["chlorine"]
+    access, reference = scope["access"], scope["reference"]
+    section = without_commentary(data["chlorine_blocked"])
+
+    donor_org = reference["orgs"][section["donor_slug"]]
+    # `donor`, not `distributor`: records.SUPPLIER_TYPES carries the word for
+    # exactly this relationship, and Evidence Action sells us nothing.
+    donor = supplier_for_org(access, donor_org, kind=section["supplier"]["type"])
+
+    # Tier 2. We wrote this down ourselves, from the agreement we are party to.
+    ours = {
+        "source": "we_recorded",
+        "recorded_by_org_id": reference["orgs"][section["programme_org_slug"]]["id"],
+    }
+
+    round_ = round_for(access, section["round"])
+    round_ = opened(access, round_)
+
+    store = _supply_point(access, section["store"], reference, ours)
+
+    contract_row = dict(section["contract"])
+    buyer_slug = contract_row.pop("buyer_org_slug")
+    line = section["round"]["lines"][0]
+    contract = op(
+        access,
+        "contract_create",
+        data={
+            **ours,
+            **contract_row,
+            "round_id": round_["id"],
+            "supplier_id": donor["id"],
+            "commodity_slug": line["commodity_slug"],
+            "buyer_org_id": reference["orgs"][buyer_slug]["id"],
+            "delivery_supply_point_id": store["id"],
+            # No `unit_price`: it is a donation, and MONEY_NONZERO would
+            # refuse a zero anyway -- rightly, since "free" is a
+            # consideration, not a price of nought.
+            # No `signed_on` and no `promised_lead_time_days`. See the
+            # docstring; this is the whole point.
+        },
+    )
+
+    return {
+        "program_id": CHLORINE_PROGRAM_ID,
+        "round": round_,
+        "supplier": donor,
+        "store": store,
+        "contract": contract,
+    }
+
+
+def seed_chc_last_mile(access, data, reference, chain):
+    """Beat 10: the ledger runs to the worker, and the worker answers back.
+
+    This is the close, and it only means anything against beat 9. The
+    supply-only organisation's chain stops at its last store because nothing
+    binds it to Connect -- no `opportunity_id`, no user-held points -- and
+    `summary._deliver()` reads that off the data rather than being told. Ours
+    does not stop, and this is what makes the difference real rather than
+    asserted: a field worker IS a supply point, so distributing to one is an
+    ordinary ledger movement, and the count they submit sits beside the
+    balance instead of overwriting it.
+
+    **The disagreement is the point, not a flaw in the seed.** One worker's
+    report matches, one is nine cartons short, and one is at zero. If all
+    three agreed there would be nothing to look at, and if all three differed
+    the variance would read as noise in the screen rather than as a finding
+    about a worker. `stock_on_hand` returns both figures for exactly this
+    reason, and its own summary says they routinely disagree.
+
+    **A zero is recorded, not skipped.** A worker with nothing left is a
+    stockout, which is the single most actionable row on the page --
+    `_STOCK_COUNT_DATA` takes the zero-accepting quantity here while the
+    money schemas refuse a zero, and that difference is deliberate.
+
+    The counts carry `source: connect_visit` because that is the kind of row
+    they stand for. In this environment nothing was ingested -- see the
+    document's own `_provenance_warning`, which says so in the one place a
+    reader will look before repeating it to a funder.
+    """
+    section = without_commentary(data["chc_last_mile"])
+    orgs = reference["orgs"]
+    program_org = orgs[chain_programme_org(data)]
+    ours = {"source": "we_recorded", "recorded_by_org_id": program_org["id"]}
+
+    store = chain["partner_points"][_store_org_slug(data, section)]
+    opportunity_id = section["opportunity_id"]
+    commodity_slug = section["commodity_slug"]
+    item_id = chain["context"]["item"]["id"]
+
+    # The workers first: a distribution line names where it went, and a line
+    # naming a worker who is not a supply point yet has nowhere to put the
+    # stock.
+    points = {}
+    for worker in section["workers"]:
+        points[worker["slug"]] = op(
+            access,
+            "supply_point_upsert",
+            data={
+                **ours,
+                "slug": worker["slug"],
+                "name": worker["name"],
+                "kind": "user_held",
+                "connect_username": worker["connect_username"],
+                "opportunity_id": opportunity_id,
+                "parent_id": store["id"],
+                "managed_by_org_id": store.get("managed_by_org_id") or program_org["id"],
+            },
+        )
+
+    distribution = op(
+        access,
+        "distribution_record",
+        data={
+            **ours,
+            "supply_point_id": store["id"],
+            "opportunity_id": opportunity_id,
+            "commodity_slug": commodity_slug,
+            "distributed_on": day(section["distributed_on_days_ago"]),
+            "reference": "RESUPPLY-CHC-01",
+            "lines": [
+                {
+                    "to_supply_point_id": points[worker["slug"]]["id"],
+                    "item_id": item_id,
+                    "quantity": worker["distributed"],
+                    "quantity_unit": "carton",
+                }
+                for worker in section["workers"]
+            ],
+        },
+    )
+
+    # What each worker then said. Recorded BY us against their username,
+    # because nothing was really ingested -- the honest stamp for a row this
+    # seeder wrote, with the kind it stands for named in `source`.
+    counts = [
+        op(
+            access,
+            "stock_count_record",
+            data={
+                "recorded_by_org_id": program_org["id"],
+                "source": "connect_visit",
+                "supply_point_id": points[worker["slug"]]["id"],
+                "item_id": item_id,
+                "commodity_slug": commodity_slug,
+                "kind": "self_reported",
+                "counted_on": day(section["counted_on_days_ago"]),
+                "quantity": worker["reported"],
+                "quantity_unit": "carton",
+                "opportunity_id": opportunity_id,
+                "connect_username": worker["connect_username"],
+            },
+        )
+        for worker in section["workers"]
+    ]
+
+    return {"points": points, "distribution": distribution, "counts": counts}
+
+
+def chain_programme_org(data):
+    """The org that records the programme's own rows, from the CHC chain."""
+    return data["chc_chain"]["programme_org_slug"]
+
+
+def _store_org_slug(data, section):
+    """Which partner store the resupply runs out of, by its own slug.
+
+    The document names the store by `store_slug` (a supply-point slug) but
+    `seed_chain` returns partner points keyed by ORGANISATION slug, because
+    that is the resolution a row naming `to_org_slug` needs. One lookup
+    reconciles the two rather than making the document say it twice and risk
+    the two drifting.
+    """
+    wanted = section["store_slug"]
+    for row in data["chc_chain"]["partner_points"]:
+        if row["slug"] == wanted:
+            return row["org_slug"]
+    raise ValueError(
+        f"chc_last_mile resupplies from {wanted!r}, which is not one of the CHC chain's "
+        "partner_points; name a store that exists or add it there"
+    )
+
+
+def seed_awaiting_approval(access, data, reference):
+    """Beat 5: an award that cannot become an order yet, and says who is holding it.
+
+    An award is a decision; an order is a commitment. Somebody other than the
+    decider has to agree before the second follows the first, and
+    `_require_approved_award` REFUSES `contract_create` while any approval on
+    the award is requested or declined -- naming whose answer is outstanding.
+    That is a rule the database enforces, not a label on a screen, which is
+    the only reason this beat is worth showing at all.
+
+    **It needed a round of its own.** The CHC and RUTF awards both already
+    carry orders, and an approval asked for after the goods were bought would
+    have shown the trail while quietly inverting the point: the gate is that
+    the purchase has NOT happened. So this is the next quarter's top-up,
+    awarded and waiting.
+
+    **The approval is deliberately left unanswered.** Deciding it would tidy
+    the screen and delete the beat. The document says so beside the data, in
+    `approval._why_pending`, because the temptation to "finish" a pending row
+    is exactly what a later reader will feel.
+
+    Stops at the award and records no contract. That is not an omission this
+    function could correct even if it wanted to -- the write would be refused,
+    which is the whole demonstration.
+    """
+    section = without_commentary(data["awaiting_approval"])
+    orgs = reference["orgs"]
+    program_org = orgs[section["programme_org_slug"]]
+    ours = {"source": "we_recorded", "recorded_by_org_id": program_org["id"]}
+
+    supplier = _chain_supplier(access, section, orgs)
+    round_ = round_for(access, section["round"])
+    round_ = opened(access, round_)
+
+    quotes, items = [], {}
+    for quoted in section["quotes"]:
+        quoted = dict(quoted)
+        item = op(
+            access,
+            "item_upsert",
+            data={**quoted.pop("item"), "commodity_slug": quoted["commodity_slug"]},
+        )
+        items[item["sku"]] = item
+        quotes.append(
+            op(
+                access,
+                "quote_record",
+                data={
+                    **quoted,
+                    "round_id": round_["id"],
+                    "supplier_id": supplier["id"],
+                    "item_id": item["id"],
+                },
+            )
+        )
+
+    index = section["awarded_quote_index"]
+    award = op(
+        access,
+        "award_create",
+        round_id=round_["id"],
+        quote_id=quotes[index]["id"],
+        rationale=section["award_rationale"],
+        decided_on=day(section["awarded_days_ago"]),
+        **({"decided_by": section["award_decided_by"]} if section.get("award_decided_by") else {}),
+    )
+
+    asked = section["approval"]
+    approval = op(
+        access,
+        "approval_request",
+        data={
+            **ours,
+            "award_id": award["id"],
+            "approver_org_id": orgs[asked["approver_org_slug"]]["id"],
+            "role": asked["role"],
+            "requested_on": day(asked["requested_days_ago"]),
+            **({"note": asked["note"]} if asked.get("note") else {}),
+        },
+    )
+
+    return {
+        "round": round_,
+        "supplier": supplier,
+        "items": items,
+        "quotes": quotes,
+        "award": award,
+        "approval": approval,
     }
 
 

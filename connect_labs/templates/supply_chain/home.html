@@ -106,7 +106,7 @@ figures, and the catalogue is where our own gaps get closed.
           <td class="px-4 py-2.5 font-medium text-gray-900">{{ round.label }}</td>
           <td class="px-4 py-2.5">{{ round.status|humanise }}</td>
           <td class="px-4 py-2.5 text-gray-600">
-            {{ round.delivery_point.name|default:"" }}{% if round.delivery_point.city %}, {{ round.delivery_point.city }}{% endif %}
+            {{ round.delivery_point|place_text }}
           </td>
           <td class="px-4 py-2.5 text-gray-600">{{ round.response_deadline|default:"—" }}</td>
           <td class="px-4 py-2.5 text-right">

@@ -364,7 +364,13 @@ def test_an_order_nobody_has_promised_a_date_for_says_so_rather_than_trailing_of
         "undated": 1,
         "next_expected": None,
     }
-    assert "No arrival date has been promised for 1 consignment: blocked, and we cannot say until when" in body
+    # The wording changed when the page was rewritten to lead with the
+    # situation rather than the sourcing lifecycle; what it must SAY did not.
+    # Both halves are asserted separately so a rewrite that keeps "blocked"
+    # while dropping the reason, or vice versa, still goes red.
+    assert "Blocked" in body
+    assert "no arrival date has been promised" in body
+    assert "1 of 1 consignment still owed" in body
 
 
 def test_an_order_past_the_date_that_was_promised_is_counted_as_overdue(client, django_user_model):
@@ -381,7 +387,8 @@ def test_an_order_past_the_date_that_was_promised_is_counted_as_overdue(client, 
     assert awaited["overdue"] == 1
     assert awaited["undated"] == 0
     assert "No arrival date has been promised" not in body
-    assert "1 past the date promised" in body
+    assert "past the date promised" in body
+    assert "1 of 1 consignment" in body
 
 
 def test_a_chain_nobody_owes_anything_says_that_rather_than_going_quiet(client, django_user_model):
@@ -402,3 +409,112 @@ def test_a_row_links_into_that_programmes_own_overview(client, django_user_model
     body = client.get(_url(portfolio)).content.decode()
 
     assert f"{reverse('supply_chain:home')}?program_id={ONE}" in body
+
+
+# ---------------------------------------------------------------------------
+# 5. The total, and the one case where there must not be one.
+# ---------------------------------------------------------------------------
+
+
+def _stock_in(program_id, *, slug, unit, point_slug, quantity):
+    """Stock actually resting somewhere, through the domain's own write path.
+
+    `_a_chain_in` gives a programme a catalogue and a round, which is enough
+    for it to stop being empty and nothing like enough to have a balance. The
+    situation this page leads with is read from the LEDGER, so a test about
+    what it totals has to put goods on it.
+    """
+    from connect_labs.labs.access.scopes import SYSTEM
+    from connect_labs.supply_chain.data_access import SupplyDataAccess
+    from connect_labs.supply_chain.operations import call_operation
+
+    access = SupplyDataAccess(access_token="unused", program_id=program_id, caller=SYSTEM)
+    if not Commodity.objects.filter(scope_key=scope_key(program_id=program_id), slug=slug).exists():
+        Commodity.objects.create(
+            scope_key=scope_key(program_id=program_id),
+            slug=slug,
+            name=slug.replace("-", " "),
+            category="consumable",
+            base_unit=unit,
+        )
+    point = call_operation(
+        "supply_point_upsert",
+        access,
+        {
+            "data": {
+                "slug": point_slug,
+                "name": point_slug.replace("-", " "),
+                "kind": "facility",
+                "source": "we_recorded",
+            }
+        },
+    )
+    call_operation(
+        "movement_record",
+        access,
+        {
+            "data": {
+                "kind": "receipt",
+                "occurred_on": "2026-09-01",
+                "to_supply_point_id": point["id"],
+                "commodity_slug": slug,
+                "quantity": str(quantity),
+                "quantity_unit": unit,
+                "source": "we_recorded",
+            }
+        },
+    )
+    return point
+
+
+def test_a_chain_holding_one_unit_is_totalled(client, django_user_model):
+    """The ordinary case, asserted so the refusal below is not vacuously true.
+
+    A test that only proves a total is WITHHELD would pass on a page that
+    never totals anything at all. This is the other half.
+    """
+    _sign_in(client, django_user_model, [ONE])
+    _a_chain_in(ONE, slug="placeholder-alpha", unit="placeholder carton")
+    _stock_in(ONE, slug="placeholder-alpha", unit="placeholder carton", point_slug="store-one", quantity=30)
+    _stock_in(ONE, slug="placeholder-alpha", unit="placeholder carton", point_slug="store-two", quantity=12)
+
+    response = client.get(_url(_portfolio([ONE])))
+    situation = response.context["rows"][0]["situation"]
+
+    assert situation["total"] == 42
+    assert situation["units_differ"] is False
+    assert "42 placeholder cartons" in response.content.decode()
+
+
+def test_a_chain_holding_two_units_is_not_totalled_and_says_why(client, django_user_model):
+    """Cartons and jerry cans are not added, here or anywhere in this domain.
+
+    This is the guard the situation summary rests on, and it was UNTESTED when
+    written: mutating `total` to sum regardless of unit, and `units_differ` to
+    False, left all fourteen tests green. A page that reported "42" for thirty
+    cartons and twelve jerry cans would have shipped.
+
+    MUTATED, after writing: both mutations above were reapplied and this test
+    went red on the total and on the sentence. Reverted.
+    """
+    _sign_in(client, django_user_model, [ONE])
+    _a_chain_in(ONE, slug="placeholder-alpha", unit="placeholder carton")
+    _stock_in(ONE, slug="placeholder-alpha", unit="placeholder carton", point_slug="store-one", quantity=30)
+    _stock_in(ONE, slug="placeholder-beta", unit="placeholder jerry can", point_slug="store-two", quantity=12)
+
+    response = client.get(_url(_portfolio([ONE])))
+    situation = response.context["rows"][0]["situation"]
+    body = response.content.decode()
+
+    assert situation["total"] is None, "two units were added together"
+    assert situation["units_differ"] is True
+    assert "in units that cannot be added together" in body
+    # And neither figure is lost: each place still carries its own.
+    assert "30 placeholder cartons" in body
+    assert "12 placeholder jerry cans" in body
+    assert "42" not in _rows_region(body), "a total was rendered for two units"
+
+
+def _rows_region(body):
+    """The card bodies, without the page chrome a stray number could hide in."""
+    return "".join(re.findall(r'<section data-programme-id="\d+".*?</section>', body, re.S))

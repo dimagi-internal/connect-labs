@@ -163,6 +163,60 @@ four screens and an id held in your head.
   {% endif %}
 </div>
 
+{% comment %} ---- how it went ----
+
+Placed before the history rather than after it, because "did they deliver?"
+is the question somebody opens this page holding, and the invitations and
+quotes below are the working that answers it.
+
+Every figure carries the count it came from. A rate with no denominator is
+the standard way this measure lies: "100%" out of one order and out of two
+hundred are different claims, and a reader cannot tell them apart.
+{% endcomment %}
+{% if performance %}
+<div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
+  <div class="px-5 py-4 border-b border-brand-border-light">
+    <h2 class="text-base font-semibold text-gray-900">How their orders went</h2>
+  </div>
+  <div class="px-5 py-4">
+    {% if performance.measurable %}
+      <div class="grid gap-4 sm:grid-cols-3">
+        <div>
+          <div class="text-xs uppercase tracking-wide text-gray-600">On time and in full</div>
+          <div class="text-xl font-semibold text-gray-900">{{ performance.otif }} of {{ performance.measurable }}</div>
+        </div>
+        <div>
+          <div class="text-xs uppercase tracking-wide text-gray-600">On time</div>
+          <div class="text-xl text-gray-900">{{ performance.on_time }} of {{ performance.measurable }}</div>
+        </div>
+        <div>
+          <div class="text-xs uppercase tracking-wide text-gray-600">In full</div>
+          <div class="text-xl text-gray-900">{{ performance.in_full }} of {{ performance.measurable }}</div>
+        </div>
+      </div>
+      {% if performance.promised_days_median %}
+        <p class="text-sm text-gray-700 mt-3">
+          They promised {{ performance.promised_days_median }} days and took {{ performance.actual_days_median }}, typically.{% if performance.days_late_worst %} The worst ran {{ performance.days_late_worst }} {{ performance.days_late_worst|pluralize:"day,days" }} past the date promised.{% endif %}
+        </p>
+      {% endif %}
+    {% else %}
+      {% comment %}
+      No measurable order is not a bad record. Showing "0 of 0" or a 0% would
+      read as one, which is why the service returns null rather than zero.
+      {% endcomment %}
+      <p class="text-sm text-gray-700">
+        Nothing to judge yet. Punctuality is measured against a promised lead time on the order, and none of theirs carries one.
+      </p>
+    {% endif %}
+    {% if performance.no_promise or performance.not_yet_due %}
+      <p class="text-sm text-gray-600 mt-2">
+        Not counted above:{% if performance.no_promise %} {{ performance.no_promise }} {{ performance.no_promise|pluralize:"order,orders" }} with no promised date{% endif %}{% if performance.no_promise and performance.not_yet_due %} and{% endif %}{% if performance.not_yet_due %} {{ performance.not_yet_due }} still on the way{% endif %}.
+      </p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 {% comment %} ---- we asked ---- {% endcomment %}
 <div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
   <div class="px-5 py-4 border-b border-brand-border-light">

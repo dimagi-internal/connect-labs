@@ -9,24 +9,44 @@ a page about three of them would say something untrue about where you are.
 The way back into the domain is a row -- each links into its own programme's
 Overview, carrying that programme in the URL.
 
-Nothing here is summed across rows and nothing is ranked. See PortfolioView's
-docstring for why both are decisions rather than omissions.
+**What leads, and why it changed.** This page used to open each chain with
+its sourcing lifecycle: Demand, RFQ issued, Quotations, Evaluation, Award,
+then Contract, Dispatched, Received, Invoiced. Eighteen figures a chain, most
+of them nought, every one of them the same size as every other. It answered
+"where is each decision up to" in a space the reader was using to ask "what
+is going on". The decisions are not the lead story; understanding the
+situation is.
+
+So the lead is now where the goods ARE, what is odd about that, and what is
+owed -- and the lifecycle counts sit underneath, behind a disclosure, intact
+and one click away. Nothing was removed from the page; what changed is which
+question it answers first.
+
+Nothing here is summed across programmes and nothing is ranked between them.
+See PortfolioView's docstring for why both are decisions rather than
+omissions.
 {% endcomment %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 py-6">
+<div class="max-w-5xl mx-auto px-4 py-6">
 
-  <div class="flex gap-4 items-center p-4 profile-bg bg-brand-indigo rounded-2xl mb-6">
-    <div class="flex flex-col justify-center text-white">
-      <h1 class="text-2xl font-bold mb-1">{{ portfolio.name }}</h1>
-      <a href="{% url 'supply_chain:portfolio_map' portfolio.slug %}" class="text-sm text-white underline underline-offset-2 opacity-90 hover:opacity-100 mb-1">
-        <i class="fa-solid fa-map-location-dot mr-1"></i>See it on a map
-      </a>
-      <p class="text-sm opacity-90">
-        Every chain in this portfolio, each in its own units. Nothing here is
-        added across programmes, and the order is the portfolio's own.
-      </p>
-    </div>
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">{{ portfolio.name }}</h1>
+    {% comment %}
+    One line, and it is about the reader's next move rather than about this
+    page's methodology. The old banner spent its headline explaining that
+    nothing is added across programmes -- true, and a footnote.
+    {% endcomment %}
+    <p class="text-sm text-gray-600 mt-1">
+      {{ rows|length }} {{ rows|length|pluralize:"chain,chains" }}, each in its own units.
+      {% comment %}
+      The map came from #2020, which put it in a banner this rewrite removed.
+      Kept, because where the goods are is exactly what this page now leads
+      with, and a map is the other way to ask that question.
+      {% endcomment %}
+      <a href="{% url 'supply_chain:portfolio_map' portfolio.slug %}" class="text-brand-indigo hover:underline ml-1">
+        <i class="fa-solid fa-map-location-dot mr-1"></i>See it on a map</a>
+    </p>
   </div>
 
   {% if hidden %}
@@ -34,13 +54,12 @@ docstring for why both are decisions rather than omissions.
     The page says what it is not showing. A portfolio that shortens its list
     in silence misrepresents the operation, which is the one thing this view
     exists not to do.
+
+    One sentence per line, deliberately: the test for this asserts on the
+    rendered TEXT rather than on a context variable, and a sentence broken
+    across template lines arrives with newlines inside it.
     {% endcomment %}
     <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 mb-6">
-      {% comment %}
-      One sentence per line, deliberately: the test for this asserts on the
-      rendered TEXT rather than on a context variable, and a sentence broken
-      across template lines arrives with newlines inside it.
-      {% endcomment %}
       <p class="text-sm text-amber-900">
         <strong>{{ hidden }} of this portfolio's {{ stated }} {{ stated|pluralize:"programme,programmes" }} {{ hidden|pluralize:"is,are" }} not shown</strong>, because your account cannot reach {{ hidden|pluralize:"it,them" }}.
         Being in a portfolio grants no access to a programme, so this page can
@@ -51,75 +70,159 @@ docstring for why both are decisions rather than omissions.
 
   {% for row in rows %}
     <section data-programme-id="{{ row.program_id }}"
-             class="bg-white border border-gray-200 rounded-lg mb-6 overflow-hidden">
-      <div class="flex flex-wrap items-baseline justify-between gap-2 px-4 py-3 border-b border-gray-100">
-        <h2 class="text-base font-semibold text-gray-900">{{ row.name }}</h2>
-        <div class="text-sm">
-          {% if row.commodity_name %}
-            <span class="text-gray-600">Figures in {{ row.commodity_name }}'s own units</span>
-          {% elif row.commodity_count %}
-            <span class="text-gray-600">{{ row.commodity_count }} commodities — counts only, because a unit needs one commodity</span>
-          {% endif %}
-          <a class="text-brand-indigo hover:underline ml-3" href="{{ row.home_url }}">Open this chain</a>
-        </div>
+             class="bg-white border border-gray-200 rounded-lg mb-5 overflow-hidden">
+
+      <div class="flex flex-wrap items-baseline justify-between gap-2 px-5 pt-4">
+        <h2 class="text-base font-semibold text-gray-900">
+          {{ row.name }}
+          {% comment %}
+          Which product these figures are in, said on the card rather than in
+          the total -- a chain holding nothing still has a commodity, and the
+          total is exactly where that fact disappears.
+          {% endcomment %}
+          {% if row.commodity_name %}<span class="font-normal text-gray-500">· {{ row.commodity_name }}</span>{% endif %}
+        </h2>
+        <a class="text-sm text-brand-indigo hover:underline" href="{{ row.home_url }}">Open this chain →</a>
       </div>
 
-      <div class="px-4 py-4">
+      <div class="px-5 pb-5">
         {% if row.empty %}
-          <p class="text-sm text-gray-600">
+          <p class="text-sm text-gray-600 mt-2">
             Nothing recorded yet — no rounds, no orders and no stores in this
             programme. Its catalogue is ready and its chain has not started.
           </p>
         {% else %}
-          {% include "supply_chain/_phase.html" with phase="Source" accent="border-brand-indigo" stages=row.summary.source|source_stages %}
-          {% include "supply_chain/_phase.html" with phase="Order" accent="border-indigo-400" stages=row.summary.order|order_stages %}
-          {% include "supply_chain/_phase.html" with phase="Deliver" accent="border-teal-500" stages=row.summary.deliver|deliver_stages %}
+
+          {% comment %}
+          The headline sentence: what this chain is holding, in one unit or
+          not at all. `total` is None when two units are in play, and the
+          places below still each carry their own -- summing a carton and a
+          jerry can is the arithmetic this domain refuses everywhere else.
+          {% endcomment %}
+          <p class="text-lg text-gray-900 mt-1">
+            {% if row.situation.empty %}
+              <span class="font-semibold">Nothing on hand</span> anywhere in this chain.
+            {% elif row.situation.units_differ %}
+              Stock at <span class="font-semibold">{{ row.situation.count }} {{ row.situation.count|pluralize:"place,places" }}</span>, <span class="text-gray-600 text-base">in units that cannot be added together.</span>
+            {% else %}
+              <span class="font-semibold">{{ row.situation.total|qty:row.situation.unit }}</span> across {{ row.situation.count }} {{ row.situation.count|pluralize:"place,places" }}.
+            {% endif %}
+          </p>
+
+          {% comment %}
+          What is owed, said next because "what are you waiting on" is the
+          question that follows "what have you got" -- and section 6a's case,
+          a consignment nobody can date, is the one a funder asks first.
+          {% endcomment %}
+          {% if row.awaited.consignments %}
+            <p class="text-sm mt-1 {% if row.awaited.undated or row.awaited.overdue %}text-orange-800{% else %}text-gray-700{% endif %}">
+              {% comment %}
+              One sentence per line, and that is load-bearing rather than
+              tidy: these are asserted on the rendered TEXT, and a sentence
+              wrapped across template lines arrives with newlines inside it,
+              so the assertion fails while the page reads correctly. The same
+              note is on the "not shown" paragraph above, for the same reason.
+              {% endcomment %}
+              {% if row.awaited.undated %}
+                <strong>Blocked</strong> — no arrival date has been promised for {{ row.awaited.undated }} of {{ row.awaited.consignments }} {{ row.awaited.consignments|pluralize:"consignment,consignments" }} still owed.
+              {% elif row.awaited.overdue %}
+                {{ row.awaited.overdue }} of {{ row.awaited.consignments }} {{ row.awaited.consignments|pluralize:"consignment,consignments" }} owed to this chain {{ row.awaited.overdue|pluralize:"is,are" }} past the date promised.
+              {% else %}
+                {{ row.awaited.consignments }} {{ row.awaited.consignments|pluralize:"consignment,consignments" }} still to arrive{% if row.awaited.next_expected %}, next due {{ row.awaited.next_expected|day }}{% endif %}.
+              {% endif %}
+            </p>
+          {% else %}
+            <p class="text-sm text-gray-700 mt-1">Nothing is owed to this chain.</p>
+          {% endif %}
+
+          {% comment %}
+          The exceptions this chain's own record raises about itself: a
+          worker with nothing left, a count that disagrees with the ledger, a
+          store nobody has visited. Each is a fact about that place, so
+          showing them ranks nothing between chains.
+          {% endcomment %}
+          {% if row.situation.exceptions %}
+            <ul class="text-sm text-gray-800 mt-2 space-y-0.5">
+              {% for note in row.situation.exceptions %}
+                <li class="flex gap-2">
+                  <span class="text-orange-600 select-none" aria-hidden="true">•</span>
+                  <span>{{ note }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+
+          {% comment %}
+          Where the goods are. The substance of the page, and the thing the
+          old lifecycle grid crowded out entirely.
+          {% endcomment %}
+          {% if not row.situation.empty or row.situation.count %}
+            <table class="w-full text-sm mt-4">
+              <thead>
+                <tr class="text-xs uppercase tracking-wide text-gray-500 text-left">
+                  <th class="font-medium pb-1">Place</th>
+                  <th class="font-medium pb-1 text-right tabular-nums">Ledger says</th>
+                  <th class="font-medium pb-1 text-right tabular-nums">They say</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for place in row.situation.places %}
+                  <tr class="border-t border-gray-100">
+                    <td class="py-1.5 pr-2">
+                      {{ place.name }}
+                      {% if place.worker %}<span class="text-xs text-gray-500">· field worker</span>{% endif %}
+                    </td>
+                    <td class="py-1.5 text-right tabular-nums text-gray-900">
+                      {% if place.held is None %}—{% else %}{{ place.held|qty:place.unit }}{% endif %}
+                    </td>
+                    <td class="py-1.5 text-right tabular-nums {% if place.variance %}text-orange-700{% else %}text-gray-600{% endif %}">
+                      {% if place.never_counted %}
+                        <span class="text-gray-500">never counted</span>
+                      {% else %}
+                        {{ place.said|qty:place.unit }}{% if place.said_on %} <span class="text-xs text-gray-500">{{ place.said_on|day }}</span>{% endif %}
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% endif %}
+
+          {% comment %}
+          The lifecycle, kept and demoted. It is real and somebody will want
+          it -- it is simply not what this page is for. `<details>` because
+          labs is Tailwind and loads no Bootstrap, so a disclosure widget has
+          to be the element that needs no JavaScript.
+          {% endcomment %}
+          <details class="mt-4 group">
+            <summary class="text-sm text-brand-indigo cursor-pointer hover:underline list-none">
+              Sourcing, orders and delivery in detail
+              {% if row.commodity_count and not row.commodity_name %}
+                <span class="text-gray-500">· {{ row.commodity_count }} commodities, units differ</span>
+              {% endif %}
+            </summary>
+            <div class="mt-3">
+              {% include "supply_chain/_phase.html" with phase="Source" accent="border-brand-indigo" stages=row.summary.source|source_stages %}
+              {% include "supply_chain/_phase.html" with phase="Order" accent="border-indigo-400" stages=row.summary.order|order_stages %}
+              {% include "supply_chain/_phase.html" with phase="Deliver" accent="border-teal-500" stages=row.summary.deliver|deliver_stages %}
+            </div>
+          </details>
+
         {% endif %}
 
-        <div class="grid gap-4 sm:grid-cols-2 mt-4">
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">Waiting on</h3>
-            {% if row.awaited.consignments %}
-              <p class="text-sm text-gray-900">
-                {{ row.awaited.consignments }}
-                {{ row.awaited.consignments|pluralize:"consignment,consignments" }} still to arrive.
-                {% if row.awaited.overdue %}{{ row.awaited.overdue }} past the date promised.{% endif %}
-                {% if row.awaited.next_expected %}Next due {{ row.awaited.next_expected|day }}.{% endif %}
-              </p>
-              {% if row.awaited.undated %}
-                {% comment %}
-                Design section 6a. An order carrying a quantity and a donor but
-                no promised lead time is the honest state, not missing data —
-                and a sentence that trails off after the supplier's name reads
-                as "fine" about the fact a funder asks first.
-                {% endcomment %}
-                <p class="text-sm text-orange-800 mt-1">
-                  No arrival date has been promised for {{ row.awaited.undated }} {{ row.awaited.undated|pluralize:"consignment,consignments" }}: blocked, and we cannot say until when.
-                </p>
-              {% endif %}
-            {% else %}
-              <p class="text-sm text-gray-600">Nothing is owed to this chain.</p>
-            {% endif %}
-          </div>
-
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">
-              What the record cannot answer
-            </h3>
-            {% if row.checks.count %}
-              <ul class="text-sm space-y-1">
-                {% for group in row.checks_by_audience %}
-                  <li>
-                    <a class="text-brand-indigo hover:underline" href="{{ group.href }}">
-                      {{ group.items|length }} {{ group.headline }}</a>
-                    <span class="text-gray-600">— {{ group.audience|audience_label }}</span>
-                  </li>
-                {% endfor %}
-              </ul>
-            {% else %}
-              <p class="text-sm text-gray-600">Nothing open.</p>
-            {% endif %}
-          </div>
+        {% comment %}
+        What the record cannot answer, last and always shown: a chain with
+        nothing open should say so rather than leave the reader wondering
+        whether the section failed to render.
+        {% endcomment %}
+        <div class="mt-4 pt-3 border-t border-gray-100 text-sm">
+          {% if row.checks.count %}
+            {% for group in row.checks_by_audience %}
+              <a class="text-brand-indigo hover:underline" href="{{ group.href }}">{{ group.items|length }} {{ group.headline }}</a><span class="text-gray-600"> — {{ group.audience|audience_label }}</span>{% if not forloop.last %}<span class="text-gray-600"> · </span>{% endif %}
+            {% endfor %}
+          {% else %}
+            <span class="text-gray-600">Nothing open that the record cannot answer.</span>
+          {% endif %}
         </div>
       </div>
     </section>
