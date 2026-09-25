@@ -1,13 +1,13 @@
 {% extends 'supply_chain/market/_shell.html' %}
 {% load supply_chain_extras %}
 {% block title %}My bids{% endblock %}
+{% block hero %}{% include 'supply_chain/market/_hero.html' with title="My bids" lede="Where each bid stands, and anything the buyer still needs from you before it can be compared fairly with the others. Answer by revising the bid." %}{% endblock %}
+
 {% block body %}
-<h1 class="text-xl font-semibold mb-1">My bids</h1>
-<p class="text-sm text-gray-600 mb-4">Where each bid stands, and anything the buyer still needs from you before it can be compared fairly with the others. Answer by revising the bid.</p>
 <ul class="space-y-3">
   {% for bid in bids %}
     {% with q=bid.quote %}
-    <li class="bg-white rounded-lg shadow-sm p-4">
+    <li class="bg-white border border-brand-border-light rounded-[10px] p-4">
       <div class="flex flex-wrap justify-between gap-2">
         <div>
           <a href="{% url 'supply_chain:market_round' q.round_id %}" class="font-semibold text-brand-indigo hover:underline">{{ q.round.label }}</a>
@@ -29,7 +29,7 @@
       {% endif %}
       {% if bid.standing == "open" %}
         <div class="mt-3 flex gap-3 text-sm">
-          <a href="{% url 'supply_chain:market_revise' q.pk %}" class="px-3 py-1.5 rounded-md bg-brand-indigo text-white">Revise</a>
+          <a href="{% url 'supply_chain:market_revise' q.pk %}" class="px-3 py-1.5 rounded-md bg-brand-deep-purple text-white">Revise</a>
           <form method="post" action="{% url 'supply_chain:market_withdraw' q.pk %}" onsubmit="return confirm('Withdraw this bid? The buyer keeps a record that you withdrew it.');">
             {% csrf_token %}<button class="px-3 py-1.5 rounded-md border border-gray-300">Withdraw</button>
           </form>
@@ -38,7 +38,7 @@
     </li>
     {% endwith %}
   {% empty %}
-    <li class="bg-white rounded-lg shadow-sm p-8 text-center text-gray-600">No bids yet. <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market' %}">See the open rounds.</a></li>
+    <li class="bg-white border border-brand-border-light rounded-[10px] p-8 text-center text-gray-600">No bids yet. <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market' %}">See the open rounds.</a></li>
   {% endfor %}
 </ul>
 {% endblock %}

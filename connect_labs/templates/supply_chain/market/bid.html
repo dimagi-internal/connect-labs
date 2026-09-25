@@ -1,6 +1,8 @@
 {% extends 'supply_chain/market/_shell.html' %}
 {% load supply_chain_extras %}
 {% block title %}{% if revising %}Revise your bid{% else %}Bid{% endif %} · {{ line.name }}{% endblock %}
+{% block hero %}{% with t=line.name e=listed.round.label|upper %}{% include 'supply_chain/market/_hero.html' with eyebrow=e title=t %}{% endwith %}{% endblock %}
+
 {% block body %}
 {% with r=listed.round %}
 <nav class="text-sm text-gray-500 mb-3">
@@ -8,8 +10,8 @@
   <a href="{% url 'supply_chain:market_round' r.pk %}" class="text-brand-indigo hover:underline">{{ r.label }}</a> <span class="mx-1 text-gray-300">/</span>
   {% if revising %}Revise your bid{% else %}Bid{% endif %}
 </nav>
-<div class="bg-white rounded-lg shadow-sm p-5">
-  <h1 class="text-xl font-semibold">{% if revising %}Revise your bid for{% else %}Bid for{% endif %} {{ line.name }}</h1>
+<div class="bg-white border border-brand-border-light rounded-[10px] p-5 sm:p-6 max-w-4xl">
+  <h2 class="text-lg font-semibold text-brand-deep-purple">{% if revising %}Revise your bid{% else %}Your bid{% endif %}</h2>
   <p class="text-sm text-gray-600 mt-1">
     They want {% if line.quantity is not None %}{{ line.quantity|qty:line.quantity_unit }}{% else %}an unstated quantity{% endif %}.
     State your offer as you would write it; the buyer's comparison converts it. Anything you leave blank is recorded as not stated, and the buyer may ask you for it.
@@ -77,7 +79,7 @@
     {% include 'supply_chain/market/_field.html' with field=form.notes %}
 
     <div class="flex gap-3 mt-4">
-      <button class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">{% if revising %}Save the revised bid{% else %}Submit bid{% endif %}</button>
+      <button class="px-4 py-2 text-sm bg-brand-deep-purple hover:bg-brand-indigo text-white rounded-md">{% if revising %}Save the revised bid{% else %}Submit bid{% endif %}</button>
       <a href="{% url 'supply_chain:market_round' r.pk %}" class="px-4 py-2 text-sm rounded-md border border-gray-300">Cancel</a>
     </div>
   </form>

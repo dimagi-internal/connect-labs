@@ -125,6 +125,9 @@ def home(request):
             "costs_view": view,
             "network": queries.network_totals(),
             "open_round_count": queries.open_rounds().count(),
+            # The suppliers' side of the marketplace: rounds a buyer is asking
+            # suppliers to quote on now, as the public market lists them.
+            "supply_round_count": queries.supply_rounds_open(),
             "totals": {
                 "programs": len(cards),
                 "spent": queries._money(sum(c["spent"] for c in cards)),

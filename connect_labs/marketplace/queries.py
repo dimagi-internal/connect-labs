@@ -931,3 +931,10 @@ def matches(org, *, query="", countries=(), delivered=(), applied=(), delivered_
     if applied and not (applied_programs_of(org) & set(applied)):
         return False
     return True
+
+
+def supply_rounds_open() -> int:
+    """Rounds open to suppliers on the public supply marketplace (/supply/market/)."""
+    from connect_labs.supply_chain.models import Round
+
+    return Round.objects.filter(status="open", visibility="public").count()

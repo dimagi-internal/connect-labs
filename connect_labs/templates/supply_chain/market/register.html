@@ -1,15 +1,15 @@
 {% extends 'supply_chain/market/_shell.html' %}
 {% block title %}Register as a supplier{% endblock %}
+{% block hero %}{% include 'supply_chain/market/_hero.html' with title="Register as a supplier" lede="Once. Buyers on every program see the same profile, and you can bid on any open round." %}{% endblock %}
+
 {% block body %}
-<div class="bg-white rounded-lg shadow-sm p-5 max-w-2xl">
-  <h1 class="text-xl font-semibold">Register as a supplier</h1>
-  <p class="text-sm text-gray-600 mt-1">Once. Buyers on every program see the same profile, and you can bid on any open round.</p>
+<div class="bg-white border border-brand-border-light rounded-[10px] p-5 max-w-2xl">
 
   {% if profileless %}
     <div class="mt-4 p-3 rounded-md bg-message-info text-message-info-text border border-message-info-border text-sm">
       <p class="mb-2">You already act for {% for org in profileless %}{{ org.name }}{% if not forloop.last %}, {% endif %}{% endfor %} through Connect. Supply as {% if profileless|length == 1 %}it{% else %}one of them{% endif %}?</p>
       {% for org in profileless %}
-        <form method="post" class="inline">{% csrf_token %}<input type="hidden" name="profile_for" value="{{ org.pk }}"><button class="px-3 py-1.5 rounded-md bg-brand-indigo text-white mr-2">Add a supplier profile for {{ org.name }}</button></form>
+        <form method="post" class="inline">{% csrf_token %}<input type="hidden" name="profile_for" value="{{ org.pk }}"><button class="px-3 py-1.5 rounded-md bg-brand-deep-purple text-white mr-2">Add a supplier profile for {{ org.name }}</button></form>
       {% endfor %}
     </div>
     <p class="text-sm text-gray-600 mt-4">Or register a different organisation:</p>
@@ -33,7 +33,7 @@
       {% include 'supply_chain/market/_field.html' with field=form.contact_phone %}
     </div>
     <p class="text-xs text-gray-500 mb-4">Already on file? Registering a second copy is refused — ask someone there, or the buyer you work with, for an invitation to join it.</p>
-    <button class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Register</button>
+    <button class="px-4 py-2 text-sm bg-brand-deep-purple hover:bg-brand-indigo text-white rounded-md">Register</button>
   </form>
 </div>
 {% endblock %}

@@ -1,0 +1,14 @@
+{% comment %}
+A page's header in the marketplace's deep purple. `eyebrow`, `title` and
+optional `lede`; the page puts anything else (figures, buttons) in its own
+hero block after including this, or uses this alone for a plain page.
+{% endcomment %}
+<div class="bg-brand-deep-purple relative overflow-hidden">
+  <div class="absolute -right-24 -top-32 w-[440px] h-[440px] rounded-full pointer-events-none"
+       style="background: radial-gradient(circle, rgba(142,161,255,0.18) 0%, rgba(22,0,109,0) 68%);"></div>
+  <div class="relative max-w-screen-xl mx-auto px-4 sm:px-8 pt-6 pb-6 sm:pt-8 sm:pb-7">
+    <div class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky">{{ eyebrow|default:"CONNECT · SUPPLY" }}</div>
+    <h1 class="text-[26px] sm:text-3xl font-semibold text-white mt-1 leading-tight">{{ title }}</h1>
+    {% if lede %}<p class="text-[14px] text-brand-sky/90 mt-2 max-w-2xl">{{ lede }}</p>{% endif %}
+  </div>
+</div>
