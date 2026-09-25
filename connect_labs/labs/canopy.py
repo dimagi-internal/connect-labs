@@ -109,6 +109,7 @@ def panel_context(
         "ready": ready,
         "base_url": _audience() if ready else "",
         "app_name": getattr(settings, "CANOPY_APP_NAME", "") if ready else "",
+        "agent": getattr(settings, "CANOPY_AGENT_SLUG", "") if ready else "",
         "page_state": state,
     }
 
@@ -214,7 +215,12 @@ def vouch_for(user) -> dict:
     """
     request = urllib.request.Request(
         f"{_audience()}/api/auth/contact-token",
-        data=json.dumps({"assertion": assertion_for(user)}).encode(),
+        # `agent_slug` says which canopy tenant this token is for — see
+        # CANOPY_AGENT_SLUG. Without it canopy resolves the tenant from the
+        # site name alone, which stops working once two workspaces share it.
+        data=json.dumps(
+            {"assertion": assertion_for(user), "agent_slug": getattr(settings, "CANOPY_AGENT_SLUG", "")}
+        ).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
