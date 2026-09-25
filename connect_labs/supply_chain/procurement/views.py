@@ -40,8 +40,8 @@ from connect_labs.supply_chain.forms import (
     OutreachReplyForm,
     QuoteForm,
     ReasonForm,
-    RoundForm,
-    RoundLineFormSet,
+    TenderForm,
+    TenderLineFormSet,
 )
 from connect_labs.supply_chain.fulfilment_forms import DocumentForm
 from connect_labs.supply_chain.navigation import supply_tabs
@@ -69,7 +69,7 @@ def _days_waiting(sent_on):
 # quote_record operation's schema declares these as JSON integers (see
 # operations.ID / _NON_NEGATIVE_INT). jsonschema does not coerce "5" to 5,
 # so passing request.POST straight through 400s on every real submission
-# that names a round, supplier, or item — i.e. every one of them.
+# that names a tender, supplier, or item — i.e. every one of them.
 @method_decorator(login_required, name="dispatch")
 class _Base(TemplateView):
     def op(self, name, **payload):
@@ -81,36 +81,36 @@ class _Base(TemplateView):
         return context
 
 
-class RoundBoardView(_Base):
-    template_name = "supply_chain/procurement/round_board.html"
+class TenderBoardView(_Base):
+    template_name = "supply_chain/procurement/tender_board.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["has_program_context"] = has_program_context(self.request)
-        # round_list is programme-scoped; a fresh '/supply/procurement/'
+        # tender_list is programme-scoped; a fresh '/supply/procurement/'
         # visit before a programme is selected is a normal state
         # (labs_context = {}), not a bug -- see api_views.has_program_context.
-        context["rounds"] = self.op("round_list") if context["has_program_context"] else []
+        context["tenders"] = self.op("tender_list") if context["has_program_context"] else []
         return context
 
 
-class RoundDetailView(_Base):
-    template_name = "supply_chain/procurement/round_detail.html"
+class TenderDetailView(_Base):
+    template_name = "supply_chain/procurement/tender_detail.html"
 
-    def get_context_data(self, round_id, **kwargs):
+    def get_context_data(self, tender_id, **kwargs):
         context = super().get_context_data(**kwargs)
-        round_ = self.op("round_get", round_id=round_id)
-        # Was a 200 rendering "Round not found." A missing resource answering
+        tender = self.op("tender_get", tender_id=tender_id)
+        # Was a 200 rendering "Tender not found." A missing resource answering
         # 200 tells a browser, a link checker and a monitor that the page is
         # fine, which is the one thing it is not.
-        if round_ is None:
-            raise Http404(f"no round {round_id} in this programme")
-        context["round"] = round_
-        outreach = self.op("outreach_list", round_id=round_id)
+        if tender is None:
+            raise Http404(f"no tender {tender_id} in this programme")
+        context["tender"] = tender
+        outreach = self.op("outreach_list", tender_id=tender_id)
         for o in outreach:
             o["days_waiting"] = None if o.get("responded") else _days_waiting(o.get("sent_on"))
         context["outreach"] = outreach
-        context["quotes"] = self.op("quote_list", round_id=round_id)
+        context["quotes"] = self.op("quote_list", tender_id=tender_id)
         # Each quote's trade item, by name and -- for a kit -- contents. Three
         # co-pack quotes from one distributor read as the same offer three
         # times, told apart only by price.
@@ -136,8 +136,8 @@ class RoundDetailView(_Base):
         # reading the page, and the name is one list call away.
         context["supplier_names"] = {s["id"]: s["name"] for s in self.op("supplier_list")}
         context["commodity_names"] = _commodity_names(self.op("commodity_list"))
-        # What the round buys, a line at a time, with a kit's contents when
-        # the round states them -- the fact its comparison ranks against.
+        # What the tender buys, a line at a time, with a kit's contents when
+        # the tender states them -- the fact its comparison ranks against.
         context["buys"] = [
             {
                 "name": context["commodity_names"].get(line.get("commodity_slug"), line.get("commodity_slug")),
@@ -149,7 +149,7 @@ class RoundDetailView(_Base):
                     for part in line.get("components") or []
                 ),
             }
-            for line in (round_.get("lines") or [])
+            for line in (tender.get("lines") or [])
             if isinstance(line, dict)
         ]
         return context
@@ -160,7 +160,7 @@ class QuoteDetailView(_Base):
 
     The two columns are the product. A quote arrives on the supplier's own
     terms -- per carton, per sachet, freight in or out -- and every figure
-    worth comparing is derived from those terms plus the round and the
+    worth comparing is derived from those terms plus the tender and the
     commodity. Showing the derivation next to its inputs is what makes an
     `Unconfirmed` legible: the reason names the input that is missing, and the
     input is right there, blank.
@@ -187,7 +187,7 @@ class QuoteDetailView(_Base):
         context["detail"] = detail
         quote = detail["quote"]
         context["quote"] = quote
-        context["round"] = self.op("round_get", round_id=quote["round_id"])
+        context["tender"] = self.op("tender_get", tender_id=quote["tender_id"])
         context["supplier"] = self.op("supplier_get", supplier_id=quote["supplier_id"])
         # The product quoted, so each derived figure names its unit the way the
         # comparison's header does ("USD per jerry can") rather than "per pack".
@@ -212,7 +212,9 @@ class QuoteDetailView(_Base):
         # The invitation this quote answered, so the page can say how long the
         # supplier took rather than only when the quote landed.
         context["outreach"] = [
-            o for o in self.op("outreach_list", round_id=quote["round_id"]) if o["supplier_id"] == quote["supplier_id"]
+            o
+            for o in self.op("outreach_list", tender_id=quote["tender_id"])
+            if o["supplier_id"] == quote["supplier_id"]
         ]
         context["questions"] = detail["missing"]
         # The trade item quoted and, for a kit, what one unit of it holds --
@@ -246,17 +248,17 @@ def _priced_per(quote, item, commodity) -> str | None:
 def table_columns(comparison) -> list:
     """The ranked table's columns, with the landed total shown once when it is one figure.
 
-    "Landed total (as quoted)" and "Landed total (this round)" differ only
+    "Landed total (as quoted)" and "Landed total (this tender)" differ only
     when a quote was priced on another quantity. When every ranked row has the
     same figure in both, the second column repeated the first and pushed the
     award marker off the right edge of a 1280px screen.
     """
     columns = list(comparison.get("columns") or [])
     rows = comparison.get("comparable") or []
-    as_quoted, this_round = "landed_total_as_quoted", "landed_total_for_round_quantity"
+    as_quoted, this_tender = "landed_total_as_quoted", "landed_total_for_tender_quantity"
     if rows and all(
-        (row.get("figures") or {}).get(as_quoted) == (row.get("figures") or {}).get(this_round)
-        and (row.get("figures") or {}).get(this_round, {}).get("amount") is not None
+        (row.get("figures") or {}).get(as_quoted) == (row.get("figures") or {}).get(this_tender)
+        and (row.get("figures") or {}).get(this_tender, {}).get("amount") is not None
         for row in rows
     ):
         columns = [column for column in columns if column.get("key") != as_quoted]
@@ -303,37 +305,37 @@ def _commodity_names(commodities) -> dict:
 class ComparisonView(_Base):
     template_name = "supply_chain/procurement/comparison.html"
 
-    def get_context_data(self, round_id, **kwargs):
+    def get_context_data(self, tender_id, **kwargs):
         context = super().get_context_data(**kwargs)
-        round_ = self.op("round_get", round_id=round_id)
-        # The `or {}` below tolerated a missing round as far as here and then
-        # `round_compare` raised on it, so a stale link 500'd. A round that is
+        tender = self.op("tender_get", tender_id=tender_id)
+        # The `or {}` below tolerated a missing tender as far as here and then
+        # `tender_compare` raised on it, so a stale link 500'd. A tender that is
         # not in this programme is a 404.
-        if round_ is None:
-            raise Http404(f"no round {round_id} in this programme")
-        lines = round_.get("lines") or []
+        if tender is None:
+            raise Http404(f"no tender {tender_id} in this programme")
+        lines = tender.get("lines") or []
         commodity = self.request.GET.get("commodity")
 
-        # round_compare's schema requires commodity_slug as a string — nothing
+        # tender_compare's schema requires commodity_slug as a string — nothing
         # ambiguous is a safe default. But a bookmark, browser-history entry,
         # or shared link with no ?commodity= at all is a normal way to land
-        # here, and it must not 500. A round with exactly one line has one
+        # here, and it must not 500. A tender with exactly one line has one
         # sensible default; more than one (or none) means asking, which is
         # also more useful than an error: it's a worklist of what to compare.
         if not commodity and len(lines) == 1:
             commodity = lines[0].get("commodity_slug")
 
-        comparison = self.op("round_compare", round_id=round_id, commodity_slug=commodity) if commodity else None
+        comparison = self.op("tender_compare", tender_id=tender_id, commodity_slug=commodity) if commodity else None
         # The awards already made on this line, so the page that awards is
         # also the way to one -- and to the approvals it may be waiting on.
         context["awards"] = (
-            [a for a in self.op("award_list", round_id=round_id) if a["commodity_slug"] == commodity]
+            [a for a in self.op("award_list", tender_id=tender_id) if a["commodity_slug"] == commodity]
             if commodity
             else []
         )
 
-        context["round"] = round_
-        context["round_id"] = round_id
+        context["tender"] = tender
+        context["tender_id"] = tender_id
         context["commodity_slug"] = commodity
         # The product's name, not its slug: "ors-zinc-copack" is an identifier.
         names = _commodity_names(self.op("commodity_list")) if commodity else {}
@@ -355,7 +357,7 @@ class ComparisonView(_Base):
         # rule had excluded, or the reason it was excluded.
         context["set_aside"] = []
         if commodity:
-            quotes = self.op("quote_list", round_id=round_id)
+            quotes = self.op("quote_list", tender_id=tender_id)
             items = {}
             for quote in quotes if isinstance(quotes, list) else []:
                 if not (isinstance(quote, dict) and quote.get("voided") and quote.get("commodity_slug") == commodity):
@@ -369,7 +371,7 @@ class ComparisonView(_Base):
         if comparison and context["table_columns"]:
             context["folded_columns"] = list(folded_columns(comparison).values())
             context["first_column_label"] = context["table_columns"][0].get("label")
-        # ranked_by is a bare figure key (e.g. "landed_total_for_round_quantity");
+        # ranked_by is a bare figure key (e.g. "landed_total_for_tender_quantity");
         # its human label already lives on the matching column (pricing.py's
         # FIGURE_LABELS, formatted with this commodity's own unit nouns), so look
         # it up here rather than re-deriving or hardcoding a second copy in the
@@ -381,9 +383,9 @@ class ComparisonView(_Base):
             context["ranked_by_label"] = column["label"] if column else comparison["ranked_by"]
         return context
 
-    def post(self, request, round_id, *args, **kwargs):
+    def post(self, request, tender_id, *args, **kwargs):
         """Award a quote. The Award button's form posts here (action="" —
-        same URL, so the ?commodity= query string round-trips for free).
+        same URL, so the ?commodity= query string tender-trips for free).
 
         A missing or empty rationale is refused by award_create's schema, not
         guessed around here — that refusal must not become a 500: catch it
@@ -397,22 +399,22 @@ class ComparisonView(_Base):
         try:
             self.op(
                 "award_create",
-                round_id=round_id,
+                tender_id=tender_id,
                 quote_id=int(quote_id_raw),
                 rationale=rationale,
                 decided_by=decided_by,
                 **({"decided_on": decided_on} if decided_on else {}),
             )
         except jsonschema.ValidationError as exc:
-            context = self.get_context_data(round_id=round_id, **kwargs)
+            context = self.get_context_data(tender_id=tender_id, **kwargs)
             context["award_error"] = exc.message
             return self.render_to_response(context)
         except (TypeError, ValueError):
-            context = self.get_context_data(round_id=round_id, **kwargs)
+            context = self.get_context_data(tender_id=tender_id, **kwargs)
             context["award_error"] = "No valid quote was selected to award."
             return self.render_to_response(context)
 
-        url = reverse("supply_chain:procurement_comparison", args=[round_id])
+        url = reverse("supply_chain:procurement_comparison", args=[tender_id])
         commodity = request.GET.get("commodity")
         return redirect(f"{url}?commodity={commodity}" if commodity else url)
 
@@ -486,23 +488,23 @@ class QuoteEntryView(OperationFormView):
 
     def get_initial(self):
         initial = super().get_initial()
-        # Arriving from a round, that round is the answer.
-        round_id = self.request.GET.get("round")
-        if round_id and str(round_id).isdigit():
-            initial.setdefault("round", int(round_id))
+        # Arriving from a tender, that tender is the answer.
+        tender_id = self.request.GET.get("tender")
+        if tender_id and str(tender_id).isdigit():
+            initial.setdefault("tender", int(tender_id))
         return initial
 
     def breadcrumb(self, **kwargs):
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_round_board")},
+            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
             {"label": self.title},
         ]
 
     def cancel_href(self, **kwargs):
-        return reverse("supply_chain:procurement_round_board")
+        return reverse("supply_chain:procurement_tender_board")
 
     def redirect_to(self, result):
-        url = reverse("supply_chain:procurement_comparison", args=[result["round_id"]])
+        url = reverse("supply_chain:procurement_comparison", args=[result["tender_id"]])
         return f"{url}?commodity={result['commodity_slug']}"
 
 
@@ -514,22 +516,22 @@ class QuoteEntryView(OperationFormView):
 # validation of its own.
 
 
-class _RoundScreen(OperationFormView):
-    """Create or update a round, header plus its commodity lines.
+class _TenderScreen(OperationFormView):
+    """Create or update a tender, header plus its commodity lines.
 
-    A round asks for one or more commodities, each with its own quantity and
+    A tender asks for one or more commodities, each with its own quantity and
     unit, so the lines are a formset rather than a JSON textarea -- which is
-    what a ModelForm would render `Round.lines` as.
+    what a ModelForm would render `Tender.lines` as.
     """
 
-    form_class = RoundForm
-    template_name = "supply_chain/procurement/round_form.html"
+    form_class = TenderForm
+    template_name = "supply_chain/procurement/tender_form.html"
 
     def commodities(self):
         return [(c["slug"], c["name"]) for c in self.op("commodity_list")]
 
     def line_formset(self, data=None, initial=None):
-        return RoundLineFormSet(
+        return TenderLineFormSet(
             data,
             initial=initial,
             prefix="lines",
@@ -564,7 +566,7 @@ class _RoundScreen(OperationFormView):
             if row and not row.get("DELETE") and row.get("commodity_slug")
         ]
         if not kept:
-            form.add_error(None, "A round has to ask for at least one commodity.")
+            form.add_error(None, "A tender has to ask for at least one commodity.")
             return self.render_to_response(self.get_context_data(form=form, lines=lines))
 
         self._lines = kept
@@ -575,43 +577,43 @@ class _RoundScreen(OperationFormView):
 
     def breadcrumb(self, **kwargs):
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_round_board")},
+            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
             {"label": self.title},
         ]
 
     def cancel_href(self, **kwargs):
-        return reverse("supply_chain:procurement_round_board")
+        return reverse("supply_chain:procurement_tender_board")
 
     def redirect_to(self, result):
-        return reverse("supply_chain:procurement_round_detail", args=[result["id"]])
+        return reverse("supply_chain:procurement_tender_detail", args=[result["id"]])
 
 
-class RoundCreateView(_RoundScreen):
-    operation = "round_create"
-    title = "New quote round"
+class TenderCreateView(_TenderScreen):
+    operation = "tender_create"
+    title = "New quote tender"
     intro = (
-        "A round is one ask, to several suppliers, for the same thing. It opens in draft: "
+        "A tender is one ask, to several suppliers, for the same thing. It opens in draft: "
         "nothing goes out until you open it."
     )
-    submit_label = "Create round"
+    submit_label = "Create tender"
 
 
-class RoundUpdateView(_RoundScreen):
-    operation = "round_update"
-    title = "Edit round"
+class TenderUpdateView(_TenderScreen):
+    operation = "tender_update"
+    title = "Edit tender"
     submit_label = "Save changes"
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs["instance"] = self._round_instance()
+        kwargs["instance"] = self._tender_instance()
         return kwargs
 
-    def _round_instance(self):
-        from connect_labs.supply_chain.models import Round
+    def _tender_instance(self):
+        from connect_labs.supply_chain.models import Tender
 
-        found = Round.objects.filter(pk=self.kwargs["round_id"], program_id=_access(self.request).program_id).first()
+        found = Tender.objects.filter(pk=self.kwargs["tender_id"], program_id=_access(self.request).program_id).first()
         if found is None:
-            raise Http404(f"no round {self.kwargs['round_id']} in this programme")
+            raise Http404(f"no tender {self.kwargs['tender_id']} in this programme")
         return found
 
     def initial_lines(self):
@@ -621,33 +623,33 @@ class RoundUpdateView(_RoundScreen):
                 "quantity": line.get("quantity"),
                 "quantity_unit": line.get("quantity_unit"),
             }
-            for line in (self._round_instance().lines or [])
+            for line in (self._tender_instance().lines or [])
         ]
 
     def fixed(self, **kwargs):
-        return {"round_id": int(kwargs["round_id"]), "data": {"lines": getattr(self, "_lines", [])}}
+        return {"tender_id": int(kwargs["tender_id"]), "data": {"lines": getattr(self, "_lines", [])}}
 
 
-class RoundOpenView(OperationActionView):
-    operation = "round_open"
-    success_message = "Round opened — it can take quotes now."
-
-    def fixed(self, **kwargs):
-        return {"round_id": int(kwargs["round_id"])}
-
-    def redirect_to(self, **kwargs):
-        return reverse("supply_chain:procurement_round_detail", args=[kwargs["round_id"]])
-
-
-class RoundCloseView(OperationActionView):
-    operation = "round_close"
-    success_message = "Round closed to further quotes."
+class TenderOpenView(OperationActionView):
+    operation = "tender_open"
+    success_message = "Tender opened — it can take quotes now."
 
     def fixed(self, **kwargs):
-        return {"round_id": int(kwargs["round_id"])}
+        return {"tender_id": int(kwargs["tender_id"])}
 
     def redirect_to(self, **kwargs):
-        return reverse("supply_chain:procurement_round_detail", args=[kwargs["round_id"]])
+        return reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]])
+
+
+class TenderCloseView(OperationActionView):
+    operation = "tender_close"
+    success_message = "Tender closed to further quotes."
+
+    def fixed(self, **kwargs):
+        return {"tender_id": int(kwargs["tender_id"])}
+
+    def redirect_to(self, **kwargs):
+        return reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]])
 
 
 class OutreachLogView(OperationFormView):
@@ -655,26 +657,26 @@ class OutreachLogView(OperationFormView):
     form_class = OutreachForm
     title = "Record an invitation"
     intro = (
-        "That we asked this supplier to quote on this round. A log, not a state machine — "
+        "That we asked this supplier to quote on this tender. A log, not a state machine — "
         "re-inviting is a real event worth keeping."
     )
     submit_label = "Record invitation"
 
     def fixed(self, **kwargs):
-        return {"data": {"round_id": int(kwargs["round_id"])}}
+        return {"data": {"tender_id": int(kwargs["tender_id"])}}
 
     def breadcrumb(self, **kwargs):
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_round_board")},
-            {"label": "Round", "href": reverse("supply_chain:procurement_round_detail", args=[kwargs["round_id"]])},
+            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
+            {"label": "Tender", "href": reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]])},
             {"label": "Record an invitation"},
         ]
 
     def cancel_href(self, **kwargs):
-        return reverse("supply_chain:procurement_round_detail", args=[kwargs["round_id"]])
+        return reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]])
 
     def redirect_to(self, result):
-        return reverse("supply_chain:procurement_round_detail", args=[result["round_id"]])
+        return reverse("supply_chain:procurement_tender_detail", args=[result["tender_id"]])
 
 
 class OutreachReplyView(OperationFormView):
@@ -693,7 +695,7 @@ class OutreachReplyView(OperationFormView):
         from connect_labs.supply_chain.models import Outreach
 
         found = Outreach.objects.filter(
-            pk=self.kwargs["outreach_id"], round__program_id=_access(self.request).program_id
+            pk=self.kwargs["outreach_id"], tender__program_id=_access(self.request).program_id
         ).first()
         if found is None:
             raise Http404(f"no invitation {self.kwargs['outreach_id']} in this programme")
@@ -703,10 +705,10 @@ class OutreachReplyView(OperationFormView):
         return {"outreach_id": int(kwargs["outreach_id"])}
 
     def cancel_href(self, **kwargs):
-        return reverse("supply_chain:procurement_round_detail", args=[self._outreach().round_id])
+        return reverse("supply_chain:procurement_tender_detail", args=[self._outreach().tender_id])
 
     def redirect_to(self, result):
-        return reverse("supply_chain:procurement_round_detail", args=[result["round_id"]])
+        return reverse("supply_chain:procurement_tender_detail", args=[result["tender_id"]])
 
 
 class OutreachDeleteView(OperationFormView):
@@ -725,7 +727,7 @@ class OutreachDeleteView(OperationFormView):
         return {"outreach_id": int(kwargs["outreach_id"])}
 
     def redirect_to(self, result):
-        return reverse("supply_chain:procurement_round_detail", args=[result["round_id"]])
+        return reverse("supply_chain:procurement_tender_detail", args=[result["tender_id"]])
 
 
 class QuoteVoidView(OperationFormView):
@@ -753,12 +755,12 @@ class QuoteVoidView(OperationFormView):
 
 
 def _award(request, award_id):
-    """An award, reached through its round's programme, or a 404."""
+    """An award, reached through its tender's programme, or a 404."""
     from connect_labs.supply_chain.models import Award
 
     found = (
-        Award.objects.filter(pk=award_id, round__program_id=_access(request).program_id)
-        .select_related("supplier__org__supplier_profile", "commodity", "round")
+        Award.objects.filter(pk=award_id, tender__program_id=_access(request).program_id)
+        .select_related("supplier__org__supplier_profile", "commodity", "tender")
         .first()
     )
     if found is None:
@@ -812,21 +814,21 @@ class AwardDetailView(_Base):
         if not context["has_program_context"]:
             return context
         award = _award(self.request, award_id)
-        detail = next((a for a in self.op("award_list", round_id=award.round_id) if a["id"] == award.pk), None)
+        detail = next((a for a in self.op("award_list", tender_id=award.tender_id) if a["id"] == award.pk), None)
         if detail is None:
             raise Http404(f"no award {award_id} in this programme")
         context["award"] = detail
         # The heading named the product's slug; what was awarded is a kit.
         context["awarded_item"] = award.quote.item.name if award.quote.item_id else None
         context["supplier"] = self.op("supplier_get", supplier_id=detail["supplier_id"])
-        context["round"] = self.op("round_get", round_id=detail["round_id"])
+        context["tender"] = self.op("tender_get", tender_id=detail["tender_id"])
         context["approvals"] = approvals_as_read(self.op, award.pk)
         # The same rule the order guard applies: a refusal later reversed by
         # a fresh approval from the same approver in the same role is history.
         blocking_ids = {a.pk for a in _access(self.request).blocking_approvals(award)}
         context["blocking"] = [a for a in context["approvals"] if a["id"] in blocking_ids]
         context["contracts"] = [
-            c for c in self.op("contract_list", round_id=detail["round_id"]) if c["award_id"] == award.pk
+            c for c in self.op("contract_list", tender_id=detail["tender_id"]) if c["award_id"] == award.pk
         ]
         # The offer the award froze, read from the comparison it was chosen
         # from rather than recomputed here -- so the award and the ranking can
@@ -836,17 +838,17 @@ class AwardDetailView(_Base):
         # the specification it was chosen against (the test-kit render).
         context["awarded_row"] = None
         context["awarded_columns"] = []
-        comparison = self.op("round_compare", round_id=detail["round_id"], commodity_slug=detail["commodity_slug"])
+        comparison = self.op("tender_compare", tender_id=detail["tender_id"], commodity_slug=detail["commodity_slug"])
         if comparison:
             rows = list(comparison.get("comparable") or []) + list(comparison.get("all_rows") or [])
             context["awarded_row"] = next((r for r in rows if r.get("quote_id") == award.quote_id), None)
             context["awarded_columns"] = table_columns(comparison)
         # How many the money is for. "USD 760.00 landed" means nothing without
-        # it, and the comparison's own column says only "(this round)".
-        sought = self.op("round_get", round_id=detail["round_id"]) or {}
+        # it, and the comparison's own column says only "(this tender)".
+        sought = self.op("tender_get", tender_id=detail["tender_id"]) or {}
         for line in sought.get("lines") or []:
             if line.get("commodity_slug") == detail["commodity_slug"] and line.get("quantity") not in (None, ""):
-                context["round_quantity"] = quantity_phrase(line["quantity"], line.get("quantity_unit"))
+                context["tender_quantity"] = quantity_phrase(line["quantity"], line.get("quantity_unit"))
                 break
         return context
 
@@ -855,10 +857,10 @@ class _AwardScreen(OperationFormView):
     def breadcrumb(self, **kwargs):
         award = self.award()
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_round_board")},
+            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
             {
-                "label": award.round.label,
-                "href": reverse("supply_chain:procurement_round_detail", args=[award.round_id]),
+                "label": award.tender.label,
+                "href": reverse("supply_chain:procurement_tender_detail", args=[award.tender_id]),
             },
             {
                 "label": f"Award to {award.supplier.name}",
@@ -906,7 +908,7 @@ class ApprovalDocumentAttachView(_AwardScreen):
 
         found = (
             AwardApproval.objects.filter(
-                pk=self.kwargs["approval_id"], award__round__program_id=_access(self.request).program_id
+                pk=self.kwargs["approval_id"], award__tender__program_id=_access(self.request).program_id
             )
             .select_related("approver_org")
             .first()
@@ -952,8 +954,8 @@ class QuoteDocumentAttachView(OperationFormView):
         from connect_labs.supply_chain.models import Quote
 
         found = (
-            Quote.objects.filter(pk=self.kwargs["quote_id"], round__program_id=_access(self.request).program_id)
-            .select_related("supplier__org__supplier_profile", "round")
+            Quote.objects.filter(pk=self.kwargs["quote_id"], tender__program_id=_access(self.request).program_id)
+            .select_related("supplier__org__supplier_profile", "tender")
             .first()
         )
         if found is None:
@@ -963,10 +965,10 @@ class QuoteDocumentAttachView(OperationFormView):
     def breadcrumb(self, **kwargs):
         quote = self.quote()
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_round_board")},
+            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
             {
-                "label": quote.round.label,
-                "href": reverse("supply_chain:procurement_round_detail", args=[quote.round_id]),
+                "label": quote.tender.label,
+                "href": reverse("supply_chain:procurement_tender_detail", args=[quote.tender_id]),
             },
             {
                 "label": f"Quote from {quote.supplier.name}",
@@ -1004,7 +1006,7 @@ class ApprovalDecideView(_AwardScreen):
         from connect_labs.supply_chain.models import AwardApproval
 
         found = AwardApproval.objects.filter(
-            pk=self.kwargs["approval_id"], award__round__program_id=_access(self.request).program_id
+            pk=self.kwargs["approval_id"], award__tender__program_id=_access(self.request).program_id
         ).first()
         if found is None:
             raise Http404(f"no approval {self.kwargs['approval_id']} in this programme")

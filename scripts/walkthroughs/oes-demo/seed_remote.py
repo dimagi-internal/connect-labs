@@ -671,7 +671,7 @@ def opened(access, round_):
     """
     if round_.get("status") != "draft":
         return round_
-    return op(access, "round_open", round_id=round_["id"])
+    return op(access, "tender_open", tender_id=round_["id"])
 
 
 def round_for(access, data):
@@ -691,10 +691,10 @@ def round_for(access, data):
     """
     label = (data or {}).get("label")
     if label:
-        for existing in op(access, "round_list"):
+        for existing in op(access, "tender_list"):
             if existing.get("label") == label:
                 return existing
-    return op(access, "round_create", data=data)
+    return op(access, "tender_create", data=data)
 
 
 def seed_chain(access, chain, reference):
@@ -742,7 +742,7 @@ def seed_chain(access, chain, reference):
                 "quote_record",
                 data={
                     **quoted,
-                    "round_id": round_["id"],
+                    "tender_id": round_["id"],
                     "supplier_id": supplier["id"],
                     "item_id": item["id"],
                 },
@@ -755,7 +755,7 @@ def seed_chain(access, chain, reference):
     award = op(
         access,
         "award_create",
-        round_id=round_["id"],
+        tender_id=round_["id"],
         quote_id=quotes[awarded_index]["id"],
         rationale=chain["award_rationale"],
         decided_on=day(AWARDED_DAYS_AGO),
@@ -776,7 +776,7 @@ def seed_chain(access, chain, reference):
         data={
             **ours,
             **contract_row,
-            "round_id": round_["id"],
+            "tender_id": round_["id"],
             "award_id": award["id"],
             "supplier_id": supplier["id"],
             "item_id": awarded_item["id"],
@@ -951,7 +951,7 @@ def seed_rutf_round_two(access, round_two):
             op(
                 access,
                 "quote_record",
-                data={**quoted, "round_id": round_["id"], "supplier_id": supplier["id"]},
+                data={**quoted, "tender_id": round_["id"], "supplier_id": supplier["id"]},
             )
         )
     return {"round": round_, "quotes": quotes, "suppliers": suppliers}
@@ -1038,7 +1038,7 @@ def seed_chlorine_blocked(data, scopes):
         data={
             **ours,
             **contract_row,
-            "round_id": round_["id"],
+            "tender_id": round_["id"],
             "supplier_id": donor["id"],
             "commodity_slug": line["commodity_slug"],
             "buyer_org_id": reference["orgs"][buyer_slug]["id"],
@@ -1241,7 +1241,7 @@ def seed_awaiting_approval(access, data, reference):
                 "quote_record",
                 data={
                     **quoted,
-                    "round_id": round_["id"],
+                    "tender_id": round_["id"],
                     "supplier_id": supplier["id"],
                     "item_id": item["id"],
                 },
@@ -1252,7 +1252,7 @@ def seed_awaiting_approval(access, data, reference):
     award = op(
         access,
         "award_create",
-        round_id=round_["id"],
+        tender_id=round_["id"],
         quote_id=quotes[index]["id"],
         rationale=section["award_rationale"],
         decided_on=day(section["awarded_days_ago"]),

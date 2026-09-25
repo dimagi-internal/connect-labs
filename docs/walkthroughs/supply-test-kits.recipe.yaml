@@ -99,7 +99,7 @@ scenes:
   show: 'Hauwa opens the round''s comparison: Harmattan''s two kits ranked by landed total, each naming
     its kit, its contents and its price per test and per kit — and under the cheaper Brightwell row, "Spec:
     1 of 3 fail" with the failing requirement in words: its range maximum is 1.5 mg/L, short of 2.0.'
-  url: /supply/procurement/rounds/${round_id}/compare/?commodity=chlorine-test-kit&program_id=${program_id}
+  url: /supply/procurement/tenders/${tender_id}/compare/?commodity=chlorine-test-kit&program_id=${program_id}
 - id: hauwa-awards-the-compliant-kit
   actions:
   - kind: wait_for
@@ -140,7 +140,7 @@ scenes:
   design_intent: The award is a decision with a reason, frozen beside the comparison — not a purchase.
   show: On the comparison Hauwa types her reason into the Lumen kit's row — only kit that reads the 2
     mg/L dispenser dose — presses Award, and opens the award.
-  url: /supply/procurement/rounds/${round_id}/compare/?commodity=chlorine-test-kit&program_id=${program_id}
+  url: /supply/procurement/tenders/${tender_id}/compare/?commodity=chlorine-test-kit&program_id=${program_id}
 - id: hauwa-asks-aqualytic
   actions:
   - kind: click

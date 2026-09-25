@@ -114,9 +114,9 @@ class TestTheMigrationDefault:
 class TestKitsAreComparedAtOneLevel:
     def _compare(self, da, *kits):
         supplier = op(da, "supplier_create", data={"name": "Harmattan Health Supplies"})
-        round_ = op(
+        tender = op(
             da,
-            "round_create",
+            "tender_create",
             data={
                 "label": "Kits",
                 "delivery_point": {"city": "Kano"},
@@ -128,7 +128,7 @@ class TestKitsAreComparedAtOneLevel:
                 da,
                 "quote_record",
                 data={
-                    "round_id": round_["id"],
+                    "tender_id": tender["id"],
                     "commodity_slug": "test-kit",
                     "supplier_id": supplier["id"],
                     "item_id": kit["id"],
@@ -141,7 +141,7 @@ class TestKitsAreComparedAtOneLevel:
                     "duties_basis": "included",
                 },
             )
-        return op(da, "round_compare", round_id=round_["id"], commodity_slug="test-kit")
+        return op(da, "tender_compare", tender_id=tender["id"], commodity_slug="test-kit")
 
     def test_the_same_contents_stated_at_different_levels_are_the_same_kit(self, da, catalogue):
         """50 tablets per kit of 50 tests is one tablet per test: the same kit."""
@@ -159,7 +159,7 @@ class TestKitsAreComparedAtOneLevel:
         reasons = " ".join(
             reason
             for row in comparison["blocked"]
-            for reason in row["figures"]["landed_total_for_round_quantity"].get("unconfirmed", [])
+            for reason in row["figures"]["landed_total_for_tender_quantity"].get("unconfirmed", [])
         )
         assert "per kit" in reasons and "per test" in reasons
 

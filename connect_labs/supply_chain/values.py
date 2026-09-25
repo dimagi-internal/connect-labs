@@ -294,7 +294,7 @@ def _plural_unit(unit: str, count) -> str:
 
 
 def destination_phrase(delivery_point: dict | None) -> str:
-    """A round's delivery point as one piece of prose: name, city, country.
+    """A tender's delivery point as one piece of prose: name, city, country.
 
     Single-sourced for the same reason quantity_phrase() is (see its own
     docstring): render.py's _destination() and questions.py's _context()

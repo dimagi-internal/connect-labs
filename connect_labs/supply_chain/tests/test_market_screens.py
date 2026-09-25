@@ -17,7 +17,7 @@ from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import membership
 from connect_labs.marketplace.models import OrgMembership
 from connect_labs.supply_chain.data_access import SupplyDataAccess
-from connect_labs.supply_chain.models import Quote, Round, Supplier, SupplierOffering, SupplierProfile
+from connect_labs.supply_chain.models import Quote, Supplier, SupplierOffering, SupplierProfile, Tender
 from connect_labs.supply_chain.operations import call_operation
 
 pytestmark = pytest.mark.django_db
@@ -30,21 +30,21 @@ def op(name, **payload):
 
 
 @pytest.fixture
-def open_round():
+def open_tender():
     op(
         "commodity_upsert",
         data={"slug": "rutf", "name": "RUTF", "category": "therapeutic_food", "base_unit": "sachet"},
     )
     made = op(
-        "round_create",
+        "tender_create",
         data={
-            "label": "RUTF round 2",
+            "label": "RUTF tender 2",
             "delivery_point": {"name": "Central store", "city": "Kano", "country_name": "Nigeria"},
             "lines": [{"commodity_slug": "rutf", "quantity": "2000", "quantity_unit": "carton"}],
         },
     )
-    op("round_open", round_id=made["id"])
-    return Round.objects.get(pk=made["id"])
+    op("tender_open", tender_id=made["id"])
+    return Tender.objects.get(pk=made["id"])
 
 
 @pytest.fixture
@@ -67,37 +67,37 @@ def supplier(user):
 
 
 class TestBrowsingIsPublic:
-    def test_an_anonymous_visitor_sees_the_open_round(self, client, open_round):
+    def test_an_anonymous_visitor_sees_the_open_tender(self, client, open_tender):
         body = client.get(reverse("supply_chain:market")).content.decode()
-        assert "RUTF round 2" in body
+        assert "RUTF tender 2" in body
         assert "Sign in to bid" in body
 
-        page = client.get(reverse("supply_chain:market_round", args=[open_round.pk]))
+        page = client.get(reverse("supply_chain:market_tender", args=[open_tender.pk]))
         assert page.status_code == 200
         assert "Central store" in page.content.decode()
 
-    def test_a_round_whose_delivery_point_has_only_a_city_still_renders(self, client, open_round):
-        """The live CHC round's delivery point has a city and no name. A template
+    def test_a_tender_whose_delivery_point_has_only_a_city_still_renders(self, client, open_tender):
+        """The live CHC tender's delivery point has a city and no name. A template
         reading a missing key as a filter ARGUMENT raises, and took the page down."""
-        Round.objects.filter(pk=open_round.pk).update(delivery_point={"city": "Kano"})
+        Tender.objects.filter(pk=open_tender.pk).update(delivery_point={"city": "Kano"})
 
         assert client.get(reverse("supply_chain:market")).status_code == 200
-        assert client.get(reverse("supply_chain:market_round", args=[open_round.pk])).status_code == 200
+        assert client.get(reverse("supply_chain:market_tender", args=[open_tender.pk])).status_code == 200
 
-    def test_a_round_with_an_empty_delivery_point_still_renders(self, client, open_round):
-        Round.objects.filter(pk=open_round.pk).update(delivery_point={})
+    def test_a_tender_with_an_empty_delivery_point_still_renders(self, client, open_tender):
+        Tender.objects.filter(pk=open_tender.pk).update(delivery_point={})
 
         assert client.get(reverse("supply_chain:market")).status_code == 200
-        assert client.get(reverse("supply_chain:market_round", args=[open_round.pk])).status_code == 200
+        assert client.get(reverse("supply_chain:market_tender", args=[open_tender.pk])).status_code == 200
 
-    def test_a_private_round_is_a_404_to_an_anonymous_visitor(self, client, open_round):
-        Round.objects.filter(pk=open_round.pk).update(visibility="private")
+    def test_a_private_tender_is_a_404_to_an_anonymous_visitor(self, client, open_tender):
+        Tender.objects.filter(pk=open_tender.pk).update(visibility="private")
 
-        assert "RUTF round 2" not in client.get(reverse("supply_chain:market")).content.decode()
-        assert client.get(reverse("supply_chain:market_round", args=[open_round.pk])).status_code == 404
+        assert "RUTF tender 2" not in client.get(reverse("supply_chain:market")).content.decode()
+        assert client.get(reverse("supply_chain:market_tender", args=[open_tender.pk])).status_code == 404
 
-    def test_bidding_anonymously_sends_you_to_sign_in_and_back(self, client, open_round):
-        bid_url = reverse("supply_chain:market_bid", args=[open_round.pk, "rutf"])
+    def test_bidding_anonymously_sends_you_to_sign_in_and_back(self, client, open_tender):
+        bid_url = reverse("supply_chain:market_bid", args=[open_tender.pk, "rutf"])
 
         response = client.get(bid_url)
 
@@ -107,8 +107,8 @@ class TestBrowsingIsPublic:
 
 
 class TestANewSupplier:
-    def test_signing_in_without_an_organisation_leads_to_registering(self, signed_in, open_round):
-        response = signed_in.get(reverse("supply_chain:market_bid", args=[open_round.pk, "rutf"]))
+    def test_signing_in_without_an_organisation_leads_to_registering(self, signed_in, open_tender):
+        response = signed_in.get(reverse("supply_chain:market_bid", args=[open_tender.pk, "rutf"]))
         assert response.status_code == 302
         assert response.url == reverse("supply_chain:market_register")
 
@@ -149,9 +149,9 @@ class TestANewSupplier:
         assert "invitation" in response.content.decode()
         assert LabsOrg.objects.filter(name__iexact="EHA Clinics").count() == 1
 
-    def test_a_bid_lands_as_the_suppliers_own_quote(self, signed_in, supplier, open_round, user):
+    def test_a_bid_lands_as_the_suppliers_own_quote(self, signed_in, supplier, open_tender, user):
         response = signed_in.post(
-            reverse("supply_chain:market_bid", args=[open_round.pk, "rutf"]),
+            reverse("supply_chain:market_bid", args=[open_tender.pk, "rutf"]),
             {
                 "as_quoted_amount": "52.40",
                 "as_quoted_unit": "per_pack",
@@ -168,7 +168,7 @@ class TestANewSupplier:
         assert quote.supplier.org == supplier
         assert quote.pack_spec_source == "not_stated"
         bids = signed_in.get(reverse("supply_chain:market_bids")).content.decode()
-        assert "RUTF round 2" in bids
+        assert "RUTF tender 2" in bids
         assert "The buyer still needs from you" in bids
 
     def test_an_offering_is_added_from_the_organisation_page(self, signed_in, supplier):
@@ -191,7 +191,7 @@ class TestANewSupplier:
 
 
 class TestAnExistingSupplier:
-    def test_an_invitation_brings_a_colleague_in(self, client, django_user_model, open_round):
+    def test_an_invitation_brings_a_colleague_in(self, client, django_user_model, open_tender):
         org = LabsOrg.objects.create(slug="harmattan", name="Harmattan Health Supplies")
         Supplier.objects.enrol(f"prog:{PROGRAM}", org=org, type="distributor")
         _, raw = membership.issue_invite(org, email="ops@harmattan.example")
@@ -228,13 +228,13 @@ class TestAnExistingSupplier:
 
 
 class TestNotYours:
-    def test_you_cannot_withdraw_another_suppliers_bid(self, signed_in, supplier, open_round, django_user_model):
+    def test_you_cannot_withdraw_another_suppliers_bid(self, signed_in, supplier, open_tender, django_user_model):
         from connect_labs.supply_chain.market import service
 
         theirs = LabsOrg.objects.create(slug="theirs", name="Theirs Ltd")
         SupplierProfile.objects.create(org=theirs)
         quote = service.bid(
-            open_round.pk,
+            open_tender.pk,
             "rutf",
             org=theirs,
             orgs=[theirs],
@@ -248,13 +248,13 @@ class TestNotYours:
 
 
 class TestTheReviewFixes:
-    def test_a_quote_the_program_typed_in_is_not_the_suppliers_to_see_or_touch(self, signed_in, supplier, open_round):
+    def test_a_quote_the_program_typed_in_is_not_the_suppliers_to_see_or_touch(self, signed_in, supplier, open_tender):
         """Another program's transcription of this company's email stays that program's."""
         link = Supplier.objects.enrol(f"prog:{PROGRAM}", org=supplier)
         typed = op(
             "quote_record",
             data={
-                "round_id": open_round.pk,
+                "tender_id": open_tender.pk,
                 "commodity_slug": "rutf",
                 "supplier_id": link.pk,
                 "as_quoted_amount": "47.00",
@@ -264,16 +264,16 @@ class TestTheReviewFixes:
 
         assert "47.00" not in signed_in.get(reverse("supply_chain:market_bids")).content.decode()
         assert (
-            "47.00" not in signed_in.get(reverse("supply_chain:market_round", args=[open_round.pk])).content.decode()
+            "47.00" not in signed_in.get(reverse("supply_chain:market_tender", args=[open_tender.pk])).content.decode()
         )
         assert signed_in.post(reverse("supply_chain:market_withdraw", args=[typed["id"]])).status_code == 404
         assert not Quote.objects.get(pk=typed["id"]).voided
 
-    def test_revising_can_clear_a_figure(self, signed_in, supplier, open_round):
+    def test_revising_can_clear_a_figure(self, signed_in, supplier, open_tender):
         from connect_labs.supply_chain.market import service
 
         first = service.bid(
-            open_round.pk,
+            open_tender.pk,
             "rutf",
             org=supplier,
             orgs=[supplier],

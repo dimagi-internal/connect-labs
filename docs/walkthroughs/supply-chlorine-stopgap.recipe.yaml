@@ -238,7 +238,7 @@ scenes:
   show: On the comparison Ngozi passes over Gidan Ruwa Traders' cheaper quote, ranked first, types her
     own name as the decider and her reason beside Harmattan's quote, awards it, and the comparison marks
     Harmattan Chosen.
-  url: /supply/procurement/rounds/${round_id}/compare/?commodity=dispenser-chlorine&program_id=10603
+  url: /supply/procurement/tenders/${tender_id}/compare/?commodity=dispenser-chlorine&program_id=10603
 - id: the-regulators-approval-rests-on-the-registration
   actions:
   - kind: click

@@ -601,7 +601,7 @@ def seed(mcp: Mcp) -> dict:
 
     # --- the stop-gap round, with the distributor's quote in ---------------------------
     round_ = mcp.op(
-        "round_create",
+        "tender_create",
         data={
             "label": ROUND_LABEL,
             "lines": [
@@ -617,10 +617,10 @@ def seed(mcp: Mcp) -> dict:
         },
     )
     round_id = round_["id"]
-    mcp.op("round_open", round_id=round_id)
+    mcp.op("tender_open", tender_id=round_id)
     outreach = mcp.op(
         "outreach_log",
-        data={"round_id": round_id, "supplier_id": distributor, "channel": "manual", "sent_on": today_minus(5)},
+        data={"tender_id": round_id, "supplier_id": distributor, "channel": "manual", "sent_on": today_minus(5)},
     )
     mcp.op(
         "outreach_update",
@@ -630,7 +630,7 @@ def seed(mcp: Mcp) -> dict:
     quote = mcp.op(
         "quote_record",
         data={
-            "round_id": round_id,
+            "tender_id": round_id,
             "supplier_id": distributor,
             "item_id": registered_item,
             "commodity_slug": "dispenser-chlorine",
@@ -695,13 +695,13 @@ def seed(mcp: Mcp) -> dict:
     )["id"]
     rival_outreach = mcp.op(
         "outreach_log",
-        data={"round_id": round_id, "supplier_id": rival, "channel": "manual", "sent_on": today_minus(5)},
+        data={"tender_id": round_id, "supplier_id": rival, "channel": "manual", "sent_on": today_minus(5)},
     )
     mcp.op("outreach_update", outreach_id=rival_outreach["id"], data={"responded": True, "response_kind": "quote"})
     mcp.op(
         "quote_record",
         data={
-            "round_id": round_id,
+            "tender_id": round_id,
             "supplier_id": rival,
             "item_id": rival_item,
             "commodity_slug": "dispenser-chlorine",
@@ -725,7 +725,7 @@ def seed(mcp: Mcp) -> dict:
 
     return {
         "programme_id": PROGRAMME_ID,
-        "round_id": round_id,
+        "tender_id": round_id,
         "quote_id": quote_id,
         "late_contract_id": late,
         "late_shipment_id": late_shipment,

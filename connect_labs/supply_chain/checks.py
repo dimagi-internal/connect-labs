@@ -59,10 +59,10 @@ from connect_labs.supply_chain.models import (
     Contract,
     Item,
     Movement,
-    Round,
     Shipment,
+    Tender,
 )
-from connect_labs.supply_chain.procurement.services.comparison import compare_round
+from connect_labs.supply_chain.procurement.services.comparison import compare_tender
 from connect_labs.supply_chain.procurement.services.compliance import failing_requirements, kit_spec_verdict
 from connect_labs.supply_chain.stock.services import network, soh
 from connect_labs.supply_chain.values import Quantity, Unconfirmed, decimal_string
@@ -145,18 +145,18 @@ def _sourcing(access, as_of):
     database holds nothing that distinguishes that from an oversight.
     """
     out = []
-    for round_ in Round.objects.filter(program_id=access.program_id, status="open"):
-        for line in round_.lines or []:
+    for tender in Tender.objects.filter(program_id=access.program_id, status="open"):
+        for line in tender.lines or []:
             slug = line.get("commodity_slug")
             commodity = access.get_commodity(slug) if slug else None
             if commodity is None:
                 continue
-            quotes = [q for q in access.list_quotes(round_id=round_.pk) if q.commodity_id == commodity.pk]
+            quotes = [q for q in access.list_quotes(tender_id=tender.pk) if q.commodity_id == commodity.pk]
             if not quotes:
                 continue
             quotes_by_id = {q.pk: q for q in quotes}
-            comparison = compare_round(
-                round_,
+            comparison = compare_tender(
+                tender,
                 commodity,
                 quotes,
                 {s.pk: s for s in access.list_suppliers()},
@@ -178,7 +178,7 @@ def _sourcing(access, as_of):
                             else "supplier"
                         ),
                         facts={
-                            "round_id": round_.pk,
+                            "tender_id": tender.pk,
                             "supplier_id": row.supplier_id,
                             "missing": [
                                 {"key": q.key, "question": q.question, "audience": q.audience} for q in row.questions
@@ -306,7 +306,7 @@ def _fulfilment(access, as_of):
     contracted_awards = set(
         Contract.objects.filter(program_id=access.program_id, award__isnull=False).values_list("award_id", flat=True)
     )
-    for award in Award.objects.filter(round__program_id=access.program_id).select_related(
+    for award in Award.objects.filter(tender__program_id=access.program_id).select_related(
         "supplier__org__supplier_profile", "commodity"
     ):
         if award.pk not in contracted_awards:
@@ -317,7 +317,7 @@ def _fulfilment(access, as_of):
                     subject_id=award.pk,
                     label=f"{award.supplier.name} — {award.commodity.name}",
                     audience="internal",
-                    facts={"round_id": award.round_id, "provisional": award.provisional},
+                    facts={"tender_id": award.tender_id, "provisional": award.provisional},
                     since=award.decided_on,
                     as_of=as_of,
                 )
@@ -328,7 +328,7 @@ def _fulfilment(access, as_of):
     # Only pending ones: a declined approval is an answer, and the refusal it
     # causes lives on contract_create, where it bites.
     pending = AwardApproval.objects.filter(
-        award__round__program_id=access.program_id, status="requested"
+        award__tender__program_id=access.program_id, status="requested"
     ).select_related("approver_org", "award__supplier__org__supplier_profile", "award__commodity")
     for approval in pending:
         award = approval.award
@@ -344,7 +344,7 @@ def _fulfilment(access, as_of):
                     "approver": {"id": approval.approver_org_id, "name": approval.approver_org.name},
                     "role": approval.role,
                     "requested_on": approval.requested_on.isoformat(),
-                    "round_id": award.round_id,
+                    "tender_id": award.tender_id,
                 },
                 since=approval.requested_on,
                 as_of=as_of,

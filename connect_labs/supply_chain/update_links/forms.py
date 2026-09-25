@@ -182,7 +182,7 @@ class UpdateLinkIssueForm(forms.Form):
                 program_id=program_id, status="active"
             ).exclude(kind="user_held")
             self.fields["approvals"].queryset = (
-                AwardApproval.objects.filter(award__round__program_id=program_id, status="requested")
+                AwardApproval.objects.filter(award__tender__program_id=program_id, status="requested")
                 .select_related(
                     "approver_org", "award__supplier__org__supplier_profile", "award__quote__item", "award__commodity"
                 )

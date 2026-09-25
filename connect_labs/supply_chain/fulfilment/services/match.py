@@ -122,7 +122,7 @@ def three_way_match(contract) -> dict:
 
     `payable_now` is the honest answer to "how much of this invoice should we
     release": the value of what actually arrived, never the value of what was
-    billed. On the round this was designed against, a supplier invoiced for
+    billed. On the tender this was designed against, a supplier invoiced for
     500 cartons while 200 of them sat at customs.
     """
     ordered = (

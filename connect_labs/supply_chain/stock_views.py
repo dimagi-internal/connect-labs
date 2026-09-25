@@ -5,7 +5,7 @@ exposes now has one.
 
 **Where the line formsets go.** A receipt and a shipment both carry several
 batches, each with its own expiry, so both use `BatchLineFormSet` and both
-build their `lines` in `form_valid` the way `_RoundScreen` does. The receipt's
+build their `lines` in `form_valid` the way `_TenderScreen` does. The receipt's
 lines additionally carry what was refused; a dispatch has nothing to refuse
 yet, so those two fields are removed rather than shown and ignored.
 

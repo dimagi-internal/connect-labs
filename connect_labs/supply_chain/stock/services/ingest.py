@@ -5,7 +5,7 @@ worker arrives: they answer a question on the CommCare deliver form, the
 submission reaches Connect, and labs reads it. Nobody keys a stock report.
 
 Three decisions this module makes, each of which would be wrong the other
-way round.
+way tender.
 
 **Idempotent on the submission id.** A machine re-reading the same export is
 normal -- a nightly job, a retried task, a widened date window -- and a second

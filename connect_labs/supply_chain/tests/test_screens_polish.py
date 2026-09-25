@@ -85,9 +85,9 @@ def world(da):
     supplier = op(da, "supplier_create", data={"name": "Sahel Chemicals", "type": "distributor"})
     us = op(da, "org_upsert", data={"slug": "us", "name": "The programme"})
     regulator = op(da, "org_upsert", data={"slug": "regulator", "name": "The regulator"})
-    round_ = op(
+    tender = op(
         da,
-        "round_create",
+        "tender_create",
         data={
             "label": "Stop-gap chlorine",
             "delivery_point": {"city": "Kano"},
@@ -98,7 +98,7 @@ def world(da):
         da,
         "quote_record",
         data={
-            "round_id": round_["id"],
+            "tender_id": tender["id"],
             "commodity_slug": "chlorine",
             "supplier_id": supplier["id"],
             "as_quoted_amount": "4.00",
@@ -107,8 +107,8 @@ def world(da):
             "quantity_basis_unit": "jerry_can",
         },
     )
-    award = op(da, "award_create", round_id=round_["id"], quote_id=quote["id"], rationale="registered locally")
-    return {"supplier": supplier, "us": us, "regulator": regulator, "round": round_, "quote": quote, "award": award}
+    award = op(da, "award_create", tender_id=tender["id"], quote_id=quote["id"], rationale="registered locally")
+    return {"supplier": supplier, "us": us, "regulator": regulator, "tender": tender, "quote": quote, "award": award}
 
 
 class TestDonorSuppliers:
@@ -387,7 +387,7 @@ class TestPlaceOrderWhileAnApprovalIsPending:
 
 class TestAnAwardRecordsThePersonWhoDecided:
     def _compare(self, world):
-        return reverse("supply_chain:procurement_comparison", args=[world["round"]["id"]]) + "?commodity=chlorine"
+        return reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=chlorine"
 
     def test_the_form_starts_with_the_signed_in_persons_name(self, client_in_programme, da, world):
         op(da, "quote_void", quote_id=world["quote"]["id"], reason="re-quoted")
@@ -396,7 +396,7 @@ class TestAnAwardRecordsThePersonWhoDecided:
             da,
             "quote_record",
             data={
-                "round_id": world["round"]["id"],
+                "tender_id": world["tender"]["id"],
                 "commodity_slug": "chlorine",
                 "supplier_id": supplier["id"],
                 "as_quoted_amount": "4.20",
@@ -420,7 +420,7 @@ class TestAnAwardRecordsThePersonWhoDecided:
             da,
             "quote_record",
             data={
-                "round_id": world["round"]["id"],
+                "tender_id": world["tender"]["id"],
                 "commodity_slug": "chlorine",
                 "supplier_id": supplier["id"],
                 "as_quoted_amount": "3.90",
@@ -441,7 +441,7 @@ class TestAnAwardRecordsThePersonWhoDecided:
             da,
             "quote_record",
             data={
-                "round_id": world["round"]["id"],
+                "tender_id": world["tender"]["id"],
                 "commodity_slug": "chlorine",
                 "supplier_id": supplier["id"],
                 "as_quoted_amount": "3.80",
@@ -645,11 +645,11 @@ class TestTheQuotePageAsksNoCourseOfAConsumable:
                 "base_per_pack": 20,
             },
         )
-        round_ = op(
+        tender = op(
             da,
-            "round_create",
+            "tender_create",
             data={
-                "label": f"{name} round",
+                "label": f"{name} tender",
                 "delivery_point": {"city": "Kano"},
                 "lines": [{"commodity_slug": slug, "quantity": "600", "quantity_unit": "jerry_can"}],
             },
@@ -658,7 +658,7 @@ class TestTheQuotePageAsksNoCourseOfAConsumable:
             da,
             "quote_record",
             data={
-                "round_id": round_["id"],
+                "tender_id": tender["id"],
                 "commodity_slug": slug,
                 "supplier_id": world["supplier"]["id"],
                 "as_quoted_amount": "4.00",
@@ -933,7 +933,7 @@ class TestTheOrderPageSaysWhichAwardItWasPlacedAgainst:
         Award.objects.filter(pk=world["award"]["id"]).update(decided_by="Amina Bello", decided_on=date(2026, 9, 2))
         approval = _ask(da, world)
         op(da, "approval_decide", approval_id=approval["id"], status="approved", decided_on="2026-09-10")
-        order = self._order(da, world, award_id=world["award"]["id"], round_id=world["round"]["id"])
+        order = self._order(da, world, award_id=world["award"]["id"], tender_id=world["tender"]["id"])
         body = client_in_programme.get(reverse("supply_chain:order_detail", args=[order["id"]])).content.decode()
         text = re.sub(r"\s+([,.;)])", r"\1", re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)))
         assert "Against the award to Sahel Chemicals, decided 2 Sep 2026 by Amina Bello" in text
@@ -963,7 +963,7 @@ class TestTheQuotePanelsSayWhatLandsInEach:
 
 
 def _comparable_pair(da, world):
-    """Two comparable chlorine quotes on the world's round, neither awarded yet."""
+    """Two comparable chlorine quotes on the world's tender, neither awarded yet."""
     op(da, "quote_void", quote_id=world["quote"]["id"], reason="re-quoted")
     for name, price in (("Second chemicals", "4.20"), ("Third chemicals", "4.40")):
         supplier = op(da, "supplier_create", data={"name": name})
@@ -971,7 +971,7 @@ def _comparable_pair(da, world):
             da,
             "quote_record",
             data={
-                "round_id": world["round"]["id"],
+                "tender_id": world["tender"]["id"],
                 "commodity_slug": "chlorine",
                 "supplier_id": supplier["id"],
                 "as_quoted_amount": price,
@@ -987,7 +987,7 @@ def _comparable_pair(da, world):
 
 
 def _compare_url(world):
-    return reverse("supply_chain:procurement_comparison", args=[world["round"]["id"]]) + "?commodity=chlorine"
+    return reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=chlorine"
 
 
 class TestTheAwardControlsFitTheColumn:
@@ -1032,7 +1032,7 @@ class TestAFigureHeaderNamesItsUnitInWords:
 
     def test_the_operation_labels_its_columns_the_same_way(self, da, world):
         _comparable_pair(da, world)
-        comparison = op(da, "round_compare", round_id=world["round"]["id"], commodity_slug="chlorine")
+        comparison = op(da, "tender_compare", tender_id=world["tender"]["id"], commodity_slug="chlorine")
         labels = {c["key"]: c["label"] for c in comparison["columns"]}
         assert labels["usd_per_pack_normalized"] == "USD per jerry can"
 

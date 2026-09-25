@@ -11,7 +11,7 @@ mostly about:
     deliberately no edit screen;
   * only an adjustment may be negative — every other kind's direction comes
     from what the kind means, in one place, so a movement counted the wrong way
-    round cannot silently double or zero a balance.
+    tender cannot silently double or zero a balance.
 """
 
 from datetime import date
@@ -360,7 +360,7 @@ class TestTheLedger:
 
     def test_only_an_adjustment_may_be_negative(self, scoped, rutf, store, other_store):
         """Every other kind's direction comes from what the kind means, in one
-        place — so a movement counted the wrong way round cannot silently
+        place — so a movement counted the wrong way tender cannot silently
         double or zero a balance."""
         response = scoped.post(
             reverse("supply_chain:movement_record"),
@@ -453,7 +453,7 @@ class TestThePayloadBoundary:
         return form
 
     def test_a_count_of_zero_survives_to_payload(self, rutf, store):
-        """Invisible to a round-trip that only ever posts a non-zero count,
+        """Invisible to a tender-trip that only ever posts a non-zero count,
         and the difference between a stockout and an unrecorded point."""
         from connect_labs.supply_chain.stock_forms import StockCountForm
 
@@ -461,11 +461,11 @@ class TestThePayloadBoundary:
         assert payload["quantity"] == "0"
 
     def test_a_receipt_line_carries_its_quantity_as_a_string(self, rtf_unused=None):
-        """Invisible to a round-trip.
+        """Invisible to a tender-trip.
 
         The receipt-line schema accepts a number as well as a string, and the
         quantities a test would naturally use (500, 0) are exactly
-        representable as floats — so a `float(...)` here round-trips through
+        representable as floats — so a `float(...)` here tender-trips through
         the database unchanged and every browser-level test stays green while
         the precision guarantee is gone.
         """

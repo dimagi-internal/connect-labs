@@ -50,9 +50,9 @@ from connect_labs.supply_chain.models import (
     Payment,
     Quote,
     Receipt,
-    Round,
     Shipment,
     StockCount,
+    Tender,
 )
 from connect_labs.utils.email import email_enabled, send_labs_email
 
@@ -97,8 +97,8 @@ def _point_commodities(point_id):
     return set(moved.values_list("commodity_id", flat=True)) | set(counted.values_list("commodity_id", flat=True))
 
 
-def _round_commodities(round_):
-    slugs = [line.get("commodity_slug") for line in (round_.lines or []) if line.get("commodity_slug")]
+def _tender_commodities(tender):
+    slugs = [line.get("commodity_slug") for line in (tender.lines or []) if line.get("commodity_slug")]
     return set(Commodity.objects.filter(slug__in=slugs).values_list("pk", flat=True))
 
 
@@ -134,9 +134,9 @@ def _subject_scope(subject_type, subject_id, facts):
         return (set(), {item.commodity_id}) if item else None
     if subject_type == "commodity":
         return set(), {subject_id}
-    if subject_type == "round":
-        round_ = Round.objects.filter(pk=subject_id).first()
-        return (set(), _round_commodities(round_)) if round_ else None
+    if subject_type == "tender":
+        tender = Tender.objects.filter(pk=subject_id).first()
+        return (set(), _tender_commodities(tender)) if tender else None
 
     facts = facts or {}
     for key, kind in (("contract_id", "contract"), ("shipment_id", "shipment"), ("supply_point_id", "supply_point")):
@@ -190,11 +190,11 @@ def record_url(subject_type, subject_id, facts, program_id) -> str:
     if subject_type == "quote":
         return _url("procurement_quote_detail", subject_id, program_id=program_id)
     if subject_type == "award":
-        round_id = Award.objects.filter(pk=subject_id).values_list("round_id", flat=True).first()
-        if round_id:
-            return _url("procurement_round_detail", round_id, program_id=program_id)
-    if subject_type == "round":
-        return _url("procurement_round_detail", subject_id, program_id=program_id)
+        tender_id = Award.objects.filter(pk=subject_id).values_list("tender_id", flat=True).first()
+        if tender_id:
+            return _url("procurement_tender_detail", tender_id, program_id=program_id)
+    if subject_type == "tender":
+        return _url("procurement_tender_detail", subject_id, program_id=program_id)
     if subject_type == "item":
         return _url("item_detail", subject_id, program_id=program_id)
     if subject_type == "commodity":

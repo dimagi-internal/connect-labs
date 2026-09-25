@@ -287,7 +287,7 @@ distributor = op(
 
 # --- the round ----------------------------------------------------------------
 round_rec = op(
-    "round_create",
+    "tender_create",
     data={
         "label": "CHC 2026 — co-packs, vitamin A, dewormer",
         "lines": [
@@ -317,11 +317,11 @@ round_rec = op(
     },
 )
 round_id = round_rec["id"]
-op("round_open", round_id=round_id)
+op("tender_open", tender_id=round_id)
 op(
     "outreach_log",
     data={
-        "round_id": round_id,
+        "tender_id": round_id,
         "supplier_id": distributor["id"],
         "channel": "manual",
         "sent_on": ago(23),
@@ -335,7 +335,7 @@ def quote(item, commodity, amount, basis, unit, lead_days):
     return op(
         "quote_record",
         data={
-            "round_id": round_id,
+            "tender_id": round_id,
             "supplier_id": distributor["id"],
             "item_id": item["id"],
             "commodity_slug": commodity,
@@ -369,7 +369,7 @@ q_alb = quote(albendazole, "albendazole", "0.018", "25000", "tablet", 30)
 DECIDED = ago(7)
 award_copack = op(
     "award_create",
-    round_id=round_id,
+    tender_id=round_id,
     quote_id=q_a["id"],
     rationale="Lowest landed cost of the two co-packs holding the protocol contents (2 ORS + 10 zinc 20 mg).",
     decided_by="Amara Bello",
@@ -377,7 +377,7 @@ award_copack = op(
 )
 award_vita = op(
     "award_create",
-    round_id=round_id,
+    tender_id=round_id,
     quote_id=q_vita["id"],
     rationale="Only offer; comparable on every figure.",
     decided_by="Amara Bello",
@@ -385,7 +385,7 @@ award_vita = op(
 )
 award_alb = op(
     "award_create",
-    round_id=round_id,
+    tender_id=round_id,
     quote_id=q_alb["id"],
     rationale="Only offer; comparable on every figure.",
     decided_by="Amara Bello",
@@ -460,7 +460,7 @@ partner_stores = [
 
 def contract(award, item, commodity, qty, unit, price, reference, status, signed_on, lead_days=45):
     data = {
-        "round_id": round_id,
+        "tender_id": round_id,
         "award_id": award["id"],
         "supplier_id": distributor["id"],
         "item_id": item["id"],
@@ -711,7 +711,7 @@ print(
             "paid_on": PAID_ON,
             "payment_received_on": PAYMENT_RECEIVED_ON,
             "received_on": RECEIVED_ON,
-            "round_id": round_id,
+            "tender_id": round_id,
             "quote_c_id": q_c["id"],
             "decided_on": DECIDED,
             "award_copack_id": award_copack["id"],

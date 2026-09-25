@@ -295,14 +295,14 @@ class UpdateLinkPublicView(View):
         forms = self._forms(scope, bound)
         # An approver link covers approvals and nothing else, so the supplier
         # actions are neither offered nor listed as unavailable -- they are not
-        # this organisation's to take -- and the other way round.
+        # this organisation's to take -- and the other way tender.
         approver_link = scope.approvals is not None and scope.approvals.exists()
         supplier_link = scope.contracts.exists() or scope.supply_points.exists()
         # A partner's link covers an order to record what reached it; the
         # supplier's own actions (confirm, dispatch, move a dispatch along) are
         # not its to take, so they are not offered or listed as unavailable.
         supplies = scope.supplied.exists()
-        # The same the other way round, on a link that follows its
+        # The same the other way tender, on a link that follows its
         # organisation: a supplier that receives nothing is not offered
         # "Record goods received". On a listed link the issuer chose the
         # orders, and every one of them can be received against.

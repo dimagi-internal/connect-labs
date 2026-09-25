@@ -80,7 +80,7 @@ def every_form_class():
 # their querysets as explicit kwargs rather than reading an access object.
 # The rows are covered through their formsets below.
 NOT_A_SCREEN = {"ScopedForm", "ProvenancedForm", "KeyedUpsertForm", "PublicForm"}
-LINE_FORMS = {"RoundLineForm", "BatchLineForm", "DistributionLineForm", "ComponentLineForm", "RequirementLineForm"}
+LINE_FORMS = {"TenderLineForm", "BatchLineForm", "DistributionLineForm", "ComponentLineForm", "RequirementLineForm"}
 
 
 def build(form_class):
@@ -142,9 +142,9 @@ def test_no_form_renders_a_select_with_nothing_in_it(label):
 
 def test_the_line_forms_offer_their_choices_too():
     """The formset row forms, built the way their screens build them."""
-    from connect_labs.supply_chain.forms import RoundLineFormSet
+    from connect_labs.supply_chain.forms import TenderLineFormSet
 
-    formset = RoundLineFormSet(prefix="lines", form_kwargs={"commodities": [("rutf", "RUTF"), ("rusf", "RUSF")]})
+    formset = TenderLineFormSet(prefix="lines", form_kwargs={"commodities": [("rutf", "RUTF"), ("rusf", "RUSF")]})
     row = formset.forms[0]
     assert [v for v, _ in row.fields["commodity_slug"].choices if v], "the commodity picker must offer the catalogue"
 

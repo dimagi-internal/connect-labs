@@ -33,7 +33,7 @@ def test_every_operation_has_a_summary_that_could_brief_an_agent():
 def test_write_operations_are_flagged_as_writes():
     for name in (
         "supplier_create",
-        "round_create",
+        "tender_create",
         "quote_record",
         "award_create",
         "item_upsert",
@@ -42,7 +42,7 @@ def test_write_operations_are_flagged_as_writes():
 
 
 def test_read_operations_are_not_flagged_as_writes():
-    for name in ("supplier_list", "round_list", "quote_list", "round_compare", "item_list"):
+    for name in ("supplier_list", "tender_list", "quote_list", "tender_compare", "item_list"):
         assert get_operation(name).is_write is False
 
 
@@ -72,7 +72,7 @@ def test_an_unknown_operation_raises_keyerror():
 
 def _quote_payload(**overrides):
     data = {
-        "round_id": 1,
+        "tender_id": 1,
         "supplier_id": 2,
         "commodity_slug": "rutf",
         "as_quoted_unit": "per_pack",
@@ -115,7 +115,7 @@ def test_a_zero_as_quoted_amount_is_rejected():
 
 def _contract_payload(**overrides):
     data = {
-        "round_id": 1,
+        "tender_id": 1,
         "supplier_id": 2,
         "commodity_slug": "rutf",
         "supplier_id": 2,
@@ -191,10 +191,10 @@ def test_a_positive_quantity_is_accepted_as_either_a_string_or_a_number():
 # inside data_access (a 500 that names nothing) ------------------------------
 
 
-def test_quote_record_rejects_data_missing_round_id_or_commodity_slug():
+def test_quote_record_rejects_data_missing_tender_id_or_commodity_slug():
     access = MagicMock()
     base = _quote_payload()["data"]
-    for missing in ("round_id", "commodity_slug", "supplier_id"):
+    for missing in ("tender_id", "commodity_slug", "supplier_id"):
         data = {k: v for k, v in base.items() if k != missing}
         with pytest.raises(jsonschema.ValidationError):
             call_operation("quote_record", access, {"data": data})
@@ -215,7 +215,7 @@ def test_commodity_upsert_rejects_data_missing_slug():
     assert not access.upsert_commodity.called
 
 
-def test_outreach_log_rejects_data_missing_round_id():
+def test_outreach_log_rejects_data_missing_tender_id():
     access = MagicMock()
     with pytest.raises(jsonschema.ValidationError):
         call_operation("outreach_log", access, {"data": {"supplier_id": 1}})
@@ -236,14 +236,14 @@ def test_contract_create_rejects_data_missing_its_commodity():
 # --- Regression (final review, item A): required on _QUOTE_DATA/_OUTREACH_DATA
 # must not land on the schemas SHARED with quote_correct/outreach_update --
 # both are partial updates (data_access merges {**existing.data, **data}), so
-# round_id/commodity_slug already live on the existing record. Forcing a
+# tender_id/commodity_slug already live on the existing record. Forcing a
 # caller to resupply them on a correction is not just friction: a wrong
 # resupplied value merges straight into the record. quote_record/outreach_log
 # alone use the *_CREATE variant that carries the requirement.
 
 
 def test_quote_correct_succeeds_with_a_partial_payload_naming_only_the_fix():
-    """A correction to a transcribed amount must not need round_id/
+    """A correction to a transcribed amount must not need tender_id/
     commodity_slug re-supplied -- those already live on the existing quote."""
     access = MagicMock()
     access.supersede_quote.return_value = Quote(id=8, commodity=_RUTF)
@@ -258,7 +258,7 @@ def test_quote_correct_succeeds_with_a_partial_payload_naming_only_the_fix():
 def test_outreach_update_succeeds_with_a_partial_payload_naming_only_the_response():
     """outreach_update's own summary is 'typically to record that a supplier
     responded, and how' -- exactly a responded/response_kind-only payload,
-    naming neither round_id nor supplier_id."""
+    naming neither tender_id nor supplier_id."""
     access = MagicMock()
     access.update_outreach.return_value = Outreach(id=9)
     call_operation(
@@ -278,8 +278,8 @@ def test_a_none_valued_parameter_is_treated_as_not_supplied():
     access.request = None
     access.user = None
     access.list_contracts.return_value = []
-    assert call_operation("contract_list", access, {"round_id": None, "status": None}) == []
-    access.list_contracts.assert_called_once_with(round_id=None, status=None)
+    assert call_operation("contract_list", access, {"tender_id": None, "status": None}) == []
+    access.list_contracts.assert_called_once_with(tender_id=None, status=None)
 
 
 def test_a_none_inside_a_data_payload_is_still_passed_through():

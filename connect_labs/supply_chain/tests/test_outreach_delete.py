@@ -51,11 +51,11 @@ def rutf(da):
 @pytest.fixture
 def invited(da, rutf):
     supplier = op(da, "supplier_create", data={"name": "Northwind"})
-    round_ = op(
+    tender = op(
         da,
-        "round_create",
+        "tender_create",
         data={
-            "label": "Round 1",
+            "label": "Tender 1",
             "delivery_point": {"city": "Kano"},
             "lines": [{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}],
         },
@@ -63,9 +63,9 @@ def invited(da, rutf):
     outreach = op(
         da,
         "outreach_log",
-        data={"round_id": round_["id"], "supplier_id": supplier["id"], "sent_on": "2026-05-01"},
+        data={"tender_id": tender["id"], "supplier_id": supplier["id"], "sent_on": "2026-05-01"},
     )
-    return {"round": round_, "supplier": supplier, "outreach": outreach}
+    return {"tender": tender, "supplier": supplier, "outreach": outreach}
 
 
 def test_an_invitation_recorded_in_error_can_be_removed(da, invited):
@@ -120,7 +120,7 @@ def test_the_quote_it_produced_is_left_alone(da, invited):
         da,
         "quote_record",
         data={
-            "round_id": invited["round"]["id"],
+            "tender_id": invited["tender"]["id"],
             "supplier_id": invited["supplier"]["id"],
             "commodity_slug": "rutf",
             "as_quoted_amount": "52.42",

@@ -72,7 +72,7 @@ class TestDate:
         assert t.ambiguous_numeric_date("9/10/2026") is True
         # 26 cannot be a month, so there is nothing to be ambiguous about.
         assert t.ambiguous_numeric_date("9/26/2026") is False
-        # Same either way round.
+        # Same either way tender.
         assert t.ambiguous_numeric_date("9/9/2026") is False
         assert t.ambiguous_numeric_date("9 Sep 2026") is False
 
@@ -153,11 +153,11 @@ def test_the_operation_is_registered_as_a_write():
     assert get_operation("tracker_import").is_write is True
 
 
-def _group_row(round_one="Round 1 Quote (500 cartons)", round_two="Feb Re-quote (2,000 cartons)"):
-    """Row 4: the sheet's merged group headers, which NAME the rounds."""
+def _group_row(tender_one="Tender 1 Quote (500 cartons)", tender_two="Feb Re-quote (2,000 cartons)"):
+    """Row 4: the sheet's merged group headers, which NAME the tenders."""
     row = [""] * 20
-    row[t.ROUNDS[0]["label_column"]] = round_one
-    row[t.ROUNDS[1]["label_column"]] = round_two
+    row[t.TENDERS[0]["label_column"]] = tender_one
+    row[t.TENDERS[1]["label_column"]] = tender_two
     return row
 
 
@@ -169,7 +169,7 @@ def _row(
     row[t.NAME] = name
     row[t.TYPE] = "Manufacturer"
     row[t.LOCATION] = "Nigeria"
-    spec = t.ROUNDS[0]
+    spec = t.TENDERS[0]
     row[spec["contacted"]] = contacted
     row[spec["responded"]] = "Yes"
     row[spec["quote_date"]] = quote_date
@@ -211,17 +211,17 @@ class TestDryRun:
         t.import_tracker(da, ensure_commodity=True, dry_run=True)
 
         assert call_operation("supplier_list", da, {}) == []
-        assert call_operation("round_list", da, {}) == []
+        assert call_operation("tender_list", da, {}) == []
         assert call_operation("commodity_list", da, {}) == []
 
 
-class TestRoundLabels:
-    """A round is named by the sheet, not by this module.
+class TestTenderLabels:
+    """A tender is named by the sheet, not by this module.
 
-    The labels were literals: "Round 1 — May 2026" and "Round 2 — February
-    re-quote". The sheet's own header for the first is "Round 1 Quote (500
+    The labels were literals: "Tender 1 — May 2026" and "Tender 2 — February
+    re-quote". The sheet's own header for the first is "Tender 1 Quote (500
     cartons)" -- no month anywhere. May was ONE supplier's quote date (DABS,
-    18 May 2026) promoted into the round's identity, and Round 1 actually
+    18 May 2026) promoted into the tender's identity, and Tender 1 actually
     runs from EHA's 23 Feb quote to DABS's 18 May one. So the label was
     wrong for EHA and misleading for the rest, and because it lived in a
     string constant no derivation guard could catch it -- the same
@@ -229,39 +229,39 @@ class TestRoundLabels:
     see one.
     """
 
-    def test_a_round_is_named_by_the_sheets_own_group_header(self):
-        labels = t._round_labels(_group_row())
-        assert labels == ["Round 1 Quote (500 cartons)", "Feb Re-quote (2,000 cartons)"]
+    def test_a_tender_is_named_by_the_sheets_own_group_header(self):
+        labels = t._tender_labels(_group_row())
+        assert labels == ["Tender 1 Quote (500 cartons)", "Feb Re-quote (2,000 cartons)"]
 
     def test_no_label_asserts_a_month_the_sheet_does_not_state(self):
-        labels = t._round_labels(_group_row())
+        labels = t._tender_labels(_group_row())
         assert not any("May" in label for label in labels)
 
-    def test_two_rounds_resolving_to_one_name_is_refused_not_merged(self):
+    def test_two_tenders_resolving_to_one_name_is_refused_not_merged(self):
         """Reading the label off the sheet made a collision reachable for the
         first time: as literals the two were distinct by construction.
 
-        `_ensure_rounds` keys on the label, so two identical headers map both
-        specs to ONE round id and `_load_round` then writes the Feb re-quote's
-        prices against Round 1 -- two rounds silently collapsed, with every
+        `_ensure_tenders` keys on the label, so two identical headers map both
+        specs to ONE tender id and `_load_tender` then writes the Feb re-quote's
+        prices against Tender 1 -- two tenders silently collapsed, with every
         quantity and age attributed to the wrong one. Refused rather than
         disambiguated: appending a suffix would invent a name, which is the
         defect this whole change exists to remove.
         """
         with pytest.raises(t.TrackerImportError) as caught:
-            t._round_labels(_group_row(round_one="Quote", round_two="Quote"))
+            t._tender_labels(_group_row(tender_one="Quote", tender_two="Quote"))
         assert "distinct" in str(caught.value)
         assert "Quote" in str(caught.value)
 
     def test_a_stated_header_colliding_with_the_other_fallback_is_refused(self):
-        """The fallbacks are real labels too, so a header reading "Round 2"
-        on the FIRST round collides with the second's fallback."""
+        """The fallbacks are real labels too, so a header reading "Tender 2"
+        on the FIRST tender collides with the second's fallback."""
         with pytest.raises(t.TrackerImportError):
-            t._round_labels(_group_row(round_one="Round 2", round_two=""))
+            t._tender_labels(_group_row(tender_one="Tender 2", tender_two=""))
 
     def test_a_blank_header_falls_back_to_an_ordinal_never_an_inferred_month(self):
-        labels = t._round_labels(_group_row(round_one="", round_two=""))
-        assert labels == ["Round 1", "Round 2"]
+        labels = t._tender_labels(_group_row(tender_one="", tender_two=""))
+        assert labels == ["Tender 1", "Tender 2"]
 
     def test_the_header_rows_are_dropped_by_position_not_truthiness(self, monkeypatch):
         """Rows 4 and 5 both carry text in the supplier-name column
@@ -298,20 +298,20 @@ class _FakeCreds:
 
 
 class TestRefusalAttribution:
-    """Every refusal names the round it belongs to.
+    """Every refusal names the tender it belongs to.
 
-    A refusal on the 500-carton round and one on the 2,000-carton re-quote
+    A refusal on the 500-carton tender and one on the 2,000-carton re-quote
     are different follow-ups, so a message that cannot be attributed to a
-    round is close to useless. Threading the round label through
-    `_load_round` put it in scope of a loop that already bound `label` to a
+    tender is close to useless. Threading the tender label through
+    `_load_tender` put it in scope of a loop that already bound `label` to a
     date FIELD name ("outreach date", "quote date"). Python leaks the loop
     variable, so from that loop onward every refusal reported the field
-    name where the round belonged -- silently, because the assertions only
+    name where the tender belonged -- silently, because the assertions only
     ever matched the tail of the message.
     """
 
     @pytest.mark.django_db
-    def test_every_refusal_names_its_round(self, monkeypatch):
+    def test_every_refusal_names_its_tender(self, monkeypatch):
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row()]))
         da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
 
@@ -319,12 +319,12 @@ class TestRefusalAttribution:
 
         assert refused
         for message in refused:
-            assert "Round 1 Quote (500 cartons)" in message, message
+            assert "Tender 1 Quote (500 cartons)" in message, message
 
     @pytest.mark.django_db
-    def test_an_ambiguous_date_names_the_round_and_the_field(self, monkeypatch):
+    def test_an_ambiguous_date_names_the_tender_and_the_field(self, monkeypatch):
         """The two are different things and the message needs both: which
-        round, and which of its dates could not be read."""
+        tender, and which of its dates could not be read."""
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [_row(quote_date="9/10/2026")]))
         da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
 
@@ -332,7 +332,7 @@ class TestRefusalAttribution:
 
         ambiguous = [m for m in refused if "ambiguous" in m]
         assert len(ambiguous) == 1, refused
-        assert "Round 1 Quote (500 cartons)" in ambiguous[0]
+        assert "Tender 1 Quote (500 cartons)" in ambiguous[0]
         assert "quote date" in ambiguous[0]
 
 
@@ -340,7 +340,7 @@ class TestRerun:
     """A second run of the same sheet must not double the programme.
 
     The operation is described as idempotent and is re-run whenever the sheet
-    is edited, but only ROUNDS and SUPPLIERS were matched before writing --
+    is edited, but only TENDERS and SUPPLIERS were matched before writing --
     outreach and quotes were created unconditionally. Re-importing the real
     tracker took labs programme 10063 from 3 quotes and 16 invitations to 6
     and 32, with every supplier listed twice on the comparison screen.
@@ -397,7 +397,7 @@ class TestRerun:
 
     @pytest.mark.django_db
     def test_a_later_invitation_is_a_second_event_not_a_duplicate(self, monkeypatch):
-        """Outreach is deliberately NOT unique per (round, supplier) -- the
+        """Outreach is deliberately NOT unique per (tender, supplier) -- the
         model says so, because re-inviting is a real event worth keeping. So
         the match is on the date: the same invitation read twice is one event,
         an invitation on a new date is two."""
@@ -449,8 +449,8 @@ class TestReviewFindings:
         # Same date, different reply state: the invitation is the same event,
         # but the row has to change.
         row = _row()
-        row[t.ROUNDS[0]["responded"]] = "No"
-        row[t.ROUNDS[0]["price"]] = ""
+        row[t.TENDERS[0]["responded"]] = "No"
+        row[t.TENDERS[0]["price"]] = ""
         monkeypatch.setattr(t, "_read_sheet", lambda _id: (_group_row(), [row]))
         result = t.import_tracker(da, ensure_commodity=True)
 

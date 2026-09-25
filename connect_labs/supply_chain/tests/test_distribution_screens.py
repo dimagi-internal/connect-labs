@@ -18,7 +18,7 @@ from decimal import Decimal
 import pytest
 from django.urls import reverse
 
-from connect_labs.supply_chain.models import Commodity, Distribution, Movement, Quote, Round, Supplier, SupplyPoint
+from connect_labs.supply_chain.models import Commodity, Distribution, Movement, Quote, Supplier, SupplyPoint, Tender
 
 pytestmark = pytest.mark.django_db
 
@@ -78,10 +78,10 @@ def worker():
 
 
 @pytest.fixture
-def a_round():
-    return Round.objects.create(
+def a_tender():
+    return Tender.objects.create(
         program_id=PROGRAM,
-        label="Round 1",
+        label="Tender 1",
         status="open",
         lines=[{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}],
         delivery_point={"name": "Central store"},
@@ -89,9 +89,9 @@ def a_round():
 
 
 @pytest.fixture
-def quote(a_round, rutf):
+def quote(a_tender, rutf):
     return Quote.objects.create(
-        round=a_round,
+        tender=a_tender,
         supplier=Supplier.objects.enrol(scope_key=SCOPE, name="Northwind Foods"),
         commodity=rutf,
         as_quoted_amount=Decimal("52.42"),
@@ -256,9 +256,9 @@ class TestCorrectingAQuote:
         assert re.search(r'name="quantity_basis" value="500(\.0*)?"', body)
 
     def test_a_quote_from_another_programme_is_not_found(self, scoped, rutf):
-        theirs = Round.objects.create(program_id=99999, label="Theirs", lines=[], delivery_point={})
+        theirs = Tender.objects.create(program_id=99999, label="Theirs", lines=[], delivery_point={})
         their_quote = Quote.objects.create(
-            round=theirs,
+            tender=theirs,
             supplier=Supplier.objects.enrol(scope_key="prog:99999", name="Theirs"),
             commodity=rutf,
         )
@@ -287,10 +287,10 @@ class TestTheScreensAreReachable:
         body = scoped.get(reverse("supply_chain:procurement_quote_detail", args=[quote.pk])).content.decode()
         assert reverse("supply_chain:procurement_quote_correct", args=[quote.pk]) in body
 
-    def test_a_superseded_quote_does_not(self, scoped, quote, a_round, rutf):
+    def test_a_superseded_quote_does_not(self, scoped, quote, a_tender, rutf):
         """Correcting a version that has already been corrected forks the
         chain, and then two versions both claim to be current."""
-        newer = Quote.objects.create(round=a_round, supplier=quote.supplier, commodity=rutf, version=2)
+        newer = Quote.objects.create(tender=a_tender, supplier=quote.supplier, commodity=rutf, version=2)
         quote.superseded_by = newer
         quote.save()
 
@@ -316,7 +316,7 @@ class TestEveryWriteOperationHasAScreen:
     """
 
     # Reached through the sourcing screens' own flow rather than a dedicated
-    # form: recording a quote and awarding a round are `quote_entry.html` and
+    # form: recording a quote and awarding a tender are `quote_entry.html` and
     # the comparison page, which predate this work.
     ALREADY_HAD_SCREENS = {"quote_record", "award_create"}
 

@@ -225,7 +225,7 @@ class TestSupplyPoints:
         assert response.status_code == 302
         assert SupplyPoint.objects.get(slug="a-worker").is_user_held
 
-    def test_a_stock_band_the_wrong_way_round_is_refused(self, scoped):
+    def test_a_stock_band_the_wrong_way_tender_is_refused(self, scoped):
         response = scoped.post(
             reverse("supply_chain:supply_point_create"),
             point_post(min_months_of_stock="3", max_months_of_stock="1"),
