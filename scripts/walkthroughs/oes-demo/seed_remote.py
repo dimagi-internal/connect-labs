@@ -1087,6 +1087,54 @@ def seed_chlorine_blocked(data, scopes):
     }
 
 
+def seed_on_the_road(access, data, reference, chain):
+    """Stock the distributor has sent and a partner has not yet received.
+
+    The movement the rest of the chain cannot show: every release above is
+    already in the partner's store, so nothing between the warehouse and a
+    partner office was ever on its way. A consignment is (models.Consignment):
+    it leaves the warehouse's stock at once and does not count at the office
+    until it arrives, so the map draws it moving and the office's stock page
+    reports it as in transit, never as cover.
+
+    Tier 1 -- the distributor told us, and we typed it: the partner links do
+    not yet carry a consignment, and a row written as theirs would claim a
+    hand that did not write it.
+
+    A row with no `expected_days_ago` is dispatched with no date given, which
+    is a real state and is shown as one.
+    """
+    rows = without_commentary((data.get("chc_chain") or {}).get("on_the_road") or [])
+    if not rows:
+        return []
+    orgs = reference["orgs"]
+    program_org = orgs[chain_programme_org(data)]
+    their_word = {"source": "partner_reported", "recorded_by_org_id": program_org["id"]}
+    warehouse = chain["warehouse"]
+    item = chain["context"]["item"]
+    sent = []
+    for row in rows:
+        destination = chain["partner_points"].get(row["to_org_slug"])
+        if destination is None:
+            raise ValueError(f"on_the_road names {row['to_org_slug']!r}, which runs no store in this chain")
+        payload = {
+            "from_supply_point_id": warehouse["id"],
+            "to_supply_point_id": destination["id"],
+            "commodity_slug": item["commodity_slug"],
+            "item_id": item["id"],
+            "quantity": row["quantity"],
+            "quantity_unit": row["quantity_unit"],
+            "dispatched_on": day(row["dispatched_days_ago"]),
+            "reference": row.get("reference", ""),
+            "carrier": row.get("carrier", ""),
+            **their_word,
+        }
+        if row.get("expected_days_ago") is not None:
+            payload["expected_on"] = day(row["expected_days_ago"])
+        sent.append(op(access, "consignment_dispatch", data=payload))
+    return sent
+
+
 def seed_chc_last_mile(access, data, reference, chain):
     """Beat 10: the ledger runs to the worker, and the worker answers back.
 

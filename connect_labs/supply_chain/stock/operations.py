@@ -205,6 +205,82 @@ def movement_record(access, data):
     return record(access.record_movement(data))
 
 
+# ---- consignments: our own stock on the road ---------------------------
+
+_CONSIGNMENT_DATA = _data_with(
+    (
+        "from_supply_point_id",
+        "to_supply_point_id",
+        "commodity_slug",
+        "quantity",
+        "quantity_unit",
+        "dispatched_on",
+        "source",
+    ),
+    from_supply_point_id=ID,
+    to_supply_point_id=ID,
+    commodity_slug={"type": "string", "minLength": 1},
+    item_id=ID,
+    batch={"type": "string"},
+    quantity={"type": ["number", "string"], "exclusiveMinimum": 0},
+    quantity_unit={"type": "string", "minLength": 1},
+    dispatched_on=_DATE,
+    expected_on=_DATE,
+    reference={"type": "string"},
+    carrier={"type": "string"},
+    opportunity_id=ID,
+    source={"enum": list(records.SOURCES)},
+    recorded_by_org_id=ID,
+)
+
+
+@register_operation(
+    name="consignment_dispatch",
+    summary=(
+        "Send stock from one of our places to another -- a warehouse to a partner's office -- that "
+        "leaves now and arrives later. The sender's stock drops at once; the destination does not count "
+        "it until consignment_receive. Give expected_on when the sender said when it would arrive; "
+        "leave it out when nobody did. For goods coming FROM A SUPPLIER use shipment_record instead."
+    ),
+    input_schema=obj({"data": _CONSIGNMENT_DATA}, required=("data",)),
+    is_write=True,
+)
+def consignment_dispatch(access, data):
+    return record(access.dispatch_consignment(data))
+
+
+@register_operation(
+    name="consignment_receive",
+    summary=(
+        "Record that a consignment arrived. Received short, the difference is written off as a loss "
+        "naming the consignment rather than left on the road."
+    ),
+    input_schema=obj(
+        {
+            "consignment_id": ID,
+            "data": _data_with(
+                ("received_on",),
+                received_on=_DATE,
+                quantity_received={"type": ["number", "string"], "minimum": 0},
+            ),
+        },
+        required=("consignment_id", "data"),
+    ),
+    is_write=True,
+)
+def consignment_receive(access, consignment_id, data):
+    return record(access.receive_consignment(consignment_id, data))
+
+
+@register_operation(
+    name="consignment_list",
+    summary="Consignments between our own places -- dispatched (on the road) or received.",
+    input_schema=obj({"status": {"enum": list(records.CONSIGNMENT_STATUSES)}, "supply_point_id": ID}),
+)
+def consignment_list(access, status=None, supply_point_id=None):
+    return [record(c) for c in access.list_consignments(status=status, supply_point_id=supply_point_id)]
+
+
 # ---- counts ------------------------------------------------------------
 
 

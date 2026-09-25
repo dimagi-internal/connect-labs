@@ -178,6 +178,10 @@
       pt._orders = p.orders.filter(function (o) {
         return o.to_supply_point_id === pt.id;
       });
+      // Our own stock on the road to this place (models.Consignment).
+      pt._consignments = (p.consignments || []).filter(function (c) {
+        return c.to_supply_point_id === pt.id;
+      });
       pt._attn = attentionOf(pt);
       pt._text = [
         pt.name,
@@ -219,7 +223,7 @@
     ) {
       return 'blocked';
     }
-    var undated = pt._orders.some(function (o) {
+    var undated = pt._orders.concat(pt._consignments).some(function (o) {
       return !o.expected_on;
     });
     if (undated || cats.length) return 'waiting';
@@ -951,6 +955,47 @@
       })
       .join('');
   }
+  function consignmentRow(c, p) {
+    var from = placeByKey[p.program_id + ':' + c.from_supply_point_id];
+    var when = !c.expected_on
+      ? '<span style="color:#b45309">no arrival date given</span>'
+      : c.overdue
+        ? '<span style="color:#dc2626">' +
+          daysLate(c.expected_on) +
+          ' days late</span>'
+        : 'due ' + esc(c.expected_on);
+    return (
+      '<div class="pm-row"><i class="fa-solid fa-truck-arrow-right" style="margin-top:3px;color:' +
+      (c.overdue ? '#dc2626' : '#f97316') +
+      '"></i><div class="min-w-0">' +
+      '<span class="text-gray-900">' +
+      esc(
+        fmt(c.quantity) +
+          ' ' +
+          c.quantity_unit +
+          ' ' +
+          (commodityNames[c.commodity_slug] || c.commodity_slug),
+      ) +
+      '</span>' +
+      (c.reference ? ' · ' + esc(c.reference) : '') +
+      '<div class="pm-muted">On the road from ' +
+      (from
+        ? '<button type="button" class="pm-link" data-place="' +
+          esc(from._key) +
+          '">' +
+          esc(from.name) +
+          '</button>'
+        : 'another of our places') +
+      ' since ' +
+      esc(c.dispatched_on) +
+      '</div>' +
+      '<div class="pm-muted">' +
+      when +
+      ' · <a class="pm-link" href="' +
+      esc(c.receive_url) +
+      '">Record arrival</a></div></div></div>'
+    );
+  }
   function orderRow(o, p) {
     var supplier = p.suppliers.filter(function (s) {
       return s.id === o.supplier_id;
@@ -1049,6 +1094,19 @@
             .join('');
       }
       if (st.key === 'deliver') {
+        if ((p.consignments || []).length) {
+          h +=
+            '<div class="pm-muted mt-2" style="font-weight:600">On the road</div>' +
+            p.consignments
+              .map(function (c) {
+                var to = placeByKey[p.program_id + ':' + c.to_supply_point_id];
+                return consignmentRow(c, p).replace(
+                  'On the road from',
+                  (to ? esc(to.name) + ' · ' : '') + 'from',
+                );
+              })
+              .join('');
+        }
         var pts = places.filter(function (pt) {
           return (
             pt.program_id === p.program_id &&
@@ -1209,10 +1267,15 @@
       '</div>';
     h +=
       '<div class="pm-sec"><h4><span>Still to arrive</span></h4>' +
-      (pt._orders.length
+      (pt._orders.length || pt._consignments.length
         ? pt._orders
             .map(function (o) {
               return orderRow(o, p);
+            })
+            .join('') +
+          pt._consignments
+            .map(function (c) {
+              return consignmentRow(c, p);
             })
             .join('')
         : '<div class="pm-muted">Nothing is owed to this place.</div>') +
@@ -1466,13 +1529,20 @@
         layout: { 'line-cap': 'round' },
         paint: {
           'line-color': [
-            'match',
-            ['get', 'type'],
-            'committed',
-            '#f59e0b',
-            'shipment',
-            '#38bdf8',
-            '#2dd4bf',
+            'case',
+            ['get', 'late'],
+            '#ef4444',
+            [
+              'match',
+              ['get', 'type'],
+              'committed',
+              '#f59e0b',
+              'shipment',
+              '#38bdf8',
+              'consignment',
+              '#f97316',
+              '#2dd4bf',
+            ],
           ],
           'line-width': [
             'interpolate',
@@ -1891,6 +1961,54 @@
             },
           });
         });
+        // On the road between two of our places: the thing a warehouse
+        // manager watches. Late is red; no date promised stays orange.
+        (p.consignments || []).forEach(function (c) {
+          if (state.commodity && c.commodity_slug !== state.commodity) return;
+          var a = at(c.from_supply_point_id);
+          var b = at(c.to_supply_point_id);
+          if (!a || !b) return;
+          var when = !c.expected_on
+            ? 'no arrival date given'
+            : c.overdue
+              ? daysLate(c.expected_on) +
+                ' days late (expected ' +
+                c.expected_on +
+                ')'
+              : 'expected ' + c.expected_on;
+          flows.push({
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: arc([a._x, a._y], [b._x, b._y]),
+            },
+            properties: {
+              type: 'consignment',
+              late: !!c.overdue,
+              count: 6,
+              label:
+                '<strong>On the road: ' +
+                esc(a.name) +
+                ' → ' +
+                esc(b.name) +
+                '</strong><br>' +
+                esc(
+                  fmt(c.quantity) +
+                    ' ' +
+                    c.quantity_unit +
+                    ' ' +
+                    (commodityNames[c.commodity_slug] || c.commodity_slug),
+                ) +
+                '<br><span style="color:' +
+                (c.overdue ? '#dc2626' : '#6b7280') +
+                '">left ' +
+                esc(c.dispatched_on) +
+                ' · ' +
+                esc(when) +
+                '</span>',
+            },
+          });
+        });
         (p.committed || []).forEach(function (c) {
           var a = at(c.from_supply_point_id);
           var b = at(c.to_supply_point_id);
@@ -2078,6 +2196,10 @@
       row(
         '<span style="width:16px;border-top:3px dashed #f59e0b"></span>',
         'Committed, not yet moved',
+      ) +
+      row(
+        '<span style="width:16px;border-top:3px solid #f97316"></span>',
+        'On the road between our places',
       ) +
       row(
         '<span class="pm-dot" style="background:#8b5cf6;opacity:.6"></span>',

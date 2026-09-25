@@ -237,6 +237,10 @@ chlorine = _seed["seed_chlorine_blocked"](data, scopes)
 # contrast that only reads against the partner seat beat 6 opened.
 last_mile = _seed["seed_chc_last_mile"](chc["access"], data, chc["reference"], chc_chain)
 
+# Stock the distributor has sent and a partner has not yet received: the one
+# thing on the map that is moving right now, rather than moved.
+on_the_road = _seed["seed_on_the_road"](chc["access"], data, chc["reference"], chc_chain)
+
 # Beat 5, the gate: its own round, because the two awards above already
 # carry orders and an approval asked for after the goods were bought would
 # show the trail while inverting the point.

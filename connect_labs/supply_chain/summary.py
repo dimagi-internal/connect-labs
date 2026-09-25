@@ -140,7 +140,9 @@ def _network_total(movements, points, item, disagreement):
 
 def _deliver(access, commodity=None, item=None, opportunity_id=None, disagreement=None):
     program_id = access.program_id
-    points = SupplyPoint.objects.filter(program_id=program_id, status="active")
+    # The in-transit point is where the ledger parks a consignment on the
+    # road -- not a place stock rests, so not one of the network's places.
+    points = SupplyPoint.objects.filter(program_id=program_id, status="active").exclude(kind="in_transit")
     if opportunity_id is not None:
         points = points.filter(opportunity_id=opportunity_id)
 
