@@ -665,6 +665,11 @@ MCP_WRITE_RATE_LIMIT = env("MCP_WRITE_RATE_LIMIT", default="30/m")
 # the page, so it should not render at all.
 CANOPY_BASE_URL = env("CANOPY_BASE_URL", default="")
 CANOPY_APP_NAME = env("CANOPY_APP_NAME", default="connect-labs")
+# The canopy agent this panel is for. Names the canopy TENANT on every token and
+# on the embed shell: since canopy-web #960 a site's name is unique only within
+# one canopy workspace, so the name alone is refused (409) once a second
+# workspace registers a `connect-labs`. An agent belongs to exactly one.
+CANOPY_AGENT_SLUG = env("CANOPY_AGENT_SLUG", default="ace")
 # PEM, Ed25519. Newlines survive an env var as literal "\n", which is how a
 # task definition and a .env can both carry one.
 CANOPY_SIGNING_KEY = env("CANOPY_SIGNING_KEY", default="").replace("\\n", "\n")
