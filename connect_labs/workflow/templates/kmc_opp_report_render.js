@@ -1563,15 +1563,18 @@ function WorkflowUI({
         )
       ) : (
         <div className="space-y-4">
+          {/* The programme report's order -- tiles, the table, the charts --
+              with the peers after them: seventeen peer cards above the worker
+              table pushed it three screens down. */}
           <Tiles />
+          <WorkerTable />
+          <ChartsRow />
           <div>
-            <R.SectionTitle sub="Anonymous peers, re-sorted per indicator: a bar cannot be followed from one chart to the next. This opportunity is the blue bar and the blue line; a trend runs on each opportunity's own weeks of delivering, so week 1 is week 1 for everybody.">
+            <R.SectionTitle sub="Anonymous peers, re-sorted per indicator: a bar cannot be followed from one chart to the next. This opportunity is the blue bar and the blue line; a trend runs on each opportunity's own weeks of delivering, so week 1 is week 1 for everybody, and ends where that opportunity's figures stopped changing.">
               Against its peers
             </R.SectionTitle>
             <Benchmark />
           </div>
-          <ChartsRow />
-          <WorkerTable />
           <AllIndicators />
         </div>
       )}
