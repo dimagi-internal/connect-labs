@@ -16,7 +16,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="quote",
             name="entered_by",
-            field=models.CharField(
+            field=models.CharField(db_default="program", 
                 choices=[("program", "program"), ("supplier", "supplier")], default="program", max_length=16
             ),
         ),
@@ -34,14 +34,14 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="round",
             name="visibility",
-            field=models.CharField(
+            field=models.CharField(db_default="public", 
                 choices=[("public", "public"), ("private", "private")], default="public", max_length=16
             ),
         ),
         migrations.AddField(
             model_name="supplier",
             name="origin",
-            field=models.CharField(
+            field=models.CharField(db_default="program", 
                 choices=[("program", "program"), ("self_registered", "self registered")],
                 default="program",
                 max_length=16,
