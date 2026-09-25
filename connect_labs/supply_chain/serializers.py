@@ -493,6 +493,31 @@ def stock_count(obj) -> dict:
     }
 
 
+def consignment(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "status": obj.status,
+        "from_supply_point_id": obj.from_supply_point_id,
+        "to_supply_point_id": obj.to_supply_point_id,
+        "via_supply_point_id": obj.via_supply_point_id,
+        "commodity_slug": obj.commodity.slug,
+        "item_id": obj.item_id,
+        "batch": obj.batch,
+        "quantity": _num(obj.quantity),
+        "quantity_unit": obj.quantity_unit,
+        "reference": obj.reference,
+        "carrier": obj.carrier,
+        "dispatched_on": _date(obj.dispatched_on),
+        "expected_on": _date(obj.expected_on),
+        "received_on": _date(obj.received_on),
+        "quantity_received": _num(obj.quantity_received),
+        "dispatch_movement_id": obj.dispatch_movement_id,
+        "receipt_movement_id": obj.receipt_movement_id,
+        "opportunity_id": obj.opportunity_id,
+        **_sourced(obj),
+    }
+
+
 def distribution(obj) -> dict:
     return {
         "id": obj.pk,

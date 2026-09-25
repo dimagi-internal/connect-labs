@@ -61,6 +61,7 @@ CHECK_LABELS = {
     "award_awaiting_approval": "Awarded, awaiting approval",
     "payment_unconfirmed": "Payment not confirmed by the payee",
     "contract_delivery_overdue": "Delivery past the promised lead time",
+    "consignment_overdue": "Consignment past its expected arrival",
 }
 
 AUDIENCE_LABELS = {
@@ -498,6 +499,7 @@ AGE_FROM = {
     "shipment_quantity_unaccounted": "since dispatch",
     "shipment_overdue": "past the expected date",
     "contract_delivery_overdue": "past the expected date",
+    "consignment_overdue": "past the expected date",
     "payment_unconfirmed": "since payment",
 }
 

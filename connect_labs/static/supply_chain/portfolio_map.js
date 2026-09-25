@@ -178,6 +178,10 @@
       pt._orders = p.orders.filter(function (o) {
         return o.to_supply_point_id === pt.id;
       });
+      // Our own stock on the road to this place (models.Consignment).
+      pt._consignments = (p.consignments || []).filter(function (c) {
+        return c.to_supply_point_id === pt.id;
+      });
       pt._attn = attentionOf(pt);
       pt._text = [
         pt.name,
@@ -219,7 +223,7 @@
     ) {
       return 'blocked';
     }
-    var undated = pt._orders.some(function (o) {
+    var undated = pt._orders.concat(pt._consignments).some(function (o) {
       return !o.expected_on;
     });
     if (undated || cats.length) return 'waiting';
@@ -229,6 +233,23 @@
   // Places sharing one coordinate -- every store a partner runs sits on its
   // head office until someone records where it is -- fan into a small ring so
   // each stays clickable. Display only; the place's panel says where it is.
+  // One organisation keeping several programs' stock at one office is ONE
+  // place on the ground: EHA's Kano warehouse holds CHC, RUTF and the
+  // supply-only chain. It is one marker listing its programs, not three dots
+  // pretending to be three buildings.
+  var sites = {};
+  places.forEach(function (pt) {
+    if (!pt._placed || pt.kind === 'user_held' || !pt.managed_by_org_id) return;
+    var k =
+      pt.managed_by_org_id + '@' + pt.lat.toFixed(4) + ',' + pt.lng.toFixed(4);
+    (sites[k] = sites[k] || []).push(pt);
+  });
+  Object.keys(sites).forEach(function (k) {
+    if (sites[k].length < 2) return;
+    sites[k].forEach(function (pt) {
+      pt._site = k;
+    });
+  });
   var stacks = {};
   function stack(o, lat, lng) {
     o._lat = lat;
@@ -236,8 +257,18 @@
     var k = lat.toFixed(4) + ',' + lng.toFixed(4);
     (stacks[k] = stacks[k] || []).push(o);
   }
+  var siteStacked = {};
   places.forEach(function (pt) {
-    if (pt._placed) stack(pt, pt.lat, pt.lng);
+    if (!pt._placed) return;
+    if (pt._site) {
+      // A site stacks once, as itself; its members share its position.
+      if (!siteStacked[pt._site]) {
+        siteStacked[pt._site] = { _site: pt._site };
+        stack(siteStacked[pt._site], pt.lat, pt.lng);
+      }
+      return;
+    }
+    stack(pt, pt.lat, pt.lng);
   });
   suppliers.forEach(function (s) {
     if (s.location) stack(s, s.location.lat, s.location.lng);
@@ -256,6 +287,13 @@
       o._y = o._lat + r * Math.sin(a);
     });
   });
+  Object.keys(siteStacked).forEach(function (k) {
+    sites[k].forEach(function (pt) {
+      pt._x = siteStacked[k]._x;
+      pt._y = siteStacked[k]._y;
+    });
+  });
+  var ATTN_ORDER = ['blocked', 'waiting', 'clear'];
 
   // ---------------------------------------------------------------- network
   // Every directory organisation with a head office: the same coordinates the
@@ -723,7 +761,7 @@
     if (stage === 'source') {
       var src = s.source || {};
       var ev = src.evaluation || {};
-      var bits = [plural((src.demand || {}).rounds || 0, 'round')];
+      var bits = [plural((src.demand || {}).tenders || 0, 'tender')];
       if (ev.of)
         bits.push(ev.comparable + ' of ' + ev.of + ' quotes comparable');
       if ((src.award || {}).count) bits.push(plural(src.award.count, 'award'));
@@ -917,6 +955,47 @@
       })
       .join('');
   }
+  function consignmentRow(c, p) {
+    var from = placeByKey[p.program_id + ':' + c.from_supply_point_id];
+    var when = !c.expected_on
+      ? '<span style="color:#b45309">no arrival date given</span>'
+      : c.overdue
+        ? '<span style="color:#dc2626">' +
+          daysLate(c.expected_on) +
+          ' days late</span>'
+        : 'due ' + esc(c.expected_on);
+    return (
+      '<div class="pm-row"><i class="fa-solid fa-truck-arrow-right" style="margin-top:3px;color:' +
+      (c.overdue ? '#dc2626' : '#f97316') +
+      '"></i><div class="min-w-0">' +
+      '<span class="text-gray-900">' +
+      esc(
+        fmt(c.quantity) +
+          ' ' +
+          c.quantity_unit +
+          ' ' +
+          (commodityNames[c.commodity_slug] || c.commodity_slug),
+      ) +
+      '</span>' +
+      (c.reference ? ' · ' + esc(c.reference) : '') +
+      '<div class="pm-muted">On the road from ' +
+      (from
+        ? '<button type="button" class="pm-link" data-place="' +
+          esc(from._key) +
+          '">' +
+          esc(from.name) +
+          '</button>'
+        : 'another of our places') +
+      ' since ' +
+      esc(c.dispatched_on) +
+      '</div>' +
+      '<div class="pm-muted">' +
+      when +
+      ' · <a class="pm-link" href="' +
+      esc(c.receive_url) +
+      '">Record arrival</a></div></div></div>'
+    );
+  }
   function orderRow(o, p) {
     var supplier = p.suppliers.filter(function (s) {
       return s.id === o.supplier_id;
@@ -1015,6 +1094,19 @@
             .join('');
       }
       if (st.key === 'deliver') {
+        if ((p.consignments || []).length) {
+          h +=
+            '<div class="pm-muted mt-2" style="font-weight:600">On the road</div>' +
+            p.consignments
+              .map(function (c) {
+                var to = placeByKey[p.program_id + ':' + c.to_supply_point_id];
+                return consignmentRow(c, p).replace(
+                  'On the road from',
+                  (to ? esc(to.name) + ' · ' : '') + 'from',
+                );
+              })
+              .join('');
+        }
         var pts = places.filter(function (pt) {
           return (
             pt.program_id === p.program_id &&
@@ -1175,10 +1267,15 @@
       '</div>';
     h +=
       '<div class="pm-sec"><h4><span>Still to arrive</span></h4>' +
-      (pt._orders.length
+      (pt._orders.length || pt._consignments.length
         ? pt._orders
             .map(function (o) {
               return orderRow(o, p);
+            })
+            .join('') +
+          pt._consignments
+            .map(function (c) {
+              return consignmentRow(c, p);
             })
             .join('')
         : '<div class="pm-muted">Nothing is owed to this place.</div>') +
@@ -1265,7 +1362,74 @@
     return h + '</div>';
   }
 
+  var openSite = null;
+  function showSite(key) {
+    var members = sites[key].filter(function (m) {
+      return visiblePlace(m, true);
+    });
+    if (members.length === 1) return go(members[0].program_id, members[0]._key);
+    openSite = key;
+    state.place = null;
+    state.member = null;
+    renderPanel();
+    writeHash();
+  }
+  function sitePanel(key) {
+    var members = sites[key];
+    var first = members[0];
+    var h =
+      '<div class="pm-crumbs"><button type="button" data-go="">' +
+      esc(DATA.portfolio.name) +
+      '</button> › <span>' +
+      esc(first.managed_by) +
+      '</span></div>';
+    h +=
+      '<div class="pm-sec"><div class="text-base font-semibold text-gray-900">' +
+      esc(first.managed_by) +
+      '</div>' +
+      '<div class="pm-muted mt-1"><i class="fa-solid fa-location-dot mr-1"></i>' +
+      esc(whereIs(first).text) +
+      '</div>' +
+      '<div class="pm-muted mt-1">One place holding stock for ' +
+      members.length +
+      ' programs.</div></div>';
+    h +=
+      '<div class="pm-sec"><h4><span>By program</span></h4>' +
+      members
+        .map(function (pt) {
+          var held = holdingText(pt);
+          return (
+            '<button type="button" class="pm-row w-full text-left" data-place="' +
+            esc(pt._key) +
+            '">' +
+            '<span class="pm-dot" style="margin-top:6px;background:' +
+            ATTN[pt._attn].color +
+            '"></span><div class="min-w-0">' +
+            '<div class="text-gray-900">' +
+            esc(progById[pt.program_id].name) +
+            '</div>' +
+            '<div class="pm-muted">' +
+            esc(pt.name) +
+            ' · ' +
+            esc(ATTN[pt._attn].label) +
+            '</div>' +
+            (held
+              ? '<div class="pm-muted">Holds ' + esc(held) + '</div>'
+              : '') +
+            '</div></button>'
+          );
+        })
+        .join('') +
+      '</div>';
+    return h;
+  }
+
   function renderPanel() {
+    if (openSite && !state.place && !state.member && sites[openSite]) {
+      side.innerHTML = sitePanel(openSite);
+      side.scrollTop = 0;
+      return;
+    }
     if (state.member && memberBySlug[state.member] && !state.place)
       side.innerHTML = memberPanel(memberBySlug[state.member]);
     else if (state.place && placeByKey[state.place])
@@ -1288,6 +1452,7 @@
   });
 
   function go(prog, place) {
+    openSite = null;
     state.prog = prog;
     state.place = place;
     update(true);
@@ -1364,13 +1529,20 @@
         layout: { 'line-cap': 'round' },
         paint: {
           'line-color': [
-            'match',
-            ['get', 'type'],
-            'committed',
-            '#f59e0b',
-            'shipment',
-            '#38bdf8',
-            '#2dd4bf',
+            'case',
+            ['get', 'late'],
+            '#ef4444',
+            [
+              'match',
+              ['get', 'type'],
+              'committed',
+              '#f59e0b',
+              'shipment',
+              '#38bdf8',
+              'consignment',
+              '#f97316',
+              '#2dd4bf',
+            ],
           ],
           'line-width': [
             'interpolate',
@@ -1505,7 +1677,9 @@
           popup.remove();
         });
         map.on('click', layer, function (e) {
-          var pt = placeByKey[e.features[0].properties.key];
+          var props = e.features[0].properties;
+          if (props.site && sites[props.site]) return showSite(props.site);
+          var pt = placeByKey[props.key];
           go(pt.program_id, pt._key);
         });
       });
@@ -1628,15 +1802,42 @@
         },
       };
     };
-    map.getSource('pm-places').setData(
-      fc(
-        vis
-          .filter(function (pt) {
-            return pt.kind !== 'user_held';
-          })
-          .map(feature),
-      ),
-    );
+    var siteSeen = {};
+    var placeFeatures = [];
+    vis.forEach(function (pt) {
+      if (pt.kind === 'user_held') return;
+      if (!pt._site) return placeFeatures.push(feature(pt));
+      if (siteSeen[pt._site]) return;
+      siteSeen[pt._site] = true;
+      var members = sites[pt._site].filter(function (m) {
+        return shown[m._key];
+      });
+      // Inside one program the site is just that program's place.
+      if (members.length < 2)
+        return placeFeatures.push(feature(members[0] || pt));
+      var worst = members
+        .map(function (m) {
+          return ATTN_ORDER.indexOf(m._attn);
+        })
+        .sort()[0];
+      var f = feature(pt);
+      f.properties.color = ATTN[ATTN_ORDER[worst]].color;
+      f.properties.r =
+        Math.max.apply(
+          null,
+          members.map(function (m) {
+            return KIND_RADIUS[m.kind] || 6;
+          }),
+        ) + 2;
+      f.properties.site = pt._site;
+      f.properties.name =
+        (pt.managed_by || pt.name) + ' · ' + members.length + ' programs';
+      f.properties.sel = members.some(function (m) {
+        return state.place === m._key;
+      });
+      placeFeatures.push(f);
+    });
+    map.getSource('pm-places').setData(fc(placeFeatures));
     map.getSource('pm-workers').setData(
       fc(
         vis
@@ -1683,7 +1884,17 @@
         var s = p.suppliers.filter(function (x) {
           return x.id === o.supplier_id;
         })[0];
-        if (!to || !shown[to._key] || !s || !s.location) return;
+        // A supplier known only to its country has no place to draw a route
+        // FROM -- the country's centre is a guess, and a route from a guess
+        // reads as a fact. Such an order stays in the panel, not on the map.
+        if (
+          !to ||
+          !shown[to._key] ||
+          !s ||
+          !s.location ||
+          s.location.precision === 'country'
+        )
+          return;
         used[s._key] = s;
         routes.push({
           type: 'Feature',
@@ -1756,6 +1967,54 @@
                 plural(f.count, f.kinds.join('/')) +
                 ', last ' +
                 esc(f.last_on) +
+                '</span>',
+            },
+          });
+        });
+        // On the road between two of our places: the thing a warehouse
+        // manager watches. Late is red; no date promised stays orange.
+        (p.consignments || []).forEach(function (c) {
+          if (state.commodity && c.commodity_slug !== state.commodity) return;
+          var a = at(c.from_supply_point_id);
+          var b = at(c.to_supply_point_id);
+          if (!a || !b) return;
+          var when = !c.expected_on
+            ? 'no arrival date given'
+            : c.overdue
+              ? daysLate(c.expected_on) +
+                ' days late (expected ' +
+                c.expected_on +
+                ')'
+              : 'expected ' + c.expected_on;
+          flows.push({
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: arc([a._x, a._y], [b._x, b._y]),
+            },
+            properties: {
+              type: 'consignment',
+              late: !!c.overdue,
+              count: 6,
+              label:
+                '<strong>On the road: ' +
+                esc(a.name) +
+                ' → ' +
+                esc(b.name) +
+                '</strong><br>' +
+                esc(
+                  fmt(c.quantity) +
+                    ' ' +
+                    c.quantity_unit +
+                    ' ' +
+                    (commodityNames[c.commodity_slug] || c.commodity_slug),
+                ) +
+                '<br><span style="color:' +
+                (c.overdue ? '#dc2626' : '#6b7280') +
+                '">left ' +
+                esc(c.dispatched_on) +
+                ' · ' +
+                esc(when) +
                 '</span>',
             },
           });
@@ -1947,6 +2206,10 @@
       row(
         '<span style="width:16px;border-top:3px dashed #f59e0b"></span>',
         'Committed, not yet moved',
+      ) +
+      row(
+        '<span style="width:16px;border-top:3px solid #f97316"></span>',
+        'On the road between our places',
       ) +
       row(
         '<span class="pm-dot" style="background:#8b5cf6;opacity:.6"></span>',

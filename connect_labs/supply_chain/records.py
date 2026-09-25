@@ -128,6 +128,12 @@ SHIPMENT_STATUSES = (
 # in_transit and REFUSES to count as on hand (design doc section 19.1).
 IN_TRANSIT_STATUSES = ("dispatched", "in_transit", "at_customs", "cleared")
 
+# Stock sent from one of our places to another and not yet arrived. A
+# consignment is `dispatched` from the moment it leaves until it is received;
+# there is no third state, because goods lost on the way are received short
+# and the shortfall is written off as a `loss` naming the consignment.
+CONSIGNMENT_STATUSES = ("dispatched", "received")
+
 CONTRACT_STATUSES = (
     "draft",
     "placed",

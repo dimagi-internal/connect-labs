@@ -65,6 +65,29 @@ def access_for(program_id):
     return SupplyDataAccess(access_token="oes-demo-seed", program_id=program_id, caller=SYSTEM)
 
 
+# Where each supplier's goods leave from: `{supplier label or org slug: {country, city}}`,
+# read from the document's `supplier_places` by `seed_orgs`, which runs first.
+# A module global rather than a parameter threaded through every seeder,
+# because suppliers are created from six call sites and a location is a fact
+# about the supplier, not about the chain that happens to buy from it. Real
+# towns are named in Drive, never here -- this repository is public.
+_SUPPLIER_PLACES: dict = {}
+
+
+def _placed_supplier(access, supplier, key):
+    """`supplier`, with the country and city the document gives it filled in.
+
+    Only fills blanks: a supplier is a global company since #2019, so one
+    somebody has already located -- through the marketplace, or by hand --
+    keeps what they said.
+    """
+    place = _SUPPLIER_PLACES.get(key) or {}
+    missing = {field: place[field] for field in ("country", "city") if place.get(field) and not supplier.get(field)}
+    if not missing:
+        return supplier
+    return op(access, "supplier_update", supplier_id=supplier["id"], data=missing)
+
+
 def seed_orgs(access, data):
     """The organisations, which belong to no program in particular.
 
@@ -89,8 +112,27 @@ def seed_orgs(access, data):
     whenever the source document carries one, independent of whether an id
     is also known.
     """
+    _SUPPLIER_PLACES.clear()
+    _SUPPLIER_PLACES.update(without_commentary(data.get("supplier_places") or {}))
     orgs = {}
+    directory = None
     for row in data["orgs"]:
+        if row.get("from_directory"):
+            # An organisation already in the partner directory, used as it
+            # is. Upserting it would overwrite a real partner's name and
+            # notes with the demo's; a slug of our own would make a second
+            # row of the same organisation -- which is how the demo came to
+            # hold two ISODAFs. So it is read, never written, and refused by
+            # name if the directory does not have it.
+            if directory is None:
+                directory = {org["slug"]: org for org in op(access, "org_list")}
+            if row["slug"] not in directory:
+                raise ValueError(
+                    f"the document marks {row['slug']!r} as from_directory, and the directory has no such "
+                    "organisation -- run marketplace_import, or fix the slug"
+                )
+            orgs[row["slug"]] = directory[row["slug"]]
+            continue
         org_data = {
             "slug": row["slug"],
             "name": row["name"],
@@ -388,12 +430,13 @@ def supplier_for_org(access, org, kind="distributor"):
     """
     for existing in op(access, "supplier_list", search=org["name"]):
         if existing["name"] == org["name"]:
-            return existing
-    return op(
+            return _placed_supplier(access, existing, org["slug"])
+    created = op(
         access,
         "supplier_create",
         data={"name": org["name"], "type": kind, "status": "awarded", "org_id": org["id"]},
     )
+    return _placed_supplier(access, created, org["slug"])
 
 
 def supplier_for_label(access, label, kind="manufacturer"):
@@ -416,8 +459,9 @@ def supplier_for_label(access, label, kind="manufacturer"):
     """
     for existing in op(access, "supplier_list", search=label):
         if existing["name"] == label:
-            return existing
-    return op(access, "supplier_create", data={"name": label, "type": kind, "status": "quoting"})
+            return _placed_supplier(access, existing, label)
+    created = op(access, "supplier_create", data={"name": label, "type": kind, "status": "quoting"})
+    return _placed_supplier(access, created, label)
 
 
 def _goods_value(access, contract):
@@ -1027,7 +1071,14 @@ def seed_chlorine_blocked(data, scopes):
     round_ = tender_for(access, section["round"])
     round_ = opened(access, round_)
 
-    store = _supply_point(access, section["store"], reference, ours)
+    # One store or several. The import is delivered to the FIRST; any others
+    # are the partners it restocks, so they sit on the map owed the same
+    # blocked goods. `store` (one) is still read, so an older document seeds.
+    rows = section.get("stores") or [section["store"]]
+    store = _supply_point(access, rows[0], reference, ours)
+    stores = [store] + [
+        _supply_point(access, {**row, "parent_supply_point_id": store["id"]}, reference, ours) for row in rows[1:]
+    ]
 
     contract_row = dict(section["contract"])
     buyer_slug = contract_row.pop("buyer_org_slug")
@@ -1056,8 +1107,57 @@ def seed_chlorine_blocked(data, scopes):
         "round": round_,
         "supplier": donor,
         "store": store,
+        "stores": stores,
         "contract": contract,
     }
+
+
+def seed_on_the_road(access, data, reference, chain):
+    """Stock the distributor has sent and a partner has not yet received.
+
+    The movement the rest of the chain cannot show: every release above is
+    already in the partner's store, so nothing between the warehouse and a
+    partner office was ever on its way. A consignment is (models.Consignment):
+    it leaves the warehouse's stock at once and does not count at the office
+    until it arrives, so the map draws it moving and the office's stock page
+    reports it as in transit, never as cover.
+
+    Tier 1 -- the distributor told us, and we typed it: the partner links do
+    not yet carry a consignment, and a row written as theirs would claim a
+    hand that did not write it.
+
+    A row with no `expected_days_ago` is dispatched with no date given, which
+    is a real state and is shown as one.
+    """
+    rows = without_commentary((data.get("chc_chain") or {}).get("on_the_road") or [])
+    if not rows:
+        return []
+    orgs = reference["orgs"]
+    program_org = orgs[chain_programme_org(data)]
+    their_word = {"source": "partner_reported", "recorded_by_org_id": program_org["id"]}
+    warehouse = chain["warehouse"]
+    item = chain["context"]["item"]
+    sent = []
+    for row in rows:
+        destination = chain["partner_points"].get(row["to_org_slug"])
+        if destination is None:
+            raise ValueError(f"on_the_road names {row['to_org_slug']!r}, which runs no store in this chain")
+        payload = {
+            "from_supply_point_id": warehouse["id"],
+            "to_supply_point_id": destination["id"],
+            "commodity_slug": item["commodity_slug"],
+            "item_id": item["id"],
+            "quantity": row["quantity"],
+            "quantity_unit": row["quantity_unit"],
+            "dispatched_on": day(row["dispatched_days_ago"]),
+            "reference": row.get("reference", ""),
+            "carrier": row.get("carrier", ""),
+            **their_word,
+        }
+        if row.get("expected_days_ago") is not None:
+            payload["expected_on"] = day(row["expected_days_ago"])
+        sent.append(op(access, "consignment_dispatch", data=payload))
+    return sent
 
 
 def seed_chc_last_mile(access, data, reference, chain):

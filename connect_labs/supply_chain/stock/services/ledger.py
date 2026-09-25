@@ -197,7 +197,20 @@ def in_transit(program_id, supply_point=None, item=None):
         lines = lines.filter(shipment__contract__delivery_supply_point=supply_point)
     if item is not None:
         lines = lines.filter(item=item)
-    return collapse(_sum_by_unit(lines), item, None)
+    totals = _sum_by_unit(lines)
+    # Our own consignments on the road count here too, and only here: a
+    # store waiting on the warehouse is owed stock exactly as one waiting on
+    # a supplier is (models.Consignment).
+    from connect_labs.supply_chain.models import Consignment
+
+    consignments = Consignment.objects.filter(program_id=program_id, status="dispatched")
+    if supply_point is not None:
+        consignments = consignments.filter(to_supply_point=supply_point)
+    if item is not None:
+        consignments = consignments.filter(item=item)
+    for unit, amount in _sum_by_unit(consignments).items():
+        totals[unit] = totals.get(unit, ZERO) + amount
+    return collapse(totals, item, None)
 
 
 def committed(program_id, supply_point, item=None):
