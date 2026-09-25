@@ -240,6 +240,10 @@ class SupplyPointForm(ScopedForm):
         }
         help_texts = {
             "parent": _("Leave empty for a point at the top of the network."),
+            "latitude": _(
+                "Leave both empty to place it, for now, at the head office of the organisation that runs it. "
+                "A location entered here replaces that and is kept."
+            ),
             "opportunity_id": _("Set for a point that belongs to one opportunity. Every worker's holding does."),
             "connect_username": _(
                 "Required for a worker's own holding — without it nothing can ever be posted to it."
