@@ -129,7 +129,7 @@ VIEWS_WITHOUT_TABS = frozenset(
         # each into its own programme's Overview.
         "supply_chain:portfolio",
         # The same portfolio laid out by place, for the same reason: it spans
-        # programmes, so no one programme's tab is where you are.
+        # programs, so no one program's tab is where you are.
         "supply_chain:portfolio_map",
     }
 )

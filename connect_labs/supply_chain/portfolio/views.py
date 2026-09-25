@@ -183,7 +183,7 @@ class PortfolioView(TemplateView):
 class PortfolioMapView(TemplateView):
     """The portfolio laid out by place: where the stock is and what blocks it.
 
-    Built from the same reachable programmes and the same operations as the
+    Built from the same reachable programs and the same operations as the
     rows above (see `map_data`), so it can show nothing the portfolio page
     could not. The payload rides in the page as JSON and every filter is
     applied in the browser: slicing a few hundred places needs no round trip,

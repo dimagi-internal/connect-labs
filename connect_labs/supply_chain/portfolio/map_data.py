@@ -1,15 +1,15 @@
 """Where a portfolio's stock is, and what is standing in its way -- as one payload.
 
-The map is the portfolio page turned on its side: the same programmes, the same
+The map is the portfolio page turned on its side: the same programs, the same
 access rule, the same operations, laid out by place instead of by chain. It
 adds no figure of its own. Every number on it is one an existing operation
 already returns (`network_stock`, `checks_list`), so the map and the
-programme's own Stock and Checks pages cannot disagree.
+program's own Stock and Checks pages cannot disagree.
 
 Three rules carry over from the portfolio unchanged, and each is load-bearing:
 
-**Access.** Programmes come from `reachable_programmes` -- the portfolio's own
-rule, which is the programme picker's list. The map has no second rule.
+**Access.** Programs come from `reachable_programmes` -- the portfolio's own
+rule, which is the program picker's list. The map has no second rule.
 
 **Nothing located is dropped in silence.** A point without coordinates is not
 on the map, and a map that simply omitted it would say "nothing here" about a
@@ -17,7 +17,7 @@ store that may be stocked out. Every such point is returned in `unplaced`,
 carrying the same status and blockers a placed one would, and the page lists
 them beside the map with a link to set the location.
 
-**Nothing is summed across programmes.** Each point carries its own figure in
+**Nothing is summed across programs.** Each point carries its own figure in
 its own unit. What the page counts is PLACES -- "3 stores stocked out" -- which
 is a count of rows, not a quantity, and implies no conversion between a carton
 of co-pack and a jerry can of chlorine.
@@ -27,7 +27,7 @@ Blockers are the domain's own checks, attributed to the place they bite:
   - a check about a supply point sits on that point;
   - a check about an order or a shipment sits on the point the order delivers to;
   - anything else (a quote, an award, a catalogue gap) has no place, and is
-    returned per programme under `unlocated_checks` so the page can still say
+    returned per program under `unlocated_checks` so the page can still say
     it exists.
 """
 
@@ -45,10 +45,10 @@ IN_TRANSIT = set(records.IN_TRANSIT_STATUSES)
 
 
 def _access(request, program_id):
-    """A data-access object for one programme, deliberately without `request`.
+    """A data-access object for one program, deliberately without `request`.
 
     For the reason `PortfolioView._row` gives: passing the request merges the
-    session's selected opportunity into every programme's scope. The caller
+    session's selected opportunity into every program's scope. The caller
     still carries it, so the scope is authorised a second time below.
     """
     return SupplyDataAccess(
@@ -94,8 +94,8 @@ def _check_wire(check):
     }
 
 
-def programme_map(request, program_id, programme) -> dict:
-    """One programme's places, blockers and consignments in motion."""
+def program_map(request, program_id, program) -> dict:
+    """One program's places, blockers and consignments in motion."""
     access = _access(request, program_id)
     scope = f"?program_id={program_id}"
 
@@ -105,10 +105,10 @@ def programme_map(request, program_id, programme) -> dict:
     contracts = {c["id"]: c for c in call_operation("contract_list", access, {})}
     shipments = {s["id"]: s for s in call_operation("shipment_list", access, {})}
     suppliers = {s["id"]: s for s in call_operation("supplier_list", access, {})}
-    # Organisations are labs-wide rather than programme-scoped (org_list says
+    # Organisations are labs-wide rather than program-scoped (org_list says
     # so), so naming the ones that manage these points reveals nothing the
-    # programme does not already hold. Only the ids in play are read, rather
-    # than the whole registry once per programme.
+    # program does not already hold. Only the ids in play are read, rather
+    # than the whole registry once per program.
     orgs = {
         o["id"]: o
         for o in LabsOrg.objects.filter(
@@ -125,7 +125,7 @@ def programme_map(request, program_id, programme) -> dict:
         else:
             unlocated.append(_check_wire(check))
 
-    # Where a supplier's goods leave from, when the programme has recorded one:
+    # Where a supplier's goods leave from, when the program has recorded one:
     # a supplier_site point managed by the supplier's own organisation. Without
     # one there is no origin to draw from, and the consignment is shown at its
     # destination only rather than from an invented place.
@@ -185,7 +185,7 @@ def programme_map(request, program_id, programme) -> dict:
                 "label": point.get("location_label") or "",
             },
             # A supplier's own site is where goods leave FROM; it keeps none of
-            # the programme's stock, so "cannot be computed" would be true and
+            # the program's stock, so "cannot be computed" would be true and
             # misleading. Anything else with no row stays "unknown".
             "status": "origin" if point["kind"] == "supplier_site" else (row.get("status") or "unknown"),
             "on_hand": row.get("on_hand"),
@@ -210,7 +210,7 @@ def programme_map(request, program_id, programme) -> dict:
 
     return {
         "program_id": program_id,
-        "name": programme.get("name") or f"Programme {program_id}",
+        "name": program.get("name") or f"Program {program_id}",
         "home_url": reverse("supply_chain:home") + scope,
         "checks_url": reverse("supply_chain:checks") + scope,
         "new_point_url": reverse("supply_chain:supply_point_create") + scope,
@@ -222,8 +222,8 @@ def programme_map(request, program_id, programme) -> dict:
 
 
 def portfolio_map(request, portfolio, reachable) -> dict:
-    """Every reachable programme in the portfolio's own order, plus what is hidden."""
-    programmes, hidden = [], 0
+    """Every reachable program in the portfolio's own order, plus what is hidden."""
+    programs, hidden = [], 0
     for stated in portfolio.program_ids:
         try:
             program_id = int(stated)
@@ -233,12 +233,12 @@ def portfolio_map(request, portfolio, reachable) -> dict:
         if program_id not in reachable:
             hidden += 1
             continue
-        programmes.append(programme_map(request, program_id, reachable[program_id]))
+        programs.append(program_map(request, program_id, reachable[program_id]))
     return {
         "portfolio": {"slug": portfolio.slug, "name": portfolio.name},
         "stated": len(portfolio.program_ids),
         "hidden": hidden,
-        "programmes": programmes,
+        "programs": programs,
         "vocabulary": _vocabulary(),
     }
 

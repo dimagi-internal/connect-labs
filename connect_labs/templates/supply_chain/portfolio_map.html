@@ -3,14 +3,14 @@
 
 {% comment %}
 The portfolio by place. Extends the ROOT base for the reason portfolio.html
-gives: the supply nav is one programme's, and this page spans several.
+gives: the supply nav is one program's, and this page spans several.
 
 Everything the page draws is in `map_payload` (portfolio/map_data.py), and
 every filter runs in the browser over it. Three rules the script keeps:
 
   - a place with no coordinates is listed beside the map, never dropped;
-  - a blocker with no place is counted per programme, never dropped;
-  - what is counted is PLACES, never a quantity across programmes.
+  - a blocker with no place is counted per program, never dropped;
+  - what is counted is PLACES, never a quantity across programs.
 
 Map-specific styling is inline in <style> rather than in Tailwind classes:
 the Tailwind bundle is built in Docker from the templates, and a class that
@@ -91,7 +91,7 @@ exists only in a new template is one a stale bundle silently lacks.
       <div class="pm-seg" id="pm-colour">
         <button type="button" data-colour="status" class="pm-on">Stock status</button>
         <button type="button" data-colour="blockers">Blockers</button>
-        <button type="button" data-colour="programme">Programme</button>
+        <button type="button" data-colour="program">Program</button>
       </div>
       <a href="{% url 'supply_chain:portfolio' portfolio.slug %}" class="text-sm text-brand-indigo hover:underline">
         <i class="fa-solid fa-list mr-1"></i>Chains view
@@ -101,7 +101,7 @@ exists only in a new template is one a stale bundle silently lacks.
 
   {% if map_payload.hidden %}
     <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 mb-3 text-sm text-amber-900" data-pm-hidden>
-      <strong>{{ map_payload.hidden }} of this portfolio's {{ map_payload.stated }} {{ map_payload.stated|pluralize:"programme,programmes" }} {{ map_payload.hidden|pluralize:"is,are" }} not shown</strong>, because your account cannot reach {{ map_payload.hidden|pluralize:"it,them" }}.
+      <strong>{{ map_payload.hidden }} of this portfolio's {{ map_payload.stated }} {{ map_payload.stated|pluralize:"program,programs" }} {{ map_payload.hidden|pluralize:"is,are" }} not shown</strong>, because your account cannot reach {{ map_payload.hidden|pluralize:"it,them" }}.
     </div>
   {% endif %}
 

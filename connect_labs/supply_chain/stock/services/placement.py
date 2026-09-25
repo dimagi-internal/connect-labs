@@ -162,7 +162,7 @@ def _set(point, lat, lng, source, precision, label) -> bool:
 
 
 def place_all(program_id=None, *, SupplyPoint=None, OrgProfile=None) -> dict:
-    """Place every supply point (optionally one programme's). Parents first, so children can inherit."""
+    """Place every supply point (optionally one program's). Parents first, so children can inherit."""
     if SupplyPoint is None:
         from connect_labs.supply_chain.models import SupplyPoint
 

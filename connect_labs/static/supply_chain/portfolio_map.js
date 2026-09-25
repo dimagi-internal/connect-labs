@@ -4,7 +4,7 @@
  * Reads the payload portfolio/map_data.py put in #pm-data and does every
  * filter, count and redraw in the browser. It computes no figure of its own:
  * each number shown is one the server already returned, in the unit it came
- * in. What it COUNTS is places, which implies no sum across programmes.
+ * in. What it COUNTS is places, which implies no sum across programs.
  *
  * Three rules, each mirrored from the server:
  *   - a place with no coordinates is listed under "Not on map", never dropped;
@@ -125,16 +125,16 @@
   }
 
   // ---------------------------------------------------------------- model
-  var programmeColor = {};
-  var programmeName = {};
+  var programColor = {};
+  var programName = {};
   var all = []; // every active place, placed or not
   var unlocated = []; // blockers with no place
   var moving = [];
   var byId = {};
-  DATA.programmes.forEach(function (p, i) {
-    programmeColor[p.program_id] =
+  DATA.programs.forEach(function (p, i) {
+    programColor[p.program_id] =
       PROGRAMME_PALETTE[i % PROGRAMME_PALETTE.length];
-    programmeName[p.program_id] = p.name;
+    programName[p.program_id] = p.name;
     p.points.forEach(function (pt) {
       pt._placed = true;
       all.push(pt);
@@ -197,7 +197,7 @@
       pt.admin_area,
       pt.managed_by,
       KIND_LABEL[pt.kind],
-      programmeName[pt.program_id],
+      programName[pt.program_id],
     ]
       .join(' ')
       .toLowerCase();
@@ -206,13 +206,13 @@
   // ---------------------------------------------------------------- state
   var FACETS = [
     {
-      key: 'programme',
-      title: 'Programme',
-      options: DATA.programmes.map(function (p) {
+      key: 'program',
+      title: 'Program',
+      options: DATA.programs.map(function (p) {
         return {
           value: String(p.program_id),
           label: p.name,
-          swatch: programmeColor[p.program_id],
+          swatch: programColor[p.program_id],
         };
       }),
       test: function (pt, vals) {
@@ -617,7 +617,7 @@
       pt._key +
       '">' +
       '<div class="flex items-center gap-2"><span class="pm-sw" style="background:' +
-      programmeColor[pt.program_id] +
+      programColor[pt.program_id] +
       '"></span>' +
       '<span class="text-sm font-medium text-gray-900 truncate">' +
       esc(pt.name) +
@@ -630,7 +630,7 @@
       esc(KIND_LABEL[pt.kind] || pt.kind) +
       (pt.admin_area ? ' · ' + esc(pt.admin_area) : '') +
       ' · ' +
-      esc(programmeName[pt.program_id]) +
+      esc(programName[pt.program_id]) +
       '</div>' +
       '<div class="text-xs mt-1 ml-4 flex flex-wrap gap-x-2 gap-y-1 items-center">' +
       statusChip(pt) +
@@ -650,7 +650,7 @@
     document.getElementById('pm-tab-unplaced').textContent =
       'Not on map (' + unplacedVis.length + ')';
     var elsewhere = unlocated.filter(function (c) {
-      var pf = state.f.programme;
+      var pf = state.f.program;
       return !pf || !pf.length || pf.indexOf(String(c.program_id)) >= 0;
     });
     document.getElementById('pm-tab-elsewhere').textContent =
@@ -688,7 +688,7 @@
                   '<div class="text-xs text-gray-500 ml-4">' +
                   esc(c.subject.label || '') +
                   ' · ' +
-                  esc(programmeName[c.program_id]) +
+                  esc(programName[c.program_id]) +
                   (c.days_open != null
                     ? ' · ' + c.days_open + ' days open'
                     : '') +
@@ -742,7 +742,7 @@
       '<button type="button" class="text-xs text-brand-indigo hover:underline mb-2" data-back>&larr; Back to list</button>';
     h +=
       '<div class="flex items-start gap-2"><span class="pm-sw mt-1.5" style="background:' +
-      programmeColor[pt.program_id] +
+      programColor[pt.program_id] +
       '"></span><div>';
     h +=
       '<div class="text-base font-semibold text-gray-900">' +
@@ -756,7 +756,7 @@
       '</div>';
     h +=
       '<div class="text-xs text-gray-500">' +
-      esc(programmeName[pt.program_id]) +
+      esc(programName[pt.program_id]) +
       '</div></div></div>';
     h += '<div class="mt-2">' + statusChip(pt) + '</div>';
     if (pt._approx) {
@@ -923,7 +923,7 @@
     update();
   });
   function colourFor(pt) {
-    if (state.colour === 'programme') return programmeColor[pt.program_id];
+    if (state.colour === 'program') return programColor[pt.program_id];
     if (state.colour === 'blockers') {
       if (!pt.checks.length) return '#475569';
       var cats = pt.checks.map(function (c) {
@@ -938,7 +938,7 @@
   // A rank per colour mode, lowest = most in need, so a cluster can take its
   // worst member's colour with one `min`. The order is the legend's order.
   function rankFor(pt) {
-    if (state.colour === 'programme') return 0;
+    if (state.colour === 'program') return 0;
     if (state.colour === 'blockers') {
       var cats = pt.checks.map(function (c) {
         return c.category;
@@ -956,7 +956,7 @@
   }
   function clusterColour() {
     var pairs;
-    if (state.colour === 'programme') return '#c7d2fe';
+    if (state.colour === 'program') return '#c7d2fe';
     if (state.colour === 'blockers')
       pairs = [
         CATEGORY_COLOR.threshold,
@@ -977,9 +977,9 @@
   }
   function renderLegend() {
     var rows;
-    if (state.colour === 'programme') {
-      rows = DATA.programmes.map(function (p) {
-        return [programmeColor[p.program_id], p.name];
+    if (state.colour === 'program') {
+      rows = DATA.programs.map(function (p) {
+        return [programColor[p.program_id], p.name];
       });
     } else if (state.colour === 'blockers') {
       rows = [
@@ -1240,7 +1240,7 @@
               '</strong><br><span style="color:#6b7280">' +
               esc(KIND_LABEL[pt.kind] || pt.kind) +
               ' · ' +
-              esc(programmeName[pt.program_id]) +
+              esc(programName[pt.program_id]) +
               '</span><br>' +
               esc(figure(pt.on_hand).text) +
               ' on hand' +
