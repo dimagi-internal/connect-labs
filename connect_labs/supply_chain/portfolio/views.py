@@ -203,6 +203,10 @@ class PortfolioMapView(TemplateView):
         if portfolio is None:
             raise Http404(f"no portfolio named {self.kwargs['slug']!r}")
         context["portfolio"] = portfolio
-        context["map_payload"] = portfolio_map(self.request, portfolio, reachable_programmes(self.request))
+        everything = self.request.GET.get("scope") == "all"
+        context["everything"] = everything
+        context["map_payload"] = portfolio_map(
+            self.request, portfolio, reachable_programmes(self.request), everything=everything
+        )
         context["mapbox_token"] = getattr(settings, "MAPBOX_TOKEN", "") or ""
         return context

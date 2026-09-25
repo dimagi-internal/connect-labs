@@ -288,3 +288,112 @@ def test_a_supplier_with_no_country_is_not_given_a_place(client, django_user_mod
     supplier = _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]["suppliers"][0]
 
     assert supplier["location"] is None
+
+
+# ---------------------------------------------------------------------------
+# 5. Movement, holdings, the network, and every program the viewer can reach.
+# ---------------------------------------------------------------------------
+
+
+def _moved(program_id, *, quantity="10"):
+    """A warehouse that received stock and transferred some to a store."""
+    from connect_labs.labs.access.scopes import SYSTEM
+    from connect_labs.supply_chain.data_access import SupplyDataAccess
+    from connect_labs.supply_chain.operations import call_operation
+
+    access = SupplyDataAccess(access_token="placeholder", program_id=program_id, caller=SYSTEM)
+    Commodity.objects.create(
+        scope_key=scope_key(program_id=program_id), slug="a-product", name="A Product", base_unit="unit"
+    )
+    warehouse = _store(program_id, slug="a-warehouse", lat=9.0, lng=8.0)
+    store = _store(program_id, slug="a-store", lat=10.0, lng=9.0, kind="facility")
+    for data in (
+        {"kind": "adjustment", "to_supply_point_id": warehouse.pk, "quantity": "50"},
+        {
+            "kind": "transfer",
+            "from_supply_point_id": warehouse.pk,
+            "to_supply_point_id": store.pk,
+            "quantity": quantity,
+        },
+    ):
+        call_operation(
+            "movement_record",
+            access,
+            {
+                "data": {
+                    **data,
+                    "occurred_on": date.today().isoformat(),
+                    "commodity_slug": "a-product",
+                    "quantity_unit": "unit",
+                    "source": "we_recorded",
+                }
+            },
+        )
+    return warehouse, store
+
+
+def test_a_transfer_is_a_route_between_its_two_places(client, django_user_model):
+    """MUTATED: `_ROUTED` emptied -- no flows came back."""
+    _sign_in(client, django_user_model, [ONE])
+    warehouse, store = _moved(ONE)
+
+    program = _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]
+
+    assert [
+        (f["from_supply_point_id"], f["to_supply_point_id"], f["commodity_slug"], f["count"]) for f in program["flows"]
+    ] == [(warehouse.pk, store.pk, "a-product", 1)]
+    assert program["flows"][0]["quantity"] == {"unit": 10.0}
+
+
+def test_each_place_says_which_commodities_it_holds_per_the_ledger(client, django_user_model):
+    """In minus out: the warehouse keeps 40, the store holds 10."""
+    _sign_in(client, django_user_model, [ONE])
+    warehouse, store = _moved(ONE)
+
+    points = {p["id"]: p for p in _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]["points"]}
+
+    assert points[warehouse.pk]["commodities"] == [
+        {"slug": "a-product", "name": "A Product", "held": True, "balance": {"unit": 40.0}}
+    ]
+    assert points[store.pk]["commodities"][0]["balance"] == {"unit": 10.0}
+
+
+def test_a_place_that_gave_everything_away_has_handled_it_but_does_not_hold_it(client, django_user_model):
+    """What makes "nearest supplies" honest: handled is not holding."""
+    _sign_in(client, django_user_model, [ONE])
+    warehouse, _ = _moved(ONE, quantity="50")
+
+    points = {p["id"]: p for p in _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]["points"]}
+
+    assert points[warehouse.pk]["commodities"][0]["held"] is False
+
+
+def test_the_network_carries_directory_members_with_a_head_office_and_no_contacts(client, django_user_model):
+    from connect_labs.labs.models import LabsOrg
+    from connect_labs.marketplace.models import OrgProfile
+
+    _sign_in(client, django_user_model, [ONE])
+    located = LabsOrg.objects.create(slug="a-located-partner", name="A Located Partner")
+    OrgProfile.objects.create(
+        org=located, lat=11.8, lon=13.1, location_precision="city", location_label="Placeholder Town"
+    )
+    OrgProfile.objects.create(org=LabsOrg.objects.create(slug="an-unlocated-partner", name="An Unlocated Partner"))
+
+    network = _payload(client.get(_url(_portfolio([ONE]))))["network"]
+
+    assert [m["slug"] for m in network] == ["a-located-partner"]
+    assert set(network[0]) == {"org_id", "slug", "name", "short", "lat", "lng", "precision", "place", "country"}
+
+
+def test_all_my_programs_adds_reachable_programs_with_supply_points_and_nothing_else(client, django_user_model):
+    """MUTATED: the `reachable` filter dropped from the `everything` query -- THREE appeared."""
+    _sign_in(client, django_user_model, [ONE, TWO])
+    _store(TWO, slug="a-store-outside-the-portfolio", lat=9.0, lng=8.0)
+    _store(THREE, slug="a-store-nobody-here-holds", lat=9.0, lng=8.0)
+    portfolio = _portfolio([ONE])
+
+    only = _payload(client.get(_url(portfolio)))
+    everything = _payload(client.get(_url(portfolio) + "?scope=all"))
+
+    assert [p["program_id"] for p in only["programs"]] == [ONE]
+    assert [(p["program_id"], p["in_portfolio"]) for p in everything["programs"]] == [(ONE, True), (TWO, False)]
