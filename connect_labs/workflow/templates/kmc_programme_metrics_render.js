@@ -2783,7 +2783,6 @@ function WorkflowUI({
     return headCell({
       key: i,
       label: c.label,
-      sub: c.id,
       title: c.title,
       def: c.id,
       scope: scope,
