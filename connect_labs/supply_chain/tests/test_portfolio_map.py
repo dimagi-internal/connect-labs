@@ -73,7 +73,7 @@ def _order_to(store, *, lead_time_days):
     commodity = Commodity.objects.create(
         scope_key=scope, slug="a-placeholder-product", name="a placeholder product", base_unit="placeholder unit"
     )
-    supplier = Supplier.objects.create(scope_key=scope, name="A Placeholder Supplier")
+    supplier = Supplier.objects.enrol(scope_key=scope, name="A Placeholder Supplier")
     return Contract.objects.create(
         program_id=store.program_id,
         supplier=supplier,

@@ -92,7 +92,7 @@ def a_round():
 def quote(a_round, rutf):
     return Quote.objects.create(
         round=a_round,
-        supplier=Supplier.objects.create(scope_key=SCOPE, name="Northwind Foods"),
+        supplier=Supplier.objects.enrol(scope_key=SCOPE, name="Northwind Foods"),
         commodity=rutf,
         as_quoted_amount=Decimal("52.42"),
         as_quoted_unit="per_pack",
@@ -259,7 +259,7 @@ class TestCorrectingAQuote:
         theirs = Round.objects.create(program_id=99999, label="Theirs", lines=[], delivery_point={})
         their_quote = Quote.objects.create(
             round=theirs,
-            supplier=Supplier.objects.create(scope_key="prog:99999", name="Theirs"),
+            supplier=Supplier.objects.enrol(scope_key="prog:99999", name="Theirs"),
             commodity=rutf,
         )
         assert scoped.get(reverse("supply_chain:procurement_quote_correct", args=[their_quote.pk])).status_code == 404

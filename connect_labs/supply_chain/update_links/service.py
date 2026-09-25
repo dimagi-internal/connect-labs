@@ -147,8 +147,10 @@ def scope_for(link) -> Scope:
         approvals = AwardApproval.objects.filter(
             award__round__program_id=program_id, update_links=link, approver_org_id=link.org_id
         )
-    contracts = contracts.select_related("commodity", "item", "supplier")
-    approvals = approvals.select_related("award__supplier", "award__quote__item", "award__commodity", "approver_org")
+    contracts = contracts.select_related("commodity", "item", "supplier__org__supplier_profile")
+    approvals = approvals.select_related(
+        "award__supplier__org__supplier_profile", "award__quote__item", "award__commodity", "approver_org"
+    )
 
     # Products the link can name: what its contracts are for, and what has
     # ever rested at its supply points. Not the programme's catalogue -- the
@@ -180,14 +182,12 @@ def scope_for(link) -> Scope:
 def _supplies(contract, org_id) -> bool:
     """Whether the organisation is the one sending the goods on this order.
 
-    The supplier's own organisation, when the supplier names one. Otherwise
-    anyone who is not on the receiving end -- the buyer, or whoever runs the
-    store it is delivered to -- since a link issued to one of those is a
-    partner's, the same reading `_provenance` makes of it.
+    Every supplier is a company with its own organisation, so this is that
+    organisation and nobody else. (It used to fall back to "anyone not on
+    the receiving end" for a supplier with no organisation; there is no such
+    supplier any more.)
     """
-    if contract.supplier.org_id is not None:
-        return contract.supplier.org_id == org_id
-    return not _receives(contract, org_id)
+    return contract.supplier.org_id == org_id
 
 
 def _require(queryset, obj, what):
@@ -540,7 +540,7 @@ def _describe_shipment(rid):
 def _describe_approval(rid):
     approval = (
         AwardApproval.objects.filter(pk=rid)
-        .select_related("award__supplier", "award__quote__item", "award__commodity")
+        .select_related("award__supplier__org__supplier_profile", "award__quote__item", "award__commodity")
         .first()
     )
     if approval is None or approval.is_pending:

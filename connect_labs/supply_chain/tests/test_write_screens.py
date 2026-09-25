@@ -70,7 +70,7 @@ def rutf():
 
 @pytest.fixture
 def supplier():
-    return Supplier.objects.create(scope_key=SCOPE, name="Northwind Foods", type="manufacturer", country="NG")
+    return Supplier.objects.enrol(scope_key=SCOPE, name="Northwind Foods", type="manufacturer", country="NG")
 
 
 @pytest.fixture
@@ -205,7 +205,7 @@ class TestInvitations:
     def test_the_supplier_picker_offers_only_this_scope(self, scoped, a_round, supplier):
         """An unscoped ModelChoiceField would list every supplier in the
         database, which is a cross-programme leak wearing a dropdown."""
-        Supplier.objects.create(scope_key="prog:99999", name="Somebody Else Ltd")
+        Supplier.objects.enrol(scope_key="prog:99999", name="Somebody Else Ltd")
         body = scoped.get(reverse("supply_chain:procurement_outreach_log", args=[a_round.pk])).content.decode()
         assert "Northwind Foods" in body
         assert "Somebody Else Ltd" not in body
@@ -422,7 +422,7 @@ class TestRecordingAQuote:
         assert made.as_quoted_currency == "USD"
 
     def test_the_pickers_offer_only_this_programme(self, scoped, a_round, supplier, rutf):
-        Supplier.objects.create(scope_key="prog:99999", name="A supplier in another programme")
+        Supplier.objects.enrol(scope_key="prog:99999", name="A supplier in another program")
         Commodity.objects.create(scope_key="prog:99999", slug="theirs", name="A product in another programme")
         Round.objects.create(program_id=99999, label="A round in another programme", lines=[], delivery_point={})
 

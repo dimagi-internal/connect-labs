@@ -662,53 +662,69 @@ StatedFigureLineFormSet = forms.formset_factory(StatedFigureLineForm, extra=0, m
 
 
 class SupplierForm(ScopedForm):
-    """A supplier, at the level the sourcing lifecycle needs.
+    """A supplier: the company, and where this program has got to with it.
 
-    Not keyed on anything: `supplier_create` makes a row and
-    `supplier_update` edits one by id, so unlike the catalogue there is no
-    natural key to protect. What there is instead is a duplicate risk --
-    "Nutriset" and "Nutriset SAS" are one company -- so the create screen
-    warns on a near-match rather than refusing, because sometimes they really
-    are two.
+    Two things are edited on one screen. The company -- name, what it is,
+    where it is, its Connect binding -- belongs to the organisation and is the
+    same in every program that buys from it (`SupplierProfile`). The status
+    and notes are this program's own. So the company fields are declared
+    here rather than taken from the model, and the operation routes each to
+    where it lives.
+
+    There is a duplicate risk -- "Nutriset" and "Nutriset SAS" are one
+    company -- so the create screen refuses an exact repeat and nothing else,
+    because sometimes they really are two.
 
     `contacts` and `qualifications` are lists of objects and stay out, the
     same way `spec_requirements` does: an existing supplier's contacts survive
     an edit here untouched.
     """
 
+    name = forms.CharField(
+        label=_("Name"),
+        max_length=300,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("as they write it themselves")}),
+    )
+    type = forms.ChoiceField(label=_("What they are"), required=False, widget=forms.Select(attrs=SELECT))
+    country = forms.CharField(
+        label=_("Country"),
+        max_length=2,
+        required=False,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": "NG", "maxlength": 2}),
+        help_text=_("Two letters, ISO 3166 — NG, KE, FR."),
+    )
+    city = forms.CharField(label=_("City"), max_length=128, required=False, widget=forms.TextInput(attrs=INPUT))
+    connect_organization_id = forms.IntegerField(
+        label=_("Connect organisation id"),
+        required=False,
+        min_value=1,
+        widget=forms.NumberInput(attrs={**INPUT, "min": 1}),
+        help_text=_(
+            "Bind this supplier to a Connect organisation and their own staff can sign in "
+            "and record their shipments. Leave empty and we record on their behalf."
+        ),
+    )
+
     class Meta:
         model = Supplier
-        fields = ["name", "type", "status", "country", "city", "connect_organization_id", "notes"]
+        fields = ["status", "notes"]
         widgets = {
-            "name": forms.TextInput(attrs={**INPUT, "placeholder": _("as they write it themselves")}),
-            "type": forms.Select(attrs=SELECT),
             "status": forms.Select(attrs=SELECT),
-            "country": forms.TextInput(attrs={**INPUT, "placeholder": "NG", "maxlength": 2}),
-            "city": forms.TextInput(attrs=INPUT),
-            "connect_organization_id": forms.NumberInput(attrs={**INPUT, "min": 1}),
             "notes": forms.Textarea(attrs=TEXTAREA),
         }
         labels = {
-            "name": _("Name"),
-            "type": _("What they are"),
             "status": _("Where we have got to"),
-            "country": _("Country"),
-            "city": _("City"),
-            "connect_organization_id": _("Connect organisation id"),
             "notes": _("Notes"),
         }
         help_texts = {
-            "country": _("Two letters, ISO 3166 — NG, KE, FR."),
-            "connect_organization_id": _(
-                "Bind this supplier to a Connect organisation and their own staff can sign in "
-                "and record their shipments. Leave empty and we record on their behalf."
-            ),
             "status": _("Moves as the relationship does. Nothing is computed from it — it is what we believe."),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["type"].required = False
+        if self.instance and self.instance.pk:
+            for field in ("name", "type", "country", "city", "connect_organization_id"):
+                self.initial.setdefault(field, getattr(self.instance, field))
         set_choices(
             self,
             "type",
@@ -749,7 +765,7 @@ class SupplierForm(ScopedForm):
     def clean_name(self):
         name = (self.cleaned_data.get("name") or "").strip()
         if name and not (self.instance and self.instance.pk):
-            existing = Supplier.objects.filter(scope_key=self.access.scope_key, name__iexact=name).first()
+            existing = Supplier.objects.filter(scope_key=self.access.scope_key, org__name__iexact=name).first()
             if existing is not None:
                 # An exact repeat is a mistake often enough to refuse. A
                 # near-match is not -- "Nutriset" and "Nutriset Nigeria" are

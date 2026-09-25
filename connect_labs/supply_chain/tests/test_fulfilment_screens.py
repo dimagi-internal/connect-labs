@@ -58,7 +58,7 @@ def rutf():
 
 @pytest.fixture
 def supplier():
-    return Supplier.objects.create(scope_key=SCOPE, name="Northwind Foods", type="manufacturer")
+    return Supplier.objects.enrol(scope_key=SCOPE, name="Northwind Foods", type="manufacturer")
 
 
 @pytest.fixture
@@ -169,11 +169,16 @@ class TestRecordingAnOrder:
         assert response.status_code == 200
         assert "item" in response.context["form"].errors
 
-    def test_the_supplier_picker_offers_only_this_programmes_suppliers(self, scoped, supplier):
-        Supplier.objects.create(scope_key="prog:99999", name="A supplier in another programme")
-        body = scoped.get(reverse("supply_chain:contract_create")).content.decode()
-        assert "Northwind Foods" in body
-        assert "A supplier in another programme" not in body
+    def test_the_supplier_picker_offers_only_this_programs_suppliers(self, scoped, supplier):
+        # Asked of the supplier field, not the page: a supplier's company is a
+        # labs-wide organisation, and the buyer picker lists organisations
+        # labs-wide on purpose. What must not cross is the other program's
+        # SUPPLIER -- its relationship with the company.
+        elsewhere = Supplier.objects.enrol(scope_key="prog:99999", name="A supplier in another program")
+        response = scoped.get(reverse("supply_chain:contract_create"))
+        offered = set(response.context["form"].fields["supplier"].queryset.values_list("pk", flat=True))
+        assert supplier.pk in offered
+        assert elsewhere.pk not in offered
 
     def test_a_claimed_duty_relief_reaches_the_row(self, scoped, rutf, supplier, buyer):
         scoped.post(
