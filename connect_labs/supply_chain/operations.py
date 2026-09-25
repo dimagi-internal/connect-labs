@@ -359,6 +359,12 @@ _TENDER_DATA = _data_with(
     ),
     pickup_accepted={"type": "boolean"},
     incoterm_requested={"type": "string"},
+    # An organisation's own listing: who publishes it, its address
+    # (/supply/market/t/<slug>/), its brief and its colour.
+    owner_org_id=NULLABLE_ID,
+    slug={"type": ["string", "null"], "maxLength": 80},
+    brief={"type": "string"},
+    hue={"enum": ["", *[code for code, _label in records.LISTING_HUES]]},
     reminder_interval_days=_NON_NEGATIVE_INT,
     visibility={"enum": list(records.TENDER_VISIBILITIES)},
 )

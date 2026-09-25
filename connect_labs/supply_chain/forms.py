@@ -45,6 +45,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from connect_labs.labs.models import LabsOrg
+from connect_labs.supply_chain import records
 from connect_labs.supply_chain.models import (
     AwardApproval,
     Commodity,
@@ -277,6 +278,10 @@ class TenderForm(ScopedForm):
             "pickup_accepted",
             "notes_to_supplier",
             "visibility",
+            "owner_org",
+            "slug",
+            "brief",
+            "hue",
         ]
         widgets = {
             "visibility": forms.Select(attrs=SELECT),
@@ -285,6 +290,10 @@ class TenderForm(ScopedForm):
             "reminder_interval_days": forms.NumberInput(attrs={**INPUT, "min": 0}),
             "shelf_life_months_minimum": forms.NumberInput(attrs={**INPUT, "min": 0}),
             "incoterm_requested": forms.TextInput(attrs={**INPUT, "placeholder": "DAP", "maxlength": 16}),
+            "owner_org": forms.Select(attrs=SEARCHABLE),
+            "slug": forms.TextInput(attrs={**INPUT, "placeholder": "e.g. rutf-sokoto-2026"}),
+            "brief": forms.Textarea(attrs=TEXTAREA),
+            "hue": forms.Select(attrs=SELECT),
             "notes_to_supplier": forms.Textarea(attrs=TEXTAREA),
         }
         labels = {
@@ -296,10 +305,17 @@ class TenderForm(ScopedForm):
             "pickup_accepted": _("We can also collect from the supplier"),
             "notes_to_supplier": _("Anything else to tell suppliers"),
             "visibility": _("On the supplier marketplace"),
+            "owner_org": _("Published by"),
+            "slug": _("Its own address"),
+            "brief": _("Brief for suppliers"),
+            "hue": _("Colour"),
         }
         help_texts = {
             "shelf_life_months_minimum": _("Sea freight and clearance routinely eat four months of it."),
             "reminder_interval_days": _("Leave empty and nobody is chased automatically."),
+            "owner_org": _("An organisation publishing this as its own tender. Its people can then run the listing."),
+            "slug": _("Gives the tender a shareable address, /supply/market/t/<this>/. Letters, numbers and hyphens."),
+            "brief": _("A few paragraphs suppliers read above the products."),
             "pickup_accepted": _(
                 "Suppliers may then offer a price for us to collect. Its delivered cost stays unconfirmed "
                 "until you enter what our own transport will cost."
@@ -325,7 +341,18 @@ class TenderForm(ScopedForm):
             Field("pickup_accepted"),
             Field("notes_to_supplier"),
             Field("visibility"),
+            Fieldset(
+                str(_("As an organisation's own listing (optional)")),
+                Row(Column("owner_org"), Column("slug"), css_class="grid md:grid-cols-2 gap-x-6"),
+                Field("brief"),
+                Field("hue"),
+                css_class="pt-2",
+            ),
         )
+        self.fields["owner_org"].queryset = LabsOrg.objects.order_by("name")
+        self.fields["owner_org"].required = False
+        self.fields["owner_org"].empty_label = _("No one — a program tender")
+        set_choices(self, "hue", [("", _("By product")), *records.LISTING_HUES], required=False)
         # Not required: a caller that does not say leaves the tender public,
         # the model's default -- the same as a tender created over the API.
         self.fields["visibility"].required = False
@@ -343,6 +370,12 @@ class TenderForm(ScopedForm):
         # A checkbox left clear is False, which to_payload keeps; say so
         # explicitly so an edit can turn collection off again.
         data["pickup_accepted"] = bool(self.cleaned_data.get("pickup_accepted"))
+        # Cleared on the form means cleared on the tender, not "left alone".
+        data["slug"] = self.cleaned_data.get("slug") or None
+        data["owner_org_id"] = self.cleaned_data["owner_org"].pk if self.cleaned_data.get("owner_org") else None
+        data.pop("owner_org", None)
+        data["hue"] = self.cleaned_data.get("hue") or ""
+        data["brief"] = self.cleaned_data.get("brief") or ""
         return data
 
 

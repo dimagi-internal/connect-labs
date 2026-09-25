@@ -71,6 +71,8 @@ TAB_FOR_VIEW = {
     "supply_chain:procurement_tender_edit": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_tender_open": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_tender_close": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_tender_invite_org": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_tender_uninvite_org": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_outreach_log": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_outreach_reply": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_outreach_delete": "supply_chain:procurement_tender_board",
@@ -147,6 +149,8 @@ VIEWS_WITHOUT_TABS = frozenset(
         "supply_chain:market_organisation",
         "supply_chain:market_invite",
         "supply_chain:market_invite_accept",
+        "supply_chain:market_tender_listing",
+        "supply_chain:market_tender_manage",
     }
 )
 

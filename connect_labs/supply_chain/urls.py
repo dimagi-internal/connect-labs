@@ -40,6 +40,9 @@ urlpatterns = [
     # under market/, so none can be read as an id.
     path("market/", market_views.MarketHomeView.as_view(), name="market"),
     path("market/tenders/<int:tender_id>/", market_views.MarketTenderView.as_view(), name="market_tender"),
+    # An organisation's own tender, at an address it can hand out.
+    path("market/t/<slug:slug>/", market_views.TenderListingView.as_view(), name="market_tender_listing"),
+    path("market/t/<slug:slug>/manage/", market_views.TenderManageView.as_view(), name="market_tender_manage"),
     path("market/tenders/<int:tender_id>/bid/<slug:slug>/", market_views.BidView.as_view(), name="market_bid"),
     path("market/bids/", market_views.MyBidsView.as_view(), name="market_bids"),
     path("market/bids/<int:quote_id>/revise/", market_views.ReviseView.as_view(), name="market_revise"),
@@ -125,6 +128,16 @@ urlpatterns = [
         "procurement/tenders/<int:tender_id>/open/",
         procurement_views.TenderOpenView.as_view(),
         name="procurement_tender_open",
+    ),
+    path(
+        "procurement/tenders/<int:tender_id>/invite-org/",
+        procurement_views.TenderInviteOrgView.as_view(),
+        name="procurement_tender_invite_org",
+    ),
+    path(
+        "procurement/tenders/<int:tender_id>/uninvite-org/",
+        procurement_views.TenderUninviteOrgView.as_view(),
+        name="procurement_tender_uninvite_org",
     ),
     path(
         "procurement/tenders/<int:tender_id>/close/",
