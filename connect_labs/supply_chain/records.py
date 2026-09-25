@@ -264,7 +264,11 @@ COMMODITY_CATEGORIES = (
 
 # Who may see an open tender on the supplier marketplace. `public`: anyone,
 # signed in or not. `private`: only organisations invited to it.
-ROUND_VISIBILITIES = ("public", "private")
+TENDER_VISIBILITIES = ("public", "private")
+
+# How a bid gets the goods to the buyer: delivered to one of the tender's
+# places, or collected by the buyer from the supplier.
+DELIVERY_MODES = ("delivered", "pickup")
 
 # Who typed a quote in: the program team (from an email, a call, a PDF), or the
 # supplier itself on the marketplace. Different evidence, so it is kept.

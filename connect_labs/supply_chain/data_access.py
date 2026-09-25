@@ -95,6 +95,61 @@ _RESOLVED = {
 _NOT_SETTABLE = {"id", "pk", "created_at", "updated_at", "scope_key", "program_id"}
 
 
+def _delivery(data: dict) -> dict:
+    """A tender's delivery places, however the caller named them.
+
+    A caller written when a tender had exactly one place still sends
+    `delivery_point` (a dict, with the Incoterm inside it); that becomes a
+    one-place `delivery_points` list and a top-level `incoterm_requested`.
+    Every place gets a stable `key` -- a supplier's bid names the places its
+    price covers by key, so a place renamed later is still the same place.
+    """
+    data = dict(data)
+    single = data.pop("delivery_point", None)
+    if single is not None and "delivery_points" not in data:
+        single = dict(single)
+        incoterm = single.pop("incoterm_requested", None)
+        if incoterm and "incoterm_requested" not in data:
+            data["incoterm_requested"] = incoterm
+        single = {k: v for k, v in single.items() if v}
+        data["delivery_points"] = [single] if single else []
+    if "delivery_points" in data:
+        from django.utils.text import slugify
+
+        keyed, used = [], set()
+        for index, point in enumerate(data["delivery_points"] or [], start=1):
+            point = {k: v for k, v in dict(point).items() if v not in (None, "")}
+            if not (point.get("name") or point.get("city")):
+                continue
+            key = point.get("key") or slugify(point.get("name") or point.get("city")) or f"place-{index}"
+            base, n = key, 2
+            while key in used:
+                key, n = f"{base}-{n}", n + 1
+            used.add(key)
+            keyed.append({**point, "key": key})
+        data["delivery_points"] = keyed
+    return data
+
+
+def _check_delivery(tender, mode: str, keys) -> None:
+    """A bid's delivery must be one the tender offers.
+
+    A delivered bid names only places the tender lists; a collected bid is
+    refused unless the tender accepts collection, and names no places. Checked
+    here, where every write lands, not only on the form that offers the choice.
+    """
+    if mode == "pickup":
+        if not tender.pickup_accepted:
+            raise ValueError("this tender does not accept collection from the supplier")
+        if keys:
+            raise ValueError("a collected bid names no delivery places")
+        return
+    listed = {p.get("key") for p in tender.delivery_points or []}
+    unknown = [key for key in keys if key not in listed]
+    if unknown:
+        raise ValueError(f"the tender lists no delivery place {', '.join(unknown)}")
+
+
 def _columns(model, data: dict) -> dict:
     """The keys of `data` that this model can actually be given.
 
@@ -672,7 +727,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         return _fresh(
             Tender.objects.create(
                 program_id=self._require_program(),
-                **{"status": "draft", **_columns(Tender, data)},
+                **{"status": "draft", **_columns(Tender, _delivery(data))},
             )
         )
 
@@ -680,24 +735,26 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         found = self.get_tender(tender_id)
         if found is None:
             raise ValueError(f"tender {tender_id} not found")
-        for key, value in _columns(Tender, data).items():
+        for key, value in _columns(Tender, _delivery(data)).items():
             setattr(found, key, value)
         found.save()
         return _fresh(found)
 
     def open_tender(self, tender_id):
-        """A tender cannot open without a delivery point.
+        """A tender cannot open until suppliers know where the goods go.
 
-        Suppliers will not quote without knowing where the goods go, because
-        freight dominates the price -- so an open tender that cannot say is
-        not a tender anyone can answer.
+        Freight dominates the price, so an open tender that cannot say is not
+        one anyone can answer. It says so by naming at least one delivery
+        place, or by accepting collection from the supplier.
         """
         found = self.get_tender(tender_id)
         if found is None:
             raise ValueError(f"tender {tender_id} not found")
-        point = found.delivery_point or {}
-        if not point.get("city") and not point.get("name"):
-            raise ValueError("a tender needs a delivery point before it can open")
+        places = [p for p in found.delivery_points or [] if p.get("city") or p.get("name")]
+        if not places and not found.pickup_accepted:
+            raise ValueError(
+                "a tender needs a delivery point, or to accept collection from the supplier, before it can open"
+            )
         found.status = "open"
         found.save(update_fields=["status", "updated_at"])
         return found
@@ -774,9 +831,11 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         return self._quotes().filter(pk=quote_id).first()
 
     def create_quote(self, data):
+        tender = self._require_tender(data["tender_id"])
+        _check_delivery(tender, data.get("delivery_mode") or "delivered", data.get("delivery_point_keys") or [])
         return _fresh(
             Quote.objects.create(
-                tender=self._require_tender(data["tender_id"]),
+                tender=tender,
                 commodity=self._require_commodity(data["commodity_slug"]),
                 supplier=self._resolve_supplier(data.get("supplier_id")),
                 item=self._resolve_item(data.get("item_id")),
@@ -810,6 +869,9 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
                 "version": (existing.version or 1) + 1,
                 "correction_reason": reason,
             },
+        )
+        _check_delivery(
+            existing.tender, merged.get("delivery_mode") or "delivered", merged.get("delivery_point_keys") or []
         )
         replacement = Quote.objects.create(
             tender=existing.tender,

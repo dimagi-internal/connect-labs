@@ -36,6 +36,11 @@ from connect_labs.supply_chain.models import SupplierOffering, SupplierProfile, 
 MARKET_CHROME = method_decorator(page_chrome(labs_context=False, pulse_widget=True), name="dispatch")
 
 
+def _delivery_choices(listed) -> dict:
+    """What a bid on this tender may say about delivery: its places, and collection."""
+    return {"places": listed.tender.delivery_points or [], "pickup_accepted": listed.tender.pickup_accepted}
+
+
 def _signed_in(request) -> bool:
     return bool(getattr(request, "user", None) and request.user.is_authenticated)
 
@@ -73,8 +78,10 @@ def _render(request, template, **extra):
 
 
 def _delivered_to(tender) -> str:
-    point = tender.delivery_point or {}
-    return f"{point.get('country', '')} {point.get('country_name', '')}"
+    """Every place the tender delivers to, as one string the country filter searches."""
+    return " ".join(
+        f"{p.get('city', '')} {p.get('country', '')} {p.get('country_name', '')}" for p in tender.delivery_points or []
+    )
 
 
 @MARKET_CHROME
@@ -176,7 +183,8 @@ class BidView(_SupplierView):
                 initial.update(
                     base_per_pack_stated=offering.base_per_pack, lead_time_days=offering.typical_lead_time_days
                 )
-        return self._page(request, listed, line, BidForm(initial=initial, requirements=requirements), org)
+        form = BidForm(initial=initial, requirements=requirements, **_delivery_choices(listed))
+        return self._page(request, listed, line, form, org)
 
     def post(self, request, tender_id, slug):
         try:
@@ -185,7 +193,11 @@ class BidView(_SupplierView):
             raise Http404("no such tender")
         line = self._line(listed, slug)
         org = self.acting(request)
-        form = BidForm(request.POST, requirements=line.commodity.spec_requirements if line.commodity else [])
+        form = BidForm(
+            request.POST,
+            requirements=line.commodity.spec_requirements if line.commodity else [],
+            **_delivery_choices(listed),
+        )
         if org is None:
             form.add_error(None, "Choose which organisation this bid is from.")
         if not form.is_valid():
@@ -215,7 +227,11 @@ class ReviseView(BidView):
         except service.NotAvailable:
             raise Http404("this tender has closed")
         line = self._line(listed, quote.commodity.slug)
-        form = BidForm(initial=BidForm.initial_from(quote), requirements=quote.commodity.spec_requirements)
+        form = BidForm(
+            initial=BidForm.initial_from(quote),
+            requirements=quote.commodity.spec_requirements,
+            **_delivery_choices(listed),
+        )
         return self._page(request, listed, line, form, quote.supplier.org, quote=quote)
 
     def post(self, request, quote_id):
@@ -226,7 +242,7 @@ class ReviseView(BidView):
             raise Http404("this tender has closed")
         line = self._line(listed, quote.commodity.slug)
         org = quote.supplier.org
-        form = BidForm(request.POST, requirements=quote.commodity.spec_requirements)
+        form = BidForm(request.POST, requirements=quote.commodity.spec_requirements, **_delivery_choices(listed))
         if not form.is_valid():
             return self._page(request, listed, line, form, org, quote=quote, status=400)
         try:

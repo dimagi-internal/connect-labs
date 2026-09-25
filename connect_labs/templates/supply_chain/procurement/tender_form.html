@@ -66,4 +66,55 @@ Alpine is what this project bundles.
     + Add another commodity
   </button>
 </div>
+
+{% comment %}
+Where the goods can go. One row per place; a supplier's bid says which of them
+its price covers. Leave them all empty only if the tender accepts collection.
+{% endcomment %}
+<div class="pt-4 mt-6 border-t border-gray-100" x-data="{ count: {{ places.total_form_count }} }">
+  <h2 class="text-sm font-semibold text-gray-900">Where the goods go</h2>
+  <p class="text-xs text-gray-500 mt-0.5 mb-3 max-w-2xl">
+    One row per place you can take delivery at. One total quantity per product: each
+    supplier says which of these places its price covers, and may price each separately.
+  </p>
+  {{ places.management_form }}
+  <div id="place-rows" class="space-y-3">
+    {% for place in places %}
+      <div class="grid grid-cols-1 md:grid-cols-[2fr,1fr,1fr,auto] gap-x-4 gap-y-2 items-start
+                  rounded-md border border-gray-200 bg-gray-50/40 px-3 py-3">
+        {{ place.key }}
+        {% for field in place.visible_fields %}
+          {% if field.name != "DELETE" %}
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.errors %}<p class="mt-1 text-xs text-red-700">{{ field.errors|join:" " }}</p>{% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+        <label class="flex items-center gap-1.5 text-xs text-gray-500 md:pt-6 whitespace-nowrap">
+          {{ place.DELETE }} Remove
+        </label>
+      </div>
+    {% endfor %}
+  </div>
+  <template id="empty-place">
+    <div class="grid grid-cols-1 md:grid-cols-[2fr,1fr,1fr,auto] gap-x-4 gap-y-2 items-start
+                rounded-md border border-gray-200 bg-gray-50/40 px-3 py-3">
+      {{ places.empty_form.as_div }}
+    </div>
+  </template>
+  <button type="button"
+          @click="
+            const tpl = document.getElementById('empty-place');
+            const host = document.createElement('div');
+            host.appendChild(tpl.content.cloneNode(true));
+            host.innerHTML = host.innerHTML.replaceAll('__prefix__', count);
+            document.getElementById('place-rows').appendChild(host.firstElementChild);
+            document.querySelector('[name=places-TOTAL_FORMS]').value = ++count;
+          "
+          class="mt-3 text-sm text-brand-indigo hover:underline">
+    + Add another place
+  </button>
+</div>
 {% endblock %}

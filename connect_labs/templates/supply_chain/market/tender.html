@@ -15,12 +15,12 @@
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">REPLIES BY{% if card.days_left is not None and card.days_left >= 0 %} · {{ card.deadline_words|upper }}{% endif %}</div>
       </div>
       <div>
-        <div class="text-[20px] sm:text-[24px] font-semibold text-white">{{ r.delivery_point.name|default:"Not stated" }}</div>
-        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">DELIVER TO{% if r.delivery_point.city %} · {{ r.delivery_point.city|upper }}{% endif %}{% if r.delivery_point.country_name %} · {{ r.delivery_point.country_name|upper }}{% endif %}</div>
+        <div class="text-[20px] sm:text-[24px] font-semibold text-white">{{ r.delivery_points|length|default:"—" }} place{{ r.delivery_points|length|pluralize }}{% if r.pickup_accepted %} · or collect{% endif %}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">WHERE THE GOODS GO</div>
       </div>
-      {% if r.delivery_point.incoterm_requested %}
+      {% if r.incoterm_requested %}
       <div>
-        <div class="text-[20px] sm:text-[24px] font-semibold text-white">{{ r.delivery_point.incoterm_requested }}</div>
+        <div class="text-[20px] sm:text-[24px] font-semibold text-white">{{ r.incoterm_requested }}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">TERMS ASKED FOR</div>
       </div>
       {% endif %}
@@ -45,6 +45,19 @@
     <p class="text-[14px] text-gray-800 whitespace-pre-line leading-relaxed">{{ r.notes_to_supplier }}</p>
   </div>
 {% endif %}
+
+<div class="mb-8 max-w-3xl">
+  <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">Where the goods go</h2>
+  <ul class="bg-white border border-brand-border-light rounded-[10px] divide-y divide-gray-100 text-[14px]">
+    {% for p in r.delivery_points %}
+      <li class="px-5 py-3"><span class="font-medium">{% firstof p.name p.city %}</span>{% if p.name and p.city %}<span class="text-gray-600">, {{ p.city }}</span>{% endif %}{% if p.country_name %}<span class="text-gray-600">, {{ p.country_name }}</span>{% endif %}</li>
+    {% endfor %}
+    {% if r.pickup_accepted %}
+      <li class="px-5 py-3"><span class="font-medium">Or the buyer collects from you</span> <span class="text-gray-600">— say where on your bid.</span></li>
+    {% endif %}
+  </ul>
+  {% if r.delivery_points|length > 1 %}<p class="text-[12.5px] text-gray-600 mt-2">Your price can cover one place or several; if it differs by place, send a bid for each.</p>{% endif %}
+</div>
 
 <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-4">
   <h2 class="text-lg font-semibold text-brand-deep-purple">What they are asking for</h2>

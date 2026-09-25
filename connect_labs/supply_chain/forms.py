@@ -259,28 +259,12 @@ class ScopedForm(forms.ModelForm):
 
 
 class TenderForm(ScopedForm):
-    """A quote tender's own details. Its commodity lines are a formset.
+    """A tender's own details. Its product lines and delivery places are formsets.
 
-    `lines` and `delivery_point` are JSONFields and are excluded: rendered by
+    `lines` and `delivery_points` are JSONFields and are excluded: rendered by
     a ModelForm they would be a textarea of raw JSON, which is a worse way to
-    ask for two numbers and a place name than asking for them.
+    ask for a quantity and a place name than asking for them.
     """
-
-    delivery_name = forms.CharField(
-        label=_("Deliver to"),
-        max_length=255,
-        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. Central store")}),
-        help_text=_("Suppliers will not quote without knowing where the goods go."),
-    )
-    delivery_city = forms.CharField(
-        label=_("City"), max_length=128, required=False, widget=forms.TextInput(attrs=INPUT)
-    )
-    delivery_country = forms.CharField(
-        label=_("Country"),
-        max_length=64,
-        required=False,
-        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. Nigeria")}),
-    )
 
     class Meta:
         model = Tender
@@ -289,6 +273,8 @@ class TenderForm(ScopedForm):
             "response_deadline",
             "reminder_interval_days",
             "shelf_life_months_minimum",
+            "incoterm_requested",
+            "pickup_accepted",
             "notes_to_supplier",
             "visibility",
         ]
@@ -298,6 +284,7 @@ class TenderForm(ScopedForm):
             "response_deadline": forms.DateInput(attrs=DATE),
             "reminder_interval_days": forms.NumberInput(attrs={**INPUT, "min": 0}),
             "shelf_life_months_minimum": forms.NumberInput(attrs={**INPUT, "min": 0}),
+            "incoterm_requested": forms.TextInput(attrs={**INPUT, "placeholder": "DAP", "maxlength": 16}),
             "notes_to_supplier": forms.Textarea(attrs=TEXTAREA),
         }
         labels = {
@@ -305,37 +292,37 @@ class TenderForm(ScopedForm):
             "response_deadline": _("Replies wanted by"),
             "reminder_interval_days": _("Chase every (days)"),
             "shelf_life_months_minimum": _("Minimum shelf life (months)"),
+            "incoterm_requested": _("Terms asked for (Incoterm)"),
+            "pickup_accepted": _("We can also collect from the supplier"),
             "notes_to_supplier": _("Anything else to tell suppliers"),
             "visibility": _("On the supplier marketplace"),
         }
         help_texts = {
             "shelf_life_months_minimum": _("Sea freight and clearance routinely eat four months of it."),
             "reminder_interval_days": _("Leave empty and nobody is chased automatically."),
+            "pickup_accepted": _(
+                "Suppliers may then offer a price for us to collect. Its delivered cost stays unconfirmed "
+                "until you enter what our own transport will cost."
+            ),
             "visibility": _(
-                "Public: while the tender is open anyone can read it on the marketplace and any registered "
-                "supplier can bid. Private: only the suppliers you invite can see it."
+                "Open: while the tender is taking bids anyone can read it on the marketplace and any "
+                "registered supplier can bid. Restricted: only the suppliers you invite can see it."
             ),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if self.instance and self.instance.pk:
-            point = self.instance.delivery_point or {}
-            self.fields["delivery_name"].initial = point.get("name", "")
-            self.fields["delivery_city"].initial = point.get("city", "")
-            self.fields["delivery_country"].initial = point.get("country_name") or point.get("country", "")
         self.helper.layout = Layout(
             Field("label"),
             Row(
                 Column("response_deadline"), Column("reminder_interval_days"), css_class="grid md:grid-cols-2 gap-x-6"
             ),
             Row(
-                Column("delivery_name"),
-                Column("delivery_city"),
-                Column("delivery_country"),
-                css_class="grid md:grid-cols-3 gap-x-6",
+                Column("shelf_life_months_minimum"),
+                Column("incoterm_requested"),
+                css_class="grid md:grid-cols-2 gap-x-6",
             ),
-            Field("shelf_life_months_minimum"),
+            Field("pickup_accepted"),
             Field("notes_to_supplier"),
             Field("visibility"),
         )
@@ -352,14 +339,33 @@ class TenderForm(ScopedForm):
         )
 
     def payload(self) -> dict:
-        data = to_payload({k: v for k, v in self.cleaned_data.items() if not k.startswith("delivery_")})
-        point = {
-            "name": self.cleaned_data.get("delivery_name", ""),
-            "city": self.cleaned_data.get("delivery_city", ""),
-            "country_name": self.cleaned_data.get("delivery_country", ""),
-        }
-        data["delivery_point"] = {k: v for k, v in point.items() if v}
+        data = to_payload(self.cleaned_data)
+        # A checkbox left clear is False, which to_payload keeps; say so
+        # explicitly so an edit can turn collection off again.
+        data["pickup_accepted"] = bool(self.cleaned_data.get("pickup_accepted"))
         return data
+
+
+class TenderPlaceForm(forms.Form):
+    """One place the buyer will take delivery at. Rendered as a formset."""
+
+    key = forms.CharField(required=False, widget=forms.HiddenInput)
+    name = forms.CharField(
+        label=_("Place"),
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. Central store")}),
+    )
+    city = forms.CharField(label=_("City"), max_length=128, required=False, widget=forms.TextInput(attrs=INPUT))
+    country_name = forms.CharField(
+        label=_("Country"),
+        max_length=64,
+        required=False,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. Nigeria")}),
+    )
+
+
+TenderPlaceFormSet = forms.formset_factory(TenderPlaceForm, extra=1, min_num=0, can_delete=True)
 
 
 class TenderLineForm(forms.Form):
@@ -689,6 +695,13 @@ class QuoteForm(ScopedForm):
     supplier actually wrote.
     """
 
+    delivery_places = forms.CharField(
+        label=_("Places this price covers"),
+        required=False,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. Kano, Sokoto")}),
+        help_text=_("As named on the tender, separated by commas. Leave empty when the tender has one place."),
+    )
+
     class Meta:
         model = Quote
         fields = [
@@ -712,6 +725,9 @@ class QuoteForm(ScopedForm):
             "lead_time_days",
             "incoterm",
             "received_on",
+            "delivery_mode",
+            "pickup_location",
+            "buyer_transport_amount",
         ]
         widgets = {
             "tender": forms.Select(attrs=SEARCHABLE),
@@ -734,6 +750,11 @@ class QuoteForm(ScopedForm):
             "lead_time_days": forms.NumberInput(attrs={**INPUT, "min": 0}),
             "incoterm": forms.TextInput(attrs={**INPUT, "placeholder": "CIF"}),
             "received_on": forms.DateInput(attrs=DATE),
+            "delivery_mode": forms.Select(attrs=SELECT),
+            "pickup_location": forms.TextInput(
+                attrs={**INPUT, "placeholder": _("e.g. their warehouse, Kano free zone")}
+            ),
+            "buyer_transport_amount": forms.NumberInput(attrs=MONEY_INPUT),
         }
         labels = {
             "tender": _("Against which tender"),
@@ -756,6 +777,9 @@ class QuoteForm(ScopedForm):
             "lead_time_days": _("Lead time (days)"),
             "incoterm": _("Incoterm"),
             "received_on": _("Received on"),
+            "delivery_mode": _("How the goods reach us"),
+            "pickup_location": _("Collected from"),
+            "buyer_transport_amount": _("Our own transport cost"),
         }
         help_texts = {
             "as_quoted_amount": _("As the supplier wrote it. Converting happens in the comparison, not here."),
@@ -780,6 +804,19 @@ class QuoteForm(ScopedForm):
 
         basis = [("not_specified", _("Not specified")), ("included", _("Included")), ("excluded", _("Excluded"))]
         set_choices(self, "freight_basis", basis)
+        set_choices(
+            self,
+            "delivery_mode",
+            [("delivered", _("Delivered to our place")), ("pickup", _("We collect from them"))],
+        )
+        self.fields["delivery_mode"].required = False
+        instance = getattr(self, "instance", None)
+        if instance is not None and instance.pk and instance.delivery_point_keys:
+            names = [
+                (instance.tender.point(key) or {}).get("name") or (instance.tender.point(key) or {}).get("city") or key
+                for key in instance.delivery_point_keys
+            ]
+            self.initial.setdefault("delivery_places", ", ".join(names))
         set_choices(self, "duties_basis", basis)
         set_choices(
             self,
@@ -860,6 +897,16 @@ class QuoteForm(ScopedForm):
                 ),
                 css_class="pt-2",
             ),
+            Fieldset(
+                str(_("Where the goods go")),
+                Row(Column("delivery_mode"), Column("delivery_places"), css_class="grid md:grid-cols-2 gap-x-6"),
+                Row(
+                    Column("pickup_location"),
+                    Column("buyer_transport_amount"),
+                    css_class="grid md:grid-cols-2 gap-x-6",
+                ),
+                css_class="pt-2",
+            ),
         )
 
     def build_layout(self):
@@ -885,10 +932,45 @@ class QuoteForm(ScopedForm):
             self.add_error(
                 "item", _("That trade item is not a version of \u201c%(name)s\u201d.") % {"name": commodity.name}
             )
+        self._match_places(cleaned)
         return cleaned
 
+    def _match_places(self, cleaned):
+        """Place names as typed, to the tender's place keys.
+
+        A person reads places by name; a bid stores them by key, so a place
+        renamed later is still the same place. Anything that names no place on
+        the tender is refused with the list it could have been.
+        """
+        tender = cleaned.get("tender") or getattr(getattr(self, "instance", None), "tender", None)
+        typed = [part.strip() for part in (cleaned.get("delivery_places") or "").split(",") if part.strip()]
+        cleaned["delivery_point_keys"] = []
+        if not typed or tender is None:
+            return
+        points = tender.delivery_points or []
+        keys, unknown = [], []
+        for name in typed:
+            found = next(
+                (
+                    p
+                    for p in points
+                    if name.casefold() in {(p.get(f) or "").casefold() for f in ("key", "name", "city")}
+                ),
+                None,
+            )
+            (keys.append(found["key"]) if found else unknown.append(name))
+        if unknown:
+            offered = ", ".join(p.get("name") or p.get("city") for p in points) or _("none")
+            self.add_error(
+                "delivery_places",
+                _("The tender has no place called %(names)s. Its places are: %(offered)s.")
+                % {"names": ", ".join(unknown), "offered": offered},
+            )
+        cleaned["delivery_point_keys"] = keys
+
     def payload(self) -> dict:
-        data = to_payload(self.cleaned_data)
+        data = to_payload({k: v for k, v in self.cleaned_data.items() if k != "delivery_places"})
+        data["delivery_point_keys"] = self.cleaned_data.get("delivery_point_keys") or []
         # The schema names the product by slug and the tender and supplier by
         # their own ids, which is what `to_payload` already produces for the
         # relations. Only the commodity needs saying differently.
@@ -934,4 +1016,6 @@ class QuoteCorrectionForm(QuoteForm):
         # `reason` is a top-level argument of `quote_correct`, describing the
         # correction rather than the offer, so the view lifts it out. Keeping
         # the split here would mean the form knowing the operation's shape.
-        return to_payload({k: v for k, v in self.cleaned_data.items() if k != "reason"})
+        data = to_payload({k: v for k, v in self.cleaned_data.items() if k not in ("reason", "delivery_places")})
+        data["delivery_point_keys"] = self.cleaned_data.get("delivery_point_keys") or []
+        return data
