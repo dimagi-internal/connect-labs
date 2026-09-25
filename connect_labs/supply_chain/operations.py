@@ -311,6 +311,7 @@ _ROUND_DATA = _data_with(
         incoterm_requested={"type": "string"},
     ),
     reminder_interval_days=_NON_NEGATIVE_INT,
+    visibility={"enum": list(records.ROUND_VISIBILITIES)},
 )
 
 _ITEM_DATA = _data_with(
@@ -664,6 +665,49 @@ def supplier_create(access, data):
 )
 def supplier_update(access, supplier_id, data):
     return record(access.update_supplier(supplier_id, data))
+
+
+@register_operation(
+    name="supplier_mark_reviewed",
+    summary=(
+        "Record that the program team has reviewed a supplier that registered itself on the supplier "
+        "marketplace. Clears the 'self-registered, not yet reviewed' flag on its quotes; changes nothing else."
+    ),
+    input_schema=obj({"supplier_id": ID}, required=("supplier_id",)),
+    is_write=True,
+)
+def supplier_mark_reviewed(access, supplier_id):
+    return record(access.mark_supplier_reviewed(supplier_id))
+
+
+@register_operation(
+    name="supplier_market_invite",
+    summary=(
+        "Issue a one-time, 30-day invitation that lets whoever opens it (signed in to labs) act for this "
+        "supplier's company on the supplier marketplace: its profile, its offerings and its bids. The raw "
+        "link is returned once and never again. The email is only a note of who it was for."
+    ),
+    input_schema=obj({"supplier_id": ID, "email": {"type": "string"}}, required=("supplier_id",)),
+    is_write=True,
+)
+def supplier_market_invite(access, supplier_id, email=""):
+    from django.urls import reverse
+
+    from connect_labs.marketplace import membership
+
+    supplier = access.get_supplier(supplier_id)
+    if supplier is None:
+        raise ValueError(f"supplier {supplier_id} not found")
+    user = access.user if getattr(access.user, "is_authenticated", False) else None
+    invite, raw = membership.issue_invite(supplier.org, email=email or "", issued_by=user)
+    return {
+        "org_id": supplier.org_id,
+        "org_name": supplier.org.name,
+        "email": invite.email,
+        "role": invite.role,
+        "expires_at": invite.expires_at.isoformat(),
+        "path": reverse("supply_chain:market_invite", args=[raw]),
+    }
 
 
 @register_operation(

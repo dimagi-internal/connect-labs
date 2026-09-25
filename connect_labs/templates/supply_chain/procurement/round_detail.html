@@ -9,6 +9,14 @@
     <p class="text-sm text-gray-600">
       Status: {{ round.status|title }} — response deadline {{ round.response_deadline|default:"not set" }}
     </p>
+    <p class="text-sm text-gray-600 mt-1">
+      {% if round.visibility == "private" %}
+        <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 border">Private</span> Only the suppliers you invite see it on the supplier marketplace.
+      {% else %}
+        <span class="px-2 py-0.5 rounded-full text-xs bg-message-info text-message-info-text border border-message-info-border">Public</span>
+        {% if round.status == "open" %}Listed on the <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_round' round.id %}">supplier marketplace</a>: any registered supplier can bid.{% else %}Listed on the supplier marketplace while it is open.{% endif %}
+      {% endif %}
+    </p>
   </div>
   <div class="flex flex-wrap items-center gap-2">
     {% for line in round.lines %}

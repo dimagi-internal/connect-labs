@@ -35,6 +35,7 @@ schema, not a policy.
 
 from decimal import Decimal, InvalidOperation
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q, Sum
@@ -294,6 +295,36 @@ class SupplierProfile(TimestampedModel):
         return f"supplier profile of {self.org}"
 
 
+class SupplierOffering(TimestampedModel):
+    """Something a supplier says it sells -- its own claim, dated.
+
+    The supply base deliberately has no "supplies" table: "X supplies RUTF"
+    typed into a box is an assertion nobody made. This one somebody did make
+    -- the supplier, about itself -- so it is kept as exactly that, and read
+    as the weakest kind of evidence (`supply_base`'s `declared`). Matched to a
+    program's product by category, or exactly by UNICEF material number or
+    GTIN when the supplier gives one.
+    """
+
+    profile = models.ForeignKey(SupplierProfile, on_delete=models.CASCADE, related_name="offerings")
+    category = models.CharField(max_length=32, choices=[(c, label) for c, label in records.COMMODITY_CATEGORIES])
+    product_name = models.CharField(max_length=255)
+    unicef_material_number = models.CharField(max_length=32, blank=True, default="")
+    gtin = models.CharField(max_length=14, blank=True, default="")
+    pack_description = models.CharField(max_length=255, blank=True, default="")
+    base_per_pack = models.IntegerField(null=True, blank=True)
+    typical_lead_time_days = models.IntegerField(null=True, blank=True)
+    minimum_order = models.CharField(max_length=128, blank=True, default="")
+    countries_served = models.JSONField(default=list, blank=True)
+    certifications = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["category", "product_name"]
+
+    def __str__(self):
+        return self.product_name
+
+
 class SupplierManager(models.Manager):
     def enrol(self, scope_key, *, org=None, **company):
         """Link a company into a program as a supplier, and return the link.
@@ -377,6 +408,16 @@ class Supplier(TimestampedModel):
     org = models.ForeignKey("labs.LabsOrg", on_delete=models.PROTECT, related_name="supplier_links")
     status = models.CharField(max_length=32, blank=True, default="identified")
     notes = models.TextField(blank=True, default="")
+    # A supplier that arrived by bidding from the marketplace, rather than
+    # being added by the program team, is shown as "not yet reviewed" until
+    # somebody on the team says they have looked. Its bids count meanwhile:
+    # a hidden bid is a silent failure, and a bid the team will not consider
+    # is voided with a reason like any other.
+    origin = models.CharField(max_length=16, default="program", choices=_choices(records.SUPPLIER_ORIGINS))
+    reviewed_on = models.DateField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
 
     objects = SupplierManager()
 
@@ -402,6 +443,10 @@ class Supplier(TimestampedModel):
             return org.supplier_profile
         except SupplierProfile.DoesNotExist:
             return None
+
+    @property
+    def awaiting_review(self) -> bool:
+        return self.origin == "self_registered" and self.reviewed_on is None
 
     def _profile_value(self, field, empty):
         profile = self.profile
@@ -451,6 +496,9 @@ class Round(TimestampedModel):
     reminder_interval_days = models.IntegerField(null=True, blank=True)
     shelf_life_months_minimum = models.IntegerField(null=True, blank=True)
     notes_to_supplier = models.TextField(blank=True, default="")
+    # On the supplier marketplace an open round is public unless the program
+    # says otherwise; a private one is seen only by the organisations invited.
+    visibility = models.CharField(max_length=16, default="public", choices=_choices(records.ROUND_VISIBILITIES))
     opened_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
 
@@ -551,6 +599,13 @@ class Quote(TimestampedModel):
     )
     correction_reason = models.TextField(blank=True, default="")
     notes = models.TextField(blank=True, default="")
+    # Who typed it in. The program team transcribing an email and the
+    # supplier entering its own offer on the marketplace are different
+    # evidence, so the quote says which it is.
+    entered_by = models.CharField(max_length=16, default="program", choices=_choices(records.QUOTE_ENTERED_BY))
+    entered_by_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
 
     class Meta:
         ordering = ["-created_at"]

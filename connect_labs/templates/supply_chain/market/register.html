@@ -1,0 +1,39 @@
+{% extends 'supply_chain/market/_shell.html' %}
+{% block title %}Register as a supplier{% endblock %}
+{% block body %}
+<div class="bg-white rounded-lg shadow-sm p-5 max-w-2xl">
+  <h1 class="text-xl font-semibold">Register as a supplier</h1>
+  <p class="text-sm text-gray-600 mt-1">Once. Buyers on every program see the same profile, and you can bid on any open round.</p>
+
+  {% if profileless %}
+    <div class="mt-4 p-3 rounded-md bg-message-info text-message-info-text border border-message-info-border text-sm">
+      <p class="mb-2">You already act for {% for org in profileless %}{{ org.name }}{% if not forloop.last %}, {% endif %}{% endfor %} through Connect. Supply as {% if profileless|length == 1 %}it{% else %}one of them{% endif %}?</p>
+      {% for org in profileless %}
+        <form method="post" class="inline">{% csrf_token %}<input type="hidden" name="profile_for" value="{{ org.pk }}"><button class="px-3 py-1.5 rounded-md bg-brand-indigo text-white mr-2">Add a supplier profile for {{ org.name }}</button></form>
+      {% endfor %}
+    </div>
+    <p class="text-sm text-gray-600 mt-4">Or register a different organisation:</p>
+  {% endif %}
+
+  <form method="post" class="mt-4">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="p-3 mb-4 rounded-md bg-message-error text-message-error-text border text-sm">{{ form.non_field_errors }}</div>{% endif %}
+    {% include 'supply_chain/market/_field.html' with field=form.name %}
+    <div class="grid md:grid-cols-3 gap-x-6">
+      {% include 'supply_chain/market/_field.html' with field=form.type %}
+      {% include 'supply_chain/market/_field.html' with field=form.country %}
+      {% include 'supply_chain/market/_field.html' with field=form.city %}
+    </div>
+    {% include 'supply_chain/market/_field.html' with field=form.website %}
+    {% include 'supply_chain/market/_field.html' with field=form.description %}
+    <h2 class="text-sm font-semibold mt-2 mb-2">Who buyers should contact</h2>
+    <div class="grid md:grid-cols-3 gap-x-6">
+      {% include 'supply_chain/market/_field.html' with field=form.contact_name %}
+      {% include 'supply_chain/market/_field.html' with field=form.contact_email %}
+      {% include 'supply_chain/market/_field.html' with field=form.contact_phone %}
+    </div>
+    <p class="text-xs text-gray-500 mb-4">Already on file? Registering a second copy is refused — ask someone there, or the buyer you work with, for an invitation to join it.</p>
+    <button class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Register</button>
+  </form>
+</div>
+{% endblock %}

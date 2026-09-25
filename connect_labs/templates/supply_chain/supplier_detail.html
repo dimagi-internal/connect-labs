@@ -33,8 +33,36 @@ four screens and an id held in your head.
       {{ supplier.status|humanise|default:"identified" }}
     </span>
     <a href="{% url 'supply_chain:supplier_edit' supplier.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit</a>
+    <a href="{% url 'supply_chain:supplier_market_invite' supplier.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Invite to the marketplace</a>
   </div>
 </div>
+
+{% if supplier.origin == "self_registered" %}
+  <div class="mb-5 rounded-lg border {% if supplier.reviewed_on %}border-gray-200 bg-white{% else %}border-message-warning-border/50 bg-message-warning{% endif %} p-3 flex flex-wrap items-center justify-between gap-3">
+    <p class="text-sm {% if not supplier.reviewed_on %}text-message-warning-text{% else %}text-gray-600{% endif %}">
+      {% if supplier.reviewed_on %}
+        Registered itself on the supplier marketplace; reviewed on {{ supplier.reviewed_on }}.
+      {% else %}
+        <strong>Self-registered, not yet reviewed.</strong> This supplier found your round on the supplier marketplace and bid on it; nobody on the team has looked at them yet. Their quotes count, and are flagged, until you do.
+      {% endif %}
+    </p>
+    {% if not supplier.reviewed_on %}
+      <form method="post" action="{% url 'supply_chain:supplier_mark_reviewed' supplier.id %}">{% csrf_token %}
+        <button class="px-3 py-1.5 text-sm rounded-md bg-white border border-gray-300 hover:bg-gray-50">Mark reviewed</button>
+      </form>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% if offerings %}
+  <div class="mb-5 bg-white border border-brand-border-light rounded-lg px-5 py-4">
+    <h2 class="text-sm font-semibold text-gray-900">What they say they offer</h2>
+    <p class="text-xs text-gray-500 mt-0.5">Their own claim, from the supplier marketplace — not something we have verified.</p>
+    <ul class="mt-2 text-sm divide-y">
+      {% for o in offerings %}<li class="py-1.5">{{ o.product_name }} <span class="text-gray-500">· {{ o.get_category_display }}{% if o.pack_description %} · {{ o.pack_description }}{% endif %}{% if o.certifications %} · {{ o.certifications|join:", " }}{% endif %} · updated {{ o.updated_at|day }}</span></li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
 
 <div class="grid gap-6 lg:grid-cols-3 mb-6">
   <div class="lg:col-span-2 bg-white border border-brand-border-light rounded-lg px-5 py-4">

@@ -244,6 +244,8 @@ class TestTheRecordReadsAsBefore:
             "connect_organization_id",
             "org_id",
             "notes",
+            "origin",
+            "reviewed_on",
             "reference_scope",
         }
         assert made["contacts"] == [{"name": "A. Bello", "email": "sales@harmattan.example"}]

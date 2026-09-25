@@ -13,6 +13,7 @@ from django.views.generic import TemplateView
 
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.checks import course_applies_to_category, courses_carried_by_kits
+from connect_labs.supply_chain.models import SupplierOffering
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
@@ -908,6 +909,7 @@ class ProductDetailView(OperationBase):
             return context
 
         context["supply_base"] = self.op("commodity_supply_base", commodity_slug=slug)
+        context["market_offers"] = self.op("commodity_market_offers", commodity_slug=slug)
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
         context["rounds"] = {r["id"]: r for r in self.op("round_list")}
         context["sourced_in"] = [
@@ -1025,6 +1027,9 @@ class SupplierDetailView(OperationBase):
         if supplier is None:
             raise Http404(f"no supplier {supplier_id} on file")
         context["supplier"] = supplier
+        context["offerings"] = (
+            SupplierOffering.objects.filter(profile__org_id=supplier["org_id"]) if supplier.get("org_id") else []
+        )
 
         if not context["has_program_context"]:
             return context

@@ -990,6 +990,7 @@ EVIDENCE_LABELS = {
     "quoted_voided": "Quoted, since withdrawn",
     "invited": "Invited",
     "named_as_manufacturer": "Named as the manufacturer",
+    "declared": "Says they sell it",
 }
 
 
