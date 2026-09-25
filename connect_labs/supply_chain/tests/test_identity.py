@@ -72,7 +72,7 @@ class TestWhoIsAsking:
         access = SupplyDataAccess(access_token="local", program_id=PROGRAM, caller=SYSTEM)
         assert caller_org_ids(access) is None
 
-    def test_the_session_route_needs_no_round_trip(self):
+    def test_the_session_route_needs_no_tender_trip(self):
         access, request = _session_access([7, 9])
         with patch("connect_labs.labs.context.get_org_data", return_value=request.org_data) as org_data:
             assert caller_org_ids(access) == {7, 9}
@@ -222,7 +222,7 @@ class TestStamping:
 
     def _contract(self, **data):
         payload = {
-            "round_id": 1,
+            "tender_id": 1,
             "supplier_id": 2,
             "commodity_slug": "rutf",
             "buyer_of_record": "partner_org",
@@ -242,11 +242,11 @@ class TestStamping:
 
     def test_a_read_operation_is_untouched(self):
         access, request = _session_access([7])
-        assert self._stamp(access, {"round_id": 1}, "contract_list") == {"round_id": 1}
+        assert self._stamp(access, {"tender_id": 1}, "contract_list") == {"tender_id": 1}
 
     def test_a_procurement_write_is_untouched_because_it_records_no_provenance(self):
         """Provenance is compulsory BELOW the contract (section 17.3), so
-        suppliers, rounds, quotes and outreach carry none and must not start
+        suppliers, tenders, quotes and outreach carry none and must not start
         being refused for lacking an organisation."""
         access, request = _session_access([7])
         payload = {"data": {"name": "Northwind"}}

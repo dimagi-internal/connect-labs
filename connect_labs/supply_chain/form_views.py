@@ -113,8 +113,8 @@ class OperationFormView(SupplyWriteMixin, FormView):
         operation = get_operation(self.operation)
         fields = form.payload()
         fixed = dict(self.fixed(**self.kwargs))
-        # `fixed` may carry both top-level arguments (the round id in the URL)
-        # and data the screen supplies rather than asks for (a round's lines,
+        # `fixed` may carry both top-level arguments (the tender id in the URL)
+        # and data the screen supplies rather than asks for (a tender's lines,
         # assembled from their formset). Kept separate rather than merged in a
         # one-liner, because which half a key lands in decides whether the
         # operation sees it at all.
@@ -164,9 +164,9 @@ class OperationFormView(SupplyWriteMixin, FormView):
 class OperationActionView(SupplyWriteMixin, View):
     """A button, not a page. POST only, because it changes something.
 
-    Opening and closing a round take nothing but the id already in the URL, so
+    Opening and closing a tender take nothing but the id already in the URL, so
     a form would be a page asking no questions. The operation still refuses
-    what it should -- `round_open` will not open a round with no delivery
+    what it should -- `tender_open` will not open a tender with no delivery
     point -- and that refusal belongs back on the page the button was on,
     because it is an instruction and the fix is one screen away.
     """

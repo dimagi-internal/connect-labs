@@ -9,12 +9,12 @@
     <li class="bg-white border border-brand-border-light rounded-[10px] p-4">
       <div class="flex flex-wrap justify-between gap-2">
         <div>
-          <a href="{% url 'supply_chain:market_round' q.round_id %}" class="font-semibold text-brand-indigo hover:underline">{{ q.round.label }}</a>
+          <a href="{% url 'supply_chain:market_tender' q.tender_id %}" class="font-semibold text-brand-indigo hover:underline">{{ q.tender.label }}</a>
           <span class="text-gray-600"> · {{ q.commodity.name }}</span>
           <div class="text-sm mt-1">{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }} {{ q.per_words }}{% if orgs|length > 1 %} · as {{ q.supplier.name }}{% endif %}</div>
         </div>
         <div class="text-sm text-right">
-          {% if bid.standing == "open" %}<span class="px-2 py-0.5 rounded-full bg-message-info text-message-info-text border border-message-info-border">Round open</span>
+          {% if bid.standing == "open" %}<span class="px-2 py-0.5 rounded-full bg-message-info text-message-info-text border border-message-info-border">Tender open</span>
           {% elif bid.standing == "awarded" %}<span class="px-2 py-0.5 rounded-full bg-message-success text-message-success-text border border-message-success-border">Awarded to you</span>
           {% elif bid.standing == "not_awarded" %}<span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border">Not awarded</span>
           {% else %}<span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border">Closed — being decided</span>{% endif %}
@@ -37,7 +37,7 @@
     </li>
     {% endwith %}
   {% empty %}
-    <li class="bg-white border border-brand-border-light rounded-[10px] p-8 text-center text-gray-600">No bids yet. <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market' %}">See the open rounds.</a></li>
+    <li class="bg-white border border-brand-border-light rounded-[10px] p-8 text-center text-gray-600">No bids yet. <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market' %}">See the open tenders.</a></li>
   {% endfor %}
 </ul>
 {% endblock %}

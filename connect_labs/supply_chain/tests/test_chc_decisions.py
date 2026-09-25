@@ -7,7 +7,7 @@
 4. A store that releases rather than dispenses has a demand rate from its
    releases, labelled as such -- so the distributor's warehouse has a
    reorder figure.
-5. A round can state the kit contents it buys, and the comparison then
+5. A tender can state the kit contents it buys, and the comparison then
    ranks the kits that hold them and refuses the rest, saying why.
 """
 
@@ -86,7 +86,7 @@ def _fresh_order(da, chain, **extra):
 
 
 class TestAdvancePayment:
-    def test_terms_default_to_on_delivery_and_round_trip(self, da, chain):
+    def test_terms_default_to_on_delivery_and_tender_trip(self, da, chain):
         assert chain["contract"]["payment_terms"] == "on_delivery"
         order = _fresh_order(da, chain, payment_terms="advance")
         assert op(da, "contract_get", contract_id=order["id"])["payment_terms"] == "advance"
@@ -337,7 +337,7 @@ class TestAwardDate:
         award = op(
             da,
             "award_create",
-            round_id=chain["round"]["id"],
+            tender_id=chain["tender"]["id"],
             quote_id=self._quote(chain)["id"],
             rationale="decided at the July meeting",
             decided_on=decided,
@@ -346,7 +346,7 @@ class TestAwardDate:
 
     def test_it_defaults_to_today(self, da, chain):
         award = op(
-            da, "award_create", round_id=chain["round"]["id"], quote_id=self._quote(chain)["id"], rationale="today"
+            da, "award_create", tender_id=chain["tender"]["id"], quote_id=self._quote(chain)["id"], rationale="today"
         )
         assert award["decided_on"] == TODAY.isoformat()
 
@@ -355,7 +355,7 @@ class TestAwardDate:
             op(
                 da,
                 "award_create",
-                round_id=chain["round"]["id"],
+                tender_id=chain["tender"]["id"],
                 quote_id=self._quote(chain)["id"],
                 rationale="not yet",
                 decided_on=(TODAY + timedelta(days=1)).isoformat(),
@@ -363,7 +363,7 @@ class TestAwardDate:
 
     def test_the_award_form_asks_for_the_date(self, client_in_programme, chain):
         url = (
-            reverse("supply_chain:procurement_comparison", args=[chain["round"]["id"]]) + "?commodity=ors-zinc-copack"
+            reverse("supply_chain:procurement_comparison", args=[chain["tender"]["id"]]) + "?commodity=ors-zinc-copack"
         )
         body = client_in_programme.get(url).content.decode()
         assert 'name="decided_on"' in body
@@ -481,21 +481,21 @@ class TestReleasesAreDemandAtAStoreThatDoesNotDispense:
         assert "releases a month" in body
 
 
-class TestARoundStatesTheContentsItBuys:
-    def test_kits_holding_the_rounds_contents_rank_and_others_are_refused(self, da, chain):
-        from connect_labs.supply_chain.models import Round
+class TestATenderStatesTheContentsItBuys:
+    def test_kits_holding_the_tenders_contents_rank_and_others_are_refused(self, da, chain):
+        from connect_labs.supply_chain.models import Tender
 
-        round_ = Round.objects.get(pk=chain["round"]["id"])
-        round_.lines = [
+        tender = Tender.objects.get(pk=chain["tender"]["id"])
+        tender.lines = [
             {
-                **round_.lines[0],
+                **tender.lines[0],
                 "components": [
                     {"commodity_slug": "ors", "quantity": "2", "base_unit": "sachet"},
                     {"commodity_slug": "zinc", "quantity": "10", "base_unit": "tablet"},
                 ],
             }
         ]
-        round_.save(update_fields=["lines"])
+        tender.save(update_fields=["lines"])
         four = op(
             da,
             "item_upsert",
@@ -516,7 +516,7 @@ class TestARoundStatesTheContentsItBuys:
             da,
             "quote_record",
             data={
-                "round_id": round_.pk,
+                "tender_id": tender.pk,
                 "commodity_slug": "ors-zinc-copack",
                 "supplier_id": chain["quotes"][0]["supplier_id"],
                 "item_id": four["id"],
@@ -529,28 +529,28 @@ class TestARoundStatesTheContentsItBuys:
                 "duties_basis": "included",
             },
         )
-        comparison = op(da, "round_compare", round_id=round_.pk, commodity_slug="ors-zinc-copack")
+        comparison = op(da, "tender_compare", tender_id=tender.pk, commodity_slug="ors-zinc-copack")
         assert comparison["comparable_count"] == 2
         refused = [row for row in comparison["not_comparable"] if row["item_name"] == "Four-sachet co-pack"]
         assert len(refused) == 1
-        reasons = refused[0]["figures"]["landed_total_for_round_quantity"]["unconfirmed"]
-        assert any("not the contents this round buys" in reason for reason in reasons)
+        reasons = refused[0]["figures"]["landed_total_for_tender_quantity"]["unconfirmed"]
+        assert any("not the contents this tender buys" in reason for reason in reasons)
 
     def test_other_contents_are_terminal_not_missing_info(self, da, chain):
-        round_ = self._round_with_a_four_sachet_offer(da, chain)
-        comparison = op(da, "round_compare", round_id=round_.pk, commodity_slug="ors-zinc-copack")
+        tender = self._tender_with_a_four_sachet_offer(da, chain)
+        comparison = op(da, "tender_compare", tender_id=tender.pk, commodity_slug="ors-zinc-copack")
         assert [row["item_name"] for row in comparison["not_comparable"]] == ["Four-sachet co-pack"]
         assert all(row["item_name"] != "Four-sachet co-pack" for row in comparison["blocked"])
         # Nothing to ask anyone: the contents are what they are.
         assert comparison["not_comparable"][0]["questions"] == []
         # Every other offer is complete, so the ranking is not provisional.
         assert comparison["provisional"] is False
-        questions = op(da, "round_outstanding_questions", round_id=round_.pk, commodity_slug="ors-zinc-copack")
+        questions = op(da, "tender_outstanding_questions", tender_id=tender.pk, commodity_slug="ors-zinc-copack")
         assert all(entry["quote_id"] != comparison["not_comparable"][0]["quote_id"] for entry in questions)
 
     def test_the_comparison_page_files_it_as_not_comparable(self, client_in_programme, da, chain):
-        round_ = self._round_with_a_four_sachet_offer(da, chain)
-        url = reverse("supply_chain:procurement_comparison", args=[round_.pk]) + "?commodity=ors-zinc-copack"
+        tender = self._tender_with_a_four_sachet_offer(da, chain)
+        url = reverse("supply_chain:procurement_comparison", args=[tender.pk]) + "?commodity=ors-zinc-copack"
         body = client_in_programme.get(url).content.decode()
         assert "Not comparable — different contents" in body
         section = body[body.index("Not comparable — different contents") :]
@@ -561,20 +561,20 @@ class TestARoundStatesTheContentsItBuys:
         assert "Needs info" not in body
         assert "PROVISIONAL" not in body
 
-    def _round_with_a_four_sachet_offer(self, da, chain):
-        from connect_labs.supply_chain.models import Round
+    def _tender_with_a_four_sachet_offer(self, da, chain):
+        from connect_labs.supply_chain.models import Tender
 
-        round_ = Round.objects.get(pk=chain["round"]["id"])
-        round_.lines = [
+        tender = Tender.objects.get(pk=chain["tender"]["id"])
+        tender.lines = [
             {
-                **round_.lines[0],
+                **tender.lines[0],
                 "components": [
                     {"commodity_slug": "ors", "quantity": "2", "base_unit": "sachet"},
                     {"commodity_slug": "zinc", "quantity": "10", "base_unit": "tablet"},
                 ],
             }
         ]
-        round_.save(update_fields=["lines"])
+        tender.save(update_fields=["lines"])
         four = op(
             da,
             "item_upsert",
@@ -595,7 +595,7 @@ class TestARoundStatesTheContentsItBuys:
             da,
             "quote_record",
             data={
-                "round_id": round_.pk,
+                "tender_id": tender.pk,
                 "commodity_slug": "ors-zinc-copack",
                 "supplier_id": chain["quotes"][0]["supplier_id"],
                 "item_id": four["id"],
@@ -608,38 +608,38 @@ class TestARoundStatesTheContentsItBuys:
                 "duties_basis": "included",
             },
         )
-        return round_
+        return tender
 
-    def test_the_round_page_says_what_it_buys(self, client_in_programme, chain):
-        from connect_labs.supply_chain.models import Round
+    def test_the_tender_page_says_what_it_buys(self, client_in_programme, chain):
+        from connect_labs.supply_chain.models import Tender
 
-        round_ = Round.objects.get(pk=chain["round"]["id"])
-        round_.lines = [
+        tender = Tender.objects.get(pk=chain["tender"]["id"])
+        tender.lines = [
             {
-                **round_.lines[0],
+                **tender.lines[0],
                 "components": [
                     {"commodity_slug": "ors", "quantity": "2", "base_unit": "sachet"},
                     {"commodity_slug": "zinc", "quantity": "10", "base_unit": "tablet"},
                 ],
             }
         ]
-        round_.save(update_fields=["lines"])
+        tender.save(update_fields=["lines"])
         body = client_in_programme.get(
-            reverse("supply_chain:procurement_round_detail", args=[round_.pk])
+            reverse("supply_chain:procurement_tender_detail", args=[tender.pk])
         ).content.decode()
-        assert "What this round buys" in body
+        assert "What this tender buys" in body
         assert "2 sachet ORS + 10 tablet Zinc" in body
 
 
-class TestARoundIsAwardedOnceEveryLineIs:
-    """A round with every line awarded read "open" nine days past its deadline."""
+class TestATenderIsAwardedOnceEveryLineIs:
+    """A tender with every line awarded read "open" nine days past its deadline."""
 
-    def _two_line_round(self, da, chain, status="open"):
-        from connect_labs.supply_chain.models import Round
+    def _two_line_tender(self, da, chain, status="open"):
+        from connect_labs.supply_chain.models import Tender
 
-        round_ = op(
+        tender = op(
             da,
-            "round_create",
+            "tender_create",
             data={
                 "label": "Two lines",
                 "delivery_point": {"city": "Kano"},
@@ -649,7 +649,7 @@ class TestARoundIsAwardedOnceEveryLineIs:
                 ],
             },
         )
-        Round.objects.filter(pk=round_["id"]).update(status=status)
+        Tender.objects.filter(pk=tender["id"]).update(status=status)
         supplier_id = chain["quotes"][0]["supplier_id"]
         quotes = {}
         for slug, unit, basis in (("ors-zinc-copack", "co-pack", "30000"), ("ors", "sachet", "1000")):
@@ -657,7 +657,7 @@ class TestARoundIsAwardedOnceEveryLineIs:
                 da,
                 "quote_record",
                 data={
-                    "round_id": round_["id"],
+                    "tender_id": tender["id"],
                     "commodity_slug": slug,
                     "supplier_id": supplier_id,
                     "as_quoted_amount": "0.60",
@@ -668,32 +668,32 @@ class TestARoundIsAwardedOnceEveryLineIs:
                     "duties_basis": "included",
                 },
             )
-        return round_, quotes
+        return tender, quotes
 
-    def _award(self, da, round_, quote):
-        op(da, "award_create", round_id=round_["id"], quote_id=quote["id"], rationale="the one we chose")
+    def _award(self, da, tender, quote):
+        op(da, "award_create", tender_id=tender["id"], quote_id=quote["id"], rationale="the one we chose")
 
-    def test_a_single_line_round_is_awarded_by_its_award(self, da, chain):
-        assert op(da, "round_get", round_id=chain["round"]["id"])["status"] == "awarded"
+    def test_a_single_line_tender_is_awarded_by_its_award(self, da, chain):
+        assert op(da, "tender_get", tender_id=chain["tender"]["id"])["status"] == "awarded"
 
     def test_it_stays_open_while_a_line_is_unawarded(self, da, chain):
-        round_, quotes = self._two_line_round(da, chain)
-        self._award(da, round_, quotes["ors-zinc-copack"])
-        assert op(da, "round_get", round_id=round_["id"])["status"] == "open"
-        self._award(da, round_, quotes["ors"])
-        assert op(da, "round_get", round_id=round_["id"])["status"] == "awarded"
+        tender, quotes = self._two_line_tender(da, chain)
+        self._award(da, tender, quotes["ors-zinc-copack"])
+        assert op(da, "tender_get", tender_id=tender["id"])["status"] == "open"
+        self._award(da, tender, quotes["ors"])
+        assert op(da, "tender_get", tender_id=tender["id"])["status"] == "awarded"
 
-    def test_a_closed_round_stays_closed(self, da, chain):
-        round_, quotes = self._two_line_round(da, chain, status="closed")
-        self._award(da, round_, quotes["ors-zinc-copack"])
-        self._award(da, round_, quotes["ors"])
-        assert op(da, "round_get", round_id=round_["id"])["status"] == "closed"
+    def test_a_closed_tender_stays_closed(self, da, chain):
+        tender, quotes = self._two_line_tender(da, chain, status="closed")
+        self._award(da, tender, quotes["ors-zinc-copack"])
+        self._award(da, tender, quotes["ors"])
+        assert op(da, "tender_get", tender_id=tender["id"])["status"] == "closed"
 
-    def test_the_overview_and_round_page_say_awarded(self, client_in_programme, chain):
+    def test_the_overview_and_tender_page_say_awarded(self, client_in_programme, chain):
         overview = client_in_programme.get(reverse("supply_chain:home")).content.decode()
         row = overview[overview.index(">CHC<") :]
         assert "awarded" in row[: row.index("</tr>")].lower()
         page = client_in_programme.get(
-            reverse("supply_chain:procurement_round_detail", args=[chain["round"]["id"]])
+            reverse("supply_chain:procurement_tender_detail", args=[chain["tender"]["id"]])
         ).content.decode()
         assert "Status: Awarded" in page

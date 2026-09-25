@@ -13,7 +13,7 @@ pytestmark = pytest.mark.django_db
 def _comparing(snapshot):
     """Answer every call with the comparison snapshot, except the two lists.
 
-    The comparison page also lists the round's awards and names the product
+    The comparison page also lists the tender's awards and names the product
     from the catalogue; a mock answering either with a snapshot dict would
     hand the page a dict to iterate.
     """
@@ -27,9 +27,9 @@ def sophie(client, django_user_model):
     return user
 
 
-def test_the_round_board_renders(client, sophie):
+def test_the_tender_board_renders(client, sophie):
     with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=[]):
-        response = client.get(reverse("supply_chain:procurement_round_board"))
+        response = client.get(reverse("supply_chain:procurement_tender_board"))
     assert response.status_code == 200
 
 
@@ -92,13 +92,13 @@ def test_the_domain_home_does_not_500_with_no_programme_selected(client, sophie)
     assert "No programme selected" in response.content.decode()
 
 
-def test_the_round_board_does_not_500_with_no_programme_selected(client, sophie):
-    response = client.get(reverse("supply_chain:procurement_round_board"))
+def test_the_tender_board_does_not_500_with_no_programme_selected(client, sophie):
+    response = client.get(reverse("supply_chain:procurement_tender_board"))
     assert response.status_code == 200
     assert "No programme selected" in response.content.decode()
 
 
-def test_the_round_board_does_not_offer_record_a_quote_with_no_programme_selected(client, sophie):
+def test_the_tender_board_does_not_offer_record_a_quote_with_no_programme_selected(client, sophie):
     """Final review, item C: the board's own button (distinct from the
     persistent site nav's copy of the same link, which is out of this
     finding's scope) rendered ABOVE the has_program_context guard, so the
@@ -106,7 +106,7 @@ def test_the_round_board_does_not_offer_record_a_quote_with_no_programme_selecte
     raised the same finding-3 ValueError. Marked by its icon, since the nav
     link (base.html) has the same text and href on every supply_chain page
     regardless of context."""
-    response = client.get(reverse("supply_chain:procurement_round_board"))
+    response = client.get(reverse("supply_chain:procurement_tender_board"))
     body = response.content.decode()
     assert response.status_code == 200
     assert "fa-plus mr-1" not in body
@@ -125,7 +125,7 @@ def test_quote_entry_post_does_not_500_with_no_programme_selected(client, sophie
     with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=[]) as mock_call:
         response = client.post(
             reverse("supply_chain:procurement_quote_entry"),
-            {"as_quoted_amount": "52.42", "as_quoted_unit": "per_pack", "round_id": "1"},
+            {"as_quoted_amount": "52.42", "as_quoted_unit": "per_pack", "tender_id": "1"},
         )
     assert response.status_code == 200
     assert "No programme selected" in response.content.decode()
@@ -135,7 +135,7 @@ def test_quote_entry_post_does_not_500_with_no_programme_selected(client, sophie
 
 
 def test_the_comparison_page_shows_an_unconfirmed_reason_rather_than_a_number(client, sophie):
-    # Shaped like the real round_compare operation's snapshot (comparison.py,
+    # Shaped like the real tender_compare operation's snapshot (comparison.py,
     # Comparison.to_snapshot()) — comparable/blocked/all_rows, not a flat
     # "rows" list. A mock describing a shape the real operation never
     # returns asserts nothing about the real contract.
@@ -149,11 +149,11 @@ def test_the_comparison_page_shows_an_unconfirmed_reason_rather_than_a_number(cl
         "questions": [{"key": "pack_spec", "question": "How many sachets are in one carton?", "audience": "supplier"}],
     }
     snapshot = {
-        "round_id": 1,
+        "tender_id": 1,
         "generated_at": "2026-09-11T00:00:00+00:00",
         "comparable_count": 0,
         "total_count": 1,
-        "ranked_by": "landed_total_for_round_quantity",
+        "ranked_by": "landed_total_for_tender_quantity",
         "provisional": True,
         "columns": [
             {
@@ -198,7 +198,7 @@ def test_the_comparison_page_uses_house_tailwind_not_bootstrap(client, sophie):
         "questions": [{"key": "pack_spec", "question": "How many sachets are in one carton?", "audience": "supplier"}],
     }
     snapshot = {
-        "round_id": 1,
+        "tender_id": 1,
         "generated_at": "2026-09-11T00:00:00+00:00",
         "comparable_count": 1,
         "total_count": 2,
@@ -252,7 +252,7 @@ def test_the_comparison_page_shows_outstanding_questions_for_a_comparable_row(cl
         ],
     }
     snapshot = {
-        "round_id": 1,
+        "tender_id": 1,
         "generated_at": "2026-09-11T00:00:00+00:00",
         "comparable_count": 1,
         "total_count": 1,
@@ -276,7 +276,7 @@ def test_the_comparison_page_shows_outstanding_questions_for_a_comparable_row(cl
 
 def test_award_post_calls_the_operation(client, sophie):
     with patch("connect_labs.supply_chain.procurement.views.call_operation") as mock_call:
-        mock_call.return_value = {"id": 99, "round_id": 1, "quote_id": 5, "rationale": "cheapest defensible option"}
+        mock_call.return_value = {"id": 99, "tender_id": 1, "quote_id": 5, "rationale": "cheapest defensible option"}
         response = client.post(
             reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf",
             {"quote_id": "5", "rationale": "cheapest defensible option"},
@@ -286,7 +286,7 @@ def test_award_post_calls_the_operation(client, sophie):
     mock_call.assert_called_once()
     name, access, payload = mock_call.call_args[0]
     assert name == "award_create"
-    assert payload["round_id"] == 1
+    assert payload["tender_id"] == 1
     assert payload["quote_id"] == 5
     assert payload["rationale"] == "cheapest defensible option"
 
@@ -314,11 +314,11 @@ def test_award_post_without_a_rationale_does_not_500(client, sophie):
 def test_comparison_without_a_commodity_shows_a_chooser_instead_of_500ing(client, sophie):
     """A bookmark, browser-history entry, or shared link with no ?commodity=
     is a normal way to land here — it must not crash the schema-required
-    commodity_slug straight into round_compare.
+    commodity_slug straight into tender_compare.
     """
-    round_ = {
+    tender = {
         "id": 1,
-        "label": "Q3 RUTF round",
+        "label": "Q3 RUTF tender",
         "lines": [
             {"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"},
             {"commodity_slug": "amoxicillin", "quantity": "1000", "quantity_unit": "bottle"},
@@ -326,9 +326,9 @@ def test_comparison_without_a_commodity_shows_a_chooser_instead_of_500ing(client
     }
 
     def _dispatch(name, access, payload):
-        if name == "round_get":
-            return round_
-        raise AssertionError(f"round_compare must not be called with no commodity selected (got {name!r})")
+        if name == "tender_get":
+            return tender
+        raise AssertionError(f"tender_compare must not be called with no commodity selected (got {name!r})")
 
     with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch):
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]))
@@ -338,14 +338,14 @@ def test_comparison_without_a_commodity_shows_a_chooser_instead_of_500ing(client
     assert "amoxicillin" in body
 
 
-def test_comparison_without_a_commodity_defaults_when_the_round_has_one_line(client, sophie):
-    round_ = {
+def test_comparison_without_a_commodity_defaults_when_the_tender_has_one_line(client, sophie):
+    tender = {
         "id": 1,
-        "label": "Q3 RUTF round",
+        "label": "Q3 RUTF tender",
         "lines": [{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}],
     }
     snapshot = {
-        "round_id": 1,
+        "tender_id": 1,
         "generated_at": "2026-09-11T00:00:00+00:00",
         "comparable_count": 0,
         "total_count": 0,
@@ -360,9 +360,9 @@ def test_comparison_without_a_commodity_defaults_when_the_round_has_one_line(cli
 
     def _dispatch(name, access, payload):
         calls.append((name, payload))
-        if name == "round_get":
-            return round_
-        if name == "round_compare":
+        if name == "tender_get":
+            return tender
+        if name == "tender_compare":
             return snapshot
         if name in ("award_list", "commodity_list", "quote_list"):
             return []
@@ -371,7 +371,7 @@ def test_comparison_without_a_commodity_defaults_when_the_round_has_one_line(cli
     with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch):
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]))
     assert response.status_code == 200
-    assert ("round_compare", {"round_id": 1, "commodity_slug": "rutf"}) in calls
+    assert ("tender_compare", {"tender_id": 1, "commodity_slug": "rutf"}) in calls
 
 
 def test_no_view_mutates_a_record_outside_an_operation():
@@ -509,7 +509,7 @@ def test_the_comparison_page_attributes_an_uncomputable_column_to_us_not_a_suppl
     the top, that the column is ours to close and is not part of the
     comparison, while the supplier stays comparable.
 
-    Shaped like the real round_compare snapshot (Comparison.to_snapshot()); a
+    Shaped like the real tender_compare snapshot (Comparison.to_snapshot()); a
     mock describing a shape the operation never returns asserts nothing.
     """
     row = {
@@ -518,18 +518,18 @@ def test_the_comparison_page_attributes_an_uncomputable_column_to_us_not_a_suppl
         "supplier_name": "Harmattan Foods",
         "is_comparable": True,
         "figures": {
-            "landed_total_for_round_quantity": {"amount": "100000.00", "currency": "USD"},
+            "landed_total_for_tender_quantity": {"amount": "100000.00", "currency": "USD"},
             "usd_per_course": {"unconfirmed": ["no course definition set for RUTF (sachets per course)"]},
         },
         "compliance": [],
         "questions": [],
     }
     snapshot = {
-        "round_id": 1,
+        "tender_id": 1,
         "generated_at": "2026-09-12T00:00:00+00:00",
         "comparable_count": 1,
         "total_count": 1,
-        "ranked_by": "landed_total_for_round_quantity",
+        "ranked_by": "landed_total_for_tender_quantity",
         "provisional": False,
         "unavailable": {
             "usd_per_course": {
@@ -539,8 +539,8 @@ def test_the_comparison_page_attributes_an_uncomputable_column_to_us_not_a_suppl
         },
         "columns": [
             {
-                "key": "landed_total_for_round_quantity",
-                "label": "Landed total (this round)",
+                "key": "landed_total_for_tender_quantity",
+                "label": "Landed total (this tender)",
                 "rankable": True,
                 "blocked_by": [],
             }
@@ -573,26 +573,26 @@ def test_a_comparable_row_never_renders_an_unconfirmed_figure_as_a_blank(client,
         "supplier_name": "Harmattan Foods",
         "is_comparable": True,
         "figures": {
-            "landed_total_for_round_quantity": {"amount": "100000.00", "currency": "USD"},
+            "landed_total_for_tender_quantity": {"amount": "100000.00", "currency": "USD"},
             "usd_per_course": {"unconfirmed": ["no course definition set for RUTF (sachets per course)"]},
         },
         "compliance": [],
         "questions": [],
     }
     snapshot = {
-        "round_id": 1,
+        "tender_id": 1,
         "generated_at": "2026-09-12T00:00:00+00:00",
         "comparable_count": 1,
         "total_count": 1,
-        "ranked_by": "landed_total_for_round_quantity",
+        "ranked_by": "landed_total_for_tender_quantity",
         "provisional": False,
         "unavailable": {
             "usd_per_course": {"label": "USD per course", "reasons": ["no course definition set for RUTF"]}
         },
         "columns": [
             {
-                "key": "landed_total_for_round_quantity",
-                "label": "Landed total (this round)",
+                "key": "landed_total_for_tender_quantity",
+                "label": "Landed total (this tender)",
                 "rankable": True,
                 "blocked_by": [],
             },
@@ -632,7 +632,7 @@ def test_with_nothing_comparable_the_page_does_not_claim_a_provisional_ranking(c
         "questions": [{"key": "pack_spec", "question": "How many sachets are in one carton?", "audience": "supplier"}],
     }
     snapshot = {
-        "round_id": 1,
+        "tender_id": 1,
         "generated_at": "2026-09-12T00:00:00+00:00",
         "comparable_count": 0,
         "total_count": 2,
@@ -689,7 +689,7 @@ def test_the_quote_page_asks_for_a_programme_rather_than_raising(client, sophie)
     "url_name,args",
     [
         ("supply_chain:order_detail", [9999]),
-        ("supply_chain:procurement_round_detail", [9999]),
+        ("supply_chain:procurement_tender_detail", [9999]),
         ("supply_chain:procurement_comparison", [9999]),
         ("supply_chain:procurement_quote_detail", [9999]),
     ],
@@ -701,7 +701,7 @@ def test_a_detail_page_for_something_that_is_not_here_is_a_404(client, sophie, u
     Three of these four were wrong and in two different ways. The order and
     comparison pages tolerated a missing record as far as a DERIVATION, which
     then raised -- so a stale bookmark returned a 500 that named nothing. The
-    round page answered 200 with "Round not found", which tells a browser, a
+    tender page answered 200 with "Tender not found", which tells a browser, a
     link checker and an uptime monitor that the page is fine, and that is the
     one thing it is not.
     """
@@ -746,7 +746,7 @@ TRADE_ITEM = {
 SUPPLIER = {"id": 1, "name": "Northwind Foods", "type": "manufacturer", "country": "NG", "status": "quoting"}
 QUOTE = {
     "id": 10,
-    "round_id": 5,
+    "tender_id": 5,
     "supplier_id": 1,
     "item_id": 7,
     "commodity_slug": "rutf",
@@ -773,7 +773,7 @@ _CATALOGUE_RESPONSES = {
     "item_get": TRADE_ITEM,
     "supplier_list": [SUPPLIER],
     "supplier_get": SUPPLIER,
-    "round_list": [{"id": 5, "label": "Round 1", "status": "open", "lines": [{"commodity_slug": "rutf"}]}],
+    "tender_list": [{"id": 5, "label": "Tender 1", "status": "open", "lines": [{"commodity_slug": "rutf"}]}],
     "quote_list": [QUOTE],
     "quote_get": {"quote": QUOTE, "figures": {}, "missing": []},
     "contract_list": [],
@@ -811,7 +811,7 @@ PROGRAMME_SCOPED_OPS = frozenset(
         "contract_list",
         "outreach_list",
         "award_list",
-        "round_list",
+        "tender_list",
         "document_list",
         "network_stock",
         "commodity_supply_base",
@@ -944,13 +944,13 @@ def test_the_new_pages_do_not_500_with_no_programme_selected(client, sophie):
             assert client.get(url).status_code == 200, url
 
 
-def test_the_round_detail_page_links_each_supplier_it_names(client, sophie):
+def test_the_tender_detail_page_links_each_supplier_it_names(client, sophie):
     """Both tables on it name a supplier, and neither was a link. Rendered
     here rather than trusted: `{% url %}` with a missing id is a 500, not a
     missing link, so an untested link is worse than none."""
     responses = {
-        "round_get": {"id": 5, "label": "Round 1", "status": "open", "lines": [{"commodity_slug": "rutf"}]},
-        "outreach_list": [{"id": 1, "round_id": 5, "supplier_id": 1, "sent_on": "2026-04-28", "responded": False}],
+        "tender_get": {"id": 5, "label": "Tender 1", "status": "open", "lines": [{"commodity_slug": "rutf"}]},
+        "outreach_list": [{"id": 1, "tender_id": 5, "supplier_id": 1, "sent_on": "2026-04-28", "responded": False}],
         "quote_list": [QUOTE],
         "supplier_list": [SUPPLIER],
         "commodity_list": [],
@@ -960,7 +960,7 @@ def test_the_round_detail_page_links_each_supplier_it_names(client, sophie):
         "connect_labs.supply_chain.procurement.views.call_operation",
         side_effect=lambda name, access, payload: responses[name],
     ):
-        response = client.get(reverse("supply_chain:procurement_round_detail", args=[5]))
+        response = client.get(reverse("supply_chain:procurement_tender_detail", args=[5]))
     body = response.content.decode()
     assert response.status_code == 200
     assert reverse("supply_chain:supplier_detail", args=[1]) in body
@@ -1089,7 +1089,7 @@ def scoped_quote_screen(client, sophie, monkeypatch):
 
     Patches the call sites, and imports every module first — see
     `test_write_screens.scoped` for the leak that follows from doing either
-    the other way round.
+    the other way tender.
     """
     from connect_labs.supply_chain import form_views  # noqa: F401  -- bind before patching
     from connect_labs.supply_chain.api_views import _access as real_access

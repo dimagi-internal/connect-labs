@@ -226,12 +226,12 @@ def _headline(kinds, count):
 def _destination(audience, items):
     if audience == "internal":
         return reverse("supply_chain:catalogue")
-    rounds = {c["facts"].get("round_id") for c in items if c["facts"].get("round_id")}
-    # One round involved -- go straight to its comparison. Several, and
+    tenders = {c["facts"].get("tender_id") for c in items if c["facts"].get("tender_id")}
+    # One tender involved -- go straight to its comparison. Several, and
     # the board is the honest landing place rather than picking one.
-    if len(rounds) == 1:
-        return reverse("supply_chain:procurement_comparison", args=[rounds.pop()])
-    return reverse("supply_chain:procurement_round_board")
+    if len(tenders) == 1:
+        return reverse("supply_chain:procurement_comparison", args=[tenders.pop()])
+    return reverse("supply_chain:procurement_tender_board")
 
 
 class DomainHomeView(OperationBase):
@@ -271,7 +271,7 @@ class DomainHomeView(OperationBase):
         context["commodities"] = commodities
         context["commodity_slug"] = commodity_slug
         context["summary"] = self.op("chain_summary", commodity_slug=commodity_slug)
-        context["rounds"] = self.op("round_list")
+        context["tenders"] = self.op("tender_list")
         context["contracts"] = self.op("contract_list")
         # The buyer of record by name: "programme org" is the role, not who.
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
@@ -311,9 +311,9 @@ class ChecksView(OperationBase):
             groups.setdefault(check["kind"], []).append(check)
         context["checks"] = checks
         # Names for the records the facts refer to by id, so a card reads
-        # "round CHC" and links to it rather than "round id 33".
+        # "tender CHC" and links to it rather than "tender id 33".
         context["refs"] = {
-            "round": {r["id"]: r.get("label") or f"round {r['id']}" for r in self.op("round_list")},
+            "tender": {r["id"]: r.get("label") or f"tender {r['id']}" for r in self.op("tender_list")},
             "supplier": {s["id"]: s["name"] for s in self.op("supplier_list")},
         }
         context["groups"] = [
@@ -554,7 +554,7 @@ class OrderDetailView(OperationBase):
         award_id = contract.get("award_id")
         if not award_id:
             return None, []
-        awards = self.op("award_list", round_id=contract["round_id"]) if contract.get("round_id") else []
+        awards = self.op("award_list", tender_id=contract["tender_id"]) if contract.get("tender_id") else []
         award = next((a for a in awards if a["id"] == award_id), None)
         if award is None:
             awards = self.op("award_list")
@@ -919,10 +919,10 @@ class ProductDetailView(OperationBase):
         context["supply_base"] = self.op("commodity_supply_base", commodity_slug=slug)
         context["market_offers"] = self.op("commodity_market_offers", commodity_slug=slug)
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
-        context["rounds"] = {r["id"]: r for r in self.op("round_list")}
+        context["tenders"] = {r["id"]: r for r in self.op("tender_list")}
         context["sourced_in"] = [
             r
-            for r in context["rounds"].values()
+            for r in context["tenders"].values()
             if any((line or {}).get("commodity_slug") == slug for line in (r.get("lines") or []))
         ]
         context["quotes"] = newest_standing_first([q for q in self.op("quote_list") if q["commodity_slug"] == slug])
@@ -967,7 +967,7 @@ class ItemDetailView(OperationBase):
             "commodity_supply_base", commodity_slug=item["commodity_slug"], item_id=item["id"]
         )
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
-        context["rounds"] = {r["id"]: r for r in self.op("round_list")}
+        context["tenders"] = {r["id"]: r for r in self.op("tender_list")}
         context["quotes"] = newest_standing_first([q for q in self.op("quote_list") if q["item_id"] == item["id"]])
         context["contracts"] = [c for c in self.op("contract_list") if c["item_id"] == item["id"]]
         context["documents"] = self.op("document_list", item_id=item["id"])
@@ -1017,8 +1017,8 @@ class SupplierDirectoryView(OperationBase):
 class SupplierDetailView(OperationBase):
     """One supplier, and everything this programme has ever done with them.
 
-    A supplier is reference data reused across rounds, so their history is
-    scattered by design: invitations sit under rounds, quotes under rounds
+    A supplier is reference data reused across tenders, so their history is
+    scattered by design: invitations sit under tenders, quotes under tenders
     again, contracts under the programme, and receipts and invoices under the
     contracts. Reading it meant four screens and an id in your head. This
     gathers it in the order it happened to them -- we asked, they answered, we
@@ -1042,8 +1042,8 @@ class SupplierDetailView(OperationBase):
         if not context["has_program_context"]:
             return context
 
-        rounds = {r["id"]: r for r in self.op("round_list")}
-        context["rounds"] = rounds
+        tenders = {r["id"]: r for r in self.op("tender_list")}
+        context["tenders"] = tenders
 
         # How their orders actually went: on time, in full, and how late the
         # worst one ran. Scoped to this programme like everything else here --
@@ -1052,7 +1052,7 @@ class SupplierDetailView(OperationBase):
 
         outreach = [o for o in self.op("outreach_list") if o["supplier_id"] == supplier_id]
         for invitation in outreach:
-            invitation["round"] = rounds.get(invitation["round_id"])
+            invitation["tender"] = tenders.get(invitation["tender_id"])
         context["outreach"] = outreach
 
         # Each quote's derived figures come from `quote_get` rather than being
@@ -1066,7 +1066,7 @@ class SupplierDetailView(OperationBase):
             quotes.append(
                 {
                     **quote,
-                    "round": rounds.get(quote["round_id"]),
+                    "tender": tenders.get(quote["tender_id"]),
                     "figures": (detail or {}).get("figures") or {},
                     "unanswered": len((detail or {}).get("missing") or []),
                 }

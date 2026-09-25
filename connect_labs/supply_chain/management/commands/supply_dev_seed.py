@@ -1,9 +1,9 @@
 """Local-only dev seeder for the supply domain.
 
-Stands up a labs-only synthetic programme plus a procurement round whose quotes
-reproduce the SHAPES that make a real round hard to compare — one quote that
+Stands up a labs-only synthetic programme plus a procurement tender whose quotes
+reproduce the SHAPES that make a real tender hard to compare — one quote that
 never stated its pack spec, one priced per sachet for a different quantity than
-the round, one excluding duties with no amount, and one complete. The screens
+the tender, one excluding duties with no amount, and one complete. The screens
 then show a ranked leader marked provisional beside three blocked suppliers,
 which is the state the app exists to handle.
 
@@ -39,7 +39,7 @@ DEV_PASSWORD = "dev"
 
 
 class Command(BaseCommand):
-    help = "Seed a local labs-only supply programme with a round in a realistically messy state."
+    help = "Seed a local labs-only supply programme with a tender in a realistically messy state."
 
     def add_arguments(self, parser):
         parser.add_argument("--reset", action="store_true", help="Delete this programme's records first.")
@@ -178,11 +178,11 @@ class Command(BaseCommand):
             )
             suppliers[name] = rec["id"]
 
-        # --- the round ------------------------------------------------------
-        round_rec = op(
-            "round_create",
+        # --- the tender ------------------------------------------------------
+        tender_rec = op(
+            "tender_create",
             data={
-                "label": "Round 2 — February",
+                "label": "Tender 2 — February",
                 "lines": [{"commodity_slug": "rutf", "quantity": "2000", "quantity_unit": "carton"}],
                 "delivery_point": {
                     "name": "Central store",
@@ -200,14 +200,14 @@ class Command(BaseCommand):
                 ),
             },
         )
-        round_id = round_rec["id"]
-        op("round_open", round_id=round_id)
+        tender_id = tender_rec["id"]
+        op("tender_open", tender_id=tender_id)
 
         for name in suppliers:
             op(
                 "outreach_log",
                 data={
-                    "round_id": round_id,
+                    "tender_id": tender_id,
                     "supplier_id": suppliers[name],
                     "channel": "manual",
                     "sent_on": "2026-09-09",
@@ -216,7 +216,7 @@ class Command(BaseCommand):
                 },
             )
 
-        common = {"round_id": round_id, "commodity_slug": "rutf", "as_quoted_currency": "USD", "fx_rate_to_usd": "1"}
+        common = {"tender_id": tender_id, "commodity_slug": "rutf", "as_quoted_currency": "USD", "fx_rate_to_usd": "1"}
 
         # COMPARABLE — everything stated.
         op(
@@ -310,18 +310,18 @@ class Command(BaseCommand):
             },
         )
 
-        snapshot = op("round_compare", round_id=round_id, commodity_slug="rutf")
+        snapshot = op("tender_compare", tender_id=tender_id, commodity_slug="rutf")
 
         # --- downstream: order, stock, distribution -------------------------
         # Everything below the award, so the screens have a chain to show and
         # the fulfilment and stock tiers are exercised end to end. The shapes
         # are the real ones; the numbers are invented.
-        downstream = self._seed_downstream(op, round_id, item_150, item_144, suppliers)
+        downstream = self._seed_downstream(op, tender_id, item_150, item_144, suppliers)
 
         self.stdout.write(self.style.SUCCESS("\nSeeded."))
         self.stdout.write(f"  user            {DEV_USERNAME} / {DEV_PASSWORD}  (view_synthetic_opps on)")
         self.stdout.write(f"  programme       {PROGRAMME_ID}")
-        self.stdout.write(f"  round           {round_id}")
+        self.stdout.write(f"  tender           {tender_id}")
         self.stdout.write(
             f"  comparison      {snapshot['comparable_count']} of {snapshot['total_count']} comparable, "
             f"provisional={snapshot['provisional']}, ranked_by={snapshot['ranked_by']}"
@@ -339,8 +339,8 @@ class Command(BaseCommand):
         self.stdout.write(f"  open  http://localhost:8000/supply/?program_id={PROGRAMME_ID}")
         self.stdout.write(f"  login http://localhost:8000/admin/  ({DEV_USERNAME}/{DEV_PASSWORD}) first")
 
-    def _seed_downstream(self, op, round_id, item_150, item_144, suppliers):
-        """Award the round, let the LLO buy it, and run the goods out to workers.
+    def _seed_downstream(self, op, tender_id, item_150, item_144, suppliers):
+        """Award the tender, let the LLO buy it, and run the goods out to workers.
 
         The arrangement this exists to demonstrate: we source, the local
         partner contracts and pays so the consignment clears under local duty
@@ -353,11 +353,11 @@ class Command(BaseCommand):
         order when only part of it arrived, and one worker whose reported
         stock does not match the ledger.
         """
-        winner = op("quote_list", round_id=round_id)
+        winner = op("quote_list", tender_id=tender_id)
         winner = next(q for q in winner if q["supplier_id"] == suppliers["Harmattan Foods"])
         award = op(
             "award_create",
-            round_id=round_id,
+            tender_id=tender_id,
             quote_id=winner["id"],
             rationale="Only quote comparable on a like-for-like basis; three others blocked.",
             decided_by="dev",
@@ -377,7 +377,7 @@ class Command(BaseCommand):
         contract = op(
             "contract_create",
             data={
-                "round_id": round_id,
+                "tender_id": tender_id,
                 "award_id": award["id"],
                 "supplier_id": suppliers["Harmattan Foods"],
                 "item_id": item_144["id"],

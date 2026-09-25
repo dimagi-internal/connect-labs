@@ -88,7 +88,7 @@ def _schema_with_scope(schema: dict) -> dict:
             "program_id": {
                 "type": "integer",
                 "description": (
-                    "Programme everything belongs to: the rounds, quotes and awards, and also "
+                    "Programme everything belongs to: the tenders, quotes and awards, and also "
                     "the commodity, trade item and supplier registries. Required in practice — "
                     "without it a read refuses rather than guessing a scope."
                 ),

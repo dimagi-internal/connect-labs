@@ -3,7 +3,7 @@ evidence.
 
 The two behaviours worth the most here are refusals. A landed total computed
 against a default buyer, and a duty relief honoured without a document, are
-both numbers that look authoritative and are wrong -- and on the round this
+both numbers that look authoritative and are wrong -- and on the tender this
 was designed against, the whole price advantage of the chosen route rested on
 exactly that relief.
 """
@@ -95,21 +95,21 @@ def chain(da, setup):
     point of the walking test is that a DECLARED target is actually
     writable, and a fixture that faked the ids would prove nothing.
     """
-    round_ = op(
+    tender = op(
         da,
-        "round_create",
+        "tender_create",
         data={
-            "label": "Round 1",
+            "label": "Tender 1",
             "delivery_point": {"city": "Kano"},
             "lines": [{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}],
         },
     )
-    op(da, "round_open", round_id=round_["id"])
+    op(da, "tender_open", tender_id=tender["id"])
     quote = op(
         da,
         "quote_record",
         data={
-            "round_id": round_["id"],
+            "tender_id": tender["id"],
             "supplier_id": setup["supplier"]["id"],
             "commodity_slug": "rutf",
             "as_quoted_amount": "52.42",
@@ -119,7 +119,7 @@ def chain(da, setup):
             "pack_spec_source": "not_stated",
         },
     )
-    award = op(da, "award_create", round_id=round_["id"], quote_id=quote["id"], rationale="only offer")
+    award = op(da, "award_create", tender_id=tender["id"], quote_id=quote["id"], rationale="only offer")
     contract = _contract(da, setup)
     shipment = op(
         da,
@@ -178,7 +178,7 @@ def chain(da, setup):
         },
     )
     return {
-        "round": round_["id"],
+        "tender": tender["id"],
         "quote": quote["id"],
         "award": award["id"],
         "contract": contract["id"],
@@ -722,7 +722,7 @@ def test_every_place_that_knows_the_document_targets_reads_the_declaration():
       the data access       -- no scoped getter, so no way to check the
                                target belongs to this programme
 
-    Each was found by a test failing, one at a time, which is six rounds of
+    Each was found by a test failing, one at a time, which is six tenders of
     the same discovery. So this asserts the agreement directly: every
     declared target has a model field, a scoped getter, a slot in both
     schemas, and a key in the published shape.

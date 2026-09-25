@@ -17,17 +17,17 @@ unconfirmed figures on the right.
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4">
     <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
     <p class="text-sm text-message-warning-text/90">
-      A quote belongs to a round, and a round belongs to a programme. Choose
+      A quote belongs to a tender, and a tender belongs to a programme. Choose
       one above to open it.
     </p>
   </div>
 {% else %}
 
 <nav class="text-sm text-gray-500 mb-3">
-  <a href="{% url 'supply_chain:procurement_round_board' %}" class="text-brand-indigo hover:underline">Sourcing</a>
+  <a href="{% url 'supply_chain:procurement_tender_board' %}" class="text-brand-indigo hover:underline">Sourcing</a>
   <span class="mx-1.5 text-gray-300">/</span>
-  <a href="{% url 'supply_chain:procurement_round_detail' quote.round_id %}"
-     class="text-brand-indigo hover:underline">{{ round.label }}</a>
+  <a href="{% url 'supply_chain:procurement_tender_detail' quote.tender_id %}"
+     class="text-brand-indigo hover:underline">{{ tender.label }}</a>
   <span class="mx-1.5 text-gray-300">/</span>
   <span class="text-gray-700">Quote {{ quote.id }}</span>
 </nav>
@@ -71,9 +71,9 @@ unconfirmed figures on the right.
     {% else %}
       <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-message-success text-message-success-text">Standing</span>
     {% endif %}
-    <a href="{% url 'supply_chain:procurement_comparison' quote.round_id %}?commodity={{ quote.commodity_slug }}"
+    <a href="{% url 'supply_chain:procurement_comparison' quote.tender_id %}?commodity={{ quote.commodity_slug }}"
        class="px-3 py-1.5 text-sm rounded-md border border-brand-indigo text-brand-indigo hover:bg-message-info">
-      Compare this round
+      Compare this tender
     </a>
     {% if not quote.voided and not quote.superseded_by_quote_id %}
       <a href="{% url 'supply_chain:procurement_quote_correct' quote.id %}"

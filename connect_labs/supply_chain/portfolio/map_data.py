@@ -55,7 +55,7 @@ STAGE_OF = {
     "award": "source",
     "commodity": "source",
     "item": "source",
-    "round": "source",
+    "tender": "source",
     "supplier": "source",
     "contract": "order",
     "shipment": "order",

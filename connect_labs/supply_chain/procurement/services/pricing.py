@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from connect_labs.supply_chain import records
-from connect_labs.supply_chain.models import Commodity, Item, Quote, Round
+from connect_labs.supply_chain.models import Commodity, Item, Quote, Tender
 from connect_labs.supply_chain.values import (
     Derived,
     Money,
@@ -28,7 +28,7 @@ FIGURE_FIELDS = (
     "usd_per_pack_normalized",
     "usd_per_course",
     "landed_total_as_quoted",
-    "landed_total_for_round_quantity",
+    "landed_total_for_tender_quantity",
     "usd_per_child_treated",
 )
 
@@ -45,15 +45,15 @@ FIGURE_FIELDS = (
 # and the only outstanding question had audience `internal`.
 #
 # So comparability is gated on the figures whose inputs are facts a supplier
-# or the round supplies. The course figures stay in FIGURE_FIELDS, stay
+# or the tender supplies. The course figures stay in FIGURE_FIELDS, stay
 # visible, and stay Unconfirmed with their reason -- they are simply not a
 # reason to refuse to rank. The ranking is on
-# landed_total_for_round_quantity, which needs no ration table.
+# landed_total_for_tender_quantity, which needs no ration table.
 COMPARABILITY_FIELDS = (
     "usd_per_base_unit",
     "usd_per_pack_normalized",
     "landed_total_as_quoted",
-    "landed_total_for_round_quantity",
+    "landed_total_for_tender_quantity",
 )
 
 # str.format templates over {base_unit} / {pack_unit}: the commodity supplies the
@@ -64,7 +64,7 @@ FIGURE_LABELS = {
     "usd_per_pack_normalized": "USD per {pack_unit}",
     "usd_per_course": "USD per course",
     "landed_total_as_quoted": "Landed total (as quoted)",
-    "landed_total_for_round_quantity": "Landed total (this round)",
+    "landed_total_for_tender_quantity": "Landed total (this tender)",
     "usd_per_child_treated": "USD per child treated",
 }
 
@@ -85,7 +85,7 @@ class QuoteFigures:
     usd_per_pack_normalized: Derived
     usd_per_course: Derived
     landed_total_as_quoted: Derived
-    landed_total_for_round_quantity: Derived
+    landed_total_for_tender_quantity: Derived
     usd_per_child_treated: Derived
 
     def as_dict(self) -> dict[str, Derived]:
@@ -342,7 +342,7 @@ def _base_units_quoted(
 def compute_figures(
     quote: Quote,
     commodity: Commodity,
-    round_: Round,
+    tender: Tender,
     item: Item | None = None,
 ) -> QuoteFigures:
     """Derive every comparable figure for one quote, or say why it cannot be.
@@ -419,30 +419,30 @@ def compute_figures(
         subtotal = _lot_subtotal(quote, commodity, usd, per_base_unit, units_quoted)
         landed_as_quoted = Money(subtotal + extras.amount)
 
-    landed_for_round: Derived
-    round_quantity = round_.quantity_for(commodity.slug)
-    if round_quantity is None:
-        landed_for_round = unconfirmed(f"this round has no line for {commodity.slug}")
+    landed_for_tender: Derived
+    tender_quantity = tender.quantity_for(commodity.slug)
+    if tender_quantity is None:
+        landed_for_tender = unconfirmed(f"this tender has no line for {commodity.slug}")
     elif quote.quantity_basis is None:
         # A dedicated message: the generic "quote covers None carton" below
         # would leak internal absence-representation into a supplier-facing
         # reason instead of naming the missing fact.
-        landed_for_round = unconfirmed(
-            f"no quantity basis recorded on the quote; this round is " f"{round_quantity[0]} {round_quantity[1]}"
+        landed_for_tender = unconfirmed(
+            f"no quantity basis recorded on the quote; this tender is " f"{tender_quantity[0]} {tender_quantity[1]}"
         )
-    elif quote.quantity_basis_unit != round_quantity[1] or quote.quantity_basis != round_quantity[0]:
-        landed_for_round = unconfirmed(
+    elif quote.quantity_basis_unit != tender_quantity[1] or quote.quantity_basis != tender_quantity[0]:
+        landed_for_tender = unconfirmed(
             f"quote covers {quote.quantity_basis} {quote.quantity_basis_unit}; "
-            f"round is {round_quantity[0]} {round_quantity[1]}"
+            f"tender is {tender_quantity[0]} {tender_quantity[1]}"
         )
     else:
-        landed_for_round = landed_as_quoted
+        landed_for_tender = landed_as_quoted
 
     return QuoteFigures(
         usd_per_base_unit=per_base_unit,
         usd_per_pack_normalized=per_pack,
         usd_per_course=per_course,
         landed_total_as_quoted=landed_as_quoted,
-        landed_total_for_round_quantity=landed_for_round,
+        landed_total_for_tender_quantity=landed_for_tender,
         usd_per_child_treated=per_child,
     )

@@ -116,29 +116,29 @@ def world():
         },
     )
     supplier = call_operation("supplier_create", access, {"data": {"name": "A Placeholder Seller"}})
-    round_ = call_operation(
-        "round_create",
+    tender = call_operation(
+        "tender_create",
         access,
         {
             "data": {
-                "label": "A placeholder round",
+                "label": "A placeholder tender",
                 "lines": [{"commodity_slug": "a-placeholder-good", "quantity": "10", "quantity_unit": "box"}],
             }
         },
     )
-    return access, supplier, round_
+    return access, supplier, tender
 
 
 def _extras_for(world, **quote_fields):
     from connect_labs.supply_chain.procurement.services.pricing import _extras
 
-    access, supplier, round_ = world
+    access, supplier, tender = world
     quote = call_operation(
         "quote_record",
         access,
         {
             "data": {
-                "round_id": round_["id"],
+                "tender_id": tender["id"],
                 "supplier_id": supplier["id"],
                 "commodity_slug": "a-placeholder-good",
                 "as_quoted_amount": "10.00",

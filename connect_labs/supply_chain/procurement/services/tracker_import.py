@@ -7,7 +7,7 @@ review it and where it drifts silently from the sheet. The repository is
 public; the tracker is not.
 
 **The sheet is read in HER shape, not ours.** Her columns are "Price /
-carton", "Freight", "Total landed" -- a per-round layout with two rounds side
+carton", "Freight", "Total landed" -- a per-tender layout with two tenders side
 by side -- and several cells are prose rather than numbers. The loader's job
 is to carry across exactly what she wrote and no more. In particular it
 REFUSES to import her own derived figures:
@@ -48,26 +48,26 @@ from connect_labs.labs.synthetic.gdrive import _load_credentials
 # argument, overridable so a different programme's tracker can be loaded.
 SPREADSHEET_ID = "1O985Gh2aTp8ugqgg7QrlvPCy8VFdLAMkEMC12s2ByzA"
 TAB = "Sheet1"
-# Row 4 carries the merged group headers ("Round 1 Quote (500 cartons)",
+# Row 4 carries the merged group headers ("Tender 1 Quote (500 cartons)",
 # "Feb Re-quote (2,000 cartons)"); row 5 the per-column ones.
 GROUP_HEADER_ROW = 4
 HEADER_ROW = 5
 
-# Her two rounds, and which columns hold each. Declared as data so the two are
+# Her two tenders, and which columns hold each. Declared as data so the two are
 # handled by one code path -- an earlier sketch had them as two blocks and the
 # second silently lacked the freight handling.
-ROUNDS = (
+TENDERS = (
     {
-        # The round's NAME comes off the sheet's own group header, at this
-        # column. It used to be the literal "Round 1 — May 2026", which the
+        # The tender's NAME comes off the sheet's own group header, at this
+        # column. It used to be the literal "Tender 1 — May 2026", which the
         # sheet nowhere states: May was one supplier's quote date (DABS, 18
-        # May) promoted into the round's identity. Round 1 actually spans
+        # May) promoted into the tender's identity. Tender 1 actually spans
         # February to May across suppliers, so the label was wrong for EHA,
         # whose quote is dated 23 Feb. A derived value stored as though
         # stated -- in a string constant, where no derivation guard could
         # see it.
         "label_column": 8,
-        "fallback_label": "Round 1",
+        "fallback_label": "Tender 1",
         "quantity": "500",
         "contacted": 6,
         "responded": 7,
@@ -78,11 +78,11 @@ ROUNDS = (
     },
     {
         # "Feb Re-quote" names the February DELIVERY requirement, not a
-        # February quote: it was re-contacted 9 Sep 2026. Round names in this
+        # February quote: it was re-contacted 9 Sep 2026. Tender names in this
         # tracker describe the requirement, never the quote date -- which is
-        # the rule the Round 1 label broke.
+        # the rule the Tender 1 label broke.
         "label_column": 12,
-        "fallback_label": "Round 2",
+        "fallback_label": "Tender 2",
         "quantity": "2000",
         "contacted": 12,
         "responded": 13,
@@ -168,7 +168,7 @@ _NUMERIC_DATE = re.compile(r"^\s*(\d{1,2})/(\d{1,2})/(\d{4})\s*$")
 
 
 def ambiguous_numeric_date(raw) -> bool:
-    """True for a slash date whose day and month could be either way round.
+    """True for a slash date whose day and month could be either way tender.
 
     "9/10/2026" is 10 September read month-first and 9 October read
     day-first, and nothing in the cell says which. "9/26/2026" is
@@ -241,27 +241,27 @@ class TrackerImportError(Exception):
     """The tracker could not be read or written, with a message worth showing."""
 
 
-def _round_labels(group_row):
-    """Each round's name as the SHEET states it.
+def _tender_labels(group_row):
+    """Each tender's name as the SHEET states it.
 
     Read rather than declared, so the label cannot drift from the sheet or
     quietly assert something the sheet never said. A blank header falls back
     to a bare ordinal -- never to a month inferred from a quote date.
     """
     labels = []
-    for spec in ROUNDS:
+    for spec in TENDERS:
         stated = _cell(group_row, spec["label_column"])
         labels.append(stated or spec["fallback_label"])
     if len(set(labels)) != len(labels):
-        # Reachable only since the label became data. `_ensure_rounds` keys on
-        # it, so two identical headers map both rounds to one id and the
-        # second round's prices land against the first -- two rounds collapsed
-        # into one, with every quantity and age on the wrong round. Refused
+        # Reachable only since the label became data. `_ensure_tenders` keys on
+        # it, so two identical headers map both tenders to one id and the
+        # second tender's prices land against the first -- two tenders collapsed
+        # into one, with every quantity and age on the wrong tender. Refused
         # rather than disambiguated: appending a suffix would invent a name,
         # which is the defect this function exists to remove.
         raise TrackerImportError(
-            f"the sheet's round headers must be distinct, and resolved to {labels!r}. "
-            "Give each round group its own header."
+            f"the sheet's tender headers must be distinct, and resolved to {labels!r}. "
+            "Give each tender group its own header."
         )
     return labels
 
@@ -269,7 +269,7 @@ def _round_labels(group_row):
 def _read_sheet(spreadsheet_id):
     """Return (group header row, data rows).
 
-    One request covering row 4 onward: the group headers name the rounds and
+    One request covering row 4 onward: the group headers name the tenders and
     everything from row 6 is a supplier.
     """
     credentials = _load_credentials()
@@ -338,21 +338,21 @@ def ensure_rutf(access):
     )
 
 
-def _ensure_rounds(op, commodity_slug, labels):
-    """The tracker's rounds, by label, idempotently.
+def _ensure_tenders(op, commodity_slug, labels):
+    """The tracker's tenders, by label, idempotently.
 
     Matched on label rather than created blindly: this is meant to be
-    re-runnable as the sheet is edited, and a second run should update a round
+    re-runnable as the sheet is edited, and a second run should update a tender
     rather than produce a twin.
     """
-    existing = {r["label"]: r["id"] for r in op("round_list")}
+    existing = {r["label"]: r["id"] for r in op("tender_list")}
     ids = []
-    for spec, label in zip(ROUNDS, labels, strict=True):
+    for spec, label in zip(TENDERS, labels, strict=True):
         if label in existing:
             ids.append(existing[label])
             continue
         created = op(
-            "round_create",
+            "tender_create",
             data={
                 "label": label,
                 "lines": [
@@ -372,14 +372,14 @@ def _ensure_rounds(op, commodity_slug, labels):
                 "shelf_life_months_minimum": 18,
             },
         )
-        op("round_open", round_id=created["id"])
+        op("tender_open", tender_id=created["id"])
         ids.append(created["id"])
     return ids
 
 
 def _ensure_supplier(op, row, name, refusals):
     existing = next((s for s in op("supplier_list", search=name) if s["name"] == name), None)
-    has_quote = any(_price(_cell(row, spec["price"]))[0] is not None for spec in ROUNDS)
+    has_quote = any(_price(_cell(row, spec["price"]))[0] is not None for spec in TENDERS)
     location = _cell(row, LOCATION)
     country = _country(location)
     if not country and location:
@@ -455,13 +455,13 @@ def _outreach_differs(existing: dict, data: dict) -> bool:
     return False
 
 
-def _live_quote(op, round_id, supplier_id, commodity_slug):
-    """The quote currently standing for this supplier on this round.
+def _live_quote(op, tender_id, supplier_id, commodity_slug):
+    """The quote currently standing for this supplier on this tender.
 
     Voided and superseded versions are skipped: they are history, and a
     re-import should neither match them nor resurrect them.
     """
-    for quote in op("quote_list", round_id=round_id):
+    for quote in op("quote_list", tender_id=tender_id):
         if (
             quote["supplier_id"] == supplier_id
             and quote["commodity_slug"] == commodity_slug
@@ -472,7 +472,7 @@ def _live_quote(op, round_id, supplier_id, commodity_slug):
     return None
 
 
-def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusals):
+def _load_tender(op, row, spec, label, tender_id, supplier, commodity_slug, refusals):
     counts = {"invitations": 0, "quotes": 0, "unchanged_invitations": 0, "unchanged_quotes": 0}
     name = _cell(row, NAME)
     sent_on_raw = _cell(row, spec["contacted"])
@@ -485,7 +485,7 @@ def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusa
 
     responded = responded_raw.startswith("yes") or amount is not None
     outreach_data = {
-        "round_id": round_id,
+        "tender_id": tender_id,
         "supplier_id": supplier["id"],
         "channel": "manual",
         **({"sent_on": sent_on} if sent_on else {}),
@@ -494,14 +494,14 @@ def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusa
         "notes": _cell(row, RATIONALE),
     }
     # Matched on the DATE as well as the supplier. Outreach is deliberately not
-    # unique per (round, supplier) -- the model says so, because re-inviting is
+    # unique per (tender, supplier) -- the model says so, because re-inviting is
     # a real event worth keeping -- so the same invitation read twice is one
     # event and an invitation on a new date is two. Creating unconditionally
     # took programme 10063 from 16 invitations to 32 on a single re-run.
     existing = next(
         (
             o
-            for o in op("outreach_list", round_id=round_id)
+            for o in op("outreach_list", tender_id=tender_id)
             if o["supplier_id"] == supplier["id"] and (o["sent_on"] or None) == (sent_on or None)
         ),
         None,
@@ -520,8 +520,8 @@ def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusa
         op("outreach_log", data=outreach_data)
         counts["invitations"] = 1
 
-    # `field`, not `label`: `label` is the round, and Python leaks a loop
-    # variable, so binding it here renamed the round to "quote date" in every
+    # `field`, not `label`: `label` is the tender, and Python leaks a loop
+    # variable, so binding it here renamed the tender to "quote date" in every
     # refusal from this point on.
     for field, raw in (("outreach date", sent_on_raw), ("quote date", _cell(row, spec["quote_date"]))):
         if ambiguous_numeric_date(raw):
@@ -547,8 +547,8 @@ def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusa
         freight = {"freight_basis": "not_specified"}
 
     # Quantity basis: what the SUPPLIER priced, which is not always the
-    # round's quantity. One quote here covers 100,000 sachets against a
-    # 500-carton round, and recording the round's figure instead would make an
+    # tender's quantity. One quote here covers 100,000 sachets against a
+    # 500-carton tender, and recording the tender's figure instead would make an
     # incomparable quote look comparable.
     quantity_basis = spec["quantity"]
     quantity_unit = "carton"
@@ -559,7 +559,7 @@ def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusa
             quantity_unit = "sachet"
             refusals.append(
                 f"{name}, {label}: priced per sachet for {quantity_basis} sachets, "
-                f"not the round's {spec['quantity']} cartons"
+                f"not the tender's {spec['quantity']} cartons"
             )
 
     # Duty and tax information is not confined to one column: a "Transport"
@@ -578,7 +578,7 @@ def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusa
 
     received_on = _date(_cell(row, spec["quote_date"]))
     quote_data = {
-        "round_id": round_id,
+        "tender_id": tender_id,
         "supplier_id": supplier["id"],
         "commodity_slug": commodity_slug,
         "as_quoted_amount": str(amount),
@@ -596,13 +596,13 @@ def _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusa
         "notes": _cell(row, RATIONALE),
     }
 
-    # A quote already standing for this supplier on this round is not
+    # A quote already standing for this supplier on this tender is not
     # something to write over. It carries its own revision chain (version,
     # superseded_by_quote_id, quote_correct), so replacing it because a
     # spreadsheet cell moved would destroy the trail of what the supplier
     # actually said and when. Unchanged means do nothing; changed means say
     # so and leave the correction to the operation built for it.
-    standing = _live_quote(op, round_id, supplier["id"], commodity_slug)
+    standing = _live_quote(op, tender_id, supplier["id"], commodity_slug)
     if standing is not None:
         differences = _quote_differences(standing, quote_data)
         if differences:
@@ -653,7 +653,7 @@ def describe(rows, labels) -> list[str]:
     for row in rows:
         name = _cell(row, NAME)
         bits = [f"{name} ({_cell(row, TYPE) or 'type not stated'}, {_country(_cell(row, LOCATION)) or '??'})"]
-        for spec, label in zip(ROUNDS, labels, strict=True):
+        for spec, label in zip(TENDERS, labels, strict=True):
             amount, unit, refusal = _price(_cell(row, spec["price"]))
             if amount is not None:
                 bits.append(f"{label}: {amount} {unit}")
@@ -690,7 +690,7 @@ def import_tracker(
             ensure_rutf(access)
 
     group_row, rows = _read_sheet(spreadsheet_id)
-    labels = _round_labels(group_row)
+    labels = _tender_labels(group_row)
 
     # A dry run walks the SAME traversal with the write stubbed out, rather
     # than taking a separate preview path. `refused` is the half of the report
@@ -703,21 +703,21 @@ def import_tracker(
         _no_write_op(access) if dry_run else lambda name, **payload: call_operation(name, access, payload)
     )  # noqa: E731
     refusals: list[str] = []
-    imported = {"suppliers": 0, "rounds": 0, "invitations": 0, "quotes": 0}
+    imported = {"suppliers": 0, "tenders": 0, "invitations": 0, "quotes": 0}
     # Reported separately from `imported`, because reading a RUN's write count
     # as the programme's total is exactly how the duplication this guards
     # against went unnoticed: on a first import the two read identically.
     unchanged = {"invitations": 0, "quotes": 0}
 
-    round_ids = _ensure_rounds(op, commodity_slug, labels)
-    imported["rounds"] = len(round_ids)
+    tender_ids = _ensure_tenders(op, commodity_slug, labels)
+    imported["tenders"] = len(tender_ids)
 
     for row in rows:
         name = _cell(row, NAME)
         supplier = _ensure_supplier(op, row, name, refusals)
         imported["suppliers"] += 1
-        for spec, label, round_id in zip(ROUNDS, labels, round_ids, strict=True):
-            counts = _load_round(op, row, spec, label, round_id, supplier, commodity_slug, refusals)
+        for spec, label, tender_id in zip(TENDERS, labels, tender_ids, strict=True):
+            counts = _load_tender(op, row, spec, label, tender_id, supplier, commodity_slug, refusals)
             imported["invitations"] += counts["invitations"]
             imported["quotes"] += counts["quotes"]
             unchanged["invitations"] += counts["unchanged_invitations"]

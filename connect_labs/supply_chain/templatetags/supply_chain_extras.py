@@ -25,7 +25,7 @@ def dictkey(mapping, key):
 def questions_for(questions, audience):
     """Split a row's outstanding questions by who they are for -- design doc
     section 7's audience split. A comparison row's `questions` list mixes
-    supplier-facing facts with our own internal gaps (a misconfigured round,
+    supplier-facing facts with our own internal gaps (a misconfigured tender,
     a missing course definition); this is what lets the comparison screen
     show "ask the supplier" and "our own outstanding work" as two lists
     instead of one undifferentiated one.
@@ -202,10 +202,10 @@ def incoterm_words(incoterm):
 def place_text(point):
     """A delivery point as a person would write the address.
 
-    `{{ round.delivery_point|place_text }}`.
+    `{{ tender.delivery_point|place_text }}`.
 
     Three templates used to join these parts by hand and each got it wrong
-    in its own way: the programme's own round list printed a leading comma
+    in its own way: the programme's own tender list printed a leading comma
     when the name was blank (", Kano"), and the SUPPLIER-FACING marketplace
     printed "(not stated), Kano" -- telling an outside reader the place was
     unknown in the same breath as naming the city. That page is the one
@@ -325,13 +325,13 @@ CHECK_FACT_LABELS = {
 }
 
 # Fact keys that reference another record: the label, the key into the view's
-# `refs` ({id: name}), and the page that record is read on. "round id 33" and
+# `refs` ({id: name}), and the page that record is read on. "tender id 33" and
 # "supplier id 88" were the raw facts; the page has the names one list call away.
 # `contract_id` is not here: the card already goes to that order -- it is the
 # card's own link when the subject has no page, and a shipment's page opens
 # with its order.
 _FACT_REFERENCES = {
-    "round_id": ("Round", "round", "supply_chain:procurement_round_detail"),
+    "tender_id": ("Tender", "tender", "supply_chain:procurement_tender_detail"),
     "supplier_id": ("Supplier", "supplier", "supply_chain:supplier_detail"),
 }
 
@@ -410,8 +410,8 @@ def check_facts(check, refs=None):
     """A check's facts as labelled rows, worded for the checks page.
 
     Each row is a `FactRow` -- (label, text) plus an `href` when the fact is
-    another record: a round or supplier reads by its name (from `refs`, which
-    maps "round" / "supplier" to {id: name}) and links to it.
+    another record: a tender or supplier reads by its name (from `refs`, which
+    maps "tender" / "supplier" to {id: name}) and links to it.
 
     Leaves out what the card already says: the age and the date it counts
     from (the header's "90 days since 2026-06-26" is `days_late` and
@@ -621,12 +621,12 @@ def source_stages(source):
     differently without fighting a format baked into the data.
     """
     evaluation = source["evaluation"]
-    sourcing = reverse("supply_chain:procurement_round_board")
+    sourcing = reverse("supply_chain:procurement_tender_board")
     return [
         _cell(
             "Demand",
-            source["demand"]["rounds"],
-            _plural(source["demand"]["open"], "open round"),
+            source["demand"]["tenders"],
+            _plural(source["demand"]["open"], "open tender"),
             sourcing,
         ),
         _cell(
@@ -1002,7 +1002,7 @@ def stated_rows(quote):
         if key == "lead_time_days" and value:
             value = f"{value} days"
         # The enum-valued fields read as words, not as identifiers. Fixed in
-        # the round table and missed here, which is why "not_stated" reached
+        # the tender table and missed here, which is why "not_stated" reached
         # the quote page.
         if key in ("as_quoted_unit", "pack_spec_source"):
             value = words(value)

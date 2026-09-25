@@ -10,7 +10,7 @@ from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import membership
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.market import service
-from connect_labs.supply_chain.models import Round, Supplier, SupplierOffering, SupplierProfile
+from connect_labs.supply_chain.models import Supplier, SupplierOffering, SupplierProfile, Tender
 from connect_labs.supply_chain.operations import call_operation
 
 pytestmark = pytest.mark.django_db
@@ -31,11 +31,11 @@ def rutf():
     )
 
 
-def self_registered_bid(rutf_round):
+def self_registered_bid(rutf_tender):
     org = LabsOrg.objects.create(slug="plateau-foods", name="Plateau Foods")
     SupplierProfile.objects.create(org=org)
     return service.bid(
-        rutf_round.pk,
+        rutf_tender.pk,
         "rutf",
         org=org,
         orgs=[org],
@@ -45,32 +45,32 @@ def self_registered_bid(rutf_round):
 
 
 @pytest.fixture
-def rutf_round(rutf):
+def rutf_tender(rutf):
     made = op(
-        "round_create",
+        "tender_create",
         data={
             "label": "R2",
             "delivery_point": {"name": "Central store"},
             "lines": [{"commodity_slug": "rutf", "quantity": "2000", "quantity_unit": "carton"}],
         },
     )
-    op("round_open", round_id=made["id"])
-    return Round.objects.get(pk=made["id"])
+    op("tender_open", tender_id=made["id"])
+    return Tender.objects.get(pk=made["id"])
 
 
 class TestReviewingASelfRegisteredSupplier:
-    def test_marking_reviewed_clears_the_flag_on_its_quotes(self, rutf_round):
-        quote = self_registered_bid(rutf_round)
-        before = op("round_compare", round_id=rutf_round.pk, commodity_slug="rutf")
+    def test_marking_reviewed_clears_the_flag_on_its_quotes(self, rutf_tender):
+        quote = self_registered_bid(rutf_tender)
+        before = op("tender_compare", tender_id=rutf_tender.pk, commodity_slug="rutf")
         assert all(r["supplier_awaiting_review"] for r in before["comparable"] + before["blocked"])
 
         reviewed = op("supplier_mark_reviewed", supplier_id=quote.supplier_id)
 
         assert reviewed["reviewed_on"] is not None
-        after = op("round_compare", round_id=rutf_round.pk, commodity_slug="rutf")
+        after = op("tender_compare", tender_id=rutf_tender.pk, commodity_slug="rutf")
         assert not any(r["supplier_awaiting_review"] for r in after["comparable"] + after["blocked"])
 
-    def test_a_supplier_the_team_added_is_never_flagged(self, rutf_round):
+    def test_a_supplier_the_team_added_is_never_flagged(self, rutf_tender):
         supplier = Supplier.objects.enrol(SCOPE, name="Harmattan Health Supplies")
         assert not supplier.awaiting_review
 
@@ -111,12 +111,12 @@ class TestInvitingAnExistingSupplier:
         assert "/supply/market/invites/" in response.content.decode()
 
 
-class TestRoundVisibility:
-    def test_a_round_is_public_unless_made_private(self, rutf):
-        made = op("round_create", data={"label": "R", "delivery_point": {"name": "x"}})
+class TestTenderVisibility:
+    def test_a_tender_is_public_unless_made_private(self, rutf):
+        made = op("tender_create", data={"label": "R", "delivery_point": {"name": "x"}})
         assert made["visibility"] == "public"
 
-        updated = op("round_update", round_id=made["id"], data={"visibility": "private"})
+        updated = op("tender_update", tender_id=made["id"], data={"visibility": "private"})
         assert updated["visibility"] == "private"
 
 

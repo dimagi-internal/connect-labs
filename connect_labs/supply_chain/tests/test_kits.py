@@ -90,7 +90,7 @@ def _kit(da, sku, zinc_tablets, zinc_mg=20, **extra):
 
 
 class TestAKitSaysWhatIsInIt:
-    def test_the_components_round_trip(self, da, catalogue):
+    def test_the_components_tender_trip(self, da, catalogue):
         kit = _kit(da, "EHA-CP-10", 10)
         assert kit["is_kit"] is True
         assert [c["commodity_slug"] for c in kit["components"]] == ["ors", "zinc"]
@@ -141,11 +141,11 @@ class TestTheSpecificationCoversEachComponent:
         assert "item_fails_specification" not in kinds
 
 
-def _round_with_quotes(da, *kits):
+def _tender_with_quotes(da, *kits):
     supplier = op(da, "supplier_create", data={"name": "EHA Clinics"})
-    round_ = op(
+    tender = op(
         da,
-        "round_create",
+        "tender_create",
         data={
             "label": "Co-packs",
             "delivery_point": {"city": "Kano"},
@@ -157,7 +157,7 @@ def _round_with_quotes(da, *kits):
             da,
             "quote_record",
             data={
-                "round_id": round_["id"],
+                "tender_id": tender["id"],
                 "commodity_slug": "ors-zinc",
                 "supplier_id": supplier["id"],
                 "item_id": kit["id"],
@@ -170,14 +170,14 @@ def _round_with_quotes(da, *kits):
                 "duties_basis": "included",
             },
         )
-    return op(da, "round_compare", round_id=round_["id"], commodity_slug="ors-zinc")
+    return op(da, "tender_compare", tender_id=tender["id"], commodity_slug="ors-zinc")
 
 
 class TestKitsAreComparedOnlyAgainstTheSameContents:
     def test_two_kits_with_the_same_contents_are_ranked_together(self, da, catalogue):
         first = _kit(da, "A", 10)
         second = _kit(da, "B", 10)
-        comparison = _round_with_quotes(da, (first, "40.00"), (second, "38.00"))
+        comparison = _tender_with_quotes(da, (first, "40.00"), (second, "38.00"))
         assert comparison["comparable_count"] == 2
 
     def test_kits_with_different_contents_are_not_ranked_against_each_other(self, da, catalogue):
@@ -185,11 +185,11 @@ class TestKitsAreComparedOnlyAgainstTheSameContents:
         different price, and ranking them would say it was."""
         ten = _kit(da, "A", 10)
         twelve = _kit(da, "B", 12)
-        comparison = _round_with_quotes(da, (ten, "40.00"), (twelve, "38.00"))
+        comparison = _tender_with_quotes(da, (ten, "40.00"), (twelve, "38.00"))
 
         assert comparison["comparable_count"] == 0
         for row in comparison["blocked"]:
-            cell = row["figures"]["landed_total_for_round_quantity"]
+            cell = row["figures"]["landed_total_for_tender_quantity"]
             assert any("kit composition differs" in reason for reason in cell["unconfirmed"])
             question = next(q for q in row["questions"] if q["key"] == "kit_composition")
             # Deciding which contents to buy is ours, not the supplier's.
@@ -198,7 +198,7 @@ class TestKitsAreComparedOnlyAgainstTheSameContents:
 
     def test_the_rows_carry_their_composition_so_a_screen_can_set_them_side_by_side(self, da, catalogue):
         ten = _kit(da, "A", 10)
-        comparison = _round_with_quotes(da, (ten, "40.00"))
+        comparison = _tender_with_quotes(da, (ten, "40.00"))
         row = comparison["comparable"][0]
         assert row["composition"] == [
             {"commodity_slug": "ors", "quantity": "2", "base_unit": "sachet"},
@@ -218,7 +218,7 @@ class TestOptionsFromOneSupplierCanBeToldApart:
     def test_each_row_names_the_trade_item_it_quotes(self, da, catalogue):
         first = _kit(da, "A", 10)
         second = _kit(da, "B", 10)
-        comparison = _round_with_quotes(da, (first, "40.00"), (second, "38.00"))
+        comparison = _tender_with_quotes(da, (first, "40.00"), (second, "38.00"))
         assert sorted(row["item_name"] for row in comparison["comparable"]) == ["Co-pack A", "Co-pack B"]
 
     def test_the_comparison_screen_shows_which_option_each_row_is(
@@ -237,9 +237,9 @@ class TestOptionsFromOneSupplierCanBeToldApart:
 
         monkeypatch.setattr(procurement_views, "_access", _scoped)
         monkeypatch.setattr(procurement_views, "has_program_context", lambda request: True)
-        comparison = _round_with_quotes(da, (_kit(da, "A", 10), "40.00"), (_kit(da, "B", 10), "38.00"))
+        comparison = _tender_with_quotes(da, (_kit(da, "A", 10), "40.00"), (_kit(da, "B", 10), "38.00"))
         response = client.get(
-            reverse("supply_chain:procurement_comparison", args=[comparison["round_id"]]) + "?commodity=ors-zinc"
+            reverse("supply_chain:procurement_comparison", args=[comparison["tender_id"]]) + "?commodity=ors-zinc"
         )
         body = response.content.decode()
         assert response.status_code == 200
@@ -251,14 +251,14 @@ class TestAKitCanBeOneCourse:
         """The co-pack commodity has no course definition. A packet the
         manufacturer made AS the course needs none."""
         kit = _kit(da, "A", 10, one_course_is="base_unit")
-        comparison = _round_with_quotes(da, (kit, "40.00"))
+        comparison = _tender_with_quotes(da, (kit, "40.00"))
         figures = comparison["comparable"][0]["figures"]
         # 40.00 per carton of 50 co-packs, one co-pack per course.
         assert Decimal(figures["usd_per_course"]["amount"]) == Decimal("0.8")
 
     def test_without_it_the_course_figure_stays_unconfirmed(self, da, catalogue):
         kit = _kit(da, "A", 10)
-        comparison = _round_with_quotes(da, (kit, "40.00"))
+        comparison = _tender_with_quotes(da, (kit, "40.00"))
         assert "unconfirmed" in comparison["comparable"][0]["figures"]["usd_per_course"]
 
 

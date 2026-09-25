@@ -16,7 +16,7 @@ SUPPLY_TABS = (
     ("supply_chain:home", "Overview"),
     ("supply_chain:catalogue", "Catalogue"),
     ("supply_chain:suppliers", "Suppliers"),
-    ("supply_chain:procurement_round_board", "Sourcing"),
+    ("supply_chain:procurement_tender_board", "Sourcing"),
     ("supply_chain:orders", "Orders"),
     ("supply_chain:network", "Network"),
     ("supply_chain:stock", "Stock"),
@@ -30,13 +30,13 @@ SUPPLY_TABS = (
 # Pages that belong under a tab without being it, so the tab still reads as
 # current when you are one level in.
 TAB_FOR_VIEW = {
-    "supply_chain:procurement_round_detail": "supply_chain:procurement_round_board",
-    "supply_chain:procurement_comparison": "supply_chain:procurement_round_board",
-    "supply_chain:procurement_quote_entry": "supply_chain:procurement_round_board",
+    "supply_chain:procurement_tender_detail": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_comparison": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_quote_entry": "supply_chain:procurement_tender_board",
     # A quote's own page had no entry, so landing on it un-highlighted every
     # tab and the nav read as though you had left the domain.
-    "supply_chain:procurement_quote_detail": "supply_chain:procurement_round_board",
-    "supply_chain:award_detail": "supply_chain:procurement_round_board",
+    "supply_chain:procurement_quote_detail": "supply_chain:procurement_tender_board",
+    "supply_chain:award_detail": "supply_chain:procurement_tender_board",
     "supply_chain:product_detail": "supply_chain:catalogue",
     "supply_chain:item_detail": "supply_chain:catalogue",
     "supply_chain:supplier_detail": "supply_chain:suppliers",
@@ -67,21 +67,21 @@ TAB_FOR_VIEW = {
     "supply_chain:org_create": "supply_chain:suppliers",
     "supply_chain:org_edit": "supply_chain:suppliers",
     "supply_chain:org_merge": "supply_chain:suppliers",
-    "supply_chain:procurement_round_create": "supply_chain:procurement_round_board",
-    "supply_chain:procurement_round_edit": "supply_chain:procurement_round_board",
-    "supply_chain:procurement_round_open": "supply_chain:procurement_round_board",
-    "supply_chain:procurement_round_close": "supply_chain:procurement_round_board",
-    "supply_chain:procurement_outreach_log": "supply_chain:procurement_round_board",
-    "supply_chain:procurement_outreach_reply": "supply_chain:procurement_round_board",
-    "supply_chain:procurement_outreach_delete": "supply_chain:procurement_round_board",
-    "supply_chain:procurement_quote_void": "supply_chain:procurement_round_board",
-    "supply_chain:procurement_quote_correct": "supply_chain:procurement_round_board",
-    "supply_chain:quote_document_attach": "supply_chain:procurement_round_board",
+    "supply_chain:procurement_tender_create": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_tender_edit": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_tender_open": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_tender_close": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_outreach_log": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_outreach_reply": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_outreach_delete": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_quote_void": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_quote_correct": "supply_chain:procurement_tender_board",
+    "supply_chain:quote_document_attach": "supply_chain:procurement_tender_board",
     # Asking for an approval, attaching its letter and answering it are all
     # read from the award, which sits under Sourcing.
-    "supply_chain:approval_request": "supply_chain:procurement_round_board",
-    "supply_chain:approval_document_attach": "supply_chain:procurement_round_board",
-    "supply_chain:approval_decide": "supply_chain:procurement_round_board",
+    "supply_chain:approval_request": "supply_chain:procurement_tender_board",
+    "supply_chain:approval_document_attach": "supply_chain:procurement_tender_board",
+    "supply_chain:approval_decide": "supply_chain:procurement_tender_board",
     # Placing the order is the first Orders screen, not the last Sourcing one.
     "supply_chain:contract_create": "supply_chain:orders",
     "supply_chain:contract_edit": "supply_chain:orders",
@@ -136,7 +136,7 @@ VIEWS_WITHOUT_TABS = frozenset(
         # The supplier marketplace: its own shell, for suppliers, who have no
         # programs and so no program tabs to be on. It spans programs too.
         "supply_chain:market",
-        "supply_chain:market_round",
+        "supply_chain:market_tender",
         "supply_chain:market_bid",
         "supply_chain:market_bids",
         "supply_chain:market_revise",

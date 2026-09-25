@@ -3,7 +3,7 @@
 Tiers, and how each is scoped (see the design doc, sections 4, 17 and 18):
 
   reference    -> program_id        commodities, items, suppliers
-  procurement  -> program_id        rounds, outreach, quotes, awards, purchases
+  procurement  -> program_id        tenders, outreach, quotes, awards, purchases
   fulfilment   -> program_id        contracts, shipments, receipts, invoices, documents
   network      -> program_id        supply points (carrying opportunity_id in data)
   stock        -> program_id        movements, counts, distributions
@@ -19,7 +19,7 @@ procurement tier already hit (see data_access._routing_opportunity_id).
 
 EXPERIMENT_PREFIX = "supply"
 
-# ---- reference: reused across a programme's rounds ---------------------
+# ---- reference: reused across a programme's tenders ---------------------
 # Organisations are NOT here: they are `labs.LabsOrg`, one labs-wide table,
 # not a per-scope LabsRecord. The `supply_party` type constant that used to
 # sit in this list was read by nothing at all once the model moved.
@@ -93,7 +93,7 @@ SUPPLY_POINT_KINDS = (
 )
 
 # Signs are fixed here, not at each call site: a movement kind that is
-# counted the wrong way round silently doubles or zeroes a balance, and
+# counted the wrong way tender silently doubles or zeroes a balance, and
 # "which kinds add" is exactly the sort of knowledge that gets re-derived
 # differently in two places.
 MOVEMENT_KINDS = (
@@ -189,7 +189,7 @@ DOCUMENT_KINDS = (
 DOCUMENT_LINKS = (
     # sourcing: what a supplier sent, and what we sent them
     "quote",
-    "round",
+    "tender",
     "award",
     # ordering and paying
     "contract",
@@ -262,7 +262,7 @@ COMMODITY_CATEGORIES = (
     ("consumable", "Consumable"),
 )
 
-# Who may see an open round on the supplier marketplace. `public`: anyone,
+# Who may see an open tender on the supplier marketplace. `public`: anyone,
 # signed in or not. `private`: only organisations invited to it.
 ROUND_VISIBILITIES = ("public", "private")
 
@@ -271,7 +271,7 @@ ROUND_VISIBILITIES = ("public", "private")
 QUOTE_ENTERED_BY = ("program", "supplier")
 
 # How a supplier came to be one of a program's: added by the program team, or
-# by bidding on one of its rounds from the marketplace.
+# by bidding on one of its tenders from the marketplace.
 SUPPLIER_ORIGINS = ("program", "self_registered")
 
 # What a supplier is to us. `donor` is the one that supplies in kind: a donor
@@ -285,7 +285,7 @@ SUPPLIER_TYPES = ("manufacturer", "distributor", "trader", "donor")
 # components are what ONE CO-PACK holds (its base unit: 2 sachets + 10
 # tablets); a chlorine test kit's are what ONE KIT holds (its pack: 50 reagent
 # tablets for 50 tests). Stated per item, because nothing in a component list
-# says which, and reading it the wrong way round is off by the pack size.
+# says which, and reading it the wrong way tender is off by the pack size.
 COMPONENTS_PER = ("base", "pack")
 
 

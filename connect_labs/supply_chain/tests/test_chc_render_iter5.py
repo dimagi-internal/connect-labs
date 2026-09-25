@@ -51,7 +51,7 @@ class TestTheComparisonFitsTheScreen:
                 "usd_per_base_unit": {"amount": unit},
                 "usd_per_course": {"amount": course},
                 "usd_per_child_treated": {"amount": course},
-                "landed_total_for_round_quantity": {"amount": "18000"},
+                "landed_total_for_tender_quantity": {"amount": "18000"},
             }
 
         return {
@@ -59,7 +59,7 @@ class TestTheComparisonFitsTheScreen:
                 {"key": "usd_per_base_unit", "label": "USD per co-pack"},
                 {"key": "usd_per_course", "label": "USD per course"},
                 {"key": "usd_per_child_treated", "label": "USD per child treated"},
-                {"key": "landed_total_for_round_quantity", "label": "Landed total (this round)"},
+                {"key": "landed_total_for_tender_quantity", "label": "Landed total (this tender)"},
             ],
             "comparable": [{"figures": figures("0.60", per_course)}, {"figures": figures("0.64", "0.64")}],
         }
@@ -68,7 +68,7 @@ class TestTheComparisonFitsTheScreen:
         comparison = self._comparison()
         assert [c["key"] for c in table_columns(comparison)] == [
             "usd_per_base_unit",
-            "landed_total_for_round_quantity",
+            "landed_total_for_tender_quantity",
         ]
         assert list(folded_columns(comparison).values()) == ["USD per course", "USD per child treated"]
 

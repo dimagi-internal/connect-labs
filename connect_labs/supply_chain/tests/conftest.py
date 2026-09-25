@@ -3,7 +3,7 @@
 THIS REPOSITORY IS PUBLIC. Every supplier, contact and price here is made up.
 The fixtures exist to reproduce the SHAPES that break a comparison:
   - a per-carton quote that never stated its pack spec
-  - a per-sachet quote whose quantity basis exceeds the round
+  - a per-sachet quote whose quantity basis exceeds the tender
   - a quote that excludes duties
   - a non-USD quote with no exchange rate
 
@@ -21,7 +21,7 @@ from decimal import Decimal
 import pytest
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.supply_chain.models import Commodity, Item, Quote, Round, Supplier, SupplierProfile
+from connect_labs.supply_chain.models import Commodity, Item, Quote, Supplier, SupplierProfile, Tender
 
 SCOPE = "prog:10501"
 
@@ -98,7 +98,7 @@ def wrap(model, data: dict, record_id=None):
         if key == "commodity_slug":
             kwargs["commodity"] = RUTF if value == "rutf" else _rutf(slug=value, name=value)
             continue
-        # A raw foreign key id (supplier_id, round_id) is already the stored
+        # A raw foreign key id (supplier_id, tender_id) is already the stored
         # type and has no field under that name -- only under attname.
         if key in attnames and key not in by_name:
             kwargs[key] = value
@@ -128,11 +128,11 @@ def rutf_without_course():
 
 
 @pytest.fixture
-def round_2000_cartons():
-    return Round(
+def tender_2000_cartons():
+    return Tender(
         id=1,
         program_id=10501,
-        label="Round 2",
+        label="Tender 2",
         status="open",
         lines=[{"commodity_slug": "rutf", "quantity": "2000", "quantity_unit": "carton"}],
         delivery_point={
@@ -158,7 +158,7 @@ def quote(**overrides) -> Quote:
     """
     fields = {
         "id": 1,
-        "round_id": 1,
+        "tender_id": 1,
         "supplier_id": 1,
         "commodity": RUTF,
         "as_quoted_amount": Decimal("50.00"),

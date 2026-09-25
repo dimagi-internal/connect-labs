@@ -26,7 +26,7 @@ import re
 import pytest
 from django.urls import reverse
 
-from connect_labs.supply_chain.models import Commodity, Round, scope_key
+from connect_labs.supply_chain.models import Commodity, Tender, scope_key
 from connect_labs.supply_chain.portfolio.models import Portfolio
 
 pytestmark = pytest.mark.django_db
@@ -87,9 +87,9 @@ def _a_chain_in(program_id, *, slug="a-placeholder-product", unit="placeholder u
         category="consumable",
         base_unit=unit,
     )
-    Round.objects.create(
+    Tender.objects.create(
         program_id=program_id,
-        label="A placeholder round",
+        label="A placeholder tender",
         status="draft",
         lines=[{"commodity_slug": slug, "quantity": "10", "quantity_unit": unit}],
     )
@@ -270,7 +270,7 @@ def test_each_row_counts_only_its_own_programme_and_keeps_its_own_units(client, 
     and the portfolio names each programme's OWN -- so two rows can carry two
     different units and neither is ever added to the other.
 
-    The arithmetic assertion is the one with teeth: three rounds exist across
+    The arithmetic assertion is the one with teeth: three tenders exist across
     the portfolio, two in one programme and one in the other, and no row
     reports three.
 
@@ -280,7 +280,7 @@ def test_each_row_counts_only_its_own_programme_and_keeps_its_own_units(client, 
     """
     _sign_in(client, django_user_model, [ONE, TWO])
     _a_chain_in(ONE, slug="placeholder-alpha", unit="placeholder carton")
-    Round.objects.create(program_id=ONE, label="A second placeholder round", status="draft", lines=[])
+    Tender.objects.create(program_id=ONE, label="A second placeholder tender", status="draft", lines=[])
     _a_chain_in(TWO, slug="placeholder-beta", unit="placeholder jerry can")
     portfolio = _portfolio([ONE, TWO])
 
@@ -288,8 +288,8 @@ def test_each_row_counts_only_its_own_programme_and_keeps_its_own_units(client, 
     body = response.content.decode()
     rows = response.context["rows"]
 
-    assert rows[0]["summary"]["source"]["demand"]["rounds"] == 2
-    assert rows[1]["summary"]["source"]["demand"]["rounds"] == 1
+    assert rows[0]["summary"]["source"]["demand"]["tenders"] == 2
+    assert rows[1]["summary"]["source"]["demand"]["tenders"] == 1
     assert rows[0]["commodity_slug"] == "placeholder-alpha"
     assert rows[1]["commodity_slug"] == "placeholder-beta"
     assert "placeholder alpha" in body
@@ -419,7 +419,7 @@ def test_a_row_links_into_that_programmes_own_overview(client, django_user_model
 def _stock_in(program_id, *, slug, unit, point_slug, quantity):
     """Stock actually resting somewhere, through the domain's own write path.
 
-    `_a_chain_in` gives a programme a catalogue and a round, which is enough
+    `_a_chain_in` gives a programme a catalogue and a tender, which is enough
     for it to stop being empty and nothing like enough to have a balance. The
     situation this page leads with is read from the LEDGER, so a test about
     what it totals has to put goods on it.

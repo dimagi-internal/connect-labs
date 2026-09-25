@@ -10,8 +10,8 @@ ranking whenever any candidate is unconfirmed was tried and rejected: it
 withholds the comparison the buyer CAN defend along with the one they
 cannot.
 
-Ranking is decided here, not in a template: `compare_round` sorts the
-comparable rows by a declared `ranked_by` key (landed total for this round's
+Ranking is decided here, not in a template: `compare_tender` sorts the
+comparable rows by a declared `ranked_by` key (landed total for this tender's
 quantity -- the only key that can ever have a comparable row to sort, per
 Ruling 22) and records that key and a `provisional` flag — true whenever
 anything was left out of the ranking — on the frozen result. "Ranked by X;
@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from connect_labs.supply_chain.models import Commodity, Quote, Round
+from connect_labs.supply_chain.models import Commodity, Quote, Tender
 from connect_labs.supply_chain.procurement.services.compliance import FAIL, PASS, check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import (
     COMPARABILITY_FIELDS,
@@ -104,7 +104,7 @@ class ComparisonRow:
 
 @dataclass
 class Comparison:
-    round_id: int
+    tender_id: int
     columns: list[ComparisonColumn]
     comparable: list[ComparisonRow]
     blocked: list[ComparisonRow]
@@ -117,18 +117,18 @@ class Comparison:
     # answered everything look like the problem.
     unavailable: dict = field(default_factory=dict)
     commodity_name: str = ""
-    # Offers whose kit contents are not the contents the round buys. Terminal,
+    # Offers whose kit contents are not the contents the tender buys. Terminal,
     # not missing information: there is nothing to ask the supplier and
     # nothing that could make them comparable, so they are neither "blocked"
     # (which reads as needs-info and makes the ranking provisional) nor ranked.
     not_comparable: list[ComparisonRow] = field(default_factory=list)
-    # The contents the round's line says it buys, when it says.
-    round_contents: list | None = None
+    # The contents the tender's line says it buys, when it says.
+    tender_contents: list | None = None
 
     @property
     def all_rows(self) -> list[ComparisonRow]:
         """Everything, comparable first — for callers that want every supplier's
-        row regardless of state (e.g. round_outstanding_questions in Task 10).
+        row regardless of state (e.g. tender_outstanding_questions in Task 10).
 
         Named `all_rows`, not `rows`, on purpose: a ranked-table render that
         pulled from this instead of `.comparable` would seat a blocked
@@ -181,7 +181,7 @@ class Comparison:
             }
 
         return {
-            "round_id": self.round_id,
+            "tender_id": self.tender_id,
             "commodity_name": self.commodity_name,
             "generated_at": self.generated_at,
             "comparable_count": self.comparable_count,
@@ -201,9 +201,9 @@ class Comparison:
             "comparable": [row_dict(row) for row in self.comparable],
             "blocked": [row_dict(row) for row in self.blocked],
             "not_comparable": [row_dict(row) for row in self.not_comparable],
-            "round_contents": self.round_contents,
+            "tender_contents": self.tender_contents,
             # Flat view for consumers that legitimately need every supplier's
-            # row regardless of state (e.g. Task 10's round_outstanding_questions).
+            # row regardless of state (e.g. Task 10's tender_outstanding_questions).
             # Named all_rows, not rows: see Comparison.all_rows's docstring.
             "all_rows": [row_dict(row) for row in self.all_rows],
         }
@@ -222,7 +222,7 @@ def _unavailable_figures(rows: list[ComparisonRow], figure_fields=FIGURE_FIELDS)
 
     Decided by the audience of the reasons, not by how many rows are missing
     the figure. An earlier version used "Unconfirmed on every row", which is
-    trivially true when a round has one quote -- so that supplier's own
+    trivially true when a tender has one quote -- so that supplier's own
     missing pack specification came back reported as our gap. `audience` is
     the domain's existing answer to whose a gap is, and it is the same table
     the supplier questions are built from.
@@ -296,25 +296,25 @@ def _canonical(components) -> list:
     )
 
 
-def _round_contents(round_, commodity) -> list | None:
-    """The kit contents this round's line for `commodity` says it buys, if it says."""
-    for line in getattr(round_, "lines", None) or []:
+def _tender_contents(tender, commodity) -> list | None:
+    """The kit contents this tender's line for `commodity` says it buys, if it says."""
+    for line in getattr(tender, "lines", None) or []:
         if isinstance(line, dict) and line.get("commodity_slug") == commodity.slug and line.get("components"):
             return _canonical(line["components"])
     return None
 
 
 def _refuse_other_contents(rows, wanted):
-    """The round has decided the contents: rank those, refuse the rest, and say why.
+    """The tender has decided the contents: rank those, refuse the rest, and say why.
 
     This is the decision `_separate_differing_kits` asks us for, taken once on
-    the round rather than by voiding offers one at a time -- so an offer with
+    the tender rather than by voiding offers one at a time -- so an offer with
     other contents stays on the page, refused a ranking in plain view, instead
     of disappearing from it.
 
     Returns (kept, refused). A refusal is terminal: the offer carries no
     questions, because no answer from anyone makes other contents the ones
-    the round buys -- and asking the supplier their minimum order on it read
+    the tender buys -- and asking the supplier their minimum order on it read
     as if one could.
     """
     keep, refused = [], []
@@ -323,11 +323,11 @@ def _refuse_other_contents(rows, wanted):
             keep.append(row)
             continue
         reason = (
-            f"not the contents this round buys: this offer is {_composition_phrase(row.composition)}; "
-            f"the round buys {_composition_phrase(wanted)}"
+            f"not the contents this tender buys: this offer is {_composition_phrase(row.composition)}; "
+            f"the tender buys {_composition_phrase(wanted)}"
         )
-        row.figures["landed_total_for_round_quantity"] = merge(
-            unconfirmed(reason), row.figures["landed_total_for_round_quantity"]
+        row.figures["landed_total_for_tender_quantity"] = merge(
+            unconfirmed(reason), row.figures["landed_total_for_tender_quantity"]
         )
         row.is_comparable = False
         row.questions = []
@@ -365,8 +365,8 @@ def _separate_differing_kits(comparable, blocked):
         )
         this = _composition_phrase(row.composition, row.composition_unit)
         reason = f"kit composition differs: this offer is {this}; " + "; ".join(others)
-        row.figures["landed_total_for_round_quantity"] = merge(
-            unconfirmed(reason), row.figures["landed_total_for_round_quantity"]
+        row.figures["landed_total_for_tender_quantity"] = merge(
+            unconfirmed(reason), row.figures["landed_total_for_tender_quantity"]
         )
         row.questions = [
             *row.questions,
@@ -375,7 +375,7 @@ def _separate_differing_kits(comparable, blocked):
                 question=(
                     f"This offer holds {this}, which differs from "
                     + "; ".join(others)
-                    + ". Decide which contents the round is for; offers are ranked only against "
+                    + ". Decide which contents the tender is for; offers are ranked only against "
                     "the same contents."
                 ),
                 audience=INTERNAL,
@@ -386,35 +386,35 @@ def _separate_differing_kits(comparable, blocked):
 
 
 def _ranking_key(comparable: list[ComparisonRow]) -> str | None:
-    """Which figure decided the leader — a declared, round-level fact.
+    """Which figure decided the leader — a declared, tender-level fact.
 
-    Landed total for this round's own quantity is the only figure the
+    Landed total for this tender's own quantity is the only figure the
     ranking is ever chosen on, and it doubles as the comparability gate:
     `is_comparable` requires every one of FIGURE_FIELDS to be confirmed,
-    landed_total_for_round_quantity among them, and that figure is
-    Unconfirmed for every quote whenever the round has no line for this
-    commodity. So a nonempty `comparable` list already proves the round has
+    landed_total_for_tender_quantity among them, and that figure is
+    Unconfirmed for every quote whenever the tender has no line for this
+    commodity. So a nonempty `comparable` list already proves the tender has
     a line — there is no reachable case where something is comparable AND
-    the round is missing one (Ruling 22 dropped the "usd_per_pack_normalized"
+    the tender is missing one (Ruling 22 dropped the "usd_per_pack_normalized"
     fallback that used to cover that case: it was dead, because whenever the
-    round had no line, `comparable` was always empty and the fallback ranked
+    tender had no line, `comparable` was always empty and the fallback ranked
     nothing). When `comparable` IS empty, the honest answer is that there is
     nothing to rank by — `None`, not a quieter figure that never had a
     chance to actually order anything.
     """
     if not comparable:
         return None
-    return "landed_total_for_round_quantity"
+    return "landed_total_for_tender_quantity"
 
 
-def compare_round(
-    round_: Round,
+def compare_tender(
+    tender: Tender,
     commodity: Commodity,
     quotes: list[Quote],
     suppliers_by_id: dict,
     items_by_id: dict | None = None,
 ) -> Comparison:
-    """Partition a round's live quotes into comparable and blocked.
+    """Partition a tender's live quotes into comparable and blocked.
 
     A quote is comparable when every one of its figures is a Money. One
     Unconfirmed figure blocks it — not because the figure is useless, but
@@ -439,15 +439,15 @@ def compare_round(
             continue
         supplier = suppliers_by_id.get(quote.supplier_id)
         item = items_by_id.get(quote.item_id) if quote.item_id else None
-        figures = compute_figures(quote, commodity, round_, item=item).as_dict()
+        figures = compute_figures(quote, commodity, tender, item=item).as_dict()
         row = ComparisonRow(
             quote_id=quote.id,
             supplier_id=quote.supplier_id,
             supplier_name=supplier.name if supplier else f"supplier {quote.supplier_id}",
             figures=figures,
             compliance=check_compliance(quote, commodity, item=item),
-            questions=missing_facts(quote, commodity, round_, item=item),
-            # Only the figures a supplier or the round determines. See
+            questions=missing_facts(quote, commodity, tender, item=item),
+            # Only the figures a supplier or the tender determines. See
             # COMPARABILITY_FIELDS: gating on the course figures blocked
             # suppliers for our own missing ration table.
             is_comparable=not any(isinstance(figures[key], Unconfirmed) for key in COMPARABILITY_FIELDS),
@@ -463,7 +463,7 @@ def compare_round(
             row.questions = [q for q in row.questions if q.key != "course_definition"]
         (comparable if row.is_comparable else blocked).append(row)
 
-    wanted = _round_contents(round_, commodity)
+    wanted = _tender_contents(tender, commodity)
     not_comparable: list[ComparisonRow] = []
     if wanted:
         comparable, refused_ranked = _refuse_other_contents(comparable, wanted)
@@ -487,7 +487,7 @@ def compare_round(
         # blocked_by names every supplier missing this figure, so the template can
         # say what a blocked row is short of — but rankability is judged over the
         # comparable subset alone (rule 6 as amended). Deduped: a supplier with
-        # two live blocked quotes on one round must not appear twice.
+        # two live blocked quotes on one tender must not appear twice.
         short = tuple(
             dict.fromkeys(
                 row.supplier_name
@@ -508,7 +508,7 @@ def compare_round(
         )
 
     return Comparison(
-        round_id=round_.id,
+        tender_id=tender.id,
         columns=columns,
         comparable=comparable,
         blocked=blocked,
@@ -520,5 +520,5 @@ def compare_round(
         unavailable=unavailable,
         commodity_name=commodity.name,
         not_comparable=not_comparable,
-        round_contents=wanted,
+        tender_contents=wanted,
     )

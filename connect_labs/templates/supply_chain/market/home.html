@@ -8,12 +8,12 @@
   <div class="relative pt-6 pb-6 sm:pt-8 sm:pb-7">
     <div class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky">CONNECT · SUPPLY</div>
     <h1 class="text-[26px] sm:text-3xl lg:text-4xl font-semibold text-white mt-1 leading-tight">Supply marketplace</h1>
-    <p class="text-[14px] text-brand-sky/90 mt-2 max-w-2xl">Buyers on Connect asking for quotes now. Anyone can read a round; sign in and register your organisation to bid.</p>
+    <p class="text-[14px] text-brand-sky/90 mt-2 max-w-2xl">Buyers on Connect asking for quotes now. Anyone can read a tender; sign in and register your organisation to bid.</p>
 
     <div class="grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap sm:gap-x-12 sm:gap-y-5 mt-6 sm:mt-7">
       <div>
-        <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ headline.rounds }}</div>
-        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">ROUND{{ headline.rounds|pluralize:"S" }} OPEN</div>
+        <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ headline.tenders }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">ROUND{{ headline.tenders|pluralize:"S" }} OPEN</div>
       </div>
       <div>
         <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ headline.products }}</div>
@@ -65,13 +65,13 @@
       <span class="text-[13px] text-gray-500">{{ section.why }}</span>
     </div>
     <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-      {% for c in section.cards %}{% include 'supply_chain/market/_round_card.html' %}{% endfor %}
+      {% for c in section.cards %}{% include 'supply_chain/market/_tender_card.html' %}{% endfor %}
     </div>
   </section>
 {% empty %}
   <div class="bg-white border border-brand-border-light rounded-[10px] p-10 text-center">
-    <div class="text-[19px] font-semibold text-gray-600">No rounds open{% if category or country %} that match{% endif %}</div>
-    <p class="text-[13px] text-gray-500 mt-1">Buyers open rounds as they need supplies. Register now and you are ready when they do.</p>
+    <div class="text-[19px] font-semibold text-gray-600">No tenders open{% if category or country %} that match{% endif %}</div>
+    <p class="text-[13px] text-gray-500 mt-1">Buyers open tenders as they need supplies. Register now and you are ready when they do.</p>
   </div>
 {% endfor %}
 {% endblock %}
