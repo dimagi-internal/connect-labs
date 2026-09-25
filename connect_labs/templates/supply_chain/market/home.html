@@ -1,50 +1,78 @@
 {% extends 'supply_chain/market/_shell.html' %}
 {% load supply_chain_extras %}
 {% block title %}Open rounds{% endblock %}
-{% block body %}
-<section class="mb-4">
-  <h1 class="text-xl font-semibold">Open rounds</h1>
-  <p class="text-sm text-gray-600 mt-1">
-    Buyers asking for quotes now. Anyone can read a round; to bid, sign in and register your organisation as a supplier.
-  </p>
-</section>
 
-<form method="get" class="flex flex-wrap gap-3 items-end mb-4 bg-white rounded-lg shadow-sm p-3">
-  <label class="text-sm">
-    <span class="block text-gray-600 mb-1">Kind of product</span>
-    <select name="category" class="base-input">
-      <option value="">Any</option>
-      {% for code, label in categories %}<option value="{{ code }}" {% if code == category %}selected{% endif %}>{{ label }}</option>{% endfor %}
-    </select>
-  </label>
-  <label class="text-sm">
-    <span class="block text-gray-600 mb-1">Delivered to</span>
-    <input name="country" value="{{ country }}" class="base-input" placeholder="e.g. Nigeria">
-  </label>
-  <button class="px-3 py-2 text-sm rounded-md border border-brand-indigo text-brand-indigo hover:bg-message-info">Filter</button>
+{% block hero %}
+<div class="bg-brand-deep-purple relative overflow-hidden">
+  <div class="absolute -right-24 -top-32 w-[440px] h-[440px] rounded-full pointer-events-none"
+       style="background: radial-gradient(circle, rgba(142,161,255,0.18) 0%, rgba(22,0,109,0) 68%);"></div>
+  <div class="relative max-w-screen-xl mx-auto px-4 sm:px-8 pt-6 pb-6 sm:pt-8 sm:pb-7">
+    <div class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky">CONNECT · SUPPLY</div>
+    <h1 class="text-[26px] sm:text-3xl lg:text-4xl font-semibold text-white mt-1 leading-tight">Supply marketplace</h1>
+    <p class="text-[14px] text-brand-sky/90 mt-2 max-w-2xl">Buyers on Connect asking for quotes now. Anyone can read a round; sign in and register your organisation to bid.</p>
+
+    <div class="grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap sm:gap-x-12 sm:gap-y-5 mt-6 sm:mt-7">
+      <div>
+        <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ headline.rounds }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">ROUND{{ headline.rounds|pluralize:"S" }} OPEN</div>
+      </div>
+      <div>
+        <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ headline.products }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">PRODUCT{{ headline.products|pluralize:"S" }} ASKED FOR</div>
+      </div>
+      <div>
+        <div class="text-[23px] sm:text-[29px] font-semibold text-brand-marigold tabular-nums">{% if headline.next_deadline %}{{ headline.next_deadline|date:"j M" }}{% else %}—{% endif %}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">NEXT REPLY-BY DATE</div>
+      </div>
+      <div>
+        <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ headline.suppliers }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">SUPPLIER{{ headline.suppliers|pluralize:"S" }} REGISTERED</div>
+      </div>
+    </div>
+
+    <div class="flex flex-col sm:flex-row sm:flex-wrap gap-3 mt-6 sm:mt-7">
+      {% if not signed_in %}
+        <a href="{% url 'labs:login' %}?next={{ request.get_full_path|urlencode }}" class="inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 bg-white text-brand-deep-purple text-sm font-semibold rounded-lg hover:bg-brand-sky/20 transition">Sign in to bid <i class="fa-solid fa-arrow-right text-xs"></i></a>
+      {% elif not supplier_orgs %}
+        <a href="{% url 'supply_chain:market_register' %}" class="inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 bg-white text-brand-deep-purple text-sm font-semibold rounded-lg hover:bg-brand-sky/20 transition">Register as a supplier <i class="fa-solid fa-arrow-right text-xs"></i></a>
+      {% else %}
+        <a href="{% url 'supply_chain:market_bids' %}" class="inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 bg-white text-brand-deep-purple text-sm font-semibold rounded-lg hover:bg-brand-sky/20 transition">My bids <i class="fa-solid fa-arrow-right text-xs"></i></a>
+      {% endif %}
+      {% if signed_in %}
+        <a href="{% url 'marketplace:home' %}" class="inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 border border-brand-sky/40 text-white text-sm font-medium rounded-lg hover:bg-white/5 transition">Implementing partners <span class="text-[11.5px] text-brand-sky">the other side of the marketplace</span></a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block body %}
+<form method="get" class="flex flex-wrap items-center gap-2 mb-6 text-[12.5px]">
+  <span class="text-gray-500">Kind of product</span>
+  <select name="category" class="base-input !h-8 !py-0 !text-[12.5px] !w-auto" onchange="this.form.submit()">
+    <option value="">Any</option>
+    {% for code, label in categories %}<option value="{{ code }}" {% if code == category %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <span class="text-gray-500 ml-2">Delivered to</span>
+  <input name="country" value="{{ country }}" class="base-input !h-8 !py-0 !text-[12.5px] !w-40" placeholder="e.g. Nigeria">
+  <button class="px-3 py-1 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50">Filter</button>
+  {% if category or country %}<a href="{% url 'supply_chain:market' %}" class="px-3 py-1 text-brand-indigo hover:underline">Clear</a>{% endif %}
 </form>
 
-<ul class="space-y-3">
-  {% for item in rounds %}
-    <li class="bg-white rounded-lg shadow-sm p-4">
-      <div class="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <a href="{% url 'supply_chain:market_round' item.round.pk %}" class="text-lg font-semibold text-brand-indigo hover:underline">{{ item.round.label }}</a>
-          {% if item.invited %}<span class="ml-2 text-xs px-2 py-0.5 rounded-full bg-message-info text-message-info-text border border-message-info-border">Invited</span>{% endif %}
-        </div>
-        <div class="text-sm text-gray-600 text-right">
-          {% if item.round.response_deadline %}Replies by <strong>{{ item.round.response_deadline|day }}</strong>{% else %}No deadline set{% endif %}
-        </div>
-      </div>
-      <ul class="mt-2 text-sm space-y-1">
-        {% for line in item.lines %}<li>{% include 'supply_chain/market/_line.html' %}</li>{% endfor %}
-      </ul>
-      <p class="mt-2 text-sm text-gray-600">
-        Deliver to {{ item.round.delivery_point.name|default:"(not stated)" }}{% if item.round.delivery_point.city %}, {{ item.round.delivery_point.city }}{% endif %}{% if item.round.delivery_point.country_name %}, {{ item.round.delivery_point.country_name }}{% elif item.round.delivery_point.country %}, {{ item.round.delivery_point.country }}{% endif %}
-      </p>
-    </li>
-  {% empty %}
-    <li class="bg-white rounded-lg shadow-sm p-8 text-center text-gray-600">No rounds are open{% if category or country %} that match{% endif %} right now.</li>
-  {% endfor %}
-</ul>
+{% for section in sections %}
+  <section class="{% if not forloop.first %}mt-12{% endif %}">
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-4">
+      <h2 class="text-lg font-semibold text-brand-deep-purple">{{ section.title }}</h2>
+      <span class="text-[13px] text-gray-500">{{ section.why }}</span>
+    </div>
+    <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+      {% for c in section.cards %}{% include 'supply_chain/market/_round_card.html' %}{% endfor %}
+    </div>
+  </section>
+{% empty %}
+  <div class="bg-white border border-brand-border-light rounded-[10px] p-10 text-center">
+    <div class="text-[19px] font-semibold text-gray-600">No rounds open{% if category or country %} that match{% endif %}</div>
+    <p class="text-[13px] text-gray-500 mt-1">Buyers open rounds as they need supplies. Register now and you are ready when they do.</p>
+  </div>
+{% endfor %}
 {% endblock %}

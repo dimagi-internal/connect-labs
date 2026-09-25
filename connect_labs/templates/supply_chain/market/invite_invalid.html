@@ -1,8 +1,9 @@
 {% extends 'supply_chain/market/_shell.html' %}
 {% block title %}Invitation not valid{% endblock %}
+{% block hero %}{% include 'supply_chain/market/_hero.html' with title="This invitation is not valid" %}{% endblock %}
+
 {% block body %}
-<div class="bg-white rounded-lg shadow-sm p-5 max-w-xl">
-  <h1 class="text-xl font-semibold">This invitation is not valid</h1>
+<div class="bg-white border border-brand-border-light rounded-[10px] p-5 max-w-xl">
   <p class="text-sm text-gray-600 mt-2">It may have been used already, or have expired. Ask whoever sent it for a new one.</p>
 </div>
 {% endblock %}

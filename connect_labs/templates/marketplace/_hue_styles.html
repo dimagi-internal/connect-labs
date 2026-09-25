@@ -1,0 +1,21 @@
+{% comment %}
+The per-card colour rules both marketplaces share -- the implementing
+partners' (marketplace/programs.html) and the suppliers' (supply_chain/market).
+A card sets `--hue` inline; these are the handful of rules Tailwind's static
+classes cannot express per element.
+{% endcomment %}
+<style>
+    .pg-card { --hue: #3843d0; position: relative; }
+    .pg-card::before {
+      content: ""; position: absolute; inset: 0 auto 0 0; width: 4px;
+      border-radius: 10px 0 0 10px; background: var(--hue);
+    }
+    .pg-card:hover { box-shadow: 0 6px 22px -12px color-mix(in srgb, var(--hue) 55%, transparent); }
+    .pg-hue { color: var(--hue); }
+    .pg-chip { background: color-mix(in srgb, var(--hue) 12%, white); color: var(--hue); }
+    .pg-spent { background: var(--hue); }
+    .pg-left { background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--hue) 26%, white) 0 5px,
+      color-mix(in srgb, var(--hue) 15%, white) 5px 10px); }
+    .pg-dot { background: var(--hue); }
+</style>

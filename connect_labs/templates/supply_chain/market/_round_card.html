@@ -1,0 +1,46 @@
+{% load supply_chain_extras %}
+<article class="pg-card bg-white border border-brand-border-light rounded-[10px] pl-5 pr-4 sm:pl-6 sm:pr-5 pt-5 pb-4 flex flex-col gap-4 transition"
+         style="--hue: {{ c.hue }}">
+  <div class="flex items-start justify-between gap-3">
+    <a href="{% url 'supply_chain:market_round' c.round.pk %}" class="min-w-0 text-[17px] font-semibold text-gray-900 leading-snug hover:underline">{{ c.round.label }}</a>
+    <span class="pg-chip shrink-0 inline-flex items-center gap-1.5 text-[10.5px] font-semibold tracking-wide px-2 py-1 rounded-md uppercase">
+      <span class="pg-dot w-1.5 h-1.5 rounded-full"></span>{% if c.listed.invited %}Invited{% elif c.listed.matches %}Matches you{% else %}Open{% endif %}
+    </span>
+  </div>
+
+  <div>
+    {% if c.headline_quantity is not None %}
+      <div class="text-[30px] font-semibold text-gray-900 leading-none tabular-nums">{{ c.headline_quantity|qty:c.headline_unit }}</div>
+    {% else %}
+      <div class="text-[19px] font-semibold text-gray-600 leading-none">Quantity not stated</div>
+    {% endif %}
+    <div class="text-[12px] text-gray-500 mt-1">{{ c.headline_product }}{% if c.more_products %} <span class="pg-hue font-medium">+ {{ c.more_products }} more product{{ c.more_products|pluralize }}</span>{% endif %}</div>
+  </div>
+
+  <div class="flex flex-col gap-1.5">
+    <div class="flex flex-wrap items-baseline justify-between gap-x-3 text-[12.5px]">
+      <span class="text-gray-500">{% if c.round.response_deadline %}replies by <span class="font-semibold text-gray-900">{{ c.round.response_deadline|day }}</span>{% else %}open until the buyer closes it{% endif %}</span>
+      <span class="{% if c.closing_soon %}pg-hue font-semibold{% else %}text-gray-500{% endif %} whitespace-nowrap">{{ c.deadline_words }}</span>
+    </div>
+    <div class="h-2 rounded-full bg-gray-100 overflow-hidden flex" title="{{ c.deadline_words }}">
+      {% if c.elapsed_pct is not None %}
+        <span class="pg-spent h-full" style="width: {{ c.elapsed_pct }}%"></span><span class="pg-left h-full flex-1"></span>
+      {% else %}
+        <span class="pg-left h-full flex-1 opacity-60"></span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-gray-600">
+    <span><span class="font-semibold text-gray-900">{{ c.kind }}</span></span>
+    <span>to {{ c.round.delivery_point.city|default:c.round.delivery_point.name|default:"a place not stated" }}{% if c.round.delivery_point.country_name %}, {{ c.round.delivery_point.country_name }}{% endif %}</span>
+    {% if c.round.shelf_life_months_minimum %}<span><span class="font-semibold text-gray-900 tabular-nums">{{ c.round.shelf_life_months_minimum }}</span> months shelf life</span>{% endif %}
+  </div>
+
+  <div class="border-t border-gray-100 pt-3 mt-auto flex gap-4 text-[12px] font-medium">
+    <a href="{% url 'supply_chain:market_round' c.round.pk %}" class="pg-hue hover:underline">Read the round →</a>
+    {% if c.listed.lines|length == 1 %}
+      <a href="{% url 'supply_chain:market_bid' c.round.pk c.listed.lines.0.commodity_slug %}" class="pg-hue hover:underline">Bid →</a>
+    {% endif %}
+  </div>
+</article>
