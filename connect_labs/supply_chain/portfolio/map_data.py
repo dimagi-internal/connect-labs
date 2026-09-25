@@ -43,6 +43,53 @@ from connect_labs.supply_chain.operations import call_operation
 # list, so "moving" on the map means what `position()` means by in transit.
 IN_TRANSIT = set(records.IN_TRANSIT_STATUSES)
 
+# Which part of the chain a check's subject belongs to, in the three phases
+# every other supply screen uses. Most of what stands in the way is not at a
+# place -- a quote that cannot be compared, a product failing its spec -- so
+# the map's panel groups blockers by stage, and only the place-bound ones
+# also light up a point.
+STAGE_OF = {
+    "quote": "source",
+    "award": "source",
+    "commodity": "source",
+    "item": "source",
+    "round": "source",
+    "supplier": "source",
+    "contract": "order",
+    "shipment": "order",
+    "invoice": "order",
+    "payment": "order",
+    "charge": "order",
+    "supply_point": "deliver",
+    "distribution": "deliver",
+    "movement": "deliver",
+}
+
+# An order that is settled, called off or not yet placed has nothing on its way.
+_NOT_OPEN = ("draft", "received", "closed", "cancelled")
+
+
+def _supplier_location(supplier):
+    """Where a supplier's goods leave from, as finely as its record allows, or None.
+
+    Read from the supplier's own city and country through Pulse's resolver --
+    a town in the gazetteer is a pin, a country is its centre -- and returned
+    with that precision, because a supplier's city is not its warehouse and
+    the map draws it as a stand-in. Isolated here because suppliers are about
+    to become global profiles: when a profile carries a location of its own,
+    this is the one function that should read it instead.
+    """
+    from connect_labs.microplans.core import iso as iso_codes
+    from connect_labs.pulse.hq_location import resolve
+
+    country = supplier.get("country") or ""
+    if not country:
+        return None
+    found = resolve(iso_codes.country_name(country) or country, "", supplier.get("city") or "")
+    if found is None:
+        return None
+    return {"lat": found.lat, "lng": found.lon, "precision": found.precision, "label": found.label}
+
 
 def _access(request, program_id):
     """A data-access object for one program, deliberately without `request`.
@@ -82,9 +129,15 @@ def _attribute(check, contracts, shipments):
     return (contracts.get(contract_id) or {}).get("delivery_supply_point_id")
 
 
-def _check_wire(check):
+def _check_wire(check, *, point_id=None, scope=""):
     """The fields the page shows; the facts travel whole, unworded."""
+    from connect_labs.supply_chain.templatetags.supply_chain_extras import check_href
+
+    href = check_href(check)
     return {
+        "stage": STAGE_OF.get((check.get("subject") or {}).get("type"), "source"),
+        "supply_point_id": point_id,
+        "href": href + scope if href else "",
         "kind": check["kind"],
         "category": check["category"],
         "audience": check["audience"],
@@ -117,13 +170,15 @@ def program_map(request, program_id, program) -> dict:
     }
 
     by_point: dict[int, list] = {}
-    unlocated = []
+    unlocated, every = [], []
     for check in checks:
         point_id = _attribute(check, contracts, shipments)
+        wired = _check_wire(check, point_id=point_id if point_id in points else None, scope=scope)
+        every.append(wired)
         if point_id in points:
-            by_point.setdefault(point_id, []).append(_check_wire(check))
+            by_point.setdefault(point_id, []).append(wired)
         else:
-            unlocated.append(_check_wire(check))
+            unlocated.append(wired)
 
     # Where a supplier's goods leave from, when the program has recorded one:
     # a supplier_site point managed by the supplier's own organisation. Without
@@ -208,9 +263,59 @@ def program_map(request, program_id, program) -> dict:
         }
         (placed_points if _placed(point) else unplaced).append(entry)
 
+    # Every order with something still to come, as a route from its supplier
+    # to the store it is owed to. What is outstanding and when it was promised
+    # come from network_stock's own expected_inbound, so the map and the
+    # Stock page cannot disagree about what is owed.
+    owed = {
+        expected["contract_id"]: expected for row in stock.values() for expected in row.get("expected_inbound") or []
+    }
+    orders, supplier_ids = [], set()
+    for contract in contracts.values():
+        if contract["status"] in _NOT_OPEN:
+            continue
+        expected = owed.get(contract["id"]) or {}
+        supplier_ids.add(contract["supplier_id"])
+        orders.append(
+            {
+                "contract_id": contract["id"],
+                "reference": contract["reference"],
+                "status": contract["status"],
+                "supplier_id": contract["supplier_id"],
+                "to_supply_point_id": contract["delivery_supply_point_id"],
+                "outstanding": expected.get("outstanding"),
+                "item_name": expected.get("item_name") or "",
+                # Already ISO on the wire; None when no date was ever promised.
+                "expected_on": expected.get("expected_on"),
+                "overdue": bool(expected.get("overdue")),
+                "url": reverse("supply_chain:order_detail", args=[contract["id"]]) + scope,
+            }
+        )
+    for shipment in moving:
+        supplier_ids.add((contracts.get(shipment["contract_id"]) or {}).get("supplier_id"))
+    located_suppliers = []
+    for supplier_id in sorted(i for i in supplier_ids if i):
+        supplier = suppliers.get(supplier_id)
+        if not supplier:
+            continue
+        located_suppliers.append(
+            {
+                "id": supplier_id,
+                "name": supplier["name"],
+                "country": supplier.get("country") or "",
+                "city": supplier.get("city") or "",
+                "location": _supplier_location(supplier),
+                "url": reverse("supply_chain:supplier_detail", args=[supplier_id]) + scope,
+            }
+        )
+
     return {
         "program_id": program_id,
         "name": program.get("name") or f"Program {program_id}",
+        "summary": call_operation("chain_summary", access, {}),
+        "checks": every,
+        "orders": orders,
+        "suppliers": located_suppliers,
         "home_url": reverse("supply_chain:home") + scope,
         "checks_url": reverse("supply_chain:checks") + scope,
         "new_point_url": reverse("supply_chain:supply_point_create") + scope,
