@@ -66,6 +66,16 @@ class TenderCard:
         return f"{self.days_left} days left"
 
     @property
+    def url(self) -> str:
+        """The listing's own address when it has one, else the tender's."""
+        from django.urls import reverse
+
+        tender = self.listed.tender
+        if tender.slug:
+            return reverse("supply_chain:market_tender_listing", args=[tender.slug])
+        return reverse("supply_chain:market_tender", args=[tender.pk])
+
+    @property
     def where(self) -> str:
         """Where the goods can go: "to Kano or Sokoto, or collected", "collected only"."""
         from connect_labs.supply_chain.values import destination_phrase
@@ -98,7 +108,9 @@ def card_for(listed, today: date | None = None) -> TenderCard:
             elapsed = max(0, min(100, round((today - opened).days * 100 / span)))
     return TenderCard(
         listed=listed,
-        hue=CATEGORY_HUES.get(category, DEFAULT_HUE),
+        # An organisation's listing wears its own colour; otherwise the
+        # colour says what kind of product it is.
+        hue=tender.hue or CATEGORY_HUES.get(category, DEFAULT_HUE),
         kind=dict(records.COMMODITY_CATEGORIES).get(category, "Product"),
         headline_quantity=first.quantity if first else None,
         headline_unit=first.quantity_unit if first else "",

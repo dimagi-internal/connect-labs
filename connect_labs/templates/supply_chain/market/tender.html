@@ -7,8 +7,14 @@
   <div class="absolute -right-24 -top-32 w-[440px] h-[440px] rounded-full pointer-events-none"
        style="background: radial-gradient(circle, rgba(142,161,255,0.18) 0%, rgba(22,0,109,0) 68%);"></div>
   <div class="relative pt-6 pb-6 sm:pt-8 sm:pb-7">
-    <a href="{% url 'supply_chain:market' %}" class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky hover:text-white">← OPEN ROUNDS</a>
+    {% if r.owner_org %}
+      <div class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky">A TENDER FROM {{ r.owner_org.name|upper }}</div>
+    {% else %}
+      <a href="{% url 'supply_chain:market' %}" class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky hover:text-white">← OPEN TENDERS</a>
+    {% endif %}
     <h1 class="text-[26px] sm:text-3xl font-semibold text-white mt-1 leading-tight">{{ r.label }}</h1>
+    {% if r.hue %}<div class="h-1 w-16 rounded-full mt-3" style="background: {{ r.hue }}"></div>{% endif %}
+    {% if r.brief %}<p class="text-[14.5px] text-white/90 mt-3 max-w-3xl whitespace-pre-line leading-relaxed">{{ r.brief }}</p>{% endif %}
     <div class="grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap sm:gap-x-12 sm:gap-y-5 mt-6">
       <div>
         <div class="text-[20px] sm:text-[24px] font-semibold {% if card.closing_soon %}text-brand-marigold{% else %}text-white{% endif %}">{% if r.response_deadline %}{{ r.response_deadline|day }}{% else %}—{% endif %}</div>
@@ -32,6 +38,10 @@
       {% endif %}
     </div>
     {% if listed.invited %}<p class="mt-5 text-[13px] text-brand-sky">The buyer invited your organisation to this tender by name.</p>{% endif %}
+    {% if r.visibility == "private" %}<p class="mt-2 text-[12px] text-brand-sky/80">Restricted: only invited suppliers can see this tender.</p>{% endif %}
+    {% if can_manage %}
+      <a href="{% url 'supply_chain:market_tender_manage' r.slug %}" class="inline-flex items-center gap-2 mt-5 px-4 py-2 border border-brand-sky/40 text-white text-sm font-medium rounded-lg hover:bg-white/5">Manage this listing</a>
+    {% endif %}
   </div>
 </div>
 {% endwith %}

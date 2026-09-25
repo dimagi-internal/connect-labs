@@ -9,6 +9,14 @@
     <p class="text-sm text-gray-600">
       Status: {{ tender.status|title }} — response deadline {{ tender.response_deadline|default:"not set" }}
     </p>
+    {% if tender.slug %}
+      <p class="text-sm text-gray-600 mt-1">
+        Its own listing{% if tender.owner_org_id %} for {{ owner_name }}{% endif %}:
+        <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender_listing' tender.slug %}">/supply/market/t/{{ tender.slug }}/</a>
+        · <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender_manage' tender.slug %}">manage the listing and who is invited</a>
+        {% if tender.invited_org_ids %}({{ tender.invited_org_ids|length }} invited){% endif %}
+      </p>
+    {% endif %}
     <p class="text-sm text-gray-600 mt-1">
       Where the goods go:
       {% for p in tender.delivery_points %}{% firstof p.name p.city %}{% if p.name and p.city %}, {{ p.city }}{% endif %}{% if not forloop.last %}; {% endif %}{% empty %}no delivery place{% endfor %}{% if tender.pickup_accepted %} — or we collect from the supplier{% endif %}{% if tender.incoterm_requested %} · asked on {{ tender.incoterm_requested }} terms{% endif %}
@@ -54,6 +62,37 @@
       </form>
     {% endif %}
   </div>
+</div>
+
+<div class="bg-white border border-brand-border-light rounded-lg p-4 mb-6">
+  <h2 class="text-sm font-semibold text-gray-900">Invited suppliers</h2>
+  <p class="text-sm text-gray-600 mt-1">
+    {% if tender.visibility == "private" %}This tender is restricted: only the suppliers below can see it and bid.{% else %}This tender is public, so any registered supplier can bid. The list matters once it is made private.{% endif %}
+  </p>
+  <ul class="mt-2 text-sm">
+    {% for org in invited_orgs %}
+      <li class="flex items-center gap-3 py-1">
+        <span>{{ org.name }}</span>
+        <form method="post" action="{% url 'supply_chain:procurement_tender_uninvite_org' tender.id %}" class="inline">
+          {% csrf_token %}
+          <input type="hidden" name="org" value="{{ org.pk }}">
+          <button type="submit" class="text-xs text-gray-600 hover:text-red-700 underline">Remove</button>
+        </form>
+      </li>
+    {% empty %}
+      <li class="text-gray-600">No one invited yet.</li>
+    {% endfor %}
+  </ul>
+  {% if invitable_orgs %}
+    <form method="post" action="{% url 'supply_chain:procurement_tender_invite_org' tender.id %}" class="mt-3 flex items-center gap-2">
+      {% csrf_token %}
+      <label for="invite-org" class="text-sm text-gray-700">Invite a registered supplier</label>
+      <select id="invite-org" name="org" class="text-sm border border-gray-300 rounded-md px-2 py-1">
+        {% for org in invitable_orgs %}<option value="{{ org.pk }}">{{ org.name }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Invite</button>
+    </form>
+  {% endif %}
 </div>
 
 {% if buys %}

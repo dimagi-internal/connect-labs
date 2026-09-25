@@ -272,6 +272,20 @@ COMMODITY_CATEGORIES = (
 # signed in or not. `private`: only organisations invited to it.
 TENDER_VISIBILITIES = ("public", "private")
 
+# The colours an organisation's own tender listing may wear, from the same
+# family the marketplace's cards use. A fixed palette, so every listing stays
+# legible on the white cards and the deep-purple header.
+LISTING_HUES = (
+    ("#3843d0", "Indigo"),
+    ("#1c7ed6", "Blue"),
+    ("#0c8599", "Teal"),
+    ("#5c940d", "Green"),
+    ("#e8590c", "Orange"),
+    ("#d9480f", "Rust"),
+    ("#c2255c", "Raspberry"),
+    ("#7048e8", "Violet"),
+)
+
 # How a bid gets the goods to the buyer: delivered to one of the tender's
 # places, or collected by the buyer from the supplier.
 DELIVERY_MODES = ("delivered", "pickup")

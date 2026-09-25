@@ -1,0 +1,70 @@
+{% extends 'supply_chain/market/_shell.html' %}
+{% block hero %}{% with e='MANAGE YOUR LISTING' %}{% include 'supply_chain/market/_hero.html' with eyebrow=e title=tender.label %}{% endwith %}{% endblock %}
+
+{% block body %}
+{% if error %}<div class="p-3 mb-5 rounded-lg border bg-message-error text-message-error-text border-message-error-border text-sm">{{ error }}</div>{% endif %}
+
+<p class="text-sm text-gray-600 mb-6">
+  Its address: <a class="text-brand-indigo hover:underline font-medium" href="{% url 'supply_chain:market_tender_listing' tender.slug %}">{{ request.scheme }}://{{ request.get_host }}{% url 'supply_chain:market_tender_listing' tender.slug %}</a>
+  {% if tender.owner_org %} · published by {{ tender.owner_org.name }}{% endif %}
+</p>
+
+<div class="grid gap-4 lg:grid-cols-2">
+  <section class="bg-white border border-brand-border-light rounded-[10px] p-5">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-3">The listing</h2>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="action" value="listing">
+      <label class="block text-sm font-medium text-gray-700 mb-1" for="id_brief">Brief</label>
+      <textarea id="id_brief" name="brief" rows="6" class="base-input !h-auto py-2 w-full">{{ tender.brief }}</textarea>
+      <p class="text-xs text-gray-500 mt-1 mb-4">A few paragraphs suppliers read above the products: the program, what matters to you, anything the lines cannot say.</p>
+
+      <div class="text-sm font-medium text-gray-700 mb-1">Colour</div>
+      <div class="flex flex-wrap gap-3 mb-4">
+        <label class="inline-flex items-center gap-1.5 text-sm"><input type="radio" name="hue" value="" {% if not tender.hue %}checked{% endif %}> By product</label>
+        {% for code, label in hues %}
+          <label class="inline-flex items-center gap-1.5 text-sm"><input type="radio" name="hue" value="{{ code }}" {% if tender.hue == code %}checked{% endif %}><span class="inline-block w-4 h-4 rounded" style="background: {{ code }}"></span>{{ label }}</label>
+        {% endfor %}
+      </div>
+
+      <div class="text-sm font-medium text-gray-700 mb-1">Who can see it</div>
+      <div class="flex flex-col gap-1 mb-4 text-sm">
+        <label class="inline-flex items-center gap-2"><input type="radio" name="visibility" value="public" {% if tender.visibility == "public" %}checked{% endif %}> Open — any registered supplier can see it and bid</label>
+        <label class="inline-flex items-center gap-2"><input type="radio" name="visibility" value="private" {% if tender.visibility == "private" %}checked{% endif %}> Restricted — only the suppliers invited below</label>
+      </div>
+      <button class="px-4 py-2 text-sm bg-brand-deep-purple text-white rounded-md">Save listing</button>
+    </form>
+  </section>
+
+  <section class="bg-white border border-brand-border-light rounded-[10px] p-5">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-1">Invited suppliers</h2>
+    <p class="text-xs text-gray-500 mb-3">{% if tender.visibility == "private" %}Only these organisations can see and bid on this tender.{% else %}The tender is open, so anyone can bid; these organisations are also marked as invited.{% endif %}</p>
+    <ul class="divide-y text-sm mb-4">
+      {% for org in invited %}
+        <li class="py-2 flex items-center justify-between gap-2">
+          <span>{{ org.name }}{% if org.country %} <span class="text-gray-500">· {{ org.country }}</span>{% endif %}</span>
+          <form method="post">{% csrf_token %}<input type="hidden" name="action" value="uninvite"><input type="hidden" name="org" value="{{ org.pk }}"><button class="text-xs text-red-700 hover:underline">Remove</button></form>
+        </li>
+      {% empty %}
+        <li class="py-2 text-gray-500">Nobody yet.</li>
+      {% endfor %}
+    </ul>
+
+    <form method="get" class="flex gap-2 mb-3">
+      <input name="q" value="{{ query }}" class="base-input flex-1" placeholder="Find a registered supplier by name">
+      <button class="px-3 py-1.5 text-sm rounded-md border border-gray-300">Find</button>
+    </form>
+    {% if query %}
+      <ul class="divide-y text-sm">
+        {% for org in candidates %}
+          <li class="py-2 flex items-center justify-between gap-2">
+            <span>{{ org.name }}{% if org.country %} <span class="text-gray-500">· {{ org.country }}</span>{% endif %}</span>
+            <form method="post">{% csrf_token %}<input type="hidden" name="action" value="invite"><input type="hidden" name="org" value="{{ org.pk }}"><button class="px-3 py-1 text-xs rounded-md bg-brand-deep-purple text-white">Invite</button></form>
+          </li>
+        {% empty %}
+          <li class="py-2 text-gray-500">No registered supplier matches “{{ query }}”. Suppliers register themselves on the marketplace; you can send them its address.</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -121,7 +121,106 @@ class MarketTenderView(View):
             listed = service.visible_tender(tender_id, orgs)
         except service.NotAvailable:
             raise Http404("no such tender")
-        return _render(request, "tender.html", listed=listed, card=cards.card_for(listed))
+        return _tender_page(request, listed)
+
+
+def _tender_page(request, listed):
+    tender = listed.tender
+    return _render(
+        request,
+        "tender.html",
+        listed=listed,
+        card=cards.card_for(listed),
+        can_manage=bool(tender.slug) and _signed_in(request) and service.can_manage(request, tender),
+    )
+
+
+@MARKET_CHROME
+class TenderListingView(View):
+    """An organisation's own tender, at its own address: /supply/market/t/<slug>/."""
+
+    def get(self, request, slug):
+        orgs = membership.orgs_for(request)
+        try:
+            listed = service.tender_by_slug(slug, orgs)
+        except service.NotAvailable:
+            raise Http404("no such tender")
+        return _tender_page(request, listed)
+
+
+@MARKET_CHROME
+class TenderManageView(View):
+    """Run a listing: its brief, colour and visibility, and who is invited.
+
+    For whoever manages the publishing organisation, or is on the tender's
+    program -- `service.can_manage`, asked afresh on every request. To anyone
+    else the page does not exist.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        if not _signed_in(request):
+            return _sign_in(request)
+        try:
+            self.tender = service.managed_tender(kwargs["slug"], request)
+        except service.NotAvailable:
+            raise Http404("no such tender")
+        return super().dispatch(request, *args, **kwargs)
+
+    def _page(self, request, *, error=None, status=200):
+        from connect_labs.supply_chain import records
+
+        query = (request.GET.get("q") or "").strip()
+        response = _render(
+            request,
+            "manage.html",
+            tender=self.tender,
+            invited=self.tender.invited_orgs.order_by("name"),
+            candidates=service.invitable_suppliers(self.tender, query) if query else [],
+            query=query,
+            hues=records.LISTING_HUES,
+            error=error,
+        )
+        response.status_code = status
+        return response
+
+    def get(self, request, slug):
+        return self._page(request)
+
+    def post(self, request, slug):
+        from connect_labs.labs.models import LabsOrg
+
+        action = request.POST.get("action")
+        back = redirect(reverse("supply_chain:market_tender_manage", args=[slug]))
+        try:
+            if action == "listing":
+                service.change_listing(
+                    self.tender,
+                    request=request,
+                    data={
+                        "brief": request.POST.get("brief", ""),
+                        "hue": request.POST.get("hue", ""),
+                        "visibility": request.POST.get("visibility") or self.tender.visibility,
+                    },
+                )
+                messages.success(request, "Listing saved.")
+                return back
+            org_id = request.POST.get("org", "")
+            org = LabsOrg.objects.filter(pk=int(org_id)).first() if org_id.isdigit() else None
+            if org is None:
+                raise Http404("no such organisation")
+            if action == "invite":
+                service.invite(self.tender, org, request=request)
+                messages.success(request, f"{org.name} can now see and bid on this tender.")
+                return back
+            if action == "uninvite":
+                service.uninvite(self.tender, org, request=request)
+                messages.success(request, f"{org.name} is no longer invited.")
+                return back
+        except service.NotAvailable:
+            raise Http404("no such tender")
+        except ValueError as refused:
+            return self._page(request, error=str(refused), status=400)
+        raise Http404("unknown action")
 
 
 # ---- bidding ------------------------------------------------------------------
