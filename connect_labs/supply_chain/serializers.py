@@ -423,6 +423,11 @@ def supply_point(obj) -> dict:
         "admin_area": obj.admin_area,
         "latitude": obj.latitude,
         "longitude": obj.longitude,
+        # `recorded`, or which stand-in the coordinates are (placement.py):
+        # a head office is not a store, and a reader must be able to tell.
+        "location_source": obj.location_source,
+        "location_precision": obj.location_precision,
+        "location_label": obj.location_label,
         "min_months_of_stock": _num(obj.min_months_of_stock),
         "max_months_of_stock": _num(obj.max_months_of_stock),
         "status": obj.status,

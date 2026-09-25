@@ -25,6 +25,7 @@ urlpatterns = [
     # row per programme, each linking down into its own chain. The slug is the
     # portfolio's, so a link to one names which.
     path("portfolios/<slug:slug>/", portfolio_views.PortfolioView.as_view(), name="portfolio"),
+    path("portfolios/<slug:slug>/map/", portfolio_views.PortfolioMapView.as_view(), name="portfolio_map"),
     # the master item list is domain-level reference data, not procurement's:
     # tracking and distribution will both read it
     path("catalogue/", views.CatalogueView.as_view(), name="catalogue"),

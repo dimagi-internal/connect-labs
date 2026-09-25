@@ -19,6 +19,9 @@ docstring for why both are decisions rather than omissions.
   <div class="flex gap-4 items-center p-4 profile-bg bg-brand-indigo rounded-2xl mb-6">
     <div class="flex flex-col justify-center text-white">
       <h1 class="text-2xl font-bold mb-1">{{ portfolio.name }}</h1>
+      <a href="{% url 'supply_chain:portfolio_map' portfolio.slug %}" class="text-sm text-white underline underline-offset-2 opacity-90 hover:opacity-100 mb-1">
+        <i class="fa-solid fa-map-location-dot mr-1"></i>See it on a map
+      </a>
       <p class="text-sm opacity-90">
         Every chain in this portfolio, each in its own units. Nothing here is
         added across programmes, and the order is the portfolio's own.

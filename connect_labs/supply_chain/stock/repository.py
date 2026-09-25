@@ -69,14 +69,22 @@ class StockRepositoryMixin:
                 raise ValueError(f"organisation {data['managed_by_org_id']} does not exist")
 
         from connect_labs.supply_chain.data_access import _columns, _fresh
+        from connect_labs.supply_chain.stock.services.placement import place
 
-        defaults = _columns(SupplyPoint, {k: v for k, v in data.items() if k != "slug"})
+        # Coordinates are placed below rather than written here, so a stand-in
+        # echoed back by an edit form is not promoted to a recorded location.
+        located = ("latitude", "longitude", "location_source", "location_precision", "location_label")
+        defaults = _columns(SupplyPoint, {k: v for k, v in data.items() if k != "slug" and k not in located})
         defaults["parent"] = parent
         defaults["managed_by_org"] = manager
         point, _ = SupplyPoint.objects.update_or_create(
             program_id=self._require_program(), slug=data["slug"], defaults=defaults
         )
         point.full_clean(exclude=["parent", "managed_by_org"])
+        # Every point carries a latitude and longitude: the one it was given,
+        # else a stand-in from its organisation's head office (placement.py).
+        submitted = (data["latitude"], data["longitude"]) if "latitude" in data and "longitude" in data else None
+        place(point, submitted=submitted)
         return _fresh(point)
 
     # ---- the ledger ------------------------------------------------------
