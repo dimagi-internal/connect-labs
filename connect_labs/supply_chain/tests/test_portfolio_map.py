@@ -229,3 +229,62 @@ def test_the_portfolio_page_links_to_its_map(client, django_user_model):
     portfolio = _portfolio([ONE])
     body = client.get(reverse("supply_chain:portfolio", args=[portfolio.slug])).content.decode()
     assert _url(portfolio) in body
+
+
+# ---------------------------------------------------------------------------
+# 4. What is in the way, by stage, and what is on its way.
+# ---------------------------------------------------------------------------
+
+
+def test_every_check_is_in_the_program_list_with_its_stage_whether_or_not_it_has_a_place(client, django_user_model):
+    """Most of what blocks a chain is not at a place; the panel must still carry it.
+
+    MUTATED: `every.append(wired)` removed -- the program's `checks` came back empty.
+    """
+    _sign_in(client, django_user_model, [ONE])
+    store = _store(ONE, slug="a-waiting-store", lat=9.0, lng=8.0)
+    _order_to(store, lead_time_days=10)
+
+    program = _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]
+    overdue = [c for c in program["checks"] if c["kind"] == "contract_delivery_overdue"]
+
+    assert overdue and overdue[0]["stage"] == "order"
+    assert overdue[0]["supply_point_id"] == store.pk
+    assert overdue[0]["href"].endswith(f"?program_id={ONE}")
+
+
+def test_an_order_with_no_promised_date_is_on_its_way_with_no_date_not_dropped(client, django_user_model):
+    """The chlorine chain's story: owed, and nobody has said when.
+
+    MUTATED: orders filtered to those with an expected date -- red.
+    """
+    _sign_in(client, django_user_model, [ONE])
+    store = _store(ONE, slug="an-owed-store", lat=9.0, lng=8.0)
+    contract = _order_to(store, lead_time_days=None)
+
+    program = _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]
+
+    assert [
+        (o["contract_id"], o["to_supply_point_id"], o["expected_on"], o["overdue"]) for o in program["orders"]
+    ] == [(contract.pk, store.pk, None, False)]
+
+
+def test_a_supplier_is_placed_from_its_own_country_and_says_how_finely(client, django_user_model):
+    _sign_in(client, django_user_model, [ONE])
+    store = _store(ONE, slug="a-store", lat=9.0, lng=8.0)
+    contract = _order_to(store, lead_time_days=10)
+    Supplier.objects.filter(pk=contract.supplier_id).update(country="IN")
+
+    supplier = _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]["suppliers"][0]
+
+    assert supplier["location"]["precision"] == "country"
+    assert supplier["location"]["lat"] is not None
+
+
+def test_a_supplier_with_no_country_is_not_given_a_place(client, django_user_model):
+    _sign_in(client, django_user_model, [ONE])
+    _order_to(_store(ONE, slug="a-store", lat=9.0, lng=8.0), lead_time_days=10)
+
+    supplier = _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]["suppliers"][0]
+
+    assert supplier["location"] is None
