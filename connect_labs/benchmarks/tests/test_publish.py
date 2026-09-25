@@ -497,6 +497,90 @@ class TestTheTenureOriginIsTheOpportunitysOwnFirstActivity:
         assert publish_module.opportunity_starts(snapshot) == {}
 
 
+def _settled(snapshot, *, after_days=42, anchor="first_visit_date", first_visit="2026-01-10", opps=OPPS):
+    """`snapshot` as the semantic builder now writes it: a case index and `meta.settles`."""
+    out = dict(snapshot)
+    out["cases"] = [
+        {"opportunity_id": o, "first_visit_date": first_visit, "last_visit_date": "2026-03-30"} for o in opps
+    ]
+    out["meta"] = {**(snapshot.get("meta") or {}), "settles": {"after_days": after_days, "anchor": anchor}}
+    return out
+
+
+class TestALineEndsWhereItsFiguresSettle:
+    """An opportunity that stopped delivering repeats its settled figures in every
+    later report. Those repeats were drawn as a flat line out to the end of the
+    axis, at a tenure the opportunity never reached. See `opportunity_ends`."""
+
+    # The fixture's opportunities start 2026-01-01 (its first cohort month). With
+    # the latest first visit on 10 Jan and a 42-day window they settle on 21 Feb.
+    DATES = ["2026-01-28", "2026-02-25", "2026-03-04", "2026-06-24"]
+
+    def _periods(self, snapshot, **kwargs):
+        pub = _publish(_cohort(), snapshot=snapshot, history=_history(dates=self.DATES), **kwargs)
+        rows = BenchmarkValue.objects.filter(publication=pub, indicator_id="lost_by_day_28").exclude(period=None)
+        return set(rows.values_list("period", flat=True))
+
+    def test_reports_after_the_settled_one_are_dropped(self):
+        # 28 Jan is W3. 25 Feb (W7) is the first report on or after the settle
+        # date, so it carries the settled figure and stays; 4 Mar and 24 Jun only
+        # repeat it.
+        assert self._periods(_settled(SNAPSHOT)) == {"W3", "W7"}
+
+    def test_without_a_settle_rule_nothing_is_cut(self):
+        """The behaviour this replaces, and what an unknown rule still does."""
+        assert self._periods(SNAPSHOT) == {"W3", "W7", "W8", "W24"}
+
+    def test_the_registrys_window_serves_a_snapshot_that_records_none(self):
+        """A snapshot saved before `meta.settles` existed: the publisher is handed
+        the window from the workflow's registry instead, and anchors on last visit."""
+        snapshot = _settled(SNAPSHOT)
+        snapshot["meta"] = {}
+        # Last visit 30 Mar + 42 days = 11 May: 4 Mar is kept, 24 Jun is not.
+        assert self._periods(snapshot, settle_after_days=42) == {"W3", "W7", "W8"}
+
+
+class TestTheSettleDate:
+    def test_is_the_latest_anchor_plus_the_window(self):
+        snapshot = {
+            "meta": {"settles": {"after_days": 42, "anchor": "first_visit_date"}},
+            "cases": [
+                {"opportunity_id": 500, "first_visit_date": "2026-01-10"},
+                {"opportunity_id": 500, "first_visit_date": "2026-02-01"},
+                {"opportunity_id": 501, "first_visit_date": "2026-01-05"},
+            ],
+        }
+        assert publish_module.opportunity_ends(snapshot) == {
+            500: dt.date(2026, 3, 15),
+            501: dt.date(2026, 2, 16),
+        }
+
+    def test_a_case_without_the_anchor_falls_back_to_its_last_visit(self):
+        snapshot = {
+            "meta": {"settles": {"after_days": 28, "anchor": "first_visit_date"}},
+            "cases": [{"opportunity_id": 500, "last_visit_date": "2026-01-10"}],
+        }
+        assert publish_module.opportunity_ends(snapshot) == {500: dt.date(2026, 2, 7)}
+
+    def test_an_opportunity_with_no_dated_case_ends_after_its_last_active_week(self):
+        snapshot = {
+            "meta": {"settles": {"after_days": 0, "anchor": "first_visit_date"}},
+            "weekly": {
+                "opp:500": [{"week": "2026-01-05", "visits": 3}, {"week": "2026-01-12", "visits": 0}],
+                "all": [{"week": "2026-06-01", "visits": 9}],
+            },
+        }
+        # Visits in the week of Monday 5 Jan run to Sunday 11 Jan; a week with no
+        # visits is not activity.
+        assert publish_module.opportunity_ends(snapshot) == {500: dt.date(2026, 1, 11)}
+
+    def test_no_window_means_no_end(self):
+        # No `meta.settles`, so no recorded anchor either: last visit is used.
+        snapshot = {"cases": [{"opportunity_id": 500, "last_visit_date": "2026-01-10"}]}
+        assert publish_module.opportunity_ends(snapshot) == {}
+        assert publish_module.opportunity_ends(snapshot, settle_after_days=7) == {500: dt.date(2026, 1, 17)}
+
+
 class TestAFurtherFamilyCanBeTrendedToo:
     """The series is drawn per FAMILY from the history, so an indicator in a
     further family (`series[<name>]`) trends exactly as a primary one does."""
