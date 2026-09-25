@@ -1054,7 +1054,14 @@ def seed_chlorine_blocked(data, scopes):
     round_ = tender_for(access, section["round"])
     round_ = opened(access, round_)
 
-    store = _supply_point(access, section["store"], reference, ours)
+    # One store or several. The import is delivered to the FIRST; any others
+    # are the partners it restocks, so they sit on the map owed the same
+    # blocked goods. `store` (one) is still read, so an older document seeds.
+    rows = section.get("stores") or [section["store"]]
+    store = _supply_point(access, rows[0], reference, ours)
+    stores = [store] + [
+        _supply_point(access, {**row, "parent_supply_point_id": store["id"]}, reference, ours) for row in rows[1:]
+    ]
 
     contract_row = dict(section["contract"])
     buyer_slug = contract_row.pop("buyer_org_slug")
@@ -1083,6 +1090,7 @@ def seed_chlorine_blocked(data, scopes):
         "round": round_,
         "supplier": donor,
         "store": store,
+        "stores": stores,
         "contract": contract,
     }
 
