@@ -1,12 +1,12 @@
 """Every supply point carries a latitude and longitude -- and says how it got one.
 
-A place nobody has surveyed is still somewhere, and the network map is useless
-if half the network is "not on the map". So a point with no coordinates of its
-own is given a STAND-IN: the head office of the organisation that manages it,
-as the LLO directory records it -- the same `OrgProfile` coordinates Pulse
-draws partners at. That is deliberately temporary. It is right to the town at
-best and to the country at worst, and the point says which, so a map can draw
-it as approximate and nobody routes a truck to it.
+An organisation keeps stock at its own office, so a point with no coordinates
+of its own is placed at the office of the organisation that runs it, as the
+LLO directory records it -- the same `OrgProfile` coordinates Pulse draws
+partners at. That is the place itself, not a guess about it: when the
+directory knows the town, the map draws it as exact. What stays approximate,
+and says so, is an office the directory knows only to a region or a country,
+a field worker drawn at the store that restocks them, and a country centre.
 
 The order, finest first:
 
@@ -91,7 +91,7 @@ def stand_in(point, OrgProfile=None) -> Placement | None:
                 profile.lon,
                 "org_hq",
                 profile.location_precision or "country",
-                f"{profile.org.name} head office" + (f" ({where})" if where else ""),
+                f"{profile.org.name} office" + (f" ({where})" if where else ""),
             )
 
     parent = point.parent
