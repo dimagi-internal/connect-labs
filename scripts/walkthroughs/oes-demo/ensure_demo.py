@@ -237,6 +237,9 @@ chlorine = _seed["seed_chlorine_blocked"](data, scopes)
 # contrast that only reads against the partner seat beat 6 opened.
 last_mile = _seed["seed_chc_last_mile"](chc["access"], data, chc["reference"], chc_chain)
 
+# The previous cycle, so cover can be computed (a rate needs 30+ days).
+history = _seed["seed_history"](chc["access"], data, chc["reference"], chc_chain, last_mile)
+
 # Stock the distributor has sent and a partner has not yet received: the one
 # thing on the map that is moving right now, rather than moved.
 on_the_road = _seed["seed_on_the_road"](chc["access"], data, chc["reference"], chc_chain)
