@@ -613,6 +613,46 @@ def _supply_point(access, row, reference, stamp):
     return op(access, "supply_point_upsert", data=data)
 
 
+def _chain_supplier(access, chain, orgs):
+    """Who sold us this, as the chain itself says.
+
+    Two chains in this demo are sourced two different ways, and the difference
+    is real rather than a modelling convenience.
+
+    The CHC basket is bought from a DISTRIBUTOR that is also one of our
+    partners -- it pays the manufacturers, holds the goods and releases them
+    to the collecting partners. It is an organisation of ours, so it is named
+    by `distributor_slug` and gets a supplier carrying `org_id`: the two roles
+    are one body, which is what makes the partner seat at beat 6 worth
+    showing, and `update_links/service.py` decides whose word a submission is
+    by asking whether the link's organisation supplies the order.
+
+    RUTF is bought from a MANUFACTURER, which is not an organisation of ours
+    and never will be -- it quotes us and that is the whole relationship. So
+    that chain names `supplier_label` and gets a supplier with no `org_id`,
+    because inventing an organisation for it would assert something the
+    document does not claim.
+
+    Exactly one of the two keys, and the refusal names both: a chain with
+    neither is a purchase from nobody, and a chain with both is two different
+    answers to "who sold us this" with no rule for choosing.
+    """
+    label = chain.get("supplier_label")
+    slug = chain.get("distributor_slug")
+    if label and slug:
+        raise ValueError(
+            f"this chain names both supplier_label ({label!r}) and distributor_slug ({slug!r}); "
+            "they are two different answers to who sold us this, so name one"
+        )
+    if label:
+        return supplier_for_label(access, label)
+    if slug:
+        return supplier_for_org(access, orgs[slug])
+    raise ValueError(
+        "this chain names neither `supplier_label` nor `distributor_slug`, so there is nobody it " "was bought from"
+    )
+
+
 def seed_chain(access, chain, reference):
     """One procurement, from the round to the stock sitting in the warehouse.
 
@@ -628,7 +668,6 @@ def seed_chain(access, chain, reference):
     # The document's own key still reads `programme_org_slug`; it is data in
     # Drive, so it is left as written rather than churned by a rename here.
     program_org = orgs[chain["programme_org_slug"]]
-    distributor = orgs[chain["distributor_slug"]]
 
     # Tier 2 in the design's table: our own hand, first-hand. Everything the
     # program itself does carries this, and `witnessed` is true of it.
@@ -637,7 +676,7 @@ def seed_chain(access, chain, reference):
     # `told_by_for` renders it "Dimagi, for EHA Clinics (they told us)".
     their_word = {"source": "partner_reported", "recorded_by_org_id": program_org["id"]}
 
-    supplier = supplier_for_org(access, distributor)
+    supplier = _chain_supplier(access, chain, orgs)
 
     round_ = op(access, "round_create", data=chain["round"])
     # A round that received quotes was open when it received them.
@@ -892,6 +931,86 @@ def seed_rutf_rounds(data, scopes):
         "program_id": RUTF_PROGRAM_ID,
         "round_one": seed_chain(scope["access"], section["round_one"], scope["reference"]),
         "round_two": seed_rutf_round_two(scope["access"], section["round_two"]),
+    }
+
+
+def seed_chlorine_blocked(data, scopes):
+    """The chain that is blocked, with no date anybody can stand behind.
+
+    Evidence Action donates the chlorine in kind and imports it. The import
+    was due in December and is behind, and nobody knows when it will land.
+
+    This chain therefore lacks two things every other chain here has, and
+    neither absence is an untidiness to be finished off later.
+
+    **No quotes and no award.** Nothing was competed, because an in-kind
+    donation is not a purchase, and an award would record a decision that was
+    never made. The round is still here, because the DEMAND is real -- 400
+    jerry cans are needed -- and demand going unmet is the thing the screen
+    exists to show. A round with no award is not a half-finished sourcing
+    exercise; it is an accurate account of one that has not happened.
+
+    **No `promised_lead_time_days`.** `stock/services/network.py`
+    `_expected_inbound` derives `expected_on` from `signed_on` plus a promised
+    lead time, and with neither it returns None -- correctly, because there is
+    no date to return. The stock page says so in words rather than trailing
+    off after the donor's name. Adding a lead time here to make the row look
+    complete would delete the only beat this chain exists for (design
+    section 6a, beat 8b).
+
+    Takes `scopes` rather than building its own access, for the reason
+    `seed_supply_only` records: this scope's catalogue was seeded from its own
+    section by `seed_scopes`, and calling `seed_reference` again would put
+    every chain's products into this one program.
+    """
+    scope = scopes["chlorine"]
+    access, reference = scope["access"], scope["reference"]
+    section = without_commentary(data["chlorine_blocked"])
+
+    donor_org = reference["orgs"][section["donor_slug"]]
+    # `donor`, not `distributor`: records.SUPPLIER_TYPES carries the word for
+    # exactly this relationship, and Evidence Action sells us nothing.
+    donor = supplier_for_org(access, donor_org, kind=section["supplier"]["type"])
+
+    # Tier 2. We wrote this down ourselves, from the agreement we are party to.
+    ours = {
+        "source": "we_recorded",
+        "recorded_by_org_id": reference["orgs"][section["programme_org_slug"]]["id"],
+    }
+
+    round_ = op(access, "round_create", data=section["round"])
+    round_ = op(access, "round_open", round_id=round_["id"])
+
+    store = _supply_point(access, section["store"], reference, ours)
+
+    contract_row = dict(section["contract"])
+    buyer_slug = contract_row.pop("buyer_org_slug")
+    line = section["round"]["lines"][0]
+    contract = op(
+        access,
+        "contract_create",
+        data={
+            **ours,
+            **contract_row,
+            "round_id": round_["id"],
+            "supplier_id": donor["id"],
+            "commodity_slug": line["commodity_slug"],
+            "buyer_org_id": reference["orgs"][buyer_slug]["id"],
+            "delivery_supply_point_id": store["id"],
+            # No `unit_price`: it is a donation, and MONEY_NONZERO would
+            # refuse a zero anyway -- rightly, since "free" is a
+            # consideration, not a price of nought.
+            # No `signed_on` and no `promised_lead_time_days`. See the
+            # docstring; this is the whole point.
+        },
+    )
+
+    return {
+        "program_id": CHLORINE_PROGRAM_ID,
+        "round": round_,
+        "supplier": donor,
+        "store": store,
+        "contract": contract,
     }
 
 
