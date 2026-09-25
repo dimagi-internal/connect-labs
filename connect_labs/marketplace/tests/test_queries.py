@@ -4,6 +4,7 @@ import datetime as dt
 
 import pytest
 
+from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import queries
 from connect_labs.marketplace.models import OrgContact
 from connect_labs.marketplace.testing import make_partner
@@ -201,3 +202,31 @@ class TestTotals:
         assert totals["rounds"] == 1
         assert totals["applications"] == 3
         assert totals["delivering"] == 1
+
+
+@pytest.mark.django_db
+class TestWhoIsInTheNetwork:
+    """`LabsOrg` is labs' one registry, so supply chain's vendors live in it too.
+
+    Folding suppliers into organisations (#2019) grew the network page by
+    twenty manufacturers, couriers and a regulator without a single EOI.
+    """
+
+    def test_a_supplier_only_organisation_is_not_in_the_network(self, network):
+        LabsOrg.objects.create(slug="kestrel-express-couriers", name="Kestrel Express Couriers", country="NG")
+        names = {r.name for r in queries.all_rows_with_rounds()}
+        assert "Kestrel Express Couriers" not in names
+        assert queries.network_totals()["organisations"] == 2
+
+    def test_answering_a_round_puts_an_organisation_in_the_network_without_a_profile(self, network):
+        walk_in = LabsOrg.objects.create(slug="walk-in", name="Walk In Health", country="KE")
+        SolicitationResponse.objects.create(
+            solicitation=network["round"], llo_entity=walk_in, source_row=9, org_name=walk_in.name, match_state="name"
+        )
+        assert "Walk In Health" in {r.name for r in queries.all_rows_with_rounds()}
+        assert queries.network_totals()["organisations"] == 3
+
+    def test_delivering_on_connect_puts_an_organisation_in_the_network_without_a_profile(self, network, monkeypatch):
+        LabsOrg.objects.create(slug="quiet-deliverer", name="Quiet Deliverer", country="NG")
+        monkeypatch.setattr(queries, "delivering_names", lambda: {"Quiet Deliverer"})
+        assert "Quiet Deliverer" in {r.name for r in queries.all_rows_with_rounds()}
