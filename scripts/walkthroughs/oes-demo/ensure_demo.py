@@ -90,8 +90,25 @@ MARK = "OES_DEMO_RESULT"
 # "the payload got too big".
 MAX_COMMAND = 120_000
 
+# How long the seed is given, and the one relationship between these two
+# numbers that matters.
+#
+# **`HOLDER_SECONDS` must exceed `CALL_TIMEOUT_SECONDS`.** The interactive
+# session dies the moment its stdin closes, so the sleeping subprocess that
+# holds stdin open has to outlive the call it is holding open for. A holder
+# that expires first ends the session mid-write -- and because there is no
+# purge for these programs, mid-write means a partial environment somebody has
+# to clear by hand.
+#
+# `CALL_TIMEOUT_SECONDS` is the real bound on the seed and is the one to raise
+# when it grows. Tasks 8, 10 and 12 each add another chain to this same run, so
+# raise it and let the derived holder follow -- do not set the holder directly.
+CALL_TIMEOUT_SECONDS = 1800
+HOLDER_SECONDS = CALL_TIMEOUT_SECONDS + 300
+assert HOLDER_SECONDS > CALL_TIMEOUT_SECONDS, "the stdin holder must outlive the call it holds open"
 
-def _aws(*args: str, stdin=None, timeout: int = 1200) -> subprocess.CompletedProcess:
+
+def _aws(*args: str, stdin=None, timeout: int = CALL_TIMEOUT_SECONDS) -> subprocess.CompletedProcess:
     env = {**os.environ, "AWS_PROFILE": os.environ.get("AWS_PROFILE", "labs"), "AWS_PAGER": ""}
     return subprocess.run(
         ["aws", *args, "--region", REGION],
@@ -257,6 +274,39 @@ def build_command(folder: str, filename: str) -> str:
     return command
 
 
+def _as_text(stream) -> str:
+    """Whatever the stream was, as text.
+
+    `TimeoutExpired` carries what had been read so far, and whether that is
+    `str` or `bytes` depends on how the call was made -- so this is read
+    defensively rather than assuming, because the one moment it is needed is
+    the moment an operator is trying to find out how far a seed got.
+    """
+    if stream is None:
+        return ""
+    if isinstance(stream, bytes):
+        return stream.decode(errors="replace")
+    return str(stream)
+
+
+def _no_result(output: str, why: str) -> None:
+    """Exit naming what went wrong and how far it got. Never returns.
+
+    Both failure paths come through here -- the command that ran and printed no
+    result, and the call that was cut off before it could. They need the same
+    two things said: the tail of what the worker managed to say, and that the
+    environment may now be half-written, because there is no purge to undo it.
+    """
+    tail = "\n".join(output.splitlines()[-60:])
+    sys.exit(
+        f"seed did not report a result ({why}).\n"
+        "Anything it had already written is still there, and there is no purge for these "
+        "programs -- clear the four scopes by hand before running this again, or the next run "
+        "is refused.\n"
+        f"{tail}"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
@@ -277,8 +327,9 @@ def main() -> None:
 
     # The interactive session needs a live stdin for the WHOLE run: /dev/null
     # gives "Cannot perform start session: EOF" and the command silently does
-    # not run. A sleeping subprocess holds it open.
-    holder = subprocess.Popen(["sleep", "1800"], stdout=subprocess.PIPE)
+    # not run. A sleeping subprocess holds it open, for longer than the call it
+    # is holding open for -- see HOLDER_SECONDS.
+    holder = subprocess.Popen(["sleep", str(HOLDER_SECONDS)], stdout=subprocess.PIPE)
     try:
         result = _aws(
             "ecs",
@@ -294,14 +345,24 @@ def main() -> None:
             command,
             stdin=holder.stdout,
         )
+    except subprocess.TimeoutExpired as expired:
+        # Caught rather than allowed out: `subprocess.run` raises this before
+        # `result` exists, so without this the careful diagnostic below is
+        # skipped entirely and the operator gets a bare traceback at the one
+        # moment the environment is half-written. The partial output it carries
+        # is what says how far the seed got.
+        _no_result(
+            _as_text(expired.stdout) + _as_text(expired.stderr),
+            f"no answer within {CALL_TIMEOUT_SECONDS}s, so the session was cut off; raise "
+            "CALL_TIMEOUT_SECONDS if the seed has simply grown",
+        )
     finally:
         holder.kill()
 
     output = result.stdout + result.stderr
     match = re.search(MARK + r"(\{.*?\})" + MARK, output, re.S)
     if not match:
-        tail = "\n".join(output.splitlines()[-60:])
-        sys.exit(f"seed did not report a result (exit {result.returncode}):\n{tail}")
+        _no_result(output, f"the command exited {result.returncode} without printing one")
     realized = json.loads(match.group(1).replace("\r", "").replace("\n", ""))
 
     OUTPUTS.write_text(json.dumps(realized, indent=2) + "\n")
