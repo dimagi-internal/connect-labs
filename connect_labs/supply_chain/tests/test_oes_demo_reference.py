@@ -743,3 +743,40 @@ def test_supplier_a_becomes_comparable_once_it_states_a_pack_spec(scopes):
     assert "Placeholder Supplier A" not in reasons
     # B and C are still blocked, for their own unrelated reasons.
     assert reasons.keys() == {"Placeholder Supplier B", "Placeholder Supplier C"}
+
+
+def test_re_seeding_does_not_drag_a_bought_round_back_onto_the_market():
+    """`round_for` made the seeder idempotent and broke the line after it.
+
+    `round_open` used to follow `round_create`, so it always acted on a fresh
+    draft. Once rounds were matched by label, a second run could hand an
+    ALREADY AWARDED round to the same `round_open` call -- and since the
+    supplier marketplace shipped, an open round is public. Re-seeding would
+    have re-published rounds decided weeks earlier and invited quotes for
+    goods already bought.
+
+    MUTATED: `opened` reverted to opening unconditionally. This test went
+    red on the awarded round. Reverted.
+
+    Checked at the seeder rather than through a full re-seed because the
+    hazard is one line's precondition, and a test that needs a whole
+    environment to prove it will not be run.
+    """
+    module = _load_seed_remote()
+    calls = []
+
+    def fake_op(access, name, **payload):
+        calls.append(name)
+        return {"id": 1, "status": "open"}
+
+    module.op = fake_op
+
+    # A draft is opened...
+    assert module.opened(object(), {"id": 1, "status": "draft"})["status"] == "open"
+    assert calls == ["round_open"]
+
+    # ...and anything already decided is left exactly as it was.
+    calls.clear()
+    for settled in ("open", "closed", "awarded"):
+        assert module.opened(object(), {"id": 1, "status": settled})["status"] == settled
+    assert calls == [], "a round that is not a draft must not be opened again"

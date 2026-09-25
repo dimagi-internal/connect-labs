@@ -653,6 +653,27 @@ def _chain_supplier(access, chain, orgs):
     )
 
 
+def opened(access, round_):
+    """Open a round that has not been opened, and leave any other alone.
+
+    `round_open` used to follow `round_create` and so always acted on a fresh
+    draft. `round_for` broke that precondition the day it landed: it may hand
+    back a round this seeder created on an earlier run, and that round may
+    already be awarded -- at which point opening it again drags a bought
+    round back onto the market.
+
+    That is not cosmetic. Since the supplier marketplace shipped, an OPEN
+    round is public, so re-running the seeder would have re-published rounds
+    that were decided weeks ago and invited quotes for goods already bought.
+
+    Found by the session building the portfolio map, re-seeding far more
+    often than I did.
+    """
+    if round_.get("status") != "draft":
+        return round_
+    return op(access, "round_open", round_id=round_["id"])
+
+
 def round_for(access, data):
     """This scope's round with that label, or a new one.
 
@@ -702,8 +723,9 @@ def seed_chain(access, chain, reference):
     supplier = _chain_supplier(access, chain, orgs)
 
     round_ = round_for(access, chain["round"])
-    # A round that received quotes was open when it received them.
-    round_ = op(access, "round_open", round_id=round_["id"])
+    # A round that received quotes was open when it received them -- but only
+    # if it is still a draft. See `opened`.
+    round_ = opened(access, round_)
 
     items, quotes = {}, []
     for quoted in chain["quotes"]:
@@ -914,8 +936,9 @@ def seed_rutf_round_two(access, round_two):
     """
     round_two = without_commentary(round_two)
     round_ = round_for(access, round_two["round"])
-    # A round that received quotes was open when it received them.
-    round_ = op(access, "round_open", round_id=round_["id"])
+    # A round that received quotes was open when it received them -- but only
+    # if it is still a draft. See `opened`.
+    round_ = opened(access, round_)
 
     quotes, suppliers = [], []
     for quoted in round_two["quotes"]:
@@ -1002,7 +1025,7 @@ def seed_chlorine_blocked(data, scopes):
     }
 
     round_ = round_for(access, section["round"])
-    round_ = op(access, "round_open", round_id=round_["id"])
+    round_ = opened(access, round_)
 
     store = _supply_point(access, section["store"], reference, ours)
 
@@ -1201,7 +1224,7 @@ def seed_awaiting_approval(access, data, reference):
 
     supplier = _chain_supplier(access, section, orgs)
     round_ = round_for(access, section["round"])
-    round_ = op(access, "round_open", round_id=round_["id"])
+    round_ = opened(access, round_)
 
     quotes, items = [], {}
     for quoted in section["quotes"]:
