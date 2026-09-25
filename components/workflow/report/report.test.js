@@ -257,6 +257,21 @@ describe('peer bars', () => {
 });
 
 describe('trend card', () => {
+  test('while loading, keeps the newest band word in its header', () => {
+    const out = html(
+      h(R.TrendCard, {
+        label: 'x',
+        target: 0.5,
+        format: String,
+        loading: true,
+        points: [
+          { date: '2026-09-15', entry: { value: 0.72, band: 'green', n: 50 } },
+        ],
+      }),
+    );
+    expect(out).toContain('Loading the trend');
+    expect(out).toContain('On target');
+  });
   test('says it is loading rather than that there is one report', () => {
     const out = html(
       h(R.TrendCard, { label: 'x', points: null, target: 0.5, format: String }),

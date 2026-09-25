@@ -255,14 +255,14 @@ def test_the_trends_say_they_are_loading_rather_than_one_report_so_far():
     fetch settles; the trends and their caption must say they are loading.
 
     The chart is the shared library's TrendCard, which shows its loading state
-    when handed `points={null}` (pinned in components/workflow/report/report.test.js)."""
+    when handed `loading` (pinned in components/workflow/report/report.test.js)."""
     src = RENDER.read_text()
     body = src[src.index("  function SmallTrend(props) {") :]
     body = body[: body.index("  function ChartsRow() {")]
     assert "<R.TrendCard" in body
-    assert "history === null" in body and "? null" in body, "a history still loading must reach the card as null"
+    assert "loading={history === null}" in body, "a history still loading must reach the card as loading"
     lib = LIBRARY_CHARTS.read_text()
-    assert lib.index("history === null") < lib.index("One report so far")
+    assert lib.index("props.loading") < lib.index("One report so far")
     assert "Loading the trend" in lib
     assert "loading the saved reports" in src
     effect = src[src.index("var defId =") :]

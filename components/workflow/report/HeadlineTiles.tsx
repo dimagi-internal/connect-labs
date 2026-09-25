@@ -122,7 +122,7 @@ export function HeadlineTiles(props: { tiles: Tile[] }) {
               </div>
             ) : null}
             <div className="mt-1 text-xs text-gray-400 whitespace-nowrap truncate">
-              {delta || ' '}
+              {delta || '\u00a0'}
             </div>
           </div>
         );
