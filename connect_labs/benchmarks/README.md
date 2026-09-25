@@ -12,6 +12,7 @@ Anonymous peer figures for an opportunity: where it sits among comparable opport
 - **Points** come from the published run's own snapshot.
 - **Trends** come from the source report's **saved run history**: one point per saved run (the latest completion wins when a period has several). So the history has to exist before the trend can: rebuild it with `workflow_rebuild_history` first, then publish. Publishing first leaves an older opportunity with no line of its own.
 - **The trend axis is tenure**: each opportunity's own weeks since its first activity, so week 1 is week 1 for everyone. It is never a calendar date.
+- **A trend ends where its figures settle**: an opportunity's latest case anchor date (KMC: first visit) plus the longest maturity window any indicator waits on (KMC: 42 days, derived from the registry by `semantic/maturity.py`). Every later saved run only repeats the settled figures, and drawing them made a finished opportunity a flat line at a tenure it never reached. The rule rides on the snapshot as `meta.settles`; see `publish.py::opportunity_ends`.
 - **Only rate-shaped indicators are published** (unit `%` or per-100). Counts, means and durations are withheld because the value would be the opportunity's size. This is a rule in `publish.py`, not a cohort setting.
 
 ## Disclosure settings (per cohort, `disclosure.py`)

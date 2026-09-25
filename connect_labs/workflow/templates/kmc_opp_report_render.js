@@ -1376,10 +1376,20 @@ function WorkflowUI({
       B = 20;
     var iw = W - L - R,
       ih = H - T - B;
+    // Placed by WEEK NUMBER, not by position. Spaced by position, W3, W8 and
+    // W52 sat at equal intervals: a gap vanished and an opportunity's line
+    // looked to start wherever its first published week happened to fall in the
+    // sorted list. The axis starts at week 0, so every line starts from the same
+    // left edge and a gap reads as a gap.
+    var nums = periods.map(periodNumber);
+    var xLo = Math.min(0, nums[0]),
+      xHi = nums[nums.length - 1];
+    if (xHi === xLo) xHi = xLo + 1;
+    function xAt(n) {
+      return L + ((n - xLo) * iw) / (xHi - xLo);
+    }
     function x(i) {
-      return (
-        L + (periods.length > 1 ? (i * iw) / (periods.length - 1) : iw / 2)
-      );
+      return xAt(nums[i]);
     }
     function y(v) {
       return T + ih - ((v - lo) / (hi - lo)) * ih;
@@ -1425,22 +1435,22 @@ function WorkflowUI({
               </g>
             );
           })}
-          {periods.map(function (p, i) {
-            var last = periods.length - 1;
-            if (i && i !== last && i !== Math.floor(last / 2)) return null;
-            // The end ticks are anchored INWARD. Centred on the first and last
-            // point they hang half a label over each edge of the plot, and the
-            // card clips it -- "week 42" was rendering as "week 4".
+          {[xLo, Math.round((xLo + xHi) / 2), xHi].map(function (n, i) {
+            // Ticks at the start, middle and end of the WEEK range, labelled in
+            // the axis's own letter. The end ticks are anchored INWARD. Centred
+            // on the edge they hang half a label over each side of the plot, and
+            // the card clips it -- "week 42" was rendering as "week 4".
+            var letter = (/^([WRM])/.exec(String(periods[0])) || [])[1] || 'W';
             return (
               <text
-                key={p}
-                x={x(i)}
+                key={i}
+                x={xAt(n)}
                 y={H - 6}
-                textAnchor={i === 0 ? 'start' : i === last ? 'end' : 'middle'}
+                textAnchor={i === 0 ? 'start' : i === 2 ? 'end' : 'middle'}
                 fontSize="7"
                 fill="#9ca3af"
               >
-                {periodLabel(p)}
+                {periodLabel(letter + n)}
               </text>
             );
           })}
