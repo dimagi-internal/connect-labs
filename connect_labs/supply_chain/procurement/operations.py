@@ -634,3 +634,28 @@ def approval_decide(
 )
 def approval_list(access, award_id=None, status=None):
     return [record(a) for a in access.list_approvals(award_id=award_id, status=status)]
+
+
+# ---- supplier performance ----------------------------------------------
+#
+# What a supplier promised against what they did. The domain stored both and
+# compared them nowhere, so the supplier directory was a list of names.
+
+
+@register_operation(
+    name="supplier_performance",
+    summary=(
+        "On-time and in-full delivery per supplier for this programme, from what was promised "
+        "(signed_on plus promised_lead_time_days) against what arrived. Orders with no promised "
+        "lead time, and orders still on their way, are EXCLUDED from the rates and counted "
+        "separately (no_promise, not_yet_due) -- scoring an unpromised order as punctual would "
+        "reward never committing to a date. Every rate comes with the count behind it, and a rate "
+        "out of no measurable orders is null rather than zero. In full means accepted: goods "
+        "refused on arrival were not delivered. There is deliberately no single blended score."
+    ),
+    input_schema=obj({"supplier_id": ID}),
+)
+def supplier_performance(access, supplier_id=None):
+    from connect_labs.supply_chain.procurement.services.performance import supplier_performance as service
+
+    return service(access, supplier_id=supplier_id)
