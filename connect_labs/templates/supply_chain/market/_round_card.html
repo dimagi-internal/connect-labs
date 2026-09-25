@@ -33,7 +33,9 @@
 
   <div class="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-gray-600">
     <span><span class="font-semibold text-gray-900">{{ c.kind }}</span></span>
-    <span>to {{ c.round.delivery_point.city|default:c.round.delivery_point.name|default:"a place not stated" }}{% if c.round.delivery_point.country_name %}, {{ c.round.delivery_point.country_name }}{% endif %}</span>
+    {% comment %}firstof, not |default:<variable>: a missing key in a filter ARGUMENT raises
+    rather than rendering blank, and a delivery point need not carry every key.{% endcomment %}
+    <span>to {% firstof c.round.delivery_point.city c.round.delivery_point.name "a place not stated" %}{% if c.round.delivery_point.country_name %}, {{ c.round.delivery_point.country_name }}{% endif %}</span>
     {% if c.round.shelf_life_months_minimum %}<span><span class="font-semibold text-gray-900 tabular-nums">{{ c.round.shelf_life_months_minimum }}</span> months shelf life</span>{% endif %}
   </div>
 
