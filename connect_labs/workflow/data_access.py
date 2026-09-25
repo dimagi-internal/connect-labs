@@ -449,6 +449,13 @@ class SemanticRegistryRecord(LocalLabsRecord):
     def shared_scope(self) -> str:
         return self.data.get("shared_scope", "global")
 
+    @property
+    def updated_at(self) -> str | None:
+        """ISO time of the last write through the data access -- stamped by create and
+        update, because Connect's LabsRecord carries no timestamps of its own. Absent
+        on a record last written before the stamp existed."""
+        return self.data.get("updated_at")
+
 
 class PipelineRenderCodeRecord(LocalLabsRecord):
     """Proxy model for pipeline render code LabsRecords."""
@@ -2021,6 +2028,7 @@ class SemanticRegistryDataAccess(BaseDataAccess):
             "deployment": deployment or {},
             "is_shared": is_shared,
             "shared_scope": "global",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         # `is_shared` is only meaningful if the RECORD is public: the data flag alone
         # listed a registry nobody outside its scope could read.
@@ -2080,6 +2088,7 @@ class SemanticRegistryDataAccess(BaseDataAccess):
         if definition_changed:
             assert_registry_valid(data["properties"], data["indicators"], data.get("deployment"))
             data["version"] = data.get("version", 1) + 1
+        data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
         self.labs_api.update_record(
             registry_id,

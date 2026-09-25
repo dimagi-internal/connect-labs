@@ -311,3 +311,13 @@ class TestSharingMakesTheRecordReadableEverywhere:
         rec = self._seeded(store, shared=True)
         props, inds, *_ = resolve_registry({"registry_id": rec.id, "public": True}, store)
         assert props["properties"] and inds["measures"]
+
+
+def test_every_write_stamps_when_it_happened(seeded):
+    """Connect's LabsRecord carries no timestamps, so a registry's last-edit time
+    exists only if the write records it -- including a metadata-only edit."""
+    store, record = seeded
+    created = store.get_registry(record.id).updated_at
+    assert created
+    store.update_registry(record.id, description="a later note")
+    assert store.get_registry(record.id).updated_at > created

@@ -162,3 +162,39 @@ def test_a_registry_not_in_the_scope_is_not_deleted(client, dimagi_user, fake_ac
     )
     assert resp.status_code == 302
     assert not any(a.deleted for a in fake_access)
+
+
+def _audit(registry_id, when, action="update"):
+    from connect_labs.audit_trail.models import AuditEvent
+
+    AuditEvent.objects.create(
+        action=action, resource_type="semantic_registry", resource_id=str(registry_id), occurred_at=when
+    )
+
+
+@override_settings(**LABS_SETTINGS)
+def test_the_list_says_when_each_registry_was_last_edited(client, dimagi_user, fake_access):
+    """Records written before writes stamped a time still have one: the audit trail."""
+    import datetime as dt
+
+    utc = dt.timezone.utc
+    _audit(21931, dt.datetime(2026, 9, 24, 21, 40, tzinfo=utc), action="create")
+    _audit(19784, dt.datetime(2026, 9, 1, 9, 0, tzinfo=utc))
+    _audit(19784, dt.datetime(2026, 9, 24, 22, 10, tzinfo=utc))
+    client.force_login(dimagi_user)
+    body = client.get(reverse("labs_admin:semantic_registries"), {"opportunity_id": "523"}).content.decode()
+    assert "2026-09-24 21:40" in body and "2026-09-24 22:10" in body, "the latest write per registry"
+    assert "2026-09-01 09:00" not in body
+
+
+def test_the_records_own_stamp_wins_when_it_is_later():
+    """A write the audit trail missed (or one past its retention) still dates the record."""
+    import datetime as dt
+
+    from connect_labs.labs.admin.registry_views import _last_edited
+
+    record = _record(21931, "SCRATCH #2004 - delete me")
+    record.data["updated_at"] = "2026-09-25T15:30:00+00:00"
+    older_audit = dt.datetime(2026, 9, 1, 9, 0, tzinfo=dt.timezone.utc)
+    assert _last_edited(record, older_audit) == dt.datetime(2026, 9, 25, 15, 30, tzinfo=dt.timezone.utc)
+    assert _last_edited(_record(1, "never stamped"), None) is None
