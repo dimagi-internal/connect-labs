@@ -1,6 +1,6 @@
 """The supplier marketplace in a browser, at /supply/market/.
 
-Browsing is public: an open public round is meant to be found. Everything
+Browsing is public: an open public tender is meant to be found. Everything
 that writes needs a labs sign-in (through Connect, like everyone else), an
 organisation the person acts for, and -- to bid -- that organisation's
 supplier profile. The pages are their own light shell rather than the labs
@@ -72,8 +72,8 @@ def _render(request, template, **extra):
 # ---- public -----------------------------------------------------------------
 
 
-def _delivered_to(round_) -> str:
-    point = round_.delivery_point or {}
+def _delivered_to(tender) -> str:
+    point = tender.delivery_point or {}
     return f"{point.get('country', '')} {point.get('country_name', '')}"
 
 
@@ -81,7 +81,7 @@ def _delivered_to(round_) -> str:
 class MarketHomeView(View):
     def get(self, request):
         orgs = membership.orgs_for(request)
-        everything = service.listed_rounds(orgs)
+        everything = service.listed_tenders(orgs)
         listed = everything
         category = request.GET.get("category", "")
         country = (request.GET.get("country") or "").strip()
@@ -90,14 +90,14 @@ class MarketHomeView(View):
                 r for r in listed if any(line.commodity and line.commodity.category == category for line in r.lines)
             ]
         if country:
-            listed = [r for r in listed if country.lower() in _delivered_to(r.round).lower()]
+            listed = [r for r in listed if country.lower() in _delivered_to(r.tender).lower()]
 
         return _render(
             request,
             "home.html",
-            rounds=listed,
+            tenders=listed,
             sections=cards.sections(listed),
-            # Across every open round, not the filtered few: the figures say what
+            # Across every open tender, not the filtered few: the figures say what
             # the market is, and a filter narrows the list below them.
             headline=cards.headline(everything, service.registered_supplier_count()),
             categories=records.COMMODITY_CATEGORIES,
@@ -107,14 +107,14 @@ class MarketHomeView(View):
 
 
 @MARKET_CHROME
-class MarketRoundView(View):
-    def get(self, request, round_id):
+class MarketTenderView(View):
+    def get(self, request, tender_id):
         orgs = membership.orgs_for(request)
         try:
-            listed = service.visible_round(round_id, orgs)
+            listed = service.visible_tender(tender_id, orgs)
         except service.NotAvailable:
-            raise Http404("no such round")
-        return _render(request, "round.html", listed=listed, card=cards.card_for(listed))
+            raise Http404("no such tender")
+        return _render(request, "tender.html", listed=listed, card=cards.card_for(listed))
 
 
 # ---- bidding ------------------------------------------------------------------
@@ -144,7 +144,7 @@ class BidView(_SupplierView):
         for line in listed.lines:
             if line.commodity_slug == slug:
                 return line
-        raise Http404("this round is not asking for that product")
+        raise Http404("this tender is not asking for that product")
 
     def _page(self, request, listed, line, form, org, quote=None, status=200):
         response = _render(
@@ -160,11 +160,11 @@ class BidView(_SupplierView):
         response.status_code = status
         return response
 
-    def get(self, request, round_id, slug):
+    def get(self, request, tender_id, slug):
         try:
-            listed = service.visible_round(round_id, self.orgs)
+            listed = service.visible_tender(tender_id, self.orgs)
         except service.NotAvailable:
-            raise Http404("no such round")
+            raise Http404("no such tender")
         line = self._line(listed, slug)
         org = self.acting(request)
         requirements = line.commodity.spec_requirements if line.commodity else []
@@ -178,11 +178,11 @@ class BidView(_SupplierView):
                 )
         return self._page(request, listed, line, BidForm(initial=initial, requirements=requirements), org)
 
-    def post(self, request, round_id, slug):
+    def post(self, request, tender_id, slug):
         try:
-            listed = service.visible_round(round_id, self.orgs)
+            listed = service.visible_tender(tender_id, self.orgs)
         except service.NotAvailable:
-            raise Http404("no such round")
+            raise Http404("no such tender")
         line = self._line(listed, slug)
         org = self.acting(request)
         form = BidForm(request.POST, requirements=line.commodity.spec_requirements if line.commodity else [])
@@ -192,7 +192,7 @@ class BidView(_SupplierView):
             return self._page(request, listed, line, form, org, status=400)
         try:
             with transaction.atomic():
-                service.bid(round_id, slug, org=org, orgs=self.orgs, user=request.user, data=form.payload())
+                service.bid(tender_id, slug, org=org, orgs=self.orgs, user=request.user, data=form.payload())
         except (service.NotAvailable, service.NeedsProfile, ValueError) as refused:
             form.add_error(None, str(refused))
             return self._page(request, listed, line, form, org, status=400)
@@ -211,9 +211,9 @@ class ReviseView(BidView):
     def get(self, request, quote_id):
         quote = self._quote(request, quote_id)
         try:
-            listed = service.visible_round(quote.round_id, self.orgs)
+            listed = service.visible_tender(quote.tender_id, self.orgs)
         except service.NotAvailable:
-            raise Http404("this round has closed")
+            raise Http404("this tender has closed")
         line = self._line(listed, quote.commodity.slug)
         form = BidForm(initial=BidForm.initial_from(quote), requirements=quote.commodity.spec_requirements)
         return self._page(request, listed, line, form, quote.supplier.org, quote=quote)
@@ -221,9 +221,9 @@ class ReviseView(BidView):
     def post(self, request, quote_id):
         quote = self._quote(request, quote_id)
         try:
-            listed = service.visible_round(quote.round_id, self.orgs)
+            listed = service.visible_tender(quote.tender_id, self.orgs)
         except service.NotAvailable:
-            raise Http404("this round has closed")
+            raise Http404("this tender has closed")
         line = self._line(listed, quote.commodity.slug)
         org = quote.supplier.org
         form = BidForm(request.POST, requirements=quote.commodity.spec_requirements)
@@ -305,7 +305,7 @@ class RegisterView(View):
             response = _render(request, "register.html", form=form, profileless=[])
             response.status_code = 400
             return response
-        messages.success(request, f"{org.name} is registered. Add what you sell, then bid on any open round.")
+        messages.success(request, f"{org.name} is registered. Add what you sell, then bid on any open tender.")
         return redirect(reverse("supply_chain:market_organisation") + f"?org={org.pk}")
 
     def _register(self, request, form):

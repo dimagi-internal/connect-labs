@@ -10,7 +10,7 @@ assumption turns out to be wrong.
 
 The second rule: **a claimed relief is not a relief.** `duty_relief_claimed`
 with no exemption document attached yields `Unconfirmed`, not zero. That is
-not pedantry -- on the round this was designed against, the entire price
+not pedantry -- on the tender this was designed against, the entire price
 advantage of routing an order through a local partner rested on a relief
 nobody had evidenced.
 """

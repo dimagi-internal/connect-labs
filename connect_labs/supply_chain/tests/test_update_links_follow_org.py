@@ -274,9 +274,9 @@ class TestAnOrderCreatedAfterIssueIsCovered:
 
     def test_an_approval_asked_of_it_later_is_covered_and_only_that_one(self, da, world, partner_link):
         _, link = partner_link
-        round_ = op(
+        tender = op(
             da,
-            "round_create",
+            "tender_create",
             data={
                 "label": "RUTF top-up",
                 "delivery_point": {"city": "Mao"},
@@ -287,7 +287,7 @@ class TestAnOrderCreatedAfterIssueIsCovered:
             da,
             "quote_record",
             data={
-                "round_id": round_["id"],
+                "tender_id": tender["id"],
                 "commodity_slug": "rutf",
                 "supplier_id": world["corner"]["id"],
                 "item_id": world["item"]["id"],
@@ -295,7 +295,7 @@ class TestAnOrderCreatedAfterIssueIsCovered:
                 "as_quoted_unit": "per_pack",
             },
         )
-        award = op(da, "award_create", round_id=round_["id"], quote_id=quote["id"], rationale="Closest stock")
+        award = op(da, "award_create", tender_id=tender["id"], quote_id=quote["id"], rationale="Closest stock")
         ours = op(
             da,
             "approval_request",

@@ -98,14 +98,14 @@ def org_upsert(access, data):
 @register_operation(
     name="contract_list",
     summary=(
-        "List contracts for this programme, optionally filtered by round or status. "
+        "List contracts for this programme, optionally filtered by tender or status. "
         "A contract is a commitment; an award is only a decision, and the two are "
         "separate because the organisation that decides is often not the one that buys."
     ),
-    input_schema=obj({"round_id": ID, "status": {"enum": list(records.CONTRACT_STATUSES)}}),
+    input_schema=obj({"tender_id": ID, "status": {"enum": list(records.CONTRACT_STATUSES)}}),
 )
-def contract_list(access, round_id=None, status=None):
-    return [record(c) for c in access.list_contracts(round_id=round_id, status=status)]
+def contract_list(access, tender_id=None, status=None):
+    return [record(c) for c in access.list_contracts(tender_id=tender_id, status=status)]
 
 
 @register_operation(

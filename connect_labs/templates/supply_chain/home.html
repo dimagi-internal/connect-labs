@@ -14,7 +14,7 @@ therefore a fact, rather than by urgency, which would be an opinion.
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
     <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
     <p class="text-sm text-amber-900">
-      Rounds, contracts and stock are programme-scoped, so there is nothing to
+      Tenders, contracts and stock are programme-scoped, so there is nothing to
       show until one is chosen.
     </p>
   </div>
@@ -79,7 +79,7 @@ figures, and the catalogue is where our own gaps get closed.
   </div>
 {% endif %}
 
-<h2 class="text-sm font-semibold text-gray-900 mt-8 mb-2">Rounds</h2>
+<h2 class="text-sm font-semibold text-gray-900 mt-8 mb-2">Tenders</h2>
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   {% comment %}
   A scroll container is not focusable by default, so a keyboard-only user
@@ -93,7 +93,7 @@ figures, and the catalogue is where our own gaps get closed.
   <table class="min-w-[44rem] w-full text-sm">
     <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
       <tr>
-        <th class="text-left px-4 py-2">Round</th>
+        <th class="text-left px-4 py-2">Tender</th>
         <th class="text-left px-4 py-2">Status</th>
         <th class="text-left px-4 py-2">Deliver to</th>
         <th class="text-left px-4 py-2">Response deadline</th>
@@ -101,21 +101,21 @@ figures, and the catalogue is where our own gaps get closed.
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-100">
-      {% for round in rounds %}
+      {% for tender in tenders %}
         <tr>
-          <td class="px-4 py-2.5 font-medium text-gray-900">{{ round.label }}</td>
-          <td class="px-4 py-2.5">{{ round.status|humanise }}</td>
+          <td class="px-4 py-2.5 font-medium text-gray-900">{{ tender.label }}</td>
+          <td class="px-4 py-2.5">{{ tender.status|humanise }}</td>
           <td class="px-4 py-2.5 text-gray-600">
-            {{ round.delivery_point|place_text }}
+            {{ tender.delivery_point|place_text }}
           </td>
-          <td class="px-4 py-2.5 text-gray-600">{{ round.response_deadline|default:"—" }}</td>
+          <td class="px-4 py-2.5 text-gray-600">{{ tender.response_deadline|default:"—" }}</td>
           <td class="px-4 py-2.5 text-right">
             <a class="text-brand-indigo hover:underline"
-               href="{% url 'supply_chain:procurement_round_detail' round.id %}">Open</a>
+               href="{% url 'supply_chain:procurement_tender_detail' tender.id %}">Open</a>
           </td>
         </tr>
       {% empty %}
-        <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">No rounds yet.</td></tr>
+        <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">No tenders yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

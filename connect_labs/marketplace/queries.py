@@ -933,8 +933,8 @@ def matches(org, *, query="", countries=(), delivered=(), applied=(), delivered_
     return True
 
 
-def supply_rounds_open() -> int:
-    """Rounds open to suppliers on the public supply marketplace (/supply/market/)."""
-    from connect_labs.supply_chain.models import Round
+def supply_tenders_open() -> int:
+    """Tenders open to all suppliers on the public supply marketplace (/supply/market/)."""
+    from connect_labs.supply_chain.models import Tender
 
-    return Round.objects.filter(status="open", visibility="public").count()
+    return Tender.objects.filter(status="open", visibility="public").count()

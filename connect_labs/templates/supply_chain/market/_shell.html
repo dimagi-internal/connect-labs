@@ -21,7 +21,7 @@ in a tab row between them.
   <nav class="bg-white border-b border-brand-border-light -mx-4 px-4 sm:mx-0 sm:px-8 lg:px-10" aria-label="Supply marketplace">
     <div class="flex flex-wrap items-center gap-1 sm:gap-2 py-2 text-[13px] font-medium">
       {% url 'supply_chain:market' as market_url %}
-      <a href="{{ market_url }}" class="px-3 py-1.5 rounded-md {% if request.path == market_url %}bg-brand-deep-purple text-white{% else %}text-gray-700 hover:bg-gray-100{% endif %}">Open rounds</a>
+      <a href="{{ market_url }}" class="px-3 py-1.5 rounded-md {% if request.path == market_url %}bg-brand-deep-purple text-white{% else %}text-gray-700 hover:bg-gray-100{% endif %}">Open tenders</a>
       {% if signed_in %}
         {% if supplier_orgs %}
           {% url 'supply_chain:market_bids' as bids_url %}
@@ -41,7 +41,7 @@ in a tab row between them.
   <div class="px-0 sm:px-8 lg:px-10 py-6 sm:py-8">
     {% block body %}{% endblock %}
     <footer class="mt-12 pt-5 border-t border-gray-200 text-[12px] text-gray-500 max-w-3xl leading-relaxed">
-      Bids are sealed: a supplier sees its own bids and nobody else's, and buyers see every bid on their own round.
+      Bids are sealed: a supplier sees its own bids and nobody else's, and buyers see every bid on their own tender.
       Signing in uses your Connect account.
     </footer>
   </div>

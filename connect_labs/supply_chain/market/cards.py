@@ -1,4 +1,4 @@
-"""How a round reads as a card on the supplier marketplace.
+"""How a tender reads as a card on the supplier marketplace.
 
 The same visual language as the implementing partners' marketplace
 (marketplace/programs.html): one colour per card, a big number, a bar. Here the
@@ -6,7 +6,7 @@ colour is the kind of product, the number is how much is being asked for, and
 the bar is how much of the time to reply has gone.
 
 Nothing here counts bids. The partners' cards show how many applied; on a
-round that number is the competition a supplier is bidding against, which is
+tender that number is the competition a supplier is bidding against, which is
 exactly what sealed bids keep from it.
 """
 
@@ -33,12 +33,12 @@ CATEGORY_HUES = {
 }
 DEFAULT_HUE = "#3843d0"
 
-# A round whose replies are due within this many days is "closing soon".
+# A tender whose replies are due within this many days is "closing soon".
 CLOSING_SOON_DAYS = 14
 
 
 @dataclass
-class RoundCard:
+class TenderCard:
     listed: object
     hue: str
     kind: str
@@ -50,8 +50,8 @@ class RoundCard:
     elapsed_pct: int | None
 
     @property
-    def round(self):
-        return self.listed.round
+    def tender(self):
+        return self.listed.tender
 
     @property
     def deadline_words(self) -> str:
@@ -70,21 +70,21 @@ class RoundCard:
         return self.days_left is not None and 0 <= self.days_left <= CLOSING_SOON_DAYS
 
 
-def card_for(listed, today: date | None = None) -> RoundCard:
+def card_for(listed, today: date | None = None) -> TenderCard:
     today = today or date.today()
     lines = listed.lines
     first = lines[0] if lines else None
     category = first.commodity.category if first and first.commodity else ""
-    round_ = listed.round
-    deadline = round_.response_deadline
+    tender = listed.tender
+    deadline = tender.response_deadline
     days_left = (deadline - today).days if deadline else None
     elapsed = None
-    if deadline and round_.opened_at:
-        opened = round_.opened_at.date()
+    if deadline and tender.opened_at:
+        opened = tender.opened_at.date()
         span = (deadline - opened).days
         if span > 0:
             elapsed = max(0, min(100, round((today - opened).days * 100 / span)))
-    return RoundCard(
+    return TenderCard(
         listed=listed,
         hue=CATEGORY_HUES.get(category, DEFAULT_HUE),
         kind=dict(records.COMMODITY_CATEGORIES).get(category, "Product"),
@@ -104,9 +104,9 @@ class Section:
     cards: list
 
 
-def sections(listed_rounds, today: date | None = None) -> list[Section]:
+def sections(listed_tenders, today: date | None = None) -> list[Section]:
     """Invited first (they were asked by name), then closing soon, then the rest."""
-    cards = [card_for(listed, today) for listed in listed_rounds]
+    cards = [card_for(listed, today) for listed in listed_tenders]
     invited = [c for c in cards if c.listed.invited]
     rest = [c for c in cards if not c.listed.invited]
     soon = sorted((c for c in rest if c.closing_soon), key=lambda c: c.days_left)
@@ -121,18 +121,18 @@ def sections(listed_rounds, today: date | None = None) -> list[Section]:
     return out
 
 
-def headline(listed_rounds, supplier_count: int, today: date | None = None) -> dict:
+def headline(listed_tenders, supplier_count: int, today: date | None = None) -> dict:
     """The numbers across the top. Quantities are never summed -- cartons and
     tins do not add -- so the page counts products, not units."""
     today = today or date.today()
     deadlines = [
-        r.round.response_deadline
-        for r in listed_rounds
-        if r.round.response_deadline and r.round.response_deadline >= today
+        r.tender.response_deadline
+        for r in listed_tenders
+        if r.tender.response_deadline and r.tender.response_deadline >= today
     ]
     return {
-        "rounds": len(listed_rounds),
-        "products": sum(len(r.lines) for r in listed_rounds),
+        "tenders": len(listed_tenders),
+        "products": sum(len(r.lines) for r in listed_tenders),
         "next_deadline": min(deadlines) if deadlines else None,
         "suppliers": supplier_count,
     }

@@ -7,7 +7,7 @@ client of it. Supply is different on both counts.
 
   1. It is *primary* data that originates here -- a stock ledger, a contract,
      a receipt, a worker's reported count. Nothing in Connect is its source.
-  2. It carries no PII. The reason labs round-trips data through Connect is so
+  2. It carries no PII. The reason labs tender-trips data through Connect is so
      that person-level data lives where its access controls live. A carton
      count does not need that.
   3. It needs real relational work. A balance is an aggregate over a ledger
@@ -58,7 +58,7 @@ def scope_key(program_id=None) -> str:
     """The reference tier's scope, as one indexable string.
 
     Reference data -- commodities, trade items, suppliers -- is shared across
-    a programme's rounds. One tier, not two.
+    a programme's tenders. One tier, not two.
 
     **There used to be an organisation tier above this one**, and it was worse
     than not having it. Whether you got `org:<id>` or `prog:<id>` depended on
@@ -124,7 +124,7 @@ class SourcedModel(TimestampedModel):
 
 
 # ======================================================================
-# Reference tier -- reused across a programme's rounds
+# Reference tier -- reused across a programme's tenders
 # ======================================================================
 
 
@@ -488,7 +488,7 @@ class Supplier(TimestampedModel):
 # ======================================================================
 
 
-class Round(TimestampedModel):
+class Tender(TimestampedModel):
     program_id = models.IntegerField(db_index=True)
     label = models.CharField(max_length=255)
     status = models.CharField(max_length=16, default="draft", choices=_choices(("draft", "open", "closed", "awarded")))
@@ -498,7 +498,7 @@ class Round(TimestampedModel):
     reminder_interval_days = models.IntegerField(null=True, blank=True)
     shelf_life_months_minimum = models.IntegerField(null=True, blank=True)
     notes_to_supplier = models.TextField(blank=True, default="")
-    # On the supplier marketplace an open round is public unless the program
+    # On the supplier marketplace an open tender is public unless the program
     # says otherwise; a private one is seen only by the organisations invited.
     visibility = models.CharField(
         max_length=16, default="public", db_default="public", choices=_choices(records.ROUND_VISIBILITIES)
@@ -513,7 +513,7 @@ class Round(TimestampedModel):
         return self.label
 
     def quantity_for(self, commodity_slug):
-        """(quantity, unit) for a commodity on this round, or None.
+        """(quantity, unit) for a commodity on this tender, or None.
 
         A single None rather than a (None, None) pair, because all three
         callers test the result for truthiness before unpacking it -- and a
@@ -534,9 +534,9 @@ class Round(TimestampedModel):
 
 class Outreach(TimestampedModel):
     """One RFQ invitation. A log, not a state machine -- deliberately not unique
-    per (round, supplier), because re-inviting is a real event worth keeping."""
+    per (tender, supplier), because re-inviting is a real event worth keeping."""
 
-    round = models.ForeignKey(Round, on_delete=models.CASCADE, related_name="outreach")
+    tender = models.ForeignKey(Tender, on_delete=models.CASCADE, related_name="outreach")
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="outreach")
     channel = models.CharField(max_length=16, blank=True, default="manual")
     sent_on = models.DateField(null=True, blank=True)
@@ -547,7 +547,7 @@ class Outreach(TimestampedModel):
 
     class Meta:
         ordering = ["-sent_on", "-created_at"]
-        indexes = [models.Index(fields=["round", "supplier"])]
+        indexes = [models.Index(fields=["tender", "supplier"])]
         verbose_name_plural = "outreach"
 
 
@@ -561,7 +561,7 @@ class Quote(TimestampedModel):
     editing it away loses the fact that it was made.
     """
 
-    round = models.ForeignKey(Round, on_delete=models.CASCADE, related_name="quotes")
+    tender = models.ForeignKey(Tender, on_delete=models.CASCADE, related_name="quotes")
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="quotes")
     commodity = models.ForeignKey(Commodity, on_delete=models.PROTECT, related_name="quotes")
     item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT, related_name="quotes")
@@ -618,7 +618,7 @@ class Quote(TimestampedModel):
 
     class Meta:
         ordering = ["-created_at"]
-        indexes = [models.Index(fields=["round", "commodity"])]
+        indexes = [models.Index(fields=["tender", "commodity"])]
 
     @property
     def commodity_slug(self):
@@ -651,7 +651,7 @@ class Quote(TimestampedModel):
 class Award(TimestampedModel):
     """The decision. Not a commitment -- see Contract."""
 
-    round = models.ForeignKey(Round, on_delete=models.CASCADE, related_name="awards")
+    tender = models.ForeignKey(Tender, on_delete=models.CASCADE, related_name="awards")
     quote = models.ForeignKey(Quote, on_delete=models.PROTECT, related_name="awards")
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="awards")
     commodity = models.ForeignKey(Commodity, on_delete=models.PROTECT, related_name="awards")
@@ -735,7 +735,7 @@ class Contract(SourcedModel):
     """
 
     program_id = models.IntegerField(db_index=True)
-    round = models.ForeignKey(Round, null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
+    tender = models.ForeignKey(Tender, null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
     award = models.ForeignKey(Award, null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="contracts")
     commodity = models.ForeignKey(Commodity, on_delete=models.PROTECT, related_name="contracts")
@@ -964,8 +964,8 @@ class Document(SourcedModel):
     quote = models.ForeignKey(
         "supply_chain.Quote", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
     )
-    round = models.ForeignKey(
-        "supply_chain.Round", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    tender = models.ForeignKey(
+        "supply_chain.Tender", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
     )
     award = models.ForeignKey(
         "supply_chain.Award", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"

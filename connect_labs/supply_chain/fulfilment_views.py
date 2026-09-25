@@ -4,7 +4,7 @@ Group 3a. Six operations that could previously only be reached over the API,
 which meant an order could be *read* on labs and never recorded there.
 
 **Where each screen hangs.** A contract is created from the orders board and
-from an awarded round; everything else hangs off the order it belongs to,
+from an awarded tender; everything else hangs off the order it belongs to,
 because an invoice with no contract is an invoice against nothing and the URL
 is where that relationship is stated. `fixed()` supplies the parent id from
 the URL, so no screen offers a picker for a thing the page is already inside.
@@ -75,7 +75,7 @@ class ContractCreateView(_ContractScreen):
     def award(self):
         """The award this order is placed against, when it arrived from one.
 
-        Scoped through the round's programme. The order then carries the
+        Scoped through the tender's programme. The order then carries the
         award, which is what lets `contract_create` refuse it while an
         approval is pending or declined -- and say whose.
         """
@@ -85,7 +85,7 @@ class ContractCreateView(_ContractScreen):
         if not raw.isdigit():
             return None
         return (
-            Award.objects.filter(pk=int(raw), round__program_id=_access(self.request).program_id)
+            Award.objects.filter(pk=int(raw), tender__program_id=_access(self.request).program_id)
             .select_related("quote", "supplier__org__supplier_profile", "commodity")
             .first()
         )
@@ -138,7 +138,7 @@ class ContractCreateView(_ContractScreen):
         award = self.award()
         if award is None:
             return {}
-        return {"data": {"award_id": award.pk, "round_id": award.round_id}}
+        return {"data": {"award_id": award.pk, "tender_id": award.tender_id}}
 
 
 class ContractUpdateView(_ContractScreen):

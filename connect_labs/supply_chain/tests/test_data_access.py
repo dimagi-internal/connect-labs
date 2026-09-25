@@ -49,15 +49,15 @@ def rutf_row(da):
 
 
 @pytest.fixture
-def open_round(da, rutf_row):
-    created = da.create_round(
+def open_tender(da, rutf_row):
+    created = da.create_tender(
         {
-            "label": "Round 2",
+            "label": "Tender 2",
             "lines": [{"commodity_slug": "rutf", "quantity": "2000", "quantity_unit": "carton"}],
             "delivery_point": {"name": "Central store", "city": "Kano", "country": "NG"},
         }
     )
-    return da.open_round(created.pk)
+    return da.open_tender(created.pk)
 
 
 class TestScoping:
@@ -97,7 +97,7 @@ class TestScoping:
         """A stand-in scope would make records written by different callers
         indistinguishable -- the cross-programme leak the scoping prevents."""
         with pytest.raises(ValueError, match="require a programme scope"):
-            access(program_id=None).list_rounds()
+            access(program_id=None).list_tenders()
 
 
 class TestReferenceData:
@@ -120,8 +120,8 @@ class TestReferenceData:
             program_id=SYNTHETIC_PROGRAM, slug="s", name="S", kind="central_store", source="we_recorded"
         )
         assert point.pk
-        round_ = da.create_round({"label": "R", "delivery_point": {"city": "Kano"}})
-        assert isinstance(round_.pk, int)
+        tender = da.create_tender({"label": "R", "delivery_point": {"city": "Kano"}})
+        assert isinstance(tender.pk, int)
 
     def test_an_unknown_key_is_ignored_rather_than_stored_where_nothing_reads_it(self, da):
         commodity = da.upsert_commodity({"slug": "rutf", "name": "RUTF", "nonsense_field": "x"})
@@ -148,27 +148,27 @@ class TestReferenceData:
         assert len(da.list_suppliers()) == 2
 
 
-class TestRounds:
-    def test_a_round_cannot_open_without_a_delivery_point(self, da):
-        created = da.create_round({"label": "Round 1", "lines": []})
+class TestTenders:
+    def test_a_tender_cannot_open_without_a_delivery_point(self, da):
+        created = da.create_tender({"label": "Tender 1", "lines": []})
         with pytest.raises(ValueError, match="needs a delivery point"):
-            da.open_round(created.pk)
+            da.open_tender(created.pk)
 
-    def test_opening_a_round_with_a_delivery_point_works(self, open_round):
-        assert open_round.status == "open"
+    def test_opening_a_tender_with_a_delivery_point_works(self, open_tender):
+        assert open_tender.status == "open"
 
-    def test_quantity_for_a_commodity_not_on_the_round_is_none(self, open_round):
-        assert open_round.quantity_for("amoxicillin") is None
+    def test_quantity_for_a_commodity_not_on_the_tender_is_none(self, open_tender):
+        assert open_tender.quantity_for("amoxicillin") is None
 
-    def test_quantity_for_a_commodity_on_the_round_is_a_decimal_and_its_unit(self, open_round):
-        assert open_round.quantity_for("rutf") == (Decimal("2000"), "carton")
+    def test_quantity_for_a_commodity_on_the_tender_is_a_decimal_and_its_unit(self, open_tender):
+        assert open_tender.quantity_for("rutf") == (Decimal("2000"), "carton")
 
 
 class TestQuotes:
-    def _quote(self, da, round_, **overrides):
+    def _quote(self, da, tender, **overrides):
         supplier = overrides.pop("supplier", None) or da.create_supplier({"name": "Harmattan Foods"})
         payload = {
-            "round_id": round_.pk,
+            "tender_id": tender.pk,
             "commodity_slug": "rutf",
             "supplier_id": supplier.pk,
             "as_quoted_amount": "50.00",
@@ -179,22 +179,22 @@ class TestQuotes:
         payload.update(overrides)
         return da.create_quote(payload)
 
-    def test_a_quote_pointing_at_a_missing_round_is_refused(self, da, rutf_row):
+    def test_a_quote_pointing_at_a_missing_tender_is_refused(self, da, rutf_row):
         """An orphan quote would never appear in any comparison -- invisible
         rather than merely wrong."""
-        with pytest.raises(ValueError, match="round 9999 does not exist"):
+        with pytest.raises(ValueError, match="tender 9999 does not exist"):
             self._quote(da, type("R", (), {"pk": 9999})())
 
-    def test_a_quote_pointing_at_a_missing_commodity_is_refused(self, da, open_round):
+    def test_a_quote_pointing_at_a_missing_commodity_is_refused(self, da, open_tender):
         with pytest.raises(ValueError, match="commodity 'nope' does not exist"):
-            self._quote(da, open_round, commodity_slug="nope")
+            self._quote(da, open_tender, commodity_slug="nope")
 
-    def test_a_stored_amount_comes_back_as_a_decimal(self, da, open_round):
-        quote = self._quote(da, open_round)
+    def test_a_stored_amount_comes_back_as_a_decimal(self, da, open_tender):
+        quote = self._quote(da, open_tender)
         assert quote.as_quoted_amount == Decimal("50.0000")
 
-    def test_a_correction_versions_rather_than_overwrites(self, da, open_round):
-        original = self._quote(da, open_round)
+    def test_a_correction_versions_rather_than_overwrites(self, da, open_tender):
+        original = self._quote(da, open_tender)
         replacement = da.supersede_quote(original.pk, {"as_quoted_amount": "52.42"}, reason="transcription error")
 
         assert replacement.version == 2
@@ -205,21 +205,21 @@ class TestQuotes:
         assert original.superseded_by_id == replacement.pk
         assert original.as_quoted_amount == Decimal("50.0000"), "the original was mutated"
 
-    def test_a_correction_naming_one_field_carries_the_rest_forward(self, da, open_round):
-        original = self._quote(da, open_round, freight_basis="included", lead_time_days=45)
+    def test_a_correction_naming_one_field_carries_the_rest_forward(self, da, open_tender):
+        original = self._quote(da, open_tender, freight_basis="included", lead_time_days=45)
         replacement = da.supersede_quote(original.pk, {"as_quoted_amount": "52.42"}, reason="typo")
         assert replacement.freight_basis == "included"
         assert replacement.lead_time_days == 45
         assert replacement.quantity_basis == Decimal("2000")
 
-    def test_a_correction_needs_a_reason(self, da, open_round):
-        original = self._quote(da, open_round)
+    def test_a_correction_needs_a_reason(self, da, open_tender):
+        original = self._quote(da, open_tender)
         with pytest.raises(ValueError, match="needs a reason"):
             da.supersede_quote(original.pk, {"as_quoted_amount": "1.00"}, reason="")
         assert Quote.objects.count() == 1, "a replacement was created despite the refusal"
 
-    def test_voiding_needs_a_reason_and_leaves_the_record_readable(self, da, open_round):
-        quote = self._quote(da, open_round)
+    def test_voiding_needs_a_reason_and_leaves_the_record_readable(self, da, open_tender):
+        quote = self._quote(da, open_tender)
         with pytest.raises(ValueError, match="needs a reason"):
             da.void_quote(quote.pk, reason="")
 
@@ -230,22 +230,22 @@ class TestQuotes:
 
 
 class TestAwards:
-    def test_an_award_needs_a_rationale(self, da, open_round):
+    def test_an_award_needs_a_rationale(self, da, open_tender):
         with pytest.raises(ValueError, match="needs a rationale"):
-            da.create_award({"round_id": open_round.pk, "rationale": ""})
+            da.create_award({"tender_id": open_tender.pk, "rationale": ""})
 
-    def test_an_award_takes_its_supplier_and_commodity_from_the_quote(self, da, open_round):
+    def test_an_award_takes_its_supplier_and_commodity_from_the_quote(self, da, open_tender):
         supplier = da.create_supplier({"name": "Harmattan Foods"})
         quote = da.create_quote(
             {
-                "round_id": open_round.pk,
+                "tender_id": open_tender.pk,
                 "commodity_slug": "rutf",
                 "supplier_id": supplier.pk,
                 "as_quoted_amount": "50.00",
             }
         )
         awarded = da.create_award(
-            {"round_id": open_round.pk, "quote_id": quote.pk, "rationale": "cheapest comparable"}
+            {"tender_id": open_tender.pk, "quote_id": quote.pk, "rationale": "cheapest comparable"}
         )
         assert awarded.supplier_id == supplier.pk
         assert awarded.commodity.slug == "rutf"
@@ -253,7 +253,7 @@ class TestAwards:
 
 
 class TestContracts:
-    def test_a_contract_needs_a_buyer_org_that_exists(self, da, open_round):
+    def test_a_contract_needs_a_buyer_org_that_exists(self, da, open_tender):
         supplier = da.create_supplier({"name": "Harmattan Foods"})
         with pytest.raises(ValueError, match="organisation 999 does not exist"):
             da.create_contract(
@@ -266,12 +266,12 @@ class TestContracts:
                 }
             )
 
-    def test_a_contract_records_who_is_buying_and_that_it_was_reported(self, da, open_round):
+    def test_a_contract_records_who_is_buying_and_that_it_was_reported(self, da, open_tender):
         partner = da.upsert_org({"slug": "llo-kano", "name": "Kano partner", "kind": "partner_org"})
         supplier = da.create_supplier({"name": "Harmattan Foods"})
         contract = da.create_contract(
             {
-                "round_id": open_round.pk,
+                "tender_id": open_tender.pk,
                 "commodity_slug": "rutf",
                 "supplier_id": supplier.pk,
                 "buyer_of_record": "partner_org",
@@ -287,7 +287,7 @@ class TestContracts:
         assert contract.witnessed is False, "a partner's report is a claim, not an observation"
         assert contract.unit_price == Decimal("52.4200")
 
-    def test_a_claimed_duty_relief_with_no_document_is_not_evidenced(self, da, open_round):
+    def test_a_claimed_duty_relief_with_no_document_is_not_evidenced(self, da, open_tender):
         partner = da.upsert_org({"slug": "llo", "name": "Partner", "kind": "partner_org"})
         supplier = da.create_supplier({"name": "Harmattan Foods"})
         contract = da.create_contract(
@@ -349,12 +349,12 @@ class TestSyntheticScopes:
 
     def test_purge_is_refused_for_a_real_programme(self, rutf_row):
         real = access(program_id=REAL_PROGRAM)
-        real.create_round({"label": "Real round", "delivery_point": {"city": "Kano"}})
+        real.create_tender({"label": "Real tender", "delivery_point": {"city": "Kano"}})
         with pytest.raises(ValueError, match="only labs-only programmes"):
             real.purge()
-        assert real.list_rounds(), "a refused purge still deleted something"
+        assert real.list_tenders(), "a refused purge still deleted something"
 
-    def test_purge_clears_a_synthetic_programme_including_its_ledger(self, da, open_round, registered_synthetic):
+    def test_purge_clears_a_synthetic_programme_including_its_ledger(self, da, open_tender, registered_synthetic):
         store = SupplyPoint.objects.create(
             program_id=SYNTHETIC_PROGRAM,
             slug="central",
@@ -376,29 +376,31 @@ class TestSyntheticScopes:
         counts = da.purge()
 
         assert counts["movements"] == 1
-        assert counts["rounds"] == 1
+        assert counts["tenders"] == 1
         assert counts["supply points"] == 1
-        assert da.list_rounds() == []
+        assert da.list_tenders() == []
         assert Movement.objects.count() == 0
         assert da.get_commodity("rutf") is None
 
-    def test_purge_leaves_another_programmes_data_alone(self, da, open_round, registered_synthetic):
+    def test_purge_leaves_another_programmes_data_alone(self, da, open_tender, registered_synthetic):
         other = access(program_id=SYNTHETIC_PROGRAM + 1)
         other.upsert_commodity({"slug": "rutf", "name": "RUTF"})
-        other.create_round({"label": "Theirs", "delivery_point": {"city": "Kaduna"}})
+        other.create_tender({"label": "Theirs", "delivery_point": {"city": "Kaduna"}})
 
         da.purge()
 
-        assert len(other.list_rounds()) == 1
+        assert len(other.list_tenders()) == 1
         assert other.get_commodity("rutf") is not None
 
-    def test_purge_clears_a_fully_seeded_chain_including_its_distributions(self, da, open_round, registered_synthetic):
+    def test_purge_clears_a_fully_seeded_chain_including_its_distributions(
+        self, da, open_tender, registered_synthetic
+    ):
         """The ledger and the events that produced it PROTECT each other in
         both directions, so there is no delete order that works -- a movement
         points at its distribution and that distribution's lines point back at
         the movement. An earlier purge deleted in dependency order and raised
         ProtectedError the second time a programme was re-seeded. The previous
-        purge test only had movements and rounds, which is exactly why it
+        purge test only had movements and tenders, which is exactly why it
         passed.
         """
         supplier = da.create_supplier({"name": "Harmattan Foods"})
@@ -422,7 +424,7 @@ class TestSyntheticScopes:
         )
         contract = da.create_contract(
             {
-                "round_id": open_round.pk,
+                "tender_id": open_tender.pk,
                 "commodity_slug": "rutf",
                 "supplier_id": supplier.pk,
                 "buyer_of_record": "partner_org",

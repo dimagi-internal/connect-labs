@@ -116,7 +116,7 @@ class QuoteCorrectView(OperationFormView):
 
     def quote(self):
         found = Quote.objects.filter(
-            pk=self.kwargs["quote_id"], round__program_id=_access(self.request).program_id
+            pk=self.kwargs["quote_id"], tender__program_id=_access(self.request).program_id
         ).first()
         if found is None:
             raise Http404(f"no quote {self.kwargs['quote_id']} in this programme")
@@ -143,10 +143,10 @@ class QuoteCorrectView(OperationFormView):
     def breadcrumb(self, **kwargs):
         quote = self.quote()
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_round_board")},
+            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
             {
-                "label": f"Round {quote.round_id}",
-                "href": reverse("supply_chain:procurement_round_detail", args=[quote.round_id]),
+                "label": f"Tender {quote.tender_id}",
+                "href": reverse("supply_chain:procurement_tender_detail", args=[quote.tender_id]),
             },
             {"label": self.title},
         ]

@@ -103,7 +103,7 @@ class TestZeroIsAnAmount:
 
 def test_no_enum_identifier_reaches_the_stated_column():
     """`not_stated` reached the quote page as an identifier. The same fix had
-    already been applied to the round table and missed here, so this asserts
+    already been applied to the tender table and missed here, so this asserts
     the property rather than the two fields it currently applies to: nothing
     in the stated column may carry an underscore where a word belongs.
     """

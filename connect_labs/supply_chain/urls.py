@@ -1,5 +1,6 @@
 from django.conf import settings
-from django.urls import path
+from django.urls import path, re_path
+from django.views.generic import RedirectView
 
 from connect_labs.supply_chain import (
     api_views,
@@ -19,6 +20,12 @@ from connect_labs.supply_chain.update_links import views as update_link_views
 app_name = "supply_chain"
 
 urlpatterns = [
+    # A request for quotes was a "round" until 2026-09-25; it is a tender now.
+    # Old links (shared, bookmarked, in emails) land on the same page.
+    re_path(
+        r"^(?P<area>procurement|market)/rounds/(?P<rest>.*)$",
+        RedirectView.as_view(url="/supply/%(area)s/tenders/%(rest)s", permanent=True, query_string=True),
+    ),
     # the domain shell — sub-components and their state
     path("", views.DomainHomeView.as_view(), name="home"),
     # The one address here that is NOT programme-scoped. It sits at the top
@@ -29,11 +36,11 @@ urlpatterns = [
     path("portfolios/<slug:slug>/map/", portfolio_views.PortfolioMapView.as_view(), name="portfolio_map"),
     # The supplier marketplace. Browsing is public and needs no program; every
     # write needs a labs sign-in and an organisation (see market/views.py).
-    # "rounds", "bids", "register", "organisation" and "invites" are literals
+    # "tenders", "bids", "register", "organisation" and "invites" are literals
     # under market/, so none can be read as an id.
     path("market/", market_views.MarketHomeView.as_view(), name="market"),
-    path("market/rounds/<int:round_id>/", market_views.MarketRoundView.as_view(), name="market_round"),
-    path("market/rounds/<int:round_id>/bid/<slug:slug>/", market_views.BidView.as_view(), name="market_bid"),
+    path("market/tenders/<int:tender_id>/", market_views.MarketTenderView.as_view(), name="market_tender"),
+    path("market/tenders/<int:tender_id>/bid/<slug:slug>/", market_views.BidView.as_view(), name="market_bid"),
     path("market/bids/", market_views.MyBidsView.as_view(), name="market_bids"),
     path("market/bids/<int:quote_id>/revise/", market_views.ReviseView.as_view(), name="market_revise"),
     path("market/bids/<int:quote_id>/withdraw/", market_views.WithdrawView.as_view(), name="market_withdraw"),
@@ -57,7 +64,7 @@ urlpatterns = [
     path("catalogue/items/<int:item_id>/", views.ItemDetailView.as_view(), name="item_detail"),
     path("catalogue/<slug:slug>/", views.ProductDetailView.as_view(), name="product_detail"),
     path("catalogue/<slug:slug>/edit/", reference_views.ProductUpdateView.as_view(), name="product_edit"),
-    # Suppliers are reference data reused across rounds, so they sit at the
+    # Suppliers are reference data reused across tenders, so they sit at the
     # domain level rather than under procurement -- orders and receipts name
     # them too.
     path("suppliers/", views.SupplierDirectoryView.as_view(), name="suppliers"),
@@ -88,44 +95,44 @@ urlpatterns = [
     # sub-component one: procurement
     path(
         "procurement/",
-        procurement_views.RoundBoardView.as_view(),
-        name="procurement_round_board",
+        procurement_views.TenderBoardView.as_view(),
+        name="procurement_tender_board",
     ),
     path(
-        "procurement/rounds/<int:round_id>/",
-        procurement_views.RoundDetailView.as_view(),
-        name="procurement_round_detail",
+        "procurement/tenders/<int:tender_id>/",
+        procurement_views.TenderDetailView.as_view(),
+        name="procurement_tender_detail",
     ),
     path(
-        "procurement/rounds/<int:round_id>/compare/",
+        "procurement/tenders/<int:tender_id>/compare/",
         procurement_views.ComparisonView.as_view(),
         name="procurement_comparison",
     ),
     # write screens: the sourcing lifecycle a person could not previously
-    # complete in a browser — create a round, open it, invite, record a reply,
+    # complete in a browser — create a tender, open it, invite, record a reply,
     # correct a mistake.
     path(
-        "procurement/rounds/new/",
-        procurement_views.RoundCreateView.as_view(),
-        name="procurement_round_create",
+        "procurement/tenders/new/",
+        procurement_views.TenderCreateView.as_view(),
+        name="procurement_tender_create",
     ),
     path(
-        "procurement/rounds/<int:round_id>/edit/",
-        procurement_views.RoundUpdateView.as_view(),
-        name="procurement_round_edit",
+        "procurement/tenders/<int:tender_id>/edit/",
+        procurement_views.TenderUpdateView.as_view(),
+        name="procurement_tender_edit",
     ),
     path(
-        "procurement/rounds/<int:round_id>/open/",
-        procurement_views.RoundOpenView.as_view(),
-        name="procurement_round_open",
+        "procurement/tenders/<int:tender_id>/open/",
+        procurement_views.TenderOpenView.as_view(),
+        name="procurement_tender_open",
     ),
     path(
-        "procurement/rounds/<int:round_id>/close/",
-        procurement_views.RoundCloseView.as_view(),
-        name="procurement_round_close",
+        "procurement/tenders/<int:tender_id>/close/",
+        procurement_views.TenderCloseView.as_view(),
+        name="procurement_tender_close",
     ),
     path(
-        "procurement/rounds/<int:round_id>/invite/",
+        "procurement/tenders/<int:tender_id>/invite/",
         procurement_views.OutreachLogView.as_view(),
         name="procurement_outreach_log",
     ),

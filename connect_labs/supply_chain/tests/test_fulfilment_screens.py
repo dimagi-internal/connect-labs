@@ -129,7 +129,7 @@ class TestRecordingAnOrder:
         assert made.currency == "USD", "stored upper case"
 
     def test_the_price_arrives_exact(self, scoped, rutf, supplier, buyer):
-        """Money crosses as a string so a float can never round it.
+        """Money crosses as a string so a float can never tender it.
 
         52.42 has no exact float representation; if this ever comes back as
         52.419999… the string boundary has been lost somewhere.
@@ -355,8 +355,8 @@ class TestAttachingEvidence:
 class TestThePayloadBoundary:
     """What crosses the wire, asserted directly.
 
-    A database round-trip cannot see the difference between a Decimal and a
-    float that happens to round back, nor between a file sent as bytes and one
+    A database tender-trip cannot see the difference between a Decimal and a
+    float that happens to tender back, nor between a file sent as bytes and one
     Django coerced to a string. These can.
     """
 

@@ -2,7 +2,7 @@
 
 Separate from `forms.py` (the sourcing lifecycle) for the reason the tiers are
 separate everywhere else in this domain: reference data is scoped to the
-programme and reused across every round, while a round belongs to one moment
+programme and reused across every tender, while a tender belongs to one moment
 of buying. The two change for different reasons and at different rates.
 
 Everything here follows `forms.py`'s contract and inherits its boundary:
@@ -23,7 +23,7 @@ anything, it forks a second row and leaves the original behind.
 A commodity's `course_definition` is a JSONField and is the thing the whole
 per-child cost figure hangs off. Rendered by a bare ModelForm it is a textarea
 of raw JSON; asked for as three numbers it is answerable. `CommodityForm`
-excludes it and reassembles it, the same way `RoundForm` handles
+excludes it and reassembles it, the same way `TenderForm` handles
 `delivery_point`.
 """
 
@@ -467,7 +467,7 @@ class ItemForm(KeyedUpsertForm):
 class ComponentLineForm(forms.Form):
     """One product inside a kit, and how much of it one kit holds.
 
-    A repeating row, so a formset, for the reason a round's lines are one:
+    A repeating row, so a formset, for the reason a tender's lines are one:
     a co-pack is two products and a test kit can be five.
     """
 
@@ -497,7 +497,7 @@ class ComponentLineForm(forms.Form):
 
 
 # No minimum: an ordinary trade item has no components, and that is the
-# common case. `extra=0` for the reason RoundLineFormSet gives.
+# common case. `extra=0` for the reason TenderLineFormSet gives.
 ComponentLineFormSet = forms.formset_factory(ComponentLineForm, extra=0, min_num=0, can_delete=True)
 
 

@@ -43,7 +43,7 @@ four screens and an id held in your head.
       {% if supplier.reviewed_on %}
         Registered itself on the supplier marketplace; reviewed on {{ supplier.reviewed_on }}.
       {% else %}
-        <strong>Self-registered, not yet reviewed.</strong> This supplier found your round on the supplier marketplace and bid on it; nobody on the team has looked at them yet. Their quotes count, and are flagged, until you do.
+        <strong>Self-registered, not yet reviewed.</strong> This supplier found your tender on the supplier marketplace and bid on it; nobody on the team has looked at them yet. Their quotes count, and are flagged, until you do.
       {% endif %}
     </p>
     {% if not supplier.reviewed_on %}
@@ -227,7 +227,7 @@ hundred are different claims, and a reader cannot tell them apart.
       {% for invitation in outreach %}
         <li class="px-5 py-3 text-sm">
           <a class="text-brand-indigo hover:underline"
-             href="{% url 'supply_chain:procurement_round_detail' invitation.round_id %}">{{ invitation.round.label|default:invitation.round_id }}</a>
+             href="{% url 'supply_chain:procurement_tender_detail' invitation.tender_id %}">{{ invitation.tender.label|default:invitation.tender_id }}</a>
           <span class="text-gray-500">
             · {% if invitation.sent_on %}sent {{ invitation.sent_on }}{% else %}no date recorded{% endif %}
             {% if invitation.channel %}· {{ invitation.channel|humanise }}{% endif %}
@@ -245,7 +245,7 @@ hundred are different claims, and a reader cannot tell them apart.
       {% endfor %}
     </ul>
   {% else %}
-    <p class="px-5 py-5 text-sm text-gray-500">We have never invited them to a round.</p>
+    <p class="px-5 py-5 text-sm text-gray-500">We have never invited them to a tender.</p>
   {% endif %}
 </div>
 
@@ -277,7 +277,7 @@ hundred are different claims, and a reader cannot tell them apart.
               <td class="px-4 py-2.5">
                 <a class="text-brand-indigo hover:underline"
                    href="{% url 'supply_chain:procurement_quote_detail' quote.id %}">Quote {{ quote.id }}</a>
-                <div class="text-xs text-gray-500">{{ quote.round.label|default:quote.round_id }}</div>
+                <div class="text-xs text-gray-500">{{ quote.tender.label|default:quote.tender_id }}</div>
               </td>
               <td class="px-4 py-2.5">
                 <a class="text-brand-indigo hover:underline"
@@ -325,7 +325,7 @@ hundred are different claims, and a reader cannot tell them apart.
       {% for award in awards %}
         <li class="px-5 py-3 text-sm">
           <a class="text-brand-indigo hover:underline"
-             href="{% url 'supply_chain:procurement_comparison' award.round_id %}?commodity={{ award.commodity_slug }}">{{ award.commodity_slug|humanise }}</a>
+             href="{% url 'supply_chain:procurement_comparison' award.tender_id %}?commodity={{ award.commodity_slug }}">{{ award.commodity_slug|humanise }}</a>
           <span class="text-gray-500">· {{ award.decided_on|day|default:"undated" }}</span>
           · <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award.id %}">the award, its approvals and orders</a>
           {% if award.provisional %}

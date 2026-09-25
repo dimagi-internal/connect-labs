@@ -207,7 +207,7 @@ numbers of sachets and adding them needs the pack spec.
 {% else %}
 
   <div class="mb-6">
-    {% include "supply_chain/_supply_base.html" with scope_note="across this programme's rounds" %}
+    {% include "supply_chain/_supply_base.html" with scope_note="across this programme's tenders" %}
     {% if market_offers %}
       <div class="mt-4 bg-white border border-brand-border-light rounded-lg px-5 py-4">
         <h3 class="text-sm font-semibold text-gray-900">On the supplier marketplace, not yet suppliers here</h3>
@@ -232,7 +232,7 @@ numbers of sachets and adding them needs the pack spec.
       <p class="text-sm text-gray-500 mt-0.5">
         As each supplier stated it, on their own terms — not normalised. Two
         prices here are only comparable once both name a pack specification,
-        which is what the round's comparison does.
+        which is what the tender's comparison does.
       </p>
     </div>
     {% if quotes %}
@@ -243,7 +243,7 @@ numbers of sachets and adding them needs the pack spec.
               <th class="text-left px-4 py-2">Supplier</th>
               <th class="text-left px-4 py-2">As quoted</th>
               <th class="text-left px-4 py-2">Trade item</th>
-              <th class="text-left px-4 py-2">Round</th>
+              <th class="text-left px-4 py-2">Tender</th>
               <th class="text-left px-4 py-2">Received</th>
               <th class="text-left px-4 py-2">Standing</th>
             </tr>
@@ -272,7 +272,7 @@ numbers of sachets and adding them needs the pack spec.
                 </td>
                 <td class="px-4 py-2.5">
                   <a class="text-brand-indigo hover:underline"
-                     href="{% url 'supply_chain:procurement_round_detail' quote.round_id %}">{{ rounds|dictkey:quote.round_id|dictkey:"label"|default:quote.round_id }}</a>
+                     href="{% url 'supply_chain:procurement_tender_detail' quote.tender_id %}">{{ tenders|dictkey:quote.tender_id|dictkey:"label"|default:quote.tender_id }}</a>
                 </td>
                 <td class="px-4 py-2.5 text-gray-600">{{ quote.received_on|day|default:"—" }}</td>
                 <td class="px-4 py-2.5">
@@ -297,12 +297,12 @@ numbers of sachets and adding them needs the pack spec.
       </div>
       {% if sourced_in %}
         <ul class="divide-y divide-gray-100">
-          {% for round in sourced_in %}
+          {% for tender in sourced_in %}
             <li class="px-5 py-3 text-sm">
               <a class="text-brand-indigo hover:underline"
-                 href="{% url 'supply_chain:procurement_round_detail' round.id %}">{{ round.label }}</a>
-              <span class="text-gray-500">· {{ round.status|words }}</span>
-              {% for line in round.lines %}
+                 href="{% url 'supply_chain:procurement_tender_detail' tender.id %}">{{ tender.label }}</a>
+              <span class="text-gray-500">· {{ tender.status|words }}</span>
+              {% for line in tender.lines %}
                 {% if line.commodity_slug == product.slug and line.quantity %}
                   <div class="text-xs text-gray-500">
                     {{ line.quantity|qty:line.quantity_unit }} sought
@@ -313,7 +313,7 @@ numbers of sachets and adding them needs the pack spec.
           {% endfor %}
         </ul>
       {% else %}
-        <p class="px-5 py-5 text-sm text-gray-500">No round has asked for this yet.</p>
+        <p class="px-5 py-5 text-sm text-gray-500">No tender has asked for this yet.</p>
       {% endif %}
     </div>
 

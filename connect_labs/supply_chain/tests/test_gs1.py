@@ -39,7 +39,7 @@ def test_a_single_transposed_digit_is_rejected():
         assert not gs1.is_valid(swapped)
 
 
-def test_digital_link_round_trips():
+def test_digital_link_tender_trips():
     gtin = gs1.make_gtin("0123456", "7890")
     uri = gs1.digital_link("01", gtin)
     assert gs1.parse_digital_link(uri) == ("01", gtin)

@@ -158,7 +158,7 @@ class ProductUpdateView(_ScopedInstanceMixin, _ProductScreen):
 class _ItemScreen(OperationFormView):
     """A trade item, plus what is inside it when it is a kit.
 
-    The components are a formset, the way a round's lines are, and are sent
+    The components are a formset, the way a tender's lines are, and are sent
     on every save -- an empty list included, because removing the last
     component is how a kit stops being one.
     """
@@ -423,7 +423,7 @@ class SupplierMarketInviteView(OperationFormView):
     intro = (
         "A one-time link, valid for 30 days, for someone at this supplier. They sign in to labs with "
         "their own Connect account, open it, and can then keep the company's profile and what it offers "
-        "up to date, and bid on open rounds themselves. What they enter is marked as theirs."
+        "up to date, and bid on open tenders themselves. What they enter is marked as theirs."
     )
     submit_label = "Create the link"
     footnote = "The link is shown once, on the next screen. Only a keyed fingerprint of it is kept."

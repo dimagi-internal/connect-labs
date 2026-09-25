@@ -90,7 +90,7 @@ class TestDecidedByIsNotTheAccount:
         user = django_user_model.objects.get()
         user.name = user.username
         user.save()
-        url = reverse("supply_chain:procurement_comparison", args=[world["award"]["round_id"]])
+        url = reverse("supply_chain:procurement_comparison", args=[world["award"]["tender_id"]])
         response = scoped.get(url + "?commodity=test-kit")
         assert response.status_code == 200
         assert response.context["decider"] == ""
@@ -99,7 +99,7 @@ class TestDecidedByIsNotTheAccount:
         user = django_user_model.objects.get()
         user.name = "Hauwa Bello"
         user.save()
-        url = reverse("supply_chain:procurement_comparison", args=[world["award"]["round_id"]])
+        url = reverse("supply_chain:procurement_comparison", args=[world["award"]["tender_id"]])
         response = scoped.get(url + "?commodity=test-kit")
         assert response.context["decider"] == "Hauwa Bello"
 
@@ -154,5 +154,5 @@ class TestTheApprovalScreenKeepsItsTab:
         body = response.content.decode()
         from connect_labs.supply_chain.navigation import TAB_FOR_VIEW
 
-        assert TAB_FOR_VIEW["supply_chain:approval_request"] == "supply_chain:procurement_round_board"
-        assert reverse("supply_chain:procurement_round_board") in body
+        assert TAB_FOR_VIEW["supply_chain:approval_request"] == "supply_chain:procurement_tender_board"
+        assert reverse("supply_chain:procurement_tender_board") in body

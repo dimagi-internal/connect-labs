@@ -47,7 +47,7 @@ def has_program_context(request) -> bool:
     """Whether the request carries a programme scope.
 
     Unlike solicitations' dual org/program scoping (see
-    solicitations/views.py's _has_context), procurement's rounds, quotes,
+    solicitations/views.py's _has_context), procurement's tenders, quotes,
     awards and purchases are programme-scoped ONLY: SupplyDataAccess's
     program_experiment property raises ValueError without a program_id, no
     matter what organization_id is set to. `labs_context = {}` -- no

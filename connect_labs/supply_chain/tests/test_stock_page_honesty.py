@@ -173,7 +173,7 @@ class TestWholePacksAreSentWhole:
         assert f"{exact.quantize(Decimal('0.01'))} jerry cans" not in text
 
     def test_the_computation_itself_stays_exact(self, da, world):
-        """Presentation rounds; the operation does not."""
+        """Presentation tenders; the operation does not."""
         exact = Decimal(_row(da, world)["resupply_quantity"]["amount"])
         assert exact != exact.to_integral_value()
 

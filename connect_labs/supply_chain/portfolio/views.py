@@ -157,7 +157,7 @@ class PortfolioView(TemplateView):
             # to be seeded looks like, and a grid of zeroes reads as a broken
             # row rather than as "nothing has happened here".
             "empty": (
-                summary["source"]["demand"]["rounds"] == 0
+                summary["source"]["demand"]["tenders"] == 0
                 and summary["order"]["contract"]["count"] == 0
                 and summary["deliver"]["network"]["supply_points"] == 0
             ),

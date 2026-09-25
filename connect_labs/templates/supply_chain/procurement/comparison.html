@@ -3,11 +3,11 @@
 {% block supply_content %}
 {% if not commodity_slug %}
   <h1 class="text-xl font-semibold text-gray-900 mb-1">
-    Comparison — round {{ round_id }}{% if round.label %}, {{ round.label }}{% endif %}
+    Comparison — tender {{ tender_id }}{% if tender.label %}, {{ tender.label }}{% endif %}
   </h1>
   <p class="text-sm text-gray-600 mb-4">Which commodity do you want to compare?</p>
   <ul class="flex flex-col gap-2">
-    {% for line in round.lines %}
+    {% for line in tender.lines %}
       <li>
         <a href="?commodity={{ line.commodity_slug }}"
            class="inline-block px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md text-brand-indigo hover:bg-gray-50">
@@ -15,11 +15,11 @@
         </a>
       </li>
     {% empty %}
-      <li class="text-sm text-gray-500">This round has no commodity lines yet — there is nothing to compare.</li>
+      <li class="text-sm text-gray-500">This tender has no commodity lines yet — there is nothing to compare.</li>
     {% endfor %}
   </ul>
 {% else %}
-<h1 class="text-xl font-semibold text-gray-900 mb-4">Comparison — {{ commodity_name }}{% if round.label %} <span class="font-normal text-gray-500">· {{ round.label }}</span>{% endif %}</h1>
+<h1 class="text-xl font-semibold text-gray-900 mb-4">Comparison — {{ commodity_name }}{% if tender.label %} <span class="font-normal text-gray-500">· {{ tender.label }}</span>{% endif %}</h1>
 
 {% if comparison.provisional %}
   <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-sm text-amber-900">
@@ -187,7 +187,7 @@
   <p class="text-gray-500 mb-4">Nothing is comparable yet. Every quote is missing something —
   the questions below are the whole job right now.</p>
 {% else %}
-  <p class="text-gray-500 mb-4">Nothing is comparable: no offer holds the contents this round buys.</p>
+  <p class="text-gray-500 mb-4">Nothing is comparable: no offer holds the contents this tender buys.</p>
 {% endif %}
 
 {% if set_aside %}
@@ -219,9 +219,9 @@
     <h2 class="text-lg font-semibold text-gray-900 mb-2">
       Not comparable — different contents
     </h2>
-    {% if comparison.round_contents %}
-      <p class="text-sm text-gray-600 mb-2">This round buys</p>
-      {% include "supply_chain/procurement/_composition.html" with composition=comparison.round_contents unit="" %}
+    {% if comparison.tender_contents %}
+      <p class="text-sm text-gray-600 mb-2">This tender buys</p>
+      {% include "supply_chain/procurement/_composition.html" with composition=comparison.tender_contents unit="" %}
     {% endif %}
     <div class="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 mt-2">
       {% for row in comparison.not_comparable %}
@@ -230,7 +230,7 @@
              class="font-medium text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
           {% include 'supply_chain/procurement/_supplier_flags.html' %}
           {% if row.item_name %}<span class="text-gray-700">· {{ row.item_name }}</span>{% endif %}
-          {% comment %}Its price, so "cheaper, but not what the round buys" can be read here and not taken on trust.{% endcomment %}
+          {% comment %}Its price, so "cheaper, but not what the tender buys" can be read here and not taken on trust.{% endcomment %}
           {% with first=comparison.columns.0 %}{% with cell=row.figures|dictkey:first.key %}{% if cell and cell.amount is not None and not cell.unconfirmed %}
             <span class="text-gray-500">· {{ first.label }}: {{ cell|money_text }}</span>
           {% endif %}{% endwith %}{% endwith %}

@@ -251,7 +251,7 @@ def takes_provenance(operation) -> bool:
     Read off the schema rather than listed here, so an operation added later
     is covered without anyone remembering to add it. Provenance is compulsory
     below the contract (section 17.3), so procurement writes -- suppliers,
-    rounds, quotes, outreach -- are untouched by any of this.
+    tenders, quotes, outreach -- are untouched by any of this.
     """
     if not operation.is_write:
         return False

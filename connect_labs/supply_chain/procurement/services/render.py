@@ -5,7 +5,7 @@ email will ignore a portal too, and the credibility is in the sender.
 Phase 1c sends the same text over SES.
 """
 
-from connect_labs.supply_chain.models import Commodity, Quote, Round, Supplier
+from connect_labs.supply_chain.models import Commodity, Quote, Supplier, Tender
 from connect_labs.supply_chain.procurement.services.questions import SUPPLIER, initial_request_facts, missing_facts
 from connect_labs.supply_chain.values import destination_phrase, quantity_phrase
 
@@ -16,31 +16,31 @@ def _numbered(facts) -> str:
 
 def render_initial_request(
     commodity: Commodity,
-    round_: Round,
+    tender: Tender,
     supplier: Supplier,
 ) -> str:
-    quantity = round_.quantity_for(commodity.slug)
+    quantity = tender.quantity_for(commodity.slug)
     quantity_text = quantity_phrase(quantity[0], quantity[1]) if quantity else "the quantity below"
-    incoterm = (round_.delivery_point or {}).get("incoterm_requested")
+    incoterm = (tender.delivery_point or {}).get("incoterm_requested")
 
     lines = [
         f"Dear {supplier.name},",
         "",
         f"We are seeking a quotation for {quantity_text} of "
-        f"{commodity.name or commodity.slug}, delivered to {destination_phrase(round_.delivery_point)}"
+        f"{commodity.name or commodity.slug}, delivered to {destination_phrase(tender.delivery_point)}"
         + (f" on {incoterm} terms" if incoterm else "")
         + ".",
     ]
-    if round_.notes_to_supplier:
-        lines += ["", round_.notes_to_supplier]
+    if tender.notes_to_supplier:
+        lines += ["", tender.notes_to_supplier]
     lines += [
         "",
         "So that we can compare offers on the same basis, please answer each of the following:",
         "",
-        _numbered(initial_request_facts(commodity, round_)),
+        _numbered(initial_request_facts(commodity, tender)),
     ]
-    if round_.response_deadline:
-        lines += ["", f"We would be grateful for a reply by {round_.response_deadline}."]
+    if tender.response_deadline:
+        lines += ["", f"We would be grateful for a reply by {tender.response_deadline}."]
     lines += ["", "With thanks,"]
     return "\n".join(lines)
 
@@ -48,7 +48,7 @@ def render_initial_request(
 def render_followup(
     quote: Quote,
     commodity: Commodity,
-    round_: Round,
+    tender: Tender,
     supplier: Supplier,
     item=None,
 ) -> str:
@@ -57,7 +57,7 @@ def render_followup(
     `item` is threaded to missing_facts so a supplier who already identified
     their trade item is not asked for its pack configuration again.
     """
-    facts = [fact for fact in missing_facts(quote, commodity, round_, item=item) if fact.audience == SUPPLIER]
+    facts = [fact for fact in missing_facts(quote, commodity, tender, item=item) if fact.audience == SUPPLIER]
     if not facts:
         return (
             f"Dear {supplier.name},\n\n" "Thank you — your quotation is complete and there is nothing outstanding.\n"

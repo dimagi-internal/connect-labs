@@ -25,7 +25,7 @@ So: Django builds and validates the form, `cleaned_data` becomes the payload,
 and the operation does the writing. `to_payload` is the boundary.
 
 **Money must cross that boundary as a string.** `operations.MONEY` is
-deliberately string-only so a JSON number can never round a price silently,
+deliberately string-only so a JSON number can never tender a price silently,
 and a model `DecimalField` hands us a `Decimal`. `str(Decimal("52.42"))` is
 exactly `"52.42"`, so model validation and wire precision both hold -- but
 only if nothing in between turns it into a float.
@@ -52,9 +52,9 @@ from connect_labs.supply_chain.models import (
     Item,
     Outreach,
     Quote,
-    Round,
     Supplier,
     SupplyPoint,
+    Tender,
 )
 
 # The house widget classes, as prod uses them and as the rest of labs does.
@@ -185,7 +185,7 @@ def programme_currencies(program_id) -> list[str]:
         Invoice.objects.filter(contract__program_id=program_id).values_list("currency", flat=True),
         Payment.objects.filter(invoice__contract__program_id=program_id).values_list("currency", flat=True),
         Charge.objects.filter(shipment__contract__program_id=program_id).values_list("currency", flat=True),
-        Quote.objects.filter(round__program_id=program_id).values_list("as_quoted_currency", flat=True),
+        Quote.objects.filter(tender__program_id=program_id).values_list("as_quoted_currency", flat=True),
     ):
         found.update(code.upper() for code in queryset.distinct() if code)
     return sorted(found)
@@ -258,8 +258,8 @@ class ScopedForm(forms.ModelForm):
         return to_payload(self.cleaned_data)
 
 
-class RoundForm(ScopedForm):
-    """A quote round's own details. Its commodity lines are a formset.
+class TenderForm(ScopedForm):
+    """A quote tender's own details. Its commodity lines are a formset.
 
     `lines` and `delivery_point` are JSONFields and are excluded: rendered by
     a ModelForm they would be a textarea of raw JSON, which is a worse way to
@@ -283,7 +283,7 @@ class RoundForm(ScopedForm):
     )
 
     class Meta:
-        model = Round
+        model = Tender
         fields = [
             "label",
             "response_deadline",
@@ -294,14 +294,14 @@ class RoundForm(ScopedForm):
         ]
         widgets = {
             "visibility": forms.Select(attrs=SELECT),
-            "label": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. Round 1 — RUTF, 500 cartons")}),
+            "label": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. Tender 1 — RUTF, 500 cartons")}),
             "response_deadline": forms.DateInput(attrs=DATE),
             "reminder_interval_days": forms.NumberInput(attrs={**INPUT, "min": 0}),
             "shelf_life_months_minimum": forms.NumberInput(attrs={**INPUT, "min": 0}),
             "notes_to_supplier": forms.Textarea(attrs=TEXTAREA),
         }
         labels = {
-            "label": _("What to call this round"),
+            "label": _("What to call this tender"),
             "response_deadline": _("Replies wanted by"),
             "reminder_interval_days": _("Chase every (days)"),
             "shelf_life_months_minimum": _("Minimum shelf life (months)"),
@@ -312,7 +312,7 @@ class RoundForm(ScopedForm):
             "shelf_life_months_minimum": _("Sea freight and clearance routinely eat four months of it."),
             "reminder_interval_days": _("Leave empty and nobody is chased automatically."),
             "visibility": _(
-                "Public: while the round is open anyone can read it on the marketplace and any registered "
+                "Public: while the tender is open anyone can read it on the marketplace and any registered "
                 "supplier can bid. Private: only the suppliers you invite can see it."
             ),
         }
@@ -339,15 +339,15 @@ class RoundForm(ScopedForm):
             Field("notes_to_supplier"),
             Field("visibility"),
         )
-        # Not required: a caller that does not say leaves the round public,
-        # the model's default -- the same as a round created over the API.
+        # Not required: a caller that does not say leaves the tender public,
+        # the model's default -- the same as a tender created over the API.
         self.fields["visibility"].required = False
         set_choices(
             self,
             "visibility",
             [
-                ("public", _("Public — listed for any supplier to bid")),
-                ("private", _("Private — only the suppliers we invite")),
+                ("public", _("Open — any registered supplier can see it and bid")),
+                ("private", _("Restricted — only the suppliers we invite")),
             ],
         )
 
@@ -362,10 +362,10 @@ class RoundForm(ScopedForm):
         return data
 
 
-class RoundLineForm(forms.Form):
-    """One commodity a round is asking for. Rendered as a formset.
+class TenderLineForm(forms.Form):
+    """One commodity a tender is asking for. Rendered as a formset.
 
-    A round can ask for several commodities and each needs its own quantity
+    A tender can ask for several commodities and each needs its own quantity
     and unit, which is a repeating row -- the thing `formset_factory` exists
     for and the thing I was about to hand-roll in Alpine.
     """
@@ -390,10 +390,10 @@ class RoundLineForm(forms.Form):
 
 
 # `extra=0`, not `extra=1`. A formset renders `max(initial, min_num) + extra`
-# rows, so min_num=1 with extra=1 opened a new round on TWO blank commodity
+# rows, so min_num=1 with extra=1 opened a new tender on TWO blank commodity
 # rows -- one required, one not, and no way to tell which from looking. One
 # row and an "add another" button is the same capability, said once.
-RoundLineFormSet = forms.formset_factory(RoundLineForm, extra=0, min_num=1, validate_min=True, can_delete=True)
+TenderLineFormSet = forms.formset_factory(TenderLineForm, extra=0, min_num=1, validate_min=True, can_delete=True)
 
 
 class OutreachForm(ScopedForm):
@@ -622,7 +622,7 @@ class ApprovalRequestForm(ScopedForm):
             .values_list("buyer_org_id", flat=True)
         )
         found |= set(
-            AwardApproval.objects.filter(award__round__program_id=program_id)
+            AwardApproval.objects.filter(award__tender__program_id=program_id)
             .exclude(approver_org=None)
             .values_list("approver_org_id", flat=True)
         )
@@ -692,7 +692,7 @@ class QuoteForm(ScopedForm):
     class Meta:
         model = Quote
         fields = [
-            "round",
+            "tender",
             "supplier",
             "commodity",
             "item",
@@ -714,7 +714,7 @@ class QuoteForm(ScopedForm):
             "received_on",
         ]
         widgets = {
-            "round": forms.Select(attrs=SEARCHABLE),
+            "tender": forms.Select(attrs=SEARCHABLE),
             "supplier": forms.Select(attrs=SEARCHABLE),
             "commodity": forms.Select(attrs=SEARCHABLE),
             "item": forms.Select(attrs=SEARCHABLE),
@@ -736,7 +736,7 @@ class QuoteForm(ScopedForm):
             "received_on": forms.DateInput(attrs=DATE),
         }
         labels = {
-            "round": _("Against which round"),
+            "tender": _("Against which tender"),
             "supplier": _("Who quoted"),
             "commodity": _("For what"),
             "item": _("Their trade item"),
@@ -769,11 +769,11 @@ class QuoteForm(ScopedForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["round"].queryset = self.rounds()
+        self.fields["tender"].queryset = self.tenders()
         self.fields["supplier"].queryset = self.scoped_to_programme(Supplier)
         self.fields["commodity"].queryset = self.scoped_to_programme(Commodity)
         self.fields["item"].queryset = self.scoped_to_programme(Item)
-        self.fields["round"].empty_label = _("Select a round\u2026")
+        self.fields["tender"].empty_label = _("Select a tender\u2026")
         self.fields["supplier"].empty_label = _("Select a supplier\u2026")
         self.fields["commodity"].empty_label = _("Select a product\u2026")
         self.fields["item"].empty_label = _("Not stated")
@@ -806,9 +806,9 @@ class QuoteForm(ScopedForm):
 
     # ---- the two halves a correction reuses ----------------------------
 
-    def rounds(self):
+    def tenders(self):
         program_id = getattr(self.access, "program_id", None) if self.access else None
-        return Round.objects.filter(program_id=program_id).order_by("-id") if program_id else Round.objects.none()
+        return Tender.objects.filter(program_id=program_id).order_by("-id") if program_id else Tender.objects.none()
 
     def scoped_to_programme(self, model):
         scope = getattr(self.access, "scope_key", None) if self.access else None
@@ -866,7 +866,7 @@ class QuoteForm(ScopedForm):
         return Layout(
             Fieldset(
                 str(_("Whose quote this is")),
-                Row(Column("round"), Column("supplier"), css_class="grid md:grid-cols-2 gap-x-6"),
+                Row(Column("tender"), Column("supplier"), css_class="grid md:grid-cols-2 gap-x-6"),
                 Row(Column("commodity"), Column("item"), css_class="grid md:grid-cols-2 gap-x-6"),
                 css_class="pt-1",
             ),
@@ -889,7 +889,7 @@ class QuoteForm(ScopedForm):
 
     def payload(self) -> dict:
         data = to_payload(self.cleaned_data)
-        # The schema names the product by slug and the round and supplier by
+        # The schema names the product by slug and the tender and supplier by
         # their own ids, which is what `to_payload` already produces for the
         # relations. Only the commodity needs saying differently.
         commodity = self.cleaned_data.get("commodity")
@@ -920,10 +920,10 @@ class QuoteCorrectionForm(QuoteForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Who quoted, against which round, for what: not a correction. Changing
+        # Who quoted, against which tender, for what: not a correction. Changing
         # any of them makes a different quote, not a corrected one, and leaving
         # them editable invites exactly that.
-        for name in ("round", "supplier", "commodity", "item"):
+        for name in ("tender", "supplier", "commodity", "item"):
             del self.fields[name]
         self.helper.layout = self.build_layout()
 

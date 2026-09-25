@@ -57,7 +57,7 @@ def client_in_programme(client, django_user_model, monkeypatch):
 
 @pytest.fixture
 def chain(da):
-    """A co-pack round from one distributor, awarded, ordered and partly received."""
+    """A co-pack tender from one distributor, awarded, ordered and partly received."""
     op(da, "commodity_upsert", data={"slug": "ors", "name": "ORS", "base_unit": "sachet"})
     op(da, "commodity_upsert", data={"slug": "zinc", "name": "Zinc", "base_unit": "tablet"})
     op(
@@ -96,9 +96,9 @@ def chain(da):
     distributor = op(da, "org_upsert", data={"slug": "harmattan-words", "name": "Harmattan Health Supplies"})
     supplier = op(da, "supplier_create", data={"org_id": distributor["id"], "type": "distributor"})
     ours = op(da, "org_upsert", data={"slug": "programme-words", "name": "Child Health Programme"})
-    round_ = op(
+    tender = op(
         da,
-        "round_create",
+        "tender_create",
         data={
             "label": "CHC",
             "delivery_point": {"city": "Kano"},
@@ -112,7 +112,7 @@ def chain(da):
                 da,
                 "quote_record",
                 data={
-                    "round_id": round_["id"],
+                    "tender_id": tender["id"],
                     "commodity_slug": "ors-zinc-copack",
                     "supplier_id": supplier["id"],
                     "item_id": item["id"],
@@ -126,7 +126,9 @@ def chain(da):
                 },
             )
         )
-    award = op(da, "award_create", round_id=round_["id"], quote_id=quotes[0]["id"], rationale="cheapest like contents")
+    award = op(
+        da, "award_create", tender_id=tender["id"], quote_id=quotes[0]["id"], rationale="cheapest like contents"
+    )
     store = op(
         da,
         "supply_point_upsert",
@@ -136,7 +138,7 @@ def chain(da):
         da,
         "contract_create",
         data={
-            "round_id": round_["id"],
+            "tender_id": tender["id"],
             "award_id": award["id"],
             "supplier_id": supplier["id"],
             "item_id": a["id"],
@@ -169,13 +171,13 @@ def chain(da):
             "lines": [{"item_id": a["id"], "quantity_accepted": "596", "quantity_unit": "carton"}],
         },
     )
-    return {"round": round_, "quotes": quotes, "contract": contract}
+    return {"tender": tender, "quotes": quotes, "contract": contract}
 
 
 class TestTheComparison:
     def _page(self, client, chain):
         url = (
-            reverse("supply_chain:procurement_comparison", args=[chain["round"]["id"]]) + "?commodity=ors-zinc-copack"
+            reverse("supply_chain:procurement_comparison", args=[chain["tender"]["id"]]) + "?commodity=ors-zinc-copack"
         )
         response = client.get(url)
         assert response.status_code == 200
@@ -184,7 +186,7 @@ class TestTheComparison:
     def test_it_is_titled_by_the_product_not_its_slug(self, client_in_programme, chain):
         body = self._page(client_in_programme, chain)
         assert "ORS/zinc co-pack" in body
-        assert "round {}, ors-zinc-copack".format(chain["round"]["id"]) not in body
+        assert "tender {}, ors-zinc-copack".format(chain["tender"]["id"]) not in body
 
     def test_money_reads_as_money(self, client_in_programme, chain):
         body = self._page(client_in_programme, chain)
@@ -220,32 +222,32 @@ class TestTheComparison:
 
         columns = [
             {"key": "landed_total_as_quoted", "label": "Landed total (as quoted)"},
-            {"key": "landed_total_for_round_quantity", "label": "Landed total (this round)"},
+            {"key": "landed_total_for_tender_quantity", "label": "Landed total (this tender)"},
         ]
         same = {"amount": "18000", "currency": "USD"}
         rows = [
-            {"figures": {"landed_total_as_quoted": same, "landed_total_for_round_quantity": same}},
+            {"figures": {"landed_total_as_quoted": same, "landed_total_for_tender_quantity": same}},
             {
                 "figures": {
                     "landed_total_as_quoted": {"amount": "9000", "currency": "USD"},
-                    "landed_total_for_round_quantity": same,
+                    "landed_total_for_tender_quantity": same,
                 }
             },
         ]
         assert [c["key"] for c in table_columns({"columns": columns, "comparable": rows})] == [
             "landed_total_as_quoted",
-            "landed_total_for_round_quantity",
+            "landed_total_for_tender_quantity",
         ]
         assert [c["key"] for c in table_columns({"columns": columns, "comparable": rows[:1]})] == [
-            "landed_total_for_round_quantity"
+            "landed_total_for_tender_quantity"
         ]
 
 
-class TestTheRoundsQuotes:
+class TestTheTendersQuotes:
     """Three co-pack quotes differing only by price, told apart by nothing but the price."""
 
     def _quotes_table(self, client, chain):
-        response = client.get(reverse("supply_chain:procurement_round_detail", args=[chain["round"]["id"]]))
+        response = client.get(reverse("supply_chain:procurement_tender_detail", args=[chain["tender"]["id"]]))
         assert response.status_code == 200
         body = response.content.decode()
         start = body.index(">Quotes<")
@@ -348,10 +350,10 @@ class TestTheQuote:
         assert "2 sachet ORS + 10 tablet Zinc" in body
 
 
-class TestTheRound:
+class TestTheTender:
     def test_the_compare_buttons_name_the_product(self, client_in_programme, chain):
         body = client_in_programme.get(
-            reverse("supply_chain:procurement_round_detail", args=[chain["round"]["id"]])
+            reverse("supply_chain:procurement_tender_detail", args=[chain["tender"]["id"]])
         ).content.decode()
         assert "Compare ORS/zinc co-pack" in body
         assert "Compare ors-zinc-copack" not in body
@@ -383,7 +385,7 @@ class TestWhatWasSetAside:
             da,
             "quote_record",
             data={
-                "round_id": chain["round"]["id"],
+                "tender_id": chain["tender"]["id"],
                 "commodity_slug": "ors-zinc-copack",
                 "supplier_id": chain["quotes"][0]["supplier_id"],
                 "item_id": extra["id"],
@@ -393,7 +395,7 @@ class TestWhatWasSetAside:
         )
         op(da, "quote_void", quote_id=quote["id"], reason="holds 4 ORS sachets, not the protocol 2")
         url = (
-            reverse("supply_chain:procurement_comparison", args=[chain["round"]["id"]]) + "?commodity=ors-zinc-copack"
+            reverse("supply_chain:procurement_comparison", args=[chain["tender"]["id"]]) + "?commodity=ors-zinc-copack"
         )
         body = client_in_programme.get(url).content.decode()
         assert "Set aside" in body
@@ -574,7 +576,7 @@ class TestTheStockPageSpeaksInPacks:
 
 
 class TestTheChecksPage:
-    """A check card listed "round id 33", "supplier id 88", "min months of stock"."""
+    """A check card listed "tender id 33", "supplier id 88", "min months of stock"."""
 
     @pytest.fixture
     def page(self, client_in_programme, da, chain):
@@ -620,15 +622,15 @@ class TestTheChecksPage:
                     "source": "connect_visit",
                 },
             )
-        from connect_labs.supply_chain.models import Round
+        from connect_labs.supply_chain.models import Tender
 
-        Round.objects.filter(pk=chain["round"]["id"]).update(status="open")
+        Tender.objects.filter(pk=chain["tender"]["id"]).update(status="open")
         # A quote that cannot be compared: in euros, with no exchange rate.
         op(
             da,
             "quote_record",
             data={
-                "round_id": chain["round"]["id"],
+                "tender_id": chain["tender"]["id"],
                 "commodity_slug": "ors-zinc-copack",
                 "supplier_id": chain["quotes"][0]["supplier_id"],
                 "as_quoted_amount": "30",
@@ -641,16 +643,16 @@ class TestTheChecksPage:
         return client_in_programme.get(reverse("supply_chain:checks")).content.decode()
 
     def test_no_raw_ids(self, page):
-        assert "round id" not in page
+        assert "tender id" not in page
         assert "supplier id" not in page
         assert "min months of stock" not in page
 
-    def test_the_round_and_supplier_are_named_and_linked(self, page, chain):
-        round_href = reverse("supply_chain:procurement_round_detail", args=[chain["round"]["id"]])
+    def test_the_tender_and_supplier_are_named_and_linked(self, page, chain):
+        tender_href = reverse("supply_chain:procurement_tender_detail", args=[chain["tender"]["id"]])
         supplier_href = reverse("supply_chain:supplier_detail", args=[chain["quotes"][0]["supplier_id"]])
-        assert f'href="{round_href}"' in page
+        assert f'href="{tender_href}"' in page
         assert f'href="{supplier_href}"' in page
-        card = page[page.index(f'href="{round_href}"') :]
+        card = page[page.index(f'href="{tender_href}"') :]
         assert card[: card.index("</a>")].endswith("CHC")
 
     def test_a_threshold_reads_as_a_readout(self, page):

@@ -16,10 +16,10 @@ adjustment form asks for a reference rather than offering to change history.
 
 **An adjustment is the only kind that may be negative.** Every other movement
 kind is a positive quantity whose sign is fixed by what the kind means, so a
-quantity that is "counted the wrong way round" cannot silently double or zero
+quantity that is "counted the wrong way tender" cannot silently double or zero
 a balance. The form enforces that asymmetry where somebody can see it.
 
-Lines are formsets, for the reason `RoundForm`'s are: a receipt or a shipment
+Lines are formsets, for the reason `TenderForm`'s are: a receipt or a shipment
 carries several batches, each with its own expiry, and that is the repeating
 row `formset_factory` exists for.
 """
@@ -515,7 +515,7 @@ class MovementForm(ProvenancedForm):
         kind, quantity = cleaned.get("kind"), cleaned.get("quantity")
         if quantity is not None and quantity < 0 and kind not in records.SIGNED_MOVEMENT_KINDS:
             # The sign of every other kind is fixed by what the kind MEANS, in
-            # one place, precisely so a movement counted the wrong way round
+            # one place, precisely so a movement counted the wrong way tender
             # cannot silently double or zero a balance.
             self.add_error(
                 "quantity",

@@ -207,7 +207,7 @@ class OfferingForm(forms.ModelForm):
 
 
 class BidForm(forms.Form):
-    """One quote on one line of a round, as the supplier states it."""
+    """One quote on one line of a tender, as the supplier states it."""
 
     as_quoted_amount = forms.DecimalField(
         label=_("Price"), min_value=0, max_digits=18, decimal_places=4, widget=forms.NumberInput(attrs=MONEY_INPUT)

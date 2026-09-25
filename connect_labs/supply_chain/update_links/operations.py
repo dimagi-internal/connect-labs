@@ -157,7 +157,7 @@ def update_link_issue(access, data):
     if not contract_ids and not point_ids and not approval_ids:
         raise ValueError("a link has to cover at least one contract, supply point or approval")
     approvals = list(
-        AwardApproval.objects.filter(award__round__program_id=program_id, pk__in=approval_ids).select_related(
+        AwardApproval.objects.filter(award__tender__program_id=program_id, pk__in=approval_ids).select_related(
             "approver_org"
         )
     )
