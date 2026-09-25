@@ -1,17 +1,21 @@
 /*
- * portfolio_map.js — the portfolio laid out by place.
+ * portfolio_map.js — the portfolio laid out by place, drilled portfolio → program → place.
  *
- * Reads the payload portfolio/map_data.py put in #pm-data and does every
- * filter, count and redraw in the browser. It computes no figure of its own:
- * each number shown is one the server already returned, in the unit it came
- * in. What it COUNTS is places, which implies no sum across programs.
+ * Reads the payload portfolio/map_data.py put in #pm-data. Computes no figure
+ * of its own: every number shown is one the server returned, in its own unit.
+ * What it COUNTS is places and orders, which implies no sum across programs.
  *
- * Three rules, each mirrored from the server:
- *   - a place with no coordinates is listed under "Not on map", never dropped;
- *   - a blocker with no place is listed under "Unplaced blockers";
- *   - rows keep the portfolio's order: filtering narrows, nothing ranks.
+ * What the map draws, and why so little:
+ *   - stores, coloured by ONE thing: blocked / waiting on an answer / nothing open;
+ *   - the routes supplies are on their way along (supplier → the store owed);
+ *   - field workers only once you are zoomed in far enough to tell them apart.
+ * Most of what stands in a chain's way is not at a place (a quote that cannot
+ * be compared, a product failing its spec), so the PANEL carries the blockers,
+ * grouped by stage, and the map shows where the place-bound ones bite.
  *
- * Filter state lives in the URL hash so a view can be shared as a link.
+ * Nothing is dropped: a place with no location and a blocker with no place are
+ * listed in the panel. Nothing is ranked: programs keep the portfolio's order.
+ * State lives in the URL hash so a view can be shared as a link.
  */
 (function () {
   'use strict';
@@ -22,25 +26,18 @@
   var V = DATA.vocabulary;
 
   // ---------------------------------------------------------------- vocab
-  var STATUS = {
-    stockout: { label: 'Stocked out', color: '#ef4444' },
-    negative: { label: 'Impossible balance', color: '#a855f7' },
-    below_min: { label: 'Below its minimum', color: '#f59e0b' },
-    ok: { label: 'Within its band', color: '#22c55e' },
-    overstocked: { label: 'Above its maximum', color: '#3b82f6' },
-    durable: { label: 'Equipment (no cover)', color: '#14b8a6' },
-    unknown: { label: 'Cannot be computed', color: '#94a3b8' },
-    origin: { label: 'Supplier site', color: '#cbd5e1', text: '#475569' },
+  // One encoding on the map. Classified from facts the record holds -- a
+  // check's category, a status against the place's own band, a promised date
+  // passed -- never from a judgement about what matters most.
+  var ATTN = {
+    blocked: { label: 'Blocked', color: '#ef4444' },
+    waiting: { label: 'Waiting on an answer', color: '#f59e0b' },
+    clear: { label: 'Nothing open', color: '#94a3b8' },
   };
-  var STATUS_ORDER = [
-    'stockout',
-    'negative',
-    'below_min',
-    'ok',
-    'overstocked',
-    'durable',
-    'unknown',
-    'origin',
+  var STAGES = [
+    { key: 'source', label: 'Source' },
+    { key: 'order', label: 'Order' },
+    { key: 'deliver', label: 'Deliver' },
   ];
   var KIND_LABEL = {
     central_store: 'Central store',
@@ -52,36 +49,37 @@
     customs: 'Customs',
   };
   var KIND_RADIUS = {
-    central_store: 11,
-    regional_store: 9,
+    central_store: 10,
+    regional_store: 8,
     facility: 7,
-    supplier_site: 8,
-    customs: 8,
+    supplier_site: 7,
+    customs: 7,
     in_transit: 6,
-    user_held: 4.5,
+    user_held: 4,
   };
-  // How a point got its coordinates (stock/services/placement.py). Anything
-  // but `recorded` is a stand-in and is drawn faded: a head office is not a store.
+  var STATUS_LABEL = {
+    stockout: 'Stocked out',
+    negative: 'Impossible balance',
+    below_min: 'Below its minimum',
+    ok: 'Within its band',
+    overstocked: 'Above its maximum',
+    durable: 'Equipment',
+    unknown: 'Stock cannot be computed',
+    origin: 'Supplier site',
+  };
   var LOCATION_LABEL = {
     recorded: 'Its own location',
-    org_hq: 'Stand-in: organisation HQ',
-    parent: 'Stand-in: where it is restocked from',
-    country: 'Stand-in: country centre',
+    org_hq: 'Organisation head office',
+    parent: 'Where it is restocked from',
+    country: 'Country centre',
   };
-  var CATEGORY_COLOR = {
-    missing: '#f59e0b',
-    conflict: '#a855f7',
-    threshold: '#ef4444',
-  };
-  var PROGRAMME_PALETTE = [
+  var PROGRAM_PALETTE = [
     '#6366f1',
     '#14b8a6',
     '#f97316',
     '#ec4899',
     '#84cc16',
     '#06b6d4',
-    '#eab308',
-    '#8b5cf6',
   ];
 
   function esc(s) {
@@ -98,16 +96,19 @@
   function checkLabel(kind) {
     return (V.check_labels && V.check_labels[kind]) || kind.replace(/_/g, ' ');
   }
+  function audienceLabel(a) {
+    return (V.audience_labels && V.audience_labels[a]) || a;
+  }
   function num(s) {
     var n = parseFloat(s);
     return isFinite(n) ? n : null;
   }
-  function fmt(amount) {
-    var n = num(amount);
-    if (n == null) return String(amount);
-    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  function fmt(n) {
+    var v = num(n);
+    return v == null
+      ? String(n)
+      : v.toLocaleString(undefined, { maximumFractionDigits: 2 });
   }
-  // A derived figure on the wire: {amount, unit} | {unconfirmed: [...]} | a bare decimal string.
   function figure(v) {
     if (v == null) return { text: '—', why: null };
     if (typeof v === 'string') return { text: fmt(v), why: null };
@@ -118,599 +119,632 @@
       return { text: fmt(v.amount) + (v.unit ? ' ' + v.unit : ''), why: null };
     return { text: '—', why: null };
   }
-  function days(iso) {
+  function plural(n, one, many) {
+    return n + ' ' + (n === 1 ? one : many || one + 's');
+  }
+  function daysLate(iso) {
     if (!iso) return null;
-    var d = new Date(iso + 'T00:00:00');
-    return Math.round((d - new Date(new Date().toDateString())) / 86400000);
+    return Math.round(
+      (new Date(new Date().toDateString()) - new Date(iso + 'T00:00:00')) /
+        86400000,
+    );
   }
 
   // ---------------------------------------------------------------- model
-  var programColor = {};
-  var programName = {};
-  var all = []; // every active place, placed or not
-  var unlocated = []; // blockers with no place
-  var moving = [];
-  var byId = {};
-  DATA.programs.forEach(function (p, i) {
-    programColor[p.program_id] =
-      PROGRAMME_PALETTE[i % PROGRAMME_PALETTE.length];
-    programName[p.program_id] = p.name;
-    p.points.forEach(function (pt) {
-      pt._placed = true;
-      all.push(pt);
+  var programs = DATA.programs;
+  var progById = {};
+  var places = []; // every active place, placed or not
+  var placeByKey = {};
+  var suppliers = [];
+  programs.forEach(function (p, i) {
+    p._color = PROGRAM_PALETTE[i % PROGRAM_PALETTE.length];
+    progById[p.program_id] = p;
+    p.points.concat(p.unplaced).forEach(function (pt) {
+      pt._placed = p.points.indexOf(pt) >= 0;
+      pt._key = p.program_id + ':' + pt.id;
+      pt._orders = p.orders.filter(function (o) {
+        return o.to_supply_point_id === pt.id;
+      });
+      pt._attn = attentionOf(pt);
+      pt._text = [
+        pt.name,
+        pt.admin_area,
+        pt.managed_by,
+        KIND_LABEL[pt.kind],
+        p.name,
+      ]
+        .join(' ')
+        .toLowerCase();
+      places.push(pt);
+      placeByKey[pt._key] = pt;
     });
-    p.unplaced.forEach(function (pt) {
-      pt._placed = false;
-      all.push(pt);
+    p.suppliers.forEach(function (s) {
+      s._key = p.program_id + ':s' + s.id;
+      suppliers.push(s);
     });
-    p.unlocated_checks.forEach(function (c) {
-      unlocated.push(
-        Object.assign(
-          { program_id: p.program_id, checks_url: p.checks_url },
-          c,
-        ),
-      );
-    });
-    p.moving.forEach(function (m) {
-      moving.push(Object.assign({ program_id: p.program_id }, m));
-    });
+    // An order past its date, or with no date ever promised, is in the way as
+    // surely as a check is -- the chlorine chain's whole story is the second.
+    p._open =
+      p.checks.length +
+      p.orders.filter(function (o) {
+        return o.overdue || !o.expected_on;
+      }).length;
   });
-  // Points sharing one coordinate -- every store a partner runs sits on its
-  // head office until someone records where it really is -- would draw as one
-  // dot at any zoom. Fan them into a small ring so each stays clickable; the
-  // ring is display only, and the detail panel says the location is a stand-in.
+
+  function attentionOf(pt) {
+    var cats = pt.checks.map(function (c) {
+      return c.category;
+    });
+    var late = pt._orders.some(function (o) {
+      return o.overdue;
+    });
+    if (
+      late ||
+      cats.indexOf('threshold') >= 0 ||
+      cats.indexOf('conflict') >= 0 ||
+      ['stockout', 'negative', 'below_min'].indexOf(pt.status) >= 0
+    ) {
+      return 'blocked';
+    }
+    var undated = pt._orders.some(function (o) {
+      return !o.expected_on;
+    });
+    if (undated || cats.length) return 'waiting';
+    return 'clear';
+  }
+
+  // Places sharing one coordinate -- every store a partner runs sits on its
+  // head office until someone records where it is -- fan into a small ring so
+  // each stays clickable. Display only; the place's panel says it is a stand-in.
   var stacks = {};
-  all.forEach(function (pt) {
-    if (!pt._placed) return;
-    var k = pt.lat.toFixed(5) + ',' + pt.lng.toFixed(5);
-    (stacks[k] = stacks[k] || []).push(pt);
+  function stack(o, lat, lng) {
+    o._lat = lat;
+    o._lng = lng;
+    var k = lat.toFixed(4) + ',' + lng.toFixed(4);
+    (stacks[k] = stacks[k] || []).push(o);
+  }
+  places.forEach(function (pt) {
+    if (pt._placed) stack(pt, pt.lat, pt.lng);
+  });
+  suppliers.forEach(function (s) {
+    if (s.location) stack(s, s.location.lat, s.location.lng);
   });
   Object.keys(stacks).forEach(function (k) {
     var group = stacks[k];
-    group.forEach(function (pt, i) {
+    group.forEach(function (o, i) {
       if (group.length === 1) {
-        pt._x = pt.lng;
-        pt._y = pt.lat;
+        o._x = o._lng;
+        o._y = o._lat;
         return;
       }
-      var angle = (2 * Math.PI * i) / group.length;
-      var r = 0.012 + 0.002 * group.length;
-      pt._x = pt.lng + r * Math.cos(angle);
-      pt._y = pt.lat + r * Math.sin(angle);
+      var a = (2 * Math.PI * i) / group.length;
+      var r = 0.025 + 0.004 * group.length;
+      o._x = o._lng + r * Math.cos(a);
+      o._y = o._lat + r * Math.sin(a);
     });
-  });
-  all.forEach(function (pt) {
-    pt._key = pt.program_id + ':' + pt.id;
-    pt._approx = pt._placed && pt.location.source !== 'recorded';
-    byId[pt._key] = pt;
-    pt._overdue = pt.expected_inbound.filter(function (e) {
-      return e.overdue;
-    }).length;
-    pt._undated = pt.expected_inbound.filter(function (e) {
-      return !e.expected_on;
-    }).length;
-    pt._movingIn = moving.filter(function (m) {
-      return m.program_id === pt.program_id && m.to_supply_point_id === pt.id;
-    });
-    pt._text = [
-      pt.name,
-      pt.admin_area,
-      pt.managed_by,
-      KIND_LABEL[pt.kind],
-      programName[pt.program_id],
-    ]
-      .join(' ')
-      .toLowerCase();
   });
 
   // ---------------------------------------------------------------- state
-  var FACETS = [
-    {
-      key: 'program',
-      title: 'Program',
-      options: DATA.programs.map(function (p) {
-        return {
-          value: String(p.program_id),
-          label: p.name,
-          swatch: programColor[p.program_id],
-        };
-      }),
-      test: function (pt, vals) {
-        return vals.indexOf(String(pt.program_id)) >= 0;
-      },
-    },
-    {
-      key: 'status',
-      title: 'Stock status',
-      options: STATUS_ORDER.map(function (s) {
-        return { value: s, label: STATUS[s].label, swatch: STATUS[s].color };
-      }),
-      test: function (pt, vals) {
-        return vals.indexOf(pt.status) >= 0;
-      },
-    },
-    {
-      key: 'blocker',
-      title: 'Blockers',
-      options: [
-        { value: 'any', label: 'Has any blocker' },
-        {
-          value: 'threshold',
-          label: 'Past a limit you set',
-          swatch: CATEGORY_COLOR.threshold,
-        },
-        {
-          value: 'conflict',
-          label: 'Records disagree',
-          swatch: CATEGORY_COLOR.conflict,
-        },
-        {
-          value: 'missing',
-          label: 'A fact is missing',
-          swatch: CATEGORY_COLOR.missing,
-        },
-        { value: 'none', label: 'No blockers' },
-      ],
-      test: function (pt, vals) {
-        return vals.some(function (v) {
-          if (v === 'any') return pt.checks.length > 0;
-          if (v === 'none') return pt.checks.length === 0;
-          return pt.checks.some(function (c) {
-            return c.category === v;
-          });
-        });
-      },
-    },
-    {
-      key: 'audience',
-      title: 'Who can unblock it',
-      options: ['supplier', 'partner', 'internal'].map(function (a) {
-        return {
-          value: a,
-          label: (V.audience_labels && V.audience_labels[a]) || a,
-        };
-      }),
-      test: function (pt, vals) {
-        return pt.checks.some(function (c) {
-          return vals.indexOf(c.audience) >= 0;
-        });
-      },
-    },
-    {
-      key: 'inbound',
-      title: 'Waiting on',
-      options: [
-        { value: 'overdue', label: 'An order past its promised date' },
-        { value: 'undated', label: 'An order with no promised date' },
-        { value: 'moving', label: 'A shipment in transit' },
-        { value: 'any', label: 'Anything still owed' },
-        { value: 'none', label: 'Nothing owed' },
-      ],
-      test: function (pt, vals) {
-        return vals.some(function (v) {
-          if (v === 'overdue') return pt._overdue > 0;
-          if (v === 'undated') return pt._undated > 0;
-          if (v === 'moving') return pt._movingIn.length > 0;
-          if (v === 'any')
-            return pt.expected_inbound.length > 0 || pt._movingIn.length > 0;
-          return pt.expected_inbound.length === 0 && pt._movingIn.length === 0;
-        });
-      },
-    },
-    {
-      key: 'location',
-      title: 'Location',
-      options: ['recorded', 'org_hq', 'parent', 'country', 'none'].map(
-        function (v) {
-          return {
-            value: v,
-            label: v === 'none' ? 'No location at all' : LOCATION_LABEL[v],
-          };
-        },
-      ),
-      test: function (pt, vals) {
-        return (
-          vals.indexOf(
-            pt._placed ? pt.location.source || 'recorded' : 'none',
-          ) >= 0
-        );
-      },
-    },
-    {
-      key: 'kind',
-      title: 'Kind of place',
-      options: V.kinds.map(function (k) {
-        return { value: k, label: KIND_LABEL[k] || k };
-      }),
-      test: function (pt, vals) {
-        return vals.indexOf(pt.kind) >= 0;
-      },
-    },
-    {
-      key: 'org',
-      title: 'Managed by',
-      options: uniq(
-        all.map(function (pt) {
-          return pt.managed_by || '';
-        }),
-      ).map(function (o) {
-        return { value: o, label: o || 'Not recorded' };
-      }),
-      test: function (pt, vals) {
-        return vals.indexOf(pt.managed_by || '') >= 0;
-      },
-    },
-  ];
-  function uniq(xs) {
-    var seen = {};
-    return xs
-      .filter(function (x) {
-        if (seen[x]) return false;
-        seen[x] = true;
-        return true;
-      })
-      .sort();
-  }
-
-  var state = { f: {}, q: '', colour: 'status', sel: null, tab: 'list' };
-  function readHash() {
+  var state = {
+    prog: null,
+    place: null,
+    attention: false,
+    kinds: [],
+    orgs: [],
+    q: '',
+  };
+  (function readHash() {
     try {
-      var h = decodeURIComponent(location.hash.slice(1));
-      if (!h) return;
-      var s = JSON.parse(h);
-      state.f = s.f || {};
-      state.q = s.q || '';
-      state.colour = s.colour || 'status';
-      state.sel = s.sel || null;
+      var s = JSON.parse(decodeURIComponent(location.hash.slice(1)) || '{}');
+      Object.keys(state).forEach(function (k) {
+        if (s[k] !== undefined) state[k] = s[k];
+      });
+      if (state.prog && !progById[state.prog]) state.prog = null;
+      if (state.place && !placeByKey[state.place]) state.place = null;
     } catch (e) {
       /* a hand-edited hash is not worth breaking the page over */
     }
-  }
+  })();
   function writeHash() {
-    var s = { f: state.f, q: state.q, colour: state.colour };
-    if (state.sel) s.sel = state.sel;
-    history.replaceState(null, '', '#' + encodeURIComponent(JSON.stringify(s)));
+    history.replaceState(
+      null,
+      '',
+      '#' + encodeURIComponent(JSON.stringify(state)),
+    );
   }
 
-  function passes(pt, skipKey) {
+  function visiblePlace(pt) {
+    if (state.prog && pt.program_id !== state.prog) return false;
+    if (state.attention && pt._attn === 'clear') return false;
+    if (state.kinds.length && state.kinds.indexOf(pt.kind) < 0) return false;
+    if (state.orgs.length && state.orgs.indexOf(pt.managed_by || '') < 0)
+      return false;
     if (state.q && pt._text.indexOf(state.q.toLowerCase()) < 0) return false;
-    for (var i = 0; i < FACETS.length; i++) {
-      var f = FACETS[i];
-      if (f.key === skipKey) continue;
-      var vals = state.f[f.key];
-      if (vals && vals.length && !f.test(pt, vals)) return false;
-    }
     return true;
   }
-  function visible() {
-    return all.filter(function (pt) {
-      return passes(pt);
+
+  // ---------------------------------------------------------------- top bar
+  function renderBar() {
+    document.getElementById('pm-programs').innerHTML = programs
+      .map(function (p) {
+        return (
+          '<button type="button" class="pm-chip' +
+          (state.prog === p.program_id ? ' pm-on' : '') +
+          '" data-prog="' +
+          p.program_id +
+          '">' +
+          '<span class="pm-dot" style="background:' +
+          p._color +
+          '"></span>' +
+          esc(p.name) +
+          (p._open
+            ? ' <span style="opacity:.7">· ' + p._open + '</span>'
+            : '') +
+          '</button>'
+        );
+      })
+      .join('');
+    document
+      .getElementById('pm-attention')
+      .classList.toggle('pm-on', state.attention);
+    var active = state.kinds.length + state.orgs.length + (state.q ? 1 : 0);
+    document.getElementById('pm-more-n').textContent = active
+      ? '· ' + active
+      : '';
+  }
+  document
+    .getElementById('pm-programs')
+    .addEventListener('click', function (e) {
+      var b = e.target.closest('[data-prog]');
+      if (!b) return;
+      var id = +b.dataset.prog;
+      go(state.prog === id ? null : id, null);
     });
-  }
+  document
+    .getElementById('pm-attention')
+    .addEventListener('click', function () {
+      state.attention = !state.attention;
+      update(false);
+    });
 
-  // ---------------------------------------------------------------- rail
-  function renderFacets() {
-    var html = FACETS.map(function (f) {
-      if (!f.options.length) return '';
-      // Counts are over the places every OTHER facet leaves in scope, so each
-      // number says what clicking it would show.
-      var pool = all.filter(function (pt) {
-        return passes(pt, f.key);
-      });
-      var chosen = state.f[f.key] || [];
-      var opts = f.options
-        .map(function (o) {
-          var n = pool.filter(function (pt) {
-            return f.test(pt, [o.value]);
-          }).length;
-          var on = chosen.indexOf(o.value) >= 0;
-          return (
-            '<label class="pm-opt' +
-            (n === 0 && !on ? ' pm-zero' : '') +
-            '">' +
-            '<input type="checkbox" data-facet="' +
-            f.key +
-            '" value="' +
-            esc(o.value) +
-            '"' +
-            (on ? ' checked' : '') +
-            '>' +
-            (o.swatch
-              ? '<span class="pm-sw" style="background:' +
-                o.swatch +
-                '"></span>'
-              : '') +
-            '<span>' +
-            esc(o.label) +
-            '</span><span class="pm-n">' +
-            n +
-            '</span></label>'
-          );
-        })
-        .join('');
+  var morePanel = document.getElementById('pm-more-panel');
+  document.getElementById('pm-more').addEventListener('click', function () {
+    morePanel.hidden = !morePanel.hidden;
+    if (!morePanel.hidden) renderMore();
+  });
+  document.addEventListener('click', function (e) {
+    if (!morePanel.hidden && !e.target.closest('.pm-pop'))
+      morePanel.hidden = true;
+  });
+  function uniq(xs) {
+    return xs
+      .filter(function (x, i) {
+        return xs.indexOf(x) === i;
+      })
+      .sort();
+  }
+  function renderMore() {
+    var kinds = uniq(
+      places.map(function (p) {
+        return p.kind;
+      }),
+    );
+    var orgs = uniq(
+      places.map(function (p) {
+        return p.managed_by || '';
+      }),
+    );
+    var box = function (field, value, label) {
       return (
-        '<div class="pm-facet"><h3><span>' +
-        esc(f.title) +
-        '</span>' +
-        (chosen.length
-          ? '<button type="button" data-clear="' + f.key + '">clear</button>'
-          : '') +
-        '</h3>' +
-        opts +
-        '</div>'
+        '<label><input type="checkbox" data-f="' +
+        field +
+        '" value="' +
+        esc(value) +
+        '"' +
+        (state[field].indexOf(value) >= 0 ? ' checked' : '') +
+        '>' +
+        esc(label) +
+        '</label>'
       );
-    }).join('');
-    document.getElementById('pm-facets').innerHTML = html;
+    };
+    morePanel.innerHTML =
+      '<input type="search" id="pm-q" placeholder="Search places, orgs, areas…" class="w-full text-sm border border-gray-300 rounded-md px-2 py-1" value="' +
+      esc(state.q) +
+      '">' +
+      '<h5>Kind of place</h5>' +
+      kinds
+        .map(function (k) {
+          return box('kinds', k, KIND_LABEL[k] || k);
+        })
+        .join('') +
+      '<h5>Run by</h5>' +
+      orgs
+        .map(function (o) {
+          return box('orgs', o, o || 'Not recorded');
+        })
+        .join('') +
+      '<button type="button" class="pm-link text-sm mt-2" id="pm-clear">Clear filters</button>';
   }
-
-  document.getElementById('pm-facets').addEventListener('change', function (e) {
+  morePanel.addEventListener('change', function (e) {
     var t = e.target;
-    if (!t.dataset.facet) return;
-    var cur = state.f[t.dataset.facet] || [];
-    cur = t.checked
+    if (!t.dataset.f) return;
+    var cur = state[t.dataset.f];
+    state[t.dataset.f] = t.checked
       ? cur.concat([t.value])
       : cur.filter(function (v) {
           return v !== t.value;
         });
-    state.f[t.dataset.facet] = cur;
-    update();
+    update(false);
   });
-  document.getElementById('pm-facets').addEventListener('click', function (e) {
-    var k = e.target.dataset && e.target.dataset.clear;
-    if (!k) return;
-    delete state.f[k];
-    update();
-  });
-  document.getElementById('pm-q').addEventListener('input', function (e) {
+  morePanel.addEventListener('input', function (e) {
+    if (e.target.id !== 'pm-q') return;
     state.q = e.target.value;
-    update();
+    update(false);
   });
-  document.getElementById('pm-reset').addEventListener('click', function () {
-    state.f = {};
+  morePanel.addEventListener('click', function (e) {
+    if (e.target.id !== 'pm-clear') return;
+    state.kinds = [];
+    state.orgs = [];
     state.q = '';
-    document.getElementById('pm-q').value = '';
-    update();
-  });
-
-  // ---------------------------------------------------------------- KPIs
-  // Each tile is a count of PLACES and a one-click filter. Nothing here is a
-  // quantity, so nothing here adds a carton to a jerry can.
-  var KPIS = [
-    { label: 'Places', facet: null },
-    {
-      label: 'Stocked out',
-      facet: 'status',
-      value: 'stockout',
-      color: STATUS.stockout.color,
-    },
-    {
-      label: 'Below minimum',
-      facet: 'status',
-      value: 'below_min',
-      color: STATUS.below_min.color,
-    },
-    {
-      label: 'With a blocker',
-      facet: 'blocker',
-      value: 'any',
-      color: '#dc2626',
-    },
-    {
-      label: 'Order overdue',
-      facet: 'inbound',
-      value: 'overdue',
-      color: '#ea580c',
-    },
-    {
-      label: 'Shipment in transit',
-      facet: 'inbound',
-      value: 'moving',
-      color: '#0ea5e9',
-    },
-    { label: 'Not on the map', facet: null, tab: 'unplaced', color: '#64748b' },
-  ];
-  function renderKpis(vis) {
-    var html = KPIS.map(function (k, i) {
-      var n,
-        on = false;
-      if (!k.facet && !k.tab) n = vis.length;
-      else if (k.tab)
-        n = vis.filter(function (pt) {
-          return !pt._placed;
-        }).length;
-      else {
-        var f = FACETS.filter(function (x) {
-          return x.key === k.facet;
-        })[0];
-        n = vis.filter(function (pt) {
-          return f.test(pt, [k.value]);
-        }).length;
-        on = (state.f[k.facet] || []).indexOf(k.value) >= 0;
-      }
-      return (
-        '<button type="button" class="pm-kpi' +
-        (on ? ' pm-on' : '') +
-        '" data-kpi="' +
-        i +
-        '">' +
-        '<div class="pm-v" style="color:' +
-        (n && k.color ? k.color : '#111827') +
-        '">' +
-        n +
-        '</div>' +
-        '<div class="pm-l">' +
-        esc(k.label) +
-        '</div></button>'
-      );
-    }).join('');
-    document.getElementById('pm-kpis').innerHTML = html;
-  }
-  document.getElementById('pm-kpis').addEventListener('click', function (e) {
-    var b = e.target.closest('[data-kpi]');
-    if (!b) return;
-    var k = KPIS[+b.dataset.kpi];
-    if (k.tab) return setTab(k.tab);
-    if (!k.facet) {
-      state.f = {};
-      return update();
-    }
-    var cur = state.f[k.facet] || [];
-    state.f[k.facet] = cur.indexOf(k.value) >= 0 ? [] : [k.value];
-    update();
+    renderMore();
+    update(false);
   });
 
   // ---------------------------------------------------------------- panel
-  function setTab(tab) {
-    state.tab = tab;
-    ['list', 'unplaced', 'elsewhere'].forEach(function (t) {
-      document
-        .getElementById('pm-tab-' + t)
-        .classList.toggle('pm-on', t === tab);
-    });
-    renderPanel(visible());
-  }
-  document.querySelector('.pm-tabbar').addEventListener('click', function (e) {
-    var t = e.target.dataset && e.target.dataset.tab;
-    if (t) {
-      state.sel = null;
-      setTab(t);
-      writeHash();
-    }
-  });
+  var side = document.getElementById('pm-side');
 
-  function statusChip(pt) {
-    var s = STATUS[pt.status] || STATUS.unknown;
+  function crumbs() {
+    var parts = [
+      '<button type="button" data-go="">' +
+        esc(DATA.portfolio.name) +
+        '</button>',
+    ];
+    if (state.prog) {
+      var p = progById[state.prog];
+      parts.push(
+        state.place
+          ? '<button type="button" data-go="' +
+              p.program_id +
+              '">' +
+              esc(p.name) +
+              '</button>'
+          : '<span>' + esc(p.name) + '</span>',
+      );
+    }
+    if (state.place)
+      parts.push('<span>' + esc(placeByKey[state.place].name) + '</span>');
+    return '<div class="pm-crumbs">' + parts.join(' › ') + '</div>';
+  }
+
+  // One line per stage, from chain_summary's own counts -- the same figures
+  // the program's Overview shows, so the two cannot disagree.
+  function stageLine(p, stage) {
+    var s = p.summary || {};
+    if (stage === 'source') {
+      var src = s.source || {};
+      var ev = src.evaluation || {};
+      var bits = [plural((src.demand || {}).rounds || 0, 'round')];
+      if (ev.of)
+        bits.push(ev.comparable + ' of ' + ev.of + ' quotes comparable');
+      if ((src.award || {}).count) bits.push(plural(src.award.count, 'award'));
+      return bits.join(' · ');
+    }
+    if (stage === 'order') {
+      var o = s.order || {};
+      var parts = [plural((o.contract || {}).count || 0, 'order')];
+      if (p.orders.length) parts.push(p.orders.length + ' still to arrive');
+      if ((o.dispatched || {}).in_transit)
+        parts.push(o.dispatched.in_transit + ' in transit');
+      if ((o.invoiced || {}).unpaid)
+        parts.push(plural(o.invoiced.unpaid, 'unpaid invoice'));
+      return parts.join(' · ');
+    }
+    var net = (s.deliver || {}).network || {};
+    var lines = [plural(net.supply_points || 0, 'place')];
+    if (net.user_held) lines.push(plural(net.user_held, 'field worker'));
+    if (net.never_reported)
+      lines.push(net.never_reported + ' never reported stock');
+    return lines.join(' · ');
+  }
+  function stalled(p) {
+    return p.orders.filter(function (o) {
+      return o.overdue || !o.expected_on;
+    });
+  }
+  function stageChecks(p, stage) {
+    return p.checks.filter(function (c) {
+      return c.stage === stage;
+    });
+  }
+
+  function portfolioPanel() {
+    var vis = places.filter(visiblePlace);
+    var count = function (a) {
+      return vis.filter(function (p) {
+        return p._attn === a;
+      }).length;
+    };
+    var onWay = programs.reduce(function (n, p) {
+      return n + p.orders.length;
+    }, 0);
+    var h = crumbs();
+    h +=
+      '<div class="pm-sec"><div class="text-sm text-gray-700">' +
+      plural(vis.length, 'place') +
+      ' across ' +
+      plural(programs.length, 'program') +
+      '. <span style="color:#dc2626">' +
+      count('blocked') +
+      ' blocked</span>, <span style="color:#b45309">' +
+      count('waiting') +
+      ' waiting on an answer</span>, ' +
+      plural(onWay, 'order') +
+      ' still to arrive.</div></div><div class="pm-sec">';
+    programs.forEach(function (p) {
+      h +=
+        '<button type="button" class="pm-card" data-go="' +
+        p.program_id +
+        '">' +
+        '<div class="flex items-center gap-2"><span class="pm-dot" style="background:' +
+        p._color +
+        '"></span>' +
+        '<span class="font-semibold text-gray-900 text-sm">' +
+        esc(p.name) +
+        '</span>' +
+        '<span class="ml-auto pm-muted">' +
+        (p._open ? plural(p._open, 'thing') + ' in the way' : 'nothing open') +
+        '</span></div>' +
+        '<div class="pm-stages">' +
+        STAGES.map(function (st) {
+          var n =
+            stageChecks(p, st.key).length +
+            (st.key === 'order' ? stalled(p).length : 0);
+          return (
+            '<div class="pm-stage' +
+            (n ? ' pm-hot' : '') +
+            '"><b>' +
+            st.label +
+            (n ? ' <span class="pm-n">' + n + '</span>' : '') +
+            '</b>' +
+            esc(stageLine(p, st.key)) +
+            '</div>'
+          );
+        }).join('') +
+        '</div>' +
+        (p.unplaced.length
+          ? '<div class="pm-muted mt-2"><i class="fa-solid fa-location-dot mr-1"></i>' +
+            plural(p.unplaced.length, 'place') +
+            ' with no location — listed, not on the map</div>'
+          : '') +
+        '</button>';
+    });
+    return h + '</div>';
+  }
+
+  function subjectLink(c, p) {
+    var pt = c.supply_point_id
+      ? placeByKey[p.program_id + ':' + c.supply_point_id]
+      : null;
+    var label = esc(c.subject.label || checkLabel(c.kind));
+    if (pt)
+      return (
+        '<button type="button" class="pm-link" data-place="' +
+        pt._key +
+        '"><i class="fa-solid fa-location-dot mr-1"></i>' +
+        esc(pt.name) +
+        '</button>'
+      );
+    return c.href
+      ? '<a class="pm-link" href="' + esc(c.href) + '">' + label + '</a>'
+      : label;
+  }
+  function checkRow(c, p) {
+    var color =
+      c.category === 'missing' ? ATTN.waiting.color : ATTN.blocked.color;
     return (
-      '<span class="pm-chip" style="background:' +
-      s.color +
-      '26;color:' +
-      (s.text || s.color) +
-      '">' +
-      esc(s.label) +
-      '</span>'
+      '<div class="pm-row"><span class="pm-dot" style="margin-top:6px;background:' +
+      color +
+      '"></span><div class="min-w-0">' +
+      '<div class="text-gray-900">' +
+      esc(checkLabel(c.kind)) +
+      ' <span class="pm-muted">· ' +
+      esc(audienceLabel(c.audience)) +
+      '</span></div>' +
+      '<div class="pm-muted">' +
+      subjectLink(c, p) +
+      (c.days_open != null ? ' · ' + c.days_open + ' days open' : '') +
+      '</div></div></div>'
     );
   }
-  function listItem(pt) {
-    var bits = [];
-    if (pt.checks.length)
-      bits.push(
-        '<span style="color:#dc2626">' +
-          pt.checks.length +
-          ' blocker' +
-          (pt.checks.length > 1 ? 's' : '') +
-          '</span>',
-      );
-    if (pt._overdue)
-      bits.push(
-        '<span style="color:#ea580c">' + pt._overdue + ' overdue</span>',
-      );
-    if (pt._movingIn.length)
-      bits.push(
-        '<span style="color:#0284c7">' +
-          pt._movingIn.length +
-          ' in transit</span>',
-      );
+  // The same finding about several records is one thing to fix, not several
+  // lines to read: "No ration table" for five products is one row naming them.
+  function checkRows(checks, p) {
+    var groups = [];
+    var byKey = {};
+    checks.forEach(function (c) {
+      var k = c.kind + '|' + c.audience;
+      if (!byKey[k]) {
+        byKey[k] = {
+          kind: c.kind,
+          category: c.category,
+          audience: c.audience,
+          items: [],
+        };
+        groups.push(byKey[k]);
+      }
+      byKey[k].items.push(c);
+    });
+    return groups
+      .map(function (g) {
+        if (g.items.length === 1) return checkRow(g.items[0], p);
+        var color =
+          g.category === 'missing' ? ATTN.waiting.color : ATTN.blocked.color;
+        return (
+          '<div class="pm-row"><span class="pm-dot" style="margin-top:6px;background:' +
+          color +
+          '"></span><details class="min-w-0 w-full">' +
+          '<summary style="cursor:pointer;list-style:none"><span class="text-gray-900">' +
+          esc(checkLabel(g.kind)) +
+          ' <b>×' +
+          g.items.length +
+          '</b></span>' +
+          ' <span class="pm-muted">· ' +
+          esc(audienceLabel(g.audience)) +
+          '</span>' +
+          '<div class="pm-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+          esc(
+            g.items
+              .map(function (c) {
+                return c.subject.label || '';
+              })
+              .join(', '),
+          ) +
+          '</div></summary>' +
+          g.items
+            .map(function (c) {
+              return (
+                '<div class="pm-muted" style="padding:3px 0 0 2px">' +
+                subjectLink(c, p) +
+                (c.days_open != null
+                  ? ' · ' + c.days_open + ' days open'
+                  : '') +
+                '</div>'
+              );
+            })
+            .join('') +
+          '</details></div>'
+        );
+      })
+      .join('');
+  }
+  function orderRow(o, p) {
+    var supplier = p.suppliers.filter(function (s) {
+      return s.id === o.supplier_id;
+    })[0];
+    var to = o.to_supply_point_id
+      ? placeByKey[p.program_id + ':' + o.to_supply_point_id]
+      : null;
+    var when = !o.expected_on
+      ? '<span style="color:#b45309">no arrival date promised</span>'
+      : o.overdue
+        ? '<span style="color:#dc2626">' +
+          daysLate(o.expected_on) +
+          ' days late</span>'
+        : 'due ' + esc(o.expected_on);
+    var colour = o.overdue ? '#dc2626' : o.expected_on ? '#0284c7' : '#d97706';
     return (
-      '<button type="button" class="pm-list-item' +
-      (state.sel === pt._key ? ' pm-sel' : '') +
-      '" data-key="' +
+      '<div class="pm-row"><i class="fa-solid fa-truck-fast" style="margin-top:3px;color:' +
+      colour +
+      '"></i><div class="min-w-0">' +
+      '<a class="pm-link" href="' +
+      esc(o.url) +
+      '">' +
+      esc(o.reference || 'Order #' + o.contract_id) +
+      '</a>' +
+      (o.outstanding ? ' · ' + esc(figure(o.outstanding).text) : '') +
+      (o.item_name ? ' ' + esc(o.item_name) : '') +
+      '<div class="pm-muted">' +
+      esc(supplier ? supplier.name : 'Supplier') +
+      ' → ' +
+      (to
+        ? '<button type="button" class="pm-link" data-place="' +
+          to._key +
+          '">' +
+          esc(to.name) +
+          '</button>'
+        : 'no destination recorded') +
+      '</div><div class="pm-muted">' +
+      when +
+      '</div></div></div>'
+    );
+  }
+  function placeRow(pt) {
+    var a = ATTN[pt._attn];
+    return (
+      '<button type="button" class="pm-row w-full text-left" data-place="' +
       pt._key +
       '">' +
-      '<div class="flex items-center gap-2"><span class="pm-sw" style="background:' +
-      programColor[pt.program_id] +
+      '<span class="pm-dot" style="margin-top:6px;background:' +
+      a.color +
       '"></span>' +
-      '<span class="text-sm font-medium text-gray-900 truncate">' +
+      '<div class="min-w-0"><div class="text-gray-900">' +
       esc(pt.name) +
-      '</span>' +
       (pt._placed
         ? ''
-        : '<i class="fa-solid fa-location-dot text-gray-300 ml-auto" title="No coordinates"></i>') +
+        : ' <i class="fa-solid fa-location-dot text-gray-300" title="No location"></i>') +
       '</div>' +
-      '<div class="text-xs text-gray-500 mt-0.5 ml-4">' +
+      '<div class="pm-muted">' +
       esc(KIND_LABEL[pt.kind] || pt.kind) +
-      (pt.admin_area ? ' · ' + esc(pt.admin_area) : '') +
+      (pt.managed_by ? ' · ' + esc(pt.managed_by) : '') +
       ' · ' +
-      esc(programName[pt.program_id]) +
-      '</div>' +
-      '<div class="text-xs mt-1 ml-4 flex flex-wrap gap-x-2 gap-y-1 items-center">' +
-      statusChip(pt) +
-      bits.join('') +
-      '</div>' +
-      '</button>'
+      esc(a.label) +
+      '</div></div></button>'
     );
   }
 
-  function renderPanel(vis) {
-    var panel = document.getElementById('pm-panel');
-    var unplacedVis = vis.filter(function (pt) {
-      return !pt._placed;
+  function programPanel(p) {
+    var h = crumbs();
+    h +=
+      '<div class="pm-sec"><div class="flex items-center gap-2"><span class="pm-dot" style="background:' +
+      p._color +
+      '"></span>' +
+      '<span class="text-base font-semibold text-gray-900">' +
+      esc(p.name) +
+      '</span>' +
+      '<a class="pm-link text-sm ml-auto" href="' +
+      esc(p.home_url) +
+      '">Open this chain →</a></div></div>';
+    STAGES.forEach(function (st) {
+      var cs = stageChecks(p, st.key);
+      h +=
+        '<div class="pm-sec"><h4><span>' +
+        st.label +
+        '</span><span style="text-transform:none;letter-spacing:0;font-weight:400">' +
+        esc(stageLine(p, st.key)) +
+        '</span></h4>';
+      h += cs.length
+        ? checkRows(cs, p)
+        : '<div class="pm-muted">Nothing in the way here.</div>';
+      if (st.key === 'order' && p.orders.length) {
+        h +=
+          '<div class="pm-muted mt-2" style="font-weight:600">Still to arrive</div>' +
+          p.orders
+            .map(function (o) {
+              return orderRow(o, p);
+            })
+            .join('');
+      }
+      if (st.key === 'deliver') {
+        var pts = places.filter(function (pt) {
+          return (
+            pt.program_id === p.program_id &&
+            visiblePlace(pt) &&
+            pt.kind !== 'user_held'
+          );
+        });
+        var workers = places.filter(function (pt) {
+          return pt.program_id === p.program_id && pt.kind === 'user_held';
+        }).length;
+        h +=
+          '<div class="pm-muted mt-2" style="font-weight:600">Places</div>' +
+          (pts.length
+            ? pts.map(placeRow).join('')
+            : '<div class="pm-muted">None match the filters.</div>') +
+          (workers
+            ? '<div class="pm-muted mt-1">' +
+              plural(workers, 'field worker') +
+              ' — zoom in to see them.</div>'
+            : '');
+      }
+      h += '</div>';
     });
-    document.getElementById('pm-tab-list').textContent =
-      'Places (' + vis.length + ')';
-    document.getElementById('pm-tab-unplaced').textContent =
-      'Not on map (' + unplacedVis.length + ')';
-    var elsewhere = unlocated.filter(function (c) {
-      var pf = state.f.program;
-      return !pf || !pf.length || pf.indexOf(String(c.program_id)) >= 0;
-    });
-    document.getElementById('pm-tab-elsewhere').textContent =
-      'Unplaced blockers (' + elsewhere.length + ')';
-
-    if (state.sel && byId[state.sel]) {
-      panel.innerHTML = detail(byId[state.sel]);
-      return;
-    }
-    if (state.tab === 'unplaced') {
-      panel.innerHTML =
-        '<p class="text-xs text-gray-600 px-4 py-3 bg-gray-50 border-b border-gray-100">' +
-        'These places have no coordinates, so the map cannot draw them. They are still counted everywhere on this page. ' +
-        'Set a latitude and longitude on each to put it on the map.</p>' +
-        (unplacedVis.length
-          ? unplacedVis.map(listItem).join('')
-          : '<p class="text-sm text-gray-500 p-4">Every place in view is on the map.</p>');
-      return;
-    }
-    if (state.tab === 'elsewhere') {
-      panel.innerHTML =
-        '<p class="text-xs text-gray-600 px-4 py-3 bg-gray-50 border-b border-gray-100">' +
-        'Blockers about a quote, an award or the catalogue belong to no place, so they are not on the map. They are listed here so the map never looks cleaner than the chain is.</p>' +
-        (elsewhere.length
-          ? elsewhere
-              .map(function (c) {
-                return (
-                  '<div class="px-4 py-2.5 border-b border-gray-100 text-sm">' +
-                  '<div class="flex items-center gap-2"><span class="pm-sw" style="background:' +
-                  CATEGORY_COLOR[c.category] +
-                  '"></span>' +
-                  '<span class="font-medium text-gray-900">' +
-                  esc(checkLabel(c.kind)) +
-                  '</span></div>' +
-                  '<div class="text-xs text-gray-500 ml-4">' +
-                  esc(c.subject.label || '') +
-                  ' · ' +
-                  esc(programName[c.program_id]) +
-                  (c.days_open != null
-                    ? ' · ' + c.days_open + ' days open'
-                    : '') +
-                  '</div>' +
-                  '<a class="text-xs text-brand-indigo hover:underline ml-4" href="' +
-                  esc(c.checks_url) +
-                  '">Open in Checks</a></div>'
-                );
-              })
-              .join('')
-          : '<p class="text-sm text-gray-500 p-4">None.</p>');
-      return;
-    }
-    panel.innerHTML = vis.length
-      ? vis.map(listItem).join('')
-      : '<p class="text-sm text-gray-500 p-4">No place matches these filters.</p>';
+    return h;
   }
 
   function band(pt) {
     var mos = num(pt.months_of_stock);
-    var lo = num(pt.min_months_of_stock),
-      hi = num(pt.max_months_of_stock);
+    var lo = num(pt.min_months_of_stock);
+    var hi = num(pt.max_months_of_stock);
     if (mos == null || (lo == null && hi == null)) return '';
     var top = Math.max(mos, hi || 0, lo || 0) * 1.25 || 1;
     var pct = function (x) {
@@ -725,7 +759,7 @@
       '<div class="pm-mark" style="left:calc(' +
       pct(mos) +
       '% - 1px)"></div></div>' +
-      '<div class="flex justify-between text-gray-500" style="font-size:11px"><span>0</span><span>band ' +
+      '<div class="flex justify-between pm-muted"><span>0</span><span>its band ' +
       (lo != null ? fmt(lo) : '–') +
       '–' +
       (hi != null ? fmt(hi) : '–') +
@@ -733,493 +767,254 @@
     );
   }
 
-  function detail(pt) {
+  function placePanel(pt) {
+    var p = progById[pt.program_id];
+    var a = ATTN[pt._attn];
+    var h = crumbs();
+    h +=
+      '<div class="pm-sec"><div class="text-base font-semibold text-gray-900">' +
+      esc(pt.name) +
+      '</div>' +
+      '<div class="pm-muted">' +
+      esc(KIND_LABEL[pt.kind] || pt.kind) +
+      (pt.admin_area ? ' · ' + esc(pt.admin_area) : '') +
+      (pt.managed_by ? ' · run by ' + esc(pt.managed_by) : '') +
+      '</div>' +
+      '<div class="mt-2 text-sm" style="color:' +
+      a.color +
+      '"><span class="pm-dot mr-1" style="background:' +
+      a.color +
+      '"></span>' +
+      esc(a.label) +
+      '</div>';
+    if (!pt._placed) {
+      h +=
+        '<div class="pm-note" style="background:#f9fafb;border:1px solid #e5e7eb">No location at all, so it is not on the map. ' +
+        '<a class="pm-link" href="' +
+        esc(pt.links.edit) +
+        '">Record where it is</a>.</div>';
+    } else if (pt.location.source !== 'recorded') {
+      h +=
+        '<div class="pm-note" style="background:#fffbeb;border:1px solid #fde68a;color:#78350f"><i class="fa-solid fa-location-crosshairs mr-1"></i>Shown at ' +
+        esc(pt.location.label || LOCATION_LABEL[pt.location.source]) +
+        (pt.location.precision
+          ? ', accurate to the ' + esc(pt.location.precision)
+          : '') +
+        ' — not where this place really is. <a class="underline" href="' +
+        esc(pt.links.edit) +
+        '">Record its location</a>.</div>';
+    }
+    h += '</div>';
+
     var onHand = figure(pt.on_hand);
     var mos = figure(pt.months_of_stock);
     var reported = figure(pt.reported);
-    var h = '<div class="pm-detail p-4">';
-    h +=
-      '<button type="button" class="text-xs text-brand-indigo hover:underline mb-2" data-back>&larr; Back to list</button>';
-    h +=
-      '<div class="flex items-start gap-2"><span class="pm-sw mt-1.5" style="background:' +
-      programColor[pt.program_id] +
-      '"></span><div>';
-    h +=
-      '<div class="text-base font-semibold text-gray-900">' +
-      esc(pt.name) +
-      '</div>';
-    h +=
-      '<div class="text-xs text-gray-500">' +
-      esc(KIND_LABEL[pt.kind] || pt.kind) +
-      (pt.admin_area ? ' · ' + esc(pt.admin_area) : '') +
-      (pt.managed_by ? ' · managed by ' + esc(pt.managed_by) : '') +
-      '</div>';
-    h +=
-      '<div class="text-xs text-gray-500">' +
-      esc(programName[pt.program_id]) +
-      '</div></div></div>';
-    h += '<div class="mt-2">' + statusChip(pt) + '</div>';
-    if (pt._approx) {
-      h +=
-        '<div class="mt-3 text-xs rounded-md bg-amber-50 border border-amber-200 p-2 text-amber-900">' +
-        '<i class="fa-solid fa-location-crosshairs mr-1"></i>Shown at ' +
-        esc(pt.location.label || LOCATION_LABEL[pt.location.source]) +
-        (pt.location.precision
-          ? ' — accurate to the ' + esc(pt.location.precision)
-          : '') +
-        ', not where this place really is. <a class="underline" href="' +
-        esc(pt.links.edit) +
-        '">Record its location</a></div>';
-    }
-    if (!pt._placed) {
-      h +=
-        '<div class="mt-3 text-xs rounded-md bg-gray-50 border border-gray-200 p-2 text-gray-700">No coordinates, so it is not on the map. ' +
-        '<a class="text-brand-indigo hover:underline" href="' +
-        esc(pt.links.edit) +
-        '">Set its location</a></div>';
-    }
-
-    h += '<h4>Stock</h4><div class="grid grid-cols-2 gap-2 text-sm">';
-    h +=
-      '<div><div class="text-xs text-gray-500">On hand (ledger)</div><div class="font-semibold"' +
-      (onHand.why ? ' title="' + esc(onHand.why) + '"' : '') +
-      '>' +
-      esc(onHand.text) +
-      '</div></div>';
-    h +=
-      '<div><div class="text-xs text-gray-500">Months of stock</div><div class="font-semibold"' +
-      (mos.why ? ' title="' + esc(mos.why) + '"' : '') +
-      '>' +
-      esc(mos.text) +
-      '</div></div>';
-    h +=
-      '<div><div class="text-xs text-gray-500">Last counted</div><div>' +
-      esc(reported.text) +
-      (pt.reported_on
-        ? ' <span class="text-xs text-gray-500">on ' +
-          esc(pt.reported_on) +
-          '</span>'
-        : '') +
-      '</div></div>';
     var dts = num(pt.days_to_stockout);
     h +=
-      '<div><div class="text-xs text-gray-500">Runs out in</div><div>' +
+      '<div class="pm-sec"><h4><span>Stock</span><span style="text-transform:none;letter-spacing:0;font-weight:400">' +
+      esc(STATUS_LABEL[pt.status] || pt.status) +
+      '</span></h4><div class="grid grid-cols-2 gap-2 text-sm">' +
+      '<div><div class="pm-muted">On hand (ledger)</div><div class="font-semibold">' +
+      esc(onHand.text) +
+      '</div></div>' +
+      '<div><div class="pm-muted">Months of stock</div><div class="font-semibold">' +
+      esc(mos.text) +
+      '</div></div>' +
+      '<div><div class="pm-muted">Last counted</div><div>' +
+      esc(reported.text) +
+      (pt.reported_on
+        ? ' <span class="pm-muted">on ' + esc(pt.reported_on) + '</span>'
+        : '') +
+      '</div></div>' +
+      '<div><div class="pm-muted">Runs out in</div><div>' +
       (dts != null ? fmt(Math.round(dts)) + ' days' : '—') +
-      '</div></div>';
-    h += '</div>' + band(pt);
-    if (onHand.why)
-      h +=
-        '<p class="text-xs text-gray-500 mt-1">Why not: ' +
-        esc(onHand.why) +
-        '</p>';
-
-    h += '<h4>Blockers (' + pt.checks.length + ')</h4>';
-    if (!pt.checks.length)
-      h += '<p class="text-sm text-gray-500">Nothing open at this place.</p>';
-    pt.checks.forEach(function (c) {
-      h +=
-        '<div class="mb-2 text-sm border-l-2 pl-2" style="border-color:' +
-        CATEGORY_COLOR[c.category] +
-        '">' +
-        '<div class="font-medium text-gray-900">' +
-        esc(checkLabel(c.kind)) +
-        '</div>' +
-        '<div class="text-xs text-gray-500">' +
-        esc((V.audience_labels || {})[c.audience] || c.audience) +
-        (c.days_open != null ? ' · ' + c.days_open + ' days open' : '') +
-        (c.subject && c.subject.type !== 'supply_point'
-          ? ' · ' + esc(c.subject.label || '')
-          : '') +
-        '</div></div>';
-    });
-
-    h += '<h4>Still owed to it</h4>';
-    if (!pt.expected_inbound.length && !pt._movingIn.length)
-      h +=
-        '<p class="text-sm text-gray-500">Nothing is owed to this place.</p>';
-    pt.expected_inbound.forEach(function (e) {
-      var d = days(e.expected_on);
-      var when = !e.expected_on
-        ? '<span style="color:#c2410c">no date promised</span>'
-        : e.overdue
-          ? '<span style="color:#dc2626">' + Math.abs(d) + ' days late</span>'
-          : 'due ' + esc(e.expected_on);
-      h +=
-        '<div class="text-sm mb-1.5"><a class="text-brand-indigo hover:underline" href="' +
-        esc(e.order_url) +
-        '">' +
-        esc(e.reference || 'Order #' + e.contract_id) +
-        '</a> · ' +
-        esc(figure(e.outstanding).text) +
-        (e.item_name ? ' ' + esc(e.item_name) : '') +
-        '<div class="text-xs text-gray-500">from ' +
-        esc(e.supplier.name) +
-        ' · ' +
-        when +
-        '</div></div>';
-    });
-    pt._movingIn.forEach(function (m) {
-      h +=
-        '<div class="text-sm mb-1.5"><i class="fa-solid fa-truck-fast mr-1" style="color:#0284c7"></i><a class="text-brand-indigo hover:underline" href="' +
-        esc(m.url) +
-        '">' +
-        esc(m.reference || 'Shipment #' + m.shipment_id) +
-        '</a> · ' +
-        esc(m.status.replace(/_/g, ' ')) +
-        '<div class="text-xs text-gray-500">' +
-        esc(m.supplier) +
-        (m.expected_on
-          ? ' · expected ' + esc(m.expected_on)
-          : ' · no expected date') +
-        '</div></div>';
-    });
+      '</div></div></div>' +
+      band(pt) +
+      (onHand.why
+        ? '<div class="pm-muted mt-1">Why not: ' + esc(onHand.why) + '</div>'
+        : '') +
+      '</div>';
 
     h +=
-      '<h4>Open</h4><div class="flex flex-wrap gap-3 text-sm">' +
-      '<a class="text-brand-indigo hover:underline" href="' +
+      '<div class="pm-sec"><h4><span>In the way here</span></h4>' +
+      (pt.checks.length
+        ? checkRows(pt.checks, p)
+        : '<div class="pm-muted">Nothing open at this place.</div>') +
+      '</div>';
+    h +=
+      '<div class="pm-sec"><h4><span>Still to arrive</span></h4>' +
+      (pt._orders.length
+        ? pt._orders
+            .map(function (o) {
+              return orderRow(o, p);
+            })
+            .join('')
+        : '<div class="pm-muted">Nothing is owed to this place.</div>') +
+      '</div>';
+    var restocks = places.filter(function (w) {
+      return w.program_id === pt.program_id && w.parent_id === pt.id;
+    });
+    if (restocks.length)
+      h +=
+        '<div class="pm-sec"><h4><span>Restocks</span></h4>' +
+        restocks.map(placeRow).join('') +
+        '</div>';
+    h +=
+      '<div class="pm-sec text-sm flex gap-4"><a class="pm-link" href="' +
       esc(pt.links.movements) +
       '">Movements</a>' +
-      '<a class="text-brand-indigo hover:underline" href="' +
+      '<a class="pm-link" href="' +
       esc(pt.links.network) +
-      '">Network</a>' +
-      '<a class="text-brand-indigo hover:underline" href="' +
+      '">Network</a><a class="pm-link" href="' +
       esc(pt.links.edit) +
       '">Edit place</a></div>';
-    return h + '</div>';
+    return h;
   }
 
-  document.getElementById('pm-panel').addEventListener('click', function (e) {
-    if (e.target.closest('[data-back]')) {
-      state.sel = null;
-      renderPanel(visible());
-      paintSelection();
-      writeHash();
-      return;
+  function renderPanel() {
+    if (state.place && placeByKey[state.place])
+      side.innerHTML = placePanel(placeByKey[state.place]);
+    else if (state.prog) side.innerHTML = programPanel(progById[state.prog]);
+    else side.innerHTML = portfolioPanel();
+    side.scrollTop = 0;
+  }
+  side.addEventListener('click', function (e) {
+    var g = e.target.closest('[data-go]');
+    if (g) return go(g.dataset.go ? +g.dataset.go : null, null);
+    var pl = e.target.closest('[data-place]');
+    if (pl) {
+      var pt = placeByKey[pl.dataset.place];
+      go(pt.program_id, pt._key);
     }
-    var b = e.target.closest('[data-key]');
-    if (b) select(b.dataset.key, true);
   });
 
-  function select(key, fly) {
-    state.sel = key;
-    var pt = byId[key];
-    renderPanel(visible());
-    paintSelection();
-    writeHash();
-    if (fly && map && pt && pt._placed)
-      // Past clusterMaxZoom, so the place is its own dot rather than a member of one.
-      map.flyTo({
-        center: [pt._x, pt._y],
-        zoom: Math.max(map.getZoom(), 11),
-        speed: 1.4,
-      });
-  }
-
-  // ---------------------------------------------------------------- colour
-  document.getElementById('pm-colour').addEventListener('click', function (e) {
-    var c = e.target.dataset && e.target.dataset.colour;
-    if (!c) return;
-    state.colour = c;
-    update();
-  });
-  function colourFor(pt) {
-    if (state.colour === 'program') return programColor[pt.program_id];
-    if (state.colour === 'blockers') {
-      if (!pt.checks.length) return '#475569';
-      var cats = pt.checks.map(function (c) {
-        return c.category;
-      });
-      if (cats.indexOf('threshold') >= 0) return CATEGORY_COLOR.threshold;
-      if (cats.indexOf('conflict') >= 0) return CATEGORY_COLOR.conflict;
-      return CATEGORY_COLOR.missing;
-    }
-    return (STATUS[pt.status] || STATUS.unknown).color;
-  }
-  // A rank per colour mode, lowest = most in need, so a cluster can take its
-  // worst member's colour with one `min`. The order is the legend's order.
-  function rankFor(pt) {
-    if (state.colour === 'program') return 0;
-    if (state.colour === 'blockers') {
-      var cats = pt.checks.map(function (c) {
-        return c.category;
-      });
-      return cats.indexOf('threshold') >= 0
-        ? 0
-        : cats.indexOf('conflict') >= 0
-          ? 1
-          : cats.length
-            ? 2
-            : 3;
-    }
-    var i = STATUS_ORDER.indexOf(pt.status);
-    return i < 0 ? STATUS_ORDER.length : i;
-  }
-  function clusterColour() {
-    var pairs;
-    if (state.colour === 'program') return '#c7d2fe';
-    if (state.colour === 'blockers')
-      pairs = [
-        CATEGORY_COLOR.threshold,
-        CATEGORY_COLOR.conflict,
-        CATEGORY_COLOR.missing,
-        '#94a3b8',
-      ];
-    else
-      pairs = STATUS_ORDER.map(function (s) {
-        return STATUS[s].color;
-      });
-    var expr = ['match', ['get', 'worst']];
-    pairs.forEach(function (c, i) {
-      expr.push(i, c);
-    });
-    expr.push('#94a3b8');
-    return expr;
-  }
-  function renderLegend() {
-    var rows;
-    if (state.colour === 'program') {
-      rows = DATA.programs.map(function (p) {
-        return [programColor[p.program_id], p.name];
-      });
-    } else if (state.colour === 'blockers') {
-      rows = [
-        [CATEGORY_COLOR.threshold, 'Past a limit you set'],
-        [CATEGORY_COLOR.conflict, 'Records disagree'],
-        [CATEGORY_COLOR.missing, 'A fact is missing'],
-        ['#475569', 'No blockers'],
-      ];
-    } else {
-      rows = STATUS_ORDER.map(function (s) {
-        return [STATUS[s].color, STATUS[s].label];
-      });
-    }
-    var html = rows
-      .map(function (r) {
-        return (
-          '<div class="pm-row"><span class="pm-sw" style="background:' +
-          r[0] +
-          '"></span>' +
-          esc(r[1]) +
-          '</div>'
-        );
-      })
-      .join('');
-    html +=
-      '<div class="pm-row" style="margin-top:6px;opacity:.8"><span class="pm-sw" style="background:transparent;border:2px solid #f43f5e"></span>Ring: open blocker</div>';
-    html +=
-      '<div class="pm-row" style="opacity:.8"><span style="width:14px;border-top:2px dashed #38bdf8"></span>Shipment in transit</div>';
-    html +=
-      '<div class="pm-row" style="opacity:.8"><span class="pm-sw" style="background:#94a3b8;opacity:.5"></span>Faded: location is a stand-in</div>';
-    document.getElementById('pm-legend').innerHTML = html;
-    Array.prototype.forEach.call(
-      document.querySelectorAll('#pm-colour button'),
-      function (b) {
-        b.classList.toggle('pm-on', b.dataset.colour === state.colour);
-      },
-    );
+  function go(prog, place) {
+    state.prog = prog;
+    state.place = place;
+    update(true);
   }
 
   // ---------------------------------------------------------------- map
   var map = null;
-  var mapReady = false;
-  var fitted = false;
+  var ready = false;
   var mapEl = document.getElementById('pm-map');
-  var anyPlaced = all.some(function (pt) {
-    return pt._placed;
-  });
-
-  function noMap(msg) {
-    mapEl.innerHTML = '<div class="pm-nomap"><div>' + msg + '</div></div>';
+  function note(msg) {
+    var n = document.createElement('div');
+    n.className = 'pm-nomap';
+    n.innerHTML = '<div>' + msg + '</div>';
+    mapEl.parentNode.appendChild(n);
+    return n;
   }
-  if (!window.mapboxgl || !window.ConnectMap) {
-    noMap('The map library did not load. The lists beside it are complete.');
-  } else if (!window.MAPBOX_TOKEN) {
-    noMap(
-      'No map token is configured on this server (MAPBOX_TOKEN), so the basemap cannot draw. The lists beside it are complete.',
+  if (!window.mapboxgl || !window.ConnectMap)
+    note('The map library did not load. The panel beside it is complete.');
+  else if (!window.MAPBOX_TOKEN)
+    note(
+      'No map token is configured on this server (MAPBOX_TOKEN). The panel beside it is complete.',
     );
-  } else {
-    map = ConnectMap.createMap(mapEl, { center: [10, 5], zoom: 2.4 });
+  else {
+    map = ConnectMap.createMap(mapEl, { center: [8, 9], zoom: 4.5 });
     map.addControl(
       new mapboxgl.NavigationControl({ showCompass: false }),
       'top-left',
     );
     map.on('load', function () {
       ConnectMap.calmBasemap(map);
-      map.addSource('pm-links', { type: 'geojson', data: empty() });
-      map.addSource('pm-moving', { type: 'geojson', data: empty() });
-      // Clustered, so twenty field workers around one town read as twenty at
-      // a glance rather than as one dot. A cluster carries its worst member's
-      // colour and the sum of its blockers -- a count of findings, never of stock.
-      map.addSource('pm-points', {
-        type: 'geojson',
-        data: empty(),
-        cluster: true,
-        clusterRadius: 38,
-        clusterMaxZoom: 10,
-        clusterProperties: {
-          blockers: ['+', ['get', 'blockers']],
-          worst: ['min', ['get', 'rank']],
-        },
+      [
+        'pm-routes',
+        'pm-links',
+        'pm-places',
+        'pm-workers',
+        'pm-suppliers',
+      ].forEach(function (id) {
+        map.addSource(id, { type: 'geojson', data: empty() });
       });
       map.addLayer({
         id: 'pm-links',
         type: 'line',
         source: 'pm-links',
         paint: {
-          'line-color': '#64748b',
-          'line-width': 1.2,
-          'line-opacity': 0.55,
+          'line-color': '#475569',
+          'line-width': 1,
+          'line-opacity': 0.6,
         },
       });
       map.addLayer({
-        id: 'pm-moving',
+        id: 'pm-routes',
         type: 'line',
-        source: 'pm-moving',
+        source: 'pm-routes',
+        layout: { 'line-cap': 'round' },
         paint: {
-          'line-color': '#38bdf8',
-          'line-width': 2.4,
-          'line-dasharray': [0, 2, 2],
-        },
-      });
-      map.addLayer({
-        id: 'pm-clusters',
-        type: 'circle',
-        source: 'pm-points',
-        filter: ['has', 'point_count'],
-        paint: {
-          'circle-radius': ['step', ['get', 'point_count'], 15, 10, 19, 50, 24],
-          'circle-color': clusterColour(),
-          'circle-opacity': 0.9,
-          'circle-stroke-color': [
-            'case',
-            ['>', ['get', 'blockers'], 0],
-            '#f43f5e',
-            '#0b1020',
+          'line-color': [
+            'match',
+            ['get', 'state'],
+            'late',
+            '#ef4444',
+            'undated',
+            '#f59e0b',
+            '#38bdf8',
           ],
-          'circle-stroke-width': [
+          'line-width': 2.2,
+          'line-opacity': 0.9,
+          'line-dasharray': [
             'case',
-            ['>', ['get', 'blockers'], 0],
-            3,
-            1.5,
+            ['==', ['get', 'state'], 'undated'],
+            ['literal', [1.5, 1.5]],
+            ['literal', [1, 0]],
           ],
         },
       });
       map.addLayer({
-        id: 'pm-cluster-count',
-        type: 'symbol',
-        source: 'pm-points',
-        filter: ['has', 'point_count'],
-        layout: {
-          'text-field': ['get', 'point_count_abbreviated'],
-          'text-size': 12,
-          'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
-          'text-allow-overlap': true,
-        },
-        paint: { 'text-color': '#0b1020' },
-      });
-      map.on('click', 'pm-clusters', function (e) {
-        var f = e.features[0];
-        map
-          .getSource('pm-points')
-          .getClusterExpansionZoom(
-            f.properties.cluster_id,
-            function (err, zoom) {
-              if (!err)
-                map.easeTo({
-                  center: f.geometry.coordinates,
-                  zoom: zoom + 0.3,
-                });
-            },
-          );
-      });
-      map.on('mouseenter', 'pm-clusters', function () {
-        map.getCanvas().style.cursor = 'pointer';
-      });
-      map.on('mouseleave', 'pm-clusters', function () {
-        map.getCanvas().style.cursor = '';
-      });
-      map.addLayer({
-        id: 'pm-halo',
+        id: 'pm-workers',
         type: 'circle',
-        source: 'pm-points',
-        filter: [
-          'all',
-          ['!', ['has', 'point_count']],
-          ['==', ['get', 'status'], 'stockout'],
-        ],
+        source: 'pm-workers',
+        minzoom: 9,
         paint: {
-          'circle-radius': ['*', ['get', 'r'], 2.2],
-          'circle-color': STATUS.stockout.color,
-          'circle-opacity': 0.18,
-          'circle-blur': 0.6,
+          'circle-radius': 3.5,
+          'circle-color': ['get', 'color'],
+          'circle-stroke-color': '#0b1020',
+          'circle-stroke-width': 1,
         },
       });
       map.addLayer({
-        id: 'pm-points',
+        id: 'pm-suppliers',
         type: 'circle',
-        source: 'pm-points',
-        filter: ['!', ['has', 'point_count']],
+        source: 'pm-suppliers',
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#0b1020',
+          'circle-stroke-color': '#e2e8f0',
+          'circle-stroke-width': 2,
+        },
+      });
+      map.addLayer({
+        id: 'pm-places',
+        type: 'circle',
+        source: 'pm-places',
         paint: {
           'circle-radius': ['get', 'r'],
           'circle-color': ['get', 'color'],
-          'circle-opacity': ['case', ['get', 'approx'], 0.5, 1],
-          'circle-stroke-color': [
-            'case',
-            ['get', 'sel'],
-            '#ffffff',
-            ['>', ['get', 'blockers'], 0],
-            '#f43f5e',
-            '#0b1020',
-          ],
-          'circle-stroke-width': [
-            'case',
-            ['get', 'sel'],
-            3.5,
-            ['>', ['get', 'blockers'], 0],
-            2.4,
-            1,
-          ],
+          'circle-opacity': ['case', ['get', 'approx'], 0.55, 1],
+          'circle-stroke-color': ['case', ['get', 'sel'], '#ffffff', '#0b1020'],
+          'circle-stroke-width': ['case', ['get', 'sel'], 3, 1.2],
         },
       });
       map.addLayer({
-        id: 'pm-badges',
+        id: 'pm-labels',
         type: 'symbol',
-        source: 'pm-points',
-        filter: [
-          'all',
-          ['!', ['has', 'point_count']],
-          ['>', ['get', 'blockers'], 0],
-        ],
+        source: 'pm-places',
+        minzoom: 6,
         layout: {
-          'text-field': ['to-string', ['get', 'blockers']],
-          'text-size': 10,
-          'text-offset': [0.9, -0.9],
-          'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
-          'text-allow-overlap': true,
-        },
-        paint: {
-          'text-color': '#fff',
-          'text-halo-color': '#e11d48',
-          'text-halo-width': 2.2,
-        },
-      });
-      map.addLayer({
-        id: 'pm-names',
-        type: 'symbol',
-        source: 'pm-points',
-        filter: ['!', ['has', 'point_count']],
-        layout: {
-          visibility: 'none',
           'text-field': ['get', 'name'],
           'text-size': 11,
-          'text-offset': [0, 1.3],
+          'text-offset': [0, 1.2],
           'text-anchor': 'top',
           'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
+          'text-optional': true,
         },
         paint: {
-          'text-color': '#e2e8f0',
+          'text-color': '#cbd5e1',
           'text-halo-color': '#0b1020',
-          'text-halo-width': 1.4,
+          'text-halo-width': 1.3,
         },
       });
 
@@ -1228,91 +1023,68 @@
         closeOnClick: false,
         offset: 10,
       });
-      map.on('mouseenter', 'pm-points', function (e) {
-        map.getCanvas().style.cursor = 'pointer';
-        var pt = byId[e.features[0].properties.key];
-        if (!pt) return;
+      ['pm-places', 'pm-workers'].forEach(function (layer) {
+        map.on('mouseenter', layer, function (e) {
+          map.getCanvas().style.cursor = 'pointer';
+          var pt = placeByKey[e.features[0].properties.key];
+          popup
+            .setLngLat([pt._x, pt._y])
+            .setHTML(
+              '<strong>' +
+                esc(pt.name) +
+                '</strong><br><span style="color:#6b7280">' +
+                esc(progById[pt.program_id].name) +
+                '</span><br>' +
+                '<span style="color:' +
+                ATTN[pt._attn].color +
+                '">' +
+                esc(ATTN[pt._attn].label) +
+                '</span>',
+            )
+            .addTo(map);
+        });
+        map.on('mouseleave', layer, function () {
+          map.getCanvas().style.cursor = '';
+          popup.remove();
+        });
+        map.on('click', layer, function (e) {
+          var pt = placeByKey[e.features[0].properties.key];
+          go(pt.program_id, pt._key);
+        });
+      });
+      map.on('mouseenter', 'pm-suppliers', function (e) {
+        var f = e.features[0].properties;
         popup
-          .setLngLat([pt._x, pt._y])
+          .setLngLat(e.lngLat)
           .setHTML(
             '<strong>' +
-              esc(pt.name) +
-              '</strong><br><span style="color:#6b7280">' +
-              esc(KIND_LABEL[pt.kind] || pt.kind) +
-              ' · ' +
-              esc(programName[pt.program_id]) +
-              '</span><br>' +
-              esc(figure(pt.on_hand).text) +
-              ' on hand' +
-              (pt.checks.length
-                ? '<br><span style="color:#dc2626">' +
-                  pt.checks.length +
-                  ' blocker' +
-                  (pt.checks.length > 1 ? 's' : '') +
-                  '</span>'
-                : ''),
+              esc(f.name) +
+              '</strong><br><span style="color:#6b7280">Supplier · shown at ' +
+              esc(f.where) +
+              '</span>',
           )
           .addTo(map);
       });
-      map.on('mouseleave', 'pm-points', function () {
-        map.getCanvas().style.cursor = '';
+      map.on('mouseleave', 'pm-suppliers', function () {
         popup.remove();
       });
-      map.on('click', 'pm-points', function (e) {
-        select(e.features[0].properties.key, false);
-      });
-
-      // Marching dashes: a consignment in motion should look like one.
-      var step = 0;
-      var DASHES = [
-        [0, 4, 3],
-        [0.5, 4, 2.5],
-        [1, 4, 2],
-        [1.5, 4, 1.5],
-        [2, 4, 1],
-        [2.5, 4, 0.5],
-        [3, 4, 0],
-        [0, 0.5, 3, 3.5],
-        [0, 1, 3, 3],
-        [0, 1.5, 3, 2.5],
-        [0, 2, 3, 2],
-        [0, 2.5, 3, 1.5],
-        [0, 3, 3, 1],
-        [0, 3.5, 3, 0.5],
-      ];
-      setInterval(function () {
-        if (!map.getLayer('pm-moving')) return;
-        step = (step + 1) % DASHES.length;
-        map.setPaintProperty('pm-moving', 'line-dasharray', DASHES[step]);
-      }, 90);
-
-      mapReady = true;
-      drawMap(visible());
-      if (!anyPlaced) {
-        var note = document.createElement('div');
-        note.className = 'pm-nomap';
-        note.style.pointerEvents = 'none';
-        note.innerHTML =
-          '<div style="background:rgba(15,23,42,.86);padding:14px 18px;border-radius:10px;max-width:360px">' +
-          'None of these places has coordinates yet, so there is nothing to draw. ' +
-          'Every one is listed under <strong>Not on map</strong>, with its status and blockers.</div>';
-        mapEl.parentNode.appendChild(note);
-      }
+      ready = true;
+      drawMap(true);
     });
   }
-
   function empty() {
     return { type: 'FeatureCollection', features: [] };
   }
-
-  // A gentle curve between two places, so a route reads as a route rather
-  // than as a border line on the basemap.
+  function fc(features) {
+    return { type: 'FeatureCollection', features: features };
+  }
+  // A gentle curve, so a route reads as a route rather than a border line.
   function arc(a, b) {
-    var mx = (a[0] + b[0]) / 2,
-      my = (a[1] + b[1]) / 2;
-    var dx = b[0] - a[0],
-      dy = b[1] - a[1];
-    var c = [mx - dy * 0.18, my + dx * 0.18];
+    var mx = (a[0] + b[0]) / 2;
+    var my = (a[1] + b[1]) / 2;
+    var dx = b[0] - a[0];
+    var dy = b[1] - a[1];
+    var c = [mx - dy * 0.2, my + dx * 0.2];
     var pts = [];
     for (var t = 0; t <= 1.0001; t += 0.05) {
       var u = 1 - t;
@@ -1324,41 +1096,56 @@
     return pts;
   }
 
-  function drawMap(vis) {
-    if (!map || !mapReady) return;
-    var placed = vis.filter(function (pt) {
-      return pt._placed;
+  var emptyNote = null;
+  function drawMap(fit) {
+    if (!ready) return;
+    var vis = places.filter(function (pt) {
+      return pt._placed && visiblePlace(pt);
     });
     var shown = {};
-    placed.forEach(function (pt) {
-      shown[pt._key] = pt;
+    vis.forEach(function (pt) {
+      shown[pt._key] = true;
     });
-    map.getSource('pm-points').setData({
-      type: 'FeatureCollection',
-      features: placed.map(function (pt) {
-        return {
-          type: 'Feature',
-          geometry: { type: 'Point', coordinates: [pt._x, pt._y] },
-          properties: {
-            approx: pt._approx,
-            key: pt._key,
-            name: pt.name,
-            status: pt.status,
-            color: colourFor(pt),
-            r: KIND_RADIUS[pt.kind] || 6,
-            blockers: pt.checks.length,
-            sel: state.sel === pt._key,
-            rank: rankFor(pt),
-          },
-        };
-      }),
-    });
+    var feature = function (pt) {
+      return {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [pt._x, pt._y] },
+        properties: {
+          key: pt._key,
+          name: pt.name,
+          color: ATTN[pt._attn].color,
+          r: KIND_RADIUS[pt.kind] || 6,
+          approx: pt.location.source !== 'recorded',
+          sel: state.place === pt._key,
+        },
+      };
+    };
+    map.getSource('pm-places').setData(
+      fc(
+        vis
+          .filter(function (pt) {
+            return pt.kind !== 'user_held';
+          })
+          .map(feature),
+      ),
+    );
+    map.getSource('pm-workers').setData(
+      fc(
+        vis
+          .filter(function (pt) {
+            return pt.kind === 'user_held';
+          })
+          .map(feature),
+      ),
+    );
 
+    // Resupply lines only inside one program: across a portfolio they are noise.
     var links = [];
-    if (document.getElementById('pm-links').checked) {
-      placed.forEach(function (pt) {
-        var parent = pt.parent_id && byId[pt.program_id + ':' + pt.parent_id];
-        if (parent && parent._placed && shown[parent._key]) {
+    if (state.prog) {
+      vis.forEach(function (pt) {
+        var parent =
+          pt.parent_id && placeByKey[pt.program_id + ':' + pt.parent_id];
+        if (parent && shown[parent._key] && pt.kind !== 'user_held') {
           links.push({
             type: 'Feature',
             geometry: {
@@ -1373,76 +1160,142 @@
         }
       });
     }
-    map
-      .getSource('pm-links')
-      .setData({ type: 'FeatureCollection', features: links });
+    map.getSource('pm-links').setData(fc(links));
 
+    // A route is drawn only when both ends are real places on the map; an
+    // order to a store with no location is listed in the panel instead.
     var routes = [];
-    if (document.getElementById('pm-moving').checked) {
-      moving.forEach(function (m) {
-        var to = byId[m.program_id + ':' + m.to_supply_point_id];
-        var from =
-          m.from_supply_point_id &&
-          byId[m.program_id + ':' + m.from_supply_point_id];
-        // Drawn only when both ends are real places. A shipment with no
-        // recorded origin is shown on its destination's card, not from a
-        // point invented to hang a line on.
-        if (to && from && to._placed && from._placed && shown[to._key]) {
-          routes.push({
-            type: 'Feature',
-            geometry: {
-              type: 'LineString',
-              coordinates: arc([from._x, from._y], [to._x, to._y]),
-            },
-            properties: {},
-          });
-        }
+    var used = {};
+    programs.forEach(function (p) {
+      if (state.prog && p.program_id !== state.prog) return;
+      p.orders.forEach(function (o) {
+        var to =
+          o.to_supply_point_id &&
+          placeByKey[p.program_id + ':' + o.to_supply_point_id];
+        var s = p.suppliers.filter(function (x) {
+          return x.id === o.supplier_id;
+        })[0];
+        if (!to || !shown[to._key] || !s || !s.location) return;
+        used[s._key] = s;
+        routes.push({
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: arc([s._x, s._y], [to._x, to._y]),
+          },
+          properties: {
+            state: o.overdue ? 'late' : o.expected_on ? 'due' : 'undated',
+          },
+        });
       });
-    }
-    map
-      .getSource('pm-moving')
-      .setData({ type: 'FeatureCollection', features: routes });
-    map.setPaintProperty('pm-clusters', 'circle-color', clusterColour());
-    map.setLayoutProperty(
-      'pm-names',
-      'visibility',
-      document.getElementById('pm-labels').checked ? 'visible' : 'none',
+    });
+    map.getSource('pm-routes').setData(fc(routes));
+    map.getSource('pm-suppliers').setData(
+      fc(
+        Object.keys(used).map(function (k) {
+          var s = used[k];
+          return {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [s._x, s._y] },
+            properties: {
+              name: s.name,
+              where: s.location.label + ', ' + s.location.precision + ' level',
+            },
+          };
+        }),
+      ),
     );
 
-    if (!fitted && placed.length) {
-      fitted = true;
-      if (placed.length === 1)
-        map.jumpTo({ center: [placed[0]._x, placed[0]._y], zoom: 8 });
-      else {
-        var b = new mapboxgl.LngLatBounds();
-        placed.forEach(function (pt) {
-          b.extend([pt._x, pt._y]);
+    if (emptyNote) {
+      emptyNote.remove();
+      emptyNote = null;
+    }
+    if (!vis.length) {
+      var anyPlaced = places.some(function (pt) {
+        return pt._placed;
+      });
+      emptyNote = note(
+        anyPlaced
+          ? 'No place on the map matches what is selected.'
+          : 'None of these places has a location yet. Each is listed in the panel.',
+      );
+    }
+
+    if (fit) {
+      var sel = state.place && placeByKey[state.place];
+      var target =
+        sel && sel._placed
+          ? [sel]
+          : vis.concat(
+              Object.keys(used).map(function (k) {
+                return used[k];
+              }),
+            );
+      if (target.length === 1) {
+        map.flyTo({
+          center: [target[0]._x, target[0]._y],
+          zoom: Math.max(map.getZoom(), sel ? 10 : 8),
+          speed: 1.4,
         });
-        map.fitBounds(b, { padding: 60, duration: 0, maxZoom: 9 });
+      } else if (target.length) {
+        var b = new mapboxgl.LngLatBounds();
+        target.forEach(function (o) {
+          b.extend([o._x, o._y]);
+        });
+        map.fitBounds(b, { padding: 70, maxZoom: 9, duration: 700 });
       }
     }
   }
-  function paintSelection() {
-    drawMap(visible());
-  }
-  ['pm-links', 'pm-moving', 'pm-labels'].forEach(function (id) {
-    document.getElementById(id).addEventListener('change', function () {
-      drawMap(visible());
-    });
-  });
 
-  // ---------------------------------------------------------------- loop
-  function update() {
-    var vis = visible();
-    renderFacets();
-    renderKpis(vis);
-    renderLegend();
-    renderPanel(vis);
-    drawMap(vis);
+  // The three states are always visible; the rest of the key folds away, so
+  // it does not sit on top of the places it explains.
+  function renderLegend() {
+    var row = function (swatch, label) {
+      return '<div>' + swatch + label + '</div>';
+    };
+    var h = ['blocked', 'waiting', 'clear']
+      .map(function (k) {
+        return row(
+          '<span class="pm-dot" style="background:' +
+            ATTN[k].color +
+            '"></span>',
+          ATTN[k].label,
+        );
+      })
+      .join('');
+    h +=
+      '<details><summary style="cursor:pointer;opacity:.7;list-style:none">More…</summary>' +
+      row(
+        '<span class="pm-dot" style="background:#94a3b8;opacity:.5"></span>',
+        'Faded: location is a stand-in',
+      ) +
+      row(
+        '<span class="pm-dot" style="background:#0b1020;border:2px solid #e2e8f0"></span>',
+        'Supplier',
+      ) +
+      row(
+        '<span style="width:16px;border-top:2px solid #38bdf8"></span>',
+        'Order on its way',
+      ) +
+      row(
+        '<span style="width:16px;border-top:2px solid #ef4444"></span>',
+        'Order past its promised date',
+      ) +
+      row(
+        '<span style="width:16px;border-top:2px dashed #f59e0b"></span>',
+        'No arrival date promised',
+      ) +
+      '</details>';
+    document.getElementById('pm-legend').innerHTML = h;
+  }
+
+  function update(fit) {
+    renderBar();
+    renderPanel();
+    drawMap(fit);
     writeHash();
   }
 
-  readHash();
-  document.getElementById('pm-q').value = state.q;
-  update();
+  renderLegend();
+  update(true);
 })();

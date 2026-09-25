@@ -5,16 +5,21 @@
 The portfolio by place. Extends the ROOT base for the reason portfolio.html
 gives: the supply nav is one program's, and this page spans several.
 
-Everything the page draws is in `map_payload` (portfolio/map_data.py), and
-every filter runs in the browser over it. Three rules the script keeps:
+Three levels, one panel: the portfolio (a card per program, its chain as three
+stages), a program (what is in the way at each stage, its orders and places),
+and a place. The map follows the panel: it fits to what is being read, and
+draws only what that level needs -- stores coloured by one thing (blocked /
+waiting on an answer / nothing open), and the routes supplies are on their
+way along.
 
-  - a place with no coordinates is listed beside the map, never dropped;
-  - a blocker with no place is counted per program, never dropped;
-  - what is counted is PLACES, never a quantity across programs.
+Everything is in `map_payload` (portfolio/map_data.py); the script filters in
+the browser. What is counted is PLACES and ORDERS, never a quantity across
+programs. A place with no location and a blocker with no place are listed in
+the panel, never dropped.
 
-Map-specific styling is inline in <style> rather than in Tailwind classes:
-the Tailwind bundle is built in Docker from the templates, and a class that
-exists only in a new template is one a stale bundle silently lacks.
+Map-specific styling is inline rather than Tailwind: the bundle is built from
+the templates in Docker, and a class only this page uses is one a stale bundle
+silently lacks.
 {% endcomment %}
 
 {% block title %}{{ portfolio.name }} — map{% endblock %}
@@ -23,119 +28,86 @@ exists only in a new template is one a stale bundle silently lacks.
   {{ block.super }}
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
   <style>
-    .pm-shell { display: grid; grid-template-columns: 272px minmax(0, 1fr) 360px; height: calc(100vh - 176px); min-height: 560px; }
-    .pm-rail, .pm-side { overflow-y: auto; background: #fff; }
-    .pm-rail { border-right: 1px solid #e5e7eb; padding: 14px 14px 24px; }
-    .pm-side { border-left: 1px solid #e5e7eb; display: flex; flex-direction: column; }
+    .pm-shell { display: grid; grid-template-columns: minmax(0, 1fr) 400px; height: calc(100vh - 150px); min-height: 560px; }
     .pm-mapwrap { position: relative; background: #0b1020; }
     #pm-map { position: absolute; inset: 0; }
-    .pm-facet { margin-bottom: 18px; }
-    .pm-facet h3 { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #6b7280; margin-bottom: 6px; display: flex; justify-content: space-between; }
-    .pm-facet h3 button { text-transform: none; letter-spacing: 0; font-weight: 500; color: #4f46e5; }
-    .pm-opt { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 6px; font-size: 13px; color: #374151; cursor: pointer; user-select: none; }
-    .pm-opt:hover { background: #f3f4f6; }
-    .pm-opt input { accent-color: #4f46e5; }
-    .pm-opt .pm-n { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 11.5px; color: #6b7280; background: #f3f4f6; border-radius: 999px; padding: 0 7px; }
-    .pm-opt.pm-zero { opacity: .45; }
-    .pm-sw { width: 10px; height: 10px; border-radius: 999px; flex: none; }
-    .pm-kpis { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
-    .pm-kpi { text-align: left; border: 1px solid #e5e7eb; background: #fff; border-radius: 10px; padding: 8px 10px; transition: border-color .15s, box-shadow .15s; }
-    .pm-kpi:hover { border-color: #a5b4fc; }
-    .pm-kpi.pm-on { border-color: #4f46e5; box-shadow: 0 0 0 2px rgba(79,70,229,.15); }
-    .pm-kpi .pm-v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
-    .pm-kpi .pm-l { font-size: 11.5px; color: #6b7280; }
-    .pm-seg { display: inline-flex; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; }
-    .pm-seg button { font-size: 12.5px; padding: 5px 10px; color: #374151; background: #fff; }
-    .pm-seg button + button { border-left: 1px solid #d1d5db; }
-    .pm-seg button.pm-on { background: #4f46e5; color: #fff; }
-    .pm-overlay { position: absolute; left: 12px; bottom: 12px; background: rgba(15,23,42,.86); color: #e2e8f0; border-radius: 10px; padding: 10px 12px; font-size: 12px; max-width: 260px; backdrop-filter: blur(4px); }
-    .pm-overlay .pm-row { display: flex; align-items: center; gap: 7px; margin: 2px 0; }
-    .pm-toggles { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 6px; }
-    .pm-toggles label { background: rgba(15,23,42,.86); color: #e2e8f0; font-size: 12px; padding: 5px 9px; border-radius: 8px; display: flex; gap: 6px; align-items: center; cursor: pointer; }
-    .pm-nomap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #cbd5e1; padding: 32px; text-align: center; font-size: 14px; }
-    .pm-list-item { display: block; width: 100%; text-align: left; padding: 10px 14px; border-bottom: 1px solid #f3f4f6; }
-    .pm-list-item:hover { background: #f9fafb; }
-    .pm-list-item.pm-sel { background: #eef2ff; }
-    .pm-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
-    .pm-tabbar { display: flex; border-bottom: 1px solid #e5e7eb; position: sticky; top: 0; background: #fff; z-index: 1; }
-    .pm-tabbar button { flex: 1; font-size: 12.5px; padding: 9px 4px; color: #6b7280; border-bottom: 2px solid transparent; }
-    .pm-tabbar button.pm-on { color: #312e81; border-bottom-color: #4f46e5; font-weight: 600; }
-    .pm-detail h4 { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #6b7280; margin: 14px 0 6px; }
+    .pm-side { overflow-y: auto; background: #fff; border-left: 1px solid #e5e7eb; }
+    .pm-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .pm-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid #e5e7eb; background: #fff; font-size: 13px; color: #374151; }
+    .pm-chip:hover { border-color: #a5b4fc; }
+    .pm-chip.pm-on { background: #312e81; border-color: #312e81; color: #fff; }
+    .pm-dot { width: 9px; height: 9px; border-radius: 999px; flex: none; display: inline-block; }
+    .pm-crumbs { font-size: 12.5px; color: #6b7280; padding: 12px 16px 0; }
+    .pm-crumbs button { color: #4f46e5; }
+    .pm-crumbs button:hover { text-decoration: underline; }
+    .pm-sec { padding: 12px 16px; border-bottom: 1px solid #f3f4f6; }
+    .pm-sec h4 { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #6b7280; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; }
+    .pm-card { display: block; width: 100%; text-align: left; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; margin-bottom: 10px; background: #fff; }
+    .pm-card:hover { border-color: #a5b4fc; box-shadow: 0 1px 6px rgba(49,46,129,.08); }
+    .pm-stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+    .pm-stage { border-radius: 8px; background: #f9fafb; padding: 6px 8px; font-size: 11.5px; color: #4b5563; line-height: 1.35; }
+    .pm-stage b { display: block; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: #6b7280; margin-bottom: 2px; }
+    .pm-stage.pm-hot { background: #fef2f2; }
+    .pm-stage .pm-n { color: #dc2626; font-weight: 700; }
+    .pm-row { display: flex; gap: 8px; align-items: flex-start; padding: 7px 0; font-size: 13px; }
+    .pm-row + .pm-row { border-top: 1px dashed #f1f5f9; }
+    .pm-muted { color: #6b7280; font-size: 12px; }
+    .pm-link { color: #4f46e5; }
+    .pm-link:hover { text-decoration: underline; }
+    .pm-legend { position: absolute; left: 12px; bottom: 12px; background: rgba(15,23,42,.86); color: #e2e8f0; border-radius: 10px; padding: 9px 11px; font-size: 12px; backdrop-filter: blur(4px); }
+    .pm-legend div { display: flex; align-items: center; gap: 7px; margin: 2px 0; }
+    .pm-nomap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #cbd5e1; padding: 32px; text-align: center; font-size: 14px; pointer-events: none; }
+    .pm-nomap > div { background: rgba(15,23,42,.86); padding: 14px 18px; border-radius: 10px; max-width: 380px; }
+    .pm-pop { position: relative; }
+    .pm-pop > div { position: absolute; right: 0; top: 36px; z-index: 20; width: 280px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.08); padding: 12px; }
+    .pm-pop label { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 2px 0; color: #374151; }
+    .pm-pop h5 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: #6b7280; margin: 8px 0 4px; }
     .pm-band { position: relative; height: 8px; background: #f3f4f6; border-radius: 999px; margin: 6px 0 2px; }
     .pm-band .pm-ok { position: absolute; top: 0; bottom: 0; background: #bbf7d0; border-radius: 999px; }
     .pm-band .pm-mark { position: absolute; top: -3px; width: 3px; height: 14px; background: #111827; border-radius: 2px; }
+    .pm-note { font-size: 12px; border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
     .mapboxgl-popup-content { padding: 8px 10px; font-size: 12.5px; border-radius: 8px; }
-    @media (max-width: 1100px) {
+    @media (max-width: 1000px) {
       .pm-shell { grid-template-columns: 1fr; height: auto; }
-      .pm-rail, .pm-side { border: 0; max-height: none; }
-      .pm-mapwrap { height: 60vh; }
-      .pm-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .pm-mapwrap { height: 55vh; }
+      .pm-side { border-left: 0; }
     }
   </style>
 {% endblock %}
 
 {% block content %}
-<div class="px-4 pt-5">
-  <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
+<div class="px-4 pt-4 pb-3">
+  <div class="flex flex-wrap items-end justify-between gap-3">
     <div>
       <div class="text-xs text-gray-500 mb-0.5">
         <a class="hover:underline" href="{% url 'supply_chain:portfolio' portfolio.slug %}">{{ portfolio.name }}</a> · Map
       </div>
       <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Where the supplies are</h1>
-      <p class="text-sm text-gray-500 mt-0.5">
-        Every place stock rests across this portfolio, what it holds in its own units, and what stands in its way.
-      </p>
     </div>
-    <div class="flex items-center gap-3 flex-wrap">
-      <span class="text-xs text-gray-500">Colour by</span>
-      <div class="pm-seg" id="pm-colour">
-        <button type="button" data-colour="status" class="pm-on">Stock status</button>
-        <button type="button" data-colour="blockers">Blockers</button>
-        <button type="button" data-colour="program">Program</button>
+    <div class="pm-bar">
+      <div id="pm-programs" class="pm-bar"></div>
+      <button type="button" class="pm-chip" id="pm-attention"><span class="pm-dot" style="background:#ef4444"></span>Needs attention</button>
+      <div class="pm-pop">
+        <button type="button" class="pm-chip" id="pm-more"><i class="fa-solid fa-sliders"></i> Filters <span id="pm-more-n"></span></button>
+        <div id="pm-more-panel" hidden></div>
       </div>
-      <a href="{% url 'supply_chain:portfolio' portfolio.slug %}" class="text-sm text-brand-indigo hover:underline">
-        <i class="fa-solid fa-list mr-1"></i>Chains view
-      </a>
+      <a href="{% url 'supply_chain:portfolio' portfolio.slug %}" class="pm-chip"><i class="fa-solid fa-list"></i> Chains view</a>
     </div>
   </div>
 
   {% if map_payload.hidden %}
-    <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 mb-3 text-sm text-amber-900" data-pm-hidden>
+    <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 mt-3 text-sm text-amber-900" data-pm-hidden>
       <strong>{{ map_payload.hidden }} of this portfolio's {{ map_payload.stated }} {{ map_payload.stated|pluralize:"program,programs" }} {{ map_payload.hidden|pluralize:"is,are" }} not shown</strong>, because your account cannot reach {{ map_payload.hidden|pluralize:"it,them" }}.
     </div>
   {% endif %}
-
-  <div class="pm-kpis" id="pm-kpis"></div>
 </div>
 
 <div class="pm-shell border-t border-gray-200">
-  <aside class="pm-rail" id="pm-rail" aria-label="Filters">
-    <div class="pm-facet">
-      <input id="pm-q" type="search" placeholder="Search places, orgs, areas…"
-             class="w-full text-sm border border-gray-300 rounded-md px-2.5 py-1.5">
-    </div>
-    <div id="pm-facets"></div>
-    <button type="button" id="pm-reset" class="text-sm text-brand-indigo hover:underline">Clear all filters</button>
-  </aside>
-
   <div class="pm-mapwrap">
     <div id="pm-map"></div>
-    <div class="pm-toggles">
-      <label><input type="checkbox" id="pm-links" checked> Resupply lines</label>
-      <label><input type="checkbox" id="pm-moving" checked> In transit</label>
-      <label><input type="checkbox" id="pm-labels"> Names</label>
-    </div>
-    <div class="pm-overlay" id="pm-legend"></div>
+    <div class="pm-legend" id="pm-legend"></div>
   </div>
-
-  <aside class="pm-side" aria-label="Places">
-    <div class="pm-tabbar">
-      <button type="button" data-tab="list" class="pm-on" id="pm-tab-list">Places</button>
-      <button type="button" data-tab="unplaced" id="pm-tab-unplaced">Not on map</button>
-      <button type="button" data-tab="elsewhere" id="pm-tab-elsewhere">Unplaced blockers</button>
-    </div>
-    <div id="pm-panel" class="flex-1"></div>
-  </aside>
+  <aside class="pm-side" id="pm-side" aria-label="Details"></aside>
 </div>
 
 {{ map_payload|json_script:"pm-data" }}
