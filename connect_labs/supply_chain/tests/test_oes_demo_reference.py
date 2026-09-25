@@ -869,3 +869,40 @@ def test_a_directory_org_the_directory_does_not_have_is_refused_by_name():
     module.op = _Empty()
     with pytest.raises(ValueError, match="a-missing-partner"):
         module.seed_orgs(object(), {"orgs": [{"slug": "a-missing-partner", "from_directory": True}]})
+
+
+def test_history_names_places_and_refuses_one_the_chain_does_not_have():
+    """Past movements are named by place in the document; a typo must not post to nowhere."""
+    fake = _FakeOp()
+    module = _load_seed_remote()
+    module.op = fake
+    chain = {
+        "warehouse": {"id": 1},
+        "partner_points": {"a-partner": {"id": 2}},
+        "context": {"item": {"id": 9, "commodity_slug": "a-product"}},
+    }
+    reference = {"orgs": {"the-programme-org": {"id": 5}}}
+    data = {
+        "chc_chain": {
+            "programme_org_slug": "the-programme-org",
+            "history": [
+                {
+                    "kind": "transfer",
+                    "days_ago": 40,
+                    "quantity": "10",
+                    "quantity_unit": "unit",
+                    "from": "warehouse",
+                    "to": "a-partner",
+                }
+            ],
+        }
+    }
+    module.chain_programme_org = lambda d: "the-programme-org"
+
+    module.seed_history(object(), data, reference, chain, {"points": {}})
+    posted = [p["data"] for name, p in fake.calls if name == "movement_record"]
+    assert [(m["from_supply_point_id"], m["to_supply_point_id"], m["item_id"]) for m in posted] == [(1, 2, 9)]
+
+    data["chc_chain"]["history"][0]["to"] = "a-typo"
+    with pytest.raises(ValueError, match="a-typo"):
+        module.seed_history(object(), data, reference, chain, {"points": {}})
