@@ -154,6 +154,22 @@ Several workbook indicators were not covered by the old scorecard rules. These a
 - Three headline figures have changed values because they now use the unified rules instead of the old scorecard rules.
 - **Reports saved before this update** will show only the indicators whose definition did not change. A note on the report explains this.
 
+### KMC opportunity report
+
+!!! note "Recent change"
+    The opportunity report has been rebuilt. Network managers now see the same view the programme report shows, scoped to their own opportunity.
+
+When a network manager opens the KMC report for their opportunity, they now see:
+
+- **Five headline figures** with the change since the previous saved report.
+- **Registrations and visits by week**, and indicator trends across all saved reports for that opportunity.
+- **A row per field worker** on the programme's scorecard, showing each worker's last visit date and an "attention" count. Clicking a worker opens their cases.
+- **"Against its peers"** — the anonymous peer bars and trend lines are still available here.
+
+The opportunity report and the programme report are now drawn from the same shared components, so they look and behave consistently.
+
+**How figures are saved:** whenever the programme report saves a week, each opportunity automatically receives that opportunity's figures for that week, labelled "From the programme report". Network managers do not need access to the programme report and do not need to save anything themselves. An opportunity can also save its own weeks independently, and a live unsaved view remains available at any time.
+
 ---
 
 ## More Information
