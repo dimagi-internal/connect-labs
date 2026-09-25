@@ -43,6 +43,10 @@ cannot end the block.
       var widget = window.canopy.init({
         baseUrl: "{{ canopy_panel.base_url|escapejs }}",
         app: "{{ canopy_panel.app_name|escapejs }}",
+        // Names canopy's tenant for this site (a site name is unique only per
+        // canopy workspace). With one agent on offer the widget skips its
+        // picker anyway, so this changes nothing a person sees.
+        agent: "{{ canopy_panel.agent|escapejs }}",
         tokenUrl: "{% url 'labs:canopy_token' %}",
         mode: "overlay",
         launcherLabel: "Ask an agent",
