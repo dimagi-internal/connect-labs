@@ -2195,13 +2195,28 @@ def preview_snapshot_api(request, run_id):
             return JsonResponse({"error": "Run not found"}, status=404)
         if run.is_completed and run.snapshot:
             return JsonResponse({"source": "stored", "snapshot": run.snapshot, "cache": None})
-        try:
-            built = build_snapshot_for_run(
+
+        def build():
+            return build_snapshot_for_run(
                 data_access,
                 run,
                 request=request,
                 program_id=getattr(data_access, "program_id", None),
             )
+
+        try:
+            try:
+                built = build()
+            except SnapshotBuildError as e:
+                # A report that fills its own cache (`warm_cache_on_read`) warms it
+                # and tries once more, rather than telling its reader to go and
+                # open some other page first. The opportunity report streams no
+                # pipelines, so nothing else on its page would ever fill it.
+                definition = data_access.get_definition(run.definition_id) if e.code == "cache_miss" else None
+                if definition is None or not _warm_cache_on_read(definition):
+                    raise
+                _warm_visit_cache(data_access, definition, definition.opportunity_ids or [run.opportunity_id])
+                built = build()
         except SnapshotBuildError as e:
             return _snapshot_build_error_response(e)
         return JsonResponse(
@@ -2655,6 +2670,15 @@ def complete_run_api(request, run_id):
         from connect_labs.benchmarks.tasks import queue_auto_publish
 
         queue_auto_publish(data_access, workflow_id=run.definition_id, run_id=run_id)
+        # ...and hands each opportunity its own slice (workflow/hand_down.py).
+        from connect_labs.workflow.hand_down import queue_hand_down
+
+        queue_hand_down(
+            data_access,
+            workflow_id=run.definition_id,
+            run_id=run_id,
+            template_type=contract.get("template_key") or getattr(definition, "template_type", None),
+        )
 
         return JsonResponse(
             {

@@ -1748,7 +1748,16 @@ Pass `source_workflow_id` (+ its scope) to get that sharing; without it each ins
 
 ### Warm-on-read (`warm_cache_on_read`)
 
-A report that fetches its figures from the semantic endpoint and never streams its pipelines (`noPipelineStream`) would otherwise depend on someone else filling the visit cache, which is held for 90 minutes. With `config.warm_cache_on_read: true`, the semantic endpoint (`api/<id>/semantic/`) fills any of the workflow's opportunities that have no live cached visits before evaluating, using the same `ensure_visit_cache` as the `workflow_ensure_visit_cache` MCP tool. It is best effort: a failure falls back to the `cold_cache` / `partial_cache` flags. It is opt-in, so a multi-opportunity report never turns a page load into a download of every opportunity. `kmc_opp_report` sets it.
+A report that fetches its figures from the semantic endpoint and never streams its pipelines (`noPipelineStream`) would otherwise depend on someone else filling the visit cache, which is held for 90 minutes. With `config.warm_cache_on_read: true`, the semantic endpoint (`api/<id>/semantic/`) fills any of the workflow's opportunities that have no live cached visits before evaluating, using the same `ensure_visit_cache` as the `workflow_ensure_visit_cache` MCP tool. It is best effort: a failure falls back to the `cold_cache` / `partial_cache` flags. It is opt-in, so a multi-opportunity report never turns a page load into a download of every opportunity. `kmc_opp_report` sets it. The live snapshot preview (`api/run/<id>/snapshot/preview/`) honours it too: a `cache_miss` warms the cache and builds once more, so an in-progress run of a report that streams no pipelines never tells its reader to open some other page first.
+
+### Handing a saved run down (`hands_down_to_opportunity_reports` / `receives_hand_down`)
+
+A programme report's saved run already graded every opportunity in it. When a run of a template with `hands_down_to_opportunity_reports` completes (web save, `workflow_save_snapshot`, or a finished history rebuild), a Celery task running as the saver cuts each opportunity's slice out of the snapshot and writes it as a **completed run** of that opportunity's report: any workflow whose template sets `receives_hand_down` and that names the programme report as its source (`config.source_workflow_id`, or a benchmark cohort containing its opportunity whose `source_workflow_id` is the programme report). The network manager reads only runs of their own report and never needs access to the programme report. See `connect_labs/workflow/hand_down.py`.
+
+- A slice carries **nothing** of any other opportunity: rows, cases, series, credibility facts and the programme's pooled figures are removed, not hidden (`test_hand_down.py` pins it, including that every key the builder emits is either sliced or known safe).
+- Idempotent per week: the same source run is written once; a newer save of the week replaces an older hand-down (new run completed before the old is deleted); a run the opportunity report saved itself is never touched.
+- A run saved before the unified KMC indicator set (#2004) is skipped, not translated.
+- Backfill with the `workflow_hand_down` MCP tool: no `run_id` walks the whole history in the background (one run per week, latest completion), a `run_id` hands one run down synchronously and returns the report.
 
 ### What still needs a person
 
@@ -1806,7 +1815,7 @@ GET /labs/workflow/api/<workflow_id>/semantic/?scopes=opportunity,flw[&series=<f
     deployment, cold_cache, partial_cache, opportunities_missing, … }
 ```
 
-- **Grade in the page, from `measures`**: minimum denominator, bands, n/a from `anyrec_*` and `inputs`, and not-credible from `_suppressed`. The SQL returns counts only. `kmc_opp_report_render.js` is a working example of grading.
+- **Grade in the page, from `measures`**: minimum denominator, bands, n/a from `anyrec_*` and `inputs`, and not-credible from `_suppressed`. The SQL returns counts only. (Better: save runs with the `semantic_snapshot` builder, which grades server-side, and render the stored payload -- as every KMC report now does.)
 - Show `cold_cache` / `partial_cache`. A cold cache reads as zeros, not as "no data".
 - `scopes=case` returns one row per entity. Use it for drill-downs and for checking numbers.
 - `registry_id=` evaluates a candidate registry without binding it.

@@ -28,13 +28,13 @@ const RENDERS = [
 ];
 // The renders that read a server-BUILT snapshot: every cell reaches them
 // already graded, so deriving credibility in the browser would be a second copy
-// of semantic/gates.py. kmc_opp_report_render.js is NOT one of these — it grades
-// LIVE endpoint rows itself, so the compiled `<measure>_suppressed` flag is the
-// only form the registry's decision can reach it in, and IGNORING it is that
-// render's failure mode. Each file is held to the rule that fits its source.
+// of semantic/gates.py. All three KMC renders do now: the opportunity report
+// used to grade LIVE endpoint rows itself, and reads the same snapshot as the
+// programme report since it gained saved runs.
 const SNAPSHOT_READERS = new Set([
   'kmc_programme_metrics_render.js',
   'kmc_flw_review_render.js',
+  'kmc_opp_report_render.js',
 ]);
 
 for (const file of RENDERS) {
