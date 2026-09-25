@@ -668,6 +668,45 @@ DEFINITION = {
     "snapshot_inputs": SNAPSHOT_INPUTS,
 }
 
+# The compute spec's section 5 scorecard, column for column: the columns every KMC
+# report's tables carry, in order. `denOnly` prints the cell's denominator (Qual N
+# is the shared denominator of the four growth-quality columns). The opportunity
+# report reads it from its config; the programme render still holds its own copy.
+SCORECARD_COLUMNS = [
+    {"id": "total_cases", "label": "Total", "title": "Total cases"},
+    {"id": "registered_cases", "label": "Reg", "title": "Registered"},
+    {"id": "started_cases", "label": "Started", "title": "Started \u2014 two or more follow-up visits"},
+    {"id": "median_gestational_age", "label": "Med GA", "title": "Median gestational age, weeks"},
+    {"id": "median_birthweight", "label": "Med BW", "title": "Median birthweight, g"},
+    {"id": "visits_per_case", "label": "Visits/case", "title": "Mean visits per case"},
+    {"id": "pct_enrolled_within_3d", "label": "%1st\u22643d", "title": "% first visit within 3 days of discharge"},
+    {
+        "id": "pct_slow_growth",
+        "label": "Qual N",
+        "title": "Qualifying SVNs \u2014 the shared denominator of the four growth-quality columns",
+        "denOnly": True,
+    },
+    {"id": "pct_slow_growth", "label": "%slow", "title": "% slow growth, of qualifying SVNs"},
+    {"id": "pct_healthy_growth", "label": "%healthy", "title": "% healthy growth, of qualifying SVNs"},
+    {"id": "pct_fast_growth", "label": "%fast", "title": "% fast growth, of qualifying SVNs"},
+    {"id": "pct_incomplete_growth_data", "label": "%incompl", "title": "% incomplete growth data, of qualifying SVNs"},
+    {
+        "id": "mortality",
+        "label": "Mortality",
+        "title": "Mortality \u2014 shown only where death recording is credible",
+    },
+    {"id": "weight_rounding_rate", "label": "Round%", "title": "Weight rounding rate"},
+    {"id": "pct_impossible_weight_changes", "label": "%imposs", "title": "% impossible weight changes"},
+]
+SCORECARD_GROUPS = [
+    {"label": "Scale", "span": 3},
+    {"label": "Cohort", "span": 2},
+    {"label": "Enrolment & visits", "span": 3},
+    {"label": "Growth quality (of Qual N)", "span": 4},
+    {"label": "Outcome", "span": 1},
+    {"label": "Data quality", "span": 2},
+]
+
 TEMPLATE = {
     "key": "kmc_programme_metrics",
     "name": "KMC Programme Metrics",
@@ -678,6 +717,9 @@ TEMPLATE = {
     "supports_saved_runs": True,
     "snapshot_inputs": SNAPSHOT_INPUTS,
     "snapshot_schema": SNAPSHOT_SCHEMA,
+    # Saving a run hands each opportunity its own slice, as a completed run of
+    # that opportunity's report (workflow/hand_down.py).
+    "hands_down_to_opportunity_reports": True,
     # The indicators come from a semantic registry. Creation binds the new workflow
     # to a live record -- the one the caller names, or a fresh one seeded from this
     # on-disk registry -- so an indicator edit reaches it without a deploy.

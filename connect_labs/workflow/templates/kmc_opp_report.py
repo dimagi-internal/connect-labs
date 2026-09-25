@@ -1,58 +1,66 @@
 """KMC Opportunity Report: one opportunity's own report.
 
 The programme report (`kmc_programme_metrics`) answers "how is the programme
-doing", across twelve opportunities, for the people who run the programme. This
-answers a different question for a different reader: an LLO opening ITS OWN
-opportunity and wanting three things at once —
+doing", across a dozen opportunities, for the people who run the programme. This
+is the same report for ONE opportunity, for the people who run that opportunity
+-- its network manager -- plus where it sits among anonymous peers:
 
-  1  its own figures, on the same indicators the programme is judged on,
-  2  ITS OWN FIELD WORKERS, a row each, a column per indicator, banded,
-  3  where it sits among peers it is not allowed to name.
+  * the programme report's headline tiles, weekly activity and trends across
+    saved reports, for this opportunity;
+  * ITS OWN FIELD WORKERS, a row each on the programme's scorecard columns, with
+    their last visit and their cases;
+  * where it sits among peers it is not allowed to name (/labs/benchmarks/).
 
-WHY THIS IS NOT A VIEW ON THE PROGRAMME REPORT. The programme report is
-multi-opp and its drill goes programme -> LLO -> opportunity -> worker; reaching
-a worker means holding the whole cohort's payload, which is exactly what a
-single partner must not be handed. This page reads ONE opportunity's scope and
-nothing else, and the only cross-opportunity figures it can reach are the
-already-anonymised ones the benchmark store serves.
+Drawn with the shared report library (components/workflow/report), so it looks
+like the programme report and cannot drift from it.
 
-THE DISCLOSURE LINE RUNS THROUGH THE MIDDLE OF THIS PAGE, and it is the reason
-sections 2 and 3 have different sources:
+SAVED RUNS. A run is graded by the same `semantic_snapshot` builder as the
+programme report, over this one opportunity, so the page opens on saved figures
+instead of recomputing them. Runs arrive two ways:
 
-  section 2  real usernames, read straight from the semantic layer. An
-             opportunity owns its own workers' data, so naming them to the
-             people running it is correct and deliberate.
-  section 3  anonymous peers, read from /labs/benchmarks/. That store exists to
-             CROSS an opportunity boundary, and FLW identity must never cross
-             one — so nothing in the worker table is sourced from it, and the
-             render's tests pin that.
+  * HANDED DOWN. When the programme report saves a week, each opportunity report
+    that follows it receives that opportunity's slice as a completed run
+    (workflow/hand_down.py). The network manager never reads the programme report
+    -- they may not have access to it -- and does not have to save anything.
+  * SAVED HERE. A report whose programme report saves nothing (or none at all)
+    saves its own weeks, exactly like the programme report does.
 
-Two shapes in the data constrain the design and are not worth rediscovering:
+A live, unsaved view is still available as an in-progress run: its preview fills
+this opportunity's visit cache itself (`warm_cache_on_read`).
 
-  * There is no per-FLW monthly series anywhere. `monthlyByScope` carries `all`,
-    `llo:<name>` and `opp:<id>`. The worker table is point-in-time and says so
-    on the page; a per-worker trend line would have to be invented.
-
-NO SAVED RUNS. A drill view has no moment of completion: it is opened, read and
-closed. The thing that DOES have one is the programme report, and it is the
-programme report's completed run that a benchmark is published from.
+THE DISCLOSURE LINE. Worker names come from this opportunity's own snapshot: an
+opportunity owns its workers' data, so naming them to the people running it is
+correct. Peer figures come only from the benchmark store, which is anonymous and
+never carries a worker. A handed-down slice carries nothing of any other
+opportunity.
 """
 
+import copy
 from pathlib import Path
 
-from connect_labs.workflow.templates.kmc_programme_metrics import CASE_PROPERTIES_SCHEMA
+from connect_labs.workflow.templates.kmc_programme_metrics import (
+    CASE_PROPERTIES_SCHEMA,
+    SCORECARD_COLUMNS,
+    SCORECARD_GROUPS,
+)
 from connect_labs.workflow.templates.kmc_programme_metrics import SNAPSHOT_INPUTS as PROGRAMME_SNAPSHOT_INPUTS
-from connect_labs.workflow.templates.kmc_programme_metrics import WEIGHT_SERIES_SCHEMA
+from connect_labs.workflow.templates.kmc_programme_metrics import SNAPSHOT_SCHEMA, WEIGHT_SERIES_SCHEMA
 
 _RENDER = (Path(__file__).parent / "kmc_opp_report_render.js").read_text()
+
+# The programme report's snapshot, over this workflow's one opportunity: the same
+# builder, the same scopes and case index, so a handed-down slice and a run saved
+# here are the same shape and the page reads both the same way.
+SNAPSHOT_INPUTS = copy.deepcopy(PROGRAMME_SNAPSHOT_INPUTS)
 
 DEFINITION = {
     "name": "KMC Opportunity Report",
     "description": (
-        "One opportunity's own KMC report: its indicator scorecard, a row per field worker "
-        "with a column per indicator, and anonymous peer bars from its benchmark cohorts. "
-        "Worker figures are read directly and shown identified — an opportunity owns its own "
-        "workers' data; peer figures are anonymous and never carry a worker."
+        "One opportunity's own KMC report, saved weekly: the programme report's headline "
+        "figures, activity and trends for this opportunity, a row per field worker on the "
+        "programme's scorecard, and where it sits among anonymous peers. Worker figures are "
+        "shown identified -- an opportunity owns its own workers' data; peer figures are "
+        "anonymous and never carry a worker."
     ),
     "version": 1,
     "templateType": "kmc_opp_report",
@@ -68,42 +76,31 @@ DEFINITION = {
         "showFilters": False,
         "showSummaryCards": False,
         "templateType": "kmc_opp_report",
-        # The page paints immediately and fetches its own three payloads, so the
-        # framework must not hold the render back for a pipeline stream...
+        # The page paints immediately and reads its own payload, so the framework
+        # must not hold the render back for a pipeline stream...
         "renderWhileLoading": True,
         # ...and must not stream every pipeline row to the browser either. Every
-        # figure here is computed server-side by the semantic endpoint; the
-        # pipelines exist to fill the visit cache it reads, not to be shipped.
+        # figure here is graded server-side; the pipelines exist to fill the
+        # visit cache a live preview reads, not to be shipped.
         "noPipelineStream": True,
-        # ...so it fills the visit cache itself. The semantic endpoint only READS
-        # the cache, and the cache expires; without this the page reads "no cached
-        # visits" whenever nobody has opened the programme report lately. One
-        # opportunity, so a cold load costs one opportunity's download.
+        # ...so a live preview fills that cache itself (views.preview_snapshot_api,
+        # and the semantic endpoint). Without it an in-progress run reads "no
+        # cached visits" whenever nobody has opened the programme report lately.
+        # One opportunity, so a cold load costs one opportunity's download. A
+        # saved run reads its stored snapshot and needs no cache at all.
         "warm_cache_on_read": True,
         # The render's fallback for a measure that declares no min_denominator
         # of its own: the KMC registry's `defaults.min_denominator` (spec
         # section 0). The live endpoint does not carry the registry default,
         # so the render needs it here.
         "min_denominator_default": 20,
-        # WHICH INDICATORS ARE GATED ON RECORDING CREDIBILITY, taken from the
-        # programme report's own credibility map so there is ONE copy of the
-        # fact in the repo, and carried on the definition so it is patchable
-        # through `workflow_update_definition` with no deploy.
-        #
-        # Two mechanisms reach the render:
-        #
-        #   * the registry's own `suppression:` rules compile to a
-        #     `<measure>_suppressed` column that the live semantic endpoint
-        #     returns on every row -- today `mortality_suppressed`.
-        #   * this list, which is what the render falls back to when a gated
-        #     indicator arrives with no flag. It cannot say WHETHER the figure
-        #     is credible, only that nothing established it -- so the render
-        #     withholds rather than bands. Until #2004 that withheld the old
-        #     scorecard's mortality on every opportunity: it had no rule of its
-        #     own. With one indicator set, the flag always arrives.
-        "credibility_gated_indicators": sorted(PROGRAMME_SNAPSHOT_INPUTS["credibility"]),
+        # The programme report's scorecard columns and their group banner, so the
+        # worker table reads column for column like the programme's.
+        "scorecard_columns": SCORECARD_COLUMNS,
+        "scorecard_groups": SCORECARD_GROUPS,
     },
     "pipeline_sources": [],
+    "snapshot_inputs": SNAPSHOT_INPUTS,
 }
 
 TEMPLATE = {
@@ -113,8 +110,12 @@ TEMPLATE = {
     "icon": "fa-hospital-user",
     "color": "green",
     "multi_opp": False,
-    # A drill view, not a periodic report: there is no moment of completion.
-    "supports_saved_runs": False,
+    "supports_saved_runs": True,
+    "snapshot_inputs": SNAPSHOT_INPUTS,
+    "snapshot_schema": SNAPSHOT_SCHEMA,
+    # Takes the programme report's saved weeks, cut to this opportunity
+    # (workflow/hand_down.py).
+    "receives_hand_down": True,
     # Creation binds the new workflow to a LIVE registry record rather than the
     # on-disk copy, so an indicator edit reaches this page without a deploy.
     # This page computes its own numbers (the worker review reads someone
