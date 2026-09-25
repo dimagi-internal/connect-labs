@@ -577,6 +577,24 @@ def facet_counts(rows, delivering: set[str]) -> dict[str, list[dict]]:
     }
 
 
+def network_orgs():
+    """The organisations that make up the network, as a queryset.
+
+    `LabsOrg` is labs' ONE registry of organisations, so it also holds the
+    companies supply chain buys from — manufacturers, couriers, clearing
+    agents, a regulator — which since suppliers became organisations (#2019)
+    all have a row. Those are the buyers' vendors, not a delivery network, and
+    counting them grew "the network" by twenty overnight without one EOI.
+
+    An organisation is in the network when it has a directory profile (it came
+    from the sheet), answered a round, or has delivered on Connect. Anything
+    else is an organisation some other feature needed a name for.
+    """
+    applied = SolicitationResponse.objects.exclude(llo_entity=None).values("llo_entity")
+    delivered = delivering_names() | set(delivered_programs_by_org_name())
+    return LabsOrg.objects.filter(Q(marketplace_profile__isnull=False) | Q(pk__in=applied) | Q(name__in=delivered))
+
+
 def network_totals() -> dict:
     """The headline figures for the marketplace hero.
 
@@ -589,7 +607,7 @@ def network_totals() -> dict:
     profiles = OrgProfile.objects.exclude(country_iso3="")
     services = sum(PulseOpportunity.objects.filter(is_test=False).values_list("lifetime_visit_count", flat=True))
     return {
-        "organisations": LabsOrg.objects.count(),
+        "organisations": network_orgs().count(),
         "countries": len({p.country_iso3 for p in profiles}),
         "services": services,
         "rounds": Solicitation.objects.count(),
@@ -839,7 +857,7 @@ def facet_rail(facets: dict, selected: dict, querydict) -> list[dict]:
 
 
 def all_rows_with_rounds():
-    """Every organisation, its profile and its rounds, in ONE trip.
+    """Every organisation in the network, its profile and its rounds, in ONE trip.
 
     The network page filters the same population five ways — the list, each of
     the three facet dimensions, and the globe. Re-running the query for each is
@@ -854,7 +872,8 @@ def all_rows_with_rounds():
     """
     responses = SolicitationResponse.objects.select_related("solicitation").order_by("-solicitation__published_on")
     return list(
-        LabsOrg.objects.select_related("marketplace_profile")
+        network_orgs()
+        .select_related("marketplace_profile")
         .prefetch_related(Prefetch("solicitation_responses", queryset=responses))
         .annotate(
             contact_count=Count("contacts", distinct=True),
