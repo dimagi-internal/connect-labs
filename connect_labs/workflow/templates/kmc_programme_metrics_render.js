@@ -1156,7 +1156,12 @@ function WorkflowUI({
         (definition && (definition.id || definition.definition_id)) ||
         (instance && instance.definition_id) ||
         (pathMatch && Number(pathMatch[1]));
-      if (!defId) return;
+      // No definition to ask about: nothing will arrive, so settle to empty
+      // rather than leaving the trends on their loading state.
+      if (!defId) {
+        setHistory([]);
+        return;
+      }
       var cancelled = false;
       // Paths are under the snapshot's own state key (`state.snapshot.*`), and
       // the page's scope travels the same way the preview fetch sends it.
@@ -2528,7 +2533,23 @@ function WorkflowUI({
     var real = pts.filter(Boolean);
     var cur = real.length ? real[real.length - 1].e : null;
     var body;
-    if (real.length < 2) {
+    if (history === null) {
+      // The run history is still on its way (it can take several seconds).
+      // Saying "one report so far" in the meantime reads as a fact about the
+      // data, and it is not one.
+      body = (
+        <div
+          className="relative rounded bg-gray-50 animate-pulse"
+          style={{ height: H }}
+          aria-busy="true"
+        >
+          <div className="absolute inset-x-3 top-1/2 border-t border-dashed border-gray-200" />
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400">
+            Loading the trend across saved reports…
+          </div>
+        </div>
+      );
+    } else if (real.length < 2) {
       body = (
         <div className="text-xs text-gray-400 py-8 text-center">
           {real.length
@@ -2753,8 +2774,13 @@ function WorkflowUI({
         <p className="mt-2 text-xs text-gray-400">
           Activity is counted in the week it happened, to {dateLbl(asOf)}. Each
           indicator point is the figure as of a saved report
-          {savedCount ? ' (' + savedCount + ' saved)' : ''}; a gap is a report
-          with too few cases to score, not a zero. Dashed line = target.
+          {history === null
+            ? ' (loading the saved reports…)'
+            : savedCount
+              ? ' (' + savedCount + ' saved)'
+              : ''}
+          ; a gap is a report with too few cases to score, not a zero. Dashed
+          line = target.
         </p>
       </div>
     );

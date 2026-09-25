@@ -237,3 +237,20 @@ def test_an_old_runs_mortality_tile_falls_back_to_its_own_cell():
     body = body[: body.index("\n  }\n")]
     assert "mortalityCredible.ind)" in body and "return entryOf(scopeInd, id);" in body
     assert "'all organisations'" in src
+
+
+def test_the_trends_say_they_are_loading_rather_than_one_report_so_far():
+    """The run history takes seconds to arrive. Until it does there is one point
+    (this run), and the charts read "One report so far" -- a statement about the
+    data that is false on a report with 71 saved runs. `history` is null until the
+    fetch settles; the trends and their caption must say they are loading."""
+    src = RENDER.read_text()
+    body = src[src.index("  function SmallTrend(props) {") :]
+    body = body[: body.index("One report so far")]
+    assert "history === null" in body, "the loading branch must come before the one-report message"
+    assert "Loading the trend" in body
+    assert "loading the saved reports" in src
+    effect = src[src.index("var defId =") :]
+    assert effect.index("setHistory([])") < effect.index(
+        "var cancelled"
+    ), "a page with no definition id must settle, not load forever"
