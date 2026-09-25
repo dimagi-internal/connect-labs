@@ -367,6 +367,19 @@ class TestPageState:
         assert len(state["visible_ids"]) == canopy.MAX_VISIBLE_IDS
         assert len(json.dumps(state).encode()) < 8192, "canopy's own cap"
 
+    def test_a_full_page_of_org_slugs_fits_canopys_byte_cap(self):
+        """400 realistic slugs are ~11 KiB — over canopy's 8 KiB cap, which
+        refused the whole state and left the agent blind (2026-09-25)."""
+        slugs = [f"some-organisation-name-{i:04d}" for i in range(400)]
+
+        state = canopy.panel_context(
+            resource="labs-marketplace://orgs", visible_ids=slugs, backing_tool="marketplace_orgs_get"
+        )["page_state"]
+
+        assert len(json.dumps(state).encode()) <= 8192
+        assert state["visible_ids"] == slugs[: len(state["visible_ids"])], "a prefix, in order"
+        assert len(state["visible_ids"]) > 100, "trimmed, not emptied"
+
     def test_no_resource_means_no_declaration(self):
         """A page that says nothing must not declare an empty screen — the agent
         would reason about a blank selection as though it were the truth."""
