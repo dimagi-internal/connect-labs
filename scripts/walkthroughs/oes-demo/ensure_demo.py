@@ -160,7 +160,7 @@ exec(compile(base64.b64decode("__LOADER_B64__").decode(), "seed_data.py", "exec"
 _seed = {}
 exec(compile(base64.b64decode("__SEEDER_B64__").decode(), "seed_remote.py", "exec"), _seed)
 
-from connect_labs.supply_chain.models import Commodity, Contract, Round, SupplyPoint, scope_key
+from connect_labs.supply_chain.models import Commodity, Contract, SupplyPoint, Tender, scope_key
 
 # The worker accepts no host at all, so give it back the one the web tier has.
 #
@@ -198,7 +198,7 @@ occupied = []
 for _name, _scope in SCOPES.items():
     _pid = _scope["program_id"]
     _rows = (
-        Round.objects.filter(program_id=_pid).count()
+        Tender.objects.filter(program_id=_pid).count()
         + Contract.objects.filter(program_id=_pid).count()
         + SupplyPoint.objects.filter(program_id=_pid).count()
         + Commodity.objects.filter(scope_key=scope_key(program_id=_pid)).count()

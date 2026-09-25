@@ -115,7 +115,24 @@ def seed_orgs(access, data):
     _SUPPLIER_PLACES.clear()
     _SUPPLIER_PLACES.update(without_commentary(data.get("supplier_places") or {}))
     orgs = {}
+    directory = None
     for row in data["orgs"]:
+        if row.get("from_directory"):
+            # An organisation already in the partner directory, used as it
+            # is. Upserting it would overwrite a real partner's name and
+            # notes with the demo's; a slug of our own would make a second
+            # row of the same organisation -- which is how the demo came to
+            # hold two ISODAFs. So it is read, never written, and refused by
+            # name if the directory does not have it.
+            if directory is None:
+                directory = {org["slug"]: org for org in op(access, "org_list")}
+            if row["slug"] not in directory:
+                raise ValueError(
+                    f"the document marks {row['slug']!r} as from_directory, and the directory has no such "
+                    "organisation -- run marketplace_import, or fix the slug"
+                )
+            orgs[row["slug"]] = directory[row["slug"]]
+            continue
         org_data = {
             "slug": row["slug"],
             "name": row["name"],

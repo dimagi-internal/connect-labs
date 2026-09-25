@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("labs", "0024_workflowschedule_interval_hours"),
-        ("supply_chain", "0026_supplier_market"),
+        ("supply_chain", "0027_round_is_a_tender"),
     ]
 
     operations = [

@@ -761,7 +761,7 @@
     if (stage === 'source') {
       var src = s.source || {};
       var ev = src.evaluation || {};
-      var bits = [plural((src.demand || {}).rounds || 0, 'round')];
+      var bits = [plural((src.demand || {}).tenders || 0, 'tender')];
       if (ev.of)
         bits.push(ev.comparable + ' of ' + ev.of + ' quotes comparable');
       if ((src.award || {}).count) bits.push(plural(src.award.count, 'award'));
@@ -1884,7 +1884,17 @@
         var s = p.suppliers.filter(function (x) {
           return x.id === o.supplier_id;
         })[0];
-        if (!to || !shown[to._key] || !s || !s.location) return;
+        // A supplier known only to its country has no place to draw a route
+        // FROM -- the country's centre is a guess, and a route from a guess
+        // reads as a fact. Such an order stays in the panel, not on the map.
+        if (
+          !to ||
+          !shown[to._key] ||
+          !s ||
+          !s.location ||
+          s.location.precision === 'country'
+        )
+          return;
         used[s._key] = s;
         routes.push({
           type: 'Feature',
