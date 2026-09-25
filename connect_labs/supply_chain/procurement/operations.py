@@ -87,6 +87,29 @@ def tender_open(access, tender_id):
 
 
 @register_operation(
+    name="tender_invite_org",
+    summary=(
+        "Put a supplier organisation on a tender's invited list, so it can see and bid on the tender "
+        "while it is restricted. Only organisations registered as suppliers can be invited."
+    ),
+    input_schema=obj({"tender_id": ID, "org_id": ID}, required=("tender_id", "org_id")),
+    is_write=True,
+)
+def tender_invite_org(access, tender_id, org_id):
+    return record(access.invite_org_to_tender(tender_id, org_id))
+
+
+@register_operation(
+    name="tender_uninvite_org",
+    summary="Take an organisation off a tender's invited list. A restricted tender disappears for it.",
+    input_schema=obj({"tender_id": ID, "org_id": ID}, required=("tender_id", "org_id")),
+    is_write=True,
+)
+def tender_uninvite_org(access, tender_id, org_id):
+    return record(access.uninvite_org_from_tender(tender_id, org_id))
+
+
+@register_operation(
     name="tender_close",
     summary="Close a tender to further quotes.",
     input_schema=obj({"tender_id": ID}, required=("tender_id",)),

@@ -97,9 +97,13 @@ class ListedTender:
 
 
 def _invited_tender_ids(orgs) -> set[int]:
+    """Tenders these organisations were invited to: by the program's outreach,
+    or by name on the tender's own invited list."""
     if not orgs:
         return set()
-    return set(Outreach.objects.filter(supplier__org__in=orgs).values_list("tender_id", flat=True))
+    by_outreach = Outreach.objects.filter(supplier__org__in=orgs).values_list("tender_id", flat=True)
+    by_list = Tender.objects.filter(invited_orgs__in=orgs).values_list("pk", flat=True)
+    return set(by_outreach) | set(by_list)
 
 
 def _visible_from(invited) -> Q:
@@ -126,6 +130,77 @@ def visible_tender(tender_id, orgs=()) -> ListedTender:
     listed = ListedTender(found, _lines(found, _offerings(orgs), _commodities_for([found])), found.pk in invited)
     listed.own_quotes = [_worded(q) for q in _own_quotes(orgs).filter(tender=found)]
     return listed
+
+
+def tender_by_slug(slug, orgs=()) -> ListedTender:
+    """An organisation's listing, by its address, if this visitor may see it."""
+    found = Tender.objects.filter(slug=slug).values_list("pk", flat=True).first()
+    if found is None:
+        raise NotAvailable("no such tender")
+    return visible_tender(found, orgs)
+
+
+# ---- an organisation's own listing ----------------------------------------
+
+
+def can_manage(request, tender) -> bool:
+    """Whether this person may run a tender's listing.
+
+    Whoever manages the organisation that publishes it (its admins; for a
+    Connect organisation, its Connect members), or anyone on the tender's
+    program. Checked on every request to the manage page, never cached.
+    """
+    from connect_labs.labs.context import get_org_data
+    from connect_labs.marketplace import membership
+
+    if tender.owner_org_id and membership.manages(request, tender.owner_org):
+        return True
+    programs = (get_org_data(request) or {}).get("programs") or []
+    return any(str(p.get("id")) == str(tender.program_id) for p in programs)
+
+
+def managed_tender(slug, request) -> Tender:
+    """The tender at this address, if this person may manage it; `NotAvailable` otherwise."""
+    tender = Tender.objects.select_related("owner_org").filter(slug=slug).first()
+    if tender is None or not can_manage(request, tender):
+        raise NotAvailable("no such tender")
+    return tender
+
+
+def change_listing(tender, *, request, data: dict) -> Tender:
+    """Change the listing's brief, colour or visibility, through the ordinary operation."""
+    if not can_manage(request, tender):
+        raise NotAvailable("no such tender")
+    allowed = {k: v for k, v in data.items() if k in ("brief", "hue", "visibility")}
+    call_operation("tender_update", _access(tender.program_id), {"tender_id": tender.pk, "data": allowed})
+    _audit(Action.UPDATE, "tender_update", tender.pk, tender, tender.owner_org)
+    return Tender.objects.get(pk=tender.pk)
+
+
+def invite(tender, org, *, request) -> Tender:
+    if not can_manage(request, tender):
+        raise NotAvailable("no such tender")
+    call_operation("tender_invite_org", _access(tender.program_id), {"tender_id": tender.pk, "org_id": org.pk})
+    _audit(Action.UPDATE, "tender_invite_org", tender.pk, tender, org)
+    return Tender.objects.get(pk=tender.pk)
+
+
+def uninvite(tender, org, *, request) -> Tender:
+    if not can_manage(request, tender):
+        raise NotAvailable("no such tender")
+    call_operation("tender_uninvite_org", _access(tender.program_id), {"tender_id": tender.pk, "org_id": org.pk})
+    _audit(Action.UPDATE, "tender_uninvite_org", tender.pk, tender, org)
+    return Tender.objects.get(pk=tender.pk)
+
+
+def invitable_suppliers(tender, query: str = ""):
+    """Registered suppliers that could be put on the list: a profile, and not already on it."""
+    from connect_labs.labs.models import LabsOrg
+
+    found = LabsOrg.objects.filter(supplier_profile__isnull=False).exclude(pk__in=tender.invited_orgs.all())
+    if query:
+        found = found.filter(name__icontains=query)
+    return found.order_by("name")[:20]
 
 
 def _commodities_for(tenders) -> dict:
@@ -384,7 +459,7 @@ def _audit(action, operation, resource_id, tender, org):
         resource_id=resource_id,
         program_id=tender.program_id,
         labs_only=synthetic_scopes.is_synthetic(tender.program_id),
-        metadata={"via": "supply_market", "org_id": org.pk, "tender_id": tender.pk},
+        metadata={"via": "supply_market", "org_id": getattr(org, "pk", None), "tender_id": tender.pk},
     )
 
 

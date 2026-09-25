@@ -53,6 +53,7 @@ from connect_labs.supply_chain.models import (
     Shipment,
     StockCount,
     Supplier,
+    SupplierProfile,
     SupplyPoint,
     Tender,
     fill_profile,
@@ -94,6 +95,28 @@ _RESOLVED = {
 
 # Never settable by a caller: the identity and the audit timestamps.
 _NOT_SETTABLE = {"id", "pk", "created_at", "updated_at", "scope_key", "program_id"}
+
+
+def _listing(data: dict, tender=None) -> dict:
+    """An organisation's listing fields, checked where every write lands.
+
+    The slug is the listing's address, so it is normalised and must be free;
+    a clash is refused by name rather than as a database error. An empty slug
+    clears it (the tender stops having a listing address).
+    """
+    from django.utils.text import slugify
+
+    data = dict(data)
+    if "slug" in data:
+        slug = slugify(data.get("slug") or "")[:80]
+        if slug:
+            taken = Tender.objects.filter(slug=slug)
+            if tender is not None:
+                taken = taken.exclude(pk=tender.pk)
+            if taken.exists():
+                raise ValueError(f"the address /t/{slug}/ is already another tender's; choose another")
+        data["slug"] = slug or None
+    return data
 
 
 def _delivery(data: dict) -> dict:
@@ -727,6 +750,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         return self._tenders().filter(pk=tender_id).first()
 
     def create_tender(self, data):
+        data = _listing(data)
         return _fresh(
             Tender.objects.create(
                 program_id=self._require_program(),
@@ -738,6 +762,7 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         found = self.get_tender(tender_id)
         if found is None:
             raise ValueError(f"tender {tender_id} not found")
+        data = _listing(data, tender=found)
         for key, value in _columns(Tender, _delivery(data)).items():
             setattr(found, key, value)
         found.save()
@@ -761,6 +786,33 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         found.status = "open"
         found.save(update_fields=["status", "updated_at"])
         return found
+
+    def invite_org_to_tender(self, tender_id, org_id):
+        """Put an organisation on a tender's invited list.
+
+        Only an organisation registered as a supplier: a restricted tender is
+        for suppliers to bid on, and an invitation to one that cannot bid is
+        a list entry that does nothing.
+        """
+        found, org = self._tender_and_org(tender_id, org_id)
+        if not SupplierProfile.objects.filter(org=org).exists():
+            raise ValueError(f"{org.name} is not registered as a supplier, so cannot be invited to bid")
+        found.invited_orgs.add(org)
+        return _fresh(found)
+
+    def uninvite_org_from_tender(self, tender_id, org_id):
+        found, org = self._tender_and_org(tender_id, org_id)
+        found.invited_orgs.remove(org)
+        return _fresh(found)
+
+    def _tender_and_org(self, tender_id, org_id):
+        found = self.get_tender(tender_id)
+        if found is None:
+            raise ValueError(f"tender {tender_id} not found")
+        org = self.get_org(org_id)
+        if org is None:
+            raise ValueError(f"organisation {org_id} does not exist")
+        return found, org
 
     def close_tender(self, tender_id):
         found = self.get_tender(tender_id)
