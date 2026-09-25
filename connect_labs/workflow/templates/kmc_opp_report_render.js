@@ -1572,11 +1572,8 @@ function WorkflowUI({
                     key={m.indicator}
                     className="border border-gray-200 rounded p-3"
                   >
-                    <div className="text-xs font-semibold text-gray-700">
+                    <div className="text-xs font-semibold text-gray-700 mb-2">
                       {m.title || m.indicator}
-                    </div>
-                    <div className="font-mono text-[10px] text-gray-300 mb-2">
-                      {m.indicator}
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
@@ -1697,7 +1694,6 @@ function WorkflowUI({
             return headCell({
               key: m.indicator,
               label: m.title ? String(m.title).slice(0, 18) : m.indicator,
-              sub: m.indicator,
               title: m.title || m.indicator,
               def: m.indicator,
               scope: scope,
@@ -1811,7 +1807,14 @@ function WorkflowUI({
           <div className="text-xs text-gray-500">
             Sorted by{' '}
             <span className="font-semibold text-indigo-700">
-              {SORT_KEY_LABEL[sortInd] || sortInd || '—'}
+              {SORT_KEY_LABEL[sortInd] ||
+                (
+                  MEASURES.filter(function (m) {
+                    return m.indicator === sortInd;
+                  })[0] || {}
+                ).title ||
+                sortInd ||
+                '—'}
             </span>{' '}
             {workerSort.dir === 'asc' ? 'ascending' : 'descending'} — the arrow
             beside a column sorts by it; its name opens the definition.

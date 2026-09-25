@@ -1894,7 +1894,6 @@ function WorkflowUI({
             return headCell({
               key: i,
               label: forCases ? c.caseLabel : c.label,
-              sub: c.id,
               title: c.title,
               def: c.id,
               scope: 'flw',
