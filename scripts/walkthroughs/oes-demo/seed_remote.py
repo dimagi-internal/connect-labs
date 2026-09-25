@@ -396,6 +396,30 @@ def supplier_for_org(access, org, kind="distributor"):
     )
 
 
+def supplier_for_label(access, label, kind="manufacturer"):
+    """A supplier that is a name and nothing else -- no organisation behind it.
+
+    Sibling of `supplier_for_org`, for the case that function's docstring
+    says is the reason the two are different functions: a quote can come
+    from someone the document can only NAME, not identify. There is no
+    `LabsOrg` row this supplier IS, so unlike `supplier_for_org` this must
+    never carry an `org_id` -- inventing one would assert an organisation the
+    document does not claim.
+
+    Matched by name before creating, for the same reason `supplier_for_org`
+    matches by name: re-running the seed must not leave two suppliers of the
+    same name quoting against each other.
+
+    `kind` defaults to `manufacturer` -- the nearest fit in
+    `records.SUPPLIER_TYPES` for an unidentified quoting party that is not
+    the (already-modelled) distributor.
+    """
+    for existing in op(access, "supplier_list", search=label):
+        if existing["name"] == label:
+            return existing
+    return op(access, "supplier_create", data={"name": label, "type": kind, "status": "quoting"})
+
+
 def _goods_value(access, contract):
     """What the goods on this order are worth -- the domain's own figure.
 
@@ -795,6 +819,79 @@ def seed_supply_only(data, scopes):
     return {
         "program_id": SUPPLY_ONLY_PROGRAM_ID,
         "chain": seed_chain(scope["access"], data["supply_only"], scope["reference"]),
+    }
+
+
+def seed_rutf_round_two(access, round_two):
+    """Round 2: open, quoted by three suppliers, and deliberately unawarded.
+
+    Not `seed_chain`. `seed_chain` awards, contracts and orders -- and round
+    2's entire point (design section 7/8, beats 1-3) is that it CANNOT yet be
+    decided: three suppliers, each incomparable for exactly one reason in the
+    product's own vocabulary, with no award and no contract to follow. Awarding
+    one here to reuse `seed_chain` would answer the question the beat exists
+    to leave open.
+
+    A round that received quotes was open when it received them -- the same
+    rule `seed_chain` applies to round 1, applied here by hand since this
+    function is not going through it.
+
+    The suppliers are named only by `supplier_label`: unlike round 1's
+    distributor, there is no organisation behind them (`supplier_for_label`),
+    and no `item_id` is ever passed -- the document's quotes name no trade
+    item, and that absence is itself part of what makes the first supplier's
+    quote incomparable. Giving the other two one would make their stated
+    `base_per_pack_stated` redundant and change which figure blocks them.
+
+    `supplier_label`, and the document's descriptive-only `supplier_country`
+    / `supplier_note` (when present -- they name real firms, so this file
+    never repeats them), are popped off before the row reaches
+    `quote_record`: none of the three is a field that operation understands,
+    and this does not rely on `_columns` silently dropping unrecognised keys
+    to keep them out of the write.
+    """
+    round_two = without_commentary(round_two)
+    round_ = op(access, "round_create", data=round_two["round"])
+    # A round that received quotes was open when it received them.
+    round_ = op(access, "round_open", round_id=round_["id"])
+
+    quotes, suppliers = [], []
+    for quoted in round_two["quotes"]:
+        quoted = dict(quoted)
+        supplier = supplier_for_label(access, quoted.pop("supplier_label"))
+        quoted.pop("supplier_country", None)
+        quoted.pop("supplier_note", None)
+        suppliers.append(supplier)
+        quotes.append(
+            op(
+                access,
+                "quote_record",
+                data={**quoted, "round_id": round_["id"], "supplier_id": supplier["id"]},
+            )
+        )
+    return {"round": round_, "quotes": quotes, "suppliers": suppliers}
+
+
+def seed_rutf_rounds(data, scopes):
+    """The RUTF chain: round 1 (ran, comparable, awarded) and round 2 (open, not).
+
+    Takes `scopes` rather than building its own access, for the reason
+    `seed_supply_only` records in its docstring: the `rutf` scope's catalogue
+    was already seeded from its own section by `seed_scopes`, and calling
+    `seed_reference` again here would put every chain's products into this
+    one program.
+
+    Round 1 is already in exactly the shape `seed_chain` consumes, so it goes
+    straight through it -- same as the CHC chain and the supply-only one.
+    Round 2 is a different shape (no award, three anonymous suppliers) and
+    goes through `seed_rutf_round_two` instead.
+    """
+    scope = scopes["rutf"]
+    section = data["rutf_rounds"]
+    return {
+        "program_id": RUTF_PROGRAM_ID,
+        "round_one": seed_chain(scope["access"], section["round_one"], scope["reference"]),
+        "round_two": seed_rutf_round_two(scope["access"], section["round_two"]),
     }
 
 

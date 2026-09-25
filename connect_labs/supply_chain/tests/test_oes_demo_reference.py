@@ -174,7 +174,15 @@ _SCOPED_DOCUMENT = {
             base_per_pack=10,
             components=[{"commodity_slug": "a-component", "quantity": 2, "base_unit": "tablet"}],
         ),
-        _commodity("a-therapeutic-food", "A Placeholder Therapeutic Food", "therapeutic_food", base_unit="sachet"),
+        # `pack_unit` matters for round 2's tests below: `compute_figures`
+        # converts a quote's `quantity_basis_unit` of "carton" against this.
+        _commodity(
+            "a-therapeutic-food",
+            "A Placeholder Therapeutic Food",
+            "therapeutic_food",
+            base_unit="sachet",
+            pack_unit="carton",
+        ),
         _commodity("a-water-treatment", "A Placeholder Water Treatment", "consumable", base_unit="L"),
         _commodity("a-product-nobody-buys", "A Placeholder Nobody Ordered", "diagnostic", base_unit="test"),
     ],
@@ -458,3 +466,254 @@ def test_a_document_with_no_portfolio_section_is_refused_by_the_name_of_the_sect
     with pytest.raises(ValueError) as caught:
         module.seed_portfolio({})
     assert "'portfolio'" in str(caught.value)
+
+
+# ======================================================================
+# RUTF round 2: three suppliers, three reasons, no ranking
+# ======================================================================
+#
+# Task 8's acceptance test. Round 2 (design section 7/8, beats 1-3) has to
+# stay genuinely incomparable -- 0 of 3 quotes ranked, each blocked for a
+# DIFFERENT reason in the product's own vocabulary. Verified once by hand
+# against a rendered `/supply/procurement/rounds/<id>/compare/` response
+# before this test was written (see task-8-report.md): "0 of 3 comparable",
+# and the three distinct reasons below appeared verbatim on the page.
+#
+# `supplier_label` (not an org slug) is the point of `supplier_for_label`:
+# these three are named, not identified, and must carry no `org_id`.
+
+_ROUND_TWO = {
+    "round": {
+        "label": "A Placeholder Round 2",
+        "delivery_point": {"city": "A Placeholder City"},
+        "lines": [{"commodity_slug": "a-therapeutic-food", "quantity": "2000", "quantity_unit": "carton"}],
+    },
+    "quotes": [
+        {
+            # Fails at pricing._pack_spec: no trade item, no stated pack spec.
+            "supplier_label": "Placeholder Supplier A",
+            "commodity_slug": "a-therapeutic-food",
+            "as_quoted_unit": "per_pack",
+            "as_quoted_amount": "41.00",
+            "as_quoted_currency": "USD",
+            "pack_spec_source": "not_stated",
+            "freight_basis": "included",
+            "duties_basis": "included",
+            "quantity_basis": "2000",
+            "quantity_basis_unit": "carton",
+        },
+        {
+            # Fails at the round-quantity branch of compute_figures (2,400
+            # quoted, round asks 2,000) -- and, separately, at pricing._extras
+            # (freight basis not specified). Two reasons on purpose.
+            "supplier_label": "Placeholder Supplier B",
+            "commodity_slug": "a-therapeutic-food",
+            "as_quoted_unit": "per_base_unit",
+            "as_quoted_amount": "0.29",
+            "as_quoted_currency": "USD",
+            "pack_spec_source": "stated_on_quote",
+            "base_per_pack_stated": 150,
+            "quantity_basis": "2400",
+            "quantity_basis_unit": "carton",
+            "freight_basis": "not_specified",
+            "duties_basis": "included",
+        },
+        {
+            # Fails at pricing._extras: duties excluded, no amount recorded.
+            "supplier_label": "Placeholder Supplier C",
+            "commodity_slug": "a-therapeutic-food",
+            "as_quoted_unit": "per_pack",
+            "as_quoted_amount": "38.50",
+            "as_quoted_currency": "USD",
+            "pack_spec_source": "stated_on_quote",
+            "base_per_pack_stated": 150,
+            "quantity_basis": "2000",
+            "quantity_basis_unit": "carton",
+            "freight_basis": "included",
+            "duties_basis": "excluded",
+        },
+    ],
+}
+
+
+class _FakeOpForRoundTwo:
+    """A fake `op` that can drive `seed_rutf_round_two` with no database.
+
+    Different from `_FakeOp` above: `supplier_for_label` reads the result of
+    `supplier_list` as a list of supplier dicts (`for existing in op(...)`),
+    so the payload-echoing fake used for `seed_reference` -- which would hand
+    back a dict here -- cannot stand in for it. This one answers each
+    operation the way the real one would, just without a database.
+    """
+
+    def __init__(self):
+        self.calls = []
+        self._id = 0
+
+    def _next_id(self):
+        self._id += 1
+        return self._id
+
+    def __call__(self, access, name, **payload):
+        self.calls.append((name, payload))
+        if name == "supplier_list":
+            return []
+        if name in ("supplier_create", "quote_record"):
+            return {"id": self._next_id(), **payload["data"]}
+        if name == "round_create":
+            return {"id": self._next_id(), **payload["data"]}
+        if name == "round_open":
+            return {"id": payload["round_id"], "status": "open"}
+        raise AssertionError(f"unexpected operation {name!r}")
+
+
+def test_round_two_never_sends_the_labels_own_descriptive_fields_to_quote_record():
+    """`supplier_label`, `supplier_country` and `supplier_note` describe the
+    supplier for a human reading the document. None of them is a field
+    `quote_record` understands, and they are popped explicitly rather than
+    left to `_columns`' silent drop -- so this pins the payload itself, not
+    just the eventual database row.
+
+    Every value here is invented, per the module docstring's public-repo rule
+    -- this is shaped like the real document (which does carry real firm
+    names in these two fields) without repeating one.
+    """
+    fake_op = _FakeOpForRoundTwo()
+    module = _load_seed_remote()
+    module.op = fake_op
+
+    round_two = {
+        "round": {"label": "A Placeholder Round", "delivery_point": {"city": "A Placeholder City"}, "lines": []},
+        "quotes": [
+            {
+                "supplier_label": "A Placeholder Manufacturer",
+                "supplier_country": "NG",
+                "supplier_note": "A placeholder note about a placeholder firm.",
+                "commodity_slug": "a-therapeutic-food",
+                "as_quoted_amount": "1.00",
+            }
+        ],
+    }
+
+    module.seed_rutf_round_two(object(), round_two)
+
+    quote_payloads = [payload["data"] for name, payload in fake_op.calls if name == "quote_record"]
+    assert len(quote_payloads) == 1
+    for key in ("supplier_label", "supplier_country", "supplier_note"):
+        assert key not in quote_payloads[0]
+
+
+def _seed_and_compare_round_two(module, seeded_scopes, round_two=_ROUND_TWO):
+    """Round 2 seeded against the real `rutf` scope, then compared for real.
+
+    Goes through `compare_round` -- the same function
+    `procurement/views.py`'s compare page calls -- rather than re-deriving the
+    figures here, so this test would fail if the page's own comparison logic
+    changed underneath it.
+    """
+    from connect_labs.supply_chain.procurement.services.comparison import compare_round
+
+    access = seeded_scopes["rutf"]["access"]
+    seeded = module.seed_rutf_round_two(access, round_two)
+
+    round_ = access.get_round(seeded["round"]["id"])
+    commodity = access.get_commodity("a-therapeutic-food")
+    quotes = access.list_quotes(round_id=round_.id)
+    suppliers_by_id = {row["id"]: access.get_supplier(row["id"]) for row in seeded["suppliers"]}
+    return compare_round(round_, commodity, quotes, suppliers_by_id), seeded
+
+
+def _round_quantity_reasons(comparison):
+    """The `landed_total_for_round_quantity` reason on each blocked row, by supplier name.
+
+    This is the figure the comparison ranks by (`COMPARABILITY_FIELDS`,
+    `ranked_by` in `comparison.py`), so it is the reason that actually keeps a
+    row out of the ranking -- the one a person reading the page sees as "why
+    can't I rank this".
+    """
+    return {row.supplier_name: row.figures["landed_total_for_round_quantity"].reasons for row in comparison.blocked}
+
+
+@pytest.mark.django_db
+def test_round_two_suppliers_are_named_not_identified(scopes):
+    """No org behind any of them -- `supplier_for_label`, not `supplier_for_org`."""
+    module, seeded_scopes, _ = scopes
+
+    _, seeded = _seed_and_compare_round_two(module, seeded_scopes)
+
+    assert {row["name"] for row in seeded["suppliers"]} == {
+        "Placeholder Supplier A",
+        "Placeholder Supplier B",
+        "Placeholder Supplier C",
+    }
+    assert all(row.get("org_id") is None for row in seeded["suppliers"])
+
+
+@pytest.mark.django_db
+def test_round_two_is_not_comparable_and_each_quote_fails_for_a_distinct_reason(scopes):
+    """The acceptance test for the whole task.
+
+    0 of 3 comparable, and the three reasons are DISTINCT -- each names the
+    one fact this supplier's quote is missing, not a shared "not enough
+    information" fog. Mutated below to prove this is a real assertion, not
+    one that passes regardless of the data.
+    """
+    module, seeded_scopes, _ = scopes
+
+    comparison, _ = _seed_and_compare_round_two(module, seeded_scopes)
+
+    assert comparison.comparable_count == 0
+    assert len(comparison.blocked) == 3
+
+    reasons = _round_quantity_reasons(comparison)
+    assert reasons.keys() == {"Placeholder Supplier A", "Placeholder Supplier B", "Placeholder Supplier C"}
+
+    # Three distinct failure modes, in the product's own words.
+    assert any("pack spec not stated" in r for r in reasons["Placeholder Supplier A"])
+    assert any("2400" in r and "2000" in r for r in reasons["Placeholder Supplier B"])
+    assert any(
+        "duties excluded from the quote but no duties amount recorded" in r for r in reasons["Placeholder Supplier C"]
+    )
+
+    # And they are genuinely distinct from one another -- not the same
+    # reason worded three ways.
+    all_reasons = {r for rs in reasons.values() for r in rs}
+    assert len(all_reasons) == 3
+
+
+@pytest.mark.django_db
+def test_supplier_a_becomes_comparable_once_it_states_a_pack_spec(scopes):
+    """The mutation the task asks for, kept as a permanent regression test.
+
+    Supplier A's whole reason for being incomparable is the missing pack
+    spec (design section 7/8): once it states one the same way B and C do,
+    `pricing._pack_spec` stops returning Unconfirmed and A's landed totals
+    become real numbers. If this ever went green with A still blocked, round
+    2's seed data would have quietly stopped making the point the beat is
+    built on.
+
+    Confirmed by hand: reverting this quote back to `pack_spec_source:
+    "not_stated"` (round 2's actual seed data) makes
+    `test_round_two_is_not_comparable_and_each_quote_fails_for_a_distinct_reason`
+    go red, because Supplier A would then be comparable and the assertion
+    that all three are blocked would fail.
+    """
+    module, seeded_scopes, _ = scopes
+    mutated = {
+        **_ROUND_TWO,
+        "quotes": [
+            {
+                **_ROUND_TWO["quotes"][0],
+                "pack_spec_source": "stated_on_quote",
+                "base_per_pack_stated": 150,
+            },
+            *_ROUND_TWO["quotes"][1:],
+        ],
+    }
+
+    comparison, _ = _seed_and_compare_round_two(module, seeded_scopes, round_two=mutated)
+
+    reasons = _round_quantity_reasons(comparison)
+    assert "Placeholder Supplier A" not in reasons
+    # B and C are still blocked, for their own unrelated reasons.
+    assert reasons.keys() == {"Placeholder Supplier B", "Placeholder Supplier C"}

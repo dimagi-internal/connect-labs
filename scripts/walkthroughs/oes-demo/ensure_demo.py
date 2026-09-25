@@ -228,6 +228,8 @@ supply_only = _seed["seed_supply_only"](data, scopes)
 
 # The RUTF and chlorine chains are tasks 8 and 10. Their scopes already hold
 # their own catalogues (seed_scopes above); the chain seeders plug in here.
+# RUTF is wired (task 8); chlorine's still plugs in below it (task 10).
+rutf_rounds = _seed["seed_rutf_rounds"](data, scopes)
 
 # Last, because it spans what the lines above seeded: the portfolio and the
 # one address in this domain that is not programme-scoped.
@@ -241,10 +243,13 @@ print(
             "orders": {
                 "chc": chc_chain["contract"]["id"],
                 "supply_only": supply_only["chain"]["contract"]["id"],
+                "rutf_round_one": rutf_rounds["round_one"]["contract"]["id"],
             },
             "rounds": {
                 "chc": chc_chain["round"]["id"],
                 "supply_only": supply_only["chain"]["round"]["id"],
+                "rutf_round_one": rutf_rounds["round_one"]["round"]["id"],
+                "rutf_round_two": rutf_rounds["round_two"]["round"]["id"],
             },
             "partner_links": {
                 slug: {"id": link["id"], "url": link["url"]} for slug, link in links.items()
