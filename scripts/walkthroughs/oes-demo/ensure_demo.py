@@ -237,6 +237,11 @@ chlorine = _seed["seed_chlorine_blocked"](data, scopes)
 # contrast that only reads against the partner seat beat 6 opened.
 last_mile = _seed["seed_chc_last_mile"](chc["access"], data, chc["reference"], chc_chain)
 
+# Beat 5, the gate: its own round, because the two awards above already
+# carry orders and an approval asked for after the goods were bought would
+# show the trail while inverting the point.
+awaiting = _seed["seed_awaiting_approval"](chc["access"], data, chc["reference"])
+
 # Last, because it spans what the lines above seeded: the portfolio and the
 # one address in this domain that is not programme-scoped.
 portfolio = _seed["seed_portfolio"](data)
@@ -263,6 +268,12 @@ print(
             # Beat 10's field workers, so the run notes name the rows the
             # close depends on rather than leaving them to be rediscovered.
             "workers": sorted(last_mile["points"]),
+            # Beat 5: the award whose "Place order" is disabled, and the
+            # approval holding it.
+            "awaiting_approval": {
+                "award_id": awaiting["award"]["id"],
+                "approval_id": awaiting["approval"]["id"],
+            },
             "partner_links": {
                 slug: {"id": link["id"], "url": link["url"]} for slug, link in links.items()
             },

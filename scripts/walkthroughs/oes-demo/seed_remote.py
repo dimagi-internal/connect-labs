@@ -1146,6 +1146,97 @@ def _store_org_slug(data, section):
     )
 
 
+def seed_awaiting_approval(access, data, reference):
+    """Beat 5: an award that cannot become an order yet, and says who is holding it.
+
+    An award is a decision; an order is a commitment. Somebody other than the
+    decider has to agree before the second follows the first, and
+    `_require_approved_award` REFUSES `contract_create` while any approval on
+    the award is requested or declined -- naming whose answer is outstanding.
+    That is a rule the database enforces, not a label on a screen, which is
+    the only reason this beat is worth showing at all.
+
+    **It needed a round of its own.** The CHC and RUTF awards both already
+    carry orders, and an approval asked for after the goods were bought would
+    have shown the trail while quietly inverting the point: the gate is that
+    the purchase has NOT happened. So this is the next quarter's top-up,
+    awarded and waiting.
+
+    **The approval is deliberately left unanswered.** Deciding it would tidy
+    the screen and delete the beat. The document says so beside the data, in
+    `approval._why_pending`, because the temptation to "finish" a pending row
+    is exactly what a later reader will feel.
+
+    Stops at the award and records no contract. That is not an omission this
+    function could correct even if it wanted to -- the write would be refused,
+    which is the whole demonstration.
+    """
+    section = without_commentary(data["awaiting_approval"])
+    orgs = reference["orgs"]
+    program_org = orgs[section["programme_org_slug"]]
+    ours = {"source": "we_recorded", "recorded_by_org_id": program_org["id"]}
+
+    supplier = _chain_supplier(access, section, orgs)
+    round_ = op(access, "round_create", data=section["round"])
+    round_ = op(access, "round_open", round_id=round_["id"])
+
+    quotes, items = [], {}
+    for quoted in section["quotes"]:
+        quoted = dict(quoted)
+        item = op(
+            access,
+            "item_upsert",
+            data={**quoted.pop("item"), "commodity_slug": quoted["commodity_slug"]},
+        )
+        items[item["sku"]] = item
+        quotes.append(
+            op(
+                access,
+                "quote_record",
+                data={
+                    **quoted,
+                    "round_id": round_["id"],
+                    "supplier_id": supplier["id"],
+                    "item_id": item["id"],
+                },
+            )
+        )
+
+    index = section["awarded_quote_index"]
+    award = op(
+        access,
+        "award_create",
+        round_id=round_["id"],
+        quote_id=quotes[index]["id"],
+        rationale=section["award_rationale"],
+        decided_on=day(section["awarded_days_ago"]),
+        **({"decided_by": section["award_decided_by"]} if section.get("award_decided_by") else {}),
+    )
+
+    asked = section["approval"]
+    approval = op(
+        access,
+        "approval_request",
+        data={
+            **ours,
+            "award_id": award["id"],
+            "approver_org_id": orgs[asked["approver_org_slug"]]["id"],
+            "role": asked["role"],
+            "requested_on": day(asked["requested_days_ago"]),
+            **({"note": asked["note"]} if asked.get("note") else {}),
+        },
+    )
+
+    return {
+        "round": round_,
+        "supplier": supplier,
+        "items": items,
+        "quotes": quotes,
+        "award": award,
+        "approval": approval,
+    }
+
+
 # ======================================================================
 # The partner seats -- and the third kind of truth
 # ======================================================================
