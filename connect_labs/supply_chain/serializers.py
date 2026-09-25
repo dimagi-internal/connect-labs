@@ -126,6 +126,8 @@ def supplier(obj) -> dict:
         "connect_organization_id": obj.connect_organization_id,
         "org_id": obj.org_id,
         "notes": obj.notes,
+        "origin": obj.origin,
+        "reviewed_on": _date(obj.reviewed_on),
         "reference_scope": _reference_scope(obj.scope_key),
     }
 
@@ -141,6 +143,7 @@ def round_(obj) -> dict:
         "reminder_interval_days": obj.reminder_interval_days,
         "shelf_life_months_minimum": obj.shelf_life_months_minimum,
         "notes_to_supplier": obj.notes_to_supplier,
+        "visibility": obj.visibility,
     }
 
 
@@ -193,6 +196,7 @@ def quote(obj) -> dict:
         "supersedes_quote_id": obj.supersedes_quote_id,
         "correction_reason": obj.correction_reason,
         "notes": obj.notes,
+        "entered_by": obj.entered_by,
     }
 
 

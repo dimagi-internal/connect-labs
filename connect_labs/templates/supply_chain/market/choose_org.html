@@ -1,0 +1,10 @@
+{% extends 'supply_chain/market/_shell.html' %}
+{% block title %}Choose an organisation{% endblock %}
+{% block body %}
+<div class="bg-white rounded-lg shadow-sm p-5 max-w-xl">
+  <h1 class="text-xl font-semibold mb-3">Which organisation?</h1>
+  <ul class="space-y-2">
+    {% for org in orgs %}<li><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_organisation' %}?org={{ org.pk }}">{{ org.name }}</a></li>{% endfor %}
+  </ul>
+</div>
+{% endblock %}

@@ -11,6 +11,7 @@ from connect_labs.supply_chain import (
     views,
 )
 from connect_labs.supply_chain.alerts import views as alert_views
+from connect_labs.supply_chain.market import views as market_views
 from connect_labs.supply_chain.portfolio import views as portfolio_views
 from connect_labs.supply_chain.procurement import views as procurement_views
 from connect_labs.supply_chain.update_links import views as update_link_views
@@ -26,6 +27,19 @@ urlpatterns = [
     # portfolio's, so a link to one names which.
     path("portfolios/<slug:slug>/", portfolio_views.PortfolioView.as_view(), name="portfolio"),
     path("portfolios/<slug:slug>/map/", portfolio_views.PortfolioMapView.as_view(), name="portfolio_map"),
+    # The supplier marketplace. Browsing is public and needs no program; every
+    # write needs a labs sign-in and an organisation (see market/views.py).
+    # "rounds", "bids", "register", "organisation" and "invites" are literals
+    # under market/, so none can be read as an id.
+    path("market/", market_views.MarketHomeView.as_view(), name="market"),
+    path("market/rounds/<int:round_id>/", market_views.MarketRoundView.as_view(), name="market_round"),
+    path("market/rounds/<int:round_id>/bid/<slug:slug>/", market_views.BidView.as_view(), name="market_bid"),
+    path("market/bids/", market_views.MyBidsView.as_view(), name="market_bids"),
+    path("market/bids/<int:quote_id>/revise/", market_views.ReviseView.as_view(), name="market_revise"),
+    path("market/bids/<int:quote_id>/withdraw/", market_views.WithdrawView.as_view(), name="market_withdraw"),
+    path("market/register/", market_views.RegisterView.as_view(), name="market_register"),
+    path("market/organisation/", market_views.OrganisationView.as_view(), name="market_organisation"),
+    path("market/invites/<str:token>/", market_views.AcceptInviteView.as_view(), name="market_invite"),
     # the master item list is domain-level reference data, not procurement's:
     # tracking and distribution will both read it
     path("catalogue/", views.CatalogueView.as_view(), name="catalogue"),
@@ -48,6 +62,16 @@ urlpatterns = [
     path("suppliers/new/", reference_views.SupplierCreateView.as_view(), name="supplier_create"),
     path("suppliers/<int:supplier_id>/", views.SupplierDetailView.as_view(), name="supplier_detail"),
     path("suppliers/<int:supplier_id>/edit/", reference_views.SupplierUpdateView.as_view(), name="supplier_edit"),
+    path(
+        "suppliers/<int:supplier_id>/reviewed/",
+        reference_views.SupplierMarkReviewedView.as_view(),
+        name="supplier_mark_reviewed",
+    ),
+    path(
+        "suppliers/<int:supplier_id>/market-invite/",
+        reference_views.SupplierMarketInviteView.as_view(),
+        name="supplier_market_invite",
+    ),
     # Organisations are labs-wide rather than programme-scoped, and they sit
     # under Suppliers in the nav because you visit them to bind a partner or
     # fold a duplicate away, not daily. "merge" and "new" precede the int

@@ -429,8 +429,61 @@ def commodity_supply_base(access, commodity_slug, item_id=None):
         outreach=access.list_outreach(),
         rounds=access.list_rounds(),
         items=access.list_items(),
+        declared=_declared(access, commodity_slug),
     )
     return [wire(claim) for claim in claims]
+
+
+def _offers_for(access, commodity_slug):
+    """Every marketplace offering that matches this program's product, with how it matched."""
+    from connect_labs.supply_chain.market.service import offering_match_kind
+    from connect_labs.supply_chain.models import SupplierOffering
+
+    commodity = access.get_commodity(commodity_slug)
+    if commodity is None:
+        return []
+    items = [i for i in access.list_items() if i.commodity_id == commodity.pk]
+    found = []
+    for offering in SupplierOffering.objects.select_related("profile__org"):
+        match = offering_match_kind(offering, commodity, items)
+        if match is not None:
+            found.append((offering, match))
+    return found
+
+
+def _declared(access, commodity_slug):
+    by_org = {s.org_id: s.pk for s in access.list_suppliers()}
+    return [
+        (by_org[offering.profile.org_id], offering, match)
+        for offering, match in _offers_for(access, commodity_slug)
+        if offering.profile.org_id in by_org
+    ]
+
+
+@register_operation(
+    name="commodity_market_offers",
+    summary=(
+        "Companies on the supplier marketplace that say they sell this product and are NOT yet this "
+        "program's suppliers -- who to approach next. Their own claim, dated, unverified; `match` says "
+        "whether it matched exactly (UNICEF number or GTIN) or only by kind of product."
+    ),
+    input_schema=obj({"commodity_slug": {"type": "string"}}, required=("commodity_slug",)),
+)
+def commodity_market_offers(access, commodity_slug):
+    ours = {s.org_id for s in access.list_suppliers()}
+    return [
+        {
+            "org_id": offering.profile.org_id,
+            "org_name": offering.profile.org.name,
+            "country": offering.profile.org.country,
+            "product_name": offering.product_name,
+            "match": match,
+            "certifications": offering.certifications,
+            "updated_on": offering.updated_at.date().isoformat() if offering.updated_at else None,
+        }
+        for offering, match in _offers_for(access, commodity_slug)
+        if offering.profile.org_id not in ours
+    ]
 
 
 # Purchases used to live here, as "what an LLO actually paid". They are gone:

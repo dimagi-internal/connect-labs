@@ -42,6 +42,9 @@ EVIDENCE_KINDS = (
     "quoted_voided",
     "invited",
     "named_as_manufacturer",
+    # The supplier's own statement, on the supplier marketplace, that it sells
+    # this. The weakest kind: made by somebody, dated, and unverified.
+    "declared",
 )
 _STRENGTH = {kind: len(EVIDENCE_KINDS) - i for i, kind in enumerate(EVIDENCE_KINDS)}
 
@@ -118,6 +121,7 @@ def supply_base(
     rounds=(),
     items=(),
     item_id: int | None = None,
+    declared=(),
 ) -> list[SupplyClaim]:
     """Everyone connected to this product, strongest evidence first.
 
@@ -272,6 +276,23 @@ def supply_base(
                 # manufacturer  named as the manufacturer of RUTF-...".
                 detail=item.sku,
                 item_id=item.pk,
+            ),
+        )
+
+    # What suppliers say they sell, as (supplier_id, offering, match) where
+    # match is "exact" (a UNICEF number or GTIN) or "category". Not carried to
+    # a trade item's page: an offering names a product, not a manufacturer's
+    # version of it, unless its GTIN said so -- and then it is "exact".
+    for supplier_id, offering, match in declared:
+        if item_id is not None and match != "exact":
+            continue
+        add(
+            supplier_id,
+            Evidence(
+                kind="declared",
+                detail=f"{offering.product_name}"
+                + (" — the same kind of product, not confirmed as this one" if match == "category" else ""),
+                on=offering.updated_at.date() if offering.updated_at else None,
             ),
         )
 

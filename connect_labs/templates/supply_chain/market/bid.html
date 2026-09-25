@@ -1,0 +1,85 @@
+{% extends 'supply_chain/market/_shell.html' %}
+{% block title %}{% if revising %}Revise your bid{% else %}Bid{% endif %} · {{ line.name }}{% endblock %}
+{% block body %}
+{% with r=listed.round %}
+<nav class="text-sm text-gray-500 mb-3">
+  <a href="{% url 'supply_chain:market' %}" class="text-brand-indigo hover:underline">Open rounds</a> <span class="mx-1 text-gray-300">/</span>
+  <a href="{% url 'supply_chain:market_round' r.pk %}" class="text-brand-indigo hover:underline">{{ r.label }}</a> <span class="mx-1 text-gray-300">/</span>
+  {% if revising %}Revise your bid{% else %}Bid{% endif %}
+</nav>
+<div class="bg-white rounded-lg shadow-sm p-5">
+  <h1 class="text-xl font-semibold">{% if revising %}Revise your bid for{% else %}Bid for{% endif %} {{ line.name }}</h1>
+  <p class="text-sm text-gray-600 mt-1">
+    They want {% if line.quantity is not None %}{{ line.quantity|floatformat:"-4" }} {{ line.quantity_unit }}{% else %}an unstated quantity{% endif %}.
+    State your offer as you would write it; the buyer's comparison converts it. Anything you leave blank is recorded as not stated, and the buyer may ask you for it.
+  </p>
+  {% if revising %}<p class="text-sm text-gray-600 mt-1">Your current bid stays on record as the earlier version.</p>{% endif %}
+
+  <form method="post" class="mt-4">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="p-3 mb-4 rounded-md bg-message-error text-message-error-text border border-message-error-border text-sm">{% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}</div>{% endif %}
+
+    {% if not revising and supplier_orgs|length > 1 %}
+      <div class="mb-4">
+        <label for="id_org" class="block text-sm font-medium text-gray-700 mb-1">Bidding as</label>
+        <select id="id_org" name="org" class="base-input">
+          {% for org in supplier_orgs %}<option value="{{ org.pk }}" {% if acting and org.pk == acting.pk %}selected{% endif %}>{{ org.name }}</option>{% endfor %}
+        </select>
+      </div>
+    {% elif acting %}
+      <input type="hidden" name="org" value="{{ acting.pk }}">
+      <p class="text-sm mb-4">Bidding as <strong>{{ acting.name }}</strong>.</p>
+    {% endif %}
+
+    {% if offerings and not revising %}
+      <p class="text-sm mb-4">Start from one of your products:
+        {% for o in offerings %}<a class="text-brand-indigo hover:underline ml-1" href="?offering={{ o.pk }}{% if acting %}&org={{ acting.pk }}{% endif %}">{{ o.product_name }}</a>{% if not forloop.last %},{% endif %}{% endfor %}
+      </p>
+    {% endif %}
+
+    <fieldset class="grid md:grid-cols-3 gap-x-6">
+      <legend class="text-sm font-semibold mb-2">Price</legend>
+      {% include 'supply_chain/market/_field.html' with field=form.as_quoted_amount %}
+      {% include 'supply_chain/market/_field.html' with field=form.as_quoted_unit %}
+      {% include 'supply_chain/market/_field.html' with field=form.as_quoted_currency %}
+      {% include 'supply_chain/market/_field.html' with field=form.quantity_basis %}
+      {% include 'supply_chain/market/_field.html' with field=form.quantity_basis_unit %}
+    </fieldset>
+    <fieldset class="grid md:grid-cols-2 gap-x-6 mt-2">
+      <legend class="text-sm font-semibold mb-2">Pack</legend>
+      {% include 'supply_chain/market/_field.html' with field=form.base_per_pack_stated %}
+      {% include 'supply_chain/market/_field.html' with field=form.base_unit_grams_stated %}
+    </fieldset>
+    <fieldset class="grid md:grid-cols-2 gap-x-6 mt-2">
+      <legend class="text-sm font-semibold mb-2">Freight and duties</legend>
+      {% include 'supply_chain/market/_field.html' with field=form.freight_basis %}
+      {% include 'supply_chain/market/_field.html' with field=form.freight_amount %}
+      {% include 'supply_chain/market/_field.html' with field=form.duties_basis %}
+      {% include 'supply_chain/market/_field.html' with field=form.duties_amount %}
+      {% include 'supply_chain/market/_field.html' with field=form.incoterm %}
+    </fieldset>
+    <fieldset class="grid md:grid-cols-3 gap-x-6 mt-2">
+      <legend class="text-sm font-semibold mb-2">Delivery and terms</legend>
+      {% include 'supply_chain/market/_field.html' with field=form.shelf_life_months_stated %}
+      {% include 'supply_chain/market/_field.html' with field=form.lead_time_days %}
+      {% include 'supply_chain/market/_field.html' with field=form.validity_until %}
+      {% include 'supply_chain/market/_field.html' with field=form.moq %}
+      {% include 'supply_chain/market/_field.html' with field=form.moq_unit %}
+    </fieldset>
+    {% if form.requirement_fields %}
+      <fieldset class="grid md:grid-cols-2 gap-x-6 mt-2">
+        <legend class="text-sm font-semibold mb-1">Your product against the specification</legend>
+        <p class="md:col-span-2 text-xs text-gray-500 mb-2">{% for req in line.requirements %}{{ req }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+        {% for name in form.requirement_fields %}{% for field in form %}{% if field.name == name %}{% include 'supply_chain/market/_field.html' %}{% endif %}{% endfor %}{% endfor %}
+      </fieldset>
+    {% endif %}
+    {% include 'supply_chain/market/_field.html' with field=form.notes %}
+
+    <div class="flex gap-3 mt-4">
+      <button class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">{% if revising %}Save the revised bid{% else %}Submit bid{% endif %}</button>
+      <a href="{% url 'supply_chain:market_round' r.pk %}" class="px-4 py-2 text-sm rounded-md border border-gray-300">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endwith %}
+{% endblock %}

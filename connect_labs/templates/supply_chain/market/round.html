@@ -1,0 +1,56 @@
+{% extends 'supply_chain/market/_shell.html' %}
+{% load supply_chain_extras %}
+{% block title %}{{ listed.round.label }}{% endblock %}
+{% block body %}
+{% with r=listed.round %}
+<nav class="text-sm text-gray-500 mb-3"><a href="{% url 'supply_chain:market' %}" class="text-brand-indigo hover:underline">Open rounds</a> <span class="mx-1 text-gray-300">/</span> {{ r.label }}</nav>
+<section class="bg-white rounded-lg shadow-sm p-5 mb-4">
+  <h1 class="text-xl font-semibold">{{ r.label }}{% if listed.invited %} <span class="text-xs align-middle px-2 py-0.5 rounded-full bg-message-info text-message-info-text border border-message-info-border">Invited</span>{% endif %}</h1>
+  <dl class="grid sm:grid-cols-3 gap-3 mt-3 text-sm">
+    <div><dt class="text-gray-500">Replies by</dt><dd class="font-medium">{{ r.response_deadline|day|default:"not set" }}</dd></div>
+    <div><dt class="text-gray-500">Deliver to</dt><dd class="font-medium">{{ r.delivery_point.name|default:"not stated" }}{% if r.delivery_point.city %}, {{ r.delivery_point.city }}{% endif %}{% if r.delivery_point.country_name %}, {{ r.delivery_point.country_name }}{% endif %}</dd></div>
+    <div><dt class="text-gray-500">Terms asked for</dt><dd class="font-medium">{{ r.delivery_point.incoterm_requested|default:"not stated" }}</dd></div>
+    {% if r.shelf_life_months_minimum %}<div><dt class="text-gray-500">Minimum shelf life on arrival</dt><dd class="font-medium">{{ r.shelf_life_months_minimum }} months</dd></div>{% endif %}
+  </dl>
+  {% if r.notes_to_supplier %}<div class="mt-4 text-sm bg-stone-50 border rounded-md p-3 whitespace-pre-line">{{ r.notes_to_supplier }}</div>{% endif %}
+</section>
+
+<h2 class="text-lg font-semibold mb-2">What they are asking for</h2>
+<ul class="space-y-3 mb-6">
+  {% for line in listed.lines %}
+    <li class="bg-white rounded-lg shadow-sm p-4">
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <div>{% include 'supply_chain/market/_line.html' %}</div>
+        {% if not signed_in %}
+          <a href="{% url 'labs:login' %}?next={% url 'supply_chain:market_bid' r.pk line.commodity_slug %}" class="px-3 py-1.5 text-sm rounded-md bg-brand-indigo text-white">Sign in to bid</a>
+        {% elif not supplier_orgs %}
+          <a href="{% url 'supply_chain:market_register' %}" class="px-3 py-1.5 text-sm rounded-md bg-brand-indigo text-white">Register to bid</a>
+        {% else %}
+          <a href="{% url 'supply_chain:market_bid' r.pk line.commodity_slug %}" class="px-3 py-1.5 text-sm rounded-md bg-brand-indigo text-white">Bid</a>
+        {% endif %}
+      </div>
+      {% if line.requirements %}
+        <details class="mt-2 text-sm"><summary class="cursor-pointer text-brand-indigo">Specification</summary>
+          <ul class="list-disc ml-5 mt-1 text-gray-700">
+            {% for req in line.requirements %}<li>{{ req }}</li>{% endfor %}
+          </ul>
+          {% if line.commodity.spec_reference %}<p class="text-xs text-gray-500 mt-1">Reference: {{ line.commodity.spec_reference }}</p>{% endif %}
+        </details>
+      {% endif %}
+    </li>
+  {% endfor %}
+</ul>
+
+{% if listed.own_quotes %}
+<h2 class="text-lg font-semibold mb-2">Your bids on this round</h2>
+<ul class="bg-white rounded-lg shadow-sm divide-y text-sm">
+  {% for q in listed.own_quotes %}
+    <li class="p-3 flex flex-wrap justify-between gap-2">
+      <span>{{ q.commodity.name }} · {{ q.as_quoted_currency }} {{ q.as_quoted_amount|floatformat:"-4" }} {{ q.per_words }}</span>
+      <span class="text-gray-500">{% if q.voided %}Withdrawn{% elif q.superseded_by_id %}Replaced by a revision{% else %}Current{% endif %} · {{ q.received_on|day }}</span>
+    </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endwith %}
+{% endblock %}

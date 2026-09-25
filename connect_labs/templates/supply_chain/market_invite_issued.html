@@ -1,0 +1,30 @@
+{% extends 'supply_chain/base.html' %}
+
+{% comment %}
+The only time a marketplace invitation is shown. Rendered on the POST's own
+response, never after a redirect, so the token never sits in a Location
+header, browser history or an access log; only a keyed fingerprint is kept.
+{% endcomment %}
+
+{% block supply_content %}
+<nav class="text-sm text-gray-500 mb-3">
+  <a href="{% url 'supply_chain:suppliers' %}" class="text-brand-indigo hover:underline">Suppliers</a>
+  <span class="mx-1.5 text-gray-300">/</span>
+  <span class="text-gray-700">Marketplace invitation</span>
+</nav>
+<div class="max-w-3xl bg-white border border-brand-border-light rounded-lg overflow-hidden">
+  <div class="px-5 py-4 border-b border-brand-border-light">
+    <h1 class="text-base font-semibold text-gray-900">Invitation for {{ invite.org_name }}</h1>
+    <p class="text-sm text-gray-500 mt-0.5">
+      Send this to {{ invite.email|default:"them" }}. They sign in to labs with their own Connect account, open the link,
+      and can then keep {{ invite.org_name }}'s profile up to date and bid on open rounds themselves. It works once, until {{ invite.expires_at|slice:":10" }}.
+    </p>
+  </div>
+  <div class="px-5 py-4 space-y-3">
+    <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-3 text-sm text-message-warning-text">
+      <strong>Copy it now — this is the only time it is shown.</strong> Whoever opens it first, signed in, joins {{ invite.org_name }}.
+    </div>
+    <input id="issued-invite" type="text" readonly value="{{ link }}" class="base-input w-full font-mono text-xs" onclick="this.select()">
+  </div>
+</div>
+{% endblock %}

@@ -246,6 +246,34 @@ ONE_COURSE_IS = ("", "base_unit", "pack")
 # computed from nothing.
 STOCK_CLASSES = ("consumable", "durable")
 
+# What a commodity is, by kind. The codes are stored on `Commodity.category`
+# and on what a supplier says it offers (`SupplierOffering.category`), so a
+# supplier's offer can be matched to a program's product by kind.
+COMMODITY_CATEGORIES = (
+    ("therapeutic_food", "Therapeutic food (treats severe malnutrition)"),
+    ("supplementary_food", "Supplementary food (treats moderate)"),
+    ("oral_rehydration", "Oral rehydration"),
+    ("micronutrient", "Micronutrient"),
+    ("antibiotic", "Antibiotic"),
+    ("antimalarial", "Antimalarial"),
+    ("anthelmintic", "Anthelmintic"),
+    ("diagnostic", "Diagnostic"),
+    ("equipment", "Equipment"),
+    ("consumable", "Consumable"),
+)
+
+# Who may see an open round on the supplier marketplace. `public`: anyone,
+# signed in or not. `private`: only organisations invited to it.
+ROUND_VISIBILITIES = ("public", "private")
+
+# Who typed a quote in: the program team (from an email, a call, a PDF), or the
+# supplier itself on the marketplace. Different evidence, so it is kept.
+QUOTE_ENTERED_BY = ("program", "supplier")
+
+# How a supplier came to be one of a program's: added by the program team, or
+# by bidding on one of its rounds from the marketplace.
+SUPPLIER_ORIGINS = ("program", "self_registered")
+
 # What a supplier is to us. `donor` is the one that supplies in kind: a donor
 # NGO ships, is received from and is followed up with like any supplier, but
 # is never paid for the goods. Stored free-text on `Supplier.type` (no

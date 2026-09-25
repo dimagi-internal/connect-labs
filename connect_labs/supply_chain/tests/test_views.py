@@ -785,6 +785,7 @@ _CATALOGUE_RESPONSES = {
     "invoice_list": [],
     "network_stock": {"summary": {}, "points": []},
     "commodity_supply_base": [CLAIM],
+    "commodity_market_offers": [],
 }
 
 

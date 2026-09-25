@@ -73,6 +73,11 @@ class ComparisonRow:
     # per test are not.
     composition_unit: str = ""
     composition_key: tuple | None = None
+    # Who typed the quote in, and whether its supplier arrived from the
+    # marketplace with nobody on the program team having looked at it yet.
+    # Shown, never used to rank or hide: a hidden bid is a silent failure.
+    entered_by: str = "program"
+    supplier_awaiting_review: bool = False
 
     @property
     def specification(self) -> dict | None:
@@ -171,6 +176,8 @@ class Comparison:
                 "composition_unit": row.composition_unit,
                 "item_name": row.item_name,
                 "specification": row.specification,
+                "entered_by": row.entered_by,
+                "supplier_awaiting_review": row.supplier_awaiting_review,
             }
 
         return {
@@ -448,6 +455,8 @@ def compare_round(
             item_name=item.name if item is not None else "",
             composition_unit=item.components_unit if item is not None and item.components else "",
             composition_key=_composition_key(item) if quote.item_id else None,
+            entered_by=getattr(quote, "entered_by", "program") or "program",
+            supplier_awaiting_review=bool(getattr(supplier, "awaiting_review", False)),
         )
         if not course_applies:
             row.figures = {key: value for key, value in figures.items() if key not in COURSE_FIGURES}
