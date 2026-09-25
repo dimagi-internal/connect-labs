@@ -96,7 +96,7 @@ def other_store():
 def contract(rutf):
     return Contract.objects.create(
         program_id=PROGRAM,
-        supplier=Supplier.objects.create(scope_key=SCOPE, name="Northwind Foods"),
+        supplier=Supplier.objects.enrol(scope_key=SCOPE, name="Northwind Foods"),
         commodity=rutf,
         buyer_of_record="programme_org",
         buyer_org=LabsOrg.objects.create(slug="us", name="Us"),
@@ -294,7 +294,7 @@ class TestRecordingADispatch:
     def test_a_shipment_from_another_programme_is_not_found(self, scoped, rutf):
         theirs = Contract.objects.create(
             program_id=99999,
-            supplier=Supplier.objects.create(scope_key="prog:99999", name="Theirs"),
+            supplier=Supplier.objects.enrol(scope_key="prog:99999", name="Theirs"),
             commodity=rutf,
             buyer_of_record="programme_org",
             source="we_recorded",

@@ -466,6 +466,14 @@ _OUTREACH_DATA_CREATE = {**_OUTREACH_DATA, "required": ["round_id"]}
 
 _SUPPLIER_DATA = _data_with(
     name={"type": "string", "minLength": 1},
+    org_id=ID,
+    connect_organization_id={"type": ["integer", "null"], "minimum": 1},
+    country={"type": "string", "maxLength": 2},
+    city={"type": "string"},
+    website={"type": "string"},
+    description={"type": "string"},
+    contacts={"type": "array", "items": {"type": "object"}},
+    qualifications={"type": "array", "items": {"type": "object"}},
     type={"enum": list(records.SUPPLIER_TYPES)},
     status={
         "enum": [
@@ -620,17 +628,23 @@ def supplier_get(access, supplier_id):
     return record(supplier) if supplier else None
 
 
-# `supplier_create` / `supplier_update`, not `supplier_upsert` -- and that is
-# the rule, not an oversight anyone should tidy. Every reference model with a
-# natural key gets an upsert (commodity on slug, item on sku, supply point on
-# slug, organisation on slug). A supplier has NO unique constraint, because
-# two suppliers can share a name: "Nutriset" and "Nutriset Nigeria" are
-# different companies, and keying an upsert on a name would silently rewrite
-# one with the other. With nothing to upsert ON, create and update are two
-# operations. test_operations.py pins this.
+# `supplier_create` / `supplier_update`, not `supplier_upsert`. A supplier is a
+# company linked into this program; the company lives on the organisation
+# and is shared by every program that buys from it. `supplier_create` finds
+# the company (by `org_id`, then Connect id, then the organisation its name
+# already belongs to) and mints one only when nothing matches -- so creating
+# "EHA Clinics" in a second program links the same EHA rather than making a
+# second, and creating it twice in one program returns the first. Names
+# still never merge two companies: "Nutriset" and "Nutriset Nigeria" have
+# different slugs and stay two. test_supplier_company.py pins this.
 @register_operation(
     name="supplier_create",
-    summary="Create a supplier. Call supplier_list first if there is any chance this supplier is already on file.",
+    summary=(
+        "Add a supplier to this program. The company is shared across programs: pass org_id "
+        "for an organisation you know, or a name (and connect_organization_id if it has one) and the "
+        "existing company is found or a new one made. Adding a company already supplying this "
+        "program returns that supplier rather than a duplicate."
+    ),
     input_schema=obj({"data": _SUPPLIER_DATA}, required=("data",)),
     is_write=True,
 )
@@ -641,7 +655,9 @@ def supplier_create(access, data):
 @register_operation(
     name="supplier_update",
     summary=(
-        "Update a supplier's details — contacts, status, qualifications, or " "the connect_organization_id binding."
+        "Update a supplier. Company facts (name, country, type, city, contacts, qualifications, "
+        "website, description, connect_organization_id) change the company in every program; "
+        "status and notes are this program's own. A company Connect names cannot be renamed here."
     ),
     input_schema=obj({"supplier_id": ID, "data": _SUPPLIER_DATA}, required=("supplier_id", "data")),
     is_write=True,

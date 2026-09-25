@@ -303,7 +303,9 @@ def _fulfilment(access, as_of):
     contracted_awards = set(
         Contract.objects.filter(program_id=access.program_id, award__isnull=False).values_list("award_id", flat=True)
     )
-    for award in Award.objects.filter(round__program_id=access.program_id).select_related("supplier", "commodity"):
+    for award in Award.objects.filter(round__program_id=access.program_id).select_related(
+        "supplier__org__supplier_profile", "commodity"
+    ):
         if award.pk not in contracted_awards:
             out.append(
                 _check(
@@ -324,7 +326,7 @@ def _fulfilment(access, as_of):
     # causes lives on contract_create, where it bites.
     pending = AwardApproval.objects.filter(
         award__round__program_id=access.program_id, status="requested"
-    ).select_related("approver_org", "award__supplier", "award__commodity")
+    ).select_related("approver_org", "award__supplier__org__supplier_profile", "award__commodity")
     for approval in pending:
         award = approval.award
         out.append(
@@ -347,7 +349,7 @@ def _fulfilment(access, as_of):
         )
 
     for contract in Contract.objects.filter(program_id=access.program_id).select_related(
-        "commodity", "supplier", "buyer_org"
+        "commodity", "supplier__org__supplier_profile", "buyer_org"
     ):
         if contract.status not in ("cancelled", "closed") and not contract.reference:
             out.append(
@@ -437,7 +439,7 @@ def _fulfilment(access, as_of):
         # for one on top kept a "missing document" on the checks list after the
         # consignment's own checklist read nothing outstanding.
         .filter(required_documents=[])
-        .select_related("contract__supplier", "contract__commodity", "contract__item")
+        .select_related("contract__supplier__org__supplier_profile", "contract__commodity", "contract__item")
     )
     out += _late_shipments(access, as_of)
     out += _unconfirmed_payments(access, as_of)
@@ -530,7 +532,7 @@ def _late_shipments(access, as_of):
         Shipment.objects.filter(contract__program_id=access.program_id, expected_on__lt=today)
         .exclude(status__in=("delivered", "lost"))
         .filter(receipts__isnull=True)
-        .select_related("contract__supplier", "contract__commodity", "contract__item")
+        .select_related("contract__supplier__org__supplier_profile", "contract__commodity", "contract__item")
         .distinct()
     )
     out = []
@@ -571,7 +573,7 @@ def _unconfirmed_payments(access, as_of):
         invoice__contract__program_id=access.program_id,
         confirmed_by_payee_on__isnull=True,
         paid_on__lt=cutoff,
-    ).select_related("invoice__contract__supplier")
+    ).select_related("invoice__contract__supplier__org__supplier_profile")
     out = []
     for payment in unconfirmed:
         contract = payment.invoice.contract
@@ -611,7 +613,7 @@ def _outstanding_documents(access, as_of):
     shipments = list(
         Shipment.objects.filter(contract__program_id=access.program_id)
         .exclude(required_documents=[])
-        .select_related("contract__supplier", "contract__commodity", "contract__item")
+        .select_related("contract__supplier__org__supplier_profile", "contract__commodity", "contract__item")
         .prefetch_related("documents")
     )
     owed_by_ids = {

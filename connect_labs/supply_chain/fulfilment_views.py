@@ -86,7 +86,7 @@ class ContractCreateView(_ContractScreen):
             return None
         return (
             Award.objects.filter(pk=int(raw), round__program_id=_access(self.request).program_id)
-            .select_related("quote", "supplier", "commodity")
+            .select_related("quote", "supplier__org__supplier_profile", "commodity")
             .first()
         )
 

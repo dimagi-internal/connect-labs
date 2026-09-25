@@ -54,6 +54,7 @@ from connect_labs.supply_chain.models import (
     StockCount,
     Supplier,
     SupplyPoint,
+    fill_profile,
     scope_key,
 )
 from connect_labs.supply_chain.stock.repository import StockRepositoryMixin
@@ -446,8 +447,17 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
             cleaned.append(entry)
         return cleaned
 
+    def _suppliers(self):
+        return self._reference(Supplier).select_related("org", "org__supplier_profile")
+
     def list_suppliers(self, search: str | None = None):
-        found = list(self._reference(Supplier).all())
+        """The companies linked into this program as suppliers.
+
+        Program-scoped on purpose: "is this supplier already on file" means
+        on file HERE. A company another program buys from is linked in by
+        `create_supplier`, which finds it rather than duplicating it.
+        """
+        found = list(self._suppliers().all())
         if not search:
             return found
         needle = search.lower().strip()
@@ -459,19 +469,98 @@ class SupplyDataAccess(FulfilmentRepositoryMixin, StockRepositoryMixin):
         ]
 
     def get_supplier(self, supplier_id: int):
-        return self._reference(Supplier).filter(pk=supplier_id).first()
+        return self._suppliers().filter(pk=supplier_id).first()
 
     def create_supplier(self, data: dict):
-        return _fresh(Supplier.objects.create(scope_key=self.scope_key, **_columns(Supplier, data)))
+        """Link a company into this program as a supplier.
 
+        The company is `org_id` when given; otherwise the organisation holding
+        `connect_organization_id`, or the one the name already belongs to, or a
+        new one (`identity.find_or_mint_supplier_org`). Linking a company that
+        is already this program's supplier returns that supplier.
+        """
+        org = None
+        if data.get("org_id") is not None:
+            org = self.get_org(data["org_id"])
+            if org is None:
+                raise ValueError(f"organisation {data['org_id']} does not exist")
+        company = {k: v for k, v in data.items() if k != "org_id"}
+        return _fresh(Supplier.objects.enrol(self.scope_key, org=org, **company))
+
+    @transaction.atomic
     def update_supplier(self, supplier_id: int, data: dict):
+        """Edit a supplier: the company's facts on the company, the program's on the link.
+
+        Three rules about the company, each because someone else owns part of it:
+
+          * Setting a Connect id another organisation already holds MOVES this
+            program's supplier onto that organisation -- that is who the
+            supplier turns out to be. Nothing else in the edit then touches the
+            company: the facts on the form described the old one, and writing
+            them onto the organisation it turned out to be would overwrite a
+            company other programs share.
+          * A name or country Connect has set is Connect's. A blank one may be
+            filled in -- that is adding knowledge, not contradicting Connect.
+          * A company in the LLO directory is named by the directory: renaming
+            it here would make the next import treat it as gone and mint a
+            second copy under the directory's name.
+        """
         supplier = self.get_supplier(supplier_id)
         if supplier is None:
             raise ValueError(f"supplier {supplier_id} not found")
-        for key, value in _columns(Supplier, data).items():
-            setattr(supplier, key, value)
+        org = supplier.org
+        rebound = False
+
+        connect_id = data.get("connect_organization_id")
+        if connect_id and connect_id != org.connect_organization_id:
+            holder = LabsOrg.objects.filter(connect_organization_id=connect_id).first()
+            if holder is not None:
+                if Supplier.objects.filter(scope_key=self.scope_key, org=holder).exclude(pk=supplier.pk).exists():
+                    raise ValueError(
+                        f"{holder.name} is already a supplier in this program; "
+                        "edit that supplier rather than binding a second one to it"
+                    )
+                supplier.org = holder
+                org = holder
+                rebound = True
+            elif org.connect_organization_id is not None:
+                raise ValueError(
+                    f"{org.name} is Connect organisation {org.connect_organization_id}; "
+                    "an organisation's Connect id is its identity and does not change"
+                )
+            else:
+                org.connect_organization_id = connect_id
+                org.save(update_fields=["connect_organization_id", "updated_at"])
+
+        if not rebound:
+            self._edit_company(org, data)
+        for key in ("status", "notes"):
+            if key in data:
+                setattr(supplier, key, data[key] if data[key] is not None else "")
         supplier.save()
         return _fresh(supplier)
+
+    def _edit_company(self, org, data):
+        identity = {k: data[k] for k in ("name", "country") if data.get(k) not in (None, "")}
+        changed = {k: v for k, v in identity.items() if getattr(org, k) != v}
+        # Filling a blank is adding what we know; only replacing a value
+        # somebody else set is refused.
+        replaced = {k for k in changed if getattr(org, k)}
+        if replaced and org.connect_organization_id is not None:
+            raise ValueError(
+                f"{org.name} is named by Connect (organisation {org.connect_organization_id}); "
+                "its name and country are changed there, not here"
+            )
+        if "name" in replaced and hasattr(org, "marketplace_profile"):
+            raise ValueError(
+                f"{org.name} is in the LLO directory, which names it; rename it in the directory sheet "
+                "and the next import will carry the change"
+            )
+        if changed:
+            for key, value in changed.items():
+                setattr(org, key, value)
+            org.save(update_fields=[*changed, "updated_at"])
+        fill_profile(org, data, overwrite=True)
 
     def list_orgs(self):
         return list(LabsOrg.objects.all())

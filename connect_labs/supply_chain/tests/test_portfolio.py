@@ -316,7 +316,7 @@ def _an_order_awaited_in(program_id, *, lead_time_days, slug="a-placeholder-prod
     commodity = Commodity.objects.filter(scope_key=scope, slug=slug).first() or Commodity.objects.create(
         scope_key=scope, slug=slug, name=slug.replace("-", " "), category="consumable", base_unit="placeholder unit"
     )
-    supplier = Supplier.objects.create(scope_key=scope, name="A Placeholder Supplier")
+    supplier = Supplier.objects.enrol(scope_key=scope, name="A Placeholder Supplier")
     store = SupplyPoint.objects.create(
         program_id=program_id,
         slug=f"a-placeholder-store-{program_id}",

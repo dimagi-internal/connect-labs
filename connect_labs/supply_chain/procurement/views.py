@@ -758,7 +758,7 @@ def _award(request, award_id):
 
     found = (
         Award.objects.filter(pk=award_id, round__program_id=_access(request).program_id)
-        .select_related("supplier", "commodity", "round")
+        .select_related("supplier__org__supplier_profile", "commodity", "round")
         .first()
     )
     if found is None:
@@ -953,7 +953,7 @@ class QuoteDocumentAttachView(OperationFormView):
 
         found = (
             Quote.objects.filter(pk=self.kwargs["quote_id"], round__program_id=_access(self.request).program_id)
-            .select_related("supplier", "round")
+            .select_related("supplier__org__supplier_profile", "round")
             .first()
         )
         if found is None:
