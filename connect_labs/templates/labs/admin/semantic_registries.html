@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Semantic Registries{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-6xl">
+  <div class="mb-6">
+    <a href="{% url 'labs_admin:index' %}" class="text-blue-600 text-sm"><i class="fa-solid fa-chevron-left mr-1"></i>Labs Admin</a>
+    <h1 class="text-3xl font-bold text-gray-900 mt-2">
+      <i class="fa-solid fa-sitemap text-blue-600 mr-2"></i>Semantic Registries
+    </h1>
+    <p class="text-gray-600 mt-1">
+      The indicator definitions reports compute from. Registries live in one opportunity, program or
+      organisation; this lists one scope plus every shared registry.
+    </p>
+  </div>
+
+  {% if messages %}
+  <div class="mb-4 space-y-2">
+    {% for message in messages %}
+    <div class="px-4 py-2 rounded text-sm {% if message.tags == 'error' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">{{ message }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <form method="get" class="mb-4 flex flex-wrap items-end gap-3 bg-white shadow rounded-lg p-4 text-sm">
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Opportunity id</label>
+      <input name="opportunity_id" value="{{ scope.opportunity_id|default:'' }}" class="border border-gray-300 rounded px-2 py-1 w-32">
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Program id</label>
+      <input name="program_id" value="{{ scope.program_id|default:'' }}" class="border border-gray-300 rounded px-2 py-1 w-32">
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Organization id</label>
+      <input name="organization_id" value="{{ scope.organization_id|default:'' }}" class="border border-gray-300 rounded px-2 py-1 w-32">
+    </div>
+    <button type="submit" class="px-3 py-1.5 rounded bg-blue-600 text-white font-medium">Show</button>
+    <span class="text-gray-500">Reading: {{ scope_label }}. Fill one field, or leave all empty for the labs context.</span>
+  </form>
+
+  {% if registries %}
+  <div class="overflow-x-auto bg-white shadow rounded-lg">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+      <thead class="bg-gray-50 text-left text-gray-500 uppercase text-xs">
+        <tr>
+          <th class="px-4 py-3">Id</th>
+          <th class="px-4 py-3">Name</th>
+          <th class="px-4 py-3">Version</th>
+          <th class="px-4 py-3">Lives in</th>
+          <th class="px-4 py-3">Families</th>
+          <th class="px-4 py-3 text-right">Indicators</th>
+          <th class="px-4 py-3 text-right">Properties</th>
+          <th class="px-4 py-3 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for r in registries %}
+        <tr>
+          <td class="px-4 py-3 text-gray-500">{{ r.id }}</td>
+          <td class="px-4 py-3 font-medium">
+            {{ r.name }}
+            {% if r.is_shared %}<span class="ml-1 inline-flex px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs">shared</span>{% endif %}
+            {% if r.description %}<div class="text-xs text-gray-500 font-normal max-w-md">{{ r.description|truncatechars:160 }}</div>{% endif %}
+          </td>
+          <td class="px-4 py-3">v{{ r.version }}</td>
+          <td class="px-4 py-3">{{ r.scope_label }}</td>
+          <td class="px-4 py-3">{{ r.families }}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ r.indicator_count }}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ r.property_count }}</td>
+          <td class="px-4 py-3 text-right whitespace-nowrap">
+            <a class="text-blue-600 hover:underline" href="{% url 'labs_admin:semantic_registry_detail' r.id %}{% if r.scope_query %}?{{ r.scope_query }}{% endif %}">View / delete</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="bg-white shadow rounded-lg p-8 text-center text-gray-500">No registries in this scope.</div>
+  {% endif %}
+</div>
+{% endblock %}
