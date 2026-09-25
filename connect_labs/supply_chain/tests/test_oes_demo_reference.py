@@ -780,3 +780,59 @@ def test_re_seeding_does_not_drag_a_bought_tender_back_onto_the_market():
     for settled in ("open", "closed", "awarded"):
         assert module.opened(object(), {"id": 1, "status": settled})["status"] == settled
     assert calls == [], "a tender that is not a draft must not be opened again"
+
+
+# ---------------------------------------------------------------------------
+# Where suppliers are.
+# ---------------------------------------------------------------------------
+
+
+class _ScriptedOp(_FakeOp):
+    """A fake `op` that answers the reads these helpers make."""
+
+    def __init__(self, existing_suppliers=()):
+        super().__init__()
+        self.existing = list(existing_suppliers)
+
+    def __call__(self, access, name, **payload):
+        self.calls.append((name, payload))
+        if name == "supplier_list":
+            return list(self.existing)
+        if name == "supplier_create":
+            return {"id": 7, "country": "", "city": "", **payload["data"]}
+        if name == "supplier_update":
+            return {"id": payload["supplier_id"], **payload["data"]}
+        return {"op": name, **payload}
+
+
+def _module_with(op, places):
+    module = _load_seed_remote()
+    module.op = op
+    module._SUPPLIER_PLACES.clear()
+    module._SUPPLIER_PLACES.update(places)
+    return module
+
+
+def test_a_new_supplier_is_given_the_country_and_city_the_document_names():
+    """What lets the map draw an order from where the goods leave.
+
+    MUTATED: `_placed_supplier` returning the supplier unchanged -- no update call, red.
+    """
+    fake = _ScriptedOp()
+    module = _module_with(fake, {"A Placeholder Maker": {"country": "NG", "city": "A Placeholder Town"}})
+
+    supplier = module.supplier_for_label(object(), "A Placeholder Maker")
+
+    assert (supplier["country"], supplier["city"]) == ("NG", "A Placeholder Town")
+
+
+def test_a_supplier_someone_has_already_located_keeps_what_they_said():
+    """Suppliers are global companies since #2019: the seed fills blanks, never overwrites."""
+    located = {"id": 3, "name": "A Placeholder Maker", "country": "FR", "city": "Somewhere Recorded"}
+    fake = _ScriptedOp(existing_suppliers=[located])
+    module = _module_with(fake, {"A Placeholder Maker": {"country": "NG", "city": "A Placeholder Town"}})
+
+    supplier = module.supplier_for_label(object(), "A Placeholder Maker")
+
+    assert supplier == located
+    assert not [name for name, _ in fake.calls if name == "supplier_update"]

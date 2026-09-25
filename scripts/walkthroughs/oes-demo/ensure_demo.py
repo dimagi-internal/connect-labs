@@ -285,16 +285,25 @@ print(
 """
 
 
-def build_command(folder: str, filename: str) -> str:
+def driver_source(folder: str, filename: str) -> str:
+    """The Python that seeds, with both modules inlined -- the same text wherever it runs.
+
+    Shared by `build_command` (labs, over ECS exec) and `seed_local.py` (this
+    machine's database), so the two can never seed different stories.
+    """
     loader = base64.b64encode(LOADER.read_bytes()).decode()
     seeder = base64.b64encode((HERE / "seed_remote.py").read_bytes()).decode()
-    driver = (
+    return (
         DRIVER.replace("__LOADER_B64__", loader)
         .replace("__SEEDER_B64__", seeder)
         .replace("__FOLDER__", folder)
         .replace("__FILENAME__", filename)
         .replace("__MARK__", MARK)
     )
+
+
+def build_command(folder: str, filename: str) -> str:
+    driver = driver_source(folder, filename)
     # Compressed before encoding, and that is the difference between this
     # route working and not. Base64 alone INFLATES by 4/3: the driver passed
     # 120,000 characters once the RUTF, chlorine and last-mile seeders landed,
