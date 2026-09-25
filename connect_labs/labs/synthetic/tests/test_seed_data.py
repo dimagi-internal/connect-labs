@@ -61,3 +61,12 @@ def test_an_org_without_its_connect_id_is_refused():
     with pytest.raises(SeedDataError) as caught:
         load_seed_data("folder", client=drive)
     assert "connect_organization_id" in str(caught.value)
+
+
+def test_an_org_taken_from_the_directory_needs_no_connect_id_of_its_own():
+    """It is the directory's own row, read and never written -- it cannot be a lookalike."""
+    doc = _valid()
+    doc["orgs"].append({"slug": "a-directory-partner", "from_directory": True})
+    drive = FakeDrive({"oes-demo.json": json.dumps(doc).encode()})
+
+    assert load_seed_data("folder", client=drive)["orgs"][1]["slug"] == "a-directory-partner"

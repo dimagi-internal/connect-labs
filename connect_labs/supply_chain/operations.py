@@ -41,6 +41,7 @@ _SERIALIZERS = {
     models.Movement: serializers.movement,
     models.StockCount: serializers.stock_count,
     models.Distribution: serializers.distribution,
+    models.Consignment: serializers.consignment,
 }
 
 # Re-exported for the tier modules that build on them (see

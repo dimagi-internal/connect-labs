@@ -160,7 +160,7 @@ exec(compile(base64.b64decode("__LOADER_B64__").decode(), "seed_data.py", "exec"
 _seed = {}
 exec(compile(base64.b64decode("__SEEDER_B64__").decode(), "seed_remote.py", "exec"), _seed)
 
-from connect_labs.supply_chain.models import Commodity, Contract, Round, SupplyPoint, scope_key
+from connect_labs.supply_chain.models import Commodity, Contract, SupplyPoint, Tender, scope_key
 
 # The worker accepts no host at all, so give it back the one the web tier has.
 #
@@ -198,7 +198,7 @@ occupied = []
 for _name, _scope in SCOPES.items():
     _pid = _scope["program_id"]
     _rows = (
-        Round.objects.filter(program_id=_pid).count()
+        Tender.objects.filter(program_id=_pid).count()
         + Contract.objects.filter(program_id=_pid).count()
         + SupplyPoint.objects.filter(program_id=_pid).count()
         + Commodity.objects.filter(scope_key=scope_key(program_id=_pid)).count()
@@ -236,6 +236,10 @@ chlorine = _seed["seed_chlorine_blocked"](data, scopes)
 # put in a partner's store, and after the links because beat 10 is the
 # contrast that only reads against the partner seat beat 6 opened.
 last_mile = _seed["seed_chc_last_mile"](chc["access"], data, chc["reference"], chc_chain)
+
+# Stock the distributor has sent and a partner has not yet received: the one
+# thing on the map that is moving right now, rather than moved.
+on_the_road = _seed["seed_on_the_road"](chc["access"], data, chc["reference"], chc_chain)
 
 # Beat 5, the gate: its own round, because the two awards above already
 # carry orders and an approval asked for after the goods were bought would
@@ -285,16 +289,25 @@ print(
 """
 
 
-def build_command(folder: str, filename: str) -> str:
+def driver_source(folder: str, filename: str) -> str:
+    """The Python that seeds, with both modules inlined -- the same text wherever it runs.
+
+    Shared by `build_command` (labs, over ECS exec) and `seed_local.py` (this
+    machine's database), so the two can never seed different stories.
+    """
     loader = base64.b64encode(LOADER.read_bytes()).decode()
     seeder = base64.b64encode((HERE / "seed_remote.py").read_bytes()).decode()
-    driver = (
+    return (
         DRIVER.replace("__LOADER_B64__", loader)
         .replace("__SEEDER_B64__", seeder)
         .replace("__FOLDER__", folder)
         .replace("__FILENAME__", filename)
         .replace("__MARK__", MARK)
     )
+
+
+def build_command(folder: str, filename: str) -> str:
+    driver = driver_source(folder, filename)
     # Compressed before encoding, and that is the difference between this
     # route working and not. Base64 alone INFLATES by 4/3: the driver passed
     # 120,000 characters once the RUTF, chlorine and last-mile seeders landed,

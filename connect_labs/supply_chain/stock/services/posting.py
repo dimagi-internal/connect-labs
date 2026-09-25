@@ -58,6 +58,27 @@ def _movement(
     )
 
 
+def post_consignment_leg(consignment, *, frm, to, quantity, occurred_on, kind="transfer") -> Movement:
+    """One leg of a consignment on the ledger: onto the road, off it, or lost on it."""
+    movement = _movement(
+        consignment,
+        kind=kind,
+        quantity=quantity,
+        unit=consignment.quantity_unit,
+        item=consignment.item,
+        commodity=consignment.commodity,
+        batch=consignment.batch,
+        frm=frm,
+        to=to,
+        occurred_on=occurred_on,
+        program_id=consignment.program_id,
+        opportunity_id=consignment.opportunity_id,
+        reference=consignment.reference,
+    )
+    movement.save()
+    return movement
+
+
 @transaction.atomic
 def post_receipt(receipt, commodity, program_id) -> list[Movement]:
     """One movement per accepted receipt line.

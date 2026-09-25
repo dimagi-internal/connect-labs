@@ -155,7 +155,9 @@ def network_stock(
     Rows carry the point's own min/max band, so "below minimum" means below
     the band this point is managed to rather than a number chosen here.
     """
-    points = SupplyPoint.objects.filter(program_id=program_id, status="active")
+    # Not the road: goods on it are reported at their destination as in
+    # transit (ledger.in_transit), never as a point holding stock.
+    points = SupplyPoint.objects.filter(program_id=program_id, status="active").exclude(kind="in_transit")
     if opportunity_id is not None:
         points = points.filter(opportunity_id=opportunity_id)
     if kind is not None:

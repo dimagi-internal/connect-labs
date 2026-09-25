@@ -101,6 +101,8 @@ KIND_CATEGORIES = {
     # date, or the contract's signature plus its promised lead time.
     "shipment_overdue": "threshold",
     "contract_delivery_overdue": "threshold",
+    # The same bound for our own stock on the road: the date the sender gave.
+    "consignment_overdue": "threshold",
 }
 
 KINDS = tuple(KIND_CATEGORIES)
@@ -445,6 +447,7 @@ def _fulfilment(access, as_of):
         .select_related("contract__supplier__org__supplier_profile", "contract__commodity", "contract__item")
     )
     out += _late_shipments(access, as_of)
+    out += _late_consignments(access, as_of)
     out += _unconfirmed_payments(access, as_of)
     out += _outstanding_documents(access, as_of)
     out += _unevidenced_deliveries(access, as_of)
@@ -723,6 +726,41 @@ def _contract_lateness(contract, match, as_of):
         since=expected_on,
         as_of=as_of,
     )
+
+
+def _late_consignments(access, as_of):
+    """Our own consignments past the date the sender gave, and not yet received.
+
+    The bound is the consignment's own `expected_on`; one nobody gave a date
+    for cannot be late, only open. Ours to answer: both ends are places we
+    or our partners run, so there is no supplier to ask.
+    """
+    from connect_labs.supply_chain.models import Consignment
+
+    today = as_of or date.today()
+    late = Consignment.objects.filter(
+        program_id=access.program_id, status="dispatched", expected_on__lt=today
+    ).select_related("from_supply_point", "to_supply_point", "commodity")
+    return [
+        _check(
+            "consignment_overdue",
+            subject_type="consignment",
+            subject_id=c.pk,
+            label=f"{c.from_supply_point.name} → {c.to_supply_point.name}",
+            audience="internal",
+            facts={
+                "days_late": (today - c.expected_on).days,
+                "expected_on": c.expected_on.isoformat(),
+                "dispatched_on": c.dispatched_on.isoformat(),
+                "quantity": f"{decimal_string(c.quantity)} {c.quantity_unit}",
+                "to_supply_point_id": c.to_supply_point_id,
+                "from_supply_point_id": c.from_supply_point_id,
+            },
+            since=c.expected_on,
+            as_of=as_of,
+        )
+        for c in late
+    ]
 
 
 def _late_shipments(access, as_of):

@@ -1356,6 +1356,60 @@ class DistributionLine(models.Model):
     )
 
 
+class Consignment(SourcedModel):
+    """Stock sent from one of our places to another, and not yet arrived.
+
+    The shipment's counterpart between our own stores: a Shipment is goods on
+    their way FROM A SUPPLIER against an order; a consignment is goods on
+    their way from the warehouse to a partner's office. Before this existed a
+    store-to-store move could only be recorded once it had happened, so
+    nothing between two stores was ever "on its way" (design §19.1: in transit
+    is a real position, and never stock).
+
+    It rides on the ledger rather than beside it. Dispatch posts a transfer
+    from the sending place into the program's own in-transit point
+    (`kind="in_transit"`, §18); receipt posts a transfer out of it into the
+    destination. So the sender's stock drops the moment the goods leave, the
+    destination does not count them until they arrive, and every balance
+    stays "movements in minus movements out" with no special case.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    opportunity_id = models.IntegerField(null=True, blank=True, db_index=True)
+    from_supply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="consignments_out")
+    to_supply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="consignments_in")
+    # The in-transit point the goods sit at on the ledger while on the road.
+    via_supply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="consignments_via")
+    commodity = models.ForeignKey(Commodity, on_delete=models.PROTECT, related_name="consignments")
+    item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    batch = models.CharField(max_length=64, blank=True, default="")
+    quantity = models.DecimalField(**QTY)
+    quantity_unit = models.CharField(max_length=32)
+    reference = models.CharField(max_length=64, blank=True, default="")
+    carrier = models.CharField(max_length=255, blank=True, default="")
+    dispatched_on = models.DateField(db_index=True)
+    # When the sender said it would arrive; null when nobody said.
+    expected_on = models.DateField(null=True, blank=True)
+    received_on = models.DateField(null=True, blank=True)
+    quantity_received = models.DecimalField(null=True, blank=True, **QTY)
+    status = models.CharField(
+        max_length=16, default="dispatched", choices=_choices(records.CONSIGNMENT_STATUSES), db_index=True
+    )
+    dispatch_movement = models.OneToOneField(
+        "supply_chain.Movement", null=True, blank=True, on_delete=models.PROTECT, related_name="consignment_dispatched"
+    )
+    receipt_movement = models.OneToOneField(
+        "supply_chain.Movement", null=True, blank=True, on_delete=models.PROTECT, related_name="consignment_received"
+    )
+
+    class Meta:
+        ordering = ["-dispatched_on", "-id"]
+
+    @property
+    def is_open(self) -> bool:
+        return self.status == "dispatched"
+
+
 # ======================================================================
 # Alerts and supplier update links -- in their own modules, registered here
 # ======================================================================
