@@ -2015,6 +2015,15 @@ function WorkflowUI({
           if (cancelled) return;
           if (!res.ok)
             throw new Error(res.j.error || 'could not read case contributions');
+          // A cold or part-expired visit cache answers 200 with rows missing. Shown
+          // as "ready" that reads as a worker whose cases counted for nothing, and
+          // a reload -- after the cache refilled -- quietly "fixed" it. Say so, and
+          // offer the retry.
+          if (res.j.cold_cache || res.j.partial_cache)
+            throw new Error(
+              res.j.cold_cache_hint ||
+                "this worker's visits are not cached right now",
+            );
           var m = {};
           (res.j.rows || []).forEach(function (r) {
             if (r.scope === 'case' && r.case_id) m[String(r.case_id)] = r;

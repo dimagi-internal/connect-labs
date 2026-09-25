@@ -3337,15 +3337,23 @@ def _warm_cache_on_read(definition) -> bool:
     return bool((data.get("config") or {}).get("warm_cache_on_read"))
 
 
-def _warm_visit_cache(data_access, definition, opportunity_ids) -> None:
-    """Fill (and hold) the visit cache for this workflow's opportunities. Best effort:
-    a failure here is logged and the endpoint answers as before, with its cold/partial
-    cache flags telling the page what is missing."""
-    from connect_labs.workflow.visit_cache import ensure_visit_cache
+def _warm_visit_cache(data_access, definition, opportunity_ids, only=None) -> None:
+    """Fill (and hold) the visit cache for this workflow's opportunities -- or, with
+    `only`, for that ONE of them. Best effort: a failure here is logged and the
+    endpoint answers as before, with its cold/partial cache flags telling the page
+    what is missing."""
+    from connect_labs.workflow.visit_cache import ensure_visit_cache, workflow_opportunity_ids
 
     owner = getattr(definition, "opportunity_id", None) or (opportunity_ids[0] if opportunity_ids else None)
+    window = {}
+    if only is not None:
+        # ensure_visit_cache walks the workflow's opportunities in order; a window of
+        # one starting at `only` warms exactly that opportunity.
+        order = [int(o) for o in workflow_opportunity_ids(definition, int(owner))]
+        if int(only) in order:
+            window = {"start_at": order.index(int(only)), "limit": 1}
     try:
-        report = ensure_visit_cache(data_access, definition.id, opportunity_id=int(owner))
+        report = ensure_visit_cache(data_access, definition.id, opportunity_id=int(owner), **window)
         if report.get("failed"):
             logger.warning(
                 "warm-on-read left opportunities uncached for workflow %s: %s", definition.id, report["failed"]
@@ -3618,9 +3626,23 @@ def semantic_indicators_api(request, definition_id):
         # "no cached visits" until someone opens the programme report. Opt-in via
         # the template's config: a multi-opportunity report would turn one page load
         # into a download of every opportunity it spans.
-        warm_cache = _warm_cache_on_read(definition)
+        # ONE worker's figures (the worker review's case table) come from ONE
+        # opportunity: the filter already restricts the visits to it, so evaluate and
+        # judge the cache over that opportunity alone. Asking the programme report's
+        # dozen opportunities meant a cold or partly-expired cache anywhere answered
+        # "ready" with empty rows -- the case table stayed blank until a reload found
+        # the cache refilled. One opportunity is a cheap download, so a cold one is
+        # warmed on read whatever the template says.
+        warm_only = None
+        if visit_filter is not None:
+            worker_opp = int(visit_filter["opportunity_id"])
+            if worker_opp not in [int(o) for o in opportunity_ids]:
+                return JsonResponse({"error": f"opportunity {worker_opp} is not in this workflow"}, status=400)
+            opportunity_ids = [worker_opp]
+            warm_only = worker_opp
+        warm_cache = _warm_cache_on_read(definition) or warm_only is not None
         if warm_cache and _cached_opportunities(opportunity_ids)[1]:
-            _warm_visit_cache(data_access, definition, opportunity_ids)
+            _warm_visit_cache(data_access, definition, opportunity_ids, only=warm_only)
 
         rows = evaluate(
             pipeline_config,
