@@ -1087,8 +1087,13 @@ class DistributionLine(models.Model):
 # Alerts and supplier update links -- in their own modules, registered here
 # ======================================================================
 #
-# Declared in `alerts/models.py` and `update_links/models.py` next to the code
-# that uses them, and imported at the bottom of this module so Django finds
-# them when it loads the app. At the bottom because both import from here.
+# Declared in `alerts/models.py`, `update_links/models.py` and
+# `portfolio/models.py` next to the code that uses them, and imported at the
+# bottom of this module so Django finds them when it loads the app. At the
+# bottom because all three import from here.
 from connect_labs.supply_chain.alerts.models import AlertCheckState, AlertNotice, AlertSubscription  # noqa: E402,F401
+
+# `Portfolio` is the ONE model in this app with no programme scope, and it says
+# why in its own docstring. Read it before adding a `program_id` to it.
+from connect_labs.supply_chain.portfolio.models import Portfolio  # noqa: E402,F401
 from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission  # noqa: E402,F401

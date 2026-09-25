@@ -9,9 +9,11 @@ Outputs a small, JSON-serializable VisitStatus dataclass.
 
 from __future__ import annotations
 
+import ast
+import json
 import random
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from .manifest import FlwPersona
 
@@ -32,7 +34,14 @@ ReviewStatus = Literal["approved", "pending", "rejected"]
 class VisitStatus:
     status: Status
     flagged: bool
-    flag_reason: str
+    # Prod's `flag_reason` is a JSONField holding `{"flags": [[code, message], ...]}`,
+    # and every labs consumer treats it as such: the raw-visit cache stores it in a
+    # JSONB column, `_with_passthrough_columns` json.loads it, SQL reads it with
+    # `jsonb_path_exists('$.flags[*]')`, and `UserVisit.flags` calls `.get("flags")`
+    # on it. A CLONE therefore has to carry the structure, not a rendering of it --
+    # see `_decode_reason`. The de-novo fallbacks below are still bare human strings;
+    # that is a separate, older type mismatch and not this field's fault.
+    flag_reason: str | dict[str, Any] | list
     review_status: ReviewStatus
 
 
@@ -45,12 +54,43 @@ _FLAG_REASONS = (
 )
 
 
-def _pick_reason(rng: random.Random, flag_reason_distribution: dict[str, float] | None) -> str:
+def _decode_reason(key: str) -> str | dict[str, Any] | list:
+    """Recover a flag reason's STRUCTURE from its distribution key.
+
+    `flag_reason_distribution` is a `dict[str, float]`, so a reason has to be a
+    string to be a key at all. `_profile_flag_reasons` now writes that key as
+    canonical JSON precisely so this can decode it back to the dict prod
+    actually stores.
+
+    The `literal_eval` branch is deliberate and is not defensive padding: every
+    bundle profiled before this fix keyed the distribution by `str(dict)` -- a
+    Python repr, single quotes and all, which `json.loads` rejects. Recovering
+    it here means such a bundle can be re-generated into correctly-typed
+    fixtures WITHOUT re-profiling production. `literal_eval` is safe on this
+    input: it evaluates literals only, and the input is a manifest we wrote.
+
+    A reason that is genuinely just a human string (the de-novo fallbacks, and
+    older hand-written manifests) decodes to itself.
+    """
+    for parse in (json.loads, ast.literal_eval):
+        try:
+            decoded = parse(key)
+        except (TypeError, ValueError, SyntaxError, MemoryError, RecursionError):
+            continue
+        # Only a container is a real flag_reason. Anything else -- a bare word, a
+        # number-like string -- is the reason itself, and coercing "123" to an int
+        # would corrupt it.
+        if isinstance(decoded, (dict, list)):
+            return decoded
+    return key
+
+
+def _pick_reason(rng: random.Random, flag_reason_distribution: dict[str, float] | None) -> str | dict[str, Any] | list:
     """Sample a flag reason from a distribution, or fall back to _FLAG_REASONS if empty/None."""
     if flag_reason_distribution:
         names = sorted(flag_reason_distribution)
         weights = [flag_reason_distribution[n] for n in names]
-        return rng.choices(names, weights=weights, k=1)[0]
+        return _decode_reason(rng.choices(names, weights=weights, k=1)[0])
     return rng.choice(_FLAG_REASONS)
 
 
