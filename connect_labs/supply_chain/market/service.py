@@ -401,5 +401,10 @@ def _worded(quote: Quote) -> Quote:
     return quote
 
 
+def registered_supplier_count() -> int:
+    """Organisations on the marketplace as suppliers: a profile, and people acting for it."""
+    return SupplierProfile.objects.filter(org__memberships__isnull=False).values("org").distinct().count()
+
+
 def category_label(code) -> str:
     return dict(records.COMMODITY_CATEGORIES).get(code, code or "")

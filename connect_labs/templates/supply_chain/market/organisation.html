@@ -1,8 +1,8 @@
 {% extends 'supply_chain/market/_shell.html' %}
 {% block title %}{{ org.name }}{% endblock %}
+{% block hero %}{% include 'supply_chain/market/_hero.html' with eyebrow="YOUR ORGANISATION" title=org.name lede="Your supplier profile. Every buyer on the marketplace sees the same one." %}{% endblock %}
+
 {% block body %}
-<h1 class="text-xl font-semibold mb-1">{{ org.name }}</h1>
-<p class="text-sm text-gray-600 mb-4">Your supplier profile. Every buyer on the marketplace sees the same one.</p>
 
 {% if issued %}
   <div class="mb-4 p-4 rounded-md bg-message-success text-message-success-text border border-message-success-border text-sm">
@@ -13,8 +13,8 @@
 {% endif %}
 
 <div class="grid md:grid-cols-2 gap-4">
-  <section class="bg-white rounded-lg shadow-sm p-5">
-    <h2 class="text-lg font-semibold mb-3">Profile</h2>
+  <section class="bg-white border border-brand-border-light rounded-[10px] p-5">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-3">Profile</h2>
     {% if admin %}
       <form method="post">
         {% csrf_token %}<input type="hidden" name="action" value="profile"><input type="hidden" name="org" value="{{ org.pk }}">
@@ -25,7 +25,7 @@
         </div>
         {% include 'supply_chain/market/_field.html' with field=profile_form.website %}
         {% include 'supply_chain/market/_field.html' with field=profile_form.description %}
-        <button class="px-4 py-2 text-sm bg-brand-indigo text-white rounded-md">Save profile</button>
+        <button class="px-4 py-2 text-sm bg-brand-deep-purple text-white rounded-md">Save profile</button>
       </form>
     {% else %}
       <dl class="text-sm space-y-1">
@@ -37,8 +37,8 @@
     {% endif %}
   </section>
 
-  <section class="bg-white rounded-lg shadow-sm p-5">
-    <h2 class="text-lg font-semibold mb-1">What you offer</h2>
+  <section class="bg-white border border-brand-border-light rounded-[10px] p-5">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-1">What you offer</h2>
     <p class="text-xs text-gray-500 mb-3">Rounds for these come first on the marketplace, and buyers looking for them can find you even before you have quoted.</p>
     <ul class="divide-y text-sm mb-4">
       {% for o in offerings %}
@@ -66,13 +66,13 @@
         </div>
         {% include 'supply_chain/market/_field.html' with field=offering_form.countries_served_text %}
         {% include 'supply_chain/market/_field.html' with field=offering_form.certifications_text %}
-        <button class="px-4 py-2 text-sm bg-brand-indigo text-white rounded-md">Add</button>
+        <button class="px-4 py-2 text-sm bg-brand-deep-purple text-white rounded-md">Add</button>
       </form>
     </details>{% endif %}
   </section>
 
-  <section class="bg-white rounded-lg shadow-sm p-5 md:col-span-2">
-    <h2 class="text-lg font-semibold mb-3">People</h2>
+  <section class="bg-white border border-brand-border-light rounded-[10px] p-5 md:col-span-2">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-3">People</h2>
     <ul class="text-sm divide-y mb-3">
       {% for m in members %}<li class="py-1.5">{{ m.user.name|default:m.user.email|default:m.user.username }} <span class="text-gray-500">· {{ m.get_role_display }}</span></li>
       {% empty %}<li class="py-1.5 text-gray-500">Members come through Connect for this organisation.</li>{% endfor %}
@@ -81,7 +81,7 @@
       <form method="post" class="flex flex-wrap items-end gap-3">
         {% csrf_token %}<input type="hidden" name="action" value="invite"><input type="hidden" name="org" value="{{ org.pk }}">
         <div class="grow max-w-sm">{% include 'supply_chain/market/_field.html' with field=invite_form.email %}</div>
-        <button class="mb-4 px-4 py-2 text-sm bg-brand-indigo text-white rounded-md">Create an invitation link</button>
+        <button class="mb-4 px-4 py-2 text-sm bg-brand-deep-purple text-white rounded-md">Create an invitation link</button>
       </form>
     {% endif %}
   </section>
