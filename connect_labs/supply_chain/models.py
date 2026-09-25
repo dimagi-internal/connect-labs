@@ -830,6 +830,20 @@ class SupplyPoint(SourcedModel):
     admin_area = models.CharField(max_length=255, blank=True, default="")
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
+    # How the point got its coordinates. `recorded` is a real one somebody
+    # entered; anything else is a stand-in (the managing organisation's head
+    # office, the parent point, or the country's centre) that is refreshed on
+    # every write and never mistaken for a survey. See stock/services/placement.
+    location_source = models.CharField(
+        max_length=16,
+        blank=True,
+        default="",
+        choices=_choices(("recorded", "org_hq", "parent", "country")),
+    )
+    # For a stand-in, how fine it is: city | region | country (the directory's
+    # own precision for the head office it came from).
+    location_precision = models.CharField(max_length=8, blank=True, default="")
+    location_label = models.CharField(max_length=255, blank=True, default="")
 
     # Policy as data: the min/max months-of-stock band this point is managed
     # to. Resupply reads it rather than hardcoding a programme's rule.
