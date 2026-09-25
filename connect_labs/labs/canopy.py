@@ -75,6 +75,12 @@ def is_configured() -> bool:
 #: page is built — with a log line naming the page — rather than as a 422 inside
 #: a widget the visitor cannot see the console of.
 MAX_VISIBLE_IDS = 400
+#: What canopy actually caps is BYTES (8 KiB, canopy-web
+#: `apps/canopy_sessions/page_state.py::MAX_STATE_BYTES`), and a count cap does
+#: not keep under it: 400 org slugs serialise to ~11 KiB, so the network page's
+#: state was refused whole (422) and the agent saw nothing of the screen
+#: (2026-09-25). Trimmed by serialised size, with headroom for what canopy adds.
+STATE_BYTE_BUDGET = 7 * 1024
 
 
 def panel_context(
@@ -105,6 +111,7 @@ def panel_context(
             state["filters"] = filters
         if path:
             state["path"] = path
+        state["visible_ids"] = _fit_ids(state)
     return {
         "ready": ready,
         "base_url": _audience() if ready else "",
@@ -112,6 +119,24 @@ def panel_context(
         "agent": getattr(settings, "CANOPY_AGENT_SLUG", "") if ready else "",
         "page_state": state,
     }
+
+
+def _fit_ids(state: dict) -> list[str]:
+    """The longest prefix of ``visible_ids`` that keeps ``state`` inside the budget.
+
+    A prefix, not a sample: the page lists what is on top first, and "the first
+    N of what I see" is the honest description of a truncated screen.
+    """
+    ids = list(state.get("visible_ids") or [])
+    fixed = len(json.dumps({**state, "visible_ids": []}).encode())
+    size, kept = fixed, []
+    for i in ids:
+        # `"<id>"` plus its comma separator (`, ` from json.dumps' default).
+        size += len(json.dumps(i).encode()) + 2
+        if size > STATE_BYTE_BUDGET:
+            break
+        kept.append(i)
+    return kept
 
 
 def assertion_for(user) -> str:
