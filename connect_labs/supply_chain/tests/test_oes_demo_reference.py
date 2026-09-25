@@ -635,8 +635,25 @@ def _round_quantity_reasons(comparison):
 
 
 @pytest.mark.django_db
-def test_round_two_suppliers_are_named_not_identified(scopes):
-    """No org behind any of them -- `supplier_for_label`, not `supplier_for_org`."""
+def test_round_two_suppliers_quote_us_and_are_not_organisations_of_ours(scopes):
+    """A supplier we only have a name for -- `supplier_for_label`, not `supplier_for_org`.
+
+    This used to assert `org_id is None`, and that premise died with #2019: a
+    supplier IS a company now, so `supplier_create` given a bare name mints a
+    LabsOrg for it rather than leaving it unattributed. The assertion was
+    updated rather than deleted, because what it was protecting is still true
+    and still worth protecting -- it just has a different shape.
+
+    The invariant is no longer "no organisation". It is that the organisation
+    minted for a firm that merely QUOTED us is not one of ours: it carries no
+    `connect_organization_id`, because there is no Connect org behind it and
+    inventing one would assert a relationship the seed document does not
+    claim. `supplier_for_org` remains the other path, for the distributor,
+    which really is an organisation of ours and needs to be the same body at
+    both ends of the chain.
+    """
+    from connect_labs.labs.models import LabsOrg
+
     module, seeded_scopes, _ = scopes
 
     _, seeded = _seed_and_compare_round_two(module, seeded_scopes)
@@ -646,7 +663,11 @@ def test_round_two_suppliers_are_named_not_identified(scopes):
         "Placeholder Supplier B",
         "Placeholder Supplier C",
     }
-    assert all(row.get("org_id") is None for row in seeded["suppliers"])
+    orgs = LabsOrg.objects.filter(id__in=[row["org_id"] for row in seeded["suppliers"] if row.get("org_id")])
+    assert orgs.count() == 3, "each quoting firm should resolve to its own company"
+    assert all(
+        org.connect_organization_id is None for org in orgs
+    ), "a firm that only quoted us must not be given a Connect organisation id"
 
 
 @pytest.mark.django_db

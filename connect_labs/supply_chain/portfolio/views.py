@@ -150,7 +150,7 @@ class PortfolioView(TemplateView):
             # Read ONCE and handed to both readers below. It was called twice
             # when only `_awaited` needed it; the situation needs the same
             # rows, and two calls could not disagree but could be slow.
-            "situation": self._situation(network),
+            "situation": self._situation(network, commodities),
             "awaited": self._awaited(network),
             # Told apart from a chain that is merely quiet: a programme with a
             # catalogue and nothing bought yet is exactly what a chain about
@@ -163,7 +163,7 @@ class PortfolioView(TemplateView):
             ),
         }
 
-    def _situation(self, rows) -> dict:
+    def _situation(self, rows, commodities) -> dict:
         """Where this chain's stock actually is, and what is odd about it.
 
         This is the page's lead, and it replaced a grid of lifecycle counts.
@@ -251,11 +251,17 @@ class PortfolioView(TemplateView):
         # when there is exactly one -- and only then, because "0" in a chain
         # of cartons and jerry cans is a question this page must not answer
         # by guessing.
-        if len(units) == 1:
-            only = next(iter(units))
+        # A chain holding nothing ANYWHERE has no unit among its places to
+        # borrow, so the catalogue answers instead -- but only when it names
+        # exactly one product, because two would be a guess. Without this a
+        # blocked chain's store read a bare "0" beside a neighbouring chain's
+        # "0 cartons", which reads as a different kind of nothing.
+        fallback = units or ({commodities[0].get("base_unit")} if len(commodities) == 1 else set())
+        if len(fallback) == 1:
+            only = next(iter(fallback))
             for place in places:
                 if not place["unit"]:
-                    place["unit"] = only
+                    place["unit"] = only or ""
 
         held_total = sum((p["held"] or 0) for p in places)
         return {
