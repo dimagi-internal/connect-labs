@@ -413,7 +413,9 @@ class Supplier(TimestampedModel):
     # somebody on the team says they have looked. Its bids count meanwhile:
     # a hidden bid is a silent failure, and a bid the team will not consider
     # is voided with a reason like any other.
-    origin = models.CharField(max_length=16, default="program", choices=_choices(records.SUPPLIER_ORIGINS))
+    origin = models.CharField(
+        max_length=16, default="program", db_default="program", choices=_choices(records.SUPPLIER_ORIGINS)
+    )
     reviewed_on = models.DateField(null=True, blank=True)
     reviewed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
@@ -498,7 +500,9 @@ class Round(TimestampedModel):
     notes_to_supplier = models.TextField(blank=True, default="")
     # On the supplier marketplace an open round is public unless the program
     # says otherwise; a private one is seen only by the organisations invited.
-    visibility = models.CharField(max_length=16, default="public", choices=_choices(records.ROUND_VISIBILITIES))
+    visibility = models.CharField(
+        max_length=16, default="public", db_default="public", choices=_choices(records.ROUND_VISIBILITIES)
+    )
     opened_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
 
@@ -599,10 +603,15 @@ class Quote(TimestampedModel):
     )
     correction_reason = models.TextField(blank=True, default="")
     notes = models.TextField(blank=True, default="")
+    # `db_default` as well as `default` on each new NOT NULL column here: a
+    # model default is applied in Python, so a checkout or an old task still
+    # running mid-deploy would insert without the column and fail.
     # Who typed it in. The program team transcribing an email and the
     # supplier entering its own offer on the marketplace are different
     # evidence, so the quote says which it is.
-    entered_by = models.CharField(max_length=16, default="program", choices=_choices(records.QUOTE_ENTERED_BY))
+    entered_by = models.CharField(
+        max_length=16, default="program", db_default="program", choices=_choices(records.QUOTE_ENTERED_BY)
+    )
     entered_by_user = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
