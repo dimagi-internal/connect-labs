@@ -161,6 +161,11 @@ def semantic_snapshot(
         # built-in. A rebuilt history restates every point under the definitions in
         # force when it ran, so a point has to be able to say which those were.
         "registry": {k: v for k, v in registry_binding(definition).items() if k != "note"},
+        # When these figures stop moving: the case-index date each maturity window
+        # counts from, and the longest window any indicator waits on. The benchmark
+        # publisher ends an opportunity's trend line there (`benchmarks/publish.py::
+        # opportunity_ends`), under the rule this run was graded with.
+        "settles": settles_meta(spec, props_doc, full_registry),
     }
     synthetic = _is_synthetic(opportunity_ids)
     if synthetic is not None:
@@ -183,6 +188,19 @@ def semantic_snapshot(
         registry_min_denominator=model.min_denominator,
     )
     return wrap_for_runner(payload, spec.get("state_key"))
+
+
+def settles_meta(spec: dict, props_doc: dict, indicators_doc: dict) -> dict:
+    """`{"after_days", "anchor"}` for `meta.settles`. See `semantic/maturity.py`.
+
+    `anchor` is the template's `maturity_anchor` (a case-index date field). Absent,
+    it is None and a reader anchors on the opportunity's last visit, which is later
+    than any maturity anchor and so always safe.
+    """
+    from connect_labs.semantic.maturity import settle_after_days
+
+    anchor = (spec or {}).get("maturity_anchor")
+    return {"after_days": settle_after_days(props_doc, indicators_doc), "anchor": str(anchor) if anchor else None}
 
 
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}")

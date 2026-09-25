@@ -307,7 +307,73 @@ def opportunity_starts(snapshot) -> dict[int, dt.date]:
     return starts
 
 
-def _history_observations(history, series: str, indicator_id: str, members: set[int], starts: dict) -> dict:
+# How many days past its settle date a report still counts as an opportunity's
+# LAST point. Reports are weekly, so the first report on or after the settle date
+# lands within a week of it and carries the settled figures; every later one only
+# repeats them.
+SETTLED_POINT_GRACE_DAYS = 6
+
+
+def opportunity_ends(snapshot, settle_after_days: int | None = None) -> dict[int, dt.date]:
+    """The date after which each opportunity's figures can no longer change.
+
+    Its latest ANCHOR date plus the registry's settle window (`semantic/maturity.py`).
+    The anchor is the case-index field the maturity windows count from -- KMC's
+    `first_visit_date` -- recorded on the snapshot as `meta.settles`. A snapshot with
+    no anchor falls back to each case's last visit, which is never earlier than any
+    maturity anchor and so can only end a line late, never early. An opportunity
+    with no dated case falls back to its last week with visits in `weekly`.
+
+    This is what stops a finished opportunity's line: without it, every weekly
+    report after it stopped delivering repeated its settled figures, and the line
+    ran flat to the end of the axis at a tenure it never reached.
+
+    `settle_after_days` is used only when the snapshot does not record its own
+    (`meta.settles`, written by the semantic snapshot builder since this change).
+    With neither, no opportunity has an end and nothing is cut.
+    """
+    settles = ((snapshot or {}).get("meta") or {}).get("settles") or {}
+    after = settles.get("after_days")
+    if after is None:
+        after = settle_after_days
+    if after is None:
+        return {}
+    anchor = settles.get("anchor") or "last_visit_date"
+
+    latest: dict[int, dt.date] = {}
+
+    def offer(opp, day):
+        if opp is None or day is None:
+            return
+        if opp not in latest or day > latest[opp]:
+            latest[opp] = day
+
+    for case in (snapshot or {}).get("cases") or []:
+        try:
+            opp = int((case or {}).get("opportunity_id"))
+        except (TypeError, ValueError):
+            continue
+        offer(opp, _as_date(case.get(anchor)) or _as_date(case.get("last_visit_date")))
+    for key, rows in ((snapshot or {}).get("weekly") or {}).items():
+        if not str(key).startswith(OPP_SCOPE_PREFIX):
+            continue
+        try:
+            opp = int(str(key)[len(OPP_SCOPE_PREFIX) :])
+        except (TypeError, ValueError):
+            continue
+        if opp in latest:
+            continue
+        active = [_as_date(r.get("week")) for r in rows or [] if (r or {}).get("visits")]
+        active = [d for d in active if d is not None]
+        if active:
+            # The Monday of the last active week; its visits run to the Sunday.
+            latest[opp] = max(active) + dt.timedelta(days=6)
+    return {opp: day + dt.timedelta(days=int(after)) for opp, day in latest.items()}
+
+
+def _history_observations(
+    history, series: str, indicator_id: str, members: set[int], starts: dict, ends: dict | None = None
+) -> dict:
     """`{period: observations}` from a workflow's SAVED RUNS, not from months.
 
     A saved run is one point of a time series: each was computed as of its own
@@ -336,7 +402,13 @@ def _history_observations(history, series: str, indicator_id: str, members: set[
     axis at all and contributes no series. That is fail-closed and deliberate --
     the alternative is inventing an origin -- but it is silent in the data, so
     the caller logs how many were dropped.
+
+    THE LINE ENDS where the figures settle (`ends`, see `opportunity_ends`): a
+    report more than a week past that date only repeats the settled figures, and
+    is dropped rather than drawn as a flat line at a tenure the opportunity never
+    reached.
     """
+    ends = ends or {}
     # (opportunity, tenure week) -> (report date, observation). Latest wins, so a
     # peer contributes at most ONE point per period: two would share a
     # peer_index and draw two points on one line at one x.
@@ -351,6 +423,9 @@ def _history_observations(history, series: str, indicator_id: str, members: set[
                 continue
             start = starts.get(opp)
             if start is None or date < start:
+                continue
+            end = ends.get(opp)
+            if end is not None and date > end + dt.timedelta(days=SETTLED_POINT_GRACE_DAYS):
                 continue
             observation = _observation(opp, (cells or {}).get(indicator_id))
             if observation is None:
@@ -387,7 +462,7 @@ def _indicator_ids(by_opp, monthly_by_scope, history=None, series: str | None = 
 
 
 def observations_from_snapshot(
-    snapshot: dict, series: str, indicator_id: str, members: set[int], history=None, starts=None
+    snapshot: dict, series: str, indicator_id: str, members: set[int], history=None, starts=None, ends=None
 ):
     """`(point_observations, {period: observations})` for one indicator.
 
@@ -403,11 +478,13 @@ def observations_from_snapshot(
     """
     if starts is None:
         starts = opportunity_starts(snapshot)
+    if ends is None:
+        ends = opportunity_ends(snapshot)
     for name, _measures, by_opp, _monthly in _blocks(snapshot):
         if name == series:
             return (
                 _point_observations(by_opp, indicator_id, members),
-                _history_observations(history, name, indicator_id, members, starts),
+                _history_observations(history, name, indicator_id, members, starts, ends),
             )
     return [], {}
 
@@ -424,6 +501,7 @@ def publish_benchmark(
     published_by: str = "",
     benchmarkable_indicator_ids: set[str] | None = None,
     history=None,
+    settle_after_days: int | None = None,
 ) -> BenchmarkPublication:
     """Publish every benchmarkable indicator in `snapshot` for `cohort`.
 
@@ -448,6 +526,9 @@ def publish_benchmark(
     rows and returning. A publication the disclosure RULES emptied is a
     legitimate result and still returns.
 
+    `settle_after_days` is the registry's settle window, for a snapshot saved
+    before snapshots recorded their own (`meta.settles`) -- see `opportunity_ends`.
+
     The returned publication carries `withheld_indicator_ids` -- what this run
     refused to publish, `<series>:<indicator>` -- so a caller can report it.
     """
@@ -463,6 +544,16 @@ def publish_benchmark(
     thresholds = {"min_peers": cohort.min_peers, "min_denominator": cohort.min_denominator}
     # Computed once for the whole publication, not per indicator.
     starts = opportunity_starts(snapshot)
+    ends = opportunity_ends(snapshot, settle_after_days)
+    unended = sorted(set(starts) & members - set(ends)) if history else []
+    if unended:
+        logger.warning(
+            "benchmark publication %s can place no settle date for %d cohort member(s) %s -- "
+            "their trend lines run to the newest report",
+            publication.pk,
+            len(unended),
+            unended,
+        )
     unplaceable = sorted(members - set(starts)) if history else []
     if unplaceable:
         logger.warning(
@@ -498,7 +589,7 @@ def publish_benchmark(
                 continue
             considered += 1
             points, by_period = observations_from_snapshot(
-                snapshot, series_name, indicator_id, members, history, starts
+                snapshot, series_name, indicator_id, members, history, starts, ends
             )
             observed += len(points) + sum(len(o) for o in by_period.values())
             for peer_index, value, opportunity_id in anonymise_point(

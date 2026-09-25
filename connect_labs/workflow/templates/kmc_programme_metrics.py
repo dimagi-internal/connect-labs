@@ -463,6 +463,10 @@ SNAPSHOT_INPUTS = {
         ],
     },
     "visits_pipeline": "visits",
+    # The case-index date every maturity window counts from (`days_since_first_visit`
+    # in the registry): with the registry's longest window, when an opportunity's
+    # figures stop moving. See semantic/maturity.py.
+    "maturity_anchor": "first_visit_date",
     # indicator -> the registry settings table that says which LLOs record it
     # credibly. Completion has a table too, but no indicator until its definition
     # exists.
