@@ -101,7 +101,8 @@ def _order(world, *, signed, promised_days, quantity="100"):
 def _delivered(world, contract, *, on, accepted, refused=None):
     lines = [{"quantity_accepted": accepted, "quantity_unit": "box"}]
     if refused:
-        lines[0]["quantity_refused"] = refused
+        lines[0]["quantity_rejected"] = refused
+        lines[0]["rejection_reason"] = "damaged in transit"
     return call_operation(
         "receipt_record",
         world["access"],
@@ -148,8 +149,21 @@ class TestOnTimeAndInFull:
         assert row["in_full"] == 1
         assert row["otif"] == 0
 
-    def test_goods_refused_on_arrival_were_not_delivered(self, world):
-        """In full means accepted, not shipped."""
+    def test_goods_rejected_on_arrival_were_not_delivered(self, world):
+        """In full means accepted, not shipped.
+
+        The fixture records a real rejection now. It first passed
+        `quantity_refused`, which is not the field -- the model's is
+        `quantity_rejected` -- and the permissive payload schema dropped it
+        silently. The test still passed, because ninety accepted of a hundred
+        ordered is short whether or not anybody wrote down why, so it was
+        pinning a SHORTFALL while claiming to pin a rejection.
+
+        That the two reach the same verdict is the design, not a coincidence:
+        `in_full` asks whether what we accepted covers what we ordered, and
+        rejected goods were not accepted. What the corrected fixture buys is
+        that the scenario is now the one the name describes.
+        """
         c = _order(world, signed=days_ago(40), promised_days=30)
         _delivered(world, c, on=days_ago(20), accepted="90", refused="10")
 
