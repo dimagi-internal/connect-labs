@@ -3,7 +3,7 @@
 Internal (Dimagi-staff-only) tooling surfaced at `/labs/admin/`, presented as **Labs Admin**.
 The landing page groups the tools into three sections:
 
-- **Data Exploration** — Labs Record (browse/edit/delete records), Visit Inspector
+- **Data Exploration** — Labs Record (browse/edit/delete records), Semantic Registries (view/delete indicator registries), Visit Inspector
 - **System & Ops** — Task Manager (kill Celery jobs), Cache Manager (wipe analysis cache)
 - **Data & Assets** — Admin Boundaries (load geoBoundaries), App Downloader (CCZ files)
 
@@ -14,6 +14,17 @@ read-only boundary APIs consumed by microplans (`countries_api`, `coverage_api`,
 
 > Package `connect_labs.labs.admin`, URL path `/labs/admin/`, Django namespace `labs_admin`
 > (not bare `admin` — that namespace belongs to `django.contrib.admin`). Was formerly `explorer`.
+
+## Semantic Registries
+
+`/labs/admin/semantic-registries/` lists the indicator registries (LabsRecords, experiment `semantic`, type
+`semantic_registry`) in one scope plus every shared one. The scope comes from `?opportunity_id=` / `?program_id=` /
+`?organization_id=`, else the labs context, because registry reads are an exact scope match. Each registry has a
+detail page (its indicators and its three documents) and a delete. The `semantic_registry_*` MCP tools that create
+and edit registries have no delete, so this is the way to remove one.
+
+The delete requires typing the registry's id back, checked on the server. Deleting the registry a live report is
+bound to takes that report down on its next load, and a shared registry may be read by reports in other programmes.
 
 ## Labs Record
 

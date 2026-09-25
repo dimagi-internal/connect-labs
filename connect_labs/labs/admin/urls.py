@@ -6,7 +6,7 @@ from django.urls import include, path
 
 from connect_labs.labs.analytics_views import AnalyticsDashboardView, UmamiSSOView
 
-from . import views
+from . import registry_views, views
 
 app_name = "labs_admin"
 
@@ -42,6 +42,18 @@ urlpatterns = [
     path("app-downloader/", views.AppDownloaderView.as_view(), name="app_downloader"),
     path("app-downloader/download/<int:opp_id>/<str:app_type>/", views.DownloadAppView.as_view(), name="download_app"),
     path("app-downloader/bulk-download/", views.BulkDownloadAppsView.as_view(), name="bulk_download_apps"),
+    # Semantic Registries
+    path("semantic-registries/", registry_views.SemanticRegistryListView.as_view(), name="semantic_registries"),
+    path(
+        "semantic-registries/<int:registry_id>/",
+        registry_views.SemanticRegistryDetailView.as_view(),
+        name="semantic_registry_detail",
+    ),
+    path(
+        "semantic-registries/<int:registry_id>/delete/",
+        registry_views.SemanticRegistryDeleteView.as_view(),
+        name="semantic_registry_delete",
+    ),
     # Scheduled Workflows
     path("schedules/", views.ScheduleListView.as_view(), name="schedules"),
     path("schedules/<int:schedule_id>/toggle/", views.ScheduleToggleView.as_view(), name="schedule_toggle"),
