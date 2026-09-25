@@ -11,6 +11,7 @@ from connect_labs.supply_chain import (
     views,
 )
 from connect_labs.supply_chain.alerts import views as alert_views
+from connect_labs.supply_chain.portfolio import views as portfolio_views
 from connect_labs.supply_chain.procurement import views as procurement_views
 from connect_labs.supply_chain.update_links import views as update_link_views
 
@@ -19,6 +20,11 @@ app_name = "supply_chain"
 urlpatterns = [
     # the domain shell — sub-components and their state
     path("", views.DomainHomeView.as_view(), name="home"),
+    # The one address here that is NOT programme-scoped. It sits at the top
+    # rather than under a sub-component because it is above all of them: one
+    # row per programme, each linking down into its own chain. The slug is the
+    # portfolio's, so a link to one names which.
+    path("portfolios/<slug:slug>/", portfolio_views.PortfolioView.as_view(), name="portfolio"),
     # the master item list is domain-level reference data, not procurement's:
     # tracking and distribution will both read it
     path("catalogue/", views.CatalogueView.as_view(), name="catalogue"),

@@ -43,6 +43,32 @@ connect_labs/supply_chain/tests/*.py`, because the supply test suite holds raw
 program ids that no registry knows about -- `10611`, which an earlier draft
 used, is one of them.
 
+## The portfolio, and the one address that spans them
+
+`seed_portfolio` writes the demo's portfolio from the document's top-level
+`portfolio` section -- its `slug`, its `name` and its `program_slugs`. The
+seed prints the address it is reachable at:
+
+    /supply/portfolios/<slug>/
+
+That is the only page in this domain that is not program-scoped, and it is
+the first screen a funder is shown: one row per chain, each in its own units,
+nothing summed across them and nothing ranked.
+
+Two things about it are deliberate and easy to undo by accident.
+
+**The members are named by scope slug, not by program id.** So the ids stay
+written down once, in `SCOPES`, and the document cannot drift from them. A
+slug `SCOPES` does not know is **refused by name**, before anything is
+written: a portfolio quietly short by one chain, saying nothing about the one
+it dropped, is the misinformation put into the data where no view can correct
+it.
+
+**Being in the portfolio grants nobody anything.** The view renders only the
+programs the viewer can already reach through
+`labs.context.get_org_data(request)["programs"]`, and says so when it leaves
+one out. Adding a program here is not a way to share it.
+
 ## Each scope gets only its own products
 
 `seed_scopes` seeds the organisations once -- `upsert_org` is the one
