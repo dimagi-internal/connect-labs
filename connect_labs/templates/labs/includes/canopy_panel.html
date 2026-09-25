@@ -50,11 +50,6 @@ cannot end the block.
         tokenUrl: "{% url 'labs:canopy_token' %}",
         mode: "overlay",
         launcherLabel: "Ask an agent",
-        // A visitor here wants the answer, not the MCP calls behind it. canopy
-        // then never sends the calls to this panel (filtered server-side, not
-        // collapsed); canopy's own chat page still shows them. Ignored by a
-        // widget.js older than canopy-web #976.
-        toolCalls: "hidden",
         // Labs sets CSRF_COOKIE_HTTPONLY, so the widget cannot read the cookie.
         // Django takes the token from the DOM just as happily, which is what
         // every other fetch in labs does. A function, not a string: the token
