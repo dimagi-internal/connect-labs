@@ -10,6 +10,10 @@
       Status: {{ tender.status|title }} — response deadline {{ tender.response_deadline|default:"not set" }}
     </p>
     <p class="text-sm text-gray-600 mt-1">
+      Where the goods go:
+      {% for p in tender.delivery_points %}{% firstof p.name p.city %}{% if p.name and p.city %}, {{ p.city }}{% endif %}{% if not forloop.last %}; {% endif %}{% empty %}no delivery place{% endfor %}{% if tender.pickup_accepted %} — or we collect from the supplier{% endif %}{% if tender.incoterm_requested %} · asked on {{ tender.incoterm_requested }} terms{% endif %}
+    </p>
+    <p class="text-sm text-gray-600 mt-1">
       {% if tender.visibility == "private" %}
         <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 border">Restricted</span> Only the suppliers you invite see it on the supplier marketplace.
       {% else %}
