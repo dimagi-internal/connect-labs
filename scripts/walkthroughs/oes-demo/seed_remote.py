@@ -831,7 +831,7 @@ def seed_chain(access, chain, reference):
         # which round -- which is exactly what makes two of them a duplicate
         # here, and what `round_compare` would show side by side.
         already = _found(
-            op(access, "quote_list", round_id=round_["id"]),
+            op(access, "quote_list", tender_id=round_["id"]),
             lambda row: row.get("supplier_id") == supplier["id"] and row.get("item_id") == item["id"],
         )
         quotes.append(
@@ -852,7 +852,7 @@ def seed_chain(access, chain, reference):
     awarded_quote = chain["quotes"][awarded_index]
     awarded_item = items[awarded_quote["item"]["sku"]]
     # One award per round in this seeder, so the round IS the key.
-    award = _found(op(access, "award_list", round_id=round_["id"]), lambda row: True) or op(
+    award = _found(op(access, "award_list", tender_id=round_["id"]), lambda row: True) or op(
         access,
         "award_create",
         tender_id=round_["id"],
@@ -1077,7 +1077,7 @@ def seed_rutf_round_two(access, round_two):
         # first of them uncostable -- so there is nothing else to key on, and
         # one supplier quotes a round once here.
         already = _found(
-            op(access, "quote_list", round_id=round_["id"]),
+            op(access, "quote_list", tender_id=round_["id"]),
             lambda row, s=supplier: row.get("supplier_id") == s["id"],
         )
         quotes.append(
@@ -1485,7 +1485,7 @@ def seed_awaiting_approval(access, data, reference):
         )
         items[item["sku"]] = item
         already = _found(
-            op(access, "quote_list", round_id=round_["id"]),
+            op(access, "quote_list", tender_id=round_["id"]),
             lambda row, s=supplier, i=item: row.get("supplier_id") == s["id"] and row.get("item_id") == i["id"],
         )
         quotes.append(
@@ -1503,7 +1503,7 @@ def seed_awaiting_approval(access, data, reference):
         )
 
     index = section["awarded_quote_index"]
-    award = _found(op(access, "award_list", round_id=round_["id"]), lambda row: True) or op(
+    award = _found(op(access, "award_list", tender_id=round_["id"]), lambda row: True) or op(
         access,
         "award_create",
         tender_id=round_["id"],
