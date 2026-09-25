@@ -1,0 +1,63 @@
+{% load static %}<!DOCTYPE html>
+{% comment %}
+The supplier marketplace's own shell, not the labs one. A supplier signs in
+to labs like everyone else, but has no programs, workflows or opportunities:
+the labs navigation would be a row of buttons that lead nowhere for them. It
+uses the labs stylesheet and typeface, so it still looks like the supply
+screens the buyer sees.
+{% endcomment %}
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="same-origin">
+  <title>{% block title %}Supply marketplace{% endblock %} · Connect</title>
+  {% include 'favicon.html' %}
+  <link rel="stylesheet" href="{% static 'bundles/css/vendors.css' %}">
+  <link rel="stylesheet" href="{% static 'bundles/css/tailwind.css' %}">
+  <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-stone-100 font-work-sans text-gray-900">
+  <div class="max-w-5xl mx-auto px-4 py-6">
+    <header class="flex flex-wrap gap-4 items-center justify-between p-4 bg-brand-indigo rounded-2xl mb-4 text-white">
+      <a href="{% url 'supply_chain:market' %}" class="flex flex-col">
+        <span class="text-xs uppercase tracking-wide opacity-80">Connect · Supply</span>
+        <span class="text-2xl font-bold">Supply marketplace</span>
+      </a>
+      <nav class="flex flex-wrap gap-2 text-sm" aria-label="Marketplace">
+        <a href="{% url 'supply_chain:market' %}" class="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20">Open rounds</a>
+        {% if signed_in %}
+          {% if supplier_orgs %}
+            <a href="{% url 'supply_chain:market_bids' %}" class="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20">My bids</a>
+          {% endif %}
+          {% if orgs %}
+            <a href="{% url 'supply_chain:market_organisation' %}{% if orgs|length == 1 %}?org={{ orgs.0.pk }}{% endif %}" class="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20">
+              {% if orgs|length == 1 %}{{ orgs.0.name }}{% else %}My organisations{% endif %}
+            </a>
+          {% endif %}
+          {% if not supplier_orgs %}
+            <a href="{% url 'supply_chain:market_register' %}" class="px-3 py-1.5 rounded-md bg-white text-brand-indigo font-medium">Register as a supplier</a>
+          {% endif %}
+        {% else %}
+          <a href="{% url 'labs:login' %}?next={{ request.get_full_path|urlencode }}" class="px-3 py-1.5 rounded-md bg-white text-brand-indigo font-medium">Sign in to bid</a>
+        {% endif %}
+      </nav>
+    </header>
+
+    {% if messages %}
+      {% for message in messages %}
+        <div class="p-3 mb-4 rounded-lg border text-sm
+          {% if message.tags == 'success' %}bg-message-success text-message-success-text border-message-success-border
+          {% elif message.tags == 'error' %}bg-message-error text-message-error-text border-message-error-border
+          {% else %}bg-message-info text-message-info-text border-message-info-border{% endif %}" role="status">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+
+    <main>{% block body %}{% endblock %}</main>
+
+    <footer class="mt-10 text-xs text-gray-500">
+      Bids are sealed: a supplier sees its own bids and nobody else's. Signing in uses your Connect account.
+    </footer>
+  </div>
+</body>
+</html>

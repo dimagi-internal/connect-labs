@@ -1,0 +1,14 @@
+{% extends 'supply_chain/market/_shell.html' %}
+{% block title %}Join {{ invite.org.name }}{% endblock %}
+{% block body %}
+<div class="bg-white rounded-lg shadow-sm p-5 max-w-xl">
+  <h1 class="text-xl font-semibold">Join {{ invite.org.name }} on the supply marketplace</h1>
+  <p class="text-sm text-gray-600 mt-2">Accepting lets you bid, and manage the supplier profile, on behalf of {{ invite.org.name }}. The link works once.</p>
+  {% if signed_in %}
+    <form method="post" class="mt-4">{% csrf_token %}<button class="px-4 py-2 text-sm bg-brand-indigo text-white rounded-md">Accept and join {{ invite.org.name }}</button></form>
+  {% else %}
+    <a href="{% url 'labs:login' %}?next={% url 'supply_chain:market_invite_accept' %}" class="inline-block mt-4 px-4 py-2 text-sm bg-brand-indigo text-white rounded-md">Sign in with Connect to accept</a>
+    <p class="text-xs text-gray-500 mt-2">Signing in uses a Connect account.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -290,8 +290,10 @@ class RoundForm(ScopedForm):
             "reminder_interval_days",
             "shelf_life_months_minimum",
             "notes_to_supplier",
+            "visibility",
         ]
         widgets = {
+            "visibility": forms.Select(attrs=SELECT),
             "label": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. Round 1 — RUTF, 500 cartons")}),
             "response_deadline": forms.DateInput(attrs=DATE),
             "reminder_interval_days": forms.NumberInput(attrs={**INPUT, "min": 0}),
@@ -304,10 +306,15 @@ class RoundForm(ScopedForm):
             "reminder_interval_days": _("Chase every (days)"),
             "shelf_life_months_minimum": _("Minimum shelf life (months)"),
             "notes_to_supplier": _("Anything else to tell suppliers"),
+            "visibility": _("On the supplier marketplace"),
         }
         help_texts = {
             "shelf_life_months_minimum": _("Sea freight and clearance routinely eat four months of it."),
             "reminder_interval_days": _("Leave empty and nobody is chased automatically."),
+            "visibility": _(
+                "Public: while the round is open anyone can read it on the marketplace and any registered "
+                "supplier can bid. Private: only the suppliers you invite can see it."
+            ),
         }
 
     def __init__(self, *args, **kwargs):
@@ -330,6 +337,18 @@ class RoundForm(ScopedForm):
             ),
             Field("shelf_life_months_minimum"),
             Field("notes_to_supplier"),
+            Field("visibility"),
+        )
+        # Not required: a caller that does not say leaves the round public,
+        # the model's default -- the same as a round created over the API.
+        self.fields["visibility"].required = False
+        set_choices(
+            self,
+            "visibility",
+            [
+                ("public", _("Public — listed for any supplier to bid")),
+                ("private", _("Private — only the suppliers we invite")),
+            ],
         )
 
     def payload(self) -> dict:

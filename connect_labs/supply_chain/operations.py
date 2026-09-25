@@ -292,6 +292,30 @@ _QUOTE_DATA = _data_with(
 # constraint violation (a 500 naming a column) into a 400 naming the field.
 _QUOTE_DATA_CREATE = {**_QUOTE_DATA, "required": ["round_id", "commodity_slug", "supplier_id"]}
 
+# A correction may CLEAR a figure, not only change it: a supplier revising its
+# bid from "freight excluded, 9.00" to "freight included" means there is no
+# freight amount any more, and a correction that could only merge would keep
+# the 9.00 on the new version. So the optional figures also take null here.
+# The price, its basis and currency stay non-null -- a quote without them is
+# not a quote.
+_CLEARABLE_ON_CORRECTION = (
+    "quantity_basis",
+    "freight_amount",
+    "duties_amount",
+    "fx_rate_to_usd",
+    "base_per_pack_stated",
+    "base_unit_grams_stated",
+    "shelf_life_months_stated",
+    "lead_time_days",
+)
+_QUOTE_DATA_CORRECTION = {
+    **_QUOTE_DATA,
+    "properties": {
+        key: ({"anyOf": [schema, {"type": "null"}]} if key in _CLEARABLE_ON_CORRECTION else schema)
+        for key, schema in _QUOTE_DATA["properties"].items()
+    },
+}
+
 _ROUND_DATA = _data_with(
     label={"type": "string", "minLength": 1},
     status={"enum": ["draft", "open", "closed", "awarded"]},
@@ -311,6 +335,7 @@ _ROUND_DATA = _data_with(
         incoterm_requested={"type": "string"},
     ),
     reminder_interval_days=_NON_NEGATIVE_INT,
+    visibility={"enum": list(records.ROUND_VISIBILITIES)},
 )
 
 _ITEM_DATA = _data_with(
@@ -664,6 +689,67 @@ def supplier_create(access, data):
 )
 def supplier_update(access, supplier_id, data):
     return record(access.update_supplier(supplier_id, data))
+
+
+@register_operation(
+    name="supplier_mark_reviewed",
+    summary=(
+        "Record that the program team has reviewed a supplier that registered itself on the supplier "
+        "marketplace. Clears the 'self-registered, not yet reviewed' flag on its quotes; changes nothing else."
+    ),
+    input_schema=obj({"supplier_id": ID}, required=("supplier_id",)),
+    is_write=True,
+)
+def supplier_mark_reviewed(access, supplier_id):
+    return record(access.mark_supplier_reviewed(supplier_id))
+
+
+@register_operation(
+    name="supplier_market_invite",
+    summary=(
+        "Hand an unclaimed supplier company to its own people: a one-time, 30-day invitation that makes "
+        "whoever opens it (signed in to labs) the company's first admin on the supplier marketplace. "
+        "Refused for a company Connect knows (Connect's membership governs it) and for one that already "
+        "has people on the marketplace (its own admins invite from then on). The raw link is returned "
+        "once and never again. The email is only a note of who it was for."
+    ),
+    input_schema=obj({"supplier_id": ID, "email": {"type": "string"}}, required=("supplier_id",)),
+    is_write=True,
+)
+def supplier_market_invite(access, supplier_id, email=""):
+    from django.urls import reverse
+
+    from connect_labs.marketplace import membership
+    from connect_labs.marketplace.models import OrgMembership
+
+    supplier = access.get_supplier(supplier_id)
+    if supplier is None:
+        raise ValueError(f"supplier {supplier_id} not found")
+    org = supplier.org
+    # A program team can link any company into its program, so a program's
+    # invitation must not be a way to take one over. It may hand over only a
+    # company nobody holds yet: not one Connect governs, and not one whose own
+    # people are already on the marketplace.
+    if org.connect_organization_id is not None:
+        raise ValueError(
+            f"{org.name} is a Connect organisation; its own members sign in and act for it already, "
+            "so there is nothing to invite them to"
+        )
+    if OrgMembership.objects.filter(org=org).exists():
+        raise ValueError(
+            f"{org.name} already has people on the supplier marketplace; ask them to invite whoever else "
+            "should act for it"
+        )
+    user = access.user if getattr(access.user, "is_authenticated", False) else None
+    invite, raw = membership.issue_invite(org, email=email or "", issued_by=user)
+    return {
+        "org_id": supplier.org_id,
+        "org_name": supplier.org.name,
+        "email": invite.email,
+        "role": invite.role,
+        "expires_at": invite.expires_at.isoformat(),
+        "path": reverse("supply_chain:market_invite", args=[raw]),
+    }
 
 
 @register_operation(

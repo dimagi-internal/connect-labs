@@ -16,10 +16,11 @@ for ids than a 403 does.
 """
 
 from django.http import Http404
+from django.shortcuts import render
 from django.urls import reverse
 
 from connect_labs.supply_chain.api_views import _access
-from connect_labs.supply_chain.form_views import OperationFormView
+from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
 from connect_labs.supply_chain.models import Commodity, Item, Supplier
 from connect_labs.supply_chain.reference_forms import (
     CommodityForm,
@@ -28,6 +29,7 @@ from connect_labs.supply_chain.reference_forms import (
     RequirementLineFormSet,
     StatedFigureLineFormSet,
     SupplierForm,
+    SupplierMarketInviteForm,
     figure_choices,
 )
 
@@ -394,3 +396,60 @@ class SupplierUpdateView(_ScopedInstanceMixin, _SupplierScreen):
 
     def redirect_to(self, result):
         return reverse("supply_chain:supplier_detail", args=[self.kwargs["supplier_id"]])
+
+
+class SupplierMarkReviewedView(OperationActionView):
+    operation = "supplier_mark_reviewed"
+    success_message = "Marked as reviewed. Their quotes no longer carry the flag."
+
+    def fixed(self, **kwargs):
+        return {"supplier_id": int(kwargs["supplier_id"])}
+
+    def redirect_to(self, **kwargs):
+        return reverse("supply_chain:supplier_detail", args=[kwargs["supplier_id"]])
+
+
+class SupplierMarketInviteView(OperationFormView):
+    """Hand an existing supplier its way onto the supplier marketplace.
+
+    Renders the link on the response rather than redirecting, for the reason
+    `UpdateLinkIssueView` gives: the raw token must not travel in a Location
+    header, where it would sit in browser history and access logs.
+    """
+
+    operation = "supplier_market_invite"
+    form_class = SupplierMarketInviteForm
+    title = "Invite to the supplier marketplace"
+    intro = (
+        "A one-time link, valid for 30 days, for someone at this supplier. They sign in to labs with "
+        "their own Connect account, open it, and can then keep the company's profile and what it offers "
+        "up to date, and bid on open rounds themselves. What they enter is marked as theirs."
+    )
+    submit_label = "Create the link"
+    footnote = "The link is shown once, on the next screen. Only a keyed fingerprint of it is kept."
+
+    def fixed(self, **kwargs):
+        return {"supplier_id": int(kwargs["supplier_id"])}
+
+    def breadcrumb(self, **kwargs):
+        return [
+            {"label": "Suppliers", "href": reverse("supply_chain:suppliers")},
+            {"label": "Supplier", "href": reverse("supply_chain:supplier_detail", args=[kwargs["supplier_id"]])},
+            {"label": self.title},
+        ]
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:supplier_detail", args=[kwargs["supplier_id"]])
+
+    def succeeded(self, result):
+        response = render(
+            self.request,
+            "supply_chain/market_invite_issued.html",
+            {
+                **self.get_context_data(form=None),
+                "invite": result,
+                "link": self.request.build_absolute_uri(result["path"]),
+            },
+        )
+        response["Cache-Control"] = "no-store"
+        return response

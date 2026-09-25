@@ -104,6 +104,8 @@ TAB_FOR_VIEW = {
     "supply_chain:distribution_record": "supply_chain:distribution",
     "supply_chain:alert_check_now": "supply_chain:alerts",
     "supply_chain:alert_delete": "supply_chain:alerts",
+    "supply_chain:supplier_mark_reviewed": "supply_chain:suppliers",
+    "supply_chain:supplier_market_invite": "supply_chain:suppliers",
 }
 
 # Addresses that render no supply nav at all, so there is no tab to keep
@@ -131,6 +133,18 @@ VIEWS_WITHOUT_TABS = frozenset(
         # The same portfolio laid out by place, for the same reason: it spans
         # programs, so no one program's tab is where you are.
         "supply_chain:portfolio_map",
+        # The supplier marketplace: its own shell, for suppliers, who have no
+        # programs and so no program tabs to be on. It spans programs too.
+        "supply_chain:market",
+        "supply_chain:market_round",
+        "supply_chain:market_bid",
+        "supply_chain:market_bids",
+        "supply_chain:market_revise",
+        "supply_chain:market_withdraw",
+        "supply_chain:market_register",
+        "supply_chain:market_organisation",
+        "supply_chain:market_invite",
+        "supply_chain:market_invite_accept",
     }
 )
 
