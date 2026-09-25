@@ -558,6 +558,11 @@ class _FakeOpForRoundTwo:
         self.calls.append((name, payload))
         if name == "supplier_list":
             return []
+        if name == "round_list":
+            # An empty scope, which is what a first seed sees. `round_for`
+            # matches an existing round by label before creating one, so this
+            # is the branch that ends in `round_create` below.
+            return []
         if name in ("supplier_create", "quote_record"):
             return {"id": self._next_id(), **payload["data"]}
         if name == "round_create":

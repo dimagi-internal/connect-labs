@@ -196,6 +196,34 @@ def incoterm_words(incoterm):
 
 
 @register.filter
+def place_text(point):
+    """A delivery point as a person would write the address.
+
+    `{{ round.delivery_point|place_text }}`.
+
+    Three templates used to join these parts by hand and each got it wrong
+    in its own way: the programme's own round list printed a leading comma
+    when the name was blank (", Kano"), and the SUPPLIER-FACING marketplace
+    printed "(not stated), Kano" -- telling an outside reader the place was
+    unknown in the same breath as naming the city. That page is the one
+    people outside the programme read, which is why this is one function now
+    rather than three expressions.
+
+    The rule: say the parts that are there, in order, and say "not stated"
+    only when none of them is. The two-letter country code is used only when
+    the country's name is missing -- a reader wants "Nigeria", but "NG" beats
+    nothing.
+    """
+    point = point or {}
+    parts = [
+        str(point.get("name") or "").strip(),
+        str(point.get("city") or "").strip(),
+        str(point.get("country_name") or "").strip() or str(point.get("country") or "").strip(),
+    ]
+    return ", ".join(part for part in parts if part) or "not stated"
+
+
+@register.filter
 def unit_words(unit):
     """A unit on its own, as a word: "per {{ unit|unit_words }}" -> "per jerry can"."""
     return unit_noun(unit)

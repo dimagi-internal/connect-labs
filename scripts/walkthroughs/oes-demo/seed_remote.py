@@ -653,6 +653,29 @@ def _chain_supplier(access, chain, orgs):
     )
 
 
+def round_for(access, data):
+    """This scope's round with that label, or a new one.
+
+    Matched by label before creating, for the same reason `supplier_for_org`
+    matches by name: re-running a seeder must not leave two rounds of the
+    same label sitting beside each other. `ensure_demo` already refuses to
+    seed a scope that holds rows, and that remains the real protection -- but
+    it guards the WHOLE run, and a seeder called on its own while iterating
+    slips past it. One did, and left the programme showing "CHC basket - Q1
+    top-up" twice, both awarded.
+
+    That mattered more than a tidy list: since #2021 an open round is public
+    on the supplier marketplace, so a duplicate is not just untidy internally,
+    it is two identical requests for quotes shown to suppliers.
+    """
+    label = (data or {}).get("label")
+    if label:
+        for existing in op(access, "round_list"):
+            if existing.get("label") == label:
+                return existing
+    return op(access, "round_create", data=data)
+
+
 def seed_chain(access, chain, reference):
     """One procurement, from the round to the stock sitting in the warehouse.
 
@@ -678,7 +701,7 @@ def seed_chain(access, chain, reference):
 
     supplier = _chain_supplier(access, chain, orgs)
 
-    round_ = op(access, "round_create", data=chain["round"])
+    round_ = round_for(access, chain["round"])
     # A round that received quotes was open when it received them.
     round_ = op(access, "round_open", round_id=round_["id"])
 
@@ -890,7 +913,7 @@ def seed_rutf_round_two(access, round_two):
     to keep them out of the write.
     """
     round_two = without_commentary(round_two)
-    round_ = op(access, "round_create", data=round_two["round"])
+    round_ = round_for(access, round_two["round"])
     # A round that received quotes was open when it received them.
     round_ = op(access, "round_open", round_id=round_["id"])
 
@@ -978,7 +1001,7 @@ def seed_chlorine_blocked(data, scopes):
         "recorded_by_org_id": reference["orgs"][section["programme_org_slug"]]["id"],
     }
 
-    round_ = op(access, "round_create", data=section["round"])
+    round_ = round_for(access, section["round"])
     round_ = op(access, "round_open", round_id=round_["id"])
 
     store = _supply_point(access, section["store"], reference, ours)
@@ -1177,7 +1200,7 @@ def seed_awaiting_approval(access, data, reference):
     ours = {"source": "we_recorded", "recorded_by_org_id": program_org["id"]}
 
     supplier = _chain_supplier(access, section, orgs)
-    round_ = op(access, "round_create", data=section["round"])
+    round_ = round_for(access, section["round"])
     round_ = op(access, "round_open", round_id=round_["id"])
 
     quotes, items = [], {}
