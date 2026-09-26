@@ -12,6 +12,7 @@ ones live in the Drive seed document and are read at run time.
 
 import copy
 from datetime import datetime, time, timedelta
+from decimal import Decimal
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -21,7 +22,8 @@ from django.utils import timezone
 from connect_labs.supply_chain.history.models import OperationCall, Revision
 from connect_labs.supply_chain.history.rewind import rewind
 from connect_labs.supply_chain.market.service import listed_tenders
-from connect_labs.supply_chain.models import Invoice, Outreach, Quote, Shipment, Tender
+from connect_labs.supply_chain.models import Invoice, Outreach, Payment, Quote, Shipment, Tender
+from connect_labs.supply_chain.standing import standing_rows
 from connect_labs.supply_chain.tests.test_oes_demo_provenance import _CHAIN, _DOCUMENT, _load_seed_remote
 from connect_labs.supply_chain.tests.test_oes_demo_reference import _ROUND_TWO
 
@@ -67,9 +69,13 @@ def _round_one():
     chain["supplier_label"] = "A Placeholder Manufacturer"
     chain["round"]["label"] = "A Placeholder RUTF Round 1"
     chain["quotes"][0]["commodity_slug"] = "a-product"
-    # The goods received note, as something we did ourselves this time.
+    # The goods received note, as something we did ourselves this time. The
+    # provenance chain's own `we_did` payment row is dropped: round 1's
+    # payment is no longer a document-listed ledger row, it is recorded
+    # automatically from `dates.paid_on` (see `seed_chain`), and keeping both
+    # would pay the invoice twice.
     receipt = {**chain["reported_to_us"][0], "source": "we_recorded"}
-    chain["we_did"] = [receipt, *chain["we_did"]]
+    chain["we_did"] = [receipt]
     chain["reported_to_us"] = []
     chain["partner_points"] = []
     chain["dates"] = dict(_DATES)
@@ -232,6 +238,52 @@ class TestWhoDidEachStep:
         waiting = Outreach.objects.filter(tender=tender, responded=False)
         assert [o.supplier.name for o in waiting] == ["Placeholder Silent Supplier"]
         assert Outreach.objects.filter(tender=tender, responded=True).count() == 3
+
+
+def _row(rows, title_start):
+    return next(r for r in rows if r.title.startswith(title_start))
+
+
+class TestRoundOneIsPaid:
+    def test_a_stated_paid_on_pays_the_invoice_in_full_and_the_overview_shows_it(self, seeded):
+        _, result = seeded
+        contract, invoice = result["round_one"]["contract"], result["round_one"]["invoice"]
+        payment = Payment.objects.get(invoice_id=invoice["id"])
+        assert Decimal(str(payment.amount)) == Decimal(str(invoice["amount"]))
+        assert str(payment.paid_on) == _DATES["paid_on"]
+
+        row = _row(standing_rows(RUTF, timezone.localdate()), contract["reference"])
+        assert row.stage == "paid"
+        assert row.waiting_on == "—"
+
+    def test_the_payment_is_recorded_by_sophie_on_the_web_on_the_day_it_was_paid(self, seeded):
+        _, result = seeded
+        invoice = result["round_one"]["invoice"]
+        payment = Payment.objects.get(invoice_id=invoice["id"])
+        create = Revision.objects.get(content_type__model="payment", object_id=str(payment.id), action="create")
+        assert create.recorded_at == _ten_am(_DATES["paid_on"])
+        assert create.call.channel == "web" and create.call.actor.username == "demo-sophie"
+        assert not create.call.actor_is_agent
+        # Sophie made the payment herself; there is no email to point at.
+        assert create.call.source_ref == ""
+
+    def test_without_a_stated_paid_on_no_payment_is_recorded(self, synthetic, capsys):
+        document = _document()
+        del document["rutf_rounds"]["round_one"]["dates"]["paid_on"]
+        _, result = _seed(document)
+        invoice = result["round_one"]["invoice"]
+
+        assert not Payment.objects.filter(invoice_id=invoice["id"]).exists()
+        row = _row(standing_rows(RUTF, timezone.localdate()), result["round_one"]["contract"]["reference"])
+        assert row.stage == "invoiced"
+        assert row.waiting_on == "payment"
+        assert "paid_on" in capsys.readouterr().out
+
+    def test_seeding_again_does_not_pay_twice(self, seeded):
+        _, result = seeded
+        invoice_id = result["round_one"]["invoice"]["id"]
+        _seed(_document())
+        assert Payment.objects.filter(invoice_id=invoice_id).count() == 1
 
 
 class TestReplay:
