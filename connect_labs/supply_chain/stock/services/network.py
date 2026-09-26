@@ -135,6 +135,51 @@ def _expected_inbound(program_id, points, item=None, as_of=None):
     return by_point
 
 
+def _latest_receipts(program_id, points, item=None, on_date=None):
+    """{supply_point_id: Movement} -- the most recent receipt into each point, in one query."""
+    movements = (
+        Movement.objects.for_program(program_id)
+        .as_of(on_date)
+        .filter(kind="receipt", to_supply_point__in=points)
+        .select_related("receipt")
+        .order_by("to_supply_point_id", "-occurred_on", "-id")
+    )
+    if item is not None:
+        movements = movements.filter(item=item)
+    latest: dict[int, Movement] = {}
+    for movement in movements:
+        latest.setdefault(movement.to_supply_point_id, movement)
+    return latest
+
+
+def _cover_before(receipt, on_hand, amc, months, item):
+    """What the latest receipt changed: cover just before it, and what it added.
+
+    Months of stock is a single figure, so a store that has just been
+    restocked and one that never was read the same until somebody remembers
+    the old number. This keeps the old number: the balance less what that
+    receipt put in, over the same rate. None when either side is not a number.
+    """
+    if receipt is None or not isinstance(on_hand, Quantity) or not isinstance(amc, Quantity):
+        return None
+    if isinstance(months, Unconfirmed) or not hasattr(months, "quantize"):
+        return None
+    added = ledger.convert(receipt.quantity, receipt.quantity_unit, on_hand.unit, item)
+    if not isinstance(added, Quantity):
+        return None
+    before = Quantity(max(on_hand.amount - added.amount, 0), on_hand.unit)
+    months_before = resupply._ratio(before, amc, item)
+    if isinstance(months_before, Unconfirmed):
+        return None
+    reference = receipt.reference or (receipt.receipt.reference if receipt.receipt_id else "")
+    return {
+        "reference": reference,
+        "received_on": receipt.occurred_on,
+        "added": Quantity(receipt.quantity, receipt.quantity_unit),
+        "months_before": months_before,
+    }
+
+
 def _restated(amc, unit, item):
     if not isinstance(amc, Quantity) or not unit or amc.unit == unit:
         return None
@@ -169,6 +214,7 @@ def network_stock(
     balances = _balances(program_id, points, item=item, on_date=on_date)
     expected = _expected_inbound(program_id, points, item=item, as_of=on_date)
     counts = _latest_counts(program_id, points, item=item)
+    receipts = _latest_receipts(program_id, points, item=item, on_date=on_date)
     # One fetch for every item any of these points has held, so resolving a
     # point's sole item costs no extra query per point.
     items_by_id = (
@@ -258,6 +304,11 @@ def network_stock(
                 "status": plan["status"],
                 # Shown beside the figures above, never netted into them.
                 "expected_inbound": expected.get(point.pk, []),
+                # The latest receipt and the cover just before it, so a rise
+                # reads as a rise and not as a number to remember.
+                "last_receipt": _cover_before(
+                    receipts.get(point.pk), on_hand, plan["amc"], plan["months_of_stock"], for_conversion
+                ),
                 "min_months_of_stock": point.min_months_of_stock,
                 "max_months_of_stock": point.max_months_of_stock,
             }

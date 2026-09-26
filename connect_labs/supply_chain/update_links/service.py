@@ -475,6 +475,8 @@ def _describe_receipt(rid):
             text += f", {quantity_digits(line.quantity_rejected)} rejected{reason}"
         if line.batch:
             text += f", batch {line.batch}"
+        if line.expiry:
+            text += f", expires {line.expiry:%-d %b %Y}"
         parts.append(text)
     ref = f"{receipt.reference}: " if receipt.reference else ""
     return ref + "; ".join(parts) + f" at {receipt.supply_point.name}"
