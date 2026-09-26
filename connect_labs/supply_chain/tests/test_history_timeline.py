@@ -494,12 +494,13 @@ class _ProgramContextMiddleware:
 
 @pytest.fixture
 def client_in_program(client, monkeypatch, settings, da, sophie):
-    """Signed in, in PROGRAM; `_access` stubbed as in test_history_as_of.py."""
-    from connect_labs.supply_chain import form_views, views  # noqa: F401  -- bind before patching
+    """Signed in, in PROGRAM; `_access` stubbed as in test_history_as_of.py (api_views
+    included: as-of builds the pages' access from there before it rewinds)."""
+    from connect_labs.supply_chain import api_views, form_views, views  # noqa: F401  -- bind before patching
     from connect_labs.supply_chain.procurement import views as procurement_views  # noqa: F401
 
     settings.MIDDLEWARE = [*settings.MIDDLEWARE, f"{__name__}._ProgramContextMiddleware"]
-    for module in ("form_views", "views", "procurement.views"):
+    for module in ("api_views", "form_views", "views", "procurement.views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", lambda request: da)
     client.force_login(sophie)
     return client
