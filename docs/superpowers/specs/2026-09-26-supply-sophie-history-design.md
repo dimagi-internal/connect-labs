@@ -34,29 +34,45 @@ the state as it stood on any past date. Parsing email is out of scope.
 
 ## 3. Model
 
-### 3.1 `Revision` (new, append-only)
+### 3.1 `OperationCall` and `Revision` (new, append-only)
 
-One row per change to one supply record.
+Provenance belongs to the **call**, and history belongs to the **record**. A
+single call can change several records: an award, for instance, writes the
+award and updates the tender. So there are two tables.
+
+**`OperationCall`**: one row per write operation that ran.
 
 | Field | Meaning |
 |---|---|
-| `program_id` | Scope, copied from the record |
+| `program_id` | The access scope of the call (nullable) |
+| `operation` | The operation name, e.g. `shipment_update` |
+| `actor` | The user who made the call (FK, nullable for a command) |
+| `actor_is_agent` | Copied at write time from `LABS_AGENT_ACCOUNT_EMAILS` |
+| `channel` | `web` / `mcp` / `api` / `command` |
+| `source_ref` | Optional. The caller's reference for its evidence, such as an email Message-ID or a document hash |
+| `source_excerpt` | Optional. The quoted text that justified the write (≤ 2,000 chars) |
+| `result` | JSON. The operation's return value, returned again on replay |
+| `recorded_at` | When the call ran |
+
+A unique constraint on `(program_id, operation, source_ref)` applies when
+`source_ref` is not empty.
+
+**`Revision`**: one row per change to one supply record.
+
+| Field | Meaning |
+|---|---|
+| `call` | FK to `OperationCall`. Null for a save outside any operation |
+| `program_id` | Derived from the record |
 | `content_type`, `object_id` | The record changed |
 | `action` | `create` / `update` / `delete` |
 | `changes` | JSON `{field: [old, new]}`. For `create`, old is null. For `delete`, the full last state |
-| `recorded_at` | Set automatically on save. Never supplied by an API caller |
-| `actor` | The Django user who made the call, or null for a command |
-| `channel` | `web` / `mcp` / `api` / `command` |
-| `operation` | The operation name, e.g. `shipment_update` |
-| `source_ref` | Optional. The caller's reference for its evidence, such as an email Message-ID or a document hash |
-| `source_excerpt` | Optional. The quoted text that justified the write (≤ 2,000 chars) |
-| `result_ref` | The record the operation returned, for idempotent replay |
+| `recorded_at` | Automatic. Never supplied by an API caller |
 
-Indexes: `(content_type, object_id, recorded_at)`,
-`(program_id, recorded_at)`, and `(program_id, operation, source_ref)`.
+Indexes: `(content_type, object_id, recorded_at)` and
+`(program_id, recorded_at)`.
 
-**No `update`, no `delete` on `Revision`.** The model raises on both. It is
-the one record that must never lose history.
+**Both tables are append-only.** Their `save()` refuses updates and their
+`delete()` raises. They are the records that must never lose history.
 
 ### 3.2 Capture
 
@@ -73,17 +89,20 @@ the one record that must never lose history.
 - A save **outside** any write context (a shell, a data migration) still
   writes a revision, with `channel="command"` and no operation. Nothing
   escapes history.
-- `Revision` itself, and the stock ledger's own append-only movement rows,
-  are excluded from capture. A movement is already a revision of stock.
+- `Revision` itself is excluded from capture. Append-only rows such as
+  stock movements are captured too, as creations only, so as-of rewinding
+  can remove them.
 
 ### 3.3 Source and idempotency
 
 Every write operation's schema gains an optional top-level `source`:
 `{ref: string, excerpt?: string}`. It is validated like any other field.
 
-If a write arrives with a `source.ref` that already has a revision in this
-program **for the same operation**, nothing is written. The call returns the
-record in `result_ref` with `"replayed": true`. That is what makes "Sophie
+If a write arrives with a `source.ref` that already has an `OperationCall` in
+this program **for the same operation**, nothing is written. The stored
+`result` is returned with `"replayed": true`. The unique constraint makes this
+safe under concurrent duplicates: the loser of the race gets the winner's
+result. That is what makes "Sophie
 forwarded the same email twice" harmless, whichever agent processes it. The
 check sits in `call_operation`, before dispatch.
 
@@ -94,33 +113,47 @@ forms don't carry one.
 
 - `channel` is `web` → the actor's display name, e.g. "Sophie".
 - `channel` is `mcp` or `api` → "via AI · Sophie" when the actor is
-  a person, and "ACE (agent)" when the actor is an agent account. An
-  agent account is a user flagged as one. A single boolean on the user's
-  labs profile is enough, and the plan confirms where it lives.
+  a person, and "ACE (agent)" when the actor is an agent account.
+  Agent accounts are listed in the setting `LABS_AGENT_ACCOUNT_EMAILS`
+  (default `["ace@dimagi-ai.com"]`). The retained `users` app must not be
+  modified. The flag is copied onto the revision as `actor_is_agent` at
+  write time, so history does not change if the setting does.
 - `source_excerpt` opens from the badge.
 - `Quote.entered_by` (program/supplier) is left as it is. It answers a
   different question: whose figure it is, not who typed it.
 
-### 3.5 As-of reads
+### 3.5 As-of reads: rewind inside a rolled-back transaction
 
-`as_of(queryset, when)` returns the records as they stood at `when`:
+Supply pages read through deep operation and queryset chains, including SQL
+aggregates in the stock ledger. Rewinding records in Python would mean
+rewriting every read path. Instead, an as-of request is rendered **inside a
+database transaction that is always rolled back**:
 
-- It excludes records whose `create` revision is later than `when`.
-- It includes records deleted after `when`, rebuilt from the `delete`
-  revision's snapshot.
-- For each record, it rewinds each field by walking revisions newer than
-  `when` from newest to oldest and applying their old values. Instances come
-  back unsaved and read-only.
+1. Open `transaction.atomic()` and turn off revision capture.
+2. Take this program's revisions with `recorded_at` after the as-of instant,
+   and undo them newest first:
+   - `update` puts back the old field values;
+   - `create` deletes the row. Rows created later go first, so children
+     leave before their parents;
+   - `delete` re-inserts the row from its snapshot, with the same primary key.
+3. Run the view **and render the response** inside the transaction, so no
+   lazy queryset escapes it.
+4. Call `set_rollback(True)`. Nothing is kept.
 
-Records that predate this feature have no `create` revision. A one-off
-migration writes a `create` revision for every existing row, stamped with
-the row's `created` time, marked `channel="command"`.
+Every existing view, operation and aggregate then works unmodified, stock
+included. The cost is one write per change since the as-of date, all rolled
+back. That is fine at program scale.
 
-**Scope of as-of in v1:** the overview, tender detail (including the quote
-comparison), and order/contract detail with its shipments, invoices and
-payments. The stock, distribution, network and market pages are **not**
-available as-of. With an as-of date active they show a banner saying so. No
-existing SQL aggregation in the stock ledger is rewritten.
+"As of 20 Aug" means the **end** of that day in the server timezone.
+
+Records that predate this feature have no `create` revision. A migration
+writes a `create` revision for every existing row, stamped with the row's
+`created_at` and marked `channel="command"`. Without it, rewinding before
+the feature existed would leave pre-existing rows in place. That is the
+right answer: they did exist.
+
+**Scope:** every program-scoped supply page. The market is cross-program and
+live, so it ignores `as_of`.
 
 ## 4. UI
 
@@ -271,5 +304,5 @@ by how this run goes.
 ## 9. Out of scope
 
 Email parsing, an inbox, sending email, supplier logins beyond what exists,
-as-of for stock/network/distribution/market, a `known_on` date, and canopy
+as-of for the cross-program market, a `known_on` date, and canopy
 plugin changes (follow-up).
