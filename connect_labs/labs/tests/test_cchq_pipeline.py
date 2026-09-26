@@ -153,6 +153,59 @@ class TestHeadlessGuard:
             client.check_token_valid()
 
 
+class TestWebPipelineLeavesTheTokenToTheRequest:
+    """AnalysisPipeline(request) used to copy the session's CCHQ access_token into
+    cchq_access_token. The fetchers passed it on, which put CommCareDataAccess into
+    headless mode, and headless mode never refreshes. 15 minutes after an
+    authorize, every live pull failed the access probe with an expired token."""
+
+    def test_session_token_is_not_promoted_to_a_headless_token(self):
+        from unittest.mock import MagicMock
+
+        from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+
+        request = MagicMock()
+        request.session = {
+            "labs_oauth": {"access_token": "connect-token"},
+            "commcare_oauth": {"access_token": "cchq-token", "refresh_token": "r", "expires_at": 0},
+        }
+        assert AnalysisPipeline(request).cchq_access_token is None
+
+    def test_fetcher_given_the_request_refreshes_an_expired_token(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from connect_labs.labs.analysis.backends.sql import cchq_fetcher
+        from connect_labs.labs.analysis.config import DataSourceConfig
+        from connect_labs.labs.integrations.commcare.api_client import CommCareDataAccess
+
+        monkeypatch.setattr(
+            cchq_fetcher, "fetch_opportunity_metadata", lambda access_token, opportunity_id: {"cc_domain": "example"}
+        )
+        refreshed = []
+
+        def fake_refresh(self):
+            refreshed.append(True)
+            self.access_token = "fresh"
+            self.commcare_oauth = {"access_token": "fresh", "expires_at": 1e12}
+            return True
+
+        monkeypatch.setattr(CommCareDataAccess, "_refresh_token", fake_refresh)
+        monkeypatch.setattr(CommCareDataAccess, "verify_hq_access", lambda self: self.access_token == "fresh")
+        monkeypatch.setattr(CommCareDataAccess, "discover_form_xmlns", lambda self, form_name: None)
+
+        request = MagicMock()
+        request.session = {"commcare_oauth": {"access_token": "expired", "refresh_token": "r", "expires_at": 0}}
+        result = cchq_fetcher.fetch_cchq_forms_as_visit_dicts(
+            request=request,
+            data_source=DataSourceConfig(type="cchq_forms", form_name="visit", app_id="app-1"),
+            access_token="connect-token",
+            opportunity_id=765,
+            cchq_access_token=None,
+        )
+        assert result == []
+        assert refreshed == [True]
+
+
 class TestHeadlessWithToken:
     """When a headless caller supplies a pre-fetched cchq_access_token (e.g. a
     scheduled celery task using get_valid_cchq_access_token(user)), the same
