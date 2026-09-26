@@ -224,3 +224,14 @@ def test_a_program_owned_report_reads_its_seeded_registry_in_the_programs_scope(
         context={"definition_id": 1, "opportunity_ids": [10013], "program_id": 10011},
     )
     assert scopes == [{"program_id": 10011}]
+
+
+def test_a_program_owned_reports_pipelines_say_where_they_live():
+    """They land on the first spanned opportunity; a drill reading another
+    opportunity's rows must still find the record (worker review, 2026-09-26:
+    'pipeline 6353 not found')."""
+    dao = _data_access(opportunity_id=None, program_id=10011)
+    _create(dao, "indicator_programme_report", opportunity_ids=[10013, 10020])
+    created = [c.kwargs for c in dao.create_definition.call_args_list]
+    for sources in (created[0]["pipeline_sources"], created[1]["pipeline_sources"]):
+        assert sources and all(s["home_scope"] == {"opportunity_id": 10013} for s in sources)
