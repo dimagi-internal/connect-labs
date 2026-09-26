@@ -43,9 +43,17 @@ function hand({
   size = 0.2,
   pinch = 1,
   pose = 'None',
+  palm = null,
 } = {}) {
   const aspect = 4 / 3;
   const lm = Array.from({ length: 21 }, () => ({ x, y, z: 0 }));
+  if (palm) {
+    // Fingers out, and a knuckle line that is wide facing the camera and
+    // collapsed when the palm is turned sideways.
+    lm[12] = { x, y: y - size * 1.3, z: 0 };
+    const width = palm === 'facing' ? 0.85 : 0.2;
+    lm[17] = { x: x + (width * size) / aspect, y, z: 0 };
+  }
   lm[0] = { x, y: y + size * 0.6, z: 0 }; // wrist
   lm[9] = { x, y: y - size * 0.4, z: 0 }; // middle knuckle
   lm[5] = { x, y, z: 0 }; // index knuckle: the pointer
@@ -312,5 +320,95 @@ describe('module', () => {
   it('drives windows only through their public API', () => {
     expect(SRC).toMatch(/PulseWindows\.moveBy\(/);
     expect(SRC).not.toMatch(/PulseWindows\.(stack|frame)\b/);
+  });
+});
+
+describe('two-hand zoom', () => {
+  // Two hands `gap` apart (camera units), centred, with palms in `palm`.
+  const pair = (gap, palm) => [
+    hand({ x: 0.5 - gap / 2, palm }),
+    hand({ x: 0.5 + gap / 2, palm }),
+  ];
+  const zooms = (actions) => actions.filter((a) => a.type === 'zoom');
+  const total = (actions) => zooms(actions).reduce((s, a) => s + a.dz, 0);
+
+  it('palms to the camera, spreading apart, zooms out', () => {
+    const { e, t } = armed();
+    const { actions } = feed(e, t, 30, (i) => pair(0.2 + i * 0.01, 'facing'));
+    expect(types(actions)[0]).toBe('zoomStart');
+    expect(zooms(actions).length).toBeGreaterThan(3);
+    expect(total(actions)).toBeLessThan(-1);
+  });
+
+  it('palms sideways, coming together, zooms in', () => {
+    const { e, t } = armed();
+    const { actions } = feed(e, t, 30, (i) => pair(0.5 - i * 0.01, 'sideways'));
+    expect(total(actions)).toBeGreaterThan(1);
+  });
+
+  it('moving the wrong way for the pose does not zoom, so hands can reset', () => {
+    const { e, t } = armed();
+    const closing = feed(e, t, 30, (i) => pair(0.5 - i * 0.01, 'facing'));
+    const spreading = feed(e, closing.t + 2000, 30, (i) =>
+      pair(0.2 + i * 0.01, 'sideways'),
+    );
+    expect(zooms([...closing.actions, ...spreading.actions])).toEqual([]);
+  });
+
+  it('mixed or curled hands do not zoom', () => {
+    const { e, t } = armed();
+    const mixed = feed(e, t, 30, (i) => [
+      hand({ x: 0.4 - i * 0.005, palm: 'facing' }),
+      hand({ x: 0.6 + i * 0.005, palm: 'sideways' }),
+    ]);
+    const curled = feed(e, mixed.t, 30, (i) => pair(0.2 + i * 0.01, null));
+    expect(zooms([...mixed.actions, ...curled.actions])).toEqual([]);
+  });
+
+  it('nothing zooms while disarmed', () => {
+    const e = core.createEngine();
+    const { actions } = feed(e, 0, 60, (i) =>
+      pair(0.2 + (i % 30) * 0.01, 'facing'),
+    );
+    expect(actions).toEqual([]);
+  });
+
+  it('two hands never also drill, and dropping one does not fire a pull', () => {
+    const { e, t } = armed();
+    const two = feed(e, t, 20, (i) => [
+      hand({ x: 0.35, pinch: 0.1, pose: 'Closed_Fist' }),
+      hand({ x: 0.65, size: 0.2 + i * 0.02 }),
+    ]);
+    expect(
+      types(two.actions).filter((x) => /select|back|drag/.test(x)),
+    ).toEqual([]);
+    // The remaining hand is still moving away as the other drops.
+    const one = feed(e, two.t, 10, (i) => hand({ size: 0.2 * (1 - i * 0.05) }));
+    expect(
+      types(one.actions).filter((x) => /select|back|swipe/.test(x)),
+    ).toEqual([]);
+  });
+
+  it('ends the zoom when a hand leaves', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 20, (i) => pair(0.2 + i * 0.01, 'facing'));
+    const b = feed(e, a.t, 1, hand());
+    expect(types(b.actions)).toEqual(['zoomEnd']);
+  });
+
+  it('the direction is one flag', () => {
+    const { e, t } = armed({ spreadZoomsOut: false });
+    const { actions } = feed(e, t, 30, (i) => pair(0.2 + i * 0.01, 'facing'));
+    expect(total(actions)).toBeGreaterThan(1);
+  });
+});
+
+describe('the map hook', () => {
+  it('display.js exposes zoomBy for gesture zoom, and it stops the act tour', () => {
+    const DISPLAY = fs.readFileSync(path.join(here, 'display.js'), 'utf8');
+    const flat = DISPLAY.replace(/\s+/g, ' ');
+    expect(flat).toMatch(
+      /window\.PulseMap = \{ zoomBy\(dz, x, y\) \{ if \(!map\) return; autoCycle = false;/,
+    );
   });
 });

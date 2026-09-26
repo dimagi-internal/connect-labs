@@ -34,6 +34,10 @@
  *   drill out closed fist, or a pull away from the camera — exactly Esc.
  *   drag     pinch, then move: the top window follows.
  *   swipe    reported in the readout only; not wired to anything yet.
+ *   zoom     two hands, and the pose picks the direction: palms facing the
+ *            camera and spreading apart zooms the map out; palms sideways
+ *            (facing each other) and coming together zooms in. Moving the
+ *            wrong way for the pose does nothing, so hands can be reset.
  */
 (function (global) {
   'use strict';
@@ -46,6 +50,8 @@
     INDEX_MCP: 5,
     INDEX_TIP: 8,
     MIDDLE_MCP: 9,
+    MIDDLE_TIP: 12,
+    PINKY_MCP: 17,
   };
 
   const DEFAULTS = {
@@ -73,6 +79,22 @@
     swipeWindowMs: 300,
     swipeDistance: 0.3,
     actionCooldownMs: 800,
+    // Two-hand zoom. Palm orientation is read from geometry, not MediaPipe's
+    // pose label (which is not trained on sideways palms): facing the camera,
+    // the knuckle line (index to pinky) is wide; turned sideways it collapses.
+    facingWidth: 0.6,
+    sidewaysWidth: 0.4,
+    // Fingers out (wrist to middle fingertip, in hand sizes), so a fist or a
+    // relaxed curl never zooms.
+    openReach: 1.5,
+    zoomEngageMs: 200,
+    zoomMinStep: 0.02,
+    // Map zoom levels per doubling of the distance between the hands.
+    zoomGain: 2.5,
+    zoomSmoothing: 0.4,
+    // Palms facing the camera and spreading apart zooms OUT; palms sideways
+    // and coming together zooms IN. Flip this to swap them.
+    spreadZoomsOut: true,
     // The part of the camera frame that maps to the whole screen, so nobody has
     // to reach the very edge of the frame to reach the edge of the screen.
     crop: { x0: 0.2, x1: 0.8, y0: 0.15, y1: 0.7 },
@@ -142,8 +164,9 @@
   /**
    * The gesture state machine.
    *
-   * `update(hand, t)` — `hand` is `{ landmarks, pose, poseScore }` or null when
-   * no hand is in view; `t` is milliseconds. Returns
+   * `update(hands, t)` — `hands` is an array of `{ landmarks, pose, poseScore }`
+   * (a single hand, or null for none, is accepted too); `t` is milliseconds.
+   * One hand points and drills; two hands zoom and nothing else. Returns
    * `{ actions: [...], readout: {...} }`. Action types:
    *
    *   armed, disarmed{reason}      state changes, for the indicator
@@ -151,6 +174,9 @@
    *   back                         drill out one layer
    *   drag{dx,dy}, dragEnd         move the top window (0..1 units)
    *   swipe{dir}                   'left' | 'right'
+   *   zoomStart{x,y}, zoom{dz,x,y}, zoomEnd
+   *                                two hands: dz in map zoom levels, about
+   *                                the point between the hands (0..1)
    *
    * Only `armed` can be produced while disarmed.
    */
@@ -171,6 +197,8 @@
     let fistSpent = false;
     let history = []; // { t, size, p }
     let baseline = null;
+    let zoom = null; // { d, last, mode, anchor, started } while two hands are up
+    let zoomCand = null; // { mode, since } a pose that has not settled yet
 
     function endPinch(actions) {
       if (pinch && pinch.dragging) actions.push({ type: 'dragEnd' });
@@ -183,6 +211,104 @@
       fistSince = null;
       fistSpent = false;
       actions.push({ type: 'disarmed', reason });
+    }
+
+    function endZoom(actions) {
+      if (zoom && zoom.started) actions.push({ type: 'zoomEnd' });
+      zoom = null;
+      zoomCand = null;
+    }
+
+    /** 'facing' | 'sideways' | null (curled, or somewhere in between). */
+    function palmShape(lm) {
+      const len = handSize(lm, o.aspect) || 1;
+      const reach = dist(lm[LM.WRIST], lm[LM.MIDDLE_TIP], o.aspect) / len;
+      if (reach < o.openReach) return null;
+      const width = dist(lm[LM.INDEX_MCP], lm[LM.PINKY_MCP], o.aspect) / len;
+      if (width >= o.facingWidth) return 'facing';
+      if (width <= o.sidewaysWidth) return 'sideways';
+      return null;
+    }
+
+    /* Two hands zoom, and do nothing else: pinch, fist, push and swipe are
+       all suspended, so a second hand coming up can never also drill. */
+    function twoHands(hands, t, actions) {
+      endPinch(actions);
+      fistSince = null;
+      fistSpent = false;
+      history = [];
+      if (arm === 'arming') arm = 'disarmed';
+      if (arm === 'armed' && t - lastActionAt >= o.idleDisarmMs)
+        disarm(actions, 'idle');
+      const live = arm === 'armed' && t - armedAt >= o.graceMs;
+
+      const [a, b] = hands;
+      const shapes = [palmShape(a.landmarks), palmShape(b.landmarks)];
+      const shape = shapes[0] && shapes[0] === shapes[1] ? shapes[0] : null;
+      const mode =
+        shape === 'facing' ? 'spread' : shape === 'sideways' ? 'close' : null;
+      const ca = a.landmarks[LM.MIDDLE_MCP];
+      const cb = b.landmarks[LM.MIDDLE_MCP];
+      const raw = dist(ca, cb, o.aspect);
+      const mid = toScreen(
+        { x: (ca.x + cb.x) / 2, y: (ca.y + cb.y) / 2 },
+        o.crop,
+      );
+
+      if (!zoom)
+        zoom = { d: raw, last: raw, mode: null, anchor: mid, started: false };
+      zoom.d += o.zoomSmoothing * (raw - zoom.d);
+
+      if (!live || !mode) {
+        zoomCand = null;
+        zoom.mode = null;
+        zoom.last = zoom.d;
+      } else if (zoom.mode !== mode) {
+        // A pose has to hold before it counts, and nothing moved while it
+        // was settling is counted as zoom.
+        if (!zoomCand || zoomCand.mode !== mode) zoomCand = { mode, since: t };
+        zoom.last = zoom.d;
+        if (t - zoomCand.since >= o.zoomEngageMs) {
+          zoom.mode = mode;
+          if (!zoom.started) {
+            zoom.started = true;
+            zoom.anchor = mid;
+            actions.push({ type: 'zoomStart', x: mid.x, y: mid.y });
+          }
+        }
+      } else {
+        const step = Math.log2(zoom.d / zoom.last);
+        const wanted = mode === 'spread' ? step > 0 : step < 0;
+        if (Math.abs(step) >= o.zoomMinStep) {
+          // Moving the wrong way for the pose re-anchors instead of zooming,
+          // so hands can be reset without the map bouncing back.
+          if (wanted) {
+            const out = (mode === 'spread') === o.spreadZoomsOut;
+            const dz = (out ? -1 : 1) * Math.abs(step) * o.zoomGain;
+            actions.push({
+              type: 'zoom',
+              dz,
+              x: zoom.anchor.x,
+              y: zoom.anchor.y,
+            });
+            lastActionAt = t;
+          }
+          zoom.last = zoom.d;
+        }
+      }
+
+      return {
+        actions,
+        readout: readout({
+          t,
+          handVisible: true,
+          hands: hands.length,
+          palms: shapes,
+          zoomMode: zoom.mode,
+          pose: a.pose || null,
+          poseScore: a.poseScore || 0,
+        }),
+      };
     }
 
     function fire(actions, action, t) {
@@ -220,25 +346,42 @@
           dragging: !!(pinch && pinch.dragging),
           depth: null,
           pointer: null,
+          hands: 0,
+          palms: null,
+          zoomMode: null,
         },
         extra,
       );
     }
 
-    function update(hand, t) {
+    function update(input, t) {
       const actions = [];
+      const hands = (Array.isArray(input) ? input : [input]).filter(
+        (h) => h && h.landmarks && h.landmarks.length >= 21,
+      );
 
-      if (!hand || !hand.landmarks || hand.landmarks.length < 21) {
+      if (!hands.length) {
         if (arm === 'arming') arm = 'disarmed';
         endPinch(actions);
+        endZoom(actions);
         fistSince = null;
         if (arm === 'armed' && t - lastSeen >= o.disarmAfterMs)
           disarm(actions, 'hand gone');
         return { actions, readout: readout({ t }) };
       }
 
-      const lm = hand.landmarks;
       lastSeen = t;
+      if (hands.length >= 2) return twoHands(hands, t, actions);
+      if (zoom) {
+        // Back to one hand: the hand that stays is usually still moving, so
+        // give it a moment before it can read as a push, pull or swipe.
+        endZoom(actions);
+        history = [];
+        cooldownUntil = Math.max(cooldownUntil, t + o.actionCooldownMs);
+      }
+
+      const hand = hands[0];
+      const lm = hand.landmarks;
       const size = handSize(lm, o.aspect);
       const ratio = pinchRatio(lm, o.aspect);
       const raw = toScreen(lm[LM.INDEX_MCP], o.crop);
@@ -358,6 +501,7 @@
           pinchRatio: ratio,
           depth: baseline ? size / baseline : 1,
           pointer: p,
+          hands: 1,
         }),
       };
     }
@@ -434,7 +578,9 @@
        </dl>
        <ol class="pg-log"></ol>
        <div class="pg-help">Hold an open palm still to arm · pinch or push to open ·
-         fist or pull back to close · pinch and move to drag a window</div>`,
+         fist or pull back to close · pinch and move to drag a window ·
+         two hands: palms to camera and spread to zoom out, palms sideways and
+         bring together to zoom in</div>`,
     );
     const frame = el('div', 'pulse-gesture-frame');
     const cursor = el('div', 'pulse-gesture-cursor');
@@ -463,14 +609,17 @@
     while (ui.log.children.length > 6) ui.log.lastChild.remove();
   }
 
-  function draw(ui, lm, armed) {
+  function draw(ui, hands, armed) {
     const c = ui.canvas;
     const v = ui.video;
     if (c.width !== v.videoWidth) c.width = v.videoWidth || 640;
     if (c.height !== v.videoHeight) c.height = v.videoHeight || 480;
     const g = c.getContext('2d');
     g.clearRect(0, 0, c.width, c.height);
-    if (!lm) return;
+    for (const lm of hands) drawHand(g, c, lm, armed);
+  }
+
+  function drawHand(g, c, lm, armed) {
     g.lineWidth = 3;
     g.strokeStyle = armed ? '#ffd166' : 'rgba(174,190,255,0.85)';
     g.beginPath();
@@ -557,6 +706,21 @@
       case 'dragEnd':
         log(ui, 'drag done');
         break;
+      case 'zoomStart':
+        log(ui, 'zoom');
+        break;
+      case 'zoom':
+        // The map sits under an open window; zooming it there would be
+        // invisible and surprising when the window closes.
+        if (
+          global.PulseMap &&
+          !(global.PulseWindows && global.PulseWindows.isOpen())
+        )
+          global.PulseMap.zoomBy(a.dz, a.x * W, a.y * H);
+        break;
+      case 'zoomEnd':
+        log(ui, 'zoom done');
+        break;
       case 'swipe':
         log(ui, 'swipe ' + a.dir + ' (not wired)');
         break;
@@ -575,9 +739,14 @@
       text = "Can't see your hand — check the light behind you";
     ui.state.textContent = text;
     ui.state.dataset.arm = r.arm;
-    ui.pose.textContent = r.pose
-      ? r.pose.replace('_', ' ') + ' ' + Math.round(r.poseScore * 100) + '%'
-      : '—';
+    ui.pose.textContent =
+      r.hands >= 2
+        ? '2 hands · ' +
+          r.palms.map((x) => x || '—').join(' / ') +
+          (r.zoomMode ? ' · zooming' : '')
+        : r.pose
+          ? r.pose.replace('_', ' ') + ' ' + Math.round(r.poseScore * 100) + '%'
+          : '—';
     ui.pinch.textContent =
       r.pinchRatio == null
         ? '—'
@@ -645,7 +814,7 @@
       vision.GestureRecognizer.createFromOptions(files, {
         baseOptions: { modelAssetPath: MODEL_URL, delegate },
         runningMode: 'VIDEO',
-        numHands: 1,
+        numHands: 2,
       });
     try {
       return await make('GPU');
@@ -693,20 +862,20 @@
       s.lastVideoTime = v.currentTime;
       const now = performance.now();
       const res = s.recognizer.recognizeForVideo(v, now);
-      const lm = res.landmarks && res.landmarks[0];
-      const top = res.gestures && res.gestures[0] && res.gestures[0][0];
-      const hand = lm
-        ? {
-            landmarks: lm,
-            pose: top ? top.categoryName : null,
-            poseScore: top ? top.score : 0,
-          }
-        : null;
-      if (hand) s.lastHand = now;
-      const out = s.engine.update(hand, now);
+      const all = res.landmarks || [];
+      const hands = all.map((lm, i) => {
+        const top = res.gestures && res.gestures[i] && res.gestures[i][0];
+        return {
+          landmarks: lm,
+          pose: top ? top.categoryName : null,
+          poseScore: top ? top.score : 0,
+        };
+      });
+      if (hands.length) s.lastHand = now;
+      const out = s.engine.update(hands, now);
       out.actions.forEach((a) => perform(s, a));
       render(s, out.readout);
-      draw(ui, lm, out.readout.arm === 'armed');
+      draw(ui, all, out.readout.arm === 'armed');
     };
     tick();
   }
