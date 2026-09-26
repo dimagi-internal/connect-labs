@@ -1,0 +1,394 @@
+"""Setup for the `supply-sophie-rutf` DDD walkthrough (labs-only program 10672).
+
+The RUTF program's story is dated history -- round 1 replayed from its first
+quote to its payment, round 2 open with three quotes that cannot yet be
+compared -- and the walkthrough then CHANGES it on camera: a supplier answers
+between the comparison scene and the next one, and Sophie awards round 2. So
+every take needs the program back where the story starts.
+
+Three things happen here.
+
+1. **Reset + seed, one ECS exec on the labs worker** (AWS profile `labs`).
+   `SupplyDataAccess.purge()` for program 10672 ONLY -- refused if any update
+   link exists in it, because a link may have been sent to someone -- and then
+   the RUTF scope alone is seeded with the same `seed_remote.py` functions
+   `oes-demo/ensure_demo.py` uses (`seed_scopes` restricted to `rutf`, then
+   `seed_rutf_rounds`). The other programs of the OES demo are not touched.
+   The backdated history needs the seed-only `recorded_at` override, which
+   only exists in-process, so this cannot go over MCP.
+
+2. **Outputs** for the recorder's `${var}` substitution (gitignored file).
+
+3. **The supplier's answer, between scenes 4 and 5.** When
+   `SOPHIE_CLARIFY_SNAPSHOTS` names the render's snapshot directory, a
+   detached watcher waits for scene 4's frame to be written and then records
+   the supplier's reply exactly the way the story says it arrives: the ACE
+   agent calls `quote_correct` over the labs MCP with the reply as its source
+   (`source.ref` is the reply's Message-ID, so a second forwarding replays
+   rather than correcting twice). Nothing is staged: it is the product's own
+   agent path, run by the agent account, at the moment in the film when the
+   reply lands. Without the variable (a preflight walk, a manual run) no
+   watcher starts.
+
+The partner data is not in this repository: it is read on the worker from the
+private Drive seed document. Set `OES_DEMO_DRIVE_FOLDER` (or put the folder id
+in `.drive-folder` beside this file -- gitignored).
+
+    python3 scripts/walkthroughs/supply-sophie-rutf/seed.py --outputs <file>
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+import urllib.request
+import zlib
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / "oes-demo"))
+import ensure_demo as oes  # noqa: E402
+
+PROGRAM_ID = 10672
+AS_OF_DATE = "2026-08-20"
+SCENE_BEFORE_ANSWER = 4
+MARK = "SOPHIE_RUTF_RESULT"
+SIDECAR = HERE / ".clarification.json"
+PIDFILE = HERE / ".watcher.pid"
+WATCH_LOG = HERE / "watcher.log"
+MCP_URL = os.environ.get("LABS_MCP_URL", "https://labs.connect.dimagi.com/mcp/")
+WATCH_TIMEOUT_SECONDS = 1800
+
+DRIVER = """
+import base64
+import json
+
+_loader = {}
+exec(compile(base64.b64decode("__LOADER_B64__").decode(), "seed_data.py", "exec"), _loader)
+_seed = {}
+exec(compile(base64.b64decode("__SEEDER_B64__").decode(), "seed_remote.py", "exec"), _seed)
+
+from connect_labs.labs.access.scopes import SYSTEM
+from connect_labs.supply_chain.data_access import SupplyDataAccess
+from connect_labs.supply_chain.update_links.models import UpdateLink
+
+PID = __PID__
+links = UpdateLink.objects.filter(program_id=PID).count()
+if links:
+    raise SystemExit("REFUSED: program %d holds %d update link(s); not purging" % (PID, links))
+print("purged", SupplyDataAccess(access_token="sophie-walkthrough-reset", program_id=PID, caller=SYSTEM).purge())
+
+# The RUTF scope alone. seed_scopes and the market check read the module's
+# SCOPES, so narrowing it here keeps every other OES program untouched.
+_seed["SCOPES"] = {"rutf": _seed["SCOPES"]["rutf"]}
+assert _seed["SCOPES"]["rutf"]["program_id"] == PID
+
+data = _loader["load_seed_data"]("__FOLDER__", filename="__FILENAME__")
+scopes = _seed["seed_scopes"](data)
+rounds = _seed["seed_rutf_rounds"](data, scopes)
+
+access = scopes["rutf"]["access"]
+clar = _seed["without_commentary"]((data["rutf_rounds"]["round_two"] or {}).get("clarification") or {})
+pack_missing = None
+excerpt = None
+if clar:
+    for quote in rounds["round_two"]["quotes"]:
+        supplier = next(s for s in rounds["round_two"]["suppliers"] if s["id"] == quote["supplier_id"])
+        if supplier["name"] == clar["supplier_label"]:
+            pack_missing = quote
+    excerpt = _seed["_clarification_excerpt"](access, pack_missing, clar["corrections"])
+
+# Sophie signs in off camera. She is the story's program manager and a demo
+# user of this environment only (no Connect account), so there is no OAuth for
+# her: the session a real sign-in would produce is minted here instead, the
+# way the recorder's off-camera personas work. Scoped to exactly this user,
+# this synthetic program's opportunity, and 12 hours.
+import time as _time
+from importlib import import_module
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from connect_labs.labs.synthetic.models import SyntheticOpportunity
+from connect_labs.labs.synthetic.org_tree import synthetic_program_id
+
+sophie = _seed["demo_persona_users"]()["sophie"]
+if sophie.is_staff or sophie.is_superuser or not sophie.email.endswith("@example.invalid"):
+    raise SystemExit("REFUSED: %s is not a demo-only persona" % sophie.username)
+opps = [o for o in SyntheticOpportunity.objects.filter(labs_only=True, enabled=True) if synthetic_program_id(o) == PID]
+if not opps:
+    raise SystemExit("REFUSED: no registered labs-only opportunity under program %d" % PID)
+for opp in opps:
+    domains = list(opp.allowed_domains or [])
+    if domains and "@example.invalid" not in domains:
+        opp.allowed_domains = domains + ["@example.invalid"]
+        opp.save(update_fields=["allowed_domains"])
+if not sophie.view_synthetic_opps:
+    sophie.view_synthetic_opps = True
+    sophie.save(update_fields=["view_synthetic_opps"])
+_hours = 12
+store = import_module(settings.SESSION_ENGINE).SessionStore()
+store["_auth_user_id"] = str(sophie.pk)
+store["_auth_user_backend"] = "django.contrib.auth.backends.ModelBackend"
+store["_auth_user_hash"] = sophie.get_session_auth_hash()
+store["labs_oauth"] = {
+    "access_token": "demo-persona-no-connect-account",
+    "refresh_token": "",
+    "expires_at": _time.time() + _hours * 3600,
+    "organization_data": {"organizations": [], "programs": [], "opportunities": []},
+}
+store.set_expiry(_hours * 3600)
+store.create()
+
+print("__MARK__" + json.dumps({
+    "sophie_session": {"key": store.session_key, "expires": int(_time.time() + _hours * 3600)},
+    "program_id": PID,
+    "round1_tender_id": rounds["round_one"]["round"]["id"],
+    "round2_tender_id": rounds["round_two"]["round"]["id"],
+    "quote_pack_missing_id": pack_missing["id"] if pack_missing else None,
+    "clarification": {
+        "corrections": clar.get("corrections"),
+        "excerpt": excerpt,
+        "ref": "<rutf-r2-clarification@demo.invalid>",
+    } if clar else None,
+}, default=str) + "__MARK__")
+"""
+
+
+def _folder() -> str:
+    folder = os.environ.get("OES_DEMO_DRIVE_FOLDER", "").strip()
+    local = HERE / ".drive-folder"
+    if not folder and local.exists():
+        folder = local.read_text().strip()
+    if not folder:
+        sys.exit("set OES_DEMO_DRIVE_FOLDER (or write the folder id to .drive-folder beside this script)")
+    return folder
+
+
+def reset_and_seed(filename: str) -> dict:
+    driver = (
+        DRIVER.replace("__LOADER_B64__", base64.b64encode(oes.LOADER.read_bytes()).decode())
+        .replace("__SEEDER_B64__", base64.b64encode((oes.HERE / "seed_remote.py").read_bytes()).decode())
+        .replace("__FOLDER__", _folder())
+        .replace("__FILENAME__", filename)
+        .replace("__MARK__", MARK)
+        .replace("__PID__", str(PROGRAM_ID))
+    )
+    packed = base64.b64encode(zlib.compress(driver.encode(), 9)).decode()
+    command = (
+        "python manage.py shell -c \"exec(__import__('zlib').decompress("
+        f"__import__('base64').b64decode('{packed}')).decode())\""
+    )
+    if len(command) > oes.MAX_COMMAND:
+        sys.exit(f"payload {len(command):,} chars exceeds the ECS exec argv limit")
+    task = oes._worker_task()
+    print(f"resetting + seeding program {PROGRAM_ID} on {task.rsplit('/', 1)[-1]}…", file=sys.stderr, flush=True)
+    holder = subprocess.Popen(["sleep", "1500"], stdout=subprocess.PIPE)
+    try:
+        result = oes._aws(
+            "ecs",
+            "execute-command",
+            "--cluster",
+            oes.CLUSTER,
+            "--task",
+            task,
+            "--container",
+            oes.CONTAINER,
+            "--interactive",
+            "--command",
+            command,
+            stdin=holder.stdout,
+            timeout=1200,
+        )
+    finally:
+        holder.kill()
+    output = result.stdout + result.stderr
+    match = re.search(MARK + r"(\{.*?\})" + MARK, output, re.S)
+    if not match:
+        tail = "\n".join(output.splitlines()[-40:])
+        sys.exit(f"seed printed no result (exit {result.returncode}):\n{tail}")
+    return json.loads(match.group(1).replace("\r", "").replace("\n", ""))
+
+
+STORAGE_STATE = HERE / ".sophie-storage-state.json"
+
+
+def write_storage_state(session: dict) -> None:
+    """Playwright storage state for Sophie's session (gitignored; the key is a credential)."""
+    STORAGE_STATE.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {
+                        "name": "sessionid",
+                        "value": session["key"],
+                        "domain": "labs.connect.dimagi.com",
+                        "path": "/",
+                        "expires": session["expires"],
+                        "httpOnly": True,
+                        "secure": True,
+                        "sameSite": "Lax",
+                    }
+                ],
+                "origins": [],
+            }
+        )
+    )
+    os.chmod(STORAGE_STATE, 0o600)
+
+
+# ---------------------------------------------------------------------------
+# The supplier's answer, recorded by the agent over MCP between scenes 4 and 5
+# ---------------------------------------------------------------------------
+
+
+def _token() -> str:
+    tok = os.environ.get("LABS_MCP_TOKEN")
+    if tok:
+        return tok
+    cfg = Path.home() / ".claude.json"
+    for name, spec in (json.loads(cfg.read_text()).get("mcpServers") or {}).items():
+        auth = (spec.get("headers") or {}).get("Authorization") or ""
+        if "labs" in name and auth.startswith("Bearer "):
+            return auth[len("Bearer ") :]
+    sys.exit("no labs MCP token (LABS_MCP_TOKEN or connect_labs in ~/.claude.json)")
+
+
+class Mcp:
+    def __init__(self):
+        self.headers = {
+            "Authorization": f"Bearer {_token()}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+        _, headers = self._post(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "supply-sophie-rutf", "version": "1"},
+                },
+            }
+        )
+        if headers.get("mcp-session-id"):
+            self.headers["Mcp-Session-Id"] = headers["mcp-session-id"]
+        self._post({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    def _post(self, payload):
+        request = urllib.request.Request(
+            MCP_URL, data=json.dumps(payload).encode(), headers=self.headers, method="POST"
+        )
+        with urllib.request.urlopen(request, timeout=120) as response:
+            return response.read().decode(), {k.lower(): v for k, v in response.headers.items()}
+
+    def call(self, name: str, **arguments):
+        body, _ = self._post(
+            {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": name, "arguments": arguments}}
+        )
+        for line in body.splitlines():
+            if line.startswith("data:"):
+                body = line[5:].strip()
+                break
+        result = json.loads(body).get("result") or {}
+        if result.get("isError"):
+            raise RuntimeError(f"{name} refused: {result.get('content')}")
+        return result
+
+
+def record_answer(mcp: Mcp, realized: dict, clarification: dict) -> dict:
+    return mcp.call(
+        "supply_chain_quote_correct",
+        program_id=PROGRAM_ID,
+        quote_id=int(realized["quote_pack_missing_id"]),
+        data=clarification["corrections"],
+        reason="The supplier answered the question the comparison raised.",
+        source={"ref": clarification["ref"], "excerpt": clarification["excerpt"]},
+    )
+
+
+def watch(snapshots: Path, since: float) -> None:
+    """Wait for scene 4's frame, then record the supplier's answer. Detached."""
+    state = json.loads(SIDECAR.read_text())
+    mcp = Mcp()  # opened before the wait, so the answer costs one call
+    frame = snapshots / f"scene_{SCENE_BEFORE_ANSWER}.png"
+    deadline = time.time() + WATCH_TIMEOUT_SECONDS
+    print(f"{time.strftime('%X')} watching {frame}", flush=True)
+    while time.time() < deadline:
+        if frame.exists() and frame.stat().st_mtime >= since:
+            started = time.time()
+            result = record_answer(mcp, state["realized"], state["clarification"])
+            print(
+                f"{time.strftime('%X')} answer recorded in {time.time() - started:.2f}s: "
+                f"{json.dumps(result.get('structuredContent') or result)[:300]}",
+                flush=True,
+            )
+            return
+        time.sleep(0.1)
+    print(f"{time.strftime('%X')} gave up: scene {SCENE_BEFORE_ANSWER} never rendered", flush=True)
+
+
+def _stop_previous_watcher() -> None:
+    if not PIDFILE.exists():
+        return
+    try:
+        os.kill(int(PIDFILE.read_text().strip()), signal.SIGTERM)
+    except (ValueError, ProcessLookupError, PermissionError):
+        pass
+    PIDFILE.unlink(missing_ok=True)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--outputs", required=False)
+    parser.add_argument("--filename", default="oes-demo.json")
+    parser.add_argument("--watch", help=argparse.SUPPRESS)
+    parser.add_argument("--since", type=float, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--answer-now", action="store_true", help="record the supplier's answer immediately (manual use)"
+    )
+    args = parser.parse_args()
+
+    if args.watch:
+        watch(Path(args.watch), args.since)
+        return
+    if args.answer_now:
+        state = json.loads(SIDECAR.read_text())
+        print(json.dumps(record_answer(Mcp(), state["realized"], state["clarification"]))[:500])
+        return
+
+    _stop_previous_watcher()
+    realized = reset_and_seed(args.filename)
+    clarification = realized.pop("clarification")
+    write_storage_state(realized.pop("sophie_session"))
+    if not realized.get("quote_pack_missing_id") or not clarification:
+        sys.exit("the seed document names no round-2 clarification; scene 5 has nothing to show")
+    outputs = {**realized, "as_of_date": AS_OF_DATE}
+    SIDECAR.write_text(json.dumps({"realized": realized, "clarification": clarification}))
+    if args.outputs:
+        Path(args.outputs).write_text(json.dumps(outputs, indent=2) + "\n")
+    print(json.dumps(outputs))
+
+    snapshots = os.environ.get("SOPHIE_CLARIFY_SNAPSHOTS", "").strip()
+    if snapshots:
+        log = open(WATCH_LOG, "a")
+        proc = subprocess.Popen(
+            [sys.executable, __file__, "--watch", snapshots, "--since", str(time.time())],
+            stdout=log,
+            stderr=log,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        PIDFILE.write_text(str(proc.pid))
+        print(f"watcher {proc.pid}: records the supplier's answer after scene {SCENE_BEFORE_ANSWER}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

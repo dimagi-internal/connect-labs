@@ -1,0 +1,210 @@
+{
+  "build_order": [
+    "sophie-reads-her-program",
+    "the-eta-that-moved",
+    "back-to-twenty-august",
+    "round-two-cannot-be-compared",
+    "the-answer-arrives",
+    "her-tender-on-the-market",
+    "sophie-awards-with-a-reason"
+  ],
+  "fetched_at": "2026-09-26T20:08:11.311824+00:00",
+  "name": "supply-sophie-rutf",
+  "narrative": "Sophie runs Connect-RUTF procurement for Dimagi, and she is the only person inside the record: suppliers and the freight forwarder email her, and an AI she forwards that email to does the typing. She opens her program and reads, line by line, where round 1 and round 2 stand, which suppliers have been silent for two weeks, and which rows the AI wrote last. Sophie opens round 1's timeline and finds the day the shipment's arrival moved from 5 Sep to 19 Sep, entered by the ACE agent from an email she forwarded twice yet recorded once, and opens the forwarder's own words behind it. Sophie sets the date back to 20 Aug and reads what her program believed then: round 1 in transit, due 5 Sep, and no round 2 at all; then she comes back to today. Sophie opens round 2's comparison and reads, for each of the three quotes, the one thing that keeps it out of the ranking and the question already written out to ask that supplier. The supplier that had not said how many sachets a carton holds replies, 150 per carton; the AI reading Sophie's forwarded mail records the answer against its quote, and Sophie finds the correction on round 2's timeline with the reply quoted beside it, then sees that quote ranked with a cost per carton and per child treated. Sophie opens round 2 on the market as a supplier would and reads the request she published, and nothing she keeps private. Sophie awards round 2 provisionally to the quote that answered, writing why, and her overview shows round 2 awarded, by her, today.",
+  "personas": {
+    "sophie": {
+      "color": "#4F46E5",
+      "intro": "Sophie buys therapeutic food for Connect-RUTF and, since suppliers will not log into anything, is the only person inside the record while an AI types in what their emails say.",
+      "name": "Sophie",
+      "org": "",
+      "role": "Program manager, Connect-RUTF (Dimagi, buyer of record)"
+    }
+  },
+  "scenes": [
+    {
+      "features": [
+        {
+          "description": "The /supply/ header names the program and the buyer-of-record org in its role (\"Connect-RUTF · Dimagi, buyer of record\"), per design spec §4.1.",
+          "id": "overview-program-header",
+          "verify": "pytest: GET /supply/?program_id=10672 as a program member returns 200 and the body contains \"buyer of record\" and the program name"
+        },
+        {
+          "description": "One overview row per open or recent tender and order in the program (data-testid=overview-row), showing stage, what it is waiting on, last change time and actor; other programs' records never appear.",
+          "id": "overview-rows",
+          "verify": "pytest: seed two programs, GET /supply/?program_id=A and assert every overview-row belongs to program A and shows a last-changed actor"
+        },
+        {
+          "description": "A stale flag (data-testid=stale-flag) when an outreach has no reply 14+ days after sent_on, an expected_on has passed with no receipt, or a quote has a not_specified basis the comparison needs.",
+          "id": "overview-stale-flag",
+          "verify": "pytest: outreach sent 15 days ago with responded=False makes its tender row carry stale-flag; one sent 13 days ago does not"
+        },
+        {
+          "description": "Rows whose latest revision has channel mcp or api show an AI badge (data-testid=ai-badge); web-channel rows do not.",
+          "id": "overview-ai-badge",
+          "verify": "pytest: a tender last updated through call_operation(channel=\"mcp\") renders ai-badge on its overview row; one updated with channel=\"web\" does not"
+        }
+      ],
+      "id": "sophie-reads-her-program",
+      "narrative": "Suppliers email Sophie and an AI types what they say, so she is the only person inside Connect-RUTF's record. Sophie opens her program and reads, line by line, where round 1 and round 2 stand, which suppliers have been silent for two weeks, and which rows the AI wrote last.",
+      "persona": "sophie",
+      "provenance": "S1",
+      "title": "Sophie reads where her program stands today"
+    },
+    {
+      "features": [
+        {
+          "description": "Append-only Revision model (program_id, content_type, object_id, action, changes, recorded_at, actor, actor_is_agent, channel, operation, source_ref, source_excerpt, result_ref) that raises on update and delete, per design spec §3.1.",
+          "id": "revision-model",
+          "verify": "pytest: Revision.objects.create(...) then .save() again raises, and .delete() raises"
+        },
+        {
+          "description": "call_operation opens a write context (actor, channel, operation, source) and pre_save/post_save/post_delete receivers on every supply_chain model write one Revision with a field diff excluding created/modified; saves outside a context write channel=\"command\".",
+          "id": "revision-capture",
+          "verify": "pytest: call_operation(\"shipment_update\", ..., channel=\"mcp\", source={\"ref\":\"m1\",\"excerpt\":\"x\"}) writes one Revision with changes {\"expected_on\": [old, new]}, channel \"mcp\" and source_excerpt \"x\""
+        },
+        {
+          "description": "Every write operation schema accepts optional source {ref, excerpt}; a repeated source.ref for the same operation in the program writes nothing and returns replayed true.",
+          "id": "source-idempotency",
+          "verify": "pytest: two identical shipment_update calls with source.ref \"m1\" produce one Revision and the second returns {\"replayed\": true}"
+        },
+        {
+          "description": "Tender detail renders a newest-first timeline (data-testid=timeline) of the tender and its children (quotes, outreach, contract, shipments, invoices, payments), one plain-language line per revision (data-testid=revision-line, data-field) from a per-model field formatter.",
+          "id": "tender-timeline",
+          "verify": "Playwright: open round 1 tender detail, assert timeline has a revision-line[data-field=expected_on] whose text contains \"5 Sep\" and \"19 Sep\""
+        },
+        {
+          "description": "Each timeline line carries an actor badge (data-testid=actor-badge) reading \"Sophie\", \"via AI · Sophie\" or \"ACE (agent)\" (agent per LABS_AGENT_ACCOUNT_EMAILS); clicking it reveals the source excerpt (data-testid=source-excerpt).",
+          "id": "actor-badge-excerpt",
+          "verify": "Playwright: click the actor-badge on the expected_on line, assert text \"ACE (agent)\" and a visible source-excerpt"
+        },
+        {
+          "description": "seed_rutf_rounds replays round 1 as dated history through its operations with synthetic Message-IDs and excerpts, some steps as the ACE agent over mcp and some as Sophie over web, using a seed-only recorded_at override refused unless scopes.is_synthetic(program_id).",
+          "id": "seed-round1-history",
+          "verify": "pytest: seeding program 10672 yields a shipment Revision with channel \"mcp\", actor_is_agent true and changes on expected_on; the override on a non-synthetic program raises"
+        }
+      ],
+      "id": "the-eta-that-moved",
+      "narrative": "Sophie opens round 1's timeline and finds the day the shipment's arrival moved from 5 Sep to 19 Sep, entered by the ACE agent from an email she forwarded twice yet recorded once, and opens the forwarder's own words behind it.",
+      "persona": "sophie",
+      "provenance": "S2",
+      "title": "Sophie finds the day round 1's arrival slipped"
+    },
+    {
+      "features": [
+        {
+          "description": "A request carrying as_of=YYYY-MM-DD renders inside a transaction that undoes this program's revisions recorded after the end of that day (updates restored, creations deleted children first, deletions re-inserted) and is always rolled back, per design spec §3.5.",
+          "id": "as-of-rewind",
+          "verify": "pytest: after changing a shipment expected_on on 2026-09-02, GET /supply/?program_id=10672&as_of=2026-08-20 shows the old date and the database row still holds the new one afterwards"
+        },
+        {
+          "description": "A header date control (data-testid=as-of-control) that sets ?as_of=, carried forward by supply links, with a persistent banner (data-testid=as-of-banner) \"Viewing as of <date> — back to today\" and all write controls hidden.",
+          "id": "as-of-control-banner",
+          "verify": "Playwright: set the control to 2026-08-20, assert the as-of-banner text contains \"20 Aug 2026\" and no form with method=post is on the page"
+        },
+        {
+          "description": "The server refuses any POST carrying as_of, on every supply write view and the operation API.",
+          "id": "as-of-refuses-writes",
+          "verify": "pytest: POST to a supply write view with ?as_of=2026-08-20 returns 400 or 403 and writes no Revision"
+        }
+      ],
+      "id": "back-to-twenty-august",
+      "narrative": "Sophie sets the date back to 20 Aug and reads what her program believed then: round 1 in transit, due 5 Sep, and no round 2 at all; then she comes back to today.",
+      "persona": "sophie",
+      "provenance": "S3",
+      "title": "Sophie looks at her program as it stood on 20 Aug"
+    },
+    {
+      "features": [
+        {
+          "description": "The comparison marks each quote row (data-quote-id) whose create revision came over mcp or api with the AI badge (data-testid=ai-badge).",
+          "id": "compare-ai-badge",
+          "verify": "Playwright: on round 2 compare, the row data-quote-id=<pack-missing quote> contains [data-testid=ai-badge]"
+        },
+        {
+          "description": "seed_rutf_rounds records round 2's three quotes as the ACE agent over mcp, each with a synthetic source excerpt, recorded recently, blocked exactly as the Drive document says (one on sachets per carton, one on lot size plus freight, one on duties).",
+          "id": "seed-round2-quotes",
+          "verify": "pytest: after seeding, compare_tender on round 2 returns 3 blocked rows and the pack-missing quote's only question key is the pack configuration"
+        }
+      ],
+      "id": "round-two-cannot-be-compared",
+      "narrative": "Sophie opens round 2's comparison and reads, for each of the three quotes, the one thing that keeps it out of the ranking and the question already written out to ask that supplier.",
+      "persona": "sophie",
+      "provenance": "S4",
+      "title": "Sophie reads the one thing each round 2 quote is missing"
+    },
+    {
+      "features": [
+        {
+          "description": "quote_correct called over MCP with source {ref, excerpt} writes the new quote version and a Revision (channel mcp, actor_is_agent true, source_excerpt the reply) on the new version.",
+          "id": "mcp-correction-with-source",
+          "verify": "pytest: call_operation(\"quote_correct\", ..., channel=\"mcp\", source={\"ref\":\"reply-1\",\"excerpt\":\"150 sachets\"}) as the agent account writes a Revision with channel \"mcp\" and that excerpt"
+        },
+        {
+          "description": "Round 2's tender timeline includes revisions on its quotes, including corrections, rendered as plain lines (data-testid=revision-line, data-field) with the actor badge and source excerpt.",
+          "id": "tender-timeline-children",
+          "verify": "Playwright: open round 2 tender detail after the correction; the first revision-line has data-field=base_per_pack_stated and actor-badge text \"ACE (agent)\""
+        },
+        {
+          "description": "A seeder step records the supplier's reply (pack configuration stated, synthetic Message-ID and excerpt) as an MCP quote_correct by the ACE agent, run off camera between the comparison scene and this one.",
+          "id": "seed-supplier-answer",
+          "verify": "pytest: after the answer step, compare_tender on round 2 returns 1 comparable row with usd_per_child_treated set and 2 blocked rows"
+        },
+        {
+          "description": "The walkthrough can run a setup command off camera between two scenes (a canopy recorder step, or a split render), so the reply lands after the comparison scene is filmed.",
+          "id": "between-scene-seed-hook",
+          "verify": "recorder run: the comparison scene snapshot shows 0 comparable and this scene's snapshot shows 1 ranked-row"
+        }
+      ],
+      "id": "the-answer-arrives",
+      "narrative": "The supplier that had not said how many sachets a carton holds replies, 150 per carton; the AI reading Sophie's forwarded mail records the answer against its quote, and Sophie finds the correction on round 2's timeline with the reply quoted beside it, then sees that quote ranked with a cost per carton and per child treated.",
+      "persona": "sophie",
+      "provenance": "S4",
+      "title": "A supplier answers, and the quote joins the ranking"
+    },
+    {
+      "features": [
+        {
+          "description": "The market tender page and its serializer carry no revisions, source excerpts or other suppliers' quotes, and ignore as_of.",
+          "id": "market-no-history",
+          "verify": "pytest: GET /supply/market/tenders/<round2>/ as a non-member contains no source_excerpt text, no data-testid=timeline and no quoted amount"
+        },
+        {
+          "description": "Revisions and excerpts are visible only to members of the program, following access to the underlying records.",
+          "id": "revisions-member-only",
+          "verify": "pytest: a non-member requesting round 2 tender detail gets 404 and no Revision is serialized for them"
+        },
+        {
+          "description": "The seeder publishes round 2 on the market with its quantity, delivery point, deadline, pack requirement and minimum shelf life; no other buyer organisations are invented.",
+          "id": "seed-round2-public",
+          "verify": "pytest: after seeding, visible_tender(round2) succeeds for an anonymous visitor and the page shows the deadline and shelf-life minimum"
+        }
+      ],
+      "id": "her-tender-on-the-market",
+      "narrative": "Sophie opens round 2 on the market as a supplier would and reads the request she published, and nothing she keeps private.",
+      "persona": "sophie",
+      "provenance": "S5",
+      "title": "Sophie sees exactly what a supplier sees of round 2"
+    },
+    {
+      "features": [
+        {
+          "description": "After award_create the tender's overview row shows stage \"awarded (provisional)\" when the award is provisional, with last change \"today · Sophie\" from the award's web-channel revision.",
+          "id": "overview-award-row",
+          "verify": "pytest: award_create via the comparison view as Sophie, then GET /supply/?program_id=10672 shows round 2 row text containing \"provisional\" and \"Sophie\""
+        },
+        {
+          "description": "The award's creation, with its rationale, appears as a line on round 2's tender timeline badged \"Sophie\".",
+          "id": "award-rationale-timeline",
+          "verify": "Playwright: after awarding, open round 2 tender detail and assert a revision-line containing the rationale text and actor-badge \"Sophie\""
+        }
+      ],
+      "id": "sophie-awards-with-a-reason",
+      "narrative": "Sophie awards round 2 provisionally to the quote that answered, writing why, and her overview shows round 2 awarded, by her, today.",
+      "persona": "sophie",
+      "provenance": "S6",
+      "title": "Sophie awards round 2 and says why she will not wait"
+    }
+  ],
+  "slug": "supply-sophie-rutf",
+  "version": 1
+}
