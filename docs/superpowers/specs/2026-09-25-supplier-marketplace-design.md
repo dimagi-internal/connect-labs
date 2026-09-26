@@ -178,7 +178,7 @@ quote. The market URL uses the round id, which is not a secret.
 
 ## 4. Bidding
 
-### 4.1 Sealed
+### 4.1 Private to each supplier
 
 A supplier sees its own quotes and nothing else: no other supplier's price,
 count of bids, or name. The comparison stays a program-team screen.
