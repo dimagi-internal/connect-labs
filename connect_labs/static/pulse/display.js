@@ -280,6 +280,22 @@
     return m;
   }
 
+  /* Two-hand zoom from gestures.js (?gestures=1). A deliberate view choice,
+     like a focus button, so it also stops the act tour flying the map away
+     from where the viewer just put it. x/y are viewport pixels to zoom about. */
+  window.PulseMap = {
+    zoomBy(dz, x, y) {
+      if (!map) return;
+      autoCycle = false;
+      lastInteractionAt = performance.now();
+      const r = $('#basemap').getBoundingClientRect();
+      map.zoomTo(map.getZoom() + dz, {
+        around: map.unproject([x - r.left, y - r.top]),
+        duration: 0,
+      });
+    },
+  };
+
   /* ═══ layouts ═══════════════════════════════════════════════════
      Same card library, same store — the layout only chooses which acts
      appear, in what order, and what the map is doing while they do. That
