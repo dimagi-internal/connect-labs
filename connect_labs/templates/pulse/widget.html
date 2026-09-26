@@ -13,19 +13,19 @@ latest service at xl.
 <a id="pulse-widget" href="{% url 'pulse:display' 'nightmap' %}"
    data-url="{% url 'pulse:api_widget' %}" data-state="pending"
    title="Open the Pulse night map"
-   class="group flex items-center gap-2 sm:gap-2.5 h-9 pl-2.5 pr-3 rounded-full bg-brand-deep-purple text-white hover:bg-brand-indigo transition min-w-0 shrink">
+   class="group flex items-center gap-2 sm:gap-2.5 h-9 pl-2.5 pr-3 rounded-full bg-brand-mango text-white shadow-md shadow-brand-mango/30 hover:bg-brand-sunset transition min-w-0 shrink">
   <span class="relative flex w-2 h-2 shrink-0" aria-hidden="true">
-    <span class="absolute h-full w-full rounded-full bg-brand-marigold opacity-70 hidden group-data-[state=live]:motion-safe:inline-flex group-data-[state=live]:motion-safe:animate-ping"></span>
-    <span class="relative inline-flex w-2 h-2 rounded-full bg-white/30 group-data-[state=live]:bg-brand-marigold group-data-[state=stale]:bg-gray-400"></span>
+    <span class="absolute h-full w-full rounded-full bg-white opacity-70 hidden group-data-[state=live]:motion-safe:inline-flex group-data-[state=live]:motion-safe:animate-ping"></span>
+    <span class="relative inline-flex w-2 h-2 rounded-full bg-white/30 group-data-[state=live]:bg-white group-data-[state=stale]:bg-white/50"></span>
   </span>
   <span class="text-[12.5px] font-semibold tabular-nums whitespace-nowrap">
-    <span class="font-normal text-brand-sky group-data-[state=pending]:inline hidden">Pulse</span>
+    <span class="font-normal text-white/85 group-data-[state=pending]:inline hidden">Pulse</span>
     <span data-pw-count class="group-data-[state=pending]:hidden"></span>
-    <span class="font-normal text-brand-sky hidden sm:inline group-data-[state=pending]:hidden"> services · 24h</span>
+    <span class="font-normal text-white/85 hidden sm:inline group-data-[state=pending]:hidden"> services · 24h</span>
   </span>
   <svg data-pw-spark viewBox="0 0 72 18" preserveAspectRatio="none" aria-hidden="true"
-       class="hidden sm:block w-[72px] h-[18px] shrink-0 fill-brand-sky/70 group-data-[state=live]:fill-brand-marigold/80"></svg>
-  <span data-pw-latest class="hidden xl:block text-[11.5px] text-brand-sky truncate max-w-[280px]"></span>
+       class="hidden sm:block w-[72px] h-[18px] shrink-0 fill-white/60 group-data-[state=live]:fill-white/90"></svg>
+  <span data-pw-latest class="hidden xl:block text-[11.5px] text-white/85 truncate max-w-[280px]"></span>
   <span class="sr-only">Open the Pulse night map</span>
 </a>
 <script src="{% static 'pulse/widget.js' %}" defer></script>

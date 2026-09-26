@@ -48,7 +48,7 @@
                 {% include "components/sidenav-items.html" with name='Marketplace' icon='handshake' target=marketplace_url namespace='marketplace' %}
             {% endif %}
             {% url 'supply_chain:market' as supply_market_url %}
-            {% include "components/sidenav-items.html" with name='Supply marketplace' icon='store' target=supply_market_url namespace='supply_market' %}
+            {% include "components/sidenav-items.html" with name='Supply marketplace' icon='store' target=supply_market_url path_prefix=supply_market_url %}
         </div>
         {% if request.user.is_authenticated %}
           {% if request.org %}
