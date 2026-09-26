@@ -148,7 +148,7 @@
                 {% endwith %}
               {% endfor %}
               <td>
-                {% if row.quote_id not in awarded_quote_ids %}
+                {% if row.quote_id not in awarded_quote_ids and not supply_as_of %}
                 {% comment %}Stacked in one narrow column: side by side, the four controls pushed
                 the table past the content column at 1440px and clipped the Award button
                 off the edge of the sideways-scrolling region. The awarded offer is marked
