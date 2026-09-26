@@ -26,7 +26,17 @@ from django.db.models import Q
 from django.urls import reverse
 
 from connect_labs.supply_chain.history.as_of import end_of_day
-from connect_labs.supply_chain.history.labels import Lookup, actor_label, is_ai, line_summary, sentence, subject
+from connect_labs.supply_chain.history.labels import (
+    HIDDEN_FIELDS,
+    Lookup,
+    actor_label,
+    correction_sentence,
+    is_ai,
+    line_summary,
+    model_label,
+    sentence,
+    subject,
+)
 from connect_labs.supply_chain.history.models import Revision
 
 
@@ -43,6 +53,9 @@ class Entry:
     # Which record an update is on ("Shipment · SH-1"); blank for a create or
     # delete, whose sentence already names it.
     subject: str = ""
+    # The attnames this line changed, for a page (or a walkthrough) to find a
+    # line by what it is about: `[data-fields~=expected_on]`.
+    fields: tuple = ()
 
 
 # ---- scope ---------------------------------------------------------------
@@ -88,12 +101,24 @@ def _revisions(scope, program_id, until):
 
 
 def tender_scope_revisions(tender_id, *, program_id, until=None):
-    """Revisions of a tender, its outreach, quotes, invitations, awards, approvals and their documents.
+    """Revisions of a tender, its outreach, quotes, invitations, awards, approvals and their documents,
+    and of the order(s) placed from it with everything under them (design doc §4.3).
 
     `program_id` is required: every query names its program as well as the
-    tender, so a revision from any other program cannot appear.
+    tender, so a revision from any other program cannot appear. One query
+    over the union, so a revision in both scopes is listed once.
     """
-    from connect_labs.supply_chain.models import Award, AwardApproval, Document, Outreach, Quote, Tender
+    return _revisions(_tender_scope(tender_id, program_id), program_id, until)
+
+
+def contract_scope_revisions(contract_id, *, program_id, until=None):
+    """Revisions of an order, its shipments and their lines and charges, receipts and
+    their lines, invoices, payments, and the documents on any of them."""
+    return _revisions(_contract_scope({int(contract_id)}, program_id), program_id, until)
+
+
+def _tender_scope(tender_id, program_id):
+    from connect_labs.supply_chain.models import Award, AwardApproval, Contract, Document, Outreach, Quote, Tender
 
     tender = {int(tender_id)}
     outreach = _child_ids(Outreach, {"tender_id": tender}, program_id)
@@ -106,7 +131,10 @@ def tender_scope_revisions(tender_id, *, program_id, until=None):
         {"tender_id": tender, "quote_id": quotes, "award_id": awards, "approval_id": approvals},
         program_id,
     )
-    scope = [
+    # The order the tender led to is part of its story: the award, then the
+    # contract, dispatch, the ETA slip, receipt and payment.
+    contracts = _child_ids(Contract, {"tender_id": tender, "award_id": awards}, program_id)
+    return [
         (Tender, tender),
         (Outreach, outreach),
         (Quote, quotes),
@@ -114,13 +142,12 @@ def tender_scope_revisions(tender_id, *, program_id, until=None):
         (Tender.invited_orgs.through, invited),
         (AwardApproval, approvals),
         (Document, documents),
+        *_contract_scope(contracts, program_id),
     ]
-    return _revisions(scope, program_id, until)
 
 
-def contract_scope_revisions(contract_id, *, program_id, until=None):
-    """Revisions of an order, its shipments and their lines and charges, receipts and
-    their lines, invoices, payments, and the documents on any of them."""
+def _contract_scope(contract, program_id):
+    """(model, ids) for the given orders and everything under them; nothing when there are none."""
     from connect_labs.supply_chain.models import (
         Charge,
         Contract,
@@ -133,7 +160,8 @@ def contract_scope_revisions(contract_id, *, program_id, until=None):
         ShipmentLine,
     )
 
-    contract = {int(contract_id)}
+    if not contract:
+        return []
     shipments = _child_ids(Shipment, {"contract_id": contract}, program_id)
     charges = _child_ids(Charge, {"shipment_id": shipments}, program_id)
     shipment_lines = _child_ids(ShipmentLine, {"shipment_id": shipments}, program_id)
@@ -153,7 +181,7 @@ def contract_scope_revisions(contract_id, *, program_id, until=None):
         },
         program_id,
     )
-    scope = [
+    return [
         (Contract, contract),
         (Shipment, shipments),
         (Charge, charges),
@@ -164,7 +192,6 @@ def contract_scope_revisions(contract_id, *, program_id, until=None):
         (Payment, payments),
         (Document, documents),
     ]
-    return _revisions(scope, program_id, until)
 
 
 # ---- lines ---------------------------------------------------------------
@@ -275,6 +302,7 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None) -
         is_ai=ai,
         excerpt=getattr(call, "source_excerpt", "") or "",
         source_ref=getattr(call, "source_ref", "") or "",
+        fields=tuple(k for k in revision.changes if k not in HIDDEN_FIELDS) if revision.action != "delete" else (),
     )
     if model is None:
         return entry
@@ -303,11 +331,59 @@ def _live_quotes(ids):
     )
 
 
+def _fold_corrections(revisions):
+    """Fold `quote_correct`'s two writes into one line; return (kept, {new version revision id(): superseded id}).
+
+    A correction creates the new version and marks the old one "replaced by a
+    corrected version" in the same call. To a reader that is one event -- the
+    quote was corrected -- so the update on the superseded quote is dropped and
+    the new version's create line says what the correction changed.
+    """
+    from connect_labs.supply_chain.models import Quote
+
+    creates = {}
+    for revision in revisions:
+        if (
+            revision.action == "create"
+            and revision.call_id is not None
+            and revision.content_type.model_class() is Quote
+        ):
+            creates[(revision.call_id, str(revision.object_id))] = revision
+    kept, folded = [], {}
+    for revision in revisions:
+        if (
+            revision.action == "update"
+            and revision.call_id is not None
+            and revision.content_type.model_class() is Quote
+        ):
+            replacement = (revision.changes.get("superseded_by_id") or [None, None])[1]
+            new = creates.get((revision.call_id, str(replacement))) if replacement is not None else None
+            if new is not None:
+                folded[id(new)] = revision.object_id
+                continue
+        kept.append(revision)
+    return kept, folded
+
+
+def _as_correction(entry, revision, superseded_id, lookup):
+    """Rewrite a new quote version's create line as the correction it was."""
+    from connect_labs.supply_chain.models import Quote
+
+    old = lookup.row(Quote, superseded_id)
+    new_values = {k: v[1] for k, v in revision.changes.items()}
+    entry.sentence, entry.fields = correction_sentence(
+        Quote, _values(old) if old is not None else {}, new_values, lookup
+    )
+    # Whose quote; "Quote" is already the sentence's first word.
+    entry.subject = subject(Quote, new_values, lookup).removeprefix(model_label(Quote) + " · ")
+
+
 def _timeline(revisions, until) -> list[Entry]:
     from connect_labs.supply_chain.models import Quote
 
     lookup = Lookup()
     revisions, suffixes = _fold_lines(_merged(list(revisions)), lookup)
+    revisions, corrections = _fold_corrections(revisions)
     by_model = {}
     for revision in revisions:
         if revision.action == "update":
@@ -321,6 +397,8 @@ def _timeline(revisions, until) -> list[Entry]:
     entries = []
     for revision in revisions:
         entry = entry_for(revision, lookup=lookup, offer_fixes=until is None, live_quote_ids=live)
+        if id(revision) in corrections:
+            _as_correction(entry, revision, corrections[id(revision)], lookup)
         # Lines come oldest first inside the call, as they were entered.
         lines = list(reversed(suffixes.get(id(revision), [])))
         if lines and entry.sentence:
@@ -335,3 +413,23 @@ def timeline_for_tender(tender_id, *, program_id, until=None) -> list[Entry]:
 
 def timeline_for_contract(contract_id, *, program_id, until=None) -> list[Entry]:
     return _timeline(contract_scope_revisions(contract_id, program_id=program_id, until=until), until)
+
+
+def ai_entered_quotes(quote_ids, *, program_id) -> dict:
+    """{quote id: who told us} for the quotes whose version was entered through an AI.
+
+    Read from each quote's create revision, the same rule as the timeline's
+    and the overview's AI pill (`labels.is_ai`). A corrected quote is a new
+    version with its own create: a correction made over MCP marks the version
+    it wrote. One query.
+    """
+    from connect_labs.supply_chain.models import Quote
+
+    ids = sorted({int(pk) for pk in quote_ids if pk is not None})
+    if not ids:
+        return {}
+    creates = Revision.objects.filter(
+        _type_q(Quote), action="create", object_id__in=[str(pk) for pk in ids], program_id=program_id
+    ).select_related("call__actor")
+    lookup = Lookup()
+    return {int(r.object_id): actor_label(r.call, lookup) for r in creates if is_ai(r.call)}

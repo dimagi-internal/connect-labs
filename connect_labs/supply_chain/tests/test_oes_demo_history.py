@@ -253,7 +253,7 @@ class TestRoundOneIsPaid:
         assert str(payment.paid_on) == _DATES["paid_on"]
 
         row = _row(standing_rows(RUTF, timezone.localdate()), contract["reference"])
-        assert row.stage == "paid"
+        assert row.stage == "delivered and paid"
         assert row.waiting_on == "—"
 
     def test_the_payment_is_recorded_by_sophie_on_the_web_on_the_day_it_was_paid(self, seeded):
@@ -433,9 +433,12 @@ class TestTheClarification:
         module.record_rutf_clarification(_document())
         entries = timeline_for_tender(result["round_two"]["round"]["id"], program_id=RUTF)
         replies = [e for e in entries if e.excerpt == "Each carton holds 150 sachet."]
-        # One call, two lines: the new version, and the old one marked replaced.
-        assert len(replies) == 2
-        assert any("Replaced by a corrected" in e.sentence for e in replies)
+        # One call, one line: the correction, naming what it changed.
+        assert len(replies) == 1
+        assert replies[0].sentence.startswith("Quote corrected: units per pack 150 (was not stated)"), replies[
+            0
+        ].sentence
+        assert "base_per_pack_stated" in replies[0].fields
         for entry in replies:
             assert entry.actor == "ACE (agent)" and entry.is_ai
             assert entry.when == _ten_am(_ago(1))

@@ -141,7 +141,7 @@ def _quote(da, tender, supplier, when=AUG_28, **extra):
     )
 
 
-def _order(da, base, reference, when=AUG_3, buyer="us"):
+def _order(da, base, reference, when=AUG_3, buyer="us", tender=None):
     return op(
         da,
         "contract_create",
@@ -156,6 +156,7 @@ def _order(da, base, reference, when=AUG_3, buyer="us"):
             "quantity_unit": "carton",
             "status": "placed",
             "source": "we_recorded",
+            **({"tender_id": tender["id"]} if tender else {}),
         },
     )
 
@@ -208,6 +209,27 @@ def _pay(da, invoice, when=SEP_1, amount="25500.00"):
         "payment_record",
         when,
         data={"invoice_id": invoice["id"], "paid_on": "2026-09-01", "amount": amount, "source": "we_recorded"},
+    )
+
+
+_COMPARABLE = dict(
+    freight_basis="included",
+    duties_basis="included",
+    pack_spec_source="stated_on_quote",
+    base_per_pack_stated=150,
+    base_unit_grams_stated=92,
+)
+
+
+def _award(da, tender, quote, when=SEP_1):
+    return op(
+        da,
+        "award_create",
+        when,
+        tender_id=tender["id"],
+        quote_id=quote["id"],
+        rationale="the only offer we could compare",
+        decided_on="2026-09-01",
     )
 
 
@@ -287,6 +309,36 @@ class TestTender:
         assert row.stage == "awarded"
         assert row.waiting_on == "contract"
 
+    def test_an_award_made_while_a_supplier_was_blocked_reads_provisional(self, da, base):
+        from connect_labs.supply_chain.models import Award
+
+        tender = _tender(da, "Round 1", AUG_3)
+        _quote(da, tender, base["suppliers"][0])  # no freight or duties basis: blocked
+        chosen = _quote(da, tender, base["suppliers"][1], **_COMPARABLE)
+        award = _award(da, tender, chosen)
+
+        assert Award.objects.get(pk=award["id"]).provisional is True
+        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stage == "awarded, provisional"
+
+    def test_an_award_over_a_complete_comparison_is_not_provisional(self, da, base):
+        from connect_labs.supply_chain.models import Award
+
+        tender = _tender(da, "Round 1", AUG_3)
+        award = _award(da, tender, _quote(da, tender, base["suppliers"][1], **_COMPARABLE))
+
+        assert Award.objects.get(pk=award["id"]).provisional is False
+        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stage == "awarded"
+
+    def test_a_tender_row_and_its_order_row_carry_the_tender_id(self, da, base):
+        tender = _tender(da, "Round 1", AUG_3)
+        _order(da, base, "PO-1", tender=tender)
+        _order(da, base, "PO-LOOSE")
+
+        rows = standing_rows(PROGRAM, TODAY)
+        assert _row(rows, "Round 1").tender_id == tender["id"]
+        assert _row(rows, "PO-1").tender_id == tender["id"]
+        assert _row(rows, "PO-LOOSE").tender_id is None
+
     def test_another_programs_tender_is_not_listed(self, da, base):
         _tender(da, "Round 1", AUG_3)
         _synthetic(OTHER_PROGRAM)
@@ -315,14 +367,14 @@ class TestTender:
 
 @pytest.mark.django_db
 class TestOrder:
-    def test_a_passed_eta_with_nothing_received_is_flagged_and_the_order_is_dispatched(self, da, base):
+    def test_a_passed_eta_with_nothing_received_is_flagged_and_the_order_is_in_transit(self, da, base):
         contract = _order(da, base, "PO-1")
         _ship(da, contract, datetime.date(2026, 9, 5))
 
         row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
 
         assert row.kind == "order"
-        assert row.stage == "dispatched"
+        assert row.stage == "in transit"
         assert row.waiting_on == "arrival (ETA 5 Sep)"
         assert row.stale == ["ETA 5 Sep passed, not received"]
         assert row.url == reverse("supply_chain:order_detail", args=[contract["id"]])
@@ -339,7 +391,7 @@ class TestOrder:
         _pay(da, _invoice(da, contract))
 
         row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
-        assert row.stage == "paid"
+        assert row.stage == "delivered and paid"
         assert row.waiting_on == "—"
         assert row.stale == []
 
@@ -355,7 +407,12 @@ class TestOrder:
 
         _pay(da, invoice, amount="12750.00")
         row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
-        assert (row.stage, row.waiting_on) == ("paid", "—")
+        assert (row.stage, row.waiting_on) == ("delivered and paid", "—")
+
+    def test_a_paid_order_nothing_arrived_for_stays_paid(self, da, base):
+        contract = _order(da, base, "PO-1")
+        _pay(da, _invoice(da, contract))
+        assert _row(standing_rows(PROGRAM, TODAY), "PO-1").stage == "paid"
 
     def test_a_part_received_order_says_so(self, da, base):
         contract = _order(da, base, "PO-1")
@@ -533,3 +590,43 @@ class TestHomePage:
         assert "Round 2" in live
         assert "Round 1" in past
         assert "Round 2" not in past
+
+
+@pytest.mark.django_db
+class TestHomePageHooks:
+    """Stable handles a walkthrough (or a person's test) can find each thing by."""
+
+    def test_rows_badges_and_flags_carry_test_ids(self, client_in_program, da, base, ace):
+        tender = _tender(da, "Round 1", AUG_3)
+        _outreach(da, tender, base["suppliers"][0], datetime.date(2026, 8, 1))
+        contract = _order(da, base, "PO-1", tender=tender)
+        _order(da, base, "PO-LOOSE")
+        op(
+            da,
+            "shipment_record",
+            AUG_28,
+            channel="mcp",
+            actor=ace,
+            data={"contract_id": contract["id"], "reference": "SH-1", "source": "supplier_reported"},
+        )
+        body = client_in_program.get(reverse("supply_chain:home")).content.decode()
+
+        assert body.count('data-testid="overview-row"') == 3
+        assert body.count(f'data-testid="overview-row" data-tender-id="{tender["id"]}"') == 2
+        assert body.count('data-testid="overview-row">') == 1  # the loose order names no tender
+        assert 'data-testid="ai-badge"' in body
+        assert body.count('data-testid="stale-flag"') == 1
+
+    def test_as_of_an_earlier_day_a_delivered_and_paid_order_is_in_transit(self, client_in_program, da, base):
+        contract = _order(da, base, "PO-1")
+        shipment = _ship(da, contract, datetime.date(2026, 9, 5))
+        _receive(da, base, contract, shipment)
+        _pay(da, _invoice(da, contract))
+        url = reverse("supply_chain:home")
+
+        live = client_in_program.get(url).content.decode()
+        past = client_in_program.get(url, {"as_of": "2026-08-25"}).content.decode()
+
+        assert "delivered and paid" in live
+        assert "in transit" in past and "arrival (ETA 5 Sep)" in past
+        assert 'data-testid="as-of-banner"' in past and 'data-testid="as-of-control"' in past

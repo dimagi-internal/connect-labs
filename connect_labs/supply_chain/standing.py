@@ -46,6 +46,11 @@ QUOTE_BASIS_FIELDS = ("freight_basis", "duties_basis")
 
 # The order's chain, in order; the stage is the furthest one reached.
 ORDER_STAGES = ("placed", "dispatched", "received", "invoiced", "paid")
+# How a stage reads on the overview where the chain's own word is not what a
+# program manager would say: goods dispatched and not yet arrived are in
+# transit, and an order both received and paid is done on both counts.
+IN_TRANSIT = "in transit"
+DELIVERED_AND_PAID = "delivered and paid"
 
 
 @dataclass
@@ -61,6 +66,9 @@ class Row:
     stale: list[str] = field(default_factory=list)
     # Who placed an order, when it is not the program's own organisation.
     buyer: str = ""
+    # The tender this row is, or the order was placed from; None when an
+    # order came from no tender.
+    tender_id: int | None = None
 
 
 def standing_rows(program_id: int, today: date, *, until: date | None = None, own_org_id=None) -> list[Row]:
@@ -105,7 +113,7 @@ def _last_change(revisions):
 
 
 def _tender_rows(program_id, today, until):
-    from connect_labs.supply_chain.models import Outreach, Quote, Tender
+    from connect_labs.supply_chain.models import Award, Outreach, Quote, Tender
 
     tenders = list(Tender.objects.filter(program_id=program_id))
     tender_ids = [t.pk for t in tenders]
@@ -118,18 +126,29 @@ def _tender_rows(program_id, today, until):
     contracted = set(
         Tender.objects.filter(program_id=program_id, contracts__isnull=False).values_list("pk", flat=True)
     )
+    provisional = set(
+        Award.objects.filter(tender__program_id=program_id, tender_id__in=tender_ids, provisional=True).values_list(
+            "tender_id", flat=True
+        )
+    )
 
     rows = []
     for tender in tenders:
         waiting_on, stale = _tender_state(
             tender, outreach.get(tender.pk, []), quotes.get(tender.pk, []), tender.pk in contracted, today
         )
+        stage = _words(tender.status)
+        # An award made while suppliers were still blocked from the comparison
+        # (the frozen snapshot's `provisional`) could still be beaten: say so.
+        if tender.status == "awarded" and tender.pk in provisional:
+            stage = "awarded, provisional"
         rows.append(
             Row(
                 kind="tender",
                 title=tender.label,
                 url=reverse("supply_chain:procurement_tender_detail", args=[tender.pk]),
-                stage=_words(tender.status),
+                tender_id=tender.pk,
+                stage=stage,
                 waiting_on=waiting_on,
                 stale=stale,
                 **_last_change(tender_scope_revisions(tender.pk, program_id=program_id, until=until)),
@@ -251,6 +270,7 @@ def _order_rows(program_id, today, until, own_org_id):
                 stage=stage,
                 waiting_on=waiting_on,
                 stale=stale,
+                tender_id=contract.tender_id,
                 buyer=(
                     contract.buyer_org.name
                     if contract.buyer_org_id is not None and contract.buyer_org_id != own_org_id
@@ -296,6 +316,10 @@ def _order_state(
     ]
 
     in_transit = [s for s in outstanding if _dispatched(s)]
+    if stage == "dispatched" and in_transit:
+        stage = IN_TRANSIT
+    elif stage == "paid" and received and contract.status != "part_received":
+        stage = DELIVERED_AND_PAID
     if in_transit:
         etas = sorted(s.expected_on for s in in_transit if s.expected_on is not None)
         waiting_on = f"arrival (ETA {_day(etas[0])})" if etas else "arrival"
