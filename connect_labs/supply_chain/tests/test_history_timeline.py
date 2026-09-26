@@ -492,6 +492,144 @@ class TestTenderTimeline:
         assert {r.content_type.model for r in revisions} >= {"tender", "quote"}
 
 
+PACK_EMAIL = "Each carton holds 150 sachets."
+
+_COMPARABLE = dict(
+    freight_basis="included",
+    duties_basis="included",
+    pack_spec_source="stated_on_quote",
+    base_per_pack_stated=150,
+    base_unit_grams_stated=92,
+)
+
+
+def _quote_with(da, tender_id, supplier_id, when, extra, **kwargs):
+    data = {
+        "tender_id": tender_id,
+        "commodity_slug": "rutf",
+        "supplier_id": supplier_id,
+        "as_quoted_amount": "42.50",
+        "as_quoted_unit": "per_pack",
+        "quantity_basis": "600",
+        "quantity_basis_unit": "carton",
+        "received_on": "2026-08-20",
+        **extra,
+    }
+    return op(da, "quote_record", when, data=data, **kwargs)
+
+
+def _correct_pack(da, quote, ace):
+    return op(
+        da,
+        "quote_correct",
+        AUG_28,
+        channel="mcp",
+        actor=ace,
+        source={"ref": "<msg-pack@northwind.example>", "excerpt": PACK_EMAIL},
+        quote_id=quote["id"],
+        data={"pack_spec_source": "stated_on_quote", "base_per_pack_stated": 150},
+        reason="the supplier stated the pack",
+    )
+
+
+@pytest.mark.django_db
+class TestTenderTimelineReachesTheOrder:
+    def test_the_order_placed_from_the_tender_and_its_shipments_are_on_it(self, da, base, ace):
+        contract = op(
+            da,
+            "contract_create",
+            AUG_20,
+            data={
+                "tender_id": base["tender"]["id"],
+                "supplier_id": base["supplier"]["id"],
+                "commodity_slug": "rutf",
+                "buyer_of_record": "programme_org",
+                "buyer_org_id": base["us"]["id"],
+                "reference": "PO-FROM-TENDER",
+                "quantity": "600",
+                "quantity_unit": "carton",
+                "source": "we_recorded",
+            },
+        )
+        op(
+            da,
+            "shipment_record",
+            AUG_28,
+            channel="mcp",
+            actor=ace,
+            data={
+                "contract_id": contract["id"],
+                "reference": "SH-7",
+                "expected_on": "2026-09-05",
+                "source": "supplier_reported",
+            },
+        )
+        op(
+            da,
+            "contract_create",
+            AUG_28,
+            data={
+                "supplier_id": base["supplier"]["id"],
+                "commodity_slug": "rutf",
+                "buyer_of_record": "programme_org",
+                "buyer_org_id": base["us"]["id"],
+                "reference": "PO-ELSEWHERE",
+                "quantity": "1",
+                "quantity_unit": "carton",
+                "source": "we_recorded",
+            },
+        )
+        sentences = [e.sentence for e in timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)]
+
+        assert sentences[0].startswith("Shipment recorded: SH-7")
+        assert any(s.startswith("Order recorded: PO-FROM-TENDER") for s in sentences)
+        assert not any("PO-ELSEWHERE" in s for s in sentences)
+        assert len(sentences) == len(set(sentences))
+        assert any(s.startswith("Tender recorded") for s in sentences)
+
+
+@pytest.mark.django_db
+class TestLineHooks:
+    def test_each_line_names_the_fields_it_changed(self, order):
+        entries = timeline_for_contract(order["contract"]["id"], program_id=PROGRAM)
+        assert entries[0].sentence == "ETA 5 Sep → 19 Sep"
+        assert entries[0].fields == ("expected_on",)
+
+    def test_a_correction_is_one_line_naming_what_changed(self, da, base, ace):
+        quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {}, channel="mcp", actor=ace)
+        corrected = _correct_pack(da, quote, ace)
+        entries = timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)
+
+        lines = [e for e in entries if e.excerpt == PACK_EMAIL]
+        assert len(lines) == 1
+        line = lines[0]
+        assert line.sentence == "Quote corrected: units per pack 150 (was not stated)"
+        assert line.subject == "Northwind Foods"
+        assert "base_per_pack_stated" in line.fields
+        assert line.actor == "ACE (agent)" and line.is_ai
+        assert line.correct_url == reverse("supply_chain:procurement_quote_correct", args=[corrected["id"]])
+        assert not any("Replaced by a corrected version" in e.sentence for e in entries)
+
+    def test_an_award_says_why(self, da, base, sophie):
+        quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _COMPARABLE)
+        op(
+            da,
+            "award_create",
+            AUG_28,
+            channel="web",
+            actor=sophie,
+            tender_id=base["tender"]["id"],
+            quote_id=quote["id"],
+            rationale="lowest delivered cost of the comparable offers",
+            decided_on="2026-08-28",
+        )
+        sentences = [e.sentence for e in timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)]
+        assert (
+            "Award recorded: Northwind Foods, decided 28 Aug — why: lowest delivered cost of the comparable offers"
+            in sentences
+        )
+
+
 @pytest.mark.django_db
 class TestActorLabel:
     def _call(self, **fields):
@@ -585,6 +723,49 @@ class TestPages:
 
         assert "<span>via AI · Sophie</span>" in body
         assert ">AI</span><span>via AI" not in body
+
+    def test_the_order_page_hooks_find_the_eta_line_and_open_its_source_from_the_badge(self, client_in_program, order):
+        import re
+
+        body = client_in_program.get(reverse("supply_chain:order_detail", args=[order["contract"]["id"]])).content
+        body = body.decode()
+
+        assert 'data-testid="timeline"' in body
+        assert re.search(r'data-testid="revision-line" data-fields="expected_on"', body)
+        # The agent's shipment line: its badge is the summary that opens the excerpt.
+        details = re.search(r"<details.*?</details>", body, re.S).group(0)
+        assert re.search(r'<summary data-testid="actor-badge"', details)
+        assert "ACE (agent)" in details
+        assert re.search(r'<blockquote data-testid="source-excerpt"[^>]*>' + re.escape(EMAIL), details)
+        assert ">Source</summary>" not in body
+        # Sophie's web edit has no excerpt: a plain badge.
+        assert '<span data-testid="actor-badge" class="inline-flex items-center rounded-full bg-gray-100' in body
+
+    def test_the_comparison_marks_each_quote_and_the_ai_entered_ones(self, client_in_program, da, base, ace, sophie):
+        import re
+
+        typed = _quote_with(
+            da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _COMPARABLE, channel="web", actor=sophie
+        )
+        other = op(da, "supplier_create", AUG_3, data={"name": "Sahel Nutrition"})
+        by_ai = _quote_with(da, base["tender"]["id"], other["id"], AUG_20, {}, channel="mcp", actor=ace)
+        url = reverse("supply_chain:procurement_comparison", args=[base["tender"]["id"]])
+        body = client_in_program.get(url, {"commodity": "rutf"}).content.decode()
+
+        ranked = re.search(rf'<tr data-testid="ranked-row" data-quote-id="{typed["id"]}">.*?</tr>', body, re.S)
+        assert ranked and 'data-testid="ai-badge"' not in ranked.group(0)
+        card = body[body.index(f'data-quote-id="{by_ai["id"]}"') :]
+        assert 'data-testid="ai-badge"' in card[: card.index("</h3>")]
+        assert body.count('data-testid="ai-badge"') == 1
+
+    def test_a_quote_corrected_over_mcp_is_marked_ai_on_the_comparison(self, client_in_program, da, base, ace, sophie):
+        typed = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {}, channel="web", actor=sophie)
+        corrected = _correct_pack(da, typed, ace)
+        url = reverse("supply_chain:procurement_comparison", args=[base["tender"]["id"]])
+        body = client_in_program.get(url, {"commodity": "rutf"}).content.decode()
+
+        assert f'data-quote-id="{corrected["id"]}"' in body
+        assert body.count('data-testid="ai-badge"') == 1
 
     def test_the_order_page_as_of_leaves_out_the_later_change(self, client_in_program, order):
         url = reverse("supply_chain:order_detail", args=[order["contract"]["id"]])

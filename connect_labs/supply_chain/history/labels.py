@@ -28,6 +28,11 @@ FIELD_LABELS = {
     ("Receipt", "received_on"): "Received",
     ("Payment", "paid_on"): "Paid",
     ("Quote", "voided"): "Voided",
+    ("Quote", "base_per_pack_stated"): "Units per pack",
+    ("Quote", "base_unit_grams_stated"): "Grams per unit",
+    ("Quote", "as_quoted_amount"): "Price",
+    ("Quote", "as_quoted_unit"): "Priced",
+    ("Quote", "as_quoted_currency"): "Currency",
     ("Tender", "status"): "Status",
 }
 
@@ -37,6 +42,10 @@ MODEL_LABELS = {
     "Contract": "Order",
     "AwardApproval": "Approval request",
 }
+
+# Vocabulary codes held in a plain CharField (no `choices`), which would
+# otherwise read verbatim as the free text beside them does.
+_CODED_FIELDS = {("Quote", "pack_spec_source"), ("Quote", "freight_basis"), ("Quote", "duties_basis")}
 
 # Never worth a clause: the record's own identity and its program. The rest of
 # what a change touched is said, provenance fields included, because in an
@@ -192,7 +201,9 @@ def value_text(model, attname, value, lookup) -> str:
         return "yes" if value else "no"
     # Only a vocabulary code is put into words; free text -- a reference
     # "PO_7", a title -- is what somebody typed and reads verbatim.
-    coded = isinstance(value, str) and (field.choices or value in VOCAB_LABELS)
+    coded = isinstance(value, str) and (
+        field.choices or value in VOCAB_LABELS or (model.__name__, attname) in _CODED_FIELDS
+    )
     text = str(words(value)) if coded else str(value)
     return text if len(text) <= _LONG_TEXT else text[: _LONG_TEXT - 1].rstrip() + "…"
 
@@ -365,8 +376,13 @@ def sentence(model, action, changes, lookup) -> str:
         org = _identity(model, values, lookup)
         return f"Invitation to {org} withdrawn" if action == "delete" else f"Invited {org}"
     if action == "create":
-        facts = _create_facts(model, {k: v[1] for k, v in changes.items()}, lookup)
-        return f"{label} recorded" + (f": {', '.join(facts)}" if facts else "")
+        values = {k: v[1] for k, v in changes.items()}
+        facts = _create_facts(model, values, lookup)
+        text = f"{label} recorded" + (f": {', '.join(facts)}" if facts else "")
+        if model.__name__ == "Award" and (values.get("rationale") or "").strip():
+            # The decision's reason is what a reader of the award wants next.
+            text += f" — why: {values['rationale'].strip()}"
+        return text
     if action == "delete":
         identity = _identity(model, changes, lookup)
         return f"{label} removed" + (f": {identity}" if identity else "")
@@ -387,6 +403,42 @@ def sentence(model, action, changes, lookup) -> str:
         lead.append(_outreach_reply_clause(kind))
     clauses = lead + [_clause(model, attname, old, new, lookup) for attname, (old, new) in changes.items()]
     return "; ".join(c for c in clauses if c)
+
+
+# What a correction writes about itself rather than about the quote.
+_CORRECTION_BOOKKEEPING = {"version", "superseded_by_id", "correction_reason", "created_at", "updated_at"}
+# A stated pack figure already says it was stated: the source flag that flips
+# with it is not a second fact worth a clause (it stays in the attnames).
+_PACK_FIGURES = {"base_per_pack_stated", "base_unit_grams_stated"}
+
+
+def correction_sentence(model, old_values, new_values, lookup):
+    """A corrected version against the one it replaced, as (sentence, attnames).
+
+    "Quote corrected: units per pack 150 (was not stated)".
+
+    Names every field whose value reads differently now, old value in
+    brackets; a value that was blank reads "not stated".
+    """
+    clauses, fields = [], []
+    for attname, new in new_values.items():
+        if attname in HIDDEN_FIELDS or attname in _CORRECTION_BOOKKEEPING or attname not in _fields(model):
+            continue
+        before = value_text(model, attname, old_values.get(attname), lookup)
+        after = value_text(model, attname, new, lookup)
+        if before == after:
+            continue
+        label = field_label(model, attname)
+        # "units per pack", but "ETA" stays as it is.
+        if not label[:2].isupper():
+            label = label[:1].lower() + label[1:]
+        clauses.append((attname, f"{label} {after or 'not stated'} (was {before or 'not stated'})"))
+        fields.append(attname)
+    if _PACK_FIGURES & set(fields):
+        clauses = [c for c in clauses if c[0] != "pack_spec_source"]
+    clauses = [text for _, text in clauses]
+    text = f"{model_label(model)} corrected"
+    return (f"{text}: {'; '.join(clauses)}" if clauses else text), tuple(fields)
 
 
 def subject(model, values, lookup) -> str:
