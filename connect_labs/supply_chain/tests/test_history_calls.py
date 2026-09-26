@@ -108,6 +108,27 @@ class TestIdempotency:
         assert "replayed" not in first
         assert Tender.objects.count() == 1 and OperationCall.objects.count() == 1
 
+    def test_same_ref_different_payload_is_a_second_write(self, access):
+        """One email quoting two products: both writes happen, both keep the ref."""
+        first = call_operation("tender_create", access, _payload("RUTF line", source=_source()))
+        second = call_operation("tender_create", access, _payload("F-75 line", source=_source()))
+
+        assert "replayed" not in second and second["id"] != first["id"]
+        assert Tender.objects.count() == 2
+        calls = OperationCall.objects.filter(operation="tender_create")
+        assert set(calls.values_list("source_ref", flat=True)) == {"<msg-1@example.test>"}
+        assert calls.values("payload_digest").distinct().count() == 2
+
+    def test_the_digest_ignores_source_and_key_order(self, access):
+        from connect_labs.supply_chain.history.calls import payload_digest
+
+        a = {"data": {"label": "x", "delivery_point": {"name": "y"}}}
+        b = {"data": {"delivery_point": {"name": "y"}, "label": "x"}}
+        assert payload_digest(a) == payload_digest(b)
+        call_operation("tender_create", access, {**a, "source": _source()})
+        replay = call_operation("tender_create", access, {**b, "source": _source(excerpt="different quote text")})
+        assert replay["replayed"] is True
+
     def test_same_ref_different_operation_writes(self, access):
         made = call_operation("tender_create", access, _payload(source=_source()))
         updated = call_operation(
@@ -312,3 +333,33 @@ class TestSeedOverridesAreBoundToTheirProgram:
 
         call = OperationCall.objects.get()
         assert call.channel == "mcp" and call.recorded_at == backdated
+
+
+@pytest.mark.django_db
+class TestALargeResultIsStoredAsASummary:
+    def _big(self, access, monkeypatch):
+        from connect_labs.supply_chain.procurement import operations as procurement_operations
+
+        rows = [{"id": n, "label": "x" * 200} for n in range(1, 501)]
+        monkeypatch.setattr(procurement_operations, "record", lambda obj: {"id": 7, "lines": rows})
+        return rows
+
+    def test_the_call_keeps_counts_and_ids_not_the_rows(self, access, monkeypatch):
+        rows = self._big(access, monkeypatch)
+        result = call_operation("tender_create", access, _payload(source=_source()))
+
+        assert result["lines"] == rows
+        stored = OperationCall.objects.get().result
+        assert stored == {"truncated": True, "summary": {"id": 7, "lines": {"count": 500, "ids": list(range(1, 501))}}}
+
+    def test_a_replay_returns_the_summary_marked_replayed(self, access, monkeypatch):
+        self._big(access, monkeypatch)
+        call_operation("tender_create", access, _payload(source=_source()))
+        replay = call_operation("tender_create", access, _payload(source=_source()))
+
+        assert replay["replayed"] is True and replay["truncated"] is True
+        assert replay["summary"]["lines"]["count"] == 500
+
+    def test_a_small_result_is_stored_whole(self, access):
+        result = call_operation("tender_create", access, _payload())
+        assert OperationCall.objects.get().result == json.loads(json.dumps(result, cls=DjangoJSONEncoder))
