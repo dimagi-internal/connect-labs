@@ -14,14 +14,23 @@ and the API are left live.
 import datetime
 from functools import wraps
 
-from django.db import transaction
-from django.http import HttpResponseBadRequest, HttpResponseNotAllowed
+from django.db import OperationalError, connection, transaction
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotAllowed
 from django.utils import timezone
 
 from connect_labs.supply_chain.history.rewind import rewind
 
 READ_ONLY = "Viewing a past date is read-only."
 NO_PAST_DOWNLOAD = "This download is not available for a past date."
+BUSY = "This past view is busy — try again in a moment."
+
+# A rewind takes row locks on everything the program changed since the date,
+# and holds them while the page renders. Bounded, so a past view waits a
+# moment for a live write rather than stalling it, and never runs long.
+LOCK_TIMEOUT = "2s"
+STATEMENT_TIMEOUT = "15s"
+# lock_not_available, query_canceled (what statement_timeout raises).
+_TIMEOUT_CODES = {"55P03", "57014"}
 
 
 def parse_as_of(value: str | None) -> datetime.date | None:
@@ -53,10 +62,17 @@ def as_of_view(view_func):
       hidden too, but this is the refusal that counts.
     - No program in the labs context: the view runs live and renders its own
       "choose a program" state.
+    - Not signed in: the view runs live, with no past date, and does its own
+      refusing (a login redirect). Nothing is rewound for an anonymous caller.
+    - Signed in: the pages' own data access is built for the request first, so
+      a caller who may not use this program gets the view's 403 BEFORE
+      anything is rewound -- a rewind is writes, and takes row locks.
     - Otherwise: rewind, run the view, render the response -- all inside one
       atomic block that is always rolled back, including when the view raises.
       With ATOMIC_REQUESTS on, that block is a savepoint inside the request's
-      transaction, and rolling it back undoes exactly the rewind.
+      transaction, and rolling it back undoes exactly the rewind. On Postgres
+      the block sets a lock and a statement timeout (rolled back with it); a
+      rewind or render that hits either is answered 503 "busy".
 
     Rendering happens inside the block because a TemplateResponse renders
     lazily; left to Django it would render after the rollback, against live
@@ -85,25 +101,60 @@ def as_of_view(view_func):
         if not program_id:
             return view_func(request, *args, **kwargs)
 
-        with transaction.atomic():
-            try:
-                rewind(int(program_id), end_of_day(as_of))
-                response = view_func(request, *args, **kwargs)
-                if getattr(response, "streaming", False):
-                    # Its body is produced after we return -- after the
-                    # rollback, against live rows. Refuse rather than serve
-                    # today's data under a past date's banner. Not close()d:
-                    # that fires request_finished, which closes the DB
-                    # connection mid-request.
-                    response = HttpResponseBadRequest(NO_PAST_DOWNLOAD)
-                elif hasattr(response, "render") and not response.is_rendered:
-                    response.render()
-            finally:
-                transaction.set_rollback(True)
-        return response
+        if not getattr(getattr(request, "user", None), "is_authenticated", False):
+            request.supply_as_of = None
+            return view_func(request, *args, **kwargs)
+        authorise(request)
+
+        try:
+            return _rewound(request, view_func, int(program_id), as_of, args, kwargs)
+        except OperationalError as error:
+            if _code(error) not in _TIMEOUT_CODES:
+                raise
+            return HttpResponse(BUSY, status=503, content_type="text/plain; charset=utf-8")
 
     wrapped.supply_as_of_wrapped = True
     return wrapped
+
+
+def authorise(request):
+    """Build the supply pages' own data access for this request.
+
+    Raises PermissionDenied (a 403, exactly as the page itself would answer)
+    when the signed-in caller may not use the program in the labs context.
+    """
+    from connect_labs.supply_chain.api_views import _access
+
+    _access(request)
+
+
+def _code(error) -> str | None:
+    cause = error.__cause__
+    return getattr(cause, "sqlstate", None) or getattr(cause, "pgcode", None)
+
+
+def _rewound(request, view_func, program_id, as_of, args, kwargs):
+    """Rewind, run the view and render it, inside a block that is always rolled back."""
+    with transaction.atomic():
+        try:
+            if connection.vendor == "postgresql":
+                with connection.cursor() as cursor:
+                    cursor.execute(f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT}'")
+                    cursor.execute(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'")
+            rewind(program_id, end_of_day(as_of))
+            response = view_func(request, *args, **kwargs)
+            if getattr(response, "streaming", False):
+                # Its body is produced after we return -- after the
+                # rollback, against live rows. Refuse rather than serve
+                # today's data under a past date's banner. Not close()d:
+                # that fires request_finished, which closes the DB
+                # connection mid-request.
+                response = HttpResponseBadRequest(NO_PAST_DOWNLOAD)
+            elif hasattr(response, "render") and not response.is_rendered:
+                response.render()
+        finally:
+            transaction.set_rollback(True)
+    return response
 
 
 def as_of_context(request):

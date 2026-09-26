@@ -120,13 +120,14 @@ def client_in_program(client, django_user_model, monkeypatch, settings, da):
 
     `_access` is stubbed in the modules that call it (see the `scoped` fixture
     in test_write_screens.py for why those, and why imported first): the
-    caller is not a real member of the synthetic program.
+    caller is not a real member of the synthetic program. `api_views` too:
+    `as_of.authorise` builds the pages' access from there before rewinding.
     """
-    from connect_labs.supply_chain import form_views, views  # noqa: F401  -- bind before patching
+    from connect_labs.supply_chain import api_views, form_views, views  # noqa: F401  -- bind before patching
     from connect_labs.supply_chain.procurement import views as procurement_views  # noqa: F401
 
     settings.MIDDLEWARE = [*settings.MIDDLEWARE, f"{__name__}._ProgramContextMiddleware"]
-    for module in ("form_views", "views", "procurement.views"):
+    for module in ("api_views", "form_views", "views", "procurement.views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", lambda request: da)
 
     client.force_login(django_user_model.objects.create_user(username="sophie", password="x"))
@@ -258,14 +259,19 @@ class TestAsOfPages:
 
 @pytest.mark.django_db
 class TestTheDecoratorDirectly:
-    def _request(self, as_of, program_id=PROGRAM):
-        from django.contrib.auth.models import AnonymousUser
+    @pytest.fixture(autouse=True)
+    def _signed_in(self, django_user_model, monkeypatch):
+        """A signed-in caller whom `authorise` lets through (not a real member of PROGRAM)."""
+        self.user = django_user_model.objects.create_user(username="sophie-direct", password="x")
+        monkeypatch.setattr("connect_labs.supply_chain.history.as_of.authorise", lambda request: None)
+
+    def _request(self, as_of, program_id=PROGRAM, user=None):
         from django.contrib.sessions.backends.db import SessionStore
         from django.test import RequestFactory
 
         request = RequestFactory().get("/supply/", {"as_of": as_of})
         request.labs_context = {"program_id": program_id}
-        request.user, request.session = AnonymousUser(), SessionStore()  # the context processors read both
+        request.user, request.session = user or self.user, SessionStore()  # the context processors read both
         return request
 
     def test_a_lazy_template_response_is_rendered_before_the_rollback(self, world):
@@ -355,9 +361,9 @@ class TestTheRealPermissionPath:
         self, client, django_user_model, settings, monkeypatch, world
     ):
         """Nothing stubbed but the labs context: the request names PROGRAM, and
-        the caller is no member of it. The rewind runs before the view refuses
-        -- it is rolled back with everything else, and the refusal is the
-        view's own, exactly as without as_of."""
+        the caller is no member of it. The refusal comes BEFORE any rewind --
+        a rewind is writes and row locks, not something an outsider may cause
+        -- and it is the same 403 the page gives without as_of."""
         # No session org list and no token: `holdings` would ask Connect. Answer
         # "belongs to nothing" rather than touching the network.
         monkeypatch.setattr(
@@ -370,13 +376,108 @@ class TestTheRealPermissionPath:
         revisions = Revision.objects.count()
 
         live = client.get(url)
-        past = client.get(url, {"as_of": BETWEEN_T0_T1})
+        with mock.patch("connect_labs.supply_chain.history.as_of.rewind") as rewind:
+            past = client.get(url, {"as_of": BETWEEN_T0_T1})
 
+        assert rewind.call_count == 0
         assert live.status_code == 403
         assert past.status_code == live.status_code
         assert "PO-OLD" not in past.content.decode()
         assert Contract.objects.get(pk=order_id).reference == "PO-NEW"
         assert Revision.objects.count() == revisions
+
+
+@pytest.mark.django_db
+class TestNothingRewindsForTheWrongCaller:
+    def test_an_anonymous_as_of_request_never_rewinds(self, client, world):
+        url = reverse("supply_chain:order_detail", args=[world["order"]["id"]])
+        with mock.patch("connect_labs.supply_chain.history.as_of.rewind") as rewind:
+            response = client.get(url, {"as_of": BETWEEN_T0_T1})
+        assert rewind.call_count == 0
+        assert response.status_code == 302  # the page's own login redirect
+
+    def test_an_anonymous_request_through_the_decorator_runs_live_with_no_past_date(self, world):
+        from django.contrib.auth.models import AnonymousUser
+        from django.http import HttpResponse
+        from django.test import RequestFactory
+
+        from connect_labs.supply_chain.history.as_of import as_of_view
+
+        seen = []
+
+        @as_of_view
+        def view(request):
+            seen.append((request.supply_as_of, Contract.objects.get(pk=world["order"]["id"]).reference))
+            return HttpResponse("ok")
+
+        request = RequestFactory().get("/supply/", {"as_of": BETWEEN_T0_T1})
+        request.labs_context, request.user = {"program_id": PROGRAM}, AnonymousUser()
+        with mock.patch("connect_labs.supply_chain.history.as_of.rewind") as rewind:
+            view(request)
+        assert rewind.call_count == 0
+        assert seen == [(None, "PO-NEW")]
+
+
+@pytest.mark.django_db
+class TestTheRewindIsBounded:
+    def test_the_block_runs_under_a_lock_and_statement_timeout_that_do_not_outlive_it(
+        self, client_in_program, world, monkeypatch
+    ):
+        from django.db import connection
+
+        from connect_labs.supply_chain import views
+
+        seen = {}
+        real = views.OrderDetailView.get_context_data
+
+        def spy(self, **kwargs):
+            with connection.cursor() as cursor:
+                cursor.execute("SHOW lock_timeout")
+                seen["lock"] = cursor.fetchone()[0]
+                cursor.execute("SHOW statement_timeout")
+                seen["statement"] = cursor.fetchone()[0]
+            return real(self, **kwargs)
+
+        monkeypatch.setattr(views.OrderDetailView, "get_context_data", spy)
+        client_in_program.get(
+            reverse("supply_chain:order_detail", args=[world["order"]["id"]]), {"as_of": BETWEEN_T0_T1}
+        )
+        assert seen == {"lock": "2s", "statement": "15s"}
+        with connection.cursor() as cursor:
+            cursor.execute("SHOW lock_timeout")
+            assert cursor.fetchone()[0] != "2s"
+
+    @pytest.mark.parametrize("code", ["55P03", "57014"])
+    def test_a_lock_or_statement_timeout_is_a_503_busy(self, client_in_program, world, code):
+        from django.db import OperationalError
+
+        from connect_labs.supply_chain.history.as_of import BUSY
+
+        class _Cause(Exception):
+            sqlstate = code
+
+        def times_out(program_id, until):
+            error = OperationalError("canceling statement due to lock timeout")
+            error.__cause__ = _Cause()
+            raise error
+
+        url = reverse("supply_chain:order_detail", args=[world["order"]["id"]])
+        with mock.patch("connect_labs.supply_chain.history.as_of.rewind", side_effect=times_out):
+            response = client_in_program.get(url, {"as_of": BETWEEN_T0_T1})
+        assert response.status_code == 503
+        assert BUSY in response.content.decode()
+        assert Contract.objects.get(pk=world["order"]["id"]).reference == "PO-NEW"
+
+    def test_any_other_operational_error_still_raises(self, client_in_program, world):
+        from django.db import OperationalError
+
+        client_in_program.raise_request_exception = True
+        url = reverse("supply_chain:order_detail", args=[world["order"]["id"]])
+        with mock.patch(
+            "connect_labs.supply_chain.history.as_of.rewind", side_effect=OperationalError("server closed")
+        ):
+            with pytest.raises(OperationalError):
+                client_in_program.get(url, {"as_of": BETWEEN_T0_T1})
 
 
 def _strip_tokens(html):
