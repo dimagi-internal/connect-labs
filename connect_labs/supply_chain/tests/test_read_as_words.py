@@ -42,7 +42,7 @@ def client_in_programme(client, django_user_model, monkeypatch):
         access.program_id = PROGRAM
         return access
 
-    for module in ("form_views", "views", "reference_views", "fulfilment_views"):
+    for module in ("form_views", "views", "reference.views", "fulfilment.views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
     for module in ("form_views", "views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)

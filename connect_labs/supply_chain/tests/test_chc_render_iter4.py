@@ -24,7 +24,7 @@ from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.alerts.models import AlertNotice, AlertSubscription
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.models import Contract, Invoice, Payment, SupplyPoint
-from connect_labs.supply_chain.stock_views import ledger_balances
+from connect_labs.supply_chain.stock.views import ledger_balances
 from connect_labs.supply_chain.tests.test_update_links import _world, op
 from connect_labs.supply_chain.update_links import forms, service
 from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission
@@ -182,8 +182,9 @@ class TestTheCountFormShowsTheLedger:
         assert balances[f"{warehouse}:"]["text"] == "194 cartons"
 
     def test_the_page_carries_them(self, client, django_user_model, monkeypatch):
-        from connect_labs.supply_chain import form_views, stock_views  # noqa: F401
+        from connect_labs.supply_chain import form_views  # noqa: F401
         from connect_labs.supply_chain.api_views import _access as real_access
+        from connect_labs.supply_chain.stock import views as stock_views  # noqa: F401
 
         client.force_login(django_user_model.objects.create_user(username="amara", password="x"))
 
@@ -194,7 +195,7 @@ class TestTheCountFormShowsTheLedger:
 
         monkeypatch.setattr("connect_labs.supply_chain.form_views.has_program_context", lambda request: True)
         monkeypatch.setattr("connect_labs.supply_chain.form_views._access", _scoped)
-        monkeypatch.setattr("connect_labs.supply_chain.stock_views._access", _scoped)
+        monkeypatch.setattr("connect_labs.supply_chain.stock.views._access", _scoped)
         body = client.get(reverse("supply_chain:stock_count_record")).content.decode()
         assert 'id="ledger-balances"' in body
         assert "The ledger holds" in body

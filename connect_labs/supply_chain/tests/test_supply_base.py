@@ -285,7 +285,7 @@ class TestTheSeedCatalogue:
         trade item whose product is absent -- silently, into `refused`. So a
         trade item naming a slug this module does not define is not a crash,
         it is a seed that quietly ships incomplete."""
-        from connect_labs.supply_chain import reference_catalogue
+        from connect_labs.supply_chain.reference import catalogue as reference_catalogue
 
         slugs = {product["slug"] for product in reference_catalogue.PRODUCTS}
         missing = {item["commodity_slug"] for item in reference_catalogue.TRADE_ITEMS} - slugs
@@ -294,7 +294,7 @@ class TestTheSeedCatalogue:
     def test_no_gtin_is_invented(self):
         """A fabricated GTIN that passes its check digit is an identifier that
         may belong to a real, different product."""
-        from connect_labs.supply_chain import reference_catalogue
+        from connect_labs.supply_chain.reference import catalogue as reference_catalogue
 
         for item in reference_catalogue.TRADE_ITEMS:
             assert not any(item.get(key) for key in ("gtin_base", "gtin_pack", "gtin_case")), item["sku"]

@@ -173,8 +173,9 @@ def test_purge_clears_consignments_with_their_legs(network):
 
 def test_the_dispatch_screen_sends_one(client, django_user_model, network, monkeypatch):
     """The screen drives the same operation; posting it leaves a consignment on the road."""
-    from connect_labs.supply_chain import form_views, stock_views  # noqa: F401  -- bind before patching
+    from connect_labs.supply_chain import form_views  # noqa: F401  -- bind before patching
     from connect_labs.supply_chain.api_views import _access as real_access
+    from connect_labs.supply_chain.stock import views as stock_views  # noqa: F401
 
     warehouse, office = network
     client.force_login(django_user_model.objects.create_user(username="jo", password="x", email="jo@dimagi.com"))
@@ -186,7 +187,7 @@ def test_the_dispatch_screen_sends_one(client, django_user_model, network, monke
 
     monkeypatch.setattr("connect_labs.supply_chain.form_views.has_program_context", lambda request: True)
     monkeypatch.setattr("connect_labs.supply_chain.form_views._access", _scoped)
-    monkeypatch.setattr("connect_labs.supply_chain.stock_views._access", _scoped)
+    monkeypatch.setattr("connect_labs.supply_chain.stock.views._access", _scoped)
 
     commodity = Commodity.objects.get(slug="a-product", scope_key=scope_key(program_id=PROGRAM))
     response = client.post(
@@ -235,8 +236,9 @@ def test_a_link_from_the_map_prefills_the_dispatch_and_ignores_another_programs_
     MUTATED: the program filter dropped from get_initial -- the other program's
     store was prefilled as the sender, red.
     """
-    from connect_labs.supply_chain import form_views, stock_views  # noqa: F401
+    from connect_labs.supply_chain import form_views  # noqa: F401
     from connect_labs.supply_chain.api_views import _access as real_access
+    from connect_labs.supply_chain.stock import views as stock_views  # noqa: F401
 
     warehouse, office = network
     elsewhere = SupplyPoint.objects.create(
@@ -251,7 +253,7 @@ def test_a_link_from_the_map_prefills_the_dispatch_and_ignores_another_programs_
 
     monkeypatch.setattr("connect_labs.supply_chain.form_views.has_program_context", lambda request: True)
     monkeypatch.setattr("connect_labs.supply_chain.form_views._access", _scoped)
-    monkeypatch.setattr("connect_labs.supply_chain.stock_views._access", _scoped)
+    monkeypatch.setattr("connect_labs.supply_chain.stock.views._access", _scoped)
 
     url = reverse("supply_chain:consignment_dispatch")
     ours = client.get(

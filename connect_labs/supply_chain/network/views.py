@@ -21,7 +21,7 @@ from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationFormView
 from connect_labs.supply_chain.models import SupplyPoint
-from connect_labs.supply_chain.network_forms import OrgForm, OrgMergeForm, SupplyPointForm
+from connect_labs.supply_chain.network.forms import OrgForm, OrgMergeForm, SupplyPointForm
 from connect_labs.supply_chain.views import OperationBase
 
 # The kinds, in the order a network reads top-down. A dict rather than a sort

@@ -39,15 +39,16 @@ def user(client, django_user_model):
 
 @pytest.fixture
 def scoped(client, user, monkeypatch):
-    from connect_labs.supply_chain import form_views, network_views, views  # noqa: F401  -- bind before patching
+    from connect_labs.supply_chain import form_views, views  # noqa: F401  -- bind before patching
     from connect_labs.supply_chain.api_views import _access as real_access
+    from connect_labs.supply_chain.network import views as network_views  # noqa: F401
 
     def _scoped(request):
         access = real_access(request)
         access.program_id = PROGRAM
         return access
 
-    for module in ("form_views", "views", "network_views"):
+    for module in ("form_views", "views", "network.views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
     return client
@@ -323,8 +324,9 @@ class TestACallerWhoActsForNobody:
 
     @pytest.fixture
     def stranger(self, client, django_user_model, monkeypatch):
-        from connect_labs.supply_chain import form_views, network_views, views  # noqa: F401
+        from connect_labs.supply_chain import form_views, views  # noqa: F401
         from connect_labs.supply_chain.api_views import _access as real_access
+        from connect_labs.supply_chain.network import views as network_views  # noqa: F401
 
         account = django_user_model.objects.create_user(username="stranger", password="x", email="a@example.invalid")
         client.force_login(account)
@@ -334,7 +336,7 @@ class TestACallerWhoActsForNobody:
             access.program_id = PROGRAM
             return access
 
-        for module in ("form_views", "views", "network_views"):
+        for module in ("form_views", "views", "network.views"):
             monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)
             monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
         return client
@@ -378,7 +380,7 @@ class TestThePayloadShape:
     def _form(self, **overrides):
         from connect_labs.labs.access.scopes import SYSTEM
         from connect_labs.supply_chain.data_access import SupplyDataAccess
-        from connect_labs.supply_chain.network_forms import SupplyPointForm
+        from connect_labs.supply_chain.network.forms import SupplyPointForm
 
         access = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
         form = SupplyPointForm(point_post(**overrides), access=access)
