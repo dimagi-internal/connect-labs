@@ -63,6 +63,8 @@ export function rankOrganisations(
   measure: Measure & { direction?: string },
   own: PeerFigure | null | undefined,
   others: PeerFigure[],
+  /** VERSION 3: the entity's plural ("too few communities"); default babies. */
+  opts?: { entityPlural?: string },
 ): Ranked {
   const dir = (measure && measure.direction) || 'higher';
   const ranked = dir === 'higher' || dir === 'lower';
@@ -95,7 +97,9 @@ export function rankOrganisations(
       }).length;
   const reasons: Record<string, number> = {};
   held.forEach(function (a) {
-    const r = REASON[a.figure.band] || 'no figure';
+    let r = REASON[a.figure.band] || 'no figure';
+    if (a.figure.band === 'insufficient' && opts && opts.entityPlural)
+      r = 'too few ' + opts.entityPlural;
     reasons[r] = (reasons[r] || 0) + 1;
   });
   const total = all.length;

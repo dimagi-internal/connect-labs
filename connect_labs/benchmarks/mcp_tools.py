@@ -846,6 +846,14 @@ def benchmarks_create_opp_reports(
                 request=None,
                 registry_source=registry_source,
                 pipeline_sources_override=pipeline_sources,
+                # A report that receives hand-downs NAMES the programme report it
+                # takes them from, so a slice cannot land from a different one and
+                # the link does not depend on the cohort fallback.
+                config_overrides=(
+                    {"source_workflow_id": int(source_workflow_id)}
+                    if source_workflow_id is not None and (get_template(template_key) or {}).get("receives_hand_down")
+                    else None
+                ),
                 # One deploy updates every instance, and an edit to any
                 # instance's stored render is refused rather than silently
                 # forking the twelve apart.

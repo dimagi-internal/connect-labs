@@ -383,3 +383,128 @@ describe('organisation benchmark', () => {
     expect(out).toContain('not collected');
   });
 });
+
+describe('the registry display contract (VERSION 3)', () => {
+  const measures = [
+    {
+      indicator: 'reached',
+      title: 'Communities reached',
+      unit: 'n',
+      kind: 'count',
+      category: 'Reach',
+      prominence: 'Top',
+    },
+    {
+      indicator: 'pct_ok',
+      title: '% visited twice',
+      unit: '%',
+      direction: 'higher',
+      bands: [60, 40],
+      category: 'Follow-up',
+      prominence: 'Top',
+      target: 70,
+      headline: 1,
+      label: 'Twice',
+    },
+    {
+      indicator: 'pct_flag',
+      title: '% flagged',
+      unit: '%',
+      direction: 'lower',
+      bands: [10, 25],
+      category: 'Quality',
+      prominence: 'Lower',
+    },
+  ];
+  test('displayOf falls back to the catalog when a payload carries no display block', () => {
+    const d = R.displayOf({ cMeasures: measures });
+    expect(d.entity.plural).toBe('cases');
+    expect(d.worker.name).toBe('worker');
+    expect(d.categories).toEqual(['Reach', 'Follow-up', 'Quality']);
+    // a declared headline wins over "first five Top"
+    expect(d.headline).toEqual(['pct_ok']);
+    expect(d.indicators.pct_flag.scorecard).toBe(false);
+  });
+  test('the payload display block is authoritative', () => {
+    const d = R.displayOf({
+      cMeasures: measures,
+      display: {
+        entity: { name: 'community', plural: 'communities' },
+        headline: ['reached', 'pct_ok'],
+        categories: ['Follow-up', 'Reach', 'Quality'],
+        indicators: {
+          reached: { label: 'Reached', scorecard: true },
+          pct_ok: { target: 70, scorecard: true },
+          pct_flag: { scorecard: true },
+        },
+      },
+    });
+    expect(d.entity.plural).toBe('communities');
+    const tiles = R.headlineSpecs({ cMeasures: measures }, d);
+    expect(tiles.map((t) => t.id)).toEqual(['reached', 'pct_ok']);
+    expect(tiles[0].count).toBe(true);
+    expect(tiles[1].pct).toBe(true);
+    expect(tiles[1].target).toBeCloseTo(0.7);
+    expect(tiles[1].sub).toBe('target 70.0%');
+    const layout = R.scorecardLayout({ cMeasures: measures }, d);
+    expect(layout.columns.map((c) => c.id)).toEqual([
+      'pct_ok',
+      'reached',
+      'pct_flag',
+    ]);
+    expect(layout.groups).toEqual([
+      { label: 'Follow-up', span: 1 },
+      { label: 'Reach', span: 1 },
+      { label: 'Quality', span: 1 },
+    ]);
+  });
+  test('a target defaults to the green band edge, in value units', () => {
+    expect(R.targetValue(measures[2], {})).toBeCloseTo(0.1);
+    expect(R.targetValue({ unit: 'n', direction: 'none' }, {})).toBeNull();
+  });
+  test('case fields print by their format', () => {
+    expect(
+      R.fmtCaseField({ field: 'd', label: 'D', format: 'date' }, '2026-09-15'),
+    ).toBe('15 Sep');
+    expect(
+      R.fmtCaseField(
+        { field: 'w', label: 'W', format: 'count', unit: 'g' },
+        2500,
+      ),
+    ).toBe('2,500 g');
+    expect(R.fmtCaseField({ field: 'x', label: 'X' }, null)).toBe('—');
+    expect(R.nounCount(1, { name: 'baby', plural: 'babies' })).toBe('1 baby');
+  });
+  test('the reading chart and the insufficient-coverage noun', () => {
+    const svg = html(
+      h(R.ReadingChart, {
+        points: [
+          { date: '2026-01-01', value: 2000 },
+          { date: '2026-01-08', value: 2150 },
+        ],
+        label: 'Weight',
+      }),
+    );
+    expect(svg).toContain('<path');
+    const ranked = R.rankOrganisations(
+      { direction: 'higher' },
+      { value: 0.5, band: 'green' },
+      [{ value: null, band: 'insufficient' }],
+      { entityPlural: 'communities' },
+    );
+    expect(ranked.coverage).toContain('too few communities');
+  });
+  test('a trend without a target draws no target line', () => {
+    const out = html(
+      h(R.TrendCard, {
+        label: 'x',
+        points: [
+          { date: '2026-01-01', entry: { value: 1, band: 'green', n: 30 } },
+          { date: '2026-01-08', entry: { value: 2, band: 'green', n: 30 } },
+        ],
+        format: (e) => String(e.value),
+      }),
+    );
+    expect(out).not.toContain('target ');
+  });
+});

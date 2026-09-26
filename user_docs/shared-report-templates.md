@@ -98,6 +98,24 @@ For "the same report somewhere else" without a cohort, use a **linked** copy:
 
 Claude uses `workflow_clone` with `linked: true`. A linked copy references the original's pipelines, binds its registry and follows the template: the same three things a fan-out instance does. An unlinked copy (the default) is a fork with its own page.
 
+### The generic indicator cascade (any programme)
+
+Three templates give any programme the KMC report cascade, driven entirely by its [semantic registry](semantic-layer.md#how-a-report-reads-it-display):
+
+| Template | What it is |
+| --- | --- |
+| `indicator_programme_report` | The programme report: headline tiles with targets and week-on-week change, an organisation scorecard grouped by indicator category, workers with peer cohorts, activity by week, trends across saved reports, and every indicator's definition. Drills programme → organisation → opportunity → worker → case. |
+| `indicator_worker_review` | Its companion: one worker's indicators against their peers, their cases, and each case's visits (with the registry's reading series charted, and photos where the visits carry them). Created automatically with the programme report. |
+| `indicator_opp_report` | The programme report cut to one opportunity, for its network manager, with a Benchmarks tab. Receives the programme report's saved weeks. |
+
+All three **follow the template from the moment they are created**, so there is nothing to sync. One create gives the programme report and its worker review, on the same pipelines and the same registry record, linked both ways:
+
+> *"Create an indicator programme report for program 10011 over opportunities 10013 to 10022, bound to registry 19784, sharing the pipelines of workflow 5456."*
+
+Claude uses `workflow_create_from_template` with `registry_source` (the registry) and, when the registry reads form fields, `pipelines_from` (an existing report whose pipelines to reference). Without `pipelines_from` the report gets one pipeline of the columns every visit carries, which is all a registry like `visit_quality` needs. Without `registry_source` it gets a new copy of `visit_quality`.
+
+For the opportunity reports, use the benchmark fan-out with `template_key: indicator_opp_report` and the programme report as the source. Each report is stamped with that source (`source_workflow_id`), so every week the programme report saves is handed down to it.
+
 ### Every new instance needs a run
 
 A newly created report has no run, and its page needs one to open. Ask Claude to create one for each new instance (`workflow_create_run`).

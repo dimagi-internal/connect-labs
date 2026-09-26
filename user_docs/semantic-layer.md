@@ -202,6 +202,47 @@ asks_as: { ever_danger_sign: danger_visits, referred: referral_visits }
 
 These are facts the data itself can't tell you. That's why they live in the registry, and why [adding an opportunity means editing it](#recommendations) (recommendation 4).
 
+### How a report reads it (display)
+
+The generic indicator reports — **Indicator Programme Report**, its **Indicator Worker Review** and the **Indicator Opportunity Report** ([Shared Report Templates](shared-report-templates.md)) — have no page code of their own for a programme. Everything a reader sees about the programme comes from the registry. So a new programme gets the whole programme → organisation → opportunity → worker → case drill by writing a registry, not a page.
+
+On each indicator's `meta`:
+
+| Key | What it does | If you leave it out |
+|---|---|---|
+| `headline` | `true`, or a position (`1`, `2`, …), puts the indicator in the headline tiles | The first five indicators with `prominence: Top` (or the first five, if none has a prominence) |
+| `target` | The goal, in the same units as `bands` (`70` for 70%). Printed under the tile and drawn as the dashed line on its trend | The green edge of `bands` for `higher`/`lower` indicators; no target otherwise |
+| `label` | A short name for tiles and column headers | The indicator's `title` |
+| `plain` | One plain-English sentence, shown in the definitions panel and column tooltips | None |
+| `order` | Sort position inside its category | Registry order |
+| `scorecard` | `true`/`false`: whether it is a column in the organisation and worker tables | Every `prominence: Top` indicator (or all of them, if none has a prominence) |
+| `credibility` | The name of a `settings` table in the deployment facts. The headline figure is pooled over the organisations that table marks credible, and the others' cells are marked | No credibility gate |
+
+And one `display:` block at the top of the indicators document:
+
+```yaml
+display:
+  title: Kangaroo Mother Care programme            # report heading
+  entity: { name: baby, plural: babies }           # what a case is called
+  worker: { name: facilitator, plural: facilitators }
+  organisation: { name: partner, plural: partners }
+  categories: [Scale, Case mix, Follow-up]         # category order in tables
+  headline_count: 5                                # tiles, when defaulted
+  case_fields:                                     # columns of the case table
+    - { field: reg_date, label: Registered, format: date }      # date | count | number | text
+    - { field: last_weight_g, label: Latest weight, format: count, unit: g }
+  reading: { column: weight_g, label: Weight, unit: g }        # charted per case in the worker review
+  targets_note: 'Targets from the 2026 workplan.'
+```
+
+Every key is optional. Without the block: the entity noun is the model's `entity.name` / `entity.plural`, workers are "workers", organisations "organisations", categories appear in the order the indicators first use them, the case table shows first visit, last visit and visit count, and the worker review charts the registry's `weight_series` value column if it has one (nothing otherwise).
+
+The **organisation level** is the deployment facts' `llo_map`. A registry without one shows opportunities where organisations would be. A `case_fields` entry must name a column the case index carries: `entity_id`, `username`, `opportunity_id`, `first_visit_date`, `last_visit_date`, `total_visits`, plus any field of the entity pipeline.
+
+The on-disk `visit_quality` registry declares none of this and renders on the defaults. The on-disk `kmc` registry declares the five headline tiles the KMC report shows, their targets, and `credibility: mortality_recording_credible` on mortality.
+
+The resolved block is saved with every run (`display` in the snapshot), next to the thresholds, so a saved report keeps reading the way it did when it was saved.
+
 ### Validation
 
 Labs checks every registry before saving it:
@@ -211,6 +252,8 @@ Labs checks every registry before saving it:
 - constants are numbers, and every name is a plain identifier (a `word_match` word is letters, digits and `_` only);
 - nothing is circular;
 - the whole registry compiles at **every** level it can have (programme, opportunity, worker, month, each level by month, single entity — and the LLO levels when it has an `llo_map`; a registry without one simply has no LLO level).
+
+- the display keys above have the right types: a headline position is used once, a percentage target is between 0 and 100, a `case_fields` entry names a column and a known format, and a `credibility` table exists in the deployment facts.
 
 Validation doesn't run the SQL, so **it catches a broken definition, not a wrong number.**
 

@@ -234,11 +234,54 @@ def case_rows(pipelines: dict, spec: dict, llo_map: dict[int, str]) -> list[dict
     if not alias or not fields:
         return []
     source = ((pipelines or {}).get(alias) or {}).get("rows") or []
+    if cfg.get("group_by"):
+        return _grouped_case_rows(source, str(cfg["group_by"]), fields, llo_map)
     out = []
     for r in source:
         oid = r.get("opportunity_id")
         rec = {k: r.get(k) for k in fields if r.get(k) is not None}
         if oid is not None:
+            rec["llo"] = llo_map.get(int(oid))
+        out.append(rec)
+    return out
+
+
+def _grouped_case_rows(visits: list[dict], key: str, fields: list[str], llo_map: dict[int, str]) -> list[dict]:
+    """One case record per (opportunity, entity key), folded from VISIT rows.
+
+    A registry whose entity pipeline is visit-level (visit_quality, or any
+    programme that counts over the rows every visit carries) has no per-entity rows
+    to index, so the case index is folded here: `entity_id` is the entity key's
+    value, dates and the visit count come from the visits, and every other field
+    takes its latest non-empty value.
+    """
+    groups: dict[tuple, dict] = {}
+    order: list[tuple] = []
+    for v in sorted(visits, key=lambda r: str(r.get("visit_date") or "")):
+        ident = v.get(key)
+        if ident in (None, ""):
+            continue
+        k = (v.get("opportunity_id"), str(ident))
+        g = groups.get(k)
+        if g is None:
+            g = groups[k] = {"entity_id": str(ident), "opportunity_id": v.get("opportunity_id"), "total_visits": 0}
+            order.append(k)
+        g["total_visits"] += 1
+        d = str(v.get("visit_date") or "")[:10] or None
+        if d:
+            g.setdefault("first_visit_date", d)
+            g["last_visit_date"] = d
+        for f in fields:
+            if f in ("entity_id", "opportunity_id", "total_visits", "first_visit_date", "last_visit_date"):
+                continue
+            if v.get(f) not in (None, ""):
+                g[f] = v.get(f)
+    out = []
+    for k in order:
+        rec = {f: groups[k][f] for f in fields if groups[k].get(f) is not None}
+        oid = groups[k].get("opportunity_id")
+        if oid is not None:
+            rec["opportunity_id"] = oid
             rec["llo"] = llo_map.get(int(oid))
         out.append(rec)
     return out
@@ -278,6 +321,7 @@ def build(
     extra_series: dict[str, list[dict]] | None = None,
     as_of: str | None = None,
     registry_min_denominator: int | None = None,
+    display: dict | None = None,
 ) -> dict:
     """Assemble the saved-run payload from evaluated semantic rows.
 
@@ -672,4 +716,9 @@ def build(
         # positions into this list.
         "cases": cases,
         "meta": meta or {},
+        # How the report reads: nouns, headline, categories, case columns, the
+        # reading series (semantic/display.py). Carried so a saved run keeps its
+        # presentation after the registry moves on, like `cMeasures` keeps its
+        # thresholds. Absent (not empty) when the caller resolved none.
+        **({"display": display} if display else {}),
     }

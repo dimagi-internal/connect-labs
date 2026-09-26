@@ -2276,10 +2276,18 @@ def _parse_pipeline_rows_params(request) -> dict:
         limit = min(int(request.GET.get("limit") or MAX_ROWS_DEFAULT_LIMIT), MAX_ROWS_HARD_LIMIT)
     except ValueError:
         raise PipelineRowsError("limit must be a number") from None
+    # Which row column `case_ids` match. Default: the KMC pair (`baby_case_id`,
+    # then `entity_id`) every existing caller relies on. A generic report names its
+    # registry's entity key instead. Identifier-checked: it is a dict key, not SQL,
+    # but a typo should be an error, not a filter that matches nothing.
+    case_key = (request.GET.get("case_key") or "").strip()
+    if case_key and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", case_key):
+        raise PipelineRowsError("case_key must be a column name")
     return {
         "alias": alias,
         "opportunity_id": opportunity_id,
         "scope_opportunity_id": scope_opportunity_id,
+        "case_key": case_key or None,
         "username": (request.GET.get("username") or "").strip(),
         "case_ids": case_ids,
         "limit": limit,
@@ -2345,8 +2353,11 @@ def _filter_pipeline_rows(rows, params: dict) -> list:
     for row in rows or []:
         if username and (row.get("username") or "") != username:
             continue
-        if case_ids and str(row.get("baby_case_id") or row.get("entity_id") or "") not in case_ids:
-            continue
+        if case_ids:
+            key = params.get("case_key")
+            value = row.get(key) if key else (row.get("baby_case_id") or row.get("entity_id"))
+            if str(value or "") not in case_ids:
+                continue
         out.append({**row, "opportunity_id": opportunity_id})
         if len(out) >= limit:
             break

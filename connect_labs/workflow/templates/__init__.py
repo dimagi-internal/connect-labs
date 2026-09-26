@@ -333,6 +333,9 @@ TEMPLATE_GROUPS: list[dict] = [
 TEMPLATE_GROUP_OF: dict[str, str] = {
     # Programme reports: read across opportunities and drill down.
     "kmc_programme_metrics": "reports",
+    # The KMC cascade, generic: any programme's registry, no page code.
+    "indicator_programme_report": "reports",
+    "indicator_opp_report": "reports",
     "program_admin_report": "reports",
     "audit_par": "reports",
     "chc_audit_history": "reports",
@@ -357,6 +360,7 @@ TEMPLATE_GROUP_OF: dict[str, str] = {
     # report as its companion, and creatable on its own (opened alone it reads
     # the newest saved report). It has no statuses; it is still a worker review.
     "kmc_flw_review": "reviews",
+    "indicator_worker_review": "reviews",
     "performance_review": "reviews",
     "llo_weekly_review": "reviews",
     "chc_nutrition_analysis": "reviews",
@@ -956,6 +960,7 @@ def create_workflow_from_template(
     registry_source: dict | None = None,
     pipeline_sources_override: list[dict] | None = None,
     render_source: dict | None = None,
+    config_overrides: dict | None = None,
 ) -> tuple:
     """
     Create a workflow from a template using the data access layer.
@@ -998,6 +1003,9 @@ def create_workflow_from_template(
         render_source: ``{"template": "<key>"}`` makes the new workflow FOLLOW
             the deployed template's render code rather than its own stored copy,
             so one deploy updates every instance. See workflow/render_source.py.
+            A template declaring ``follow_template: True`` is followed by default.
+        config_overrides: config keys stamped on the new definition at create
+            time (e.g. an opportunity report's ``source_workflow_id``).
 
     Returns:
         Tuple of (definition_record, render_code_record, pipeline_record or None)
@@ -1043,6 +1051,7 @@ def create_workflow_from_template(
             registry_source=registry_source,
             pipeline_sources_override=pipeline_sources_override,
             render_source=render_source,
+            config_overrides=config_overrides,
         )
     finally:
         if owns_data_access:
@@ -1254,6 +1263,12 @@ def _create_workflow_from_template_scoped(
         # editing the instance manifest. Hook templates stay registry-resolved
         # (their snapshot is computed Python, which can't live on the record).
         extra_definition_kwargs["snapshot_inputs"] = dict(template.get("snapshot_inputs") or {})
+    if not render_source and template.get("follow_template"):
+        # A template that says its instances FOLLOW it (the generic indicator
+        # reports) is followed from birth: its render, and its config on read,
+        # come from the deployed template, so one deploy updates every instance
+        # and nothing is copied to drift. A caller may still fork later.
+        render_source = {"template": template_key}
     if render_source:
         extra_definition_kwargs["render_source"] = dict(render_source)
     if registry_name:
@@ -1376,6 +1391,14 @@ def _create_companions(
         overrides = {}
         if spec.get("back_reference"):
             overrides[spec["back_reference"]] = definition.id
+        # A companion that computes indicators too reads the SAME registry record
+        # as its primary: seeding it a second record would let the two pages of
+        # one drill grade against different definitions after the first edit.
+        shared_registry = None
+        if companion_template.get("semantic_registry"):
+            data = getattr(definition, "data", None)
+            binding = dict((data if isinstance(data, dict) else {}).get("registry_source") or {})
+            shared_registry = binding if binding.get("registry_id") is not None else None
         companion_def, _companion_render, _ = _create_workflow_from_template_scoped(
             data_access=data_access,
             template=companion_template,
@@ -1384,6 +1407,7 @@ def _create_companions(
             opportunity_ids=opportunity_ids,
             pipeline_sources_override=pipeline_sources if spec.get("share_pipelines") else None,
             config_overrides=overrides,
+            registry_source=shared_registry,
             _ancestry=(*_ancestry, template_key),
         )
         link = {"workflow_id": companion_def.id}
