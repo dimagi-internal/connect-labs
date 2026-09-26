@@ -206,3 +206,109 @@ class TestEachSurfaceNamesItsChannel:
             )
         assert response.status_code == 200
         assert called.call_args.kwargs == {"channel": "api"}
+
+
+@pytest.mark.django_db
+class TestAnUnscopedWriteIsNeverDeduplicated:
+    """With no program, the unique constraint treats NULLs as distinct, so a
+    lookup keyed on `program_id IS NULL` would disagree with it: sequential
+    duplicates would replay across EVERY unscoped caller while concurrent ones
+    both wrote. Unscoped writes therefore record their source and never replay."""
+
+    def test_two_identical_writes_with_a_ref_both_write(self):
+        unscoped = SupplyDataAccess(program_id=None, caller=SYSTEM)
+        payload = {"data": {"slug": "a-placeholder-org", "name": "A Placeholder Org"}, "source": _source()}
+
+        first = call_operation("org_upsert", unscoped, payload)
+        second = call_operation("org_upsert", unscoped, payload)
+
+        assert "replayed" not in first and "replayed" not in second
+        calls = OperationCall.objects.filter(program_id=None, operation="org_upsert")
+        assert calls.count() == 2
+        assert set(calls.values_list("source_ref", flat=True)) == {"<msg-1@example.test>"}
+
+    def test_a_handlers_integrity_error_propagates(self, monkeypatch):
+        unscoped = SupplyDataAccess(program_id=None, caller=SYSTEM)
+        # Two unscoped calls already carry this ref, so a fallback `.get()`
+        # would raise MultipleObjectsReturned and hide the handler's error.
+        for _ in range(2):
+            OperationCall.objects.create(
+                program_id=None, operation="tender_create", channel="command", source_ref="<msg-1@example.test>"
+            )
+
+        def clash(data):
+            raise IntegrityError("duplicate key in the handler's own table")
+
+        monkeypatch.setattr(unscoped, "create_tender", clash)
+        with pytest.raises(IntegrityError, match="handler's own table"):
+            call_operation("tender_create", unscoped, _payload(source=_source()))
+
+    def test_a_scoped_fallback_that_finds_several_calls_reraises_the_handlers_error(self, access, monkeypatch):
+        """Defence in depth: MultipleObjectsReturned must never mask the original error."""
+        from connect_labs.supply_chain.history import calls
+
+        def clash(data):
+            raise IntegrityError("duplicate key in the handler's own table")
+
+        real = OperationCall.objects
+
+        class _Several:
+            def filter(self, **kwargs):
+                return self
+
+            def first(self):
+                return None
+
+            def get(self, **kwargs):
+                raise OperationCall.MultipleObjectsReturned
+
+            def create(self, **kwargs):
+                return real.create(**kwargs)
+
+        monkeypatch.setattr(access, "create_tender", clash)
+        monkeypatch.setattr(calls.OperationCall, "objects", _Several())
+        with pytest.raises(IntegrityError, match="handler's own table"):
+            call_operation("tender_create", access, _payload(source=_source()))
+
+
+@pytest.mark.django_db
+class TestSeedOverridesAreBoundToTheirProgram:
+    PROGRAM_A = 20997
+    PROGRAM_B = 20996
+
+    @pytest.fixture
+    def synthetic_programs(self):
+        from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+        for program in (self.PROGRAM_A, self.PROGRAM_B):
+            SyntheticOpportunity.objects.create(
+                opportunity_id=program,
+                program_id=program,
+                labs_only=True,
+                enabled=True,
+                label="history calls tests",
+                allowed_domains=["dimagi.com"],
+            )
+
+    def test_overrides_for_one_program_refuse_a_write_to_another(self, synthetic_programs):
+        from connect_labs.supply_chain.history.context import seed_overrides
+
+        other = SupplyDataAccess(program_id=self.PROGRAM_B, caller=SYSTEM)
+        with seed_overrides(self.PROGRAM_A, channel="command"):
+            with pytest.raises(PermissionError):
+                call_operation("tender_create", other, _payload())
+
+        assert not OperationCall.objects.exists() and not Tender.objects.exists()
+
+    def test_overrides_for_the_written_program_apply(self, synthetic_programs):
+        from datetime import datetime, timezone
+
+        from connect_labs.supply_chain.history.context import seed_overrides
+
+        backdated = datetime(2026, 3, 2, 9, 0, tzinfo=timezone.utc)
+        same = SupplyDataAccess(program_id=self.PROGRAM_A, caller=SYSTEM)
+        with seed_overrides(self.PROGRAM_A, channel="mcp", recorded_at=backdated):
+            call_operation("tender_create", same, _payload())
+
+        call = OperationCall.objects.get()
+        assert call.channel == "mcp" and call.recorded_at == backdated
