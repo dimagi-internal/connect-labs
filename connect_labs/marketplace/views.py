@@ -93,6 +93,26 @@ def _population(request) -> dict:
     }
 
 
+# Typefaces on trial for the marketplace, by ?font= key -> Google Fonts family.
+# An allowlist, because the family name is written into the page's CSS.
+TRIAL_FONTS = {
+    "manrope": "Manrope",
+    "geist": "Geist",
+    "inter": "Inter",
+    "dm-sans": "DM Sans",
+    "plus-jakarta": "Plus Jakarta Sans",
+    "figtree": "Figtree",
+    "ibm-plex": "IBM Plex Sans",
+    "instrument": "Instrument Sans",
+    "public-sans": "Public Sans",
+    "outfit": "Outfit",
+    "sora": "Sora",
+    "lexend": "Lexend",
+    "source-sans": "Source Sans 3",
+    "nunito-sans": "Nunito Sans",
+}
+
+
 @login_required
 @MARKETPLACE_CHROME
 def home(request):
@@ -108,6 +128,7 @@ def home(request):
     from connect_labs.pulse import costs
 
     view = costs.parse_view(request.GET.get("costs"))
+    font = request.GET.get("font", "")
     cards = queries.program_cards(view)
     by_state = {key: [] for key, _, _ in queries.STATES}
     for card in cards:
@@ -123,8 +144,9 @@ def home(request):
         {
             "sections": sections,
             "costs_view": view,
-            # A typeface trial (?font=manrope|geist) — anything else is the house face.
-            "font": request.GET.get("font") if request.GET.get("font") in ("manrope", "geist") else "",
+            # A typeface trial (?font=<key>) — anything unlisted is the house face.
+            "font": font if font in TRIAL_FONTS else "",
+            "font_family": TRIAL_FONTS.get(font, ""),
             "network": queries.network_totals(),
             "open_round_count": queries.open_rounds().count(),
             # The suppliers' side of the marketplace: tenders a buyer is asking
