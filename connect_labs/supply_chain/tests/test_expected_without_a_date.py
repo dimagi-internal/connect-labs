@@ -59,9 +59,9 @@ def _consignment_lines(html):
 def _undated_donation(world):
     """Confirmed, owed, and carrying no promised lead time.
 
-    Evidence Action's chlorine import: agreed and behind, with no date anybody
-    can stand behind. The absence of `promised_lead_time_days` is the whole
-    point -- do not add one to make the row tidier.
+    A donated chlorine import, agreed and behind, with no date anybody can
+    stand behind. The absence of `promised_lead_time_days` is the whole point
+    -- do not add one to make the row tidier.
     """
     return world["contract"](
         reference="DON-3",
