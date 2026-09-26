@@ -37,6 +37,7 @@
       Compare {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}
     </a>
     {% endfor %}
+    {% if not supply_as_of %}
     <a href="{% url 'supply_chain:procurement_tender_edit' tender.id %}"
        class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit</a>
     {% comment %}
@@ -61,6 +62,7 @@
         </button>
       </form>
     {% endif %}
+    {% endif %}{# not supply_as_of #}
   </div>
 </div>
 
@@ -73,17 +75,19 @@
     {% for org in invited_orgs %}
       <li class="flex items-center gap-3 py-1">
         <span>{{ org.name }}</span>
+        {% if not supply_as_of %}
         <form method="post" action="{% url 'supply_chain:procurement_tender_uninvite_org' tender.id %}" class="inline">
           {% csrf_token %}
           <input type="hidden" name="org" value="{{ org.pk }}">
           <button type="submit" class="text-xs text-gray-600 hover:text-red-700 underline">Remove</button>
         </form>
+        {% endif %}
       </li>
     {% empty %}
       <li class="text-gray-600">No one invited yet.</li>
     {% endfor %}
   </ul>
-  {% if invitable_orgs %}
+  {% if invitable_orgs and not supply_as_of %}
     <form method="post" action="{% url 'supply_chain:procurement_tender_invite_org' tender.id %}" class="mt-3 flex items-center gap-2">
       {% csrf_token %}
       <label for="invite-org" class="text-sm text-gray-700">Invite a registered supplier</label>
@@ -113,8 +117,10 @@
 
 <div class="flex items-center justify-between mb-2">
   <h2 class="text-lg font-semibold text-gray-900">Outreach</h2>
+  {% if not supply_as_of %}
   <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Record an invitation</a>
+  {% endif %}
 </div>
 <div class="bg-white rounded-lg shadow-sm overflow-hidden mb-8">
   {% comment %}
@@ -151,11 +157,13 @@
         <td class="px-4 py-2 text-sm text-gray-600">{% if o.responded %}Yes{% else %}No{% endif %}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ o.response_kind|humanise|default:"—" }}</td>
           <td class="px-4 py-2 text-sm text-right whitespace-nowrap">
+            {% if not supply_as_of %}
             <a href="{% url 'supply_chain:procurement_outreach_reply' o.id %}"
                class="text-brand-indigo hover:underline">Record a reply</a>
             <span class="text-gray-300 mx-1.5">·</span>
             <a href="{% url 'supply_chain:procurement_outreach_delete' o.id %}"
                class="text-red-700 hover:underline">Delete</a>
+            {% endif %}
           </td>
       </tr>
       {% empty %}
@@ -226,6 +234,7 @@
   </table>
   </div>
 </div>
+{% include "supply_chain/_timeline.html" %}
 {% else %}
 <p class="text-gray-500">Tender not found.</p>
 {% endif %}

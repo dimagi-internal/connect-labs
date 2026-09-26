@@ -131,6 +131,7 @@ class this build has not seen ships purged.
       </ul>
     {% endif %}
   {% endif %}
+  {% if not supply_as_of %}
   <div class="flex flex-wrap gap-2 mt-3">
     <a href="{% url 'supply_chain:contract_edit' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit order</a>
     {% if contract.consideration == "priced" %}
@@ -140,6 +141,7 @@ class this build has not seen ships purged.
     <a href="{% url 'supply_chain:receipt_record' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record a receipt</a>
     <a href="{% url 'supply_chain:document_attach' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Attach a document</a>
   </div>
+  {% endif %}
 </div>
 
 {% if contract_late %}
@@ -598,8 +600,10 @@ partner's name (the IPTSc render).
                 consignment, and a link on every batch row would offer to set
                 it several times over.
                 {% endcomment %}
+                {% if not supply_as_of %}
                 <a href="{% url 'supply_chain:shipment_status' shipment.id %}"
                    class="text-brand-indigo hover:underline">Update</a>
+                {% endif %}
               {% endif %}
             </td>
           </tr>
@@ -627,7 +631,7 @@ partner's name (the IPTSc render).
             </td>
             <td class="px-4 py-2 text-xs text-gray-500">{% told_by_for shipment orgs tellers %}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
-              <a href="{% url 'supply_chain:shipment_status' shipment.id %}" class="text-brand-indigo hover:underline">Update</a>
+              {% if not supply_as_of %}<a href="{% url 'supply_chain:shipment_status' shipment.id %}" class="text-brand-indigo hover:underline">Update</a>{% endif %}
             </td>
           </tr>
         {% endfor %}
@@ -700,7 +704,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
 {% if contract.consideration == "priced" or invoices %}
 <div class="flex items-baseline justify-between mt-6 mb-2">
   <h3 class="text-sm font-semibold text-gray-900">Invoices</h3>
-  {% if contract.consideration == "priced" %}
+  {% if contract.consideration == "priced" and not supply_as_of %}
   <a href="{% url 'supply_chain:invoice_record' contract.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Record an invoice</a>
   {% endif %}
@@ -742,6 +746,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
           <td class="px-4 py-2 text-gray-700">{{ invoice.status|humanise }}</td>
           <td class="px-4 py-2 text-xs text-gray-500">{{ invoice|told_by:orgs }}</td>
           <td class="px-4 py-2 text-right whitespace-nowrap">
+            {% if not supply_as_of %}
             {% if invoice.status != "paid" %}
               <a href="{% url 'supply_chain:payment_record' invoice.id %}"
                  class="text-brand-indigo hover:underline">Pay</a>
@@ -749,6 +754,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
             {% endif %}
             <a href="{% url 'supply_chain:invoice_edit' invoice.id %}"
                class="text-brand-indigo hover:underline">Edit</a>
+            {% endif %}
           </td>
         </tr>
         {% for payment in invoice.payments %}
@@ -767,7 +773,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
               {% endif %}
             </td>
             <td class="px-4 py-1.5 text-right whitespace-nowrap text-xs">
-              {% if not payment.confirmed_by_payee_on %}
+              {% if not payment.confirmed_by_payee_on and not supply_as_of %}
                 <a href="{% url 'supply_chain:payment_confirm' payment.id %}" class="text-brand-indigo hover:underline">Record confirmation</a>
               {% endif %}
             </td>
@@ -784,8 +790,10 @@ The section stays only if one was somehow recorded, so it is not hidden.
 
 <div class="flex items-baseline justify-between mt-6 mb-2">
   <h3 class="text-sm font-semibold text-gray-900">Evidence</h3>
+  {% if not supply_as_of %}
   <a href="{% url 'supply_chain:document_attach' contract.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Attach a document</a>
+  {% endif %}
 </div>
 <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
   {% if documents %}
@@ -816,6 +824,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
     </p>
   {% endif %}
 </div>
+{% include "supply_chain/_timeline.html" %}
 </div>
 {% endif %}
 {% endblock %}

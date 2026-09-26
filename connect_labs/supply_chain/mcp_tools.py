@@ -48,7 +48,7 @@ def _make_handler(operation):
         # consumed by this handler's own signature above, so they never reach
         # the operation's payload -- the operation's schema does not declare
         # them and would reject them if they did.
-        return call_operation(operation.name, access, payload)
+        return call_operation(operation.name, access, payload, channel="mcp")
 
     handler.__name__ = f"{TOOL_PREFIX}{operation.name}"
     return handler

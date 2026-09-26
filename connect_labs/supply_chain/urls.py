@@ -6,6 +6,7 @@ from connect_labs.supply_chain import api_views, views
 from connect_labs.supply_chain.alerts import views as alert_views
 from connect_labs.supply_chain.distribution import views as distribution_views
 from connect_labs.supply_chain.fulfilment import views as fulfilment_views
+from connect_labs.supply_chain.history.as_of import as_of_view
 from connect_labs.supply_chain.market import views as market_views
 from connect_labs.supply_chain.network import views as network_views
 from connect_labs.supply_chain.portfolio import views as portfolio_views
@@ -317,3 +318,37 @@ if settings.DEBUG:
     from connect_labs.supply_chain import dev_views
 
     urlpatterns += [path("dev-login/", dev_views.dev_login, name="dev_login")]
+
+
+# Every program page can be viewed as of a past date (history/as_of.py). One
+# pass over the finished list rather than a decorator on each of ~100 lines,
+# so a route added later is covered without anyone remembering to.
+#
+# Left live: the market (cross-program, and public), the login-free update
+# link (no program in the labs context -- the token decides), the API
+# (operations are the write path; an as-of read belongs to the pages), the
+# portfolios (above programs: rewinding the one program in context would show
+# it in the past beside every other one live), the dev login and the old-URL
+# redirect.
+_LIVE_PREFIXES = ("market/", "u/", "api/", "portfolios/", "dev-login/")
+
+
+def _is_live(pattern, prefix="") -> bool:
+    route = prefix + str(pattern.pattern).lstrip("^")
+    if route.startswith(_LIVE_PREFIXES):
+        return True
+    return getattr(pattern.callback, "view_class", None) is RedirectView
+
+
+def _wrap(pattern, prefix=""):
+    # None today; here so a future nested include() is wrapped, under its prefix.
+    if hasattr(pattern, "url_patterns"):
+        for child in pattern.url_patterns:
+            _wrap(child, prefix + str(pattern.pattern).lstrip("^"))
+        return pattern
+    if not _is_live(pattern, prefix):
+        pattern.callback = as_of_view(pattern.callback)
+    return pattern
+
+
+urlpatterns = [_wrap(p) for p in urlpatterns]

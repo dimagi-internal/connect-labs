@@ -46,10 +46,19 @@ def _load_seed_remote():
     return module
 
 
+# OperationCall logs every write that RAN, so a second seed run adds rows to it
+# by design: an upsert that changes nothing was still called. Whether anything
+# CHANGED is Revision's job, and Revision stays in the count -- a no-op save
+# writes none, so it growing would be a real finding.
+_LOGS_EVERY_CALL = {"OperationCall"}
+
+
 def _counts():
     """Every supply row there is, by model."""
     out = {}
     for model in apps.get_app_config("supply_chain").get_models():
+        if model.__name__ in _LOGS_EVERY_CALL:
+            continue
         out[model.__name__] = model.objects.count()
     return out
 

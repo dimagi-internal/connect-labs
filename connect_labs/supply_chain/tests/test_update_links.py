@@ -889,3 +889,21 @@ class TestTheReadBackSaysWhatThatSubmissionReported:
         with django_assert_max_num_queries(2):
             updates = service.updates_for_contract(contract)
         assert [u["detail"].split(":")[0] for u in updates] == ["AWB-31"]
+
+
+class TestHistoryNamesThePartner:
+    """A link's write is the partner reporting for itself, not an import."""
+
+    def test_a_submission_reads_supplier_and_the_orgs_name_on_the_order_timeline(self, issued, world):
+        from connect_labs.supply_chain.history.models import OperationCall, Revision
+        from connect_labs.supply_chain.history.timeline import timeline_for_contract
+
+        service.submit(_link(issued), "confirm_order", {"contract": Contract.objects.get(pk=world["contract"]["id"])})
+
+        call = OperationCall.objects.get(operation="contract_update")
+        assert (call.channel, call.acting_org_id, call.actor) == ("supplier", world["eha"]["id"], None)
+        # The submission row is part of what the partner did, recorded against the same call.
+        submission = UpdateLinkSubmission.objects.get()
+        assert Revision.objects.get(object_id=str(submission.pk), action="create").call == call
+        entries = timeline_for_contract(world["contract"]["id"], program_id=PROGRAM)
+        assert "Supplier · EHA Clinics" in {entry.actor for entry in entries}

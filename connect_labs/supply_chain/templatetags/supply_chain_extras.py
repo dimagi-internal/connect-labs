@@ -152,6 +152,28 @@ def day(value):
 
 
 @register.filter
+def days_ago(value, now):
+    """When something happened, counted back from `now`: "today", "yesterday", "12 days ago".
+
+    `now` is passed in rather than read from the clock so a page viewed as of
+    a past date counts back from that date. Beyond a month the date itself
+    reads better than a count.
+    """
+    if value is None or now is None:
+        return ""
+    from django.utils import timezone
+
+    days = (timezone.localdate(now) - timezone.localdate(value)).days
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    if days < 31:
+        return f"{days} days ago"
+    return day_text(timezone.localdate(value)) or ""
+
+
+@register.filter
 def qty(value, unit=None):
     """A quantity and its unit as a person writes them: "3 jerry cans", "1 carton".
 

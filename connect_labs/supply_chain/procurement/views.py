@@ -34,6 +34,7 @@ from django.views.generic import TemplateView
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
 from connect_labs.supply_chain.fulfilment.forms import DocumentForm
+from connect_labs.supply_chain.history.timeline import timeline_for_tender
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.forms import (
@@ -163,6 +164,13 @@ class TenderDetailView(_Base):
         context["invited_orgs"] = LabsOrg.objects.filter(pk__in=invited_ids).order_by("name")
         context["invitable_orgs"] = (
             LabsOrg.objects.filter(supplier_profile__isnull=False).exclude(pk__in=invited_ids).order_by("name")[:200]
+        )
+        # What changed on this tender and its children, and who told us. Scoped
+        # by this program as well as the tender, and cut at the as-of date.
+        context["timeline"] = timeline_for_tender(
+            tender_id,
+            program_id=_access(self.request).program_id,
+            until=getattr(self.request, "supply_as_of", None),
         )
         return context
 

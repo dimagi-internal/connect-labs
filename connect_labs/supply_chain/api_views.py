@@ -97,7 +97,7 @@ class OperationDispatchView(View):
             return JsonResponse({"error": f"invalid JSON body: {exc}"}, status=400)
 
         try:
-            result = call_operation(name, _access(request), payload)
+            result = call_operation(name, _access(request), payload, channel="api")
         except jsonschema.ValidationError as exc:
             return JsonResponse({"error": exc.message}, status=400)
         except ValueError as exc:
