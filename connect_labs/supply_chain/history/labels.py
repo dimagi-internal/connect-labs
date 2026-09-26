@@ -18,7 +18,7 @@ from decimal import Decimal
 from django.db import models
 from django.utils.dateformat import format as date_format
 
-from connect_labs.supply_chain.templatetags.supply_chain_extras import words
+from connect_labs.supply_chain.templatetags.supply_chain_extras import VOCAB_LABELS, words
 from connect_labs.supply_chain.values import money_digits, quantity_digits, unit_noun
 
 # A field whose own name is not what a person calls it on this record.
@@ -82,7 +82,9 @@ def actor_label(call) -> str:
         return f"via AI · {_first_name(actor)}" if actor is not None else "via AI"
     if call.channel == "web":
         return (_full_name(actor) or actor.username) if actor is not None else "Someone"
-    return "Imported"
+    if call.channel == "command":
+        return "Imported"
+    return "System"
 
 
 # ---- what --------------------------------------------------------------
@@ -171,7 +173,10 @@ def value_text(model, attname, value, lookup) -> str:
         return money_digits(value) if any(w in attname for w in _MONEY_WORDS) else quantity_digits(value)
     if isinstance(field, models.BooleanField):
         return "yes" if value else "no"
-    text = str(words(value)) if isinstance(value, str) and "_" in value else str(value)
+    # Only a vocabulary code is put into words; free text -- a reference
+    # "PO_7", a title -- is what somebody typed and reads verbatim.
+    coded = isinstance(value, str) and (field.choices or value in VOCAB_LABELS)
+    text = str(words(value)) if coded else str(value)
     return text if len(text) <= _LONG_TEXT else text[: _LONG_TEXT - 1].rstrip() + "…"
 
 
@@ -346,3 +351,8 @@ def subject(model, values, lookup) -> str:
     """Which record an update is on: "Shipment · SH-1". The model alone when nothing names it."""
     identity = _identity(model, values or {}, lookup) if values is not None else ""
     return f"{model_label(model)} · {identity}" if identity else model_label(model)
+
+
+def line_summary(model, changes, lookup) -> str:
+    """A new line row's facts, to hang off its parent's sentence: "300 cartons, batch B1"."""
+    return ", ".join(_create_facts(model, {k: v[1] for k, v in changes.items()}, lookup))
