@@ -45,7 +45,6 @@
     "webpack": "^5.111.1",
     "webpack-bundle-tracker": "^2.0.0",
     "webpack-cli": "^5.0.1",
-    "webpack-dev-server": "^4.6.0",
     "webpack-merge": "^5.8.0"
   },
   "engines": {
@@ -92,7 +91,7 @@
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@tailwindcss/typography": "^0.5.20",
     "@xyflow/react": "^12.11.6",
-    "ai": "^5.0.264",
+    "ai": "^5.0.267",
     "cmdk": "^1.1.1",
     "embla-carousel-react": "^8.6.0",
     "motion": "^13.4.2",
