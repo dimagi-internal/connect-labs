@@ -210,6 +210,9 @@ def resolve_display(
         "reading": reading,
         "visits_pipeline": visits_pipeline,
         "targets_note": raw.get("targets_note") or None,
+        # The registry's `defaults.min_denominator`: the floor a measure with none of
+        # its own is graded against, and what an "n<..." cell must say.
+        "min_denominator": model.min_denominator,
     }
 
 
