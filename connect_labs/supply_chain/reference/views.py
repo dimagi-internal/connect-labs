@@ -22,7 +22,7 @@ from django.urls import reverse
 from connect_labs.supply_chain.api_views import _access
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
 from connect_labs.supply_chain.models import Commodity, Item, Supplier
-from connect_labs.supply_chain.reference_forms import (
+from connect_labs.supply_chain.reference.forms import (
     CommodityForm,
     ComponentLineFormSet,
     ItemForm,
@@ -226,7 +226,7 @@ class _ItemScreen(OperationFormView):
         for row in stated.cleaned_data:
             if not row or row.get("DELETE") or not row.get("field"):
                 continue
-            from connect_labs.supply_chain.reference_forms import spec_value
+            from connect_labs.supply_chain.reference.forms import spec_value
 
             target = "" if row.get("applies_to") in (None, "", "item") else row["applies_to"]
             bucket = own if not target else per_product.setdefault(target, {})

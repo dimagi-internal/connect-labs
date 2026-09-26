@@ -50,11 +50,11 @@ def user(client, django_user_model):
 def scoped(client, user, monkeypatch):
     from connect_labs.supply_chain import (  # noqa: F401  -- bind before patching
         form_views,
-        fulfilment_views,
-        stock_views,
         views,
     )
     from connect_labs.supply_chain.api_views import _access as real_access
+    from connect_labs.supply_chain.fulfilment import views as fulfilment_views  # noqa: F401
+    from connect_labs.supply_chain.stock import views as stock_views  # noqa: F401
 
     def _scoped(request):
         access = real_access(request)
@@ -63,7 +63,7 @@ def scoped(client, user, monkeypatch):
 
     for module in ("form_views", "views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)
-    for module in ("form_views", "views", "fulfilment_views", "stock_views"):
+    for module in ("form_views", "views", "fulfilment.views", "stock.views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
     return client
 
@@ -455,7 +455,7 @@ class TestThePayloadBoundary:
     def test_a_count_of_zero_survives_to_payload(self, rutf, store):
         """Invisible to a tender-trip that only ever posts a non-zero count,
         and the difference between a stockout and an unrecorded point."""
-        from connect_labs.supply_chain.stock_forms import StockCountForm
+        from connect_labs.supply_chain.stock.forms import StockCountForm
 
         payload = self._form(StockCountForm, count_post(rutf, store, quantity="0")).payload()
         assert payload["quantity"] == "0"
@@ -469,7 +469,7 @@ class TestThePayloadBoundary:
         the database unchanged and every browser-level test stays green while
         the precision guarantee is gone.
         """
-        from connect_labs.supply_chain.stock_views import ReceiptRecordView
+        from connect_labs.supply_chain.stock.views import ReceiptRecordView
 
         row = {
             "quantity": Decimal("1234567890123.4567"),
@@ -485,7 +485,7 @@ class TestThePayloadBoundary:
         assert not isinstance(line["quantity_accepted"], float)
 
     def test_a_dispatch_line_does_the_same(self):
-        from connect_labs.supply_chain.stock_views import ShipmentRecordView
+        from connect_labs.supply_chain.stock.views import ShipmentRecordView
 
         row = {
             "quantity": Decimal("1234567890123.4567"),
@@ -498,7 +498,7 @@ class TestThePayloadBoundary:
         assert line["quantity"] == "1234567890123.4567"
 
     def test_quantities_cross_as_exact_strings(self, rutf, store, other_store):
-        from connect_labs.supply_chain.stock_forms import MovementForm
+        from connect_labs.supply_chain.stock.forms import MovementForm
 
         data = movement_post(rutf, quantity="12.3456", from_supply_point=store.pk, to_supply_point=other_store.pk)
         payload = self._form(MovementForm, data).payload()
@@ -506,7 +506,7 @@ class TestThePayloadBoundary:
         assert not isinstance(payload["quantity"], float)
 
     def test_the_product_is_named_by_slug(self, rutf, store):
-        from connect_labs.supply_chain.stock_forms import StockCountForm
+        from connect_labs.supply_chain.stock.forms import StockCountForm
 
         payload = self._form(StockCountForm, count_post(rutf, store)).payload()
         assert payload["commodity_slug"] == "rutf"
@@ -517,7 +517,7 @@ class TestThePayloadBoundary:
         that it moves the ledger, and a three-column row cut it to "overriding b"."""
         from connect_labs.labs.access.scopes import SYSTEM
         from connect_labs.supply_chain.data_access import SupplyDataAccess
-        from connect_labs.supply_chain.stock_forms import StockCountForm
+        from connect_labs.supply_chain.stock.forms import StockCountForm
 
         access = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
         form = StockCountForm(access=access)

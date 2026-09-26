@@ -42,7 +42,7 @@ from connect_labs.supply_chain.forms import (
     set_choices,
     to_payload,
 )
-from connect_labs.supply_chain.fulfilment_forms import ProvenancedForm
+from connect_labs.supply_chain.fulfilment.forms import ProvenancedForm
 from connect_labs.supply_chain.models import (
     Charge,
     Commodity,

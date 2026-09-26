@@ -15,7 +15,8 @@ from typing import Any
 import jsonschema
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.supply_chain import models, records, reference_catalogue, serializers
+from connect_labs.supply_chain import models, records, serializers
+from connect_labs.supply_chain.reference import catalogue as reference_catalogue
 from connect_labs.supply_chain.values import to_wire
 
 # The published wire shape, per model. See serializers.py for why these are
