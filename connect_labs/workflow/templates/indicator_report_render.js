@@ -187,6 +187,33 @@ function WorkflowUI({
   function orgOf(opp) {
     return LLO_MAP[opp] || LLO_MAP[String(opp)] || null;
   }
+  // What a reader calls each opportunity. The run's own names first -- resolved
+  // when it was built from the opportunity's record, or the registry's
+  // `deployment.opportunity_labels` (snapshot_builders.opportunity_labels) --
+  // then the viewer's own opportunity list on this page, for runs saved before
+  // names were carried. Never invented: an unnamed one reads "Opportunity <id>".
+  var PAGE_OPP_NAMES = React.useMemo(function () {
+    var m = {};
+    try {
+      var el = document.getElementById('user-opportunities');
+      if (el)
+        JSON.parse(el.textContent).forEach(function (o) {
+          if (o && o.id !== null && o.id !== undefined && o.name)
+            m[String(o.id)] = String(o.name);
+        });
+    } catch (e) {
+      console.error('Indicator report: could not read the opportunity list', e);
+    }
+    return m;
+  }, []);
+  var OPP_LABELS = (P.deployment && P.deployment.opportunity_labels) || {};
+  function oppName(opp) {
+    if (opp === null || opp === undefined) return null;
+    return OPP_LABELS[String(opp)] || PAGE_OPP_NAMES[String(opp)] || null;
+  }
+  function oppLabel(opp) {
+    return oppName(opp) || 'Opportunity ' + opp;
+  }
 
   // ══ Drill state ═════════════════════════════════════════════════════════════
   var sOrg = React.useState(null);
@@ -712,7 +739,7 @@ function WorkflowUI({
       return !selOrg || (o.llo || orgOf(o.opp)) === selOrg;
     });
     var rows = R.sortRows(list, sort.sortOf('opps'), function (o, key) {
-      if (key === 'name') return Number(o.opp);
+      if (key === 'name') return oppLabel(o.opp).toLowerCase();
       if (key === 'size') return o.n || sizeOf(o.ind, 0);
       if (key === 'last') return lastVisit.opp[String(o.opp)] || null;
       if (key === 'attn') {
@@ -747,7 +774,7 @@ function WorkflowUI({
             >
               <td className="px-3 py-2 whitespace-nowrap">
                 <div className="font-semibold text-indigo-700">
-                  {'Opportunity ' + o.opp}
+                  {oppLabel(o.opp)}
                 </div>
                 <div className="text-gray-400">
                   {(o.llo || orgOf(o.opp)
@@ -938,7 +965,7 @@ function WorkflowUI({
                     </a>
                   ) : null}
                   <div className="text-gray-400">
-                    {'opp ' + w.opp + (w.org ? ' · ' + w.org : '')}
+                    {oppLabel(w.opp) + (w.org ? ' · ' + w.org : '')}
                   </div>
                 </td>
                 <td className="px-1.5 py-2 text-right tabular-nums text-gray-600">
@@ -1378,11 +1405,16 @@ function WorkflowUI({
   }
   var handedDown = meta.handed_down_from || null;
   var title = OPP_MODE
-    ? (ownOrg ? ownOrg + ' · ' : '') +
-      (oppId !== null ? 'opportunity ' + oppId : 'this opportunity')
+    ? oppName(oppId) ||
+      (ownOrg ? ownOrg + ' · ' : '') +
+        (oppId !== null ? 'opportunity ' + oppId : 'this opportunity')
     : D.title || (definition && definition.name) || 'Programme report';
   var crumbs = OPP_MODE ? (
-    <span>{(D.title ? D.title + ' · ' : '') + 'opportunity report'}</span>
+    <span>
+      {(D.title ? D.title + ' · ' : '') +
+        (ownOrg && oppName(oppId) ? ownOrg + ' · ' : '') +
+        'opportunity report'}
+    </span>
   ) : (
     <span>
       <button
@@ -1412,9 +1444,41 @@ function WorkflowUI({
           </button>
         </span>
       ) : null}
-      {selOpp !== null ? ' › opportunity ' + selOpp : null}
+      {selOpp !== null ? ' › ' + oppLabel(selOpp) : null}
     </span>
   );
+  // The header counts the scope on screen: drilled into a partner or an
+  // opportunity it counts THAT scope's cases, visits and workers, never the
+  // programme's. Cases from the case index, visits from the scope's weekly
+  // activity (the same cut hand_down.py uses for an opportunity's slice).
+  var DRILLED = !!selOrg || selOpp !== null;
+  function inScope(opp, org) {
+    if (selOpp !== null) return String(opp) === String(selOpp);
+    if (selOrg) return (org || orgOf(opp)) === selOrg;
+    return true;
+  }
+  var scopeCases = DRILLED
+    ? caseIndex.filter(function (c) {
+        return inScope(c.opportunity_id, c.llo);
+      }).length
+    : meta.cases;
+  var scopeWeeks = (P.weekly || {})[scopeKey];
+  var scopeVisits = !DRILLED
+    ? meta.visits
+    : scopeWeeks
+      ? scopeWeeks.reduce(function (a, w) {
+          return a + (Number(w.visits) || 0);
+        }, 0)
+      : null;
+  var scopeWorkers = workerRows.filter(function (w) {
+    return inScope(w.opp, w.org);
+  }).length;
+  var scopeOpps = selOrg
+    ? (P.byOpp || []).filter(function (o) {
+        return (o.llo || orgOf(o.opp)) === selOrg;
+      }).length
+    : 0;
+  var OPP_NOUN = { name: 'opportunity', plural: 'opportunities' };
   var cache = live.cache || {};
   return (
     <div className="p-4 space-y-4 bg-gray-50">
@@ -1425,23 +1489,27 @@ function WorkflowUI({
           OPP_MODE
             ? title
             : selOpp !== null
-              ? 'Opportunity ' + selOpp
+              ? oppLabel(selOpp)
               : selOrg || title
         }
         subtitle={
           ready ? (
             <span>
-              <b>
-                {R.nounCount(
-                  selOrg || selOpp !== null
-                    ? sizeOf(scopeInd, meta.cases)
-                    : meta.cases,
-                  ENT,
-                )}
-              </b>{' '}
-              · <b>{R.nCount(meta.visits)}</b> visits ·{' '}
-              <b>{R.nounCount(workerRows.length, WRK)}</b>
-              {HAS_ORGS ? (
+              <b>{R.nounCount(scopeCases, ENT)}</b>
+              {scopeVisits !== null && scopeVisits !== undefined ? (
+                <span>
+                  {' · '}
+                  <b>{R.nCount(scopeVisits)}</b> visits
+                </span>
+              ) : null}
+              {' · '}
+              <b>{R.nounCount(scopeWorkers, WRK)}</b>
+              {selOrg && selOpp === null ? (
+                <span>
+                  {' · '}
+                  <b>{R.nounCount(scopeOpps, OPP_NOUN)}</b>
+                </span>
+              ) : HAS_ORGS && !DRILLED ? (
                 <span>
                   {' · '}
                   <b>{R.nounCount((P.byLLO || []).length, ORG)}</b>
