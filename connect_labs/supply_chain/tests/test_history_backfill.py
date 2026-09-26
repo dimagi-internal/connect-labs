@@ -102,6 +102,36 @@ class TestBackfill:
         # historical instance the same way it runs on a live one.
         assert commodity_rev.program_id == PROGRAM
 
+    def test_rows_whose_program_cannot_be_resolved_are_counted_and_logged(self, monkeypatch, caplog):
+        with capture_suspended():
+            tender = Tender.objects.create(program_id=PROGRAM, label="Unresolvable")
+        real = program.program_of
+
+        def refuses_tenders(instance):
+            if type(instance).__name__ == "Tender":
+                raise LookupError("a relation the frozen registry cannot walk")
+            return real(instance)
+
+        monkeypatch.setattr(program, "program_of", refuses_tenders)
+        with caplog.at_level("WARNING"):
+            unscoped = backfill(django_apps, None)
+
+        assert unscoped == {"Tender": 1}
+        assert "1 row(s) fell back to program None" in caplog.text and "Tender=1" in caplog.text
+        rev = Revision.objects.get(content_type=ContentType.objects.get_for_model(Tender), object_id=str(tender.pk))
+        assert rev.program_id is None
+
+    def test_an_unexpected_error_is_not_swallowed(self, monkeypatch):
+        with capture_suspended():
+            Tender.objects.create(program_id=PROGRAM, label="Broken")
+
+        def breaks(instance):
+            raise RuntimeError("a bug, not a missing relation")
+
+        monkeypatch.setattr(program, "program_of", breaks)
+        with pytest.raises(RuntimeError):
+            backfill(django_apps, None)
+
     def test_rerunning_the_backfill_adds_no_revisions(self):
         with capture_suspended():
             Tender.objects.create(program_id=PROGRAM, label="Once")

@@ -23,8 +23,13 @@ docs/superpowers/specs/2026-09-26-supply-sophie-history-design.md §3.5 and
 `tests/test_history_backfill.py`.
 """
 
+import logging
+
+from django.core.exceptions import FieldDoesNotExist, ObjectDoesNotExist
 from django.db import migrations
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 1000
 
@@ -114,6 +119,7 @@ def backfill(apps, schema_editor):
 
     # `include_auto_created`: many-to-many through models are captured going
     # forward (capture.py), so their existing rows need a create revision too.
+    unscoped = {}
     for model in apps.get_app_config("supply_chain").get_models(include_auto_created=True):
         if model.__name__ in EXCLUDED_MODELS:
             continue
@@ -138,10 +144,12 @@ def backfill(apps, schema_editor):
                 # carries identically to the real one -- see the design doc
                 # note above.
                 program_id = program_of(instance)
-            except Exception:
+            except (AttributeError, KeyError, LookupError, ValueError, ObjectDoesNotExist, FieldDoesNotExist):
                 # A relation this migration's frozen apps registry can't
-                # walk loses only its program scope, not the whole backfill.
+                # walk loses only its program scope, not the whole backfill --
+                # counted and logged below, never silently.
                 program_id = None
+                unscoped[model.__name__] = unscoped.get(model.__name__, 0) + 1
             recorded_at = _stamp(instance, model.__name__, run_time)
             changes = {field: [None, value] for field, value in _snapshot(instance).items()}
             batch.append(
@@ -160,6 +168,15 @@ def backfill(apps, schema_editor):
                 batch = []
         if batch:
             Revision.objects.bulk_create(batch)
+
+    if unscoped:
+        logger.warning(
+            "history backfill: %d row(s) fell back to program None because their program could not be "
+            "resolved: %s",
+            sum(unscoped.values()),
+            ", ".join(f"{name}={count}" for name, count in sorted(unscoped.items())),
+        )
+    return unscoped
 
 
 def backwards(apps, schema_editor):
