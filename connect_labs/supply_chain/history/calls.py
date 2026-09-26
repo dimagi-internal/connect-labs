@@ -22,6 +22,8 @@ import json
 from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import IntegrityError, transaction
+from django.db.models import F
+from django.utils import timezone
 
 from connect_labs.supply_chain.history.context import current_overrides, write_context
 from connect_labs.supply_chain.history.models import OperationCall
@@ -79,7 +81,15 @@ def _actor(access):
     return user if getattr(user, "is_authenticated", False) else None
 
 
-def _replay(call):
+def _replay(call, when=None):
+    """The stored result, with the replay noted on the call it answered from.
+
+    A queryset update, as for `result`: the row is append-only to `save()`,
+    and a replay changes nothing but that it happened.
+    """
+    OperationCall.objects.filter(pk=call.pk).update(
+        replay_count=F("replay_count") + 1, last_replayed_at=when or timezone.now()
+    )
     result = call.result
     if isinstance(result, dict):
         return {**result, "replayed": True}
@@ -143,7 +153,7 @@ def run_recorded(operation, access, payload, source, channel, *, digest="", acto
     if deduplicates:
         existing = OperationCall.objects.filter(**key).first()
         if existing is not None:
-            return _replay(existing)
+            return _replay(existing, overrides.get("recorded_at"))
     try:
         with transaction.atomic():
             call = OperationCall.objects.create(**fields)
@@ -169,4 +179,4 @@ def run_recorded(operation, access, payload, source, channel, *, digest="", acto
             winner = OperationCall.objects.get(**key)
         except (OperationCall.DoesNotExist, OperationCall.MultipleObjectsReturned):
             raise error from None
-        return _replay(winner)
+        return _replay(winner, overrides.get("recorded_at"))

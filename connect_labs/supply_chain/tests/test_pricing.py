@@ -78,7 +78,8 @@ def test_a_quantity_basis_over_the_tender_blocks_the_tender_total(rutf, tender_2
     q = quote(quantity_basis="2667", quantity_basis_unit="carton")
     f = compute_figures(q, rutf, tender_2000_cartons)
     reasons = _reasons(f.landed_total_for_tender_quantity)
-    assert "2667" in reasons and "2000" in reasons
+    # Written as a person writes quantities, not as the column stores them.
+    assert "quote covers 2,667 cartons; tender is 2,000 cartons" in reasons
     # but the total for what they actually quoted is knowable
     assert isinstance(f.landed_total_as_quoted, Money)
 

@@ -25,7 +25,12 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from connect_labs.supply_chain.models import Commodity, Quote, Tender
-from connect_labs.supply_chain.procurement.services.compliance import FAIL, PASS, check_compliance
+from connect_labs.supply_chain.procurement.services.compliance import (
+    FAIL,
+    PASS,
+    check_compliance,
+    requirement_label,
+)
 from connect_labs.supply_chain.procurement.services.pricing import (
     COMPARABILITY_FIELDS,
     FIGURE_FIELDS,
@@ -37,6 +42,7 @@ from connect_labs.supply_chain.procurement.services.questions import (
     INTERNAL,
     MissingFact,
     audience_for_reason,
+    key_for_reason,
     missing_facts,
 )
 from connect_labs.supply_chain.records import course_applies_to_category
@@ -91,6 +97,33 @@ class ComparisonRow:
     delivery: str = ""
 
     @property
+    def blocking(self) -> dict | None:
+        """What keeps this offer out of the ranking, and the ONE question that clears it.
+
+        The first gap among the comparability figures, in words, with the
+        question the same reason table asks for it. A blocked card led with
+        its whole checklist, and the one fact that mattered read as one bullet
+        among eight. Everything else is still asked -- under "also confirm".
+        None for a row nothing blocks.
+        """
+        for key in COMPARABILITY_FIELDS:
+            value = self.figures.get(key)
+            if not isinstance(value, Unconfirmed):
+                continue
+            for reason in value.reasons:
+                wanted = key_for_reason(reason) or ("kit_composition" if "kit composition" in reason else None)
+                question = next((q for q in self.questions if q.key == wanted), None)
+                return {
+                    "fact": reason[:1].upper() + reason[1:],
+                    "question": (
+                        {"key": question.key, "question": question.question, "audience": question.audience}
+                        if question is not None
+                        else None
+                    ),
+                }
+        return None
+
+    @property
     def specification(self) -> dict | None:
         """This offer against the product's specification, summarised.
 
@@ -110,7 +143,26 @@ class ComparisonRow:
         else:
             unstated = len([o for o in outcomes if o != PASS])
             outcome, summary = "not_stated", f"{unstated} of {len(outcomes)} not stated"
-        return {"outcome": outcome, "summary": summary, "failures": failures}
+        # Where each answered figure came from, so "meets all 2" can be read
+        # as "because the quote says so" or "because the trade item does" --
+        # a supplier's statement and a product's specification sheet are not
+        # the same evidence.
+        stated_on_quote, confirmed_by_item = [], []
+        for result in self.compliance:
+            if result.outcome == "not_stated":
+                continue
+            label = requirement_label(result.field, result.requirement.get("unit", "")).lower()
+            if result.spec_origin == "quote":
+                stated_on_quote.append(label)
+            elif result.spec_origin == "item":
+                confirmed_by_item.append(label)
+        return {
+            "outcome": outcome,
+            "summary": summary,
+            "failures": failures,
+            "stated_on_quote": stated_on_quote,
+            "confirmed_by_item": confirmed_by_item,
+        }
 
 
 @dataclass
@@ -187,6 +239,7 @@ class Comparison:
                 "composition_unit": row.composition_unit,
                 "item_name": row.item_name,
                 "specification": row.specification,
+                "blocking": row.blocking,
                 "entered_by": row.entered_by,
                 "supplier_awaiting_review": row.supplier_awaiting_review,
                 "delivery": row.delivery,

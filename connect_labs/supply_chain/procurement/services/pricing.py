@@ -19,6 +19,7 @@ from connect_labs.supply_chain.values import (
     confirmed,
     merge,
     metric_tonnes_to_base_units,
+    quantity_phrase,
     unconfirmed,
     unit_noun,
 )
@@ -439,12 +440,12 @@ def compute_figures(
         # would leak internal absence-representation into a supplier-facing
         # reason instead of naming the missing fact.
         landed_for_tender = unconfirmed(
-            f"no quantity basis recorded on the quote; this tender is " f"{tender_quantity[0]} {tender_quantity[1]}"
+            f"no quantity basis recorded on the quote; this tender is {quantity_phrase(*tender_quantity)}"
         )
     elif quote.quantity_basis_unit != tender_quantity[1] or quote.quantity_basis != tender_quantity[0]:
         landed_for_tender = unconfirmed(
-            f"quote covers {quote.quantity_basis} {quote.quantity_basis_unit}; "
-            f"tender is {tender_quantity[0]} {tender_quantity[1]}"
+            f"quote covers {quantity_phrase(quote.quantity_basis, quote.quantity_basis_unit)}; "
+            f"tender is {quantity_phrase(*tender_quantity)}"
         )
     else:
         landed_for_tender = landed_as_quoted

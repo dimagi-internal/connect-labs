@@ -412,13 +412,15 @@ _CORRECTION_BOOKKEEPING = {"version", "superseded_by_id", "correction_reason", "
 _PACK_FIGURES = {"base_per_pack_stated", "base_unit_grams_stated"}
 
 
-def correction_sentence(model, old_values, new_values, lookup):
+def correction_sentence(model, old_values, new_values, lookup, *, with_before=True):
     """A corrected version against the one it replaced, as (sentence, attnames).
 
     "Quote corrected: units per pack 150 (was not stated)".
 
     Names every field whose value reads differently now, old value in
-    brackets; a value that was blank reads "not stated".
+    brackets; a value that was blank reads "not stated". `with_before=False`
+    leaves the brackets off, for a one-line note that says only what the
+    quote says now: "units per pack 150".
     """
     clauses, fields = [], []
     for attname, new in new_values.items():
@@ -432,7 +434,10 @@ def correction_sentence(model, old_values, new_values, lookup):
         # "units per pack", but "ETA" stays as it is.
         if not label[:2].isupper():
             label = label[:1].lower() + label[1:]
-        clauses.append((attname, f"{label} {after or 'not stated'} (was {before or 'not stated'})"))
+        clause = f"{label} {after or 'not stated'}"
+        if with_before:
+            clause += f" (was {before or 'not stated'})"
+        clauses.append((attname, clause))
         fields.append(attname)
     if _PACK_FIGURES & set(fields):
         clauses = [c for c in clauses if c[0] != "pack_spec_source"]

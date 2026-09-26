@@ -160,7 +160,13 @@ class TestTwoOffersFromOneSupplier:
         rows = {row["quote_id"]: row for row in _compare(da, world)["comparable"]}
         good = rows[world["good_quote"]["id"]]["specification"]
         bad = rows[world["bad_quote"]["id"]]["specification"]
-        assert good == {"outcome": "pass", "summary": "Meets all 2", "failures": []}
+        assert {k: good[k] for k in ("outcome", "summary", "failures")} == {
+            "outcome": "pass",
+            "summary": "Meets all 2",
+            "failures": [],
+        }
+        assert good["confirmed_by_item"] == ["tests per kit", "range maximum"]
+        assert good["stated_on_quote"] == []
         assert bad["outcome"] == "fail"
         assert bad["summary"] == "1 of 2 fail"
         assert bad["failures"] == [
