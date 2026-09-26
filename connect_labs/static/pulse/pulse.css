@@ -3022,3 +3022,178 @@
     border-right: 0;
   }
 }
+
+/* ── gesture control (gestures.js, ?gestures=1 only) ─────────────────────
+   Above the drill-down windows (z 40–43), so the armed frame and the cursor
+   stay visible over an open window. None of it takes pointer events except
+   the panel's Off button: the cursor must never be what elementFromPoint
+   finds under itself. */
+.pulse-transport-top #btn-gestures[aria-pressed='true'] {
+  color: var(--light);
+  border-color: var(--light-dim);
+}
+.pulse-gesture-panel {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 60;
+  width: 248px;
+  padding: 8px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: rgba(16, 10, 61, 0.94);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  pointer-events: none;
+}
+.pulse-gesture-panel .pg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.pulse-gesture-panel .pg-state {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pulse-gesture-panel .pg-state[data-arm='arming'] {
+  color: var(--ink);
+}
+.pulse-gesture-panel .pg-state[data-arm='armed'] {
+  color: var(--light);
+}
+.pulse-gesture-panel .pg-off {
+  pointer-events: auto;
+  font: inherit;
+  padding: 2px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--panel-2);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.pulse-gesture-panel .pg-view {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #000;
+}
+/* Mirrored, so the preview behaves like a mirror: move right, it moves right. */
+.pulse-gesture-panel video,
+.pulse-gesture-panel canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+.pulse-gesture-panel .pg-read {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 6px 0 4px;
+}
+.pulse-gesture-panel .pg-read dt {
+  color: var(--ink-3);
+}
+.pulse-gesture-panel .pg-read dd {
+  margin: 0;
+  color: var(--ink);
+}
+.pulse-gesture-panel .pg-depth {
+  display: inline-block;
+  position: relative;
+  width: 100%;
+  height: 6px;
+  vertical-align: middle;
+  border-radius: 3px;
+  background: var(--rule-soft);
+}
+.pulse-gesture-panel .pg-depth::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--ink-3);
+}
+.pulse-gesture-panel .pg-depth i {
+  display: block;
+  width: 50%; /* the baseline, until the first frame says otherwise */
+  height: 100%;
+  border-radius: 3px;
+  background: var(--light-dim);
+}
+.pulse-gesture-panel .pg-log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-height: 3em;
+  color: var(--ink-2);
+}
+.pulse-gesture-panel .pg-help {
+  margin-top: 4px;
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+/* Armed: a frame round the whole screen, impossible to miss from across the
+   room, so nobody is ever surprised by what their hands just did. */
+.pulse-gesture-frame {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 4px var(--light);
+}
+.pulse-gesture-frame::after {
+  content: 'Gestures armed';
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  border-radius: 3px;
+  background: var(--light);
+  color: #1a1030;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.pulse-gesture-cursor {
+  position: fixed;
+  left: -14px;
+  top: -14px;
+  z-index: 61;
+  width: 28px;
+  height: 28px;
+  border: 2px solid rgba(174, 190, 255, 0.5);
+  border-radius: 50%;
+  pointer-events: none;
+  transition:
+    border-color 0.12s,
+    background 0.12s,
+    scale 0.12s;
+}
+.pulse-gesture-cursor[data-armed='1'] {
+  border-color: var(--light);
+}
+.pulse-gesture-cursor[data-hot='1'] {
+  background: rgba(255, 190, 70, 0.3);
+  scale: 1.25;
+}
+.pulse-gesture-cursor[data-pinched='1'] {
+  scale: 0.7;
+  background: var(--light);
+}
+.pulse-gesture-hot {
+  outline: 2px solid var(--light) !important;
+  outline-offset: 2px;
+}

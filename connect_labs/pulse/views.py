@@ -242,7 +242,11 @@ class PulseDisplayView(LoginRequiredMixin, View):
     def get(self, request, layout=DEFAULT_LAYOUT):
         if layout not in LAYOUTS:
             raise Http404("Unknown layout")
-        return render(request, "pulse/display.html", _display_context(layout, public=False))
+        context = _display_context(layout, public=False)
+        # Webcam hand-gesture control (static/pulse/gestures.js): a demo toy,
+        # opt-in by URL only, and deliberately absent from the public view.
+        context["gestures"] = request.GET.get("gestures") == "1"
+        return render(request, "pulse/display.html", context)
 
 
 class PulseOppGroupView(LoginRequiredMixin, View):
