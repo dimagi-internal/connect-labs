@@ -192,18 +192,24 @@ function WorkflowUI({
   // `deployment.opportunity_labels` (snapshot_builders.opportunity_labels) --
   // then the viewer's own opportunity list on this page, for runs saved before
   // names were carried. Never invented: an unnamed one reads "Opportunity <id>".
+  // Two carriers of the same list: the multi-opp run page's `user-opportunities`
+  // and the header context selector's `opportunity-data`, which is the only one
+  // on a single-opportunity page (the opportunity report).
   var PAGE_OPP_NAMES = React.useMemo(function () {
     var m = {};
-    try {
-      var el = document.getElementById('user-opportunities');
-      if (el)
-        JSON.parse(el.textContent).forEach(function (o) {
-          if (o && o.id !== null && o.id !== undefined && o.name)
-            m[String(o.id)] = String(o.name);
-        });
-    } catch (e) {
-      console.error('Indicator report: could not read the opportunity list', e);
-    }
+    ['user-opportunities', 'opportunity-data'].forEach(function (id) {
+      try {
+        var el = document.getElementById(id);
+        if (el)
+          (JSON.parse(el.textContent) || []).forEach(function (o) {
+            var k =
+              o && o.id !== null && o.id !== undefined ? String(o.id) : null;
+            if (k && o.name && !m[k]) m[k] = String(o.name);
+          });
+      } catch (e) {
+        console.error('Indicator report: could not read ' + id, e);
+      }
+    });
     return m;
   }, []);
   var OPP_LABELS = (P.deployment && P.deployment.opportunity_labels) || {};
@@ -777,9 +783,10 @@ function WorkflowUI({
                   {oppLabel(o.opp)}
                 </div>
                 <div className="text-gray-400">
-                  {(o.llo || orgOf(o.opp)
-                    ? (o.llo || orgOf(o.opp)) + ' · '
-                    : '') + R.nounCount(o.n, ENT)}
+                  {(o.llo || orgOf(o.opp)) &&
+                  oppLabel(o.opp).indexOf(o.llo || orgOf(o.opp)) === -1
+                    ? (o.llo || orgOf(o.opp)) + ' · ' + R.nounCount(o.n, ENT)
+                    : R.nounCount(o.n, ENT)}
                 </div>
               </td>
               {cells(o.ind)}
@@ -965,7 +972,10 @@ function WorkflowUI({
                     </a>
                   ) : null}
                   <div className="text-gray-400">
-                    {oppLabel(w.opp) + (w.org ? ' · ' + w.org : '')}
+                    {oppLabel(w.opp) +
+                      (w.org && oppLabel(w.opp).indexOf(w.org) === -1
+                        ? ' · ' + w.org
+                        : '')}
                   </div>
                 </td>
                 <td className="px-1.5 py-2 text-right tabular-nums text-gray-600">
