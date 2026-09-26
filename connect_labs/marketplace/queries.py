@@ -356,13 +356,15 @@ def services_by_program() -> dict[str, int]:
 # The old "more want it than do it" split is gone for a different reason: it
 # is a supply-and-demand observation, not a stage of life, and `_note` already
 # says it per card in the one place it means something.
+# Delivering leads: what is running today is the first thing a visitor should
+# see, and the pipeline behind it second (Jonathan, 2026-09-25).
 STATES = (
+    ("delivering", "Delivering", "Live on Connect today."),
     (
         "design",
         "In Design and Development",
         "Organizations have put their names forward. Nothing is live on Connect yet.",
     ),
-    ("delivering", "Delivering", "Live on Connect today."),
     (
         "funding",
         "Delivered, awaiting funding",
@@ -400,11 +402,13 @@ def _note(card: dict) -> str:
     applied, delivering = card["applied"], card["delivering"]
     if applied and not delivering:
         return f"{applied} organizations have applied. None has delivered this program on Connect yet."
-    if delivering and applied >= 3 * delivering:
-        return f"{applied // delivering} applicants for every organization delivering it today."
     if card["remaining"]:
         # The card's own "up to … still funded" line already says this, so a
         # note repeating it is left blank rather than said twice.
+        return ""
+    if card["live"]:
+        # Live work with no budget left on it: the paid figure is already on
+        # the card, and "no live work is funded" would contradict its LIVE chip.
         return ""
     if card["spent"]:
         return f"{_money(card['spent'])} paid out. No live work is funded right now."
@@ -467,7 +471,6 @@ def program_cards(view: str = "separate") -> list[dict]:
         card = {
             "slug": slug,
             "label": programs.label(slug),
-            "hue": programs.hue(slug),
             "image": programs.image(slug),
             "services": services.get(slug, 0),
             "spent": money.get("deployed", 0),
@@ -493,6 +496,11 @@ def program_cards(view: str = "separate") -> list[dict]:
 
     order = {key: i for i, (key, _, _) in enumerate(STATES)}
     cards.sort(key=lambda c: (order[c["state"]], -c["spent"], -c["applied"], c["label"]))
+    position: dict[str, int] = {}
+    for card in cards:
+        index = position.get(card["state"], 0)
+        card["hue"] = programs.section_hue(card["state"], index)
+        position[card["state"]] = index + 1
     return cards
 
 

@@ -1,3 +1,4 @@
+{% load static %}
 {% comment %}
 An item is selected when the page is in its URL namespace, or — for an item that
 shares a namespace with pages it does not own, like the supplier market inside
@@ -7,12 +8,8 @@ supply_chain — when the path is under `path_prefix`.
     <!-- Icon Container with Fixed Width -->
     <div class="relative z-10 flex items-center justify-center w-8 h-8">
         {% if icon == 'handshake' %}
-            {# Two hands, two colours: the same glyph twice, each clipped to its own half. #}
-            <span class="relative inline-block" aria-hidden="true">
-                <i class="fa-solid fa-handshake invisible"></i>
-                <i class="fa-solid fa-handshake absolute inset-0 text-brand-mango" style="clip-path: inset(0 50% 0 0)"></i>
-                <i class="fa-solid fa-handshake absolute inset-0 text-brand-sky" style="clip-path: inset(0 0 0 50%)"></i>
-            </span>
+            {# Two hands in two skin tones -- a drawing, since no icon font has one. #}
+            <img src="{% static 'images/handshake.svg' %}" alt="" class="w-6 h-6">
         {% else %}
             <i class="fa-solid fa-{{ icon }} {% if request.resolver_match.namespace == namespace or path_prefix and path_prefix in request.path %}text-brand-marigold{% endif %}"></i>
         {% endif %}
