@@ -170,6 +170,14 @@ jobs:
   # Same-repo PRs only: the OIDC deploy role is not handed to a fork's code
   # (and id-token is unavailable to fork PRs regardless).
   #
+  # And not for dependabot, for the same reason one step further on: a
+  # dependabot-triggered run reads the Dependabot secret store, where
+  # AWS_ROLE_ARN does not exist, so configure-aws-credentials fails with
+  # "Could not load credentials from any providers" before the job does
+  # anything. That red X appeared on every dependabot PR including a pandas
+  # patch bump, which is how seven of them sat open looking broken while their
+  # required checks were green all along.
+  #
   # Not a required check, on purpose: if this fails the PR still merges and the
   # deploy builds the image itself. The deploy also refuses to reuse an image
   # whose recorded base/node digests differ from the current base-latest /
@@ -179,7 +187,8 @@ jobs:
     if: >-
       github.event_name == 'merge_group' ||
       (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     permissions:
       id-token: write
