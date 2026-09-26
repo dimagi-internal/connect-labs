@@ -897,6 +897,27 @@ def test_a_new_slug_under_a_name_the_directory_already_holds_is_refused():
     assert not [name for name, _ in fake.calls if name == "org_upsert"]
 
 
+def test_an_existing_slug_sharing_a_name_is_an_update_not_a_duplicate():
+    """Two rows already share a name (an org and one of its Connect workspaces);
+    re-seeding the one the document owns must not be refused."""
+
+    class _Two(_FakeOp):
+        def __call__(self, access, name, **payload):
+            self.calls.append((name, payload))
+            if name == "org_list":
+                return [
+                    {"id": 1, "slug": "an-org", "name": "An Org"},
+                    {"id": 2, "slug": "an-org-workspace", "name": "An Org"},
+                ]
+            return {"op": name, **payload}
+
+    fake = _Two()
+    module = _load_seed_remote()
+    module.op = fake
+    module.seed_orgs(object(), {"orgs": [{"slug": "an-org-workspace", "name": "An Org", "country": "NG"}]})
+    assert [name for name, _ in fake.calls if name == "org_upsert"] == ["org_upsert"]
+
+
 def test_history_names_places_and_refuses_one_the_chain_does_not_have():
     """Past movements are named by place in the document; a typo must not post to nowhere."""
     fake = _FakeOp()
