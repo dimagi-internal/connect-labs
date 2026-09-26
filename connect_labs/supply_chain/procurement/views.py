@@ -33,7 +33,10 @@ from django.views.generic import TemplateView
 
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
-from connect_labs.supply_chain.forms import (
+from connect_labs.supply_chain.fulfilment.forms import DocumentForm
+from connect_labs.supply_chain.navigation import supply_tabs
+from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.procurement.forms import (
     ApprovalDecisionForm,
     ApprovalRequestForm,
     OutreachForm,
@@ -44,9 +47,6 @@ from connect_labs.supply_chain.forms import (
     TenderLineFormSet,
     TenderPlaceFormSet,
 )
-from connect_labs.supply_chain.fulfilment.forms import DocumentForm
-from connect_labs.supply_chain.navigation import supply_tabs
-from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.values import quantity_phrase, unit_noun
 
 
