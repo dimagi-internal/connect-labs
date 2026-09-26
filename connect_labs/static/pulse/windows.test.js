@@ -105,6 +105,8 @@ describe('windows.js module load', () => {
     // Gesture drag (gestures.js) moves a window through this, not the stack.
     expect(typeof win.PulseWindows.moveBy).toBe('function');
     win.PulseWindows.moveBy(10, 10); // nothing open: a no-op, not a throw
+    // Gesture dial: nothing open means nothing to step.
+    expect(win.PulseWindows.stepOpportunity(1)).toBe(false);
   });
 
   it('opens closed, so the map tour is not suppressed before anything is shown', () => {
@@ -164,5 +166,89 @@ describe('windows.js shareable state', () => {
     expect(flat).toMatch(
       /if \(depth === 0\) openState = \{ partner: null, opportunity: null, worker: null \};/,
     );
+  });
+});
+
+describe('windows.js opportunity dial', () => {
+  /* A partner window run for real against a do-nothing DOM and a stub API,
+     so the steps are asserted by what the window actually asks for. */
+  async function partnerWindow(oppIds) {
+    const cards = fs.readFileSync(path.join(here, 'cards.js'), 'utf8');
+    const el = () => ({
+      style: {},
+      dataset: {},
+      classList: { add() {}, remove() {} },
+      setAttribute() {},
+      toggleAttribute() {},
+      addEventListener() {},
+      appendChild() {},
+      remove() {},
+      focus() {},
+      querySelector: () => el(),
+      querySelectorAll: () => [],
+    });
+    const doc = {
+      addEventListener() {},
+      createElement: el,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      body: el(),
+    };
+    const asked = [];
+    const win = {
+      document: doc,
+      fetch: async (url) => {
+        asked.push(new URL(url, 'http://x').searchParams.get('opportunity'));
+        return {
+          ok: true,
+          json: async () => ({
+            partner: { slug: 'p', name: 'P', named: true },
+            opportunities: oppIds.map((id) => ({ id, name: 'o' + id })),
+            workers: [],
+          }),
+        };
+      },
+      setInterval: () => 0,
+      clearInterval() {},
+    };
+    new Function('window', 'document', cards)(win, doc);
+    new Function(
+      'window',
+      'document',
+      'fetch',
+      'setInterval',
+      'clearInterval',
+      SRC,
+    )(win, doc, win.fetch, win.setInterval, win.clearInterval);
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    win.PulseWindows.openPartner('p');
+    await tick();
+    const step = async (d) => {
+      const moved = win.PulseWindows.stepOpportunity(d);
+      await tick();
+      return moved;
+    };
+    return { step, asked };
+  }
+
+  it('steps all -> each opportunity -> all, wrapping both ways', async () => {
+    const { step, asked } = await partnerWindow([11, 22, 33]);
+    for (const d of [1, 1, 1, 1, -1, -1]) expect(await step(d)).toBe(true);
+    // The first request is the window opening on all of them.
+    expect(asked).toEqual([null, '11', '22', '33', null, '33', '22']);
+  });
+
+  it('has nothing to step through for a one-opportunity partner', async () => {
+    const { step, asked } = await partnerWindow([11]);
+    expect(await step(1)).toBe(false);
+    expect(asked).toEqual([null]);
+  });
+
+  it('lets only the latest partner request paint', () => {
+    // A dial steps faster than the API answers; without this a late reply
+    // for the previous opportunity repaints over the selected one.
+    const flat = SRC.replace(/\s+/g, ' ');
+    expect(flat).toContain('const seq = ++loadSeq;');
+    expect(flat).toMatch(/if \(seq !== loadSeq\) return; win\.last = d;/);
   });
 });
