@@ -316,8 +316,10 @@ def _order_state(
     ]
 
     in_transit = [s for s in outstanding if _dispatched(s)]
-    if stage == "dispatched" and in_transit:
-        stage = IN_TRANSIT
+    if in_transit and not received:
+        # Goods on the road are the order's news even when the money moved first
+        # (paid in advance): "paid" alone would read as finished.
+        stage = IN_TRANSIT if stage == "dispatched" else f"{stage}, {IN_TRANSIT}"
     elif stage == "paid" and received and contract.status != "part_received":
         stage = DELIVERED_AND_PAID
     if in_transit:
