@@ -27,6 +27,43 @@ BATCH_SIZE = 1000
 # match that shape rather than silently omitting them.
 EXCLUDED_MODELS = {"OperationCall", "Revision"}
 
+# `program_of` walks a foreign key (or a chain of them) for every model whose
+# `program.PATHS` entry is a `_via(...)` resolver -- without help, that is one
+# extra query PER HOP PER ROW. This names the full `select_related()` path(s)
+# `program_of` might actually follow for each of those models, so the walk
+# costs one JOIN per chunk instead. Built by hand rather than introspecting
+# `_via`'s closures, because a model's real dependency is not just its own
+# PATHS attribute: `program_of` recurses into whatever that attribute points
+# at, and `_via` can offer SEVERAL alternate attributes (Receipt tries
+# `contract`, then `shipment`, then `supply_point`) so every alternative's
+# own chain needs covering too. `test_every_via_resolved_model_has_a_select_
+# related_entry` (tests/test_history_backfill.py) keeps this in sync with
+# `program.PATHS` by construction, not by memory.
+SELECT_RELATED = {
+    "Outreach": ["tender"],
+    "Quote": ["tender"],
+    "Award": ["tender"],
+    "AwardApproval": ["award__tender"],
+    "Shipment": ["contract"],
+    "Invoice": ["contract"],
+    "Charge": ["shipment__contract"],
+    "ShipmentLine": ["shipment__contract"],
+    "Receipt": ["contract", "shipment__contract", "supply_point"],
+    "ReceiptLine": ["receipt__contract", "receipt__shipment__contract", "receipt__supply_point"],
+    "Payment": ["invoice__contract"],
+    "DistributionLine": ["distribution"],
+    "AlertCheckState": ["subscription"],
+    # `contract` is nullable on a submission; `link` never is (program.py).
+    "UpdateLinkSubmission": ["link"],
+}
+
+
+def _queryset_for(model):
+    """Every row of `model`, pre-joined along whatever `program_of` will walk."""
+    queryset = model._default_manager.all()
+    paths = SELECT_RELATED.get(model.__name__)
+    return queryset.select_related(*paths) if paths else queryset
+
 
 def backfill(apps, schema_editor):
     # Imported here, not at module scope: a migration module is imported by
@@ -54,7 +91,7 @@ def backfill(apps, schema_editor):
         )
 
         batch = []
-        for instance in model._default_manager.all().iterator():
+        for instance in _queryset_for(model).iterator(chunk_size=BATCH_SIZE):
             object_id = str(instance.pk)
             if object_id in already:
                 continue

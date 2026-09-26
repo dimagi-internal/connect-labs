@@ -11,6 +11,7 @@ docs/superpowers/specs/2026-09-26-supply-sophie-history-design.md §3.5.
 
 import importlib
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from django.apps import apps as django_apps
@@ -20,9 +21,10 @@ from django.utils import timezone
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.alerts.models import AlertCheckState, AlertSubscription
 from connect_labs.supply_chain.data_access import SupplyDataAccess
+from connect_labs.supply_chain.history import program
 from connect_labs.supply_chain.history.context import capture_suspended
 from connect_labs.supply_chain.history.models import OperationCall, Revision
-from connect_labs.supply_chain.models import Commodity, Tender
+from connect_labs.supply_chain.models import Commodity, SupplierProfile, Tender
 from connect_labs.supply_chain.operations import call_operation
 
 pytestmark = pytest.mark.django_db
@@ -31,7 +33,8 @@ PROGRAM = 10997
 OTHER_PROGRAM = 10996
 SYNTHETIC_PROGRAM = 10995
 
-backfill = importlib.import_module("connect_labs.supply_chain.migrations.0033_history_backfill").backfill
+backfill_module = importlib.import_module("connect_labs.supply_chain.migrations.0033_history_backfill")
+backfill = backfill_module.backfill
 
 
 def _tender_payload(label="Backfilled tender"):
@@ -41,7 +44,7 @@ def _tender_payload(label="Backfilled tender"):
 @pytest.fixture
 def registered_synthetic():
     """Register `SYNTHETIC_PROGRAM` as a labs-only scope. `purge()` refuses a
-    programme `scopes.is_synthetic` does not recognise -- see
+    program `scopes.is_synthetic` does not recognise -- see
     `test_data_access.py::registered_synthetic`, whose pattern this reuses.
     """
     from connect_labs.labs.synthetic.models import SyntheticOpportunity
@@ -145,9 +148,63 @@ class TestBackfill:
         assert rev.program_id == PROGRAM
 
 
+class TestBackfillAvoidsNPlusOneOnViaChains:
+    """`program.PATHS` resolves several models by walking a foreign key (or a
+    chain of them); without `select_related`, each hop is one extra query
+    PER ROW. These pin the migration's `SELECT_RELATED` map: it stays
+    complete (every `_via`-resolved model has an entry) and it builds the
+    right join for a single hop, a multi-hop chain, and a multi-alternative
+    one.
+    """
+
+    def test_every_via_resolved_model_has_a_select_related_entry(self):
+        # `_via(...)` always returns a closure literally named `resolve`;
+        # `_direct` and `_scope` are named for themselves. That is the
+        # cheapest reliable way to ask "does this model's PATHS entry walk a
+        # foreign key" without re-deriving the chains from the closure itself
+        # (see the migration module's own comment on why not).
+        via_models = {name for name, resolve in program.PATHS.items() if resolve.__name__ == "resolve"}
+
+        assert via_models == set(backfill_module.SELECT_RELATED.keys())
+
+    def test_a_single_hop_chain_is_covered(self):
+        from connect_labs.supply_chain.models import Quote
+
+        queryset = backfill_module._queryset_for(Quote)
+
+        assert queryset.query.select_related == {"tender": {}}
+
+    def test_a_two_hop_chain_is_covered(self):
+        from connect_labs.supply_chain.models import AwardApproval
+
+        queryset = backfill_module._queryset_for(AwardApproval)
+
+        assert queryset.query.select_related == {"award": {"tender": {}}}
+
+    def test_a_multi_alternative_chain_covers_every_alternative(self):
+        """`Receipt` tries `contract`, then `shipment`, then `supply_point`
+        (program.py) -- `program_of` may follow any one of the three
+        depending on which is set, so all three need pre-joining.
+        """
+        from connect_labs.supply_chain.models import Receipt
+
+        queryset = backfill_module._queryset_for(Receipt)
+
+        assert queryset.query.select_related == {
+            "contract": {},
+            "shipment": {"contract": {}},
+            "supply_point": {},
+        }
+
+    def test_a_direct_or_scope_resolved_model_gets_no_select_related(self):
+        queryset = backfill_module._queryset_for(Tender)
+
+        assert queryset.query.select_related is False
+
+
 @pytest.mark.usefixtures("registered_synthetic")
 class TestPurgeWipesHistory:
-    def test_purge_deletes_the_programmes_revisions_and_calls_but_not_anothers(self):
+    def test_purge_deletes_the_programs_revisions_and_calls_but_not_anothers(self):
         synthetic_access = SupplyDataAccess(program_id=SYNTHETIC_PROGRAM, caller=SYSTEM)
         other_access = SupplyDataAccess(program_id=OTHER_PROGRAM, caller=SYSTEM)
 
@@ -161,7 +218,7 @@ class TestPurgeWipesHistory:
 
         assert not Revision.objects.filter(program_id=SYNTHETIC_PROGRAM).exists()
         assert not OperationCall.objects.filter(program_id=SYNTHETIC_PROGRAM).exists()
-        # The other programme's history is untouched.
+        # The other program's history is untouched.
         assert Revision.objects.filter(program_id=OTHER_PROGRAM).exists()
         assert OperationCall.objects.filter(program_id=OTHER_PROGRAM).exists()
 
@@ -169,7 +226,7 @@ class TestPurgeWipesHistory:
         """Every row purge() deletes runs under `capture_suspended()`, so the
         deletes themselves never produce `delete` Revisions that would then
         need cleaning up too -- there is nothing left at all for the
-        programme, not merely no `create` rows.
+        program, not merely no `create` rows.
         """
         access = SupplyDataAccess(program_id=SYNTHETIC_PROGRAM, caller=SYSTEM)
         call_operation("tender_create", access, _tender_payload(), channel="command")
@@ -182,8 +239,8 @@ class TestPurgeWipesHistory:
         """`supplier_create` writes a `SupplierProfile` -- organisation-level,
         shared across every program that buys from it (program.SKIPPED_MODELS)
         -- so that Revision's OWN `program_id` is None even though the call
-        that wrote it was scoped to this programme. Before the `call__program_id`
-        fallback, purge deleted the programme's OWN revisions, then hit
+        that wrote it was scoped to this program. Before the `call__program_id`
+        fallback, purge deleted the program's OWN revisions, then hit
         ProtectedError deleting its OperationCalls: the SupplierProfile
         revision still pointed at one of them.
         """
@@ -201,3 +258,74 @@ class TestPurgeWipesHistory:
 
         assert not Revision.objects.filter(content_type=profile_ct, call__program_id=SYNTHETIC_PROGRAM).exists()
         assert not OperationCall.objects.filter(program_id=SYNTHETIC_PROGRAM).exists()
+
+    def test_purge_leaves_another_programs_revision_on_a_shared_org_level_row(self):
+        """The hard case: ONE shared `SupplierProfile` row carries a revision
+        from program A's call AND a revision from program B's call (two
+        programs buying from the same company). Purging A must take only
+        A's revision and OperationCall off that shared row -- B's must
+        survive, and so must the row itself.
+        """
+        from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+        SyntheticOpportunity.objects.create(
+            opportunity_id=OTHER_PROGRAM,
+            program_id=OTHER_PROGRAM,
+            labs_only=True,
+            enabled=True,
+            label="the other program",
+            allowed_domains=["dimagi.com"],
+        )
+        access_a = SupplyDataAccess(program_id=SYNTHETIC_PROGRAM, caller=SYSTEM)
+        access_b = SupplyDataAccess(program_id=OTHER_PROGRAM, caller=SYSTEM)
+
+        call_operation(
+            "supplier_create",
+            access_a,
+            {"data": {"name": "Northwind Foods", "type": "manufacturer", "country": "NG"}},
+            channel="command",
+        )
+        call_operation(
+            "supplier_create",
+            access_b,
+            # Same company, by exact name -- `find_or_mint_supplier_org`
+            # resolves to the SAME organisation, and this fact (a blank
+            # field A never gave) makes `fill_profile` write a SECOND
+            # revision on that SAME profile, attributed to B's call.
+            {"data": {"name": "Northwind Foods", "website": "https://northwind.example"}},
+            channel="command",
+        )
+        profile_ct = ContentType.objects.get_for_model(SupplierProfile)
+        b_revisions = Revision.objects.filter(content_type=profile_ct, call__program_id=OTHER_PROGRAM)
+        assert b_revisions.exists()
+        b_revision_ids = set(b_revisions.values_list("pk", flat=True))
+        profile_id = b_revisions.first().object_id
+
+        access_a.purge()
+
+        assert not Revision.objects.filter(content_type=profile_ct, call__program_id=SYNTHETIC_PROGRAM).exists()
+        assert not OperationCall.objects.filter(program_id=SYNTHETIC_PROGRAM).exists()
+        # B's revisions on the shared row, and B's call, survive untouched.
+        assert set(Revision.objects.filter(pk__in=b_revision_ids).values_list("pk", flat=True)) == b_revision_ids
+        assert OperationCall.objects.filter(program_id=OTHER_PROGRAM).exists()
+        # The shared row itself was never in scope for either purge.
+        assert SupplierProfile.objects.filter(pk=profile_id).exists()
+
+    def test_purge_is_atomic_a_failure_after_the_data_deletes_leaves_everything(self):
+        """If the history deletes blow up after the data deletes have
+        already run, the whole purge must roll back together -- not leave
+        supply rows gone with their history still standing, or the reverse.
+        """
+        access = SupplyDataAccess(program_id=SYNTHETIC_PROGRAM, caller=SYSTEM)
+        call_operation("tender_create", access, _tender_payload(), channel="command")
+        assert Tender.objects.filter(program_id=SYNTHETIC_PROGRAM).exists()
+
+        with (
+            patch.object(Revision.objects, "filter", side_effect=RuntimeError("boom")),
+            pytest.raises(RuntimeError, match="boom"),
+        ):
+            access.purge()
+
+        assert Tender.objects.filter(program_id=SYNTHETIC_PROGRAM).exists()
+        assert Revision.objects.filter(program_id=SYNTHETIC_PROGRAM).exists()
+        assert OperationCall.objects.filter(program_id=SYNTHETIC_PROGRAM).exists()

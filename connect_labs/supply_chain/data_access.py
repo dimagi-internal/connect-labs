@@ -29,6 +29,7 @@ import logging
 from datetime import date
 
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Q
 
 from connect_labs.labs.access.scopes import Caller, may_use
@@ -368,82 +369,90 @@ class SupplyDataAccess(
             if own:
                 counts[label] = own
 
-        # Every delete below is real supply data going away for good, so it
-        # would ordinarily write a `delete` Revision per row -- thousands of
-        # them, for the ledger of a fully-seeded programme -- only for the
-        # history purge a few lines down to remove them again. Suspended for
-        # the whole purge; the history rows are dropped in bulk, not one
-        # Revision at a time.
-        with capture_suspended():
-            # Sever every protected reference BEFORE deleting anything. This
-            # graph is PROTECT-heavy on purpose -- that is what stops a stray
-            # delete orphaning a ledger in normal use -- but it means there is
-            # no delete ORDER that works, because several pairs protect each
-            # other in both directions: a Movement points at its Distribution
-            # while that Distribution's lines point back at the Movement, and
-            # a worker's supply point names the store above it as its parent.
-            # So unlink first, then delete, rather than weakening the
-            # constraints that make the ledger trustworthy the rest of the
-            # time.
-            movements = Movement.objects.filter(program_id=program_id)
-            DistributionLine.objects.filter(distribution__program_id=program_id).update(movement=None)
-            StockCount.objects.filter(program_id=program_id).update(adjustment_movement=None)
-            movements.update(distribution=None, receipt=None, shipment=None, stock_count=None)
-            Contract.objects.filter(program_id=program_id).update(duty_relief_document=None)
-            Quote.objects.filter(tender__program_id=program_id).update(superseded_by=None)
-            # Self-references are the same problem one table in: a worker's
-            # holding names the store above it as its parent, so no ordering
-            # of SupplyPoint deletes can work either.
-            SupplyPoint.objects.filter(program_id=program_id).update(parent=None, managed_by_org=None)
+        # The whole purge -- every data delete plus both history deletes --
+        # is one transaction. Without it, a crash partway through (the
+        # process killed, a later delete raising) could commit the data
+        # deletes while leaving their history in place, or the reverse; a
+        # `--reset` that half-happened is worse than one that didn't.
+        with transaction.atomic():
+            # Every delete below is real supply data going away for good, so
+            # it would ordinarily write a `delete` Revision per row --
+            # thousands of them, for the ledger of a fully-seeded program --
+            # only for the history purge a few lines down to remove them
+            # again. Suspended for the whole purge; the history rows are
+            # dropped in bulk, not one Revision at a time.
+            with capture_suspended():
+                # Sever every protected reference BEFORE deleting anything.
+                # This graph is PROTECT-heavy on purpose -- that is what
+                # stops a stray delete orphaning a ledger in normal use --
+                # but it means there is no delete ORDER that works, because
+                # several pairs protect each other in both directions: a
+                # Movement points at its Distribution while that
+                # Distribution's lines point back at the Movement, and a
+                # worker's supply point names the store above it as its
+                # parent. So unlink first, then delete, rather than
+                # weakening the constraints that make the ledger
+                # trustworthy the rest of the time.
+                movements = Movement.objects.filter(program_id=program_id)
+                DistributionLine.objects.filter(distribution__program_id=program_id).update(movement=None)
+                StockCount.objects.filter(program_id=program_id).update(adjustment_movement=None)
+                movements.update(distribution=None, receipt=None, shipment=None, stock_count=None)
+                Contract.objects.filter(program_id=program_id).update(duty_relief_document=None)
+                Quote.objects.filter(tender__program_id=program_id).update(superseded_by=None)
+                # Self-references are the same problem one table in: a
+                # worker's holding names the store above it as its parent,
+                # so no ordering of SupplyPoint deletes can work either.
+                SupplyPoint.objects.filter(program_id=program_id).update(parent=None, managed_by_org=None)
 
-            # Links and alerts reach the programme's rows through join tables
-            # and nullable FKs, so no cascade below takes them: a link would
-            # outlive its contracts, still listed as working and still
-            # accepted at its URL. Imported here: both apps import this
-            # module.
-            from connect_labs.supply_chain.alerts.models import AlertSubscription
-            from connect_labs.supply_chain.update_links.models import UpdateLink
+                # Links and alerts reach the programme's rows through join
+                # tables and nullable FKs, so no cascade below takes them: a
+                # link would outlive its contracts, still listed as working
+                # and still accepted at its URL. Imported here: both apps
+                # import this module.
+                from connect_labs.supply_chain.alerts.models import AlertSubscription
+                from connect_labs.supply_chain.update_links.models import UpdateLink
 
-            drop("update links", UpdateLink.objects.filter(program_id=program_id))
-            drop("alert subscriptions", AlertSubscription.objects.filter(program_id=program_id))
-            drop("documents", Document.objects.filter(program_id=program_id))
-            drop("stock counts", StockCount.objects.filter(program_id=program_id))
-            drop("distributions", Distribution.objects.filter(program_id=program_id))
-            # A consignment holds its two ledger legs, so it goes before them.
-            drop("consignments", Consignment.objects.filter(program_id=program_id))
-            drop("movements", movements)
-            drop("invoices", Invoice.objects.filter(contract__program_id=program_id))
-            drop("receipts", Receipt.objects.filter(supply_point__program_id=program_id))
-            drop("shipments", Shipment.objects.filter(contract__program_id=program_id))
-            drop("contracts", Contract.objects.filter(program_id=program_id))
-            drop("awards", Award.objects.filter(tender__program_id=program_id))
-            drop("quotes", Quote.objects.filter(tender__program_id=program_id))
-            drop("outreach", Outreach.objects.filter(tender__program_id=program_id))
-            drop("tenders", Tender.objects.filter(program_id=program_id))
-            drop("supply points", SupplyPoint.objects.filter(program_id=program_id))
-            # Reference data is scoped to the programme, so purging the
-            # programme purges it. This used to be guarded on the scope being
-            # a programme rather than an organisation, because an
-            # organisation's registry could be shared with a programme that
-            # is not being purged. There is no organisation tier any more
-            # (see models.scope_key), so the guard was always true and the
-            # branch it protected unreachable.
-            key = self.scope_key
-            drop("items", Item.objects.filter(scope_key=key))
-            drop("suppliers", Supplier.objects.filter(scope_key=key))
-            drop("commodities", Commodity.objects.filter(scope_key=key))
+                drop("update links", UpdateLink.objects.filter(program_id=program_id))
+                drop("alert subscriptions", AlertSubscription.objects.filter(program_id=program_id))
+                drop("documents", Document.objects.filter(program_id=program_id))
+                drop("stock counts", StockCount.objects.filter(program_id=program_id))
+                drop("distributions", Distribution.objects.filter(program_id=program_id))
+                # A consignment holds its two ledger legs, so it goes before them.
+                drop("consignments", Consignment.objects.filter(program_id=program_id))
+                drop("movements", movements)
+                drop("invoices", Invoice.objects.filter(contract__program_id=program_id))
+                drop("receipts", Receipt.objects.filter(supply_point__program_id=program_id))
+                drop("shipments", Shipment.objects.filter(contract__program_id=program_id))
+                drop("contracts", Contract.objects.filter(program_id=program_id))
+                drop("awards", Award.objects.filter(tender__program_id=program_id))
+                drop("quotes", Quote.objects.filter(tender__program_id=program_id))
+                drop("outreach", Outreach.objects.filter(tender__program_id=program_id))
+                drop("tenders", Tender.objects.filter(program_id=program_id))
+                drop("supply points", SupplyPoint.objects.filter(program_id=program_id))
+                # Reference data is scoped to the programme, so purging the
+                # programme purges it. This used to be guarded on the scope
+                # being a programme rather than an organisation, because an
+                # organisation's registry could be shared with a programme
+                # that is not being purged. There is no organisation tier
+                # any more (see models.scope_key), so the guard was always
+                # true and the branch it protected unreachable.
+                key = self.scope_key
+                drop("items", Item.objects.filter(scope_key=key))
+                drop("suppliers", Supplier.objects.filter(scope_key=key))
+                drop("commodities", Commodity.objects.filter(scope_key=key))
 
-        # the one sanctioned bulk delete of history: require_synthetic above
-        # Revision before OperationCall: OperationCall.revisions is PROTECT.
-        # A revision's OWN program_id is None for an organisation-level model
-        # (SupplierProfile, SupplierOffering, Portfolio -- program.py's
-        # SKIPPED_MODELS), even when it was written by a call scoped to THIS
-        # programme. Filtering on program_id alone would leave those rows
-        # behind, still pointing at the OperationCall this purge is about to
-        # delete, and ProtectedError on the next line. `call__program_id`
-        # catches them too.
-        Revision.objects.filter(Q(program_id=program_id) | Q(call__program_id=program_id)).delete()
-        OperationCall.objects.filter(program_id=program_id).delete()
+            # the one sanctioned bulk delete of history: require_synthetic above
+            # Revision before OperationCall: OperationCall.revisions is PROTECT.
+            # A revision's OWN program_id is None for an organisation-level
+            # model (SupplierProfile, SupplierOffering, Portfolio --
+            # program.py's SKIPPED_MODELS), even when it was written by a
+            # call scoped to THIS program. Filtering on program_id alone
+            # would leave those rows behind, still pointing at the
+            # OperationCall this purge is about to delete, and
+            # ProtectedError on the next line. `call__program_id` catches
+            # them too.
+            Revision.objects.filter(Q(program_id=program_id) | Q(call__program_id=program_id)).delete()
+            OperationCall.objects.filter(program_id=program_id).delete()
         return counts
 
     # ---- scoping --------------------------------------------------------
