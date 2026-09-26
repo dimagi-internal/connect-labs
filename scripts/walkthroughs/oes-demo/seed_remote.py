@@ -37,14 +37,23 @@ skipped with a line on stdout, never filled in with an invented value.
   rutf_rounds.round_two.outreach       {"sent_on": "YYYY-MM-DD", "non_responders": ["<supplier label>", ...]}
       When Sophie asked for quotes, and who never answered.
   rutf_rounds.round_two.quotes[i].received_on           "YYYY-MM-DD" (default: 3 days ago)
-  rutf_rounds.round_two.quotes[i].freight_stated_in_email   "included" | "excluded"
-      What the supplier's email said about freight where the recorded quote
-      says `not_specified`: it reaches the source excerpt, never the quote.
+      No earlier than `outreach.sent_on`.
+  rutf_rounds.round_two.clarification  {"supplier_label": "<a round-2 supplier>",
+                                        "answered_on": "YYYY-MM-DD",
+                                        "corrections": {"pack_spec_source": "stated_on_quote",
+                                                        "base_per_pack_stated": 150}}
+      A supplier's answer to the question the comparison drafted. NOT applied
+      by the seed: the demo shows the gap first, and the walkthrough setup
+      calls `record_rutf_clarification(data)` between scenes.
   market_buyers                        [{"program_id": <synthetic id, >= 10000>,
                                          "org_slug": "<a slug in `orgs`>",
                                          "tender": {<tender_create data: label, lines,
                                                     delivery_point, response_deadline, brief>}}]
-      Other buyers' open public tenders, beside round 2 on the market.
+      Other buyers' open public tenders, beside round 2 on the market. Each
+      program must be a REGISTERED synthetic program, not one of the four here.
+
+No day may be in the future, and a step dated today is recorded no later
+than now.
 """
 
 import re
@@ -62,7 +71,7 @@ from connect_labs.supply_chain.fulfilment.services.landed import landed_total
 from connect_labs.supply_chain.history.context import seed_overrides
 from connect_labs.supply_chain.identity import WITNESSED_SOURCES
 from connect_labs.supply_chain.operations import call_operation
-from connect_labs.supply_chain.scopes import SYNTHETIC_FLOOR, is_synthetic
+from connect_labs.supply_chain.scopes import is_synthetic
 from connect_labs.supply_chain.values import Money, decimal_string
 
 # Three chains, three programs -- plus the supply-only organisation's own.
@@ -521,12 +530,27 @@ _DATE_DEFAULTS = {
 }
 
 
+def _past_day(value, what):
+    """`value` as a date, refused if it is in the future.
+
+    A replayed history is what already happened; a step dated tomorrow would
+    be recorded as having happened before it did.
+    """
+    found = date.fromisoformat(str(value)[:10])
+    if found > timezone.localdate():
+        raise ValueError(f"{what} ({found.isoformat()}) is in the future; a replayed history can only hold the past")
+    return found
+
+
 def _chain_dates(chain):
     """Each step's day: the document's `dates`, else the relative default."""
     stated = (chain or {}).get("dates") or {}
-    dates = {key: stated.get(key) or day(days) for key, days in _DATE_DEFAULTS.items()}
+    parsed = {
+        key: _past_day(stated.get(key) or day(days), f"this chain's {key}") for key, days in _DATE_DEFAULTS.items()
+    }
+    dates = {key: found.isoformat() for key, found in parsed.items()}
     for earlier, later in _DATE_ORDER:
-        if dates[later] < dates[earlier]:
+        if parsed[later] < parsed[earlier]:
             raise ValueError(
                 f"this chain's {later} ({dates[later]}) is before its {earlier} ({dates[earlier]}); "
                 "a replayed history has to run forwards, or rewinding it deletes rows from under "
@@ -536,9 +560,13 @@ def _chain_dates(chain):
 
 
 def _ten_am(iso_day):
-    """When a step is recorded: 10:00 local time on its own day."""
-    when = datetime.combine(date.fromisoformat(str(iso_day)[:10]), time(10))
-    return timezone.make_aware(when, timezone.get_default_timezone())
+    """When a step is recorded: 10:00 local time on its own day, and never later than now.
+
+    A step dated today and seeded at 08:00 would otherwise be recorded two
+    hours in the future. A day after today is refused outright.
+    """
+    when = datetime.combine(_past_day(iso_day, "a step's day"), time(10))
+    return min(timezone.make_aware(when, timezone.get_default_timezone()), timezone.now())
 
 
 def _as_date(iso_day):
@@ -576,21 +604,30 @@ def demo_persona_users():
 _CHANNELS = {"sophie": "web", "ace": "mcp"}
 
 
+def _require_replayable(program_id):
+    """Refuse, before anything is written or anyone created, a program that is not synthetic.
+
+    Backdating a real program's history would make it say something false.
+    `seed_overrides` refuses too, but only at the first step -- after the
+    demo users exist -- so this runs first.
+    """
+    if not is_synthetic(program_id):
+        raise PermissionError(
+            f"program {program_id} is not a registered synthetic program, so its history "
+            "cannot be replayed with backdated days"
+        )
+
+
 class Replay:
     """Who did each step of a replayed round, on which day, and from what email.
 
-    Refuses, before anything is written, a program that is not synthetic:
-    backdating a real program's history would make it say something false.
+    Only a synthetic program accepts it: `seed_overrides` refuses any other at
+    the first step, and callers check `_require_replayable` before that.
     """
 
     active = True
 
     def __init__(self, program_id, personas, tag):
-        if not is_synthetic(program_id):
-            raise PermissionError(
-                f"program {program_id} is not a registered synthetic program, so its history "
-                "cannot be replayed with backdated days"
-            )
         self.program_id = program_id
         self.personas = personas
         self.tag = tag
@@ -633,7 +670,7 @@ def _quote_excerpt(quoted):
     )
     said = f"{quoted.get('as_quoted_currency', '')} {quoted.get('as_quoted_amount')} {per}".strip()
     text = f"We can supply {basis} {unit} at {said}" if basis else f"Our price is {said}"
-    freight = quoted.get("freight_stated_in_email") or quoted.get("freight_basis")
+    freight = quoted.get("freight_basis")
     terms = [f"freight {freight}"] if freight and freight != "not_specified" else []
     duties = quoted.get("duties_basis")
     if duties and duties != "not_specified":
@@ -1368,7 +1405,8 @@ def _seed_consignment(access, chain, contract, dates, replay):
             "shipment.expected_on and shipment.eta_slip_learned_on); the consignment is seeded without one"
         )
     order_days = [dates["signed_on"], dispatched_on] + ([learned, dates["received_on"]] if slips else [])
-    if order_days != sorted(order_days):
+    parsed = [_past_day(value, "a consignment day") for value in order_days]
+    if parsed != sorted(parsed):
         raise ValueError(
             "the consignment's days must run signed_on <= dispatched_on <= eta_slip_learned_on <= "
             f"received_on; the document gives {order_days}"
@@ -1467,6 +1505,30 @@ def seed_supply_only(data, scopes):
     }
 
 
+def _round_two_opens(round_two):
+    """The day round 2 opened, after checking its days run forwards.
+
+    The requests go out on `outreach.sent_on`, and no quote is received
+    before them or in the future. With no outreach the round opened when its
+    first quote came in.
+    """
+    quoted_on = day(ROUND_TWO_DAYS_AGO)
+    received = [
+        _past_day(q.get("received_on") or quoted_on, "a round-2 quote's received_on") for q in round_two["quotes"]
+    ]
+    sent_on = (round_two.get("outreach") or {}).get("sent_on")
+    if not sent_on:
+        return min(received or [date.fromisoformat(quoted_on)]).isoformat()
+    sent = _past_day(sent_on, "round 2's outreach.sent_on")
+    early = [found for found in received if found < sent]
+    if early:
+        raise ValueError(
+            f"a round-2 quote is received on {min(early).isoformat()}, before the requests went out on "
+            f"{sent.isoformat()}; a quote cannot answer a request not yet sent"
+        )
+    return sent.isoformat()
+
+
 def seed_rutf_round_two(access, round_two, *, replay=NO_REPLAY):
     """Round 2: open, quoted by three suppliers, and deliberately unawarded.
 
@@ -1499,10 +1561,10 @@ def seed_rutf_round_two(access, round_two, *, replay=NO_REPLAY):
     and sent the requests on the day the document's `outreach.sent_on` says
     (or, with no outreach, when the quotes came), and each quote came in
     through the agent, dated its own `received_on` or a few days ago, with a
-    paraphrase of the supplier's email as its source. A quote's
-    `freight_stated_in_email` is what that email said about freight when the
-    record says otherwise -- the misreading Sophie finds and corrects -- and
-    reaches the source excerpt only, never the quote.
+    paraphrase of the supplier's email as its source. A quote is never
+    received before the requests went out; that is refused before any write.
+    The document's `clarification` is not applied here -- see
+    `record_rutf_clarification`.
 
     `outreach.non_responders` are suppliers asked and never heard from. They
     get an invitation and nothing else, which is what flags the round stale.
@@ -1510,9 +1572,7 @@ def seed_rutf_round_two(access, round_two, *, replay=NO_REPLAY):
     round_two = without_commentary(round_two)
     outreach = round_two.get("outreach") or {}
     quoted_on = day(ROUND_TWO_DAYS_AGO)
-    opened_on = outreach.get("sent_on") or min(
-        [q.get("received_on") or quoted_on for q in round_two["quotes"]] or [quoted_on]
-    )
+    opened_on = _round_two_opens(round_two)
 
     with replay.by("sophie", opened_on):
         round_ = tender_for(access, round_two["round"])
@@ -1546,9 +1606,6 @@ def seed_rutf_round_two(access, round_two, *, replay=NO_REPLAY):
         if replay.active:
             quoted["received_on"] = received_on
         email = replay.source(f"quote-{index + 1}", _quote_excerpt(quoted))
-        # What the email said about freight is evidence, not a field of the
-        # quote: the record keeps what the agent entered.
-        quoted.pop("freight_stated_in_email", None)
         with replay.by("ace", received_on):
             supplier = supplier_for_label(access, quoted.pop("supplier_label"))
             quoted.pop("supplier_country", None)
@@ -1604,6 +1661,11 @@ def seed_rutf_rounds(data, scopes):
     """
     scope = scopes["rutf"]
     section = data["rutf_rounds"]
+    _require_replayable(RUTF_PROGRAM_ID)
+    # Everything that can be refused is refused before the first write.
+    _chain_dates(without_commentary(section["round_one"]))
+    _round_two_opens(without_commentary(section["round_two"]))
+    _check_market_buyers(data)
     replay = Replay(RUTF_PROGRAM_ID, demo_persona_users(), "rutf")
     return {
         "program_id": RUTF_PROGRAM_ID,
@@ -1615,29 +1677,41 @@ def seed_rutf_rounds(data, scopes):
     }
 
 
+def _check_market_buyers(data):
+    """The document's other buyers, each refused unless its program is theirs to write.
+
+    A program must be a REGISTERED synthetic program -- an id in the reserved
+    range is not enough, since nobody may have said whose it is -- and not
+    one of this demo's own four.
+    """
+    buyers = without_commentary(data.get("market_buyers") or [])
+    ours = {scope["program_id"] for scope in SCOPES.values()}
+    for buyer in buyers:
+        program_id = buyer["program_id"]
+        if program_id in ours or not is_synthetic(program_id):
+            raise ValueError(
+                f"market buyer {buyer.get('org_slug')!r} names program {program_id}, which is "
+                + ("one of this demo's own" if program_id in ours else "not a registered synthetic program")
+                + "; another buyer's tender needs a registered synthetic program of its own"
+            )
+    return buyers
+
+
 def seed_market_buyers(data, scopes):
     """Other buyers' open tenders, so round 2 is not alone on the market.
 
     From the document's `market_buyers`: each names a synthetic program of its
     own, an organisation from the document's `orgs` that publishes the
     tender, and the tender. Nothing about them is in this file; with no such
-    section the market is left as it is and the seed says so. A program below
-    the synthetic floor, or one of this demo's own four, is refused: another
-    buyer's tender must never be written into a real program.
+    section the market is left as it is and the seed says so. A program that
+    is not a registered synthetic one, or is one of this demo's own four, is
+    refused (`_check_market_buyers`): another buyer's tender must never be
+    written into a real program.
     """
-    buyers = without_commentary(data.get("market_buyers") or [])
+    buyers = _check_market_buyers(data)
     if not buyers:
         print("the document has no market_buyers section; no other buyers' tenders seeded")
         return []
-    ours = {scope["program_id"] for scope in SCOPES.values()}
-    for buyer in buyers:
-        program_id = buyer["program_id"]
-        if program_id < SYNTHETIC_FLOOR or program_id in ours:
-            raise ValueError(
-                f"market buyer {buyer.get('org_slug')!r} names program {program_id}, which is "
-                + ("a real program" if program_id < SYNTHETIC_FLOOR else "one of this demo's own")
-                + f"; another buyer's tender needs a synthetic program of its own (id >= {SYNTHETIC_FLOOR})"
-            )
     orgs = scopes["rutf"]["reference"]["orgs"]
     seeded = []
     for buyer in buyers:
@@ -1648,6 +1722,75 @@ def seed_market_buyers(data, scopes):
         listing = tender_for(access, {**tender, "owner_org_id": owner["id"], "visibility": "public"})
         seeded.append(opened(access, listing))
     return seeded
+
+
+def record_rutf_clarification(data):
+    """A round-2 supplier's answer to the question the comparison drafted.
+
+    Not part of the seed: the demo shows round 2 with the gap and the drafted
+    question first, and the walkthrough setup calls this between scenes, as
+    the reply landing. The document's `rutf_rounds.round_two.clarification`
+    names the supplier, the day it answered and what the answer settles; the
+    agent records it through `quote_correct` over MCP, with a paraphrase of
+    the reply as its source. That source's reference makes a second call a
+    replay, not a second correction.
+
+    Returns the corrected quote, or None (and says so) when the document
+    states no clarification.
+    """
+    clarification = without_commentary((data["rutf_rounds"]["round_two"] or {}).get("clarification") or {})
+    if not clarification:
+        print("the document has no rutf_rounds.round_two.clarification; no reply recorded")
+        return None
+    _require_replayable(RUTF_PROGRAM_ID)
+    answered_on = _past_day(clarification["answered_on"], "the clarification's answered_on").isoformat()
+    corrections = clarification["corrections"]
+    access = access_for(RUTF_PROGRAM_ID)
+
+    label = data["rutf_rounds"]["round_two"]["round"]["label"]
+    round_ = _found(op(access, "tender_list"), lambda row: row.get("label") == label)
+    if round_ is None:
+        raise ValueError(f"round 2 ({label!r}) is not seeded in program {RUTF_PROGRAM_ID}; seed it first")
+    supplier = _found(
+        op(access, "supplier_list", search=clarification["supplier_label"]),
+        lambda row: row["name"] == clarification["supplier_label"],
+    )
+    if supplier is None:
+        raise ValueError(f"no round-2 supplier named {clarification['supplier_label']!r}")
+    # The quote as it stands. After the correction that is the new version,
+    # and the replay below answers without touching it.
+    quote = _found(
+        op(access, "quote_list", tender_id=round_["id"]),
+        lambda row: row.get("supplier_id") == supplier["id"],
+    )
+    if quote is None:
+        raise ValueError(f"{clarification['supplier_label']!r} has no quote on round 2")
+    if quote.get("received_on") and answered_on < str(quote["received_on"])[:10]:
+        raise ValueError(f"the clarification is answered on {answered_on}, before the quote it answers arrived")
+
+    replay = Replay(RUTF_PROGRAM_ID, demo_persona_users(), "rutf-r2")
+    email = replay.source("clarification", _clarification_excerpt(access, quote, corrections))
+    with replay.by("ace", answered_on):
+        return op(
+            access,
+            "quote_correct",
+            quote_id=quote["id"],
+            data=corrections,
+            reason="The supplier answered the question the comparison raised.",
+            **email,
+        )
+
+
+def _clarification_excerpt(access, quote, corrections):
+    """What the supplier's reply said, from the corrections it settles."""
+    count = corrections.get("base_per_pack_stated")
+    if count:
+        commodity = access.get_commodity(quote["commodity_slug"])
+        base = getattr(commodity, "base_unit", "") or "units"
+        pack = getattr(commodity, "pack_unit", "") or "pack"
+        return f"Each {pack} holds {count} {base}."
+    stated = ", ".join(f"{key.replace('_', ' ')}: {value}" for key, value in corrections.items())
+    return f"In answer to your question: {stated}."
 
 
 def seed_chlorine_blocked(data, scopes):

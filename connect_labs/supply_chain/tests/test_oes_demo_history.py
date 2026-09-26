@@ -78,20 +78,30 @@ def _round_one():
 
 
 def _round_two():
+    """The reference tests' round 2: A fails only on its pack spec, B and C on their own reasons."""
     round_two = copy.deepcopy(_ROUND_TWO)
-    for quote in round_two["quotes"]:
-        quote["commodity_slug"] = "a-product"
-    round_two["round"]["lines"][0]["commodity_slug"] = "a-product"
-    # Supplier B's email said freight was included; the record says not specified.
-    round_two["quotes"][1]["freight_stated_in_email"] = "included"
     round_two["outreach"] = {"sent_on": _ago(20), "non_responders": ["Placeholder Silent Supplier"]}
+    round_two["clarification"] = {
+        "supplier_label": "Placeholder Supplier A",
+        "answered_on": _ago(1),
+        "corrections": {"pack_spec_source": "stated_on_quote", "base_per_pack_stated": 150},
+    }
     return round_two
+
+
+_THERAPEUTIC_FOOD = {
+    "slug": "a-therapeutic-food",
+    "name": "A Placeholder Therapeutic Food",
+    "category": "therapeutic_food",
+    "base_unit": "sachet",
+    "pack_unit": "carton",
+}
 
 
 def _document(**changes):
     document = {
         "orgs": _DOCUMENT["orgs"] + [{"slug": "another-buyer", "name": "A Placeholder Other Buyer"}],
-        "commodities": _DOCUMENT["commodities"],
+        "commodities": _DOCUMENT["commodities"] + [_THERAPEUTIC_FOOD],
         "chc_chain": {"round": {"lines": []}},
         "rutf_rounds": {"round_one": _round_one(), "round_two": _round_two()},
         "chlorine_blocked": {"round": {"lines": []}},
@@ -134,6 +144,7 @@ def _seed(document):
 @pytest.fixture
 def synthetic(db):
     _register(RUTF)
+    _register(MARKET_BUYER_PROGRAM)
 
 
 @pytest.fixture
@@ -210,16 +221,6 @@ class TestWhoDidEachStep:
         call = OperationCall.objects.filter(program_id=RUTF, operation="invoice_record").first()
         assert call.actor.email == settings.LABS_AGENT_ACCOUNT_EMAILS[0]
 
-    def test_the_misread_quote_has_a_source_that_states_what_the_record_does_not(self, seeded):
-        _, result = seeded
-        misread = next(
-            q for q in result["round_two"]["quotes"] if q["supplier_id"] == result["round_two"]["suppliers"][1]["id"]
-        )
-        quote = Quote.objects.get(pk=misread["id"])
-        call = Revision.objects.get(content_type__model="quote", object_id=str(quote.id), action="create").call
-        assert quote.freight_basis == "not_specified"
-        assert "freight included" in call.source_excerpt.lower()
-
     def test_round_two_is_recent_and_its_silent_supplier_is_still_waiting(self, seeded):
         _, result = seeded
         tender = Tender.objects.get(pk=result["round_two"]["round"]["id"])
@@ -288,11 +289,17 @@ def test_no_market_section_is_skipped_not_invented(synthetic, capsys):
     assert "market_buyers" in capsys.readouterr().out
 
 
-def test_a_market_buyer_on_a_real_program_is_refused(synthetic):
+@pytest.mark.parametrize(
+    "program_id, why",
+    [(263, "not a registered synthetic"), (10690, "not a registered synthetic"), (RUTF, "demo's own")],
+)
+def test_a_market_buyer_on_a_program_that_is_not_its_own_synthetic_one_is_refused(synthetic, program_id, why):
+    """Refused before anything is written, round 1 included."""
     document = _document()
-    document["market_buyers"][0]["program_id"] = 263
-    with pytest.raises(ValueError, match="263"):
+    document["market_buyers"][0]["program_id"] = program_id
+    with pytest.raises(ValueError, match=why):
         _seed(document)
+    assert not Tender.objects.filter(program_id=RUTF).exists()
 
 
 def test_seeding_round_one_as_history_is_refused_on_a_program_that_is_not_synthetic(db):
@@ -303,6 +310,8 @@ def test_seeding_round_one_as_history_is_refused_on_a_program_that_is_not_synthe
     with pytest.raises(PermissionError):
         module.seed_rutf_rounds(document, scopes)
     assert not Tender.objects.filter(program_id=RUTF).exists()
+    # Refused before the demo's people are made, not just before its records.
+    assert not get_user_model().objects.filter(username="demo-sophie").exists()
 
 
 def test_the_personas_are_created_once(db):
@@ -327,3 +336,139 @@ def test_the_stock_a_receipt_posted_is_in_history_on_the_receipts_day(seeded):
     for movement in movements:
         create = Revision.objects.get(content_type__model="movement", object_id=str(movement.id), action="create")
         assert create.recorded_at == _ten_am(_DATES["received_on"])
+
+
+# ---- the clarification that lands mid-demo -------------------------------
+
+
+def _supplier_a_reasons(tender_id):
+    """Why supplier A's quote cannot be ranked, from the comparison the page draws."""
+    from connect_labs.labs.access.scopes import SYSTEM
+    from connect_labs.supply_chain.data_access import SupplyDataAccess
+    from connect_labs.supply_chain.procurement.services.comparison import compare_tender
+
+    access = SupplyDataAccess(access_token="unused", program_id=RUTF, caller=SYSTEM)
+    tender = access.get_tender(tender_id)
+    quotes = access.list_quotes(tender_id=tender_id)
+    suppliers = {q.supplier_id: access.get_supplier(q.supplier_id) for q in quotes}
+    comparison = compare_tender(tender, access.get_commodity("a-therapeutic-food"), quotes, suppliers)
+    return {row.supplier_name: row.figures["landed_total_for_tender_quantity"].reasons for row in comparison.blocked}
+
+
+class TestTheClarification:
+    def test_the_seed_leaves_supplier_a_blocked_on_its_pack_spec_alone(self, seeded):
+        _, result = seeded
+        reasons = _supplier_a_reasons(result["round_two"]["round"]["id"])["Placeholder Supplier A"]
+        assert reasons and all("pack spec" in reason for reason in reasons)
+
+    def test_the_reply_makes_the_quote_comparable(self, seeded):
+        module, result = seeded
+        module.record_rutf_clarification(_document())
+        assert "Placeholder Supplier A" not in _supplier_a_reasons(result["round_two"]["round"]["id"])
+
+    def test_the_reply_forwarded_again_replays(self, seeded):
+        module, _ = seeded
+        module.record_rutf_clarification(_document())
+        before = (Quote.objects.count(), Revision.objects.count(), OperationCall.objects.count())
+        again = module.record_rutf_clarification(_document())
+        assert again["replayed"] is True
+        assert (Quote.objects.count(), Revision.objects.count(), OperationCall.objects.count()) == before
+
+    def test_the_timeline_shows_the_agent_recording_the_reply_on_its_day(self, seeded):
+        from connect_labs.supply_chain.history.timeline import timeline_for_tender
+
+        module, result = seeded
+        module.record_rutf_clarification(_document())
+        entries = timeline_for_tender(result["round_two"]["round"]["id"], program_id=RUTF)
+        replies = [e for e in entries if e.excerpt == "Each carton holds 150 sachet."]
+        # One call, two lines: the new version, and the old one marked replaced.
+        assert len(replies) == 2
+        assert any("Replaced by a corrected" in e.sentence for e in replies)
+        for entry in replies:
+            assert entry.actor == "ACE (agent)" and entry.is_ai
+            assert entry.when == _ten_am(_ago(1))
+
+    def test_no_clarification_in_the_document_is_skipped_and_said(self, seeded, capsys):
+        module, _ = seeded
+        document = _document()
+        del document["rutf_rounds"]["round_two"]["clarification"]
+        assert module.record_rutf_clarification(document) is None
+        assert "clarification" in capsys.readouterr().out
+        assert not OperationCall.objects.filter(operation="quote_correct").exists()
+
+    def test_a_reply_dated_in_the_future_is_refused(self, seeded):
+        module, _ = seeded
+        document = _document()
+        document["rutf_rounds"]["round_two"]["clarification"]["answered_on"] = _ago(-1)
+        with pytest.raises(ValueError, match="future"):
+            module.record_rutf_clarification(document)
+        assert not OperationCall.objects.filter(operation="quote_correct").exists()
+
+
+# ---- days that cannot have happened -------------------------------------
+
+
+def test_a_step_dated_tomorrow_is_refused():
+    module = _load_seed_remote()
+    with pytest.raises(ValueError, match="future"):
+        module._ten_am(_ago(-1))
+
+
+def test_a_step_dated_today_is_never_recorded_after_now(monkeypatch):
+    from django.utils import timezone as django_timezone
+
+    early = timezone.make_aware(datetime.combine(timezone.localdate(), time(8)), timezone.get_default_timezone())
+    monkeypatch.setattr(django_timezone, "now", lambda: early)
+    module = _load_seed_remote()
+    assert module._ten_am(early.date().isoformat()) == early
+
+
+def test_a_round_one_day_in_the_future_is_refused_before_any_write(synthetic):
+    document = _document()
+    document["rutf_rounds"]["round_one"]["dates"]["counted_on"] = _ago(-2)
+    with pytest.raises(ValueError, match="future"):
+        _seed(document)
+    assert not Tender.objects.filter(program_id=RUTF).exists()
+
+
+def test_round_one_days_that_run_backwards_are_refused_before_any_write(synthetic):
+    document = _document()
+    document["rutf_rounds"]["round_one"]["dates"]["decided_on"] = _ago(90)
+    with pytest.raises(ValueError, match="decided_on"):
+        _seed(document)
+    assert not Tender.objects.filter(program_id=RUTF).exists()
+
+
+def test_a_consignment_dispatched_before_its_order_was_signed_is_refused(synthetic):
+    document = _document()
+    document["rutf_rounds"]["round_one"]["shipment"]["dispatched_on"] = _ago(69)
+    with pytest.raises(ValueError, match="consignment"):
+        _seed(document)
+    assert not Shipment.objects.exists()
+
+
+def test_a_round_two_quote_received_before_the_requests_went_out_is_refused(synthetic):
+    document = _document()
+    document["rutf_rounds"]["round_two"]["quotes"][0]["received_on"] = _ago(21)
+    with pytest.raises(ValueError, match="before the requests went out"):
+        _seed(document)
+    assert not Tender.objects.filter(program_id=RUTF).exists()
+
+
+def test_an_invoice_email_that_bills_twice_stops_the_seed(synthetic):
+    """If the second invoice email were written rather than replayed, the seed says so."""
+    module = _load_seed_remote()
+    real, seen = module.op, []
+
+    def second_invoice_loses_its_source(access, name, **payload):
+        if name == "invoice_record":
+            seen.append(name)
+            if len(seen) == 2:
+                payload.pop("source", None)
+        return real(access, name, **payload)
+
+    module.op = second_invoice_loses_its_source
+    document = _document()
+    scopes = module.seed_scopes(document)
+    with pytest.raises(RuntimeError, match="invoice"):
+        module.seed_rutf_rounds(document, scopes)
