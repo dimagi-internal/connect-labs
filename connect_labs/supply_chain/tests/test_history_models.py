@@ -48,7 +48,9 @@ def test_every_supply_model_has_a_program_path():
     """A new model without a path would write revisions no as-of view can rewind."""
     from connect_labs.supply_chain.history import program
 
-    for model in apps.get_app_config("supply_chain").get_models():
+    # Auto-created many-to-many through models too: their rows are captured
+    # like any other, so they need a program as much as a real model does.
+    for model in apps.get_app_config("supply_chain").get_models(include_auto_created=True):
         if model in (OperationCall, Revision) or model.__name__ in SKIPPED_MODELS:
             continue
         assert model.__name__ in program.PATHS, f"{model.__name__} has no program path"

@@ -4,10 +4,18 @@ An as-of rewind (design doc §3.5) undoes revisions recorded after a given
 instant, working newest-first back to nothing. A row written before history
 existed has no `create` revision to stop at, so rewinding past its actual
 creation would erase it -- the wrong answer, since it did exist. This
-backfills one `create` revision per row, stamped with the row's own
-`created_at` where it has one, or this migration's run time where it does
-not (`ShipmentLine`, `ReceiptLine`, `DistributionLine`, `AlertCheckState`,
-`AlertNotice`, `UpdateLinkSubmission`).
+backfills one `create` revision per row, including the link rows of
+auto-created many-to-many through models (a tender's invited organisations,
+an update link's contracts), stamped with the moment the row came to exist
+as nearly as the data says:
+
+- the row's own `created_at`, where it has one;
+- otherwise its own event time, where it records one (`OWN_STAMP`: an alert
+  state's first report, a notice's detection, a submission's submit time);
+- otherwise its parent's `created_at` -- a shipment line or a link row
+  exists from when its parent does, so rewinding to before this migration
+  ran must not strip lines off parents that stay;
+- and only when none of those resolves, this migration's run time.
 
 `backfill` is a module-level function (not a closure) so a test can import
 and call it directly against a real database, per
@@ -55,6 +63,20 @@ SELECT_RELATED = {
     "AlertCheckState": ["subscription"],
     # `contract` is nullable on a submission; `link` never is (program.py).
     "UpdateLinkSubmission": ["link"],
+    # Auto-created many-to-many through models (program.py).
+    "Tender_invited_orgs": ["tender"],
+    "UpdateLink_contracts": ["updatelink"],
+    "UpdateLink_supply_points": ["updatelink"],
+    "UpdateLink_approvals": ["updatelink"],
+}
+
+# A model with no `created_at` of its own but a field saying when the row
+# came to be. Better than its parent's `created_at`: a submission through a
+# link happened when it was submitted, not when the link was issued.
+OWN_STAMP = {
+    "AlertCheckState": "first_reported_at",
+    "AlertNotice": "detected_at",
+    "UpdateLinkSubmission": "submitted_at",
 }
 
 
@@ -63,6 +85,20 @@ def _queryset_for(model):
     queryset = model._default_manager.all()
     paths = SELECT_RELATED.get(model.__name__)
     return queryset.select_related(*paths) if paths else queryset
+
+
+def _stamp(instance, name, run_time):
+    """When this row came to exist, as nearly as the data says (module docstring)."""
+    stamp = getattr(instance, "created_at", None) or getattr(instance, OWN_STAMP.get(name, ""), None)
+    if stamp is None:
+        # The parent is the first hop of the chain `program_of` walks, already
+        # joined by `_queryset_for`, so this costs no query.
+        for path in SELECT_RELATED.get(name, []):
+            parent = getattr(instance, path.split("__", 1)[0], None)
+            stamp = getattr(parent, "created_at", None)
+            if stamp is not None:
+                break
+    return stamp or run_time
 
 
 def backfill(apps, schema_editor):
@@ -76,14 +112,15 @@ def backfill(apps, schema_editor):
     Revision = apps.get_model("supply_chain", "Revision")
     run_time = timezone.now()
 
-    for model in apps.get_app_config("supply_chain").get_models():
+    # `include_auto_created`: many-to-many through models are captured going
+    # forward (capture.py), so their existing rows need a create revision too.
+    for model in apps.get_app_config("supply_chain").get_models(include_auto_created=True):
         if model.__name__ in EXCLUDED_MODELS:
             continue
 
         content_type, _ = ContentType.objects.get_or_create(
             app_label="supply_chain", model=model._meta.model_name
         )
-        has_created_at = any(field.name == "created_at" for field in model._meta.concrete_fields)
         already = set(
             Revision.objects.filter(content_type=content_type, action="create").values_list(
                 "object_id", flat=True
@@ -105,9 +142,7 @@ def backfill(apps, schema_editor):
                 # A relation this migration's frozen apps registry can't
                 # walk loses only its program scope, not the whole backfill.
                 program_id = None
-            recorded_at = getattr(instance, "created_at", None) if has_created_at else None
-            if recorded_at is None:
-                recorded_at = run_time
+            recorded_at = _stamp(instance, model.__name__, run_time)
             changes = {field: [None, value] for field, value in _snapshot(instance).items()}
             batch.append(
                 Revision(

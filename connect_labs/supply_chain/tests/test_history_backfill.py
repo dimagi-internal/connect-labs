@@ -19,12 +19,21 @@ from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 
 from connect_labs.labs.access.scopes import SYSTEM
+from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.alerts.models import AlertCheckState, AlertSubscription
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.history import program
 from connect_labs.supply_chain.history.context import capture_suspended
 from connect_labs.supply_chain.history.models import OperationCall, Revision
-from connect_labs.supply_chain.models import Commodity, SupplierProfile, Tender
+from connect_labs.supply_chain.models import (
+    Commodity,
+    Contract,
+    Shipment,
+    ShipmentLine,
+    Supplier,
+    SupplierProfile,
+    Tender,
+)
 from connect_labs.supply_chain.operations import call_operation
 
 pytestmark = pytest.mark.django_db
@@ -119,33 +128,94 @@ class TestBackfill:
         assert len(revs) == 1
         assert revs[0].pk == real_rev.pk
 
-    def test_a_model_with_no_created_at_is_stamped_with_the_migration_run_time(self):
-        """`AlertCheckState` has no `created_at` -- the backfill must fall
-        back to a stamp taken while it runs, not crash or leave `recorded_at`
-        unset.
+    def test_a_model_with_no_created_at_is_stamped_with_its_own_event_time(self):
+        """`AlertCheckState` has no `created_at`, but says when it was first
+        reported -- that is when it came to exist, not this migration's run.
         """
+        first_reported = timezone.now() - timedelta(days=3)
         with capture_suspended():
             subscription = AlertSubscription.objects.create(program_id=PROGRAM, recipient_email="ops@example.test")
             state = AlertCheckState.objects.create(
                 subscription=subscription,
                 check_key="stale_outreach",
-                first_reported_at=timezone.now(),
+                first_reported_at=first_reported,
                 last_seen_at=timezone.now(),
             )
         assert not hasattr(state, "created_at")
 
-        before = timezone.now()
         backfill(django_apps, None)
-        after = timezone.now()
 
         rev = Revision.objects.get(
             content_type=ContentType.objects.get_for_model(AlertCheckState), object_id=str(state.pk), action="create"
         )
-        assert before - timedelta(seconds=1) <= rev.recorded_at <= after + timedelta(seconds=1)
+        assert rev.recorded_at == first_reported
         # `AlertCheckState` resolves its program by walking `subscription`,
         # which is a plain FK attribute a historical model instance carries
         # identically to the real one.
         assert rev.program_id == PROGRAM
+
+    def test_a_line_row_is_stamped_with_its_parents_created_at(self):
+        """A shipment line has no timestamp of its own. Stamped at run time, a
+        rewind to before the deploy would strip lines off shipments that
+        stay; it existed from when its shipment did."""
+        scope = f"prog:{PROGRAM}"
+        with capture_suspended():
+            commodity = Commodity.objects.create(
+                scope_key=scope, slug="rutf", name="RUTF", base_unit="sachet", pack_unit="carton", base_per_pack=150
+            )
+            supplier = Supplier.objects.enrol(
+                scope_key=scope, name="Northwind Foods", type="manufacturer", country="NG"
+            )
+            contract = Contract.objects.create(
+                program_id=PROGRAM, supplier=supplier, commodity=commodity, buyer_of_record="programme_org"
+            )
+            shipment = Shipment.objects.create(contract=contract, reference="SHP-1")
+            Shipment.objects.filter(pk=shipment.pk).update(created_at=timezone.now() - timedelta(days=40))
+            shipment.refresh_from_db()
+            line = ShipmentLine.objects.create(shipment=shipment, quantity=600, quantity_unit="carton")
+
+        backfill(django_apps, None)
+
+        rev = Revision.objects.get(
+            content_type=ContentType.objects.get_for_model(ShipmentLine), object_id=str(line.pk), action="create"
+        )
+        assert rev.recorded_at == shipment.created_at
+        assert rev.program_id == PROGRAM
+
+    def test_a_many_to_many_link_row_is_backfilled_from_its_owner(self):
+        """An invitation (a `Tender.invited_orgs` through row) gets a create
+        revision, stamped with its tender's `created_at` and scoped to its program."""
+        with capture_suspended():
+            tender = Tender.objects.create(program_id=PROGRAM, label="Restricted tender")
+            Tender.objects.filter(pk=tender.pk).update(created_at=timezone.now() - timedelta(days=10))
+            tender.refresh_from_db()
+            org = LabsOrg.objects.create(slug="northwind", name="Northwind Foods")
+            tender.invited_orgs.add(org)
+        through = Tender.invited_orgs.through
+        link = through.objects.get(tender=tender, labsorg=org)
+
+        backfill(django_apps, None)
+
+        # By name, not `get_for_model`: a through model's content type is made
+        # on first use and may not survive in the per-process cache.
+        rev = Revision.objects.get(
+            content_type__app_label="supply_chain",
+            content_type__model=through._meta.model_name,
+            object_id=str(link.pk),
+            action="create",
+        )
+        assert rev.recorded_at == tender.created_at
+        assert rev.program_id == PROGRAM
+        assert rev.changes["labsorg_id"] == [None, org.pk]
+
+    def test_a_row_with_no_resolvable_stamp_falls_back_to_the_run_time(self):
+        run_time = timezone.now()
+
+        class Orphan:
+            created_at = None
+            shipment = None
+
+        assert backfill_module._stamp(Orphan(), "ShipmentLine", run_time) == run_time
 
 
 class TestBackfillAvoidsNPlusOneOnViaChains:

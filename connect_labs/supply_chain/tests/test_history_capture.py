@@ -127,3 +127,70 @@ def test_seed_overrides_stamps_recorded_at_on_a_synthetic_program(registered_syn
         tender = Tender.objects.create(program_id=SYNTHETIC_PROGRAM, label="Backdated tender")
     rev = Revision.objects.get(object_id=str(tender.pk))
     assert rev.recorded_at == backdated
+
+
+class TestManyToManyLinkRows:
+    """`add()` bulk-inserts link rows with no `post_save`, so `m2m_changed`
+    records them; `remove()`/`clear()` go through a queryset delete whose
+    per-row delete signals already record them -- exactly once each."""
+
+    @pytest.fixture
+    def orgs(self):
+        from connect_labs.labs.models import LabsOrg
+
+        return [LabsOrg.objects.create(slug=f"org-{n}", name=f"Org {n}") for n in (1, 2)]
+
+    def _link_revs(self, action):
+        return Revision.objects.filter(
+            content_type__app_label="supply_chain", content_type__model="tender_invited_orgs", action=action
+        )
+
+    def test_add_writes_one_create_revision_per_new_link_with_program(self, orgs):
+        tender = _tender()
+        tender.invited_orgs.add(*orgs)
+        tender.invited_orgs.add(orgs[0])  # already there: nothing new
+
+        revs = self._link_revs("create")
+        assert revs.count() == 2
+        assert {r.changes["labsorg_id"][1] for r in revs} == {o.pk for o in orgs}
+        assert all(r.program_id == PROGRAM and r.changes["tender_id"] == [None, tender.pk] for r in revs)
+
+    def test_add_from_the_other_side_is_recorded_the_same_way(self, orgs):
+        tender = _tender()
+        orgs[0].tenders_invited_to.add(tender)
+
+        rev = self._link_revs("create").get()
+        assert rev.program_id == PROGRAM
+        assert (rev.changes["tender_id"][1], rev.changes["labsorg_id"][1]) == (tender.pk, orgs[0].pk)
+
+    def test_remove_and_clear_write_one_delete_revision_per_link(self, orgs):
+        tender = _tender()
+        tender.invited_orgs.add(*orgs)
+        tender.invited_orgs.remove(orgs[0])
+        assert self._link_revs("delete").count() == 1
+        tender.invited_orgs.clear()
+
+        revs = self._link_revs("delete")
+        assert revs.count() == 2
+        assert all(r.program_id == PROGRAM for r in revs)
+
+    def test_a_cascade_records_the_link_rows_it_takes(self, orgs):
+        """Deleting a tender, or an invited organisation, drops link rows the
+        collector deletes without signals."""
+        tender = _tender()
+        tender.invited_orgs.add(*orgs)
+        org_pks = {o.pk for o in orgs}  # delete() clears .pk on the instance
+        orgs[1].delete()
+        assert self._link_revs("delete").count() == 1
+        tender.delete()
+
+        revs = self._link_revs("delete")
+        assert revs.count() == 2
+        assert all(r.program_id == PROGRAM for r in revs)
+        assert {r.changes["labsorg_id"] for r in revs} == org_pks
+
+    def test_add_under_capture_suspended_writes_nothing(self, orgs):
+        tender = _tender()
+        with capture_suspended():
+            tender.invited_orgs.add(*orgs)
+        assert not self._link_revs("create").exists()

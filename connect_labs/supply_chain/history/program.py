@@ -65,6 +65,12 @@ PATHS = {
     "AlertCheckState": _via("subscription"),
     # `contract` is nullable on a submission; `link` never is.
     "UpdateLinkSubmission": _via("link"),
+    # Many-to-many link rows: Django's auto-created through models, named
+    # `<Model>_<field>`. Each walks the FK to the side that owns the field.
+    "Tender_invited_orgs": _via("tender"),
+    "UpdateLink_contracts": _via("updatelink"),
+    "UpdateLink_supply_points": _via("updatelink"),
+    "UpdateLink_approvals": _via("updatelink"),
 }
 
 # Skipped deliberately, not by omission -- each reason says why rewinding by

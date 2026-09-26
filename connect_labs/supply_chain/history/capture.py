@@ -2,8 +2,10 @@
 
 Wired up for side effect: importing this module connects `pre_save`,
 `post_save`, `pre_delete` and `post_delete` on every concrete Django model,
-filtered down to `supply_chain`-labelled models (excluding the history
-tables themselves) in the receivers below. `apps.py::ready()` imports it so
+plus `m2m_changed` for the many-to-many link rows an `add()` bulk-inserts,
+filtered down to `supply_chain`-labelled models (including auto-created
+through models, excluding the history tables themselves) in the receivers
+below. `apps.py::ready()` imports it so
 the connection happens once, at startup.
 
 The diff is taken between the row as loaded fresh from the database in
@@ -17,7 +19,7 @@ import json
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
+from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete, pre_save
 
 from connect_labs.supply_chain.history.context import current_call, current_overrides, is_suspended
 from connect_labs.supply_chain.history.models import OperationCall, Revision
@@ -55,6 +57,20 @@ def _tracked(sender):
     return sender._meta.app_label == "supply_chain" and sender not in (OperationCall, Revision)
 
 
+def _content_type(model):
+    """The ContentType for `model`, safe for auto-created through models.
+
+    `migrate` creates content types only for a registry's regular models, so
+    a through model's is made on first use -- and `get_for_model` would cache
+    it for the life of the process even if the transaction that made it
+    rolled back, leaving every later write pointing at a row that is not
+    there. For those, ask the table each time; everything else keeps the cache.
+    """
+    if model._meta.auto_created:
+        return ContentType.objects.get_or_create(app_label=model._meta.app_label, model=model._meta.model_name)[0]
+    return ContentType.objects.get_for_model(model)
+
+
 def _write(instance, action, changes, program_id):
     overrides = current_overrides()
     kwargs = {}
@@ -63,7 +79,7 @@ def _write(instance, action, changes, program_id):
     Revision.objects.create(
         call=current_call(),
         program_id=program_id,
-        content_type=ContentType.objects.get_for_model(type(instance)),
+        content_type=_content_type(type(instance)),
         object_id=str(instance.pk),
         action=action,
         changes=changes,
@@ -94,12 +110,22 @@ def on_post_save(sender, instance, created, **kwargs):
 
 
 def on_pre_delete(sender, instance, **kwargs):
-    if _tracked(sender) and not is_suspended():
+    if is_suspended() or sender.__module__ == "__fake__":
+        return
+    if _tracked(sender):
         # Captured before the row (or, in a cascade, any of its parents) is
         # actually deleted, so a program path that walks a foreign key still
         # resolves.
         instance._history_program = program_of(instance)
         instance._history_snapshot = _snapshot(instance)
+    # Django's collector never sends delete signals for an auto-created
+    # through model, so the link rows a cascade takes with this row (a
+    # deleted tender's invitations, a deleted contract's update-link entries)
+    # would vanish unrecorded. Record them here, while they -- and the
+    # parents their program path walks -- still exist. Any sender, not only
+    # a supply one: deleting an organisation drops its invitations too.
+    for through, fk in _links_pointing_at(sender):
+        _write_link_deletes(through._base_manager.filter(**{fk.attname: instance.pk}))
 
 
 def on_post_delete(sender, instance, **kwargs):
@@ -107,7 +133,67 @@ def on_post_delete(sender, instance, **kwargs):
         _write(instance, "delete", instance._history_snapshot, instance._history_program)
 
 
+_LINKS = {}
+
+
+def _links_pointing_at(model):
+    """[(through model, its FK to `model`)] over this app's auto-created through models."""
+    if model not in _LINKS:
+        from django.apps import apps
+
+        _LINKS[model] = [
+            (through, field)
+            for through in apps.get_app_config("supply_chain").get_models(include_auto_created=True)
+            if through._meta.auto_created
+            for field in through._meta.concrete_fields
+            if field.is_relation and field.related_model == model._meta.concrete_model
+        ]
+    return _LINKS[model]
+
+
+def _write_link_deletes(rows):
+    for row in rows.order_by("pk"):
+        _write(row, "delete", _snapshot(row), program_of(row))
+
+
+def _link_rows(sender, instance, model, pk_set):
+    """The through rows joining `instance` to `pk_set` (every one, when None).
+
+    Found by which FK points at `instance`'s model and which at `model`, not
+    by direction, so the same code serves `reverse=True` (called from the
+    other side). No through model in this app relates a model to itself,
+    where that would be ambiguous.
+    """
+    links = [f for f in sender._meta.concrete_fields if f.is_relation]
+    own = next(f for f in links if f.related_model == instance._meta.concrete_model)
+    other = next(f for f in links if f is not own and f.related_model == model._meta.concrete_model)
+    rows = sender._base_manager.filter(**{own.attname: instance.pk})
+    return rows if pk_set is None else rows.filter(**{f"{other.attname}__in": pk_set})
+
+
+def on_m2m_changed(sender, instance, action, model, pk_set, **kwargs):
+    """Many-to-many link rows, which Django writes and deletes without the
+    per-row signals the receivers above rely on.
+
+    - `post_add`: `add()` inserts with `bulk_create`, so no `post_save`.
+      `pk_set` holds only the rows actually inserted.
+    - `pre_remove` / `pre_clear`: `remove()` and `clear()` delete through a
+      queryset whose collector skips delete signals for auto-created
+      models. Snapshotted here, before they go.
+    """
+    if not _tracked(sender) or is_suspended():
+        return
+    if action == "post_add" and pk_set:
+        for row in _link_rows(sender, instance, model, pk_set).order_by("pk"):
+            _write(row, "create", {k: [None, v] for k, v in _snapshot(row).items()}, program_of(row))
+    elif action == "pre_remove" and pk_set:
+        _write_link_deletes(_link_rows(sender, instance, model, pk_set))
+    elif action == "pre_clear":
+        _write_link_deletes(_link_rows(sender, instance, model, None))
+
+
 pre_save.connect(on_pre_save, dispatch_uid="supply_history_pre_save")
 post_save.connect(on_post_save, dispatch_uid="supply_history_post_save")
 pre_delete.connect(on_pre_delete, dispatch_uid="supply_history_pre_delete")
 post_delete.connect(on_post_delete, dispatch_uid="supply_history_post_delete")
+m2m_changed.connect(on_m2m_changed, dispatch_uid="supply_history_m2m_changed")
