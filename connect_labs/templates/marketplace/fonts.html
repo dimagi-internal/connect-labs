@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% comment %}
+The typeface trial: every candidate from views.FONT_CANDIDATES set on the same
+slice of the marketplace page, with a link to the real page in that face.
+The figures are a fixed sample, not live — this page compares type, not data.
+{% endcomment %}
+{% block title %}Marketplace typefaces{% endblock %}
+
+{% block css %}
+  {{ block.super }}
+  <link href="https://fonts.googleapis.com/css2?{{ families }}&display=swap" rel="stylesheet">
+  <style>
+    .ft-hero { background: #16006d; color: #fff; }
+    .ft-card { border-left: 4px solid #b45309; }
+    .ft-amber { color: #b45309; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-screen-2xl mx-auto px-0 sm:px-8 lg:px-10 py-6 sm:py-8">
+  <div class="max-w-3xl mb-6">
+    <div class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-indigo">CONNECT · MARKETPLACE</div>
+    <h1 class="text-2xl sm:text-3xl font-semibold text-brand-deep-purple mt-1">Typefaces for the marketplace</h1>
+    <p class="text-sm text-gray-600 mt-2 leading-relaxed">
+      Each panel is a slice of the marketplace set in one font. Work Sans, the current one, is first.
+      "Try it live" opens the real page in that font.
+    </p>
+  </div>
+
+  <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+    {% for f in faces %}
+      <article class="bg-white border border-brand-border-light rounded-[10px] overflow-hidden flex flex-col {% if not f.key %}ring-2 ring-brand-sky/40{% endif %}">
+        <div class="flex items-baseline justify-between gap-3 px-4 py-3 border-b border-gray-100">
+          <div class="text-sm font-semibold text-gray-900">{{ f.family }}{% if not f.key %} <span class="font-normal text-gray-500">· current</span>{% endif %}</div>
+          <a href="{% url 'marketplace:home' %}?costs=spread{% if f.key %}&font={{ f.key }}{% endif %}"
+             class="text-[12.5px] font-semibold text-brand-indigo whitespace-nowrap hover:underline">Try it live →</a>
+        </div>
+
+        <div style="font-family: '{{ f.family }}', sans-serif">
+          <div class="ft-hero px-4 pt-4 pb-4 flex flex-col gap-3">
+            <div class="text-[10.5px] font-semibold tracking-[0.14em] text-brand-sky">CONNECT</div>
+            <div class="text-[26px] font-semibold leading-tight">Marketplace</div>
+            <div class="flex flex-wrap gap-x-6 gap-y-2">
+              <div><div class="text-[21px] font-semibold tabular-nums leading-tight">$1.82M</div><div class="text-[9.5px] tracking-wider text-brand-sky mt-0.5">PAID OUT</div></div>
+              <div><div class="text-[21px] font-semibold tabular-nums leading-tight text-brand-marigold">$661k</div><div class="text-[9.5px] tracking-wider text-brand-sky mt-0.5">UP TO, STILL FUNDED</div></div>
+              <div><div class="text-[21px] font-semibold tabular-nums leading-tight">1,850,399</div><div class="text-[9.5px] tracking-wider text-brand-sky mt-0.5">SERVICES DELIVERED</div></div>
+            </div>
+          </div>
+          <div class="ft-card m-4 border border-brand-border-light rounded-[10px] px-4 py-3 flex flex-col gap-1.5">
+            <div class="text-[15.5px] font-semibold text-gray-900 leading-snug">Ready-to-Use Therapeutic Food (RUTF)</div>
+            <div class="text-[17px] font-semibold text-gray-400">No delivery yet</div>
+            <p class="text-[12.5px] text-gray-600 leading-relaxed">33 organizations have applied. None has delivered this program on Connect yet.</p>
+            <div class="border-t border-gray-100 pt-2 mt-1 grid grid-cols-3 gap-x-3 gap-y-1 text-[11.5px] text-gray-600">
+              <span><span class="font-semibold text-gray-900 tabular-nums">0</span> delivering</span>
+              <span><span class="font-semibold text-gray-900 tabular-nums">33</span> applied</span>
+              <span><span class="font-semibold text-gray-900 tabular-nums">2</span> rounds</span>
+              <span></span>
+              <span class="ft-amber font-medium whitespace-nowrap">Who has applied →</span>
+            </div>
+          </div>
+        </div>
+
+        <p class="px-4 pb-4 mt-auto text-[12.5px] text-gray-500">{{ f.note }}</p>
+      </article>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

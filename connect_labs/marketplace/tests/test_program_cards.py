@@ -285,3 +285,22 @@ class TestFixedCostsInBothViews:
         assert "includes" in body and "$4,000" in body
         body = client.get(reverse("marketplace:home")).content.decode()
         assert "STARTUP AND SUPPLIES" in body and "$4,000" in body
+
+
+@pytest.mark.django_db
+class TestTheTypefaceTrial:
+    def test_every_candidate_is_on_the_page_and_linked_live(self, client, user):
+        from connect_labs.marketplace.views import FONT_CANDIDATES
+
+        client.force_login(user)
+        response = client.get(reverse("marketplace:fonts"))
+        assert response.status_code == 200
+        body = response.content.decode()
+        for key, family, _ in FONT_CANDIDATES:
+            assert f"font-family: '{family}'" in body
+            assert f'&font={key}"' in body
+
+    def test_an_unlisted_font_key_leaves_the_house_face(self, client, user):
+        client.force_login(user)
+        body = client.get(reverse("marketplace:home") + "?font=comic-sans").content.decode()
+        assert "fonts.googleapis.com/css2?family=comic" not in body.lower()

@@ -93,24 +93,37 @@ def _population(request) -> dict:
     }
 
 
-# Typefaces on trial for the marketplace, by ?font= key -> Google Fonts family.
-# An allowlist, because the family name is written into the page's CSS.
-TRIAL_FONTS = {
-    "manrope": "Manrope",
-    "geist": "Geist",
-    "inter": "Inter",
-    "dm-sans": "DM Sans",
-    "plus-jakarta": "Plus Jakarta Sans",
-    "figtree": "Figtree",
-    "ibm-plex": "IBM Plex Sans",
-    "instrument": "Instrument Sans",
-    "public-sans": "Public Sans",
-    "outfit": "Outfit",
-    "sora": "Sora",
-    "lexend": "Lexend",
-    "source-sans": "Source Sans 3",
-    "nunito-sans": "Nunito Sans",
-}
+# Typefaces on trial for the marketplace: ?font=<key> sets the page in one,
+# and /marketplace/fonts/ shows them side by side. An allowlist, because the
+# family name is written into the page's CSS. (key, Google family, one line.)
+FONT_CANDIDATES = (
+    ("inter", "Inter", "Neutral and precise. The safest choice, and the most common one."),
+    ("dm-sans", "DM Sans", "Low contrast and slightly geometric. Calm, compact numbers."),
+    ("plus-jakarta", "Plus Jakarta Sans", "Modern and warm, with a little flair in the capitals."),
+    ("figtree", "Figtree", "Clean and friendly with round shapes. Easy on dense cards."),
+    ("ibm-plex", "IBM Plex Sans", "Engineered and serious. Reads like infrastructure."),
+    ("instrument", "Instrument Sans", "Narrow and crisp. Fits more on a line without shrinking."),
+    ("public-sans", "Public Sans", "Government-grade neutral. Plain and very legible."),
+    ("outfit", "Outfit", "Geometric and soft. More brand, less spreadsheet."),
+    ("sora", "Sora", "Wide and technical, with a strong presence in headings."),
+    ("lexend", "Lexend", "Built for readability. Generous spacing, very open."),
+    ("source-sans", "Source Sans 3", "Humanist and efficient. Good in long, dense text."),
+    ("nunito-sans", "Nunito Sans", "Rounded and approachable, the softest of the set."),
+)
+# Manrope and Geist were tried first and passed over; they stay usable by key.
+TRIAL_FONTS = {"manrope": "Manrope", "geist": "Geist", **{key: family for key, family, _ in FONT_CANDIDATES}}
+
+
+@login_required
+@MARKETPLACE_CHROME
+def fonts(request):
+    """Every candidate typeface side by side, each on a slice of this page."""
+    faces = [
+        {"key": "", "family": "Work Sans", "note": "The current font. Wide and friendly, but loose at small sizes."}
+    ]
+    faces += [{"key": key, "family": family, "note": note} for key, family, note in FONT_CANDIDATES]
+    families = "&".join(f"family={f['family'].replace(' ', '+')}:wght@400;500;600;700" for f in faces)
+    return render(request, "marketplace/fonts.html", {"faces": faces, "families": families})
 
 
 @login_required
