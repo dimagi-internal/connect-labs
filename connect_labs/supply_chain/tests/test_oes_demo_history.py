@@ -396,6 +396,15 @@ class TestTheClarification:
         assert "clarification" in capsys.readouterr().out
         assert not OperationCall.objects.filter(operation="quote_correct").exists()
 
+    def test_a_quote_with_no_received_on_is_refused_not_waved_through(self, seeded):
+        """Without the day the quote arrived, "answered before it arrived" cannot
+        be ruled out, so the reply is refused rather than the check skipped."""
+        module, result = seeded
+        Quote.objects.filter(tender_id=result["round_two"]["round"]["id"]).update(received_on=None)
+        with pytest.raises(ValueError, match="no received_on"):
+            module.record_rutf_clarification(_document())
+        assert not OperationCall.objects.filter(operation="quote_correct").exists()
+
     def test_a_reply_dated_in_the_future_is_refused(self, seeded):
         module, _ = seeded
         document = _document()
@@ -439,12 +448,13 @@ def test_round_one_days_that_run_backwards_are_refused_before_any_write(syntheti
     assert not Tender.objects.filter(program_id=RUTF).exists()
 
 
-def test_a_consignment_dispatched_before_its_order_was_signed_is_refused(synthetic):
+def test_a_consignment_dispatched_before_its_order_was_signed_is_refused_before_any_write(synthetic):
     document = _document()
     document["rutf_rounds"]["round_one"]["shipment"]["dispatched_on"] = _ago(69)
     with pytest.raises(ValueError, match="consignment"):
         _seed(document)
     assert not Shipment.objects.exists()
+    assert not Tender.objects.filter(program_id=RUTF).exists()
 
 
 def test_a_round_two_quote_received_before_the_requests_went_out_is_refused(synthetic):
