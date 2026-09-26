@@ -103,17 +103,14 @@ def da():
 
 @pytest.fixture
 def client_in_programme(client, django_user_model, monkeypatch):
-    from connect_labs.supply_chain import (  # noqa: F401  -- import every screen module before patching
-        form_views,
-        reference_views,
-        views,
-    )
+    from connect_labs.supply_chain import form_views, views  # noqa: F401
     from connect_labs.supply_chain.alerts import views as alert_views  # noqa: F401
     from connect_labs.supply_chain.api_views import _access as real_access
     from connect_labs.supply_chain.distribution import views as distribution_views  # noqa: F401
     from connect_labs.supply_chain.fulfilment import views as fulfilment_views  # noqa: F401
     from connect_labs.supply_chain.network import views as network_views  # noqa: F401
     from connect_labs.supply_chain.procurement import views as procurement_views  # noqa: F401
+    from connect_labs.supply_chain.reference import views as reference_views  # noqa: F401
     from connect_labs.supply_chain.stock import views as stock_views  # noqa: F401
     from connect_labs.supply_chain.update_links import views as link_views  # noqa: F401
 

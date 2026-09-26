@@ -2,11 +2,7 @@ from django.conf import settings
 from django.urls import path, re_path
 from django.views.generic import RedirectView
 
-from connect_labs.supply_chain import (
-    api_views,
-    reference_views,
-    views,
-)
+from connect_labs.supply_chain import api_views, views
 from connect_labs.supply_chain.alerts import views as alert_views
 from connect_labs.supply_chain.distribution import views as distribution_views
 from connect_labs.supply_chain.fulfilment import views as fulfilment_views
@@ -14,6 +10,7 @@ from connect_labs.supply_chain.market import views as market_views
 from connect_labs.supply_chain.network import views as network_views
 from connect_labs.supply_chain.portfolio import views as portfolio_views
 from connect_labs.supply_chain.procurement import views as procurement_views
+from connect_labs.supply_chain.reference import views as reference_views
 from connect_labs.supply_chain.stock import views as stock_views
 from connect_labs.supply_chain.update_links import views as update_link_views
 

@@ -36,8 +36,9 @@ def scoped(client, user, monkeypatch):
     imports every one of them first — see `test_write_screens.scoped` for the
     leak that happens when those two rules are not both followed.
     """
-    from connect_labs.supply_chain import form_views, reference_views, views  # noqa: F401  -- bind before patching
+    from connect_labs.supply_chain import form_views, views  # noqa: F401  -- bind before patching
     from connect_labs.supply_chain.api_views import _access as real_access
+    from connect_labs.supply_chain.reference import views as reference_views  # noqa: F401
 
     def _scoped(request):
         access = real_access(request)
@@ -50,7 +51,7 @@ def scoped(client, user, monkeypatch):
     # attribute, which is the check that caught this being over-patched.
     for module in ("form_views", "views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)
-    for module in ("form_views", "views", "reference_views"):
+    for module in ("form_views", "views", "reference.views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
     return client
 

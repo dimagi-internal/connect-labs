@@ -43,10 +43,11 @@ def da():
 
 @pytest.fixture
 def scoped(client, django_user_model, monkeypatch):
-    from connect_labs.supply_chain import form_views, reference_views, views  # noqa: F401
+    from connect_labs.supply_chain import form_views, views  # noqa: F401
     from connect_labs.supply_chain.api_views import _access as real_access
     from connect_labs.supply_chain.fulfilment import views as fulfilment_views  # noqa: F401
     from connect_labs.supply_chain.procurement import views as procurement_views  # noqa: F401
+    from connect_labs.supply_chain.reference import views as reference_views  # noqa: F401
 
     account = django_user_model.objects.create_user(username="kits2", password="x", email="kits2@dimagi.com")
     client.force_login(account)
@@ -56,7 +57,7 @@ def scoped(client, django_user_model, monkeypatch):
         access.program_id = PROGRAM
         return access
 
-    for module in ("form_views", "views", "fulfilment.views", "procurement.views", "reference_views"):
+    for module in ("form_views", "views", "fulfilment.views", "procurement.views", "reference.views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
     for module in ("form_views", "views", "procurement.views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)
