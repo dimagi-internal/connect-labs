@@ -126,7 +126,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       # The whole dependency tree now, because this job runs the whole JS suite.
       # It used to install just the JSX parser, because package-lock.json really
@@ -134,15 +134,18 @@ jobs:
       # was accurate, and the lock is fixed in this same change rather than
       # worked around again.
       #
-      # REGENERATE THE LOCK UNDER NODE 20, which is what this job runs. npm 11
-      # (current on a dev Mac) accepts the old lock and writes a new one that
-      # npm 10 still rejects, so a local `npm ci` proves nothing about CI:
-      #   docker run --rm -v "$PWD:/w" -w /w node:20 npm install --package-lock-only
+      # Regenerate the lock under the node this job runs, and build the bundle
+      # there too -- `render-tests` only runs `npm test`, so a dependency bump
+      # that breaks webpack passes this job and fails in the image build:
+      #   docker run --rm -v "$PWD:/w" -w /w node:24 sh -c 'npm ci && npm run build'
+      #
+      # The npm 10-vs-11 lockfile trap this comment used to describe is gone:
+      # node 24 ships npm 11, the same major a current dev Mac has.
       - name: Cache node_modules
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: npm-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+          key: npm-${{ runner.os }}-node24-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
