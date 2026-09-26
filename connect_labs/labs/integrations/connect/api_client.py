@@ -377,6 +377,24 @@ class LabsRecordAPIClient:
         # integers there, and labs-only (synthetic) records are addressed by opportunity.
         home_override = opportunity_id is None and (organization_id is not None or program_id is not None)
 
+        # ...EXCEPT a labs-only PROGRAM, which exists only in the labs DB. Connect's
+        # labs_record export has never heard of it, so sending it there 404s: a
+        # registry created in a synthetic program listed fine (the list read goes
+        # local) but could not be bound by {registry_id, program_id} (#2072).
+        if (
+            home_override
+            and program_id is not None
+            and organization_id is None
+            and _local_backend.is_labs_only_program_id(program_id)
+        ):
+            return _local_backend.get_record_by_id(
+                record_id=record_id,
+                program_id=int(program_id),
+                experiment=experiment,
+                type=type,
+                model_class=model_class,
+            )
+
         if not home_override and self._is_labs_only(opportunity_id):
             return _local_backend.get_record_by_id(
                 record_id=record_id,

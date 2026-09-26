@@ -100,15 +100,19 @@ def get_record_by_id(
     *,
     record_id: int,
     opportunity_id: int | None = None,
+    program_id: int | None = None,
     experiment: str | None = None,
     type: str | None = None,
     model_class: type[LocalLabsRecord] | None = None,
 ) -> LocalLabsRecord | None:
-    # record_id is the global PK; opportunity_id is an optional scoping guard so
-    # program-scoped lookups (no opp selected) can still resolve a record.
+    # record_id is the global PK; opportunity_id / program_id are optional scoping
+    # guards so program-scoped lookups (no opp selected) can still resolve a record,
+    # and a read naming a record's home program finds it only in that program.
     qs = LabsLocalRecord.objects.filter(id=record_id)
     if opportunity_id is not None:
         qs = qs.filter(opportunity_id=opportunity_id)
+    if program_id is not None:
+        qs = qs.filter(program_id=program_id)
     if experiment is not None:
         qs = qs.filter(experiment=experiment)
     if type is not None:

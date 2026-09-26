@@ -237,7 +237,9 @@ display:
 
 Every key is optional. Without the block: the entity noun is the model's `entity.name` / `entity.plural`, workers are "workers", organisations "organisations", categories appear in the order the indicators first use them, the case table shows first visit, last visit and visit count, and the worker review charts the registry's `weight_series` value column if it has one (nothing otherwise).
 
-The **organisation level** is the deployment facts' `llo_map`. A registry without one shows opportunities where organisations would be. A `case_fields` entry must name a column the case index carries: `entity_id`, `username`, `opportunity_id`, `first_visit_date`, `last_visit_date`, `total_visits`, plus any field of the entity pipeline.
+The **organisation level** is the deployment facts' `llo_map`. A registry without one shows opportunities where organisations would be.
+
+**Opportunity names.** A report names each opportunity by its own name: a synthetic (labs-only) opportunity's registered label, or a real one's name in Connect. The names are captured when a run is built, so a saved week keeps them; an opportunity report is handed only its own. To call an opportunity something else in the report, add `opportunity_labels: { 10082: Partner A site }` to the deployment facts. Nothing is invented: an opportunity with no name reads "Opportunity 10082". A `case_fields` entry must name a column the case index carries: `entity_id`, `username`, `opportunity_id`, `first_visit_date`, `last_visit_date`, `total_visits`, plus any field of the entity pipeline.
 
 The on-disk `visit_quality` registry declares none of this and renders on the defaults. The on-disk `kmc` registry declares the five headline tiles the KMC report shows, their targets, and `credibility: mortality_recording_credible` on mortality.
 

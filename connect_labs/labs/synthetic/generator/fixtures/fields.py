@@ -240,6 +240,13 @@ def _format_forced(value: Any, kind: str | None) -> Any:
         return value
     if kind == "int":
         return int(round(float(value)))
+    if kind is None and isinstance(value, str):
+        # No schema to say what this is (a labs-only opp has no form schema), and it
+        # arrived as a STRING -- the wire form of a real submission. Keep it: a coded
+        # answer "1" rounded to 1.0 is written back as "1.0" and silently fails every
+        # `= '1'` / `= 1` filter built on the real data (#2072). Only a schema kind
+        # licenses reshaping a value.
+        return value
     try:
         return round(float(value), 3)
     except (TypeError, ValueError):
