@@ -44,6 +44,8 @@ function hand({
   pinch = 1,
   pose = 'None',
   palm = null,
+  roll = 0,
+  span = null,
 } = {}) {
   const aspect = 4 / 3;
   const lm = Array.from({ length: 21 }, () => ({ x, y, z: 0 }));
@@ -59,6 +61,22 @@ function hand({
   lm[5] = { x, y, z: 0 }; // index knuckle: the pointer
   lm[8] = { x, y: y - size * 0.9, z: 0 }; // index tip
   lm[4] = { x: x + (pinch * size) / aspect, y: y - size * 0.9, z: 0 }; // thumb tip
+  if (span != null) {
+    // Index and pinky fingertips `span` hand sizes apart.
+    lm[8] = { x: x - (span * size) / 2 / aspect, y: y - size * 0.9, z: 0 };
+    lm[20] = { x: x + (span * size) / 2 / aspect, y: y - size * 0.9, z: 0 };
+  }
+  if (roll) {
+    // Turn the whole hand about the index knuckle, clockwise as the viewer
+    // sees it (the preview is mirrored), in physical (aspect-corrected) space.
+    const r = (roll * Math.PI) / 180;
+    for (const q of lm) {
+      const ox = (q.x - x) * aspect;
+      const oy = q.y - y;
+      q.x = x + (Math.cos(r) * ox + Math.sin(r) * oy) / aspect;
+      q.y = y - Math.sin(r) * ox + Math.cos(r) * oy;
+    }
+  }
   return { landmarks: lm, pose, poseScore: pose === 'None' ? 0.3 : 0.9 };
 }
 
@@ -204,11 +222,33 @@ describe('drill in', () => {
     expect(all[0].x).toBeCloseTo(0.5, 1);
   });
 
-  it('a long pinch without movement selects nothing', () => {
+  it('a long pinch without movement selects nothing, and says why', () => {
     const { e, t } = armed();
     const a = feed(e, t, 40, hand({ pinch: 0.1 }));
     const b = feed(e, a.t, 3, hand({ pinch: 1 }));
-    expect(types([...a.actions, ...b.actions])).toEqual([]);
+    const all = [...a.actions, ...b.actions];
+    expect(types(all)).toEqual(['tapMissed']);
+    expect(all[0].reason).toBe('held too long');
+  });
+
+  it('a deliberate pinch (0.8s) still clicks', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 24, hand({ pinch: 0.1 }));
+    const b = feed(e, a.t, 3, hand({ pinch: 1 }));
+    expect(types([...a.actions, ...b.actions])).toEqual(['select']);
+  });
+
+  it('a pinch that jolts the cursor a little still clicks, not drags', () => {
+    // Closing the fingers moves the knuckle the cursor follows: ~4% of the
+    // screen here, which the old 3% tolerance read as a drag.
+    // It settles there before release, so the smoothed cursor really has
+    // moved ~5%: past the old tolerance, inside the new one.
+    const { e, t } = armed();
+    const a = feed(e, t, 12, (i) =>
+      hand({ pinch: 0.1, x: 0.5 - Math.min(i, 6) * 0.005 }),
+    );
+    const b = feed(e, a.t, 3, hand({ pinch: 1, x: 0.47 }));
+    expect(types([...a.actions, ...b.actions])).toEqual(['select']);
   });
 
   it('pinch hysteresis: hovering around the threshold is one pinch, not many', () => {
@@ -336,33 +376,72 @@ describe('open palm: spin and zoom', () => {
   const zooms = (actions) => actions.filter((a) => a.type === 'zoom');
   const zoomed = (actions) => zooms(actions).reduce((s, a) => s + a.dz, 0);
 
-  it('pushing an open palm toward the camera zooms in, and does not drill', () => {
+  // An armed engine with an open palm at rest (size 0.2).
+  const resting = () => {
     const { e, t } = armed();
-    const { actions } = feed(e, t, 30, (i) =>
-      hand({ size: 0.2 * (1 + i * 0.02), palm: 'facing' }),
+    const held = feed(e, t, 10, hand({ palm: 'facing' }));
+    return { e, t: held.t };
+  };
+  // Move the palm to `to` over 8 frames, then hold it there for `hold` frames.
+  const pushTo = (e, t, to, hold) => {
+    const move = feed(e, t, 8, (i) =>
+      hand({ size: 0.2 + ((to - 0.2) * (i + 1)) / 8, palm: 'facing' }),
     );
-    expect(zoomed(actions)).toBeGreaterThan(1);
-    expect(types(actions)).not.toContain('select');
+    const held = feed(e, move.t, hold, hand({ size: to, palm: 'facing' }));
+    return { move, held };
+  };
+
+  it('push and HOLD keeps zooming in, with no limit from arm reach', () => {
+    const { e, t } = resting();
+    const { held } = pushTo(e, t, 0.28, 90); // ~3s held
+    const firstSec = zoomed(held.actions.slice(0, 30));
+    const lastSec = zoomed(held.actions.filter((a) => a.t >= held.t - 1000));
+    // Still zooming a full second later, at a steady rate.
+    expect(lastSec).toBeGreaterThan(0.5);
+    expect(zoomed(held.actions)).toBeGreaterThan(firstSec * 2);
+  });
+
+  it('further from rest zooms faster', () => {
+    const near = resting();
+    const a = pushTo(near.e, near.t, 0.24, 30);
+    const far = resting();
+    const b = pushTo(far.e, far.t, 0.3, 30);
+    expect(zoomed(b.held.actions)).toBeGreaterThan(zoomed(a.held.actions) * 2);
+  });
+
+  it('pulling back past rest zooms out, and does not go back', () => {
+    const { e, t } = resting();
+    const { move, held } = pushTo(e, t, 0.14, 30);
+    const all = [...move.actions, ...held.actions];
+    expect(zoomed(all)).toBeLessThan(-0.5);
+    expect(types(all)).not.toContain('back');
+  });
+
+  it('returning to rest stops the zoom', () => {
+    const { e, t } = resting();
+    const { held } = pushTo(e, t, 0.28, 30);
+    const back = feed(e, held.t, 60, hand({ palm: 'facing' }));
+    // Allow the smoothing a moment to settle, then nothing.
+    expect(zooms(back.actions.filter((a) => a.t >= back.t - 1000))).toEqual([]);
+  });
+
+  it('closing and reopening the hand makes a new rest point (the clutch)', () => {
+    const { e, t } = resting();
+    const { held } = pushTo(e, t, 0.28, 10);
+    // Relax the hand (not open), then reopen it where it is.
+    const relax = feed(e, held.t, 6, hand({ size: 0.28 }));
+    const reopen = feed(e, relax.t, 60, hand({ size: 0.28, palm: 'facing' }));
+    expect(zooms(reopen.actions)).toEqual([]);
   });
 
   it('a fast push of an open palm is a zoom, never a drill-in', () => {
     // As fast as the pointing-hand push that drills in, below.
-    const { e, t } = armed();
-    const held = feed(e, t, 10, hand({ palm: 'facing' }));
-    const { actions } = feed(e, held.t, 12, (i) =>
-      hand({ size: 0.2 * (1 + i * 0.05), palm: 'facing' }),
+    const { e, t } = resting();
+    const { actions } = feed(e, t, 20, (i) =>
+      hand({ size: 0.2 * (1 + Math.min(i, 11) * 0.05), palm: 'facing' }),
     );
-    expect(zoomed(actions)).toBeGreaterThan(1);
+    expect(zoomed(actions)).toBeGreaterThan(0.3);
     expect(types(actions)).not.toContain('select');
-  });
-
-  it('pulling it away zooms out, and does not go back', () => {
-    const { e, t } = armed();
-    const { actions } = feed(e, t, 30, (i) =>
-      hand({ size: 0.2 * (1 - i * 0.015), palm: 'facing' }),
-    );
-    expect(zoomed(actions)).toBeLessThan(-0.5);
-    expect(types(actions)).not.toContain('back');
   });
 
   it('a steady palm does not breathe', () => {
@@ -411,6 +490,26 @@ describe('open palm: spin and zoom', () => {
     expect(types(actions)).not.toContain('swipe');
   });
 
+  it('a hand whose speed hovers at the threshold fades in, not stutters', () => {
+    const { e, t } = armed();
+    const settle = feed(e, t, 10, hand({ palm: 'facing' }));
+    // Screen speed hovering either side of spinMinSpeed (0.15/s): camera
+    // steps of 0.0024-0.004 are 0.12-0.2 screen widths/s through the crop.
+    let x = 0.5;
+    const slow = feed(e, settle.t, 30, (i) => {
+      x -= i % 2 ? 0.0024 : 0.004;
+      return hand({ x, palm: 'facing' });
+    });
+    const fast = feed(e, slow.t, 20, (i) =>
+      hand({ x: x - (i + 1) * 0.01, palm: 'facing' }),
+    );
+    const biggest = (acts) =>
+      Math.max(0, ...spins(acts).map((a) => Math.abs(a.dx)));
+    // Near the threshold the globe barely moves; it is not the full step
+    // the same hand gets when clearly moving.
+    expect(biggest(slow.actions)).toBeLessThan(biggest(fast.actions) / 5);
+  });
+
   it('a palm held still does not drift the globe', () => {
     const { e, t } = armed();
     const { actions } = feed(e, t, 60, (i) =>
@@ -441,6 +540,220 @@ describe('open palm: spin and zoom', () => {
     const e = core.createEngine();
     const { actions } = feed(e, 0, 60, (i) =>
       hand({ x: 0.3 + (i % 30) * 0.01, palm: 'facing' }),
+    );
+    expect(actions).toEqual([]);
+  });
+});
+
+describe('dial', () => {
+  const dials = (actions) =>
+    actions.filter((a) => a.type === 'dial').map((a) => a.step);
+  // An armed engine with an open palm settled upright.
+  const settled = () => {
+    const { e, t } = armed();
+    const held = feed(e, t, 10, hand({ palm: 'facing' }));
+    return { e, t: held.t };
+  };
+
+  it('turning the open palm clockwise steps once to the next', () => {
+    const { e, t } = settled();
+    const turn = feed(e, t, 6, (i) => hand({ palm: 'facing', roll: i * 7 }));
+    const back = feed(e, turn.t, 6, (i) =>
+      hand({ palm: 'facing', roll: 35 - i * 7 }),
+    );
+    expect(dials([...turn.actions, ...back.actions])).toEqual([1]);
+  });
+
+  it('anti-clockwise steps to the previous', () => {
+    const { e, t } = settled();
+    const { actions } = feed(e, t, 6, (i) =>
+      hand({ palm: 'facing', roll: -i * 7 }),
+    );
+    expect(dials(actions)).toEqual([-1]);
+  });
+
+  it('holding the turn keeps stepping, like a jog shuttle', () => {
+    const { e, t } = settled();
+    const { actions } = feed(e, t, 60, (i) =>
+      hand({ palm: 'facing', roll: Math.min(i * 7, 35) }),
+    );
+    // One on crossing, then one per repeat interval over ~1.8s held.
+    expect(dials(actions).length).toBeGreaterThanOrEqual(3);
+    expect(new Set(dials(actions))).toEqual(new Set([1]));
+  });
+
+  it('a turn jittering across the threshold is one step, not a burst', () => {
+    const { e, t } = settled();
+    // ~0.6s, under one repeat interval, wobbling either side of 25 degrees.
+    const { actions } = feed(e, t, 18, (i) =>
+      hand({ palm: 'facing', roll: i < 4 ? i * 7 : i % 2 ? 22 : 28 }),
+    );
+    expect(dials(actions)).toEqual([1]);
+  });
+
+  it('a small wobble does not step', () => {
+    const { e, t } = settled();
+    const { actions } = feed(e, t, 60, (i) =>
+      hand({ palm: 'facing', roll: i % 2 ? 15 : -15 }),
+    );
+    expect(dials(actions)).toEqual([]);
+  });
+
+  it('upright is wherever the palm settled, not true vertical', () => {
+    const { e, t } = armed();
+    // A palm that naturally rests tilted 30 degrees -- past a step, measured
+    // from vertical -- is not a turn.
+    const held = feed(e, t, 30, hand({ palm: 'facing', roll: 30 }));
+    expect(dials(held.actions)).toEqual([]);
+  });
+
+  it('a pointing hand turned does not dial', () => {
+    const { e, t } = armed();
+    const { actions } = feed(e, t, 20, (i) => hand({ roll: i * 5 }));
+    expect(dials(actions)).toEqual([]);
+  });
+
+  it('turning does not zoom', () => {
+    const { e, t } = settled();
+    const { actions } = feed(e, t, 12, (i) =>
+      hand({ palm: 'facing', roll: i * 7 }),
+    );
+    expect(actions.filter((a) => a.type === 'zoom')).toEqual([]);
+  });
+
+  it('nothing dials while disarmed', () => {
+    const e = core.createEngine();
+    const { actions } = feed(e, 0, 60, (i) =>
+      hand({ palm: 'facing', roll: (i % 20) * 4 }),
+    );
+    expect(actions).toEqual([]);
+  });
+});
+
+describe('thumbs up', () => {
+  it('confirms once, however long it is held, aimed where the hand was', () => {
+    const { e, t } = armed();
+    const { actions } = feed(e, t, 60, (i) =>
+      hand({ pose: 'Thumb_Up', x: 0.5 - Math.min(i, 3) * 0.01 }),
+    );
+    expect(types(actions)).toEqual(['confirm']);
+  });
+
+  it('a second thumbs up confirms again', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 20, hand({ pose: 'Thumb_Up' }));
+    const b = feed(e, a.t, 20, hand());
+    const c = feed(e, b.t, 20, hand({ pose: 'Thumb_Up' }));
+    expect(types([...a.actions, ...b.actions, ...c.actions])).toEqual([
+      'confirm',
+      'confirm',
+    ]);
+  });
+
+  it('a flicked thumb (under the hold) does nothing', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 5, hand({ pose: 'Thumb_Up' }));
+    const b = feed(e, a.t, 10, hand());
+    expect(types([...a.actions, ...b.actions])).toEqual([]);
+  });
+
+  it('a thumbs up moving toward the camera is not also a push', () => {
+    const { e, t } = armed();
+    const { actions } = feed(e, t, 15, (i) =>
+      hand({ pose: 'Thumb_Up', size: 0.2 * (1 + i * 0.05) }),
+    );
+    expect(types(actions)).toEqual(['confirm']);
+  });
+
+  it('nothing confirms while disarmed', () => {
+    const e = core.createEngine();
+    const { actions } = feed(e, 0, 60, hand({ pose: 'Thumb_Up' }));
+    expect(actions).toEqual([]);
+  });
+});
+
+describe('the contract with the page', () => {
+  /* The gesture layer finds what to click by CSS class. Rename one of these
+     classes in the page and the gesture silently stops working -- nothing
+     else would go red. This keeps each class it relies on present in the
+     code that renders it. */
+  const read = (rel) => fs.readFileSync(path.join(here, rel), 'utf8');
+  const page = [
+    read('display.js'),
+    read('cards.js'),
+    read('windows.js'),
+    read('../../templates/pulse/display.html'),
+  ].join('\n');
+
+  it('every class the gestures click on is still rendered by the page', () => {
+    const targets = SRC.match(/const TARGETS = \[([\s\S]*?)\]\.join/)[1];
+    const classes = [...targets.matchAll(/'\.([a-z0-9-]+)/g)].map((m) => m[1]);
+    expect(classes.length).toBeGreaterThanOrEqual(5);
+    const missing = classes.filter((c) => !page.includes(c));
+    expect(missing).toEqual([]);
+  });
+
+  it('the thumbs-up card is still the pinned partner card', () => {
+    expect(SRC).toContain("document.querySelector('.pulse-partner')");
+    expect(read('display.js')).toContain("card.className = 'pulse-partner'");
+  });
+});
+
+describe('bloom', () => {
+  const bunched = (pose = 'None') => hand({ span: 0.3, pose });
+  const wide = () => hand({ span: 1.4, palm: 'facing' });
+  const opening = (i, n) =>
+    hand({ span: 0.3 + ((1.4 - 0.3) * (i + 1)) / n, palm: 'facing' });
+
+  it('bunched fingertips flung wide opens, once', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 6, bunched());
+    const b = feed(e, a.t, 4, (i) => opening(i, 4));
+    const c = feed(e, b.t, 30, wide()); // held open afterwards
+    const all = [...a.actions, ...b.actions, ...c.actions];
+    expect(types(all)).toEqual(['confirm']);
+    expect(all[0].via).toBe('bloom');
+  });
+
+  it('opening the hand slowly is not a bloom', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 6, bunched());
+    const b = feed(e, a.t, 30, (i) => opening(i, 30)); // ~1s
+    expect(types([...a.actions, ...b.actions])).not.toContain('confirm');
+  });
+
+  it('a quick fist flicked open blooms (the fist was too brief to close)', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 5, bunched('Closed_Fist')); // ~165ms, under the hold
+    const b = feed(e, a.t, 4, (i) => opening(i, 4));
+    expect(types([...a.actions, ...b.actions])).toEqual(['confirm']);
+  });
+
+  it('opening the hand after a fist has closed a window does not reopen it', () => {
+    const { e, t } = armed();
+    // Held 2s -- well past the cooldown after "back", which would otherwise
+    // hide a reopen that only happens when the fist is held a while.
+    const a = feed(e, t, 60, bunched('Closed_Fist'));
+    const b = feed(e, a.t, 4, (i) => opening(i, 4)); // the natural release
+    const c = feed(e, b.t, 20, wide());
+    expect(types([...a.actions, ...b.actions, ...c.actions])).toEqual(['back']);
+  });
+
+  it('a bloom after that release works again', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 30, bunched('Closed_Fist'));
+    const b = feed(e, a.t, 30, wide()); // released, and the cooldown passes
+    const c = feed(e, b.t, 6, bunched());
+    const d = feed(e, c.t, 4, (i) => opening(i, 4));
+    expect(
+      types([...a.actions, ...b.actions, ...c.actions, ...d.actions]),
+    ).toEqual(['back', 'confirm']);
+  });
+
+  it('nothing blooms while disarmed', () => {
+    const e = core.createEngine();
+    const { actions } = feed(e, 0, 60, (i) =>
+      i % 10 < 5 ? bunched() : opening(i % 5, 5),
     );
     expect(actions).toEqual([]);
   });

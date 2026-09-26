@@ -32,12 +32,21 @@
  *            click beside the thing you were pointing at). Point with the
  *            index finger to aim; an open hand moves the globe instead.
  *   drill in quick pinch-and-release, or a push toward the camera with a
- *            pointing (not open) hand.
+ *            pointing (not open) hand, or a thumbs up -- which opens the
+ *            partner card showing on the map without aiming at it -- or a
+ *            bloom: fingertips bunched, then flung wide, which does the same.
  *   drill out closed fist, or a pull away from the camera — exactly Esc.
  *   drag     pinch, then move: the top window follows.
  *   globe    an open hand, palm to the camera: move it and the globe turns
- *            the way the hand moves, as if pushing its surface; push it
- *            toward the camera to zoom in, pull it away to zoom out.
+ *            the way the hand moves, as if pushing its surface. Push it
+ *            toward the camera and HOLD to keep zooming in (further = faster),
+ *            pull it back past where it started to zoom out, return to stop.
+ *            To move further than an arm allows, close the hand and reopen
+ *            it: wherever it reopens is the new resting point.
+ *   dial     in a partner window: turn the open palm like a knob, clockwise
+ *            for the next opportunity, anti-clockwise for the previous; hold
+ *            the turn and it keeps stepping. (The globe cannot move while a
+ *            window is open, so the open palm is free for this.)
  *   swipe    reported in the readout only; not wired to anything yet.
  */
 (function (global) {
@@ -52,6 +61,7 @@
     INDEX_TIP: 8,
     MIDDLE_MCP: 9,
     MIDDLE_TIP: 12,
+    PINKY_TIP: 20,
     PINKY_MCP: 17,
   };
 
@@ -69,11 +79,25 @@
     // After arming, ignore gestures briefly: the arming palm is often still
     // travelling toward the camera, which would otherwise read as a push.
     graceMs: 400,
-    pinchEnter: 0.28,
-    pinchExit: 0.42,
-    tapMaxMs: 550,
-    dragStart: 0.03,
+    // A pinch was hard to land: closing the fingers moves the index knuckle
+    // the cursor follows, so a tap that drifted 3% of the screen read as a
+    // drag, and a deliberate pinch often outlasted the old 0.55s. A miss now
+    // says why, in the panel log.
+    pinchEnter: 0.33,
+    pinchExit: 0.48,
+    tapMaxMs: 900,
+    dragStart: 0.06,
     fistHoldMs: 300,
+    // Thumbs up: "yes, open it" -- the pinned partner card, or whatever the
+    // cursor is on. Needs no aim precision, so it is also the easy click.
+    thumbHoldMs: 300,
+    // Bloom: fingertips bunched, then flung wide -- also "open it". A
+    // transition, not a pose (an open palm alone arms, spins and zooms):
+    // the index-to-pinky fingertip span, in hand sizes, has to go from under
+    // bloomClosed to over bloomOpen within bloomWindowMs, ending open-palmed.
+    bloomClosed: 0.6,
+    bloomOpen: 1.1,
+    bloomWindowMs: 450,
     depthWindowMs: 350,
     pushRatio: 1.3,
     pullRatio: 0.77,
@@ -89,16 +113,31 @@
     // The palm has to hold briefly before it moves the globe, so a hand
     // opening on its way to a pinch does not nudge it.
     palmEngageMs: 150,
-    // Spin: slow drift (a hand held "still") is ignored. Screen widths/second.
+    // Spin is position control -- the globe's surface follows the hand, like
+    // a drag. It fades in between spinMinSpeed and twice that rather than
+    // switching on at a threshold (a hand whose speed hovers around a hard
+    // threshold stutters), and its velocity is smoothed. Screen widths/second.
     spinMinSpeed: 0.15,
+    spinSmoothing: 0.5,
     // Screen widths of map moved per screen width of hand movement.
     spinGain: 1.5,
-    // Zoom: map zoom levels per doubling of apparent hand size (push toward
-    // the camera zooms in, pull away zooms out). Hand size is smoothed, and a
-    // step under the deadband is jitter, so a steady palm does not breathe.
-    zoomGain: 2.5,
-    zoomSmoothing: 0.35,
-    zoomDeadband: 0.05,
+    // Zoom is RATE control: how far the palm is from where it settled sets how
+    // FAST the map zooms, not how far -- push and hold to keep zooming in, pull
+    // back past the rest point to zoom out, return to it to stop. Position
+    // control ran out of arm: a stroke's worth of reach was a few zoom levels.
+    // Depth is log2(hand size / resting size); inside the dead zone nothing
+    // happens, then speed eases in (quadratic) up to zoomRateMax at
+    // zoomDeadzone + zoomRange. Closing the hand and reopening it re-rests.
+    zoomDeadzone: 0.08,
+    zoomRange: 0.45,
+    zoomRateMax: 2.5, // zoom levels per second
+    zoomFilter: { minCutoff: 0.8, beta: 0.3, dCutoff: 1.0 },
+    // Dial: roll the open palm like a knob. Past dialEnter degrees from where
+    // the palm settled is one step; holding it there repeats, like a jog
+    // shuttle, so a long list needs no regrip; back inside dialExit stops.
+    dialEnter: 25,
+    dialExit: 12,
+    dialRepeatMs: 700,
     // The part of the camera frame that maps to the whole screen, so nobody has
     // to reach the very edge of the frame to reach the edge of the screen.
     crop: { x0: 0.2, x1: 0.8, y0: 0.15, y1: 0.7 },
@@ -180,6 +219,10 @@
    *   swipe{dir}                   'left' | 'right'
    *   spin{dx,dy}                  turn the globe with the hand (0..1 units)
    *   zoom{dz}                     map zoom levels, + is in
+   *   dial{step}                   +1 clockwise (as the viewer sees it), -1 anti
+   *   confirm{via,x,y}             thumbs up or bloom: open the pinned card /
+   *                                the target
+   *   tapMissed{reason}            a pinch that did not click, and why
    *
    * Only `armed` can be produced while disarmed.
    */
@@ -187,6 +230,7 @@
     const o = Object.assign({}, DEFAULTS, options || {});
     const fx = oneEuro(o.smoothing);
     const fy = oneEuro(o.smoothing);
+    const fz = oneEuro(o.zoomFilter);
 
     let arm = 'disarmed';
     let armStart = 0;
@@ -198,6 +242,11 @@
     let pinch = null; // { startT, startP, lastP, dragging }
     let fistSince = null;
     let fistSpent = false;
+    let thumb = null; // { since, p, spent } while a thumbs-up is held
+    let bunched = null; // { t, p } the last frame the fingertips were together
+    // Set when a fist has just closed something: opening that hand again is
+    // the natural next move, and must not bloom the window straight back.
+    let bloomBlocked = false;
     let history = []; // { t, size, p }
     let baseline = null;
     let palm = null; // { since, lastP, lastT, size, ref } while an open palm is up
@@ -213,6 +262,16 @@
       fistSince = null;
       fistSpent = false;
       actions.push({ type: 'disarmed', reason });
+    }
+
+    /** Roll of the hand in degrees, in mirrored (on-screen) space: 0 fingers
+        up, positive turned clockwise as the viewer sees it. */
+    function rollDeg(lm) {
+      const w = lm[LM.WRIST];
+      const m = lm[LM.MIDDLE_MCP];
+      const dx = -(m.x - w.x) * o.aspect; // mirrored
+      const dy = m.y - w.y;
+      return (Math.atan2(dx, -dy) * 180) / Math.PI;
     }
 
     /** Fingers out and palm to the camera: the hand that drives the globe. */
@@ -255,8 +314,10 @@
           poseScore: 0,
           pinchRatio: null,
           pinched: !!pinch,
+          pinchClose: 0,
           spinning: false,
           zooming: false,
+          dial: 0,
           dragging: !!(pinch && pinch.dragging),
           depth: null,
           pointer: null,
@@ -274,6 +335,8 @@
         endPinch(actions);
         palm = null;
         fistSince = null;
+        thumb = null;
+        bunched = null;
         if (arm === 'armed' && t - lastSeen >= o.disarmAfterMs)
           disarm(actions, 'hand gone');
         return { actions, readout: readout({ t }) };
@@ -334,7 +397,14 @@
           if (pinch.dragging) {
             actions.push({ type: 'dragEnd' });
             lastActionAt = t;
-          } else if (t - pinch.startT <= o.tapMaxMs && t >= cooldownUntil) {
+          } else if (t - pinch.startT > o.tapMaxMs) {
+            actions.push({ type: 'tapMissed', reason: 'held too long' });
+          } else if (t < cooldownUntil) {
+            actions.push({
+              type: 'tapMissed',
+              reason: 'too soon after the last one',
+            });
+          } else {
             fire(
               actions,
               { type: 'select', x: pinch.startP.x, y: pinch.startP.y },
@@ -355,32 +425,96 @@
         }
       }
 
+      /* ── thumbs up: "yes, open it", once per thumbs-up ── */
+      if (live && pose === 'Thumb_Up' && !pinch) {
+        if (!thumb) thumb = { since: t, p, spent: false };
+        else if (!thumb.spent && t - thumb.since >= o.thumbHoldMs) {
+          thumb.spent = true;
+          // Aim where the hand was as the thumb went up.
+          if (t >= cooldownUntil)
+            fire(
+              actions,
+              { type: 'confirm', via: 'thumbs up', x: thumb.p.x, y: thumb.p.y },
+              t,
+            );
+        }
+      } else {
+        thumb = null;
+      }
+
       /* ── open palm: the globe. Move it to spin; push or pull to zoom ── */
       const open = isOpenPalm(lm);
       let spinning = false;
       let zooming = false;
+      const roll = rollDeg(lm);
       if (live && open && !pinch && ratio > o.pinchExit) {
-        if (!palm) palm = { since: t, lastP: p, lastT: t, size, ref: size };
-        palm.size += o.zoomSmoothing * (size - palm.size);
+        if (!palm) {
+          fz.reset();
+          palm = {
+            since: t,
+            lastP: p,
+            lastT: t,
+            depthLog: 0,
+            rest: null,
+            vx: 0,
+            vy: 0,
+            neutral: roll,
+            dialDir: 0,
+            dialNext: 0,
+          };
+        }
+        const logSize = fz.filter(Math.log2(size), t);
         if (t - palm.since < o.palmEngageMs) {
-          // Settling: nothing moved while the palm was forming counts.
-          palm.ref = palm.size;
+          // Settling: nothing moved while the palm was forming counts, and
+          // however the palm settled is "upright" for the dial and "rest"
+          // for the zoom.
+          palm.rest = logSize;
+          palm.neutral = roll;
         } else {
+          /* The dial. The page uses it only while a window is open, where
+             the globe cannot move -- so a palm is never both at once. */
+          let tilt = roll - palm.neutral;
+          if (tilt > 180) tilt -= 360;
+          if (tilt < -180) tilt += 360;
+          let dir = palm.dialDir;
+          if (tilt >= o.dialEnter) dir = 1;
+          else if (tilt <= -o.dialEnter) dir = -1;
+          else if (Math.abs(tilt) <= o.dialExit) dir = 0;
+          const held = dir !== 0 && Math.abs(tilt) >= o.dialEnter;
+          if (
+            dir !== 0 &&
+            (dir !== palm.dialDir || (held && t >= palm.dialNext))
+          ) {
+            actions.push({ type: 'dial', step: dir });
+            palm.dialNext = t + o.dialRepeatMs;
+            lastActionAt = t;
+          }
+          palm.dialDir = dir;
+
           const dt = Math.max((t - palm.lastT) / 1000, 1e-3);
           const dx = p.x - palm.lastP.x;
           const dy = p.y - palm.lastP.y;
-          if (Math.hypot(dx, dy) / dt >= o.spinMinSpeed) {
+          palm.vx += o.spinSmoothing * (dx - palm.vx);
+          palm.vy += o.spinSmoothing * (dy - palm.vy);
+          const fade = clamp01(
+            (Math.hypot(palm.vx, palm.vy) / dt - o.spinMinSpeed) /
+              o.spinMinSpeed,
+          );
+          if (fade > 0) {
             actions.push({
               type: 'spin',
-              dx: dx * o.spinGain,
-              dy: dy * o.spinGain,
+              dx: palm.vx * o.spinGain * fade,
+              dy: palm.vy * o.spinGain * fade,
             });
             spinning = true;
           }
-          const step = Math.log2(palm.size / palm.ref);
-          if (Math.abs(step) >= o.zoomDeadband) {
-            actions.push({ type: 'zoom', dz: step * o.zoomGain });
-            palm.ref = palm.size;
+
+          palm.depthLog = logSize - palm.rest;
+          const past = Math.abs(palm.depthLog) - o.zoomDeadzone;
+          if (past > 0) {
+            const k = Math.min(past / o.zoomRange, 1);
+            const dz = Math.sign(palm.depthLog) * o.zoomRateMax * k * k * dt;
+            actions.push({ type: 'zoom', dz });
             zooming = true;
           }
           if (spinning || zooming) lastActionAt = t;
@@ -396,6 +530,8 @@
         if (fistSince == null) fistSince = t;
         else if (!fistSpent && t - fistSince >= o.fistHoldMs) {
           fistSpent = true;
+          bloomBlocked = true;
+          bunched = null;
           // A pull usually precedes a fist, and both mean "back": if one just
           // fired, this fist is the same intent, not a second layer.
           if (t >= cooldownUntil) fire(actions, { type: 'back' }, t);
@@ -405,6 +541,30 @@
         fistSpent = false;
       }
 
+      /* ── bloom: bunched fingertips flung wide, "open it" ── */
+      const span =
+        dist(lm[LM.INDEX_TIP], lm[LM.PINKY_TIP], o.aspect) / (size || 1);
+      if (span < o.bloomClosed) {
+        if (!bloomBlocked) bunched = { t, p };
+      } else if (span > o.bloomOpen) {
+        if (
+          live &&
+          bunched &&
+          open &&
+          !pinch &&
+          t - bunched.t <= o.bloomWindowMs &&
+          t >= cooldownUntil
+        )
+          fire(
+            actions,
+            { type: 'confirm', via: 'bloom', x: bunched.p.x, y: bunched.p.y },
+            t,
+          );
+        // Either way this opening is spent, including the one after a fist.
+        bunched = null;
+        bloomBlocked = false;
+      }
+
       /* ── push / pull, and swipe: rate of change, not position ──
          Not for an open palm: its depth is zoom and its movement is spin. */
       if (
@@ -412,6 +572,7 @@
         !pinch &&
         !open &&
         pose !== 'Closed_Fist' &&
+        pose !== 'Thumb_Up' &&
         t >= cooldownUntil
       ) {
         const then = ago(t, o.depthWindowMs);
@@ -441,10 +602,22 @@
           pose: hand.pose || null,
           poseScore: hand.poseScore || 0,
           pinchRatio: ratio,
-          depth: baseline ? size / baseline : 1,
+          spread: span,
+          // 0 with the fingers apart, 1 at the pinch point: the cursor
+          // shrinks with it, so you can see how close a pinch is.
+          pinchClose: clamp01((1 - ratio) / (1 - o.pinchEnter)),
+          // With a palm up, the meter shows depth from its rest point (what
+          // drives zoom); otherwise the running baseline.
+          depth:
+            palm && palm.rest != null
+              ? Math.pow(2, palm.depthLog)
+              : baseline
+                ? size / baseline
+                : 1,
           pointer: p,
           spinning,
           zooming,
+          dial: palm ? palm.dialDir : 0,
         }),
       };
     }
@@ -521,9 +694,14 @@
        </dl>
        <ol class="pg-log"></ol>
        <div class="pg-help">Hold an open palm still to arm · pinch or push to open ·
-         fist or pull back to close · pinch and move to drag a window ·
-         point with a finger to aim · open hand: move to spin the globe, push
-         toward the camera to zoom in, pull back to zoom out</div>`,
+         fist or pull back to close · thumbs up, or bunch your fingertips and
+         fling them wide, opens the partner card showing (or what the cursor
+         is on) · pinch and move to drag a window ·
+         point with a finger to aim · open hand: move to spin the globe; push
+         toward the camera and hold to keep zooming in, pull back to zoom out,
+         return to stop; close and reopen the hand to reset · in a partner
+         window, turn the open hand like a dial to step through its
+         opportunities (hold the turn to keep going)</div>`,
     );
     const frame = el('div', 'pulse-gesture-frame');
     const cursor = el('div', 'pulse-gesture-cursor');
@@ -647,7 +825,12 @@
           global.PulseWindows.moveBy(a.dx * W, a.dy * H);
         break;
       case 'dragEnd':
-        log(ui, 'drag done');
+        log(
+          ui,
+          global.PulseWindows && global.PulseWindows.isOpen()
+            ? 'drag done'
+            : 'pinch moved too much: read as a drag (no window to move)',
+        );
         break;
       case 'zoom':
         // The map sits under an open window; moving it there would be
@@ -658,6 +841,44 @@
         )
           global.PulseMap.zoomBy(a.dz);
         break;
+      case 'dial':
+        // Only over an open window: there the globe is out of reach, so the
+        // palm is free to be a dial.
+        if (global.PulseWindows && global.PulseWindows.isOpen()) {
+          const moved = global.PulseWindows.stepOpportunity(a.step);
+          log(
+            ui,
+            'dial ' +
+              (a.step > 0 ? 'next' : 'previous') +
+              (moved ? '' : ' (nothing to step)'),
+          );
+        }
+        break;
+      case 'tapMissed':
+        log(ui, 'pinch missed: ' + a.reason);
+        break;
+      case 'confirm': {
+        // The partner card showing on the map is what "open it" means when
+        // there is one -- the cursor is usually still on the map after the
+        // click that pinned it, and clicking the map again would unpin it.
+        const open = global.PulseWindows && global.PulseWindows.isOpen();
+        const card = !open && document.querySelector('.pulse-partner');
+        let node = null;
+        let x = a.x * W;
+        let y = a.y * H;
+        if (card) {
+          const r = card.getBoundingClientRect();
+          x = r.left + r.width / 2;
+          y = r.top + r.height / 2;
+          node = card;
+        } else {
+          const at = targetAt(x, y);
+          if (at && !at.target.classList.contains('pulse-map')) node = at.hit;
+        }
+        log(ui, a.via + (node ? ': open' : ' (nothing to open)'));
+        if (node) mouse('click', node, x, y);
+        break;
+      }
       case 'spin':
         if (
           global.PulseMap &&
@@ -683,16 +904,23 @@
       text = "Can't see your hand — check the light behind you";
     ui.state.textContent = text;
     ui.state.dataset.arm = r.arm;
-    ui.pose.textContent = r.pose
-      ? r.pose.replace('_', ' ') + ' ' + Math.round(r.poseScore * 100) + '%'
-      : '—';
+    ui.pose.textContent =
+      (r.spread != null ? 'spread ' + r.spread.toFixed(2) + ' · ' : '') +
+      (r.pose
+        ? r.pose.replace('_', ' ') + ' ' + Math.round(r.poseScore * 100) + '%'
+        : '—');
     ui.pinch.textContent =
       r.pinchRatio == null
         ? '—'
         : r.pinchRatio.toFixed(2) +
-          (r.spinning || r.zooming
+          (r.spinning || r.zooming || r.dial
             ? ' · ' +
-              [r.spinning && 'spinning', r.zooming && 'zooming']
+              [
+                r.spinning && 'spinning',
+                r.zooming && 'zooming',
+                r.dial > 0 && 'dial ▶',
+                r.dial < 0 && 'dial ◀',
+              ]
                 .filter(Boolean)
                 .join(' + ')
             : r.dragging
@@ -712,6 +940,7 @@
       ui.cursor.style.transform = `translate(${x}px, ${y}px)`;
       ui.cursor.dataset.armed = armed ? '1' : '';
       ui.cursor.dataset.pinched = r.pinched ? '1' : '';
+      ui.cursor.style.setProperty('--close', String(r.pinchClose || 0));
       if (armed) {
         const at = targetAt(x, y);
         setHot(s, at ? at.target : null);

@@ -505,19 +505,52 @@
         });
     };
 
+    // Only the latest request may paint. A dial steps faster than the API
+    // answers, and a late reply for the opportunity before would otherwise
+    // repaint over the one now selected.
+    let loadSeq = 0;
     const load = async () => {
+      const seq = ++loadSeq;
       try {
         const params = { org: slug };
         if (selectedOpp) params.opportunity = selectedOpp;
         const d = await fetchJSON('/api/partner/', params);
+        if (seq !== loadSeq) return;
         win.last = d;
         paint(d);
+        if (win.reveal) {
+          win.reveal = false;
+          const card = win.body.querySelector(
+            '.pulse-opp[aria-pressed="true"]',
+          );
+          if (card) card.scrollIntoView({ block: 'nearest' });
+        }
       } catch (err) {
+        if (seq !== loadSeq) return;
         win.body.innerHTML = `<div class="pulse-win-note">Could not load this partner (${esc(
           err.message,
         )}).</div>`;
       }
     };
+
+    /* Step the window's narrowing along its opportunities, as a dial would:
+       all of them, then each in the order the grid shows them, then back to
+       all. The same re-fetch the narrow button does, so the roster, chart and
+       KPIs follow. Returns false when there is nothing to step through. */
+    win.stepOpp = (delta) => {
+      const rows = (win.last && win.last.opportunities) || [];
+      if (rows.length < 2) return false;
+      const ids = [null, ...rows.map((o) => o.id)];
+      const at = Math.max(ids.indexOf(selectedOpp), 0);
+      selectedOpp =
+        ids[(((at + delta) % ids.length) + ids.length) % ids.length];
+      openState.opportunity = selectedOpp;
+      if (typeof onChange === 'function') onChange();
+      win.reveal = true;
+      load();
+      return true;
+    };
+
     load();
     win.timer = setInterval(load, REFRESH_MS);
   }
@@ -675,6 +708,12 @@
     close: () => close(0),
     isOpen: () => stack.length > 0,
     moveBy,
+    /* Step the TOP window through its opportunities (gesture dial). A worker
+       window on top has none, so this does nothing until it is closed. */
+    stepOpportunity(delta) {
+      const top = stack[stack.length - 1];
+      return !!(top && top.stepOpp && top.stepOpp(delta));
+    },
     /* What a shareable URL should describe. Null fields are simply omitted by
        the caller, so a partner window with nothing selected produces
        `?org=solina` rather than `?org=solina&opp=&worker=`. */
