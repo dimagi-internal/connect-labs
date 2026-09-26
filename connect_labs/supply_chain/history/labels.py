@@ -224,6 +224,23 @@ _SPECIAL_CLAUSES = {
     ("Quote", "version"): lambda old, new: "",
 }
 
+# How a program manager would say what a supplier's reply was, from the
+# vocabulary `outreach_update`'s schema restricts `response_kind` to
+# (operations.py's `_OUTREACH_DATA`). An unknown code -- there should never be
+# one, since the schema is closed -- falls back to the plain vocabulary word
+# rather than raising, so a future addition here shows up as a stopgap
+# sentence instead of a broken timeline.
+_OUTREACH_REPLY_TEXT = {
+    "quote": "Replied with a quote",
+    "declined": "Declined to quote",
+    "needs_info": "Replied asking for more information",
+    "no_reply": "Marked as no reply",
+}
+
+
+def _outreach_reply_clause(kind) -> str:
+    return _OUTREACH_REPLY_TEXT.get(kind) or f"Replied: {words(kind)}"
+
 
 def _values_of(obj) -> dict:
     return {f.attname: getattr(obj, f.attname) for f in obj._meta.concrete_fields}
@@ -360,6 +377,14 @@ def sentence(model, action, changes, lookup) -> str:
         changes.pop("voided")
         reason = (changes.pop("void_reason", None) or [None, ""])[1]
         lead.append(f"Voided: {reason}" if reason else "Voided")
+    if model.__name__ == "Outreach" and (changes.get("response_kind") or [None, ""])[1]:
+        # "Replied with a quote", not "Responded; Response kind: quote" -- the
+        # kind of reply already says a reply happened, so the boolean flip
+        # that always comes with it is not a second fact worth a clause of
+        # its own.
+        kind = changes.pop("response_kind")[1]
+        changes.pop("responded", None)
+        lead.append(_outreach_reply_clause(kind))
     clauses = lead + [_clause(model, attname, old, new, lookup) for attname, (old, new) in changes.items()]
     return "; ".join(c for c in clauses if c)
 
