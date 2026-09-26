@@ -617,6 +617,25 @@
     }
   }
 
+  /* A refused camera usually never prompts -- the browser remembers an old
+     "Block", or macOS has not granted the browser the camera at all -- so the
+     message has to say where the switch is, not just that it failed. */
+  function whyNoCamera(err) {
+    const name = (err && err.name) || '';
+    const msg = (err && err.message) || String(err);
+    if (!global.isSecureContext || !navigator.mediaDevices)
+      return 'The camera needs https or localhost; this page is neither.';
+    if (name === 'NotAllowedError' || name === 'SecurityError')
+      return /system/i.test(msg)
+        ? 'macOS is blocking the camera for this browser: System Settings → Privacy & Security → Camera.'
+        : 'Camera blocked for this site: use the camera icon in the address bar to allow it, then click Gestures again.';
+    if (name === 'NotFoundError' || name === 'OverconstrainedError')
+      return 'No camera found.';
+    if (name === 'NotReadableError' || name === 'AbortError')
+      return 'The camera is in use by another app (a video call?).';
+    return 'Could not start: ' + msg;
+  }
+
   async function loadRecognizer() {
     const vision = await import(MP_BASE + '/vision_bundle.mjs');
     const files = await vision.FilesetResolver.forVisionTasks(
@@ -661,7 +680,8 @@
       s.recognizer = await loadRecognizer();
       if (session !== s) return s.recognizer.close();
     } catch (err) {
-      ui.state.textContent = 'Could not start: ' + (err.message || err.name);
+      console.warn('[pulse gestures] could not start', err);
+      ui.state.textContent = whyNoCamera(err);
       return;
     }
 
