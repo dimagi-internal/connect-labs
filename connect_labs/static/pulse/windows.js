@@ -651,6 +651,20 @@
     }
   });
 
+  /* Nudge the topmost window by a pixel offset (gesture drag). Uses the
+     `translate` property, which composes with the centring `transform` and
+     its entrance animation instead of fighting them. Clamped so the header,
+     and with it the close button, can never be dragged out of reach. */
+  function moveBy(dx, dy) {
+    const win = stack[stack.length - 1];
+    if (!win) return;
+    const W = global.innerWidth || 0;
+    const H = global.innerHeight || 0;
+    win.dx = Math.max(-W / 2, Math.min(W / 2, (win.dx || 0) + dx));
+    win.dy = Math.max(-H * 0.03, Math.min(H * 0.7, (win.dy || 0) + dy));
+    win.el.style.translate = `${win.dx}px ${win.dy}px`;
+  }
+
   // Set by display.js so the address bar can follow what is open.
   let onChange = null;
 
@@ -660,6 +674,7 @@
     openWorker,
     close: () => close(0),
     isOpen: () => stack.length > 0,
+    moveBy,
     /* What a shareable URL should describe. Null fields are simply omitted by
        the caller, so a partner window with nothing selected produces
        `?org=solina` rather than `?org=solina&opp=&worker=`. */
