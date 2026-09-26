@@ -102,6 +102,9 @@ describe('windows.js module load', () => {
     expect(typeof win.PulseWindows.openWorker).toBe('function');
     expect(typeof win.PulseWindows.close).toBe('function');
     expect(typeof win.PulseWindows.isOpen).toBe('function');
+    // Gesture drag (gestures.js) moves a window through this, not the stack.
+    expect(typeof win.PulseWindows.moveBy).toBe('function');
+    win.PulseWindows.moveBy(10, 10); // nothing open: a no-op, not a throw
   });
 
   it('opens closed, so the map tour is not suppressed before anything is shown', () => {
