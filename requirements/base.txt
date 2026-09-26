@@ -191,9 +191,9 @@ exceptiongroup==1.3.1
     # via fastmcp-slim
 executing==2.2.1
     # via logfire
-fastmcp==3.4.7
+fastmcp==4.0.5
     # via -r base.in
-fastmcp-slim[client,server]==3.4.7
+fastmcp-slim[client,server]==4.0.5
     # via
     #   fastmcp
     #   pydantic-ai-slim
@@ -245,15 +245,13 @@ httpcore2==2.13.0
 httpx[http2]==0.28.1
     # via
     #   -r base.in
-    #   fastmcp-slim
     #   google-genai
-    #   mcp
-httpx-sse==0.4.3
-    # via mcp
 httpx2==2.13.0
     # via
     #   anthropic
+    #   fastmcp-slim
     #   genai-prices
+    #   mcp
     #   openai
     #   pydantic-ai-slim
 hyperframe==6.1.0
@@ -326,10 +324,14 @@ markdown==3.10.3
     # via -r base.in
 markdown-it-py==4.2.0
     # via rich
-mcp==1.30.0
+mcp==2.2.0
     # via
     #   -r base.in
     #   fastmcp-slim
+mcp-types==2.2.0
+    # via
+    #   fastmcp-slim
+    #   mcp
 mdurl==0.1.2
     # via markdown-it-py
 more-itertools==11.1.0
@@ -361,6 +363,7 @@ openpyxl==3.1.5
 opentelemetry-api==1.44.0
     # via
     #   fastmcp-slim
+    #   mcp
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-httpx
@@ -442,6 +445,7 @@ pydantic[email]==2.13.5
     #   genai-prices
     #   google-genai
     #   mcp
+    #   mcp-types
     #   openai
     #   openapi-pydantic
     #   pydantic-ai-slim
@@ -461,16 +465,14 @@ pydantic-evals==2.44.0
 pydantic-graph==2.44.0
     # via pydantic-ai-slim
 pydantic-settings==2.15.0
-    # via
-    #   fastmcp-slim
-    #   mcp
+    # via fastmcp-slim
 pygments==2.21.0
     # via
     #   rich
     #   rich-rst
 pyjwt[crypto]==2.14.0
     # via
-    #   -r requirements/base.in
+    #   -r base.in
     #   mcp
 pyogrio==0.13.0
     # via geopandas
@@ -603,6 +605,7 @@ typing-extensions==4.16.0
     #   jwcrypto
     #   logfire
     #   mcp
+    #   mcp-types
     #   openai
     #   opentelemetry-api
     #   opentelemetry-exporter-otlp-proto-http
