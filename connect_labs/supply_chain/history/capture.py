@@ -1,12 +1,15 @@
 """Signal receivers that turn every supply-record write into a `Revision`.
 
-Wired up for side effect: importing this module connects `pre_save`,
-`post_save`, `pre_delete` and `post_delete` on every concrete Django model,
-plus `m2m_changed` for the many-to-many link rows an `add()` bulk-inserts,
-filtered down to `supply_chain`-labelled models (including auto-created
-through models, excluding the history tables themselves) in the receivers
-below. `apps.py::ready()` imports it so
-the connection happens once, at startup.
+`connect_receivers()`, called once from `apps.py::ready()`, connects
+`pre_save`, `post_save`, `pre_delete` and `post_delete` to each
+`supply_chain` model (including auto-created through models, excluding the
+history tables themselves), plus `m2m_changed` for the many-to-many link rows
+an `add()` bulk-inserts. Every connection names its sender. A receiver
+connected with no sender makes `pre_delete.has_listeners()` true for EVERY
+model in the project, which turns off Django's fast delete everywhere -- a
+visit-cache purge or a retention sweep would then load every row it deletes.
+The only non-supply models that get a receiver are those a supply through
+model points at (an organisation), whose delete takes link rows with it.
 
 The diff is taken between the row as loaded fresh from the database in
 `pre_save` (never the in-memory instance, which may itself be stale) and the
@@ -192,8 +195,45 @@ def on_m2m_changed(sender, instance, action, model, pk_set, **kwargs):
         _write_link_deletes(_link_rows(sender, instance, model, None))
 
 
-pre_save.connect(on_pre_save, dispatch_uid="supply_history_pre_save")
-post_save.connect(on_post_save, dispatch_uid="supply_history_post_save")
-pre_delete.connect(on_pre_delete, dispatch_uid="supply_history_pre_delete")
-post_delete.connect(on_post_delete, dispatch_uid="supply_history_post_delete")
-m2m_changed.connect(on_m2m_changed, dispatch_uid="supply_history_m2m_changed")
+def _supply_models():
+    from django.apps import apps
+
+    return [
+        model
+        for model in apps.get_app_config("supply_chain").get_models(include_auto_created=True)
+        if model not in (OperationCall, Revision)
+    ]
+
+
+def connect_receivers():
+    """Connect every receiver above to exactly the senders it serves. Idempotent (dispatch_uid)."""
+    supply = _supply_models()
+    for model in supply:
+        uid = model._meta.label_lower
+        pre_save.connect(on_pre_save, sender=model, dispatch_uid=f"supply_history_pre_save:{uid}")
+        post_save.connect(on_post_save, sender=model, dispatch_uid=f"supply_history_post_save:{uid}")
+        pre_delete.connect(on_pre_delete, sender=model, dispatch_uid=f"supply_history_pre_delete:{uid}")
+        post_delete.connect(on_post_delete, sender=model, dispatch_uid=f"supply_history_post_delete:{uid}")
+        if model._meta.auto_created:
+            m2m_changed.connect(on_m2m_changed, sender=model, dispatch_uid=f"supply_history_m2m_changed:{uid}")
+    # A model outside this app that a supply through model points at: deleting
+    # it cascades to link rows that must be recorded (on_pre_delete). Nothing
+    # else outside the app is listened to.
+    for model in link_targets_outside_app(supply):
+        pre_delete.connect(
+            on_pre_delete, sender=model, dispatch_uid=f"supply_history_pre_delete:{model._meta.label_lower}"
+        )
+
+
+def link_targets_outside_app(supply=None):
+    """Non-supply models some supply through model has a foreign key to."""
+    supply = supply if supply is not None else _supply_models()
+    targets = []
+    for through in supply:
+        if not through._meta.auto_created:
+            continue
+        for field in through._meta.concrete_fields:
+            target = field.related_model._meta.concrete_model if field.is_relation else None
+            if target is not None and target._meta.app_label != "supply_chain" and target not in targets:
+                targets.append(target)
+    return targets
