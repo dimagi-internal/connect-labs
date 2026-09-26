@@ -194,3 +194,34 @@ class TestManyToManyLinkRows:
         with capture_suspended():
             tender.invited_orgs.add(*orgs)
         assert not self._link_revs("create").exists()
+
+
+class TestReceiversAreConnectedPerSender:
+    """Capture must not listen to models it does not track.
+
+    A `pre_delete` receiver connected with no sender makes every model in the
+    project look like it has delete listeners, and Django then refuses to
+    fast-delete anything: a visit-cache purge or a retention sweep loads every
+    row it deletes. Only supply models, and the non-supply models a supply
+    link row points at, may have one.
+    """
+
+    def test_a_labs_model_outside_supply_can_still_be_fast_deleted(self):
+        from django.db.models.deletion import Collector
+        from django.db.models.signals import pre_delete
+
+        from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+
+        assert not pre_delete.has_listeners(RawVisitCache)
+        assert Collector(using="default").can_fast_delete(RawVisitCache.objects.all())
+
+    def test_supply_models_and_link_targets_are_listened_to(self):
+        from django.db.models.signals import m2m_changed, pre_delete
+
+        from connect_labs.labs.models import LabsOrg
+
+        assert pre_delete.has_listeners(Tender)
+        assert pre_delete.has_listeners(LabsOrg)
+        assert m2m_changed.has_listeners(Tender.invited_orgs.through)
+        assert not pre_delete.has_listeners(OperationCall)
+        assert not pre_delete.has_listeners(Revision)
