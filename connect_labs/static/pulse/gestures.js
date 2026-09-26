@@ -32,7 +32,8 @@
  *            click beside the thing you were pointing at). Point with the
  *            index finger to aim; an open hand moves the globe instead.
  *   drill in quick pinch-and-release, or a push toward the camera with a
- *            pointing (not open) hand.
+ *            pointing (not open) hand, or a thumbs up -- which opens the
+ *            partner card showing on the map without aiming at it.
  *   drill out closed fist, or a pull away from the camera — exactly Esc.
  *   drag     pinch, then move: the top window follows.
  *   globe    an open hand, palm to the camera: move it and the globe turns
@@ -76,11 +77,18 @@
     // After arming, ignore gestures briefly: the arming palm is often still
     // travelling toward the camera, which would otherwise read as a push.
     graceMs: 400,
-    pinchEnter: 0.28,
-    pinchExit: 0.42,
-    tapMaxMs: 550,
-    dragStart: 0.03,
+    // A pinch was hard to land: closing the fingers moves the index knuckle
+    // the cursor follows, so a tap that drifted 3% of the screen read as a
+    // drag, and a deliberate pinch often outlasted the old 0.55s. A miss now
+    // says why, in the panel log.
+    pinchEnter: 0.33,
+    pinchExit: 0.48,
+    tapMaxMs: 900,
+    dragStart: 0.06,
     fistHoldMs: 300,
+    // Thumbs up: "yes, open it" -- the pinned partner card, or whatever the
+    // cursor is on. Needs no aim precision, so it is also the easy click.
+    thumbHoldMs: 300,
     depthWindowMs: 350,
     pushRatio: 1.3,
     pullRatio: 0.77,
@@ -203,6 +211,8 @@
    *   spin{dx,dy}                  turn the globe with the hand (0..1 units)
    *   zoom{dz}                     map zoom levels, + is in
    *   dial{step}                   +1 clockwise (as the viewer sees it), -1 anti
+   *   confirm{x,y}                 thumbs up: open the pinned card / the target
+   *   tapMissed{reason}            a pinch that did not click, and why
    *
    * Only `armed` can be produced while disarmed.
    */
@@ -222,6 +232,7 @@
     let pinch = null; // { startT, startP, lastP, dragging }
     let fistSince = null;
     let fistSpent = false;
+    let thumb = null; // { since, p, spent } while a thumbs-up is held
     let history = []; // { t, size, p }
     let baseline = null;
     let palm = null; // { since, lastP, lastT, size, ref } while an open palm is up
@@ -289,6 +300,7 @@
           poseScore: 0,
           pinchRatio: null,
           pinched: !!pinch,
+          pinchClose: 0,
           spinning: false,
           zooming: false,
           dial: 0,
@@ -309,6 +321,7 @@
         endPinch(actions);
         palm = null;
         fistSince = null;
+        thumb = null;
         if (arm === 'armed' && t - lastSeen >= o.disarmAfterMs)
           disarm(actions, 'hand gone');
         return { actions, readout: readout({ t }) };
@@ -369,7 +382,14 @@
           if (pinch.dragging) {
             actions.push({ type: 'dragEnd' });
             lastActionAt = t;
-          } else if (t - pinch.startT <= o.tapMaxMs && t >= cooldownUntil) {
+          } else if (t - pinch.startT > o.tapMaxMs) {
+            actions.push({ type: 'tapMissed', reason: 'held too long' });
+          } else if (t < cooldownUntil) {
+            actions.push({
+              type: 'tapMissed',
+              reason: 'too soon after the last one',
+            });
+          } else {
             fire(
               actions,
               { type: 'select', x: pinch.startP.x, y: pinch.startP.y },
@@ -388,6 +408,19 @@
           }
           pinch.lastP = p;
         }
+      }
+
+      /* ── thumbs up: "yes, open it", once per thumbs-up ── */
+      if (live && pose === 'Thumb_Up' && !pinch) {
+        if (!thumb) thumb = { since: t, p, spent: false };
+        else if (!thumb.spent && t - thumb.since >= o.thumbHoldMs) {
+          thumb.spent = true;
+          // Aim where the hand was as the thumb went up.
+          if (t >= cooldownUntil)
+            fire(actions, { type: 'confirm', x: thumb.p.x, y: thumb.p.y }, t);
+        }
+      } else {
+        thumb = null;
       }
 
       /* ── open palm: the globe. Move it to spin; push or pull to zoom ── */
@@ -494,6 +527,7 @@
         !pinch &&
         !open &&
         pose !== 'Closed_Fist' &&
+        pose !== 'Thumb_Up' &&
         t >= cooldownUntil
       ) {
         const then = ago(t, o.depthWindowMs);
@@ -523,6 +557,9 @@
           pose: hand.pose || null,
           poseScore: hand.poseScore || 0,
           pinchRatio: ratio,
+          // 0 with the fingers apart, 1 at the pinch point: the cursor
+          // shrinks with it, so you can see how close a pinch is.
+          pinchClose: clamp01((1 - ratio) / (1 - o.pinchEnter)),
           // With a palm up, the meter shows depth from its rest point (what
           // drives zoom); otherwise the running baseline.
           depth:
@@ -611,7 +648,8 @@
        </dl>
        <ol class="pg-log"></ol>
        <div class="pg-help">Hold an open palm still to arm · pinch or push to open ·
-         fist or pull back to close · pinch and move to drag a window ·
+         fist or pull back to close · thumbs up opens the partner card showing
+         (or what the cursor is on) · pinch and move to drag a window ·
          point with a finger to aim · open hand: move to spin the globe; push
          toward the camera and hold to keep zooming in, pull back to zoom out,
          return to stop; close and reopen the hand to reset · in a partner
@@ -740,7 +778,12 @@
           global.PulseWindows.moveBy(a.dx * W, a.dy * H);
         break;
       case 'dragEnd':
-        log(ui, 'drag done');
+        log(
+          ui,
+          global.PulseWindows && global.PulseWindows.isOpen()
+            ? 'drag done'
+            : 'pinch moved too much: read as a drag (no window to move)',
+        );
         break;
       case 'zoom':
         // The map sits under an open window; moving it there would be
@@ -764,6 +807,31 @@
           );
         }
         break;
+      case 'tapMissed':
+        log(ui, 'pinch missed: ' + a.reason);
+        break;
+      case 'confirm': {
+        // The partner card showing on the map is what "open it" means when
+        // there is one -- the cursor is usually still on the map after the
+        // click that pinned it, and clicking the map again would unpin it.
+        const open = global.PulseWindows && global.PulseWindows.isOpen();
+        const card = !open && document.querySelector('.pulse-partner');
+        let node = null;
+        let x = a.x * W;
+        let y = a.y * H;
+        if (card) {
+          const r = card.getBoundingClientRect();
+          x = r.left + r.width / 2;
+          y = r.top + r.height / 2;
+          node = card;
+        } else {
+          const at = targetAt(x, y);
+          if (at && !at.target.classList.contains('pulse-map')) node = at.hit;
+        }
+        log(ui, node ? 'thumbs up: open' : 'thumbs up (nothing to open)');
+        if (node) mouse('click', node, x, y);
+        break;
+      }
       case 'spin':
         if (
           global.PulseMap &&
@@ -823,6 +891,7 @@
       ui.cursor.style.transform = `translate(${x}px, ${y}px)`;
       ui.cursor.dataset.armed = armed ? '1' : '';
       ui.cursor.dataset.pinched = r.pinched ? '1' : '';
+      ui.cursor.style.setProperty('--close', String(r.pinchClose || 0));
       if (armed) {
         const at = targetAt(x, y);
         setHot(s, at ? at.target : null);
