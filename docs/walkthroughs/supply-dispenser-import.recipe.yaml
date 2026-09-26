@@ -17,7 +17,7 @@ scenes:
   url: /supply/checks/?program_id=10604
   actions:
   - kind: wait_for
-    target: css:h2:has-text('What the record cannot answer')
+    target: css:h2:has-text('What the record cannot answer'), h2:has-text('what is missing, in conflict')
   - kind: hold
     seconds: 1.5
   - kind: snapshot
@@ -432,7 +432,7 @@ scenes:
   url: /supply/checks/?program_id=10604
   actions:
   - kind: wait_for
-    target: css:h2:has-text('What the record cannot answer')
+    target: css:h2:has-text('What the record cannot answer'), h2:has-text('what is missing, in conflict')
   - kind: hold
     seconds: 1.2
   - kind: hover
