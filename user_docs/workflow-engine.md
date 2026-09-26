@@ -162,7 +162,11 @@ The **Indicator Worker Review** (created automatically alongside the programme r
 
 #### Indicator Opportunity Report
 
-The **Indicator Opportunity Report** template creates a standalone report for a single opportunity, intended for use by that opportunity's network manager. It includes the same indicator view as the programme report but scoped to one opportunity — and the opportunity's real name appears in the report title rather than its ID number. The report also includes a **Benchmarks tab** that shows how that opportunity compares to others. Each time the programme report saves a weekly run, the opportunity report receives the same data automatically — no separate run is needed.
+The **Indicator Opportunity Report** template creates a standalone report for a single opportunity, intended for use by that opportunity's network manager. It includes the same indicator view as the programme report but scoped to one opportunity, and the opportunity's real name appears in the report title and in facilitator rows rather than its ID number or a plain partner label. For example, you will see **"[Synthetic] Spark facilitator - Partner A"** instead of **"Partner A · opportunity 10082"**. This applies to all weeks shown in the report, including weeks that were saved before this change was made.
+
+Where a facilitator row would otherwise repeat the partner name because the opportunity's name already contains it — for example, showing "… Partner A · Partner A" — the duplicate is suppressed so the name appears only once.
+
+The report also includes a **Benchmarks tab** that shows how that opportunity compares to others. Each time the programme report saves a weekly run, the opportunity report receives the same data automatically — no separate run is needed.
 
 Create it from **Workflows → Create Workflow → "Indicator Opportunity Report"** (listed under *Opportunity reports*).
 
@@ -227,9 +231,4 @@ Your filter selections are saved on the report, so they persist between sessions
 
 ### MBW Visit Verification template
 
-The **MBW Visit Verification** template creates a single-table dashboard for opportunity 765. Each row represents one visit and shows whether GPS location, QR code scan, mother's signature, ANC card capture, and the mother-questions check each came back **Pass**, **Fail**, or **NA**, along with the visit's overall verification outcome and the field worker's pass rate on that mother's earlier visits. Only field workers flagged with the `visit_verification` property in CommCare appear as rows in the table.
-
-The dashboard has three tabs:
-
-- **Dashboard** — the main visit-by-visit table described above.
-- **Verification Summary** — aggregated pass rates and a stacked bar
+The **MBW Visit Verification** template creates a single-table dashboard for opportunity 765. Each row represents one visit and shows whether GPS location, QR code scan, mother's signature
