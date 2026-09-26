@@ -148,6 +148,26 @@ class TestRefusesToGuess:
         assert resolve("frht")["parent"] == ""
 
 
+class TestOnlyTheDirectoryNamesPartners:
+    """`LabsOrg` also holds rows other features minted -- suppliers, demo
+    seeds. None of them is a partner a Connect slug may resolve to."""
+
+    def test_a_minted_row_sorting_first_does_not_take_the_directory_partners_workspace(self):
+        """The shape that happened: the directory holds "X Clinics (Outreach Program)"; a
+        supplier import minted "X Clinics (X Pharma)". Both bare names are
+        `x-clinics`, so `x-clinics-outreach` suffix-matches either -- and rows
+        load in name order, so the minted one used to win."""
+        make_partner(name="Brightwater Clinics (Outreach Program)", short="BWC")
+        LabsOrg.objects.create(slug="brightwater-clinics-pharma", name="Brightwater Clinics (Brightwater Pharma)")
+        invalidate()
+        assert resolve("brightwater-clinics-outreach")["parent"] == "Brightwater Clinics (Outreach Program)"
+
+    def test_a_minted_row_is_never_a_match_on_its_own(self):
+        LabsOrg.objects.create(slug="kestrel-couriers", name="Kestrel Couriers")
+        invalidate()
+        assert resolve("kestrel-couriers")["parent"] == ""
+
+
 class TestCuratedAliases:
     """Slugs no string rule reaches, pointed at a partner by a human on the
     directory's mapping tab and carried in ``marketplace.OrgConnectSlug``."""

@@ -43,6 +43,8 @@ class _FakeOp:
 
     def __call__(self, access, name, **payload):
         self.calls.append((name, payload))
+        if name == "org_list":
+            return []
         return {"op": name, **payload}
 
 
@@ -874,6 +876,25 @@ def test_a_directory_org_the_directory_does_not_have_is_refused_by_name():
     module.op = _Empty()
     with pytest.raises(ValueError, match="a-missing-partner"):
         module.seed_orgs(object(), {"orgs": [{"slug": "a-missing-partner", "from_directory": True}]})
+
+
+def test_a_new_slug_under_a_name_the_directory_already_holds_is_refused():
+    """How the demo came to hold two of one partner: its own slug, the directory's name."""
+
+    class _Directory(_FakeOp):
+        def __call__(self, access, name, **payload):
+            self.calls.append((name, payload))
+            if name == "org_list":
+                return [{"id": 41, "slug": "a-directory-partner-program", "name": "A Directory Partner (Program)"}]
+            return {"op": name, **payload}
+
+    fake = _Directory()
+    module = _load_seed_remote()
+    module.op = fake
+    row = {"slug": "a-directory-partner", "name": "A Directory Partner (Program)", "country": "NG"}
+    with pytest.raises(ValueError, match="a-directory-partner-program"):
+        module.seed_orgs(object(), {"orgs": [row]})
+    assert not [name for name, _ in fake.calls if name == "org_upsert"]
 
 
 def test_history_names_places_and_refuses_one_the_chain_does_not_have():

@@ -226,7 +226,12 @@ class TestWhoIsInTheNetwork:
         assert "Walk In Health" in {r.name for r in queries.all_rows_with_rounds()}
         assert queries.network_totals()["organisations"] == 3
 
-    def test_delivering_on_connect_puts_an_organisation_in_the_network_without_a_profile(self, network, monkeypatch):
-        LabsOrg.objects.create(slug="quiet-deliverer", name="Quiet Deliverer", country="NG")
-        monkeypatch.setattr(queries, "delivering_names", lambda: {"Quiet Deliverer"})
-        assert "Quiet Deliverer" in {r.name for r in queries.all_rows_with_rounds()}
+    def test_a_second_row_sharing_a_delivering_partners_name_is_not_in_the_network(self, network):
+        """A demo seed once minted its own copy of a real partner under a new
+        slug. Delivery is attributed by name, so the copy was listed beside
+        the directory's row, delivering the same programs, with no HQ."""
+        LabsOrg.objects.create(slug="northlake-copy", name="Northlake Maternal Health Network", country="UG")
+        slugs = [r.slug for r in queries.all_rows_with_rounds()]
+        assert slugs.count("northlake-maternal-health-network") == 1
+        assert "northlake-copy" not in slugs
+        assert queries.network_totals()["organisations"] == 2
