@@ -280,6 +280,30 @@
     return m;
   }
 
+  /* Hand gestures from gestures.js (?gestures=1): an open palm spins the
+     globe and zooms it. Each is a deliberate view choice, like a focus button, so it also
+     stops the act tour flying the map away from where the viewer put it. */
+  const handMoved = () => {
+    autoCycle = false;
+    lastInteractionAt = performance.now();
+  };
+  window.PulseMap = {
+    /* dz in zoom levels, + is in; about the map's centre, which a spin has
+       just put under the hand. */
+    zoomBy(dz) {
+      if (!map) return;
+      handMoved();
+      map.zoomTo(map.getZoom() + dz, { duration: 0 });
+    },
+    /* The surface follows the hand, as it would under a dragging mouse, so the
+       view moves the opposite way. On the globe that is a spin. */
+    panBy(dx, dy) {
+      if (!map) return;
+      handMoved();
+      map.panBy([-dx, -dy], { duration: 0 });
+    },
+  };
+
   /* ═══ layouts ═══════════════════════════════════════════════════
      Same card library, same store — the layout only chooses which acts
      appear, in what order, and what the map is doing while they do. That

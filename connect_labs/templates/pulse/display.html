@@ -37,6 +37,9 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
       <div class="pulse-transport-top">
         <button id="btn-play" type="button" aria-label="Pause">Pause</button>
         <button id="btn-mode" type="button">Go live</button>
+        {# Webcam hand-gesture control: a demo toy, only on ?gestures=1 and    #}
+        {# never on a public link. The camera starts on click, not on load.  #}
+        {% if gestures %}<button id="btn-gestures" type="button" aria-pressed="false" title="Drive the windows by hand, from your webcam. Nothing leaves this browser.">Gestures</button>{% endif %}
       </div>
 
       {# Filter captions live in each menu's own first option ("All services") #}
@@ -177,5 +180,6 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
   <script src="{% static 'pulse/cards.js' %}"></script>
   <script src="{% static 'pulse/windows.js' %}"></script>
   <script src="{% static 'pulse/display.js' %}"></script>
+  {% if gestures %}<script src="{% static 'pulse/gestures.js' %}"></script>{% endif %}
 </body>
 </html>

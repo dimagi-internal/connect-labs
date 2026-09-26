@@ -362,6 +362,36 @@ class TestPublicAccess:
 
 
 @pytest.mark.django_db
+class TestGestureControl:
+    """Webcam gesture control is a demo toy: opt-in by URL, never on a public link.
+
+    The ordinary display must not even load the script, so nobody meets a
+    camera button they did not ask for.
+    """
+
+    def test_absent_from_the_ordinary_display(self, client, django_user_model):
+        client.force_login(django_user_model.objects.create(username="demo1"))
+        body = client.get(reverse("pulse:display", args=["nightmap"])).content.decode()
+        assert "pulse/gestures.js" not in body
+        assert 'id="btn-gestures"' not in body
+
+    def test_loaded_when_the_url_asks_for_it(self, client, django_user_model):
+        client.force_login(django_user_model.objects.create(username="demo2"))
+        body = client.get(reverse("pulse:display", args=["nightmap"]) + "?gestures=1").content.decode()
+        assert "pulse/gestures.js" in body
+        assert 'id="btn-gestures"' in body
+        assert "{#" not in body
+
+    def test_never_on_a_public_link(self, client, django_user_model):
+        from connect_labs.pulse.views import mint_public_token
+
+        token = mint_public_token(django_user_model.objects.create(username="demo3"))
+        body = client.get(reverse("pulse:public", args=[token.token]) + "?gestures=1").content.decode()
+        assert "pulse/gestures.js" not in body
+        assert 'id="btn-gestures"' not in body
+
+
+@pytest.mark.django_db
 class TestOperatorIndex:
     """The operator page, where a wrong poller has to be catchable by eye."""
 
