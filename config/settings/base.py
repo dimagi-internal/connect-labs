@@ -308,6 +308,7 @@ TEMPLATES = [
                 "connect_labs.web.context_processors.page_settings",
                 "connect_labs.web.context_processors.analytics_context",
                 "connect_labs.web.context_processors.chat_widget_context",
+                "connect_labs.supply_chain.history.as_of.as_of_context",
             ],
         },
     }
