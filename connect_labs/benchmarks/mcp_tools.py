@@ -137,6 +137,7 @@ def _serialize_cohort(cohort: BenchmarkCohort) -> dict[str, Any]:
         "source_workflow_id": cohort.source_workflow_id,
         "min_peers": cohort.min_peers,
         "require_complete_series": cohort.require_complete_series,
+        "complete_cohort": cohort.complete_cohort,
         "min_denominator": cohort.min_denominator,
         "opportunity_ids": sorted(cohort.opportunity_ids),
     }
@@ -395,7 +396,7 @@ def _coerce_int(name: str, value) -> int:
     name="benchmarks_cohort_update",
     description=(
         "Change a benchmark cohort's name, description, disclosure settings (min_peers, "
-        "min_denominator, require_complete_series) or automatic publishing "
+        "min_denominator, require_complete_series, complete_cohort) or automatic publishing "
         "(source_workflow_id + auto_publish_on_completion: saving a run of that workflow, or "
         "finishing a history rebuild of it, republishes the cohort). Pass only what should change. "
         f"min_peers must be >= {MIN_PEERS_FLOOR}; min_peers=1 with min_denominator=0 and "
@@ -413,6 +414,13 @@ def _coerce_int(name: str, value) -> int:
             "min_peers": {"type": "integer", "description": f"Must be >= {MIN_PEERS_FLOOR}."},
             "min_denominator": {"type": "integer", "description": "Must be >= 0."},
             "require_complete_series": {"type": "boolean"},
+            "complete_cohort": {
+                "type": "boolean",
+                "description": (
+                    "Every member organisation on every non-count indicator, withheld figures kept "
+                    "with their band (too few babies, not credible, not collected) instead of dropped."
+                ),
+            },
             "source_workflow_id": {
                 "type": "integer",
                 "description": "The report this cohort is published from. 0 clears it.",
@@ -436,6 +444,7 @@ def benchmarks_cohort_update(
     min_peers: int | None = None,
     min_denominator: int | None = None,
     require_complete_series: bool | None = None,
+    complete_cohort: bool | None = None,
     source_workflow_id: int | None = None,
     auto_publish_on_completion: bool | None = None,
 ) -> dict[str, Any]:
@@ -461,6 +470,9 @@ def benchmarks_cohort_update(
     if require_complete_series is not None:
         cohort.require_complete_series = _coerce_bool("require_complete_series", require_complete_series)
         changed.append("require_complete_series")
+    if complete_cohort is not None:
+        cohort.complete_cohort = _coerce_bool("complete_cohort", complete_cohort)
+        changed.append("complete_cohort")
     if source_workflow_id is not None:
         source_workflow_id = _coerce_int("source_workflow_id", source_workflow_id)
         cohort.source_workflow_id = source_workflow_id or None

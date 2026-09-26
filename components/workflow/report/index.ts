@@ -35,6 +35,15 @@ import {
   periodNumber,
 } from './Peers';
 import {
+  MiniRankBars,
+  RankedBars,
+  Tabs,
+  drawable,
+  ordinal,
+  rankOrganisations,
+  targetOf,
+} from './Benchmark';
+import {
   Button,
   Card,
   Loading,
@@ -44,7 +53,7 @@ import {
   SectionTitle,
 } from './Layout';
 
-export const VERSION = 1;
+export const VERSION = 2;
 
 export const LabsReport = {
   VERSION,
@@ -92,6 +101,14 @@ export const LabsReport = {
   PeerCard,
   periodNumber,
   periodLabel,
+  // organisation benchmark scorecard (VERSION 2)
+  Tabs,
+  MiniRankBars,
+  RankedBars,
+  rankOrganisations,
+  targetOf,
+  drawable,
+  ordinal,
 };
 
 export type LabsReportLibrary = typeof LabsReport;
