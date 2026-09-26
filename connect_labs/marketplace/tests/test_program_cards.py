@@ -9,7 +9,7 @@ from decimal import Decimal
 import pytest
 from django.urls import reverse
 
-from connect_labs.marketplace import queries
+from connect_labs.marketplace import programs, queries
 from connect_labs.marketplace.testing import make_partner
 from connect_labs.pulse.models import PulseOpportunity, PulseProgram, PulseWork
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
@@ -186,6 +186,13 @@ class TestTheCards:
     def test_every_card_has_a_colour_of_its_own(self, market):
         hues = [c["hue"] for c in queries.program_cards()]
         assert len(hues) == len(set(hues))
+
+    def test_a_card_takes_its_colour_from_its_section(self, market):
+        for card in queries.program_cards():
+            assert card["hue"] in programs.SECTION_HUES[card["state"]]
+
+    def test_delivering_is_the_first_section(self):
+        assert queries.STATES[0][0] == "delivering"
 
 
 @pytest.mark.django_db

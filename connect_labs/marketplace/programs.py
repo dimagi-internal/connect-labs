@@ -109,19 +109,40 @@ def hue(slug: str | None) -> str:
 # programs the portfolio actually pictures are listed — a borrowed photo of a
 # different program would say something false about this one, so the rest
 # show their colour instead.
+#
+# Each carries the CSS object-position that keeps its people in frame: the
+# card crops every picture to one wide band, and a centred crop of a portrait
+# photo takes the faces off the top.
 _IMAGES = {
-    "chc": "chc.jpg",
-    "kmc": "kmc.jpg",
-    "mbw": "mbw.jpg",
-    "readers": "readers.jpg",
-    "ecd": "ecd.jpg",
-    "nutrition": "nutrition.svg",
-    "water": "water.svg",
-    "interview": "interview.svg",
+    "chc": ("chc.jpg", "50% 35%"),
+    "kmc": ("kmc.jpg", "50% 25%"),
+    "mbw": ("mbw.jpg", "50% 20%"),
+    "readers": ("readers.jpg", "50% 35%"),
+    "ecd": ("ecd.jpg", "70% 25%"),
+    "nutrition": ("nutrition.svg", "50% 50%"),
+    "water": ("water.svg", "50% 50%"),
+    "interview": ("interview.svg", "50% 50%"),
 }
 
 
-def image(slug: str | None) -> str | None:
-    """Static path of the program's portfolio picture, if it has one."""
-    name = _IMAGES.get(slug or "")
-    return f"images/programs/{name}" if name else None
+def image(slug: str | None) -> dict | None:
+    """The program's portfolio picture — static path and focal point — if it has one."""
+    entry = _IMAGES.get(slug or "")
+    return {"src": f"images/programs/{entry[0]}", "focus": entry[1]} if entry else None
+
+
+# On the marketplace page a card is coloured by the section it sits in, so a
+# section reads as one family: green for delivering, amber for in design, blue
+# for proven-but-waiting-on-money. Every shade is dark enough to be legible as
+# text on white, since the hue also colours the card's links and figures.
+SECTION_HUES = {
+    "delivering": ("#15803d", "#047857", "#4d7c0f", "#0f766e", "#166534", "#3f6212", "#059669", "#65a30d"),
+    "design": ("#b45309", "#a16207", "#c2410c", "#92400e", "#ca8a04", "#9a3412", "#854d0e", "#d97706"),
+    "funding": ("#1d4ed8", "#0369a1", "#4338ca", "#1e40af", "#0e7490", "#3730a3", "#2563eb", "#075985"),
+}
+
+
+def section_hue(state: str, index: int) -> str:
+    """The index-th shade of a section's family, cycling if it runs out."""
+    shades = SECTION_HUES[state]
+    return shades[index % len(shades)]
