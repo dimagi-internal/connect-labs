@@ -339,7 +339,7 @@ TEMPLATE = {
     "name": "RUTF CIFF Program KPIs",
     "description": "Program-level M&E dashboard tracking the CIFF RUTF indicator framework against targets",
     "icon": "fa-chart-line",
-    "color": "emerald",
+    "color": "green",
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schemas": PIPELINE_SCHEMAS,
