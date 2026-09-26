@@ -190,10 +190,28 @@ if not list(settings.ALLOWED_HOSTS or []):
 
 SCOPES = _seed["SCOPES"]
 
-# Nothing is written until every scope is known to be empty. There is no
-# purge for these programs (see ensure_demo.py, "Running it twice"), so
-# seeding on top of an existing chain would tell the same story twice rather
-# than replace it.
+# What is already here, reported rather than refused.
+#
+# This used to REFUSE outright if any scope held a single row, on the
+# reasoning that seeding on top of an existing chain would tell the same
+# story twice. That was true of the seeder that wrote it and is no longer
+# true of this one: every record is found before it is made, keyed on
+# something the seed document supplies, and the ledger is written only on the
+# run that creates its order. `test_seeding_twice_changes_nothing` seeds,
+# counts every supply row, seeds again, and asserts nothing grew.
+#
+# Refusing was also the wrong protection to have. It guarded the data and
+# left no way to converge, so the only route was purging the whole scope --
+# which throws away the partner links and their tokens, and those are the
+# addresses somebody may already have sent to a partner.
+#
+# One thing a converging seed cannot do, and it is worth knowing before you
+# run this against an environment somebody is using: if a KEY in the document
+# changes -- a tender relabelled, an order given a new reference -- the row
+# under the old key is not a duplicate and is not removed. It is left beside
+# the new one. `find_duplicates.py` will not report it either, because they
+# genuinely are two different things. Changing a key means purging that
+# scope.
 occupied = []
 for _name, _scope in SCOPES.items():
     _pid = _scope["program_id"]
@@ -206,13 +224,12 @@ for _name, _scope in SCOPES.items():
     if _rows:
         occupied.append("%s (program %d): %d rows" % (_name, _pid, _rows))
 if occupied:
-    raise SystemExit(
-        "refusing to seed: these scopes already hold supply rows -- "
+    print(
+        "seeding on top of what is already here: "
         + "; ".join(occupied)
-        + ". There is no purge for an unregistered labs-only program, so this "
-        "would add a second chain beside the first rather than replace it. "
-        "Delete those rows deliberately, or register a labs-only opportunity "
-        "under the program so SupplyDataAccess.purge() will take it."
+        + ". Records are found before they are made, so this converges rather "
+        "than duplicating. A row under a key the document no longer uses is "
+        "left alone -- purge the scope if you have changed one."
     )
 
 data = _loader["load_seed_data"]("__FOLDER__", filename="__FILENAME__")
