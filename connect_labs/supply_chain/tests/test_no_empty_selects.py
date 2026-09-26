@@ -53,12 +53,14 @@ def every_form_class():
     from connect_labs.supply_chain.distribution import forms as distribution_forms
     from connect_labs.supply_chain.fulfilment import forms as fulfilment_forms
     from connect_labs.supply_chain.network import forms as network_forms
+    from connect_labs.supply_chain.procurement import forms as procurement_forms
     from connect_labs.supply_chain.reference import forms as reference_forms
     from connect_labs.supply_chain.stock import forms as stock_forms
     from connect_labs.supply_chain.update_links import forms as update_link_forms
 
     modules = [
         sourcing_forms,
+        procurement_forms,
         reference_forms,
         network_forms,
         fulfilment_forms,
@@ -145,7 +147,7 @@ def test_no_form_renders_a_select_with_nothing_in_it(label):
 
 def test_the_line_forms_offer_their_choices_too():
     """The formset row forms, built the way their screens build them."""
-    from connect_labs.supply_chain.forms import TenderLineFormSet
+    from connect_labs.supply_chain.procurement.forms import TenderLineFormSet
 
     formset = TenderLineFormSet(prefix="lines", form_kwargs={"commodities": [("rutf", "RUTF"), ("rusf", "RUSF")]})
     row = formset.forms[0]
