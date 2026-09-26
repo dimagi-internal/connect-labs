@@ -25,7 +25,11 @@ skipped with a line on stdout, never filled in with an invented value.
                                         "paid_on": ..., "received_on": ..., "counted_on": ...}
       The day of each step, which is also when it is recorded (10:00 local).
       Any key left out falls back to the relative offsets below. The days must
-      run forwards (`_chain_dates` refuses otherwise).
+      run forwards (`_chain_dates` refuses otherwise). `paid_on` is also the
+      one date that DOES something beyond ordering: stated, it records
+      Sophie's payment of round 1's invoice in full, on that day. Left out,
+      no payment is written -- the fallback offset is only for keeping the
+      other steps in order, never a claim that the bill was paid.
   rutf_rounds.round_one.shipment       {"reference": "AWB-...", "carrier": "...",
                                         "dispatched_on": "YYYY-MM-DD",
                                         "eta_original": "YYYY-MM-DD",
@@ -1250,6 +1254,38 @@ def seed_chain(access, chain, reference, *, replay=NO_REPLAY):
             }
             invoice = op(access, "invoice_record", data=invoice_data, **_invoice_email(replay, invoice_data, contract))
         invoice_replayed = _invoice_arrives_again(access, replay, contract, invoice_data, invoice)
+
+    # Sophie's own payment of that invoice, in full -- but only when the
+    # document actually says when it was paid. `dates["paid_on"]` always has
+    # a value by this point (`_chain_dates` fills an unstated one in from the
+    # relative offsets), and that fallback is exactly the case a payment must
+    # not be invented for: a day nobody stated is not a fact that a payment
+    # was made on it. So this reads the document's OWN `dates`, before
+    # `_chain_dates` filled anything in, and skips with a line on stdout when
+    # it says nothing -- the same rule the ETA slip and the clarification
+    # apply to their own optional facts.
+    if not (chain.get("dates") or {}).get("paid_on"):
+        print(
+            f"order {contract.get('reference') or contract['id']}: the document states no "
+            "dates.paid_on; no payment recorded"
+        )
+    elif not invoice.get("payments"):
+        # Found via the invoice's own payments, not a reference: a payment
+        # carries none, so this is idempotent the way the ledger events above
+        # are, by asking the record itself rather than the document.
+        with replay.by("sophie", dates["paid_on"]):
+            op(
+                access,
+                "payment_record",
+                data={
+                    **ours,
+                    "invoice_id": invoice["id"],
+                    "paid_on": dates["paid_on"],
+                    "amount": invoice["amount"],
+                    "currency": invoice["currency"],
+                },
+            )
+        invoice = _found(op(access, "invoice_list", contract_id=contract["id"]), lambda row: True) or invoice
 
     context = {
         "contract": {**contract, "quantity_unit": contract_row["quantity_unit"]},
