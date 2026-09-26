@@ -36,8 +36,11 @@
  *   drill out closed fist, or a pull away from the camera — exactly Esc.
  *   drag     pinch, then move: the top window follows.
  *   globe    an open hand, palm to the camera: move it and the globe turns
- *            the way the hand moves, as if pushing its surface; push it
- *            toward the camera to zoom in, pull it away to zoom out.
+ *            the way the hand moves, as if pushing its surface. Push it
+ *            toward the camera and HOLD to keep zooming in (further = faster),
+ *            pull it back past where it started to zoom out, return to stop.
+ *            To move further than an arm allows, close the hand and reopen
+ *            it: wherever it reopens is the new resting point.
  *   dial     in a partner window: turn the open palm like a knob, clockwise
  *            for the next opportunity, anti-clockwise for the previous; hold
  *            the turn and it keeps stepping. (The globe cannot move while a
@@ -93,16 +96,25 @@
     // The palm has to hold briefly before it moves the globe, so a hand
     // opening on its way to a pinch does not nudge it.
     palmEngageMs: 150,
-    // Spin: slow drift (a hand held "still") is ignored. Screen widths/second.
+    // Spin is position control -- the globe's surface follows the hand, like
+    // a drag. It fades in between spinMinSpeed and twice that rather than
+    // switching on at a threshold (a hand whose speed hovers around a hard
+    // threshold stutters), and its velocity is smoothed. Screen widths/second.
     spinMinSpeed: 0.15,
+    spinSmoothing: 0.5,
     // Screen widths of map moved per screen width of hand movement.
     spinGain: 1.5,
-    // Zoom: map zoom levels per doubling of apparent hand size (push toward
-    // the camera zooms in, pull away zooms out). Hand size is smoothed, and a
-    // step under the deadband is jitter, so a steady palm does not breathe.
-    zoomGain: 2.5,
-    zoomSmoothing: 0.35,
-    zoomDeadband: 0.05,
+    // Zoom is RATE control: how far the palm is from where it settled sets how
+    // FAST the map zooms, not how far -- push and hold to keep zooming in, pull
+    // back past the rest point to zoom out, return to it to stop. Position
+    // control ran out of arm: a stroke's worth of reach was a few zoom levels.
+    // Depth is log2(hand size / resting size); inside the dead zone nothing
+    // happens, then speed eases in (quadratic) up to zoomRateMax at
+    // zoomDeadzone + zoomRange. Closing the hand and reopening it re-rests.
+    zoomDeadzone: 0.08,
+    zoomRange: 0.45,
+    zoomRateMax: 2.5, // zoom levels per second
+    zoomFilter: { minCutoff: 0.8, beta: 0.3, dCutoff: 1.0 },
     // Dial: roll the open palm like a knob. Past dialEnter degrees from where
     // the palm settled is one step; holding it there repeats, like a jog
     // shuttle, so a long list needs no regrip; back inside dialExit stops.
@@ -198,6 +210,7 @@
     const o = Object.assign({}, DEFAULTS, options || {});
     const fx = oneEuro(o.smoothing);
     const fy = oneEuro(o.smoothing);
+    const fz = oneEuro(o.zoomFilter);
 
     let arm = 'disarmed';
     let armStart = 0;
@@ -383,22 +396,27 @@
       let zooming = false;
       const roll = rollDeg(lm);
       if (live && open && !pinch && ratio > o.pinchExit) {
-        if (!palm)
+        if (!palm) {
+          fz.reset();
           palm = {
             since: t,
             lastP: p,
             lastT: t,
-            size,
-            ref: size,
+            depthLog: 0,
+            rest: null,
+            vx: 0,
+            vy: 0,
             neutral: roll,
             dialDir: 0,
             dialNext: 0,
           };
-        palm.size += o.zoomSmoothing * (size - palm.size);
+        }
+        const logSize = fz.filter(Math.log2(size), t);
         if (t - palm.since < o.palmEngageMs) {
           // Settling: nothing moved while the palm was forming counts, and
-          // however the palm settled is "upright" for the dial.
-          palm.ref = palm.size;
+          // however the palm settled is "upright" for the dial and "rest"
+          // for the zoom.
+          palm.rest = logSize;
           palm.neutral = roll;
         } else {
           /* The dial. The page uses it only while a window is open, where
@@ -424,18 +442,27 @@
           const dt = Math.max((t - palm.lastT) / 1000, 1e-3);
           const dx = p.x - palm.lastP.x;
           const dy = p.y - palm.lastP.y;
-          if (Math.hypot(dx, dy) / dt >= o.spinMinSpeed) {
+          palm.vx += o.spinSmoothing * (dx - palm.vx);
+          palm.vy += o.spinSmoothing * (dy - palm.vy);
+          const fade = clamp01(
+            (Math.hypot(palm.vx, palm.vy) / dt - o.spinMinSpeed) /
+              o.spinMinSpeed,
+          );
+          if (fade > 0) {
             actions.push({
               type: 'spin',
-              dx: dx * o.spinGain,
-              dy: dy * o.spinGain,
+              dx: palm.vx * o.spinGain * fade,
+              dy: palm.vy * o.spinGain * fade,
             });
             spinning = true;
           }
-          const step = Math.log2(palm.size / palm.ref);
-          if (Math.abs(step) >= o.zoomDeadband) {
-            actions.push({ type: 'zoom', dz: step * o.zoomGain });
-            palm.ref = palm.size;
+
+          palm.depthLog = logSize - palm.rest;
+          const past = Math.abs(palm.depthLog) - o.zoomDeadzone;
+          if (past > 0) {
+            const k = Math.min(past / o.zoomRange, 1);
+            const dz = Math.sign(palm.depthLog) * o.zoomRateMax * k * k * dt;
+            actions.push({ type: 'zoom', dz });
             zooming = true;
           }
           if (spinning || zooming) lastActionAt = t;
@@ -496,7 +523,14 @@
           pose: hand.pose || null,
           poseScore: hand.poseScore || 0,
           pinchRatio: ratio,
-          depth: baseline ? size / baseline : 1,
+          // With a palm up, the meter shows depth from its rest point (what
+          // drives zoom); otherwise the running baseline.
+          depth:
+            palm && palm.rest != null
+              ? Math.pow(2, palm.depthLog)
+              : baseline
+                ? size / baseline
+                : 1,
           pointer: p,
           spinning,
           zooming,
@@ -578,8 +612,9 @@
        <ol class="pg-log"></ol>
        <div class="pg-help">Hold an open palm still to arm · pinch or push to open ·
          fist or pull back to close · pinch and move to drag a window ·
-         point with a finger to aim · open hand: move to spin the globe, push
-         toward the camera to zoom in, pull back to zoom out · in a partner
+         point with a finger to aim · open hand: move to spin the globe; push
+         toward the camera and hold to keep zooming in, pull back to zoom out,
+         return to stop; close and reopen the hand to reset · in a partner
          window, turn the open hand like a dial to step through its
          opportunities (hold the turn to keep going)</div>`,
     );

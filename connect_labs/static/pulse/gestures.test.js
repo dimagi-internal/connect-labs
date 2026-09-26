@@ -348,33 +348,72 @@ describe('open palm: spin and zoom', () => {
   const zooms = (actions) => actions.filter((a) => a.type === 'zoom');
   const zoomed = (actions) => zooms(actions).reduce((s, a) => s + a.dz, 0);
 
-  it('pushing an open palm toward the camera zooms in, and does not drill', () => {
+  // An armed engine with an open palm at rest (size 0.2).
+  const resting = () => {
     const { e, t } = armed();
-    const { actions } = feed(e, t, 30, (i) =>
-      hand({ size: 0.2 * (1 + i * 0.02), palm: 'facing' }),
+    const held = feed(e, t, 10, hand({ palm: 'facing' }));
+    return { e, t: held.t };
+  };
+  // Move the palm to `to` over 8 frames, then hold it there for `hold` frames.
+  const pushTo = (e, t, to, hold) => {
+    const move = feed(e, t, 8, (i) =>
+      hand({ size: 0.2 + ((to - 0.2) * (i + 1)) / 8, palm: 'facing' }),
     );
-    expect(zoomed(actions)).toBeGreaterThan(1);
-    expect(types(actions)).not.toContain('select');
+    const held = feed(e, move.t, hold, hand({ size: to, palm: 'facing' }));
+    return { move, held };
+  };
+
+  it('push and HOLD keeps zooming in, with no limit from arm reach', () => {
+    const { e, t } = resting();
+    const { held } = pushTo(e, t, 0.28, 90); // ~3s held
+    const firstSec = zoomed(held.actions.slice(0, 30));
+    const lastSec = zoomed(held.actions.filter((a) => a.t >= held.t - 1000));
+    // Still zooming a full second later, at a steady rate.
+    expect(lastSec).toBeGreaterThan(0.5);
+    expect(zoomed(held.actions)).toBeGreaterThan(firstSec * 2);
+  });
+
+  it('further from rest zooms faster', () => {
+    const near = resting();
+    const a = pushTo(near.e, near.t, 0.24, 30);
+    const far = resting();
+    const b = pushTo(far.e, far.t, 0.3, 30);
+    expect(zoomed(b.held.actions)).toBeGreaterThan(zoomed(a.held.actions) * 2);
+  });
+
+  it('pulling back past rest zooms out, and does not go back', () => {
+    const { e, t } = resting();
+    const { move, held } = pushTo(e, t, 0.14, 30);
+    const all = [...move.actions, ...held.actions];
+    expect(zoomed(all)).toBeLessThan(-0.5);
+    expect(types(all)).not.toContain('back');
+  });
+
+  it('returning to rest stops the zoom', () => {
+    const { e, t } = resting();
+    const { held } = pushTo(e, t, 0.28, 30);
+    const back = feed(e, held.t, 60, hand({ palm: 'facing' }));
+    // Allow the smoothing a moment to settle, then nothing.
+    expect(zooms(back.actions.filter((a) => a.t >= back.t - 1000))).toEqual([]);
+  });
+
+  it('closing and reopening the hand makes a new rest point (the clutch)', () => {
+    const { e, t } = resting();
+    const { held } = pushTo(e, t, 0.28, 10);
+    // Relax the hand (not open), then reopen it where it is.
+    const relax = feed(e, held.t, 6, hand({ size: 0.28 }));
+    const reopen = feed(e, relax.t, 60, hand({ size: 0.28, palm: 'facing' }));
+    expect(zooms(reopen.actions)).toEqual([]);
   });
 
   it('a fast push of an open palm is a zoom, never a drill-in', () => {
     // As fast as the pointing-hand push that drills in, below.
-    const { e, t } = armed();
-    const held = feed(e, t, 10, hand({ palm: 'facing' }));
-    const { actions } = feed(e, held.t, 12, (i) =>
-      hand({ size: 0.2 * (1 + i * 0.05), palm: 'facing' }),
+    const { e, t } = resting();
+    const { actions } = feed(e, t, 20, (i) =>
+      hand({ size: 0.2 * (1 + Math.min(i, 11) * 0.05), palm: 'facing' }),
     );
-    expect(zoomed(actions)).toBeGreaterThan(1);
+    expect(zoomed(actions)).toBeGreaterThan(0.3);
     expect(types(actions)).not.toContain('select');
-  });
-
-  it('pulling it away zooms out, and does not go back', () => {
-    const { e, t } = armed();
-    const { actions } = feed(e, t, 30, (i) =>
-      hand({ size: 0.2 * (1 - i * 0.015), palm: 'facing' }),
-    );
-    expect(zoomed(actions)).toBeLessThan(-0.5);
-    expect(types(actions)).not.toContain('back');
   });
 
   it('a steady palm does not breathe', () => {
@@ -421,6 +460,26 @@ describe('open palm: spin and zoom', () => {
     );
     expect(spins(actions).length).toBeGreaterThan(3);
     expect(types(actions)).not.toContain('swipe');
+  });
+
+  it('a hand whose speed hovers at the threshold fades in, not stutters', () => {
+    const { e, t } = armed();
+    const settle = feed(e, t, 10, hand({ palm: 'facing' }));
+    // Screen speed hovering either side of spinMinSpeed (0.15/s): camera
+    // steps of 0.0024-0.004 are 0.12-0.2 screen widths/s through the crop.
+    let x = 0.5;
+    const slow = feed(e, settle.t, 30, (i) => {
+      x -= i % 2 ? 0.0024 : 0.004;
+      return hand({ x, palm: 'facing' });
+    });
+    const fast = feed(e, slow.t, 20, (i) =>
+      hand({ x: x - (i + 1) * 0.01, palm: 'facing' }),
+    );
+    const biggest = (acts) =>
+      Math.max(0, ...spins(acts).map((a) => Math.abs(a.dx)));
+    // Near the threshold the globe barely moves; it is not the full step
+    // the same hand gets when clearly moving.
+    expect(biggest(slow.actions)).toBeLessThan(biggest(fast.actions) / 5);
   });
 
   it('a palm held still does not drift the globe', () => {
