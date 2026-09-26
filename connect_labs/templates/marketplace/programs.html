@@ -177,8 +177,8 @@ always worded "up to" — see `queries.committed_by_program`.
               <span class="text-gray-600"><span class="font-semibold text-gray-900 tabular-nums">{{ c.delivering }}</span> delivering</span>
               <span class="text-gray-600"><span class="font-semibold text-gray-900 tabular-nums">{{ c.applied }}</span> applied</span>
               <span class="text-gray-600"><span class="font-semibold text-gray-900 tabular-nums">{{ c.rounds }}</span> round{{ c.rounds|pluralize }}</span>
-              <span>{% if c.delivering %}<a href="{% url 'marketplace:network' %}?delivered={{ c.slug }}" class="pg-hue font-medium hover:underline">Who delivers it →</a>{% endif %}</span>
-              <span>{% if c.applied %}<a href="{% url 'marketplace:network' %}?applied={{ c.slug }}" class="pg-hue font-medium hover:underline">Who has applied →</a>{% endif %}</span>
+              <span>{% if c.delivering %}<a href="{% url 'marketplace:network' %}?delivered={{ c.slug }}" class="pg-hue font-medium whitespace-nowrap hover:underline">Who delivers it →</a>{% endif %}</span>
+              <span>{% if c.applied %}<a href="{% url 'marketplace:network' %}?applied={{ c.slug }}" class="pg-hue font-medium whitespace-nowrap hover:underline">Who has applied →</a>{% endif %}</span>
             </div>
           </article>
         {% endfor %}
