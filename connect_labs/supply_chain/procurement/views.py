@@ -44,7 +44,7 @@ from connect_labs.supply_chain.forms import (
     TenderLineFormSet,
     TenderPlaceFormSet,
 )
-from connect_labs.supply_chain.fulfilment_forms import DocumentForm
+from connect_labs.supply_chain.fulfilment.forms import DocumentForm
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.values import quantity_phrase, unit_noun

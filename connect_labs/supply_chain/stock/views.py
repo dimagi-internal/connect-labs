@@ -19,10 +19,10 @@ from django.urls import reverse
 
 from connect_labs.supply_chain.api_views import _access
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
-from connect_labs.supply_chain.fulfilment_forms import DocumentForm
-from connect_labs.supply_chain.fulfilment_views import _contract
+from connect_labs.supply_chain.fulfilment.forms import DocumentForm
+from connect_labs.supply_chain.fulfilment.views import _contract
 from connect_labs.supply_chain.models import Item, Shipment
-from connect_labs.supply_chain.stock_forms import (
+from connect_labs.supply_chain.stock.forms import (
     BatchLineFormSet,
     ChargeForm,
     ConsignmentForm,

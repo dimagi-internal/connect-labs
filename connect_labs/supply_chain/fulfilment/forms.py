@@ -52,7 +52,7 @@ from connect_labs.supply_chain.models import (
     Supplier,
     SupplyPoint,
 )
-from connect_labs.supply_chain.network_forms import SOURCE_CHOICES
+from connect_labs.supply_chain.network.forms import SOURCE_CHOICES
 
 __all__ = ["ContractForm", "DocumentForm", "InvoiceForm", "PaymentConfirmationForm", "PaymentForm"]
 

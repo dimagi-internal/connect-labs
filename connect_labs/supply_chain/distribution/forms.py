@@ -15,7 +15,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from connect_labs.supply_chain.forms import DATE, INPUT, SEARCHABLE, to_payload
-from connect_labs.supply_chain.fulfilment_forms import ProvenancedForm
+from connect_labs.supply_chain.fulfilment.forms import ProvenancedForm
 from connect_labs.supply_chain.models import Commodity, Distribution, Item, SupplyPoint
 
 __all__ = ["DistributionForm", "DistributionLineFormSet"]
