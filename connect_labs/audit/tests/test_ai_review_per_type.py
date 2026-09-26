@@ -1,5 +1,8 @@
 """Tests for per-image-type agent resolution in _run_ai_review_on_sessions."""
 
+import threading
+import time
+
 import pytest
 from django.test import override_settings
 
@@ -703,7 +706,25 @@ def test_cancel_key_stops_before_next_session(monkeypatch):
 class _CancelOnFirstAgent:
     """Sets the cancel flag from the FIRST review() call it sees, then keeps
     reviewing (as any real agent would) -- exercises the mid-session path
-    where later, still-queued futures get .cancel()'d rather than run."""
+    where later, still-queued futures get .cancel()'d rather than run.
+
+    Every call after the first one BLOCKS, and that is what makes the test
+    deterministic rather than a race it usually wins.
+
+    `_run_ai_review_on_sessions` submits all the work at once and only checks
+    the cancel flag after `as_completed` hands it a finished future. A future
+    that has already STARTED cannot be cancelled. So if review() returns
+    instantly, the pool's workers drain all n_images before the consumer loop
+    processes even the first result, every future has started, `.cancel()` is a
+    no-op and `seen` is the full set -- which is how this failed on main as
+    `assert 40 < 40`, having passed on every previous run.
+
+    Holding the other workers for _HOLD seconds keeps the pool busy while the
+    first result travels back to the consumer, so the still-queued futures are
+    genuinely still queued when it cancels them. The first call returns at once
+    so that result arrives promptly; nothing waits on the full _HOLD but the
+    pool shutdown.
+    """
 
     agent_id = "agent_cancel_multi"
     name = "Cancel On First Agent"
@@ -711,14 +732,22 @@ class _CancelOnFirstAgent:
     result_actions = {"ok": {"ai_result": "match", "human_result": "pass", "button_label": "OK"}}
     seen = []
     flagged = False
+    #: Generous next to the consumer's bookkeeping, and paid once per run.
+    _HOLD = 1.0
+    _lock = threading.Lock()
 
     def review(self, ctx):
-        type(self).seen.append(ctx.metadata["blob_id"])
-        if not type(self).flagged:
-            type(self).flagged = True
+        with type(self)._lock:
+            type(self).seen.append(ctx.metadata["blob_id"])
+            first = not type(self).flagged
+            if first:
+                type(self).flagged = True
+        if first:
             from connect_labs.audit.data_access import mark_audit_creation_cancelled
 
             mark_audit_creation_cancelled("test-cancel-key-multi")
+            return ReviewResult.success(match=True)
+        time.sleep(type(self)._HOLD)
         return ReviewResult.success(match=True)
 
 
