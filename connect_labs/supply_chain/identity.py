@@ -345,7 +345,7 @@ def find_or_mint_supplier_org(name: str, *, country: str = "", connect_organizat
     Connect org, and is a complete organisation without one. A minted
     organisation carries a Connect id only when the caller gave one.
     """
-    from connect_labs.marketplace.identity import find_org, mint_org
+    from connect_labs.marketplace.identity import find_org, mint_org, slug_for
 
     if connect_organization_id:
         linked = LabsOrg.objects.filter(connect_organization_id=connect_organization_id).first()
@@ -361,6 +361,14 @@ def find_or_mint_supplier_org(name: str, *, country: str = "", connect_organizat
     # name's own slug is the one this name has always resolved to.
     named = list(LabsOrg.objects.filter(name__iexact=name.strip())[:2])
     org = named[0] if len(named) == 1 else find_org(name)
+    if org is None:
+        # A name somebody merged away. `org_merge` keeps the merged row's slug
+        # as an alias on the survivor precisely so a lookup by that name still
+        # finds it -- and a re-run of the tracker import is exactly that
+        # lookup. Without this it minted the duplicate straight back.
+        aliased = list(LabsOrg.objects.filter(aliases__contains=[slug_for(name)])[:2])
+        if len(aliased) == 1:
+            org = aliased[0]
     if org is None:
         org = mint_org(name, country=country)
     if connect_organization_id and org.connect_organization_id not in (None, connect_organization_id):
