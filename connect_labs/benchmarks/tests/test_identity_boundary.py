@@ -38,12 +38,23 @@ def test_to_public_never_emits_the_source_opportunity():
     # Nor under any other spelling, and not as a stray value.
     assert 874 not in public.values()
     assert public == {
+        "unit": "opportunity",
         "series": "KMC",
         "indicator_id": "pct_enrolled_within_3d",
         "period": None,
         "peer_index": 3,
         "value": 50.4,
+        "band": "",
     }
+
+
+def test_to_public_never_emits_the_source_organisation():
+    """An organisation row's name is provenance under the same rule as an
+    opportunity id: stored, never displayed."""
+    public = _value(unit="organisation", opportunity_id=None, organisation="NAMA", band="notcredible").to_public()
+    assert "organisation" not in public
+    assert "NAMA" not in public.values()
+    assert public["unit"] == "organisation" and public["band"] == "notcredible"
 
 
 def test_to_public_is_clean_for_a_series_point_too():
