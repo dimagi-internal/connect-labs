@@ -46,16 +46,18 @@ award and updates the tender. So there are two tables.
 |---|---|
 | `program_id` | The access scope of the call (nullable) |
 | `operation` | The operation name, e.g. `shipment_update` |
-| `actor` | The user who made the call (FK, nullable for a command) |
+| `actor` | The user who made the call (FK, nullable for a command). `PROTECT`: a user with supply history cannot be hard-deleted — deactivate them instead |
 | `actor_is_agent` | Copied at write time from `LABS_AGENT_ACCOUNT_EMAILS` |
-| `channel` | `web` / `mcp` / `api` / `command` |
+| `channel` | `web` / `mcp` / `api` / `command` / `supplier` (a partner acting for itself: a market bid, an update-link report) |
+| `acting_org_id` | For `supplier`: the organisation the partner acted for (a plain integer, no FK) |
 | `source_ref` | Optional. The caller's reference for its evidence, such as an email Message-ID or a document hash |
 | `source_excerpt` | Optional. The quoted text that justified the write (≤ 2,000 chars) |
-| `result` | JSON. The operation's return value, returned again on replay |
+| `payload_digest` | sha256 of the canonical JSON of the validated payload, `source` left out |
+| `result` | JSON. The operation's return value, returned again on replay. Over 64 KB it is stored as `{"truncated": true, "summary": …}` (counts and ids), and a replay returns that |
 | `recorded_at` | When the call ran |
 
-A unique constraint on `(program_id, operation, source_ref)` applies when
-`source_ref` is not empty.
+A unique constraint on `(program_id, operation, source_ref, payload_digest)`
+applies when `source_ref` is not empty.
 
 **`Revision`**: one row per change to one supply record.
 
@@ -82,14 +84,26 @@ Indexes: `(content_type, object_id, recorded_at)` and
 - The MCP adapter sets `channel="mcp"`. The HTTP endpoint sets `api`, views
   set `web`, and management commands set `command`. The adapter passes this
   in. `call_operation` gains a `channel` keyword with default `web`.
+- The market and update links run their writes under `SYSTEM` access, so
+  they pass `channel="supplier"`, the acting organisation and (on the market)
+  the signed-in user. These attribution keywords — and a `then` hook that runs
+  the caller's follow-up saves inside the same call, such as marking a quote
+  as the supplier's own — are for trusted in-process callers only. No MCP or
+  HTTP adapter passes them.
 - `pre_save`, `post_save`, `pre_delete` and `post_delete` receivers on every
-  concrete supply_chain model write the `Revision`, plus `m2m_changed` for the
+  concrete supply_chain model write the `Revision`. Each is connected with its
+  model as the sender: a receiver with no sender would make every model in
+  the project look like it had delete listeners and turn off Django's fast
+  delete everywhere. `pre_delete` is also connected to the non-supply models a
+  supply through model points at (an organisation), for the link rows their
+  delete takes with it, and to nothing else. `m2m_changed` is connected to the
   many-to-many link tables (Django writes and deletes those rows without the
   per-row signals the others rely on). The field diff is taken against the
   row as loaded in `pre_save`. `pre_delete` stashes the row's program and a
   flat snapshot on the instance before anything is actually deleted, so a
   cascade still resolves each child's program before its parent goes. The
-  timestamp-only fields `created`/`modified` are excluded from `changes`.
+  timestamp-only fields `created`/`modified` are excluded from `changes`. A
+  `save(update_fields=[…])` records only those fields.
 - A save **outside** any write context (a shell, a data migration) still
   writes a revision, with `channel="command"` and no operation. Nothing
   escapes history.
@@ -103,8 +117,13 @@ Every write operation's schema gains an optional top-level `source`:
 `{ref: string, excerpt?: string}`. It is validated like any other field.
 
 If a write arrives with a `source.ref` that already has an `OperationCall` in
-this program **for the same operation**, nothing is written. The stored
-`result` is returned with `"replayed": true`. The unique constraint makes this
+this program **for the same operation with the same payload** (compared by
+`payload_digest`, taken before provenance stamping so two agents forwarding
+the same email agree), nothing is written. The stored `result` is returned
+with `"replayed": true`. The same evidence producing the same write is
+recorded once. The same `source.ref` with a **different** payload — one email
+quoting two products — is an ordinary second write, and both calls keep the
+ref for provenance. The unique constraint makes this
 safe under concurrent duplicates: the loser of the race gets the winner's
 result. That is what makes "Sophie
 forwarded the same email twice" harmless, whichever agent processes it. The
@@ -123,6 +142,8 @@ forms don't carry one.
   modified. `actor_is_agent` lives on `OperationCall` only, decided once at
   write time from that setting; a `Revision` has no such column and reaches
   it through its `call`, so history does not change if the setting does.
+- `channel` is `supplier` → "Supplier · {organisation}" (the user's name when
+  no organisation is recorded). Not marked as AI.
 - `source_excerpt` opens from the badge.
 - `Quote.entered_by` (program/supplier) is left as it is. It answers a
   different question: whose figure it is, not who typed it.
@@ -150,6 +171,22 @@ included. The cost is one write per change since the as-of date, all rolled
 back. That is fine at program scale.
 
 "As of 20 Aug" means the **end** of that day in the server timezone.
+
+Nothing rewinds for a caller who may not see the page. An anonymous request
+runs live, with no past date, and the page redirects to login. For a
+signed-in caller the pages' own data access is built first, so a non-member
+gets the page's 403 before any rewind. On Postgres the rolled-back block runs
+under `lock_timeout = 2s` and `statement_timeout = 15s`; hitting either
+answers 503 "This past view is busy — try again in a moment", so a past view
+can never hold row locks against live writes for long.
+
+**Known gap: alert state reads live.** The alert checker updates
+`AlertCheckState` (`cleared_at`, `last_seen_at`), `AlertSubscription`
+(`movements_seen_through`, `last_digest_sent_at`) and `AlertNotice` with
+queryset `.update()`s, which bypass capture. Those fields are therefore not
+rewound, and an as-of page shows them as they are today. They are the alert
+machinery's own bookkeeping, not a program's supply record, so this is
+accepted rather than changed.
 
 Records that predate this feature have no `create` revision. A migration
 writes a `create` revision for every existing row, stamped with the row's
