@@ -84,7 +84,7 @@ Clicking **Create Workflow** opens the **Choose a template** modal. The modal is
 
 | Group | Examples |
 |---|---|
-| Programme reports | KMC Programme Metrics, Photo Audit Report, Indicator Programme Report |
+| Programme reports | KMC Programme Metrics, Photo Audit Report, Indicator Programme Report, RUTF CIFF Program KPIs |
 | Automatic reports | Scheduled summary reports |
 | Worker reviews | KMC Worker Review, Indicator Worker Review |
 | Audits | Weekly Dual-Track Image Audit, Muac Picture Audit |
@@ -160,6 +160,23 @@ Create it from **Workflows → Create Workflow → "Indicator Opportunity Report
 !!! note "The KMC reports are unchanged"
     The Indicator report templates are a new set of templates for programmes that do not already have a custom report cascade. The existing KMC Programme Metrics, KMC Worker Review, and related reports are unaffected and continue to work exactly as before.
 
+### RUTF CIFF Program KPIs
+
+The **RUTF CIFF Program KPIs** template creates a single dashboard for tracking a CIFF-funded RUTF (ready-to-use therapeutic food) programme's M&E indicator framework against its funder-agreed targets. Create it from **Workflows → Create Workflow → "RUTF CIFF Program KPIs"** (listed under *Programme reports*).
+
+This template is intended for use on opportunity **2230 (RUTF - NG - CBI - P1 - Sept 26)**.
+
+#### What the dashboard shows
+
+The dashboard brings together the programme's key indicators in one place, each displayed alongside its stated target:
+
+- **Screening & enrollment** — SAM and MAM screening counts and enrollment figures.
+- **Treatment outcomes** — recovery rates, exit rates, and the 3-month relapse rate.
+- **Caregiver counseling engagement** — counts and rates for caregiver counseling sessions.
+- **Referral counts** — the number of beneficiaries referred onward.
+
+Indicators that the CommCare app captures automatically are pulled live from the data. A small number of indicators that the app does not currently collect — including immunization linkage, LLO contracts, MOUs, and field worker anomaly and suspension counts — appear as **manual-entry fields** on the same dashboard, so the programme team can fill them in directly without needing a separate tracking sheet.
+
 ### Photo Audit Report
 
 The **Photo Audit Report** shows the photo verification success rate from the bulk image audits your team runs — that is, the percentage of audited photos that passed review. Create it from **Workflows → Create Workflow → "Photo Audit Report"** (listed under *Programme reports*).
@@ -207,17 +224,4 @@ The dashboard has three tabs:
 
 - **Dashboard** — the main visit-by-visit table described above.
 - **Verification Summary** — aggregated pass rates and a stacked bar chart showing how verification outcomes break down across field workers or visits.
-- **Definitions** — a reference tab that documents exactly how every column and metric in the dashboard is calculated. This includes which visits are included (the field worker must be flagged for verification and the visit's form must contain the verification questions), what each of the 15 table columns means, the exact logic behind each Pass / Fail / NA / Not available / ERROR outcome for GPS, QR code, signature, mother questions, and ANC card checks, what counts as an "attempted" verification method, the colour legend, and how the three Verification Summary percentages and the stacked bar chart are computed. For each column or metric, the Definitions tab also shows the exact pipeline field name(s) and the underlying CommCare form path(s) — such as `form.where_is_the_visit_being_conducted` — that are used to calculate it, displayed below the plain-English description. Columns that are computed inside the dashboard itself rather than read from a raw form field — such as **Visit #**, **Previous verification pass rate**, and **Final verification method(s)** — are clearly labelled as client-side calculated rather than implying a raw CommCare value. If you are unsure what a result means or where the data comes from, the Definitions tab is the first place to check.
-
-!!! warning "This template currently reads from a test app, not the live production app"
-    The verification questions that this dashboard depends on have not yet been deployed to opportunity 765's live production app — they exist only in a test CommCare app. Until the live app is updated, this template reads from that test app rather than live field data.
-
-    Once the verification questions are added to the live app, the dashboard will automatically show production data:
-
-    - For the **ANC Visit** form, which already has the verification questions, this happens as soon as the live app is updated — no further action needed.
-    - For the other five visit types (**Post delivery**, **1-week**, **1-month**, **3-month**, and **6-month**), production data appears as soon as those forms receive the same verification questions.
-
-    No engineering work is required for that transition. A small follow-up to re-point the template directly at the production domain (removing the need for test-domain access) is recommended once the live app is fully updated, but is not required for the dashboard to function.
-
-!!! note "Empty table fix"
-    A previous issue caused the MBW Visit Verification dashboard to display an empty table even when real visit data
+- **Definitions** — a reference tab that documents exactly how every column and metric in the dashboard is calculated. This includes which visits are included (the field worker must be flagged for verification and the visit's form must contain the verification questions), what each of the 15 table columns means, the exact logic behind each Pass / Fail / NA / Not available / ERROR outcome for GPS, QR code, signature, mother questions, and ANC card checks, what counts as an "attempted" verification method, the colour legend, and how the three Verification Summary percentages and the stacked bar chart are computed. For each column or metric, the Definitions tab also shows the exact pipeline field name(s) and the underlying CommCare form path(s) — such as `form.where_is_the_visit_being_conducted` — that are used to calculate it, displayed below the plain-English description. Columns that are computed inside the dashboard itself rather than read from a raw form field — such as
