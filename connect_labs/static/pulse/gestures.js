@@ -33,7 +33,8 @@
  *            index finger to aim; an open hand moves the globe instead.
  *   drill in quick pinch-and-release, or a push toward the camera with a
  *            pointing (not open) hand, or a thumbs up -- which opens the
- *            partner card showing on the map without aiming at it.
+ *            partner card showing on the map without aiming at it -- or a
+ *            bloom: fingertips bunched, then flung wide, which does the same.
  *   drill out closed fist, or a pull away from the camera — exactly Esc.
  *   drag     pinch, then move: the top window follows.
  *   globe    an open hand, palm to the camera: move it and the globe turns
@@ -60,6 +61,7 @@
     INDEX_TIP: 8,
     MIDDLE_MCP: 9,
     MIDDLE_TIP: 12,
+    PINKY_TIP: 20,
     PINKY_MCP: 17,
   };
 
@@ -89,6 +91,13 @@
     // Thumbs up: "yes, open it" -- the pinned partner card, or whatever the
     // cursor is on. Needs no aim precision, so it is also the easy click.
     thumbHoldMs: 300,
+    // Bloom: fingertips bunched, then flung wide -- also "open it". A
+    // transition, not a pose (an open palm alone arms, spins and zooms):
+    // the index-to-pinky fingertip span, in hand sizes, has to go from under
+    // bloomClosed to over bloomOpen within bloomWindowMs, ending open-palmed.
+    bloomClosed: 0.6,
+    bloomOpen: 1.1,
+    bloomWindowMs: 450,
     depthWindowMs: 350,
     pushRatio: 1.3,
     pullRatio: 0.77,
@@ -211,7 +220,8 @@
    *   spin{dx,dy}                  turn the globe with the hand (0..1 units)
    *   zoom{dz}                     map zoom levels, + is in
    *   dial{step}                   +1 clockwise (as the viewer sees it), -1 anti
-   *   confirm{x,y}                 thumbs up: open the pinned card / the target
+   *   confirm{via,x,y}             thumbs up or bloom: open the pinned card /
+   *                                the target
    *   tapMissed{reason}            a pinch that did not click, and why
    *
    * Only `armed` can be produced while disarmed.
@@ -233,6 +243,10 @@
     let fistSince = null;
     let fistSpent = false;
     let thumb = null; // { since, p, spent } while a thumbs-up is held
+    let bunched = null; // { t, p } the last frame the fingertips were together
+    // Set when a fist has just closed something: opening that hand again is
+    // the natural next move, and must not bloom the window straight back.
+    let bloomBlocked = false;
     let history = []; // { t, size, p }
     let baseline = null;
     let palm = null; // { since, lastP, lastT, size, ref } while an open palm is up
@@ -322,6 +336,7 @@
         palm = null;
         fistSince = null;
         thumb = null;
+        bunched = null;
         if (arm === 'armed' && t - lastSeen >= o.disarmAfterMs)
           disarm(actions, 'hand gone');
         return { actions, readout: readout({ t }) };
@@ -417,7 +432,11 @@
           thumb.spent = true;
           // Aim where the hand was as the thumb went up.
           if (t >= cooldownUntil)
-            fire(actions, { type: 'confirm', x: thumb.p.x, y: thumb.p.y }, t);
+            fire(
+              actions,
+              { type: 'confirm', via: 'thumbs up', x: thumb.p.x, y: thumb.p.y },
+              t,
+            );
         }
       } else {
         thumb = null;
@@ -511,6 +530,8 @@
         if (fistSince == null) fistSince = t;
         else if (!fistSpent && t - fistSince >= o.fistHoldMs) {
           fistSpent = true;
+          bloomBlocked = true;
+          bunched = null;
           // A pull usually precedes a fist, and both mean "back": if one just
           // fired, this fist is the same intent, not a second layer.
           if (t >= cooldownUntil) fire(actions, { type: 'back' }, t);
@@ -518,6 +539,30 @@
       } else {
         fistSince = null;
         fistSpent = false;
+      }
+
+      /* ── bloom: bunched fingertips flung wide, "open it" ── */
+      const span =
+        dist(lm[LM.INDEX_TIP], lm[LM.PINKY_TIP], o.aspect) / (size || 1);
+      if (span < o.bloomClosed) {
+        if (!bloomBlocked) bunched = { t, p };
+      } else if (span > o.bloomOpen) {
+        if (
+          live &&
+          bunched &&
+          open &&
+          !pinch &&
+          t - bunched.t <= o.bloomWindowMs &&
+          t >= cooldownUntil
+        )
+          fire(
+            actions,
+            { type: 'confirm', via: 'bloom', x: bunched.p.x, y: bunched.p.y },
+            t,
+          );
+        // Either way this opening is spent, including the one after a fist.
+        bunched = null;
+        bloomBlocked = false;
       }
 
       /* ── push / pull, and swipe: rate of change, not position ──
@@ -557,6 +602,7 @@
           pose: hand.pose || null,
           poseScore: hand.poseScore || 0,
           pinchRatio: ratio,
+          spread: span,
           // 0 with the fingers apart, 1 at the pinch point: the cursor
           // shrinks with it, so you can see how close a pinch is.
           pinchClose: clamp01((1 - ratio) / (1 - o.pinchEnter)),
@@ -648,8 +694,9 @@
        </dl>
        <ol class="pg-log"></ol>
        <div class="pg-help">Hold an open palm still to arm · pinch or push to open ·
-         fist or pull back to close · thumbs up opens the partner card showing
-         (or what the cursor is on) · pinch and move to drag a window ·
+         fist or pull back to close · thumbs up, or bunch your fingertips and
+         fling them wide, opens the partner card showing (or what the cursor
+         is on) · pinch and move to drag a window ·
          point with a finger to aim · open hand: move to spin the globe; push
          toward the camera and hold to keep zooming in, pull back to zoom out,
          return to stop; close and reopen the hand to reset · in a partner
@@ -828,7 +875,7 @@
           const at = targetAt(x, y);
           if (at && !at.target.classList.contains('pulse-map')) node = at.hit;
         }
-        log(ui, node ? 'thumbs up: open' : 'thumbs up (nothing to open)');
+        log(ui, a.via + (node ? ': open' : ' (nothing to open)'));
         if (node) mouse('click', node, x, y);
         break;
       }
@@ -857,9 +904,11 @@
       text = "Can't see your hand — check the light behind you";
     ui.state.textContent = text;
     ui.state.dataset.arm = r.arm;
-    ui.pose.textContent = r.pose
-      ? r.pose.replace('_', ' ') + ' ' + Math.round(r.poseScore * 100) + '%'
-      : '—';
+    ui.pose.textContent =
+      (r.spread != null ? 'spread ' + r.spread.toFixed(2) + ' · ' : '') +
+      (r.pose
+        ? r.pose.replace('_', ' ') + ' ' + Math.round(r.poseScore * 100) + '%'
+        : '—');
     ui.pinch.textContent =
       r.pinchRatio == null
         ? '—'

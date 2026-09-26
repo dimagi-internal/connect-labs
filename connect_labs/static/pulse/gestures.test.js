@@ -45,6 +45,7 @@ function hand({
   pose = 'None',
   palm = null,
   roll = 0,
+  span = null,
 } = {}) {
   const aspect = 4 / 3;
   const lm = Array.from({ length: 21 }, () => ({ x, y, z: 0 }));
@@ -60,6 +61,11 @@ function hand({
   lm[5] = { x, y, z: 0 }; // index knuckle: the pointer
   lm[8] = { x, y: y - size * 0.9, z: 0 }; // index tip
   lm[4] = { x: x + (pinch * size) / aspect, y: y - size * 0.9, z: 0 }; // thumb tip
+  if (span != null) {
+    // Index and pinky fingertips `span` hand sizes apart.
+    lm[8] = { x: x - (span * size) / 2 / aspect, y: y - size * 0.9, z: 0 };
+    lm[20] = { x: x + (span * size) / 2 / aspect, y: y - size * 0.9, z: 0 };
+  }
   if (roll) {
     // Turn the whole hand about the index knuckle, clockwise as the viewer
     // sees it (the preview is mirrored), in physical (aspect-corrected) space.
@@ -690,5 +696,65 @@ describe('the contract with the page', () => {
   it('the thumbs-up card is still the pinned partner card', () => {
     expect(SRC).toContain("document.querySelector('.pulse-partner')");
     expect(read('display.js')).toContain("card.className = 'pulse-partner'");
+  });
+});
+
+describe('bloom', () => {
+  const bunched = (pose = 'None') => hand({ span: 0.3, pose });
+  const wide = () => hand({ span: 1.4, palm: 'facing' });
+  const opening = (i, n) =>
+    hand({ span: 0.3 + ((1.4 - 0.3) * (i + 1)) / n, palm: 'facing' });
+
+  it('bunched fingertips flung wide opens, once', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 6, bunched());
+    const b = feed(e, a.t, 4, (i) => opening(i, 4));
+    const c = feed(e, b.t, 30, wide()); // held open afterwards
+    const all = [...a.actions, ...b.actions, ...c.actions];
+    expect(types(all)).toEqual(['confirm']);
+    expect(all[0].via).toBe('bloom');
+  });
+
+  it('opening the hand slowly is not a bloom', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 6, bunched());
+    const b = feed(e, a.t, 30, (i) => opening(i, 30)); // ~1s
+    expect(types([...a.actions, ...b.actions])).not.toContain('confirm');
+  });
+
+  it('a quick fist flicked open blooms (the fist was too brief to close)', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 5, bunched('Closed_Fist')); // ~165ms, under the hold
+    const b = feed(e, a.t, 4, (i) => opening(i, 4));
+    expect(types([...a.actions, ...b.actions])).toEqual(['confirm']);
+  });
+
+  it('opening the hand after a fist has closed a window does not reopen it', () => {
+    const { e, t } = armed();
+    // Held 2s -- well past the cooldown after "back", which would otherwise
+    // hide a reopen that only happens when the fist is held a while.
+    const a = feed(e, t, 60, bunched('Closed_Fist'));
+    const b = feed(e, a.t, 4, (i) => opening(i, 4)); // the natural release
+    const c = feed(e, b.t, 20, wide());
+    expect(types([...a.actions, ...b.actions, ...c.actions])).toEqual(['back']);
+  });
+
+  it('a bloom after that release works again', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 30, bunched('Closed_Fist'));
+    const b = feed(e, a.t, 30, wide()); // released, and the cooldown passes
+    const c = feed(e, b.t, 6, bunched());
+    const d = feed(e, c.t, 4, (i) => opening(i, 4));
+    expect(
+      types([...a.actions, ...b.actions, ...c.actions, ...d.actions]),
+    ).toEqual(['back', 'confirm']);
+  });
+
+  it('nothing blooms while disarmed', () => {
+    const e = core.createEngine();
+    const { actions } = feed(e, 0, 60, (i) =>
+      i % 10 < 5 ? bunched() : opening(i % 5, 5),
+    );
+    expect(actions).toEqual([]);
   });
 });
