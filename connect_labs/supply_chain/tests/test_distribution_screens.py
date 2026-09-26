@@ -36,8 +36,9 @@ def user(client, django_user_model):
 
 @pytest.fixture
 def scoped(client, user, monkeypatch):
-    from connect_labs.supply_chain import distribution_views, form_views, views  # noqa: F401  -- bind before patching
+    from connect_labs.supply_chain import form_views, views  # noqa: F401  -- bind before patching
     from connect_labs.supply_chain.api_views import _access as real_access
+    from connect_labs.supply_chain.distribution import views as distribution_views  # noqa: F401
     from connect_labs.supply_chain.procurement import views as procurement_views  # noqa: F401
 
     def _scoped(request):
@@ -47,7 +48,7 @@ def scoped(client, user, monkeypatch):
 
     for module in ("form_views", "views", "procurement.views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)
-    for module in ("form_views", "views", "procurement.views", "distribution_views"):
+    for module in ("form_views", "views", "procurement.views", "distribution.views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
     return client
 

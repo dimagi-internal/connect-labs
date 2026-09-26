@@ -7,7 +7,7 @@ from django.http import Http404
 from django.urls import reverse
 
 from connect_labs.supply_chain.api_views import _access
-from connect_labs.supply_chain.distribution_forms import DistributionForm, DistributionLineFormSet
+from connect_labs.supply_chain.distribution.forms import DistributionForm, DistributionLineFormSet
 from connect_labs.supply_chain.form_views import OperationFormView
 from connect_labs.supply_chain.forms import QuoteCorrectionForm
 from connect_labs.supply_chain.models import Item, Quote, SupplyPoint

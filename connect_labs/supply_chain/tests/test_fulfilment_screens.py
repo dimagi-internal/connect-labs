@@ -36,8 +36,9 @@ def user(client, django_user_model):
 
 @pytest.fixture
 def scoped(client, user, monkeypatch):
-    from connect_labs.supply_chain import form_views, fulfilment_views, views  # noqa: F401  -- bind before patching
+    from connect_labs.supply_chain import form_views, views  # noqa: F401  -- bind before patching
     from connect_labs.supply_chain.api_views import _access as real_access
+    from connect_labs.supply_chain.fulfilment import views as fulfilment_views  # noqa: F401
 
     def _scoped(request):
         access = real_access(request)
@@ -46,7 +47,7 @@ def scoped(client, user, monkeypatch):
 
     for module in ("form_views", "views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)
-    for module in ("form_views", "views", "fulfilment_views"):
+    for module in ("form_views", "views", "fulfilment.views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
     return client
 
@@ -370,14 +371,14 @@ class TestThePayloadBoundary:
         return form
 
     def test_money_crosses_as_an_exact_string_not_a_float(self, rutf, supplier, buyer):
-        from connect_labs.supply_chain.fulfilment_forms import ContractForm
+        from connect_labs.supply_chain.fulfilment.forms import ContractForm
 
         payload = self._form(ContractForm, contract_post(rutf, supplier, buyer)).payload()
         assert payload["unit_price"] == "52.42"
         assert not isinstance(payload["unit_price"], float)
 
     def test_the_product_is_named_by_slug_not_by_row_id(self, rutf, supplier, buyer):
-        from connect_labs.supply_chain.fulfilment_forms import ContractForm
+        from connect_labs.supply_chain.fulfilment.forms import ContractForm
 
         payload = self._form(ContractForm, contract_post(rutf, supplier, buyer)).payload()
         assert payload["commodity_slug"] == "rutf"
@@ -392,13 +393,13 @@ class TestThePayloadBoundary:
         and no browser-level test would notice — the row would simply keep the
         claim it already had.
         """
-        from connect_labs.supply_chain.fulfilment_forms import ContractForm
+        from connect_labs.supply_chain.fulfilment.forms import ContractForm
 
         payload = self._form(ContractForm, contract_post(rutf, supplier, buyer)).payload()
         assert payload["duty_relief_claimed"] is False
 
     def test_an_uploaded_file_crosses_as_base64_not_as_a_django_file(self):
-        from connect_labs.supply_chain.fulfilment_forms import DocumentForm
+        from connect_labs.supply_chain.fulfilment.forms import DocumentForm
 
         upload = SimpleUploadedFile("e.pdf", b"hello", content_type="application/pdf")
         form = self._form(

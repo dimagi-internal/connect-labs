@@ -323,8 +323,10 @@ class TestChargesAreInTheLandedCost:
 
 @pytest.fixture
 def scoped(client, django_user_model, monkeypatch):
-    from connect_labs.supply_chain import form_views, fulfilment_views, stock_views, views  # noqa: F401
+    from connect_labs.supply_chain import form_views, views  # noqa: F401
     from connect_labs.supply_chain.api_views import _access as real_access
+    from connect_labs.supply_chain.fulfilment import views as fulfilment_views  # noqa: F401
+    from connect_labs.supply_chain.stock import views as stock_views  # noqa: F401
 
     account = django_user_model.objects.create_user(username="clear", password="x", email="clear@dimagi.com")
     client.force_login(account)
@@ -334,7 +336,7 @@ def scoped(client, django_user_model, monkeypatch):
         access.program_id = PROGRAM
         return access
 
-    for module in ("form_views", "views", "fulfilment_views", "stock_views"):
+    for module in ("form_views", "views", "fulfilment.views", "stock.views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
     for module in ("form_views", "views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)

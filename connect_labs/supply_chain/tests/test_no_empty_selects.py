@@ -48,10 +48,13 @@ def every_form_class():
     whole point, since the defect this file guards was in a form nobody
     thought to check.
     """
-    from connect_labs.supply_chain import distribution_forms
     from connect_labs.supply_chain import forms as sourcing_forms
-    from connect_labs.supply_chain import fulfilment_forms, network_forms, reference_forms, stock_forms
+    from connect_labs.supply_chain import reference_forms
     from connect_labs.supply_chain.alerts import forms as alert_forms
+    from connect_labs.supply_chain.distribution import forms as distribution_forms
+    from connect_labs.supply_chain.fulfilment import forms as fulfilment_forms
+    from connect_labs.supply_chain.network import forms as network_forms
+    from connect_labs.supply_chain.stock import forms as stock_forms
     from connect_labs.supply_chain.update_links import forms as update_link_forms
 
     modules = [
