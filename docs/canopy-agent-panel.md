@@ -181,6 +181,45 @@ The panel does not render at all unless all three are set. That is deliberate: a
 launcher that opens onto an error the page cannot explain is worse than no
 launcher.
 
+## Letting canopy act as the visitor (off by default)
+
+Without this, the agent's calls to labs' MCP run as the AGENT. With it, a page
+can let canopy call labs' MCP **as the person on the page**, limited to what that
+page offers. This is MCP's Enterprise-Managed Authorization shape (an ID-JAG
+redeemed with the RFC 7523 jwt-bearer grant), and the principle is that labs —
+which signed the person in — issues the grant; canopy only redeems it. Contract
+and design: canopy-web PR #985
+(`docs/superpowers/specs/2026-09-26-embedded-caller-delegation-design.md`).
+
+1. **Which pages, which scopes** — `canopy.PAGE_SCOPES`, keyed by URL name. A
+   page passes `request=request` to `panel_context`; the panel then carries labs'
+   own signature over the route (`?page=` on the token URL). At mint time labs
+   checks it and puts that route's scopes in an **ID-JAG** sent beside the
+   visitor assertion. An unregistered page, or a missing/forged/expired page
+   token, simply means no ID-JAG. v1: the network and round pages →
+   `marketplace:read`.
+2. **Redeeming** — canopy POSTs the ID-JAG to `/o/token/` with
+   `private_key_jwt` (keys from its Client ID Metadata Document, fetched
+   SSRF-safe and cached ≤ 1h) and a DPoP proof. Labs issues a 15-minute access
+   token, no refresh token, bound to the DPoP key (`DelegatedAccessToken`, its
+   own table — never django-oauth-toolkit's, which would open labs' REST API).
+3. **Using it** — `Authorization: DPoP <token>` plus a fresh `DPoP` proof on every
+   MCP request (`delegation.DPoPGate`). The tool runs as the visitor, and only
+   the tools `delegation.SCOPE_TOOLS` maps the token's scopes to are listed or
+   callable. `MCPAuditLog` records the client and the `Canopy-Actor` header.
+
+PATs and ordinary MCP OAuth sign-ins never touch any of this.
+
+**To turn it on**, set one more env var (with the three above and
+`LABS_PUBLIC_URL`, which every JWT here names as issuer):
+
+```
+CANOPY_CLIENT_ID=https://labs.connect.dimagi.com/canopy/oauth/client.json
+```
+
+Unset, nothing changes: no ID-JAG is issued, `/o/token/` answers the grant with
+`unsupported_grant_type`, and the metadata does not advertise it.
+
 ## When it does not work
 
 | Symptom | Cause |

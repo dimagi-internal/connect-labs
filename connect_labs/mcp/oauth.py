@@ -111,8 +111,10 @@ def protected_resource_metadata_url() -> str:
 
 def protected_resource_metadata() -> dict:
     """RFC 9728 protected-resource metadata for the MCP endpoint."""
+    from . import delegation, dpop
+
     base = public_base_url()
-    return {
+    doc = {
         "resource": resource_url(),
         "authorization_servers": [base],
         "scopes_supported": [MCP_SCOPE],
@@ -120,12 +122,21 @@ def protected_resource_metadata() -> dict:
         "resource_name": "Connect Labs",
         "resource_documentation": f"{base}/labs/mcp/tokens/",
     }
+    if delegation.grant_enabled():
+        # Advertised only while the grant is on, so an instance never describes
+        # a way in it does not offer. DPoP is required only for the tokens that
+        # grant issues, never for sign-ins or PATs, hence not "required" here.
+        doc["scopes_supported"] = [MCP_SCOPE, *sorted(delegation.SCOPE_TOOLS)]
+        doc["dpop_signing_alg_values_supported"] = list(dpop.ALLOWED_ALGS)
+    return doc
 
 
 def authorization_server_metadata() -> dict:
     """RFC 8414 authorization-server metadata for labs' OAuth server."""
+    from . import delegation, dpop
+
     base = public_base_url()
-    return {
+    doc = {
         "issuer": base,
         "authorization_endpoint": f"{base}/o/authorize/",
         "token_endpoint": f"{base}/o/token/",
@@ -138,6 +149,16 @@ def authorization_server_metadata() -> dict:
         "revocation_endpoint_auth_methods_supported": ["none"],
         "scopes_supported": [MCP_SCOPE],
     }
+    if delegation.grant_enabled():
+        # The jwt-bearer grant canopy redeems a visitor's ID-JAG with. Listed
+        # only while CANOPY_CLIENT_ID is set: advertising a disabled grant
+        # would send a client down a path that ends in unsupported_grant_type.
+        doc["grant_types_supported"] = sorted({*_SUPPORTED_GRANTS, delegation.JWT_BEARER_GRANT})
+        doc["token_endpoint_auth_methods_supported"] = ["none", "private_key_jwt"]
+        doc["token_endpoint_auth_signing_alg_values_supported"] = list(dpop.ALLOWED_ALGS)
+        doc["dpop_signing_alg_values_supported"] = list(dpop.ALLOWED_ALGS)
+        doc["scopes_supported"] = [MCP_SCOPE, *sorted(delegation.SCOPE_TOOLS)]
+    return doc
 
 
 # ---------------------------------------------------------------------------

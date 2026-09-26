@@ -29,12 +29,16 @@ anyone sign), ``aud`` must match, ``exp`` at most 120 seconds out, and each
 from __future__ import annotations
 
 import json
+import logging
 import urllib.error
 import urllib.request
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from django.conf import settings
+from django.core import signing
+
+log = logging.getLogger(__name__)
 
 #: Canopy caps a declared lifetime at 120s (+30s leeway). Sixty is comfortably
 #: inside that and leaves room for a slow hop; there is nothing to gain from
@@ -45,6 +49,32 @@ ASSERTION_TTL_SECONDS = 60
 #: is not going to, and the widget should show a failure rather than hold the
 #: request open.
 MINT_TIMEOUT_SECONDS = 10
+
+
+#: The one algorithm labs signs with, for the visitor assertion and the ID-JAG
+#: alike. Asymmetric, because canopy verifies with a key anyone may read.
+SIGNING_ALG = "EdDSA"
+
+#: How long a rendered page's identity stays good for (``page_token``). It only
+#: says which page the panel was opened on, and it is re-checked against the
+#: session's user on every mint; past this, the panel still works, the agent just
+#: cannot act as the visitor until the page is reloaded.
+PAGE_TOKEN_MAX_AGE_SECONDS = 2 * 60 * 60
+_PAGE_TOKEN_SALT = "connect_labs.labs.canopy.page"
+
+#: ID-JAGs are good for at most 300 seconds under the contract; canopy redeems
+#: one immediately, so this only has to cover the hop.
+ID_JAG_TTL_SECONDS = 120
+
+#: Which pages may let canopy act as the visitor, and with which scopes, keyed
+#: by URL name. THE route registry: a page's scopes are decided here, server-
+#: side, and never from anything the browser sends. A page not listed gets no
+#: grant at all — the panel still opens, and the agent works as it did before.
+#: Every scope here must exist in ``connect_labs.mcp.delegation.SCOPE_TOOLS``.
+PAGE_SCOPES: dict[str, tuple[str, ...]] = {
+    "marketplace:network": ("marketplace:read",),
+    "marketplace:round": ("marketplace:read",),
+}
 
 
 class CanopyNotConfigured(RuntimeError):
@@ -90,8 +120,14 @@ def panel_context(
     visible_ids=(),
     filters=None,
     path: str = "",
+    request=None,
 ) -> dict:
     """What ``labs/includes/canopy_panel.html`` needs, or a dict that renders nothing.
+
+    Pass ``request`` and the panel carries a signed ``page_token`` naming this
+    page's route, which the widget hands back when it mints. That is how labs
+    knows, at mint time and from its own signature, which page's scopes to put
+    in the ID-JAG (``PAGE_SCOPES``). An unregistered route gets no token.
 
     ``visible_ids`` is the selection the visitor can see — slugs or ids, never
     rows. It is truncated rather than allowed to breach canopy's 8 KiB cap,
@@ -118,7 +154,42 @@ def panel_context(
         "app_name": getattr(settings, "CANOPY_APP_NAME", "") if ready else "",
         "agent": getattr(settings, "CANOPY_AGENT_SLUG", "") if ready else "",
         "page_state": state,
+        "page_token": page_token(request) if ready and request is not None else "",
     }
+
+
+def page_token(request) -> str:
+    """A server-signed statement of which registered page this is, for this user.
+
+    Empty for a page not in ``PAGE_SCOPES``. Signed with Django's signer (labs'
+    own secret) because it never leaves labs: the browser carries it from the
+    rendered page back to ``canopy_views.token``, and only labs reads it.
+    """
+    match = getattr(request, "resolver_match", None)
+    view_name = getattr(match, "view_name", "") or ""
+    user = getattr(request, "user", None)
+    if view_name not in PAGE_SCOPES or user is None or not user.is_authenticated:
+        return ""
+    return signing.dumps({"page": view_name, "user": user.pk}, salt=_PAGE_TOKEN_SALT, compress=False)
+
+
+def scopes_for_page_token(raw, user) -> tuple[str, ...]:
+    """The scopes the page named by ``raw`` grants ``user``, or () — never an error.
+
+    Anything wrong (absent, forged, expired, minted for another user, a page no
+    longer registered) means no grant, and the panel carries on without one.
+    The scopes are read from the registry NOW, not from the token, so removing a
+    page from ``PAGE_SCOPES`` takes effect on the next mint.
+    """
+    if not raw or not isinstance(raw, str) or len(raw) > 1024 or user is None or not user.is_authenticated:
+        return ()
+    try:
+        claims = signing.loads(raw, salt=_PAGE_TOKEN_SALT, max_age=PAGE_TOKEN_MAX_AGE_SECONDS)
+    except signing.BadSignature:  # includes SignatureExpired
+        return ()
+    if not isinstance(claims, dict) or claims.get("user") != user.pk:
+        return ()
+    return PAGE_SCOPES.get(claims.get("page"), ())
 
 
 def _fit_ids(state: dict) -> list[str]:
@@ -152,7 +223,7 @@ def assertion_for(user) -> str:
             "iss": settings.CANOPY_APP_NAME,
             # OUR id for them. Opaque to canopy, and namespaced by the app, so it
             # cannot collide with a canopy user or another site's people.
-            "sub": str(user.pk),
+            "sub": _subject(user),
             "aud": _audience(),
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(seconds=ASSERTION_TTL_SECONDS)).timestamp()),
@@ -176,12 +247,70 @@ def assertion_for(user) -> str:
             "email_verified": bool(user.email),
         },
         settings.CANOPY_SIGNING_KEY,
-        algorithm="EdDSA",
+        algorithm=SIGNING_ALG,
         # So canopy can pick this key out of the JWKS we publish. Without it a
         # rotation has nothing to select on: canopy would try every published key
         # and succeed only by luck of ordering.
         headers={"kid": public_jwk()["kid"]},
     )
+
+
+def id_jag_for(user, scopes) -> str:
+    """An ID-JAG letting canopy act as ``user`` at labs' MCP, within ``scopes``.
+
+    draft-ietf-oauth-identity-assertion-authz-grant, as pinned by canopy-web's
+    host-grant contract. Labs is both the issuer and the audience — it grants
+    for its own authorization server — and canopy can only REDEEM it, at labs'
+    token endpoint, authenticated as itself and holding a DPoP key
+    (``connect_labs.mcp.delegation``). Signed with the same key as the visitor
+    assertion, so canopy needs no second key to trust.
+
+    ``sub`` is the same value the visitor assertion carries: the two statements
+    are about one person.
+    """
+    from connect_labs.mcp import delegation, oauth
+
+    if not is_configured():
+        raise CanopyNotConfigured("CANOPY_BASE_URL / CANOPY_SIGNING_KEY are not set")
+    if not delegation.grant_enabled():
+        raise CanopyNotConfigured("CANOPY_CLIENT_ID / LABS_PUBLIC_URL are not set")
+    scopes = [s for s in scopes if s in delegation.SCOPE_TOOLS]
+    if not scopes:
+        raise ValueError("an ID-JAG needs at least one scope this server offers")
+
+    import jwt
+
+    now = datetime.now(timezone.utc)
+    return jwt.encode(
+        {
+            "iss": oauth.public_base_url(),
+            "aud": oauth.public_base_url(),
+            "sub": _subject(user),
+            "client_id": delegation.canopy_client_id(),
+            "resource": oauth.resource_url(),
+            "scope": " ".join(scopes),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(seconds=ID_JAG_TTL_SECONDS)).timestamp()),
+            "jti": str(uuid.uuid4()),
+        },
+        settings.CANOPY_SIGNING_KEY,
+        algorithm=SIGNING_ALG,
+        headers={"kid": public_jwk()["kid"], "typ": "oauth-id-jag+jwt"},
+    )
+
+
+def _subject(user) -> str:
+    """OUR id for a user — the ``sub`` of both the assertion and the ID-JAG."""
+    return str(user.pk)
+
+
+def host_verification_key():
+    """The public half of labs' signing key, for checking an ID-JAG labs issued."""
+    if not getattr(settings, "CANOPY_SIGNING_KEY", ""):
+        raise CanopyNotConfigured("CANOPY_SIGNING_KEY is not set")
+    from cryptography.hazmat.primitives import serialization
+
+    return serialization.load_pem_private_key(settings.CANOPY_SIGNING_KEY.encode(), password=None).public_key()
 
 
 def _thumbprint(jwk: dict) -> str:
@@ -231,21 +360,37 @@ def _audience() -> str:
     return settings.CANOPY_BASE_URL.rstrip("/")
 
 
-def vouch_for(user) -> dict:
+def vouch_for(user, scopes=()) -> dict:
     """Exchange a signed statement for a short-lived token for ``user``.
+
+    With ``scopes`` (the page's, from ``scopes_for_page_token``) and the grant
+    enabled, the same request also carries an ``id_jag`` so canopy can act as
+    this visitor at labs' MCP, within those scopes. Without either, the request
+    is exactly what it was before the grant existed.
 
     Returns only the two fields the widget needs. Canopy's response is not passed
     through: a new field on its side should not silently become part of labs'
     contract.
     """
-    request = urllib.request.Request(
-        f"{_audience()}/api/auth/contact-token",
+    from connect_labs.mcp import delegation
+
+    payload = {
+        "assertion": assertion_for(user),
         # `agent_slug` says which canopy tenant this token is for — see
         # CANOPY_AGENT_SLUG. Without it canopy resolves the tenant from the
         # site name alone, which stops working once two workspaces share it.
-        data=json.dumps(
-            {"assertion": assertion_for(user), "agent_slug": getattr(settings, "CANOPY_AGENT_SLUG", "")}
-        ).encode(),
+        "agent_slug": getattr(settings, "CANOPY_AGENT_SLUG", ""),
+    }
+    if scopes and delegation.grant_enabled():
+        try:
+            payload["id_jag"] = id_jag_for(user, scopes)
+        except (CanopyNotConfigured, ValueError):
+            # No grant is a working panel (the agent acts as itself, as it
+            # always has); a failed mint is not. Say so, and carry on without.
+            log.warning("could not issue an ID-JAG for user %s", user.pk, exc_info=True)
+    request = urllib.request.Request(
+        f"{_audience()}/api/auth/contact-token",
+        data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )

@@ -673,6 +673,12 @@ CANOPY_AGENT_SLUG = env("CANOPY_AGENT_SLUG", default="ace")
 # PEM, Ed25519. Newlines survive an env var as literal "\n", which is how a
 # task definition and a .env can both carry one.
 CANOPY_SIGNING_KEY = env("CANOPY_SIGNING_KEY", default="").replace("\\n", "\n")
+# Canopy acting AS the visitor at labs' MCP (connect_labs/mcp/delegation.py).
+# The canopy client's id — the URL of its Client ID Metadata Document, e.g.
+# https://labs.connect.dimagi.com/canopy/oauth/client.json. Unset = the
+# jwt-bearer grant is off: no ID-JAG is issued, /o/token/ refuses the grant,
+# and nothing else changes. Needs LABS_PUBLIC_URL and CANOPY_SIGNING_KEY too.
+CANOPY_CLIENT_ID = env("CANOPY_CLIENT_ID", default="")
 
 # Audit trail (HIPAA-bar access/change logging — see docs/AUDIT_LOGGING.md)
 # ------------------------------------------------------------------------------

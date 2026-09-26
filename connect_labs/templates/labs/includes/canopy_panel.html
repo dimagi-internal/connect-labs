@@ -47,7 +47,11 @@ cannot end the block.
         // canopy workspace). With one agent on offer the widget skips its
         // picker anyway, so this changes nothing a person sees.
         agent: "{{ canopy_panel.agent|escapejs }}",
-        tokenUrl: "{% url 'labs:canopy_token' %}",
+        // `page` is labs' own signature over which page this is (see
+        // canopy.page_token): it decides whether canopy may act as the visitor
+        // here, and with which scopes. Labs reads the scopes from its own
+        // registry, never from the browser.
+        tokenUrl: "{% url 'labs:canopy_token' %}{% if canopy_panel.page_token %}?page={{ canopy_panel.page_token|urlencode|escapejs }}{% endif %}",
         mode: "overlay",
         launcherLabel: "Ask an agent",
         // Labs sets CSRF_COOKIE_HTTPONLY, so the widget cannot read the cookie.
