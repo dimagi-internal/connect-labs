@@ -1,0 +1,7 @@
+{% comment %}
+The amber AI pill on an offer an AI entered (history/timeline.py
+ai_entered_quotes), worded as the timeline and the overview word it: the bold
+"AI" only where the label does not already say "via AI". `actor` is who told
+us; nothing renders without one.
+{% endcomment %}
+{% if actor %}<span data-ai data-testid="ai-badge" class="ml-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-normal text-amber-900">{% if actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ actor }}</span></span>{% endif %}

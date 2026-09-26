@@ -34,7 +34,7 @@ from django.views.generic import TemplateView
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
 from connect_labs.supply_chain.fulfilment.forms import DocumentForm
-from connect_labs.supply_chain.history.timeline import timeline_for_tender
+from connect_labs.supply_chain.history.timeline import ai_entered_quotes, timeline_for_tender
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.forms import (
@@ -396,6 +396,16 @@ class ComparisonView(_Base):
                     items[item_id] = self.op("item_get", item_id=item_id)
                 context["set_aside"].append({"quote": quote, "item": items.get(item_id)})
         context["comparison"] = comparison
+        # Which offers an AI entered, so each carries the same amber pill as
+        # the timeline and the overview -- the reader checks those first.
+        context["ai_quotes"] = (
+            ai_entered_quotes(
+                [row.get("quote_id") for row in comparison.get("all_rows") or []],
+                program_id=_access(self.request).program_id,
+            )
+            if comparison
+            else {}
+        )
         context["table_columns"] = table_columns(comparison) if comparison else []
         if comparison and context["table_columns"]:
             context["folded_columns"] = list(folded_columns(comparison).values())

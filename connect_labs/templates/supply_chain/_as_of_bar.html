@@ -11,12 +11,12 @@ a block inside an include cannot fill the parent's.
 {% endcomment %}
 {% if supply_as_of_available %}
   {% if supply_as_of %}
-    <div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-wrap items-center gap-x-4 gap-y-1" data-as-of-banner>
+    <div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-wrap items-center gap-x-4 gap-y-1" data-as-of-banner data-testid="as-of-banner">
       <span><strong>Viewing as of {{ supply_as_of|date:'j M Y' }} — read-only.</strong> Nothing here can be changed while you look at the past.</span>
       <a data-as-of-exempt class="font-medium underline underline-offset-2 hover:text-amber-950" href="{{ request.path }}">Back to today</a>
     </div>
   {% endif %}
-  <form method="get" class="mb-4 flex items-center gap-2 text-sm text-gray-700" data-as-of-form>
+  <form method="get" class="mb-4 flex items-center gap-2 text-sm text-gray-700" data-as-of-form data-testid="as-of-control">
     {% for key, values in request.GET.lists %}
       {% if key != "as_of" %}
         {% for value in values %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
