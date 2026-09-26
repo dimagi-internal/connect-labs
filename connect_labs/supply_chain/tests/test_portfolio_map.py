@@ -335,16 +335,19 @@ def _moved(program_id, *, quantity="10"):
 
 
 def test_a_transfer_is_a_route_between_its_two_places(client, django_user_model):
-    """MUTATED: `_ROUTED` emptied -- no flows came back."""
+    """Routes arrive bucketed by week, summed in the database, per unit.
+
+    MUTATED: `_ROUTED` emptied -- no flows came back.
+    """
     _sign_in(client, django_user_model, [ONE])
     warehouse, store = _moved(ONE)
 
     program = _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]
 
     assert [
-        (f["from_supply_point_id"], f["to_supply_point_id"], f["commodity_slug"], f["count"]) for f in program["flows"]
-    ] == [(warehouse.pk, store.pk, "a-product", 1)]
-    assert program["flows"][0]["quantity"] == {"unit": 10.0}
+        (f["from_supply_point_id"], f["to_supply_point_id"], f["commodity_slug"], f["unit"], f["quantity"], f["count"])
+        for f in program["flows"]
+    ] == [(warehouse.pk, store.pk, "a-product", "unit", 10.0, 1)]
 
 
 def test_each_place_says_which_commodities_it_holds_per_the_ledger(client, django_user_model):
@@ -401,24 +404,38 @@ def test_all_my_programs_adds_reachable_programs_with_supply_points_and_nothing_
     assert [(p["program_id"], p["in_portfolio"]) for p in everything["programs"]] == [(ONE, True), (TWO, False)]
 
 
-def test_each_place_carries_what_it_holds_of_each_commodity_and_for_how_long(client, django_user_model):
-    """The Stock colour mode reads this; it is network_stock's own figure, per item.
+def test_cover_is_fetched_per_commodity_for_the_programs_the_page_shows_and_no_others(client, django_user_model):
+    """Cover moved off the page load; the endpoint must keep the page's access rule.
 
-    MUTATED: `_cover` returning {} -- the warehouse came back with no cover, red.
+    MUTATED: `portfolio_cover` iterating every program with a supply point
+    rather than `portfolio_programs` -- THREE's store came back, red.
     """
     from connect_labs.supply_chain.models import Item
 
     _sign_in(client, django_user_model, [ONE])
-    warehouse, store = _moved(ONE)
+    warehouse, _ = _moved(ONE)
     Item.objects.create(
         scope_key=scope_key(program_id=ONE),
         sku="a-sku",
         name="An Item",
         commodity=Commodity.objects.get(slug="a-product", scope_key=scope_key(program_id=ONE)),
     )
+    _store(THREE, slug="a-store-nobody-here-holds", lat=9.0, lng=8.0)
+    portfolio = _portfolio([ONE, THREE])
 
-    points = {p["id"]: p for p in _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]["points"]}
+    page = _payload(client.get(_url(portfolio)))
+    assert "cover" not in page["programs"][0]["points"][0]
+    body = client.get(page["cover_url"], {"commodity": "a-product"}).json()
 
-    cover = points[warehouse.pk]["cover"]["a-product"]
-    assert cover["status"] in {"unknown", "ok", "stockout", "below_min", "overstocked"}
-    assert "item_id" in cover and "months_of_stock" in cover
+    assert list(body["programs"]) == [str(ONE)]
+    cover = body["programs"][str(ONE)][str(warehouse.pk)]
+    # Per ITEM: the helper's movements name no item, so this item holds none
+    # -- the shape and the scoping are what this test is for.
+    assert set(cover) >= {"item_id", "on_hand", "status", "months_of_stock", "min_months_of_stock"}
+
+
+def test_cover_needs_a_commodity(client, django_user_model):
+    _sign_in(client, django_user_model, [ONE])
+    portfolio = _portfolio([ONE])
+    response = client.get(reverse("supply_chain:portfolio_map_cover", args=[portfolio.slug]))
+    assert response.status_code == 400
