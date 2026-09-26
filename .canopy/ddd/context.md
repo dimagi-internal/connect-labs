@@ -1,120 +1,102 @@
-# DDD Context — Nutrition Demo (OES/ECF Program Admin Report)
+# DDD Context — Supply: Sophie's RUTF program (`supply-sophie-rutf`)
 
 ## Project
 
-A funder-facing (OES/ECF) demo of the labs **Program Admin Report** for a child-nutrition
-program: a program manager overseeing three RUTF/MUAC **network managers** reads all three
-managers' weekly reviews as one grid and drills program → network manager → frontline worker →
-individual child's MUAC evidence. Rendered against the live labs dashboard on
-`labs.connect.dimagi.com`.
+connect-labs, the labs/rapid-prototyping environment for Connect. The narrative in play is
+`supply-sophie-rutf`: the core-labs supply domain at `/supply/` (`connect_labs/supply_chain/`),
+where the labs DB is the system of record. It demos **record history, provenance and a
+program-scoped view** for the Connect-RUTF procurement program.
+
+Other supply narratives (`supply-test-kits`, `supply-chc-copacks`, `supply-chlorine-stopgap`,
+`supply-dispenser-import`, `supply-iptsc-shortfall`, `oes-supply-base`) and older ones
+(`nutrition-demo`, microplans, solicitations) live in `docs/walkthroughs/`; their run history is
+under `.canopy/ddd/runs/`.
 
 ## base_url
 
 https://labs.connect.dimagi.com
+
 Auth: labs browser session at `~/.ace/labs-session.json` (seeded out-of-band via
-`bin/ace-labs-walkthrough-login` / `/ace:labs-login`). The spec carries NO `auth` block —
-cookies are seeded before the render; `record_video` gets `--storage-state ~/.ace/labs-session.json`.
+`/ace:labs-login`). Specs carry NO `auth` block — cookies are seeded before the render and the
+recorder gets `--storage-state ~/.ace/labs-session.json`. The session cookie's local expiry
+(~12h) is honoured by Playwright even while the server session lives: an all-red preflight with no
+hint means re-mint the session, not a broken recipe.
 
-## The narrative (already authored + validated + locked)
+Artifacts publish to the canopy-web `connect` workspace (`.canopy/ddd/config.yaml`).
 
-- Spec: `docs/walkthroughs/nutrition-demo.yaml` (UnifiedSpec, `narrative_locked: true`).
-- WhyBrief: `docs/walkthroughs/nutrition-demo.why_brief.yaml`.
-- Both pass `scripts.ddd.validate` and `scripts.ddd.spec_qa` (2026-07-21).
-- Setup: `scripts/walkthroughs/nutrition-demo/ensure_env.py` → `realized.json` (`rerun: once`;
-  the env is pinned + already deployed, so the checked-in `realized.json` is authoritative).
+## The narrative
 
-The story is approved by the operator (Jon) — this run should skip re-authoring, hydrate the
-locked narrative, and go straight to render → dual-judge → route findings → converge → Video
-phase → upload.
+- Source of truth for WHAT it shows: `docs/superpowers/specs/2026-09-26-supply-sophie-history-design.md`
+  (§1 why, §3 model, §4 UI, §5 seeder, §6 scene list, §7 how the loop runs this time).
+  Sophie's real workflow: `docs/superpowers/specs/2026-09-11-rutf-procurement-design.md` (§0-1,
+  §5.6 basis flags, §11 append-only quotes, §17 buyer of record).
+- Draft spec (single file, not yet split): `docs/walkthroughs/supply-sophie-rutf.yaml`.
+  WhyBrief: `docs/walkthroughs/supply-sophie-rutf.why_brief.yaml`.
+- Run dir: `.canopy/ddd/runs/supply-sophie-rutf-2026-09-26-001/` (evidence, why-brief, verdicts).
+- **Persona:** Sophie, program manager for Connect-RUTF at Dimagi (buyer of record). She is the
+  ONLY user inside the system. Suppliers and the freight forwarder email her; an external AI
+  (ACE, Claude over MCP, or the canopy panel) records the facts through the same operations.
+  The AI is never a persona.
+- **Scenes (7):** overview today → round 1 timeline with the ETA slip and its source → as of
+  20 Aug → round 2 comparison (each quote's one missing fact, the question to ask, AI badges) →
+  the answer arrives (a supplier states sachets per carton; ACE records it as an MCP correction
+  with the reply as source; the quote ranks with cost per carton and per child) → the market
+  (round 2 exactly as a supplier sees it: the request, nothing private) → provisional award with rationale,
+  shown on the overview.
+- **Controller ruling (2026-09-26):** the earlier "AI misread freight, Sophie corrects it" beat is
+  dropped: in the seed each round 2 quote fails for one reason except the second, which fails on
+  two, so no correction could make it comparable without faking figures. The reply beat replaces
+  it; the reply lands between scenes 4 and 5 off camera (why-brief G10: the recorder has no
+  between-scene step yet).
+- **Narrative-agreement (concept_change) gate: AGREED.** The owner agreed this story in
+  conversation on 2026-09-26 (design spec status line and §6). It was not posted to the review
+  surface; record that provenance, don't re-ask. After any material story change, re-gate.
 
-## The data (live + deployed on labs)
+## The data
 
-Env `nutrition-demo` (`connect_labs/labs/synthetic/envs/nutrition-demo.yaml`): three opps filed
-under **PROGRAM 10110**, so the cross-opp Program Admin Report rollup is **program-owned**
-(viewed via `&program_id=10110`; program-owned workflow support = connect-labs #945/#946/#948).
-
-- **Northern** (10010, Amara Nwosu): 10 solid FLWs, no flags → aggregate reads **SOP MET**.
-- **Central** (10011, Bakary Diallo): two bad MUAC distributions → **BELOW**. Drill targets:
-  `kadi_c` (Kadi Fofana) flagged wk1/May 11, coached-to-close (audit 4996 / task 5000 closed);
-  `lola_c` (Lola Kargbo) flagged wk2/May 18, investigation still open (audit 4997 / task 5001).
-- **Eastern** (10012, Chidi Eze): two misleading-MUAC-photo FLWs the AI image review flags →
-  **BELOW**. Drill target: `vida_c` (Vida Kargbo) suspended for misleading photos (wk2/May 18).
-
-Realized PAR: program-owned def 5003, run 5005, `program_id=10110`
-(`/labs/workflow/5003/run/?run_id=5005&program_id=10110`).
-
-## Requirements (evidence)
-
-- Operator brief: OES/ECF nutrition program-management demo; arc program manager → network
-  manager → FLW → individual child (MUAC recovery over the review weeks + the audit photos).
-- Env + program-owned workflow support shipped: connect-labs PRs #945 #946 #948 #949.
-- Modeled on the proven 2-opp walkthrough `docs/walkthroughs/program-admin-report.yaml`.
-
-## Narrative direction
-
-Program manager Priya reads three network managers on one grid, sees which met the SOP and which
-fell below, and drills from any cell down to the network manager's own review, the flagged
-worker's audited child-MUAC photos, and the AI coaching transcript that resolved (or is still
-resolving, or suspended) each case. Closing frame: the SOP MET vs BELOW contrast across the three
-managers — the sixty-second call on where her attention goes this week.
-
-## Known gap (honesty)
-
-A dedicated per-child MUAC-trajectory dashboard (red→yellow→green over the weeks) is NOT built;
-the child's recovery is shown via the audited MUAC photos + the closed coaching outcome. Tracked
-as WhyBrief gap G1 (CAPABILITY, claim_ref S4).
+- Synthetic **program 10672**, mirroring real program 263 (org `dimagi-ng-rutf`), seeded by
+  `seed_rutf_rounds` in `scripts/walkthroughs/oes-demo/seed_remote.py`. Real facts (suppliers,
+  prices, dates) come from the Drive document at runtime and NEVER enter the repo.
+- Walkthrough setup (to be built): `scripts/walkthroughs/supply-sophie-rutf/seed.py` on the
+  `scripts/walkthroughs/supply-test-kits/seed.py` pattern, emitting `program_id`,
+  `round1_tender_id`, `round2_tender_id`, `quote_pack_missing_id`, `as_of_date` to `outputs.json` (ignored by that directory's own `.gitignore`, already in place).
+  `rerun: per_render` — scene 7 writes (award); the reply before scene 5 is a seeder write.
+- The seeder must replay round 1 as dated history (some writes as the ACE agent over mcp, some as
+  Sophie over web, one replayed twice), seed round 2's three quotes as AI-entered, add an
+  off-camera step recording the pack-configuration reply as an MCP correction by ACE, and make round 2 public. No other buyers' tenders are
+  seeded (controller ruling: invented buyer orgs would pollute the real org directory).
 
 ## Current phase
 
-UPLOADED — EXTERNALLY PUBLISHED. Run `nutrition-demo-2026-07-22-003` **iter1**
-(2026-07-22). Resumed run 003 to finish the two undone items: (1) NARRATED hero
-(prior 003 hero was silent) and (2) re-capture scene 12 after workflow 5017
-render-code v3 added the MUAC-recovery **SPARKLINE**. Re-rendered the FULL 12-scene
-spec (55/55 actions ok). **CONVERGED iter1: concept 5.0 (up from 4.0), user 4.0,
-stop_done.** The sparkline resolved scene-12's two prior sub-5 caps against their
-own pre-registered fix (visual_polish 4→5, claim_reality 4→5 — the arc red→green is
-now visible in one frame). user-artifact trust stays 4 (Beneficiary-N privacy
-anon, unaffected by the curve). Narrated hero: 110.5s, reused run002 s1-s11 VO +
-new s12 payoff line + child-landing outro; timing 4.44, video-judge 4.0, dead-air
-under threshold. Caught+fixed a video-render defect (s12 action-mark on a deep row
-in the tall page → page-fit zoom → 18% strip; re-mapped clip to the settled panel
-region + dropped the action-mark → full-width curve). **EXTERNAL-published via
-`ddd-upload --release-approved`** (external_release gate created+resolved+audited,
-phase→uploaded), narrative v3 (ff96b68a).
-- /ddd package: `https://labs.connect.dimagi.com/canopy/w/connect/ddd/nutrition-demo/nutrition-demo-2026-07-22-003`
-- Clean release page (public, anon-viewable): `https://labs.connect.dimagi.com/canopy/ddd-release/nutrition-demo/nutrition-demo-2026-07-22-003?t=REDACTED-SEE-CANOPY-WEB`
-  (narrative already public → publishing auto-minted is_public+share_token; anon
-  access confirmed, scene-12 recovery curve renders).
-- Note: the WhyBrief "known gap G1" below is now BUILT (SAM Follow-up Timeline
-  wf 5017), so the per-child MUAC-trajectory dashboard exists as scene 12.
+PHASE 0 + SPEC AUTHORED (2026-09-26). Evidence audit, why-brief (why-qa pass, why-eval pass 4),
+unified spec (validate pass, spec-qa pass, narrative-coherence pass) and actionability eval
+(iteration 1 warn 3 -> narration revised -> iteration 2 pass 4) are done. The concept_change gate
+is recorded as agreed in the run dir's `narrative-agreement.yaml`. Nothing rendered, recorded, judged or deployed.
 
-### Prior phase
-CONVERGED (concept 4.0/5 pass, user-artifact 4.0/5 pass) — run
-`nutrition-demo-2026-07-22-003` (2026-07-22), FULL 12-scene spec incl. the NEW
-closing **scene 12 "Priya follows one child's recovery"** (SAM Follow-up Timeline,
-workflow 5017 / opp 10036). Scenes 1-11 render byte-identical to run 002's 5.0;
-scene 12 (the only new scene) drives the sub-5s (visual_polish 4, trust 4,
-claim_reality 4) — the per-child MUAC recovery reads as a clean color-coded list
-(red 11.0cm → green 13.5cm recovered) rather than a bespoke curve; children shown
-as privacy-anon "Beneficiary N" (real source child_name null). Narrative **v3**
-posted to canopy-web (review ff96b68a). Internal `/ddd` package published (--stuck):
-`https://labs.connect.dimagi.com/canopy/w/connect/ddd/nutrition-demo/nutrition-demo-2026-07-22-003`.
-Scene 12 required: (a) broadening opp 10036 allowed_domains to +@dimagi-ai.com via
-ECS (deployed labs :506 lacks the dimagi-internal is_accessible_to bypass), (b)
-pointing scene 12 at saved run_id=5019 (workflow 5017 executes live via "Create
-Run"), (c) fixing the drill to the row's Timeline button. External/public release
-+ a narrated-VO hero (run 002-style) remain as gated operator finishing steps.
+**Next:** build the CAPABILITY gaps (why-brief G1-G5, G10 and the spec's per-scene features),
+i.e. the design spec §3-§5, then run §7's gap walk. No render until that walk comes back empty.
+Then `split_spec` the draft into `supply-sophie-rutf.recipe.yaml` + lock via canopy-web.
 
-### Prior phase
-CONVERGED at 5.0/5 (both judges) — run `nutrition-demo-2026-07-22-002` (2026-07-22).
-Up from the prior run's 4.0. Both prior gate root-causes fixed & verified: scene-3
-Actions-column clip (→ `video_viewport_width: 1600`, full table renders) and the
-claim_reality badge over-application (→ connect-labs #954: exactly 2 Hyperzoomed
-badges live). One mechanical render-recipe fix this run: scene-10 `text:Hyperzoomed`
-→ `css:text=/^Hyperzoomed$/` (the substring selector grabbed a hidden `Not
-Hyperzoomed` span as `.first` after the data fix). Narrated hero re-rendered fresh
-with corrected s10 VO; timing 4.44, video-judge 4.0. Internal `/ddd` package
-published (`--stuck`, OAuth-gated) under narrative v2:
-`https://labs.connect.dimagi.com/canopy/w/connect/ddd/nutrition-demo/nutrition-demo-2026-07-22-002`.
-External stakeholder publish remains a gated operator action (`ddd-upload` WITHOUT
-`--stuck`). Run stays iterable.
+## How the loop runs this time (design spec §7)
+
+1. Gap walk before any render; build everything it finds.
+2. Judge once, then fix the backlog as ONE PR and one deploy; re-judge only scenes with findings;
+   full render every third batch and at the end.
+3. Deploy gate: render only when `/health/` `git_sha`, sampled until every sample agrees, equals
+   the fix PR's merge commit.
+4. Progress = open-finding count, mean cell score, confirmed-cap count. Convergence stays min
+   cell ≥ 4 and user ≥ 4.
+5. One narrative at a time against labs; video only after convergence.
+
+## Repo facts that bite supply renders (see learnings.md for detail)
+
+- Deploy only from `main`; a labs deploy mid-seed yields new-schema/old-code errors — check
+  `gh run list --workflow deploy-labs.yml` before blaming the product.
+- Tom-select pickers: hold after `type` before `Enter`, and press `Tab` before a submit.
+- `wait_for` text only the SAVED page has, never text the form also contains.
+- Start effecting scenes with a short hold or a `wait_for` on the scene's own page, or the
+  before-frame is the previous scene's page.
+- `ddd upload` only finds `<slug>.yaml`; with a split recipe, compose a temporary one and put
+  `why_brief.yaml` in the run dir.
+- This repo is PUBLIC: no real supplier names, prices, emails, people other than first name
+  "Sophie", or Drive contents in committed files.
