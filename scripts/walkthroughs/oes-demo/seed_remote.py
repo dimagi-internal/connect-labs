@@ -1381,6 +1381,26 @@ def _invoice_arrives_again(access, replay, contract, invoice_data, invoice):
     return True
 
 
+def _consignment_days(section, dates):
+    """The consignment's days, refused unless they run in order.
+
+    Returns (dispatched_on, eta_original, expected_on, eta_slip_learned_on,
+    slips). Pure, so `seed_rutf_rounds` can refuse a bad document before its
+    first write rather than halfway through the seed.
+    """
+    dispatched_on = section["dispatched_on"]
+    original, final, learned = (section.get(key) for key in ("eta_original", "expected_on", "eta_slip_learned_on"))
+    slips = bool(original and final and learned and original != final)
+    order_days = [dates["signed_on"], dispatched_on] + ([learned, dates["received_on"]] if slips else [])
+    parsed = [_past_day(value, "a consignment day") for value in order_days]
+    if parsed != sorted(parsed):
+        raise ValueError(
+            "the consignment's days must run signed_on <= dispatched_on <= eta_slip_learned_on <= "
+            f"received_on; the document gives {order_days}"
+        )
+    return dispatched_on, original, final, learned, slips
+
+
 def _seed_consignment(access, chain, contract, dates, replay):
     """The consignment round 1 was delivered in, and the day its ETA slipped.
 
@@ -1396,20 +1416,11 @@ def _seed_consignment(access, chain, contract, dates, replay):
     if not section or not section.get("dispatched_on"):
         print("rutf round 1: the document has no shipment with a dispatched_on; no consignment seeded")
         return {}
-    dispatched_on = section["dispatched_on"]
-    original, final, learned = (section.get(key) for key in ("eta_original", "expected_on", "eta_slip_learned_on"))
-    slips = bool(original and final and learned and original != final)
+    dispatched_on, original, final, learned, slips = _consignment_days(section, dates)
     if not slips:
         print(
             "rutf round 1: the document states no ETA slip (needs shipment.eta_original, "
             "shipment.expected_on and shipment.eta_slip_learned_on); the consignment is seeded without one"
-        )
-    order_days = [dates["signed_on"], dispatched_on] + ([learned, dates["received_on"]] if slips else [])
-    parsed = [_past_day(value, "a consignment day") for value in order_days]
-    if parsed != sorted(parsed):
-        raise ValueError(
-            "the consignment's days must run signed_on <= dispatched_on <= eta_slip_learned_on <= "
-            f"received_on; the document gives {order_days}"
         )
 
     reference = section.get("reference") or ""
@@ -1663,7 +1674,11 @@ def seed_rutf_rounds(data, scopes):
     section = data["rutf_rounds"]
     _require_replayable(RUTF_PROGRAM_ID)
     # Everything that can be refused is refused before the first write.
-    _chain_dates(without_commentary(section["round_one"]))
+    round_one = without_commentary(section["round_one"])
+    round_one_dates = _chain_dates(round_one)
+    shipment = round_one.get("shipment") or {}
+    if shipment.get("dispatched_on"):
+        _consignment_days(shipment, round_one_dates)
     _round_two_opens(without_commentary(section["round_two"]))
     _check_market_buyers(data)
     replay = Replay(RUTF_PROGRAM_ID, demo_persona_users(), "rutf")
@@ -1757,15 +1772,23 @@ def record_rutf_clarification(data):
     )
     if supplier is None:
         raise ValueError(f"no round-2 supplier named {clarification['supplier_label']!r}")
-    # The quote as it stands. After the correction that is the new version,
-    # and the replay below answers without touching it.
+    # The quote as the supplier first sent it: the first version, which
+    # supersedes nothing. Always that one, so a second forwarding of the same
+    # reply is the same write -- same quote, same corrections -- and replays
+    # (the replay key includes the payload) instead of correcting the
+    # correction.
     quote = _found(
         op(access, "quote_list", tender_id=round_["id"]),
-        lambda row: row.get("supplier_id") == supplier["id"],
+        lambda row: row.get("supplier_id") == supplier["id"] and not row.get("supersedes_quote_id"),
     )
     if quote is None:
         raise ValueError(f"{clarification['supplier_label']!r} has no quote on round 2")
-    if quote.get("received_on") and answered_on < str(quote["received_on"])[:10]:
+    if not quote.get("received_on"):
+        raise ValueError(
+            f"{clarification['supplier_label']!r}'s round-2 quote has no received_on, so there is no telling "
+            "whether the clarification was answered before the quote arrived"
+        )
+    if answered_on < str(quote["received_on"])[:10]:
         raise ValueError(f"the clarification is answered on {answered_on}, before the quote it answers arrived")
 
     replay = Replay(RUTF_PROGRAM_ID, demo_persona_users(), "rutf-r2")
