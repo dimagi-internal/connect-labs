@@ -1,9 +1,108 @@
-schema_version: 1
-narrative_slug: supply-sophie-rutf
-problem: Sophie, the program manager who runs Connect-RUTF procurement for Dimagi, is the only person inside the supply record while suppliers and freight forwarders reach it by email through an AI that types for her, and because every record is overwritten in place she cannot tell what changed, who or what entered it, on what evidence, or what the program believed on an earlier date.
+gaps:
+- id: G1
+  type: CAPABILITY
+  detail: The /supply/ overview today shows a stage funnel and checks, not one line
+    per tender and order with stage, waiting-on, last change (when and who), stale
+    flag and AI badge, and its header does not read "Connect-RUTF · Dimagi, buyer
+    of record". The stale rules (outreach unanswered 14 days after sent_on, expected_on
+    passed without receipt, a basis not_specified the comparison needs) are not computed.
+  claim_ref: S1
+  proposed_action: Build design spec docs/superpowers/specs/2026-09-26-supply-sophie-history-design.md
+    §4.1-4.2 (overview rows, stale flags, AI badge, program framing).
+- id: G2
+  type: CAPABILITY
+  detail: No Revision model, write context, source {ref, excerpt} on write operations,
+    idempotent replay, or actor badge exists in supply_chain; the tender and order
+    detail pages have no timeline and no per-model plain-language field formatter.
+  claim_ref: S2
+  proposed_action: Build design spec §3.1-3.4 (Revision, capture in call_operation
+    plus signals, source and replay, provenance badge with LABS_AGENT_ACCOUNT_EMAILS)
+    and §4.3 (timeline on tender and order detail).
+- id: G3
+  type: CAPABILITY
+  detail: seed_rutf_rounds writes round 1 as current state with no dated history,
+    no sources, no ACE-agent writes over mcp and no seed-only recorded_at override;
+    round 2 is not seeded as a public market tender (no other buyer organisations
+    are to be invented, since they would pollute the real org directory); there is
+    no scripts/walkthroughs/supply-sophie-rutf/seed.py wrapper emitting the recorder's
+    outputs (program_id, round1_tender_id, round2_tender_id, quote_pack_missing_id,
+    as_of_date).
+  claim_ref: S2
+  proposed_action: Extend scripts/walkthroughs/oes-demo/seed_remote.py per design
+    spec §5 (dated replay with synthetic Message-IDs and excerpts, some steps as the
+    ACE agent, override refused unless scopes.is_synthetic, one step replayed twice,
+    round 2 public) and add scripts/walkthroughs/supply-sophie-rutf/seed.py on the
+    supply-test-kits pattern.
+- id: G4
+  type: CAPABILITY
+  detail: There is no ?as_of date control, rolled-back rewind, as-of banner, or refusal
+    of writes carrying as_of; the only as_of in supply_chain is a stock-ledger date
+    filter.
+  claim_ref: S3
+  proposed_action: Build design spec §3.5 and §4.4 (rewind inside a rolled-back transaction,
+    header date control, banner, write controls hidden and refused), plus the §3.5
+    migration that writes a create Revision for every pre-existing supply row at its
+    created_at (channel command), without which program 10672's existing rows cannot
+    be rewound.
+- id: G5
+  type: CAPABILITY
+  detail: A quote_correct written over MCP does not carry a source, the tender timeline
+    does not show corrections on its quotes, and the seeder has no step that records
+    a supplier's reply (the pack configuration round 2's first quote left out) as
+    the ACE agent with the reply as its excerpt. Correct and Void on AI-entered lines
+    (design spec §4.3) are still to be built but are not filmed in this narrative.
+  claim_ref: S4
+  proposed_action: Build design spec §3.3 source on quote_correct, §4.3 timeline over
+    the tender's quotes, and a seed_rutf_rounds step recording the reply through quote_correct
+    over mcp with a synthetic Message-ID and excerpt.
+- id: G6
+  type: RESEARCH
+  detail: The ETA dates (5 Sep to 19 Sep) and the 20 Aug as-of date come from the
+    design spec's example, not from round 1's real shipment record.
+  claim_ref: S2
+  proposed_action: Confirm round 1's actual expected and revised arrival dates with
+    Sophie and carry them in the Drive document, not the repo.
+- id: G7
+  type: DECISION
+  detail: The 2026-09-11 design (§17) records that the local partner placed round
+    1's order to claim local duty relief, while this narrative frames Dimagi as buyer
+    of record; an earlier run also surfaced the seeder using the real Dimagi org as
+    buyer.
+  resolved: The owner agreed the framing "Connect-RUTF · Dimagi, buyer of record"
+    in conversation on 2026-09-26 (design spec §4.1).
+  claim_ref: S1
+  proposed_action: None further; if round 1's contract carries partner_org, the overview
+    names the program's buyer of record and the order shows its own.
+- id: G8
+  type: DECISION
+  detail: checks._sourcing deliberately removed a "has not replied" finding as a judgement
+    about silence; the overview's stale flag reintroduces a 14-day threshold.
+  resolved: Design spec §4.2, approved by the owner 2026-09-26, sets the 14-day stale
+    rule on the overview; the checks panel stays unchanged.
+  claim_ref: S1
+  proposed_action: None further.
+- id: G9
+  type: CAPABILITY
+  detail: The overview does not yet show an award as the tender's last change with
+    its actor, so the closing beat depends on G1 and G2.
+  claim_ref: S6
+  proposed_action: Covered by building G1 and G2; verify the award row on the overview
+    after they land.
+- id: G10
+  type: CAPABILITY
+  detail: The supplier's reply must land after the comparison scene is filmed and
+    before the next, but the canopy recorder runs setup only before a render and has
+    no off-camera step between scenes.
+  claim_ref: S4
+  proposed_action: Add an off-camera setup step between scenes to the canopy recorder
+    (follow-up in the canopy repo), or split the render into two takes with the reply
+    recorded between them.
 spine:
 - id: S1
-  claim: Sophie's overview shows only her program's tenders and orders, each with its stage, what it is waiting on, when it last changed and who changed it, a stale flag where a supplier has been silent for two weeks or a quote lacks a basis the comparison needs, and a badge on rows the AI last wrote.
+  claim: Sophie's overview shows only her program's tenders and orders, each with
+    its stage, what it is waiting on, when it last changed and who changed it, a stale
+    flag where a supplier has been silent for two weeks or a quote lacks a basis the
+    comparison needs, and a badge on rows the AI last wrote.
   status: grounded
   evidence:
   - ref: EV-006
@@ -16,9 +115,15 @@ spine:
     kind: implemented
   - ref: EV-023
     kind: implemented
-  rationale: Sophie manages one program, not the world's supply chain, and most of her suppliers do not reply at all, so the first screen has to say where each round stands and which silences have gone on long enough to chase. The badge matters because most of what she reads was typed by an AI from email she forwarded.
+  rationale: Sophie manages one program, not the world's supply chain, and most of
+    her suppliers do not reply at all, so the first screen has to say where each round
+    stands and which silences have gone on long enough to chase. The badge matters
+    because most of what she reads was typed by an AI from email she forwarded.
 - id: S2
-  claim: Round 1's timeline lists every change from quote to payment, newest first, in plain language, and the line where the shipment's expected arrival moved from 5 Sep to 19 Sep is badged as entered by the ACE agent, with the forwarder's words that justified it one click away.
+  claim: Round 1's timeline lists every change from quote to payment, newest first,
+    in plain language, and the line where the shipment's expected arrival moved from
+    5 Sep to 19 Sep is badged as entered by the ACE agent, with the forwarder's words
+    that justified it one click away.
   status: grounded
   evidence:
   - ref: EV-001
@@ -37,9 +142,15 @@ spine:
     kind: implemented
   - ref: EV-029
     kind: assumed
-  rationale: The ETA slip is the case that shows the record had no memory; overwriting the date erased what the program had believed. Every write already passes one choke point, so a revision with actor, channel and source can be written there for every channel, and an AI-typed change is only trustworthy if its evidence is kept beside it.
+  rationale: The ETA slip is the case that shows the record had no memory; overwriting
+    the date erased what the program had believed. Every write already passes one
+    choke point, so a revision with actor, channel and source can be written there
+    for every channel, and an AI-typed change is only trustworthy if its evidence
+    is kept beside it.
 - id: S3
-  claim: Set to 20 Aug, the same overview shows round 1 in transit with an expected arrival of 5 Sep and no round 2 at all, under a banner that names the date, with every write control hidden, and one click returns it to today.
+  claim: Set to 20 Aug, the same overview shows round 1 in transit with an expected
+    arrival of 5 Sep and no round 2 at all, under a banner that names the date, with
+    every write control hidden, and one click returns it to today.
   status: grounded
   evidence:
   - ref: EV-005
@@ -48,9 +159,17 @@ spine:
     kind: documented
   - ref: EV-009
     kind: documented
-  rationale: Once every change carries a recorded time, the state on any past date is recoverable by undoing the later changes, so "what did we think on 20 Aug?" becomes a page rather than an argument. Hiding the write controls keeps a look at the past from becoming an edit to the present.
+  rationale: Once every change carries a recorded time, the state on any past date
+    is recoverable by undoing the later changes, so "what did we think on 20 Aug?"
+    becomes a page rather than an argument. Hiding the write controls keeps a look
+    at the past from becoming an edit to the present.
 - id: S4
-  claim: On round 2's comparison each quote names the one fact that keeps it out of the ranking and the question to ask that supplier; when one supplier replies with the missing fact, the AI reading Sophie's forwarded mail records it as a correction to that quote with the reply quoted as its source, the correction appears on round 2's timeline, and the quote joins the ranking with a cost per carton and per child treated.
+  claim: On round 2's comparison each quote names the one fact that keeps it out of
+    the ranking and the question to ask that supplier; when one supplier replies with
+    the missing fact, the AI reading Sophie's forwarded mail records it as a correction
+    to that quote with the reply quoted as its source, the correction appears on round
+    2's timeline, and the quote joins the ranking with a cost per carton and per child
+    treated.
   status: grounded
   evidence:
   - ref: EV-011
@@ -69,9 +188,15 @@ spine:
     kind: implemented
   - ref: EV-032
     kind: implemented
-  rationale: Round 2's quotes cannot be compared because each supplier left one fact out, and the product already names it and phrases the question. Suppliers answer by email, so the answer enters through the AI as the same append-only correction a person would make; keeping the reply as its source is what lets Sophie trust a ranking that moved without her typing.
+  rationale: Round 2's quotes cannot be compared because each supplier left one fact
+    out, and the product already names it and phrases the question. Suppliers answer
+    by email, so the answer enters through the AI as the same append-only correction
+    a person would make; keeping the reply as its source is what lets Sophie trust
+    a ranking that moved without her typing.
 - id: S5
-  claim: On the market, Sophie sees round 2 exactly as a supplier does, showing the request it publishes (quantity, delivery point, deadline, pack and shelf-life asks) and none of her quotes, sources or history.
+  claim: On the market, Sophie sees round 2 exactly as a supplier does, showing the
+    request it publishes (quantity, delivery point, deadline, pack and shelf-life
+    asks) and none of her quotes, sources or history.
   status: grounded
   evidence:
   - ref: EV-008
@@ -80,9 +205,13 @@ spine:
     kind: implemented
   - ref: EV-009
     kind: documented
-  rationale: The history and the email excerpts are private working evidence of her program; the market listing is what every supplier sees, so the boundary between the two has to be visible, not assumed.
+  rationale: The history and the email excerpts are private working evidence of her
+    program; the market listing is what every supplier sees, so the boundary between
+    the two has to be visible, not assumed.
 - id: S6
-  claim: Sophie awards round 2 provisionally to the quote that answered, writing that it states everything needed to cost it and comes from the same manufacturer as round 1, and her overview shows round 2 awarded, by Sophie, today.
+  claim: Sophie awards round 2 provisionally to the quote that answered, writing that
+    it states everything needed to cost it and comes from the same manufacturer as
+    round 1, and her overview shows round 2 awarded, by Sophie, today.
   status: grounded
   evidence:
   - ref: EV-014
@@ -93,57 +222,14 @@ spine:
     kind: implemented
   - ref: EV-006
     kind: documented
-  rationale: An award is a decision with a reason, frozen beside the comparison, and it is provisional whenever something was left out of the ranking. Closing on the overview shows the decision has joined the same record of who did what and when that the story opened on.
-gaps:
-- id: G1
-  type: CAPABILITY
-  claim_ref: S1
-  detail: The /supply/ overview today shows a stage funnel and checks, not one line per tender and order with stage, waiting-on, last change (when and who), stale flag and AI badge, and its header does not read "Connect-RUTF · Dimagi, buyer of record". The stale rules (outreach unanswered 14 days after sent_on, expected_on passed without receipt, a basis not_specified the comparison needs) are not computed.
-  proposed_action: Build design spec docs/superpowers/specs/2026-09-26-supply-sophie-history-design.md §4.1-4.2 (overview rows, stale flags, AI badge, program framing).
-- id: G2
-  type: CAPABILITY
-  claim_ref: S2
-  detail: No Revision model, write context, source {ref, excerpt} on write operations, idempotent replay, or actor badge exists in supply_chain; the tender and order detail pages have no timeline and no per-model plain-language field formatter.
-  proposed_action: Build design spec §3.1-3.4 (Revision, capture in call_operation plus signals, source and replay, provenance badge with LABS_AGENT_ACCOUNT_EMAILS) and §4.3 (timeline on tender and order detail).
-- id: G3
-  type: CAPABILITY
-  claim_ref: S2
-  detail: seed_rutf_rounds writes round 1 as current state with no dated history, no sources, no ACE-agent writes over mcp and no seed-only recorded_at override; round 2 is not seeded as a public market tender (no other buyer organisations are to be invented, since they would pollute the real org directory); there is no scripts/walkthroughs/supply-sophie-rutf/seed.py wrapper emitting the recorder's outputs (program_id, round1_tender_id, round2_tender_id, quote_pack_missing_id, as_of_date).
-  proposed_action: Extend scripts/walkthroughs/oes-demo/seed_remote.py per design spec §5 (dated replay with synthetic Message-IDs and excerpts, some steps as the ACE agent, override refused unless scopes.is_synthetic, one step replayed twice, round 2 public) and add scripts/walkthroughs/supply-sophie-rutf/seed.py on the supply-test-kits pattern.
-- id: G4
-  type: CAPABILITY
-  claim_ref: S3
-  detail: There is no ?as_of date control, rolled-back rewind, as-of banner, or refusal of writes carrying as_of; the only as_of in supply_chain is a stock-ledger date filter.
-  proposed_action: Build design spec §3.5 and §4.4 (rewind inside a rolled-back transaction, header date control, banner, write controls hidden and refused), plus the §3.5 migration that writes a create Revision for every pre-existing supply row at its created_at (channel command), without which program 10672's existing rows cannot be rewound.
-- id: G5
-  type: CAPABILITY
-  claim_ref: S4
-  detail: A quote_correct written over MCP does not carry a source, the tender timeline does not show corrections on its quotes, and the seeder has no step that records a supplier's reply (the pack configuration round 2's first quote left out) as the ACE agent with the reply as its excerpt. Correct and Void on AI-entered lines (design spec §4.3) are still to be built but are not filmed in this narrative.
-  proposed_action: Build design spec §3.3 source on quote_correct, §4.3 timeline over the tender's quotes, and a seed_rutf_rounds step recording the reply through quote_correct over mcp with a synthetic Message-ID and excerpt.
-- id: G6
-  type: RESEARCH
-  claim_ref: S2
-  detail: The ETA dates (5 Sep to 19 Sep) and the 20 Aug as-of date come from the design spec's example, not from round 1's real shipment record.
-  proposed_action: Confirm round 1's actual expected and revised arrival dates with Sophie and carry them in the Drive document, not the repo.
-- id: G7
-  type: DECISION
-  claim_ref: S1
-  detail: The 2026-09-11 design (§17) records that the local partner placed round 1's order to claim local duty relief, while this narrative frames Dimagi as buyer of record; an earlier run also surfaced the seeder using the real Dimagi org as buyer.
-  resolved: The owner agreed the framing "Connect-RUTF · Dimagi, buyer of record" in conversation on 2026-09-26 (design spec §4.1).
-  proposed_action: None further; if round 1's contract carries partner_org, the overview names the program's buyer of record and the order shows its own.
-- id: G8
-  type: DECISION
-  claim_ref: S1
-  detail: checks._sourcing deliberately removed a "has not replied" finding as a judgement about silence; the overview's stale flag reintroduces a 14-day threshold.
-  resolved: Design spec §4.2, approved by the owner 2026-09-26, sets the 14-day stale rule on the overview; the checks panel stays unchanged.
-  proposed_action: None further.
-- id: G9
-  type: CAPABILITY
-  claim_ref: S6
-  detail: The overview does not yet show an award as the tender's last change with its actor, so the closing beat depends on G1 and G2.
-  proposed_action: Covered by building G1 and G2; verify the award row on the overview after they land.
-- id: G10
-  type: CAPABILITY
-  claim_ref: S4
-  detail: The supplier's reply must land after the comparison scene is filmed and before the next, but the canopy recorder runs setup only before a render and has no off-camera step between scenes.
-  proposed_action: Add an off-camera setup step between scenes to the canopy recorder (follow-up in the canopy repo), or split the render into two takes with the reply recorded between them.
+  rationale: An award is a decision with a reason, frozen beside the comparison, and
+    it is provisional whenever something was left out of the ranking. Closing on the
+    overview shows the decision has joined the same record of who did what and when
+    that the story opened on.
+problem: Sophie, the program manager who runs Connect-RUTF procurement for Dimagi,
+  is the only person inside the supply record while suppliers and freight forwarders
+  reach it by email through an AI that types for her, and because every record is
+  overwritten in place she cannot tell what changed, who or what entered it, on what
+  evidence, or what the program believed on an earlier date.
+narrative_slug: supply-sophie-rutf
+schema_version: 1

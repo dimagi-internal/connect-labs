@@ -1,1 +1,6 @@
 outputs.json
+.clarification.json
+.watcher.pid
+watcher.log
+.drive-folder
+.sophie-storage-state.json
