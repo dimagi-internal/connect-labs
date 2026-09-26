@@ -106,7 +106,12 @@ def post_receipt(receipt, commodity, program_id) -> list[Movement]:
         for line in receipt.lines.all()
         if line.quantity_accepted and line.quantity_accepted > 0
     ]
-    return Movement.objects.bulk_create(movements)
+    # One save each, not `bulk_create`: a bulk insert sends no `post_save`,
+    # so the movements would never reach history and an as-of rewind past the
+    # receipt could not delete the receipt they PROTECT.
+    for movement in movements:
+        movement.save()
+    return movements
 
 
 @transaction.atomic

@@ -1,22 +1,29 @@
 """Django pages for the supply domain.
 
-Every mutation goes through an operation, so the web UI can never do something
-the API and MCP surfaces cannot. OperationBase.op() is the only way a view
-reaches the domain.
+Every mutation goes through an operation (OperationBase.op()), so the web UI
+can never do something the API and MCP surfaces cannot. Read-only projections
+(history timelines, standing.py's overview) are helpers that read the models
+directly, each filtered by program.
 """
 
 from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 
+from connect_labs.labs.context import get_org_data
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.checks import course_applies_to_category, courses_carried_by_kits
+from connect_labs.supply_chain.history.as_of import end_of_day
+from connect_labs.supply_chain.history.timeline import timeline_for_contract
+from connect_labs.supply_chain.identity import IdentityUnresolved, resolve_org
 from connect_labs.supply_chain.models import SupplierOffering
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
+from connect_labs.supply_chain.standing import standing_rows
 
 
 @method_decorator(login_required, name="dispatch")
@@ -250,9 +257,24 @@ class DomainHomeView(OperationBase):
     order; that came out, because prioritising is a judgement about what
     matters today and the database does not contain what it would take to
     make it. Grouping by who can answer is routing, which IS a fact.
+
+    Above both, where everything stands (standing.py): one line per tender
+    and order, ordered by last change and not by urgency, for the same
+    reason. Its stale flags are stated facts with their counts and days.
     """
 
     template_name = "supply_chain/home.html"
+
+    def _program_heading(self, program_id, org):
+        """ "Connect-RUTF · Dimagi": the program by name, and the organisation acting in it.
+
+        No "buyer of record" after the org: a local partner may place an
+        order, so each order row names its own buyer where it differs.
+        """
+        programs = get_org_data(self.request).get("programs") or []
+        name = next((p.get("name") for p in programs if str(p.get("id")) == str(program_id) and p.get("name")), None)
+        name = name or f"Program {program_id}"
+        return f"{name} · {org.name}" if org is not None else name
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -262,6 +284,26 @@ class DomainHomeView(OperationBase):
             # rather than inventing a scope, and a half-rendered page is
             # worse than an explicit "choose a programme".
             return context
+
+        # The program the data access was authorised for, not re-read off
+        # the request: the same scope every operation on this page uses.
+        access = _access(self.request)
+        program_id = access.program_id
+        try:
+            org = resolve_org(access)
+        except IdentityUnresolved:
+            org = None
+        # Under as-of the page runs inside the rewound transaction, so the
+        # rows are the past; "today" is the as-of day and the log is cut there.
+        as_of = getattr(self.request, "supply_as_of", None)
+        context["program_heading"] = self._program_heading(program_id, org)
+        context["standing"] = standing_rows(
+            int(program_id),
+            as_of or timezone.localdate(),
+            until=as_of,
+            own_org_id=org.pk if org is not None else None,
+        )
+        context["standing_now"] = end_of_day(as_of) if as_of else timezone.now()
 
         commodity_slug = self.request.GET.get("commodity") or None
         commodities = self.op("commodity_list")
@@ -685,6 +727,13 @@ class OrderDetailView(OperationBase):
             for c in late
             if c["kind"] == "shipment_overdue" and c["subject"]["id"] in shipment_ids
         }
+        # What changed on this order and its children, and who told us. Scoped
+        # by this program as well as the order, and cut at the as-of date.
+        context["timeline"] = timeline_for_contract(
+            contract_id,
+            program_id=_access(self.request).program_id,
+            until=getattr(self.request, "supply_as_of", None),
+        )
         return context
 
 

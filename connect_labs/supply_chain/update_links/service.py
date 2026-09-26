@@ -748,24 +748,40 @@ def submit(link, action, data) -> dict:
         raise ValueError(f"no action {action!r}")
 
     operation, payload, audit_action = handler(scope_for(link), data)
-    result = call_operation(operation, link_access(link), payload)
-    if action in AFTER:
-        AFTER[action](link, data, result)
-
-    result_id = result.get("id") if isinstance(result, dict) else None
     now = timezone.now()
-    happened = happened_on(action, data, now)
-    UpdateLinkSubmission.objects.create(
-        link=link,
-        action=action,
-        operation=operation,
-        result_type=operation.split("_", 1)[0],
-        result_id=result_id,
-        summary=_read_back(operation, result_id),
-        contract_id=_contract_of(operation, result_id),
-        submitted_at=now,
-        happened_on=happened,
+
+    def then(result):
+        # Inside the call: the attached letter and the submission row are
+        # part of what the partner did, and history records them against it.
+        if action in AFTER:
+            AFTER[action](link, data, result)
+        result_id = result.get("id") if isinstance(result, dict) else None
+        UpdateLinkSubmission.objects.create(
+            link=link,
+            action=action,
+            operation=operation,
+            result_type=operation.split("_", 1)[0],
+            result_id=result_id,
+            summary=_read_back(operation, result_id),
+            contract_id=_contract_of(operation, result_id),
+            submitted_at=now,
+            happened_on=happened_on(action, data, now),
+        )
+
+    # Channel "supplier", for the link's organisation: the partner reported
+    # this themselves. The access is SYSTEM (no user), which would otherwise
+    # record it as an unattended import.
+    result = call_operation(
+        operation,
+        link_access(link),
+        payload,
+        channel="supplier",
+        acting_org_id=link.org_id,
+        then=then,
     )
+    result_id = result.get("id") if isinstance(result, dict) else None
+    # A queryset update on purpose: when a link was last used is housekeeping,
+    # not a change to the link worth a line of its history.
     UpdateLink.objects.filter(pk=link.pk).update(last_used_at=now)
     audit_record(
         audit_action,

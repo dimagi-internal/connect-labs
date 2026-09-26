@@ -308,6 +308,7 @@ TEMPLATES = [
                 "connect_labs.web.context_processors.page_settings",
                 "connect_labs.web.context_processors.analytics_context",
                 "connect_labs.web.context_processors.chat_widget_context",
+                "connect_labs.supply_chain.history.as_of.as_of_context",
             ],
         },
     }
@@ -582,6 +583,12 @@ LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID = env("LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_
 # Only set this in your local .env if your dev Connect account has no email.
 # Example: LABS_ADMIN_USERNAMES=matt
 LABS_ADMIN_USERNAMES = env.list("LABS_ADMIN_USERNAMES", default=[])
+
+# The labs accounts that AI agents sign in as. A supply write made by one of
+# them is recorded with actor_is_agent=True (supply_chain/history/calls.py), so
+# its history can say an agent made the change. Not a secret; the default is
+# the one agent account in use today.
+LABS_AGENT_ACCOUNT_EMAILS = env.list("LABS_AGENT_ACCOUNT_EMAILS", default=["ace@dimagi-ai.com"])
 
 # S3 bucket for exporting audit/workflow records as CSV backups.
 # When None (default), all export calls are silently skipped.
