@@ -18,7 +18,10 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
-CHANNELS = ("web", "mcp", "api", "command")
+# "supplier": a partner acting for itself -- a bid on the market, or a report
+# through an update link. Set only by trusted in-process callers, never by an
+# MCP or HTTP caller (see `history.calls.run_recorded`).
+CHANNELS = ("web", "mcp", "api", "command", "supplier")
 ACTIONS = ("create", "update", "delete")
 
 
@@ -48,9 +51,16 @@ class OperationCall(_AppendOnly):
 
     program_id = models.IntegerField(null=True, db_index=True)
     operation = models.CharField(max_length=64)
+    # PROTECT on purpose: a user who has supply history cannot be hard-deleted,
+    # because the history would then lose who did it. Deactivate such a user
+    # (is_active=False) instead.
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="+")
     actor_is_agent = models.BooleanField(default=False)
     channel = models.CharField(max_length=16, choices=_choices(CHANNELS))
+    # For channel "supplier": the organisation the partner acted for (a
+    # labs.LabsOrg id). A plain integer, like program_id, so history never
+    # holds an organisation's row in place or cascades with it.
+    acting_org_id = models.IntegerField(null=True, blank=True)
     # The caller's reference for its evidence -- an email Message-ID, a
     # document hash. Blank (never null) so the uniqueness constraint below
     # can exclude blanks with a plain `~Q(source_ref="")`.
@@ -58,8 +68,13 @@ class OperationCall(_AppendOnly):
     # The quoted text that justified the write. Capped at the application
     # layer (2,000 chars per the design doc); the column itself is unbounded.
     source_excerpt = models.TextField(blank=True, default="")
+    # sha256 of the canonical JSON of the validated payload, `source` left
+    # out. Part of the idempotency key: the same evidence producing the same
+    # write is recorded once, but one email quoting two products is two writes.
+    payload_digest = models.CharField(max_length=64, blank=True, default="")
     # The operation's return value, returned again on replay of a duplicate
-    # source_ref.
+    # source_ref. A result over RESULT_LIMIT bytes is stored as
+    # {"truncated": true, "summary": ...} instead (history/calls.py).
     result = models.JSONField(null=True, encoder=DjangoJSONEncoder)
     # Recorded time only -- deliberately NOT auto_now_add, so the demo seeder
     # (Task 2) can backfill a plausible past recorded_at.
@@ -68,7 +83,7 @@ class OperationCall(_AppendOnly):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["program_id", "operation", "source_ref"],
+                fields=["program_id", "operation", "source_ref", "payload_digest"],
                 condition=~Q(source_ref=""),
                 name="supply_opcall_idempotent_source",
             )

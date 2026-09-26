@@ -26,11 +26,20 @@ class Migration(migrations.Migration):
                 (
                     "channel",
                     models.CharField(
-                        choices=[("web", "web"), ("mcp", "mcp"), ("api", "api"), ("command", "command")], max_length=16
+                        choices=[
+                            ("web", "web"),
+                            ("mcp", "mcp"),
+                            ("api", "api"),
+                            ("command", "command"),
+                            ("supplier", "supplier"),
+                        ],
+                        max_length=16,
                     ),
                 ),
+                ("acting_org_id", models.IntegerField(blank=True, null=True)),
                 ("source_ref", models.CharField(blank=True, default="", max_length=512)),
                 ("source_excerpt", models.TextField(blank=True, default="")),
+                ("payload_digest", models.CharField(blank=True, default="", max_length=64)),
                 ("result", models.JSONField(encoder=django.core.serializers.json.DjangoJSONEncoder, null=True)),
                 ("recorded_at", models.DateTimeField(db_index=True, default=django.utils.timezone.now)),
                 (
@@ -79,7 +88,7 @@ class Migration(migrations.Migration):
             model_name="operationcall",
             constraint=models.UniqueConstraint(
                 condition=models.Q(("source_ref", ""), _negated=True),
-                fields=("program_id", "operation", "source_ref"),
+                fields=("program_id", "operation", "source_ref", "payload_digest"),
                 name="supply_opcall_idempotent_source",
             ),
         ),

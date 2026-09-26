@@ -16,7 +16,7 @@ import jsonschema
 
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import models, records, serializers
-from connect_labs.supply_chain.history.calls import run_recorded
+from connect_labs.supply_chain.history.calls import payload_digest, run_recorded
 from connect_labs.supply_chain.reference import catalogue as reference_catalogue
 from connect_labs.supply_chain.values import to_wire
 
@@ -89,8 +89,10 @@ SOURCE_SCHEMA = {
     "required": ["ref"],
     "additionalProperties": False,
     "description": (
-        "Evidence for this write: ref is the source email's Message-ID or a document hash; "
-        "the same ref for the same operation is recorded once and replayed."
+        "Evidence for this write: ref is the source email's Message-ID or a document hash. "
+        "The same evidence producing the same write is recorded once: repeating this operation "
+        "with the same ref and the same payload replays the first result. The same ref with a "
+        "different payload (one email quoting two products) is a separate write, and both keep the ref."
     ),
 }
 
@@ -148,7 +150,16 @@ def get_operation(name: str) -> Operation:
     return _REGISTRY[name]
 
 
-def call_operation(name: str, access, payload: dict | None = None, *, channel: str | None = None) -> Any:
+def call_operation(
+    name: str,
+    access,
+    payload: dict | None = None,
+    *,
+    channel: str | None = None,
+    actor=None,
+    acting_org_id: int | None = None,
+    then=None,
+) -> Any:
     """Validate a payload against its operation's schema, then dispatch.
 
     Top-level keys whose value is None are dropped before validation: a
@@ -163,10 +174,15 @@ def call_operation(name: str, access, payload: dict | None = None, *, channel: s
     distinguishes that from an omitted key.
 
     A write runs as a recorded OperationCall (history/calls.py): `channel`
-    names the surface it came through ("mcp", "api"); left unset it is "web"
-    for a request and "command" for a caller with neither user nor request.
-    A read runs exactly as before -- nothing is recorded and no transaction is
-    opened.
+    names the surface it came through ("mcp", "api", "supplier"); left unset
+    it is "web" for a request and "command" for a caller with neither user
+    nor request. A read runs exactly as before -- nothing is recorded and no
+    transaction is opened.
+
+    `actor`, `acting_org_id` and `then` are for trusted in-process callers
+    only (the market, update links): they attribute a SYSTEM-access write to
+    the partner it was made for. The MCP and HTTP adapters never pass them.
+    See `history.calls.run_recorded`.
     """
     operation = get_operation(name)
     payload = {key: value for key, value in (payload or {}).items() if value is not None}
@@ -176,10 +192,21 @@ def call_operation(name: str, access, payload: dict | None = None, *, channel: s
     # on who sent it; before dispatch, because this is the one choke point both
     # the HTTP adapter and the MCP tools pass through, and provenance derived
     # in two places is provenance that can disagree with itself.
+    digest = payload_digest(payload) if operation.is_write else ""
     payload = stamp_provenance(access, operation, payload)
     if not operation.is_write:
         return operation.handler(access, **payload)
-    return run_recorded(operation, access, payload, source, channel)
+    return run_recorded(
+        operation,
+        access,
+        payload,
+        source,
+        channel,
+        digest=digest,
+        actor=actor,
+        acting_org_id=acting_org_id,
+        then=then,
+    )
 
 
 # ---- serialisation helpers ---------------------------------------------
