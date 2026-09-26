@@ -1,0 +1,100 @@
+schema_version: 1
+kind: actionability
+gate: advisory
+live_state_verified: false
+calibration: provisional
+rubric_name: ddd-narrative-actionability-eval
+ran_at: '2026-09-26T15:45:00+00:00'
+spec_path: docs/walkthroughs/supply-sophie-rutf.yaml
+iteration: 2
+previous: verdict-actionability-iter1.yaml (warn, 3) — narration revised on its findings, as-of backfill migration moved to why-brief G4
+
+dimensions:
+  coverage:
+    score: 4
+    weight: 0.35
+    justification: All 23 declared features were inferred by at least two of three derivations (idempotent replay, Void, member-only history now included); only the seed-only recorded_at override refused off synthetic programs, part of seed-round1-history, was implied by none.
+  specificity:
+    score: 4
+    weight: 0.25
+    justification: Every plan names routes, data-testids, a Revision table with field diffs and excerpt, a single record_change writer, and runnable assertions per scene; the as-of rewind is stated as "undo later revisions" rather than as a rolled-back transaction.
+  correctness:
+    score: 4
+    weight: 0.20
+    justification: No derivation now makes the excerpt compulsory; inferences match the declared intent, with one valid divergence (an idempotency key hashed from the Message-ID rather than the operation plus source.ref).
+  consistency:
+    score: 4
+    weight: 0.20
+    justification: The three plans agree on the central mechanic and on every scene's primary action; they differ on secondary details (whether the overview itself is member-gated, 403 vs 404).
+
+overall_score: 4
+overall_rule: lowest
+
+passes:
+- pass_id: d4
+  returned_at: '2026-09-26T15:35:55+00:00'
+  sha256: b30a8fbe19cc4258c54ee5c86341dbb1d3eab5ecdebe06ebd6d2b30e2af68377
+- pass_id: d5
+  returned_at: '2026-09-26T15:36:01+00:00'
+  sha256: 15a0a97b2a02115dab0b7e13dc47dbccbd39bed016a7ec97526b85255a5dd200
+- pass_id: d6
+  returned_at: '2026-09-26T15:36:01+00:00'
+  sha256: d3983ec44927f7c6952ee16c32eca0005cfb153fdf13c55d58fffff9b122d194
+pass_quotes:
+- pass_id: d5
+  quote: On a duplicate key it returns the existing revision and writes nothing.
+- pass_id: d4
+  quote: An AI line has `action-correct` and `action-void`. A web line has neither.
+- pass_id: d6
+  quote: Web revisions render no excerpt element.
+
+verdict: pass
+blocking_reason: null
+
+fix_recommendation: |
+  Optional: in scene "Sophie finds the day round 1's arrival slipped", the backdated history is a
+  seeder concern; keep the recorded_at override out of narration (it is a demo mechanism, design
+  spec §2) and leave it to the seed feature's verify.
+
+capability_gaps:
+  # Every declared feature is a capability to BUILD (none exists in connect_labs/supply_chain
+  # on 2026-09-26); scene -> missing capability, pointing at the design spec sections.
+  sophie-reads-her-program:
+    - overview-program-header (§4.1)
+    - overview-rows with last change and actor (§4.2)
+    - overview-stale-flag, 14-day outreach / passed expected_on / not_specified basis (§4.2)
+    - overview-ai-badge (§4.2, §3.4)
+  the-eta-that-moved:
+    - revision-model, append-only (§3.1)
+    - revision-capture via call_operation write context + model signals (§3.2)
+    - source-idempotency, source {ref, excerpt} + replay (§3.3)
+    - tender-timeline with per-model field formatter (§4.3)
+    - actor-badge-excerpt, LABS_AGENT_ACCOUNT_EMAILS (§3.4)
+    - seed-round1-history, dated replay + seed-only recorded_at override (§5)
+  back-to-twenty-august:
+    - as-of-rewind in a rolled-back transaction, plus backfill migration (§3.5)
+    - as-of-control-banner (§4.4)
+    - as-of-refuses-writes (§4.4)
+  round-two-cannot-be-compared:
+    - compare-ai-badge (§4.2/§4.3)
+    - seed-round2-quotes as AI-entered with sources (§5)
+  sophie-checks-the-ai-against-the-email:
+    - quote-timeline-chain across the supersedes chain (§4.3)
+    - timeline-correct-void links on AI-entered quote lines (§4.3)
+    - seed-misread-excerpt (§5, illustrative per why-brief G6)
+  her-tender-on-the-market:
+    - market-no-history (§4.5)
+    - revisions-member-only (§4.5)
+    - seed-market-buyers, round 2 public (§5)
+  sophie-awards-with-a-reason:
+    - overview-award-row, provisional + actor (§4.2)
+    - award-rationale-timeline (§4.3)
+
+actionability_findings:
+- scene: Sophie finds the day round 1's arrival slipped
+  dimension: coverage
+  severity: low
+  declared_features_missed: []
+  wrong_inferences: []
+  ambiguous_phrases: []
+  fix_recommendation: The seed-only recorded_at override (refused off synthetic programs) is not implied by narration and should not be; it stays in the seed-round1-history verify.

@@ -1,0 +1,96 @@
+schema_version: 1
+kind: actionability
+gate: advisory
+live_state_verified: false
+calibration: provisional
+rubric_name: ddd-narrative-actionability-eval
+ran_at: '2026-09-26T15:40:00+00:00'
+spec_path: docs/walkthroughs/supply-sophie-rutf.yaml
+iteration: 1
+superseded_by: verdict-actionability.yaml
+note: pass d1 was removed from the repository after it was found to name a real manufacturer (public-repo rule); this superseded verdict no longer validates against disk.
+
+dimensions:
+  coverage:
+    score: 3
+    weight: 0.35
+    justification: 20 of 24 declared features were inferred by at least two derivations; source-idempotency and as-of-backfill-migration were inferred by none, and the Void half of timeline-correct-void and the member-only half of revisions-member-only by none.
+  specificity:
+    score: 4
+    weight: 0.25
+    justification: All three plans name routes, data-testids, model fields and assertions for every scene; the as-of reconstruction is described one level up (undo later events) but executably.
+  correctness:
+    score: 3
+    weight: 0.20
+    justification: Two derivations made the source excerpt compulsory for agent writes and refused writes without one, contradicting the design's optional source; otherwise inferences match the declared intent.
+  consistency:
+    score: 4
+    weight: 0.20
+    justification: The three plans agree on the central mechanic (one append-only change log with actor, channel and excerpt feeding overview, timeline, as-of and award); they diverge only on whether an excerpt is required.
+
+overall_score: 3
+overall_rule: lowest
+
+passes:
+- pass_id: d1
+  returned_at: '2026-09-26T15:33:11+00:00'
+  sha256: 40d489d3ca6302eb7dc9a8e5b747c5304160e21febb4997d07a8f7d4e8e7058a
+- pass_id: d2
+  returned_at: '2026-09-26T15:33:02+00:00'
+  sha256: 6de0b070c3d457d1898de312c8405d0078ae6cd99a7744882f379b3856b482ba
+- pass_id: d3
+  returned_at: '2026-09-26T15:33:10+00:00'
+  sha256: 775706477fc4e186a03fee634fb578114b502cefeb3bdcbaa40b3368868345b5
+pass_quotes:
+- pass_id: d2
+  quote: MCP write by an agent without `source_excerpt` is refused (400/ValueError)
+- pass_id: d3
+  quote: MCP write path must require `source_excerpt` for agent writes (refuse otherwise).
+
+verdict: warn
+blocking_reason: null
+
+fix_recommendation: |
+  Scene "Sophie finds the day round 1's arrival slipped": say that the email Sophie forwarded
+  twice still appears once, and that lines Sophie typed herself carry her name and no excerpt
+  (the source is optional). Scene "Sophie checks one AI-entered quote...": name Void beside
+  Correct on the AI's line. Scene "Sophie sees what other buyers and suppliers can see":
+  say the history opens only to members of her program. Move the as-of backfill migration out
+  of scene features into why-brief gap G4 (it is infrastructure no narration can imply).
+
+actionability_findings:
+- scene: Sophie finds the day round 1's arrival slipped
+  dimension: coverage
+  severity: low
+  declared_features_missed: [source-idempotency]
+  wrong_inferences: []
+  ambiguous_phrases: ["entered by the ACE agent, and opens the forwarder's own words behind it"]
+  fix_recommendation: Add that the forwarder's email reached the AI twice and the change appears once.
+- scene: Sophie finds the day round 1's arrival slipped
+  dimension: correctness
+  severity: low
+  declared_features_missed: []
+  wrong_inferences: [source excerpt required for every agent write; writes without one refused]
+  ambiguous_phrases: ["opens the badge: the forwarder's email excerpt that justified the change"]
+  fix_recommendation: State that lines Sophie typed herself carry her name and no excerpt.
+- scene: Sophie looks at her program as it stood on 20 Aug
+  dimension: coverage
+  severity: low
+  declared_features_missed: [as-of-backfill-migration]
+  wrong_inferences: []
+  ambiguous_phrases: []
+  fix_recommendation: Move the backfill migration to why-brief G4; no narration can imply it.
+- scene: Sophie checks one AI-entered quote against the email and corrects it
+  dimension: coverage
+  severity: low
+  declared_features_missed: [timeline-correct-void]
+  wrong_inferences: []
+  ambiguous_phrases: ["She clicks Correct"]
+  fix_recommendation: Name Correct and Void as the two actions on the AI's line.
+- scene: Sophie sees what other buyers and suppliers can see of round 2
+  dimension: coverage
+  severity: low
+  declared_features_missed: [revisions-member-only]
+  wrong_inferences: []
+  ambiguous_phrases: ["with no timeline, no source excerpts and no other supplier's quote"]
+  fix_recommendation: Say the history and excerpts open only to members of her program.

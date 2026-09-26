@@ -1,0 +1,22 @@
+schema_version: 1
+gate: concept_change
+narrative_slug: supply-sophie-rutf
+spec_path: docs/walkthroughs/supply-sophie-rutf.yaml
+decision: agree
+decided_by: owner
+decided_on: '2026-09-26'
+provenance: >-
+  The owner agreed this story arc in conversation on 2026-09-26, recorded in
+  docs/superpowers/specs/2026-09-26-supply-sophie-history-design.md (status line: "design
+  approved in conversation 2026-09-26"; §6 lists the scenes). The agent authoring the spec was
+  instructed to record the gate as agreed with that provenance rather than post it for review.
+posted_to_review_surface: false
+notes: >-
+  The spec follows §6's beats. Revised the same day on the controller's ruling: the illustrative
+  "AI misread freight, Sophie corrects it" beat was dropped (in the seed data no correction could
+  make that quote comparable without faking figures) and replaced by "the answer arrives": a
+  supplier's reply stating its pack configuration is recorded by ACE over MCP as a correction with
+  the reply as source, and that quote is then awarded provisionally. That revision comes from the
+  owner's side, so it is treated as agreed. ddd-upload later expects a narrative_review_id on
+  run_state; run `scripts.ddd.narrative post` (no approve/redraft pause) before the first upload,
+  then `split_spec` the draft into recipe + lock.
