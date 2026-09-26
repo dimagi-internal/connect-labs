@@ -71,6 +71,7 @@ def payload():
             "llo_map": {str(OTHER): "Other LLO", str(MINE): "My LLO"},
             "app_asks": {str(OTHER): {"x": True}, str(MINE): {"x": False}},
             "asks_as": {},
+            "opportunity_labels": {str(OTHER): "Rival Programme Site", str(MINE): "My Site"},
         },
         "cohortEdges": {"caseload": [2.0, 3.0]},
         "meta": {"as_of": "2026-09-13", "cases": 5, "opportunities": 2, "llos": 2},
@@ -80,7 +81,7 @@ def payload():
 class TestASliceCarriesOnlyItsOwnOpportunity:
     def test_nothing_of_the_other_opportunity_survives(self):
         text = json.dumps(hd.slice_for_opportunity(payload(), MINE))
-        for leak in (str(OTHER), "Other LLO", "zed", "c-other-1", "c-other-2", "0.09", "0.4,"):
+        for leak in (str(OTHER), "Other LLO", "Rival Programme Site", "zed", "c-other-1", "c-other-2", "0.09", "0.4,"):
             assert leak not in text, f"{leak!r} reached another opportunity's report"
 
     def test_its_own_figures_become_the_page_scope(self):
@@ -90,6 +91,10 @@ class TestASliceCarriesOnlyItsOwnOpportunity:
         assert out["weekly"]["all"] == [{"week": "2026-09-07", "visits": 10, "registered": 2}]
         assert out["monthly"] == out["monthlyByScope"]["all"] == payload()["monthlyByScope"][f"opp:{MINE}"]
         assert out["meta"]["cases"] == 3 and out["meta"]["visits"] == 10 and out["meta"]["opportunities"] == 1
+
+    def test_it_keeps_its_own_opportunity_name(self):
+        out = hd.slice_for_opportunity(payload(), MINE)
+        assert out["deployment"]["opportunity_labels"] == {str(MINE): "My Site"}
 
     def test_workers_still_point_at_their_own_cases(self):
         """`byFLW[].rows` are positions into the case index; the index shrank, so

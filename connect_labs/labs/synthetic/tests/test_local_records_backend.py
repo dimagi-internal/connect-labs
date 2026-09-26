@@ -300,3 +300,29 @@ def test_client_does_not_route_real_opps_to_local(real_opp, monkeypatch):
     finally:
         client.close()
     assert called["hit"] is True
+
+
+@pytest.mark.django_db
+def test_a_record_read_in_its_labs_only_home_program_resolves_locally(monkeypatch):
+    """#2072: binding a registry by {registry_id, program_id: <labs-only program>}
+    sent the read to Connect's labs_record export, which has no labs-only programs,
+    and 404'd -- while the same record LISTED fine (that read already went local)."""
+    SyntheticOpportunity.objects.create(opportunity_id=10_082, program_id=10_082, gdrive_folder_id="f", labs_only=True)
+    SyntheticOpportunity.objects.create(opportunity_id=10_090, program_id=10_090, gdrive_folder_id="f", labs_only=True)
+    row = LabsLocalRecord.objects.create(
+        opportunity_id=10_082, program_id=10_082, experiment="semantic", type="semantic_registry", data={"v": 1}
+    )
+    # An opportunity-owned reader naming the record's home program, as a workflow does.
+    client = LabsRecordAPIClient(access_token="dummy", opportunity_id=10_083)
+
+    def _no_http(*args, **kwargs):
+        raise AssertionError("a labs-only home program must not be read from production Connect")
+
+    monkeypatch.setattr(client.http_client, "get", _no_http)
+    try:
+        found = client.get_record_by_id(row.id, experiment="semantic", type="semantic_registry", program_id=10_082)
+        elsewhere = client.get_record_by_id(row.id, experiment="semantic", type="semantic_registry", program_id=10_090)
+    finally:
+        client.close()
+    assert found is not None and found.data == {"v": 1}
+    assert elsewhere is None  # the home scope is still a guard, not a hint

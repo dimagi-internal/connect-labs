@@ -235,3 +235,53 @@ def test_a_program_owned_reports_pipelines_say_where_they_live():
     created = [c.kwargs for c in dao.create_definition.call_args_list]
     for sources in (created[0]["pipeline_sources"], created[1]["pipeline_sources"]):
         assert sources and all(s["home_scope"] == {"opportunity_id": 10013} for s in sources)
+
+
+class TestOpportunityLabels:
+    """A report names its opportunities: "Opportunity 10082" means nothing to a partner."""
+
+    def _synthetic(self, oid, label):
+        from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+        SyntheticOpportunity.objects.create(opportunity_id=oid, label=label, gdrive_folder_id="f", labs_only=True)
+
+    def test_a_labs_only_opportunity_is_named_from_its_own_record(self, db):
+        from connect_labs.workflow.snapshot_builders import opportunity_labels
+
+        self._synthetic(10_082, "[Synthetic] Spark facilitator - Partner A")
+        self._synthetic(10_099, "not in this report")
+        assert opportunity_labels([10_082, 10_083]) == {"10082": "[Synthetic] Spark facilitator - Partner A"}
+
+    def test_the_registry_can_rename_one_and_only_for_opportunities_in_scope(self, db):
+        from connect_labs.workflow.snapshot_builders import opportunity_labels
+
+        self._synthetic(10_082, "own record name")
+        out = opportunity_labels([10_082], declared={"10082": "Partner A site", "555": "elsewhere"})
+        assert out == {"10082": "Partner A site"}
+
+    def test_a_real_opportunity_is_named_from_the_requesters_org_data(self, db):
+        from connect_labs.workflow.snapshot_builders import opportunity_labels
+
+        with patch(
+            "connect_labs.labs.context.get_org_data",
+            return_value={"opportunities": [{"id": 814, "name": "KMC Kenya"}, {"id": 900, "name": "other"}]},
+        ):
+            assert opportunity_labels([814, 815], request=object()) == {"814": "KMC Kenya"}
+
+    def test_the_payload_carries_them_and_the_registry_record_keeps_them(self):
+        from connect_labs.semantic.runtime import normalise_deployment_facts
+
+        facts = normalise_deployment_facts({"opportunity_labels": {10082: "Partner A site", 10083: ""}})
+        assert facts["opportunity_labels"] == {"10082": "Partner A site"}
+        out = snap.build(spec={}, rows=[], measures=[], deployment=facts, as_of="2026-09-20")
+        assert out["deployment"]["opportunity_labels"] == {"10082": "Partner A site"}
+
+    def test_the_render_names_opportunities_and_counts_the_drilled_scope(self):
+        from pathlib import Path
+
+        src = (Path(__file__).parents[1] / "templates" / "indicator_report_render.js").read_text()
+        # Every place an opportunity is shown goes through the resolver...
+        assert "'Opportunity ' + o.opp" not in src and "'Opportunity ' + selOpp" not in src
+        assert "opportunity_labels" in src and "user-opportunities" in src
+        # ...and the drilled header counts its own scope, not the programme's.
+        assert "R.nounCount(scopeCases, ENT)" in src and "R.nounCount(scopeWorkers, WRK)" in src

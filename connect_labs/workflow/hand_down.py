@@ -152,6 +152,10 @@ def slice_for_opportunity(payload: dict, opportunity_id: int, *, source: dict | 
 
     deployment = dict(payload.get("deployment") or {})
     deployment["llo_map"] = {str(opp): llo} if llo else {}
+    # Its own name only: another opportunity's name is another opportunity's data.
+    labels = deployment.get("opportunity_labels") or {}
+    own_label = labels.get(str(opp)) or labels.get(opp)
+    deployment["opportunity_labels"] = {str(opp): own_label} if own_label else {}
     deployment["app_asks"] = {k: v for k, v in (deployment.get("app_asks") or {}).items() if str(k) == str(opp)}
     credibility = {
         ind: {k: v for k, v in (table or {}).items() if k == llo}
