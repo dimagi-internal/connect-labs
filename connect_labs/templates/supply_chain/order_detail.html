@@ -673,7 +673,7 @@ partner's name (the IPTSc render).
             <td class="px-4 py-2 text-gray-600">{{ receipt.received_on|day }}</td>
             <td class="px-4 py-2 text-gray-600">{{ supply_points|dictkey:receipt.supply_point_id|default:"—" }}</td>
             <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
-            <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{{ line.expiry|default:"—" }}</td>
+            <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{{ line.expiry|day|default:"—" }}</td>
             <td class="px-4 py-2 tabular-nums">{{ line.quantity_accepted|qty:line.quantity_unit }}</td>
             <td class="px-4 py-2 tabular-nums">
               {% if line.quantity_rejected and line.quantity_rejected != "0" %}{{ line.quantity_rejected|qty:line.quantity_unit }}{% else %}0{% endif %}

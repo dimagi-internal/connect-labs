@@ -156,14 +156,23 @@ class TestTheAnswerFormKeepsWhatTheRequestRestsOn:
 
 class TestExpiryTypedOnAReceiptIsShown:
     def test_the_order_page_has_an_expiry_column(self, client_in_programme, da, store):
+        """And prints the date by the one date rule, like every other date on the page.
+
+        Asserted through `day_text` rather than against a literal, so this says
+        "however values.DAY_FORMAT reads" and not "24 Sep 2027" -- the same
+        source the `|day` filter goes through.
+        """
+        from connect_labs.supply_chain.values import day_text
+
         stopgap = store["order"]("HHS-PO-1", "90")
-        expiry = (date.today() + timedelta(days=365)).isoformat()
-        store["receive"](stopgap, "GRN-KANO-0431", "90", 0, batch="AQ-2609-14", expiry=expiry)
+        expiry = date.today() + timedelta(days=365)
+        store["receive"](stopgap, "GRN-KANO-0431", "90", 0, batch="AQ-2609-14", expiry=expiry.isoformat())
         text = _text(
             client_in_programme.get(reverse("supply_chain:order_detail", args=[stopgap["id"]])).content.decode()
         )
         assert "Expiry" in text
-        assert expiry in text
+        assert day_text(expiry) in text
+        assert expiry.isoformat() not in text, "the ISO string belongs in the operation, not on the screen"
 
     def test_the_update_links_read_back_says_it(self, da, store):
         from connect_labs.supply_chain.update_links.service import _describe_receipt
@@ -177,6 +186,6 @@ class TestTheAwardedStripSaysWhoAndWhy:
     """The narration says "in her own name, and writes down why"; the page the scene ends on said neither."""
 
     def test_the_comparison_names_the_decider_and_the_reason(self, client_in_programme, world):
-        url = reverse("supply_chain:procurement_comparison", args=[world["round"]["id"]])
+        url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]])
         text = _text(client_in_programme.get(url + "?commodity=chlorine").content.decode())
         assert "Why: registered locally" in text
