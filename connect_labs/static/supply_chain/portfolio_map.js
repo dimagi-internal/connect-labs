@@ -747,7 +747,7 @@
           esc(p.program_id) +
           '">' +
           '<span class="pm-dot" style="background:' +
-          p._color +
+          esc(p._color) +
           '"></span>' +
           esc(p.name) +
           (p._open
@@ -1050,7 +1050,7 @@
           (programs.length > 1 ? ' · ' + esc(i.program) : '') +
           '</div>' +
           '<div class="pm-muted">' +
-          (i.days != null ? i.days + ' days open · ' : '') +
+          (i.days != null ? esc(i.days) + ' days open · ' : '') +
           (i.href
             ? '<a class="pm-link" href="' + esc(i.href) + '">Open</a>'
             : '') +
@@ -1146,7 +1146,7 @@
         esc(p.program_id) +
         '">' +
         '<div class="flex items-center gap-2"><span class="pm-dot" style="background:' +
-        p._color +
+        esc(p._color) +
         '"></span>' +
         '<span class="font-semibold text-gray-900 text-sm">' +
         esc(p.name) +
@@ -1212,7 +1212,7 @@
       '</span></div>' +
       '<div class="pm-muted">' +
       subjectLink(c, p) +
-      (c.days_open != null ? ' · ' + c.days_open + ' days open' : '') +
+      (c.days_open != null ? ' · ' + esc(c.days_open) + ' days open' : '') +
       '</div></div></div>'
     );
   }
@@ -1266,7 +1266,7 @@
                 '<div class="pm-muted" style="padding:3px 0 0 2px">' +
                 subjectLink(c, p) +
                 (c.days_open != null
-                  ? ' · ' + c.days_open + ' days open'
+                  ? ' · ' + esc(c.days_open) + ' days open'
                   : '') +
                 '</div>'
               );
@@ -1387,7 +1387,7 @@
     var h = crumbs();
     h +=
       '<div class="pm-sec"><div class="flex items-center gap-2"><span class="pm-dot" style="background:' +
-      p._color +
+      esc(p._color) +
       '"></span>' +
       '<span class="text-base font-semibold text-gray-900">' +
       esc(p.name) +
