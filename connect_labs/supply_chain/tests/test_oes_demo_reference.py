@@ -558,6 +558,11 @@ class _FakeOpForTenderTwo:
         self.calls.append((name, payload))
         if name == "supplier_list":
             return []
+        if name == "quote_list":
+            # An empty round, which is what a first seed sees. Quotes are now
+            # found before they are recorded, so this is the branch that ends
+            # in `quote_record` below.
+            return []
         if name == "tender_list":
             # An empty scope, which is what a first seed sees. `tender_for`
             # matches an existing tender by label before creating one, so this
