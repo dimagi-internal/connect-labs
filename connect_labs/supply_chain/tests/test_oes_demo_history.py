@@ -432,7 +432,7 @@ class TestTheClarification:
         module, result = seeded
         module.record_rutf_clarification(_document())
         entries = timeline_for_tender(result["round_two"]["round"]["id"], program_id=RUTF)
-        replies = [e for e in entries if e.excerpt == "Each carton holds 150 sachet."]
+        replies = [e for e in entries if e.excerpt == "Each carton holds 150 sachets."]
         # One call, one line: the correction, naming what it changed.
         assert len(replies) == 1
         assert replies[0].sentence.startswith("Quote corrected: units per pack 150 (was not stated)"), replies[
