@@ -84,13 +84,14 @@ Clicking **Create Workflow** opens the **Choose a template** modal. The modal is
 
 | Group | Examples |
 |---|---|
-| Programme reports | KMC Programme Metrics, Photo Audit Report |
+| Programme reports | KMC Programme Metrics, Photo Audit Report, Indicator Programme Report |
 | Automatic reports | Scheduled summary reports |
-| Worker reviews | KMC Worker Review |
+| Worker reviews | KMC Worker Review, Indicator Worker Review |
 | Audits | Weekly Dual-Track Image Audit, Muac Picture Audit |
 | Beneficiary tracking | Beneficiary-level dashboards |
 | Outreach & demos | Outreach and demonstration reports |
 | Visit verification | MBW Visit Verification |
+| Opportunity reports | Indicator Opportunity Report |
 
 A **filter box** at the top of the modal lets you type to narrow the list. Each row shows the template's full name — names are never cut short — alongside a coloured icon and a short description on the line below. If a template is always created together with another template, both rows say so, so you know what you will get before you confirm.
 
@@ -101,10 +102,55 @@ A **filter box** at the top of the modal lets you type to narrow the list. Each 
 
 Some templates produce more than one workflow in a single action. The **KMC Programme Metrics** template is the main example: selecting it creates both the **KMC Programme Metrics** report and the **KMC Worker Review** page at the same time, over the same set of opportunities, with a run ready on each and the two pages already linked to each other. Worker rows on the programme metrics report open directly into the worker review — no manual linking step is needed.
 
+The **Indicator Programme Report** template works the same way: selecting it creates both the **Indicator Programme Report** and the **Indicator Worker Review** together, already linked, so that clicking a worker row on the programme report opens directly into their individual review.
+
 Before this change, creating the KMC Programme Metrics report by hand left worker rows that were plain text rather than links; a separate API step was required to connect the two workflows. That step is no longer needed.
 
 !!! note "The opportunity picker spans all programmes you can access"
     When you create a workflow from the programme-level Workflows page, the opportunity picker shows **every opportunity you have access to**, not only those belonging to the current programme. The current programme's own opportunities appear at the top of the list and are pre-ticked, so the default selection is correct for most reports. If your KMC report needs to span opportunities from several programmes — which is common for whole-programme KMC metrics — you can tick the additional opportunities from the same picker without navigating away.
+
+### Indicator Programme Report
+
+The **Indicator Programme Report** gives any programme the same report cascade that KMC uses — a programme-level headline report, a per-worker review, and a per-opportunity report with benchmarks — without any custom page-building required. Create it from **Workflows → Create Workflow → "Indicator Programme Report"** (listed under *Programme reports*).
+
+Selecting this template creates two workflows at once:
+
+- **Indicator Programme Report** — the programme-wide view described below.
+- **Indicator Worker Review** — created automatically and already linked, so worker rows on the programme report open directly into the worker's individual page.
+
+#### What the programme report shows
+
+The report is built from your programme's indicator definitions (its semantic registry), which determine which figures appear as headlines, what their targets are, what a "case" is called in your programme (for example, baby, community, or beneficiary), and what columns appear in the case table. This means the same template produces a report that looks and reads correctly for your programme's context — you do not need to configure it by hand.
+
+The programme report includes:
+
+- **Headline figures** with their targets and the change since the last saved week.
+- **Scorecard by organisation**, grouped by indicator category.
+- **Workers table**, with two peer-group filters — "started the same month" and "similar caseload" — so you can compare workers fairly.
+- **Activity by week** — a breakdown of activity over time.
+- **Trends across saved reports** — how figures have moved across the weeks for which a report has been saved.
+- **Definitions tab** — a plain-English explanation of every number on the report.
+
+#### Drilling down
+
+The report supports a full drill-down cascade:
+
+1. Click an **organisation** to narrow to that organisation's workers and data.
+2. Click an **opportunity** to narrow further to that opportunity.
+3. Click a **worker** to open the **Indicator Worker Review** for that individual.
+
+#### Indicator Worker Review
+
+The **Indicator Worker Review** (created automatically alongside the programme report) shows one worker's indicators compared to their peers, their full caseload, and each case's visits. Where the programme's indicator definitions include a reading series (for example, weight), a chart of that series is shown for each case. Where visits carry photos, those photos are shown alongside the visit record.
+
+#### Indicator Opportunity Report
+
+The **Indicator Opportunity Report** template creates a standalone report for a single opportunity, intended for use by that opportunity's network manager. It includes the same indicator view as the programme report but scoped to one opportunity, plus a **Benchmarks tab** that shows how that opportunity compares to others. Each time the programme report saves a weekly run, the opportunity report receives the same data automatically — no separate run is needed.
+
+Create it from **Workflows → Create Workflow → "Indicator Opportunity Report"** (listed under *Opportunity reports*).
+
+!!! note "The KMC reports are unchanged"
+    The Indicator report templates are a new set of templates for programmes that do not already have a custom report cascade. The existing KMC Programme Metrics, KMC Worker Review, and related reports are unaffected and continue to work exactly as before.
 
 ### Photo Audit Report
 
@@ -172,38 +218,4 @@ The dashboard has three tabs:
 
 The **KMC Worker Review** page opens when you click a worker row on the KMC Programme Metrics report. It shows that worker's full caseload: each case's weight series, growth chart, and a set of live columns — danger signs, referrals, discharge, skin-to-skin, alive-at-last-visit, gain, rounded, and implausible.
 
-**If you previously saw cases listed but with empty dashes in every live column and a "No weighings recorded." message on the growth chart**, this was caused by issues with how the page retrieved per-case data. Three separate causes have now been identified and corrected:
-
-1. A page error was displaying as missing data rather than as a clear error message.
-2. Scheduled runs were recomputing data for all of the report's opportunities on every load and discarding the result, causing unnecessary load and collisions.
-3. Per-case detail data was being looked up in the wrong location — the page was not reading from the pipeline where the referenced data actually lives.
-
-With all three fixes in place, opening a case on the Worker Review page shows the baby's full weight series and growth chart, and all live columns — danger signs, referrals, discharge, skin-to-skin, alive-at-last-visit, gain, rounded, and implausible — populate as expected. The underlying data was always there; it was simply not being retrieved correctly. If a live data request does fail, the page will say so rather than showing an empty cohort.
-
-Two further improvements that you will notice on the Worker Review page:
-
-- **The page now loads in seconds rather than minutes.** It was previously recomputing data for all of the report's opportunities on every load and discarding the result. That wasted work has been removed.
-- **The red "Another pipeline run for this opportunity is already in progress" banner should no longer appear.** That banner was a side effect of the same unnecessary recompute colliding with the programme report. With the recompute removed, the banner no longer fires.
-- **The per-case table fills in on the first load.** Previously, the table could appear blank when the page first opened and only populate after a manual reload. Cases now appear immediately. If a worker's visits genuinely cannot be loaded, the page says so and offers a **Retry** button rather than showing a silent empty table.
-
-!!! note "Cases table and growth chart briefly unavailable after a recent update"
-    A short-lived issue caused the Worker Review page to show **"Could not load this worker's cases"** in place of the cases table and growth chart — even for workers who had data. This affected both the table and the progress indicator that streams case rows as they load. Both have been corrected and the page displays case data as expected again.
-
-#### Sorting columns on the KMC reports
-
-Every column on the KMC Programme Report, the KMC Opportunity Report, and the KMC Worker Review can be sorted. Click the **↕** arrow beside any column name to sort that column:
-
-- **▼** sorts highest first
-- **▲** sorts lowest first
-
-This applies to all column types — worker name, organisation, opportunity, case, date, Attention, and indicator columns. Cells that are blank or withheld (for example, cells showing **n<20**) always appear at the bottom of the sorted list regardless of sort direction.
-
-On the programme report's worker table, sorting ranks **all** workers across the full dataset before the "first 25" display cut is applied. This means the top 25 you see after sorting are the true top 25 for that indicator across the whole programme, not just the top 25 among the busiest workers.
-
-#### One set of indicators on all KMC reports
-
-The KMC reports now use **one unified set of 24 indicators** across the Programme Report, Opportunity Report, and Worker Review. Previously, two overlapping sets existed — a workbook set (labelled C) and a demo scorecard set (labelled N) — which sometimes disagreed on when a baby counted as "started" and how growth was judged. That split has been retired.
-
-All 24 indicators now follow the same rules:
-
-- **
+**If you previously saw cases listed but with empty dashes in every live column and a "No weighings recorded." message on the growth chart**, this was caused by issues with how the page retrieved per-case data. Three separate
