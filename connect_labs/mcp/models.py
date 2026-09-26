@@ -158,6 +158,12 @@ class MCPAuditLog(models.Model):
     error_code = models.CharField(max_length=50, blank=True)
     version_before = models.IntegerField(null=True, blank=True)
     version_after = models.IntegerField(null=True, blank=True)
+    #: Set only for a call made with a delegated token (canopy acting for a
+    #: visitor): the client that redeemed the grant, and the informational
+    #: ``Canopy-Actor`` header naming the agent. ``user`` is the visitor. Empty
+    #: for PATs and ordinary OAuth sign-ins, whose caller IS the user.
+    client_id = models.CharField(max_length=255, blank=True, default="")
+    actor = models.CharField(max_length=100, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
@@ -170,3 +176,71 @@ class MCPAuditLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.tool_name} by {self.user} at {self.created_at}"
+
+
+class DelegatedAccessToken(models.Model):
+    """An access token canopy redeemed for a labs visitor (the jwt-bearer grant).
+
+    Kept in its OWN table rather than django-oauth-toolkit's ``AccessToken``, on
+    purpose: the toolkit authenticates labs' REST API with any live row in its
+    table (``verify_request(scopes=[])`` checks no scope), so a delegated token
+    stored there would open labs' whole API to canopy. Here nothing but the MCP
+    verifier ever reads it (``delegation.resolve_delegated_token``).
+
+    The raw token is never stored, only its SHA-256 (as for PATs). It is
+    sender-constrained: ``cnf_jkt`` is the RFC 7638 thumbprint of the DPoP key
+    canopy proved possession of when it redeemed the grant, and every MCP request
+    made with it must carry a DPoP proof signed by that same key. A token copied
+    out of a log is useless without it. There is no refresh token: canopy gets a
+    new one only by redeeming a fresh grant, which labs issues only while the
+    visitor is on the page.
+    """
+
+    token_checksum = models.CharField(max_length=64, unique=True)
+    #: The visitor. Tools run as this user.
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="mcp_delegated_tokens",
+    )
+    #: The client that redeemed the grant (canopy's CIMD URL).
+    client_id = models.CharField(max_length=255)
+    #: RFC 8693 ``act.sub`` — who is acting for the visitor.
+    actor = models.CharField(max_length=255, blank=True)
+    #: Space-separated scopes, a subset of what the page's grant carried.
+    scope = models.CharField(max_length=255)
+    cnf_jkt = models.CharField(max_length=64)
+    #: The grant's ``jti``, so an audit can join a token to the page visit that issued it.
+    grant_jti = models.CharField(max_length=64, blank=True)
+    expires_at = models.DateTimeField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "mcp_delegated_access_token"
+
+    def __str__(self) -> str:
+        return f"Delegated token for user {self.user_id} via {self.client_id}"
+
+    @property
+    def scopes(self) -> list[str]:
+        return self.scope.split()
+
+
+class SeenJTI(models.Model):
+    """A ``jti`` already used, so a signed statement works exactly once.
+
+    One table for all three kinds (client assertion, grant, DPoP proof), keyed
+    by kind plus a hash of the value. In the database rather than a cache
+    because single use has to hold across every worker and task, and has to
+    fail CLOSED: an insert that cannot happen refuses the request, where a cache
+    that silently drops writes would quietly allow replays.
+    """
+
+    key = models.CharField(max_length=200, unique=True)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        db_table = "mcp_seen_jti"
+
+    def __str__(self) -> str:
+        return self.key

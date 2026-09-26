@@ -366,7 +366,7 @@ for two-thirds of them — only sourcing is procurement, and the name stuck
 through fulfilment, stock and distribution. Plain `supply_` was not available:
 the OES demo app already registers `supply_demo_reseed`.
 
-**Auth:** two ways in, both resolving to the same labs user (tools run as that
+**Auth:** two ways in for people and scripts (plus a third, below, for canopy acting as a visitor), each resolving to a labs user (tools run as that
 user, audit rows attribute to them):
 
 - **Standard MCP sign-in (OAuth 2.1)** — for people. Any MCP client adds the URL
@@ -379,6 +379,11 @@ user, audit rows attribute to them):
 - **Personal Access Tokens (PAT)** — for scripts and headless agents. Mint/rotate
   self-service at `/labs/mcp/tokens/` (the `labs-token-setup` skill automates
   this). The verifier tries a PAT first, then an OAuth token.
+- **Canopy acting as a visitor (off unless `CANOPY_CLIENT_ID` is set)** — labs
+  issues an ID-JAG for the person on a registered page, canopy redeems it at
+  `/o/token/` (jwt-bearer + `private_key_jwt` + DPoP), and calls the MCP with
+  `Authorization: DPoP`. Tools run as the visitor, limited to the scope's tools.
+  See `connect_labs/mcp/delegation.py` and `docs/canopy-agent-panel.md`.
 
 Labs was PAT-only until 2026-09-11, with OAuth discovery deliberately suppressed
 (#431) because nothing stood behind it. It was changed so labs works like any

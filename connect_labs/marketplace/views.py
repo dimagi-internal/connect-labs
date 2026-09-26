@@ -254,6 +254,7 @@ def network(request):
                 visible_ids=[row["org"].slug for row in listed],
                 filters={k: v for k, v in state["selected"].items() if v},
                 path=request.path,
+                request=request,
             ),
         },
     )
@@ -327,6 +328,7 @@ def round_detail(request, slug):
                 visible_ids=[a["org"].slug for a in applicants if a.get("org")],
                 filters={"round": round_.slug},
                 path=request.path,
+                request=request,
             ),
         },
     )

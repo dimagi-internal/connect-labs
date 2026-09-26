@@ -32,6 +32,13 @@ def token(request):
     cannot read the cookie — it is handed the rendered token instead, through
     ``csrfToken`` in the snippet. If this ever starts 403ing with no
     ``X-CSRFToken`` on the request, that binding is what broke.
+
+    The one thing read from the request is ``?page=``, the page token the panel
+    was rendered with (``canopy.page_token``). It is labs' OWN signature over
+    the page's route and this user, so it can say which registered page the
+    panel is on and nothing else: the scopes come from labs' registry, and a
+    token that is missing, forged, expired or another user's simply means no
+    grant — the mint itself goes ahead as before.
     """
     if not canopy.is_configured():
         # 503 rather than 404: the route exists, the deployment has not been
@@ -40,7 +47,8 @@ def token(request):
         return JsonResponse({"error": "the canopy panel is not configured here"}, status=503)
 
     try:
-        vouched = canopy.vouch_for(request.user)
+        scopes = canopy.scopes_for_page_token(request.GET.get("page"), request.user)
+        vouched = canopy.vouch_for(request.user, scopes=scopes)
     except canopy.CanopyMintFailed as exc:
         # Logged with canopy's own words, because they name the cause
         # (`replayed`, `bad_signature`, `unknown_issuer`) and nothing on the page
