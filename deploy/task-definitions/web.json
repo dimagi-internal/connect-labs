@@ -125,6 +125,10 @@
         {
           "name": "CANOPY_APP_NAME",
           "value": "connect-labs"
+        },
+        {
+          "name": "CANOPY_CLIENT_ID",
+          "value": "https://labs.connect.dimagi.com/canopy/oauth/client.json"
         }
       ],
       "mountPoints": [],
