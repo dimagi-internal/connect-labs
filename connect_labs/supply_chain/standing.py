@@ -20,6 +20,13 @@ Two things this deliberately does not do:
 inside a rewound transaction, so the rows read here are the past; `today` is
 the as-of date, so "20 days" is counted from it, and `until` cuts the
 revision log at the end of that day.
+
+Cost: the rows and their children are read with one query per kind for the
+whole program, but each row's last change goes through the Task 7 scope
+collectors (`tender_scope_revisions` / `contract_scope_revisions`), about ten
+queries a row -- fine for a program's handful of tenders and orders. If a
+program ever holds hundreds, batch it: collect every row's scope ids first,
+then read the newest revision per scope in one query over the union.
 """
 
 from dataclasses import dataclass, field
@@ -145,7 +152,9 @@ def _tender_state(tender, outreach, quotes, contracted, today):
             latest_ask[o.supplier_id] = max(latest_ask.get(o.supplier_id, o.sent_on), o.sent_on)
     ages = [(today - sent).days for sent in latest_ask.values()]
     overdue = [age for age in ages if age >= NO_REPLY_DAYS]
-    if overdue:
+    # Only while replies are still being taken: once a tender is closed or
+    # awarded a silent supplier is history, not something waiting.
+    if overdue and tender.status == "open":
         # The age every one of them has passed, so the sentence is true of each.
         stale.append(f"No reply in {min(overdue)} days from {_plural(len(overdue), 'supplier')}")
     unstated = [q for q in live if any(getattr(q, f) == "not_specified" for f in QUOTE_BASIS_FIELDS)]
@@ -197,11 +206,28 @@ def _order_rows(program_id, today, until, own_org_id):
         .exclude(status="rejected")
         .values_list("contract_id", flat=True)
     )
-    paid = set(
+    # Paid means every live invoice is settled -- fulfilment/repository.py
+    # derives an invoice's "paid" from what has been paid against its amount,
+    # so a half payment leaves it "part_paid" and the order still waiting on
+    # payment. An invoice with no amount cannot be derived, so a payment
+    # against it is taken as settling it.
+    with_payment = set(
         Payment.objects.filter(invoice__contract__program_id=program_id, invoice__contract_id__in=ids).values_list(
-            "invoice__contract_id", flat=True
+            "invoice_id", flat=True
         )
     )
+    settled, any_paid = {}, set()
+    for invoice_id, contract_id, status, amount in (
+        Invoice.objects.filter(contract__program_id=program_id, contract_id__in=ids)
+        .exclude(status="rejected")
+        .values_list("pk", "contract_id", "status", "amount")
+    ):
+        done = status == "paid" or (amount is None and invoice_id in with_payment)
+        settled[contract_id] = settled.get(contract_id, True) and done
+        if invoice_id in with_payment:
+            any_paid.add(contract_id)
+    paid = {c for c, done in settled.items() if done}
+    part_paid = any_paid - paid
 
     rows = []
     for contract in contracts:
@@ -212,6 +238,7 @@ def _order_rows(program_id, today, until, own_org_id):
             contract.pk in received_contracts,
             contract.pk in invoiced,
             contract.pk in paid,
+            contract.pk in part_paid,
             contract.pk in unlinked,
             today,
         )
@@ -239,7 +266,9 @@ def _dispatched(shipment) -> bool:
     return shipment.dispatched_on is not None or shipment.status in (*records.IN_TRANSIT_STATUSES, "delivered")
 
 
-def _order_state(contract, shipments, received_shipments, received, invoiced, paid, unlinked_receipt, today):
+def _order_state(
+    contract, shipments, received_shipments, received, invoiced, paid, part_paid, unlinked_receipt, today
+):
     if contract.status in ("cancelled", "draft"):
         return _words(contract.status), "—", []
 
@@ -251,6 +280,11 @@ def _order_state(contract, shipments, received_shipments, received, invoiced, pa
         "paid": paid,
     }
     stage = [s for s in ORDER_STAGES if reached[s]][-1]
+    # The order's own status says when only some of the goods have arrived.
+    if stage == "received" and contract.status == "part_received":
+        stage = "part received"
+    elif stage == "invoiced" and part_paid:
+        stage = "part paid"
 
     outstanding = [
         s for s in shipments if s.pk not in received_shipments and s.status != "lost" and not unlinked_receipt

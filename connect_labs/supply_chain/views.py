@@ -1,8 +1,9 @@
 """Django pages for the supply domain.
 
-Every mutation goes through an operation, so the web UI can never do something
-the API and MCP surfaces cannot. OperationBase.op() is the only way a view
-reaches the domain.
+Every mutation goes through an operation (OperationBase.op()), so the web UI
+can never do something the API and MCP surfaces cannot. Read-only projections
+(history timelines, standing.py's overview) are helpers that read the models
+directly, each filtered by program.
 """
 
 from django.contrib.auth.decorators import login_required
