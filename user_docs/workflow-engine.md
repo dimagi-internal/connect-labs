@@ -72,6 +72,9 @@ This means each workflow appears in exactly one place. If you cannot find a work
 
     If you have recently opened a per-opportunity run in another tab (for example, by clicking an "open run ↗" link"), that should no longer affect Create Run on program-owned workflows. The program view keeps the program context in place, so Create Run on a program-owned workflow will always create the run under the program — not under whichever opportunity you last visited. If you do see a "Workflow not found" error, try refreshing the program workflow list page and clicking Create Run again.
 
+!!! note "Drilling into worker visits from a program-level report"
+    When you open a worker's case in the worker review from a programme report created at program level, their visits now load correctly. Previously, this could show a "pipeline not found" error; this has been fixed and visit data loads as expected.
+
 ---
 
 ## Creating a Workflow from a Template
@@ -224,4 +227,4 @@ The dashboard has three tabs:
 
 - **Dashboard** — the main visit-by-visit table described above.
 - **Verification Summary** — aggregated pass rates and a stacked bar chart showing how verification outcomes break down across field workers or visits.
-- **Definitions** — a reference tab that documents exactly how every column and metric in the dashboard is calculated. This includes which visits are included (the field worker must be flagged for verification and the visit's form must contain the verification questions), what each of the 15 table columns means, the exact logic behind each Pass / Fail / NA / Not available / ERROR outcome for GPS, QR code, signature, mother questions, and ANC card checks, what counts as an "attempted" verification method, the colour legend, and how the three Verification Summary percentages and the stacked bar chart are computed. For each column or metric, the Definitions tab also shows the exact pipeline field name(s) and the underlying CommCare form path(s) — such as `form.where_is_the_visit_being_conducted` — that are used to calculate it, displayed below the plain-English description. Columns that are computed inside the dashboard itself rather than read from a raw form field — such as
+- **Definitions** — a reference tab that documents exactly how every column and metric in the dashboard is calculated. This includes which visits are included (the field worker must be flagged for verification and the visit's form must contain the verification questions), what each of the 15 table columns means, the exact logic behind each Pass / Fail / NA / Not available / ERROR outcome for GPS, QR code, signature, mother questions, and ANC card checks, what counts as an "attempted" verification method, the colour legend, and how the three Verification Summary percentages and the stacked bar chart are computed. For each column or metric, the Definitions tab also shows the exact pipeline field
