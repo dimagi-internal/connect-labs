@@ -12,6 +12,11 @@ invitation recorded in error and then removed still shows that it was.
 
 `tender_scope_revisions` and `contract_scope_revisions` are the public
 collectors; the program overview (Task 8) reads them too.
+
+Under as-of, the lines are cut at the date but the NAMES they print --
+suppliers, organisations, shipment references -- are read from the rows as
+they are now (inside the rewound transaction where a view calls this, rows the
+rewind restored included). A supplier renamed since reads by its new name.
 """
 
 from dataclasses import dataclass
@@ -21,7 +26,7 @@ from django.db.models import Q
 from django.urls import reverse
 
 from connect_labs.supply_chain.history.as_of import end_of_day
-from connect_labs.supply_chain.history.labels import Lookup, actor_label, is_ai, sentence, subject
+from connect_labs.supply_chain.history.labels import Lookup, actor_label, is_ai, line_summary, sentence, subject
 from connect_labs.supply_chain.history.models import Revision
 
 
@@ -49,7 +54,7 @@ def _type_q(model):
     return Q(content_type__app_label=model._meta.app_label, content_type__model=model._meta.model_name)
 
 
-def _child_ids(model, links, program_id=None) -> set[int]:
+def _child_ids(model, links, program_id) -> set[int]:
     """Ids of `model` rows whose FK `attname` is (or ever was) one of the given parent ids.
 
     `links` is {attname: parent ids}. Two queries whatever the number of
@@ -65,9 +70,7 @@ def _child_ids(model, links, program_id=None) -> set[int]:
         known |= Q(**{f"changes__{attname}__1__in": ids}) & ~Q(action="delete")
         known |= Q(**{f"changes__{attname}__in": ids}, action="delete")
     ids = set(model._base_manager.filter(current).values_list("pk", flat=True))
-    revisions = Revision.objects.filter(_type_q(model), known)
-    if program_id is not None:
-        revisions = revisions.filter(program_id=program_id)
+    revisions = Revision.objects.filter(_type_q(model), known, program_id=program_id)
     ids |= {int(pk) for pk in revisions.values_list("object_id", flat=True)}
     return ids
 
@@ -78,18 +81,17 @@ def _revisions(scope, program_id, until):
         if ids:
             q |= _type_q(model) & Q(object_id__in=[str(pk) for pk in ids])
     revisions = Revision.objects.filter(q)
-    if program_id is not None:
-        revisions = revisions.filter(program_id=program_id)
+    revisions = revisions.filter(program_id=program_id)
     if until is not None:
         revisions = revisions.filter(recorded_at__lte=end_of_day(until))
     return revisions.select_related("call__actor", "content_type").order_by("-recorded_at", "-id")
 
 
-def tender_scope_revisions(tender_id, *, program_id=None, until=None):
+def tender_scope_revisions(tender_id, *, program_id, until=None):
     """Revisions of a tender, its outreach, quotes, invitations, awards, approvals and their documents.
 
-    Pass `program_id` from a view: the query then names its program as well
-    as the tender, and a revision from any other program cannot appear.
+    `program_id` is required: every query names its program as well as the
+    tender, so a revision from any other program cannot appear.
     """
     from connect_labs.supply_chain.models import Award, AwardApproval, Document, Outreach, Quote, Tender
 
@@ -116,7 +118,7 @@ def tender_scope_revisions(tender_id, *, program_id=None, until=None):
     return _revisions(scope, program_id, until)
 
 
-def contract_scope_revisions(contract_id, *, program_id=None, until=None):
+def contract_scope_revisions(contract_id, *, program_id, until=None):
     """Revisions of an order, its shipments and their lines and charges, receipts and
     their lines, invoices, payments, and the documents on any of them."""
     from connect_labs.supply_chain.models import (
@@ -200,19 +202,56 @@ def _merge(group):
 
 
 def _merged(revisions):
-    """Newest first in, newest first out, with each run of one call on one record merged."""
-    merged, run = [], []
+    """Newest first in, newest first out, with everything one call did to one record merged.
+
+    Grouped across the whole call, not only adjacent rows: a handler that saves
+    a shipment, then its lines, then the shipment again is still one shipment
+    line, placed where the group's newest revision falls.
+    """
+    groups, order = {}, []
     for revision in revisions:
-        key = (revision.call_id, revision.content_type_id, revision.object_id)
-        if run and revision.call_id is not None and key == run[0][0]:
-            run.append((key, revision))
-            continue
-        if run:
-            merged.append(_merge([r for _, r in reversed(run)]))
-        run = [(key, revision)]
-    if run:
-        merged.append(_merge([r for _, r in reversed(run)]))
-    return merged
+        if revision.call_id is None:
+            key = ("single", revision.pk if revision.pk is not None else id(revision))
+        else:
+            key = (revision.call_id, revision.content_type_id, revision.object_id)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(revision)
+    return [_merge(list(reversed(groups[key]))) for key in order]
+
+
+# A line row created in the same call as its parent is part of that record, not
+# an event of its own: {line model name: (parent model name, FK attname)}.
+_LINE_PARENTS = {"ShipmentLine": ("Shipment", "shipment_id"), "ReceiptLine": ("Receipt", "receipt_id")}
+
+
+def _fold_lines(revisions, lookup):
+    """Drop line creates whose parent was created by the same call; return {parent revision id(): [summaries]}.
+
+    "Shipment recorded: SH-1, ETA 5 Sep — 300 cartons, batch B1" rather than a
+    second line saying the same shipment has a line.
+    """
+    parents = {}
+    for revision in revisions:
+        model = revision.content_type.model_class()
+        if revision.action == "create" and model is not None and revision.call_id is not None:
+            parents[(revision.call_id, model.__name__, str(revision.object_id))] = revision
+    kept, suffixes = [], {}
+    for revision in revisions:
+        model = revision.content_type.model_class()
+        link = _LINE_PARENTS.get(model.__name__) if model is not None else None
+        if link and revision.action == "create" and revision.call_id is not None:
+            parent_name, attname = link
+            parent_id = (revision.changes.get(attname) or [None, None])[1]
+            parent = parents.get((revision.call_id, parent_name, str(parent_id)))
+            if parent is not None:
+                summary = line_summary(model, revision.changes, lookup)
+                if summary:
+                    suffixes.setdefault(id(parent), []).append(summary)
+                continue
+        kept.append(revision)
+    return kept, suffixes
 
 
 def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None) -> Entry:
@@ -267,8 +306,8 @@ def _live_quotes(ids):
 def _timeline(revisions, until) -> list[Entry]:
     from connect_labs.supply_chain.models import Quote
 
-    revisions = _merged(list(revisions))
     lookup = Lookup()
+    revisions, suffixes = _fold_lines(_merged(list(revisions)), lookup)
     by_model = {}
     for revision in revisions:
         if revision.action == "update":
@@ -279,13 +318,20 @@ def _timeline(revisions, until) -> list[Entry]:
     quote_type = ContentType.objects.get_for_model(Quote)
     quote_ids = {int(r.object_id) for r in revisions if r.content_type_id == quote_type.pk}
     live = set(_live_quotes(quote_ids)) if quote_ids and until is None else set()
-    entries = [entry_for(r, lookup=lookup, offer_fixes=until is None, live_quote_ids=live) for r in revisions]
+    entries = []
+    for revision in revisions:
+        entry = entry_for(revision, lookup=lookup, offer_fixes=until is None, live_quote_ids=live)
+        # Lines come oldest first inside the call, as they were entered.
+        lines = list(reversed(suffixes.get(id(revision), [])))
+        if lines and entry.sentence:
+            entry.sentence += " — " + "; ".join(lines)
+        entries.append(entry)
     return [e for e in entries if e.sentence]
 
 
-def timeline_for_tender(tender_id, *, program_id=None, until=None) -> list[Entry]:
+def timeline_for_tender(tender_id, *, program_id, until=None) -> list[Entry]:
     return _timeline(tender_scope_revisions(tender_id, program_id=program_id, until=until), until)
 
 
-def timeline_for_contract(contract_id, *, program_id=None, until=None) -> list[Entry]:
+def timeline_for_contract(contract_id, *, program_id, until=None) -> list[Entry]:
     return _timeline(contract_scope_revisions(contract_id, program_id=program_id, until=until), until)

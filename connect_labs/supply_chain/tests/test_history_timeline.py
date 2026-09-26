@@ -28,6 +28,9 @@ from connect_labs.supply_chain.history.timeline import (
 from connect_labs.supply_chain.operations import call_operation
 
 PROGRAM = 20997
+# Measured, plus a small margin: a query per line would blow straight past these.
+QUERY_BOUND_CONTRACT = 18  # measured 15
+QUERY_BOUND_TENDER = 25  # measured 22
 
 
 def _at(month, day, hour=9):
@@ -168,7 +171,7 @@ def _quote(da, tender_id, supplier_id, when, **kwargs):
 @pytest.mark.django_db
 class TestContractTimeline:
     def test_newest_first_with_the_eta_change_on_top(self, order, sophie):
-        entries = timeline_for_contract(order["contract"]["id"])
+        entries = timeline_for_contract(order["contract"]["id"], program_id=PROGRAM)
 
         assert entries[0].sentence == "ETA 5 Sep → 19 Sep"
         assert entries[0].actor == "Sophie Bello"
@@ -176,7 +179,7 @@ class TestContractTimeline:
         assert [e.when for e in entries] == sorted((e.when for e in entries), reverse=True)
 
     def test_the_agent_create_carries_its_label_and_the_email(self, order):
-        entries = timeline_for_contract(order["contract"]["id"])
+        entries = timeline_for_contract(order["contract"]["id"], program_id=PROGRAM)
         created = next(e for e in entries if e.sentence.startswith("Shipment recorded"))
 
         assert created.actor == "ACE (agent)"
@@ -186,18 +189,18 @@ class TestContractTimeline:
         assert "ETA 5 Sep" in created.sentence
 
     def test_the_order_itself_is_on_its_own_timeline(self, order):
-        sentences = [e.sentence for e in timeline_for_contract(order["contract"]["id"])]
+        sentences = [e.sentence for e in timeline_for_contract(order["contract"]["id"], program_id=PROGRAM)]
         assert sentences[-1].startswith("Order recorded")
         assert "PO-HARMATTAN" in sentences[-1]
 
     def test_until_leaves_out_what_happened_after_that_day(self, order):
-        entries = timeline_for_contract(order["contract"]["id"], until=datetime.date(2026, 8, 27))
+        entries = timeline_for_contract(order["contract"]["id"], program_id=PROGRAM, until=datetime.date(2026, 8, 27))
 
         assert "ETA 5 Sep → 19 Sep" not in [e.sentence for e in entries]
         assert any(e.sentence.startswith("Shipment recorded") for e in entries)
 
     def test_until_includes_the_whole_of_that_day(self, order):
-        entries = timeline_for_contract(order["contract"]["id"], until=datetime.date(2026, 8, 28))
+        entries = timeline_for_contract(order["contract"]["id"], program_id=PROGRAM, until=datetime.date(2026, 8, 28))
         assert entries[0].sentence == "ETA 5 Sep → 19 Sep"
 
     def test_another_orders_shipments_are_not_on_this_timeline(self, da, order, base):
@@ -220,13 +223,110 @@ class TestContractTimeline:
             AUG_20,
             data={"contract_id": other["id"], "reference": "SH-OTHER", "source": "we_recorded"},
         )
-        sentences = " ".join(e.sentence for e in timeline_for_contract(order["contract"]["id"]))
+        sentences = " ".join(e.sentence for e in timeline_for_contract(order["contract"]["id"], program_id=PROGRAM))
         assert "SH-OTHER" not in sentences
         assert "PO-OTHER" not in sentences
 
+    def test_line_rows_fold_into_the_shipment_they_arrived_with(self, da, order):
+        op(
+            da,
+            "shipment_record",
+            AUG_20,
+            data={
+                "contract_id": order["contract"]["id"],
+                "reference": "SH-2",
+                "expected_on": "2026-09-12",
+                "source": "we_recorded",
+                "lines": [
+                    {"batch": "B1", "quantity": "300", "quantity_unit": "carton"},
+                    {"batch": "B2", "quantity": "1", "quantity_unit": "carton"},
+                ],
+            },
+        )
+        sentences = [e.sentence for e in timeline_for_contract(order["contract"]["id"], program_id=PROGRAM)]
+
+        assert "Shipment recorded: SH-2, ETA 12 Sep — 300 cartons, batch B1; 1 carton, batch B2" in sentences
+        assert not [s for s in sentences if s.startswith("Shipment line")]
+
+    def test_a_line_added_by_a_later_call_keeps_its_own_line(self, da, order):
+        from connect_labs.supply_chain.models import ShipmentLine
+
+        with seed_overrides(PROGRAM, recorded_at=AUG_28):
+            ShipmentLine.objects.create(
+                shipment_id=order["shipment"]["id"], batch="B9", quantity="5", quantity_unit="carton"
+            )
+        sentences = [e.sentence for e in timeline_for_contract(order["contract"]["id"], program_id=PROGRAM)]
+        assert "Shipment line recorded: 5 cartons, batch B9" in sentences
+
+    def test_a_save_lines_save_again_handler_is_one_line(self, da, order):
+        """Shipment saved, its lines, then the shipment again: one call, one shipment line."""
+        from django.contrib.contenttypes.models import ContentType
+
+        from connect_labs.supply_chain.history.models import Revision
+        from connect_labs.supply_chain.models import Shipment, ShipmentLine
+
+        call = OperationCall.objects.create(operation="shipment_record", channel="web", program_id=PROGRAM)
+        shipment_type = ContentType.objects.get_for_model(Shipment)
+        common = dict(call=call, program_id=PROGRAM, recorded_at=AUG_28)
+        Revision.objects.create(
+            content_type=shipment_type,
+            object_id="888888",
+            action="create",
+            changes={"contract_id": [None, order["contract"]["id"]], "reference": [None, "SH-9"]},
+            **common,
+        )
+        Revision.objects.create(
+            content_type=ContentType.objects.get_for_model(ShipmentLine),
+            object_id="777777",
+            action="create",
+            changes={"shipment_id": [None, 888888], "quantity": [None, "40"], "quantity_unit": [None, "carton"]},
+            **common,
+        )
+        Revision.objects.create(
+            content_type=shipment_type,
+            object_id="888888",
+            action="update",
+            changes={"expected_on": [None, "2026-10-02"]},
+            **common,
+        )
+        sentences = [e.sentence for e in timeline_for_contract(order["contract"]["id"], program_id=PROGRAM)]
+
+        assert sentences[0] == "Shipment recorded: SH-9, ETA 2 Oct — 40 cartons"
+        assert not [s for s in sentences if s.startswith("ETA") and "2 Oct" in s]
+
+    def test_free_text_reads_verbatim_and_codes_read_as_words(self, da, order):
+        op(
+            da,
+            "contract_update",
+            AUG_28,
+            contract_id=order["contract"]["id"],
+            data={"reference": "PO_7", "status": "part_received"},
+        )
+        top = timeline_for_contract(order["contract"]["id"], program_id=PROGRAM)[0].sentence
+        assert "Reference PO-HARMATTAN → PO_7" in top
+        assert "Status placed → part received" in top
+
+    def test_the_whole_timeline_is_a_bounded_number_of_queries(self, da, order, base, django_assert_max_num_queries):
+        for n in range(3):
+            op(
+                da,
+                "shipment_record",
+                AUG_20,
+                data={"contract_id": order["contract"]["id"], "reference": f"SH-B{n}", "source": "we_recorded"},
+            )
+        with django_assert_max_num_queries(QUERY_BOUND_CONTRACT):
+            entries = timeline_for_contract(order["contract"]["id"], program_id=PROGRAM)
+        assert len(entries) >= 5
+
+    def test_program_is_required(self, order):
+        with pytest.raises(TypeError):
+            timeline_for_contract(order["contract"]["id"])
+        with pytest.raises(TypeError):
+            contract_scope_revisions(order["contract"]["id"])
+
     def test_the_scope_is_one_query_set_not_one_per_child(self, order, django_assert_max_num_queries):
         with django_assert_max_num_queries(20):
-            revisions = list(contract_scope_revisions(order["contract"]["id"]))
+            revisions = list(contract_scope_revisions(order["contract"]["id"], program_id=PROGRAM))
         assert revisions
 
 
@@ -234,7 +334,7 @@ class TestContractTimeline:
 class TestTenderTimeline:
     def test_a_quote_reads_as_its_price_basis_and_pack(self, da, base):
         _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20)
-        entries = timeline_for_tender(base["tender"]["id"])
+        entries = timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)
 
         quote = next(e for e in entries if e.sentence.startswith("Quote recorded"))
         assert quote.sentence.startswith("Quote recorded: 42.50 USD per carton (basis not specified)")
@@ -242,7 +342,9 @@ class TestTenderTimeline:
 
     def test_an_ai_entered_quote_offers_correct_and_void(self, da, base, sophie):
         quote = _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, channel="mcp", actor=sophie)
-        entry = next(e for e in timeline_for_tender(base["tender"]["id"]) if e.sentence.startswith("Quote"))
+        entry = next(
+            e for e in timeline_for_tender(base["tender"]["id"], program_id=PROGRAM) if e.sentence.startswith("Quote")
+        )
 
         assert entry.actor == "via AI · Sophie"
         assert entry.correct_url == reverse("supply_chain:procurement_quote_correct", args=[quote["id"]])
@@ -250,7 +352,9 @@ class TestTenderTimeline:
 
     def test_a_quote_typed_in_on_the_web_offers_neither(self, da, base, sophie):
         _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, channel="web", actor=sophie)
-        entry = next(e for e in timeline_for_tender(base["tender"]["id"]) if e.sentence.startswith("Quote"))
+        entry = next(
+            e for e in timeline_for_tender(base["tender"]["id"], program_id=PROGRAM) if e.sentence.startswith("Quote")
+        )
 
         assert entry.correct_url is None
         assert entry.void_url is None
@@ -258,7 +362,7 @@ class TestTenderTimeline:
     def test_a_voided_quote_offers_neither(self, da, base, sophie):
         quote = _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, channel="mcp", actor=sophie)
         op(da, "quote_void", AUG_28, quote_id=quote["id"], reason="duplicate of an earlier email")
-        entries = timeline_for_tender(base["tender"]["id"])
+        entries = timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)
 
         assert entries[0].sentence == "Voided: duplicate of an earlier email"
         assert entries[0].subject == "Quote · Northwind Foods"
@@ -266,7 +370,7 @@ class TestTenderTimeline:
 
     def test_as_of_mode_never_offers_correct_or_void(self, da, base, sophie):
         _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, channel="mcp", actor=sophie)
-        entries = timeline_for_tender(base["tender"]["id"], until=datetime.date(2026, 8, 30))
+        entries = timeline_for_tender(base["tender"]["id"], program_id=PROGRAM, until=datetime.date(2026, 8, 30))
         assert all(e.correct_url is None for e in entries)
 
     def test_a_deleted_outreach_still_appears(self, da, base):
@@ -277,14 +381,14 @@ class TestTenderTimeline:
             data={"tender_id": base["tender"]["id"], "supplier_id": base["supplier"]["id"], "sent_on": "2026-08-03"},
         )
         op(da, "outreach_delete", AUG_20, outreach_id=outreach["id"], reason="never actually sent")
-        sentences = [e.sentence for e in timeline_for_tender(base["tender"]["id"])]
+        sentences = [e.sentence for e in timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)]
 
         assert sentences[0] == "Outreach removed: Northwind Foods"
         assert any(s.startswith("Outreach recorded: Northwind Foods") for s in sentences)
 
     def test_a_status_change_names_both_states(self, da, base):
         op(da, "tender_open", AUG_20, tender_id=base["tender"]["id"])
-        entries = timeline_for_tender(base["tender"]["id"])
+        entries = timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)
         assert any(e.sentence.startswith("Status draft → open") for e in entries)
 
     def test_another_tenders_quotes_are_not_on_this_timeline(self, da, base):
@@ -295,7 +399,9 @@ class TestTenderTimeline:
             data={"label": "Tender Other", "lines": [{"commodity_slug": "rutf", "quantity": "1"}]},
         )
         _quote(da, other["id"], base["supplier"]["id"], AUG_20)
-        assert not [e for e in timeline_for_tender(base["tender"]["id"]) if e.sentence.startswith("Quote")]
+        assert not [
+            e for e in timeline_for_tender(base["tender"]["id"], program_id=PROGRAM) if e.sentence.startswith("Quote")
+        ]
 
     def test_an_invitation_and_its_withdrawal_name_the_organisation(self, da, base):
         from connect_labs.supply_chain.models import Supplier
@@ -303,7 +409,7 @@ class TestTenderTimeline:
         org_id = Supplier.objects.get(pk=base["supplier"]["id"]).org_id
         op(da, "tender_invite_org", AUG_20, tender_id=base["tender"]["id"], org_id=org_id)
         op(da, "tender_uninvite_org", AUG_28, tender_id=base["tender"]["id"], org_id=org_id)
-        sentences = [e.sentence for e in timeline_for_tender(base["tender"]["id"])]
+        sentences = [e.sentence for e in timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)]
 
         assert sentences[:2] == ["Invitation to Northwind Foods withdrawn", "Invited Northwind Foods"]
 
@@ -329,9 +435,17 @@ class TestTenderTimeline:
         entries = _timeline(Revision.objects.filter(object_id="999999").order_by("-recorded_at", "-id"), None)
         assert [e.sentence for e in entries] == ["Tender recorded: Tender Sahel"]
 
+    def test_the_whole_timeline_is_a_bounded_number_of_queries(self, da, base, django_assert_max_num_queries):
+        for name in ("Harmattan Mills", "Sahel Nutrition", "Lakeside Foods"):
+            supplier = op(da, "supplier_create", AUG_3, data={"name": name})
+            _quote(da, base["tender"]["id"], supplier["id"], AUG_20, channel="mcp")
+        with django_assert_max_num_queries(QUERY_BOUND_TENDER):
+            entries = timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)
+        assert len([e for e in entries if e.sentence.startswith("Quote recorded")]) == 3
+
     def test_scope_revisions_are_this_tenders_only(self, da, base):
         _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20)
-        revisions = tender_scope_revisions(base["tender"]["id"])
+        revisions = tender_scope_revisions(base["tender"]["id"], program_id=PROGRAM)
         assert {r.program_id for r in revisions} == {PROGRAM}
         assert {r.content_type.model for r in revisions} >= {"tender", "quote"}
 
@@ -362,6 +476,9 @@ class TestActorLabel:
 
     def test_a_command_is_an_import(self):
         assert actor_label(self._call(channel="command")) == "Imported"
+
+    def test_an_unknown_channel_is_the_system(self):
+        assert actor_label(self._call(channel="replay")) == "System"
 
 
 class _ProgramContextMiddleware:
@@ -398,6 +515,7 @@ class TestPages:
         assert "ETA 5 Sep → 19 Sep" in body
         assert ">AI<" in body
         assert "ACE (agent)" in body
+        assert "AI</span><span>via AI" not in body
         assert "<blockquote" in body and "Northwind dispatch" in body
 
     def test_the_tender_page_offers_correct_live_and_not_as_of(self, client_in_program, da, base, ace):
@@ -407,6 +525,7 @@ class TestPages:
 
         live = client_in_program.get(url).content.decode()
         assert "data-timeline" in live
+        assert "ACE (agent)" in live
         assert "Quote recorded: 42.50 USD per carton" in live
         assert correct in live
 
@@ -415,6 +534,14 @@ class TestPages:
         body = past.content.decode()
         assert "Quote recorded: 42.50 USD per carton" in body
         assert correct not in body
+
+    def test_a_via_ai_pill_does_not_say_ai_twice(self, client_in_program, da, base, sophie):
+        _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, channel="mcp", actor=sophie)
+        url = reverse("supply_chain:procurement_tender_detail", args=[base["tender"]["id"]])
+        body = client_in_program.get(url).content.decode()
+
+        assert "<span>via AI · Sophie</span>" in body
+        assert ">AI</span><span>via AI" not in body
 
     def test_the_order_page_as_of_leaves_out_the_later_change(self, client_in_program, order):
         url = reverse("supply_chain:order_detail", args=[order["contract"]["id"]])
