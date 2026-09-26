@@ -93,8 +93,15 @@ def semantic_snapshot(
 
     props_doc, full_registry, llo_map, reg_settings, deployment, _source = resolve_registry_for(
         definition,
+        # The registry is read by its OWNER too, for the reason the definition is:
+        # a record seeded at creation lives in the workflow's own scope, and a
+        # program-owned workflow's scope has no opportunity. Reading through the
+        # data anchor (opportunity + program) matched nothing, so every program-
+        # owned report with a SEEDED registry failed to save ("no semantic registry
+        # with id ..."); reports bound to a public record were unaffected. A binding
+        # that names a home scope still reads there (runtime.resolve_registry).
         registry_access_factory=lambda: SemanticRegistryDataAccess(
-            request=request, access_token=access_token, **scope
+            request=request, access_token=access_token, **owner_scope
         ),
     )
     # Which pipelines feed Layer 1 is the registry's own model, so it is resolved

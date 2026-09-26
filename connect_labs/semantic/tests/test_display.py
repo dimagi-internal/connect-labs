@@ -34,6 +34,8 @@ def test_visit_quality_renders_out_of_the_box_on_defaults(vq):
     assert d["indicators"]["Q02"]["target"] == 60 and d["indicators"]["Q01"]["target"] is None
     assert [f["field"] for f in d["case_fields"]] == ["first_visit_date", "last_visit_date", "total_visits"]
     assert d["reading"] is None
+    # The registry's own floor, so an "n<..." cell names it (was a measure's, 100).
+    assert d["min_denominator"] == 5
 
 
 def test_kmc_declares_the_five_tiles_its_report_hand_codes(kmc):
