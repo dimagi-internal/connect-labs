@@ -5,7 +5,7 @@ not become one -- so nothing here goes through a program-scoped
 `SupplyDataAccess` on the supplier's behalf. Reads are queries over the
 models that return only what the market shows: open tenders that are public or
 that the organisation was invited to, and the organisation's OWN quotes.
-Bids are sealed; no function here returns another supplier's quote.
+Each supplier's bids are private to it; no function here returns another supplier's quote.
 
 Writes go through the ordinary operations (`quote_record`, `quote_correct`,
 `quote_void`, `supplier_create`) under the `SYSTEM` caller -- the same
@@ -285,7 +285,7 @@ def _own_quotes(orgs):
     Not every quote against the company. A quote a program team typed in from
     the supplier's email is that program's record -- another program's team,
     or anyone who comes to act for the company later, must not be able to read
-    or change it through the marketplace. Bids are sealed from other programs
+    or change it through the marketplace. A bid is private from other programs
     as well as from other suppliers.
     """
     return (
