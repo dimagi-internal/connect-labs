@@ -289,6 +289,13 @@ def measure_catalog(registry: dict[str, Any]) -> list[dict[str, Any]]:
     # its NUMERATOR -- count / avg / sum -- which is where the render's old `kind`
     # came from too.
     kinds = {"count": "count", "avg": "mean", "sum": "sumratio"}
+    # The display contract (semantic/display.py): label, plain sentence, headline
+    # position, target, order, scorecard membership and credibility table, with
+    # every default filled, so a generic report reads its presentation from here
+    # rather than from page code.
+    from connect_labs.semantic.display import indicator_display
+
+    shown = indicator_display(registry.get("measures", []))
 
     out = []
     for m in registry.get("measures", []):
@@ -347,6 +354,11 @@ def measure_catalog(registry: dict[str, Any]) -> list[dict[str, Any]]:
                 # comment in the render put it best: an unlabelled pair reads as a bug.
                 "scope_note": meta.get("scope_note"),
                 "flw_applicable": meta.get("flw_applicable", False),
+                **{
+                    k: v
+                    for k, v in (shown.get(meta.get("indicator")) or {}).items()
+                    if k in ("label", "plain", "headline", "target", "order", "scorecard", "credibility")
+                },
             }
         )
     return out

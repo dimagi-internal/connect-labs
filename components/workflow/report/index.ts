@@ -44,6 +44,18 @@ import {
   targetOf,
 } from './Benchmark';
 import {
+  DefinitionBody,
+  DefinitionModal,
+  ReadingChart,
+  cap,
+  displayOf,
+  fmtCaseField,
+  headlineSpecs,
+  nounCount,
+  scorecardLayout,
+  targetValue,
+} from './Indicators';
+import {
   Button,
   Card,
   Loading,
@@ -53,7 +65,7 @@ import {
   SectionTitle,
 } from './Layout';
 
-export const VERSION = 2;
+export const VERSION = 3;
 
 export const LabsReport = {
   VERSION,
@@ -109,6 +121,17 @@ export const LabsReport = {
   targetOf,
   drawable,
   ordinal,
+  // the registry display contract, for generic indicator reports (VERSION 3)
+  displayOf,
+  headlineSpecs,
+  scorecardLayout,
+  targetValue,
+  fmtCaseField,
+  nounCount,
+  cap,
+  ReadingChart,
+  DefinitionBody,
+  DefinitionModal,
 };
 
 export type LabsReportLibrary = typeof LabsReport;

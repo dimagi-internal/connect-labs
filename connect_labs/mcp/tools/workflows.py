@@ -1044,6 +1044,24 @@ def _binding_or_none(definition):
                     "access; single-opp templates silently ignore this."
                 ),
             },
+            "pipelines_from": {
+                "type": "object",
+                "description": (
+                    "Optional. REFERENCE another workflow's pipeline records instead of creating the "
+                    "template's own: {workflow_id: N, opportunity_id | program_id: <its scope>}. Each "
+                    "source keeps (or gains) a home_scope so it is read where it lives -- one cache, "
+                    "no copies to drift. The pipelines' aliases must be the ones the bound registry "
+                    "names (properties.pipelines). Companions share the same records."
+                ),
+            },
+            "config": {
+                "type": "object",
+                "description": (
+                    "Optional config keys stamped on the new definition at create time, e.g. "
+                    "{source_workflow_id: N} so an opportunity report names the programme report it "
+                    "receives hand-downs from."
+                ),
+            },
         },
         "required": ["template_key"],
         "additionalProperties": False,
@@ -1058,6 +1076,8 @@ def workflow_create_from_template(
     name: str = None,
     opportunity_ids: list[int] = None,
     registry_source: dict = None,
+    pipelines_from: dict = None,
+    config: dict = None,
 ):
     # Record ownership is exactly one of opportunity / program.
     if (opportunity_id is None) == (program_id is None):
@@ -1114,6 +1134,11 @@ def workflow_create_from_template(
                     "home scope key. Omit it to seed a new record from the template's on-disk registry.",
                 )
             _validate_registry_source(registry_source, wda, opportunity_id=opportunity_id, program_id=program_id)
+        pipeline_sources_override = None
+        if pipelines_from is not None:
+            pipeline_sources_override = _pipelines_from(pipelines_from, token)
+        if config is not None and not isinstance(config, dict):
+            raise MCPToolError("INVALID_SCHEMA", "config must be an object of config keys")
         try:
             # request=None means we go through the access_token path.
             # Pipelines are created via data_access.access_token forwarding.
@@ -1124,6 +1149,8 @@ def workflow_create_from_template(
                 opportunity_ids=cleaned_opp_ids or None,
                 program_id=program_id,
                 registry_source=registry_source,
+                pipeline_sources_override=pipeline_sources_override,
+                config_overrides=config or None,
             )
         except ValueError as e:
             # create_workflow_from_template raises ValueError on unknown template.
@@ -1420,6 +1447,32 @@ def workflow_set_template_flag(
         }
     finally:
         wda.close()
+
+
+def _pipelines_from(value, token: str) -> list[dict]:
+    """The pipeline sources of the workflow `value` names, referenced where they live."""
+    if not isinstance(value, dict) or not isinstance(value.get("workflow_id"), int):
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            "pipelines_from must be {workflow_id: <int>, opportunity_id | program_id: <its scope>}",
+        )
+    opp, pgm = value.get("opportunity_id"), value.get("program_id")
+    if (opp is None) == (pgm is None):
+        raise MCPToolError("INVALID_SCHEMA", "pipelines_from needs exactly one of opportunity_id / program_id")
+    scope = {"opportunity_id": int(opp)} if opp is not None else {"program_id": int(pgm)}
+    src = WorkflowDataAccess(access_token=token, **scope)
+    try:
+        source = src.get_definition(int(value["workflow_id"]))
+    finally:
+        src.close()
+    if source is None:
+        raise MCPToolError(
+            "NOT_FOUND", f"No workflow {value['workflow_id']} readable in scope {scope} -- nothing was created."
+        )
+    sources = source.data.get("pipeline_sources") or []
+    if not sources:
+        raise MCPToolError("INVALID_SCHEMA", f"workflow {value['workflow_id']} has no pipeline sources to share")
+    return _linked_sources(sources, scope, token)
 
 
 def _linked_sources(sources, source_scope: dict, token: str) -> list[dict]:

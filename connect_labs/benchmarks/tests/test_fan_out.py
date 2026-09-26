@@ -196,6 +196,9 @@ def test_the_instances_reference_one_pipeline_record_rather_than_copying_it(monk
         # The binding gains the home scope too, or an opportunity-scoped
         # instance cannot read the record it is bound to.
         assert call["registry_source"] == {"registry_id": 55, "program_id": 46}
+        # A receiving template NAMES its source, so hand-downs do not depend on
+        # the cohort fallback.
+        assert call["config_overrides"] == {"source_workflow_id": 19780}
 
 
 def test_without_a_source_workflow_it_says_so_rather_than_pretending(monkeypatch):
@@ -213,6 +216,7 @@ def test_without_a_source_workflow_it_says_so_rather_than_pretending(monkeypatch
 
     assert out["shared"] is False
     assert store.create_calls[0]["pipeline_sources_override"] is None
+    assert store.create_calls[0]["config_overrides"] is None
     assert store.create_calls[0]["registry_source"] is None
 
 
