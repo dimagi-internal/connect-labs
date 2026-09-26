@@ -11,6 +11,7 @@ urlpatterns = [
     # addresses land on it rather than each serving their own copy.
     path("programs/", RedirectView.as_view(pattern_name="marketplace:home", permanent=True), name="programs"),
     path("programmes/", RedirectView.as_view(pattern_name="marketplace:home", permanent=True)),
+    path("fonts/", views.fonts, name="fonts"),
     path("network/", views.network, name="network"),
     path("network/points/", views.network_points, name="network_points"),
     path("rounds/", views.rounds, name="rounds"),
