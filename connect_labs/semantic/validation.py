@@ -120,6 +120,14 @@ def validate_registry(
     #    workflow bound to a record computed from something else.
     errors.extend(_gate_coherence(registry, deployment))
 
+    # 4. The display contract the generic indicator reports read (semantic/display.py):
+    #    headline positions, targets, orders, nouns, case columns, and credibility
+    #    tables that exist.
+    from connect_labs.semantic.display import credibility_problems, display_problems
+
+    errors.extend(display_problems(registry))
+    errors.extend(credibility_problems(registry, settings or {}))
+
     return errors
 
 

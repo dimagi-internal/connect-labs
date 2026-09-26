@@ -105,6 +105,11 @@ def semantic_snapshot(
         props_doc=props_doc,
     )
     model = resolve_model(props_doc, full_registry)
+    # A spec may leave the registry-shaped keys out (the generic indicator
+    # templates do): they are then derived from the registry's own model and the
+    # pipelines it names, so one template serves any registry. A spec that states
+    # them -- every KMC report -- is used exactly as written.
+    spec = resolve_spec_defaults(spec, model, pipeline_config, extra_fields, llo_map, full_registry)
 
     # `series` is one family or several. The FIRST is the primary -- it drives
     # programInd / byLLO / byOpp / byFLW / the trend -- and every further one is
@@ -175,7 +180,15 @@ def semantic_snapshot(
         # disclaimer silently absent.
         meta["synthetic"] = synthetic
 
+    from connect_labs.semantic.display import resolve_display
+
+    display = resolve_display(
+        props_doc,
+        full_registry,
+        visits_pipeline=spec.get("visits_pipeline"),
+    )
     payload = snap.build(
+        display=display,
         spec=spec,
         rows=rows,
         measures=measures,
@@ -188,6 +201,71 @@ def semantic_snapshot(
         registry_min_denominator=model.min_denominator,
     )
     return wrap_for_runner(payload, spec.get("state_key"))
+
+
+_ALL_SCOPES = ["programme", "llo", "opportunity", "flw", "month", "llo_month", "opportunity_month"]
+
+
+def _stage(config) -> str:
+    stage = getattr(config, "terminal_stage", None)
+    return str(getattr(stage, "value", stage) or "")
+
+
+def resolve_spec_defaults(spec, model, pipeline_config, extra_fields, llo_map, indicators_doc) -> dict:
+    """The builder spec with every registry-derivable key filled in.
+
+    Only ABSENT keys are filled, so a spec that states a key keeps it. What is
+    derived, and from where:
+
+      scopes          every scope the registry can compile (no `llo*` scopes
+                      without an llo_map -- the compiler refuses them by name)
+      case_index      the registry's entity pipeline: its rows as they are when it
+                      is an ENTITY pipeline, grouped per entity key when it is a
+                      VISIT-level one (a registry over the visit rows alone)
+      visits_pipeline the visit-level pipeline: the entity pipeline itself when it
+                      is visit-level, else the first extra-field pipeline that is
+      maturity_anchor first_visit_date, which every case index carries
+      credibility     each indicator's `meta.credibility` table, merged under any
+                      the spec states
+    """
+    from connect_labs.semantic.compiler import available_scopes
+    from connect_labs.semantic.display import credibility_from_meta
+
+    out = dict(spec or {})
+    allowed = available_scopes(llo_map or None)
+    if "scopes" not in out:
+        out["scopes"] = [s for s in _ALL_SCOPES if s in allowed]
+    else:
+        # A generic spec listing llo scopes over a registry with no llo_map would
+        # fail to compile; KMC-shaped specs over KMC registries are unaffected.
+        out["scopes"] = [s for s in out["scopes"] if s in allowed] or ["programme"]
+
+    entity_alias = model.entity_pipeline
+    entity_visit_level = _stage(pipeline_config) == "visit_level"
+    if "visits_pipeline" not in out:
+        if entity_visit_level:
+            out["visits_pipeline"] = entity_alias
+        else:
+            aliases = model.extra_fields or {}
+            out["visits_pipeline"] = next(
+                (a for col, a in aliases.items() if _stage((extra_fields or {}).get(col)) == "visit_level"),
+                None,
+            )
+    if "case_index" not in out and entity_alias:
+        from connect_labs.semantic.display import resolve_display
+
+        wanted = [f["field"] for f in resolve_display(None, indicators_doc)["case_fields"]]
+        base = ["entity_id", "username", "opportunity_id", "first_visit_date", "last_visit_date", "total_visits"]
+        fields = base + [f for f in wanted if f not in base]
+        out["case_index"] = {"pipeline": entity_alias, "fields": fields}
+        if entity_visit_level:
+            out["case_index"]["group_by"] = model.key
+    if "maturity_anchor" not in out:
+        out["maturity_anchor"] = "first_visit_date"
+    meta_cred = credibility_from_meta(indicators_doc)
+    if meta_cred:
+        out["credibility"] = {**meta_cred, **(out.get("credibility") or {})}
+    return out
 
 
 def settles_meta(spec: dict, props_doc: dict, indicators_doc: dict) -> dict:

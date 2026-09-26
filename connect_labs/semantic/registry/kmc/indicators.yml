@@ -46,6 +46,26 @@ defaults:
 # letters say nothing about which family it is in.
 series: [KMC]
 
+# How a GENERIC indicator report (indicator_programme_report and its cascade)
+# reads this registry -- see semantic/display.py. The KMC templates keep their own
+# page code and ignore it; the per-indicator `headline` / `target` / `label` /
+# `credibility` keys above are the same five tiles the KMC report hand-codes.
+display:
+  title: Kangaroo Mother Care programme
+  entity: { name: baby, plural: babies }
+  organisation: { name: organisation, plural: organisations }
+  categories:
+    [Scale, Case mix, Follow-up, Growth quality, Outcome, Care, Data quality]
+  case_fields:
+    - { field: reg_date, label: Registered, format: date }
+    - { field: first_visit_date, label: First visit, format: date }
+    - { field: last_visit_date, label: Last visit, format: date }
+    - { field: total_visits, label: Visits, format: count }
+    - { field: birth_weight_g, label: Birth weight, format: count, unit: g }
+    - { field: last_weight_g, label: Latest weight, format: count, unit: g }
+    - { field: last_kmc_status, label: Status, format: text }
+  reading: { column: weight_g, label: Weight, unit: g }
+
 measures:
   # ── Scale ────────────────────────────────────────────────────────────────
   - name: total_cases
@@ -92,6 +112,8 @@ measures:
     meta:
       {
         indicator: started_cases,
+        headline: 1,
+        label: 'Started cases',
         plain: 'Babies with two or more follow-up visits (registration excluded).',
         category: Scale,
         prominence: Top,
@@ -250,6 +272,9 @@ measures:
     meta:
       {
         indicator: lost_by_day_28,
+        headline: 5,
+        label: 'Lost by day 28',
+        target: 10,
         plain: 'Started babies whose first visit was at least 28 days ago and whose outcome is unknown: neither died nor seen at least 28 days after the first visit.',
         category: Follow-up,
         prominence: Top,
@@ -301,6 +326,9 @@ measures:
     meta:
       {
         indicator: pct_healthy_growth,
+        headline: 2,
+        label: 'Healthy growth',
+        target: 70,
         plain: 'Share of qualifying babies whose early velocity is within the plausible range for their birthweight band.',
         inputs: [weights],
         category: Growth quality,
@@ -376,6 +404,9 @@ measures:
     sql: '{mean_early_growth_rate_numerator}'
     meta: {
         indicator: mean_early_growth_rate,
+        headline: 3,
+        label: 'Early growth rate',
+        target: 15,
         # A mean growth rate says nothing about how big an opportunity is, so it
         # is publishable as an anonymised peer figure. Declared rather than
         # inferred from the unit, which cannot tell a mean from a count.
@@ -438,6 +469,9 @@ measures:
     meta:
       {
         indicator: mortality,
+        headline: 4,
+        target: 4,
+        credibility: mortality_recording_credible,
         plain: 'Deaths as a share of started babies whose first visit was at least 28 days ago and whose outcome is known. Two-sided: under about 2 percent usually means deaths are not being recorded. Shown only where death recording is credible.',
         scope_note: 'All LLOs pooled, including those that do not record deaths credibly. A figure gated to the credible recorders reads higher, because non-recorders add denominator without deaths.',
         category: Outcome,

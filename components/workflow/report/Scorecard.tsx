@@ -21,6 +21,8 @@ export function ScoreCellText(props: {
   entry: Cell | null | undefined;
   measure?: Measure | null;
   minDenominator?: number;
+  /** VERSION 3: the tooltip on a not-credible figure. */
+  notCredibleTitle?: string;
 }) {
   const c = props.column;
   const e = props.entry;
@@ -39,7 +41,10 @@ export function ScoreCellText(props: {
     return (
       <span
         className="text-slate-400"
-        title="Death recording is not credible for this organisation"
+        title={
+          props.notCredibleTitle ||
+          'Death recording is not credible for this organisation'
+        }
       >
         {text}
       </span>
@@ -55,6 +60,7 @@ export function ScoreCell(props: {
   minDenominator?: number;
   highlight?: boolean;
   title?: string;
+  notCredibleTitle?: string;
 }) {
   const tint = props.column.denOnly ? '' : tintFor(props.entry);
   return (

@@ -155,6 +155,8 @@ export function WeeklyActivityCard(props: {
   weeks: Week[];
   title?: string;
   className?: string;
+  /** VERSION 3: the bars' legend ("Communities registered"). */
+  registeredLabel?: string;
 }) {
   return (
     <div
@@ -173,7 +175,7 @@ export function WeeklyActivityCard(props: {
               className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle"
               style={{ background: '#a5b4fc' }}
             />
-            Babies registered
+            {props.registeredLabel || 'Babies registered'}
           </span>
           <span>
             <span
@@ -207,13 +209,15 @@ export function TrendCard(props: {
   title?: string;
   points: TrendPoint[] | null;
   pct?: boolean;
-  target: number;
+  /** Null or undefined (VERSION 3) draws no target line. */
+  target?: number | null;
   format: (e: Cell) => string;
   loading?: boolean;
 }) {
   const label = props.label;
   const pct = !!props.pct;
-  const target = props.target;
+  const hasTarget = props.target !== null && props.target !== undefined;
+  const target = hasTarget ? Number(props.target) : 0;
   const history = props.points;
   const pts = (history || []).map(function (p) {
     const e = p.entry;
@@ -253,8 +257,8 @@ export function TrendCard(props: {
       </div>
     );
   } else {
-    let lo = target,
-      hi = target;
+    let lo = hasTarget ? target : real[0].v,
+      hi = hasTarget ? target : real[0].v;
     real.forEach(function (p) {
       lo = Math.min(lo, p.v);
       hi = Math.max(hi, p.v);
@@ -316,23 +320,27 @@ export function TrendCard(props: {
             </g>
           );
         })}
-        <line
-          x1={L}
-          x2={W - R}
-          y1={y(target)}
-          y2={y(target)}
-          stroke="#c3c6d3"
-          strokeDasharray="3 3"
-        />
-        <text
-          x={W - R}
-          y={y(target) - 3}
-          fontSize="9"
-          fill="#9ca3af"
-          textAnchor="end"
-        >
-          {'target ' + f(target)}
-        </text>
+        {hasTarget ? (
+          <line
+            x1={L}
+            x2={W - R}
+            y1={y(target)}
+            y2={y(target)}
+            stroke="#c3c6d3"
+            strokeDasharray="3 3"
+          />
+        ) : null}
+        {hasTarget ? (
+          <text
+            x={W - R}
+            y={y(target) - 3}
+            fontSize="9"
+            fill="#9ca3af"
+            textAnchor="end"
+          >
+            {'target ' + f(target)}
+          </text>
+        ) : null}
         <path
           d={d}
           fill="none"
