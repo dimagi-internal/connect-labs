@@ -1847,7 +1847,8 @@ def _clarification_excerpt(access, quote, corrections):
         commodity = access.get_commodity(quote["commodity_slug"])
         base = getattr(commodity, "base_unit", "") or "units"
         pack = getattr(commodity, "pack_unit", "") or "pack"
-        return f"Each {pack} holds {count} {base}."
+        plural = base if count == 1 or base.endswith("s") else f"{base}s"
+        return f"Each {pack} holds {count} {plural}."
     stated = ", ".join(f"{key.replace('_', ' ')}: {value}" for key, value in corrections.items())
     return f"In answer to your question: {stated}."
 
