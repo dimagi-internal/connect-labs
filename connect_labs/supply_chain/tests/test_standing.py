@@ -202,12 +202,12 @@ def _invoice(da, contract, when=SEP_1):
     )
 
 
-def _pay(da, invoice, when=SEP_1):
+def _pay(da, invoice, when=SEP_1, amount="25500.00"):
     return op(
         da,
         "payment_record",
         when,
-        data={"invoice_id": invoice["id"], "paid_on": "2026-09-01", "amount": "25500.00", "source": "we_recorded"},
+        data={"invoice_id": invoice["id"], "paid_on": "2026-09-01", "amount": amount, "source": "we_recorded"},
     )
 
 
@@ -267,6 +267,19 @@ class TestTender:
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
         assert row.stale == ["1 quote missing a basis"]
         assert row.waiting_on == "award decision"
+
+    def test_a_closed_or_awarded_tender_drops_the_no_reply_flag_but_keeps_the_basis_flag(self, da, base):
+        tender = _tender(da, "Round 1", AUG_3)
+        _outreach(da, tender, base["suppliers"][0], datetime.date(2026, 8, 1))
+        _outreach(da, tender, base["suppliers"][1], datetime.date(2026, 8, 1), responded=True)
+        _quote(da, tender, base["suppliers"][1])  # basis not stated
+        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == [
+            "No reply in 40 days from 1 supplier",
+            "1 quote missing a basis",
+        ]
+
+        op(da, "tender_update", SEP_1, tender_id=tender["id"], data={"status": "awarded"})
+        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == ["1 quote missing a basis"]
 
     def test_an_awarded_tender_waits_on_its_contract(self, da, base):
         _tender(da, "Round 1", AUG_3, status="awarded")
@@ -329,6 +342,29 @@ class TestOrder:
         assert row.stage == "paid"
         assert row.waiting_on == "—"
         assert row.stale == []
+
+    def test_a_half_paid_order_is_part_paid_and_still_waits_on_payment(self, da, base):
+        contract = _order(da, base, "PO-1")
+        shipment = _ship(da, contract, datetime.date(2026, 8, 30))
+        _receive(da, base, contract, shipment)
+        invoice = _invoice(da, contract)
+        _pay(da, invoice, amount="12750.00")
+
+        row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
+        assert (row.stage, row.waiting_on) == ("part paid", "payment")
+
+        _pay(da, invoice, amount="12750.00")
+        row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
+        assert (row.stage, row.waiting_on) == ("paid", "—")
+
+    def test_a_part_received_order_says_so(self, da, base):
+        contract = _order(da, base, "PO-1")
+        shipment = _ship(da, contract, datetime.date(2026, 8, 30))
+        _receive(da, base, contract, shipment)
+        op(da, "contract_update", SEP_1, contract_id=contract["id"], data={"status": "part_received"})
+
+        row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
+        assert (row.stage, row.waiting_on) == ("part received", "invoice")
 
     def test_received_then_invoiced_wait_on_the_next_step(self, da, base):
         contract = _order(da, base, "PO-1")
@@ -446,8 +482,7 @@ class TestHomePage:
         monkeypatch.setattr("connect_labs.supply_chain.views.resolve_org", lambda access: us)
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
 
-        assert "Connect-RUTF · The program" in body
-        assert "buyer of record" not in body.split("Connect-RUTF · The program")[1][:80]
+        assert '<h2 class="text-lg font-semibold text-gray-900 mb-3">Connect-RUTF · The program</h2>' in body
 
     def test_the_heading_falls_back_to_the_program_id(self, client_in_program, base, monkeypatch):
         monkeypatch.setattr("connect_labs.supply_chain.views.resolve_org", lambda access: None)
@@ -455,7 +490,7 @@ class TestHomePage:
         session["labs_oauth"] = {}
         session.save()
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-        assert f"Program {PROGRAM}" in body
+        assert f'<h2 class="text-lg font-semibold text-gray-900 mb-3">Program {PROGRAM}</h2>' in body
 
     def test_the_table_lists_each_tender_and_order_above_the_funnel(self, client_in_program, da, base, ace):
         tender = _tender(da, "Round 1", AUG_3)
