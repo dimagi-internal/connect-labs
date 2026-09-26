@@ -386,6 +386,48 @@ class TestTenderTimeline:
         assert sentences[0] == "Outreach removed: Northwind Foods"
         assert any(s.startswith("Outreach recorded: Northwind Foods") for s in sentences)
 
+    @pytest.mark.parametrize(
+        "response_kind, expected",
+        [
+            ("quote", "Replied with a quote"),
+            ("declined", "Declined to quote"),
+            ("needs_info", "Replied asking for more information"),
+            ("no_reply", "Marked as no reply"),
+        ],
+    )
+    def test_a_reply_reads_as_a_program_manager_would_say_it(self, da, base, response_kind, expected):
+        """Not "Responded; Response kind: quote" -- one clause, in plain words."""
+        outreach = op(
+            da,
+            "outreach_log",
+            AUG_3,
+            data={"tender_id": base["tender"]["id"], "supplier_id": base["supplier"]["id"], "sent_on": "2026-08-03"},
+        )
+        op(
+            da,
+            "outreach_update",
+            AUG_20,
+            outreach_id=outreach["id"],
+            data={"responded": True, "response_kind": response_kind},
+        )
+        sentences = [e.sentence for e in timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)]
+
+        assert expected in sentences
+        assert not any("Response kind" in s for s in sentences)
+        assert not any(s == "Responded" for s in sentences)
+
+    def test_responded_with_no_response_kind_still_reads_as_responded(self, da, base):
+        outreach = op(
+            da,
+            "outreach_log",
+            AUG_3,
+            data={"tender_id": base["tender"]["id"], "supplier_id": base["supplier"]["id"], "sent_on": "2026-08-03"},
+        )
+        op(da, "outreach_update", AUG_20, outreach_id=outreach["id"], data={"responded": True})
+        sentences = [e.sentence for e in timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)]
+
+        assert "Responded" in sentences
+
     def test_a_status_change_names_both_states(self, da, base):
         op(da, "tender_open", AUG_20, tender_id=base["tender"]["id"])
         entries = timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)
