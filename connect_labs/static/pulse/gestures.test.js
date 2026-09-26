@@ -216,11 +216,33 @@ describe('drill in', () => {
     expect(all[0].x).toBeCloseTo(0.5, 1);
   });
 
-  it('a long pinch without movement selects nothing', () => {
+  it('a long pinch without movement selects nothing, and says why', () => {
     const { e, t } = armed();
     const a = feed(e, t, 40, hand({ pinch: 0.1 }));
     const b = feed(e, a.t, 3, hand({ pinch: 1 }));
-    expect(types([...a.actions, ...b.actions])).toEqual([]);
+    const all = [...a.actions, ...b.actions];
+    expect(types(all)).toEqual(['tapMissed']);
+    expect(all[0].reason).toBe('held too long');
+  });
+
+  it('a deliberate pinch (0.8s) still clicks', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 24, hand({ pinch: 0.1 }));
+    const b = feed(e, a.t, 3, hand({ pinch: 1 }));
+    expect(types([...a.actions, ...b.actions])).toEqual(['select']);
+  });
+
+  it('a pinch that jolts the cursor a little still clicks, not drags', () => {
+    // Closing the fingers moves the knuckle the cursor follows: ~4% of the
+    // screen here, which the old 3% tolerance read as a drag.
+    // It settles there before release, so the smoothed cursor really has
+    // moved ~5%: past the old tolerance, inside the new one.
+    const { e, t } = armed();
+    const a = feed(e, t, 12, (i) =>
+      hand({ pinch: 0.1, x: 0.5 - Math.min(i, 6) * 0.005 }),
+    );
+    const b = feed(e, a.t, 3, hand({ pinch: 1, x: 0.47 }));
+    expect(types([...a.actions, ...b.actions])).toEqual(['select']);
   });
 
   it('pinch hysteresis: hovering around the threshold is one pinch, not many', () => {
@@ -599,5 +621,74 @@ describe('dial', () => {
       hand({ palm: 'facing', roll: (i % 20) * 4 }),
     );
     expect(actions).toEqual([]);
+  });
+});
+
+describe('thumbs up', () => {
+  it('confirms once, however long it is held, aimed where the hand was', () => {
+    const { e, t } = armed();
+    const { actions } = feed(e, t, 60, (i) =>
+      hand({ pose: 'Thumb_Up', x: 0.5 - Math.min(i, 3) * 0.01 }),
+    );
+    expect(types(actions)).toEqual(['confirm']);
+  });
+
+  it('a second thumbs up confirms again', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 20, hand({ pose: 'Thumb_Up' }));
+    const b = feed(e, a.t, 20, hand());
+    const c = feed(e, b.t, 20, hand({ pose: 'Thumb_Up' }));
+    expect(types([...a.actions, ...b.actions, ...c.actions])).toEqual([
+      'confirm',
+      'confirm',
+    ]);
+  });
+
+  it('a flicked thumb (under the hold) does nothing', () => {
+    const { e, t } = armed();
+    const a = feed(e, t, 5, hand({ pose: 'Thumb_Up' }));
+    const b = feed(e, a.t, 10, hand());
+    expect(types([...a.actions, ...b.actions])).toEqual([]);
+  });
+
+  it('a thumbs up moving toward the camera is not also a push', () => {
+    const { e, t } = armed();
+    const { actions } = feed(e, t, 15, (i) =>
+      hand({ pose: 'Thumb_Up', size: 0.2 * (1 + i * 0.05) }),
+    );
+    expect(types(actions)).toEqual(['confirm']);
+  });
+
+  it('nothing confirms while disarmed', () => {
+    const e = core.createEngine();
+    const { actions } = feed(e, 0, 60, hand({ pose: 'Thumb_Up' }));
+    expect(actions).toEqual([]);
+  });
+});
+
+describe('the contract with the page', () => {
+  /* The gesture layer finds what to click by CSS class. Rename one of these
+     classes in the page and the gesture silently stops working -- nothing
+     else would go red. This keeps each class it relies on present in the
+     code that renders it. */
+  const read = (rel) => fs.readFileSync(path.join(here, rel), 'utf8');
+  const page = [
+    read('display.js'),
+    read('cards.js'),
+    read('windows.js'),
+    read('../../templates/pulse/display.html'),
+  ].join('\n');
+
+  it('every class the gestures click on is still rendered by the page', () => {
+    const targets = SRC.match(/const TARGETS = \[([\s\S]*?)\]\.join/)[1];
+    const classes = [...targets.matchAll(/'\.([a-z0-9-]+)/g)].map((m) => m[1]);
+    expect(classes.length).toBeGreaterThanOrEqual(5);
+    const missing = classes.filter((c) => !page.includes(c));
+    expect(missing).toEqual([]);
+  });
+
+  it('the thumbs-up card is still the pinned partner card', () => {
+    expect(SRC).toContain("document.querySelector('.pulse-partner')");
+    expect(read('display.js')).toContain("card.className = 'pulse-partner'");
   });
 });

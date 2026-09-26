@@ -3182,12 +3182,15 @@
     background 0.12s,
     scale 0.12s;
 }
+/* The ring closes as the fingers approach a pinch (--close, 0..1), so a
+   near-miss is visible rather than silent. */
 .pulse-gesture-cursor[data-armed='1'] {
   border-color: var(--light);
+  scale: calc(1 - 0.35 * var(--close, 0));
 }
 .pulse-gesture-cursor[data-hot='1'] {
   background: rgba(255, 190, 70, 0.3);
-  scale: 1.25;
+  scale: calc(1.25 - 0.4 * var(--close, 0));
 }
 .pulse-gesture-cursor[data-pinched='1'] {
   scale: 0.7;
