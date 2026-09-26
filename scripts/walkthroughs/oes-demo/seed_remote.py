@@ -13,19 +13,56 @@ appear here. What IS here is the shape of the chain, which is public already
 (docs/superpowers/specs/2026-09-23-supply-field-use-cases.md).
 
 See docs/superpowers/specs/2026-09-24-oes-demo-environment-design.md.
+
+RUTF is replayed as dated, attributed history (design:
+docs/superpowers/specs/2026-09-26-supply-sophie-history-design.md, section 5),
+so the program's timeline and its as-of rewind read the way round 1 actually
+went. These document keys drive it. All are OPTIONAL: a missing one is
+skipped with a line on stdout, never filled in with an invented value.
+
+  rutf_rounds.round_one.dates          {"requested_on": "YYYY-MM-DD", "quoted_on": ...,
+                                        "decided_on": ..., "signed_on": ..., "invoiced_on": ...,
+                                        "paid_on": ..., "received_on": ..., "counted_on": ...}
+      The day of each step, which is also when it is recorded (10:00 local).
+      Any key left out falls back to the relative offsets below. The days must
+      run forwards (`_chain_dates` refuses otherwise).
+  rutf_rounds.round_one.shipment       {"reference": "AWB-...", "carrier": "...",
+                                        "dispatched_on": "YYYY-MM-DD",
+                                        "eta_original": "YYYY-MM-DD",
+                                        "eta_slip_learned_on": "YYYY-MM-DD",
+                                        "expected_on": "YYYY-MM-DD"}
+      The consignment round 1 came in. Without `dispatched_on` there is none.
+      The ETA slip (`eta_original` -> `expected_on`, learned on
+      `eta_slip_learned_on`) is written only when all three are stated.
+  rutf_rounds.round_two.outreach       {"sent_on": "YYYY-MM-DD", "non_responders": ["<supplier label>", ...]}
+      When Sophie asked for quotes, and who never answered.
+  rutf_rounds.round_two.quotes[i].received_on           "YYYY-MM-DD" (default: 3 days ago)
+  rutf_rounds.round_two.quotes[i].freight_stated_in_email   "included" | "excluded"
+      What the supplier's email said about freight where the recorded quote
+      says `not_specified`: it reaches the source excerpt, never the quote.
+  market_buyers                        [{"program_id": <synthetic id, >= 10000>,
+                                         "org_slug": "<a slug in `orgs`>",
+                                         "tender": {<tender_create data: label, lines,
+                                                    delivery_point, response_deadline, brief>}}]
+      Other buyers' open public tenders, beside round 2 on the market.
 """
 
 import re
-from datetime import timedelta
+from contextlib import nullcontext
+from datetime import date, datetime, time, timedelta
 from html import unescape
 
+from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.fulfilment.services.landed import landed_total
+from connect_labs.supply_chain.history.context import seed_overrides
 from connect_labs.supply_chain.identity import WITNESSED_SOURCES
 from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.scopes import SYNTHETIC_FLOOR, is_synthetic
 from connect_labs.supply_chain.values import Money, decimal_string
 
 # Three chains, three programs -- plus the supply-only organisation's own.
@@ -283,6 +320,21 @@ def commodities_for(section, catalogue):
     return wanted
 
 
+def _catalogue_dated(name, section, program_id):
+    """The RUTF catalogue, dated the day round 1's request went out.
+
+    Round 1 is replayed as history (`seed_rutf_rounds`), and rewinding the
+    program to any day of it must not delete products its older quotes still
+    name. So on a synthetic program the catalogue is recorded no later than
+    the first step that uses it. Every other scope, and a program that is not
+    synthetic, is seeded exactly as before.
+    """
+    if name != "rutf" or not is_synthetic(program_id):
+        return nullcontext()
+    opens = _chain_dates(section.get("round_one"))["requested_on"]
+    return seed_overrides(program_id, recorded_at=_ten_am(opens))
+
+
 def seed_scopes(data):
     """One program per chain, each with its own catalogue.
 
@@ -311,6 +363,9 @@ def seed_scopes(data):
                 f"{name!r} program is seeded from"
             )
         sections[name] = (section, commodities_for(section, data["commodities"]))
+        if name == "rutf":
+            # Days that run backwards are refused here, before the first write.
+            _chain_dates(section.get("round_one"))
 
     scopes, orgs = {}, None
     for name, scope in SCOPES.items():
@@ -318,7 +373,8 @@ def seed_scopes(data):
         access = access_for(scope["program_id"])
         if orgs is None:
             orgs = seed_orgs(access, data)
-        commodities = seed_catalogue(access, data, commodity_slugs=slugs)
+        with _catalogue_dated(name, section, scope["program_id"]):
+            commodities = seed_catalogue(access, data, commodity_slugs=slugs)
         scopes[name] = {
             "name": name,
             "program_id": scope["program_id"],
@@ -412,9 +468,177 @@ COUNTED_DAYS_AGO = 14
 ONBOARDED_DAYS_AGO = 10
 
 
+# Before the award: when the request went out and when the quote came back.
+# Only a replayed chain (below) writes these steps with their own days.
+REQUESTED_DAYS_AGO = 45
+QUOTED_DAYS_AGO = 38
+# Round 2 is recorded "recently": its quotes arrived a few days ago.
+ROUND_TWO_DAYS_AGO = 3
+
+
 def day(days_ago):
     """A day in the chain's timeline, as an ISO date string."""
     return (timezone.localdate() - timedelta(days=days_ago)).isoformat()
+
+
+# ======================================================================
+# A chain replayed as dated, attributed history
+# ======================================================================
+#
+# The RUTF round-1 story is read back through its timeline and its as-of
+# rewind, so each step is written on the day it happened, by whoever did it:
+# Sophie over the web for what she did herself, and the ACE agent over MCP
+# for what a supplier's email said, with that email's reference and a
+# one-sentence paraphrase as the source. Only a synthetic program accepts
+# the backdating (`history.context.seed_overrides`).
+#
+# The order of the days is not cosmetic. The rewind undoes creations newest
+# first, so a row dated later than something that points at it would be
+# deleted from under it. `_chain_dates` refuses a document whose days run
+# backwards, and everything a step needs (its supplier, its trade item, its
+# stores) is written inside that step.
+
+# (earlier, later) pairs `_chain_dates` checks.
+_DATE_ORDER = (
+    ("requested_on", "quoted_on"),
+    ("quoted_on", "decided_on"),
+    ("decided_on", "signed_on"),
+    ("signed_on", "invoiced_on"),
+    ("invoiced_on", "paid_on"),
+    ("signed_on", "received_on"),
+    ("received_on", "counted_on"),
+)
+
+_DATE_DEFAULTS = {
+    "requested_on": REQUESTED_DAYS_AGO,
+    "quoted_on": QUOTED_DAYS_AGO,
+    "decided_on": AWARDED_DAYS_AGO,
+    "signed_on": ORDERED_DAYS_AGO,
+    "invoiced_on": INVOICED_DAYS_AGO,
+    "paid_on": PAID_DAYS_AGO,
+    "received_on": RECEIVED_DAYS_AGO,
+    "counted_on": COUNTED_DAYS_AGO,
+}
+
+
+def _chain_dates(chain):
+    """Each step's day: the document's `dates`, else the relative default."""
+    stated = (chain or {}).get("dates") or {}
+    dates = {key: stated.get(key) or day(days) for key, days in _DATE_DEFAULTS.items()}
+    for earlier, later in _DATE_ORDER:
+        if dates[later] < dates[earlier]:
+            raise ValueError(
+                f"this chain's {later} ({dates[later]}) is before its {earlier} ({dates[earlier]}); "
+                "a replayed history has to run forwards, or rewinding it deletes rows from under "
+                "the ones that point at them"
+            )
+    return dates
+
+
+def _ten_am(iso_day):
+    """When a step is recorded: 10:00 local time on its own day."""
+    when = datetime.combine(date.fromisoformat(str(iso_day)[:10]), time(10))
+    return timezone.make_aware(when, timezone.get_default_timezone())
+
+
+def _as_date(iso_day):
+    """`19 Sep 2026`, the way an email would write it."""
+    found = date.fromisoformat(str(iso_day)[:10])
+    return f"{found.day} {found:%b %Y}"
+
+
+SOPHIE_USERNAME = "demo-sophie"
+ACE_USERNAME = "ace-agent"
+
+
+def demo_persona_users():
+    """The two people in the story: Sophie, and the ACE agent that types for her.
+
+    Sophie is a demo user of this environment's own, with an address that
+    cannot receive mail. ACE is whoever holds the configured agent address --
+    the same account `history.calls` marks as an agent -- created only if
+    this environment has never seen it.
+    """
+    users = get_user_model()
+    sophie, _ = users.objects.get_or_create(
+        username=SOPHIE_USERNAME,
+        defaults={"name": "Sophie", "email": "demo-sophie@example.invalid"},
+    )
+    agent_email = settings.LABS_AGENT_ACCOUNT_EMAILS[0]
+    ace = users.objects.filter(email__iexact=agent_email).first()
+    if ace is None:
+        ace, _ = users.objects.get_or_create(username=ACE_USERNAME, defaults={"name": "ACE", "email": agent_email})
+    return {"sophie": sophie, "ace": ace}
+
+
+# Who writes over which channel. Sophie's own actions go through the screens;
+# what a supplier said reaches the record through the agent.
+_CHANNELS = {"sophie": "web", "ace": "mcp"}
+
+
+class Replay:
+    """Who did each step of a replayed round, on which day, and from what email.
+
+    Refuses, before anything is written, a program that is not synthetic:
+    backdating a real program's history would make it say something false.
+    """
+
+    active = True
+
+    def __init__(self, program_id, personas, tag):
+        if not is_synthetic(program_id):
+            raise PermissionError(
+                f"program {program_id} is not a registered synthetic program, so its history "
+                "cannot be replayed with backdated days"
+            )
+        self.program_id = program_id
+        self.personas = personas
+        self.tag = tag
+
+    def tagged(self, tag):
+        return Replay(self.program_id, self.personas, tag)
+
+    def by(self, who, on):
+        """Write the block as `who`, recorded at 10:00 on `on`."""
+        return seed_overrides(
+            self.program_id, actor=self.personas[who], channel=_CHANNELS[who], recorded_at=_ten_am(on)
+        )
+
+    def source(self, step, excerpt):
+        """The payload key naming the email a step was typed from."""
+        return {"source": {"ref": f"<{self.tag}-{step}@demo.invalid>", "excerpt": excerpt}}
+
+
+class _NoReplay:
+    """A chain seeded as it always was: now, as the seeder, with no sources."""
+
+    active = False
+
+    def by(self, who, on):
+        return nullcontext()
+
+    def source(self, step, excerpt):
+        return {}
+
+
+NO_REPLAY = _NoReplay()
+
+
+def _quote_excerpt(quoted):
+    """What the supplier's email said, from the facts the quote records."""
+    basis = quoted.get("quantity_basis")
+    unit = quoted.get("quantity_basis_unit") or ""
+    per = {"per_pack": "per pack", "per_base_unit": "per unit", "per_lot_total": "for the lot"}.get(
+        quoted.get("as_quoted_unit"), ""
+    )
+    said = f"{quoted.get('as_quoted_currency', '')} {quoted.get('as_quoted_amount')} {per}".strip()
+    text = f"We can supply {basis} {unit} at {said}" if basis else f"Our price is {said}"
+    freight = quoted.get("freight_stated_in_email") or quoted.get("freight_basis")
+    terms = [f"freight {freight}"] if freight and freight != "not_specified" else []
+    duties = quoted.get("duties_basis")
+    if duties and duties != "not_specified":
+        terms.append(f"duties {duties}")
+    return (text + (", " + " and ".join(terms) if terms else "")).replace("  ", " ") + "."
 
 
 def without_commentary(value):
@@ -541,6 +765,11 @@ def _with_unit(data, context):
     return data
 
 
+def _day_of(context, step):
+    """The day this chain's `step` happened: its own dates, else the default."""
+    return (context.get("dates") or {}).get(step) or day(_DATE_DEFAULTS[step])
+
+
 def _wire_receipt(data, context):
     """A goods received note. The quantities are the fact; the ids are ours.
 
@@ -560,7 +789,7 @@ def _wire_receipt(data, context):
     return {
         "contract_id": context["contract"]["id"],
         "supply_point_id": context["warehouse"]["id"],
-        "received_on": day(RECEIVED_DAYS_AGO),
+        "received_on": _day_of(context, "received_on"),
         **data,
         "lines": [line],
     }
@@ -582,7 +811,7 @@ def _wire_stock_count(data, context):
         "supply_point_id": context["warehouse"]["id"],
         "commodity_slug": context["commodity"]["slug"],
         "item_id": context["item"]["id"],
-        "counted_on": day(COUNTED_DAYS_AGO),
+        "counted_on": _day_of(context, "counted_on"),
         **_with_unit(data, context),
     }
 
@@ -597,7 +826,7 @@ def _wire_payment(data, context):
     """
     return {
         "invoice_id": context["invoice"]["id"],
-        "paid_on": day(PAID_DAYS_AGO),
+        "paid_on": _day_of(context, "paid_on"),
         "amount": context["invoice"]["amount"],
         "currency": context["invoice"]["currency"],
         **data,
@@ -810,7 +1039,7 @@ def by_reference(access, list_name, reference, **query):
     return _found(op(access, list_name, **query), lambda row: row.get("reference") == reference)
 
 
-def seed_chain(access, chain, reference):
+def seed_chain(access, chain, reference, *, replay=NO_REPLAY):
     """One procurement, from the round to the stock sitting in the warehouse.
 
     Shared by the program's own CHC chain and by the supply-only
@@ -819,9 +1048,16 @@ def seed_chain(access, chain, reference):
     matters -- the supply-only chain has no opportunity binding and no
     user-held points -- is data, so `summary._deliver()` stops at the last
     store on its own rather than being made to.
+
+    With a `replay` (RUTF round 1, see `Replay`), each step is written on its
+    own day by whoever did it, the supplier's side of it through the agent
+    with its email as the source, and the chain gains the steps only a
+    history shows: the request that went out, and the consignment with its
+    ETA slip. Without one, the chain is seeded exactly as before.
     """
     chain = without_commentary(chain)
     orgs = reference["orgs"]
+    dates = _chain_dates(chain)
     # The document's own key still reads `programme_org_slug`; it is data in
     # Drive, so it is left as written rather than churned by a rename here.
     program_org = orgs[chain["programme_org_slug"]]
@@ -833,107 +1069,150 @@ def seed_chain(access, chain, reference):
     # `told_by_for` renders it "Dimagi, for EHA Clinics (they told us)".
     their_word = {"source": "partner_reported", "recorded_by_org_id": program_org["id"]}
 
-    supplier = _chain_supplier(access, chain, orgs)
+    with replay.by("sophie", dates["requested_on"]):
+        supplier = _chain_supplier(access, chain, orgs)
 
-    round_ = tender_for(access, chain["round"])
-    # A round that received quotes was open when it received them -- but only
-    # if it is still a draft. See `opened`.
-    round_ = opened(access, round_)
+        round_ = tender_for(access, chain["round"])
+        # A round that received quotes was open when it received them -- but
+        # only if it is still a draft. See `opened`.
+        round_ = opened(access, round_)
 
-    items, quotes = {}, []
-    for quoted in chain["quotes"]:
-        quoted = dict(quoted)
-        item = op(
-            access,
-            "item_upsert",
-            data={**quoted.pop("item"), "commodity_slug": quoted["commodity_slug"]},
-        )
-        items[item["sku"]] = item
-        # No reference on a quote, so its key is who quoted what against
-        # which round -- which is exactly what makes two of them a duplicate
-        # here, and what `round_compare` would show side by side.
-        already = _found(
-            op(access, "quote_list", tender_id=round_["id"]),
-            lambda row: row.get("supplier_id") == supplier["id"] and row.get("item_id") == item["id"],
-        )
-        quotes.append(
-            already
-            or op(
+        # The request Sophie sent. Only a replayed chain has one: the other
+        # chains' documents say nothing about how their rounds were run.
+        invitation = None
+        if replay.active:
+            invitation = _found(
+                op(access, "outreach_list", tender_id=round_["id"]),
+                lambda row: row.get("supplier_id") == supplier["id"],
+            ) or op(
                 access,
-                "quote_record",
+                "outreach_log",
                 data={
-                    **quoted,
                     "tender_id": round_["id"],
                     "supplier_id": supplier["id"],
-                    "item_id": item["id"],
+                    "channel": "manual",
+                    "sent_on": dates["requested_on"],
                 },
             )
-        )
+
+    items, quotes = {}, []
+    with replay.by("ace", dates["quoted_on"]):
+        for index, quoted in enumerate(chain["quotes"]):
+            quoted = dict(quoted)
+            item = op(
+                access,
+                "item_upsert",
+                data={**quoted.pop("item"), "commodity_slug": quoted["commodity_slug"]},
+            )
+            items[item["sku"]] = item
+            # No reference on a quote, so its key is who quoted what against
+            # which round -- which is exactly what makes two of them a
+            # duplicate here, and what `round_compare` would show side by side.
+            already = _found(
+                op(access, "quote_list", tender_id=round_["id"]),
+                lambda row: row.get("supplier_id") == supplier["id"] and row.get("item_id") == item["id"],
+            )
+            if replay.active:
+                quoted.setdefault("received_on", dates["quoted_on"])
+            email = replay.source(f"quote-{index + 1}", _quote_excerpt(quoted))
+            quotes.append(
+                already
+                or op(
+                    access,
+                    "quote_record",
+                    data={
+                        **quoted,
+                        "tender_id": round_["id"],
+                        "supplier_id": supplier["id"],
+                        "item_id": item["id"],
+                    },
+                    **email,
+                )
+            )
+        if invitation and not invitation.get("responded"):
+            # The same email answered the request. Its reference keys this
+            # write too, so a second run replays rather than writes.
+            op(
+                access,
+                "outreach_update",
+                outreach_id=invitation["id"],
+                data={"responded": True, "response_kind": "quote"},
+                **replay.source("quote-1", _quote_excerpt(dict(chain["quotes"][0]))),
+            )
 
     awarded_index = chain["awarded_quote_index"]
     awarded_quote = chain["quotes"][awarded_index]
     awarded_item = items[awarded_quote["item"]["sku"]]
     # One award per round in this seeder, so the round IS the key.
-    award = _found(op(access, "award_list", tender_id=round_["id"]), lambda row: True) or op(
-        access,
-        "award_create",
-        tender_id=round_["id"],
-        quote_id=quotes[awarded_index]["id"],
-        rationale=chain["award_rationale"],
-        decided_on=day(AWARDED_DAYS_AGO),
-        **({"decided_by": chain["award_decided_by"]} if chain.get("award_decided_by") else {}),
-    )
-
-    # The stores first: the order says where its goods are to be delivered,
-    # and a contract that cannot name the place is a contract nobody can
-    # receive against.
-    warehouse = _supply_point(access, chain["warehouse"], reference, ours)
-    partner_points = {row["org_slug"]: _supply_point(access, row, reference, ours) for row in chain["partner_points"]}
+    with replay.by("sophie", dates["decided_on"]):
+        award = _found(op(access, "award_list", tender_id=round_["id"]), lambda row: True) or op(
+            access,
+            "award_create",
+            tender_id=round_["id"],
+            quote_id=quotes[awarded_index]["id"],
+            rationale=chain["award_rationale"],
+            decided_on=dates["decided_on"],
+            **({"decided_by": chain["award_decided_by"]} if chain.get("award_decided_by") else {}),
+        )
 
     contract_row = dict(chain["contract"])
     buyer_slug = contract_row.pop("buyer_org_slug")
-    # The order's own purchase-order number, which is what a person would use
-    # to say "that one" and the only identifier that survives a re-seed.
-    contract = by_reference(access, "contract_list", contract_row.get("reference"))
-    # Whether the ORDER was found or made decides whether the ledger rows
-    # below are written at all -- see the block that posts them.
-    chain_is_new = contract is None
-    contract = contract or op(
-        access,
-        "contract_create",
-        data={
-            **ours,
-            **contract_row,
-            "tender_id": round_["id"],
-            "award_id": award["id"],
-            "supplier_id": supplier["id"],
-            "item_id": awarded_item["id"],
-            "commodity_slug": awarded_quote["commodity_slug"],
-            "buyer_org_id": orgs[buyer_slug]["id"],
-            "delivery_supply_point_id": warehouse["id"],
-            # The price the award was made at. Not a new figure: the contract
-            # IS that award, and without it the comparison's per-course
-            # column has nothing to carry through to the order.
-            "unit_price": awarded_quote["as_quoted_amount"],
-            "unit_price_unit": awarded_quote["as_quoted_unit"],
-            "signed_on": day(ORDERED_DAYS_AGO),
-        },
-    )
+    with replay.by("sophie", dates["signed_on"]):
+        # The stores first: the order says where its goods are to be
+        # delivered, and a contract that cannot name the place is a contract
+        # nobody can receive against.
+        warehouse = _supply_point(access, chain["warehouse"], reference, ours)
+        partner_points = {
+            row["org_slug"]: _supply_point(access, row, reference, ours) for row in chain["partner_points"]
+        }
+
+        # The order's own purchase-order number, which is what a person would
+        # use to say "that one" and the only identifier that survives a
+        # re-seed.
+        contract = by_reference(access, "contract_list", contract_row.get("reference"))
+        # Whether the ORDER was found or made decides whether the ledger rows
+        # below are written at all -- see the block that posts them.
+        chain_is_new = contract is None
+        contract = contract or op(
+            access,
+            "contract_create",
+            data={
+                **ours,
+                **contract_row,
+                "tender_id": round_["id"],
+                "award_id": award["id"],
+                "supplier_id": supplier["id"],
+                "item_id": awarded_item["id"],
+                "commodity_slug": awarded_quote["commodity_slug"],
+                "buyer_org_id": orgs[buyer_slug]["id"],
+                "delivery_supply_point_id": warehouse["id"],
+                # The price the award was made at. Not a new figure: the
+                # contract IS that award, and without it the comparison's
+                # per-course column has nothing to carry through to the order.
+                "unit_price": awarded_quote["as_quoted_amount"],
+                "unit_price_unit": awarded_quote["as_quoted_unit"],
+                "signed_on": dates["signed_on"],
+            },
+        )
+
+    consignment = _seed_consignment(access, chain, contract, dates, replay) if replay.active else {}
 
     # One invoice per order in this seeder, so the order is the key.
-    invoice = _found(op(access, "invoice_list", contract_id=contract["id"]), lambda row: True) or op(
-        access,
-        "invoice_record",
-        data={
-            **ours,
-            "contract_id": contract["id"],
-            "issued_on": day(INVOICED_DAYS_AGO),
-            "amount": _goods_value(access, contract),
-            "currency": contract_row["currency"],
-            "quantity_billed": contract_row["quantity"],
-            "quantity_unit": contract_row["quantity_unit"],
-        },
-    )
+    invoice_data = None
+    with replay.by("ace", dates["invoiced_on"]):
+        invoice = _found(op(access, "invoice_list", contract_id=contract["id"]), lambda row: True)
+        if invoice is None:
+            invoice_data = {
+                **ours,
+                "contract_id": contract["id"],
+                "issued_on": dates["invoiced_on"],
+                "amount": _goods_value(access, contract),
+                "currency": contract_row["currency"],
+                "quantity_billed": contract_row["quantity"],
+                "quantity_unit": contract_row["quantity_unit"],
+            }
+            invoice = op(access, "invoice_record", data=invoice_data, **_invoice_email(replay, invoice_data, contract))
+        invoice_replayed = _invoice_arrives_again(access, replay, contract, invoice_data, invoice)
 
     context = {
         "contract": {**contract, "quantity_unit": contract_row["quantity_unit"]},
@@ -942,6 +1221,7 @@ def seed_chain(access, chain, reference):
         "warehouse": warehouse,
         "partner_points": partner_points,
         "invoice": invoice,
+        "dates": dates,
     }
 
     # The ledger, written exactly once: on the run that CREATED this order.
@@ -965,13 +1245,32 @@ def seed_chain(access, chain, reference):
         # WhatsApp that the goods had landed and read us a stock figure off
         # its own sheet; we typed both in. Our hand, their word, and the
         # screen says so.
-        reported_to_us = [
-            op(access, row["operation"], data=wired(row, context, their_word, may_witness=False))
-            for row in chain["reported_to_us"]
-        ]
+        for row in chain["reported_to_us"]:
+            with replay.by("sophie", _ledger_day(dates, row)):
+                reported_to_us.append(
+                    op(access, row["operation"], data=wired(row, context, their_word, may_witness=False))
+                )
 
         # Tier 2 -- what we did ourselves, and therefore witnessed.
-        we_did = [op(access, row["operation"], data=wired(row, context, ours)) for row in chain["we_did"]]
+        for row in chain["we_did"]:
+            with replay.by("sophie", _ledger_day(dates, row)):
+                we_did.append(op(access, row["operation"], data=wired(row, context, ours)))
+
+    if consignment.get("shipment") and consignment["shipment"].get("status") != "delivered":
+        # The goods Sophie received were the consignment that was on its way.
+        with replay.by("sophie", dates["received_on"]):
+            consignment["shipment"] = op(
+                access,
+                "shipment_update",
+                shipment_id=consignment["shipment"]["id"],
+                data={
+                    "contract_id": contract["id"],
+                    # Unchanged: whose word the consignment is does not move
+                    # because it arrived.
+                    "source": consignment["shipment"].get("source") or "supplier_reported",
+                    "status": "delivered",
+                },
+            )
 
     # Tier 3 -- what the partner enters through its own link -- is seeded by
     # the partner-link step, because it has to go THROUGH the link: that is
@@ -997,7 +1296,122 @@ def seed_chain(access, chain, reference):
         # chain used, rather than working them out a second time from the
         # document and risking a different answer.
         "context": context,
+        "shipment": consignment.get("shipment"),
+        "eta_replayed": consignment.get("eta_replayed"),
+        "invoice_replayed": invoice_replayed,
     }
+
+
+# Which of a chain's days each ledger operation happened on.
+_LEDGER_DAYS = {
+    "receipt_record": "received_on",
+    "stock_count_record": "counted_on",
+    "payment_record": "paid_on",
+}
+
+
+def _ledger_day(dates, row):
+    """The day a ledger row happened. An operation `wired` cannot place is refused there, by name."""
+    return dates[_LEDGER_DAYS.get(row["operation"], "received_on")]
+
+
+def _invoice_email(replay, data, contract):
+    """The supplier's invoice email, as the agent's source for the bill."""
+    excerpt = (
+        f"Invoice for {data['quantity_billed']} {data['quantity_unit']} against order "
+        f"{contract.get('reference') or contract['id']}: {data['currency']} {data['amount']}."
+    )
+    return replay.source("invoice", excerpt)
+
+
+def _invoice_arrives_again(access, replay, contract, invoice_data, invoice):
+    """The invoice email, forwarded a second time: it must replay, not bill twice.
+
+    Only on the run that wrote the invoice (a later run found it, and the
+    first call's record is what a repeat would replay against). Refuses,
+    rather than asserts, so `python -O` cannot skip it.
+    """
+    if not replay.active or invoice_data is None:
+        return None
+    before = len(op(access, "invoice_list", contract_id=contract["id"]))
+    again = op(access, "invoice_record", data=invoice_data, **_invoice_email(replay, invoice_data, contract))
+    after = len(op(access, "invoice_list", contract_id=contract["id"]))
+    if not again.get("replayed") or after != before or again.get("id") != invoice["id"]:
+        raise RuntimeError(
+            f"the invoice email sent twice was written twice (replayed={again.get('replayed')!r}, "
+            f"invoices {before} -> {after}); the source reference is not deduplicating"
+        )
+    return True
+
+
+def _seed_consignment(access, chain, contract, dates, replay):
+    """The consignment round 1 was delivered in, and the day its ETA slipped.
+
+    From the document's `shipment` section. The dispatch notice and the
+    revised ETA were both supplier emails, so the agent records them. The
+    slip is written only when the document states the ETA the supplier first
+    gave (`eta_original`), the final one (`expected_on`) and the day the
+    change was learned (`eta_slip_learned_on`): a slip with an invented date
+    in it would be a history of something that did not happen, so a missing
+    one is skipped and said so.
+    """
+    section = chain.get("shipment")
+    if not section or not section.get("dispatched_on"):
+        print("rutf round 1: the document has no shipment with a dispatched_on; no consignment seeded")
+        return {}
+    dispatched_on = section["dispatched_on"]
+    original, final, learned = (section.get(key) for key in ("eta_original", "expected_on", "eta_slip_learned_on"))
+    slips = bool(original and final and learned and original != final)
+    if not slips:
+        print(
+            "rutf round 1: the document states no ETA slip (needs shipment.eta_original, "
+            "shipment.expected_on and shipment.eta_slip_learned_on); the consignment is seeded without one"
+        )
+    order_days = [dates["signed_on"], dispatched_on] + ([learned, dates["received_on"]] if slips else [])
+    if order_days != sorted(order_days):
+        raise ValueError(
+            "the consignment's days must run signed_on <= dispatched_on <= eta_slip_learned_on <= "
+            f"received_on; the document gives {order_days}"
+        )
+
+    reference = section.get("reference") or ""
+    named = f"consignment {reference}" if reference else "your consignment"
+    order = contract.get("reference") or contract["id"]
+    first_eta = original or final
+    data = {
+        "contract_id": contract["id"],
+        "source": "supplier_reported",
+        "status": "dispatched",
+        "dispatched_on": dispatched_on,
+        **({"reference": reference} if reference else {}),
+        **({"carrier": section["carrier"]} if section.get("carrier") else {}),
+        **({"expected_on": first_eta} if first_eta else {}),
+    }
+    notice = f"The {named} for order {order} left on {_as_date(dispatched_on)}" + (
+        f", expected {_as_date(first_eta)}." if first_eta else "."
+    )
+    with replay.by("ace", dispatched_on):
+        shipment = _found(op(access, "shipment_list", contract_id=contract["id"]), lambda row: True) or op(
+            access, "shipment_record", data=data, **replay.source("dispatch", notice)
+        )
+
+    eta_replayed = None
+    if slips:
+        revised = {"contract_id": contract["id"], "source": "supplier_reported", "expected_on": final}
+        email = replay.source("eta", f"Revised ETA for {named}: {_as_date(final)}.")
+        with replay.by("ace", learned):
+            slipped = op(access, "shipment_update", shipment_id=shipment["id"], data=revised, **email)
+            # The same email, forwarded to the agent a second time. It is one
+            # change on the timeline, not two.
+            again = op(access, "shipment_update", shipment_id=shipment["id"], data=revised, **email)
+        if not again.get("replayed"):
+            raise RuntimeError("the revised-ETA email sent twice was recorded twice")
+        eta_replayed = True
+        if not slipped.get("replayed"):
+            # A replay hands back the record as it was that day; the row as
+            # it stands now is the one found above.
+            shipment = slipped
+    return {"shipment": shipment, "eta_replayed": eta_replayed}
 
 
 def seed_chc_chain(access, data, reference):
@@ -1053,7 +1467,7 @@ def seed_supply_only(data, scopes):
     }
 
 
-def seed_rutf_round_two(access, round_two):
+def seed_rutf_round_two(access, round_two, *, replay=NO_REPLAY):
     """Round 2: open, quoted by three suppliers, and deliberately unawarded.
 
     Not `seed_chain`. `seed_chain` awards, contracts and orders -- and round
@@ -1080,36 +1494,92 @@ def seed_rutf_round_two(access, round_two):
     `quote_record`: none of the three is a field that operation understands,
     and this does not rely on `_columns` silently dropping unrecognised keys
     to keep them out of the write.
+
+    With a `replay`, the round is recorded as it happened: Sophie opened it
+    and sent the requests on the day the document's `outreach.sent_on` says
+    (or, with no outreach, when the quotes came), and each quote came in
+    through the agent, dated its own `received_on` or a few days ago, with a
+    paraphrase of the supplier's email as its source. A quote's
+    `freight_stated_in_email` is what that email said about freight when the
+    record says otherwise -- the misreading Sophie finds and corrects -- and
+    reaches the source excerpt only, never the quote.
+
+    `outreach.non_responders` are suppliers asked and never heard from. They
+    get an invitation and nothing else, which is what flags the round stale.
     """
     round_two = without_commentary(round_two)
-    round_ = tender_for(access, round_two["round"])
-    # A round that received quotes was open when it received them -- but only
-    # if it is still a draft. See `opened`.
-    round_ = opened(access, round_)
+    outreach = round_two.get("outreach") or {}
+    quoted_on = day(ROUND_TWO_DAYS_AGO)
+    opened_on = outreach.get("sent_on") or min(
+        [q.get("received_on") or quoted_on for q in round_two["quotes"]] or [quoted_on]
+    )
+
+    with replay.by("sophie", opened_on):
+        round_ = tender_for(access, round_two["round"])
+        # A round that received quotes was open when it received them -- but
+        # only if it is still a draft. See `opened`.
+        round_ = opened(access, round_)
+
+        invitations = {}
+        if outreach:
+            asked = [q["supplier_label"] for q in round_two["quotes"]] + list(outreach.get("non_responders") or [])
+            listed = op(access, "outreach_list", tender_id=round_["id"])
+            for label in asked:
+                supplier = supplier_for_label(access, label)
+                invitations[supplier["id"]] = _found(
+                    listed, lambda row, s=supplier: row.get("supplier_id") == s["id"]
+                ) or op(
+                    access,
+                    "outreach_log",
+                    data={
+                        "tender_id": round_["id"],
+                        "supplier_id": supplier["id"],
+                        "channel": "manual",
+                        "sent_on": outreach["sent_on"],
+                    },
+                )
 
     quotes, suppliers = [], []
-    for quoted in round_two["quotes"]:
+    for index, quoted in enumerate(round_two["quotes"]):
         quoted = dict(quoted)
-        supplier = supplier_for_label(access, quoted.pop("supplier_label"))
-        quoted.pop("supplier_country", None)
-        quoted.pop("supplier_note", None)
-        suppliers.append(supplier)
-        # Keyed on round and supplier alone, not on the trade item: these
-        # quotes deliberately identify no item -- that is what makes the
-        # first of them uncostable -- so there is nothing else to key on, and
-        # one supplier quotes a round once here.
-        already = _found(
-            op(access, "quote_list", tender_id=round_["id"]),
-            lambda row, s=supplier: row.get("supplier_id") == s["id"],
-        )
-        quotes.append(
-            already
-            or op(
-                access,
-                "quote_record",
-                data={**quoted, "tender_id": round_["id"], "supplier_id": supplier["id"]},
+        received_on = quoted.get("received_on") or quoted_on
+        if replay.active:
+            quoted["received_on"] = received_on
+        email = replay.source(f"quote-{index + 1}", _quote_excerpt(quoted))
+        # What the email said about freight is evidence, not a field of the
+        # quote: the record keeps what the agent entered.
+        quoted.pop("freight_stated_in_email", None)
+        with replay.by("ace", received_on):
+            supplier = supplier_for_label(access, quoted.pop("supplier_label"))
+            quoted.pop("supplier_country", None)
+            quoted.pop("supplier_note", None)
+            suppliers.append(supplier)
+            # Keyed on round and supplier alone, not on the trade item: these
+            # quotes deliberately identify no item -- that is what makes the
+            # first of them uncostable -- so there is nothing else to key on,
+            # and one supplier quotes a round once here.
+            already = _found(
+                op(access, "quote_list", tender_id=round_["id"]),
+                lambda row, s=supplier: row.get("supplier_id") == s["id"],
             )
-        )
+            quotes.append(
+                already
+                or op(
+                    access,
+                    "quote_record",
+                    data={**quoted, "tender_id": round_["id"], "supplier_id": supplier["id"]},
+                    **email,
+                )
+            )
+            invitation = invitations.get(supplier["id"])
+            if invitation and not invitation.get("responded"):
+                op(
+                    access,
+                    "outreach_update",
+                    outreach_id=invitation["id"],
+                    data={"responded": True, "response_kind": "quote"},
+                    **email,
+                )
     return {"round": round_, "quotes": quotes, "suppliers": suppliers}
 
 
@@ -1126,14 +1596,58 @@ def seed_rutf_rounds(data, scopes):
     straight through it -- same as the CHC chain and the supply-only one.
     Round 2 is a different shape (no award, three anonymous suppliers) and
     goes through `seed_rutf_round_two` instead.
+
+    Both are replayed as dated, attributed history (`Replay`), which is only
+    allowed on a synthetic program: on any other this raises PermissionError
+    before writing anything. Then the other buyers' tenders are put on the
+    market beside round 2 (`seed_market_buyers`).
     """
     scope = scopes["rutf"]
     section = data["rutf_rounds"]
+    replay = Replay(RUTF_PROGRAM_ID, demo_persona_users(), "rutf")
     return {
         "program_id": RUTF_PROGRAM_ID,
-        "round_one": seed_chain(scope["access"], section["round_one"], scope["reference"]),
-        "round_two": seed_rutf_round_two(scope["access"], section["round_two"]),
+        "round_one": seed_chain(
+            scope["access"], section["round_one"], scope["reference"], replay=replay.tagged("rutf-r1")
+        ),
+        "round_two": seed_rutf_round_two(scope["access"], section["round_two"], replay=replay.tagged("rutf-r2")),
+        "market": seed_market_buyers(data, scopes),
     }
+
+
+def seed_market_buyers(data, scopes):
+    """Other buyers' open tenders, so round 2 is not alone on the market.
+
+    From the document's `market_buyers`: each names a synthetic program of its
+    own, an organisation from the document's `orgs` that publishes the
+    tender, and the tender. Nothing about them is in this file; with no such
+    section the market is left as it is and the seed says so. A program below
+    the synthetic floor, or one of this demo's own four, is refused: another
+    buyer's tender must never be written into a real program.
+    """
+    buyers = without_commentary(data.get("market_buyers") or [])
+    if not buyers:
+        print("the document has no market_buyers section; no other buyers' tenders seeded")
+        return []
+    ours = {scope["program_id"] for scope in SCOPES.values()}
+    for buyer in buyers:
+        program_id = buyer["program_id"]
+        if program_id < SYNTHETIC_FLOOR or program_id in ours:
+            raise ValueError(
+                f"market buyer {buyer.get('org_slug')!r} names program {program_id}, which is "
+                + ("a real program" if program_id < SYNTHETIC_FLOOR else "one of this demo's own")
+                + f"; another buyer's tender needs a synthetic program of its own (id >= {SYNTHETIC_FLOOR})"
+            )
+    orgs = scopes["rutf"]["reference"]["orgs"]
+    seeded = []
+    for buyer in buyers:
+        tender = buyer["tender"]
+        access = access_for(buyer["program_id"])
+        seed_catalogue(access, data, commodity_slugs=commodities_for(tender, data["commodities"]))
+        owner = orgs[buyer["org_slug"]]
+        listing = tender_for(access, {**tender, "owner_org_id": owner["id"], "visibility": "public"})
+        seeded.append(opened(access, listing))
+    return seeded
 
 
 def seed_chlorine_blocked(data, scopes):
