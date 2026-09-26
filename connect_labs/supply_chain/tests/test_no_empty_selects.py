@@ -49,11 +49,11 @@ def every_form_class():
     thought to check.
     """
     from connect_labs.supply_chain import forms as sourcing_forms
-    from connect_labs.supply_chain import reference_forms
     from connect_labs.supply_chain.alerts import forms as alert_forms
     from connect_labs.supply_chain.distribution import forms as distribution_forms
     from connect_labs.supply_chain.fulfilment import forms as fulfilment_forms
     from connect_labs.supply_chain.network import forms as network_forms
+    from connect_labs.supply_chain.reference import forms as reference_forms
     from connect_labs.supply_chain.stock import forms as stock_forms
     from connect_labs.supply_chain.update_links import forms as update_link_forms
 
