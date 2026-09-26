@@ -150,11 +150,20 @@ def can_manage(request, tender) -> bool:
     Connect organisation, its Connect members), or anyone on the tender's
     program. Checked on every request to the manage page, never cached.
     """
-    from connect_labs.labs.context import get_org_data
     from connect_labs.marketplace import membership
 
     if tender.owner_org_id and membership.manages(request, tender.owner_org):
         return True
+    return on_program(request, tender)
+
+
+def on_program(request, tender) -> bool:
+    """Whether this person is on the program that owns the tender -- the team
+    that holds its quotes, sources and history, not a supplier looking in."""
+    from connect_labs.labs.context import get_org_data
+
+    if tender.program_id is None:
+        return False
     programs = (get_org_data(request) or {}).get("programs") or []
     return any(str(p.get("id")) == str(tender.program_id) for p in programs)
 

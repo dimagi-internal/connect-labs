@@ -17,7 +17,7 @@
     {% if r.brief %}<p class="text-[14.5px] text-white/90 mt-3 max-w-3xl whitespace-pre-line leading-relaxed">{{ r.brief }}</p>{% endif %}
     <div class="grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap sm:gap-x-12 sm:gap-y-5 mt-6">
       <div>
-        <div class="text-[20px] sm:text-[24px] font-semibold {% if card.closing_soon %}text-brand-marigold{% else %}text-white{% endif %}">{% if r.response_deadline %}{{ r.response_deadline|day }}{% else %}—{% endif %}</div>
+        <div class="text-[20px] sm:text-[24px] font-semibold {% if card.closing_soon %}text-brand-marigold{% else %}text-white{% endif %}">{% if r.response_deadline %}{{ r.response_deadline|day }}{% else %}Open until closed{% endif %}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">REPLIES BY{% if card.days_left is not None and card.days_left >= 0 %} · {{ card.deadline_words|upper }}{% endif %}</div>
       </div>
       <div>
@@ -49,6 +49,12 @@
 
 {% block body %}
 {% with r=listed.tender %}
+{% if program_view_url %}
+  <div data-testid="public-listing-note" class="bg-white border border-brand-border-light rounded-[10px] px-5 py-3 mb-6 max-w-3xl text-[13.5px] text-gray-700">
+    This is the public listing, as every supplier sees it. Quotes, sources and history stay in your program.
+    <a href="{{ program_view_url }}" class="ml-1 font-medium text-brand-indigo hover:underline">Back to the tender in your program →</a>
+  </div>
+{% endif %}
 {% if r.notes_to_supplier %}
   <div class="bg-white border border-brand-border-light rounded-[10px] px-5 py-4 mb-8 max-w-3xl">
     <div class="text-[11.5px] font-semibold tracking-wider text-gray-500 mb-1">FROM THE BUYER</div>

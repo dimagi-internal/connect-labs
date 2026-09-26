@@ -33,6 +33,15 @@ def questions_for(questions, audience):
     return [q for q in (questions or []) if q.get("audience") == audience]
 
 
+@register.filter
+def also_confirm(row):
+    """A blocked row's questions without the one that clears its block -- the
+    rest of the checklist, once that question has been asked on its own."""
+    row = row or {}
+    blocking = (row.get("blocking") or {}).get("question") or {}
+    return [q for q in (row.get("questions") or []) if q.get("key") != blocking.get("key")]
+
+
 # A human name for each check kind. It lives HERE, in the presentation layer,
 # and not in checks.py, because checks.py must not carry prose -- the whole
 # point of section 22 is that the domain states facts and a client words them.
@@ -171,6 +180,25 @@ def days_ago(value, now):
     if days < 31:
         return f"{days} days ago"
     return day_text(timezone.localdate(value)) or ""
+
+
+@register.filter
+def days_ago_and_day(value, now):
+    """ "today · 26 Sep", "7 days ago · 19 Sep": the count back from `now`, and the day itself.
+
+    A count alone cannot be checked against anything else on the page, and on
+    a page viewed as of a past date "7 days ago" is from that date, not from
+    today -- the day beside it says which day that was. Past a month the count
+    is already the date, so it is said once.
+    """
+    relative = days_ago(value, now)
+    if not relative:
+        return ""
+    from django.utils import timezone
+
+    day = timezone.localdate(value)
+    short = f"{day.day} {day.strftime('%b')}"
+    return relative if relative == (day_text(day) or "") else f"{relative} · {short}"
 
 
 @register.filter

@@ -79,6 +79,13 @@ class OperationCall(_AppendOnly):
     # Recorded time only -- deliberately NOT auto_now_add, so the demo seeder
     # (Task 2) can backfill a plausible past recorded_at.
     recorded_at = models.DateTimeField(default=timezone.now, db_index=True)
+    # The same evidence arriving again and being answered from this row rather
+    # than written twice (history/calls.py `_replay`). A count and a day, not a
+    # row per replay: nothing was written, so there is nothing else to keep,
+    # and "received again 2 Sep, recorded once" is the whole story. The one
+    # thing about a call that changes after it ran, alongside `result`.
+    replay_count = models.PositiveIntegerField(default=0, db_default=0)
+    last_replayed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [

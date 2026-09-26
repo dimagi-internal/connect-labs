@@ -40,7 +40,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
     <table class="min-w-[48rem] w-full text-sm">
       <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
         <tr>
-          <th class="text-left px-4 py-2"><span class="sr-only">Tender or order</span></th>
+          <th class="text-left px-4 py-2">Tender or order</th>
           <th class="text-left px-4 py-2">Stage</th>
           <th class="text-left px-4 py-2">Waiting on</th>
           <th class="text-left px-4 py-2">Last change</th>
@@ -55,11 +55,14 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
               <a class="font-medium text-brand-indigo hover:underline" href="{{ row.url }}">{{ row.title }}</a>
               {% if row.buyer %}<span class="block text-xs text-gray-500">bought by {{ row.buyer }}</span>{% endif %}
             </td>
-            <td class="px-4 py-2.5">{{ row.stage }}</td>
+            <td class="px-4 py-2.5">
+              {{ row.stage }}
+              {% if row.award_why %}<span data-testid="award-why" class="block text-xs text-gray-600">why: {{ row.award_why }}</span>{% endif %}
+            </td>
             <td class="px-4 py-2.5 text-gray-700">{{ row.waiting_on }}</td>
             <td class="px-4 py-2.5">
               {% if row.last_change_at %}
-                <span class="block text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|days_ago:standing_now }}</span>
+                <span class="block text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|days_ago_and_day:standing_now }}</span>
                 {% if row.last_change_is_ai %}
                   <span data-ai data-testid="ai-badge" class="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{% if row.last_change_by|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ row.last_change_by }}</span></span>
                 {% else %}
@@ -118,7 +121,14 @@ So the page says how many and who, and links to where the answering
 happens: the comparison screen lists a supplier's questions beside its
 figures, and the catalogue is where our own gaps get closed.
 {% endcomment %}
-{% if checks.count %}
+{% if supply_as_of %}
+  {% comment %}
+  The checks are worked out from the records against today's date and from
+  reference rows a rewind does not touch, so on a past date they would be
+  today's answers under a past date's banner. Said once, not shown.
+  {% endcomment %}
+  <p data-testid="checks-as-of-note" class="text-xs text-gray-500 mt-8">Checks are worked out for today; back to today to see them.</p>
+{% elif checks.count %}
   <h2 class="text-sm font-semibold text-gray-900 mt-8 mb-1">Needs an answer</h2>
   <p class="text-xs text-gray-500 mb-3">
     Worked out from the records each time this page opens, so it is the state now.
@@ -168,7 +178,7 @@ figures, and the catalogue is where our own gaps get closed.
       {% for tender in tenders %}
         <tr>
           <td class="px-4 py-2.5 font-medium text-gray-900">{{ tender.label }}</td>
-          <td class="px-4 py-2.5">{{ tender.status|humanise }}</td>
+          <td class="px-4 py-2.5">{% if tender.id in provisional_tender_ids %}awarded, provisional{% else %}{{ tender.status|humanise }}{% endif %}</td>
           <td class="px-4 py-2.5 text-gray-600">
             {{ tender.delivery_point|place_text }}
           </td>
