@@ -284,7 +284,7 @@ class TestTender:
     def test_a_quote_counts_as_a_reply_even_when_the_outreach_was_not_marked(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
         _outreach(da, tender, base["suppliers"][0], datetime.date(2026, 8, 1))
-        _quote(da, tender, base["suppliers"][0], freight_basis="included", duties_basis="excluded")
+        _quote(da, tender, base["suppliers"][0], freight_basis="included", duties_basis="included")
 
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
         assert row.stale == []
@@ -298,7 +298,9 @@ class TestTender:
         _quote(da, tender, base["suppliers"][1], freight_basis="included", duties_basis="excluded")
 
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
-        assert row.stale == ["1 quote missing a basis"]
+        # Both are blocked on the comparison, so both are named: duties
+        # excluded with no amount cannot be costed any more than unstated ones.
+        assert row.stale == ["Missing a basis: Baobab Nutrition (duties amount), Northwind Foods (freight, duties)"]
         assert row.waiting_on == "award decision"
 
     def test_a_closed_or_awarded_tender_drops_the_no_reply_flag_but_keeps_the_basis_flag(self, da, base):
@@ -308,11 +310,13 @@ class TestTender:
         _quote(da, tender, base["suppliers"][1])  # basis not stated
         assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == [
             "No reply in 40 days: Northwind Foods",
-            "1 quote missing a basis",
+            "Missing a basis: Baobab Nutrition (freight, duties)",
         ]
 
         op(da, "tender_update", SEP_1, tender_id=tender["id"], data={"status": "awarded"})
-        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == ["1 quote missing a basis"]
+        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == [
+            "Missing a basis: Baobab Nutrition (freight, duties)"
+        ]
 
     def test_an_awarded_tender_waits_on_its_contract(self, da, base):
         _tender(da, "Round 1", AUG_3, status="awarded")

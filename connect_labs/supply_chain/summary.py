@@ -102,8 +102,6 @@ def _order(access, commodity=None):
     for contract in contracts:
         by_buyer[contract.buyer_of_record] = by_buyer.get(contract.buyer_of_record, 0) + 1
 
-    from connect_labs.supply_chain.records import IN_TRANSIT_STATUSES
-
     return {
         "contract": {
             "count": contracts.count(),
@@ -115,7 +113,7 @@ def _order(access, commodity=None):
         },
         "dispatched": {
             "shipments": shipments.count(),
-            "in_transit": shipments.filter(status__in=IN_TRANSIT_STATUSES).count(),
+            "in_transit": shipments.filter(Shipment.in_transit_q()).count(),
         },
         "received": {"receipts": receipts.count()},
         "invoiced": {

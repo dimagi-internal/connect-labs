@@ -11,7 +11,7 @@ from connect_labs.supply_chain.values import destination_phrase, quantity_phrase
 
 
 def _numbered(facts) -> str:
-    return "\n".join(f"{index}. {fact.question}" for index, fact in enumerate(facts, start=1))
+    return "\n".join(f"{index}. {fact.text}" for index, fact in enumerate(facts, start=1))
 
 
 def render_initial_request(

@@ -175,6 +175,40 @@ def field_label(model, attname) -> str:
     return label[:1].upper() + label[1:]
 
 
+def _quote_units(values, lookup) -> tuple[str, str]:
+    """(base unit, pack unit) of the quote these values are, from its trade item or its commodity."""
+    from connect_labs.supply_chain.models import Commodity, Item
+
+    base = pack = ""
+    for model, key in ((Item, "item_id"), (Commodity, "commodity_id")):
+        row = lookup.row(model, (values or {}).get(key))
+        if row is not None:
+            base = base or row.base_unit
+            pack = pack or row.pack_unit
+    return base, pack
+
+
+def quote_field_label(attname, values, lookup) -> str:
+    """A quote's pack figure in the commodity's own units: "Sachets per carton", not "Units per pack".
+
+    Falls back to the generic label when the commodity names no units.
+    """
+    base, pack = _quote_units(values, lookup)
+    if attname == "base_per_pack_stated" and base and pack:
+        label = f"{unit_noun(base, 2)} per {unit_noun(pack)}"
+    elif attname == "base_unit_grams_stated" and base:
+        label = f"grams per {unit_noun(base)}"
+    else:
+        return field_label(_quote_model(), attname)
+    return label[:1].upper() + label[1:]
+
+
+def _quote_model():
+    from connect_labs.supply_chain.models import Quote
+
+    return Quote
+
+
 def _day(value) -> str:
     if isinstance(value, str):
         try:
@@ -415,12 +449,13 @@ _PACK_FIGURES = {"base_per_pack_stated", "base_unit_grams_stated"}
 def correction_sentence(model, old_values, new_values, lookup, *, with_before=True):
     """A corrected version against the one it replaced, as (sentence, attnames).
 
-    "Quote corrected: units per pack 150 (was not stated)".
+    "Quote corrected: sachets per carton 150 (was not stated)" -- a pack
+    figure in the commodity's own units, when it names them.
 
     Names every field whose value reads differently now, old value in
     brackets; a value that was blank reads "not stated". `with_before=False`
     leaves the brackets off, for a one-line note that says only what the
-    quote says now: "units per pack 150".
+    quote says now: "sachets per carton 150".
     """
     clauses, fields = [], []
     for attname, new in new_values.items():
@@ -430,8 +465,12 @@ def correction_sentence(model, old_values, new_values, lookup, *, with_before=Tr
         after = value_text(model, attname, new, lookup)
         if before == after:
             continue
-        label = field_label(model, attname)
-        # "units per pack", but "ETA" stays as it is.
+        label = (
+            quote_field_label(attname, {**old_values, **new_values}, lookup)
+            if model.__name__ == "Quote"
+            else field_label(model, attname)
+        )
+        # "sachets per carton", but "ETA" stays as it is.
         if not label[:2].isupper():
             label = label[:1].lower() + label[1:]
         clause = f"{label} {after or 'not stated'}"

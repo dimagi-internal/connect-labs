@@ -22,6 +22,7 @@ client of its own API.
 """
 
 from datetime import date, datetime
+from types import SimpleNamespace
 
 import jsonschema
 from django.contrib.auth.decorators import login_required
@@ -141,6 +142,12 @@ class TenderDetailView(_Base):
         # Rows showed "Supplier #2". An id is not a supplier to anyone
         # reading the page, and the name is one list call away.
         context["supplier_names"] = {s["id"]: s["name"] for s in self.op("supplier_list")}
+        # Who was asked, from the outreach, for the invited panel when nobody
+        # is on the marketplace invitation list.
+        context["asked_names"] = list(
+            dict.fromkeys(context["supplier_names"].get(o.get("supplier_id"), "Supplier") for o in outreach)
+        )
+        context["tender_is_over"] = tender.get("status") in ("closed", "awarded")
         context["commodity_names"] = _commodity_names(self.op("commodity_list"))
         # What the tender buys, a line at a time, with a kit's contents when
         # the tender states them -- the fact its comparison ranks against.
@@ -371,19 +378,16 @@ class ComparisonView(_Base):
         context["tender_id"] = tender_id
         context["commodity_slug"] = commodity
         # The product's name, not its slug: "ors-zinc-copack" is an identifier.
-        names = _commodity_names(self.op("commodity_list")) if commodity else {}
+        commodities = self.op("commodity_list") if commodity else []
+        names = _commodity_names(commodities)
         context["commodity_name"] = names.get(commodity) or commodity
         # The offers already chosen, so the page marks them rather than
         # offering to award them again.
         context["awarded_quote_ids"] = {a.get("quote_id") for a in context["awards"] if isinstance(a, dict)}
         context["today"] = date.today().isoformat()
-        # Who decides, by name: the award form's "decided by" starts as the
-        # signed-in person's display name, never their login or email -- on a
-        # shared or service account that read as the account, not the person.
-        # Prefilled only with a person's name. A login handle ("ace") is the
-        # account recording the award, not the person who decided it, and
-        # prefilled it reads as though somebody called that made the choice.
-        context["decider"] = _person_name(self.request.user)
+        # Who decides is who is signed in: shown on the award form, not asked,
+        # and recorded from the request by `post` whatever is posted.
+        context["decider"] = _decider(self.request.user)
         # Offers set aside on this line. A voided quote leaves the ranking, and
         # without this it left the page too -- so the one screen that applies
         # "kits rank only against the same contents" never showed an offer the
@@ -400,7 +404,7 @@ class ComparisonView(_Base):
                     items[item_id] = self.op("item_get", item_id=item_id)
                 context["set_aside"].append({"quote": quote, "item": items.get(item_id)})
         context["comparison"] = comparison
-        # Which offers an AI entered, so each carries the same amber pill as
+        # Which offers an AI entered, so each carries the same indigo AI pill as
         # the timeline and the overview -- the reader checks those first.
         context["ai_quotes"] = (
             ai_entered_quotes(
@@ -422,6 +426,11 @@ class ComparisonView(_Base):
             else {}
         )
         context["history_url"] = reverse("supply_chain:procurement_tender_detail", args=[tender_id]) + "#history"
+        context["cost_basis"] = (
+            cost_basis(next((c for c in commodities if isinstance(c, dict) and c.get("slug") == commodity), None))
+            if comparison
+            else ""
+        )
         context["table_columns"] = table_columns(comparison) if comparison else []
         if comparison and context["table_columns"]:
             context["folded_columns"] = list(folded_columns(comparison).values())
@@ -450,7 +459,9 @@ class ComparisonView(_Base):
         quote_id_raw = request.POST.get("quote_id")
         rationale = request.POST.get("rationale", "")
         decided_on = request.POST.get("decided_on") or None
-        decided_by = (request.POST.get("decided_by") or "").strip() or _display_name(request.user)
+        # Never from the form: a posted name would let anyone record an award
+        # as somebody else's decision.
+        decided_by = _decider(request.user)
         try:
             self.op(
                 "award_create",
@@ -506,6 +517,52 @@ def _person_name(user) -> str:
     }
     handles.discard("")
     return "" if name.lower() in handles else name
+
+
+def _decider(user) -> str:
+    """Who an award made by this signed-in person is recorded as deciding: their name, else their display name."""
+    return _person_name(user) or _display_name(user)
+
+
+def cost_basis(commodity) -> str:
+    """ "1 carton = 150 sachets; a course is 150 sachets": only what the commodity defines.
+
+    The pack from the commodity's own units per pack, or else an "exactly"
+    requirement on the pack count in its specification; the course from its
+    ration table. "" when it defines neither.
+    """
+    from connect_labs.supply_chain.procurement.services.compliance import is_pack_count_field
+    from connect_labs.supply_chain.values import quantity_digits
+
+    if not isinstance(commodity, dict):
+        return ""
+    base, pack = commodity.get("base_unit") or "", commodity.get("pack_unit") or ""
+    if not base:
+        return ""
+    parts = []
+    per_pack = commodity.get("base_per_pack")
+    if per_pack is None:
+        units = SimpleNamespace(base_unit=base, pack_unit=pack)
+        per_pack = next(
+            (
+                r.get("value")
+                for r in commodity.get("spec_requirements") or []
+                if isinstance(r, dict) and r.get("operator") == "==" and is_pack_count_field(r.get("field"), units)
+            ),
+            None,
+        )
+    if per_pack not in (None, "") and pack:
+        parts.append(f"1 {unit_noun(pack, 1)} = {quantity_digits(per_pack)} {unit_noun(base, per_pack)}")
+    course = commodity.get("course_definition") or {}
+    per_course = course.get("base_units_per_course")
+    if per_course in (None, "") and course.get("base_units_per_day") and course.get("days_per_course"):
+        try:
+            per_course = float(course["base_units_per_day"]) * float(course["days_per_course"])
+        except (TypeError, ValueError):
+            per_course = None
+    if per_course not in (None, ""):
+        parts.append(f"a course is {quantity_digits(per_course)} {unit_noun(base, per_course)}")
+    return "; ".join(parts)
 
 
 def _display_name(user) -> str:

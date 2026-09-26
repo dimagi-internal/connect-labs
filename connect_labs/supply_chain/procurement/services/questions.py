@@ -55,6 +55,20 @@ class MissingFact:
     key: str
     question: str
     audience: str = SUPPLIER
+    # What the specification requires of the figure asked about ("exactly
+    # 150"), kept apart from the question. Folded into the question, "How
+    # many sachets are in one carton? We require exactly 150." read as a
+    # leading question on the comparison; the page states it beside the
+    # question instead, and a message to the supplier says both (`text`).
+    requirement: str = ""
+
+    @property
+    def text(self) -> str:
+        """The question with the requirement said after it, for a message to the supplier."""
+        return f"{self.question} We require {self.requirement}." if self.requirement else self.question
+
+    def as_dict(self) -> dict:
+        return {"key": self.key, "question": self.question, "audience": self.audience, "requirement": self.requirement}
 
 
 # Maps a fragment of a pricing Unconfirmed reason to (key, question, audience).
@@ -73,7 +87,7 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
     (
         "pack spec",
         "pack_spec",
-        "How many {base_unit}s are in one {pack_unit}, and what is the weight of each {base_unit}?",
+        "How many {base_unit}s are in one {pack_unit}?{unit_weight_clause}",
         SUPPLIER,
     ),
     (
@@ -240,6 +254,7 @@ def _context(commodity: Commodity, tender: Tender, quote: Quote | None = None) -
     if keys:
         places = [p for p in places if p.get("key") in keys] or places
     pickup = getattr(quote, "pickup_location", "") if quote is not None else ""
+    base_unit = commodity.base_unit or "unit"
     return {
         "base_unit": commodity.base_unit or "unit",
         "pack_unit": commodity.pack_unit or "pack",
@@ -248,7 +263,20 @@ def _context(commodity: Commodity, tender: Tender, quote: Quote | None = None) -
         "pickup": f" ({pickup})" if pickup else "",
         "quantity_phrase": quantity_phrase(quantity[0], quantity[1]) if quantity else "",
         "shelf_life": tender.shelf_life_months_minimum or commodity.shelf_life_months_minimum or "",
+        # The pack question asks for a unit's weight only when the
+        # specification requires one: asked of every tender, it was a second
+        # question nobody's requirement needed answered.
+        "unit_weight_clause": f" What does one {base_unit} weigh?" if _requires_unit_weight(commodity) else "",
     }
+
+
+def _requires_unit_weight(commodity: Commodity) -> bool:
+    """Whether the specification sets a requirement on the weight of one base unit."""
+    for requirement in getattr(commodity, "spec_requirements", None) or []:
+        name = str((requirement or {}).get("field") or "").lower()
+        if "gram" in name or "weight" in name:
+            return True
+    return False
 
 
 def _fact(key: str, template: str, context: dict, audience: str = SUPPLIER) -> MissingFact:
@@ -264,13 +292,12 @@ _OPERATOR_PHRASES = {
 }
 
 
-def _requirement_clause(requirement: dict) -> str:
-    """ "We require exactly 150." -- or "" for an operator nobody should read raw."""
+def _requirement_words(requirement: dict) -> str:
+    """ "exactly 150" -- or "" for an operator nobody should read raw."""
     phrase = _OPERATOR_PHRASES.get(requirement.get("operator"))
     if phrase is None:
         return ""
-    amount = f"{requirement.get('value')} {requirement.get('unit') or ''}".strip()
-    return f"We require {phrase} {amount}."
+    return f"{phrase} {requirement.get('value')} {requirement.get('unit') or ''}".strip()
 
 
 def _spec_fact(field_name: str, requirement: dict, commodity: Commodity | None = None) -> MissingFact:
@@ -293,7 +320,7 @@ def _spec_fact(field_name: str, requirement: dict, commodity: Commodity | None =
     raw operator symbol.
     """
     if commodity is not None and is_pack_count_field(field_name, commodity):
-        question = f"How many {commodity.base_unit or 'unit'}s are in each {commodity.pack_unit or 'pack'}?"
+        question = f"How many {commodity.base_unit or 'unit'}s are in one {commodity.pack_unit or 'pack'}?"
     elif is_shelf_life_field(field_name):
         question = (
             "What is the shelf life from the date of manufacture, and the production date of the batch "
@@ -304,17 +331,16 @@ def _spec_fact(field_name: str, requirement: dict, commodity: Commodity | None =
         # once, beside the number the requirement names.
         label = requirement_label(figure_name(field_name), requirement.get("unit") or "").lower()
         question = f"What is the {label} of what you would supply?"
-    clause = _requirement_clause(requirement)
-    return MissingFact(key=f"spec:{field_name}", question=f"{question} {clause}".strip())
+    return MissingFact(key=f"spec:{field_name}", question=question, requirement=_requirement_words(requirement))
 
 
 def _with_requirement(fact: MissingFact, requirement: dict) -> MissingFact:
-    """A question already asked, with the specification's requirement said once at its end."""
-    clause = _requirement_clause(requirement)
+    """A question already asked, carrying the specification's requirement beside it."""
+    words = _requirement_words(requirement)
     # The shelf-life question already names the minimum when there is one.
-    if not clause or clause in fact.question or (fact.key == "shelf_life" and "at least" in fact.question):
+    if not words or fact.requirement or (fact.key == "shelf_life" and "at least" in fact.question):
         return fact
-    return MissingFact(key=fact.key, question=f"{fact.question} {clause}", audience=fact.audience)
+    return MissingFact(key=fact.key, question=fact.question, audience=fact.audience, requirement=words)
 
 
 def _fold_spec_question(facts, seen, field_name, requirement, commodity) -> bool:

@@ -64,7 +64,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
               {% if row.last_change_at %}
                 <span class="block text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|days_ago_and_day:standing_now }}</span>
                 {% if row.last_change_is_ai %}
-                  <span data-ai data-testid="ai-badge" class="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{% if row.last_change_by|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ row.last_change_by }}</span></span>
+                  <span data-ai data-testid="ai-badge" class="mt-0.5 inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs">{% if row.last_change_by|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ row.last_change_by }}</span></span>
                 {% else %}
                   <span class="mt-0.5 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ row.last_change_by }}</span>
                 {% endif %}
@@ -73,8 +73,11 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
               {% endif %}
             </td>
             <td class="px-4 py-2.5">
+              {% comment %}A flag is a stated fact, not an alarm: a calm amber marker, with
+              the rule that raised it as its title.{% endcomment %}
               {% for flag in row.stale %}
-                <span data-testid="stale-flag" class="block text-xs text-red-700">{{ flag }}</span>
+                <span data-testid="stale-flag" title="{{ flag.rule }}"
+                      class="mb-1 flex w-fit items-start gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span>{{ flag }}</span></span>
               {% endfor %}
             </td>
           </tr>
@@ -240,7 +243,11 @@ figures, and the catalogue is where our own gaps get closed.
               {% endif %}
             </td>
             <td class="px-4 py-2.5 text-gray-600">{{ contract.quantity|qty:contract.quantity_unit }}</td>
-            <td class="px-4 py-2.5">{{ contract.status|humanise }}</td>
+            {% comment %}The stage the overview's own row gives this order, so the two
+            tables say the same thing -- on a past date too, where the stored
+            status is the rewound record's and the stage is read from its
+            shipments, receipts and payments.{% endcomment %}
+            <td class="px-4 py-2.5">{% with stage=order_stages|dictkey:contract.id %}{% if stage %}{{ stage }}{% else %}{{ contract.status|humanise }}{% endif %}{% endwith %}</td>
             <td class="px-4 py-2.5 text-xs text-gray-500">{{ contract.source|humanise }}</td>
             <td class="px-4 py-2.5 text-right">
               <a class="text-brand-indigo hover:underline"

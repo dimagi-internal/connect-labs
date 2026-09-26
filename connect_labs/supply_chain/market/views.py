@@ -136,7 +136,53 @@ def _tender_page(request, listed):
         card=cards.card_for(listed),
         can_manage=bool(tender.slug) and _signed_in(request) and service.can_manage(request, tender),
         program_view_url=(reverse("supply_chain:procurement_tender_detail", args=[tender.pk]) if on_program else None),
+        asked_for=_asked_for(listed.lines),
+        delivered_to=_delivered_to_words(tender.delivery_points or []),
+        posted_by=_posted_by(request, tender, on_program),
     )
+
+
+def _asked_for(lines) -> str:
+    """ "2,000 cartons": the tender's quantity, summed when every line counts in one unit.
+
+    Lines in different units cannot be added, so they read as a count of
+    products; "" when no line states a quantity.
+    """
+    from connect_labs.supply_chain.values import quantity_phrase
+
+    stated = [line for line in lines if line.quantity is not None]
+    if not stated:
+        return ""
+    units = {line.quantity_unit for line in stated}
+    if len(units) == 1:
+        return quantity_phrase(sum(line.quantity for line in stated), units.pop())
+    return f"{len(lines)} products"
+
+
+def _delivered_to_words(places) -> str:
+    """The one place the goods go, by its city or name; "3 places" when there are more."""
+    if len(places) > 1:
+        return f"{len(places)} places"
+    if places:
+        place = places[0] or {}
+        return place.get("city") or place.get("name") or ""
+    return ""
+
+
+def _posted_by(request, tender, on_program) -> str:
+    """The buyer organisation's name: the tender's owner, else -- to its own program's team,
+    whose session names it -- the program's organisation. "" when neither is known."""
+    if tender.owner_org_id:
+        return tender.owner_org.name
+    if not on_program:
+        return ""
+    from connect_labs.labs.context import get_org_data
+
+    data = get_org_data(request) or {}
+    program = next((p for p in data.get("programs") or [] if str(p.get("id")) == str(tender.program_id)), {})
+    slug = program.get("organization")
+    org = next((o for o in data.get("organizations") or [] if slug and o.get("slug") == slug), {})
+    return org.get("name") or ""
 
 
 @MARKET_CHROME

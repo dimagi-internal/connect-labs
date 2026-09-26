@@ -7,7 +7,7 @@
   <div>
     <h1 class="text-xl font-semibold text-gray-900">{{ tender.label }}</h1>
     <p class="text-sm text-gray-600">
-      Status: {{ tender.status|title }} — response deadline {{ tender.response_deadline|default:"not set" }}
+      Status: {{ tender.status|title }} — response deadline {{ tender.response_deadline|day|default:"not set" }}
     </p>
     {% if tender.slug %}
       <p class="text-sm text-gray-600 mt-1">
@@ -26,7 +26,7 @@
         <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 border">Restricted</span> Only the suppliers you invite see it on the supplier marketplace.
       {% else %}
         <span class="px-2 py-0.5 rounded-full text-xs bg-message-info text-message-info-text border border-message-info-border">Open to all suppliers</span>
-        {% if tender.status == "open" %}Listed on the <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender' tender.id %}">supplier marketplace</a>: any registered supplier can bid.{% else %}Listed on the supplier marketplace while it is open.{% endif %}
+        {% if tender.status == "open" %}Listed on the <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender' tender.id %}">supplier marketplace</a>: any registered supplier can bid.{% elif tender.status == "draft" %}Listed on the supplier marketplace while it is open.{% endif %}
       {% endif %}
     </p>
   </div>
@@ -69,7 +69,7 @@
 <div class="bg-white border border-brand-border-light rounded-lg p-4 mb-6">
   <h2 class="text-sm font-semibold text-gray-900">Invited suppliers</h2>
   <p class="text-sm text-gray-600 mt-1">
-    {% if tender.visibility == "private" %}This tender is restricted: only the suppliers below can see it and bid.{% else %}This tender is public, so any registered supplier can bid. The list matters once it is made private.{% endif %}
+    {% if tender_is_over %}Closed to further quotes, so no one else is invited.{% elif tender.visibility == "private" %}This tender is restricted: only the suppliers below can see it and bid.{% else %}This tender is public, so any registered supplier can bid. The list matters once it is made private.{% endif %}
   </p>
   <ul class="mt-2 text-sm">
     {% for org in invited_orgs %}
@@ -84,10 +84,16 @@
         {% endif %}
       </li>
     {% empty %}
-      <li class="text-gray-600">No one invited yet.</li>
+      {% comment %}Suppliers asked directly are invited too: "No one invited yet" above
+      an outreach table listing them contradicted it.{% endcomment %}
+      {% if asked_names %}
+        <li data-testid="asked-directly" class="text-gray-700">Asked directly: {{ asked_names|join:", " }} <span class="text-gray-500">— see Outreach below.</span></li>
+      {% else %}
+        <li class="text-gray-600">No one invited yet.</li>
+      {% endif %}
     {% endfor %}
   </ul>
-  {% if invitable_orgs and not supply_as_of %}
+  {% if invitable_orgs and not supply_as_of and not tender_is_over %}
     <form method="post" action="{% url 'supply_chain:procurement_tender_invite_org' tender.id %}" class="mt-3 flex items-center gap-2">
       {% csrf_token %}
       <label for="invite-org" class="text-sm text-gray-700">Invite a registered supplier</label>
@@ -150,7 +156,7 @@
           <a href="{% url 'supply_chain:supplier_detail' o.supplier_id %}"
              class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:o.supplier_id|default:"Supplier" }}</a>
         </td>
-        <td class="px-4 py-2 text-sm text-gray-600">{{ o.sent_on|default:"—" }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ o.sent_on|day|default:"—" }}</td>
         <td class="px-4 py-2 text-sm text-gray-600">
           {{ o.days_waiting|default_if_none:"—" }}
         </td>

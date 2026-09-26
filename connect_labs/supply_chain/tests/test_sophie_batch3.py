@@ -126,12 +126,12 @@ class TestTheSpecificationReadsWhatTheQuoteStates:
         _with_spec(da)
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
         before = _row(_compare(da, base["tender"]["id"]), quote["id"])
-        assert before["specification"]["summary"] == "2 of 2 not stated"
+        assert before["specification"]["summary"] == "Not stated: sachets per carton, shelf life"
 
         corrected = _correct_pack(da, quote, ace)
         after = _row(_compare(da, base["tender"]["id"]), corrected["id"])
 
-        assert after["specification"]["summary"] == "1 of 2 not stated"
+        assert after["specification"]["summary"] == "Not stated: shelf life"
         assert after["specification"]["stated_on_quote"] == ["sachets per carton"]
         keys = [q["key"] for q in after["questions"]]
         assert "spec:sachets_per_carton" not in keys and "pack_spec" not in keys
@@ -166,15 +166,17 @@ class TestABlockedCardLeadsWithWhatBlocksIt:
     def test_questions_about_one_figure_are_asked_once_as_a_sentence(self, da, base):
         _with_spec(da)
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
-        questions = {
-            q["key"]: q["question"] for q in _row(_compare(da, base["tender"]["id"]), quote["id"])["questions"]
-        }
+        rows = _row(_compare(da, base["tender"]["id"]), quote["id"])["questions"]
+        questions = {q["key"]: q["question"] for q in rows}
+        requirements = {q["key"]: q["requirement"] for q in rows}
 
         assert "spec:sachets_per_carton" not in questions
-        assert questions["pack_spec"].endswith("We require exactly 150.")
+        # Asked neutrally; the requirement is carried beside it (batch 4).
+        assert questions["pack_spec"] == "How many sachets are in one carton?"
+        assert requirements["pack_spec"] == "exactly 150"
         assert "shelf_life" not in questions
         assert questions["spec:shelf_life_months"].startswith("What is the shelf life from the date of manufacture")
-        assert questions["spec:shelf_life_months"].endswith("We require at least 24 months.")
+        assert requirements["spec:shelf_life_months"] == "at least 24 months"
         assert not any("of the item you would supply" in q for q in questions.values())
 
     def test_a_spec_question_nothing_else_asks_reads_as_a_sentence(self, da, base):
@@ -191,13 +193,13 @@ class TestABlockedCardLeadsWithWhatBlocksIt:
             },
         )
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _COMPARABLE)
-        questions = {
-            q["key"]: q["question"] for q in _row(_compare(da, base["tender"]["id"]), quote["id"])["questions"]
-        }
-        assert (
-            questions["spec:moisture_pct"]
-            == "What is the moisture of what you would supply? We require no more than 2.5 %."
+        (fact,) = (
+            q
+            for q in _row(_compare(da, base["tender"]["id"]), quote["id"])["questions"]
+            if q["key"] == "spec:moisture_pct"
         )
+        assert fact["question"] == "What is the moisture of what you would supply?"
+        assert fact["requirement"] == "no more than 2.5 %"
 
     def test_quantities_read_with_separators_and_no_storage_decimals(self, da, base, client_in_program):
         Tender.objects.filter(pk=base["tender"]["id"]).update(
@@ -228,7 +230,10 @@ class TestACorrectedOfferSaysWhyItJoined:
         note = re.search(r'<a data-testid="correction-note" href="([^"]+)"[^>]*>(.*?)</a>', ranked.group(0), re.S)
         history = reverse("supply_chain:procurement_tender_detail", args=[base["tender"]["id"]]) + "#history"
         assert note.group(1) == history
-        assert " ".join(note.group(2).split()) == "Corrected 28 Aug: units per pack 150 — ACE (agent)"
+        summary = re.search(r'data-testid="correction-source".*?<summary[^>]*>(.*?)</summary>', ranked.group(0), re.S)
+        assert " ".join(summary.group(1).split()) == (
+            "Corrected 28 Aug: sachets per carton 150 (was not stated) — ACE (agent)"
+        )
 
         tender_page = client_in_program.get(history.split("#")[0]).content.decode()
         assert '<section id="history" data-timeline data-testid="timeline"' in tender_page

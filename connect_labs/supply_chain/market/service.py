@@ -345,7 +345,7 @@ def own_quotes(orgs) -> list[OwnQuote]:
         needs = []
         if quote.tender.status == "open":
             needs = [
-                fact.question
+                fact.text
                 for fact in missing_facts(quote, quote.commodity, quote.tender, item=quote.item)
                 if fact.audience == "supplier"
             ]
