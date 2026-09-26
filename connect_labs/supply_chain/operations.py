@@ -16,6 +16,7 @@ import jsonschema
 
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import models, records, serializers
+from connect_labs.supply_chain.history.calls import run_recorded
 from connect_labs.supply_chain.reference import catalogue as reference_catalogue
 from connect_labs.supply_chain.values import to_wire
 
@@ -74,8 +75,39 @@ class Operation:
 
 _REGISTRY: dict[str, Operation] = {}
 
+# Every write accepts an optional `source`: the evidence the caller acted on.
+# Added here, once, rather than declared by each operation, so no write can
+# forget it and the MCP catalogue and HTTP discovery both show it. It never
+# reaches a handler -- call_operation pops it and hands it to history/calls.py,
+# which stores it on the OperationCall and deduplicates on `ref`.
+SOURCE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ref": {"type": "string", "minLength": 1, "maxLength": 512},
+        "excerpt": {"type": "string", "maxLength": 2000},
+    },
+    "required": ["ref"],
+    "additionalProperties": False,
+    "description": (
+        "Evidence for this write: ref is the source email's Message-ID or a document hash; "
+        "the same ref for the same operation is recorded once and replayed."
+    ),
+}
+
+
+def _with_source(name: str, input_schema: dict) -> dict:
+    properties = input_schema.get("properties")
+    if input_schema.get("type") != "object" or not isinstance(properties, dict):
+        raise ValueError(f"write operation {name!r} needs an object schema with properties to carry `source`")
+    if "source" in properties:
+        raise ValueError(f"write operation {name!r} declares its own `source`, which the registry reserves")
+    return {**input_schema, "properties": {**properties, "source": SOURCE_SCHEMA}}
+
 
 def register_operation(*, name: str, summary: str, input_schema: dict, is_write: bool = False, internal: bool = False):
+    if is_write:
+        input_schema = _with_source(name, input_schema)
+
     def decorator(fn):
         if name in _REGISTRY:
             raise ValueError(f"operation {name!r} already registered")
@@ -116,7 +148,7 @@ def get_operation(name: str) -> Operation:
     return _REGISTRY[name]
 
 
-def call_operation(name: str, access, payload: dict | None = None) -> Any:
+def call_operation(name: str, access, payload: dict | None = None, *, channel: str | None = None) -> Any:
     """Validate a payload against its operation's schema, then dispatch.
 
     Top-level keys whose value is None are dropped before validation: a
@@ -129,16 +161,25 @@ def call_operation(name: str, access, payload: dict | None = None) -> Any:
     Only the top level. A None INSIDE a `data` payload is meaningful: it is
     how a nullable field gets cleared, and data_access._columns already
     distinguishes that from an omitted key.
+
+    A write runs as a recorded OperationCall (history/calls.py): `channel`
+    names the surface it came through ("mcp", "api"); left unset it is "web"
+    for a request and "command" for a caller with neither user nor request.
+    A read runs exactly as before -- nothing is recorded and no transaction is
+    opened.
     """
     operation = get_operation(name)
     payload = {key: value for key, value in (payload or {}).items() if value is not None}
     jsonschema.validate(payload, operation.input_schema)
+    source = payload.pop("source", None)
     # After validation, so a malformed payload fails on its shape rather than
     # on who sent it; before dispatch, because this is the one choke point both
     # the HTTP adapter and the MCP tools pass through, and provenance derived
     # in two places is provenance that can disagree with itself.
     payload = stamp_provenance(access, operation, payload)
-    return operation.handler(access, **payload)
+    if not operation.is_write:
+        return operation.handler(access, **payload)
+    return run_recorded(operation, access, payload, source, channel)
 
 
 # ---- serialisation helpers ---------------------------------------------

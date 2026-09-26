@@ -9,6 +9,15 @@ from connect_labs.supply_chain.operations import all_operations, call_operation,
 from connect_labs.supply_chain.tests.conftest import RUTF as _RUTF
 
 
+def _write_access():
+    """A mock data access with the plain scope a recorded write reads.
+
+    A write now runs as a recorded OperationCall, which stores the caller's
+    program and actor; a bare MagicMock would offer a mock for each.
+    """
+    return MagicMock(program_id=None, user=None, request=None)
+
+
 def test_the_registry_is_not_empty():
     assert len(all_operations()) >= 15
 
@@ -56,8 +65,9 @@ def test_a_payload_that_violates_the_schema_is_rejected_before_the_handler_runs(
     assert not access.create_supplier.called
 
 
+@pytest.mark.django_db
 def test_a_valid_payload_reaches_the_data_access():
-    access = MagicMock()
+    access = _write_access()
     # A real (unsaved) model, because the handler serialises what it gets back
     # and a MagicMock is not JSON.
     access.create_supplier.return_value = Supplier(id=3, org=LabsOrg(name="Northwind Nutrition"))
@@ -93,8 +103,9 @@ def test_a_float_money_amount_is_rejected():
     assert not access.create_quote.called
 
 
+@pytest.mark.django_db
 def test_the_equivalent_string_money_amount_is_accepted():
-    access = MagicMock()
+    access = _write_access()
     access.create_quote.return_value = Quote(id=7, commodity=_RUTF)
     call_operation("quote_record", access, _quote_payload(as_quoted_amount="12.50"))
     assert access.create_quote.called
@@ -176,8 +187,9 @@ def test_a_negative_or_zero_quantity_is_rejected_on_both_the_string_and_the_numb
     assert not access.create_contract.called
 
 
+@pytest.mark.django_db
 def test_a_positive_quantity_is_accepted_as_either_a_string_or_a_number():
-    access = MagicMock()
+    access = _write_access()
     access.request = None
     access.user = None
     access.create_contract.return_value = Contract(id=1, commodity=_RUTF)
@@ -242,10 +254,11 @@ def test_contract_create_rejects_data_missing_its_commodity():
 # alone use the *_CREATE variant that carries the requirement.
 
 
+@pytest.mark.django_db
 def test_quote_correct_succeeds_with_a_partial_payload_naming_only_the_fix():
     """A correction to a transcribed amount must not need tender_id/
     commodity_slug re-supplied -- those already live on the existing quote."""
-    access = MagicMock()
+    access = _write_access()
     access.supersede_quote.return_value = Quote(id=8, commodity=_RUTF)
     call_operation(
         "quote_correct",
@@ -255,11 +268,12 @@ def test_quote_correct_succeeds_with_a_partial_payload_naming_only_the_fix():
     assert access.supersede_quote.called
 
 
+@pytest.mark.django_db
 def test_outreach_update_succeeds_with_a_partial_payload_naming_only_the_response():
     """outreach_update's own summary is 'typically to record that a supplier
     responded, and how' -- exactly a responded/response_kind-only payload,
     naming neither tender_id nor supplier_id."""
-    access = MagicMock()
+    access = _write_access()
     access.update_outreach.return_value = Outreach(id=9)
     call_operation(
         "outreach_update",
@@ -282,12 +296,13 @@ def test_a_none_valued_parameter_is_treated_as_not_supplied():
     access.list_contracts.assert_called_once_with(tender_id=None, status=None)
 
 
+@pytest.mark.django_db
 def test_a_none_inside_a_data_payload_is_still_passed_through():
     """Only the top level is stripped. A None inside `data` is meaningful
     where the schema says so: detaching a document wrongly attached as a duty
     exemption is a real operation, and `duty_relief_document_id` is declared
     NULLABLE_ID for it."""
-    access = MagicMock()
+    access = _write_access()
     # Payload plumbing, not provenance: an unknowable caller (no request, no
     # user) is the management-command route, which stamps nothing. Left as a
     # bare MagicMock, `access.request` is a truthy auto-attribute and the

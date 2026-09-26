@@ -583,6 +583,12 @@ LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID = env("LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_
 # Example: LABS_ADMIN_USERNAMES=matt
 LABS_ADMIN_USERNAMES = env.list("LABS_ADMIN_USERNAMES", default=[])
 
+# The labs accounts that AI agents sign in as. A supply write made by one of
+# them is recorded with actor_is_agent=True (supply_chain/history/calls.py), so
+# its history can say an agent made the change. Not a secret; the default is
+# the one agent account in use today.
+LABS_AGENT_ACCOUNT_EMAILS = env.list("LABS_AGENT_ACCOUNT_EMAILS", default=["ace@dimagi-ai.com"])
+
 # S3 bucket for exporting audit/workflow records as CSV backups.
 # When None (default), all export calls are silently skipped.
 LABS_EXPORTS_BUCKET = env("LABS_EXPORTS_BUCKET", default=None)
