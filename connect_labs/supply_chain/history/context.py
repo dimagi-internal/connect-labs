@@ -66,6 +66,9 @@ def seed_overrides(program_id, *, actor=None, channel=None, recorded_at=None):
     values = {
         k: v for k, v in {"actor": actor, "channel": channel, "recorded_at": recorded_at}.items() if v is not None
     }
+    # Bound to this program: run_recorded refuses a write to any other one, so
+    # a seeder's backdating cannot leak onto a real program's history.
+    values["program_id"] = program_id
     token = _overrides.set(values)
     try:
         yield

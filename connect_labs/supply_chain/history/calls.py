@@ -49,10 +49,31 @@ def _is_agent(actor):
 
 
 def run_recorded(operation, access, payload, source, channel):
+    """Run one write as an OperationCall; return its result, or a replay.
+
+    Deduplication needs a program. The unique constraint treats a NULL
+    program_id as distinct from every other, so a lookup on `IS NULL` would
+    disagree with it -- sequential duplicates would replay across every
+    unscoped caller while concurrent ones both wrote. An unscoped write
+    therefore still records its source, for provenance, and never replays.
+
+    A replay returns the result as it was STORED: wire JSON through
+    DjangoJSONEncoder, so a date comes back as its ISO string rather than a
+    `date`, plus `"replayed": True` when the result is a dict.
+
+    Raises PermissionError if seed overrides are active for a different
+    program than the one this write targets.
+    """
     overrides = current_overrides()
+    program_id = getattr(access, "program_id", None)
+    if overrides and overrides.get("program_id") != program_id:
+        raise PermissionError(
+            f"seed overrides were opened for program {overrides.get('program_id')!r}, "
+            f"not the program {program_id!r} this write targets"
+        )
     actor = overrides.get("actor") or _actor(access)
     fields = dict(
-        program_id=getattr(access, "program_id", None),
+        program_id=program_id,
         operation=operation.name,
         actor=actor,
         actor_is_agent=_is_agent(actor),
@@ -62,9 +83,10 @@ def run_recorded(operation, access, payload, source, channel):
     )
     if "recorded_at" in overrides:
         fields["recorded_at"] = overrides["recorded_at"]
-    key = dict(program_id=fields["program_id"], operation=operation.name, source_ref=fields["source_ref"])
+    deduplicates = bool(fields["source_ref"]) and program_id is not None
+    key = dict(program_id=program_id, operation=operation.name, source_ref=fields["source_ref"])
 
-    if fields["source_ref"]:
+    if deduplicates:
         existing = OperationCall.objects.filter(**key).first()
         if existing is not None:
             return _replay(existing)
@@ -80,13 +102,15 @@ def run_recorded(operation, access, payload, source, channel):
             )
             return result
     except IntegrityError as error:
-        if not fields["source_ref"]:
+        if not deduplicates:
             raise
         # Either a concurrent call with the same ref won the race, or the
         # handler hit a constraint of its own. Only the first has a winner to
         # return; the second must surface unchanged.
+        # Accepted narrow race: a handler's own IntegrityError that coincides
+        # with a concurrent winner is answered with the winner's result.
         try:
             winner = OperationCall.objects.get(**key)
-        except OperationCall.DoesNotExist:
+        except (OperationCall.DoesNotExist, OperationCall.MultipleObjectsReturned):
             raise error from None
         return _replay(winner)
