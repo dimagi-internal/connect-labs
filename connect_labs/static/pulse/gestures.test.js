@@ -332,18 +332,18 @@ describe('two-hand zoom', () => {
   const zooms = (actions) => actions.filter((a) => a.type === 'zoom');
   const total = (actions) => zooms(actions).reduce((s, a) => s + a.dz, 0);
 
-  it('palms to the camera, spreading apart, zooms out', () => {
+  it('palms to the camera, spreading apart, zooms in', () => {
     const { e, t } = armed();
     const { actions } = feed(e, t, 30, (i) => pair(0.2 + i * 0.01, 'facing'));
     expect(types(actions)[0]).toBe('zoomStart');
     expect(zooms(actions).length).toBeGreaterThan(3);
-    expect(total(actions)).toBeLessThan(-1);
+    expect(total(actions)).toBeGreaterThan(1);
   });
 
-  it('palms sideways, coming together, zooms in', () => {
+  it('palms sideways, coming together, zooms out', () => {
     const { e, t } = armed();
     const { actions } = feed(e, t, 30, (i) => pair(0.5 - i * 0.01, 'sideways'));
-    expect(total(actions)).toBeGreaterThan(1);
+    expect(total(actions)).toBeLessThan(-1);
   });
 
   it('moving the wrong way for the pose does not zoom, so hands can reset', () => {
@@ -397,9 +397,9 @@ describe('two-hand zoom', () => {
   });
 
   it('the direction is one flag', () => {
-    const { e, t } = armed({ spreadZoomsOut: false });
+    const { e, t } = armed({ spreadZoomsOut: true });
     const { actions } = feed(e, t, 30, (i) => pair(0.2 + i * 0.01, 'facing'));
-    expect(total(actions)).toBeGreaterThan(1);
+    expect(total(actions)).toBeLessThan(-1);
   });
 });
 
@@ -407,8 +407,65 @@ describe('the map hook', () => {
   it('display.js exposes zoomBy for gesture zoom, and it stops the act tour', () => {
     const DISPLAY = fs.readFileSync(path.join(here, 'display.js'), 'utf8');
     const flat = DISPLAY.replace(/\s+/g, ' ');
-    expect(flat).toMatch(
-      /window\.PulseMap = \{ zoomBy\(dz, x, y\) \{ if \(!map\) return; autoCycle = false;/,
+    expect(flat).toMatch(/const handMoved = \(\) => \{ autoCycle = false;/);
+  });
+});
+
+describe('one-hand spin', () => {
+  const spins = (actions) => actions.filter((a) => a.type === 'spin');
+
+  it('an open palm moving turns the globe the way the hand moves', () => {
+    const { e, t } = armed();
+    // Camera x falling is the hand moving RIGHT on screen (the view is mirrored).
+    const { actions } = feed(e, t, 20, (i) =>
+      hand({ x: 0.55 - i * 0.008, palm: 'facing' }),
     );
+    expect(spins(actions).length).toBeGreaterThan(5);
+    expect(spins(actions).reduce((s, a) => s + a.dx, 0)).toBeGreaterThan(0);
+    // Spinning is not swiping.
+    expect(types(actions)).not.toContain('swipe');
+  });
+
+  it('a fast flick of an open palm spins, and is not also a swipe', () => {
+    const { e, t } = armed();
+    const { actions } = feed(e, t, 12, (i) =>
+      hand({ x: 0.6 - i * 0.025, palm: 'facing' }),
+    );
+    expect(spins(actions).length).toBeGreaterThan(3);
+    expect(types(actions)).not.toContain('swipe');
+  });
+
+  it('a palm held still does not drift the globe', () => {
+    const { e, t } = armed();
+    const { actions } = feed(e, t, 60, (i) =>
+      hand({ x: 0.5 + (i % 2 ? 0.001 : -0.001), palm: 'facing' }),
+    );
+    expect(spins(actions)).toEqual([]);
+  });
+
+  it('pointing moves the cursor, not the globe', () => {
+    const { e, t } = armed();
+    const { actions, readout } = feed(e, t, 20, (i) =>
+      hand({ x: 0.55 - i * 0.008 }),
+    );
+    expect(spins(actions)).toEqual([]);
+    expect(readout.pointer).not.toBeNull();
+  });
+
+  it('a pinch-drag drags the window, and never also spins', () => {
+    const { e, t } = armed();
+    const { actions } = feed(e, t, 30, (i) =>
+      hand({ x: 0.5 - i * 0.004, pinch: 0.1, palm: 'facing' }),
+    );
+    expect(types(actions)).toContain('drag');
+    expect(spins(actions)).toEqual([]);
+  });
+
+  it('nothing spins while disarmed', () => {
+    const e = core.createEngine();
+    const { actions } = feed(e, 0, 60, (i) =>
+      hand({ x: 0.3 + (i % 30) * 0.01, palm: 'facing' }),
+    );
+    expect(actions).toEqual([]);
   });
 });

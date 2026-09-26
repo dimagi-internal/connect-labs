@@ -280,19 +280,30 @@
     return m;
   }
 
-  /* Two-hand zoom from gestures.js (?gestures=1). A deliberate view choice,
-     like a focus button, so it also stops the act tour flying the map away
-     from where the viewer just put it. x/y are viewport pixels to zoom about. */
+  /* Hand gestures from gestures.js (?gestures=1): two-hand zoom and one-hand
+     spin. Each is a deliberate view choice, like a focus button, so it also
+     stops the act tour flying the map away from where the viewer put it. */
+  const handMoved = () => {
+    autoCycle = false;
+    lastInteractionAt = performance.now();
+  };
   window.PulseMap = {
+    /* dz in zoom levels, about x/y in viewport pixels. */
     zoomBy(dz, x, y) {
       if (!map) return;
-      autoCycle = false;
-      lastInteractionAt = performance.now();
+      handMoved();
       const r = $('#basemap').getBoundingClientRect();
       map.zoomTo(map.getZoom() + dz, {
         around: map.unproject([x - r.left, y - r.top]),
         duration: 0,
       });
+    },
+    /* The surface follows the hand, as it would under a dragging mouse, so the
+       view moves the opposite way. On the globe that is a spin. */
+    panBy(dx, dy) {
+      if (!map) return;
+      handMoved();
+      map.panBy([-dx, -dy], { duration: 0 });
     },
   };
 

@@ -29,14 +29,17 @@
  *   disarm   hand out of view ~1s, or 30s with nothing done.
  *   point    the index knuckle steers a smoothed cursor (the knuckle, not the
  *            fingertip: the fingertip moves when you pinch, so a pinch would
- *            click beside the thing you were pointing at).
+ *            click beside the thing you were pointing at). Point with the
+ *            index finger to aim; an open hand spins the globe instead.
+ *   spin     open hand, palm to the camera, moving: the globe turns the way
+ *            the hand moves, as if pushing its surface.
  *   drill in quick pinch-and-release, or a push toward the camera.
  *   drill out closed fist, or a pull away from the camera — exactly Esc.
  *   drag     pinch, then move: the top window follows.
  *   swipe    reported in the readout only; not wired to anything yet.
  *   zoom     two hands, and the pose picks the direction: palms facing the
- *            camera and spreading apart zooms the map out; palms sideways
- *            (facing each other) and coming together zooms in. Moving the
+ *            camera and spreading apart zooms the map in; palms sideways
+ *            (facing each other) and coming together zooms out. Moving the
  *            wrong way for the pose does nothing, so hands can be reset.
  */
 (function (global) {
@@ -92,9 +95,16 @@
     // Map zoom levels per doubling of the distance between the hands.
     zoomGain: 2.5,
     zoomSmoothing: 0.4,
-    // Palms facing the camera and spreading apart zooms OUT; palms sideways
-    // and coming together zooms IN. Flip this to swap them.
-    spreadZoomsOut: true,
+    // Palms facing the camera and spreading apart zooms IN, like pulling the
+    // map open; palms sideways and coming together zooms OUT. Flip to swap.
+    spreadZoomsOut: false,
+    // One-hand spin. The pose has to hold briefly so a hand opening on its way
+    // to a pinch does not nudge the globe, and slow drift (a hand held "still")
+    // is ignored. Speed is in screen widths per second.
+    spinEngageMs: 150,
+    spinMinSpeed: 0.15,
+    // Screen widths of map moved per screen width of hand movement.
+    spinGain: 1.5,
     // The part of the camera frame that maps to the whole screen, so nobody has
     // to reach the very edge of the frame to reach the edge of the screen.
     crop: { x0: 0.2, x1: 0.8, y0: 0.15, y1: 0.7 },
@@ -199,6 +209,7 @@
     let baseline = null;
     let zoom = null; // { d, last, mode, anchor, started } while two hands are up
     let zoomCand = null; // { mode, since } a pose that has not settled yet
+    let spin = null; // { since, lastP, lastT } while an open palm is up
 
     function endPinch(actions) {
       if (pinch && pinch.dragging) actions.push({ type: 'dragEnd' });
@@ -343,6 +354,7 @@
           poseScore: 0,
           pinchRatio: null,
           pinched: !!pinch,
+          spinning: false,
           dragging: !!(pinch && pinch.dragging),
           depth: null,
           pointer: null,
@@ -456,6 +468,32 @@
         }
       }
 
+      /* ── spin: open palm to the camera, moving ── */
+      const facing = palmShape(lm) === 'facing';
+      let spinning = false;
+      if (live && facing && !pinch && ratio > o.pinchExit) {
+        if (!spin) spin = { since: t, lastP: p, lastT: t };
+        const dt = Math.max((t - spin.lastT) / 1000, 1e-3);
+        const dx = p.x - spin.lastP.x;
+        const dy = p.y - spin.lastP.y;
+        if (
+          t - spin.since >= o.spinEngageMs &&
+          Math.hypot(dx, dy) / dt >= o.spinMinSpeed
+        ) {
+          actions.push({
+            type: 'spin',
+            dx: dx * o.spinGain,
+            dy: dy * o.spinGain,
+          });
+          lastActionAt = t;
+          spinning = true;
+        }
+        spin.lastP = p;
+        spin.lastT = t;
+      } else {
+        spin = null;
+      }
+
       /* ── fist: drill out, once per fist ── */
       if (live && pose === 'Closed_Fist' && !pinch) {
         if (fistSince == null) fistSince = t;
@@ -481,7 +519,8 @@
         } else if (r <= o.pullRatio) {
           fire(actions, { type: 'back' }, t);
           history = [];
-        } else {
+        } else if (!facing) {
+          // An open palm moving sideways is spinning the globe, not swiping.
           const s = ago(t, o.swipeWindowMs);
           const dx = s ? p.x - s.p.x : 0;
           if (Math.abs(dx) >= o.swipeDistance) {
@@ -502,6 +541,7 @@
           depth: baseline ? size / baseline : 1,
           pointer: p,
           hands: 1,
+          spinning,
         }),
       };
     }
@@ -579,8 +619,9 @@
        <ol class="pg-log"></ol>
        <div class="pg-help">Hold an open palm still to arm · pinch or push to open ·
          fist or pull back to close · pinch and move to drag a window ·
-         two hands: palms to camera and spread to zoom out, palms sideways and
-         bring together to zoom in</div>`,
+         point with a finger to aim, move an open hand to spin the globe ·
+         two hands: palms to camera and spread to zoom in, palms sideways and
+         bring together to zoom out</div>`,
     );
     const frame = el('div', 'pulse-gesture-frame');
     const cursor = el('div', 'pulse-gesture-cursor');
@@ -718,6 +759,13 @@
         )
           global.PulseMap.zoomBy(a.dz, a.x * W, a.y * H);
         break;
+      case 'spin':
+        if (
+          global.PulseMap &&
+          !(global.PulseWindows && global.PulseWindows.isOpen())
+        )
+          global.PulseMap.panBy(a.dx * W, a.dy * H);
+        break;
       case 'zoomEnd':
         log(ui, 'zoom done');
         break;
@@ -751,7 +799,13 @@
       r.pinchRatio == null
         ? '—'
         : r.pinchRatio.toFixed(2) +
-          (r.dragging ? ' · dragging' : r.pinched ? ' · pinched' : '');
+          (r.spinning
+            ? ' · spinning'
+            : r.dragging
+              ? ' · dragging'
+              : r.pinched
+                ? ' · pinched'
+                : '');
     // 1.0 is the running baseline; the bar is centred on it.
     const d = r.depth == null ? 1 : r.depth;
     ui.depth.style.width = Math.min(Math.max((d - 0.5) * 100, 0), 100) + '%';
