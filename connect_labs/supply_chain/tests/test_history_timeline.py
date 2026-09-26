@@ -1,0 +1,423 @@
+"""Per-record timelines: what changed on a tender or an order, who told us, and on what evidence.
+
+THIS REPOSITORY IS PUBLIC. Every id, name, address and figure below is invented.
+
+History is built the realistic way -- through `call_operation`, dated and
+attributed with `seed_overrides` on a synthetic program (see
+test_history_rewind.py) -- and read back through `timeline_for_tender` /
+`timeline_for_contract` and through the two detail pages. Design doc
+docs/superpowers/specs/2026-09-26-supply-sophie-history-design.md §3.4, §4.3.
+"""
+
+import datetime
+
+import pytest
+from django.urls import reverse
+
+from connect_labs.labs.access.scopes import SYSTEM
+from connect_labs.supply_chain.data_access import SupplyDataAccess
+from connect_labs.supply_chain.history.context import seed_overrides
+from connect_labs.supply_chain.history.labels import actor_label
+from connect_labs.supply_chain.history.models import OperationCall
+from connect_labs.supply_chain.history.timeline import (
+    contract_scope_revisions,
+    tender_scope_revisions,
+    timeline_for_contract,
+    timeline_for_tender,
+)
+from connect_labs.supply_chain.operations import call_operation
+
+PROGRAM = 20997
+
+
+def _at(month, day, hour=9):
+    return datetime.datetime(2026, month, day, hour, 0, tzinfo=datetime.UTC)
+
+
+AUG_3, AUG_20, AUG_28 = _at(8, 3), _at(8, 20), _at(8, 28)
+EMAIL = "Hi Sophie, the RUTF consignment will now arrive on 5 September. Regards, Northwind dispatch"
+
+
+@pytest.fixture
+def registered_synthetic():
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+    return SyntheticOpportunity.objects.create(
+        opportunity_id=PROGRAM,
+        program_id=PROGRAM,
+        labs_only=True,
+        enabled=True,
+        label="history timeline tests",
+        allowed_domains=["dimagi.com"],
+    )
+
+
+@pytest.fixture
+def da(registered_synthetic):
+    return SupplyDataAccess(program_id=PROGRAM, caller=SYSTEM)
+
+
+@pytest.fixture
+def sophie(django_user_model):
+    return django_user_model.objects.create_user(
+        username="sophie", email="sophie@example.org", name="Sophie Bello", password="x"
+    )
+
+
+@pytest.fixture
+def ace(django_user_model):
+    return django_user_model.objects.create_user(username="ace", email="ace@dimagi-ai.com", password="x")
+
+
+def op(da, name, when, *, channel="command", actor=None, source=None, **payload):
+    """One recorded write, dated `when`, through `channel`, by `actor`."""
+    if source is not None:
+        payload["source"] = source
+    with seed_overrides(PROGRAM, actor=actor, recorded_at=when):
+        return call_operation(name, da, payload, channel=channel)
+
+
+@pytest.fixture
+def base(da):
+    op(
+        da,
+        "commodity_upsert",
+        AUG_3,
+        data={"slug": "rutf", "name": "RUTF", "base_unit": "sachet", "pack_unit": "carton"},
+    )
+    supplier = op(da, "supplier_create", AUG_3, data={"name": "Northwind Foods"})
+    us = op(da, "org_upsert", AUG_3, data={"slug": "timeline-us", "name": "The program"})
+    tender = op(
+        da,
+        "tender_create",
+        AUG_3,
+        data={
+            "label": "Tender Harmattan",
+            "delivery_point": {"city": "Kano"},
+            "response_deadline": "2026-09-30",
+            "lines": [{"commodity_slug": "rutf", "quantity": "600", "quantity_unit": "carton"}],
+        },
+    )
+    return {"supplier": supplier, "us": us, "tender": tender}
+
+
+@pytest.fixture
+def order(da, base, sophie, ace):
+    """An order whose shipment an agent recorded from an email, and Sophie then moved."""
+    contract = op(
+        da,
+        "contract_create",
+        AUG_3,
+        data={
+            "supplier_id": base["supplier"]["id"],
+            "commodity_slug": "rutf",
+            "buyer_of_record": "programme_org",
+            "buyer_org_id": base["us"]["id"],
+            "reference": "PO-HARMATTAN",
+            "quantity": "600",
+            "quantity_unit": "carton",
+            "status": "placed",
+            "source": "we_recorded",
+        },
+    )
+    shipment = op(
+        da,
+        "shipment_record",
+        AUG_20,
+        channel="mcp",
+        actor=ace,
+        source={"ref": "<msg-4411@northwind.example>", "excerpt": EMAIL},
+        data={
+            "contract_id": contract["id"],
+            "reference": "SH-1",
+            "expected_on": "2026-09-05",
+            "source": "supplier_reported",
+        },
+    )
+    op(
+        da,
+        "shipment_update",
+        AUG_28,
+        channel="web",
+        actor=sophie,
+        shipment_id=shipment["id"],
+        data={"contract_id": contract["id"], "expected_on": "2026-09-19", "source": "supplier_reported"},
+    )
+    return {"contract": contract, "shipment": shipment}
+
+
+def _quote(da, tender_id, supplier_id, when, **kwargs):
+    return op(
+        da,
+        "quote_record",
+        when,
+        data={
+            "tender_id": tender_id,
+            "commodity_slug": "rutf",
+            "supplier_id": supplier_id,
+            "as_quoted_amount": "42.50",
+            "as_quoted_unit": "per_pack",
+            "quantity_basis": "600",
+            "quantity_basis_unit": "carton",
+            "received_on": "2026-08-20",
+        },
+        **kwargs,
+    )
+
+
+@pytest.mark.django_db
+class TestContractTimeline:
+    def test_newest_first_with_the_eta_change_on_top(self, order, sophie):
+        entries = timeline_for_contract(order["contract"]["id"])
+
+        assert entries[0].sentence == "ETA 5 Sep → 19 Sep"
+        assert entries[0].actor == "Sophie Bello"
+        assert entries[0].is_ai is False
+        assert [e.when for e in entries] == sorted((e.when for e in entries), reverse=True)
+
+    def test_the_agent_create_carries_its_label_and_the_email(self, order):
+        entries = timeline_for_contract(order["contract"]["id"])
+        created = next(e for e in entries if e.sentence.startswith("Shipment recorded"))
+
+        assert created.actor == "ACE (agent)"
+        assert created.is_ai is True
+        assert created.excerpt == EMAIL
+        assert created.source_ref == "<msg-4411@northwind.example>"
+        assert "ETA 5 Sep" in created.sentence
+
+    def test_the_order_itself_is_on_its_own_timeline(self, order):
+        sentences = [e.sentence for e in timeline_for_contract(order["contract"]["id"])]
+        assert sentences[-1].startswith("Order recorded")
+        assert "PO-HARMATTAN" in sentences[-1]
+
+    def test_until_leaves_out_what_happened_after_that_day(self, order):
+        entries = timeline_for_contract(order["contract"]["id"], until=datetime.date(2026, 8, 27))
+
+        assert "ETA 5 Sep → 19 Sep" not in [e.sentence for e in entries]
+        assert any(e.sentence.startswith("Shipment recorded") for e in entries)
+
+    def test_until_includes_the_whole_of_that_day(self, order):
+        entries = timeline_for_contract(order["contract"]["id"], until=datetime.date(2026, 8, 28))
+        assert entries[0].sentence == "ETA 5 Sep → 19 Sep"
+
+    def test_another_orders_shipments_are_not_on_this_timeline(self, da, order, base):
+        other = op(
+            da,
+            "contract_create",
+            AUG_3,
+            data={
+                "supplier_id": base["supplier"]["id"],
+                "commodity_slug": "rutf",
+                "buyer_of_record": "programme_org",
+                "buyer_org_id": base["us"]["id"],
+                "reference": "PO-OTHER",
+                "source": "we_recorded",
+            },
+        )
+        op(
+            da,
+            "shipment_record",
+            AUG_20,
+            data={"contract_id": other["id"], "reference": "SH-OTHER", "source": "we_recorded"},
+        )
+        sentences = " ".join(e.sentence for e in timeline_for_contract(order["contract"]["id"]))
+        assert "SH-OTHER" not in sentences
+        assert "PO-OTHER" not in sentences
+
+    def test_the_scope_is_one_query_set_not_one_per_child(self, order, django_assert_max_num_queries):
+        with django_assert_max_num_queries(20):
+            revisions = list(contract_scope_revisions(order["contract"]["id"]))
+        assert revisions
+
+
+@pytest.mark.django_db
+class TestTenderTimeline:
+    def test_a_quote_reads_as_its_price_basis_and_pack(self, da, base):
+        _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20)
+        entries = timeline_for_tender(base["tender"]["id"])
+
+        quote = next(e for e in entries if e.sentence.startswith("Quote recorded"))
+        assert quote.sentence.startswith("Quote recorded: 42.50 USD per carton (basis not specified)")
+        assert "Northwind Foods" in quote.sentence
+
+    def test_an_ai_entered_quote_offers_correct_and_void(self, da, base, sophie):
+        quote = _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, channel="mcp", actor=sophie)
+        entry = next(e for e in timeline_for_tender(base["tender"]["id"]) if e.sentence.startswith("Quote"))
+
+        assert entry.actor == "via AI · Sophie"
+        assert entry.correct_url == reverse("supply_chain:procurement_quote_correct", args=[quote["id"]])
+        assert entry.void_url == reverse("supply_chain:procurement_quote_void", args=[quote["id"]])
+
+    def test_a_quote_typed_in_on_the_web_offers_neither(self, da, base, sophie):
+        _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, channel="web", actor=sophie)
+        entry = next(e for e in timeline_for_tender(base["tender"]["id"]) if e.sentence.startswith("Quote"))
+
+        assert entry.correct_url is None
+        assert entry.void_url is None
+
+    def test_a_voided_quote_offers_neither(self, da, base, sophie):
+        quote = _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, channel="mcp", actor=sophie)
+        op(da, "quote_void", AUG_28, quote_id=quote["id"], reason="duplicate of an earlier email")
+        entries = timeline_for_tender(base["tender"]["id"])
+
+        assert entries[0].sentence == "Voided: duplicate of an earlier email"
+        assert entries[0].subject == "Quote · Northwind Foods"
+        assert all(e.correct_url is None and e.void_url is None for e in entries)
+
+    def test_as_of_mode_never_offers_correct_or_void(self, da, base, sophie):
+        _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, channel="mcp", actor=sophie)
+        entries = timeline_for_tender(base["tender"]["id"], until=datetime.date(2026, 8, 30))
+        assert all(e.correct_url is None for e in entries)
+
+    def test_a_deleted_outreach_still_appears(self, da, base):
+        outreach = op(
+            da,
+            "outreach_log",
+            AUG_3,
+            data={"tender_id": base["tender"]["id"], "supplier_id": base["supplier"]["id"], "sent_on": "2026-08-03"},
+        )
+        op(da, "outreach_delete", AUG_20, outreach_id=outreach["id"], reason="never actually sent")
+        sentences = [e.sentence for e in timeline_for_tender(base["tender"]["id"])]
+
+        assert sentences[0] == "Outreach removed: Northwind Foods"
+        assert any(s.startswith("Outreach recorded: Northwind Foods") for s in sentences)
+
+    def test_a_status_change_names_both_states(self, da, base):
+        op(da, "tender_open", AUG_20, tender_id=base["tender"]["id"])
+        entries = timeline_for_tender(base["tender"]["id"])
+        assert any(e.sentence.startswith("Status draft → open") for e in entries)
+
+    def test_another_tenders_quotes_are_not_on_this_timeline(self, da, base):
+        other = op(
+            da,
+            "tender_create",
+            AUG_3,
+            data={"label": "Tender Other", "lines": [{"commodity_slug": "rutf", "quantity": "1"}]},
+        )
+        _quote(da, other["id"], base["supplier"]["id"], AUG_20)
+        assert not [e for e in timeline_for_tender(base["tender"]["id"]) if e.sentence.startswith("Quote")]
+
+    def test_an_invitation_and_its_withdrawal_name_the_organisation(self, da, base):
+        from connect_labs.supply_chain.models import Supplier
+
+        org_id = Supplier.objects.get(pk=base["supplier"]["id"]).org_id
+        op(da, "tender_invite_org", AUG_20, tender_id=base["tender"]["id"], org_id=org_id)
+        op(da, "tender_uninvite_org", AUG_28, tender_id=base["tender"]["id"], org_id=org_id)
+        sentences = [e.sentence for e in timeline_for_tender(base["tender"]["id"])]
+
+        assert sentences[:2] == ["Invitation to Northwind Foods withdrawn", "Invited Northwind Foods"]
+
+    def test_one_calls_create_and_update_of_one_record_read_as_one_line(self, da, base):
+        """The handler's second save is bookkeeping to a reader, not a second event."""
+        from django.contrib.contenttypes.models import ContentType
+
+        from connect_labs.supply_chain.history.models import Revision
+        from connect_labs.supply_chain.models import Tender
+
+        call = OperationCall.objects.create(operation="tender_create", channel="web", program_id=PROGRAM)
+        common = dict(
+            call=call,
+            program_id=PROGRAM,
+            content_type=ContentType.objects.get_for_model(Tender),
+            object_id="999999",
+            recorded_at=AUG_20,
+        )
+        Revision.objects.create(action="create", changes={"label": [None, "Draft name"]}, **common)
+        Revision.objects.create(action="update", changes={"label": ["Draft name", "Tender Sahel"]}, **common)
+        from connect_labs.supply_chain.history.timeline import _timeline
+
+        entries = _timeline(Revision.objects.filter(object_id="999999").order_by("-recorded_at", "-id"), None)
+        assert [e.sentence for e in entries] == ["Tender recorded: Tender Sahel"]
+
+    def test_scope_revisions_are_this_tenders_only(self, da, base):
+        _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20)
+        revisions = tender_scope_revisions(base["tender"]["id"])
+        assert {r.program_id for r in revisions} == {PROGRAM}
+        assert {r.content_type.model for r in revisions} >= {"tender", "quote"}
+
+
+@pytest.mark.django_db
+class TestActorLabel:
+    def _call(self, **fields):
+        return OperationCall(operation="x", **fields)
+
+    def test_no_call_is_the_system(self):
+        assert actor_label(None) == "System"
+
+    def test_the_agent_account(self, ace):
+        assert actor_label(self._call(actor=ace, actor_is_agent=True, channel="mcp")) == "ACE (agent)"
+
+    def test_another_agent_account_is_named(self, django_user_model):
+        bot = django_user_model.objects.create_user(username="bot", email="bot@example.org", name="Reorder bot")
+        assert actor_label(self._call(actor=bot, actor_is_agent=True, channel="api")) == "Reorder bot (agent)"
+
+    def test_a_person_through_an_ai(self, sophie):
+        assert actor_label(self._call(actor=sophie, channel="mcp")) == "via AI · Sophie"
+        assert actor_label(self._call(actor=sophie, channel="api")) == "via AI · Sophie"
+
+    def test_a_person_on_the_web(self, sophie, django_user_model):
+        assert actor_label(self._call(actor=sophie, channel="web")) == "Sophie Bello"
+        nameless = django_user_model.objects.create_user(username="kwame", password="x")
+        assert actor_label(self._call(actor=nameless, channel="web")) == "kwame"
+
+    def test_a_command_is_an_import(self):
+        assert actor_label(self._call(channel="command")) == "Imported"
+
+
+class _ProgramContextMiddleware:
+    """Stands in for LabsContextMiddleware (left out of the test settings)."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        request.labs_context = {"program_id": PROGRAM} if request.user.is_authenticated else {}
+        return self.get_response(request)
+
+
+@pytest.fixture
+def client_in_program(client, monkeypatch, settings, da, sophie):
+    """Signed in, in PROGRAM; `_access` stubbed as in test_history_as_of.py."""
+    from connect_labs.supply_chain import form_views, views  # noqa: F401  -- bind before patching
+    from connect_labs.supply_chain.procurement import views as procurement_views  # noqa: F401
+
+    settings.MIDDLEWARE = [*settings.MIDDLEWARE, f"{__name__}._ProgramContextMiddleware"]
+    for module in ("form_views", "views", "procurement.views"):
+        monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", lambda request: da)
+    client.force_login(sophie)
+    return client
+
+
+@pytest.mark.django_db
+class TestPages:
+    def test_the_order_page_shows_the_eta_change_and_the_ai_pill(self, client_in_program, order):
+        body = client_in_program.get(reverse("supply_chain:order_detail", args=[order["contract"]["id"]])).content
+        body = body.decode()
+
+        assert "data-timeline" in body
+        assert "ETA 5 Sep → 19 Sep" in body
+        assert ">AI<" in body
+        assert "ACE (agent)" in body
+        assert "<blockquote" in body and "Northwind dispatch" in body
+
+    def test_the_tender_page_offers_correct_live_and_not_as_of(self, client_in_program, da, base, ace):
+        quote = _quote(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, channel="mcp", actor=ace)
+        url = reverse("supply_chain:procurement_tender_detail", args=[base["tender"]["id"]])
+        correct = reverse("supply_chain:procurement_quote_correct", args=[quote["id"]])
+
+        live = client_in_program.get(url).content.decode()
+        assert "data-timeline" in live
+        assert "Quote recorded: 42.50 USD per carton" in live
+        assert correct in live
+
+        past = client_in_program.get(url, {"as_of": "2026-08-25"})
+        assert past.status_code == 200
+        body = past.content.decode()
+        assert "Quote recorded: 42.50 USD per carton" in body
+        assert correct not in body
+
+    def test_the_order_page_as_of_leaves_out_the_later_change(self, client_in_program, order):
+        url = reverse("supply_chain:order_detail", args=[order["contract"]["id"]])
+        body = client_in_program.get(url, {"as_of": "2026-08-25"}).content.decode()
+        assert "ETA 5 Sep → 19 Sep" not in body
+        assert "Shipment recorded" in body
