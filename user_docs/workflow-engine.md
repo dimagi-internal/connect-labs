@@ -135,13 +135,21 @@ The programme report includes:
 
 The report supports a full drill-down cascade:
 
-1. Click an **organisation** to narrow to that organisation's workers and data.
+1. Click an **organisation** to narrow to that organisation's workers and data. The header count updates to reflect only that organisation's cases.
 2. Click an **opportunity** to narrow further to that opportunity.
 3. Click a **worker** to open the **Indicator Worker Review** for that individual.
 
+#### Saving a weekly run
+
+When you save a week on the Indicator Programme Report, the report uses your programme's own indicator definitions to record the snapshot. If you see an error when trying to save, check that your programme has its indicator definitions set up — a report that has not yet been linked to any indicator definitions cannot save a weekly snapshot.
+
+#### Small-cell suppression
+
+Cells that contain too few cases to report reliably are suppressed and show a minimum-cases label — for example, **n<20** — rather than a number. The threshold shown always reflects your programme's own minimum, not a default or an unrelated programme's setting.
+
 #### Indicator Worker Review
 
-The **Indicator Worker Review** (created automatically alongside the programme report) shows one worker's indicators compared to their peers, their full caseload, and each case's visits. Where the programme's indicator definitions include a reading series (for example, weight), a chart of that series is shown for each case. Where visits carry photos, those photos are shown alongside the visit record.
+The **Indicator Worker Review** (created automatically alongside the programme report) shows one worker's indicators compared to their peers, their full caseload, and each case's visits. Where the programme's indicator definitions include a reading series (for example, weight), a chart of that series is shown for each case at a readable size. Where visits carry photos, those photos are shown alongside the visit record.
 
 #### Indicator Opportunity Report
 
@@ -212,10 +220,4 @@ The dashboard has three tabs:
     No engineering work is required for that transition. A small follow-up to re-point the template directly at the production domain (removing the need for test-domain access) is recommended once the live app is fully updated, but is not required for the dashboard to function.
 
 !!! note "Empty table fix"
-    A previous issue caused the MBW Visit Verification dashboard to display an empty table even when real visit data was available. This has been corrected — visits now appear as expected.
-
-### KMC Worker Review
-
-The **KMC Worker Review** page opens when you click a worker row on the KMC Programme Metrics report. It shows that worker's full caseload: each case's weight series, growth chart, and a set of live columns — danger signs, referrals, discharge, skin-to-skin, alive-at-last-visit, gain, rounded, and implausible.
-
-**If you previously saw cases listed but with empty dashes in every live column and a "No weighings recorded." message on the growth chart**, this was caused by issues with how the page retrieved per-case data. Three separate
+    A previous issue caused the MBW Visit Verification dashboard to display an empty table even when real visit data
