@@ -172,6 +172,25 @@ The opportunity report and the programme report are now drawn from the same shar
 
 ---
 
+## Generic Indicator Report Cascade
+
+!!! note "Recent change"
+    Any programme can now have the same report cascade as KMC — a programme report, a worker review, and a per-opportunity report with benchmarks — without anyone writing a page.
+
+Three new report templates are available for any programme whose indicators are defined in the semantic registry:
+
+- **Indicator Programme Report** — headline figures with their targets and the change since the last saved week, a scorecard by organisation grouped by indicator category, workers (with "started the same month" and "similar caseload" peer groups), activity by week, trends across saved reports, and the definition of every number. Click an organisation, then an opportunity, then a worker to drill down.
+- **Indicator Worker Review** — created automatically alongside the programme report. Shows one worker's indicators against their peers, their cases, and each case's visits — including a chart of the programme's reading series (for example, weight) where one exists, and photos where visits carry them.
+- **Indicator Opportunity Report** — the programme report scoped to a single opportunity, for its network manager, with a Benchmarks tab. It receives each week the programme report saves, so network managers never need to save anything themselves.
+
+### What drives the report content
+
+Everything the pages say about a programme — which figures are the headline, their targets, what a "case" is called (baby, community, beneficiary), the columns of the case table — comes from the programme's indicator definitions in the semantic registry. See *How a report reads it* in the Semantic Layer guide.
+
+The KMC reports are unchanged and continue to use their own dedicated pages.
+
+---
+
 ## More Information
 
 - **[Reports with Claude](reports-with-claude.md)** — plain-English guide to changing reports, pipelines and indicator definitions through the MCP
