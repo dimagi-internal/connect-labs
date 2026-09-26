@@ -32,6 +32,8 @@ class Migration(migrations.Migration):
         migrations.AlterModelOptions(name="supplier", options={"ordering": ["org__name"]}),
         migrations.AddConstraint(
             model_name="supplier",
-            constraint=models.UniqueConstraint(fields=("scope_key", "org"), name="supply_supplier_one_link_per_program"),
+            constraint=models.UniqueConstraint(
+                fields=("scope_key", "org"), name="supply_supplier_one_link_per_program"
+            ),
         ),
     ]

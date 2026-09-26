@@ -486,7 +486,7 @@ class TestRecordingAQuote:
         same column anyway."""
         from connect_labs.labs.access.scopes import SYSTEM
         from connect_labs.supply_chain.data_access import SupplyDataAccess
-        from connect_labs.supply_chain.forms import QuoteForm
+        from connect_labs.supply_chain.procurement.forms import QuoteForm
 
         access = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
         form = QuoteForm(self._post(tender=a_tender.pk, supplier=supplier.pk, commodity=rutf.pk), access=access)

@@ -95,7 +95,9 @@ def _org_for(apps, LabsOrg, row):
         connect_id = row.connect_organization_id
         if connect_id and LabsOrg.objects.filter(connect_organization_id=connect_id).exists():
             connect_id = None
-        org = LabsOrg.objects.create(slug=slug, name=name, country=row.country or "", connect_organization_id=connect_id)
+        org = LabsOrg.objects.create(
+            slug=slug, name=name, country=row.country or "", connect_organization_id=connect_id
+        )
     elif row.connect_organization_id and org.connect_organization_id is None:
         org.connect_organization_id = row.connect_organization_id
         org.save(update_fields=["connect_organization_id"])
