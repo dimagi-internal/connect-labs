@@ -33,9 +33,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="item",
             name="components_per",
-            field=models.CharField(
-                choices=[("base", "base"), ("pack", "pack")], default="base", max_length=8
-            ),
+            field=models.CharField(choices=[("base", "base"), ("pack", "pack")], default="base", max_length=8),
         ),
         # `run_on_secondary` is required by connect_labs.multidb: False, as in 0004.
         migrations.RunPython(infer_levels, migrations.RunPython.noop, hints={"run_on_secondary": False}),
