@@ -25,6 +25,10 @@ const RENDERS = [
   'kmc_programme_metrics_render.js',
   'kmc_flw_review_render.js',
   'kmc_opp_report_render.js',
+  // The generic cascade (any registry): the programme/opportunity report and
+  // its worker review.
+  'indicator_report_render.js',
+  'indicator_worker_review_render.js',
 ];
 // The renders that read a server-BUILT snapshot: every cell reaches them
 // already graded, so deriving credibility in the browser would be a second copy
@@ -35,6 +39,8 @@ const SNAPSHOT_READERS = new Set([
   'kmc_programme_metrics_render.js',
   'kmc_flw_review_render.js',
   'kmc_opp_report_render.js',
+  'indicator_report_render.js',
+  'indicator_worker_review_render.js',
 ]);
 
 for (const file of RENDERS) {
