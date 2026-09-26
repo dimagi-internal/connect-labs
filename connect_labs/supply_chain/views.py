@@ -307,6 +307,8 @@ class DomainHomeView(OperationBase):
         # The tenders table below says "awarded, provisional" where the row
         # above does, rather than a bare "awarded" beside it.
         context["provisional_tender_ids"] = {r.tender_id for r in context["standing"] if r.provisional}
+        # The contracts table's status is the stage the order's row gives.
+        context["order_stages"] = {r.contract_id: r.stage for r in context["standing"] if r.kind == "order"}
 
         commodity_slug = self.request.GET.get("commodity") or None
         commodities = self.op("commodity_list")

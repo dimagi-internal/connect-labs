@@ -86,14 +86,16 @@ class TestDecidedByIsNotTheAccount:
         user = django_user_model(name=name, username=username, email=email)
         assert _person_name(user) == prefilled
 
-    def test_the_comparison_offers_that_and_not_the_handle(self, scoped, django_user_model, world):
+    def test_with_no_person_s_name_the_account_is_who_decided(self, scoped, django_user_model, world):
+        # "Decided by" is no longer typed: it is whoever is signed in, shown
+        # read-only. With no person's name on file, the account is that.
         user = django_user_model.objects.get()
         user.name = user.username
         user.save()
         url = reverse("supply_chain:procurement_comparison", args=[world["award"]["tender_id"]])
         response = scoped.get(url + "?commodity=test-kit")
         assert response.status_code == 200
-        assert response.context["decider"] == ""
+        assert response.context["decider"] == user.username
 
     def test_the_comparison_offers_a_real_name(self, scoped, django_user_model, world):
         user = django_user_model.objects.get()

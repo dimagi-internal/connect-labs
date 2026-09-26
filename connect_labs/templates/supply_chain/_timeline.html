@@ -1,13 +1,13 @@
 {% comment %}
 What changed on this record and its children, newest first (history/timeline.py).
-Each line: when, what, who told us -- an amber "AI" pill when the write came
+Each line: when, what, who told us -- an indigo "AI" pill when the write came
 through an agent or MCP/the API -- and the quoted source it rested on, in a
 <details> (labs has no Bootstrap collapse) whose summary is the actor badge.
 Correct and Void sit on the right of a quote an AI entered that still stands; the timeline builder leaves
 them out on a past date.
 {% endcomment %}
 <section id="history" data-timeline data-testid="timeline" class="mt-8 scroll-mt-4">
-  <h3 class="text-sm font-semibold text-gray-900 mb-2">History</h3>
+  <h2 class="text-lg font-semibold text-gray-900 mb-2">History</h2>
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-2">
     {% if timeline %}
       <ol class="divide-y divide-gray-100">
@@ -24,13 +24,13 @@ them out on a past date.
                 {% comment %}
                 The actor badge is how the source opens: with an excerpt it is
                 the <summary> of the <details> holding it, so clicking who told
-                us shows what they said. The amber is the AI marker; the bold
+                us shows what they said. The indigo is the AI marker, kept apart from the amber of a data gap; the bold
                 "AI" only where the label does not already say "via AI".
                 {% endcomment %}
                 {% if entry.excerpt %}
                   <details class="text-xs">
                     <summary data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}title="Show the source"
-                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs {% if entry.is_ai %}bg-amber-100 text-amber-900{% else %}bg-gray-100 text-gray-700{% endif %}">{% if entry.is_ai and entry.actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ entry.actor }}</span><span class="underline underline-offset-2 opacity-80">source</span></summary>
+                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-700{% endif %}">{% if entry.is_ai and entry.actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ entry.actor }}</span><span class="underline underline-offset-2 opacity-80">source</span></summary>
                     {% comment %}Where the quote came from, as the call recorded it -- the kind its
                     reference implies, who recorded it and when. A replay of the same evidence
                     was answered from this write, not written again.{% endcomment %}
@@ -38,7 +38,7 @@ them out on a past date.
                     <blockquote data-testid="source-excerpt" class="mt-1 border-l-2 border-gray-300 pl-3 text-gray-700 whitespace-pre-line">{{ entry.excerpt }}</blockquote>
                   </details>
                 {% elif entry.is_ai %}
-                  <span data-testid="actor-badge" data-ai class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{% if entry.actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ entry.actor }}</span></span>
+                  <span data-testid="actor-badge" data-ai class="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs">{% if entry.actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ entry.actor }}</span></span>
                 {% else %}
                   <span data-testid="actor-badge" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ entry.actor }}</span>
                 {% endif %}

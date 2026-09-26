@@ -465,8 +465,8 @@ def ai_entered_quotes(quote_ids, *, program_id) -> dict:
 def corrections_for_quotes(quote_ids, *, program_id, until=None) -> dict:
     """{quote id: {"when", "changes", "actor", "is_ai"}} for the quotes whose version a correction made.
 
-    What the timeline's correction line says, cut to what the quote says now
-    ("units per pack 150"), so a comparison row can show why an offer that
+    What the timeline's correction line says ("sachets per carton 150 (was
+    not stated)"), so a comparison row can show why an offer that
     was blocked has joined the ranking. Read from each version's create
     revision and the `quote_correct` call that wrote it. Three queries.
     """
@@ -496,12 +496,18 @@ def corrections_for_quotes(quote_ids, *, program_id, until=None) -> dict:
     for revision in creates:
         quote_id = int(revision.object_id)
         new_values = {k: v[1] for k, v in revision.changes.items()}
-        text, _fields = correction_sentence(Quote, old.get(quote_id, {}), new_values, lookup, with_before=False)
+        text, _fields = correction_sentence(Quote, old.get(quote_id, {}), new_values, lookup)
         _, _, changes = text.partition(": ")
+        call = revision.call
         out[quote_id] = {
             "when": revision.recorded_at,
             "changes": changes,
-            "actor": actor_label(revision.call, lookup),
-            "is_ai": is_ai(revision.call),
+            "actor": actor_label(call, lookup),
+            "is_ai": is_ai(call),
+            # The reply the correction rested on, so the row that shows the
+            # correction can open on its evidence.
+            "excerpt": getattr(call, "source_excerpt", "") or "",
+            "source_kind": source_kind(getattr(call, "source_ref", "")),
+            "recorded_on": getattr(call, "recorded_at", None) or revision.recorded_at,
         }
     return out

@@ -386,7 +386,7 @@ class TestAnAwardRecordsThePersonWhoDecided:
     def _compare(self, world):
         return reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=chlorine"
 
-    def test_the_form_starts_with_the_signed_in_persons_name(self, client_in_programme, da, world):
+    def test_the_form_shows_the_signed_in_persons_name(self, client_in_programme, da, world):
         op(da, "quote_void", quote_id=world["quote"]["id"], reason="re-quoted")
         supplier = op(da, "supplier_create", data={"name": "Second chemicals"})
         op(
@@ -407,9 +407,10 @@ class TestAnAwardRecordsThePersonWhoDecided:
             },
         )
         body = client_in_programme.get(self._compare(world)).content.decode()
-        assert 'name="decided_by" value="Amina Bello"' in body
+        assert '<span data-testid="decided-by" class="py-1 text-sm text-gray-900">Amina Bello</span>' in body
+        assert 'name="decided_by"' not in body
 
-    def test_what_is_typed_is_what_is_recorded(self, client_in_programme, da, world):
+    def test_a_posted_name_is_ignored_for_the_signed_in_person(self, client_in_programme, da, world):
         from connect_labs.supply_chain.models import Award
 
         supplier = op(da, "supplier_create", data={"name": "Third chemicals"})
@@ -428,7 +429,7 @@ class TestAnAwardRecordsThePersonWhoDecided:
             self._compare(world),
             {"quote_id": quote["id"], "rationale": "cheaper", "decided_by": "Ngozi Eze"},
         )
-        assert Award.objects.get(quote_id=quote["id"]).decided_by == "Ngozi Eze"
+        assert Award.objects.get(quote_id=quote["id"]).decided_by == "Amina Bello"
 
     def test_left_blank_it_is_the_signed_in_persons_name_not_their_login(self, client_in_programme, da, world):
         from connect_labs.supply_chain.models import Award
@@ -1002,8 +1003,9 @@ class TestTheAwardControlsFitTheColumn:
         for cls, inner in award_forms:
             assert "flex-wrap" in cls
             # Same fields, posting to the same URL.
-            for field in ("quote_id", "rationale", "decided_on", "decided_by"):
+            for field in ("quote_id", "rationale", "decided_on"):
                 assert f'name="{field}"' in inner
+            assert 'data-testid="decided-by"' in inner
             assert 'type="submit"' in inner and "Award" in inner
         # No column for it: the ranked rows hold figures, the row under each holds the form.
         assert "<th>Award</th>" not in body
@@ -1021,10 +1023,10 @@ class TestTheAwardControlsFitTheColumn:
         quote = Quote.objects.get(supplier__org__name="Second chemicals")
         client_in_programme.post(
             _compare_url(world),
-            {"quote_id": quote.pk, "rationale": "cheaper", "decided_on": "2026-09-20", "decided_by": "Ngozi Eze"},
+            {"quote_id": quote.pk, "rationale": "cheaper", "decided_on": "2026-09-20"},
         )
         award = Award.objects.get(quote_id=quote.pk)
-        assert (award.decided_by, award.decided_on.isoformat()) == ("Ngozi Eze", "2026-09-20")
+        assert (award.decided_by, award.decided_on.isoformat()) == ("Amina Bello", "2026-09-20")
 
 
 class TestAFigureHeaderNamesItsUnitInWords:

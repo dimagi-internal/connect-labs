@@ -16,6 +16,7 @@ from connect_labs.supply_chain.models import Commodity, Item, Quote, Tender
 from connect_labs.supply_chain.values import (
     Derived,
     Money,
+    Unconfirmed,
     confirmed,
     merge,
     metric_tonnes_to_base_units,
@@ -261,6 +262,28 @@ def _extras(quote: Quote) -> Derived:
     if reasons:
         return unconfirmed(*reasons)
     return Money(total)
+
+
+def basis_gaps(quote: Quote) -> list[str]:
+    """What keeps this quote's freight and duties from being costed, one leg each.
+
+    "freight" when its basis is not stated (or contradicts the Incoterm),
+    "duties amount" when it is excluded with no amount recorded. Read from the
+    same `_extras` every delivered figure is derived through, so the overview's
+    count is the comparison's blocker and not a second rule beside it.
+    """
+    extras = _extras(quote)
+    if not isinstance(extras, Unconfirmed):
+        return []
+    gaps = []
+    for reason in extras.reasons:
+        for leg in ("freight", "duties"):
+            if not reason.startswith(f"{leg} ") and f"says {leg} " not in reason:
+                continue
+            gap = f"{leg} amount" if f"no {leg} amount recorded" in reason else leg
+            if gap not in gaps:
+                gaps.append(gap)
+    return gaps
 
 
 def _course_size(commodity: Commodity, item: Item | None = None, pack_spec: int | Derived = None) -> int | Derived:

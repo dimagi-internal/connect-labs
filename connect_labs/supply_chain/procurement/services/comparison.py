@@ -115,11 +115,7 @@ class ComparisonRow:
                 question = next((q for q in self.questions if q.key == wanted), None)
                 return {
                     "fact": reason[:1].upper() + reason[1:],
-                    "question": (
-                        {"key": question.key, "question": question.question, "audience": question.audience}
-                        if question is not None
-                        else None
-                    ),
+                    "question": (question.as_dict() if question is not None else None),
                 }
         return None
 
@@ -141,8 +137,13 @@ class ComparisonRow:
         elif all(o == PASS for o in outcomes):
             outcome, summary = PASS, f"Meets all {len(outcomes)}"
         else:
-            unstated = len([o for o in outcomes if o != PASS])
-            outcome, summary = "not_stated", f"{unstated} of {len(outcomes)} not stated"
+            # Which requirements, by name: "Not stated: shelf life". A count
+            # ("1 of 2 not stated") sent the reader looking for which.
+            outcome, summary = "not_stated", "Not stated: " + ", ".join(
+                requirement_label(r.field, r.requirement.get("unit", "")).lower()
+                for r in self.compliance
+                if r.outcome != PASS
+            )
         # Where each answered figure came from, so "meets all 2" can be read
         # as "because the quote says so" or "because the trade item does" --
         # a supplier's statement and a product's specification sheet are not
@@ -234,7 +235,7 @@ class Comparison:
                     }
                     for r in row.compliance
                 ],
-                "questions": [{"key": f.key, "question": f.question, "audience": f.audience} for f in row.questions],
+                "questions": [f.as_dict() for f in row.questions],
                 "composition": row.composition,
                 "composition_unit": row.composition_unit,
                 "item_name": row.item_name,
