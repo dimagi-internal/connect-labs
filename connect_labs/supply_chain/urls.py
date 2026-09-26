@@ -341,7 +341,8 @@ def _is_live(pattern, prefix="") -> bool:
 
 
 def _wrap(pattern, prefix=""):
-    if hasattr(pattern, "url_patterns"):  # an include(): wrap what it holds, under its prefix
+    # None today; here so a future nested include() is wrapped, under its prefix.
+    if hasattr(pattern, "url_patterns"):
         for child in pattern.url_patterns:
             _wrap(child, prefix + str(pattern.pattern).lstrip("^"))
         return pattern

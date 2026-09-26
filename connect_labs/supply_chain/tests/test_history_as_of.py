@@ -288,6 +288,45 @@ class TestTheDecoratorDirectly:
         assert "[Tender Harmattan]" not in response.content.decode()
         assert Tender.objects.filter(pk=world["tender"]["id"]).exists()
 
+    def test_a_streaming_response_is_refused_under_as_of(self, world):
+        """A stream's body runs after the view returns -- after the rollback --
+        so it would read live rows under a past date's banner. Refused instead."""
+        from django.http import StreamingHttpResponse
+
+        from connect_labs.supply_chain.history.as_of import NO_PAST_DOWNLOAD, as_of_view
+
+        revisions = Revision.objects.count()
+        order_id = world["order"]["id"]
+
+        @as_of_view
+        def view(request):
+            return StreamingHttpResponse(
+                f"[{c.reference}]" for c in Contract.objects.filter(pk=order_id)  # read lazily, at iteration
+            )
+
+        response = view(self._request(BETWEEN_T0_T1))
+
+        assert response.status_code == 400
+        assert not getattr(response, "streaming", False)
+        body = response.content.decode()
+        assert NO_PAST_DOWNLOAD in body
+        assert "PO-OLD" not in body and "PO-NEW" not in body
+        assert Contract.objects.get(pk=order_id).reference == "PO-NEW"
+        assert Revision.objects.count() == revisions
+
+    def test_a_streaming_response_is_served_live_without_as_of(self):
+        from django.http import StreamingHttpResponse
+        from django.test import RequestFactory
+
+        from connect_labs.supply_chain.history.as_of import as_of_view
+
+        @as_of_view
+        def view(request):
+            return StreamingHttpResponse(iter(["live"]))
+
+        response = view(RequestFactory().get("/supply/"))
+        assert response.streaming and b"".join(response.streaming_content) == b"live"
+
     def test_supply_as_of_is_set_on_every_wrapped_request(self):
         from django.http import HttpResponse
         from django.test import RequestFactory
@@ -308,6 +347,36 @@ class TestTheDecoratorDirectly:
             view(no_program)
         assert seen == [None, datetime.date(2026, 1, 15)]
         assert rewind.call_count == 0  # no program: nothing to rewind, the view says "choose one"
+
+
+@pytest.mark.django_db
+class TestTheRealPermissionPath:
+    def test_an_as_of_read_of_a_program_the_caller_cannot_use_is_refused_and_changes_nothing(
+        self, client, django_user_model, settings, monkeypatch, world
+    ):
+        """Nothing stubbed but the labs context: the request names PROGRAM, and
+        the caller is no member of it. The rewind runs before the view refuses
+        -- it is rolled back with everything else, and the refusal is the
+        view's own, exactly as without as_of."""
+        # No session org list and no token: `holdings` would ask Connect. Answer
+        # "belongs to nothing" rather than touching the network.
+        monkeypatch.setattr(
+            "connect_labs.labs.access.scopes.fetch_user_organization_data", lambda token, owner=None: {}
+        )
+        settings.MIDDLEWARE = [*settings.MIDDLEWARE, f"{__name__}._ProgramContextMiddleware"]
+        client.force_login(django_user_model.objects.create_user(username="outsider", password="x"))
+        order_id = world["order"]["id"]
+        url = reverse("supply_chain:order_detail", args=[order_id])
+        revisions = Revision.objects.count()
+
+        live = client.get(url)
+        past = client.get(url, {"as_of": BETWEEN_T0_T1})
+
+        assert live.status_code == 403
+        assert past.status_code == live.status_code
+        assert "PO-OLD" not in past.content.decode()
+        assert Contract.objects.get(pk=order_id).reference == "PO-NEW"
+        assert Revision.objects.count() == revisions
 
 
 def _strip_tokens(html):

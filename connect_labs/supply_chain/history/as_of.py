@@ -21,6 +21,7 @@ from django.utils import timezone
 from connect_labs.supply_chain.history.rewind import rewind
 
 READ_ONLY = "Viewing a past date is read-only."
+NO_PAST_DOWNLOAD = "This download is not available for a past date."
 
 
 def parse_as_of(value: str | None) -> datetime.date | None:
@@ -59,7 +60,8 @@ def as_of_view(view_func):
 
     Rendering happens inside the block because a TemplateResponse renders
     lazily; left to Django it would render after the rollback, against live
-    rows.
+    rows. A streaming response (a file, a stream) cannot be rendered early,
+    so under as_of it is refused with a 400 instead.
 
     Only the program's own records rewind: a reference row whose scope_key
     does not resolve to a program is never rewound and shows live.
@@ -87,7 +89,14 @@ def as_of_view(view_func):
             try:
                 rewind(int(program_id), end_of_day(as_of))
                 response = view_func(request, *args, **kwargs)
-                if hasattr(response, "render") and not response.is_rendered:
+                if getattr(response, "streaming", False):
+                    # Its body is produced after we return -- after the
+                    # rollback, against live rows. Refuse rather than serve
+                    # today's data under a past date's banner. Not close()d:
+                    # that fires request_finished, which closes the DB
+                    # connection mid-request.
+                    response = HttpResponseBadRequest(NO_PAST_DOWNLOAD)
+                elif hasattr(response, "render") and not response.is_rendered:
                     response.render()
             finally:
                 transaction.set_rollback(True)
