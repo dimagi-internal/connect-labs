@@ -744,7 +744,7 @@
           '<button type="button" class="pm-chip' +
           (state.prog === p.program_id ? ' pm-on' : '') +
           '" data-prog="' +
-          p.program_id +
+          esc(p.program_id) +
           '">' +
           '<span class="pm-dot" style="background:' +
           p._color +
@@ -885,7 +885,7 @@
       parts.push(
         state.place
           ? '<button type="button" data-go="' +
-              p.program_id +
+              esc(p.program_id) +
               '">' +
               esc(p.name) +
               '</button>'
@@ -1143,7 +1143,7 @@
     programs.forEach(function (p) {
       h +=
         '<button type="button" class="pm-card" data-go="' +
-        p.program_id +
+        esc(p.program_id) +
         '">' +
         '<div class="flex items-center gap-2"><span class="pm-dot" style="background:' +
         p._color +
