@@ -113,12 +113,23 @@ def test_tool_schemas_match_legacy_registry():
 
 
 def test_initialize_and_list_via_inmemory_client():
-    """FastMCP owns initialize/tools/list now; an in-memory client exercises it."""
+    """FastMCP owns initialize/tools/list now; an in-memory client exercises it.
+
+    No `client.ping()` here. `ping` was REMOVED from the MCP protocol in
+    revision 2026-07-28, which is what fastmcp 4 negotiates
+    (`mcp.types.LATEST_PROTOCOL_VERSION`), and `mcp.types.PingRequest` says so
+    itself: "Removed in protocol 2026-07-28; sent/received on sessions
+    negotiating <= 2025-11-25." Asking for it on a current session gets a
+    correct "Method not found", so asserting it would pin a protocol feature
+    that no longer exists rather than anything about this server.
+
+    `async with Client(...)` still performs the initialize handshake, so that
+    half of the name is covered by entering the block at all.
+    """
     from fastmcp import Client
 
     async def _run():
         async with Client(mcp) as client:
-            await client.ping()
             tools = await client.list_tools()
             return [t.name for t in tools]
 
