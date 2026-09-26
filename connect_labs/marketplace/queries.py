@@ -402,14 +402,10 @@ def _note(card: dict) -> str:
         return f"{applied} organizations have applied. None has delivered this program on Connect yet."
     if delivering and applied >= 3 * delivering:
         return f"{applied // delivering} applicants for every organization delivering it today."
-    if card["remaining"] and card["spent"] and card["remaining"] > card["spent"]:
-        return (
-            f"Up to {_money(card['remaining'])} still available on live work — more than the "
-            f"{_money(card['spent'])} paid out so far."
-        )
     if card["remaining"]:
-        opps = "opportunity" if card["live"] == 1 else "opportunities"
-        return f"Up to {_money(card['remaining'])} still available across {card['live']} live {opps}."
+        # The card's own "up to … still funded" line already says this, so a
+        # note repeating it is left blank rather than said twice.
+        return ""
     if card["spent"]:
         return f"{_money(card['spent'])} paid out. No live work is funded right now."
     if delivering:
@@ -472,6 +468,7 @@ def program_cards(view: str = "separate") -> list[dict]:
             "slug": slug,
             "label": programs.label(slug),
             "hue": programs.hue(slug),
+            "image": programs.image(slug),
             "services": services.get(slug, 0),
             "spent": money.get("deployed", 0),
             "remaining": money.get("remaining", 0),
