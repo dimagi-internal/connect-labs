@@ -13,11 +13,13 @@ import datetime
 from decimal import Decimal
 
 import pytest
+from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
-from connect_labs.supply_chain.history.context import seed_overrides
+from connect_labs.supply_chain.history.capture import _snapshot
+from connect_labs.supply_chain.history.context import capture_suspended, seed_overrides
 from connect_labs.supply_chain.history.models import Revision
 from connect_labs.supply_chain.history.rewind import _coerce, rewind
 from connect_labs.supply_chain.models import Award, Quote, Tender
@@ -118,6 +120,49 @@ def rewound(as_of, check, program_id=PROGRAM):
         check()
         transaction.set_rollback(True)
     return undone
+
+
+@pytest.fixture
+def supplier_org():
+    from connect_labs.labs.models import LabsOrg
+    from connect_labs.supply_chain.models import SupplierProfile
+
+    org = LabsOrg.objects.create(slug="northwind", name="Northwind Foods")
+    SupplierProfile.objects.create(org=org)
+    return org
+
+
+def _invited(tender_id):
+    return list(Tender.objects.get(pk=tender_id).invited_orgs.values_list("pk", flat=True))
+
+
+@pytest.mark.django_db
+class TestRewindInvitations:
+    """Many-to-many link rows rewind like any other row (capture.py records them)."""
+
+    def test_an_invitation_made_after_the_instant_is_absent(self, da, world, supplier_org):
+        tender_id = world["tender"]["id"]
+        op(da, "tender_invite_org", T1, tender_id=tender_id, org_id=supplier_org.pk)
+
+        rewound(BETWEEN_T0_T1, lambda: _assert_equal(_invited(tender_id), []))
+        assert _invited(tender_id) == [supplier_org.pk]
+
+    def test_an_invitation_withdrawn_after_the_instant_is_present(self, da, world, supplier_org):
+        tender_id = world["tender"]["id"]
+        op(da, "tender_invite_org", T0, tender_id=tender_id, org_id=supplier_org.pk)
+        op(da, "tender_uninvite_org", T1, tender_id=tender_id, org_id=supplier_org.pk)
+
+        rewound(BETWEEN_T0_T1, lambda: _assert_equal(_invited(tender_id), [supplier_org.pk]))
+        assert _invited(tender_id) == []
+
+    def test_a_deleted_tender_comes_back_with_its_invitations(self, da, world, supplier_org):
+        tender_id = world["tender"]["id"]
+        op(da, "tender_invite_org", T0, tender_id=tender_id, org_id=supplier_org.pk)
+        with at(T1):
+            Tender.objects.get(pk=tender_id).delete()
+
+        rewound(BETWEEN_T0_T1, lambda: _assert_equal(_invited(tender_id), [supplier_org.pk]))
+        assert not Tender.objects.filter(pk=tender_id).exists()
 
 
 @pytest.mark.django_db
@@ -226,8 +271,6 @@ class TestRewind:
         assert rewound(BETWEEN_T0_T1, only_ours) == 1
 
     def test_a_revision_whose_model_or_row_is_gone_is_harmless(self, da, world):
-        from django.contrib.contenttypes.models import ContentType
-
         removed = ContentType.objects.create(app_label="supply_chain", model="retiredthing")
         Revision.objects.create(
             program_id=PROGRAM,
@@ -248,6 +291,61 @@ class TestRewind:
 
         # The retired model is skipped; the update to a missing row touches nothing.
         assert rewound(BETWEEN_T0_T1, lambda: _assert_equal(Tender.objects.filter(pk=987654).exists(), False)) == 1
+
+    def test_a_revision_naming_a_field_the_model_no_longer_has_is_tolerated(self, da, world):
+        """A field removed or renamed after a revision was recorded must not
+        break every as-of page before the change."""
+
+        tender_id, quote_id = world["tender"]["id"], world["quote"]["id"]
+        # Revisions are append-only, so the stale ones are written as a past
+        # deploy would have left them: an update and a delete that each name
+        # a field the model no longer has.
+        with capture_suspended():
+            Tender.objects.filter(pk=tender_id).update(label="Tender R2")
+            quote = Quote.objects.get(pk=quote_id)
+            snapshot = _snapshot(quote)
+            quote.delete()
+        for model, object_id, action, changes in (
+            (Tender, tender_id, "update", {"label": ["Tender R1", "Tender R2"], "retired_field": ["old", "new"]}),
+            (Quote, quote_id, "delete", {**snapshot, "retired_field": "gone"}),
+        ):
+            Revision.objects.create(
+                program_id=PROGRAM,
+                content_type=ContentType.objects.get_for_model(model),
+                object_id=str(object_id),
+                action=action,
+                changes=changes,
+                recorded_at=T1,
+            )
+
+        def rewound_anyway():
+            assert Tender.objects.get(pk=tender_id).label == "Tender R1"
+            assert Quote.objects.get(pk=quote_id).as_quoted_amount == Decimal("50.00")
+
+        assert rewound(BETWEEN_T0_T1, rewound_anyway) == 2
+
+    def test_a_restored_rows_timestamps_follow_recorded_order_not_id_order(self, da, world):
+        """A seeder can write a revision after the delete but date it before
+        it. `updated_at` comes from the last change before the delete in
+        recorded order."""
+
+        quote_id = world["quote"]["id"]
+        with at(T2):
+            Quote.objects.get(pk=quote_id).delete()
+        Revision.objects.create(
+            program_id=PROGRAM,
+            content_type=ContentType.objects.get_for_model(Quote),
+            object_id=str(quote_id),
+            action="update",
+            changes={"notes": ["", "chased by phone"]},
+            recorded_at=T1,
+        )
+
+        def stamped():
+            quote = Quote.objects.get(pk=quote_id)
+            assert (quote.created_at, quote.updated_at) == (T0, T1)
+
+        rewound(BETWEEN_T1_T2, stamped)
 
     def test_nothing_after_the_instant_undoes_nothing(self, da, world):
         assert rewound(T2, lambda: None) == 0
