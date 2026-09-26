@@ -350,6 +350,13 @@ class SupplyDataAccess(
         What a seeder's `--reset` needs, and the reason `scopes.require_synthetic`
         exists: the guard is here, at the only place that can do it, rather
         than in each caller that might forget.
+
+        The program's history goes too: every Revision recorded for it, and
+        every OperationCall it made. That includes the history of
+        organisation-level rows (SupplierProfile, SupplierOffering) written by
+        this program's calls -- those rows themselves are shared and stay, but
+        the revisions that record this program's changes to them are deleted
+        with the calls that made them.
         """
         program_id = self._require_program()
         scopes.require_synthetic(program_id, "purge supply data")

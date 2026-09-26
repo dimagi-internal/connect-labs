@@ -20,7 +20,8 @@ from contextlib import contextmanager
 
 _call = contextvars.ContextVar("supply_history_call", default=None)
 _suspended = contextvars.ContextVar("supply_history_suspended", default=False)
-_overrides = contextvars.ContextVar("supply_history_overrides", default={})
+# Default None, not {}: a mutable default is one dict shared by every context.
+_overrides = contextvars.ContextVar("supply_history_overrides", default=None)
 
 
 @contextmanager
@@ -77,4 +78,5 @@ def seed_overrides(program_id, *, actor=None, channel=None, recorded_at=None):
 
 
 def current_overrides():
-    return _overrides.get()
+    """The active seed overrides, or {} when none are."""
+    return _overrides.get() or {}
