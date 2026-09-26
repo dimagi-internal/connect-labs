@@ -283,5 +283,7 @@ class TestOpportunityLabels:
         # Every place an opportunity is shown goes through the resolver...
         assert "'Opportunity ' + o.opp" not in src and "'Opportunity ' + selOpp" not in src
         assert "opportunity_labels" in src and "user-opportunities" in src
+        # The opportunity report's page carries the list only in the header selector.
+        assert "'opportunity-data'" in src
         # ...and the drilled header counts its own scope, not the programme's.
         assert "R.nounCount(scopeCases, ENT)" in src and "R.nounCount(scopeWorkers, WRK)" in src
