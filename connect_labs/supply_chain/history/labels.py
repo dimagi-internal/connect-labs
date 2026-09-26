@@ -4,7 +4,7 @@ A `Revision` stores a change as `{attname: [old, new]}`; nobody reads that.
 This module turns one into a sentence -- "ETA 5 Sep → 19 Sep", "Quote
 recorded: 42.50 USD per carton (basis not specified), from Northwind Foods" --
 and an `OperationCall` into who told us: "Sophie Bello", "via AI · Sophie",
-"ACE (agent)". See docs/superpowers/specs/2026-09-26-supply-sophie-history-design.md
+"ACE (agent)", "Supplier · Northwind Foods". See docs/superpowers/specs/2026-09-26-supply-sophie-history-design.md
 §3.4 and §4.3.
 
 Numbers go through the app's one money and quantity rules (`values.py`), and
@@ -68,8 +68,12 @@ def _first_name(user) -> str:
     return name.split()[0] if name else user.username
 
 
-def actor_label(call) -> str:
-    """Who told us, as the timeline's pill reads it."""
+def actor_label(call, lookup=None) -> str:
+    """Who told us, as the timeline's pill reads it.
+
+    `lookup` (a `Lookup`) caches the organisation a supplier-channel call names,
+    so a timeline of one supplier's reports reads its name once.
+    """
     if call is None:
         return "System"
     actor = call.actor
@@ -82,9 +86,22 @@ def actor_label(call) -> str:
         return f"via AI · {_first_name(actor)}" if actor is not None else "via AI"
     if call.channel == "web":
         return (_full_name(actor) or actor.username) if actor is not None else "Someone"
+    if call.channel == "supplier":
+        who = _acting_org_name(call, lookup) or _full_name(actor) or getattr(actor, "username", "")
+        return f"Supplier · {who or 'unknown'}"
     if call.channel == "command":
         return "Imported"
     return "System"
+
+
+def _acting_org_name(call, lookup=None) -> str:
+    """The organisation a supplier-channel call was made for, by name."""
+    if not call.acting_org_id:
+        return ""
+    from connect_labs.labs.models import LabsOrg
+
+    org = (lookup or Lookup()).row(LabsOrg, call.acting_org_id)
+    return (org.name or "") if org is not None else ""
 
 
 # ---- what --------------------------------------------------------------

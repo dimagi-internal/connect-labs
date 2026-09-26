@@ -172,7 +172,12 @@ def change_listing(tender, *, request, data: dict) -> Tender:
     if not can_manage(request, tender):
         raise NotAvailable("no such tender")
     allowed = {k: v for k, v in data.items() if k in ("brief", "hue", "visibility")}
-    call_operation("tender_update", _access(tender.program_id), {"tender_id": tender.pk, "data": allowed})
+    call_operation(
+        "tender_update",
+        _access(tender.program_id),
+        {"tender_id": tender.pk, "data": allowed},
+        **_as_manager(request),
+    )
     _audit(Action.UPDATE, "tender_update", tender.pk, tender, tender.owner_org)
     return Tender.objects.get(pk=tender.pk)
 
@@ -180,7 +185,12 @@ def change_listing(tender, *, request, data: dict) -> Tender:
 def invite(tender, org, *, request) -> Tender:
     if not can_manage(request, tender):
         raise NotAvailable("no such tender")
-    call_operation("tender_invite_org", _access(tender.program_id), {"tender_id": tender.pk, "org_id": org.pk})
+    call_operation(
+        "tender_invite_org",
+        _access(tender.program_id),
+        {"tender_id": tender.pk, "org_id": org.pk},
+        **_as_manager(request),
+    )
     _audit(Action.UPDATE, "tender_invite_org", tender.pk, tender, org)
     return Tender.objects.get(pk=tender.pk)
 
@@ -188,7 +198,12 @@ def invite(tender, org, *, request) -> Tender:
 def uninvite(tender, org, *, request) -> Tender:
     if not can_manage(request, tender):
         raise NotAvailable("no such tender")
-    call_operation("tender_uninvite_org", _access(tender.program_id), {"tender_id": tender.pk, "org_id": org.pk})
+    call_operation(
+        "tender_uninvite_org",
+        _access(tender.program_id),
+        {"tender_id": tender.pk, "org_id": org.pk},
+        **_as_manager(request),
+    )
     _audit(Action.UPDATE, "tender_uninvite_org", tender.pk, tender, org)
     return Tender.objects.get(pk=tender.pk)
 
@@ -361,7 +376,43 @@ def _access(program_id):
     return SupplyDataAccess(program_id=program_id, caller=SYSTEM)
 
 
-def program_supplier(tender: Tender, org) -> Supplier:
+def _as_manager(request) -> dict:
+    """History attribution for a listing manager's write: the person, on the web.
+
+    The access runs as SYSTEM (see `_access`), which would otherwise record the
+    write as an unattended import.
+    """
+    user = getattr(request, "user", None)
+    return {"channel": "web", "actor": user if getattr(user, "is_authenticated", False) else None}
+
+
+def _as_supplier(org, user) -> dict:
+    """History attribution for a supplier's own write on the market: "Supplier · <org>"."""
+    return {
+        "channel": "supplier",
+        "actor": user if getattr(user, "is_authenticated", False) else None,
+        "acting_org_id": org.pk,
+    }
+
+
+def _mark_as_suppliers(user):
+    """A `then` hook: the quote just written is the supplier's own figure.
+
+    A save inside the call, so the change is recorded against it.
+    """
+    from connect_labs.supply_chain.operations import record
+
+    def then(result):
+        quote = Quote.objects.get(pk=result["id"])
+        quote.entered_by = "supplier"
+        quote.entered_by_user = user if getattr(user, "is_authenticated", False) else None
+        quote.save(update_fields=["entered_by", "entered_by_user"])
+        return record(quote)
+
+    return then
+
+
+def program_supplier(tender: Tender, org, user=None) -> Supplier:
     """The program's supplier for this organisation, linking it in on a first bid.
 
     A company the program already knows keeps its row. One the program has
@@ -372,10 +423,19 @@ def program_supplier(tender: Tender, org) -> Supplier:
     existing = Supplier.objects.filter(scope_key=key, org=org).first()
     if existing is not None:
         return existing
+
+    def self_registered(result):
+        supplier = Supplier.objects.get(pk=result["id"])
+        supplier.origin = "self_registered"
+        supplier.save(update_fields=["origin"])
+
     made = call_operation(
-        "supplier_create", _access(tender.program_id), {"data": {"org_id": org.pk, "status": "quoting"}}
+        "supplier_create",
+        _access(tender.program_id),
+        {"data": {"org_id": org.pk, "status": "quoting"}},
+        then=self_registered,
+        **_as_supplier(org, user),
     )
-    Supplier.objects.filter(pk=made["id"]).update(origin="self_registered")
     return Supplier.objects.get(pk=made["id"])
 
 
@@ -401,7 +461,7 @@ def bid(tender_id, commodity_slug, *, org, orgs, user, data: dict) -> Quote:
     tender = Tender.objects.select_for_update().get(pk=listed.tender.pk)
     if tender.status != "open":
         raise NotAvailable("this tender has closed")
-    supplier = program_supplier(tender, org)
+    supplier = program_supplier(tender, org, user)
     payload = {
         **data,
         "tender_id": tender.pk,
@@ -409,8 +469,13 @@ def bid(tender_id, commodity_slug, *, org, orgs, user, data: dict) -> Quote:
         "supplier_id": supplier.pk,
         "received_on": date.today().isoformat(),
     }
-    made = call_operation("quote_record", _access(tender.program_id), {"data": payload})
-    Quote.objects.filter(pk=made["id"]).update(entered_by="supplier", entered_by_user=user)
+    made = call_operation(
+        "quote_record",
+        _access(tender.program_id),
+        {"data": payload},
+        then=_mark_as_suppliers(user),
+        **_as_supplier(org, user),
+    )
     _audit(Action.CREATE, "quote_record", made["id"], tender, org)
     return Quote.objects.get(pk=made["id"])
 
@@ -423,8 +488,9 @@ def revise(quote_id, *, org, orgs, user, data: dict) -> Quote:
         "quote_correct",
         _access(quote.tender.program_id),
         {"quote_id": quote.pk, "data": data, "reason": "revised by the supplier on the marketplace"},
+        then=_mark_as_suppliers(user),
+        **_as_supplier(org, user),
     )
-    Quote.objects.filter(pk=made["id"]).update(entered_by="supplier", entered_by_user=user)
     _audit(Action.UPDATE, "quote_correct", made["id"], quote.tender, org)
     return Quote.objects.get(pk=made["id"])
 
@@ -436,6 +502,7 @@ def withdraw(quote_id, *, org, orgs, user) -> Quote:
         "quote_void",
         _access(quote.tender.program_id),
         {"quote_id": quote.pk, "reason": "withdrawn by the supplier on the marketplace"},
+        **_as_supplier(org, user),
     )
     _audit(Action.UPDATE, "quote_void", quote.pk, quote.tender, org)
     return Quote.objects.get(pk=quote.pk)

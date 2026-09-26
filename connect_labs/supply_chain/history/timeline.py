@@ -271,7 +271,7 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None) -
     entry = Entry(
         when=revision.recorded_at,
         sentence=sentence(model, revision.action, revision.changes, lookup) if model is not None else "",
-        actor=actor_label(call),
+        actor=actor_label(call, lookup),
         is_ai=ai,
         excerpt=getattr(call, "source_excerpt", "") or "",
         source_ref=getattr(call, "source_ref", "") or "",
