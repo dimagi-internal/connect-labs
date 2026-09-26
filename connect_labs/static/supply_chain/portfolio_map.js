@@ -397,6 +397,8 @@
     flows: true,
     network: false,
     colour: 'attention',
+    window: 90,
+    view: 'programs',
   };
   // Anything read off the page -- a data-* attribute, a select's value, the
   // URL hash -- is resolved here to the matching value from the SERVER'S data,
@@ -462,6 +464,8 @@
       state.flows = s.flows !== false;
       state.network = s.network === true;
       state.colour = s.colour === 'stock' ? 'stock' : 'attention';
+      state.window = [30, 90, 180].indexOf(s.window) >= 0 ? s.window : 90;
+      state.view = s.view === 'chase' ? 'chase' : 'programs';
     } catch (e) {
       /* a hand-edited hash is not worth breaking the page over */
     }
@@ -507,6 +511,11 @@
   commoditySelect.addEventListener('change', function () {
     state.commodity = canonCommodity(commoditySelect.value);
     update(true);
+  });
+  var windowSelect = document.getElementById('pm-window');
+  windowSelect.addEventListener('change', function () {
+    state.window = pick([30, 90, 180], +windowSelect.value) || 90;
+    update(false);
   });
   ['flows', 'network'].forEach(function (layer) {
     var box = document.getElementById('pm-layer-' + layer);
@@ -609,8 +618,47 @@
     unknown: { label: 'Cover cannot be said', color: '#94a3b8' },
     durable: { label: 'Equipment', color: '#14b8a6' },
   };
+  // Cover is fetched per commodity, when it is needed -- it is the one figure
+  // on the map whose cost grows with the network (a resupply plan per place
+  // per item), so the page does not compute it for everything on load.
+  var coverLoaded = {};
+  var coverLoading = {};
   function coverOf(pt, slug) {
     return (pt.cover || {})[slug || state.commodity] || null;
+  }
+  function needCover(slug) {
+    if (!slug || coverLoaded[slug] || coverLoading[slug] || !DATA.cover_url)
+      return;
+    coverLoading[slug] = true;
+    var url =
+      DATA.cover_url +
+      (DATA.cover_url.indexOf('?') >= 0 ? '&' : '?') +
+      'commodity=' +
+      encodeURIComponent(slug);
+    fetch(url, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    })
+      .then(function (r) {
+        return r.ok ? r.json() : Promise.reject(r.status);
+      })
+      .then(function (body) {
+        Object.keys(body.programs || {}).forEach(function (pid) {
+          var byPoint = body.programs[pid];
+          Object.keys(byPoint).forEach(function (id) {
+            var pt = placeByKey[pid + ':' + id];
+            if (pt) (pt.cover = pt.cover || {})[slug] = byPoint[id];
+          });
+        });
+        coverLoaded[slug] = true;
+      })
+      .catch(function () {
+        coverLoaded[slug] = 'failed';
+      })
+      .then(function () {
+        coverLoading[slug] = false;
+        update(false);
+      });
   }
   function coverLine(c) {
     if (!c) return 'Holds none';
@@ -680,6 +728,7 @@
   });
 
   function renderBar() {
+    windowSelect.value = String(state.window);
     Array.prototype.forEach.call(
       document.querySelectorAll('#pm-colour [data-colour]'),
       function (a) {
@@ -889,6 +938,185 @@
     });
   }
 
+  // ---------------------------------------------------------------- chase list
+  // "What is stuck, and who do I call": every open thing across the programs
+  // in view, grouped by who can unblock it, oldest first. Oldest-first is an
+  // AGE, a fact on the record -- not a ranking of what matters, which the
+  // database cannot know.
+  var WHO = [
+    { key: 'supplier', label: 'Suppliers to chase' },
+    { key: 'partner', label: 'Partners to chase' },
+    { key: 'internal', label: 'Ours to answer' },
+  ];
+  function chaseItems() {
+    var items = [];
+    programs.forEach(function (p) {
+      if (state.prog && p.program_id !== state.prog) return;
+      p.checks.forEach(function (c) {
+        // Who to call: the supplier the check names, else -- for a supplier's
+        // question -- the name its own label leads with ("Nutriset — RUTF").
+        var who = (c.facts && c.facts.supplier && c.facts.supplier.name) || '';
+        if (
+          !who &&
+          c.audience === 'supplier' &&
+          (c.subject.label || '').indexOf(' — ') > 0
+        ) {
+          who = c.subject.label.split(' — ')[0];
+        }
+        items.push({
+          audience: c.audience,
+          who: who,
+          what: checkLabel(c.kind),
+          about: c.subject.label || '',
+          days: c.days_open,
+          href: c.href,
+          program: p.name,
+        });
+      });
+      (p.consignments || []).forEach(function (c) {
+        // A late one is already a consignment_overdue check above; this adds
+        // the one no check can see -- dispatched with no date given.
+        if (c.expected_on) return;
+        var from = placeByKey[p.program_id + ':' + c.from_supply_point_id];
+        var to = placeByKey[p.program_id + ':' + c.to_supply_point_id];
+        items.push({
+          audience: 'internal',
+          who: from ? from.managed_by : '',
+          what: 'On the road with no arrival date',
+          about:
+            (from ? from.name : '') +
+            ' → ' +
+            (to ? to.name : '') +
+            ' · ' +
+            fmt(c.quantity) +
+            ' ' +
+            c.quantity_unit,
+          days: daysLate(c.dispatched_on),
+          href: c.receive_url,
+          program: p.name,
+        });
+      });
+      p.orders.forEach(function (o) {
+        if (o.expected_on) return; // a late order is already a check above
+        var supplier = p.suppliers.filter(function (x) {
+          return x.id === o.supplier_id;
+        })[0];
+        items.push({
+          audience: 'supplier',
+          who: supplier ? supplier.name : '',
+          what: 'Owed, with no arrival date promised',
+          about:
+            (o.reference || 'Order #' + o.contract_id) +
+            (o.outstanding ? ' · ' + figure(o.outstanding).text : ''),
+          days: null,
+          href: o.url,
+          program: p.name,
+        });
+      });
+    });
+    return items;
+  }
+  function chasePanel() {
+    var items = chaseItems();
+    var h = crumbs() + chaseTabs();
+    if (!items.length)
+      return h + '<div class="pm-sec pm-muted">Nothing open.</div>';
+    h +=
+      '<div class="pm-sec"><button type="button" class="pm-link text-sm" id="pm-copy"><i class="fa-regular fa-copy mr-1"></i>Copy as text</button></div>';
+    WHO.forEach(function (w) {
+      var group = items
+        .filter(function (i) {
+          return i.audience === w.key;
+        })
+        .sort(function (a, b) {
+          return (b.days || -1) - (a.days || -1);
+        });
+      if (!group.length) return;
+      h +=
+        '<div class="pm-sec"><h4><span>' +
+        esc(w.label) +
+        '</span><span style="text-transform:none;letter-spacing:0;font-weight:400">' +
+        group.length +
+        ', oldest first</span></h4>';
+      group.forEach(function (i) {
+        h +=
+          '<div class="pm-row"><div class="min-w-0">' +
+          '<div class="text-gray-900">' +
+          (i.who ? '<b>' + esc(i.who) + '</b> · ' : '') +
+          esc(i.what) +
+          '</div>' +
+          '<div class="pm-muted">' +
+          esc(i.about) +
+          (programs.length > 1 ? ' · ' + esc(i.program) : '') +
+          '</div>' +
+          '<div class="pm-muted">' +
+          (i.days != null ? i.days + ' days open · ' : '') +
+          (i.href
+            ? '<a class="pm-link" href="' + esc(i.href) + '">Open</a>'
+            : '') +
+          '</div>' +
+          '</div></div>';
+      });
+      h += '</div>';
+    });
+    return h;
+  }
+  function chaseText() {
+    var items = chaseItems();
+    return WHO.map(function (w) {
+      var group = items.filter(function (i) {
+        return i.audience === w.key;
+      });
+      if (!group.length) return '';
+      return (
+        w.label.toUpperCase() +
+        '\n' +
+        group
+          .map(function (i) {
+            return (
+              '- ' +
+              (i.who ? i.who + ': ' : '') +
+              i.what +
+              ' -- ' +
+              i.about +
+              (i.days != null ? ' (' + i.days + ' days)' : '')
+            );
+          })
+          .join('\n')
+      );
+    })
+      .filter(Boolean)
+      .join('\n\n');
+  }
+  function chaseTabs() {
+    return (
+      '<div class="pm-sec" style="padding-top:6px;padding-bottom:6px"><span class="pm-seg">' +
+      '<a href="#" data-view="programs" class="' +
+      (state.view === 'programs' ? 'pm-on' : '') +
+      '">Programs</a>' +
+      '<a href="#" data-view="chase" class="' +
+      (state.view === 'chase' ? 'pm-on' : '') +
+      '">Chase list</a></span></div>'
+    );
+  }
+  side.addEventListener('click', function (e) {
+    var v = e.target.closest('[data-view]');
+    if (v) {
+      e.preventDefault();
+      state.view = v.dataset.view === 'chase' ? 'chase' : 'programs';
+      update(false);
+      return;
+    }
+    if (e.target.closest('#pm-copy')) {
+      var text = chaseText();
+      var done = function () {
+        e.target.closest('#pm-copy').innerHTML =
+          '<i class="fa-solid fa-check mr-1"></i>Copied';
+      };
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(done);
+    }
+  });
+
   function portfolioPanel() {
     var vis = places.filter(visiblePlace);
     var count = function (a) {
@@ -899,7 +1127,7 @@
     var onWay = programs.reduce(function (n, p) {
       return n + p.orders.length;
     }, 0);
-    var h = crumbs();
+    var h = crumbs() + chaseTabs();
     h +=
       '<div class="pm-sec"><div class="text-sm text-gray-700">' +
       plural(vis.length, 'place') +
@@ -1259,10 +1487,28 @@
   function stockSection(pt, p) {
     var slugs = state.commodity
       ? [state.commodity]
-      : Object.keys(pt.cover || {});
+      : uniqValues(
+          pt.commodities
+            .map(function (c) {
+              return c.slug;
+            })
+            .concat(pt.owed_commodities),
+        );
     if (!slugs.length || pt.kind === 'supplier_site') return '';
+    slugs.forEach(needCover);
     var h = '<div class="pm-sec"><h4><span>Stock and cover</span></h4>';
     slugs.forEach(function (slug) {
+      if (coverLoaded[slug] !== true) {
+        h +=
+          '<div class="pm-row pm-muted">' +
+          esc(commodityNames[slug] || slug) +
+          ' · ' +
+          (coverLoaded[slug] === 'failed'
+            ? 'cover could not be loaded'
+            : 'working out cover…') +
+          '</div>';
+        return;
+      }
       var c = coverOf(pt, slug);
       var tone = c ? COVER[c.status] || COVER.unknown : null;
       h +=
@@ -1638,7 +1884,8 @@
     else if (state.place && placeByKey[state.place])
       side.innerHTML = placePanel(placeByKey[state.place]);
     else if (state.prog) side.innerHTML = programPanel(progById[state.prog]);
-    else side.innerHTML = portfolioPanel();
+    else
+      side.innerHTML = state.view === 'chase' ? chasePanel() : portfolioPanel();
     side.scrollTop = 0;
   }
   side.addEventListener('click', function (e) {
@@ -1981,6 +2228,41 @@
     return pts;
   }
 
+  // The server sends routed movement bucketed by week over the last 180 days;
+  // the window the viewer picks is summed here, per route, commodity and unit
+  // -- never across units.
+  function routesIn(p) {
+    var since = new Date(Date.now() - state.window * 86400000)
+      .toISOString()
+      .slice(0, 10);
+    var routes = {};
+    (p.flows || []).forEach(function (f) {
+      if (f.last_on < since) return;
+      var key =
+        f.from_supply_point_id +
+        '>' +
+        f.to_supply_point_id +
+        '>' +
+        f.commodity_slug;
+      var r = (routes[key] = routes[key] || {
+        from_supply_point_id: f.from_supply_point_id,
+        to_supply_point_id: f.to_supply_point_id,
+        commodity_slug: f.commodity_slug,
+        kinds: [],
+        count: 0,
+        last_on: '',
+        quantity: {},
+      });
+      if (r.kinds.indexOf(f.kind) < 0) r.kinds.push(f.kind);
+      r.count += f.count;
+      if (f.last_on > r.last_on) r.last_on = f.last_on;
+      r.quantity[f.unit] = (r.quantity[f.unit] || 0) + f.quantity;
+    });
+    return Object.keys(routes).map(function (k) {
+      return routes[k];
+    });
+  }
+
   var emptyNote = null;
   function drawMap(fit) {
     if (!ready) return;
@@ -1992,6 +2274,7 @@
       shown[pt._key] = true;
     });
     var stockMode = state.colour === 'stock' && state.commodity;
+    if (stockMode) needCover(state.commodity);
     var biggest = {};
     if (stockMode) {
       vis.forEach(function (pt) {
@@ -2168,7 +2451,7 @@
           var pt = id && placeByKey[p.program_id + ':' + id];
           return pt && shown[pt._key] ? pt : null;
         };
-        (p.flows || []).forEach(function (f) {
+        routesIn(p).forEach(function (f) {
           if (state.commodity && f.commodity_slug !== state.commodity) return;
           var a = at(f.from_supply_point_id);
           var b = at(f.to_supply_point_id);

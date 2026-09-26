@@ -34,6 +34,11 @@ urlpatterns = [
     # portfolio's, so a link to one names which.
     path("portfolios/<slug:slug>/", portfolio_views.PortfolioView.as_view(), name="portfolio"),
     path("portfolios/<slug:slug>/map/", portfolio_views.PortfolioMapView.as_view(), name="portfolio_map"),
+    path(
+        "portfolios/<slug:slug>/map/cover/",
+        portfolio_views.PortfolioMapCoverView.as_view(),
+        name="portfolio_map_cover",
+    ),
     # The supplier marketplace. Browsing is public and needs no program; every
     # write needs a labs sign-in and an organisation (see market/views.py).
     # "tenders", "bids", "register", "organisation" and "invites" are literals
