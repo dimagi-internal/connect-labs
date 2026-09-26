@@ -1180,6 +1180,15 @@ def _create_workflow_from_template_scoped(
         "program_id": None if pipeline_opportunity_id else dao_program_id,
         "organization_id": getattr(data_access, "organization_id", None),
     }
+    # A PROGRAM-owned workflow's pipelines land on an anchor opportunity (above),
+    # which is not the scope any reader of the workflow is in: the builder happens
+    # to read through that same anchor, but a drill that asks for another
+    # opportunity's rows (the worker review's `pipeline-rows`, scoped to the case's
+    # opportunity) looked the record up THERE and got "pipeline not found". Saying
+    # where the record lives (`home_scope`) makes every reader find it.
+    anchor_home = (
+        {"opportunity_id": pipeline_opportunity_id} if (not dao_opportunity_id and pipeline_opportunity_id) else None
+    )
     can_create_pipelines = bool(request) or bool(pipeline_access_token)
     if pipeline_sources_override is not None:
         # A companion sharing its primary's pipelines: the same two records,
@@ -1222,6 +1231,7 @@ def _create_workflow_from_template_scoped(
             {
                 "pipeline_id": pipeline_record.id,
                 "alias": pipeline_alias,
+                **({"home_scope": dict(anchor_home)} if anchor_home else {}),
             }
         ]
 
@@ -1241,12 +1251,10 @@ def _create_workflow_from_template_scoped(
                 description=ps.get("description", ""),
                 schema=ps["schema"],
             )
-            pipeline_sources.append(
-                {
-                    "pipeline_id": record.id,
-                    "alias": ps["alias"],
-                }
-            )
+            source = {"pipeline_id": record.id, "alias": ps["alias"]}
+            if anchor_home:
+                source["home_scope"] = dict(anchor_home)
+            pipeline_sources.append(source)
         pipeline_data_access.close()
 
     # Create the workflow definition with pipeline source if created. A COPY:
