@@ -182,3 +182,45 @@ def test_the_payload_carries_the_display_block_and_the_kmc_one_is_unchanged_with
     out = snap.build(spec={}, rows=[], measures=[], deployment={}, display={"entity": {"name": "x"}})
     assert out["display"] == {"entity": {"name": "x"}}
     assert "display" not in snap.build(spec={}, rows=[], measures=[], deployment={})
+
+
+def test_a_program_owned_report_reads_its_seeded_registry_in_the_programs_scope(monkeypatch):
+    """A seeded record lives in the workflow's own scope. For a program-owned report
+    that scope has NO opportunity, so reading it through the data anchor (opp +
+    program) found nothing: 'no semantic registry with id ...' on the first save of a
+    generic report created over visit_quality (synthetic program 10011, 2026-09-26)."""
+    from connect_labs.semantic import runtime
+    from connect_labs.semantic import snapshot as snap
+    from connect_labs.semantic import workflow_binding
+    from connect_labs.workflow import data_access as wf_data_access
+    from connect_labs.workflow.snapshot_builders import semantic_snapshot
+
+    from .test_periodic_builders import _DAO
+
+    scopes = []
+
+    class _Registry(_DAO):
+        def __init__(self, *a, **kw):
+            scopes.append({k: v for k, v in kw.items() if k in ("opportunity_id", "program_id")})
+
+    def resolve(definition, registry_access_factory=None):
+        registry_access_factory()
+        return {}, {}, {}, {}, {}, "x"
+
+    monkeypatch.setattr(wf_data_access, "WorkflowDataAccess", _DAO)
+    monkeypatch.setattr(wf_data_access, "PipelineDataAccess", _DAO)
+    monkeypatch.setattr(wf_data_access, "SemanticRegistryDataAccess", _Registry)
+    monkeypatch.setattr(workflow_binding, "build_evaluate_inputs", lambda d, f, **kw: ({}, {}))
+    monkeypatch.setattr(workflow_binding, "resolve_registry_for", resolve)
+    monkeypatch.setattr(runtime, "evaluate", lambda *a, **kw: [])
+    monkeypatch.setattr(runtime, "filter_to_series", lambda reg, s: reg)
+    monkeypatch.setattr(runtime, "measure_catalog", lambda reg: [])
+    monkeypatch.setattr(snap, "build", lambda **kw: {"ok": True})
+
+    semantic_snapshot(
+        spec={"series": "Q", "scopes": ["programme"]},
+        pipelines={},
+        opportunity_id=10013,
+        context={"definition_id": 1, "opportunity_ids": [10013], "program_id": 10011},
+    )
+    assert scopes == [{"program_id": 10011}]

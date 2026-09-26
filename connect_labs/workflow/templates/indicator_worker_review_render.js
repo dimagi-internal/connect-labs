@@ -147,10 +147,7 @@ function WorkflowUI({
     M_BY_ID[m.indicator] = m;
   });
   var LAYOUT = R.scorecardLayout(P, D);
-  var MIN_DEN = 20;
-  MEASURES.forEach(function (m) {
-    if (m.min_denominator && MIN_DEN === 20) MIN_DEN = m.min_denominator;
-  });
+  var MIN_DEN = Number(D.min_denominator) || 20;
   var asOf = (P.meta && P.meta.as_of) || '';
 
   // ══ The worker ══════════════════════════════════════════════════════════════

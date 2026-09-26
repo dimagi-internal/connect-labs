@@ -169,12 +169,10 @@ function WorkflowUI({
   var ENT = D.entity,
     WRK = D.worker,
     ORG = D.organisation;
+  // The registry's default floor (display.min_denominator); a measure's own
+  // min_denominator still wins cell by cell.
   var MIN_DEN =
-    Number(cfg.min_denominator_default) ||
-    MEASURES.reduce(function (acc, m) {
-      return acc || m.min_denominator;
-    }, 0) ||
-    20;
+    Number(cfg.min_denominator_default) || Number(D.min_denominator) || 20;
   function entryOf(map, id) {
     return (map && map[id]) || { id: id, n: 0, value: null, band: 'nodata' };
   }
@@ -1433,8 +1431,15 @@ function WorkflowUI({
         subtitle={
           ready ? (
             <span>
-              <b>{R.nounCount(meta.cases, ENT)}</b> ·{' '}
-              <b>{R.nCount(meta.visits)}</b> visits ·{' '}
+              <b>
+                {R.nounCount(
+                  selOrg || selOpp !== null
+                    ? sizeOf(scopeInd, meta.cases)
+                    : meta.cases,
+                  ENT,
+                )}
+              </b>{' '}
+              · <b>{R.nCount(meta.visits)}</b> visits ·{' '}
               <b>{R.nounCount(workerRows.length, WRK)}</b>
               {HAS_ORGS ? (
                 <span>
