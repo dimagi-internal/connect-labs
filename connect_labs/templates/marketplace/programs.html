@@ -11,12 +11,26 @@ the style block below and everything else stays in utility classes.
 Spent and services are Pulse's own figures. Remaining is an upper bound and is
 always worded "up to" — see `queries.committed_by_program`.
 {% endcomment %}
-{% load humanize %}
+{% load humanize static %}
 {% block title %}Connect Marketplace{% endblock %}
 
 {% block css %}
   {{ block.super }}
   {% include 'marketplace/_hue_styles.html' %}
+  {# Typeface trial: ?font=manrope or ?font=geist sets the page in that face. #}
+  {% if font == "manrope" %}
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>html, body, .font-sans { font-family: 'Manrope', sans-serif; }</style>
+  {% elif font == "geist" %}
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>html, body, .font-sans { font-family: 'Geist', sans-serif; }</style>
+  {% endif %}
+  <style>
+    /* Brand hexes, not var(--color-brand-*): the theme is `inline`, so those
+       variables are never emitted at runtime. */
+    .mk-ghost:hover { background: #fff; color: #16006d; border-color: #fff; }
+    .mk-ghost:hover .mk-ghost-sub { color: #3843d0; }
+  </style>
 {% endblock %}
 
 {% block content %}
@@ -55,24 +69,24 @@ always worded "up to" — see `queries.committed_by_program`.
 
     <div class="flex flex-col sm:flex-row sm:flex-wrap gap-3 mt-6 sm:mt-7">
       <a href="{% url 'marketplace:rounds' %}"
-         class="inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 bg-white text-brand-deep-purple text-sm font-semibold rounded-lg hover:bg-brand-sky/20 transition">
+         class="inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 bg-white text-brand-deep-purple text-sm font-semibold rounded-lg hover:bg-brand-marigold transition">
         Expressions of interest
         {% if open_round_count %}
-          <span class="inline-flex items-center px-1.5 py-px rounded-full text-[10.5px] font-semibold tracking-wider bg-green-100 text-green-800">{{ open_round_count }} OPEN</span>
+          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-bold tracking-wider bg-brand-mango text-white shadow-sm">{{ open_round_count }} OPEN</span>
         {% else %}
           <span class="text-[11.5px] font-normal text-gray-500 tabular-nums">{{ network.rounds }} rounds</span>
         {% endif %}
         <i class="fa-solid fa-arrow-right text-xs"></i>
       </a>
       <a href="{% url 'marketplace:network' %}"
-         class="inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 border border-brand-sky/40 text-white text-sm font-medium rounded-lg hover:bg-white/5 transition">
+         class="mk-ghost inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 border border-brand-sky/40 text-white text-sm font-medium rounded-lg transition">
         The network
-        <span class="text-[11.5px] text-brand-sky tabular-nums">{{ network.organisations }} organizations</span>
+        <span class="mk-ghost-sub text-[11.5px] text-brand-sky tabular-nums">{{ network.organisations }} organizations</span>
       </a>
       <a href="{% url 'supply_chain:market' %}"
-         class="inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 border border-brand-sky/40 text-white text-sm font-medium rounded-lg hover:bg-white/5 transition">
+         class="mk-ghost inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 border border-brand-sky/40 text-white text-sm font-medium rounded-lg transition">
         Supply tenders
-        <span class="text-[11.5px] text-brand-sky tabular-nums">{% if supply_tender_count %}{{ supply_tender_count }} open to suppliers{% else %}the supplier marketplace{% endif %}</span>
+        <span class="mk-ghost-sub text-[11.5px] text-brand-sky tabular-nums">{% if supply_tender_count %}{{ supply_tender_count }} open to suppliers{% else %}the supplier marketplace{% endif %}</span>
       </a>
     </div>
   </div>
@@ -84,10 +98,10 @@ always worded "up to" — see `queries.committed_by_program`.
   {# The same choice as the Pulse wall's, remembered across both.            #}
   <div class="flex flex-wrap items-center gap-2 mb-6 text-[12.5px]" id="costs-toggle">
     <span class="text-gray-500">Startup and supplies</span>
-    <a href="?costs=separate" data-costs="separate"
-       class="px-3 py-1 rounded-full border {% if costs_view != 'spread' %}bg-brand-deep-purple text-white border-brand-deep-purple{% else %}border-gray-300 text-gray-600 hover:bg-gray-50{% endif %}">shown separately</a>
-    <a href="?costs=spread" data-costs="spread"
-       class="px-3 py-1 rounded-full border {% if costs_view == 'spread' %}bg-brand-deep-purple text-white border-brand-deep-purple{% else %}border-gray-300 text-gray-600 hover:bg-gray-50{% endif %}">spread into services</a>
+    <a href="?costs=separate{% if font %}&font={{ font }}{% endif %}" data-costs="separate"
+       class="px-3 py-1 rounded-full border {% if costs_view != 'spread' %}bg-brand-deep-purple text-white border-brand-deep-purple{% else %}border-gray-300 text-gray-600 hover:bg-brand-deep-purple/10 hover:border-brand-deep-purple hover:text-brand-deep-purple{% endif %}">shown separately</a>
+    <a href="?costs=spread{% if font %}&font={{ font }}{% endif %}" data-costs="spread"
+       class="px-3 py-1 rounded-full border {% if costs_view == 'spread' %}bg-brand-deep-purple text-white border-brand-deep-purple{% else %}border-gray-300 text-gray-600 hover:bg-brand-deep-purple/10 hover:border-brand-deep-purple hover:text-brand-deep-purple{% endif %}">spread into services</a>
   </div>
 
   {% for section in sections %}
@@ -99,8 +113,13 @@ always worded "up to" — see `queries.committed_by_program`.
 
       <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
         {% for c in section.cards %}
-          <article class="pg-card bg-white border border-brand-border-light rounded-[10px] pl-5 pr-4 sm:pl-6 sm:pr-5 pt-5 pb-4 flex flex-col gap-4 transition"
+          <article class="pg-card bg-white border border-brand-border-light rounded-[10px] overflow-hidden pl-5 pr-4 sm:pl-6 sm:pr-5 pt-0 pb-4 flex flex-col gap-4 transition"
                    style="--hue: {{ c.hue }}">
+
+            {# The program's picture from connect.dimagi.com/portfolio; its colour where there is none. #}
+            <div class="pg-photo -ml-5 -mr-4 sm:-ml-6 sm:-mr-5 h-32">
+              {% if c.image %}<img src="{% static c.image %}" alt="" loading="lazy" class="w-full h-full object-cover">{% endif %}
+            </div>
 
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
@@ -131,8 +150,6 @@ always worded "up to" — see `queries.committed_by_program`.
                   <span class="whitespace-nowrap"><span class="font-semibold text-gray-900 tabular-nums">{{ c.spent_fmt }}</span> <span class="text-gray-500">paid</span></span>
                   {% if c.remaining %}
                     <span class="text-gray-500 whitespace-nowrap text-right">up to <span class="font-semibold pg-hue tabular-nums">{{ c.remaining_fmt }}</span> still funded</span>
-                  {% else %}
-                    <span class="text-gray-400 whitespace-nowrap">nothing live</span>
                   {% endif %}
                 </div>
                 {% if c.fixed %}
@@ -162,7 +179,7 @@ always worded "up to" — see `queries.committed_by_program`.
             </div>
 
             <div class="border-t border-gray-100 pt-3 mt-auto flex flex-col gap-2.5">
-              <p class="text-[13px] text-gray-600 leading-relaxed">{{ c.note }}</p>
+              {% if c.note %}<p class="text-[13px] text-gray-600 leading-relaxed">{{ c.note }}</p>{% endif %}
               <div class="flex gap-4 text-[12px] font-medium">
                 {% if c.delivering %}
                   <a href="{% url 'marketplace:network' %}?delivered={{ c.slug }}" class="pg-hue hover:underline">Who delivers it →</a>

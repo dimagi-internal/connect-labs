@@ -1,7 +1,21 @@
+{% comment %}
+An item is selected when the page is in its URL namespace, or — for an item that
+shares a namespace with pages it does not own, like the supplier market inside
+supply_chain — when the path is under `path_prefix`.
+{% endcomment %}
 <a href="{{ target }}" class="flex rounded-lg items-center p-2 hover:bg-brand-sunset-light transition-all duration-300 relative group">
     <!-- Icon Container with Fixed Width -->
-    <div class="flex items-center justify-center w-8 h-8">
-        <i class="fa-solid fa-{{ icon }}"></i>
+    <div class="relative z-10 flex items-center justify-center w-8 h-8">
+        {% if icon == 'handshake' %}
+            {# Two hands, two colours: the same glyph twice, each clipped to its own half. #}
+            <span class="relative inline-block" aria-hidden="true">
+                <i class="fa-solid fa-handshake invisible"></i>
+                <i class="fa-solid fa-handshake absolute inset-0 text-brand-mango" style="clip-path: inset(0 50% 0 0)"></i>
+                <i class="fa-solid fa-handshake absolute inset-0 text-brand-sky" style="clip-path: inset(0 0 0 50%)"></i>
+            </span>
+        {% else %}
+            <i class="fa-solid fa-{{ icon }} {% if request.resolver_match.namespace == namespace or path_prefix and path_prefix in request.path %}text-brand-marigold{% endif %}"></i>
+        {% endif %}
     </div>
 
     <!-- Text Container with Fixed Width -->
@@ -19,7 +33,7 @@
 
     <!-- Selected -->
 
-     {% if request.resolver_match.namespace == namespace %}
+     {% if request.resolver_match.namespace == namespace or path_prefix and path_prefix in request.path %}
      <div class="absolute left-0 top-0 w-full h-full bg-brand-mango/20 rounded-lg"></div>
      <div class="absolute right-0 w-1 h-1/2 top-1/2 -translate-y-1/2 bg-brand-mango rounded-2xl"></div>
      {% endif %}
