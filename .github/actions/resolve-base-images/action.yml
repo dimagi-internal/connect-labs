@@ -89,5 +89,5 @@ runs:
             echo "${3}_digest=none" >> "$GITHUB_OUTPUT"
           fi
         }
-        resolve base-latest python:3.11-slim-bookworm base
-        resolve node-latest node:18-bullseye node
+        resolve base-latest python:3.13-slim-bookworm base
+        resolve node-latest node:24-bookworm node
