@@ -200,7 +200,7 @@ paragraphs of method above a one-row table.{% endcomment %}
               <div class="text-xs text-gray-600 mt-0.5" data-cover-before="{{ point.supply_point_id }}">
                 was {{ point.last_receipt.months_before }} before
                 {% if point.last_receipt.reference %}{{ point.last_receipt.reference }}{% else %}the last receipt{% endif %}
-                (+{{ point.last_receipt.added|figure_text }}, {{ point.last_receipt.received_on }})
+                (+{{ point.last_receipt.added|figure_text }}, {{ point.last_receipt.received_on|day }})
               </div>
             {% endif %}
           </td>
