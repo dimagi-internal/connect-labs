@@ -711,6 +711,10 @@ def build(
             "llo_map": llo_map,
             "app_asks": deployment.get("app_asks") or {},
             "asks_as": deployment.get("asks_as") or {},
+            # opportunity id (str) -> the name a reader knows it by. Resolved when the
+            # run was built (snapshot_builders.opportunity_labels), so a saved run
+            # names its opportunities without the session that built it.
+            "opportunity_labels": deployment.get("opportunity_labels") or {},
         },
         # Flat case index and the ONLY copy of the case records: `byFLW[].rows` holds
         # positions into this list.

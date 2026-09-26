@@ -131,6 +131,12 @@ def normalise_deployment_facts(doc: dict[str, Any] | None) -> dict[str, Any]:
             for opp, fields in (doc.get("app_asks") or {}).items()
         },
         "asks_as": {str(k): str(v) for k, v in (doc.get("asks_as") or {}).items()},
+        # What a reader calls each opportunity, when the author wants to say it
+        # (keyed by str, like every map a JSON record carries). Optional: without
+        # it the snapshot builder names opportunities from their own records.
+        "opportunity_labels": {
+            str(k): str(v) for k, v in (doc.get("opportunity_labels") or {}).items() if v not in (None, "")
+        },
     }
 
 

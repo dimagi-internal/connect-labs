@@ -74,8 +74,14 @@ the created pipeline's schema.
 
 1. *Per-case indicator contributions in the worker review* — not shown; the review
    reads saved figures only. The `case` scope exists if wanted later.
-2. *Org label for an opportunity* (KMC's `OPP_LABEL`) — opportunities show as
-   "Opportunity <id>"; a `display.opportunity_labels` map could be added.
+2. *Org label for an opportunity* (KMC's `OPP_LABEL`) — **resolved.** The builder
+   names each opportunity in `deployment.opportunity_labels`
+   (`snapshot_builders.opportunity_labels`): the opportunity's own record
+   (`SyntheticOpportunity.label` for a labs-only opp, the requester's Connect org
+   data for a real one), overridden by the registry's
+   `deployment.opportunity_labels`. Hand-down keeps only the slice's own name.
+   The render falls back to the viewer's own opportunity list (`user-opportunities`)
+   for runs saved before names were carried, then to "Opportunity <id>".
 3. *Scorecard default* — every `prominence: Top` indicator (18 for KMC vs its 15
    hand-picked); a registry narrows it with `meta.scorecard: false`.
 4. *Image audit action* — not ported; the review shows images where visit rows carry

@@ -623,3 +623,21 @@ def test_mirror_omits_questions_the_source_never_answered():
     sel = FormSchema(questions=[QuestionSpec("form.status", "select", choices=["ok", "bad"])])
     out_sel = fill_form_json(schema=sel, cohort=_cohort(), anomalies_for_visit=[], rng=random.Random(3), mirror=True)
     assert out_sel["form"]["status"] in ("ok", "bad")
+
+
+def test_a_schemaless_coded_answer_is_written_verbatim_not_as_a_float():
+    """#2072: a labs-only opp has no form schema, so a transplanted categorical has
+    no kind. "1" (a coded yes) used to be rounded to 1.0 and written back as "1.0",
+    which matches none of the `= '1'` filters built on real submissions."""
+    schema = FormSchema(questions=[])
+    cohort = BeneficiaryCohort(id="c", size=1, field_distributions={}, progression="flat")
+    out = fill_form_json(
+        schema=schema,
+        cohort=cohort,
+        anomalies_for_visit=[],
+        rng=random.Random(0),
+        forced_values={"form.savings.currently_saving": "1", "form.weight": 1234.56789},
+        mirror=True,
+    )
+    assert out["form"]["savings"]["currently_saving"] == "1"
+    assert out["form"]["weight"] == 1234.568  # a number with no kind is still rounded

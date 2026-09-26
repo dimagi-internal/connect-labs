@@ -187,6 +187,13 @@ def semantic_snapshot(
         # disclaimer silently absent.
         meta["synthetic"] = synthetic
 
+    deployment = {
+        **(deployment or {}),
+        "opportunity_labels": opportunity_labels(
+            opportunity_ids, request=request, declared=(deployment or {}).get("opportunity_labels")
+        ),
+    }
+
     from connect_labs.semantic.display import resolve_display
 
     display = resolve_display(
@@ -375,6 +382,59 @@ def _is_synthetic(opportunity_ids: list[int]) -> bool | None:
         logger.warning("could not determine synthetic status for %s", opportunity_ids, exc_info=True)
         return None
     return all(int(o) in known for o in opportunity_ids)
+
+
+def opportunity_labels(opportunity_ids, request=None, declared=None) -> dict[str, str]:
+    """opportunity id (str) -> the name a reader knows it by, for every id in scope.
+
+    Two sources, the second winning:
+      1. the opportunity's own record -- a labs-only opportunity's registry row
+         (`SyntheticOpportunity.label`), a real one's entry in the requester's
+         Connect org data (the web path; the MCP path has no session, so a real
+         opportunity saved there is named by the render from the viewer's own
+         opportunity list instead);
+      2. the registry's `deployment.opportunity_labels`, for an author who wants
+         the report to say something other than the opportunity's own name.
+
+    Nothing is guessed: an id with no name is left out, and the render says
+    "Opportunity <id>" rather than inventing one.
+
+    Best-effort by construction: a name is a label, and must not be able to fail
+    a snapshot.
+    """
+    ids = {int(o) for o in opportunity_ids or []}
+    out: dict[str, str] = {}
+    try:
+        from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+        for oid, label in SyntheticOpportunity.objects.filter(opportunity_id__in=ids, enabled=True).values_list(
+            "opportunity_id", "label"
+        ):
+            if label:
+                out[str(oid)] = str(label)
+    except Exception:  # noqa: BLE001
+        logger.warning("could not read synthetic opportunity labels for %s", sorted(ids), exc_info=True)
+    missing = {i for i in ids if str(i) not in out}
+    if missing and request is not None:
+        try:
+            from connect_labs.labs.context import get_org_data
+
+            for o in get_org_data(request).get("opportunities") or []:
+                try:
+                    oid = int(o.get("id"))
+                except (TypeError, ValueError):
+                    continue
+                if oid in missing and o.get("name"):
+                    out[str(oid)] = str(o["name"])
+        except Exception:  # noqa: BLE001
+            logger.warning("could not read opportunity names from org data", exc_info=True)
+    for k, v in (declared or {}).items():
+        try:
+            if int(k) in ids and v:
+                out[str(int(k))] = str(v)
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 BUILDERS = {"semantic_snapshot": semantic_snapshot}
