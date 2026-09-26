@@ -18,12 +18,13 @@ from django.urls import reverse
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.data_access import SupplyDataAccess
-from connect_labs.supply_chain.models import Supplier, Tender
+from connect_labs.supply_chain.models import Quote, Supplier, Tender
 from connect_labs.supply_chain.operations import call_operation
 
 pytestmark = pytest.mark.django_db
 
 PROGRAM = 10501
+TENDER_LABEL = "RUTF tender leak check"
 PRIVATE_PRICE = "913.47"
 PRIVATE_EXCERPT = "PRIVATE-EXCERPT"
 
@@ -44,7 +45,7 @@ def open_tender():
     made = op(
         "tender_create",
         data={
-            "label": "RUTF tender leak check",
+            "label": TENDER_LABEL,
             "delivery_point": {"name": "Central store", "city": "Kano", "country_name": "Nigeria"},
             "lines": [{"commodity_slug": "rutf", "quantity": "2000", "quantity_unit": "carton"}],
         },
@@ -58,7 +59,7 @@ def ai_entered_quote(open_tender):
     """A quote an AI agent typed in from a private email, over MCP."""
     org = LabsOrg.objects.create(slug="theirs-supply-ltd", name="Theirs Supply Ltd")
     link = Supplier.objects.enrol(f"prog:{PROGRAM}", org=org, type="manufacturer")
-    return op(
+    made = op(
         "quote_record",
         channel="mcp",
         source={"ref": "email-2026-09-26-001", "excerpt": PRIVATE_EXCERPT},
@@ -71,13 +72,23 @@ def ai_entered_quote(open_tender):
             "as_quoted_currency": "USD",
         },
     )
+    # If this quote never landed, its absence below would be trivially true.
+    assert Quote.objects.filter(pk=made["id"], tender_id=open_tender.pk, supplier_id=link.pk).exists()
+    return made
 
 
 class TestMarketPagesLeakNothing:
     def test_the_tender_page_has_neither_the_excerpt_nor_the_price_nor_a_timeline(
         self, client, open_tender, ai_entered_quote
     ):
-        body = client.get(reverse("supply_chain:market_tender", args=[open_tender.pk])).content.decode()
+        response = client.get(reverse("supply_chain:market_tender", args=[open_tender.pk]))
+        body = response.content.decode()
+
+        # A 404 or an error page would trivially pass the absences below, so
+        # pin the page down first: it really rendered, and it really is this
+        # public tender.
+        assert response.status_code == 200
+        assert TENDER_LABEL in body
 
         assert PRIVATE_EXCERPT not in body
         assert PRIVATE_PRICE not in body
@@ -86,7 +97,11 @@ class TestMarketPagesLeakNothing:
     def test_the_market_listing_has_neither_the_excerpt_nor_the_price_nor_a_timeline(
         self, client, open_tender, ai_entered_quote
     ):
-        body = client.get(reverse("supply_chain:market")).content.decode()
+        response = client.get(reverse("supply_chain:market"))
+        body = response.content.decode()
+
+        assert response.status_code == 200
+        assert TENDER_LABEL in body
 
         assert PRIVATE_EXCERPT not in body
         assert PRIVATE_PRICE not in body
@@ -96,7 +111,11 @@ class TestMarketPagesLeakNothing:
         """Same request, made explicit: no session, no login, nothing extra given."""
         assert client.session.get("labs_oauth") is None
 
-        body = client.get(reverse("supply_chain:market")).content.decode()
+        response = client.get(reverse("supply_chain:market"))
+        body = response.content.decode()
+
+        assert response.status_code == 200
+        assert TENDER_LABEL in body
 
         assert PRIVATE_EXCERPT not in body
         assert PRIVATE_PRICE not in body
