@@ -469,7 +469,9 @@ pygments==2.21.0
     #   rich
     #   rich-rst
 pyjwt[crypto]==2.14.0
-    # via mcp
+    # via
+    #   -r requirements/base.in
+    #   mcp
 pyogrio==0.13.0
     # via geopandas
 pyperclip==1.11.0
