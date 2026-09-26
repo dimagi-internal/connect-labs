@@ -82,10 +82,14 @@ Indexes: `(content_type, object_id, recorded_at)` and
 - The MCP adapter sets `channel="mcp"`. The HTTP endpoint sets `api`, views
   set `web`, and management commands set `command`. The adapter passes this
   in. `call_operation` gains a `channel` keyword with default `web`.
-- `pre_save`, `post_save` and `post_delete` receivers on every concrete
-  supply_chain model write the `Revision`. The field diff is taken against the
-  row as loaded in `pre_save`. The timestamp-only fields `created`/`modified`
-  are excluded from `changes`.
+- `pre_save`, `post_save`, `pre_delete` and `post_delete` receivers on every
+  concrete supply_chain model write the `Revision`, plus `m2m_changed` for the
+  many-to-many link tables (Django writes and deletes those rows without the
+  per-row signals the others rely on). The field diff is taken against the
+  row as loaded in `pre_save`. `pre_delete` stashes the row's program and a
+  flat snapshot on the instance before anything is actually deleted, so a
+  cascade still resolves each child's program before its parent goes. The
+  timestamp-only fields `created`/`modified` are excluded from `changes`.
 - A save **outside** any write context (a shell, a data migration) still
   writes a revision, with `channel="command"` and no operation. Nothing
   escapes history.
@@ -116,8 +120,9 @@ forms don't carry one.
   a person, and "ACE (agent)" when the actor is an agent account.
   Agent accounts are listed in the setting `LABS_AGENT_ACCOUNT_EMAILS`
   (default `["ace@dimagi-ai.com"]`). The retained `users` app must not be
-  modified. The flag is copied onto the revision as `actor_is_agent` at
-  write time, so history does not change if the setting does.
+  modified. `actor_is_agent` lives on `OperationCall` only, decided once at
+  write time from that setting; a `Revision` has no such column and reaches
+  it through its `call`, so history does not change if the setting does.
 - `source_excerpt` opens from the badge.
 - `Quote.entered_by` (program/supplier) is left as it is. It answers a
   different question: whose figure it is, not who typed it.
@@ -153,7 +158,8 @@ the feature existed would leave pre-existing rows in place. That is the
 right answer: they did exist.
 
 **Scope:** every program-scoped supply page. The market is cross-program and
-live, so it ignores `as_of`.
+live, so it ignores `as_of`; portfolios stay live for the same reason — a
+named set of program ids is not a program's own record to rewind.
 
 ## 4. UI
 
