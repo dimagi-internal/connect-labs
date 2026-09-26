@@ -298,7 +298,13 @@ class ProcurementRepositoryMixin:
             quote=quote,
             supplier=self._resolve_supplier(data.get("supplier_id")) or (quote.supplier if quote else None),
             commodity=self._resolve_commodity(data.get("commodity_slug")) or (quote.commodity if quote else None),
-            **{"decided_on": date.today(), **_columns(Award, data)},
+            # Provisional when the comparison it froze was: an award made while
+            # some suppliers could not yet be compared could still be beaten.
+            **{
+                "decided_on": date.today(),
+                "provisional": bool((data.get("comparison_snapshot") or {}).get("provisional")),
+                **_columns(Award, data),
+            },
         )
         self._mark_awarded_when_complete(found)
         return _fresh(award)

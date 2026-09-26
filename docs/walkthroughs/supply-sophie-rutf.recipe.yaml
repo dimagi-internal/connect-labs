@@ -1,0 +1,300 @@
+base_url: https://labs.connect.dimagi.com
+narrative_locked: true
+narrative_locked_at: '2026-09-26T20:07:47.199768+00:00'
+review_mode: autonomous
+setup:
+  command: python3 scripts/walkthroughs/supply-sophie-rutf/seed.py --outputs scripts/walkthroughs/supply-sophie-rutf/outputs.json
+  outputs: scripts/walkthroughs/supply-sophie-rutf/outputs.json
+  rerun: per_render
+  timeout_seconds: 900
+tagline: Every change on the record says who made it, on what evidence, and what we believed before it
+video_pace: medium
+video_viewport_height: 900
+video_viewport_width: 1440
+why_brief: supply-sophie-rutf.why_brief.yaml
+scenes:
+- id: sophie-reads-her-program
+  actions:
+  - kind: wait_for
+    target: Where everything stands
+  - kind: hold
+    seconds: 1.0
+    note: the program's rows, round 2 above round 1
+  - kind: hover
+    target: css:[data-testid=overview-row][data-tender-id='${round2_tender_id}'] [data-testid=stale-flag]
+    seconds: 2.0
+    say: silent
+    note: 'the stale flags on round 2: the supplier who has not replied, and the quote missing a basis'
+  - kind: hover
+    target: css:[data-testid=overview-row][data-tender-id='${round2_tender_id}'] [data-testid=ai-badge]
+    seconds: 1.8
+    say: AI
+    note: a row whose last change came through the AI
+  - kind: hover
+    target: text:Where everything stands
+    seconds: 0.8
+    note: park the cursor off the rows
+  - kind: snapshot
+    note: the program on one screen, today
+  concept_claim: The supply overview for the RUTF program lists only this program's tenders and orders, each with its stage,
+    what it is waiting on, when and by whom it last changed, a stale flag on round 2 for unanswered outreach and a quote missing
+    a basis, and an AI badge on the row last written over MCP.
+  design_intent: Sophie manages one program; the first screen answers "where does each round stand and what needs chasing"
+    without her opening anything, and tells her which of what she reads the AI typed.
+  full_page: false
+  role: overview
+  show: 'Sophie opens /supply/ for the RUTF program. One line per tender and order, newest change first: round 2 open, waiting
+    on quotes, with a stale flag for the supplier who has not replied in two weeks and for a quote missing a basis; round
+    1''s order delivered and paid, and round 1''s tender awarded. Each line says when it last changed and who changed it,
+    and the row last written through the AI carries the AI badge.'
+  url: /supply/?program_id=${program_id}
+- id: the-eta-that-moved
+  actions:
+  - kind: hold
+    seconds: 1.0
+    note: let the scene's own page paint before the before-frame
+  - kind: wait_for
+    target: testid:timeline
+  - kind: scroll_to
+    target: css:[data-testid=revision-line][data-fields~=expected_on]
+  - kind: hover
+    target: css:[data-testid=revision-line][data-fields~=expected_on]
+    seconds: 1.5
+    say: 19 Sep
+    note: the ETA change, in words, with its actor badge
+  - kind: click
+    target: css:[data-testid=revision-line][data-fields~=expected_on] [data-testid=actor-badge]
+    note: open the source behind the AI's entry
+  - kind: wait_for
+    target: testid:source-excerpt
+  - kind: hold
+    seconds: 2.0
+    note: the forwarder's words, quoted
+    say: words
+  - kind: snapshot
+    note: the ETA slip and the evidence for it
+  concept_claim: Round 1's tender page shows a newest-first timeline of its changes from quote to payment in plain sentences,
+    including exactly one line "ETA 5 Sep → 19 Sep" badged "ACE (agent)" although its source email was submitted twice, and
+    clicking that badge shows the quoted email excerpt the agent recorded as its source, while lines Sophie entered on the
+    web show her name and no excerpt.
+  design_intent: An overwrite erased what the program had believed; a revision with actor, channel and source makes the change,
+    who made it and why visible, so an AI-typed change can be checked rather than trusted.
+  show: 'Sophie opens round 1. Under its current state, a timeline reads newest first, from payment back to the first quote,
+    one plain sentence per change; lines she typed herself carry her name and no excerpt. She scrolls to "ETA 5 Sep → 19 Sep",
+    badged "ACE (agent)", which appears once although the forwarder''s email reached the AI twice, and opens the badge: the
+    forwarder''s email excerpt that justified the change.'
+  url: /supply/procurement/tenders/${round1_tender_id}/?program_id=${program_id}
+- id: back-to-twenty-august
+  actions:
+  - kind: hold
+    seconds: 1.0
+    note: let the scene's own page paint before the before-frame
+  - kind: wait_for
+    target: testid:as-of-control
+  - kind: fill
+    say: 20 Aug
+    target: css:[data-testid=as-of-control] input[type=date]
+    value: ${as_of_date}
+  - kind: click
+    must_succeed: true
+    target: css:[data-testid=as-of-control] button
+    timeout_ms: 30000
+  - kind: wait_for
+    must_succeed: true
+    target: testid:as-of-banner
+  - kind: hover
+    note: round 1 in transit, due 5 Sep, as believed that day
+    say: in transit
+    seconds: 2.0
+    target: css:[data-testid=overview-row][data-tender-id='${round1_tender_id}']:has-text('in transit')
+  - kind: hold
+    note: no round 2 row, and no write controls
+    seconds: 1.5
+  - kind: snapshot
+    note: the program on 20 Aug
+  - kind: click
+    note: the banner's way out
+    target: text:back to today
+  - kind: wait_for
+    target: css:[data-testid=overview-row][data-tender-id='${round2_tender_id}']
+  - kind: hold
+    seconds: 1.0
+  concept_claim: Setting the supply header's date control to 20 Aug reloads the overview with a banner naming that date and
+    no write controls, showing round 1 in transit with an expected arrival of 5 Sep and no round 2 row, and the banner's "back
+    to today" link restores the current overview.
+  design_intent: '"What did we think on 20 Aug?" becomes a page, not an argument; hiding every write control keeps a look
+    at the past from becoming an edit to the present.'
+  full_page: false
+  show: From the overview Sophie sets the header's date control to 20 Aug. A banner reads "Viewing as of 20 Aug 2026 — back
+    to today"; the write controls are gone; round 1 reads in transit with an expected arrival of 5 Sep, and round 2 is not
+    on the page. She clicks "back to today" and the present overview returns.
+  url: /supply/?program_id=${program_id}
+- id: round-two-cannot-be-compared
+  actions:
+  - kind: wait_for
+    target: Needs info
+  - kind: hold
+    note: three quotes, none comparable yet
+    seconds: 1.2
+  - kind: hover
+    note: the quote that never said how many sachets a carton holds, with the AI badge
+    say: sachets
+    seconds: 2.0
+    target: css:[data-quote-id='${quote_pack_missing_id}']
+  - kind: hover
+    note: the question to send, written out
+    say: question
+    seconds: 1.8
+    target: css:[data-quote-id='${quote_pack_missing_id}'] >> text=Ask the supplier
+  - kind: hover
+    note: park the cursor off the rows
+    seconds: 0.8
+    target: text:Needs info
+  - kind: snapshot
+    note: every blocked quote with the one thing it lacks and the question to ask
+  - kind: hover
+    target: css:[data-quote-id]:not([data-quote-id='${quote_pack_missing_id}'])
+    seconds: 1.6
+    note: the other two blocked quotes, after the frame
+  - kind: hover
+    target: css:[data-quote-id='${quote_pack_missing_id}']
+    seconds: 1.6
+    note: back to the one the next scene answers
+  concept_claim: Round 2's comparison lists all three quotes under Needs info, each naming in words the fact that blocks it
+    (sachets per carton not stated; a per-sachet price on a different lot size with freight to be agreed; duties excluded)
+    with the question to ask that supplier written out, and shows the AI badge on each quote that came in through the AI.
+  design_intent: The product refuses to fake a comparison; the missing fact is stated and the next question is already phrased,
+    while the badge tells Sophie which of those facts a model read rather than a person.
+  full_page: false
+  show: 'Sophie opens round 2''s comparison. The banner reads that none of the three quotes can be compared yet. Under Needs
+    info, each quote names what is missing in words: one supplier did not say how many sachets a carton holds; one priced
+    per sachet on a larger lot than the round asked for, with freight still to be agreed; one excluded import duties. Under
+    each, "Ask the supplier" spells out the question, and each quote that came in through the AI carries the AI badge.'
+  url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
+- id: the-answer-arrives
+  actions:
+  - kind: hold
+    seconds: 1.0
+    note: let the scene's own page paint before the before-frame
+  - kind: wait_for
+    target: css:[data-testid=revision-line][data-fields~=base_per_pack_stated]
+    must_succeed: true
+    timeout_ms: 15000
+  - kind: hover
+    note: the answer, recorded as a correction to the quote
+    say: '150'
+    seconds: 1.5
+    target: css:[data-testid=revision-line][data-fields~=base_per_pack_stated]
+  - kind: click
+    note: open the reply the agent recorded as its source
+    target: css:[data-testid=revision-line][data-fields~=base_per_pack_stated] [data-testid=actor-badge]
+  - kind: wait_for
+    target: testid:source-excerpt
+  - kind: hold
+    note: the supplier's own words
+    say: reply
+    seconds: 2.0
+  - kind: goto
+    note: the same quote, now in the ranking
+    target: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
+  - kind: wait_for
+    must_succeed: true
+    target: Ranked by
+  - attr: data-quote-id
+    kind: capture
+    source: element
+    target: css:[data-testid=ranked-row]
+    var: answered_quote_id
+  - kind: hover
+    note: landed cost per carton and per child treated, provisional while two are blocked
+    say: per child
+    seconds: 2.0
+    target: text:USD per child treated
+  - kind: snapshot
+    note: one quote comparable, two still waiting
+  concept_claim: After the supplier's reply is recorded through the AI as a correction to its quote, round 2's timeline shows
+    that correction badged "ACE (agent)" with the reply quoted as its source, and the comparison ranks that quote under Comparable
+    with a landed cost per carton and a cost per child treated while the other two remain under Needs info.
+  design_intent: Suppliers answer by email, not in the product; the AI records the answer through the same correction a person
+    would make, with the reply as evidence, so the ranking moves only on a fact someone can read.
+  full_page: false
+  show: 'Sophie opens round 2. At the top of its timeline is a new line, the quote corrected to 150 sachets per carton, badged
+    "ACE (agent)"; she opens the badge and reads the supplier''s reply quoted as its source. She opens the comparison: that
+    quote now sits under Comparable, ranked, with a landed cost per carton and per child treated, while the other two stay
+    under Needs info.'
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
+- id: her-tender-on-the-market
+  actions:
+  - kind: hold
+    seconds: 1.0
+    note: let the scene's own page paint before the before-frame
+  - kind: wait_for
+    target: css:a[href*='/market/tenders/${round2_tender_id}/']
+  - kind: click
+    must_succeed: true
+    target: css:a[href*='/market/tenders/${round2_tender_id}/']
+  - kind: wait_for
+    target: css:body:not(:has([data-testid=timeline]))
+  - kind: hover
+    note: quantity, delivery point, and what the buyer asks each supplier to state
+    say: request
+    seconds: 2.0
+    target: text:FROM THE BUYER
+  - kind: hold
+    note: no prices, no excerpts, no history
+    say: private
+    seconds: 1.5
+  - kind: snapshot
+    note: round 2 as a supplier sees it
+  concept_claim: Round 2's public market listing shows the quantity, delivery point and the buyer's request to suppliers,
+    and shows no supplier's price, no source excerpt and no timeline, because quotes, revisions and excerpts are shown only
+    to members of the owning program.
+  design_intent: History, excerpts and prices are the program's private working evidence; the listing is what every supplier
+    sees, so the boundary is drawn where Sophie can check it.
+  show: 'Sophie opens the market and her round 2 listing. It shows the request: the quantity, where the goods go, and what
+    she asks every supplier to state (sachets per carton, freight and import duties). It shows no supplier''s price, no AI
+    source excerpt and no history; those open only to members of her program.'
+  url: /supply/market/
+- id: sophie-awards-with-a-reason
+  actions:
+  - kind: hold
+    seconds: 1.0
+    note: let the scene's own page paint before the before-frame
+  - kind: wait_for
+    target: Ranked by
+  - kind: scroll_to
+    target: css:form:has(input[name=quote_id][value='${answered_quote_id}'])
+  - kind: fill
+    say: why
+    target: css:form:has(input[name=quote_id][value='${answered_quote_id}']) input[name=rationale]
+    value: States everything needed to cost it; same manufacturer as round 1
+  - kind: fill
+    target: css:form:has(input[name=quote_id][value='${answered_quote_id}']) input[name=decided_by]
+    value: Sophie
+  - kind: click
+    must_succeed: true
+    target: css:form:has(input[name=quote_id][value='${answered_quote_id}']) button:has-text('Award')
+    timeout_ms: 30000
+  - kind: wait_for
+    target: css:a[href*='/procurement/awards/']
+  - kind: goto
+    note: back to the program, where the decision now sits
+    target: /supply/?program_id=${program_id}
+  - kind: wait_for
+    target: css:[data-testid=overview-row][data-tender-id='${round2_tender_id}']
+  - kind: hover
+    note: round 2 awarded, provisional, by Sophie, today
+    say: awarded
+    seconds: 2.0
+    target: css:[data-testid=overview-row][data-tender-id='${round2_tender_id}']
+  - kind: snapshot
+    note: the award on the overview, with who and when
+  concept_claim: Awarding the quote that answered on round 2's comparison with a typed reason records a provisional award,
+    and the supply overview then shows round 2 as awarded, provisional, last changed today by Sophie.
+  design_intent: A decision is recorded with its reason, frozen beside the comparison, and marked provisional because two
+    suppliers were left out; the overview closes the loop on the same who-and-when record the story opened on.
+  full_page: false
+  show: 'On round 2''s comparison the quote that answered ranks alone, marked provisional because two quotes are still blocked.
+    Sophie types her reason into its row (it states everything needed to cost it, and it is the same manufacturer as round
+    1) and awards it. She returns to the overview: round 2 reads awarded, provisional, last changed today by Sophie.'
+  url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}

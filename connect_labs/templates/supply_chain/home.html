@@ -49,7 +49,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for row in standing %}
-          <tr class="align-top">
+          <tr class="align-top" data-testid="overview-row"{% if row.tender_id %} data-tender-id="{{ row.tender_id }}"{% endif %}>
             <td class="px-4 py-2.5">
               <span class="block text-xs text-gray-500">{% if row.kind == "tender" %}Tender{% else %}Order{% endif %}</span>
               <a class="font-medium text-brand-indigo hover:underline" href="{{ row.url }}">{{ row.title }}</a>
@@ -61,7 +61,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
               {% if row.last_change_at %}
                 <span class="block text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|days_ago:standing_now }}</span>
                 {% if row.last_change_is_ai %}
-                  <span data-ai class="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{% if row.last_change_by|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ row.last_change_by }}</span></span>
+                  <span data-ai data-testid="ai-badge" class="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{% if row.last_change_by|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ row.last_change_by }}</span></span>
                 {% else %}
                   <span class="mt-0.5 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ row.last_change_by }}</span>
                 {% endif %}
@@ -71,7 +71,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
             </td>
             <td class="px-4 py-2.5">
               {% for flag in row.stale %}
-                <span class="block text-xs text-red-700">{{ flag }}</span>
+                <span data-testid="stale-flag" class="block text-xs text-red-700">{{ flag }}</span>
               {% endfor %}
             </td>
           </tr>
