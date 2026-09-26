@@ -1001,8 +1001,9 @@ function WorkflowUI({
   // withheld everything -- and is explained in words. Only a failed REQUEST is
   // an error.
   var benchmarkEmptyMessage =
-    'No benchmark is published for this opportunity yet. Either it is not in a ' +
-    'benchmark cohort, or the disclosure rules withheld every indicator.';
+    'No organisation benchmark is published for this opportunity yet: it is ' +
+    'not in a benchmark cohort, or its cohort has not been republished since ' +
+    'organisations were added.';
   var sBench = React.useState({ status: 'loading' });
   var bench = sBench[0],
     setBench = sBench[1];
@@ -1046,23 +1047,54 @@ function WorkflowUI({
     },
     [oppId],
   );
-  // What may stand on a peer chart. Mirrors the publisher's PUBLISHABLE_BANDS
-  // (benchmarks/publish.py): anything else is the registry or its gates saying
-  // the figure must not stand on its own.
-  function publishableValue(cell) {
-    if (!cell) return null;
-    if (
-      cell.band !== 'green' &&
-      cell.band !== 'yellow' &&
-      cell.band !== 'red' &&
-      cell.band !== 'unbanded'
-    )
-      return null;
-    return cell.value;
+  // The benchmark tab: this opportunity's ORGANISATION against the programme's
+  // other organisations, one row per indicator. The rows come from the
+  // benchmark store's organisation rows (benchmarks/publish.py), published from
+  // the programme report's saved week: the reader's own organisation apart, the
+  // others unnamed and re-sorted on every row. A complete cohort keeps every
+  // organisation on every row, a withheld one as an outline with its reason.
+  var sOpenRow = React.useState(null);
+  var openRow = sOpenRow[0],
+    setOpenRow = sOpenRow[1];
+  var ownOrgLabel = (llo || 'Your organisation') + ' (you)';
+  function benchmarkRows(bp) {
+    var cohorts = bp.cohorts || {};
+    // The first cohort that publishes organisation rows. A programme has one.
+    var cid = Object.keys(cohorts).filter(function (id) {
+      var fam = (bp.indicators || {})[id] || {};
+      return Object.keys(fam).some(function (s) {
+        return Object.keys(fam[s]).some(function (i) {
+          return fam[s][i].organisations;
+        });
+      });
+    })[0];
+    if (!cid) return { cid: null, groups: [] };
+    var fam = bp.indicators[cid] || {};
+    var groups = [];
+    var byCat = {};
+    MEASURES.forEach(function (m) {
+      var e = (fam[m.series] || {})[m.indicator];
+      var orgs = e && e.organisations;
+      if (!orgs) return;
+      var ranked = R.rankOrganisations(m, orgs.own, orgs.others || []);
+      var row = {
+        m: m,
+        orgs: orgs,
+        ranked: ranked,
+        target: R.targetOf(m),
+      };
+      var cat = m.category || 'Other';
+      if (!byCat[cat]) {
+        byCat[cat] = { name: cat, rows: [] };
+        groups.push(byCat[cat]);
+      }
+      byCat[cat].rows.push(row);
+    });
+    return { cid: cid, groups: groups, meta: cohorts[cid] || {} };
   }
   function Benchmark() {
     if (bench.status === 'loading')
-      return <R.Loading height={120}>Loading the benchmark…</R.Loading>;
+      return <R.Loading height={160}>Loading the benchmark…</R.Loading>;
     if (bench.status === 'error')
       return (
         <R.Notice tone="error">
@@ -1070,54 +1102,158 @@ function WorkflowUI({
           request, not an empty benchmark.
         </R.Notice>
       );
-    var bp = bench.payload || {};
-    var cohorts = bp.cohorts || {};
-    var ids = Object.keys(cohorts);
-    if (!ids.length)
+    var built = benchmarkRows(bench.payload || {});
+    if (!built.cid)
       return <R.Notice tone="muted">{benchmarkEmptyMessage}</R.Notice>;
+    var COLS = '300px 120px 150px 280px minmax(0, 1fr)';
     return (
-      <div className="space-y-4">
-        {ids.map(function (cid) {
-          var cmeta = cohorts[cid] || {};
-          var byFamily = (bp.indicators || {})[cid] || {};
-          var shown = MEASURES.filter(function (m) {
-            var e = (byFamily[m.series] || {})[m.indicator];
+      <div className="space-y-3">
+        <div className="text-sm text-gray-600 max-w-4xl">
+          {ownOrgLabel.replace(' (you)', '')} against the programme's other
+          organisations, as of{' '}
+          {R.dateLbl(built.meta.as_of || (bench.payload || {}).as_of)}. Each
+          small chart is every organisation, best to worst: yours in blue, the
+          others unnamed and re-sorted on every row, so no grey bar can be
+          followed down the page. An outline is an organisation without a usable
+          figure; the coverage column says why. Click a row for the full chart.
+        </div>
+        <div className="flex flex-wrap items-center gap-5 text-xs text-gray-500">
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-2.5 h-3.5 rounded-sm bg-indigo-600" />
+            {ownOrgLabel}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span
+              className="inline-block w-2.5 h-3.5 rounded-sm"
+              style={{ background: '#c7c5bc' }}
+            />
+            Another organisation
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span
+              className="inline-block w-2.5 h-3.5 rounded-sm border border-dashed"
+              style={{ borderColor: '#b9b7ae' }}
+            />
+            No usable figure
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-4 border-t-2 border-dashed border-gray-900" />
+            Target
+          </span>
+        </div>
+        <R.Card padded={false}>
+          <div
+            className="grid items-center gap-4 px-5 py-2.5 border-b border-gray-200 text-[11px] uppercase tracking-wide text-gray-500"
+            style={{ gridTemplateColumns: COLS }}
+          >
+            <div>Indicator</div>
+            <div>{llo || 'Yours'}</div>
+            <div>Rank</div>
+            <div>Best → worst</div>
+            <div>Coverage</div>
+          </div>
+          {built.groups.map(function (g) {
             return (
-              e &&
-              ((e.peers || []).length || Object.keys(e.series || {}).length > 1)
-            );
-          });
-          return (
-            <div key={cid}>
-              <div className="flex items-baseline justify-between mb-2">
-                <div className="text-sm font-semibold text-gray-800">
-                  {cmeta.name || 'Cohort ' + cid}
+              <div key={g.name}>
+                <div className="px-5 pt-2.5 pb-1 text-[11px] font-bold uppercase tracking-wide text-gray-700 bg-gray-50 border-b border-gray-100">
+                  {g.name}
                 </div>
-                <div className="text-xs text-gray-400">
-                  peers as of {R.dateLbl(cmeta.as_of || bp.as_of) || 'unknown'}
-                </div>
-              </div>
-              {shown.length ? (
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                  {shown.map(function (m) {
-                    return (
-                      <R.PeerCard
-                        key={m.indicator}
-                        measure={m}
-                        entry={(byFamily[m.series] || {})[m.indicator]}
-                        own={publishableValue(ind[m.indicator])}
+                {g.rows.map(function (r) {
+                  var id = r.m.indicator;
+                  var open = openRow === id;
+                  var own = r.orgs.own;
+                  var ok = R.drawable(own);
+                  var out = [
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={function () {
+                        setOpenRow(open ? null : id);
+                      }}
+                      aria-expanded={open}
+                      className={
+                        'w-full text-left grid items-center gap-4 px-5 py-2.5 border-b border-gray-100 hover:bg-gray-50 ' +
+                        (open ? 'bg-indigo-50/60' : '')
+                      }
+                      style={{ gridTemplateColumns: COLS }}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-gray-900 truncate">
+                          {r.m.title || id}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {r.m.direction === 'lower'
+                            ? 'lower is better'
+                            : r.m.direction === 'higher'
+                              ? 'higher is better'
+                              : r.m.direction === 'mid2'
+                                ? 'two-sided, not ranked'
+                                : 'context, not ranked'}
+                          {r.target !== null
+                            ? ' · target ' + R.fmtValue(r.m, r.target)
+                            : ''}
+                        </div>
+                      </div>
+                      <div
+                        className={
+                          'text-lg font-bold tabular-nums ' +
+                          (ok
+                            ? R.BAND_TEXT[own.band] || 'text-gray-900'
+                            : 'text-gray-400')
+                        }
+                      >
+                        {ok ? R.fmtValue(r.m, own.value) : '—'}
+                      </div>
+                      <div className="text-sm text-gray-700">
+                        {!own
+                          ? '—'
+                          : r.ranked.rank === null
+                            ? 'no usable figure'
+                            : !r.ranked.ranked
+                              ? '—'
+                              : (r.ranked.tied ? 'joint ' : '') +
+                                R.ordinal(r.ranked.rank) +
+                                ' of ' +
+                                r.ranked.scored}
+                      </div>
+                      <R.MiniRankBars
+                        ranked={r.ranked}
+                        target={r.target}
+                        width={280}
                       />
+                      <div className="text-xs text-gray-500">
+                        {r.ranked.coverage}
+                      </div>
+                    </button>,
+                  ];
+                  if (open)
+                    out.push(
+                      <div
+                        key={id + ':detail'}
+                        className="px-5 py-4 bg-indigo-50/40 border-b border-gray-200"
+                      >
+                        <R.RankedBars
+                          measure={r.m}
+                          ranked={r.ranked}
+                          ownLabel={ownOrgLabel}
+                          target={r.target}
+                        />
+                        <div className="mt-3 text-xs text-gray-500">
+                          This opportunity on its own:{' '}
+                          <b className="text-gray-800">
+                            {R.fmtValue(r.m, entryOf(ind, id).value)}
+                          </b>
+                          . The organisation figure pools every opportunity{' '}
+                          {llo || 'it'} runs in this programme.
+                        </div>
+                      </div>,
                     );
-                  })}
-                </div>
-              ) : (
-                <R.Notice tone="muted">
-                  Nothing published for these indicators in this cohort.
-                </R.Notice>
-              )}
-            </div>
-          );
-        })}
+                  return out;
+                })}
+              </div>
+            );
+          })}
+        </R.Card>
       </div>
     );
   }
@@ -1468,6 +1604,9 @@ function WorkflowUI({
   }
 
   // ══ Render ═════════════════════════════════════════════════════════════════
+  var sTab = React.useState('report');
+  var tab = sTab[0],
+    setTab = sTab[1];
   function saveRun() {
     if (!view || !view.complete) return;
     view.complete({
@@ -1566,16 +1705,24 @@ function WorkflowUI({
           {/* The programme report's order -- tiles, the table, the charts --
               with the peers after them: seventeen peer cards above the worker
               table pushed it three screens down. */}
-          <Tiles />
-          <WorkerTable />
-          <ChartsRow />
-          <div>
-            <R.SectionTitle sub="Anonymous peers, re-sorted per indicator: a bar cannot be followed from one chart to the next. This opportunity is the blue bar and the blue line; a trend runs on each opportunity's own weeks of delivering, so week 1 is week 1 for everybody, and ends where that opportunity's figures stopped changing.">
-              Against its peers
-            </R.SectionTitle>
+          <R.Tabs
+            tabs={[
+              { id: 'report', label: 'Report' },
+              { id: 'benchmarks', label: 'Benchmarks' },
+            ]}
+            active={tab}
+            onChange={setTab}
+          />
+          {tab === 'benchmarks' ? (
             <Benchmark />
-          </div>
-          <AllIndicators />
+          ) : (
+            <div className="space-y-4">
+              <Tiles />
+              <WorkerTable />
+              <ChartsRow />
+              <AllIndicators />
+            </div>
+          )}
         </div>
       )}
     </div>

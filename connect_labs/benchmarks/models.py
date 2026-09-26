@@ -64,6 +64,14 @@ class BenchmarkCohort(models.Model):
     # Safe to switch off only because a period is an opportunity's own Nth
     # report, so an incomplete line carries no date. R1 and R5 still apply.
     require_complete_series = models.BooleanField(default=True)
+    # The same peers on every indicator. On, every member organisation is
+    # published on every non-count indicator, and a figure the registry withheld
+    # (too few babies, not credible, not collected -- R7) stays in the set
+    # carrying its band instead of being dropped. Off, a peer without a
+    # publishable figure is left out of that indicator, so the peer set changes
+    # from row to row -- which is what made the per-opportunity peer charts
+    # unreadable. Counts are never published either way: the value is the size.
+    complete_cohort = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -122,6 +130,10 @@ class BenchmarkPublication(models.Model):
     # The as-of date of the snapshot these figures were computed from.
     as_of = models.DateField()
     published_by = models.CharField(max_length=200, blank=True, default="")
+    # Which organisation each member opportunity belonged to in the source run,
+    # {"<opportunity_id>": "<organisation>"}. Provenance, never displayed: the
+    # read API uses it only to say which organisation row is the READER'S own.
+    organisation_of = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -169,28 +181,46 @@ class _BenchmarkValueManager(models.Manager):
         return self.get_queryset().with_source()
 
 
+UNIT_OPPORTUNITY = "opportunity"
+UNIT_ORGANISATION = "organisation"
+
+
 class BenchmarkValue(models.Model):
     """One published figure: an indicator, for one anonymous peer, at one period.
 
     `peer_index` is assigned at publish time by sorting peers on value WITHIN
     this indicator (rule R4), so the index carries no identity and cannot be
     joined across indicators into a per-opportunity profile.
+
+    A peer is an opportunity or an ORGANISATION (`unit`). Organisation rows are
+    the benchmark tab's: a stable set of peers, published as points only.
     """
 
     publication = models.ForeignKey(BenchmarkPublication, on_delete=models.CASCADE, related_name="values")
+    unit = models.CharField(max_length=16, default=UNIT_OPPORTUNITY, db_index=True)
     series = models.CharField(max_length=16)
     indicator_id = models.CharField(max_length=64, db_index=True)
     # None for a point-in-time value; "YYYY-MM" for a series point.
     period = models.CharField(max_length=7, null=True, blank=True)
     peer_index = models.PositiveIntegerField()
-    value = models.FloatField()
+    # None only for a figure kept in a complete cohort with no value at all
+    # (its app does not collect the input); `band` then says why.
+    value = models.FloatField(null=True, blank=True)
+    # The registry's grade for this figure: green/yellow/red/unbanded, or --
+    # kept only by a complete cohort -- insufficient/notcredible/notinapp/
+    # unrecorded/nodata. Displayed: it is what makes a withheld figure a
+    # marker with a reason instead of a missing bar.
+    band = models.CharField(max_length=16, blank=True, default="")
 
     # Provenance. Stored deliberately (Jonathan, 2026-09-14) and never
     # displayed: every read for display goes through `to_public()`, and reading
     # it for its source is spelled `with_source()` so it is greppable and
     # audited. See _BenchmarkValueQuerySet.with_source for why this is a naming
     # boundary rather than a technical one.
-    opportunity_id = models.IntegerField(db_index=True)
+    opportunity_id = models.IntegerField(db_index=True, null=True, blank=True)
+    # Provenance for an organisation row, under the same rule as
+    # `opportunity_id`: stored, never displayed.
+    organisation = models.CharField(max_length=100, blank=True, default="")
 
     objects = _BenchmarkValueManager()
 
@@ -203,9 +233,11 @@ class BenchmarkValue(models.Model):
         """The only projection that may leave this model; callers may narrow
         further, never widen."""
         return {
+            "unit": self.unit,
             "series": self.series,
             "indicator_id": self.indicator_id,
             "period": self.period,
             "peer_index": self.peer_index,
             "value": self.value,
+            "band": self.band,
         }

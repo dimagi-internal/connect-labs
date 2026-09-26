@@ -15,6 +15,14 @@ Anonymous peer figures for an opportunity: where it sits among comparable opport
 - **A trend ends where its figures settle**: an opportunity's latest case anchor date (KMC: first visit) plus the longest maturity window any indicator waits on (KMC: 42 days, derived from the registry by `semantic/maturity.py`). Every later saved run only repeats the settled figures, and drawing them made a finished opportunity a flat line at a tenure it never reached. The rule rides on the snapshot as `meta.settles`; see `publish.py::opportunity_ends`.
 - **Only rate-shaped indicators are published** (unit `%` or per-100). Counts, means and durations are withheld because the value would be the opportunity's size. This is a rule in `publish.py`, not a cohort setting.
 
+## Organisations as the peer unit
+
+The opportunity report's **Benchmarks** tab compares the reader's ORGANISATION with the programme's other organisations: a stable set of peers, where opportunities come and go. Every publication also stores organisation rows (`BenchmarkValue.unit = "organisation"`), one per member organisation per indicator, from the programme run's `byLLO` rows. Points only; no organisation trends.
+
+- **`complete_cohort`** (a cohort setting, on for both KMC cohorts): every member organisation on every non-count indicator. A figure the registry withheld (too few babies, not credible, not collected) stays in the set with its `band` instead of being dropped (R7 and R2 grade rather than drop), so the reader sees the same peers on every row, each withheld one as an outline with its reason. Off, withheld organisations are dropped, as opportunities are.
+- **Counts are never published**, either way: an organisation's case count is its size.
+- **Names never leave the store.** `organisation` is provenance like `opportunity_id`; `to_public()` carries neither. The publication's `organisation_of` map is what tells the read API which organisation row is the reader's own.
+
 ## Disclosure settings (per cohort, `disclosure.py`)
 
 | Setting                   | Meaning                                                                                   | Off                                   |

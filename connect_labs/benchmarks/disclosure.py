@@ -68,7 +68,7 @@ class PeerObservation:
     suppressed: bool = False
 
 
-def _tie_key(tie_salt: str, opportunity_id: int) -> str:
+def _tie_key(tie_salt: str, opportunity_id) -> str:
     """A deterministic-but-salted tiebreaker for R4 -- never opportunity_id alone."""
     return hashlib.blake2b(f"{tie_salt}:{opportunity_id}".encode(), digest_size=8).hexdigest()
 
@@ -198,3 +198,72 @@ def anonymise_series(
         )
         out[period] = [(peer_index[o.opportunity_id], o.value, o.opportunity_id) for o in kept]
     return out
+
+
+# The bands a figure may carry and still be drawn as a bar. The rest are the
+# registry saying the figure must not stand as a score (R7).
+DRAWABLE_BANDS = frozenset({"green", "yellow", "red", "unbanded"})
+
+
+@dataclass(frozen=True)
+class OrganisationCell:
+    """One organisation's graded cell for one indicator."""
+
+    organisation: str
+    value: float | None
+    band: str
+    denominator: int | None = None
+
+
+def anonymise_organisations(
+    cells, *, min_peers: int, min_denominator: int, tie_salt: str, complete: bool
+) -> list[tuple[int, float | None, str, str]]:
+    """`(peer_index, value, band, organisation)` per organisation, or [] if withheld.
+
+    The ORGANISATION counterpart of `anonymise_point`, for the benchmark tab's
+    stable peer set. Names are returned as provenance only; `to_public` never
+    carries them.
+
+    `complete` is the cohort's `complete_cohort`. On, every organisation stays in
+    the set: R7 and R2 no longer DROP a figure, they grade it -- a figure below
+    the cohort's minimum denominator is kept with band `insufficient`, and one
+    the registry withheld keeps its own band. The reader sees the same peers on
+    every indicator, each withheld one as a marker with its reason. R1 counts the
+    organisations with a drawable figure; R3 (no denominator out) and R4 (order
+    by value within the indicator, salted ties) hold either way.
+    """
+    if min_peers < 1:
+        raise ValueError("min_peers must be at least 1")
+    if not tie_salt or not tie_salt.strip():
+        raise ValueError("tie_salt must be a non-empty string that varies per indicator")
+    cells = list(cells)
+    names = [c.organisation for c in cells]
+    if len(set(names)) != len(names):
+        raise ValueError("duplicate organisation in one observation set")
+
+    graded = []
+    for c in cells:
+        band = c.band or "nodata"
+        thin = band in DRAWABLE_BANDS and c.denominator is not None and c.denominator < min_denominator
+        if thin:
+            band = "insufficient"
+        drawable = band in DRAWABLE_BANDS and c.value is not None
+        if not complete and not drawable:
+            continue
+        graded.append((c, band, drawable))
+    if sum(1 for _c, _b, drawable in graded if drawable) < min_peers:  # R1
+        return []
+
+    def key(item):
+        c, _band, drawable = item
+        # Drawable figures by value, then the withheld ones -- by value where
+        # they have one, then the valueless -- each tie broken by a salted hash.
+        return (
+            not drawable,
+            c.value is None,
+            c.value if c.value is not None else 0.0,
+            _tie_key(tie_salt, c.organisation),
+        )
+
+    ordered = sorted(graded, key=key)
+    return [(i, c.value, band, c.organisation) for i, (c, band, _d) in enumerate(ordered)]

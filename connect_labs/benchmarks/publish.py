@@ -30,8 +30,14 @@ import logging
 
 from django.db import transaction
 
-from connect_labs.benchmarks.disclosure import PeerObservation, anonymise_point, anonymise_series
-from connect_labs.benchmarks.models import BenchmarkPublication, BenchmarkValue
+from connect_labs.benchmarks.disclosure import (
+    OrganisationCell,
+    PeerObservation,
+    anonymise_organisations,
+    anonymise_point,
+    anonymise_series,
+)
+from connect_labs.benchmarks.models import UNIT_ORGANISATION, BenchmarkPublication, BenchmarkValue
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +130,54 @@ def _blocks(snapshot: dict) -> list[tuple[str, list, list, dict]]:
             )
         )
     return blocks
+
+
+def _organisation_blocks(snapshot: dict) -> list[tuple[str, list, list]]:
+    """`(series_name, measures, by_llo)` per indicator family -- the organisation rows."""
+    blocks = []
+    primary_measures = snapshot.get("cMeasures") or []
+    primary = _primary_series_name(primary_measures)
+    if primary:
+        blocks.append((primary, primary_measures, snapshot.get("byLLO") or []))
+    for name, block in sorted((snapshot.get("series") or {}).items()):
+        block = block or {}
+        blocks.append((str(name), block.get("measures") or [], block.get("byLLO") or []))
+    return blocks
+
+
+def organisation_of(snapshot: dict, members) -> dict[str, str]:
+    """`{"<opportunity>": "<organisation>"}` for the cohort's members, from the run."""
+    llo_map = ((snapshot or {}).get("deployment") or {}).get("llo_map") or {}
+    out = {}
+    for opp in members:
+        name = llo_map.get(str(opp)) or llo_map.get(opp)
+        if name:
+            out[str(int(opp))] = str(name)
+    return out
+
+
+def _organisation_cells(by_llo, indicator_id: str, organisations: set[str]) -> list[OrganisationCell]:
+    out = []
+    for row in by_llo or []:
+        name = (row or {}).get("llo")
+        if not name or name not in organisations:
+            continue
+        cell = ((row.get("ind") or {}).get(indicator_id)) or {}
+        value = cell.get("value")
+        try:
+            value = None if value is None else float(value)
+        except (TypeError, ValueError):
+            value = None
+        n = cell.get("n")
+        try:
+            n = None if n is None else int(float(n))
+        except (TypeError, ValueError):
+            n = None
+        band = str(cell.get("band") or "nodata")
+        if cell.get("thinDenominator") and band in PUBLISHABLE_BANDS:
+            band = "insufficient"
+        out.append(OrganisationCell(organisation=str(name), value=value, band=band, denominator=n))
+    return out
 
 
 # A COUNT is never publishable, whatever anyone declares. Opportunity sizes are
@@ -541,6 +595,8 @@ def publish_benchmark(
         published_by=published_by,
     )
     members = cohort.opportunity_ids
+    publication.organisation_of = organisation_of(snapshot, members)
+    publication.save(update_fields=["organisation_of"])
     thresholds = {"min_peers": cohort.min_peers, "min_denominator": cohort.min_denominator}
     # Computed once for the whole publication, not per indicator.
     starts = opportunity_starts(snapshot)
@@ -624,6 +680,47 @@ def publish_benchmark(
                             opportunity_id=opportunity_id,
                         )
                     )
+
+    # ── Organisations: the benchmark tab's stable peer set ──────────────────
+    # Points only. A complete cohort publishes every non-count indicator for
+    # every member organisation, withheld figures included with their band;
+    # otherwise the same indicators, and the same R7/R2 drops, as above.
+    organisations = set(publication.organisation_of.values())
+    complete = bool(getattr(cohort, "complete_cohort", False))
+    for series_name, measures, by_llo in _organisation_blocks(snapshot):
+        if not organisations or not by_llo:
+            continue
+        counts = count_indicator_ids(measures)
+        if complete:
+            allowed = {str(m.get("indicator")) for m in measures if m.get("indicator")} - counts
+        elif benchmarkable_indicator_ids is not None:
+            allowed = {str(i) for i in benchmarkable_indicator_ids} - counts
+        else:
+            allowed = resolve_benchmarkable_ids(measures) - counts
+        for indicator_id in sorted(allowed):
+            cells = _organisation_cells(by_llo, indicator_id, organisations)
+            if not cells:
+                continue
+            observed += len(cells)
+            for peer_index, value, band, organisation in anonymise_organisations(
+                cells,
+                **thresholds,
+                tie_salt=f"{publication.pk}:org:{series_name}:{indicator_id}",
+                complete=complete,
+            ):
+                rows.append(
+                    BenchmarkValue(
+                        publication=publication,
+                        unit=UNIT_ORGANISATION,
+                        series=series_name,
+                        indicator_id=indicator_id,
+                        period=None,
+                        peer_index=peer_index,
+                        value=value,
+                        band=band,
+                        organisation=organisation,
+                    )
+                )
 
     if withheld:
         logger.info(
