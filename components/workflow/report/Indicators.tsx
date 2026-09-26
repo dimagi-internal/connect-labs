@@ -50,6 +50,8 @@ export interface Display {
   reading: { column: string; label: string; unit?: string } | null;
   visits_pipeline: string | null;
   targets_note?: string | null;
+  /** The registry's default minimum denominator, when the payload carries it. */
+  min_denominator?: number | null;
 }
 
 type CatalogMeasure = Measure & {
@@ -150,6 +152,7 @@ export function displayOf(payload: any): Display {
     reading: raw.reading || null,
     visits_pipeline: raw.visits_pipeline || null,
     targets_note: raw.targets_note || null,
+    min_denominator: raw.min_denominator || null,
   };
 }
 
@@ -330,6 +333,7 @@ export function ReadingChart(props: {
     <svg
       viewBox={'0 0 ' + W + ' ' + H}
       className="w-full h-auto block"
+      style={{ maxHeight: 220, maxWidth: 720 }}
       role="img"
       aria-label={props.label || 'Readings'}
     >
