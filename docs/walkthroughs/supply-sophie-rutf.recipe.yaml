@@ -56,14 +56,14 @@ scenes:
   - kind: wait_for
     target: testid:timeline
   - kind: scroll_to
-    target: css:[data-testid=revision-line][data-fields~=expected_on]
+    target: css:[data-testid=revision-line][data-fields~=expected_on]:has-text('→')
   - kind: hover
-    target: css:[data-testid=revision-line][data-fields~=expected_on]
+    target: css:[data-testid=revision-line][data-fields~=expected_on]:has-text('→')
     seconds: 1.5
     say: 19 Sep
     note: the ETA change, in words, with its actor badge
   - kind: click
-    target: css:[data-testid=revision-line][data-fields~=expected_on] [data-testid=actor-badge]
+    target: css:[data-testid=revision-line][data-fields~=expected_on]:has-text('→') [data-testid=actor-badge]
     note: open the source behind the AI's entry
   - kind: wait_for
     target: testid:source-excerpt
@@ -177,17 +177,17 @@ scenes:
     seconds: 1.0
     note: let the scene's own page paint before the before-frame
   - kind: wait_for
-    target: css:[data-testid=revision-line][data-fields~=base_per_pack_stated]
+    target: css:[data-testid=revision-line][data-fields~=base_per_pack_stated]:has-text('corrected')
     must_succeed: true
     timeout_ms: 15000
   - kind: hover
     note: the answer, recorded as a correction to the quote
     say: '150'
     seconds: 1.5
-    target: css:[data-testid=revision-line][data-fields~=base_per_pack_stated]
+    target: css:[data-testid=revision-line][data-fields~=base_per_pack_stated]:has-text('corrected')
   - kind: click
     note: open the reply the agent recorded as its source
-    target: css:[data-testid=revision-line][data-fields~=base_per_pack_stated] [data-testid=actor-badge]
+    target: css:[data-testid=revision-line][data-fields~=base_per_pack_stated]:has-text('corrected') [data-testid=actor-badge]
   - kind: wait_for
     target: testid:source-excerpt
   - kind: hold

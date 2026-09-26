@@ -379,6 +379,16 @@ class TestOrder:
         assert row.stale == ["ETA 5 Sep passed, not received"]
         assert row.url == reverse("supply_chain:order_detail", args=[contract["id"]])
 
+    def test_an_order_paid_in_advance_with_goods_on_the_road_reads_paid_in_transit(self, da, base):
+        contract = _order(da, base, "PO-1")
+        _ship(da, contract, datetime.date(2026, 9, 5))
+        _pay(da, _invoice(da, contract))
+
+        row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
+
+        assert row.stage == "paid, in transit"
+        assert row.waiting_on == "arrival (ETA 5 Sep)"
+
     def test_an_eta_still_ahead_is_not_flagged(self, da, base):
         contract = _order(da, base, "PO-1")
         _ship(da, contract, TODAY)
