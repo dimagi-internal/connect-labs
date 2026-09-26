@@ -703,7 +703,7 @@ def test_tender_two_is_not_comparable_and_each_quote_fails_for_a_distinct_reason
 
     # Three distinct failure modes, in the product's own words.
     assert any("pack spec not stated" in r for r in reasons["Placeholder Supplier A"])
-    assert any("2400" in r and "2000" in r for r in reasons["Placeholder Supplier B"])
+    assert any("2,400" in r and "2,000" in r for r in reasons["Placeholder Supplier B"])
     assert any(
         "duties excluded from the quote but no duties amount recorded" in r for r in reasons["Placeholder Supplier C"]
     )

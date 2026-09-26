@@ -81,6 +81,11 @@ def _split_unit(field) -> tuple[str, str]:
     return name, ""
 
 
+def figure_name(field) -> str:
+    """A figure's name without the unit it ends in: `moisture_pct` -> "moisture"."""
+    return _split_unit(field)[0]
+
+
 def figure_unit(field) -> str:
     """The unit a figure's name says it is stated in: `range_max_mg_per_l` -> "mg/L", else ""."""
     return _split_unit(field)[1]
@@ -108,16 +113,76 @@ def _as_decimal(raw):
         return None
 
 
-def _resolve(field, quote: Quote, item):
+# Requirement names that ask for a figure the quote and the trade item also
+# carry in their own columns. A supplier who wrote "150 sachets per carton" on
+# the quote has answered "sachets per carton", however the figure was typed in.
+SHELF_LIFE_FIELDS = frozenset({"shelf_life_months", "shelf_life"})
+
+
+def pack_count_fields(commodity) -> frozenset:
+    """The requirement names that mean "base units per pack" for this commodity:
+    `sachets_per_carton` for RUTF, and the generic `units_per_pack`."""
+    names = {"base_per_pack", "units_per_pack"}
+    base = (getattr(commodity, "base_unit", "") or "").lower()
+    pack = (getattr(commodity, "pack_unit", "") or "").lower()
+    if base and pack:
+        names |= {f"{base}s_per_{pack}", f"{base}_per_{pack}"}
+    return frozenset(names)
+
+
+def is_pack_count_field(field, commodity) -> bool:
+    return (field or "").lower() in pack_count_fields(commodity)
+
+
+def is_shelf_life_field(field) -> bool:
+    return (field or "").lower() in SHELF_LIFE_FIELDS
+
+
+def _item_column(field, item, commodity):
+    """A requirement the trade item's own columns answer (units per pack, shelf life)."""
+    if item is None:
+        return None
+    if is_pack_count_field(field, commodity):
+        return item.base_per_pack
+    if is_shelf_life_field(field):
+        return item.shelf_life_months
+    return None
+
+
+def _quote_column(field, quote, commodity):
+    """A requirement the quote's own columns answer.
+
+    Units per pack counts only when the quote says it was stated on the quote:
+    a figure left behind by some other source is not the supplier's statement.
+    """
+    if is_pack_count_field(field, commodity):
+        if getattr(quote, "pack_spec_source", "") == "stated_on_quote":
+            return quote.base_per_pack_stated
+        return None
+    if is_shelf_life_field(field):
+        return quote.shelf_life_months_stated
+    return None
+
+
+def _resolve(field, quote: Quote, item, commodity=None):
     """(value, origin, conflict) for one requirement field.
 
     The item's specification sheet wins over the supplier's claim: one is a
     durable property of a product, the other is what somebody wrote in an email.
     A disagreement between them is not swallowed — it is reported, because a
     supplier claiming a specification the sheet contradicts is worth a look.
+
+    Each side is read from its specification first and then from its own
+    columns: a quote that states 150 sachets per carton, or a shelf life, has
+    answered the requirement that asks for it, and "not stated" beside a
+    stated figure is the contradiction this exists to prevent.
     """
     item_value = item.spec_attributes.get(field) if item is not None else None
+    if item_value is None:
+        item_value = _item_column(field, item, commodity)
     quote_value = quote.stated_spec.get(field)
+    if quote_value is None:
+        quote_value = _quote_column(field, quote, commodity)
 
     if item_value is not None:
         conflict = quote_value is not None and _as_decimal(quote_value) != _as_decimal(item_value)
@@ -145,7 +210,7 @@ def check_compliance(
 
         unit = requirement.get("unit", "")
         required = _as_decimal(requirement.get("value"))
-        raw_value, origin, conflict = _resolve(field, quote, item)
+        raw_value, origin, conflict = _resolve(field, quote, item, commodity)
         stated = _as_decimal(raw_value)
 
         if stated is None:
@@ -162,7 +227,7 @@ def check_compliance(
             )
             continue
 
-        suffix = " (per the item specification)" if origin == "item" else ""
+        suffix = {"item": " (per the item specification)", "quote": " (stated on the quote)"}.get(origin, "")
         if conflict:
             suffix += "; the quote claims a different value"
 

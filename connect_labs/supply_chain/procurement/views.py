@@ -34,7 +34,11 @@ from django.views.generic import TemplateView
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
 from connect_labs.supply_chain.fulfilment.forms import DocumentForm
-from connect_labs.supply_chain.history.timeline import ai_entered_quotes, timeline_for_tender
+from connect_labs.supply_chain.history.timeline import (
+    ai_entered_quotes,
+    corrections_for_quotes,
+    timeline_for_tender,
+)
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.forms import (
@@ -406,6 +410,18 @@ class ComparisonView(_Base):
             if comparison
             else {}
         )
+        # Offers a correction brought into the ranking, and what it changed,
+        # so why an offer joined is read on its row rather than hunted for.
+        context["corrections"] = (
+            corrections_for_quotes(
+                [row.get("quote_id") for row in comparison.get("comparable") or []],
+                program_id=_access(self.request).program_id,
+                until=getattr(self.request, "supply_as_of", None),
+            )
+            if comparison
+            else {}
+        )
+        context["history_url"] = reverse("supply_chain:procurement_tender_detail", args=[tender_id]) + "#history"
         context["table_columns"] = table_columns(comparison) if comparison else []
         if comparison and context["table_columns"]:
             context["folded_columns"] = list(folded_columns(comparison).values())

@@ -304,6 +304,9 @@ class DomainHomeView(OperationBase):
             own_org_id=org.pk if org is not None else None,
         )
         context["standing_now"] = end_of_day(as_of) if as_of else timezone.now()
+        # The tenders table below says "awarded, provisional" where the row
+        # above does, rather than a bare "awarded" beside it.
+        context["provisional_tender_ids"] = {r.tender_id for r in context["standing"] if r.provisional}
 
         commodity_slug = self.request.GET.get("commodity") or None
         commodities = self.op("commodity_list")
@@ -318,9 +321,13 @@ class DomainHomeView(OperationBase):
         # The buyer of record by name: "programme org" is the role, not who.
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
 
-        checks = self.op("checks_list")
-        context["checks"] = checks
-        context["checks_by_audience"] = checks_by_audience(checks)
+        # Not on a past date: the checks read today's date and reference rows
+        # a rewind leaves live, so the template says so instead of showing
+        # today's answers under a past date.
+        if as_of is None:
+            checks = self.op("checks_list")
+            context["checks"] = checks
+            context["checks_by_audience"] = checks_by_audience(checks)
         return context
 
 

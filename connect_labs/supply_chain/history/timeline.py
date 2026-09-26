@@ -56,6 +56,15 @@ class Entry:
     # The attnames this line changed, for a page (or a walkthrough) to find a
     # line by what it is about: `[data-fields~=expected_on]`.
     fields: tuple = ()
+    # What the excerpt was, as far as its reference says: an email's
+    # Message-ID holds an "@"; anything else is a document. Blank with no source.
+    source_kind: str = ""
+    # When the write that quoted it was recorded.
+    recorded_on: object = None  # datetime
+    # The last time the same evidence arrived again and was answered from the
+    # first write rather than written twice; None when it never did (or, on a
+    # past date, had not yet).
+    replayed_at: object = None  # datetime
 
 
 # ---- scope ---------------------------------------------------------------
@@ -281,7 +290,22 @@ def _fold_lines(revisions, lookup):
     return kept, suffixes
 
 
-def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None) -> Entry:
+def source_kind(ref) -> str:
+    """ "Email" for a Message-ID, "Document" for any other reference, "" for none."""
+    if not ref:
+        return ""
+    return "Email" if "@" in ref else "Document"
+
+
+def _replayed_at(call, until):
+    if call is None or not getattr(call, "replay_count", 0) or call.last_replayed_at is None:
+        return None
+    if until is not None and call.last_replayed_at > end_of_day(until):
+        return None
+    return call.last_replayed_at
+
+
+def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None, until=None) -> Entry:
     """One revision as one timeline line.
 
     `offer_fixes` is off in as-of mode: a past date is read-only. Correct and
@@ -303,6 +327,9 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None) -
         excerpt=getattr(call, "source_excerpt", "") or "",
         source_ref=getattr(call, "source_ref", "") or "",
         fields=tuple(k for k in revision.changes if k not in HIDDEN_FIELDS) if revision.action != "delete" else (),
+        source_kind=source_kind(getattr(call, "source_ref", "")),
+        recorded_on=getattr(call, "recorded_at", None) or revision.recorded_at,
+        replayed_at=_replayed_at(call, until),
     )
     if model is None:
         return entry
@@ -396,7 +423,7 @@ def _timeline(revisions, until) -> list[Entry]:
     live = set(_live_quotes(quote_ids)) if quote_ids and until is None else set()
     entries = []
     for revision in revisions:
-        entry = entry_for(revision, lookup=lookup, offer_fixes=until is None, live_quote_ids=live)
+        entry = entry_for(revision, lookup=lookup, offer_fixes=until is None, live_quote_ids=live, until=until)
         if id(revision) in corrections:
             _as_correction(entry, revision, corrections[id(revision)], lookup)
         # Lines come oldest first inside the call, as they were entered.
@@ -433,3 +460,48 @@ def ai_entered_quotes(quote_ids, *, program_id) -> dict:
     ).select_related("call__actor")
     lookup = Lookup()
     return {int(r.object_id): actor_label(r.call, lookup) for r in creates if is_ai(r.call)}
+
+
+def corrections_for_quotes(quote_ids, *, program_id, until=None) -> dict:
+    """{quote id: {"when", "changes", "actor", "is_ai"}} for the quotes whose version a correction made.
+
+    What the timeline's correction line says, cut to what the quote says now
+    ("units per pack 150"), so a comparison row can show why an offer that
+    was blocked has joined the ranking. Read from each version's create
+    revision and the `quote_correct` call that wrote it. Three queries.
+    """
+    from connect_labs.supply_chain.models import Quote
+
+    ids = sorted({int(pk) for pk in quote_ids if pk is not None})
+    if not ids:
+        return {}
+    creates = Revision.objects.filter(
+        _type_q(Quote),
+        action="create",
+        object_id__in=[str(pk) for pk in ids],
+        program_id=program_id,
+        call__operation="quote_correct",
+    ).select_related("call__actor")
+    if until is not None:
+        creates = creates.filter(recorded_at__lte=end_of_day(until))
+    creates = list(creates)
+    if not creates:
+        return {}
+    old = {
+        row.superseded_by_id: _values(row)
+        for row in Quote._base_manager.filter(superseded_by_id__in=[int(r.object_id) for r in creates])
+    }
+    lookup = Lookup()
+    out = {}
+    for revision in creates:
+        quote_id = int(revision.object_id)
+        new_values = {k: v[1] for k, v in revision.changes.items()}
+        text, _fields = correction_sentence(Quote, old.get(quote_id, {}), new_values, lookup, with_before=False)
+        _, _, changes = text.partition(": ")
+        out[quote_id] = {
+            "when": revision.recorded_at,
+            "changes": changes,
+            "actor": actor_label(revision.call, lookup),
+            "is_ai": is_ai(revision.call),
+        }
+    return out
