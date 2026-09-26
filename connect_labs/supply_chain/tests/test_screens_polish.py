@@ -1073,4 +1073,5 @@ class TestACheckSaysWhatItsAgeCountsFrom:
 
         assert check_audience(self._check("shipment_documents_outstanding")) == "Ours to chase"
         assert check_audience(self._check("award_not_contracted")) == "Ours to answer"
+        assert check_audience(self._check("shipment_overdue")) == "Ours to chase"
         assert check_audience(self._check("shipment_overdue", audience="supplier")) == ("Only the supplier can answer")

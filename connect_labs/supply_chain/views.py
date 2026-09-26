@@ -322,7 +322,26 @@ class ChecksView(OperationBase):
         ]
         context["kind"] = kind
         context["category"] = category
+        if not checks["checks"] and not kind and not category:
+            context["arrived"] = self._arrived()
         return context
+
+    def _arrived(self):
+        """Consignments that have arrived, each with its documents -- what an empty list is empty OF."""
+        out = []
+        for shipment in self.op("shipment_list", status="delivered")[:8]:
+            required = shipment.get("required_documents") or []
+            documents = (
+                {d["kind"] for d in self.op("document_list", shipment_id=shipment["id"])} if required else set()
+            )
+            out.append(
+                {
+                    **shipment,
+                    "required": len(required),
+                    "on_file": sum(1 for entry in required if entry.get("kind") in documents),
+                }
+            )
+        return out
 
 
 class OrdersView(OperationBase):

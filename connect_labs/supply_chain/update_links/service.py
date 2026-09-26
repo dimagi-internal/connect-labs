@@ -677,9 +677,25 @@ def updates_for_contract(contract) -> list[dict]:
     Asked of the database: a submission carries the order it touched, so this
     is one query however many links and submissions the programme has.
     """
-    submissions = UpdateLinkSubmission.objects.filter(
-        link__program_id=contract.program_id, contract=contract
-    ).select_related("link__org")
+    submissions = list(
+        UpdateLinkSubmission.objects.filter(link__program_id=contract.program_id, contract=contract).select_related(
+            "link__org"
+        )
+    )
+    # A release names no order -- it moves stock of an item between places --
+    # so it was missing from the order it continues. Add the releases of this
+    # order's item made through the links that reported on this order.
+    if contract.item_id:
+        link_ids = {submission.link_id for submission in submissions}
+        releases = UpdateLinkSubmission.objects.filter(
+            link_id__in=link_ids, action="record_release", contract__isnull=True
+        ).select_related("link__org")
+        moved = set(
+            Movement.objects.filter(
+                pk__in=[r.result_id for r in releases if r.result_id], item_id=contract.item_id
+            ).values_list("pk", flat=True)
+        )
+        submissions += [r for r in releases if r.result_id in moved]
     updates = [
         {
             "org": submission.link.org.name,

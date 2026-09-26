@@ -392,3 +392,7 @@ class TestReadBackNamesTheRecord:
         assert "Record a release —" not in page
         order = _visible(_order_page(scoped, world))
         assert "Goods received" in order and "record receipt" not in order.lower()
+        # A release carries no order of its own, but the same link released
+        # this order's item: the order's panel lists it beside the receipt.
+        panel = order.split("Recorded through the update link", 1)[1].split("Landed cost", 1)[0]
+        assert "Release — REL-1: 60 units from Harmattan warehouse to Dawaki project site" in panel

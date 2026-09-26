@@ -522,7 +522,10 @@ def check_audience(check):
     """Who can answer a check. A documents check is ours when several parties
     owe papers -- we are the ones chasing them, so it says so rather than
     claiming we can answer for papers somebody else holds."""
-    if check.get("kind") == "shipment_documents_outstanding" and check.get("audience") == "internal":
+    if (
+        check.get("kind") in ("shipment_documents_outstanding", "shipment_overdue")
+        and check.get("audience") == "internal"
+    ):
         return "Ours to chase"
     return audience_label(check.get("audience"))
 

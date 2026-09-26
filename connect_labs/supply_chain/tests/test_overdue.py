@@ -94,6 +94,16 @@ class TestShipmentOverdue:
         assert check["facts"]["supplier"] == {"id": contract["supplier_id"], "name": "A donor"}
         assert check["days_open"] == 90
 
+    def test_a_late_shipment_on_the_road_is_the_suppliers_to_answer(self, da, contract):
+        _shipment(da, contract, TODAY - timedelta(days=9))
+        assert _found(da, "shipment_overdue")[0]["audience"] == "supplier"
+
+    def test_a_late_shipment_held_at_customs_is_ours_to_chase(self, da, contract):
+        # At customs it is the clearing that is outstanding, which the
+        # programme chases -- "only the supplier can answer" was wrong there.
+        _shipment(da, contract, TODAY - timedelta(days=9), status="at_customs")
+        assert _found(da, "shipment_overdue")[0]["audience"] == "internal"
+
     def test_one_not_yet_due_is_not(self, da, contract):
         _shipment(da, contract, TODAY + timedelta(days=3))
         assert _found(da, "shipment_overdue") == []
@@ -216,6 +226,31 @@ class TestTheScreens:
         assert "A donor" in body
         # Links back to the order it is about.
         assert reverse("supply_chain:order_detail", args=[contract["id"]]) in body
+
+    def test_the_page_names_itself_in_plain_words(self, scoped, da, contract):
+        from django.urls import reverse
+
+        body = scoped.get(reverse("supply_chain:checks")).content.decode()
+        assert "Checks: what is missing, in conflict or overdue" in body
+        assert "cannot answer, or disagrees with itself" not in body
+
+    def test_with_nothing_to_report_it_says_what_has_arrived(self, scoped, da, contract, monkeypatch):
+        from django.urls import reverse
+
+        from connect_labs.supply_chain import views
+
+        _shipment(da, contract, TODAY - timedelta(days=9), status="delivered")
+        real_op = views.ChecksView.op
+
+        def op_with_nothing_to_report(self, name, **kwargs):
+            if name == "checks_list":
+                return {"checks": [], "kinds": {}, "count": 0}
+            return real_op(self, name, **kwargs)
+
+        monkeypatch.setattr(views.ChecksView, "op", op_with_nothing_to_report)
+        body = scoped.get(reverse("supply_chain:checks")).content.decode()
+        assert "Nothing to report" in body
+        assert "Arrived" in body and "SHIP-1" in body
 
     def test_the_checks_page_filters_by_kind(self, scoped, da, contract):
         from django.urls import reverse
