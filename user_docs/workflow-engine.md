@@ -134,12 +134,18 @@ The programme report includes:
 - **Trends across saved reports** — how figures have moved across the weeks for which a report has been saved.
 - **Definitions tab** — a plain-English explanation of every number on the report.
 
+#### Opportunity names in the report
+
+Opportunities in the programme report — including the opportunity table, the breadcrumb and title when you drill into a partner, and facilitator rows — display their real names rather than their internal ID numbers. For example, you will see **"[Synthetic] Spark facilitator - Partner A"** instead of **"Opportunity 10082"**.
+
+If your programme uses custom labels for its opportunities, those labels appear automatically throughout the report wherever an opportunity name is shown.
+
 #### Drilling down
 
 The report supports a full drill-down cascade:
 
-1. Click an **organisation** to narrow to that organisation's workers and data. The header count updates to reflect only that organisation's cases.
-2. Click an **opportunity** to narrow further to that opportunity.
+1. Click an **organisation** to narrow to that organisation's workers and data. The header count updates to reflect only that organisation's cases, visits, communities, facilitators, and opportunity count — not the whole programme's totals.
+2. Click an **opportunity** to narrow further to that opportunity. The header updates again to reflect only that opportunity's data.
 3. Click a **worker** to open the **Indicator Worker Review** for that individual.
 
 #### Saving a weekly run
@@ -156,7 +162,7 @@ The **Indicator Worker Review** (created automatically alongside the programme r
 
 #### Indicator Opportunity Report
 
-The **Indicator Opportunity Report** template creates a standalone report for a single opportunity, intended for use by that opportunity's network manager. It includes the same indicator view as the programme report but scoped to one opportunity, plus a **Benchmarks tab** that shows how that opportunity compares to others. Each time the programme report saves a weekly run, the opportunity report receives the same data automatically — no separate run is needed.
+The **Indicator Opportunity Report** template creates a standalone report for a single opportunity, intended for use by that opportunity's network manager. It includes the same indicator view as the programme report but scoped to one opportunity — and the opportunity's real name appears in the report title rather than its ID number. The report also includes a **Benchmarks tab** that shows how that opportunity compares to others. Each time the programme report saves a weekly run, the opportunity report receives the same data automatically — no separate run is needed.
 
 Create it from **Workflows → Create Workflow → "Indicator Opportunity Report"** (listed under *Opportunity reports*).
 
@@ -226,5 +232,4 @@ The **MBW Visit Verification** template creates a single-table dashboard for opp
 The dashboard has three tabs:
 
 - **Dashboard** — the main visit-by-visit table described above.
-- **Verification Summary** — aggregated pass rates and a stacked bar chart showing how verification outcomes break down across field workers or visits.
-- **Definitions** — a reference tab that documents exactly how every column and metric in the dashboard is calculated. This includes which visits are included (the field worker must be flagged for verification and the visit's form must contain the verification questions), what each of the 15 table columns means, the exact logic behind each Pass / Fail / NA / Not available / ERROR outcome for GPS, QR code, signature, mother questions, and ANC card checks, what counts as an "attempted" verification method, the colour legend, and how the three Verification Summary percentages and the stacked bar chart are computed. For each column or metric, the Definitions tab also shows the exact pipeline field
+- **Verification Summary** — aggregated pass rates and a stacked bar
