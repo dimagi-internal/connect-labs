@@ -133,7 +133,10 @@ silently lacks.
     <div id="pm-map"></div>
     <div class="pm-legend" id="pm-legend"></div>
     <div class="pm-layers">
-      <label><input type="checkbox" id="pm-layer-flows" checked> Movement</label>
+      <label><input type="checkbox" id="pm-layer-flows" checked> Movement,
+        <select id="pm-window" style="background:transparent;color:inherit;border:0;font-size:12px" aria-label="Movement window">
+          <option value="30">last 30 days</option><option value="90">last 90 days</option><option value="180">last 180 days</option>
+        </select></label>
       <label><input type="checkbox" id="pm-layer-network"> Network members</label>
     </div>
   </div>

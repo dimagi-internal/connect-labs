@@ -153,62 +153,80 @@ def _check_wire(check, *, point_id=None, scope=""):
     }
 
 
-# How far back the map draws movement that has already happened. Long enough
-# to show a chain's shape, short enough that last year's routes do not read
-# as this month's.
-FLOW_WINDOW_DAYS = 90
+# How far back the map offers movement that has already happened. The page
+# chooses a window inside it (30, 90 or 180 days); routes arrive bucketed by
+# week so choosing one needs no round trip.
+FLOW_HISTORY_DAYS = 180
 # Movement kinds that carry stock from one place to another. A consumption, a
 # loss or an adjustment happens AT a place and has no route to draw.
 _ROUTED = ("transfer", "distribution", "issue", "return")
 
 
-def _flows(movements, since):
-    """Recent movement between two places, one entry per route and commodity.
+def _flows(program_id, since):
+    """Movement between two places, one row per route, commodity, unit and week.
 
-    Summed per unit within one program and one commodity -- never across
-    either, so no carton is ever added to a jerry can.
+    Aggregated in the database from the program's whole ledger -- not from a
+    capped page of recent movements, which silently drops history on a busy
+    program. Summed per unit within one commodity, never across either, so no
+    carton is ever added to a jerry can.
     """
-    routes: dict[tuple, dict] = {}
-    for m in movements:
-        if m["kind"] not in _ROUTED or not (m["from_supply_point_id"] and m["to_supply_point_id"]):
-            continue
-        if not m["occurred_on"] or m["occurred_on"] < since:
-            continue
-        key = (m["from_supply_point_id"], m["to_supply_point_id"], m["commodity_slug"])
-        route = routes.setdefault(
-            key,
-            {
-                "from_supply_point_id": key[0],
-                "to_supply_point_id": key[1],
-                "commodity_slug": key[2],
-                "kinds": set(),
-                "count": 0,
-                "last_on": "",
-                "quantity": {},
-            },
+    from django.db.models import Count, Max, Sum
+    from django.db.models.functions import TruncWeek
+
+    from connect_labs.supply_chain.models import Movement
+
+    rows = (
+        Movement.objects.for_program(program_id)
+        .filter(
+            kind__in=_ROUTED,
+            from_supply_point__isnull=False,
+            to_supply_point__isnull=False,
+            occurred_on__gte=since,
         )
-        route["kinds"].add(m["kind"])
-        route["count"] += 1
-        route["last_on"] = max(route["last_on"], m["occurred_on"])
-        amount = float(m["quantity"] or 0)
-        route["quantity"][m["quantity_unit"]] = route["quantity"].get(m["quantity_unit"], 0) + amount
-    return [{**r, "kinds": sorted(r["kinds"])} for r in routes.values()]
+        .annotate(week=TruncWeek("occurred_on"))
+        .values("from_supply_point_id", "to_supply_point_id", "commodity__slug", "quantity_unit", "kind", "week")
+        .annotate(total=Sum("quantity"), count=Count("id"), last_on=Max("occurred_on"))
+        .order_by("week")
+    )
+    return [
+        {
+            "from_supply_point_id": row["from_supply_point_id"],
+            "to_supply_point_id": row["to_supply_point_id"],
+            "commodity_slug": row["commodity__slug"],
+            "unit": row["quantity_unit"],
+            "kind": row["kind"],
+            "week": row["week"].isoformat(),
+            "quantity": float(row["total"]),
+            "count": row["count"],
+            "last_on": row["last_on"].isoformat(),
+        }
+        for row in rows
+    ]
 
 
-def _holdings(movements, names):
-    """{supply_point_id: [commodity it has held or handled]} from the ledger.
+def _holdings(program_id, names):
+    """{supply_point_id: [commodity it has held or handled]}, balanced in the database.
 
-    `held` is a positive balance in at least one unit -- in minus out, the
-    ledger's own sign convention -- so the commodity filter can tell "has
-    some" from "has dealt in it".
+    In minus out per point, commodity and unit -- the ledger's own sign
+    convention, in two grouped queries over the whole ledger. `held` is a
+    positive balance in at least one unit, so the commodity filter can tell
+    "has some" from "has dealt in it".
     """
+    from django.db.models import Sum
+
+    from connect_labs.supply_chain.models import Movement
+
+    ledger = Movement.objects.for_program(program_id)
     balance: dict[int, dict] = {}
-    for m in movements:
-        for point_id, sign in ((m["to_supply_point_id"], 1), (m["from_supply_point_id"], -1)):
-            if not point_id:
-                continue
-            units = balance.setdefault(point_id, {}).setdefault(m["commodity_slug"], {})
-            units[m["quantity_unit"]] = units.get(m["quantity_unit"], 0) + sign * float(m["quantity"] or 0)
+    for field, sign in (("to_supply_point_id", 1), ("from_supply_point_id", -1)):
+        rows = (
+            ledger.filter(**{f"{field}__isnull": False})
+            .values(field, "commodity__slug", "quantity_unit")
+            .annotate(total=Sum("quantity"))
+        )
+        for row in rows:
+            units = balance.setdefault(row[field], {}).setdefault(row["commodity__slug"], {})
+            units[row["quantity_unit"]] = units.get(row["quantity_unit"], 0) + sign * float(row["total"])
     return {
         point_id: [
             {
@@ -223,18 +241,21 @@ def _holdings(movements, names):
     }
 
 
-def _cover(access):
-    """{supply_point_id: {commodity_slug: cover}} -- what each place holds of each commodity, and for how long.
+def _cover(access, commodity_slug):
+    """{supply_point_id: cover} -- what each place holds of ONE commodity, and for how long.
 
-    `network_stock` reports cover for ONE item at a time (months of stock is
+    `network_stock` reports cover for one item at a time (months of stock is
     a quantity over a rate, and neither means anything summed across trade
-    items), so it is asked once per item. Where a commodity comes in several
-    items the one this place holds most of speaks for it. Every figure is the
-    operation's own -- quantity in its unit, cover or the reason there is
-    none -- so the map and the Stock page cannot disagree.
+    items), so it is asked once per item OF THIS COMMODITY -- only when the
+    page asks for it, because it is the most expensive thing the map shows
+    (a resupply plan per place per item). Where a commodity comes in several
+    items the one a place holds most of speaks for it. Every figure is the
+    operation's own, so the map and the Stock page cannot disagree.
     """
     by_point: dict[int, dict] = {}
     for item in call_operation("item_list", access, {}):
+        if item["commodity_slug"] != commodity_slug:
+            continue
         for row in call_operation("network_stock", access, {"item_id": item["id"]})["points"]:
             on_hand = row.get("on_hand") or {}
             try:
@@ -252,11 +273,23 @@ def _cover(access):
                 "min_months_of_stock": row.get("min_months_of_stock"),
                 "max_months_of_stock": row.get("max_months_of_stock"),
             }
-            held = by_point.setdefault(row["supply_point_id"], {})
-            current = held.get(item["commodity_slug"])
+            current = by_point.get(row["supply_point_id"])
             if current is None or (amount or 0) > (current["amount"] or 0):
-                held[item["commodity_slug"]] = cover
+                by_point[row["supply_point_id"]] = cover
     return by_point
+
+
+def portfolio_cover(request, portfolio, reachable, commodity_slug, *, everything=False) -> dict:
+    """{program_id: {supply_point_id: cover}} for one commodity, over the same programs the page shows.
+
+    The Stock colour mode and a place's panel fetch this when they need it.
+    It answers only for programs `portfolio_programs` yields -- the page's own
+    access rule -- so it can reveal nothing the page could not.
+    """
+    return {
+        program_id: _cover(_access(request, program_id), commodity_slug)
+        for program_id, _ in portfolio_programs(portfolio, reachable, everything=everything)[0]
+    }
 
 
 def program_map(request, program_id, program) -> dict:
@@ -270,11 +303,9 @@ def program_map(request, program_id, program) -> dict:
     contracts = {c["id"]: c for c in call_operation("contract_list", access, {})}
     shipments = {s["id"]: s for s in call_operation("shipment_list", access, {})}
     suppliers = {s["id"]: s for s in call_operation("supplier_list", access, {})}
-    movements = call_operation("movement_list", access, {"limit": 2000})
     on_the_road = call_operation("consignment_list", access, {"status": "dispatched"})
     names = {c["slug"]: c["name"] for c in call_operation("commodity_list", access, {})}
-    holdings = _holdings(movements, names)
-    cover = _cover(access)
+    holdings = _holdings(program_id, names)
     # Organisations are labs-wide rather than program-scoped (org_list says
     # so), so naming the ones that manage these points reveals nothing the
     # program does not already hold. Only the ids in play are read, rather
@@ -379,9 +410,6 @@ def program_map(request, program_id, program) -> dict:
             # to it -- so the commodity filter finds a store about to receive
             # ORS as well as one holding it.
             "commodities": holdings.get(point_id, []),
-            # Per commodity: on hand in its own unit, months of stock against
-            # the place's own band, or the reason cover cannot be said.
-            "cover": cover.get(point_id, {}),
             "owed_commodities": sorted(
                 {
                     c["commodity_slug"]
@@ -449,7 +477,7 @@ def program_map(request, program_id, program) -> dict:
         "name": program.get("name") or f"Program {program_id}",
         "summary": call_operation("chain_summary", access, {}),
         "commodities": [{"slug": slug, "name": name} for slug, name in sorted(names.items(), key=lambda kv: kv[1])],
-        "flows": _flows(movements, (date.today() - timedelta(days=FLOW_WINDOW_DAYS)).isoformat()),
+        "flows": _flows(program_id, date.today() - timedelta(days=FLOW_HISTORY_DAYS)),
         # Allocated to a place and not yet moved: a distribution line with no
         # movement, which the ledger calls committed. Drawn as on its way.
         # Our own stock on the road between two of our places (models.Consignment).
@@ -496,13 +524,13 @@ def program_map(request, program_id, program) -> dict:
     }
 
 
-def portfolio_map(request, portfolio, reachable, *, everything=False) -> dict:
-    """Every reachable program in the portfolio's own order, plus what is hidden.
+def portfolio_programs(portfolio, reachable, *, everything=False):
+    """([(program_id, in_portfolio)], hidden) -- the ONE access rule the map has.
 
-    With `everything`, every OTHER program the viewer can reach that has a
-    supply point follows the portfolio's own -- "all the supply points we know
-    about". The access rule is the same one: nothing outside `reachable` is
-    ever read.
+    The portfolio's own programs in its stated order, keeping only those the
+    viewer can already reach; with `everything`, every other reachable program
+    that has a supply point after them. Shared by the page and the cover
+    endpoint, so the two cannot disagree about what a viewer may see.
     """
     from connect_labs.supply_chain.models import SupplyPoint
 
@@ -517,20 +545,37 @@ def portfolio_map(request, portfolio, reachable, *, everything=False) -> dict:
             hidden += 1
             continue
         seen.add(program_id)
-        programs.append({**program_map(request, program_id, reachable[program_id]), "in_portfolio": True})
+        programs.append((program_id, True))
     if everything:
         with_points = set(
             SupplyPoint.objects.filter(program_id__in=list(reachable), status="active")
             .values_list("program_id", flat=True)
             .distinct()
         )
-        for program_id in sorted(with_points - seen):
-            programs.append({**program_map(request, program_id, reachable[program_id]), "in_portfolio": False})
+        programs += [(program_id, False) for program_id in sorted(with_points - seen)]
+    return programs, hidden
+
+
+def portfolio_map(request, portfolio, reachable, *, everything=False) -> dict:
+    """Every reachable program in the portfolio's own order, plus what is hidden.
+
+    With `everything`, every OTHER program the viewer can reach that has a
+    supply point follows the portfolio's own -- "all the supply points we know
+    about". The access rule is `portfolio_programs`: nothing outside
+    `reachable` is ever read.
+    """
+    chosen, hidden = portfolio_programs(portfolio, reachable, everything=everything)
+    programs = [
+        {**program_map(request, program_id, reachable[program_id]), "in_portfolio": in_portfolio}
+        for program_id, in_portfolio in chosen
+    ]
     return {
         "portfolio": {"slug": portfolio.slug, "name": portfolio.name},
         "stated": len(portfolio.program_ids),
         "hidden": hidden,
         "everything": everything,
+        "cover_url": reverse("supply_chain:portfolio_map_cover", args=[portfolio.slug])
+        + ("?scope=all" if everything else ""),
         "programs": programs,
         "network": network_members(),
         "vocabulary": _vocabulary(),
