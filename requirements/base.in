@@ -56,11 +56,7 @@ geopandas>=1.1.4  # For coverage maps spatial operations
 markdown  # For solicitation markdown rendering
 nh3  # HTML sanitizer for user-authored markdown output (XSS defense)
 mcp>=1.0.0  # MCP protocol library (low-level; pulled in by fastmcp)
-fastmcp>=3.0.0,<4.0.0  # FastMCP 3.x server (remote labs MCP — Streamable-HTTP transport).
-# The <4 ceiling is load-bearing, not caution: fastmcp 4.0.5 answers the MCP
-# `ping` method with "Method not found" — over Streamable-HTTP as well as
-# in-memory — where 3.4.7 answers it. Clients use ping for liveness, so 4 is a
-# regression for a live server. See the closed #1952 for the transport matrix.
+fastmcp>=4.0.10,<5.0.0  # FastMCP 4.x server (remote labs MCP — Streamable-HTTP transport)
 uvicorn>=0.52.4  # ASGI server worker for the MCP Streamable-HTTP app (config.asgi)
 pyjwt[crypto]  # Signs/verifies the canopy assertion, ID-JAG, client assertion and DPoP proofs
 duckdb>=1.5.5  # Overture Maps building footprints via S3 parquet (rooftop_surveys sampling)
