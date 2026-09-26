@@ -16,8 +16,7 @@ from decimal import Decimal
 
 from django.db.models import Q, Sum
 
-from connect_labs.supply_chain import records
-from connect_labs.supply_chain.models import DistributionLine, Movement, ShipmentLine
+from connect_labs.supply_chain.models import DistributionLine, Movement, Shipment, ShipmentLine
 from connect_labs.supply_chain.values import Quantity, unconfirmed
 
 ZERO = Decimal("0")
@@ -190,7 +189,7 @@ def in_transit(program_id, supply_point=None, item=None):
     reorders, and the stores run dry while the goods sit at a border.
     """
     lines = ShipmentLine.objects.filter(
-        shipment__status__in=records.IN_TRANSIT_STATUSES,
+        Shipment.in_transit_q("shipment__"),
         shipment__contract__program_id=program_id,
     )
     if supply_point is not None:

@@ -13,6 +13,9 @@
       <a href="{% url 'supply_chain:market' %}" class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky hover:text-white">← OPEN TENDERS</a>
     {% endif %}
     <h1 class="text-[26px] sm:text-3xl font-semibold text-white mt-1 leading-tight">{{ r.label }}</h1>
+    {% if posted_by or r.opened_at %}
+      <p data-testid="posted-by" class="text-[13px] text-brand-sky mt-1">{% if posted_by %}Posted by {{ posted_by }}{% endif %}{% if posted_by and r.opened_at %} · {% endif %}{% if r.opened_at %}Published {{ r.opened_at|day }}{% endif %}</p>
+    {% endif %}
     {% if r.hue %}<div class="h-1 w-16 rounded-full mt-3" style="background: {{ r.hue }}"></div>{% endif %}
     {% if r.brief %}<p class="text-[14.5px] text-white/90 mt-3 max-w-3xl whitespace-pre-line leading-relaxed">{{ r.brief }}</p>{% endif %}
     <div class="grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap sm:gap-x-12 sm:gap-y-5 mt-6">
@@ -20,9 +23,15 @@
         <div class="text-[20px] sm:text-[24px] font-semibold {% if card.closing_soon %}text-brand-marigold{% else %}text-white{% endif %}">{% if r.response_deadline %}{{ r.response_deadline|day }}{% else %}Open until closed{% endif %}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">REPLIES BY{% if card.days_left is not None and card.days_left >= 0 %} · {{ card.deadline_words|upper }}{% endif %}</div>
       </div>
+      {% if asked_for %}
       <div>
-        <div class="text-[20px] sm:text-[24px] font-semibold text-white">{{ r.delivery_points|length|default:"—" }} place{{ r.delivery_points|length|pluralize }}{% if r.pickup_accepted %} · or collect{% endif %}</div>
-        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">WHERE THE GOODS GO</div>
+        <div data-testid="asked-for" class="text-[20px] sm:text-[24px] font-semibold text-white tabular-nums">{{ asked_for }}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">ASKED FOR</div>
+      </div>
+      {% endif %}
+      <div>
+        <div data-testid="delivered-to" class="text-[20px] sm:text-[24px] font-semibold text-white">{% if delivered_to %}{{ delivered_to }}{% if r.pickup_accepted %} · or collect{% endif %}{% elif r.pickup_accepted %}Collected{% else %}—{% endif %}</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">DELIVERED TO</div>
       </div>
       {% if r.incoterm_requested %}
       <div>
@@ -103,6 +112,9 @@
       <div class="border-t border-gray-100 pt-3 mt-auto flex gap-4 text-[12.5px] font-medium">
         {% if not signed_in %}
           <a href="{% url 'labs:login' %}?next={% url 'supply_chain:market_bid' r.pk line.commodity_slug %}" class="pg-hue hover:underline">Sign in to bid →</a>
+        {% elif program_view_url %}
+          {% comment %}The buyer's own team: nothing to register for or bid on.{% endcomment %}
+          <span class="text-gray-500 font-normal">Your program's tender</span>
         {% elif not supplier_orgs %}
           <a href="{% url 'supply_chain:market_register' %}" class="pg-hue hover:underline">Register to bid →</a>
         {% else %}

@@ -46,8 +46,16 @@ NAMED_SILENT = 2
 WHY_LENGTH = 80
 PROVISIONAL_STAGE = "awarded, provisional"
 
-# The quote fields a delivered-cost comparison cannot do without knowing.
-QUOTE_BASIS_FIELDS = ("freight_basis", "duties_basis")
+# The rule behind each flag, for its title: what raised it, said once.
+NO_REPLY_RULE = (
+    f"An invited supplier who has neither replied nor quoted {NO_REPLY_DAYS} or more days after "
+    "we last asked, while the tender is open."
+)
+BASIS_RULE = (
+    "A live quote the comparison cannot cost delivered: its freight or duties are not stated, "
+    "or are excluded with no amount recorded."
+)
+ETA_RULE = "A shipment whose expected arrival day has passed and that has not been received."
 
 # The order's chain, in order; the stage is the furthest one reached.
 ORDER_STAGES = ("placed", "dispatched", "received", "invoiced", "paid")
@@ -56,6 +64,17 @@ ORDER_STAGES = ("placed", "dispatched", "received", "invoiced", "paid")
 # transit, and an order both received and paid is done on both counts.
 IN_TRANSIT = "in transit"
 DELIVERED_AND_PAID = "delivered and paid"
+
+
+class Flag(str):
+    """A flag's words, carrying the rule that raised it -- shown as its title."""
+
+    rule: str = ""
+
+    def __new__(cls, text, rule=""):
+        flag = super().__new__(cls, text)
+        flag.rule = rule
+        return flag
 
 
 @dataclass
@@ -71,6 +90,8 @@ class Row:
     stale: list[str] = field(default_factory=list)
     # Who placed an order, when it is not the program's own organisation.
     buyer: str = ""
+    # The order this row is; None on a tender's row.
+    contract_id: int | None = None
     # The tender this row is, or the order was placed from; None when an
     # order came from no tender.
     tender_id: int | None = None
@@ -143,7 +164,9 @@ def _tender_rows(program_id, today, until):
     ):
         outreach.setdefault(o.tender_id, []).append(o)
     quotes = {}
-    for q in Quote.objects.filter(tender__program_id=program_id, tender_id__in=tender_ids):
+    for q in Quote.objects.filter(tender__program_id=program_id, tender_id__in=tender_ids).select_related(
+        "supplier__org"
+    ):
         quotes.setdefault(q.tender_id, []).append(q)
     contracted = set(
         Tender.objects.filter(program_id=program_id, contracts__isnull=False).values_list("pk", flat=True)
@@ -206,10 +229,26 @@ def _tender_state(tender, outreach, quotes, contracted, today):
         # sentence is true of each.
         suppliers = {o.supplier_id: o.supplier for o in outreach}
         silent = sorted(overdue, key=lambda sid: (-overdue[sid], suppliers[sid].name))
-        stale.append(f"No reply in {min(overdue.values())} days: {_names([suppliers[sid].name for sid in silent])}")
-    unstated = [q for q in live if any(getattr(q, f) == "not_specified" for f in QUOTE_BASIS_FIELDS)]
-    if unstated:
-        stale.append(f"{_plural(len(unstated), 'quote')} missing a basis")
+        stale.append(
+            Flag(
+                f"No reply in {min(overdue.values())} days: {_names([suppliers[sid].name for sid in silent])}",
+                NO_REPLY_RULE,
+            )
+        )
+    # Every live quote the comparison blocks on its freight or duties, named
+    # with what it is missing -- read through pricing's own blocker, so this
+    # counts what the comparison counts.
+    from connect_labs.supply_chain.procurement.services.pricing import basis_gaps
+
+    missing = [(q.supplier.name, gaps) for q in live if (gaps := basis_gaps(q))]
+    if missing:
+        stale.append(
+            Flag(
+                "Missing a basis: "
+                + _names([f"{name} ({', '.join(gaps)})" for name, gaps in sorted(missing)], limit=len(missing)),
+                BASIS_RULE,
+            )
+        )
 
     if tender.status == "awarded":
         waiting_on = "—" if contracted else "contract"
@@ -302,6 +341,7 @@ def _order_rows(program_id, today, until, own_org_id):
                 waiting_on=waiting_on,
                 stale=stale,
                 tender_id=contract.tender_id,
+                contract_id=contract.pk,
                 buyer=(
                     contract.buyer_org.name
                     if contract.buyer_org_id is not None and contract.buyer_org_id != own_org_id
@@ -341,7 +381,7 @@ def _order_state(
         s for s in shipments if s.pk not in received_shipments and s.status != "lost" and not unlinked_receipt
     ]
     stale = [
-        f"ETA {_day(s.expected_on)} passed, not received"
+        Flag(f"ETA {_day(s.expected_on)} passed, not received", ETA_RULE)
         for s in sorted(outstanding, key=lambda s: (s.expected_on or date.max, s.pk))
         if s.expected_on is not None and s.expected_on < today
     ]

@@ -183,7 +183,7 @@ def _sourcing(access, as_of):
                             "tender_id": tender.pk,
                             "supplier_id": row.supplier_id,
                             "missing": [
-                                {"key": q.key, "question": q.question, "audience": q.audience} for q in row.questions
+                                {"key": q.key, "question": q.text, "audience": q.audience} for q in row.questions
                             ],
                         },
                         # How long the question has gone unanswered. Nullable

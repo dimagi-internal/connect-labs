@@ -14,7 +14,9 @@ buying is the buyer's call, and the award freezes this beside their reason.
     {% elif specification.outcome == "pass" %}
       <span class="font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">Spec: {{ specification.summary }}</span>
     {% else %}
-      <span class="font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">Spec: {{ specification.summary }}</span>
+      {% comment %}Names what is missing ("Not stated: shelf life"), in sentence case: a
+      list of requirement names in capitals read as a shouted code.{% endcomment %}
+      <span data-testid="spec-not-stated" class="font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">{{ specification.summary }}</span>
     {% endif %}
     {% if specification.stated_on_quote %}
       <div class="text-gray-500 mt-1 max-w-xs" data-spec-origin="quote">Stated on the quote: {{ specification.stated_on_quote|join:", " }}</div>
