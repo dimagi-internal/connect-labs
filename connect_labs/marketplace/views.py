@@ -123,6 +123,8 @@ def home(request):
         {
             "sections": sections,
             "costs_view": view,
+            # A typeface trial (?font=manrope|geist) — anything else is the house face.
+            "font": request.GET.get("font") if request.GET.get("font") in ("manrope", "geist") else "",
             "network": queries.network_totals(),
             "open_round_count": queries.open_rounds().count(),
             # The suppliers' side of the marketplace: tenders a buyer is asking

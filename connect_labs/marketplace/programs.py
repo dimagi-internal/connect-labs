@@ -101,3 +101,27 @@ _HUES = {
 
 def hue(slug: str | None) -> str:
     return _HUES.get(slug or "", "#3843d0")
+
+
+# The picture connect.dimagi.com/portfolio shows for the same program, copied
+# into static/images/programs/ rather than hotlinked: the public site serves
+# them under content-hashed names that change on every deploy there. Only the
+# programs the portfolio actually pictures are listed — a borrowed photo of a
+# different program would say something false about this one, so the rest
+# show their colour instead.
+_IMAGES = {
+    "chc": "chc.jpg",
+    "kmc": "kmc.jpg",
+    "mbw": "mbw.jpg",
+    "readers": "readers.jpg",
+    "ecd": "ecd.jpg",
+    "nutrition": "nutrition.svg",
+    "water": "water.svg",
+    "interview": "interview.svg",
+}
+
+
+def image(slug: str | None) -> str | None:
+    """Static path of the program's portfolio picture, if it has one."""
+    name = _IMAGES.get(slug or "")
+    return f"images/programs/{name}" if name else None
