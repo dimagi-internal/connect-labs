@@ -47,7 +47,8 @@ from django.db import connections
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken, TokenVerifier
-from fastmcp.server.dependencies import get_access_token, get_context
+from fastmcp.server.dependencies import get_access_token, get_context, get_http_headers
+from fastmcp.server.middleware import Middleware
 from fastmcp.tools.tool import Tool, ToolResult
 
 from connect_labs.audit_trail.context import audit_context, get_audit_context
@@ -142,23 +143,45 @@ def _verify_pat_sync(raw: str):
     return token.user
 
 
-def _verify_bearer_sync(raw: str):
-    """Resolve a bearer to ``(user, auth_method, client_id, scopes)``, or None.
+def _verify_bearer_sync(raw: str, presented_jkt: str | None = None):
+    """Resolve a bearer to ``(user, auth_method, client_id, scopes, extra_claims)``, or None.
 
     A Personal Access Token first -- unchanged, for scripts and headless agents --
-    then an OAuth access token from the standard MCP sign-in (``oauth.py``).
+    then an OAuth access token from the standard MCP sign-in (``oauth.py``), then
+    a token canopy redeemed for a visitor (``delegation.py``). Only that last kind
+    is DPoP-bound, so only it looks at ``presented_jkt``: the key the request's
+    DPoP proof was signed with, as checked by ``delegation.DPoPGate``.
     """
     user = _verify_pat_sync(raw)
     if user is not None:
-        return user, "pat", str(user.pk), PAT_SCOPES
+        return user, "pat", str(user.pk), PAT_SCOPES, {}
 
     from .oauth import MCP_SCOPE, resolve_mcp_access_token
 
     resolved = resolve_mcp_access_token(raw)
-    if resolved is None:
+    if resolved is not None:
+        user, client_id = resolved
+        return user, "oauth", client_id, [MCP_SCOPE], {}
+
+    from .delegation import resolve_delegated_token
+
+    delegated = resolve_delegated_token(raw, presented_jkt)
+    if delegated is None:
         return None
-    user, client_id = resolved
-    return user, "oauth", client_id, [MCP_SCOPE]
+    user, client_id, scopes, actor, jkt, expires_at = delegated
+    return (
+        user,
+        "delegated",
+        client_id,
+        scopes,
+        {
+            # RFC 8693 / RFC 9449 shapes, so what the audit and the tool gate
+            # read is the standard vocabulary rather than a private one.
+            "act": {"sub": actor},
+            "cnf": {"jkt": jkt},
+            "expires_at": int(expires_at.timestamp()),
+        },
+    )
 
 
 class CommCarePATVerifier(TokenVerifier):
@@ -175,20 +198,28 @@ class CommCarePATVerifier(TokenVerifier):
     async def verify_token(self, token: str) -> AccessToken | None:
         if not token:
             return None
-        resolved = await sync_to_async(_closing_connections(_verify_bearer_sync), thread_sensitive=True)(token)
+        from .delegation import presented_dpop_jkt
+
+        resolved = await sync_to_async(_closing_connections(_verify_bearer_sync), thread_sensitive=True)(
+            token, presented_dpop_jkt.get()
+        )
         if resolved is None:
             return None
-        user, auth_method, client_id, scopes = resolved
+        user, auth_method, client_id, scopes, extra = resolved
+        claims = {
+            "sub": str(user.pk),
+            "user_id": user.pk,
+            "username": getattr(user, "username", "") or "",
+            "auth_method": auth_method,
+        }
+        expires_at = extra.pop("expires_at", None)
+        claims.update(extra)
         return AccessToken(
             token=token,
             client_id=client_id,
             scopes=scopes,
-            claims={
-                "sub": str(user.pk),
-                "user_id": user.pk,
-                "username": getattr(user, "username", "") or "",
-                "auth_method": auth_method,
-            },
+            expires_at=expires_at,
+            claims=claims,
         )
 
 
@@ -236,11 +267,18 @@ def _write_audit(
     error_code: str = "",
     version_before: int | None = None,
     version_after: int | None = None,
+    client_id: str = "",
+    actor: str = "",
 ) -> None:
     """Best-effort audit write. Never raises — failure to log must not abort
-    a tool call. Identical semantics to ``transport._log``."""
+    a tool call. Identical semantics to ``transport._log``.
+
+    ``client_id`` / ``actor`` are set only for a delegated call (canopy acting
+    for the visitor, who is ``user``)."""
     try:
         MCPAuditLog.objects.create(
+            client_id=(client_id or "")[:255],
+            actor=(actor or "")[:100],
             user=user if (user and getattr(user, "is_authenticated", False)) else None,
             tool_name=tool_name,
             is_write=is_write,
@@ -259,7 +297,21 @@ def _write_audit(
 # ---------------------------------------------------------------------------
 
 
-def _run_registry_tool(spec: RegistryToolSpec, arguments: dict, progress=NULL_PROGRESS) -> ToolResult:
+def _delegation_audit(actor_header: str = "") -> dict:
+    """Audit fields for a delegated call, or {} for everyone else."""
+    access = get_access_token()
+    claims = getattr(access, "claims", None) or {}
+    if claims.get("auth_method") != "delegated":
+        return {}
+    # The client (canopy) and the agent it says is acting. The header is
+    # informational — logged, never trusted for anything — so it is recorded
+    # beside the authenticated client rather than instead of it.
+    return {"client_id": access.client_id or "", "actor": actor_header or ""}
+
+
+def _run_registry_tool(
+    spec: RegistryToolSpec, arguments: dict, progress=NULL_PROGRESS, actor_header: str = ""
+) -> ToolResult:
     """Execute a legacy registry tool. Runs synchronously (in FastMCP's
     threadpool) so the existing sync handlers + ORM work unchanged.
 
@@ -281,11 +333,24 @@ def _run_registry_tool(spec: RegistryToolSpec, arguments: dict, progress=NULL_PR
         request_id=f"mcp:{uuid.uuid4().hex}",
         path=f"mcp:{spec.name}",
     ):
-        return _run_registry_tool_inner(spec, arguments, user, progress)
+        return _run_registry_tool_inner(spec, arguments, user, progress, actor_header)
 
 
-def _run_registry_tool_inner(spec: RegistryToolSpec, arguments: dict, user, progress=NULL_PROGRESS) -> ToolResult:
+def _run_registry_tool_inner(
+    spec: RegistryToolSpec, arguments: dict, user, progress=NULL_PROGRESS, actor_header: str = ""
+) -> ToolResult:
     """The gate → run → audit body of a tool call, inside an open audit context."""
+    from .delegation import allowed_tools
+
+    audit = functools.partial(_write_audit, **_delegation_audit(actor_header))
+
+    # A delegated token (canopy acting for a visitor) reaches only the tools its
+    # scopes map to. Checked here as well as in ToolScopeMiddleware, so a path
+    # that reaches the tool without the middleware still cannot widen it.
+    permitted = allowed_tools(get_access_token())
+    if permitted is not None and spec.name not in permitted:
+        audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
+        raise ToolError(f"This token's scope does not include {spec.name}.")
     # Central labs-only access gate. Any tool scoped to a labs-only opp/program
     # routes to the local backend with no downstream Connect membership check, so
     # enforce the synthetic access model here — one place every tool passes through,
@@ -299,14 +364,14 @@ def _run_registry_tool_inner(spec: RegistryToolSpec, arguments: dict, user, prog
         program_id=arguments.get("program_id"),
     )
     if denied:
-        _write_audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
+        audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
         raise ToolError(denied)
 
     if spec.is_write:
         try:
             enforce_write_limit(user)
         except MCPToolError as e:
-            _write_audit(user, spec.name, arguments, success=False, error_code=e.code, is_write=True)
+            audit(user, spec.name, arguments, success=False, error_code=e.code, is_write=True)
             raise ToolError(e.message) from e
 
     # `progress` is passed OUT OF BAND — it is not a caller-supplied argument, so
@@ -319,10 +384,10 @@ def _run_registry_tool_inner(spec: RegistryToolSpec, arguments: dict, user, prog
     try:
         result = spec.handler(user=user, **handler_kwargs)
     except MCPToolError as e:
-        _write_audit(user, spec.name, arguments, success=False, error_code=e.code, is_write=spec.is_write)
+        audit(user, spec.name, arguments, success=False, error_code=e.code, is_write=spec.is_write)
         raise ToolError(e.message) from e
     except Exception as e:  # noqa: BLE001
-        _write_audit(user, spec.name, arguments, success=False, error_code="UPSTREAM_ERROR", is_write=spec.is_write)
+        audit(user, spec.name, arguments, success=False, error_code="UPSTREAM_ERROR", is_write=spec.is_write)
         # Surface the full traceback inline — same diagnostic choice the old
         # transport made; faster to debug than digging through CloudWatch. The
         # request id is the audit context's, so this log line, the audit rows
@@ -347,7 +412,7 @@ def _run_registry_tool_inner(spec: RegistryToolSpec, arguments: dict, user, prog
         # Strip private keys before returning to the caller.
         result = {k: v for k, v in result.items() if not k.startswith("_")}
 
-    _write_audit(
+    audit(
         user,
         spec.name,
         arguments,
@@ -390,8 +455,10 @@ class RegistryTool(Tool):
                 progress = make_thread_safe_reporter(get_context(), asyncio.get_running_loop())
             except Exception:  # noqa: BLE001 — no context (tests, direct calls) is not an error
                 logger.debug("no MCP context for progress reporting on %s", self.spec.name, exc_info=True)
+        # Read on the event loop, where FastMCP's request context lives.
+        actor_header = (get_http_headers().get("canopy-actor") or "")[:100]
         return await sync_to_async(_closing_connections(_run_registry_tool), thread_sensitive=True)(
-            self.spec, arguments, progress
+            self.spec, arguments, progress, actor_header
         )
 
 
@@ -414,11 +481,37 @@ def _build_registry_tools() -> list[RegistryTool]:
     return built
 
 
+class ToolScopeMiddleware(Middleware):
+    """A delegated token sees and calls only the tools its scopes map to.
+
+    Everyone else — PATs, OAuth sign-ins — gets the whole catalogue, exactly as
+    before: ``delegation.allowed_tools`` answers ``None`` for them.
+    """
+
+    async def on_list_tools(self, context, call_next):
+        from .delegation import allowed_tools
+
+        tools = await call_next(context)
+        permitted = allowed_tools(get_access_token())
+        if permitted is None:
+            return tools
+        return [tool for tool in tools if tool.name in permitted]
+
+    async def on_call_tool(self, context, call_next):
+        from .delegation import allowed_tools
+
+        permitted = allowed_tools(get_access_token())
+        if permitted is not None and context.message.name not in permitted:
+            raise ToolError(f"This token's scope does not include {context.message.name}.")
+        return await call_next(context)
+
+
 def _build_server() -> FastMCP:
     server = FastMCP(
         "connect_labs",
         instructions=SERVER_INSTRUCTIONS,
         auth=CommCarePATVerifier(),
+        middleware=[ToolScopeMiddleware()],
     )
     for tool in _build_registry_tools():
         server.add_tool(tool)
