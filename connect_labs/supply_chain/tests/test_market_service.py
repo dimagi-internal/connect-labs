@@ -311,3 +311,33 @@ class TestMembership:
         request.session = {"labs_oauth": {"organization_data": {"organizations": [{"id": 8101, "slug": "sahel"}]}}}
 
         assert {o.pk for o in membership.orgs_for(request)} == {connect_org.pk, local_org.pk}
+
+
+class TestHistoryNamesTheSupplier:
+    """A bid is the supplier acting for itself: its history says so, not "Imported"."""
+
+    def test_a_bid_reads_supplier_and_the_orgs_name_on_the_tender_timeline(self, rutf, django_user_model):
+        from connect_labs.supply_chain.history.models import OperationCall, Revision
+        from connect_labs.supply_chain.history.timeline import timeline_for_tender
+
+        tender = make_tender()
+        org = supplier_org("Plateau Foods")
+        user = django_user_model.objects.create_user(username="ada", password="x")
+
+        quote = service.bid(tender.pk, "rutf", org=org, orgs=[org], user=user, data=BID)
+
+        call = OperationCall.objects.get(operation="quote_record")
+        assert (call.channel, call.acting_org_id, call.actor) == ("supplier", org.pk, user)
+        # Marking the quote as the supplier's own is a save inside the call, not a
+        # silent queryset update: every revision of the quote belongs to the call.
+        quote_revisions = Revision.objects.filter(object_id=str(quote.pk), content_type__model="quote")
+        assert {r.call_id for r in quote_revisions} == {call.pk}
+        assert any(r.changes.get("entered_by") == ["program", "supplier"] for r in quote_revisions)
+        assert call.result["entered_by"] == "supplier"
+        supplier_call = OperationCall.objects.get(operation="supplier_create", channel="supplier")
+        supplier_revisions = Revision.objects.filter(call=supplier_call, content_type__model="supplier")
+        assert any(r.changes.get("origin", [None, None])[1] == "self_registered" for r in supplier_revisions)
+
+        entries = timeline_for_tender(tender.pk, program_id=PROGRAM)
+        assert "Supplier · Plateau Foods" in {entry.actor for entry in entries}
+        assert quote.entered_by == "supplier"
