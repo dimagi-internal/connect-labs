@@ -11,10 +11,17 @@
     "the-stop-gap-reaches-kano",
     "the-stop-gap-bridges-but-does-not-replace"
   ],
-  "fetched_at": "2026-09-24T12:08:44.569119+00:00",
+  "fetched_at": "2026-09-24T14:08:02.275004+00:00",
   "name": "supply-chlorine-stopgap",
-  "narrative": "Ngozi starts at the checks, where ClearWater Action's donated chlorine is ninety days past the date it was promised and the Sahel CHI store in Kano that refills the dispensers sits under its two-month floor. She opens the donation and reads it as ClearWater gave it: in kind, nothing to pay, 400 jerry cans still to arrive. Instead of chasing ClearWater again, she points an alert at their supply desk's email for the store falling below its minimum or their shipment passing its date, and checks it at once: both facts go to ClearWater straight from the record. For a stop-gap she has asked Harmattan Health Supplies for nationally registered chlorine. Their quote reads Aquaguard at 1.25%, 90 jerry cans within a week, and she files the product's registration certificate beside the quotation. Gidan Ruwa Traders' quote is cheaper, but she awards the stop-gap to Harmattan in her own name and writes down why. On the award, decided under her name with her reason, she asks the national regulator for its approval and records their approval, resting on the registration certificate she has just filed. Then she asks Northstar Fund, which pays for the programme, to approve the spend, and Place order greys out, naming the answer it is waiting for. Northstar says yes. Ngozi records their answer, Place order comes back, and she orders the jerry cans for the Kano store within a week; this time it goes through, with a price the donation never had. When the jerry cans reach Kano she records the goods received note Sahel CHI sent from the store, batch and expiry included, and the 90 cans enter the store's ledger. Last she reads the Kano store: its cover rises to just under two months, still below its floor, so the stop-gap bridges the gap and ClearWater's 400 jerry cans are what will close it.",
+  "narrative": "Ngozi starts at the checks, where ClearWater Action's donated chlorine is ninety days past the date it was promised and the Sahel CHI store in Kano that refills the dispensers sits under its two-month floor. She opens the donation and reads it as ClearWater gave it: in kind, nothing to pay, 400 jerry cans still to arrive. Instead of chasing ClearWater again, she points an alert at their supply desk's email for the store falling below its minimum or their shipment passing its date, and checks it at once: both facts go to ClearWater straight from the record. For a stop-gap she has asked Harmattan Health Supplies for nationally registered chlorine. Their quote reads Aquaguard at 1.25%, 90 jerry cans within a week, and she files the product's registration certificate beside the quotation. Gidan Ruwa Traders' quote is cheaper, but she awards the stop-gap to Harmattan in her own name and writes down why. On the award, decided under her name with her reason, she asks the national regulator for its approval and records their approval, resting on the registration certificate she has just filed. Then she asks Northstar Fund, which pays for the programme, to approve the spend, and Place order greys out, naming the answer it is waiting for. Northstar says yes. Ngozi records their answer, Place order comes back, and she orders the jerry cans for the Kano store within a week; this time it goes through, with a price the donation never had. When the jerry cans reach Kano, Bala at the Sahel CHI store opens the store's own update link, with no labs login, finds the stop-gap order already on it, and records his goods received note himself, batch and expiry included, so the 90 cans enter the store's ledger in Sahel CHI's name. Last Ngozi reads the Kano store: its cover has risen, and the page says what it was before Bala's note, but it is still below its floor, and ClearWater's 400 jerry cans sit beside the balance, overdue and not counted as cover: the stop-gap bridges the gap, and ClearWater's cans are what will close it.",
   "personas": {
+    "bala": {
+      "color": "#0F766E",
+      "intro": "Bala keeps the Sahel CHI chlorine store in Kano and signs for what arrives there.",
+      "name": "Bala",
+      "org": "Sahel Community Health Initiative",
+      "role": "Storekeeper, Sahel CHI Kano store"
+    },
     "ngozi": {
       "color": "#2563EB",
       "intro": "Ngozi keeps chlorine in the community dispensers across Kano, and this morning the donor's consignment is three months late and the store is running down.",
@@ -204,21 +211,26 @@
     {
       "features": [
         {
-          "description": "receipt_record posts one ledger movement per accepted line into the receiving supply point.",
+          "description": "An update link issued with coverage 'organisation' covers every order the organisation receives at a store it runs, including orders created after the link was issued.",
+          "id": "org-link-covers-new-orders",
+          "verify": "pytest connect_labs/supply_chain/tests/test_update_links_follow_org.py asserts an order created after issue is covered"
+        },
+        {
+          "description": "receipt_record posts one ledger movement per accepted line into the receiving supply point, attributed to the organisation that reported it.",
           "id": "receipt-posts-ledger",
           "verify": "pytest connect_labs/supply_chain/tests -k receipt asserts a receipt movement of the accepted quantity"
         },
         {
-          "description": "A receipt that covers the ordered quantity moves the contract status to received.",
-          "id": "contract-status-follows-receipts",
-          "verify": "Playwright: after Record receipt the order page shows status received and 'Received 90 jerry_can'"
+          "description": "After a write the link page confirms the receipt as the programme holds it: reference, quantity accepted, batch and expiry.",
+          "id": "receipt-read-back",
+          "verify": "pytest connect_labs/supply_chain/tests/test_chlorine_iteration_five.py -k read_back"
         }
       ],
       "id": "the-stop-gap-reaches-kano",
-      "narrative": "When the jerry cans reach Kano she records the goods received note Sahel CHI sent from the store, batch and expiry included, and the 90 cans enter the store's ledger.",
-      "persona": "ngozi",
+      "narrative": "When the jerry cans reach Kano, Bala at the Sahel CHI store opens the store's own update link, with no labs login, finds the stop-gap order already on it, and records his goods received note himself, batch and expiry included, so the 90 cans enter the store's ledger in Sahel CHI's name.",
+      "persona": "bala",
       "provenance": "S5",
-      "title": "The stop-gap reaches Kano"
+      "title": "Sahel CHI says the stop-gap has arrived"
     },
     {
       "features": [
@@ -231,15 +243,25 @@
           "description": "Average monthly consumption counts only consumption inside the stated window ending today.",
           "id": "amc-window",
           "verify": "pytest connect_labs/supply_chain/tests -k average_monthly_consumption asserts consumption older than the window is not counted"
+        },
+        {
+          "description": "Each stock row carries its latest receipt and the months of stock just before it, so a restock reads as a change.",
+          "id": "cover-before-receipt",
+          "verify": "pytest connect_labs/supply_chain/tests/test_chlorine_iteration_five.py -k cover_before"
+        },
+        {
+          "description": "Orders still to arrive at a point are listed beside its balance with their supplier and due date, marked overdue when late, and never added into months of stock.",
+          "id": "expected-inbound-not-cover",
+          "verify": "pytest connect_labs/supply_chain/tests/test_stock_page_honesty.py -k expected"
         }
       ],
       "id": "the-stop-gap-bridges-but-does-not-replace",
-      "narrative": "Last she reads the Kano store: its cover rises to just under two months, still below its floor, so the stop-gap bridges the gap and ClearWater's 400 jerry cans are what will close it.",
+      "narrative": "Last Ngozi reads the Kano store: its cover has risen, and the page says what it was before Bala's note, but it is still below its floor, and ClearWater's 400 jerry cans sit beside the balance, overdue and not counted as cover: the stop-gap bridges the gap, and ClearWater's cans are what will close it.",
       "persona": "ngozi",
       "provenance": "S5",
       "title": "Kano is covered for now, and ClearWater's cans close the gap"
     }
   ],
   "slug": "supply-chlorine-stopgap",
-  "version": 5
+  "version": 6
 }

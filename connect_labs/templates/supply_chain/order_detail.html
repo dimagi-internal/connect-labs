@@ -659,6 +659,7 @@ partner's name (the IPTSc render).
         <th class="text-left px-4 py-2">Date</th>
         <th class="text-left px-4 py-2">Received at</th>
         <th class="text-left px-4 py-2">Batch</th>
+        <th class="text-left px-4 py-2">Expiry</th>
         <th class="text-left px-4 py-2">Accepted</th>
         <th class="text-left px-4 py-2">Refused</th>
         <th class="text-left px-4 py-2">Told by</th>
@@ -672,6 +673,7 @@ partner's name (the IPTSc render).
             <td class="px-4 py-2 text-gray-600">{{ receipt.received_on|day }}</td>
             <td class="px-4 py-2 text-gray-600">{{ supply_points|dictkey:receipt.supply_point_id|default:"—" }}</td>
             <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
+            <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{{ line.expiry|day|default:"—" }}</td>
             <td class="px-4 py-2 tabular-nums">{{ line.quantity_accepted|qty:line.quantity_unit }}</td>
             <td class="px-4 py-2 tabular-nums">
               {% if line.quantity_rejected and line.quantity_rejected != "0" %}{{ line.quantity_rejected|qty:line.quantity_unit }}{% else %}0{% endif %}
@@ -683,7 +685,7 @@ partner's name (the IPTSc render).
           </tr>
         {% endfor %}
       {% empty %}
-        <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">Nothing received yet.</td></tr>
+        <tr><td colspan="8" class="px-4 py-6 text-center text-gray-500">Nothing received yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

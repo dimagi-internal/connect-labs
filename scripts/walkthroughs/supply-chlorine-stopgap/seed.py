@@ -723,7 +723,23 @@ def seed(mcp: Mcp) -> dict:
         },
     )
 
+    # Sahel CHI runs the Kano store, so it -- not the programme -- says what
+    # arrived there. Its link follows the organisation, so the stop-gap order
+    # placed on camera appears on it the moment it exists.
+    partner_link = mcp.op(
+        "update_link_issue",
+        data={
+            "org_id": sahel,
+            "coverage": "organisation",
+            "label": "Sahel CHI — everything at the Kano store",
+            "expires_in_days": 30,
+        },
+    )
+    raw_url = partner_link.get("url") or ""
+    partner_link_path = "/" + raw_url.split("://", 1)[1].split("/", 1)[1] if "://" in raw_url else raw_url
+
     return {
+        "partner_link_path": partner_link_path,
         "programme_id": PROGRAMME_ID,
         "tender_id": round_id,
         "quote_id": quote_id,
