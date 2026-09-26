@@ -44,6 +44,7 @@ function hand({
   pinch = 1,
   pose = 'None',
   palm = null,
+  roll = 0,
 } = {}) {
   const aspect = 4 / 3;
   const lm = Array.from({ length: 21 }, () => ({ x, y, z: 0 }));
@@ -59,6 +60,17 @@ function hand({
   lm[5] = { x, y, z: 0 }; // index knuckle: the pointer
   lm[8] = { x, y: y - size * 0.9, z: 0 }; // index tip
   lm[4] = { x: x + (pinch * size) / aspect, y: y - size * 0.9, z: 0 }; // thumb tip
+  if (roll) {
+    // Turn the whole hand about the index knuckle, clockwise as the viewer
+    // sees it (the preview is mirrored), in physical (aspect-corrected) space.
+    const r = (roll * Math.PI) / 180;
+    for (const q of lm) {
+      const ox = (q.x - x) * aspect;
+      const oy = q.y - y;
+      q.x = x + (Math.cos(r) * ox + Math.sin(r) * oy) / aspect;
+      q.y = y - Math.sin(r) * ox + Math.cos(r) * oy;
+    }
+  }
   return { landmarks: lm, pose, poseScore: pose === 'None' ? 0.3 : 0.9 };
 }
 
@@ -441,6 +453,91 @@ describe('open palm: spin and zoom', () => {
     const e = core.createEngine();
     const { actions } = feed(e, 0, 60, (i) =>
       hand({ x: 0.3 + (i % 30) * 0.01, palm: 'facing' }),
+    );
+    expect(actions).toEqual([]);
+  });
+});
+
+describe('dial', () => {
+  const dials = (actions) =>
+    actions.filter((a) => a.type === 'dial').map((a) => a.step);
+  // An armed engine with an open palm settled upright.
+  const settled = () => {
+    const { e, t } = armed();
+    const held = feed(e, t, 10, hand({ palm: 'facing' }));
+    return { e, t: held.t };
+  };
+
+  it('turning the open palm clockwise steps once to the next', () => {
+    const { e, t } = settled();
+    const turn = feed(e, t, 6, (i) => hand({ palm: 'facing', roll: i * 7 }));
+    const back = feed(e, turn.t, 6, (i) =>
+      hand({ palm: 'facing', roll: 35 - i * 7 }),
+    );
+    expect(dials([...turn.actions, ...back.actions])).toEqual([1]);
+  });
+
+  it('anti-clockwise steps to the previous', () => {
+    const { e, t } = settled();
+    const { actions } = feed(e, t, 6, (i) =>
+      hand({ palm: 'facing', roll: -i * 7 }),
+    );
+    expect(dials(actions)).toEqual([-1]);
+  });
+
+  it('holding the turn keeps stepping, like a jog shuttle', () => {
+    const { e, t } = settled();
+    const { actions } = feed(e, t, 60, (i) =>
+      hand({ palm: 'facing', roll: Math.min(i * 7, 35) }),
+    );
+    // One on crossing, then one per repeat interval over ~1.8s held.
+    expect(dials(actions).length).toBeGreaterThanOrEqual(3);
+    expect(new Set(dials(actions))).toEqual(new Set([1]));
+  });
+
+  it('a turn jittering across the threshold is one step, not a burst', () => {
+    const { e, t } = settled();
+    // ~0.6s, under one repeat interval, wobbling either side of 25 degrees.
+    const { actions } = feed(e, t, 18, (i) =>
+      hand({ palm: 'facing', roll: i < 4 ? i * 7 : i % 2 ? 22 : 28 }),
+    );
+    expect(dials(actions)).toEqual([1]);
+  });
+
+  it('a small wobble does not step', () => {
+    const { e, t } = settled();
+    const { actions } = feed(e, t, 60, (i) =>
+      hand({ palm: 'facing', roll: i % 2 ? 15 : -15 }),
+    );
+    expect(dials(actions)).toEqual([]);
+  });
+
+  it('upright is wherever the palm settled, not true vertical', () => {
+    const { e, t } = armed();
+    // A palm that naturally rests tilted 30 degrees -- past a step, measured
+    // from vertical -- is not a turn.
+    const held = feed(e, t, 30, hand({ palm: 'facing', roll: 30 }));
+    expect(dials(held.actions)).toEqual([]);
+  });
+
+  it('a pointing hand turned does not dial', () => {
+    const { e, t } = armed();
+    const { actions } = feed(e, t, 20, (i) => hand({ roll: i * 5 }));
+    expect(dials(actions)).toEqual([]);
+  });
+
+  it('turning does not zoom', () => {
+    const { e, t } = settled();
+    const { actions } = feed(e, t, 12, (i) =>
+      hand({ palm: 'facing', roll: i * 7 }),
+    );
+    expect(actions.filter((a) => a.type === 'zoom')).toEqual([]);
+  });
+
+  it('nothing dials while disarmed', () => {
+    const e = core.createEngine();
+    const { actions } = feed(e, 0, 60, (i) =>
+      hand({ palm: 'facing', roll: (i % 20) * 4 }),
     );
     expect(actions).toEqual([]);
   });

@@ -38,6 +38,10 @@
  *   globe    an open hand, palm to the camera: move it and the globe turns
  *            the way the hand moves, as if pushing its surface; push it
  *            toward the camera to zoom in, pull it away to zoom out.
+ *   dial     in a partner window: turn the open palm like a knob, clockwise
+ *            for the next opportunity, anti-clockwise for the previous; hold
+ *            the turn and it keeps stepping. (The globe cannot move while a
+ *            window is open, so the open palm is free for this.)
  *   swipe    reported in the readout only; not wired to anything yet.
  */
 (function (global) {
@@ -99,6 +103,12 @@
     zoomGain: 2.5,
     zoomSmoothing: 0.35,
     zoomDeadband: 0.05,
+    // Dial: roll the open palm like a knob. Past dialEnter degrees from where
+    // the palm settled is one step; holding it there repeats, like a jog
+    // shuttle, so a long list needs no regrip; back inside dialExit stops.
+    dialEnter: 25,
+    dialExit: 12,
+    dialRepeatMs: 700,
     // The part of the camera frame that maps to the whole screen, so nobody has
     // to reach the very edge of the frame to reach the edge of the screen.
     crop: { x0: 0.2, x1: 0.8, y0: 0.15, y1: 0.7 },
@@ -180,6 +190,7 @@
    *   swipe{dir}                   'left' | 'right'
    *   spin{dx,dy}                  turn the globe with the hand (0..1 units)
    *   zoom{dz}                     map zoom levels, + is in
+   *   dial{step}                   +1 clockwise (as the viewer sees it), -1 anti
    *
    * Only `armed` can be produced while disarmed.
    */
@@ -213,6 +224,16 @@
       fistSince = null;
       fistSpent = false;
       actions.push({ type: 'disarmed', reason });
+    }
+
+    /** Roll of the hand in degrees, in mirrored (on-screen) space: 0 fingers
+        up, positive turned clockwise as the viewer sees it. */
+    function rollDeg(lm) {
+      const w = lm[LM.WRIST];
+      const m = lm[LM.MIDDLE_MCP];
+      const dx = -(m.x - w.x) * o.aspect; // mirrored
+      const dy = m.y - w.y;
+      return (Math.atan2(dx, -dy) * 180) / Math.PI;
     }
 
     /** Fingers out and palm to the camera: the hand that drives the globe. */
@@ -257,6 +278,7 @@
           pinched: !!pinch,
           spinning: false,
           zooming: false,
+          dial: 0,
           dragging: !!(pinch && pinch.dragging),
           depth: null,
           pointer: null,
@@ -359,13 +381,46 @@
       const open = isOpenPalm(lm);
       let spinning = false;
       let zooming = false;
+      const roll = rollDeg(lm);
       if (live && open && !pinch && ratio > o.pinchExit) {
-        if (!palm) palm = { since: t, lastP: p, lastT: t, size, ref: size };
+        if (!palm)
+          palm = {
+            since: t,
+            lastP: p,
+            lastT: t,
+            size,
+            ref: size,
+            neutral: roll,
+            dialDir: 0,
+            dialNext: 0,
+          };
         palm.size += o.zoomSmoothing * (size - palm.size);
         if (t - palm.since < o.palmEngageMs) {
-          // Settling: nothing moved while the palm was forming counts.
+          // Settling: nothing moved while the palm was forming counts, and
+          // however the palm settled is "upright" for the dial.
           palm.ref = palm.size;
+          palm.neutral = roll;
         } else {
+          /* The dial. The page uses it only while a window is open, where
+             the globe cannot move -- so a palm is never both at once. */
+          let tilt = roll - palm.neutral;
+          if (tilt > 180) tilt -= 360;
+          if (tilt < -180) tilt += 360;
+          let dir = palm.dialDir;
+          if (tilt >= o.dialEnter) dir = 1;
+          else if (tilt <= -o.dialEnter) dir = -1;
+          else if (Math.abs(tilt) <= o.dialExit) dir = 0;
+          const held = dir !== 0 && Math.abs(tilt) >= o.dialEnter;
+          if (
+            dir !== 0 &&
+            (dir !== palm.dialDir || (held && t >= palm.dialNext))
+          ) {
+            actions.push({ type: 'dial', step: dir });
+            palm.dialNext = t + o.dialRepeatMs;
+            lastActionAt = t;
+          }
+          palm.dialDir = dir;
+
           const dt = Math.max((t - palm.lastT) / 1000, 1e-3);
           const dx = p.x - palm.lastP.x;
           const dy = p.y - palm.lastP.y;
@@ -445,6 +500,7 @@
           pointer: p,
           spinning,
           zooming,
+          dial: palm ? palm.dialDir : 0,
         }),
       };
     }
@@ -523,7 +579,9 @@
        <div class="pg-help">Hold an open palm still to arm · pinch or push to open ·
          fist or pull back to close · pinch and move to drag a window ·
          point with a finger to aim · open hand: move to spin the globe, push
-         toward the camera to zoom in, pull back to zoom out</div>`,
+         toward the camera to zoom in, pull back to zoom out · in a partner
+         window, turn the open hand like a dial to step through its
+         opportunities (hold the turn to keep going)</div>`,
     );
     const frame = el('div', 'pulse-gesture-frame');
     const cursor = el('div', 'pulse-gesture-cursor');
@@ -658,6 +716,19 @@
         )
           global.PulseMap.zoomBy(a.dz);
         break;
+      case 'dial':
+        // Only over an open window: there the globe is out of reach, so the
+        // palm is free to be a dial.
+        if (global.PulseWindows && global.PulseWindows.isOpen()) {
+          const moved = global.PulseWindows.stepOpportunity(a.step);
+          log(
+            ui,
+            'dial ' +
+              (a.step > 0 ? 'next' : 'previous') +
+              (moved ? '' : ' (nothing to step)'),
+          );
+        }
+        break;
       case 'spin':
         if (
           global.PulseMap &&
@@ -690,9 +761,14 @@
       r.pinchRatio == null
         ? '—'
         : r.pinchRatio.toFixed(2) +
-          (r.spinning || r.zooming
+          (r.spinning || r.zooming || r.dial
             ? ' · ' +
-              [r.spinning && 'spinning', r.zooming && 'zooming']
+              [
+                r.spinning && 'spinning',
+                r.zooming && 'zooming',
+                r.dial > 0 && 'dial ▶',
+                r.dial < 0 && 'dial ◀',
+              ]
                 .filter(Boolean)
                 .join(' + ')
             : r.dragging
