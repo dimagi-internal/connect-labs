@@ -178,7 +178,7 @@ class TestBidding:
             service.bid(tender.pk, "rutf", org=org, orgs=[org], user=None, data=BID)
 
 
-class TestSealedBids:
+class TestBidsArePrivateToEachSupplier:
     def test_a_supplier_sees_only_its_own_quotes(self, rutf):
         tender = make_tender()
         mine, theirs = supplier_org("Mine Ltd"), supplier_org("Theirs Ltd")

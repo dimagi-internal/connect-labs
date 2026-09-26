@@ -7,7 +7,7 @@ the bar is how much of the time to reply has gone.
 
 Nothing here counts bids. The partners' cards show how many applied; on a
 tender that number is the competition a supplier is bidding against, which is
-exactly what sealed bids keep from it.
+exactly what keeping each supplier's bids private hides from it.
 """
 
 from __future__ import annotations
