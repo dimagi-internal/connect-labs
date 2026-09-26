@@ -248,7 +248,7 @@ def quote_get(access, quote_id):
             }
             for r in check_compliance(quote, commodity, item=item)
         ],
-        "missing": [{"key": f.key, "question": f.question, "audience": f.audience} for f in missing],
+        "missing": [f.as_dict() for f in missing],
     }
 
 

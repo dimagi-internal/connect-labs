@@ -30,7 +30,7 @@ in a tab row between them.
         {% if orgs %}
           <a href="{% url 'supply_chain:market_organisation' %}{% if orgs|length == 1 %}?org={{ orgs.0.pk }}{% endif %}" class="px-3 py-1.5 rounded-md text-gray-700 hover:bg-gray-100 max-w-[16rem] truncate">{% if orgs|length == 1 %}{{ orgs.0.name }}{% else %}My organisations{% endif %}</a>
         {% endif %}
-        {% if not supplier_orgs and request.path != market_url %}<a href="{% url 'supply_chain:market_register' %}" class="ml-auto px-3 py-1.5 rounded-lg bg-brand-deep-purple text-white">Register as a supplier</a>{% endif %}
+        {% if not supplier_orgs and not program_view_url and request.path != market_url %}<a href="{% url 'supply_chain:market_register' %}" class="ml-auto px-3 py-1.5 rounded-lg bg-brand-deep-purple text-white">Register as a supplier</a>{% endif %}
       {% elif request.path != market_url %}
         {# The home page's hero already carries this button. #}
         <a href="{% url 'labs:login' %}?next={{ request.get_full_path|urlencode }}" class="ml-auto px-3 py-1.5 rounded-lg bg-brand-deep-purple text-white">Sign in to bid</a>

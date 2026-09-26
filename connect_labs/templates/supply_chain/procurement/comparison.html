@@ -95,6 +95,11 @@
       {% if ranked_by_label %}Ranked by {{ ranked_by_label }}{% else %}Not yet ranked{% endif %}
     </p>
   </div>
+  {% if cost_basis %}
+    {% comment %}What one pack and one course are in base units, as the commodity
+    defines them, so the per-unit columns can be read against each other.{% endcomment %}
+    <p data-testid="cost-basis" class="text-xs text-gray-500 mb-2">{{ cost_basis }}</p>
+  {% endif %}
   {% if folded_columns %}
     <p class="text-xs text-gray-500 mb-2">{{ folded_columns|join:" and " }} {{ folded_columns|length|pluralize:"is,are" }} the same as {{ first_column_label }} here, so {{ folded_columns|length|pluralize:"it is,they are" }} not repeated.</p>
   {% endif %}
@@ -130,9 +135,18 @@
                 {% endif %}
                 {% with correction=corrections|dictkey:row.quote_id %}{% if correction %}
                   {% comment %}Why a once-blocked offer is in the ranking: the correction that
-                  answered it, worded as the timeline words it, linked to that line.{% endcomment %}
-                  <a data-testid="correction-note" href="{{ history_url }}"
-                     class="block mt-0.5 text-xs font-normal text-gray-600 hover:underline">Corrected {{ correction.when|date:"j M" }}{% if correction.changes %}: {{ correction.changes }}{% endif %} — {{ correction.actor }}</a>
+                  answered it, worded as the timeline words it. It opens on the reply it rested
+                  on, so the evidence is read here rather than on another page.{% endcomment %}
+                  <details data-testid="correction-source" class="mt-0.5 text-xs font-normal max-w-md whitespace-normal">
+                    <summary class="cursor-pointer text-gray-600 hover:underline">Corrected {{ correction.when|date:"j M" }}{% if correction.changes %}: {{ correction.changes }}{% endif %} — {{ correction.actor }}</summary>
+                    {% if correction.excerpt %}
+                      <p class="mt-1 text-gray-500">{{ correction.source_kind|default:"Source" }}, recorded by {{ correction.actor }} on {{ correction.recorded_on|date:"j M" }}</p>
+                      <blockquote data-testid="source-excerpt" class="mt-1 border-l-2 border-gray-300 pl-3 text-gray-700 whitespace-pre-line">{{ correction.excerpt }}</blockquote>
+                    {% else %}
+                      <p class="mt-1 text-gray-500">No source was recorded with this correction.</p>
+                    {% endif %}
+                    <a data-testid="correction-note" href="{{ history_url }}" class="mt-1 inline-block text-brand-indigo hover:underline">In the tender's history</a>
+                  </details>
                 {% endif %}{% endwith %}
                 {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
                 {% include "supply_chain/procurement/_specification.html" with specification=row.specification %}
@@ -159,20 +173,28 @@
               {% endfor %}
             </tr>
             {% if row.questions or row.quote_id not in awarded_quote_ids and not supply_as_of %}
+            {% comment %}
+            Two blocks in normal flow, one above the other: the questions, then
+            the award form. Side by side in a wrapping flex row the question
+            text ran under the inputs -- the table's cells do not wrap
+            (base-table's whitespace-nowrap), so a long question overflowed its
+            column into the form's. The cell is set to wrap, and nothing here
+            is positioned.
+            {% endcomment %}
             <tr data-testid="ranked-row-actions" data-actions-for="{{ row.quote_id }}" class="border-b border-gray-200">
               <td></td>
-              <td colspan="{{ table_columns|length|add:1 }}" class="pt-0 pb-3">
-                <div class="flex flex-wrap items-start gap-x-8 gap-y-3">
+              <td colspan="{{ table_columns|length|add:1 }}" class="pt-0 pb-3 whitespace-normal">
+                <div class="flex flex-col gap-3 max-w-4xl">
                   {% if row.questions %}
-                    <div class="min-w-0 flex-1 basis-80">
+                    <div data-testid="row-questions" class="min-w-0">
                       {% include "supply_chain/procurement/_row_questions.html" with row=row %}
                     </div>
                   {% endif %}
                   {% if row.quote_id not in awarded_quote_ids and not supply_as_of %}
-                  <form method="post" action="" class="flex flex-wrap items-end gap-2 min-w-0 flex-1 basis-96">
+                  <form method="post" action="" class="flex flex-wrap items-end gap-2 min-w-0">
                     {% csrf_token %}
                     <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
-                    <label class="flex flex-col gap-0.5 text-xs text-gray-600 min-w-0 flex-1 basis-56" for="rationale-{{ row.quote_id }}">Why this offer
+                    <label class="flex flex-col gap-0.5 text-xs text-gray-600 min-w-0 flex-1 basis-64" for="rationale-{{ row.quote_id }}">Why this offer
                       <input type="text" id="rationale-{{ row.quote_id }}" name="rationale" placeholder="the reason, in a sentence" required
                              class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-900">
                     </label>
@@ -181,12 +203,11 @@
                              title="The day the decision was made"
                              class="border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-900">
                     </label>
-                    <label class="flex flex-col gap-0.5 text-xs text-gray-600 w-40" for="decided-by-{{ row.quote_id }}">Decided by
-                      <input type="text" id="decided-by-{{ row.quote_id }}" name="decided_by" value="{{ decider }}"
-                             title="Who made the decision — the person, not the account recording it"
-                             placeholder="your name"
-                             class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-900">
-                    </label>
+                    {% comment %}Who decided is who is signed in: the view records that, and
+                    ignores anything posted, so it is shown and not asked.{% endcomment %}
+                    <div class="flex flex-col gap-0.5 text-xs text-gray-600">Decided by
+                      <span data-testid="decided-by" class="py-1 text-sm text-gray-900">{{ decider }}</span>
+                    </div>
                     <button class="shrink-0 px-4 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
                             type="submit">
                       Award
@@ -203,8 +224,7 @@
     </div>
   </div>
 {% elif comparison.blocked %}
-  <p class="text-gray-500 mb-4">Nothing is comparable yet. Every quote is missing something —
-  the questions below are the whole job right now.</p>
+  {% comment %}Nothing to add: the banner above already says none of them is comparable, and names who has to answer.{% endcomment %}
 {% else %}
   <p class="text-gray-500 mb-4">Nothing is comparable: no offer holds the contents this tender buys.</p>
 {% endif %}
@@ -284,6 +304,7 @@
           <p data-testid="blocking-question" class="text-sm text-gray-800 mt-0.5 mb-2">
             {% if row.blocking.question.audience == "internal" %}Ours to do:{% else %}Ask the supplier:{% endif %}
             {{ row.blocking.question.question }}
+            {% with q=row.blocking.question %}{% include "supply_chain/procurement/_requirement.html" %}{% endwith %}
           </p>
         {% endif %}
       {% endif %}

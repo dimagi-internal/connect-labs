@@ -887,7 +887,23 @@ class Shipment(SourcedModel):
     @property
     def is_in_transit(self) -> bool:
         """Dispatched and not yet received. Never counted as stock (section 19.1)."""
-        return self.status in records.IN_TRANSIT_STATUSES
+        return self.status in records.IN_TRANSIT_STATUSES or (
+            self.status == "planned" and self.dispatched_on is not None
+        )
+
+    @staticmethod
+    def in_transit_q(prefix: str = "") -> Q:
+        """Shipments on the road: an in-transit status, or a dispatch day recorded on one still "planned".
+
+        A shipment recorded with the day it left keeps the default status
+        until somebody moves it, so reading the status alone counted goods on
+        the road as nothing -- the overview's chain said "In transit 0" beside
+        an order its own row called in transit. A receipt marks the shipment
+        delivered, so a received one is never counted.
+        """
+        return Q(**{f"{prefix}status__in": records.IN_TRANSIT_STATUSES}) | Q(
+            **{f"{prefix}status": "planned", f"{prefix}dispatched_on__isnull": False}
+        )
 
 
 class Charge(SourcedModel):

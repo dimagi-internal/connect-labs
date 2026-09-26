@@ -12,7 +12,7 @@ questions -- and those must be just as visible as a Blocked row's.
     <div class="mt-2">
       <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Ask the supplier</p>
       <ul class="list-disc list-inside text-sm text-gray-700 space-y-0.5">
-        {% for q in supplier_questions %}<li>{{ q.question }}</li>{% endfor %}
+        {% for q in supplier_questions %}<li>{{ q.question }}{% include "supply_chain/procurement/_requirement.html" %}</li>{% endfor %}
       </ul>
     </div>
   {% endif %}
@@ -20,7 +20,7 @@ questions -- and those must be just as visible as a Blocked row's.
     <div class="mt-2">
       <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Our own outstanding work</p>
       <ul class="list-disc list-inside text-sm text-gray-700 space-y-0.5">
-        {% for q in internal_questions %}<li>{{ q.question }}</li>{% endfor %}
+        {% for q in internal_questions %}<li>{{ q.question }}{% include "supply_chain/procurement/_requirement.html" %}</li>{% endfor %}
       </ul>
     </div>
   {% endif %}
