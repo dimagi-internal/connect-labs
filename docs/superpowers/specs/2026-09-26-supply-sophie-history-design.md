@@ -266,8 +266,13 @@ existing access to the underlying records.
   idempotency.
 - Round 2 is seeded as it is today: open, three quotes that can't be compared,
   five non-responders. It is recorded "recently".
-- The market is seeded with a few other synthetic buyers' public tenders, so
-  Sophie's round 2 isn't alone on the board.
+- Round 2 is **published**, so it is on the market exactly as a supplier
+  browsing it would see it. The demo seeds no other buyers' tenders beside
+  it: this repository is public, and an invented buyer organisation would be
+  a second, fictitious row in the same directory that holds our real
+  partners. The seeder's `market_buyers` support (other synthetic programs'
+  public tenders, for a demo that wants a busier board) still exists and
+  still works — this demo's document simply does not use it.
 - The seeder stays idempotent, and a purge is only allowed through
   `require_synthetic`.
 
@@ -281,8 +286,8 @@ existing access to the underlying records.
    5 Sep, and round 2 doesn't exist yet. Back to today.
 4. **Round 2 comparison.** The missing bases are flagged. Sophie corrects one
    AI-entered quote, and the correction appears on its timeline.
-5. **The market.** Her public tender among other buyers', showing only public
-   facts.
+5. **The market.** Round 2, published, shown exactly as a supplier browsing
+   the market sees it — only public facts, no other buyers on the board.
 6. **Award with rationale.** It appears on the overview.
 
 `.canopy/ddd/context.md` is rewritten for this narrative. It currently
