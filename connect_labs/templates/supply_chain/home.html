@@ -20,6 +20,70 @@ therefore a fact, rather than by urgency, which would be an opinion.
   </div>
 {% else %}
 
+<h2 class="text-lg font-semibold text-gray-900 mb-3">{{ program_heading }}</h2>
+
+{% comment %}
+Where everything stands (standing.py): one line per tender and order,
+ordered by last change -- not ranked. A flag is a stated fact with its count
+or day; which one matters most today is the reader's call. Title links are
+plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
+{% endcomment %}
+<section id="supply-standing" class="mb-8">
+  <h2 class="text-sm font-semibold text-gray-900 mb-2">
+    Where everything stands
+    <span class="normal-case tracking-normal font-normal text-gray-500">
+      — newest change first
+    </span>
+  </h2>
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Where everything stands, scrolls sideways">
+    <table class="min-w-[48rem] w-full text-sm">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <tr>
+          <th class="text-left px-4 py-2"><span class="sr-only">Tender or order</span></th>
+          <th class="text-left px-4 py-2">Stage</th>
+          <th class="text-left px-4 py-2">Waiting on</th>
+          <th class="text-left px-4 py-2">Last change</th>
+          <th class="text-left px-4 py-2">Flags</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for row in standing %}
+          <tr class="align-top">
+            <td class="px-4 py-2.5">
+              <span class="block text-xs text-gray-500">{% if row.kind == "tender" %}Tender{% else %}Order{% endif %}</span>
+              <a class="font-medium text-brand-indigo hover:underline" href="{{ row.url }}">{{ row.title }}</a>
+              {% if row.buyer %}<span class="block text-xs text-gray-500">bought by {{ row.buyer }}</span>{% endif %}
+            </td>
+            <td class="px-4 py-2.5">{{ row.stage }}</td>
+            <td class="px-4 py-2.5 text-gray-700">{{ row.waiting_on }}</td>
+            <td class="px-4 py-2.5">
+              {% if row.last_change_at %}
+                <span class="block text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|days_ago:standing_now }}</span>
+                {% if row.last_change_is_ai %}
+                  <span data-ai class="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{% if row.last_change_by|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ row.last_change_by }}</span></span>
+                {% else %}
+                  <span class="mt-0.5 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ row.last_change_by }}</span>
+                {% endif %}
+              {% else %}
+                <span class="text-gray-600">—</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2.5">
+              {% for flag in row.stale %}
+                <span class="block text-xs text-red-700">{{ flag }}</span>
+              {% endfor %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">No tenders or orders yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</section>
+
 {% if commodities|length > 1 %}
   <div class="flex items-center gap-2 mb-4 text-sm">
     <span class="text-gray-500">Commodity</span>

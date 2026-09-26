@@ -298,7 +298,8 @@ class TestTheOrder:
 
     def test_the_overview_names_the_buyer_of_record(self, client_in_programme, chain):
         body = client_in_programme.get(reverse("supply_chain:home")).content.decode()
-        row = body[body.index("CHC-1") :]
+        # The contracts table's row, not the "where everything stands" line above it.
+        row = body[body.index("CHC-1", body.index("Buyer of record")) :]
         row = row[: row.index("</tr>")]
         assert "Child Health Programme" in row
         assert "programme org" not in row
