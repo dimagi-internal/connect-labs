@@ -300,3 +300,86 @@ describe('trend card', () => {
     expect(out).toContain('On target');
   });
 });
+
+describe('organisation benchmark', () => {
+  const m = { unit: '%', direction: 'higher', bands: [70, 50] };
+  const others = [
+    { value: 0.68, band: 'yellow' },
+    { value: null, band: 'notinapp' },
+    { value: 0.39, band: 'red' },
+    { value: 0.09, band: 'insufficient' },
+    { value: 0.52, band: 'yellow' },
+  ];
+  const own = { value: 0.47, band: 'red' };
+  test('ranks the reader among organisations with a usable figure, best first', () => {
+    const r = R.rankOrganisations(m, own, others);
+    expect(r.rank).toBe(3);
+    expect(r.scored).toBe(4);
+    expect(r.total).toBe(6);
+    expect(r.ordered.map((a) => a.figure.value)).toEqual([
+      0.68,
+      0.52,
+      0.47,
+      0.39,
+      null,
+      0.09,
+    ]);
+  });
+  test('coverage names every missing organisation and why', () => {
+    expect(R.rankOrganisations(m, own, others).coverage).toBe(
+      '4 of 6 · 1 not collected · 1 too few babies',
+    );
+  });
+  test('lower is better sorts the other way', () => {
+    const r = R.rankOrganisations({ ...m, direction: 'lower' }, own, others);
+    expect(r.rank).toBe(2);
+  });
+  test('a tie shares the better place', () => {
+    const tie = [
+      { value: 0, band: 'green' },
+      { value: 0, band: 'green' },
+      { value: 3, band: 'red' },
+    ];
+    const r = R.rankOrganisations(
+      { unit: 'd', direction: 'lower' },
+      { value: 0, band: 'green' },
+      tie,
+    );
+    expect(r.rank).toBe(1);
+    expect(r.tied).toBe(true);
+  });
+  test('a two-sided measure is not ranked', () => {
+    expect(
+      R.rankOrganisations({ ...m, direction: 'mid2' }, own, others).ranked,
+    ).toBe(false);
+  });
+  test('a percent target is converted to the value units', () => {
+    expect(R.targetOf(m)).toBe(0.7);
+    expect(
+      R.targetOf({ unit: 'g/kg/d', direction: 'higher', bands: [15, 13] }),
+    ).toBe(15);
+  });
+  test('the mini bars draw every organisation, the missing ones as outlines', () => {
+    const out = html(
+      h(R.MiniRankBars, {
+        ranked: R.rankOrganisations(m, own, others),
+        target: 0.7,
+      }),
+    );
+    expect(out.match(/<rect/g)).toHaveLength(6);
+    expect(out.match(/stroke-dasharray="3 3"/g)).toHaveLength(2);
+    expect(out.match(/#4f46e5/g)).toHaveLength(1);
+  });
+  test('the full chart names only the reader', () => {
+    const out = html(
+      h(R.RankedBars, {
+        measure: m,
+        ranked: R.rankOrganisations(m, own, others),
+        ownLabel: 'NAMA (you)',
+      }),
+    );
+    expect(out).toContain('NAMA (you)');
+    expect(out.match(/Another organisation/g)).toHaveLength(5);
+    expect(out).toContain('not collected');
+  });
+});

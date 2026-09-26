@@ -18,7 +18,7 @@ without saying which set of peers it was drawn from.
 
 from __future__ import annotations
 
-from connect_labs.benchmarks.models import BenchmarkCohort, BenchmarkValue
+from connect_labs.benchmarks.models import UNIT_ORGANISATION, BenchmarkCohort, BenchmarkValue
 from connect_labs.labs.access.scopes import Caller, may_use
 
 
@@ -34,7 +34,15 @@ def benchmarks_for_opportunity(request, opportunity_id: int) -> dict:
         "series": {period: [{peer_index, value}, ...]},
         "own": value | None,                           # this opportunity's own
         "ownSeries": {period: value},                  # published figures
+        "organisations": {                             # organisation peers
+            "own": {"value", "band"} | None,           #   the reader's organisation
+            "others": [{peer_index, value, band}, ...] #   the rest, unnamed, sorted
+        },
     }}}}}
+
+    Organisation rows (`unit: organisation`) are the benchmark tab's stable peer
+    set. The reader's own organisation is told apart by the publication's
+    `organisation_of` map -- provenance, like `opportunity_id`, never returned.
 
     Every figure comes from `BenchmarkValue.to_public()`, which is the only
     projection that may reach a viewer -- narrowed further here (a viewer needs
@@ -59,6 +67,7 @@ def benchmarks_for_opportunity(request, opportunity_id: int) -> dict:
             continue
         as_of = max(as_of, publication.as_of) if as_of else publication.as_of
         indicators: dict[str, dict] = {}
+        own_organisation = (publication.organisation_of or {}).get(str(opportunity_id))
         # A reader's OWN rows never land in `peers`. Two reasons, and the second
         # is the one that bites: the report draws this opportunity as its own
         # bar, so leaving the published copy among the peers draws it twice --
@@ -81,6 +90,14 @@ def benchmarks_for_opportunity(request, opportunity_id: int) -> dict:
                 public["indicator_id"],
                 {"peers": [], "series": {}, "own": None, "ownSeries": {}},
             )
+            if public["unit"] == UNIT_ORGANISATION:
+                orgs = entry.setdefault("organisations", {"own": None, "others": []})
+                figure = {"value": public["value"], "band": public["band"]}
+                if own_organisation and row.organisation == own_organisation:
+                    orgs["own"] = figure
+                else:
+                    orgs["others"].append({"peer_index": public["peer_index"], **figure})
+                continue
             if row.opportunity_id == opportunity_id:
                 if public["period"] is None:
                     entry["own"] = public["value"]
@@ -95,6 +112,8 @@ def benchmarks_for_opportunity(request, opportunity_id: int) -> dict:
         for series in indicators.values():
             for entry in series.values():
                 entry["peers"].sort(key=lambda p: p["peer_index"])
+                if "organisations" in entry:
+                    entry["organisations"]["others"].sort(key=lambda p: p["peer_index"])
                 for points in entry["series"].values():
                     points.sort(key=lambda p: p["peer_index"])
         by_cohort[str(cohort.pk)] = indicators

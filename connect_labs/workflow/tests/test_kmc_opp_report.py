@@ -176,25 +176,35 @@ def test_an_empty_benchmark_is_explained_rather_than_errored():
     and nothing about an error."""
     src = RENDER.read_text()
     assert "benchmarkEmptyMessage" in src
-    assert "withheld" in src and "cohort" in src, "the message must name both innocent causes"
-    assert "if (!ids.length)" in src, "no branch for a payload carrying no cohort"
-    empty_branch = src.split("if (!ids.length)")[1][:200]
+    assert "cohort" in src and "republished" in src, "the message must name both innocent causes"
+    assert "if (!built.cid)" in src, "no branch for a payload carrying no organisation benchmark"
+    empty_branch = src.split("if (!built.cid)")[1][:200]
     assert "benchmarkEmptyMessage" in empty_branch
     assert "status: 'error'" not in empty_branch
 
 
-def test_a_withheld_figure_is_never_marked_on_the_peer_bars():
-    """Marking our own value on a peer chart is publishing it as a comparison.
-    The publisher's own PUBLISHABLE_BANDS is the rule; this mirrors it, so a
-    notcredible or unverifiable cell contributes no marker."""
+def test_the_benchmark_tab_compares_organisations_from_the_benchmark_store():
+    """Organisations, not opportunities: a stable peer set, read from the store's
+    organisation rows -- never from the report's own snapshot, which carries only
+    this opportunity."""
     src = RENDER.read_text()
-    assert "function publishableValue(" in src
-    assert "own={publishableValue(ind[m.indicator])}" in src, "the marker bypasses the band filter"
-    body = src[src.index("function publishableValue(") :]
-    body = body[: body.index("\n  function ")]
-    for band in ("notcredible", "unverifiable", "insufficient", "notinapp"):
-        assert band not in body, f"{band} must not be publishable"
-    assert "'green'" in body and "'yellow'" in body and "'red'" in body
+    body = src[src.index("function benchmarkRows(") : src.index("  // ══ The worker table")]
+    assert "e.organisations" in body
+    assert "R.rankOrganisations(" in body and "<R.MiniRankBars" in body and "<R.RankedBars" in body
+    assert "P.byLLO" not in body and "P.byFLW" not in body
+
+
+def test_the_peer_trend_lines_are_gone():
+    """Anonymous peer lines over tenure were unreadable; the tab is one scorecard."""
+    src = RENDER.read_text()
+    assert "PeerTrend" not in src and "PeerCard" not in src
+
+
+def test_the_other_organisations_are_never_named_on_the_page():
+    src = RENDER.read_text()
+    body = src[src.index("function benchmarkRows(") : src.index("  // ══ The worker table")]
+    assert "Another organisation" in body
+    assert ".organisation" not in body.replace(".organisations", ""), "a provenance field reached the render"
 
 
 def test_there_is_one_indicator_set_and_no_series_switch():
@@ -204,4 +214,4 @@ def test_there_is_one_indicator_set_and_no_series_switch():
     src = RENDER.read_text()
     assert "SeriesSwitch" not in src and "Workbook (C)" not in src
     assert "'series='" not in src and "qp('series')" not in src
-    assert "byFamily[m.series]" in src
+    assert "(fam[m.series] || {})[m.indicator]" in src
