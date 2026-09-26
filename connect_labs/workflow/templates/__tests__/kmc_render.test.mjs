@@ -15,9 +15,11 @@ import { dirname, join } from 'node:path';
 // Only @babel/core, which is already a devDependency and re-exports both — adding
 // @babel/parser and @babel/traverse as direct deps would change package-lock and
 // trigger the node image build for a test that needs neither.
-import babel from '@babel/core';
-
-const { parseSync, traverse } = babel;
+//
+// Named imports, not a default one: @babel/core 8 is a real ES module and
+// exports no `default`, so `import babel from '@babel/core'` throws at load
+// ("does not provide an export named 'default'") before a single check runs.
+import { parseSync, traverse } from '@babel/core';
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Every KMC render is held to the same checks: the programme report, the
 // worker review it drills into, and the single-opportunity report.
