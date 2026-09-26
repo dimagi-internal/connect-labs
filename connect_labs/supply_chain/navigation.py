@@ -137,6 +137,8 @@ VIEWS_WITHOUT_TABS = frozenset(
         # The same portfolio laid out by place, for the same reason: it spans
         # programs, so no one program's tab is where you are.
         "supply_chain:portfolio_map",
+        # JSON behind the map's Stock mode, not a page.
+        "supply_chain:portfolio_map_cover",
         # The supplier marketplace: its own shell, for suppliers, who have no
         # programs and so no program tabs to be on. It spans programs too.
         "supply_chain:market",

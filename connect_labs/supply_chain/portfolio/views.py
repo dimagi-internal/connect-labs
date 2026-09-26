@@ -34,9 +34,10 @@ one computed from severity.
 """
 
 from django.contrib.auth.decorators import login_required
-from django.http import Http404
+from django.http import Http404, JsonResponse
 from django.urls import reverse
 from django.utils.decorators import method_decorator
+from django.views import View
 from django.views.generic import TemplateView
 
 from connect_labs.labs.access.scopes import Caller
@@ -328,3 +329,33 @@ class PortfolioMapView(TemplateView):
         )
         context["mapbox_token"] = getattr(settings, "MAPBOX_TOKEN", "") or ""
         return context
+
+
+@method_decorator(login_required, name="dispatch")
+class PortfolioMapCoverView(View):
+    """One commodity's stock and cover at every place the map shows, as JSON.
+
+    Fetched by the page when it needs cover -- the Stock colour mode, or a
+    place's panel -- rather than computed for every item on every load: cover
+    is a resupply plan per place per item, the one figure on the map whose
+    cost grows with the size of a network. Same programs, same access rule as
+    the page (`map_data.portfolio_programs`).
+    """
+
+    def get(self, request, slug):
+        from connect_labs.supply_chain.portfolio.map_data import portfolio_cover
+
+        portfolio = Portfolio.objects.filter(slug=slug).first()
+        if portfolio is None:
+            raise Http404(f"no portfolio named {slug!r}")
+        commodity = (request.GET.get("commodity") or "").strip()
+        if not commodity:
+            return JsonResponse({"error": "name a commodity: ?commodity=<slug>"}, status=400)
+        cover = portfolio_cover(
+            request,
+            portfolio,
+            reachable_programmes(request),
+            commodity,
+            everything=request.GET.get("scope") == "all",
+        )
+        return JsonResponse({"commodity": commodity, "programs": {str(pid): points for pid, points in cover.items()}})
