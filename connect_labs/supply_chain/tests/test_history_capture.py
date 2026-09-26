@@ -225,3 +225,14 @@ class TestReceiversAreConnectedPerSender:
         assert m2m_changed.has_listeners(Tender.invited_orgs.through)
         assert not pre_delete.has_listeners(OperationCall)
         assert not pre_delete.has_listeners(Revision)
+
+
+def test_save_with_update_fields_records_only_those_fields():
+    """`save(update_fields=[...])` writes only those columns, so the revision
+    must not claim a change to a field that was set in memory but never saved."""
+    tender = _tender(label="R2")
+    tender.label = "Round 2"
+    tender.notes_to_supplier = "set in memory only"
+    tender.save(update_fields=["label"])
+    rev = Revision.objects.filter(object_id=str(tender.pk), action="update").get()
+    assert rev.changes == {"label": ["R2", "Round 2"]}

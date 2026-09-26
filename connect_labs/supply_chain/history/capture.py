@@ -108,6 +108,12 @@ def on_post_save(sender, instance, created, **kwargs):
         _write(instance, "create", {k: [None, v] for k, v in after.items()}, program_of(instance))
         return
     diff = {k: [before.get(k), v] for k, v in after.items() if before.get(k) != v}
+    update_fields = kwargs.get("update_fields")
+    if update_fields is not None:
+        # Only these columns were written; anything else that differs was set
+        # in memory and never saved, so it is not a change the row went through.
+        saved = {sender._meta.get_field(name).attname for name in update_fields}
+        diff = {k: v for k, v in diff.items() if k in saved}
     if diff:
         _write(instance, "update", diff, program_of(instance))
 
