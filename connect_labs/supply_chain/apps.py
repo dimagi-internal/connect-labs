@@ -11,6 +11,11 @@ class SupplyChainConfig(AppConfig):
         # generated from that. A tier not imported here is a tier with no API.
         from connect_labs.supply_chain.alerts import operations as alert_operations  # noqa: F401
         from connect_labs.supply_chain.fulfilment import operations as fulfilment_operations  # noqa: F401
+
+        # Import for side effect: connects the pre_save/post_save/pre_delete/
+        # post_delete receivers that write a Revision for every supply record
+        # change. See history/capture.py.
+        from connect_labs.supply_chain.history import capture  # noqa: F401
         from connect_labs.supply_chain.procurement import operations  # noqa: F401
         from connect_labs.supply_chain.stock import operations as stock_operations  # noqa: F401
         from connect_labs.supply_chain.update_links import operations as update_link_operations  # noqa: F401
