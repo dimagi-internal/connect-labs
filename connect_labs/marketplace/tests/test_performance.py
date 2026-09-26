@@ -191,11 +191,13 @@ class TestTheRegistryIsFetchedOnce:
 
         # The page's own population — the annotated fetch that carries each
         # organisation's profile. (`partner_names` reads the same table for a
-        # different question, name resolution, and has its own cache.)
+        # different question, name resolution, and has its own cache. It joins
+        # the profile too, to keep to directory organisations, but selects none
+        # of its columns -- so a profile column is what marks the page's fetch.)
         scans = [
             q
             for q in ctx.captured_queries
-            if 'FROM "labs_labsorg"' in q["sql"] and "marketplace_orgprofile" in q["sql"]
+            if 'FROM "labs_labsorg"' in q["sql"] and '"marketplace_orgprofile"."lat"' in q["sql"]
         ]
         assert len(scans) == 1, f"the registry was scanned {len(scans)} times for one render"
 
