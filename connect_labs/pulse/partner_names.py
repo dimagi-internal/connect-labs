@@ -7,7 +7,9 @@ names (``OpportunitySerializer`` also emits ``organization`` as a slug).
 
 So the names come from the team's LLO Directory, loaded into the organisation registry
 (``labs.LabsOrg`` + ``marketplace.OrgProfile``) by
-``marketplace_import`` and matched to slugs here. The sheet is the source of
+``marketplace_import`` and matched to slugs here. Only organisations with a
+directory profile are candidates: a ``LabsOrg`` another feature minted is never
+a partner a Connect slug can resolve to. The sheet is the source of
 truth; this is a cache of it. Nothing about partner identity is written down in
 this repository, because the people who own that identity do not review pull
 requests — and a name that lives in code drifts from the directory with nothing
@@ -140,7 +142,15 @@ def _load() -> None:
     from connect_labs.labs.models import LabsOrg
     from connect_labs.marketplace.models import OrgConnectSlug
 
-    rows = list(LabsOrg.objects.values_list("name", "short_name"))
+    # Directory organisations only. `LabsOrg` also holds every company some
+    # other feature needed a name for -- a supplier the RUTF tracker import
+    # minted, a demo seed's partner -- and those are not the directory's to
+    # vouch for. Letting them compete handed a real partner's Connect
+    # deliveries to a supplier row for the same company: with the
+    # parenthetical dropped both names reduce to one `x-clinics` key, so a
+    # `x-clinics-...` workspace suffix-matches either, and the supplier's name
+    # sorted first.
+    rows = list(LabsOrg.objects.filter(marketplace_profile__isnull=False).values_list("name", "short_name"))
     _cache["candidates"] = [_build(name, short or "", i) for i, (name, short) in enumerate(rows) if name]
     _cache["aliases"] = tuple(OrgConnectSlug.objects.select_related("org").values_list("slug", "org__name"))
     _cache["loaded_at"] = time.monotonic()

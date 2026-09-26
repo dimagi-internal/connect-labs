@@ -133,6 +133,28 @@ def seed_orgs(access, data):
                 )
             orgs[row["slug"]] = directory[row["slug"]]
             continue
+        # A NEW slug under a name another organisation already answers to is
+        # a second row of that organisation. The demo made three this way;
+        # the copies then shadowed the directory's rows on the network page.
+        # A real partner is `from_directory`, always. A slug that already
+        # exists is an update of that row, not a new one, and is left alone.
+        if directory is None:
+            directory = {org["slug"]: org for org in op(access, "org_list")}
+        holder = None
+        if row["slug"] not in directory:
+            holder = next(
+                (
+                    org["slug"]
+                    for org in directory.values()
+                    if org["name"].strip().lower() == row["name"].strip().lower()
+                ),
+                None,
+            )
+        if holder:
+            raise ValueError(
+                f"the document would write {row['slug']!r} as {row['name']!r}, which {holder!r} already is -- "
+                f'mark it {{"slug": "{holder}", "from_directory": true}} instead'
+            )
         org_data = {
             "slug": row["slug"],
             "name": row["name"],

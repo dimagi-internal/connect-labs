@@ -43,6 +43,8 @@ class _FakeOp:
 
     def __call__(self, access, name, **payload):
         self.calls.append((name, payload))
+        if name == "org_list":
+            return []
         return {"op": name, **payload}
 
 
@@ -874,6 +876,46 @@ def test_a_directory_org_the_directory_does_not_have_is_refused_by_name():
     module.op = _Empty()
     with pytest.raises(ValueError, match="a-missing-partner"):
         module.seed_orgs(object(), {"orgs": [{"slug": "a-missing-partner", "from_directory": True}]})
+
+
+def test_a_new_slug_under_a_name_the_directory_already_holds_is_refused():
+    """How the demo came to hold two of one partner: its own slug, the directory's name."""
+
+    class _Directory(_FakeOp):
+        def __call__(self, access, name, **payload):
+            self.calls.append((name, payload))
+            if name == "org_list":
+                return [{"id": 41, "slug": "a-directory-partner-program", "name": "A Directory Partner (Program)"}]
+            return {"op": name, **payload}
+
+    fake = _Directory()
+    module = _load_seed_remote()
+    module.op = fake
+    row = {"slug": "a-directory-partner", "name": "A Directory Partner (Program)", "country": "NG"}
+    with pytest.raises(ValueError, match="a-directory-partner-program"):
+        module.seed_orgs(object(), {"orgs": [row]})
+    assert not [name for name, _ in fake.calls if name == "org_upsert"]
+
+
+def test_an_existing_slug_sharing_a_name_is_an_update_not_a_duplicate():
+    """Two rows already share a name (an org and one of its Connect workspaces);
+    re-seeding the one the document owns must not be refused."""
+
+    class _Two(_FakeOp):
+        def __call__(self, access, name, **payload):
+            self.calls.append((name, payload))
+            if name == "org_list":
+                return [
+                    {"id": 1, "slug": "an-org", "name": "An Org"},
+                    {"id": 2, "slug": "an-org-workspace", "name": "An Org"},
+                ]
+            return {"op": name, **payload}
+
+    fake = _Two()
+    module = _load_seed_remote()
+    module.op = fake
+    module.seed_orgs(object(), {"orgs": [{"slug": "an-org-workspace", "name": "An Org", "country": "NG"}]})
+    assert [name for name, _ in fake.calls if name == "org_upsert"] == ["org_upsert"]
 
 
 def test_history_names_places_and_refuses_one_the_chain_does_not_have():

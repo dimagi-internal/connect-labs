@@ -55,6 +55,19 @@ class TestOneCompanyAcrossPrograms:
         assert chc["status"] == "awarded"
         assert rutf["status"] == "contacted"
 
+    def test_a_name_merged_into_another_organisation_links_to_the_survivor(self):
+        """Re-running an import after a merge must not mint the duplicate back."""
+        from connect_labs.labs.org_merge import merge_orgs
+
+        keep = LabsOrg.objects.create(slug="harmattan-health", name="Harmattan Health (Outreach)")
+        copy = create(CHC, name="Harmattan Health (Harmattan Pharma)")
+        merge_orgs(keep_id=keep.pk, merge_id=copy["org_id"])
+
+        again = create(RUTF, name="Harmattan Health (Harmattan Pharma)")
+
+        assert again["org_id"] == keep.pk
+        assert not LabsOrg.objects.filter(name="Harmattan Health (Harmattan Pharma)").exists()
+
     def test_a_similar_name_is_a_different_company(self):
         one = create(CHC, name="Nutriset")
         two = create(CHC, name="Nutriset Nigeria")
