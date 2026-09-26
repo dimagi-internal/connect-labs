@@ -49,7 +49,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken, TokenVerifier
 from fastmcp.server.dependencies import get_access_token, get_context, get_http_headers
 from fastmcp.server.middleware import Middleware
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools import Tool, ToolResult
 
 from connect_labs.audit_trail.context import audit_context, get_audit_context
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError
