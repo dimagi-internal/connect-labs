@@ -1911,7 +1911,12 @@ def seed_chlorine_blocked(data, scopes):
     contract_row = dict(section["contract"])
     buyer_slug = contract_row.pop("buyer_org_slug")
     line = section["round"]["lines"][0]
-    contract = op(
+    # Found by the order's reference before it is made, as `seed_chain` finds
+    # its own. Everything else above already converges -- the round by label,
+    # the donor by name, the stores by slug -- and this was the one write that
+    # did not, so a re-seed left two in-kind orders carrying one reference and
+    # the stock page showed the same blocked import owed twice.
+    contract = by_reference(access, "contract_list", contract_row.get("reference")) or op(
         access,
         "contract_create",
         data={

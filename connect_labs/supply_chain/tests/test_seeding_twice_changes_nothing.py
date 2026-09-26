@@ -361,3 +361,69 @@ def test_seeding_stock_on_the_road_again_adds_nothing(seeded):
 
     grew = _grew(before, _counts())
     assert grew == {}, "second run grew: " + ", ".join(f"{n} {a}->{b}" for n, (a, b) in sorted(grew.items()))
+
+
+# ---------------------------------------------------------------------------
+# The blocked chain. It has no award and no quotes, so it is built by its own
+# seeder rather than `seed_chain` -- and that seeder has to find its order the
+# same way `seed_chain` does, by the reference the document gives it.
+# ---------------------------------------------------------------------------
+
+_BLOCKED = {
+    "donor_slug": "the-distributor",
+    "programme_org_slug": "the-programme-org",
+    "supplier": {"type": "donor"},
+    "round": {
+        "label": "A Placeholder Blocked Round",
+        "delivery_point": {"city": "A Placeholder City"},
+        "lines": [{"commodity_slug": "a-product", "quantity": "40", "quantity_unit": "carton"}],
+    },
+    "stores": [
+        {
+            "slug": "a-blocked-store",
+            "name": "A placeholder store the import is owed to",
+            "kind": "central_store",
+            "managed_by_org_slug": "a-partner",
+            "source": "we_recorded",
+        },
+        {
+            "slug": "a-blocked-partner-store",
+            "name": "A placeholder partner store",
+            "kind": "facility",
+            "managed_by_org_slug": "a-partner",
+            "source": "we_recorded",
+        },
+    ],
+    "contract": {
+        "reference": "A-PLACEHOLDER-DONATION",
+        "consideration": "in_kind",
+        "buyer_of_record": "programme_org",
+        "buyer_org_slug": "the-programme-org",
+        "status": "placed",
+        "quantity": "40",
+        "quantity_unit": "carton",
+    },
+}
+
+
+def test_seeding_the_blocked_chain_again_adds_nothing(db):
+    """A second in-kind order under the same reference is a donation twice over.
+
+    The stock page would show the same blocked import owed to the store twice,
+    and nothing on either row says which is the mistake. This seeder once
+    called `contract_create` on every run, and a re-seed of the environment
+    left two orders carrying one reference side by side.
+
+    Red before the fix: "second run grew: Contract 1->2, Revision 12->13".
+    """
+    module = _load_seed_remote()
+    document = {**_DOCUMENT, "chlorine_blocked": _BLOCKED}
+    scopes = module.seed_scopes(document)
+    first = module.seed_chlorine_blocked(document, scopes)
+    before = _counts()
+
+    second = module.seed_chlorine_blocked(document, scopes)
+
+    grew = _grew(before, _counts())
+    assert grew == {}, "second run grew: " + ", ".join(f"{n} {a}->{b}" for n, (a, b) in sorted(grew.items()))
+    assert second["contract"]["id"] == first["contract"]["id"], "the order the first run made is the one returned"
