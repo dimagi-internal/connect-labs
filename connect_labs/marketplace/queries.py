@@ -592,12 +592,18 @@ def network_orgs():
     counting them grew "the network" by twenty overnight without one EOI.
 
     An organisation is in the network when it has a directory profile (it came
-    from the sheet), answered a round, or has delivered on Connect. Anything
-    else is an organisation some other feature needed a name for.
+    from the sheet) or answered a round. Anything else is an organisation some
+    other feature needed a name for.
+
+    Delivering on Connect is deliberately NOT a way in. Delivery is attributed
+    by partner NAME, and only directory organisations can carry one
+    (`pulse.partner_names`), so every delivering organisation already has a
+    profile. Matching on the name as well let in any other row that happened
+    to share it: a demo seed's own copy of a real partner showed up beside
+    the directory's row, delivering the same programs.
     """
     applied = SolicitationResponse.objects.exclude(llo_entity=None).values("llo_entity")
-    delivered = delivering_names() | set(delivered_programs_by_org_name())
-    return LabsOrg.objects.filter(Q(marketplace_profile__isnull=False) | Q(pk__in=applied) | Q(name__in=delivered))
+    return LabsOrg.objects.filter(Q(marketplace_profile__isnull=False) | Q(pk__in=applied))
 
 
 def network_totals() -> dict:
