@@ -6,7 +6,7 @@ through an agent or MCP/the API -- and the quoted source it rested on, in a
 Correct and Void sit on the right of a quote an AI entered that still stands; the timeline builder leaves
 them out on a past date.
 {% endcomment %}
-<section data-timeline data-testid="timeline" class="mt-8">
+<section id="history" data-timeline data-testid="timeline" class="mt-8 scroll-mt-4">
   <h3 class="text-sm font-semibold text-gray-900 mb-2">History</h3>
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-2">
     {% if timeline %}
@@ -31,6 +31,10 @@ them out on a past date.
                   <details class="text-xs">
                     <summary data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}title="Show the source"
                              class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs {% if entry.is_ai %}bg-amber-100 text-amber-900{% else %}bg-gray-100 text-gray-700{% endif %}">{% if entry.is_ai and entry.actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ entry.actor }}</span><span class="underline underline-offset-2 opacity-80">source</span></summary>
+                    {% comment %}Where the quote came from, as the call recorded it -- the kind its
+                    reference implies, who recorded it and when. A replay of the same evidence
+                    was answered from this write, not written again.{% endcomment %}
+                    <p data-testid="source-heading" class="mt-1 text-gray-500">{{ entry.source_kind|default:"Source" }}, recorded by {{ entry.actor }} on {{ entry.recorded_on|date:"j M" }}{% if entry.replayed_at %} · received again {{ entry.replayed_at|date:"j M" }}, recorded once{% endif %}</p>
                     <blockquote data-testid="source-excerpt" class="mt-1 border-l-2 border-gray-300 pl-3 text-gray-700 whitespace-pre-line">{{ entry.excerpt }}</blockquote>
                   </details>
                 {% elif entry.is_ai %}

@@ -126,12 +126,16 @@ class MarketTenderView(View):
 
 def _tender_page(request, listed):
     tender = listed.tender
+    # The owning program's team sees the public listing as a supplier does,
+    # and is told so, with the way back to the tender's own page.
+    on_program = _signed_in(request) and service.on_program(request, tender)
     return _render(
         request,
         "tender.html",
         listed=listed,
         card=cards.card_for(listed),
         can_manage=bool(tender.slug) and _signed_in(request) and service.can_manage(request, tender),
+        program_view_url=(reverse("supply_chain:procurement_tender_detail", args=[tender.pk]) if on_program else None),
     )
 
 

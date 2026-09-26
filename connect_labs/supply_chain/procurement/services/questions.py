@@ -33,7 +33,14 @@ import logging
 from dataclasses import dataclass
 
 from connect_labs.supply_chain.models import Commodity, Quote, Tender
-from connect_labs.supply_chain.procurement.services.compliance import NOT_STATED, check_compliance
+from connect_labs.supply_chain.procurement.services.compliance import (
+    NOT_STATED,
+    check_compliance,
+    figure_name,
+    is_pack_count_field,
+    is_shelf_life_field,
+    requirement_label,
+)
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
 from connect_labs.supply_chain.values import Unconfirmed, destination_phrase, quantity_phrase
 
@@ -142,6 +149,19 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
 _QUESTION_BY_KEY: dict[str, str] = {key: template for _, key, template, _audience in _REASON_QUESTIONS}
 
 
+def key_for_reason(reason: str) -> str | None:
+    """The question key this Unconfirmed reason is answered by, or None.
+
+    The same first-match-wins table missing_facts asks from, so the comparison
+    can say which ONE question clears what blocks an offer.
+    """
+    lowered = (reason or "").lower()
+    for fragment, key, _template, _audience in _REASON_QUESTIONS:
+        if fragment in lowered:
+            return key
+    return None
+
+
 def audience_for_reason(reason: str) -> str:
     """Who can close the gap this Unconfirmed reason names.
 
@@ -235,12 +255,34 @@ def _fact(key: str, template: str, context: dict, audience: str = SUPPLIER) -> M
     return MissingFact(key=key, question=template.format(**context), audience=audience)
 
 
-def _spec_fact(field_name: str, requirement: dict) -> MissingFact:
+_OPERATOR_PHRASES = {
+    "<=": "no more than",
+    ">=": "at least",
+    "==": "exactly",
+    "<": "less than",
+    ">": "more than",
+}
+
+
+def _requirement_clause(requirement: dict) -> str:
+    """ "We require exactly 150." -- or "" for an operator nobody should read raw."""
+    phrase = _OPERATOR_PHRASES.get(requirement.get("operator"))
+    if phrase is None:
+        return ""
+    amount = f"{requirement.get('value')} {requirement.get('unit') or ''}".strip()
+    return f"We require {phrase} {amount}."
+
+
+def _spec_fact(field_name: str, requirement: dict, commodity: Commodity | None = None) -> MissingFact:
     """The one question text for an unstated spec requirement.
 
     Shared by missing_facts (a specific quote left it unanswered) and
     initial_request_facts (nobody has answered anything yet) so the wording
     of a spec question is written exactly once, not duplicated between them.
+
+    Written as a person would ask it: "How many sachets are in each carton?
+    We require exactly 150.", not "What is the sachets per carton of the item
+    you would supply?".
 
     `commodity.spec_requirements` is unconstrained by _COMMODITY_DATA, and
     initial_request_facts calls this directly rather than through
@@ -250,19 +292,50 @@ def _spec_fact(field_name: str, requirement: dict) -> MissingFact:
     Omit the requirement clause entirely in that case rather than leak the
     raw operator symbol.
     """
-    operator_phrases = {
-        "<=": "no more than",
-        ">=": "at least",
-        "==": "exactly",
-        "<": "less than",
-        ">": "more than",
-    }
-    question = f"What is the {field_name.replace('_', ' ')} of the item you would supply?"
-    phrase = operator_phrases.get(requirement.get("operator"))
-    if phrase is not None:
-        amount = f"{requirement.get('value')} {requirement.get('unit') or ''}".strip()
-        question += f" We require {phrase} {amount}."
-    return MissingFact(key=f"spec:{field_name}", question=question)
+    if commodity is not None and is_pack_count_field(field_name, commodity):
+        question = f"How many {commodity.base_unit or 'unit'}s are in each {commodity.pack_unit or 'pack'}?"
+    elif is_shelf_life_field(field_name):
+        question = (
+            "What is the shelf life from the date of manufacture, and the production date of the batch "
+            "you would supply?"
+        )
+    else:
+        # The figure's name without the unit it ends in: the unit is said
+        # once, beside the number the requirement names.
+        label = requirement_label(figure_name(field_name), requirement.get("unit") or "").lower()
+        question = f"What is the {label} of what you would supply?"
+    clause = _requirement_clause(requirement)
+    return MissingFact(key=f"spec:{field_name}", question=f"{question} {clause}".strip())
+
+
+def _with_requirement(fact: MissingFact, requirement: dict) -> MissingFact:
+    """A question already asked, with the specification's requirement said once at its end."""
+    clause = _requirement_clause(requirement)
+    # The shelf-life question already names the minimum when there is one.
+    if not clause or clause in fact.question or (fact.key == "shelf_life" and "at least" in fact.question):
+        return fact
+    return MissingFact(key=fact.key, question=f"{fact.question} {clause}", audience=fact.audience)
+
+
+def _fold_spec_question(facts, seen, field_name, requirement, commodity) -> bool:
+    """Fold a spec question into the question already asked about the same figure.
+
+    "How many sachets are in one carton...?" and "What is the sachets per
+    carton...?" are one question to a supplier, and so is the shelf-life pair.
+    Returns True when folded, so the caller adds no second question.
+    """
+    if is_pack_count_field(field_name, commodity):
+        target = "pack_spec"
+    elif is_shelf_life_field(field_name):
+        target = "shelf_life"
+    else:
+        return False
+    if target not in seen:
+        return False
+    for index, fact in enumerate(facts):
+        if fact.key == target:
+            facts[index] = _with_requirement(fact, requirement)
+    return True
 
 
 def missing_facts(
@@ -322,9 +395,14 @@ def missing_facts(
     for result in check_compliance(quote, commodity, item=item):
         if result.outcome == NOT_STATED:
             key = f"spec:{result.field}"
-            if key not in seen:
-                seen.add(key)
-                facts.append(_spec_fact(result.field, result.requirement))
+            if key in seen or _fold_spec_question(facts, seen, result.field, result.requirement, commodity):
+                continue
+            seen.add(key)
+            facts.append(_spec_fact(result.field, result.requirement, commodity))
+            # The shelf-life requirement IS the shelf-life question: asking
+            # the acceptance one as well would ask the supplier twice.
+            if is_shelf_life_field(result.field):
+                seen.add("shelf_life")
 
     for key, attr in _ACCEPTANCE_CHECKS:
         if key not in seen and getattr(quote, attr) is None:
@@ -392,8 +470,9 @@ def initial_request_facts(
     for requirement in commodity.spec_requirements:
         req_field = requirement.get("field")
         key = f"spec:{req_field}"
-        if key not in seen:
-            seen.add(key)
-            facts.append(_spec_fact(req_field, requirement))
+        if key in seen or _fold_spec_question(facts, seen, req_field, requirement, commodity):
+            continue
+        seen.add(key)
+        facts.append(_spec_fact(req_field, requirement, commodity))
 
     return facts

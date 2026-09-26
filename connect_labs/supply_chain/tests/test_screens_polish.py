@@ -988,22 +988,31 @@ def _compare_url(world):
 
 
 class TestTheAwardControlsFitTheColumn:
-    """At 1440px the reason, date, decided-by and Award button sat side by side
-    and pushed the table past the content column, clipping the button off the
-    right edge of the sideways-scrolling region."""
+    """At 1440px the reason, date, decided-by and Award button, stacked in the
+    table's last cell, clipped the button to "A" and cut the questions off.
+    They sit in a full-width row under each offer instead, so the table is
+    only as wide as its figures."""
 
-    def test_they_stack_rather_than_sit_in_one_row(self, client_in_programme, da, world):
+    def test_they_sit_in_a_full_width_row_under_the_offer_not_in_a_cell(self, client_in_programme, da, world):
         _comparable_pair(da, world)
         body = client_in_programme.get(_compare_url(world)).content.decode()
         forms = re.findall(r'<form method="post" action="" class="([^"]*)">(.*?)</form>', body, re.S)
         award_forms = [(cls, inner) for cls, inner in forms if 'name="rationale"' in inner]
         assert len(award_forms) == 2
         for cls, inner in award_forms:
-            assert "flex-col" in cls and "w-56" in cls
+            assert "flex-wrap" in cls
             # Same fields, posting to the same URL.
             for field in ("quote_id", "rationale", "decided_on", "decided_by"):
                 assert f'name="{field}"' in inner
             assert 'type="submit"' in inner and "Award" in inner
+        # No column for it: the ranked rows hold figures, the row under each holds the form.
+        assert "<th>Award</th>" not in body
+        for ranked in re.findall(r'<tr data-testid="ranked-row" .*?</tr>', body, re.S):
+            assert "<form" not in ranked
+        subrows = re.findall(r'<tr data-testid="ranked-row-actions".*?</tr>', body, re.S)
+        assert len(subrows) == 2 and all('name="rationale"' in row for row in subrows)
+        columns = len(re.search(r"<thead>.*?</thead>", body, re.S).group(0).split("<th>")) - 1
+        assert all(f'colspan="{columns - 1}"' in row for row in subrows)
 
     def test_the_stacked_form_still_awards(self, client_in_programme, da, world):
         from connect_labs.supply_chain.models import Award, Quote

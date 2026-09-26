@@ -16,5 +16,11 @@ buying is the buyer's call, and the award freezes this beside their reason.
     {% else %}
       <span class="font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">Spec: {{ specification.summary }}</span>
     {% endif %}
+    {% if specification.stated_on_quote %}
+      <div class="text-gray-500 mt-1 max-w-xs" data-spec-origin="quote">Stated on the quote: {{ specification.stated_on_quote|join:", " }}</div>
+    {% endif %}
+    {% if specification.confirmed_by_item %}
+      <div class="text-gray-500 mt-1 max-w-xs" data-spec-origin="item">Per the trade item: {{ specification.confirmed_by_item|join:", " }}</div>
+    {% endif %}
   </div>
 {% endif %}

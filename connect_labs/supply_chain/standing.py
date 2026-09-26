@@ -40,6 +40,11 @@ from connect_labs.supply_chain.history.timeline import contract_scope_revisions,
 
 # An invitation unanswered this many days after it was sent is stale (§4.2).
 NO_REPLY_DAYS = 14
+# How many silent suppliers the flag names before it counts the rest ("+2").
+NAMED_SILENT = 2
+# An award's reason, cut to fit under the stage.
+WHY_LENGTH = 80
+PROVISIONAL_STAGE = "awarded, provisional"
 
 # The quote fields a delivered-cost comparison cannot do without knowing.
 QUOTE_BASIS_FIELDS = ("freight_basis", "duties_basis")
@@ -69,6 +74,10 @@ class Row:
     # The tender this row is, or the order was placed from; None when an
     # order came from no tender.
     tender_id: int | None = None
+    # A tender whose award could still be beaten (see `_tender_rows`), and
+    # the reason the buyer gave for it, so "provisional" reads with its why.
+    provisional: bool = False
+    award_why: str = ""
 
 
 def standing_rows(program_id: int, today: date, *, until: date | None = None, own_org_id=None) -> list[Row]:
@@ -98,6 +107,17 @@ def _words(value: str) -> str:
     return (value or "").replace("_", " ")
 
 
+def _truncate(text, limit=WHY_LENGTH) -> str:
+    text = " ".join((text or "").split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def _names(names, limit=NAMED_SILENT) -> str:
+    """ "Northwind Foods, Sahel Nutrition +1": up to `limit` names, then how many more."""
+    shown = ", ".join(names[:limit])
+    return f"{shown} +{len(names) - limit}" if len(names) > limit else shown
+
+
 def _last_change(revisions):
     latest = revisions.first()
     if latest is None:
@@ -118,7 +138,9 @@ def _tender_rows(program_id, today, until):
     tenders = list(Tender.objects.filter(program_id=program_id))
     tender_ids = [t.pk for t in tenders]
     outreach = {}
-    for o in Outreach.objects.filter(tender__program_id=program_id, tender_id__in=tender_ids):
+    for o in Outreach.objects.filter(tender__program_id=program_id, tender_id__in=tender_ids).select_related(
+        "supplier__org"
+    ):
         outreach.setdefault(o.tender_id, []).append(o)
     quotes = {}
     for q in Quote.objects.filter(tender__program_id=program_id, tender_id__in=tender_ids):
@@ -126,11 +148,13 @@ def _tender_rows(program_id, today, until):
     contracted = set(
         Tender.objects.filter(program_id=program_id, contracts__isnull=False).values_list("pk", flat=True)
     )
-    provisional = set(
-        Award.objects.filter(tender__program_id=program_id, tender_id__in=tender_ids, provisional=True).values_list(
-            "tender_id", flat=True
-        )
-    )
+    # The newest provisional award's reason per tender (Award is ordered
+    # newest decision first), so the row can say why it was made anyway.
+    provisional = {}
+    for tender_id, rationale in Award.objects.filter(
+        tender__program_id=program_id, tender_id__in=tender_ids, provisional=True
+    ).values_list("tender_id", "rationale"):
+        provisional.setdefault(tender_id, rationale or "")
 
     rows = []
     for tender in tenders:
@@ -140,8 +164,9 @@ def _tender_rows(program_id, today, until):
         stage = _words(tender.status)
         # An award made while suppliers were still blocked from the comparison
         # (the frozen snapshot's `provisional`) could still be beaten: say so.
-        if tender.status == "awarded" and tender.pk in provisional:
-            stage = "awarded, provisional"
+        is_provisional = tender.status == "awarded" and tender.pk in provisional
+        if is_provisional:
+            stage = PROVISIONAL_STAGE
         rows.append(
             Row(
                 kind="tender",
@@ -151,6 +176,8 @@ def _tender_rows(program_id, today, until):
                 stage=stage,
                 waiting_on=waiting_on,
                 stale=stale,
+                provisional=is_provisional,
+                award_why=_truncate(provisional.get(tender.pk, "")) if is_provisional else "",
                 **_last_change(tender_scope_revisions(tender.pk, program_id=program_id, until=until)),
             )
         )
@@ -169,13 +196,17 @@ def _tender_state(tender, outreach, quotes, contracted, today):
     for o in outreach:
         if o.sent_on is not None and o.supplier_id not in replied:
             latest_ask[o.supplier_id] = max(latest_ask.get(o.supplier_id, o.sent_on), o.sent_on)
-    ages = [(today - sent).days for sent in latest_ask.values()]
-    overdue = [age for age in ages if age >= NO_REPLY_DAYS]
+    overdue = {sid: (today - sent).days for sid, sent in latest_ask.items() if (today - sent).days >= NO_REPLY_DAYS}
     # Only while replies are still being taken: once a tender is closed or
     # awarded a silent supplier is history, not something waiting.
     if overdue and tender.status == "open":
-        # The age every one of them has passed, so the sentence is true of each.
-        stale.append(f"No reply in {min(overdue)} days from {_plural(len(overdue), 'supplier')}")
+        # Named, longest silent first: "No reply in 17 days: Northwind Foods"
+        # is something to act on; "from 1 supplier" sends the reader to find
+        # out who. The age is the one every one of them has passed, so the
+        # sentence is true of each.
+        suppliers = {o.supplier_id: o.supplier for o in outreach}
+        silent = sorted(overdue, key=lambda sid: (-overdue[sid], suppliers[sid].name))
+        stale.append(f"No reply in {min(overdue.values())} days: {_names([suppliers[sid].name for sid in silent])}")
     unstated = [q for q in live if any(getattr(q, f) == "not_specified" for f in QUOTE_BASIS_FIELDS)]
     if unstated:
         stale.append(f"{_plural(len(unstated), 'quote')} missing a basis")

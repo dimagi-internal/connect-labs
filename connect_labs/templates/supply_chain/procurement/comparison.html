@@ -98,6 +98,12 @@
   {% if folded_columns %}
     <p class="text-xs text-gray-500 mb-2">{{ folded_columns|join:" and " }} {{ folded_columns|length|pluralize:"is,are" }} the same as {{ first_column_label }} here, so {{ folded_columns|length|pluralize:"it is,they are" }} not repeated.</p>
   {% endif %}
+  {% comment %}
+  The award form and the questions sit in a full-width row under each offer,
+  not in a last column: in a cell, at 1440px, the Award button was clipped to
+  "A" and the questions were cut off at the edge of the sideways-scrolling
+  region. With them underneath, the table is only as wide as its figures.
+  {% endcomment %}
   <div class="table-container flex flex-col gap-2 mb-1">
     <div class="w-full overflow-x-auto">
       <table class="base-table">
@@ -105,7 +111,6 @@
           <tr>
             <th>#</th><th>Supplier</th>
             {% for column in table_columns %}<th>{{ column.label }}</th>{% endfor %}
-            <th>Award</th>
           </tr>
         </thead>
         <tbody>
@@ -120,11 +125,15 @@
                    class="{% if row.item_name %}text-sm font-normal {% endif %}text-brand-indigo hover:underline">{% if row.item_name %}from {% endif %}{{ row.supplier_name }}</a>
                 {% include 'supply_chain/procurement/_supplier_flags.html' %}
                 {% include 'supply_chain/procurement/_ai_badge.html' with actor=ai_quotes|dictkey:row.quote_id %}
-                {% comment %}Beside the name, not in the last column: at 1280px that
-                column ran off the right edge and took the marker with it.{% endcomment %}
                 {% if row.quote_id in awarded_quote_ids %}
                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Awarded</span>
                 {% endif %}
+                {% with correction=corrections|dictkey:row.quote_id %}{% if correction %}
+                  {% comment %}Why a once-blocked offer is in the ranking: the correction that
+                  answered it, worded as the timeline words it, linked to that line.{% endcomment %}
+                  <a data-testid="correction-note" href="{{ history_url }}"
+                     class="block mt-0.5 text-xs font-normal text-gray-600 hover:underline">Corrected {{ correction.when|date:"j M" }}{% if correction.changes %}: {{ correction.changes }}{% endif %} — {{ correction.actor }}</a>
+                {% endif %}{% endwith %}
                 {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
                 {% include "supply_chain/procurement/_specification.html" with specification=row.specification %}
               </td>
@@ -148,38 +157,46 @@
                   {% endif %}
                 {% endwith %}
               {% endfor %}
-              <td>
-                {% if row.quote_id not in awarded_quote_ids and not supply_as_of %}
-                {% comment %}Stacked in one narrow column: side by side, the four controls pushed
-                the table past the content column at 1440px and clipped the Award button
-                off the edge of the sideways-scrolling region. The awarded offer is marked
-                beside its name, not here.{% endcomment %}
-                <form method="post" action="" class="flex flex-col gap-1.5 w-56">
-                  {% csrf_token %}
-                  <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
-                  <label class="text-xs text-gray-600" for="rationale-{{ row.quote_id }}">Why this offer</label>
-                  <input type="text" id="rationale-{{ row.quote_id }}" name="rationale" placeholder="the reason, in a sentence" required
-                         class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm">
-                  <label class="text-xs text-gray-600" for="decided-on-{{ row.quote_id }}">Decided on</label>
-                  <input type="date" id="decided-on-{{ row.quote_id }}" name="decided_on" value="{{ today }}" max="{{ today }}"
-                         title="The day the decision was made"
-                         class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm">
-                  <label class="text-xs text-gray-600" for="decided-by-{{ row.quote_id }}">Decided by</label>
-                  <div class="flex items-center gap-2">
-                    <input type="text" id="decided-by-{{ row.quote_id }}" name="decided_by" value="{{ decider }}"
-                           title="Who made the decision — the person, not the account recording it"
-                           placeholder="your name"
-                           class="flex-1 min-w-0 border border-gray-300 rounded-md px-2 py-1 text-sm">
-                    <button class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
+            </tr>
+            {% if row.questions or row.quote_id not in awarded_quote_ids and not supply_as_of %}
+            <tr data-testid="ranked-row-actions" data-actions-for="{{ row.quote_id }}" class="border-b border-gray-200">
+              <td></td>
+              <td colspan="{{ table_columns|length|add:1 }}" class="pt-0 pb-3">
+                <div class="flex flex-wrap items-start gap-x-8 gap-y-3">
+                  {% if row.questions %}
+                    <div class="min-w-0 flex-1 basis-80">
+                      {% include "supply_chain/procurement/_row_questions.html" with row=row %}
+                    </div>
+                  {% endif %}
+                  {% if row.quote_id not in awarded_quote_ids and not supply_as_of %}
+                  <form method="post" action="" class="flex flex-wrap items-end gap-2 min-w-0 flex-1 basis-96">
+                    {% csrf_token %}
+                    <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
+                    <label class="flex flex-col gap-0.5 text-xs text-gray-600 min-w-0 flex-1 basis-56" for="rationale-{{ row.quote_id }}">Why this offer
+                      <input type="text" id="rationale-{{ row.quote_id }}" name="rationale" placeholder="the reason, in a sentence" required
+                             class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-900">
+                    </label>
+                    <label class="flex flex-col gap-0.5 text-xs text-gray-600" for="decided-on-{{ row.quote_id }}">Decided on
+                      <input type="date" id="decided-on-{{ row.quote_id }}" name="decided_on" value="{{ today }}" max="{{ today }}"
+                             title="The day the decision was made"
+                             class="border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-900">
+                    </label>
+                    <label class="flex flex-col gap-0.5 text-xs text-gray-600 w-40" for="decided-by-{{ row.quote_id }}">Decided by
+                      <input type="text" id="decided-by-{{ row.quote_id }}" name="decided_by" value="{{ decider }}"
+                             title="Who made the decision — the person, not the account recording it"
+                             placeholder="your name"
+                             class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-900">
+                    </label>
+                    <button class="shrink-0 px-4 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
                             type="submit">
                       Award
                     </button>
-                  </div>
-                </form>
-                {% endif %}
-                {% include "supply_chain/procurement/_row_questions.html" with row=row %}
+                  </form>
+                  {% endif %}
+                </div>
               </td>
             </tr>
+            {% endif %}
           {% endfor %}
         </tbody>
       </table>
@@ -255,19 +272,41 @@
         {% if row.item_name %}<span class="text-sm font-normal text-gray-700">· {{ row.item_name }}</span>{% endif %}
         {% include 'supply_chain/procurement/_ai_badge.html' with actor=ai_quotes|dictkey:row.quote_id %}
       </h3>
+      {% comment %}
+      The one fact that keeps this offer out of the ranking, and the one
+      question that clears it, first. The rest of the checklist still stands,
+      folded under "Also confirm": led by eight bullets, the card hid the one
+      that mattered.
+      {% endcomment %}
+      {% if row.blocking %}
+        <p data-testid="blocking" class="text-sm font-semibold text-gray-900">Blocking: {{ row.blocking.fact }}</p>
+        {% if row.blocking.question %}
+          <p data-testid="blocking-question" class="text-sm text-gray-800 mt-0.5 mb-2">
+            {% if row.blocking.question.audience == "internal" %}Ours to do:{% else %}Ask the supplier:{% endif %}
+            {{ row.blocking.question.question }}
+          </p>
+        {% endif %}
+      {% endif %}
       {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
       {% include "supply_chain/procurement/_specification.html" with specification=row.specification %}
-      {% for column in comparison.columns %}
-        {% with cell=row.figures|dictkey:column.key %}
-          {% if cell.unconfirmed %}
-            <p class="text-sm text-gray-500 mb-1">
-              <strong class="text-gray-700">{{ column.label }}:</strong>
-              {% for reason in cell.unconfirmed %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}
-            </p>
-          {% endif %}
-        {% endwith %}
-      {% endfor %}
-      {% include "supply_chain/procurement/_row_questions.html" with row=row %}
+      {% with rest=row|also_confirm %}
+        {% if rest or row.blocking %}
+          <details data-testid="also-confirm" class="mt-2">
+            <summary class="cursor-pointer text-sm text-brand-indigo">{% if rest %}Also confirm ({{ rest|length }}){% else %}What each figure is missing{% endif %}</summary>
+            {% if rest %}{% include "supply_chain/procurement/_row_questions.html" with row=row questions=rest %}{% endif %}
+            {% for column in comparison.columns %}
+              {% with cell=row.figures|dictkey:column.key %}
+                {% if cell.unconfirmed %}
+                  <p class="text-xs text-gray-500 mt-1">
+                    <strong class="text-gray-600">{{ column.label }}:</strong>
+                    {% for reason in cell.unconfirmed %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}
+                  </p>
+                {% endif %}
+              {% endwith %}
+            {% endfor %}
+          </details>
+        {% endif %}
+      {% endwith %}
       {% for c in row.compliance %}
         {% if c.claim_conflict %}
           <p class="text-sm text-red-700 mt-2">

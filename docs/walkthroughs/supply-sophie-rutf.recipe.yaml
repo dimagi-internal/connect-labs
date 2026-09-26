@@ -67,6 +67,10 @@ scenes:
     note: open the source behind the AI's entry
   - kind: wait_for
     target: testid:source-excerpt
+  - kind: hover
+    target: text:History
+    seconds: 0.6
+    note: park the cursor off the forwarder's words
   - kind: hold
     seconds: 2.0
     note: the forwarder's words, quoted
@@ -147,9 +151,9 @@ scenes:
     seconds: 1.8
     target: css:[data-quote-id='${quote_pack_missing_id}'] >> text=Ask the supplier
   - kind: hover
-    note: park the cursor off the rows
+    note: the card the next scene answers, in frame
     seconds: 0.8
-    target: text:Needs info
+    target: css:[data-quote-id='${quote_pack_missing_id}']
   - kind: snapshot
     note: every blocked quote with the one thing it lacks and the question to ask
   - kind: hover
@@ -210,6 +214,10 @@ scenes:
     say: per child
     seconds: 2.0
     target: text:USD per child treated
+  - kind: hover
+    target: css:[data-testid=ranked-row]
+    seconds: 1.2
+    note: the answered quote, ranked, with the correction that let it in
   - kind: snapshot
     note: one quote comparable, two still waiting
   concept_claim: After the supplier's reply is recorded through the AI as a correction to its quote, round 2's timeline shows
@@ -277,6 +285,9 @@ scenes:
     timeout_ms: 30000
   - kind: wait_for
     target: css:a[href*='/procurement/awards/']
+  - kind: hold
+    seconds: 1.5
+    note: the award recorded, with her reason
   - kind: goto
     note: back to the program, where the decision now sits
     target: /supply/?program_id=${program_id}
