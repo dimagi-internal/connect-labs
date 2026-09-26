@@ -1,0 +1,54 @@
+schema_version: 1
+kind: why
+gate: advisory
+live_state_verified: false
+calibration: provisional
+rubric_name: ddd-why-brief
+ran_at: '2026-09-26T18:58:00+00:00'
+note: re-scored after the controller ruling replaced the misread/correction beat (S4, S6 rewritten; G6 dropped, G10 added)
+why_brief_path: .canopy/ddd/runs/supply-sophie-rutf-2026-09-26-001/why_brief.yaml
+
+adversarial:
+  weakest_claims:
+    - On round 2's comparison each quote names the one fact that keeps it out of the ranking and the question to ask that supplier; when one supplier replies with the missing fact, the AI reading Sophie's forwarded mail records it as a correction to that quote with the reply quoted as its source, the correction appears on round 2's timeline, and the quote joins the ranking with a cost per carton and per child treated.
+    - Sophie awards round 2 provisionally to the quote that answered, writing that it states everything needed to cost it and comes from the same manufacturer as round 1, and her overview shows round 2 awarded, by Sophie, today.
+    - Round 1's timeline lists every change from quote to payment, newest first, in plain language, and the line where the shipment's expected arrival moved from 5 Sep to 19 Sep is badged as entered by the ACE agent, with the forwarder's words that justified it one click away.
+  gap_honesty_concerns:
+    - "S4 depends on a supplier reply landing between two filmed scenes; the recorder cannot do that yet, which is surfaced as G10 but makes the beat unfilmable until canopy changes or the render is split."
+    - "EV-030 (other buyers on the market are synthetic) is assumed and is covered only as a seeding CAPABILITY (G3), not as a RESEARCH question about whether a public RUTF market with other buyers is realistic."
+    - "Most 'documented' evidence for S1-S4 is sections of one design spec written the same day; it is several anchors in one source, not independent confirmation that Sophie needs each view."
+  narrative_test: 'YES'
+  narrative_test_reason: A program director reading the spine in order sees a manager whose record forgets and whose data is typed by an AI, then sees her look back in time, watch a supplier's emailed answer enter the record with its evidence, and decide with a reason on the record.
+
+dimensions:
+  problem_clarity:
+    score: 4
+    weight: 0.20
+    justification: Names the actor (Sophie, Connect-RUTF), the channel (email via an AI) and the concrete pain (overwritten records, no who/what/when/as-of), and is falsifiable; one long sentence carrying four losses keeps it from a 5.
+  rationale_soundness:
+    score: 4
+    weight: 0.25
+    justification: Each rationale follows from the prior beat (no memory -> timeline -> as-of -> check the AI -> privacy boundary -> decision on the record); the S4 -> S6 step now rests on a real one-fact gap in the seed, closed by the supplier's reply.
+  evidence_sufficiency:
+    score: 4
+    weight: 0.25
+    justification: Every grounded claim carries at least two inventory-verified items, including implemented code for the choke point, quote fields, correct/void screens, comparison and provisional award; the capability claims for S1-S4 lean on one same-day design spec, so they are not independently sourced.
+  gap_honesty:
+    score: 4
+    weight: 0.15
+    justification: Every unbuilt capability is a typed CAPABILITY gap pointing at the design section, the illustrative dates are a RESEARCH gap, the between-scene reply is a CAPABILITY gap (G10), and the two framing tensions are DECISION gaps with their resolution; EV-030 is surfaced only as seeding work.
+  user_narrative_strength:
+    score: 4
+    weight: 0.15
+    justification: It reads as a story from today, back into the past, to a checked correction and a reasoned decision; the market beat (S5) is a side-step from the round-2 thread and feels slightly abrupt.
+
+overall_score: 4
+overall_rule: lowest
+
+verdict: pass
+blocking_reason: null
+
+fix_recommendation: |
+  [SPEC] Keep the reply beat free of any real supplier's figures (the reply states only the
+  pack configuration the round asked for). Consider framing S5 as Sophie checking what suppliers
+  can see of her open round 2 before she awards, so the market beat stays on the round-2 thread.

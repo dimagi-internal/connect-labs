@@ -2,3 +2,20 @@
 # Read by scripts/ddd/auth.py:resolve_ddd_workspace — every /canopy:ddd run here
 # publishes under /w/connect/ddd/… instead of the default (dimagi) flat routes.
 workspace: connect
+
+# v1-mode loop (canopy >= 0.2.525): backlog mode harvests findings from one full
+# judge and fixes them as one batch; convergence is still only declared on a full
+# pass. The deploy gate refuses to judge until labs /health/ reports the fix
+# PR's merge SHA on every sample (record it: python -m scripts.ddd.judge_gate
+# set-fix-sha <run_id> <sha>).
+loop:
+  mode: auto
+  backlog_min_findings: 8
+  full_rejudge_every: 3
+deploy_gate:
+  health_url: https://labs.connect.dimagi.com/health/
+  sha_field: git_sha
+  samples: 5
+  interval_seconds: 5
+  attempts: 12
+  retry_seconds: 30

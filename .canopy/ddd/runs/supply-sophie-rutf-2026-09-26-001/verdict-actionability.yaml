@@ -1,0 +1,100 @@
+schema_version: 1
+kind: actionability
+gate: advisory
+live_state_verified: false
+calibration: provisional
+rubric_name: ddd-narrative-actionability-eval
+ran_at: '2026-09-26T18:55:00+00:00'
+spec_path: docs/walkthroughs/supply-sophie-rutf.yaml
+iteration: 3
+previous: verdict-actionability-iter2.yaml (pass, 4) — spec revised on the controller ruling (misread/correct beat replaced by "the answer arrives"; award goes to the quote that answered)
+
+dimensions:
+  coverage:
+    score: 4
+    weight: 0.35
+    justification: All 23 declared features were inferred by at least two of three derivations, including the AI badge on comparison rows, the "Ask the supplier" question, the MCP correction carrying the reply as its source, the tender timeline over its quotes, cost per child, and an off-camera step between scenes 4 and 5; only the seed-only recorded_at override stays implied by none (by design).
+  specificity:
+    score: 4
+    weight: 0.25
+    justification: Plans name routes, testids, the revision table, a single record_change writer, the MCP correction call and per-rule question text with assertions; the carton-to-child conversion was left to the builder's choice.
+  correctness:
+    score: 4
+    weight: 0.20
+    justification: Two derivations update the quote's pack field in place, where the declared feature writes a new quote version via quote_correct; directionally right, one scope divergence.
+  consistency:
+    score: 4
+    weight: 0.20
+    justification: The three plans agree on every scene's primary action and on the reply being recorded by the agent between scenes 4 and 5; they differ on the conversion basis for cost per child and on in-place vs versioned correction.
+
+overall_score: 4
+overall_rule: lowest
+
+passes:
+- pass_id: d7
+  returned_at: '2026-09-26T18:49:59+00:00'
+  sha256: 37a38f0b118fe00a12438ab2a770f0b6d581c506b0669adfb7ece1f44175f3c8
+- pass_id: d8
+  returned_at: '2026-09-26T18:50:08+00:00'
+  sha256: a98f61b50ffb9fe26cce69271bbd87c67deee5c0d7b54a1a1112e4fad08fdaf6
+- pass_id: d9
+  returned_at: '2026-09-26T18:50:17+00:00'
+  sha256: 8965f0e0a801983e59d348ac5164c2fa473ac297481c915635a9a833b99baaf8
+pass_quotes:
+- pass_id: d7
+  quote: setup hook between scenes 4 and 5 invokes the MCP tool as ACE agent user
+- pass_id: d9
+  quote: an `ask-supplier` block with the heading "Ask the supplier" and the question text
+- pass_id: d8
+  quote: Every write (web form or MCP tool) goes through one `record_change()` service
+
+verdict: pass
+blocking_reason: null
+
+fix_recommendation: |
+  Optional: in "A supplier answers, and the quote joins the ranking", say the answer is recorded
+  as a new version of the quote (the earlier one stays readable), so builders do not edit the
+  quote in place.
+
+capability_gaps:
+  # scene -> missing capability (none exists in connect_labs/supply_chain on 2026-09-26)
+  sophie-reads-her-program:
+    - overview-program-header (§4.1)
+    - overview-rows with last change and actor (§4.2)
+    - overview-stale-flag (§4.2)
+    - overview-ai-badge (§4.2, §3.4)
+  the-eta-that-moved:
+    - revision-model (§3.1)
+    - revision-capture (§3.2)
+    - source-idempotency (§3.3)
+    - tender-timeline with field formatter (§4.3)
+    - actor-badge-excerpt, LABS_AGENT_ACCOUNT_EMAILS (§3.4)
+    - seed-round1-history with seed-only recorded_at override (§5)
+  back-to-twenty-august:
+    - as-of-rewind + backfill migration (§3.5)
+    - as-of-control-banner (§4.4)
+    - as-of-refuses-writes (§4.4)
+  round-two-cannot-be-compared:
+    - compare-ai-badge (§4.2/§4.3)
+    - seed-round2-quotes as agent writes with sources (§5)
+  the-answer-arrives:
+    - mcp-correction-with-source (§3.3 on quote_correct)
+    - tender-timeline-children (§4.3)
+    - seed-supplier-answer (§5)
+    - between-scene-seed-hook (canopy recorder; why-brief G10)
+  her-tender-on-the-market:
+    - market-no-history (§4.5)
+    - revisions-member-only (§4.5)
+    - seed-round2-public (§5; no other buyers seeded, controller ruling 2026-09-26)
+  sophie-awards-with-a-reason:
+    - overview-award-row (§4.2)
+    - award-rationale-timeline (§4.3)
+
+actionability_findings:
+- scene: A supplier answers, and the quote joins the ranking
+  dimension: correctness
+  severity: low
+  declared_features_missed: []
+  wrong_inferences: [pack field updated in place on the existing quote rather than a new version]
+  ambiguous_phrases: ["records the answer against its quote"]
+  fix_recommendation: Say the answer is recorded as a new version of the quote.
