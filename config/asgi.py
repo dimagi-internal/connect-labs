@@ -53,8 +53,7 @@ from starlette.responses import JSONResponse, Response  # noqa: E402
 from starlette.routing import Mount, Route  # noqa: E402
 
 from connect_labs.mcp import oauth  # noqa: E402
-from connect_labs.mcp.delegation import DPoPGate  # noqa: E402
-from connect_labs.mcp.server import build_http_app  # noqa: E402
+from connect_labs.mcp.server import build_http_app, dpop_gate  # noqa: E402
 
 
 class _ClosingConnectionsApp:
@@ -360,12 +359,13 @@ def build_application() -> Starlette:
             # outer _ClosingConnectionsApp closes this request's DB connections at
             # the mount boundary (MCP bypasses Django's request_finished signal),
             # the primary, comprehensive fix for the connection leak (#667 / #669).
-            # DPoPGate checks the proof on an `Authorization: DPoP` request (a
+            # dpop_gate (the canopy SDK's DPoPGate) checks the proof on an
+            # `Authorization: DPoP` request (a
             # token canopy redeemed for a visitor) and hands FastMCP a plain
             # bearer; it sits OUTSIDE _BearerChallenge so its RFC 9449
             # `invalid_dpop_proof` 401 is not rewritten into a Bearer challenge.
             # Bearer requests pass through it untouched.
-            Mount("/mcp", app=_ClosingConnectionsApp(DPoPGate(_BearerChallenge(mcp_app)))),
+            Mount("/mcp", app=_ClosingConnectionsApp(dpop_gate(_BearerChallenge(mcp_app)))),
             # Django handles everything else (catch-all, mounted last).
             Mount("/", app=_django_asgi_app),
         ],

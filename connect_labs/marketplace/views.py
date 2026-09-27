@@ -18,12 +18,12 @@ from __future__ import annotations
 
 import datetime
 
+from canopy_sdk.django.pages import panel_context as canopy_panel_context
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 
-from connect_labs.labs import canopy
 from connect_labs.labs.chrome import page_chrome
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import programs, queries
@@ -248,13 +248,13 @@ def network(request):
             # The agent panel is told WHICH organisations are on screen and how
             # the visitor narrowed to them — never the rows, which it reads for
             # itself through `marketplace_orgs_get`.
-            "canopy_panel": canopy.panel_context(
+            "canopy_panel": canopy_panel_context(
+                request,
                 resource="labs-marketplace://orgs",
                 backing_tool="marketplace_orgs_get",
                 visible_ids=[row["org"].slug for row in listed],
                 filters={k: v for k, v in state["selected"].items() if v},
                 path=request.path,
-                request=request,
             ),
         },
     )
@@ -322,13 +322,13 @@ def round_detail(request, slug):
             # round in the resource is what makes "draft an email for each of
             # these orgs to submit to THIS EOI" answerable without the visitor
             # having to say which one they are looking at.
-            "canopy_panel": canopy.panel_context(
+            "canopy_panel": canopy_panel_context(
+                request,
                 resource=f"labs-marketplace://rounds/{round_.slug}",
                 backing_tool="marketplace_rounds_list",
                 visible_ids=[a["org"].slug for a in applicants if a.get("org")],
                 filters={"round": round_.slug},
                 path=request.path,
-                request=request,
             ),
         },
     )

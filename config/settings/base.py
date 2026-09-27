@@ -148,6 +148,9 @@ THIRD_PARTY_APPS = [
     "django_tables2",
     "pghistory",
     "pgtrigger",  # added for pghistory
+    # The canopy SDK's host half (app label `canopy_host`): the delegated-token
+    # and used-jti tables behind the jwt-bearer grant. See connect_labs/labs/canopy.py.
+    "canopy_sdk.django",
 ]
 
 LOCAL_APPS = [
@@ -680,12 +683,18 @@ CANOPY_AGENT_SLUG = env("CANOPY_AGENT_SLUG", default="ace")
 # PEM, Ed25519. Newlines survive an env var as literal "\n", which is how a
 # task definition and a .env can both carry one.
 CANOPY_SIGNING_KEY = env("CANOPY_SIGNING_KEY", default="").replace("\\n", "\n")
-# Canopy acting AS the visitor at labs' MCP (connect_labs/mcp/delegation.py).
-# The canopy client's id — the URL of its Client ID Metadata Document, e.g.
-# https://labs.connect.dimagi.com/canopy/oauth/client.json. Unset = the
-# jwt-bearer grant is off: no ID-JAG is issued, /o/token/ refuses the grant,
+# Canopy acting AS the visitor at labs' MCP (the jwt-bearer grant, served by
+# the canopy SDK). The canopy client's id — the URL of its Client ID Metadata
+# Document, e.g. https://labs.connect.dimagi.com/canopy/oauth/client.json.
+# Unset = the grant is off: no ID-JAG is issued, /o/token/ refuses the grant,
 # and nothing else changes. Needs LABS_PUBLIC_URL and CANOPY_SIGNING_KEY too.
 CANOPY_CLIENT_ID = env("CANOPY_CLIENT_ID", default="")
+# What the canopy SDK (`canopy_sdk.django`) reads. Not a second copy of the
+# values above: a live view of them (and of LABS_PUBLIC_URL, which later
+# settings modules override), plus labs' page and scope registries.
+from connect_labs.labs.canopy import CanopyHost  # noqa: E402
+
+CANOPY_HOST = CanopyHost()
 
 # Audit trail (HIPAA-bar access/change logging — see docs/AUDIT_LOGGING.md)
 # ------------------------------------------------------------------------------
