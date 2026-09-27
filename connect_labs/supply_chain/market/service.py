@@ -70,15 +70,10 @@ class Line:
 
     @property
     def requirements(self) -> list[str]:
-        """The product's specification, in words: "Minimum graduation at most 20 g"."""
-        from connect_labs.supply_chain.procurement.services.compliance import OPERATOR_WORDS, requirement_label
+        """The product's specification, a line each: "Sachets per carton: 150 (exact)"."""
+        from connect_labs.supply_chain.procurement.services.compliance import requirement_line
 
-        out = []
-        for req in (self.commodity.spec_requirements if self.commodity else None) or []:
-            unit = req.get("unit") or ""
-            words = OPERATOR_WORDS.get(req.get("operator"), req.get("operator") or "")
-            out.append(f"{requirement_label(req.get('field'), unit)} {words} {req.get('value')} {unit}".strip())
-        return out
+        return [requirement_line(req) for req in (self.commodity.spec_requirements if self.commodity else None) or []]
 
 
 @dataclass

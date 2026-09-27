@@ -31,9 +31,13 @@ from connect_labs.supply_chain.history.labels import (
     Lookup,
     actor_label,
     correction_sentence,
+    create_what,
+    identity,
     is_ai,
     line_summary,
     model_label,
+    quote_field_label,
+    sender,
     sentence,
     subject,
 )
@@ -65,6 +69,21 @@ class Entry:
     # first write rather than written twice; None when it never did (or, on a
     # past date, had not yet).
     replayed_at: object = None  # datetime
+    # The line as the page reads it, one grammar for every kind of change:
+    # "<entity> · <which one> · <what happened>" -- "Shipment · SH-1 ·
+    # recorded: ETA 5 Sep", "Shipment · SH-1 · ETA 5 Sep → 19 Sep".
+    entity: str = ""
+    identity: str = ""
+    what: str = ""
+    # Who the quoted source came from, when the record says: a quote's
+    # supplier, a shipment's carrier. Blank otherwise -- never guessed.
+    sender: str = ""
+
+    @property
+    def line(self) -> str:
+        if not self.what:
+            return self.sentence
+        return " · ".join(part for part in (self.entity, self.identity, self.what) if part)
 
 
 # ---- scope ---------------------------------------------------------------
@@ -333,9 +352,16 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None, u
     )
     if model is None:
         return entry
+    values = None
     if revision.action == "update":
         row = lookup.row(model, revision.object_id)
-        entry.subject = subject(model, _values(row) if row is not None else None, lookup)
+        values = _values(row) if row is not None else None
+        entry.subject = subject(model, values, lookup)
+    elif revision.action == "create":
+        values = {k: v[1] for k, v in revision.changes.items()}
+    else:
+        values = dict(revision.changes)
+    _set_line(entry, model, revision.action, values, lookup, revision.object_id)
     if model is Quote and ai and offer_fixes and revision.action != "delete":
         quote_id = int(revision.object_id)
         if live_quote_ids is None:
@@ -344,6 +370,30 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None, u
             entry.correct_url = reverse("supply_chain:procurement_quote_correct", args=[quote_id])
             entry.void_url = reverse("supply_chain:procurement_quote_void", args=[quote_id])
     return entry
+
+
+def _set_line(entry, model, action, values, lookup, object_id=None):
+    """Fill the entry's "<entity> · <which one> · <what happened>" parts."""
+    # Who the source came from, off the record as it stands: a carrier
+    # recorded after the email arrived still says whose email it was.
+    # Only the two records a sender is read from, so no other line costs a query.
+    row = None
+    if model.__name__ in ("Quote", "Shipment") and action != "delete" and object_id not in (None, ""):
+        row = lookup.row(model, object_id)
+    entry.sender = sender(model, _values(row) if row is not None else values, lookup)
+    if model._meta.auto_created:
+        entry.entity = model_label(model)
+        entry.identity = identity(model, values, lookup)
+        entry.what = "withdrawn" if action == "delete" else "sent"
+        return
+    entry.entity = model_label(model)
+    entry.identity = identity(model, values, lookup) if values is not None else ""
+    if action == "create":
+        entry.what = create_what(model, values, lookup)
+    elif action == "delete":
+        entry.what = "removed"
+    else:
+        entry.what = entry.sentence
 
 
 def _values(row):
@@ -403,6 +453,10 @@ def _as_correction(entry, revision, superseded_id, lookup):
     )
     # Whose quote; "Quote" is already the sentence's first word.
     entry.subject = subject(Quote, new_values, lookup).removeprefix(model_label(Quote) + " · ")
+    entry.entity = model_label(Quote)
+    entry.identity = identity(Quote, new_values, lookup)
+    entry.what = "corrected" + entry.sentence.removeprefix(f"{model_label(Quote)} corrected")
+    entry.sender = sender(Quote, new_values, lookup)
 
 
 def _timeline(revisions, until) -> list[Entry]:
@@ -413,8 +467,13 @@ def _timeline(revisions, until) -> list[Entry]:
     revisions, corrections = _fold_corrections(revisions)
     by_model = {}
     for revision in revisions:
-        if revision.action == "update":
-            by_model.setdefault(revision.content_type.model_class(), set()).add(revision.object_id)
+        model = revision.content_type.model_class()
+        # Updates name their record from the row; a quote's or a shipment's
+        # create reads its source's sender from it too (`_set_line`).
+        if revision.action == "update" or (
+            revision.action == "create" and model is not None and model.__name__ in ("Quote", "Shipment")
+        ):
+            by_model.setdefault(model, set()).add(revision.object_id)
     for model, pks in by_model.items():
         if model is not None:
             lookup.prime(model, pks)
@@ -430,6 +489,8 @@ def _timeline(revisions, until) -> list[Entry]:
         lines = list(reversed(suffixes.get(id(revision), [])))
         if lines and entry.sentence:
             entry.sentence += " — " + "; ".join(lines)
+            if entry.what:
+                entry.what += " — " + "; ".join(lines)
         entries.append(entry)
     return [e for e in entries if e.sentence]
 
@@ -496,9 +557,10 @@ def corrections_for_quotes(quote_ids, *, program_id, until=None) -> dict:
     for revision in creates:
         quote_id = int(revision.object_id)
         new_values = {k: v[1] for k, v in revision.changes.items()}
-        text, _fields = correction_sentence(Quote, old.get(quote_id, {}), new_values, lookup)
+        text, fields = correction_sentence(Quote, old.get(quote_id, {}), new_values, lookup)
         _, _, changes = text.partition(": ")
         call = revision.call
+        merged = {**old.get(quote_id, {}), **new_values}
         out[quote_id] = {
             "when": revision.recorded_at,
             "changes": changes,
@@ -509,5 +571,15 @@ def corrections_for_quotes(quote_ids, *, program_id, until=None) -> dict:
             "excerpt": getattr(call, "source_excerpt", "") or "",
             "source_kind": source_kind(getattr(call, "source_ref", "")),
             "recorded_on": getattr(call, "recorded_at", None) or revision.recorded_at,
+            # Who the reply came from: the quote's supplier.
+            "sender": sender(Quote, merged, lookup),
+            # The figures the correction supplied, as the specification names
+            # them ("sachets per carton"), so the comparison can say where each
+            # came from rather than "stated on the quote".
+            "labels": [
+                quote_field_label(attname, merged, lookup).lower()
+                for attname in fields
+                if attname != "pack_spec_source"
+            ],
         }
     return out

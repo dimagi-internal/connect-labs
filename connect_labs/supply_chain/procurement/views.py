@@ -342,6 +342,44 @@ def _commodity_names(commodities) -> dict:
     return {c["slug"]: c.get("name") or c["slug"] for c in commodities if isinstance(c, dict) and c.get("slug")}
 
 
+def _short_day(when) -> str:
+    """ "28 Aug", in the site's time zone."""
+    from django.utils import timezone
+
+    if not when:
+        return ""
+    local = timezone.localtime(when) if timezone.is_aware(when) else when
+    return f"{local.day} {local.strftime('%b')}"
+
+
+def _spec_sources(comparison, corrections) -> None:
+    """Say where a correction's figure came from, in place of "stated on the quote".
+
+    After a supplier's reply supplies the pack, "Stated on the quote: sachets
+    per carton" was not true -- the quote never said it; the email did. Each
+    figure a correction supplied becomes "Sachets per carton: from supplier
+    email, 28 Aug" (`specification.from_correction`), and the rest stay
+    stated on the quote. Edits the comparison's rows in place.
+    """
+    for row in comparison.get("comparable") or []:
+        correction = corrections.get(row.get("quote_id"))
+        specification = row.get("specification")
+        if not correction or not specification:
+            continue
+        supplied = set(correction.get("labels") or [])
+        kind = (correction.get("source_kind") or "").lower()
+        where = f"from supplier {kind}" if kind else "from a correction"
+        day = _short_day(correction.get("when"))
+        specification["from_correction"] = [
+            f"{label[:1].upper()}{label[1:]}: {where}" + (f", {day}" if day else "")
+            for label in specification.get("stated_on_quote") or []
+            if label in supplied
+        ]
+        specification["stated_on_quote"] = [
+            label for label in specification.get("stated_on_quote") or [] if label not in supplied
+        ]
+
+
 class ComparisonView(_Base):
     template_name = "supply_chain/procurement/comparison.html"
 
@@ -425,6 +463,8 @@ class ComparisonView(_Base):
             if comparison
             else {}
         )
+        if comparison:
+            _spec_sources(comparison, context["corrections"])
         context["history_url"] = reverse("supply_chain:procurement_tender_detail", args=[tender_id]) + "#history"
         context["cost_basis"] = (
             cost_basis(next((c for c in commodities if isinstance(c, dict) and c.get("slug") == commodity), None))

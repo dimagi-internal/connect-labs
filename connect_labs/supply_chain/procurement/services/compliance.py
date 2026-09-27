@@ -106,6 +106,20 @@ def requirement_text(requirement: dict) -> str:
     return f"{requirement_label(requirement.get('field'), unit)} {words} {requirement.get('value')} {unit}".strip()
 
 
+# How each operator reads after a requirement's name on a listing: "Sachets
+# per carton: 150 (exact)", "Shelf life: at least 18 months".
+_LINE_WORDS = {">=": "at least {}", "<=": "at most {}", ">": "more than {}", "<": "less than {}", "==": "{} (exact)"}
+
+
+def requirement_line(requirement: dict) -> str:
+    """One requirement as a line of a request: "Sachets per carton: 150 (exact)"."""
+    unit = requirement.get("unit") or ""
+    figure = f"{requirement.get('value')} {unit}".strip()
+    template = _LINE_WORDS.get(requirement.get("operator"))
+    said = template.format(figure) if template else f"{requirement.get('operator') or ''} {figure}".strip()
+    return f"{requirement_label(figure_name(requirement.get('field')), unit)}: {said}"
+
+
 def _as_decimal(raw):
     try:
         return Decimal(str(raw))

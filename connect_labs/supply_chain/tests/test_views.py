@@ -89,7 +89,7 @@ def test_the_catalogue_shows_status_and_a_computed_spec_verdict(client, sophie):
 def test_the_domain_home_does_not_500_with_no_programme_selected(client, sophie):
     response = client.get(reverse("supply_chain:home"))
     assert response.status_code == 200
-    assert "No programme selected" in response.content.decode()
+    assert "No program selected" in response.content.decode()
 
 
 def test_the_tender_board_does_not_500_with_no_programme_selected(client, sophie):
@@ -170,7 +170,8 @@ def test_the_comparison_page_shows_an_unconfirmed_reason_rather_than_a_number(cl
     with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_comparing(snapshot)):
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
     body = response.content.decode()
-    assert "pack spec not stated" in body
+    # In the commodity's words where it names its units; "units per pack" where it does not.
+    assert "units per pack not stated" in body
     assert "Harmattan Foods" in body
 
 
