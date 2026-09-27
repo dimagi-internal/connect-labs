@@ -160,9 +160,9 @@ scenes:
     note: the card the next scene answers, in frame
     seconds: 0.8
     target: css:[data-quote-id='${quote_pack_missing_id}']
-  - kind: scroll
-    value: top
-    note: the comparison from its heading down
+  - kind: scroll_to
+    target: text:Needs info
+    note: all three blocked quotes in frame, the answered one included
   - kind: hold
     seconds: 0.6
   - kind: snapshot
