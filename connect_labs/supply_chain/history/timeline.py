@@ -19,6 +19,7 @@ they are now (inside the rewound transaction where a view calls this, rows the
 rewind restored included). A supplier renamed since reads by its new name.
 """
 
+import datetime
 from dataclasses import dataclass
 
 from django.contrib.contenttypes.models import ContentType
@@ -78,6 +79,14 @@ class Entry:
     # Who the quoted source came from, when the record says: a quote's
     # supplier, a shipment's carrier. Blank otherwise -- never guessed.
     sender: str = ""
+    # A change to a shipment's expected arrival, as a tag beside its line:
+    # "ETA moved +14 days". Blank for every other line.
+    eta_moved: str = ""
+
+    @property
+    def source_link_text(self) -> str:
+        """What the source affordance says: "View email" for an email, else "source"."""
+        return "View email" if self.source_kind == "Email" else "source"
 
     @property
     def line(self) -> str:
@@ -316,6 +325,25 @@ def source_kind(ref) -> str:
     return "Email" if "@" in ref else "Document"
 
 
+def _as_date(value):
+    if isinstance(value, datetime.date):
+        return value
+    try:
+        return datetime.date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def eta_moved(changes) -> str:
+    """ "ETA moved +14 days" (or "-3 days") for a change to `expected_on` between two days; "" otherwise."""
+    before, after = (changes or {}).get("expected_on") or (None, None)
+    before, after = _as_date(before), _as_date(after)
+    if before is None or after is None or before == after:
+        return ""
+    days = (after - before).days
+    return f"ETA moved {'+' if days > 0 else '-'}{abs(days)} day{'' if abs(days) == 1 else 's'}"
+
+
 def _replayed_at(call, until):
     if call is None or not getattr(call, "replay_count", 0) or call.last_replayed_at is None:
         return None
@@ -349,6 +377,7 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None, u
         source_kind=source_kind(getattr(call, "source_ref", "")),
         recorded_on=getattr(call, "recorded_at", None) or revision.recorded_at,
         replayed_at=_replayed_at(call, until),
+        eta_moved=eta_moved(revision.changes) if revision.action == "update" else "",
     )
     if model is None:
         return entry

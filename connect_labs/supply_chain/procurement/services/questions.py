@@ -162,6 +162,16 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
 
 _QUESTION_BY_KEY: dict[str, str] = {key: template for _, key, template, _audience in _REASON_QUESTIONS}
 
+# Freight or duties the quote EXCLUDES with no amount: whether it is included
+# is already answered, so the question asks only for the figure. Keyed by the
+# fragment of pricing's reason ("duties excluded from the quote but no duties
+# amount recorded"); the fact keeps its row's key, so it is still the one
+# question that clears the block.
+_AMOUNT_QUESTIONS: dict[str, str] = {
+    "no freight amount recorded": "What is the freight charge to {destination}?",
+    "no duties amount recorded": "What are the import duties and taxes at {destination}?",
+}
+
 
 def key_for_reason(reason: str) -> str | None:
     """The question key this Unconfirmed reason is answered by, or None.
@@ -400,6 +410,7 @@ def missing_facts(
             if fragment in lowered:
                 if key not in seen:
                     seen.add(key)
+                    template = next((q for f, q in _AMOUNT_QUESTIONS.items() if f in lowered), template)
                     facts.append(_fact(key, template, context, audience=audience))
                 break
         else:

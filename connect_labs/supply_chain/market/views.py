@@ -129,13 +129,28 @@ def _tender_page(request, listed):
     # The owning program's team sees the public listing as a supplier does,
     # and is told so, with the way back to the tender's own page.
     on_program = _signed_in(request) and service.on_program(request, tender)
+    # "Preview as a supplier" (?as_supplier=1): the program's team sees the
+    # page as a signed-in supplier outside the program would -- no owner note,
+    # no "your program's tender", the Bid action shown. Only for the team: to
+    # anyone else the page already is that. The action is drawn, not wired:
+    # the owner cannot bid on its own tender from a preview.
+    previewing = on_program and request.GET.get("as_supplier") == "1"
     return _render(
         request,
         "tender.html",
         listed=listed,
         card=cards.card_for(listed),
-        can_manage=bool(tender.slug) and _signed_in(request) and service.can_manage(request, tender),
-        program_view_url=(reverse("supply_chain:procurement_tender_detail", args=[tender.pk]) if on_program else None),
+        can_manage=(
+            not previewing and bool(tender.slug) and _signed_in(request) and service.can_manage(request, tender)
+        ),
+        program_view_url=(
+            reverse("supply_chain:procurement_tender_detail", args=[tender.pk])
+            if on_program and not previewing
+            else None
+        ),
+        previewing_as_supplier=previewing,
+        preview_url=f"{request.path}?as_supplier=1" if on_program and not previewing else "",
+        exit_preview_url=request.path if previewing else "",
         asked_for=_asked_for(listed.lines),
         delivered_to=_delivered_to_words(tender.delivery_points or []),
         posted_by=_posted_by(request, tender, on_program),

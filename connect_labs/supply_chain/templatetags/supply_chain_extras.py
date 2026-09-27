@@ -43,6 +43,13 @@ def also_confirm(row):
 
 
 @register.filter
+def all_missing_one(rows):
+    """Whether every blocked row is kept out of the ranking by exactly one gap."""
+    rows = list(rows or [])
+    return bool(rows) and all(len((row or {}).get("gaps") or []) == 1 for row in rows)
+
+
+@register.filter
 def not_blocking(row):
     """The specification's unstated requirements a blocked row's blocker is not: ["shelf life"].
 
@@ -710,6 +717,14 @@ def source_stages(source):
     """
     evaluation = source["evaluation"]
     sourcing = reverse("supply_chain:procurement_tender_board")
+
+    # Each count says what it is counted across: "2 of 4 comparable" is the
+    # program's total, and without its scope read as contradicting one
+    # round's "1 of 3" on the comparison page.
+    def across(part):
+        n = part.get("tenders")
+        return f" across {_plural(n, 'tender')}" if n else ""
+
     return [
         _cell(
             "Demand",
@@ -720,14 +735,14 @@ def source_stages(source):
         _cell(
             "RFQ issued",
             source["rfq_issued"]["invitations"],
-            f"{source['rfq_issued']['awaiting_reply']} awaiting a reply",
+            f"{source['rfq_issued']['awaiting_reply']} awaiting a reply" + across(source["rfq_issued"]),
             sourcing,
         ),
-        _cell("Quotations", source["quotations"]["live"], "live, after corrections", sourcing),
+        _cell("Quotations", source["quotations"]["live"], "live" + across(source["quotations"]), sourcing),
         _cell(
             "Evaluation",
             f"{evaluation['comparable']} of {evaluation['of']}",
-            "comparable" + (" · provisional" if evaluation["provisional"] else ""),
+            "comparable" + across(evaluation) + (" · provisional" if evaluation["provisional"] else ""),
             sourcing,
         ),
         _cell(

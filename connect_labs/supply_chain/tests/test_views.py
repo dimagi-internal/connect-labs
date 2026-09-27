@@ -661,7 +661,8 @@ def test_with_nothing_comparable_the_page_does_not_claim_a_provisional_ranking(c
     # the count renders either way and the supplier names also appear in the
     # "Needs info" cards below, so without this the whole no-ranking branch
     # could be deleted and every other assertion here would still hold.
-    assert "There is no ranking yet" in body
+    assert "0 of 2 comparable</strong>" in body
+    assert "each quote below is missing" in body
     # Who has to answer is still reported.
     assert "EHA Clinics" in body
     assert "DABS" in body

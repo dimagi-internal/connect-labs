@@ -14,7 +14,8 @@
     {% endif %}
     <h1 class="text-[26px] sm:text-3xl font-semibold text-white mt-1 leading-tight">{{ r.label }}</h1>
     {% if posted_by or r.opened_at %}
-      <p data-testid="posted-by" class="text-[13px] text-brand-sky mt-1">{% if posted_by %}Posted by {{ posted_by }}{% endif %}{% if posted_by and r.opened_at %} · {% endif %}{% if r.opened_at %}Published {{ r.opened_at|day }}{% endif %}</p>
+      {% comment %}One phrase, the day with its year and then who: "Posted 20 Aug 2026 by Lakeside Health Trust".{% endcomment %}
+      <p data-testid="posted-by" class="text-[13px] text-brand-sky mt-1">Posted{% if r.opened_at %} {{ r.opened_at|day }}{% endif %}{% if posted_by %} by {{ posted_by }}{% endif %}</p>
     {% endif %}
     {% if r.hue %}<div class="h-1 w-16 rounded-full mt-3" style="background: {{ r.hue }}"></div>{% endif %}
     {% if r.brief %}<p class="text-[14.5px] text-white/90 mt-3 max-w-3xl whitespace-pre-line leading-relaxed">{{ r.brief }}</p>{% endif %}
@@ -68,7 +69,15 @@
   <div data-testid="public-listing-note" class="bg-white border border-brand-border-light rounded-[10px] px-5 py-3 mb-6 max-w-3xl text-[13.5px] text-gray-700">
     This is the public listing, as every supplier sees it. Quotes, sources and history stay in your program.
     <a href="{{ program_view_url }}" class="ml-1 font-medium text-brand-indigo hover:underline">Back to the tender in your program →</a>
+    {% if preview_url %}<a data-testid="preview-as-supplier" href="{{ preview_url }}" class="ml-3 font-medium text-brand-indigo hover:underline">Preview as a supplier</a>{% endif %}
   </div>
+{% endif %}
+{% if previewing_as_supplier %}
+  {% comment %}Small and muted: the page below is the supplier's, and this is only the way back.{% endcomment %}
+  <p data-testid="supplier-preview-bar" class="mb-4 text-[12.5px] text-gray-500">
+    Previewing as a supplier would see it.
+    <a data-testid="exit-supplier-preview" href="{{ exit_preview_url }}" class="ml-1 text-brand-indigo hover:underline">Back to your view</a>
+  </p>
 {% endif %}
 {% if r.notes_to_supplier %}
   <div class="bg-white border border-brand-border-light rounded-[10px] px-5 py-4 mb-8 max-w-3xl">
@@ -79,16 +88,31 @@
 
 {% comment %}
 The products on the left, the request as a whole on the right: how much, where
-it goes, and what the specification says. The delivery places used to be a
-second full-width box above the products, which put the thing a supplier bids
-on below the fold.
+it goes, and what the specification says. The heading sits above both columns,
+so the first card and the request panel start on one line. With one product
+the request panel IS its card -- a separate card repeated its quantity -- and
+carries the bid action.
 {% endcomment %}
-<div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] items-start">
-<div class="min-w-0">
 <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-4">
   <h2 class="text-lg font-semibold text-brand-deep-purple">What they are asking for</h2>
-  <span class="text-[13px] text-gray-500">One bid per product. State it as you would write it; the buyer's comparison converts.</span>
+  <span class="text-[13px] text-gray-500">{% if listed.lines|length > 1 %}One bid per product. {% endif %}State it as you would write it; the buyer's comparison converts.</span>
 </div>
+{% if listed.lines|length == 1 %}
+  {% with line=listed.lines.0 %}
+  <aside data-testid="request-summary" class="pg-card bg-white border border-brand-border-light rounded-[10px] px-5 py-4 text-[13.5px] max-w-3xl" style="--hue: {{ card.hue }}">
+    <div class="flex items-start justify-between gap-3 mb-3">
+      <div data-testid="request-product" class="text-[17px] font-semibold text-gray-900 leading-snug">{{ line.name }}</div>
+      {% if line.matches %}<span class="pg-chip shrink-0 inline-flex items-center gap-1.5 text-[10.5px] font-semibold tracking-wide px-2 py-1 rounded-md"><span class="pg-dot w-1.5 h-1.5 rounded-full"></span>MATCHES YOU</span>{% endif %}
+    </div>
+    {% include "supply_chain/market/_request.html" %}
+    <div class="border-t border-gray-100 pt-3 mt-4 flex gap-4 text-[12.5px] font-medium">
+      {% include "supply_chain/market/_bid_action.html" %}
+    </div>
+  </aside>
+  {% endwith %}
+{% else %}
+<div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] items-start">
+<div class="min-w-0">
 <div class="grid gap-4 grid-cols-1 md:grid-cols-2">
   {% for line in listed.lines %}
     <article class="pg-card bg-white border border-brand-border-light rounded-[10px] pl-5 pr-4 sm:pl-6 sm:pr-5 pt-5 pb-4 flex flex-col gap-4" style="--hue: {{ card.hue }}">
@@ -104,16 +128,7 @@ on below the fold.
         {% endif %}
       </div>
       <div class="border-t border-gray-100 pt-3 mt-auto flex gap-4 text-[12.5px] font-medium">
-        {% if not signed_in %}
-          <a href="{% url 'labs:login' %}?next={% url 'supply_chain:market_bid' r.pk line.commodity_slug %}" class="pg-hue hover:underline">Sign in to bid →</a>
-        {% elif program_view_url %}
-          {% comment %}The buyer's own team: nothing to register for or bid on.{% endcomment %}
-          <span class="text-gray-500 font-normal">Your program's tender</span>
-        {% elif not supplier_orgs %}
-          <a href="{% url 'supply_chain:market_register' %}" class="pg-hue hover:underline">Register to bid →</a>
-        {% else %}
-          <a href="{% url 'supply_chain:market_bid' r.pk line.commodity_slug %}" class="pg-hue hover:underline">Bid →</a>
-        {% endif %}
+        {% include "supply_chain/market/_bid_action.html" %}
       </div>
     </article>
   {% endfor %}
@@ -122,33 +137,10 @@ on below the fold.
 
 <aside data-testid="request-summary" class="bg-white border border-brand-border-light rounded-[10px] px-5 py-4 text-[13.5px]">
   <h2 class="text-[11.5px] font-semibold tracking-wider text-gray-500 mb-2">THE REQUEST</h2>
-  <dl class="space-y-3">
-    {% if asked_for %}
-      <div>
-        <dt class="text-[12px] text-gray-500">Quantity</dt>
-        <dd class="font-medium text-gray-900 tabular-nums">{{ asked_for }}</dd>
-      </div>
-    {% endif %}
-    <div>
-      <dt class="text-[12px] text-gray-500">Delivered to</dt>
-      {% for p in r.delivery_points %}
-        <dd data-testid="delivery-point" class="text-gray-900"><span class="font-medium">{% firstof p.name p.city %}</span>{% if p.name and p.city %}<span class="text-gray-600">, {{ p.city }}</span>{% endif %}{% if p.country_name %}<span class="text-gray-600">, {{ p.country_name }}</span>{% endif %}</dd>
-      {% empty %}
-        {% if not r.pickup_accepted %}<dd class="text-gray-600">No place stated</dd>{% endif %}
-      {% endfor %}
-      {% if r.pickup_accepted %}<dd class="text-gray-900">Or the buyer collects from you <span class="text-gray-600">— say where on your bid.</span></dd>{% endif %}
-      {% if r.delivery_points|length > 1 %}<dd class="text-[12px] text-gray-600 mt-1">Your price can cover one place or several; if it differs by place, send a bid for each.</dd>{% endif %}
-    </div>
-    {% for line in listed.lines %}{% if line.requirements %}
-      <div>
-        <dt class="text-[12px] text-gray-500">Specification{% if listed.lines|length > 1 %} · {{ line.name }}{% endif %}</dt>
-        {% for req in line.requirements %}<dd data-testid="spec-line" class="text-gray-900">{{ req }}</dd>{% endfor %}
-        {% if line.commodity.spec_reference %}<dd class="text-[12px] text-gray-600 mt-0.5">Reference: {{ line.commodity.spec_reference }}</dd>{% endif %}
-      </div>
-    {% endif %}{% endfor %}
-  </dl>
+  {% include "supply_chain/market/_request.html" %}
 </aside>
 </div>
+{% endif %}
 
 {% if listed.own_quotes %}
   <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mt-12 mb-4">

@@ -1,0 +1,18 @@
+{% comment %}
+The action under one product of a listed tender, for whoever is looking: sign
+in, register, bid -- or, to the buyer's own team, nothing to do. In a
+"preview as a supplier" the Bid action is drawn as a supplier sees it but does
+nothing: the team cannot bid on its own tender.
+{% endcomment %}
+{% if previewing_as_supplier %}
+  <span data-testid="preview-bid" aria-disabled="true" title="A supplier bids here. This is a preview, so it does nothing." class="pg-hue cursor-not-allowed">Bid →</span>
+{% elif not signed_in %}
+  <a href="{% url 'labs:login' %}?next={% url 'supply_chain:market_bid' r.pk line.commodity_slug %}" class="pg-hue hover:underline">Sign in to bid →</a>
+{% elif program_view_url %}
+  {% comment %}The buyer's own team: nothing to register for or bid on.{% endcomment %}
+  <span class="text-gray-500 font-normal">Your program's tender</span>
+{% elif not supplier_orgs %}
+  <a href="{% url 'supply_chain:market_register' %}" class="pg-hue hover:underline">Register to bid →</a>
+{% else %}
+  <a href="{% url 'supply_chain:market_bid' r.pk line.commodity_slug %}" class="pg-hue hover:underline">Bid →</a>
+{% endif %}

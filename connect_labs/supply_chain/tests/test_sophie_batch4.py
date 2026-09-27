@@ -115,7 +115,7 @@ class TestTheSpecificationNamesWhatIsMissing:
         body = _page(client_in_program, base["tender"]["id"])
         # On a blocked card the blocker is said once; the rest reads as not blocking (batch 5).
         unstated = re.search(r'data-testid="not-blocking"[^>]*>(.*?)</p>', body).group(1)
-        assert unstated == "Also not stated (not blocking): shelf life"
+        assert " ".join(re.sub(r"<[^>]+>", "", unstated).split()) == "Also not stated (not blocking): shelf life"
         assert "OF 2 NOT STATED" not in body.upper()
 
     def test_the_pack_question_is_neutral_and_the_requirement_is_said_apart(self, da, base, client_in_program):
@@ -128,7 +128,9 @@ class TestTheSpecificationNamesWhatIsMissing:
         card = batch3._card(_page(client_in_program, base["tender"]["id"]), quote["id"])
         asked = re.search(r'data-testid="blocking-question"[^>]*>(.*?)</p>', card, re.S).group(1)
         assert "We require" not in asked and "weigh" not in asked
-        assert re.search(r'data-testid="requirement"[^>]*>Our specification: exactly 150<', asked)
+        # Since batch 6 the spec chip beside the blocker says it, so the line under the question does not.
+        assert "Our specification" not in asked
+        assert re.search(r'data-testid="spec-chip"[^>]*>Spec: 150 sachets per carton<', card)
 
     def test_a_supplier_message_still_says_the_requirement(self, da, base):
         _with_spec(da)
@@ -166,7 +168,7 @@ class TestACorrectionSaysItsUnitsAndOpensOnItsSource:
 
         source = re.search(r'<details data-testid="correction-source".*?</details>', ranked, re.S).group(0)
         summary = " ".join(re.search(r"<summary[^>]*>(.*?)</summary>", source, re.S).group(1).split())
-        assert summary == "Corrected 28 Aug: sachets per carton 150 (was not stated)"
+        assert summary == "Corrected 28 Aug by ACE (agent) from Northwind Foods email:"
         excerpt = re.search(r'<blockquote data-testid="source-excerpt"[^>]*>(.*?)</blockquote>', source, re.S)
         assert excerpt.group(1) == PACK_EMAIL
 
@@ -210,7 +212,7 @@ class TestTheBasisFlagNamesWhatTheComparisonBlocks:
         (row,) = (r for r in standing_rows(PROGRAM, datetime.date(2026, 8, 30)) if r.kind == "tender")
         # Since batch 5 one flag covers every blocked quote, whatever blocks it.
         (flag,) = (f for f in row.stale if f.startswith("Can't compare yet"))
-        assert flag == "Can't compare yet: Northwind Foods (freight), Sahel Nutrition (duties amount)"
+        assert flag == "Can't compare yet: Northwind Foods: freight; Sahel Nutrition: duties amount"
         assert flag.rule == BLOCKED_RULE
 
         blocked = _compare(da, tender_id)["blocked"]
@@ -325,7 +327,7 @@ class TestTheTenderPage:
     def test_history_is_headed_like_the_other_sections_and_dates_read_one_way(self, da, base, client_in_program):
         batch3._outreach(da, base["tender"]["id"], base["supplier"]["id"], "2026-07-06")
         body = _tender_page(client_in_program, base["tender"]["id"])
-        assert '<h2 class="text-lg font-semibold text-gray-900 mb-2">History</h2>' in body
+        assert '<h2 class="text-lg font-semibold text-gray-900 mb-2 scroll-mt-20">History</h2>' in body
         assert '<section id="history"' in body
         assert "6 Jul 2026" in body
         assert "2026-07-06" not in body
@@ -458,7 +460,7 @@ class TestTheListingHero:
             opened_at=datetime.datetime(2026, 7, 6, 9, tzinfo=datetime.UTC)
         )
         anonymous = _listing(client, listed_tender)
-        assert re.search(r'data-testid="posted-by"[^>]*>Published 6 Jul 2026<', anonymous)
+        assert re.search(r'data-testid="posted-by"[^>]*>Posted 6 Jul 2026<', anonymous)
 
         user = django_user_model.objects.create_user(username="sophie5", password="x", email="s5@example.org")
         client.force_login(user)
@@ -471,4 +473,4 @@ class TestTheListingHero:
         }
         session.save()
         own = _listing(client, listed_tender)
-        assert re.search(r'data-testid="posted-by"[^>]*>Posted by Lakeside Health Trust · Published 6 Jul 2026<', own)
+        assert re.search(r'data-testid="posted-by"[^>]*>Posted 6 Jul 2026 by Lakeside Health Trust<', own)
