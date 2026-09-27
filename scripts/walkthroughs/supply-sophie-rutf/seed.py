@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import calendar
 import json
 import os
 import re
@@ -70,10 +71,7 @@ DRIVER = """
 import base64
 import json
 
-_loader = {}
-exec(compile(base64.b64decode("__LOADER_B64__").decode(), "seed_data.py", "exec"), _loader)
-_seed = {}
-exec(compile(base64.b64decode("__SEEDER_B64__").decode(), "seed_remote.py", "exec"), _seed)
+__MODULES__
 
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
@@ -132,6 +130,7 @@ if not sophie.view_synthetic_opps:
     sophie.view_synthetic_opps = True
     sophie.save(update_fields=["view_synthetic_opps"])
 _hours = 12
+MINT = __MINT__
 store = import_module(settings.SESSION_ENGINE).SessionStore()
 store["_auth_user_id"] = str(sophie.pk)
 store["_auth_user_backend"] = "django.contrib.auth.backends.ModelBackend"
@@ -143,10 +142,11 @@ store["labs_oauth"] = {
     "organization_data": {"organizations": [], "programs": [], "opportunities": []},
 }
 store.set_expiry(_hours * 3600)
-store.create()
+if MINT:
+    store.create()
 
 print("__MARK__" + json.dumps({
-    "sophie_session": {"key": store.session_key, "expires": int(_time.time() + _hours * 3600)},
+    "sophie_session": {"key": store.session_key, "expires": int(_time.time() + _hours * 3600)} if MINT else None,
     "program_id": PID,
     "round1_tender_id": rounds["round_one"]["round"]["id"],
     "round2_tender_id": rounds["round_two"]["round"]["id"],
@@ -170,15 +170,135 @@ def _folder() -> str:
     return folder
 
 
-def reset_and_seed(filename: str) -> dict:
-    driver = (
-        DRIVER.replace("__LOADER_B64__", base64.b64encode(oes.LOADER.read_bytes()).decode())
+INLINE_MODULES = """
+_loader = {}
+exec(compile(base64.b64decode("__LOADER_B64__").decode(), "seed_data.py", "exec"), _loader)
+_seed = {}
+exec(compile(base64.b64decode("__SEEDER_B64__").decode(), "seed_remote.py", "exec"), _seed)
+"""
+
+# The GitHub route cannot carry the modules: ECS run-task overrides stop at 8 KB.
+# The repository is public, so the task fetches them at a pinned commit instead.
+FETCHED_MODULES = """
+import urllib.request
+def _fetch(path):
+    url = "https://raw.githubusercontent.com/dimagi-internal/connect-labs/__SHA__/" + path
+    with urllib.request.urlopen(url, timeout=60) as response:
+        return response.read().decode()
+_loader = {}
+exec(compile(_fetch("connect_labs/labs/synthetic/seed_data.py"), "seed_data.py", "exec"), _loader)
+_seed = {}
+exec(compile(_fetch("scripts/walkthroughs/oes-demo/seed_remote.py"), "seed_remote.py", "exec"), _seed)
+"""
+
+
+def _driver(filename: str, *, modules: str, mint: bool) -> str:
+    return (
+        DRIVER.replace("__MODULES__", modules)
+        .replace("__LOADER_B64__", base64.b64encode(oes.LOADER.read_bytes()).decode())
         .replace("__SEEDER_B64__", base64.b64encode((oes.HERE / "seed_remote.py").read_bytes()).decode())
         .replace("__FOLDER__", _folder())
         .replace("__FILENAME__", filename)
         .replace("__MARK__", MARK)
         .replace("__PID__", str(PROGRAM_ID))
+        .replace("__MINT__", "True" if mint else "False")
     )
+
+
+def _parse_result(output: str, why: str) -> dict:
+    match = re.search(MARK + r"(\{.*?\})" + MARK, output, re.S)
+    if not match:
+        tail = "\n".join(output.splitlines()[-40:])
+        sys.exit(f"seed printed no result ({why}):\n{tail}")
+    return json.loads(match.group(1).replace("\r", "").replace("\n", ""))
+
+
+def _aws_session_live() -> bool:
+    probe = subprocess.run(
+        ["aws", "sts", "get-caller-identity", "--profile", os.environ.get("AWS_PROFILE", "labs")],
+        capture_output=True,
+        text=True,
+    )
+    return probe.returncode == 0
+
+
+def reset_and_seed_via_github(filename: str) -> dict:
+    """Same payload, run as a one-off task by the repo's run-labs-command workflow.
+
+    For when the local AWS SSO session has expired (renewing it needs a person).
+    That workflow assumes its role through GitHub OIDC. Its log is PUBLIC, so this
+    route never mints Sophie's session (the key would be printed there); the
+    previous take's session is reused while it is still valid.
+    """
+    sha = subprocess.run(
+        ["git", "rev-parse", "origin/main"], cwd=HERE, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    driver = _driver(filename, modules=FETCHED_MODULES.replace("__SHA__", sha), mint=False)
+    packed = base64.b64encode(zlib.compress(driver.encode(), 9)).decode()
+    command = (
+        "shell -c \"exec(__import__('zlib').decompress(" f"__import__('base64').b64decode('{packed}')).decode())\""
+    )
+    if len(command) > 7000:
+        sys.exit(f"payload {len(command):,} chars is past what ECS run-task overrides carry (8 KB)")
+    repo = "dimagi-internal/connect-labs"
+    started = time.time()
+    subprocess.run(
+        [
+            "gh",
+            "workflow",
+            "run",
+            "run-labs-command.yml",
+            "--repo",
+            repo,
+            "--ref",
+            "main",
+            "--field",
+            f"command={command}",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    print("resetting + seeding over the run-labs-command workflow (AWS SSO expired)…", file=sys.stderr, flush=True)
+    run_id = None
+    for _ in range(30):
+        time.sleep(4)
+        runs = json.loads(
+            subprocess.run(
+                [
+                    "gh",
+                    "run",
+                    "list",
+                    "--repo",
+                    repo,
+                    "--workflow",
+                    "run-labs-command.yml",
+                    "--limit",
+                    "5",
+                    "--json",
+                    "databaseId,createdAt",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        )
+        fresh = [
+            r for r in runs if calendar.timegm(time.strptime(r["createdAt"], "%Y-%m-%dT%H:%M:%SZ")) >= started - 10
+        ]
+        if fresh:
+            run_id = str(fresh[0]["databaseId"])
+            break
+    if run_id is None:
+        sys.exit("dispatched run-labs-command but could not find its run")
+    subprocess.run(["gh", "run", "watch", run_id, "--repo", repo], capture_output=True, timeout=1500)
+    log = subprocess.run(["gh", "run", "view", run_id, "--repo", repo, "--log"], capture_output=True, text=True)
+    return _parse_result(log.stdout + log.stderr, f"run {run_id}")
+
+
+def reset_and_seed(filename: str) -> dict:
+    if not _aws_session_live():
+        return reset_and_seed_via_github(filename)
+    driver = _driver(filename, modules=INLINE_MODULES, mint=True)
     packed = base64.b64encode(zlib.compress(driver.encode(), 9)).decode()
     command = (
         "python manage.py shell -c \"exec(__import__('zlib').decompress("
@@ -207,12 +327,7 @@ def reset_and_seed(filename: str) -> dict:
         )
     finally:
         holder.kill()
-    output = result.stdout + result.stderr
-    match = re.search(MARK + r"(\{.*?\})" + MARK, output, re.S)
-    if not match:
-        tail = "\n".join(output.splitlines()[-40:])
-        sys.exit(f"seed printed no result (exit {result.returncode}):\n{tail}")
-    return json.loads(match.group(1).replace("\r", "").replace("\n", ""))
+    return _parse_result(result.stdout + result.stderr, f"exit {result.returncode}")
 
 
 STORAGE_STATE = HERE / ".sophie-storage-state.json"
@@ -367,7 +482,18 @@ def main() -> None:
     _stop_previous_watcher()
     realized = reset_and_seed(args.filename)
     clarification = realized.pop("clarification")
-    write_storage_state(realized.pop("sophie_session"))
+    session = realized.pop("sophie_session")
+    if session:
+        write_storage_state(session)
+    else:
+        state = json.loads(STORAGE_STATE.read_text()) if STORAGE_STATE.exists() else {"cookies": []}
+        left = min((c.get("expires", 0) for c in state["cookies"]), default=0) - time.time()
+        if left < 3600:
+            sys.exit(
+                "no fresh Sophie session: the GitHub route cannot mint one and the last one expires "
+                "within the hour; renew AWS SSO (aws sso login --profile labs)"
+            )
+        print(f"reusing Sophie's session ({left / 3600:.1f} h left)", file=sys.stderr)
     if not realized.get("quote_pack_missing_id") or not clarification:
         sys.exit("the seed document names no round-2 clarification; scene 5 has nothing to show")
     outputs = {**realized, "as_of_date": AS_OF_DATE}
