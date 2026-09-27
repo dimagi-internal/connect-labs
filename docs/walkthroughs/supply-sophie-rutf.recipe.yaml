@@ -160,6 +160,11 @@ scenes:
     note: the card the next scene answers, in frame
     seconds: 0.8
     target: css:[data-quote-id='${quote_pack_missing_id}']
+  - kind: scroll
+    value: top
+    note: the comparison from its heading down
+  - kind: hold
+    seconds: 0.6
   - kind: snapshot
     note: every blocked quote with the one thing it lacks and the question to ask
   - kind: hover
@@ -239,7 +244,7 @@ scenes:
     "ACE (agent)"; she opens the badge and reads the supplier''s reply quoted as its source. She opens the comparison: that
     quote now sits under Comparable, ranked, with a landed cost per carton and per child treated, while the other two stay
     under Needs info.'
-  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#history
 - id: her-tender-on-the-market
   actions:
   - kind: hold
@@ -252,15 +257,17 @@ scenes:
     target: css:a[href*='/market/tenders/${round2_tender_id}/']
   - kind: wait_for
     target: css:body:not(:has([data-testid=timeline]))
+  - kind: click
+    target: testid:preview-as-supplier
+    must_succeed: true
+    note: the page exactly as a supplier sees it
+  - kind: wait_for
+    target: css:body:not(:has(:text("This is the public listing")))
   - kind: hover
     note: quantity, delivery point, and what the buyer asks each supplier to state
     say: request
     seconds: 2.0
     target: text:FROM THE BUYER
-  - kind: hover
-    target: text:This is the public listing
-    seconds: 0.8
-    note: park the cursor on the boundary note, off the request
   - kind: hold
     note: no prices, no excerpts, no history
     say: private
@@ -289,6 +296,9 @@ scenes:
     say: why
     target: css:form:has(input[name=quote_id][value='${answered_quote_id}']) input[name=rationale]
     value: States everything needed to cost it and is the same manufacturer as round 1; provisional until the other two answer
+  - kind: hold
+    seconds: 1.5
+    note: her reason, typed, before the award
   - kind: click
     must_succeed: true
     target: css:form:has(input[name=quote_id][value='${answered_quote_id}']) button:has-text('Award')
