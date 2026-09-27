@@ -171,34 +171,20 @@ def _verify_bearer_sync(raw: str, presented_jkt: str | None = None):
 # ---------------------------------------------------------------------------
 
 
-def _resource_verifier():
-    """The SDK's verifier for labs' MCP (``LABS_PUBLIC_URL`` + ``/mcp/``).
-
-    A labs with no signing key issues no grants, so a DPoP request there is
-    refused as one (401 ``invalid_dpop_proof``). The SDK's own
-    ``canopy_sdk.django.asgi.dpop_gate`` would let ``HostNotConfigured`` escape
-    as a 500, which is why labs builds the gate itself.
-    """
-    from canopy_sdk.contract import ContractError
-    from canopy_sdk.django.asgi import resource_verifier
-
-    try:
-        return resource_verifier()
-    except Exception as exc:  # noqa: BLE001 - unconfigured or an unreadable key: no grants here
-        raise ContractError("not_configured", "this server accepts no DPoP-bound tokens") from exc
-
-
 def dpop_gate(app):
     """Wrap the MCP app: ``Authorization: DPoP`` is verified (proof, ``ath``,
     freshness, single use) and handed on as a plain bearer; everything else
-    passes through untouched. See ``canopy_sdk.host.DPoPGate``."""
-    from canopy_sdk.host import DPoPGate
+    passes through untouched. A labs with no grant configured (no signing key,
+    no ``CANOPY_CLIENT_ID``, or an unreadable key) refuses a DPoP request 401
+    ``invalid_dpop_proof`` — the SDK's gate, never a 500. See
+    ``canopy_sdk.django.asgi.dpop_gate``."""
+    from canopy_sdk.django.asgi import dpop_gate as sdk_dpop_gate
 
     def run_sync(fn, *args):
         # thread_sensitive: the ORM's connections are per-thread.
         return sync_to_async(_closing_connections(fn), thread_sensitive=True)(*args)
 
-    return DPoPGate(app, _resource_verifier, run_sync=run_sync)
+    return sdk_dpop_gate(app, run_sync=run_sync)
 
 
 def _resolve_delegated_sync(raw: str, presented_jkt: str | None):
@@ -208,13 +194,13 @@ def _resolve_delegated_sync(raw: str, presented_jkt: str | None):
     ALWAYS presented with a proof by the key it is bound to — plus that the
     subject is still a labs user to run the tools as.
     """
+    from canopy_sdk.django.asgi import resolve_delegated
+
     from connect_labs.users.models import User
 
-    try:
-        verifier = _resource_verifier()
-    except Exception:  # noqa: BLE001 - no grants here, so no delegated tokens either
-        return None
-    principal = verifier.resolve(raw, presented_jkt)
+    # None while the grant is off (or the key is unreadable): no grants here,
+    # so no delegated tokens either. Never raises for configuration.
+    principal = resolve_delegated(raw, presented_jkt)
     if principal is None:
         return None
     try:

@@ -12,9 +12,10 @@ can decide:
   which scopes;
 * ``SCOPE_TOOLS`` — what each scope unlocks at labs' MCP;
 * ``user_claims`` — what labs vouches for about its signed-in user;
-* ``CanopyHost`` — ``settings.CANOPY_HOST``, built from labs' existing
-  ``CANOPY_*`` settings and ``LABS_PUBLIC_URL``, so no environment variable was
-  renamed and the task definitions did not change.
+* ``host_settings`` — ``settings.CANOPY_HOST`` (the SDK resolves a callable
+  on every read), built from labs' existing ``CANOPY_*`` settings and
+  ``LABS_PUBLIC_URL``, so no environment variable was renamed and the task
+  definitions did not change.
 
 Two rules the SDK keeps and labs relies on: ``sub`` is labs' OWN id for the
 signed-in user (``str(user.pk)``), never anything the browser sent; and a page's
@@ -25,8 +26,6 @@ anything that needs the app registry at import time.
 """
 
 from __future__ import annotations
-
-from collections.abc import Mapping
 
 from django.conf import settings
 
@@ -82,21 +81,15 @@ def user_claims(user) -> dict:
     }
 
 
-def _panel_token_url() -> str:
-    from django.urls import NoReverseMatch, reverse
-
-    try:
-        return reverse("labs:canopy_token")
-    except NoReverseMatch:
-        return ""
-
-
 def host_settings() -> dict:
     """``CANOPY_HOST`` as the SDK reads it, from labs' settings as they are NOW.
 
-    Read on every call rather than frozen at settings import: ``LABS_PUBLIC_URL``
-    is overridden per environment AFTER ``base.py`` (local, test, labs_aws), and
-    tests override the individual ``CANOPY_*`` settings. The grant needs a public
+    ``settings.CANOPY_HOST`` is this function, and the SDK calls it on every
+    read rather than freezing it at settings import: ``LABS_PUBLIC_URL`` is
+    overridden per environment AFTER ``base.py`` (local, test, labs_aws), and
+    tests override the individual ``CANOPY_*`` settings. A callable (not a
+    ``Mapping``) also keeps the signing key off Django's debug page, which shows
+    a callable by name. The grant needs a public
     origin — every URL it names is absolute — so without one it is off, exactly
     as before.
     """
@@ -113,29 +106,10 @@ def host_settings() -> dict:
         "SCOPE_TOOLS": SCOPE_TOOLS,
         "PAGE_SCOPES": PAGE_SCOPES,
         "USER_CLAIMS": user_claims,
-        "PANEL_TOKEN_URL": _panel_token_url(),
+        # Reversed by the SDK per request, so it follows labs' URLconf.
+        "PANEL_TOKEN_URL_NAME": "labs:canopy_token",
         "PANEL": PANEL,
     }
-
-
-class CanopyHost(Mapping):
-    """``settings.CANOPY_HOST``: a live view of ``host_settings()``.
-
-    Its repr never shows the values — the signing key is one of them, and a
-    Mapping is not a dict, so Django's debug-page cleansing would not reach it.
-    """
-
-    def __getitem__(self, key):
-        return host_settings()[key]
-
-    def __iter__(self):
-        return iter(host_settings())
-
-    def __len__(self):
-        return len(host_settings())
-
-    def __repr__(self) -> str:
-        return "<CanopyHost: built from the CANOPY_* settings and LABS_PUBLIC_URL>"
 
 
 def host_config():

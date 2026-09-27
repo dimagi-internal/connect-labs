@@ -104,12 +104,18 @@ def _published_key(client):
     return PyJWK.from_dict(client.get(reverse("labs:canopy_jwks")).json()["keys"][0]).key
 
 
-def _token_url(body: str) -> str:
-    """The widget's ``tokenUrl`` as the browser reads it (the template escapes it
-    for a JS string, so ``=`` arrives as ``\\u003D``)."""
-    marker = 'tokenUrl: "'
+def _panel_options(body: str) -> dict:
+    """The widget's options exactly as the page carries them (``json_script``)."""
+    marker = '<script id="canopy-panel-options" type="application/json">'
     start = body.index(marker) + len(marker)
-    return json.loads('"' + body[start : body.index('"', start)] + '"')
+    return json.loads(body[start : body.index("</script>", start)])
+
+
+def _token_url(body: str) -> str:
+    """The widget's ``tokenUrl``: rendered literally, so it is on the page as-is."""
+    url = _panel_options(body)["tokenUrl"]
+    assert url in body
+    return url
 
 
 def _rendered_page_token(client, name="marketplace:network", args=()):
@@ -125,9 +131,9 @@ def _rendered_page_token(client, name="marketplace:network", args=()):
 
 class TestSettings:
     def test_canopy_host_reads_labs_settings_live(self, configured, settings):
-        from django.conf import settings as live
+        from canopy_sdk.django import conf
 
-        host = dict(live.CANOPY_HOST)
+        host = conf.raw()
 
         assert host["CANOPY_BASE_URL"] == CANOPY
         assert host["APP_NAME"] == "connect-labs"
@@ -136,11 +142,11 @@ class TestSettings:
         assert host["ISSUER"] == BASE
         assert host["RESOURCE"] == f"{BASE}/mcp/"
         assert host["TOKEN_ENDPOINT"] == f"{BASE}/o/token/"
-        assert host["PANEL_TOKEN_URL"] == "/labs/canopy/token/"
+        assert host["PANEL_TOKEN_URL_NAME"] == "labs:canopy_token"
         assert host["PAGE_SCOPES"] is canopy.PAGE_SCOPES
 
         settings.CANOPY_CLIENT_ID = ""
-        assert live.CANOPY_HOST["CLIENT_ID"] == "", "an override applies without a rebuild"
+        assert conf.raw()["CLIENT_ID"] == "", "an override applies without a rebuild"
 
     def test_no_public_origin_means_no_grant(self, configured, settings):
         settings.LABS_PUBLIC_URL = ""
@@ -148,10 +154,11 @@ class TestSettings:
         assert canopy.host_config().grant_enabled is False
         assert canopy.host_config().assertions_enabled is True, "the panel itself still works"
 
-    def test_the_repr_never_shows_the_signing_key(self, configured):
-        from django.conf import settings as live
+    def test_the_debug_page_never_shows_the_signing_key(self, configured):
+        from django.views.debug import SafeExceptionReporterFilter
 
-        assert "PRIVATE KEY" not in repr(live.CANOPY_HOST)
+        safe = SafeExceptionReporterFilter().get_safe_settings()
+        assert "PRIVATE KEY" not in repr(safe["CANOPY_HOST"])
 
     def test_no_key_means_no_host(self, configured, settings):
         settings.CANOPY_SIGNING_KEY = ""
@@ -180,7 +187,7 @@ class TestTheMint:
         response, canopy_stub = _mint(client)
 
         assert response.status_code == 200
-        assert response.json() == {"token": "tok", "expires_at": "2026-01-01T00:00:00Z"}
+        assert response.json() == {"token": "tok", "expires_at": "2026-01-01T00:00:00Z", "kind": "contact"}
         assert canopy_stub.url == f"{CANOPY}/api/auth/contact-token"
         assert canopy_stub.sent["agent_slug"] == "ace", "names canopy's tenant (canopy-web #960)"
         claims = jwt.decode(
@@ -373,7 +380,7 @@ class TestTheRenderedPanel:
         assert 'id="canopy-page-state"' in body
         assert "labs-marketplace://orgs" in body
         assert "marketplace_orgs_get" in body
-        assert 'agent: "ace"' in body
+        assert _panel_options(body)["agent"] == "ace"
         assert _token_url(body).startswith("/labs/canopy/token/?page=")
         # Labs' look, unchanged.
         assert "#3F4FA0" in body
