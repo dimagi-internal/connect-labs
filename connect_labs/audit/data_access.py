@@ -506,6 +506,46 @@ def filter_out_prior_audited(all_visit_images: dict, prior_index: dict) -> tuple
     return filtered, excluded
 
 
+def drop_images_shared_across_visits(all_visit_images: dict) -> tuple[dict, int]:
+    """Keep each blob on only one visit: the lowest visit id that carries it.
+
+    A form with more than one Connect deliver block (e.g. an RUTF Screening that
+    fires both "CHC Distribution" and "SAM enrollment visit") becomes one
+    UserVisit per block, all sharing the form's xform_id. Connect attaches images
+    by xform_id, so every one of those visits reports the SAME blobs -- and the
+    audit would otherwise show, review and count one photo once per visit.
+
+    Lowest visit id is deterministic across runs, so the prior-audit index
+    ("<visit_id>:<blob_id>") keeps matching. Visits whose images were all
+    claimed by an earlier visit are kept with an empty list, the same shape
+    extract_images_for_visits uses for a visit with no images.
+
+    Returns (deduped_visit_images, dropped_count).
+    """
+    seen: set = set()
+    deduped: dict = {}
+    dropped = 0
+
+    def _order(visit_key):
+        try:
+            return (0, int(visit_key), "")
+        except (TypeError, ValueError):
+            return (1, 0, str(visit_key))
+
+    for visit_key in sorted(all_visit_images, key=_order):
+        kept = []
+        for img in all_visit_images[visit_key]:
+            blob_id = img.get("blob_id")
+            if blob_id and blob_id in seen:
+                dropped += 1
+                continue
+            if blob_id:
+                seen.add(blob_id)
+            kept.append(img)
+        deduped[visit_key] = kept
+    return deduped, dropped
+
+
 def parse_session_id_filter(raw):
     """Parse a ``?ids=`` query value into a set of ints, or None for "no filter".
 
@@ -1074,6 +1114,14 @@ class AuditDataAccess(BaseDataAccess):
         for vid in visit_ids:
             if str(vid) not in result:
                 result[str(vid)] = []
+
+        # One form can be several visits (one per deliver block) sharing its images.
+        result, shared_dropped = drop_images_shared_across_visits(result)
+        if shared_dropped:
+            logger.info(
+                f"[Audit] Dropped {shared_dropped} image(s) shared with a lower visit id from the same form "
+                f"(opp={opp_id})"
+            )
 
         # Add related field values if rules provided
         if related_fields:
