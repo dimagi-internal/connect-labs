@@ -293,8 +293,8 @@ class TestTheOrder:
         header = body[body.index("Bought by") :]
         header = header[: header.index("</p>")]
         assert "Child Health Programme" in header
-        assert "the programme" in header
-        assert header.index("Child Health Programme") < header.index("the programme")
+        assert "the program" in header
+        assert header.index("Child Health Programme") < header.index("the program<")
 
     def test_the_overview_names_the_buyer_of_record(self, client_in_programme, chain):
         body = client_in_programme.get(reverse("supply_chain:home")).content.decode()
@@ -303,7 +303,7 @@ class TestTheOrder:
         row = row[: row.index("</tr>")]
         assert "Child Health Programme" in row
         assert "programme org" not in row
-        assert "the programme" in row
+        assert "the program" in row
 
     def test_it_does_not_claim_three_different_amounts_when_they_are_the_same(self, client_in_programme, chain):
         body = self._page(client_in_programme, chain)

@@ -30,6 +30,7 @@ FIELD_LABELS = {
     ("Quote", "voided"): "Voided",
     ("Quote", "base_per_pack_stated"): "Units per pack",
     ("Quote", "base_unit_grams_stated"): "Grams per unit",
+    ("Quote", "shelf_life_months_stated"): "Shelf life",
     ("Quote", "as_quoted_amount"): "Price",
     ("Quote", "as_quoted_unit"): "Priced",
     ("Quote", "as_quoted_currency"): "Currency",
@@ -400,6 +401,47 @@ def _create_facts(model, values, lookup) -> list[str]:
     elif named == "Payment" and values.get("paid_on"):
         facts.append(f"paid {_day(values['paid_on'])}")
     return [f for f in facts if f]
+
+
+def create_what(model, values, lookup) -> str:
+    """What a new record's line says after its entity and name: "recorded: ETA 5 Sep".
+
+    The same facts `sentence` gives a create, less the record's own name --
+    the line already leads with it ("Shipment · SH-1 · recorded: ETA 5 Sep").
+    """
+    identity = _identity(model, values, lookup)
+    if model.__name__ == "Quote":
+        facts = [_quote_price(values, lookup)]
+    else:
+        facts = _create_facts(model, values, lookup)
+        if identity and facts and facts[0] == identity:
+            facts = facts[1:]
+    text = "recorded" + (f": {', '.join(facts)}" if facts else "")
+    if model.__name__ == "Award" and (values.get("rationale") or "").strip():
+        text += f" — why: {values['rationale'].strip()}"
+    return text
+
+
+def identity(model, values, lookup) -> str:
+    """What names one record among its siblings, for a timeline line: "SH-1", "Northwind Foods"."""
+    return _identity(model, values or {}, lookup)
+
+
+def sender(model, values, lookup) -> str:
+    """Who a quoted source on this record came from, when the record says so; "" otherwise.
+
+    Never invented: a quote's source is its supplier's reply, and a
+    shipment's is its carrier's notice when a carrier is recorded. Anything
+    else reads only as its kind ("Email, recorded by ...").
+    """
+    from connect_labs.supply_chain.models import Supplier
+
+    values = values or {}
+    if model.__name__ == "Quote":
+        return lookup.name(Supplier, values.get("supplier_id")) if values.get("supplier_id") else ""
+    if model.__name__ == "Shipment":
+        return (values.get("carrier") or "").strip()
+    return ""
 
 
 def sentence(model, action, changes, lookup) -> str:

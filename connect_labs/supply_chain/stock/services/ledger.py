@@ -197,6 +197,8 @@ def in_transit(program_id, supply_point=None, item=None):
     if item is not None:
         lines = lines.filter(item=item)
     totals = _sum_by_unit(lines)
+    for unit, amount in _lineless_in_transit(program_id, supply_point, item).items():
+        totals[unit] = totals.get(unit, ZERO) + amount
     # Our own consignments on the road count here too, and only here: a
     # store waiting on the warehouse is owed stock exactly as one waiting on
     # a supplier is (models.Consignment).
@@ -210,6 +212,46 @@ def in_transit(program_id, supply_point=None, item=None):
     for unit, amount in _sum_by_unit(consignments).items():
         totals[unit] = totals.get(unit, ZERO) + amount
     return collapse(totals, item, None)
+
+
+def _lineless_in_transit(program_id, supply_point=None, item=None) -> dict:
+    """{unit: quantity} on the road on shipments recorded with no lines.
+
+    A supplier's "your order left the plant" is often recorded as a shipment
+    with a dispatch day and nothing else. Counting only shipment lines read
+    "In transit 0 cartons" beside "Dispatched 1 · 1 in transit" and an order
+    its own row called in transit. With no lines, what is on the road is the
+    order's quantity less whatever its other shipments' lines already carry
+    -- once per order however many such shipments it has.
+    """
+    from connect_labs.supply_chain.models import Contract
+
+    shipments = Shipment.objects.filter(
+        Shipment.in_transit_q(), contract__program_id=program_id, lines__isnull=True
+    ).values_list("pk", "contract_id")
+    by_contract = {}
+    for shipment_id, contract_id in shipments:
+        by_contract.setdefault(contract_id, set()).add(shipment_id)
+    if not by_contract:
+        return {}
+    # An order already received, or cancelled, has nothing left on the road
+    # whatever a shipment's stale status says.
+    contracts = (
+        Contract.objects.filter(pk__in=by_contract, quantity__isnull=False)
+        .exclude(quantity_unit="")
+        .exclude(status__in=("part_received", "received", "closed", "cancelled"))
+    )
+    if supply_point is not None:
+        contracts = contracts.filter(delivery_supply_point=supply_point)
+    if item is not None:
+        contracts = contracts.filter(Q(item=item) | Q(item__isnull=True, commodity_id=item.commodity_id))
+    totals: dict[str, Decimal] = {}
+    for contract in contracts:
+        carried = ShipmentLine.objects.filter(shipment__contract=contract, quantity_unit=contract.quantity_unit)
+        remaining = contract.quantity - (carried.aggregate(total=Sum("quantity"))["total"] or ZERO)
+        if remaining > ZERO:
+            totals[contract.quantity_unit] = totals.get(contract.quantity_unit, ZERO) + remaining
+    return totals
 
 
 def committed(program_id, supply_point, item=None):

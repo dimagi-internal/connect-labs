@@ -12,9 +12,9 @@ therefore a fact, rather than by urgency, which would be an opinion.
 
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
     <p class="text-sm text-amber-900">
-      Tenders, contracts and stock are programme-scoped, so there is nothing to
+      Tenders, contracts and stock are program-scoped, so there is nothing to
       show until one is chosen.
     </p>
   </div>
@@ -59,12 +59,18 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
               {{ row.stage }}
               {% if row.award_why %}<span data-testid="award-why" class="block text-xs text-gray-600">why: {{ row.award_why }}</span>{% endif %}
             </td>
-            <td class="px-4 py-2.5 text-gray-700">{{ row.waiting_on }}</td>
+            <td class="px-4 py-2.5 text-gray-700">
+              {{ row.waiting_on }}
+              {% if row.waiting_detail %}<span data-testid="waiting-detail" class="block text-xs text-gray-500">{{ row.waiting_detail }}</span>{% endif %}
+            </td>
             <td class="px-4 py-2.5">
               {% if row.last_change_at %}
-                <span class="block text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|days_ago_and_day:standing_now }}</span>
+                {% comment %}The count and the day on a line each, neither wrapping: "7 days
+                ago" broke inside "3 Aug" in a narrow column.{% endcomment %}
+                <span data-testid="last-change" class="block whitespace-nowrap text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|days_ago:standing_now }}</span>
+                {% with day=row.last_change_at|day_beside_count:standing_now %}{% if day %}<span data-testid="last-change-day" class="block whitespace-nowrap text-xs text-gray-500">{{ day }}</span>{% endif %}{% endwith %}
                 {% if row.last_change_is_ai %}
-                  <span data-ai data-testid="ai-badge" class="mt-0.5 inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs">{% if row.last_change_by|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ row.last_change_by }}</span></span>
+                  <span data-ai data-testid="ai-badge" title="{{ row.last_change_title }}" class="mt-0.5 inline-flex items-center whitespace-nowrap rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs font-medium">{{ row.last_change_badge }}</span>
                 {% else %}
                   <span class="mt-0.5 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ row.last_change_by }}</span>
                 {% endif %}
@@ -78,6 +84,10 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
               {% for flag in row.stale %}
                 <span data-testid="stale-flag" title="{{ flag.rule }}"
                       class="mb-1 flex w-fit items-start gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span>{{ flag }}</span></span>
+              {% empty %}
+                {% comment %}On a past date an empty cell read as "all clear then"; the flags
+                are the checks as they run, which is for today.{% endcomment %}
+                {% if supply_as_of %}<span data-testid="flags-as-of" class="text-xs text-gray-500">checked for today only</span>{% endif %}
               {% endfor %}
             </td>
           </tr>

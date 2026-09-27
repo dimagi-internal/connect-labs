@@ -1,28 +1,38 @@
 {% comment %}
-One offer against the product's specification, set under the supplier's name.
-A statement, not a ranking input: a failing offer stays where its price puts
-it, and this says which requirement it fails -- whether it is still worth
-buying is the buyer's call, and the award freezes this beside their reason.
+One offer against the product's specification. A statement, not a ranking
+input: a failing offer stays where its price puts it, and this says which
+requirement it fails -- whether it is still worth buying is the buyer's call,
+and the award freezes this beside their reason.
+
+`inline`: laid out on one line, for the ranked row's secondary line.
+`hide_not_stated`: leaves out the "Not stated: ..." badge, for a blocked card,
+which lists the requirements its blocker is not as "not blocking" instead of
+putting a second amber badge beside the one gap that matters.
 {% endcomment %}
 {% if specification %}
-  <div class="mt-1 text-xs font-normal">
+  <div data-testid="specification" class="{% if inline %}flex flex-wrap items-center gap-x-3 gap-y-1{% else %}mt-1{% endif %} text-xs font-normal">
     {% if specification.outcome == "fail" %}
       <span class="font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">Spec: {{ specification.summary }}</span>
       {% for failure in specification.failures %}
-        <div class="text-red-700 mt-1 max-w-xs">{{ failure }}</div>
+        <div class="text-red-700 {% if not inline %}mt-1 {% endif %}max-w-xs">{{ failure }}</div>
       {% endfor %}
     {% elif specification.outcome == "pass" %}
       <span class="font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">Spec: {{ specification.summary }}</span>
-    {% else %}
+    {% elif not hide_not_stated %}
       {% comment %}Names what is missing ("Not stated: shelf life"), in sentence case: a
       list of requirement names in capitals read as a shouted code.{% endcomment %}
       <span data-testid="spec-not-stated" class="font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">{{ specification.summary }}</span>
     {% endif %}
+    {% comment %}Where each answered figure came from: a figure a supplier's reply
+    supplied says so, with the day; the rest were on the quote.{% endcomment %}
+    {% for source in specification.from_correction %}
+      <div class="text-gray-600 {% if not inline %}mt-1 {% endif %}" data-spec-origin="correction">{{ source }}</div>
+    {% endfor %}
     {% if specification.stated_on_quote %}
-      <div class="text-gray-500 mt-1 max-w-xs" data-spec-origin="quote">Stated on the quote: {{ specification.stated_on_quote|join:", " }}</div>
+      <div class="text-gray-500 {% if not inline %}mt-1 max-w-xs{% endif %}" data-spec-origin="quote">Stated on the quote: {{ specification.stated_on_quote|join:", " }}</div>
     {% endif %}
     {% if specification.confirmed_by_item %}
-      <div class="text-gray-500 mt-1 max-w-xs" data-spec-origin="item">Per the trade item: {{ specification.confirmed_by_item|join:", " }}</div>
+      <div class="text-gray-500 {% if not inline %}mt-1 max-w-xs{% endif %}" data-spec-origin="item">Per the trade item: {{ specification.confirmed_by_item|join:", " }}</div>
     {% endif %}
   </div>
 {% endif %}

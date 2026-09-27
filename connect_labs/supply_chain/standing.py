@@ -51,9 +51,13 @@ NO_REPLY_RULE = (
     f"An invited supplier who has neither replied nor quoted {NO_REPLY_DAYS} or more days after "
     "we last asked, while the tender is open."
 )
-BASIS_RULE = (
-    "A live quote the comparison cannot cost delivered: its freight or duties are not stated, "
-    "or are excluded with no amount recorded."
+BLOCKED_RULE = (
+    "A live quote the comparison cannot rank yet, named with what it is missing -- the same gaps "
+    "that keep it out of the comparison ranking (freight, duties, the pack, the quantity...)."
+)
+AWARDED_GAP_RULE = (
+    "The awarded quote against the product's specification: a requirement it states no figure for, "
+    "or one its figure does not meet."
 )
 ETA_RULE = "A shipment whose expected arrival day has passed and that has not been received."
 
@@ -88,6 +92,12 @@ class Row:
     last_change_by: str
     last_change_is_ai: bool
     stale: list[str] = field(default_factory=list)
+    # The AI pill's words and its title: "AI · ACE", "Entered by the ACE
+    # agent from a forwarded email". Blank when a person made the change.
+    last_change_badge: str = ""
+    last_change_title: str = ""
+    # A second line under "waiting on": "3 of 4 replied".
+    waiting_detail: str = ""
     # Who placed an order, when it is not the program's own organisation.
     buyer: str = ""
     # The order this row is; None on a tender's row.
@@ -139,14 +149,38 @@ def _names(names, limit=NAMED_SILENT) -> str:
     return f"{shown} +{len(names) - limit}" if len(names) > limit else shown
 
 
+def _ai_badge(label: str, call) -> tuple[str, str]:
+    """ "AI · ACE" and its title, from who told us: one compact pill, the long form on hover."""
+    agent = label.endswith(" (agent)")
+    if agent:
+        name = label.removesuffix(" (agent)")
+        badge, title = f"AI · {name}", f"Entered by the {name} agent"
+    elif label.startswith("via AI · "):
+        name = label.removeprefix("via AI · ")
+        badge, title = f"AI · {name}", f"Entered by {name} through an AI assistant"
+    else:
+        badge, title = "AI", "Entered through an AI assistant"
+    ref = getattr(call, "source_ref", "") or ""
+    if "@" in ref:
+        title += " from a forwarded email" if agent else " from an email"
+    elif ref:
+        title += " from a document"
+    return badge, title
+
+
 def _last_change(revisions):
     latest = revisions.first()
     if latest is None:
         return {"last_change_at": None, "last_change_by": "", "last_change_is_ai": False}
+    label = actor_label(latest.call)
+    ai = is_ai(latest.call)
+    badge, title = _ai_badge(label, latest.call) if ai else ("", "")
     return {
         "last_change_at": latest.recorded_at,
-        "last_change_by": actor_label(latest.call),
-        "last_change_is_ai": is_ai(latest.call),
+        "last_change_by": label,
+        "last_change_is_ai": ai,
+        "last_change_badge": badge,
+        "last_change_title": title,
     }
 
 
@@ -165,31 +199,36 @@ def _tender_rows(program_id, today, until):
         outreach.setdefault(o.tender_id, []).append(o)
     quotes = {}
     for q in Quote.objects.filter(tender__program_id=program_id, tender_id__in=tender_ids).select_related(
-        "supplier__org"
+        "supplier__org", "commodity", "item"
     ):
         quotes.setdefault(q.tender_id, []).append(q)
     contracted = set(
         Tender.objects.filter(program_id=program_id, contracts__isnull=False).values_list("pk", flat=True)
     )
-    # The newest provisional award's reason per tender (Award is ordered
-    # newest decision first), so the row can say why it was made anyway.
-    provisional = {}
-    for tender_id, rationale in Award.objects.filter(
-        tender__program_id=program_id, tender_id__in=tender_ids, provisional=True
-    ).values_list("tender_id", "rationale"):
-        provisional.setdefault(tender_id, rationale or "")
+    # The newest award per tender (Award is ordered newest decision first):
+    # who it went to, and -- when provisional -- the reason it was made anyway.
+    awards = {}
+    for award in Award.objects.filter(tender__program_id=program_id, tender_id__in=tender_ids).select_related(
+        "quote__supplier", "quote__commodity", "quote__item"
+    ):
+        awards.setdefault(award.tender_id, award)
+    provisional = {tid: a.rationale or "" for tid, a in awards.items() if a.provisional}
 
     rows = []
     for tender in tenders:
-        waiting_on, stale = _tender_state(
-            tender, outreach.get(tender.pk, []), quotes.get(tender.pk, []), tender.pk in contracted, today
+        award = awards.get(tender.pk) if tender.status == "awarded" else None
+        waiting_on, waiting_detail, stale = _tender_state(
+            tender, outreach.get(tender.pk, []), quotes.get(tender.pk, []), tender.pk in contracted, today, award
         )
         stage = _words(tender.status)
+        awardee = award.quote.supplier.name if award is not None and award.quote_id else ""
+        if awardee:
+            stage = f"awarded to {awardee}"
         # An award made while suppliers were still blocked from the comparison
         # (the frozen snapshot's `provisional`) could still be beaten: say so.
         is_provisional = tender.status == "awarded" and tender.pk in provisional
         if is_provisional:
-            stage = PROVISIONAL_STAGE
+            stage = f"{stage}, provisional" if awardee else PROVISIONAL_STAGE
         rows.append(
             Row(
                 kind="tender",
@@ -198,6 +237,7 @@ def _tender_rows(program_id, today, until):
                 tender_id=tender.pk,
                 stage=stage,
                 waiting_on=waiting_on,
+                waiting_detail=waiting_detail,
                 stale=stale,
                 provisional=is_provisional,
                 award_why=_truncate(provisional.get(tender.pk, "")) if is_provisional else "",
@@ -207,11 +247,13 @@ def _tender_rows(program_id, today, until):
     return rows
 
 
-def _tender_state(tender, outreach, quotes, contracted, today):
+def _tender_state(tender, outreach, quotes, contracted, today, award=None):
+    """(waiting on, a second line under it, flags) for one tender."""
     live = [q for q in quotes if q.is_live]
     invited = {o.supplier_id for o in outreach}
     replied = {o.supplier_id for o in outreach if o.responded} | {q.supplier_id for q in live}
     replied &= invited
+    suppliers = {o.supplier_id: o.supplier for o in outreach}
 
     stale = []
     # A supplier's clock runs from the latest time we asked it: a re-invite is a new request.
@@ -227,7 +269,6 @@ def _tender_state(tender, outreach, quotes, contracted, today):
         # is something to act on; "from 1 supplier" sends the reader to find
         # out who. The age is the one every one of them has passed, so the
         # sentence is true of each.
-        suppliers = {o.supplier_id: o.supplier for o in outreach}
         silent = sorted(overdue, key=lambda sid: (-overdue[sid], suppliers[sid].name))
         stale.append(
             Flag(
@@ -235,23 +276,27 @@ def _tender_state(tender, outreach, quotes, contracted, today):
                 NO_REPLY_RULE,
             )
         )
-    # Every live quote the comparison blocks on its freight or duties, named
-    # with what it is missing -- read through pricing's own blocker, so this
-    # counts what the comparison counts.
-    from connect_labs.supply_chain.procurement.services.pricing import basis_gaps
+    # Every live quote the comparison cannot rank, named with what it is
+    # missing -- read off the comparison itself, so "0 of 3 comparable" there
+    # and this flag here count the same offers for the same reasons. Not once
+    # the tender is awarded: the decision has been made, and what the chosen
+    # quote still lacks is flagged on its own below.
+    if tender.status not in ("awarded", "cancelled"):
+        blocked = _blocked(tender, live)
+        if blocked:
+            stale.append(Flag("Can't compare yet: " + ", ".join(blocked), BLOCKED_RULE))
+    if award is not None:
+        gaps = _award_gaps(award)
+        if gaps:
+            stale.append(Flag(f"Awarded quote: {gaps}", AWARDED_GAP_RULE))
 
-    missing = [(q.supplier.name, gaps) for q in live if (gaps := basis_gaps(q))]
-    if missing:
-        stale.append(
-            Flag(
-                "Missing a basis: "
-                + _names([f"{name} ({', '.join(gaps)})" for name, gaps in sorted(missing)], limit=len(missing)),
-                BASIS_RULE,
-            )
-        )
-
+    detail = ""
     if tender.status == "awarded":
-        waiting_on = "—" if contracted else "contract"
+        awardee = award.quote.supplier.name if award is not None and award.quote_id else ""
+        if contracted:
+            waiting_on = "—"
+        else:
+            waiting_on = f"a contract with {awardee}" if awardee else "a contract"
     elif tender.status == "draft":
         waiting_on = "opening"
     elif invited and replied == invited:
@@ -259,10 +304,62 @@ def _tender_state(tender, outreach, quotes, contracted, today):
     elif tender.status == "closed":
         waiting_on = "award decision"
     elif invited:
-        waiting_on = f"{len(replied)} of {_plural(len(invited), 'supplier')} replied"
+        # Who, not how many: "Northwind Foods — no reply since 9 Sep" is who
+        # to chase. The day is the latest we asked any of them, so it is true
+        # of each; the count moves to the line under it.
+        silent = sorted(invited - replied, key=lambda sid: suppliers[sid].name)
+        asked = [latest_ask[sid] for sid in silent if sid in latest_ask]
+        since = f"no reply since {_day(max(asked))}" if asked else "no reply yet"
+        waiting_on = f"{_names([suppliers[sid].name for sid in silent])} — {since}"
+        detail = f"{len(replied)} of {len(invited)} replied"
     else:
         waiting_on = "invitations"
-    return waiting_on, stale
+    return waiting_on, detail, stale
+
+
+def _blocked(tender, live) -> list[str]:
+    """ "Northwind Foods (freight)" for every live quote the comparison blocks, by supplier name."""
+    from connect_labs.supply_chain.procurement.services.comparison import compare_tender
+
+    by_commodity = {}
+    for quote in live:
+        by_commodity.setdefault(quote.commodity_id, []).append(quote)
+    named = []
+    for quotes in by_commodity.values():
+        comparison = compare_tender(
+            tender,
+            quotes[0].commodity,
+            quotes,
+            {q.supplier_id: q.supplier for q in quotes},
+            items_by_id={q.item_id: q.item for q in quotes if q.item_id},
+        )
+        for row in comparison.blocked:
+            text = f"{row.supplier_name} ({', '.join(row.gaps)})" if row.gaps else row.supplier_name
+            if text not in named:
+                named.append(text)
+    return sorted(named)
+
+
+def _award_gaps(award) -> str:
+    """What the awarded quote leaves open against the specification: "shelf life not stated"."""
+    from connect_labs.supply_chain.procurement.services.compliance import FAIL, check_compliance, requirement_label
+
+    quote = award.quote
+    if quote is None or quote.commodity_id is None:
+        return ""
+    results = check_compliance(quote, quote.commodity, item=quote.item)
+
+    def names(outcome):
+        return [
+            requirement_label(r.field, r.requirement.get("unit", "")).lower() for r in results if r.outcome == outcome
+        ]
+
+    parts = []
+    if names("not_stated"):
+        parts.append(f"{', '.join(names('not_stated'))} not stated")
+    if names(FAIL):
+        parts.append(f"{', '.join(names(FAIL))} outside the specification")
+    return "; ".join(parts)
 
 
 # ---- orders --------------------------------------------------------------
