@@ -7,7 +7,7 @@ minversion = "6.0"
 # files and every route in that package, which is exactly the condition the
 # pause's own rule names for turning it back on (see
 # connect_labs/supply/README.md's Testing section) — so the ignore is gone.
-addopts = "--ds=config.settings.test --reuse-db --durations=25 --ignore=connect_labs/workflow/tests/e2e --ignore=connect_labs/labs/tests/e2e --ignore=connect_labs/solicitations/tests/e2e --ignore=connect_labs/funder_dashboard/tests/e2e --ignore=connect_labs/campaign/tests/e2e --ignore=connect_labs/audit/management/commands/test_search_readers.py"
+addopts = "--ds=config.settings.test -p canopy_sdk.conformance.pytest_plugin --reuse-db --durations=25 --ignore=connect_labs/workflow/tests/e2e --ignore=connect_labs/labs/tests/e2e --ignore=connect_labs/solicitations/tests/e2e --ignore=connect_labs/funder_dashboard/tests/e2e --ignore=connect_labs/campaign/tests/e2e --ignore=connect_labs/audit/management/commands/test_search_readers.py"
 norecursedirs = ["management"]
 python_files = [
     "tests.py",
