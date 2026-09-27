@@ -24,13 +24,17 @@ This file is only what is true of **labs**.
                                                           via marketplace_orgs_get
 ```
 
-Four labs-side pieces:
+The protocol — signing, the mint view, the page token, the overlay template,
+the jwt-bearer grant and the DPoP gate — is the **canopy SDK** (`dimagi-canopy`,
+import `canopy_sdk`, from canopy-web `sdk/python`), the one implementation of
+canopy's host grant contract that canopy itself tests against. Labs owns only
+what is labs':
 
 | Piece | Where |
 | --- | --- |
-| Signing + the mint call | `connect_labs/labs/canopy.py` |
-| The one endpoint, plus the published key | `connect_labs/labs/canopy_views.py` → `/labs/canopy/token/`, `/labs/canopy/jwks/` |
-| The overlay, and the page it declares | `connect_labs/templates/labs/includes/canopy_panel.html` |
+| Page → scope and scope → tool registries, what labs vouches for, `CANOPY_HOST` built from labs' settings | `connect_labs/labs/canopy.py` |
+| The mint and the published key (SDK views, labs' URLs) | `connect_labs/labs/urls.py` → `/labs/canopy/token/`, `/labs/canopy/jwks/` |
+| The overlay | the SDK's `canopy_host/panel.html`, styled by `canopy.PANEL` |
 | What the agent reads | `connect_labs/mcp/tools/marketplace.py` |
 
 ## Putting it on a page
@@ -39,7 +43,10 @@ Give the view a `canopy_panel`, and include the partial in
 `{% block inline_javascript %}`:
 
 ```python
-context["canopy_panel"] = canopy.panel_context(
+from canopy_sdk.django.pages import panel_context
+
+context["canopy_panel"] = panel_context(
+    request,
     resource="labs-marketplace://orgs",
     backing_tool="marketplace_orgs_get",
     visible_ids=[row["org"].slug for row in listed],
@@ -50,7 +57,7 @@ context["canopy_panel"] = canopy.panel_context(
 
 ```django
 {% block inline_javascript %}
-  {% include "labs/includes/canopy_panel.html" %}
+  {% include "canopy_host/panel.html" %}
 {% endblock %}
 ```
 
@@ -192,7 +199,7 @@ and design: canopy-web PR #985
 (`docs/superpowers/specs/2026-09-26-embedded-caller-delegation-design.md`).
 
 1. **Which pages, which scopes** — `canopy.PAGE_SCOPES`, keyed by URL name. A
-   page passes `request=request` to `panel_context`; the panel then carries labs'
+   page passes `request` to `panel_context`; the panel then carries labs'
    own signature over the route (`?page=` on the token URL). At mint time labs
    checks it and puts that route's scopes in an **ID-JAG** sent beside the
    visitor assertion. An unregistered page, or a missing/forged/expired page
@@ -201,12 +208,12 @@ and design: canopy-web PR #985
 2. **Redeeming** — canopy POSTs the ID-JAG to `/o/token/` with
    `private_key_jwt` (keys from its Client ID Metadata Document, fetched
    SSRF-safe and cached ≤ 1h) and a DPoP proof. Labs issues a 15-minute access
-   token, no refresh token, bound to the DPoP key (`DelegatedAccessToken`, its
+   token, no refresh token, bound to the DPoP key (the SDK's `canopy_host.DelegatedToken`, its
    own table — never django-oauth-toolkit's, which would open labs' REST API).
 3. **Using it** — `Authorization: DPoP <token>` plus a fresh `DPoP` proof on every
-   MCP request (`delegation.DPoPGate`). The tool runs as the visitor, and only
-   the tools `delegation.SCOPE_TOOLS` maps the token's scopes to are listed or
-   callable. `MCPAuditLog` records the client and the `Canopy-Actor` header.
+   MCP request (the SDK's `DPoPGate`, mounted by `mcp.server.dpop_gate`). The
+   tool runs as the visitor, and only the tools `canopy.SCOPE_TOOLS` maps the
+   token's scopes to are listed or callable. `MCPAuditLog` records the client and the `Canopy-Actor` header.
 
 PATs and ordinary MCP OAuth sign-ins never touch any of this.
 

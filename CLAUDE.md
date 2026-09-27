@@ -383,7 +383,9 @@ user, audit rows attribute to them):
   issues an ID-JAG for the person on a registered page, canopy redeems it at
   `/o/token/` (jwt-bearer + `private_key_jwt` + DPoP), and calls the MCP with
   `Authorization: DPoP`. Tools run as the visitor, limited to the scope's tools.
-  See `connect_labs/mcp/delegation.py` and `docs/canopy-agent-panel.md`.
+  The protocol is the canopy SDK (`canopy_sdk`, canopy-web `sdk/python`); labs
+  owns only its registries in `connect_labs/labs/canopy.py`. See
+  `docs/canopy-agent-panel.md`.
 
 Labs was PAT-only until 2026-09-11, with OAuth discovery deliberately suppressed
 (#431) because nothing stood behind it. It was changed so labs works like any
