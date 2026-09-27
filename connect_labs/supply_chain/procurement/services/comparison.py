@@ -45,7 +45,7 @@ from connect_labs.supply_chain.procurement.services.questions import (
     key_for_reason,
     missing_facts,
 )
-from connect_labs.supply_chain.records import course_applies_to_category
+from connect_labs.supply_chain.records import course_applies_to_category, freight_and_duties_for_incoterm
 from connect_labs.supply_chain.values import (
     Unconfirmed,
     decimal_string,
@@ -55,6 +55,14 @@ from connect_labs.supply_chain.values import (
     to_wire,
     unconfirmed,
     unit_noun,
+)
+
+# What decides whether a quote can be ranked, said where a card lists what is
+# "not blocking": the inputs of COMPARABILITY_FIELDS, and nothing else.
+RANKING_RULE = (
+    "Only what the landed price depends on decides whether a quote can be ranked: its price, "
+    "pack size, quantity, freight, duties and exchange rate. Specification figures such as "
+    "shelf life are checked, not ranked."
 )
 
 
@@ -169,6 +177,9 @@ class ComparisonRow:
     # What the specification requires of the pack figure, as a chip beside a
     # pack blocker: "150 sachets per carton".
     pack_requirement: str = ""
+    # What the landed figures assume, and whose word it is: "Delivered to
+    # Kano · freight included · duties included, per quote".
+    landed_basis: str = ""
 
     @property
     def gaps(self) -> list[str]:
@@ -248,13 +259,21 @@ class ComparisonRow:
         # as "because the quote says so" or "because the trade item does" --
         # a supplier's statement and a product's specification sheet are not
         # the same evidence.
-        stated_on_quote, confirmed_by_item = [], []
+        stated_on_quote, confirmed_by_item, stated_values = [], [], []
         for result in self.compliance:
             if result.outcome == "not_stated":
                 continue
-            label = requirement_label(result.field, result.requirement.get("unit", "")).lower()
+            unit = result.requirement.get("unit", "")
+            label = requirement_label(result.field, unit).lower()
             if result.spec_origin == "quote":
                 stated_on_quote.append(label)
+                # With its figure: "Sachets per carton: 150", which the reader
+                # can hold against the specification beside it.
+                if result.stated_value not in (None, ""):
+                    figure = f"{decimal_string(result.stated_value)} {unit}".strip()
+                    stated_values.append(
+                        {"label": label, "text": f"{requirement_label(result.field, unit)}: {figure}"}
+                    )
             elif result.spec_origin == "item":
                 confirmed_by_item.append(label)
         return {
@@ -269,6 +288,7 @@ class ComparisonRow:
             ],
             "failures": failures,
             "stated_on_quote": stated_on_quote,
+            "stated_values": stated_values,
             "confirmed_by_item": confirmed_by_item,
         }
 
@@ -351,6 +371,7 @@ class Comparison:
                 "entered_by": row.entered_by,
                 "supplier_awaiting_review": row.supplier_awaiting_review,
                 "delivery": row.delivery,
+                "landed_basis": row.landed_basis,
                 "gaps": row.gaps,
                 "base_unit": row.base_unit,
                 "pack_unit": row.pack_unit,
@@ -626,6 +647,45 @@ def delivery_words(quote, tender) -> str:
     return f"to {destination_phrase(places)}" if places else ""
 
 
+def landed_basis_words(quote, tender) -> str:
+    """What a quote's landed figures rest on: where it is delivered, and how freight and duties were counted.
+
+    "Delivered to Kano · freight included · duties included, per quote". Read
+    the way `pricing._extras` reads it -- the quote's own basis first, its
+    Incoterm where the quote is silent -- and says which of the two it was.
+    Only the legs that were counted: a leg still unknown blocks the quote, and
+    the blocked card says so.
+    """
+    parts, sources = [], []
+    pickup = getattr(quote, "delivery_mode", "delivered") == "pickup"
+    where = delivery_words(quote, tender)
+    if where.startswith("to "):
+        parts.append(f"Delivered {where}")
+    elif where:
+        parts.append(where[:1].upper() + where[1:])
+    currency = quote.as_quoted_currency or "USD"
+    from_term = dict(zip(("freight", "duties"), freight_and_duties_for_incoterm(quote.incoterm), strict=True))
+    legs = [("duties", quote.duties_basis, quote.duties_amount)]
+    if not pickup:
+        legs.insert(0, ("freight", quote.freight_basis, quote.freight_amount))
+    for label, basis, amount in legs:
+        source = "quote"
+        if basis not in ("included", "excluded"):
+            basis, source = from_term[label], f"Incoterm {quote.incoterm}"
+        if basis == "included":
+            parts.append(f"{label} included")
+        elif basis == "excluded" and amount is not None:
+            parts.append(f"{label} {money_digits(amount)} {currency} added")
+        else:
+            continue
+        if source not in sources:
+            sources.append(source)
+    if pickup and getattr(quote, "buyer_transport_amount", None) is not None:
+        parts.append(f"our transport {money_digits(quote.buyer_transport_amount)} {currency} added")
+    text = " · ".join(parts)
+    return f"{text}, per {' and '.join(sources)}" if text and sources else text
+
+
 def compare_tender(
     tender: Tender,
     commodity: Commodity,
@@ -684,6 +744,7 @@ def compare_tender(
             pack_requirement=pack_requirement,
         )
         row.as_quoted = as_quoted_words(quote, row.base_unit, row.pack_unit)
+        row.landed_basis = landed_basis_words(quote, tender)
         if not course_applies:
             row.figures = {key: value for key, value in figures.items() if key not in COURSE_FIGURES}
             row.questions = [q for q in row.questions if q.key != "course_definition"]

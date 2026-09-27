@@ -28,7 +28,13 @@ putting a second amber badge beside the one gap that matters.
     {% for source in specification.from_correction %}
       <div class="text-gray-600 {% if not inline %}mt-1 {% endif %}" data-spec-origin="correction">{{ source }}</div>
     {% endfor %}
-    {% if specification.stated_on_quote %}
+    {% comment %}A figure stated on the quote is shown with its value ("Sachets per
+    carton: 150 (stated on the quote)"), so it can be held against the spec.{% endcomment %}
+    {% if specification.stated_values %}
+      {% for value in specification.stated_values %}
+        <div class="text-gray-600 {% if not inline %}mt-1 max-w-xs{% endif %}" data-spec-origin="quote">{{ value.text }} (stated on the quote)</div>
+      {% endfor %}
+    {% elif specification.stated_on_quote %}
       <div class="text-gray-500 {% if not inline %}mt-1 max-w-xs{% endif %}" data-spec-origin="quote">Stated on the quote: {{ specification.stated_on_quote|join:", " }}</div>
     {% endif %}
     {% if specification.confirmed_by_item %}
