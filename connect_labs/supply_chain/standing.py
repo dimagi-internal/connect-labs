@@ -42,8 +42,6 @@ from connect_labs.supply_chain.history.timeline import contract_scope_revisions,
 NO_REPLY_DAYS = 14
 # How many silent suppliers the flag names before it counts the rest ("+2").
 NAMED_SILENT = 2
-# An award's reason, cut to fit under the stage.
-WHY_LENGTH = 80
 PROVISIONAL_STAGE = "awarded, provisional"
 
 # The rule behind each flag, for its title: what raised it, said once.
@@ -71,13 +69,22 @@ DELIVERED_AND_PAID = "delivered and paid"
 
 
 class Flag(str):
-    """A flag's words, carrying the rule that raised it -- shown as its title."""
+    """A flag's words, carrying the rule that raised it -- shown as its title.
+
+    `heading` and `lines`, when a flag names several things: "Can't compare
+    yet" over one line per supplier ("Northwind Foods: freight"). The string
+    itself still says all of it on one line, for anything reading it as text.
+    """
 
     rule: str = ""
+    heading: str = ""
+    lines: tuple = ()
 
-    def __new__(cls, text, rule=""):
+    def __new__(cls, text, rule="", *, heading="", lines=()):
         flag = super().__new__(cls, text)
         flag.rule = rule
+        flag.heading = heading
+        flag.lines = tuple(lines)
         return flag
 
 
@@ -109,6 +116,9 @@ class Row:
     # the reason the buyer gave for it, so "provisional" reads with its why.
     provisional: bool = False
     award_why: str = ""
+    # Why the award is provisional, from the comparison it froze:
+    # "provisional — 2 of 3 suppliers not yet comparable".
+    provisional_caveat: str = ""
 
 
 def standing_rows(program_id: int, today: date, *, until: date | None = None, own_org_id=None) -> list[Row]:
@@ -138,9 +148,18 @@ def _words(value: str) -> str:
     return (value or "").replace("_", " ")
 
 
-def _truncate(text, limit=WHY_LENGTH) -> str:
-    text = " ".join((text or "").split())
-    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+def _one_line(text) -> str:
+    """The award's reason as typed, on one line; never cut -- the cell wraps it."""
+    return " ".join((text or "").split())
+
+
+def _provisional_caveat(award) -> str:
+    """ "provisional — 2 of 3 suppliers not yet comparable", read from the comparison the award froze."""
+    snapshot = getattr(award, "comparison_snapshot", None) or {}
+    total, comparable = snapshot.get("total_count"), snapshot.get("comparable_count")
+    if not isinstance(total, int) or not isinstance(comparable, int) or total <= comparable:
+        return "provisional"
+    return f"provisional — {total - comparable} of {_plural(total, 'supplier')} not yet comparable"
 
 
 def _names(names, limit=NAMED_SILENT) -> str:
@@ -212,7 +231,7 @@ def _tender_rows(program_id, today, until):
         "quote__supplier", "quote__commodity", "quote__item"
     ):
         awards.setdefault(award.tender_id, award)
-    provisional = {tid: a.rationale or "" for tid, a in awards.items() if a.provisional}
+    provisional = {tid: a for tid, a in awards.items() if a.provisional}
 
     rows = []
     for tender in tenders:
@@ -240,7 +259,8 @@ def _tender_rows(program_id, today, until):
                 waiting_detail=waiting_detail,
                 stale=stale,
                 provisional=is_provisional,
-                award_why=_truncate(provisional.get(tender.pk, "")) if is_provisional else "",
+                award_why=_one_line(provisional[tender.pk].rationale) if is_provisional else "",
+                provisional_caveat=_provisional_caveat(provisional[tender.pk]) if is_provisional else "",
                 **_last_change(tender_scope_revisions(tender.pk, program_id=program_id, until=until)),
             )
         )
@@ -284,7 +304,16 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None):
     if tender.status not in ("awarded", "cancelled"):
         blocked = _blocked(tender, live)
         if blocked:
-            stale.append(Flag("Can't compare yet: " + ", ".join(blocked), BLOCKED_RULE))
+            # One line per supplier: a comma list of names and bracketed gaps
+            # ran to four lines in a narrow cell and read as one sentence.
+            stale.append(
+                Flag(
+                    "Can't compare yet: " + "; ".join(blocked),
+                    BLOCKED_RULE,
+                    heading="Can't compare yet",
+                    lines=blocked,
+                )
+            )
     if award is not None:
         gaps = _award_gaps(award)
         if gaps:
@@ -318,7 +347,7 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None):
 
 
 def _blocked(tender, live) -> list[str]:
-    """ "Northwind Foods (freight)" for every live quote the comparison blocks, by supplier name."""
+    """ "Northwind Foods: freight" for every live quote the comparison blocks, by supplier name."""
     from connect_labs.supply_chain.procurement.services.comparison import compare_tender
 
     by_commodity = {}
@@ -334,7 +363,7 @@ def _blocked(tender, live) -> list[str]:
             items_by_id={q.item_id: q.item for q in quotes if q.item_id},
         )
         for row in comparison.blocked:
-            text = f"{row.supplier_name} ({', '.join(row.gaps)})" if row.gaps else row.supplier_name
+            text = f"{row.supplier_name}: {', '.join(row.gaps)}" if row.gaps else row.supplier_name
             if text not in named:
                 named.append(text)
     return sorted(named)

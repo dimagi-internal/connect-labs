@@ -6,8 +6,9 @@ through an agent or MCP/the API -- and the quoted source it rested on, in a
 Correct and Void sit on the right of a quote an AI entered that still stands; the timeline builder leaves
 them out on a past date.
 {% endcomment %}
-<section id="history" data-timeline data-testid="timeline" class="mt-8 scroll-mt-4">
-  <h2 class="text-lg font-semibold text-gray-900 mb-2">History</h2>
+{% comment %}scroll-mt-20: a link to #history lands with the heading clear of the fixed 4rem header.{% endcomment %}
+<section id="history" data-timeline data-testid="timeline" class="mt-8 scroll-mt-20">
+  <h2 class="text-lg font-semibold text-gray-900 mb-2 scroll-mt-20">History</h2>
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-2">
     {% if timeline %}
       <ol class="divide-y divide-gray-100">
@@ -15,13 +16,16 @@ them out on a past date.
           <li data-testid="revision-line" data-fields="{{ entry.fields|join:' ' }}" class="py-2 flex items-start gap-3">
             {% comment %}Every date on the tender page carries its year ("6 Jul 2026"), so the
             history reads the same way as the panels above it.{% endcomment %}
-            <time class="w-24 shrink-0 whitespace-nowrap text-xs text-gray-500 tabular-nums pt-0.5"
+            <time class="w-24 shrink-0 whitespace-nowrap text-sm text-gray-900 tabular-nums"
                   datetime="{{ entry.when|date:'c' }}">{{ entry.when|date:"j M Y" }}</time>
             <div class="min-w-0 flex-1">
               {% comment %}One grammar for a new record and a change to one: "Shipment · SH-1 ·
               recorded: ETA 5 Sep" and "Shipment · SH-1 · ETA 5 Sep → 19 Sep".{% endcomment %}
               <div data-testid="revision-text" class="text-sm text-gray-900">{{ entry.line }}</div>
               <div class="mt-0.5 flex flex-wrap items-center gap-2">
+                {% comment %}How far the arrival moved, as a signed count of days, so "5 Sep → 19 Sep"
+                need not be worked out.{% endcomment %}
+                {% if entry.eta_moved %}<span data-testid="eta-moved" class="inline-flex items-center whitespace-nowrap rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-900">{{ entry.eta_moved }}</span>{% endif %}
                 {% comment %}
                 The actor badge is how the source opens: with an excerpt it is
                 the <summary> of the <details> holding it, so clicking who told
@@ -30,12 +34,12 @@ them out on a past date.
                 {% endcomment %}
                 {% if entry.excerpt %}
                   <details class="text-xs">
-                    <summary data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}title="Show the source"
-                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-700{% endif %}">{% if entry.is_ai and entry.actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ entry.actor }}</span><span class="underline underline-offset-2 opacity-80">source</span></summary>
+                    <summary data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}title="{% if entry.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
+                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-700{% endif %}">{% if entry.is_ai and entry.actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ entry.actor }}</span><span data-testid="source-link" class="underline underline-offset-2 opacity-80">{{ entry.source_link_text }}</span></summary>
                     {% comment %}Where the quote came from, as the call recorded it -- the kind its
                     reference implies, who recorded it and when. A replay of the same evidence
                     was answered from this write, not written again.{% endcomment %}
-                    <p data-testid="source-heading" class="mt-1.5 text-xs text-gray-600">{{ entry.source_kind|default:"Source" }}{% if entry.sender %} from {{ entry.sender }}{% endif %}, recorded by {{ entry.actor }} on {{ entry.recorded_on|date:"j M Y" }}{% if entry.replayed_at %} · received again {{ entry.replayed_at|date:"j M Y" }}, recorded once{% endif %}</p>
+                    <p data-testid="source-heading" class="mt-1.5 text-sm text-gray-900">{{ entry.source_kind|default:"Source" }}{% if entry.sender %} from {{ entry.sender }}{% endif %}, recorded by {{ entry.actor }} on {{ entry.recorded_on|date:"j M Y" }}{% if entry.replayed_at %} · received again {{ entry.replayed_at|date:"j M Y" }}, recorded once{% endif %}</p>
                     {% comment %}The words the change rested on, at reading size and full contrast:
                     this is the evidence, not a footnote.{% endcomment %}
                     <blockquote data-testid="source-excerpt" class="mt-1 max-w-2xl rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ entry.excerpt }}</blockquote>

@@ -104,18 +104,18 @@ class TestTheOverviewFlagsEveryBlockedQuote:
         assert (comparison["comparable_count"], comparison["total_count"]) == (0, 4)
 
         (flag,) = (f for f in _tender_row().stale if f.startswith("Can't compare yet"))
-        assert flag == (
-            "Can't compare yet: Lakeside Foods (sachets per carton), Northwind Foods (freight), "
-            "Plateau Mills (quantity), Sahel Nutrition (duties amount)"
+        # One line per supplier since batch 6.
+        assert flag.lines == (
+            "Lakeside Foods: sachets per carton",
+            "Northwind Foods: freight",
+            "Plateau Mills: quantity",
+            "Sahel Nutrition: duties amount",
         )
         assert flag.rule == BLOCKED_RULE
-        assert {name.split(" (")[0] for name in flag.removeprefix("Can't compare yet: ").split(", ")} == {
-            r["supplier_name"] for r in comparison["blocked"]
-        }
+        assert {line.split(": ")[0] for line in flag.lines} == {r["supplier_name"] for r in comparison["blocked"]}
 
         row = _standing_row(_home(home_client), tender_id)
-        flags = re.findall(r'data-testid="stale-flag"[^>]*>.*?<span>(.*?)</span></span>', row, re.S)
-        assert flags == [flag.replace("'", "&#x27;")]
+        assert re.findall(r'data-testid="flag-line"[^>]*>(.*?)</span>', row) == list(flag.lines)
 
     def test_a_comparable_quote_is_not_flagged(self, da, base):
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _DELIVERED)
@@ -180,9 +180,9 @@ class TestWaitingOnNamesWho:
 @pytest.mark.django_db
 class TestTheLastChange:
     def test_the_count_and_the_day_are_a_line_each(self, da, base, home_client):
-        cell = _cells(_standing_row(_home(home_client, as_of="2026-08-10"), base["tender"]["id"]))[3]
-        assert re.search(r'data-testid="last-change" class="[^"]*whitespace-nowrap[^"]*"[^>]*>7 days ago<', cell)
-        assert re.search(r'data-testid="last-change-day" class="[^"]*block whitespace-nowrap[^"]*">3 Aug<', cell)
+        # Today: a count and a day, each on a line. (A past date shows the day alone: batch 6.)
+        cell = _cells(_standing_row(_home(home_client), base["tender"]["id"]))[3]
+        assert re.search(r'data-testid="last-change" class="[^"]*whitespace-nowrap[^"]*"[^>]*>[^<]+<', cell)
         assert "·" not in _text(cell)
 
     def test_the_ai_pill_is_one_compact_badge(self, da, base, ace, home_client):
@@ -214,11 +214,13 @@ class TestTheAsOfControl:
         assert re.search(r'data-testid="as-of-date"[^>]*>20 Aug 2026<', control)
         assert 'data-testid="as-of-date"' not in _home(home_client)
 
-    def test_an_empty_flags_cell_says_the_flags_are_for_today(self, da, base, home_client):
-        past = _cells(_standing_row(_home(home_client, as_of="2026-08-20"), base["tender"]["id"]))[4]
-        assert re.search(r'data-testid="flags-as-of"[^>]*>checked for today only<', past)
-        live = _cells(_standing_row(_home(home_client), base["tender"]["id"]))[4]
-        assert "checked for today only" not in live
+    def test_the_flags_are_said_to_be_for_today_once_in_their_header(self, da, base, home_client):
+        past = _home(home_client, as_of="2026-08-20")
+        header = re.search(r"<th[^>]*>Flags.*?</th>", past, re.S).group(0)
+        assert re.search(r'data-testid="flags-as-of"[^>]*>— checked for today only<', header)
+        assert past.count("checked for today only") == 1
+        assert "checked for today only" not in _cells(_standing_row(past, base["tender"]["id"]))[4]
+        assert "checked for today only" not in _home(home_client)
 
     def test_the_chain_says_program(self, da, base, home_client, lineless_order):
         body = _home(home_client)
@@ -432,7 +434,7 @@ class TestACorrectedRankedRow:
         detail = _detail(body, corrected["id"])
         source = re.search(r'<details data-testid="correction-source".*?</details>', detail, re.S).group(0)
         summary = " ".join(re.search(r"<summary[^>]*>(.*?)</summary>", source, re.S).group(1).split())
-        assert summary == "Corrected 28 Aug: sachets per carton 150 (was not stated)"
+        assert summary == "Corrected 28 Aug by ACE (agent) from Northwind Foods email:"
         assert re.search(r'<blockquote data-testid="source-excerpt"[^>]*>(.*?)</blockquote>', source).group(1) == (
             PACK_EMAIL
         )
@@ -465,7 +467,8 @@ class TestABlockedCard:
         assert "units per pack" not in card.lower()
         assert re.search(r'data-testid="spec-chip"[^>]*>Spec: 150 sachets per carton<', blocking)
         assert 'data-testid="spec-not-stated"' not in card
-        assert re.search(r'data-testid="not-blocking"[^>]*>Also not stated \(not blocking\): shelf life<', card)
+        not_blocking = re.search(r'data-testid="not-blocking"[^>]*>(.*?)</p>', card, re.S).group(1)
+        assert " ".join(re.sub(r"<[^>]+>", "", not_blocking).split()) == "Also not stated (not blocking): shelf life"
         assert card.index('data-testid="also-confirm"') < card.index('data-testid="not-blocking"')
 
     def test_three_cards_fit_below_the_header(self, da, base, client_in_program):

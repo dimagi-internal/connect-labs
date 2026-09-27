@@ -127,7 +127,7 @@
 {% endif %}
 
 <div class="flex items-center justify-between mb-2">
-  <h2 class="text-lg font-semibold text-gray-900">Outreach</h2>
+  <h2 id="outreach" class="text-lg font-semibold text-gray-900 scroll-mt-20">Outreach</h2>
   {% if not supply_as_of %}
   <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Record an invitation</a>
@@ -185,7 +185,7 @@
   </div>
 </div>
 
-<h2 class="text-lg font-semibold text-gray-900 mb-2">Quotes</h2>
+<h2 id="quotes" class="text-lg font-semibold text-gray-900 mb-2 scroll-mt-20">Quotes</h2>
 <div class="bg-white rounded-lg shadow-sm overflow-hidden">
   {% comment %}
   A scroll container is not focusable by default, so a keyboard-only user

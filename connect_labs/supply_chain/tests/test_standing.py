@@ -306,7 +306,7 @@ class TestTender:
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
         # Both are blocked on the comparison, so both are named: duties
         # excluded with no amount cannot be costed any more than unstated ones.
-        assert row.stale == ["Can't compare yet: Baobab Nutrition (duties amount), Northwind Foods (freight, duties)"]
+        assert row.stale == ["Can't compare yet: Baobab Nutrition: duties amount; Northwind Foods: freight, duties"]
         assert row.waiting_on == "award decision"
 
     def test_a_closed_tender_drops_the_no_reply_flag_but_keeps_the_blocked_flag(self, da, base):
@@ -316,12 +316,12 @@ class TestTender:
         _quote(da, tender, base["suppliers"][1], **_PACK)  # basis not stated
         assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == [
             "No reply in 40 days: Northwind Foods",
-            "Can't compare yet: Baobab Nutrition (freight, duties)",
+            "Can't compare yet: Baobab Nutrition: freight, duties",
         ]
 
         op(da, "tender_update", SEP_1, tender_id=tender["id"], data={"status": "closed"})
         assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == [
-            "Can't compare yet: Baobab Nutrition (freight, duties)"
+            "Can't compare yet: Baobab Nutrition: freight, duties"
         ]
         # Once awarded the decision is made: what is left to flag is the
         # awarded quote's own gaps, not the offers it was chosen over.
