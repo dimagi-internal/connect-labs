@@ -116,9 +116,12 @@ class TestTheSpecificationReadsWhatTheQuoteStates:
         assert not [q for q in row["questions"] if q["key"].startswith("spec:") or q["key"] == "shelf_life"]
 
         body = _page(client_in_program, base["tender"]["id"])
-        ranked = re.search(rf'<tr data-testid="ranked-row" data-quote-id="{quote["id"]}">.*?</tr>', body, re.S)
-        assert "Spec: Meets all 2" in ranked.group(0)
-        assert "Stated on the quote: sachets per carton, shelf life" in ranked.group(0)
+        # Under the ranked row since batch 5, on the line that holds its specification.
+        detail = re.search(
+            rf'<tr data-testid="ranked-row-detail" data-detail-for="{quote["id"]}">.*?</tr>', body, re.S
+        )
+        assert "Spec: Meets all 2" in detail.group(0)
+        assert "Stated on the quote: sachets per carton, shelf life" in detail.group(0)
         assert "NOT STATED" not in body.upper().replace("SPEC: MEETS", "")
 
     @pytest.mark.django_db
@@ -150,12 +153,12 @@ class TestABlockedCardLeadsWithWhatBlocksIt:
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
         row = _row(_compare(da, base["tender"]["id"]), quote["id"])
 
-        assert row["blocking"]["fact"] == "Pack spec not stated on the quote (units per pack)"
+        assert row["blocking"]["fact"] == "Sachets per carton not stated on the quote"
         assert row["blocking"]["question"]["key"] == "pack_spec"
 
         card = _card(_page(client_in_program, base["tender"]["id"]), quote["id"])
         assert card.count('data-testid="blocking"') == 1
-        assert "Blocking: Pack spec not stated on the quote (units per pack)" in card
+        assert "Blocking: Sachets per carton not stated on the quote" in card
         blocking_question = re.search(r'data-testid="blocking-question"[^>]*>(.*?)</p>', card, re.S).group(1)
         assert "How many sachets are in one carton" in blocking_question
         # The rest is folded, counted, and does not repeat the blocking question.
@@ -226,14 +229,15 @@ class TestACorrectedOfferSaysWhyItJoined:
         corrected = _correct_pack(da, quote, ace)
         body = _page(client_in_program, base["tender"]["id"])
 
-        ranked = re.search(rf'<tr data-testid="ranked-row" data-quote-id="{corrected["id"]}">.*?</tr>', body, re.S)
+        ranked = re.search(
+            rf'<tr data-testid="ranked-row-detail" data-detail-for="{corrected["id"]}">.*?</tr>', body, re.S
+        )
         note = re.search(r'<a data-testid="correction-note" href="([^"]+)"[^>]*>(.*?)</a>', ranked.group(0), re.S)
         history = reverse("supply_chain:procurement_tender_detail", args=[base["tender"]["id"]]) + "#history"
         assert note.group(1) == history
         summary = re.search(r'data-testid="correction-source".*?<summary[^>]*>(.*?)</summary>', ranked.group(0), re.S)
-        assert " ".join(summary.group(1).split()) == (
-            "Corrected 28 Aug: sachets per carton 150 (was not stated) — ACE (agent)"
-        )
+        # Who recorded it is said once, in the source's heading (batch 5).
+        assert " ".join(summary.group(1).split()) == "Corrected 28 Aug: sachets per carton 150 (was not stated)"
 
         tender_page = client_in_program.get(history.split("#")[0]).content.decode()
         assert '<section id="history" data-timeline data-testid="timeline"' in tender_page
@@ -285,7 +289,7 @@ class TestTheSourceSaysWhereItCameFrom:
     def test_the_excerpt_is_headed_by_its_kind_who_recorded_it_and_when(self, da, base, ace, client_in_program):
         contract, _shipment, _source = _order_with_emailed_shipment(da, base, ace)
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
-        assert _source_heading(body) == "Email, recorded by ACE (agent) on 20 Aug"
+        assert _source_heading(body) == "Email, recorded by ACE (agent) on 20 Aug 2026"
 
     def test_the_same_email_again_is_answered_once_and_says_so(self, da, base, ace, client_in_program):
         contract, shipment, source = _order_with_emailed_shipment(da, base, ace)
@@ -297,11 +301,12 @@ class TestTheSourceSaysWhereItCameFrom:
         url = reverse("supply_chain:order_detail", args=[contract["id"]])
         live = client_in_program.get(url).content.decode()
         assert (
-            _source_heading(live) == "Email, recorded by ACE (agent) on 20 Aug · received again 28 Aug, recorded once"
+            _source_heading(live)
+            == "Email, recorded by ACE (agent) on 20 Aug 2026 · received again 28 Aug 2026, recorded once"
         )
         # Before it arrived again, it had not.
         past = client_in_program.get(url, {"as_of": "2026-08-25"}).content.decode()
-        assert _source_heading(past) == "Email, recorded by ACE (agent) on 20 Aug"
+        assert _source_heading(past) == "Email, recorded by ACE (agent) on 20 Aug 2026"
 
 
 # ---- 5 and 6. the overview ------------------------------------------------
@@ -343,8 +348,10 @@ class TestTheOverview:
 
     def test_the_last_change_gives_the_day_beside_the_count_from_the_as_of_date(self, da, base, home_client):
         past = _home(home_client, as_of="2026-08-10")
-        cell = re.search(r'<span class="block text-gray-700" title="[^"]*">(.*?)</span>', past).group(1)
-        assert cell == "7 days ago · 3 Aug"
+        # A line each since batch 5.
+        count = re.search(r'data-testid="last-change"[^>]*>(.*?)</span>', past).group(1)
+        day = re.search(r'data-testid="last-change-day"[^>]*>(.*?)</span>', past).group(1)
+        assert (count, day) == ("7 days ago", "3 Aug")
 
     def test_a_count_and_its_day(self):
         now = datetime.datetime(2026, 9, 26, 18, tzinfo=datetime.UTC)
@@ -434,10 +441,10 @@ def _sign_in(client, user, programs):
 
 @pytest.mark.django_db
 class TestThePublicListing:
-    def test_no_deadline_reads_open_until_closed(self, client, listed_tender):
+    def test_no_deadline_reads_as_none(self, client, listed_tender):
         body = client.get(reverse("supply_chain:market_tender", args=[listed_tender.pk])).content.decode()
-        hero = body[body.index("REPLIES BY") - 400 : body.index("REPLIES BY")]
-        assert "Open until closed" in hero and ">—<" not in hero
+        # "No reply-by date" since batch 5; never a bare dash.
+        assert "No reply-by date" in body and ">—<" not in body
 
     def test_the_owning_program_is_told_this_is_the_public_view(self, client, django_user_model, listed_tender):
         user = django_user_model.objects.create_user(username="sophie2", password="x", email="s2@example.org")

@@ -51,9 +51,72 @@ from connect_labs.supply_chain.values import (
     decimal_string,
     destination_phrase,
     merge,
+    money_digits,
     to_wire,
     unconfirmed,
+    unit_noun,
 )
+
+
+def pack_words(base_unit, pack_unit) -> str:
+    """ "sachets per carton": the pack figure in the commodity's own units, else "units per pack"."""
+    if base_unit and pack_unit:
+        return f"{unit_noun(base_unit, 2)} per {unit_noun(pack_unit)}"
+    return "units per pack"
+
+
+def plain_reason(reason: str, base_unit="", pack_unit="") -> str:
+    """A pricing reason in the commodity's own words.
+
+    "pack spec not stated on the quote (units per pack)" is the pricing
+    module's generic sentence; on a screen about RUTF it reads "sachets per
+    carton not stated on the quote". The bracketed generic unit goes, and so
+    does "pack spec", which nobody on the program says.
+    """
+    pack = pack_words(base_unit, pack_unit)
+    text = reason.replace(" (units per pack)", "").replace(" (grams per base unit)", "")
+    text = text.replace("units-per-pack value", f"{pack} figure").replace("units per pack", pack)
+    text = text.replace("pack spec", pack)
+    if base_unit:
+        text = text.replace("unit weight", f"weight of one {unit_noun(base_unit)}")
+    return text
+
+
+# The short name of each gap, by the question key that answers it -- the
+# words the overview's flag uses: "Northwind Foods (freight)".
+_GAP_WORDS = {
+    "unit_weight": "unit weight",
+    "pickup_transport": "our transport cost",
+    "fx_rate": "exchange rate",
+    "quantity_basis_missing": "quantity",
+    "quantity_basis_mismatch": "quantity",
+    "amount": "price",
+    "tender_configuration": "tender line",
+    "as_quoted_unit": "price unit",
+}
+
+
+def gap_word(reason: str, base_unit="", pack_unit="") -> str:
+    """One Unconfirmed reason as the few words the overview names it by.
+
+    Freight and duties read as `pricing.basis_gaps` reads them ("freight",
+    "duties amount"), so the overview's flag and its earlier basis flag
+    cannot word one gap two ways.
+    """
+    lowered = (reason or "").lower()
+    key = key_for_reason(reason)
+    if key == "pack_spec":
+        return pack_words(base_unit, pack_unit)
+    if key in ("freight_basis", "duties_basis"):
+        leg = key.removesuffix("_basis")
+        return f"{leg} amount" if f"no {leg} amount recorded" in lowered else leg
+    if key == "unit_weight" and base_unit:
+        return f"{unit_noun(base_unit)} weight"
+    if key in _GAP_WORDS:
+        return _GAP_WORDS[key]
+    if "kit composition" in lowered:
+        return "kit contents"
+    return " ".join(lowered.split()[:4])
 
 
 @dataclass(frozen=True)
@@ -95,6 +158,37 @@ class ComparisonRow:
     # "collected from Our warehouse, Kano". Two bids from one supplier for
     # two places read as two different offers, which they are.
     delivery: str = ""
+    # The commodity's own nouns, so a gap reads "sachets per carton" rather
+    # than the pricing module's generic "units per pack".
+    base_unit: str = ""
+    pack_unit: str = ""
+    # The price as the supplier stated it ("42.50 USD per carton") and the
+    # day the quote arrived: a blocked card still says what was offered.
+    as_quoted: str = ""
+    received_on: str = ""
+    # What the specification requires of the pack figure, as a chip beside a
+    # pack blocker: "150 sachets per carton".
+    pack_requirement: str = ""
+
+    @property
+    def gaps(self) -> list[str]:
+        """Every gap that keeps this offer out of the ranking, in a few words each, once.
+
+        "freight", "duties amount", "sachets per carton": read from the same
+        comparability figures `is_comparable` is judged on, so a list of
+        these across a tender names exactly the offers the comparison
+        blocks, and why.
+        """
+        out = []
+        for key in COMPARABILITY_FIELDS:
+            value = self.figures.get(key)
+            if not isinstance(value, Unconfirmed):
+                continue
+            for reason in value.reasons:
+                word = gap_word(reason, self.base_unit, self.pack_unit)
+                if word not in out:
+                    out.append(word)
+        return out
 
     @property
     def blocking(self) -> dict | None:
@@ -113,9 +207,15 @@ class ComparisonRow:
             for reason in value.reasons:
                 wanted = key_for_reason(reason) or ("kit_composition" if "kit composition" in reason else None)
                 question = next((q for q in self.questions if q.key == wanted), None)
+                fact = plain_reason(reason, self.base_unit, self.pack_unit)
                 return {
-                    "fact": reason[:1].upper() + reason[1:],
+                    "fact": fact[:1].upper() + fact[1:],
                     "question": (question.as_dict() if question is not None else None),
+                    # What the gap is called, so the card can leave it out of
+                    # "also not stated" -- and the specification's figure for
+                    # it, said beside the blocker as a chip.
+                    "label": gap_word(reason, self.base_unit, self.pack_unit),
+                    "spec": self.pack_requirement if wanted == "pack_spec" else "",
                 }
         return None
 
@@ -160,6 +260,13 @@ class ComparisonRow:
         return {
             "outcome": outcome,
             "summary": summary,
+            # The requirements nobody has stated a figure for, by name: a
+            # blocked card lists the ones its blocker is not, as not blocking.
+            "not_stated": [
+                requirement_label(r.field, r.requirement.get("unit", "")).lower()
+                for r in self.compliance
+                if r.outcome == "not_stated"
+            ],
             "failures": failures,
             "stated_on_quote": stated_on_quote,
             "confirmed_by_item": confirmed_by_item,
@@ -244,6 +351,11 @@ class Comparison:
                 "entered_by": row.entered_by,
                 "supplier_awaiting_review": row.supplier_awaiting_review,
                 "delivery": row.delivery,
+                "gaps": row.gaps,
+                "base_unit": row.base_unit,
+                "pack_unit": row.pack_unit,
+                "as_quoted": row.as_quoted,
+                "received_on": row.received_on,
             }
 
         return {
@@ -473,6 +585,33 @@ def _ranking_key(comparable: list[ComparisonRow]) -> str | None:
     return "landed_total_for_tender_quantity"
 
 
+def pack_requirement_words(commodity) -> str:
+    """ "150 sachets per carton" (or "at least 150 ..."): the specification's pack figure, or ""."""
+    from connect_labs.supply_chain.procurement.services.compliance import is_pack_count_field
+
+    prefixes = {"==": "", ">=": "at least ", "<=": "at most ", ">": "more than ", "<": "fewer than "}
+    for requirement in commodity.spec_requirements or []:
+        if not isinstance(requirement, dict) or not is_pack_count_field(requirement.get("field"), commodity):
+            continue
+        prefix = prefixes.get(requirement.get("operator"))
+        if prefix is None or requirement.get("value") in (None, ""):
+            continue
+        return f"{prefix}{requirement['value']} {pack_words(commodity.base_unit, commodity.pack_unit)}"
+    return ""
+
+
+def as_quoted_words(quote, base_unit="", pack_unit="") -> str:
+    """ "42.50 USD per carton": the price as the supplier stated it, before any conversion."""
+    if quote.as_quoted_amount is None:
+        return "no price stated"
+    price = f"{money_digits(quote.as_quoted_amount)} {quote.as_quoted_currency or 'USD'}"
+    unit = {"per_pack": pack_unit, "per_base_unit": base_unit}.get(quote.as_quoted_unit or "")
+    if unit:
+        return f"{price} per {unit_noun(unit)}"
+    basis = (quote.as_quoted_unit or "").replace("_", " ")
+    return f"{price} {basis}".strip()
+
+
 def delivery_words(quote, tender) -> str:
     """How a bid reaches the buyer, as a reader says it."""
     if getattr(quote, "delivery_mode", "delivered") == "pickup":
@@ -513,6 +652,7 @@ def compare_tender(
     # the checks feed and the product page already knew better.
     course_applies = course_applies_to_category(commodity.category)
     figure_fields = [key for key in FIGURE_FIELDS if course_applies or key not in COURSE_FIGURES]
+    pack_requirement = pack_requirement_words(commodity)
 
     for quote in quotes:
         if not _is_live(quote):
@@ -538,7 +678,12 @@ def compare_tender(
             entered_by=getattr(quote, "entered_by", "program") or "program",
             supplier_awaiting_review=bool(getattr(supplier, "awaiting_review", False)),
             delivery=delivery_words(quote, tender),
+            base_unit=(item.base_unit if item is not None and item.base_unit else "") or commodity.base_unit or "",
+            pack_unit=(item.pack_unit if item is not None and item.pack_unit else "") or commodity.pack_unit or "",
+            received_on=str(quote.received_on)[:10] if quote.received_on else "",
+            pack_requirement=pack_requirement,
         )
+        row.as_quoted = as_quoted_words(quote, row.base_unit, row.pack_unit)
         if not course_applies:
             row.figures = {key: value for key, value in figures.items() if key not in COURSE_FIGURES}
             row.questions = [q for q in row.questions if q.key != "course_definition"]

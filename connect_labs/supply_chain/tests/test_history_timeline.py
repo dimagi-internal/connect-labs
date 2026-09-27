@@ -707,13 +707,13 @@ class TestPages:
         live = client_in_program.get(url).content.decode()
         assert "data-timeline" in live
         assert "ACE (agent)" in live
-        assert "Quote recorded: 42.50 USD per carton" in live
+        assert "Quote · Northwind Foods · recorded: 42.50 USD per carton" in live
         assert correct in live
 
         past = client_in_program.get(url, {"as_of": "2026-08-25"})
         assert past.status_code == 200
         body = past.content.decode()
-        assert "Quote recorded: 42.50 USD per carton" in body
+        assert "Quote · Northwind Foods · recorded: 42.50 USD per carton" in body
         assert correct not in body
 
     def test_a_via_ai_pill_does_not_say_ai_twice(self, client_in_program, da, base, sophie):
@@ -771,4 +771,4 @@ class TestPages:
         url = reverse("supply_chain:order_detail", args=[order["contract"]["id"]])
         body = client_in_program.get(url, {"as_of": "2026-08-25"}).content.decode()
         assert "ETA 5 Sep → 19 Sep" not in body
-        assert "Shipment recorded" in body
+        assert "Shipment · SH-1 · recorded" in body

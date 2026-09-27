@@ -20,8 +20,14 @@
     {% if r.brief %}<p class="text-[14.5px] text-white/90 mt-3 max-w-3xl whitespace-pre-line leading-relaxed">{{ r.brief }}</p>{% endif %}
     <div class="grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap sm:gap-x-12 sm:gap-y-5 mt-6">
       <div>
-        <div class="text-[20px] sm:text-[24px] font-semibold {% if card.closing_soon %}text-brand-marigold{% else %}text-white{% endif %}">{% if r.response_deadline %}{{ r.response_deadline|day }}{% else %}Open until closed{% endif %}</div>
-        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">REPLIES BY{% if card.days_left is not None and card.days_left >= 0 %} · {{ card.deadline_words|upper }}{% endif %}</div>
+        {% if r.response_deadline %}
+          <div data-testid="replies-by" class="text-[20px] sm:text-[24px] font-semibold {% if card.closing_soon %}text-brand-marigold{% else %}text-white{% endif %}">{{ r.response_deadline|day }}</div>
+          <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">REPLIES BY{% if card.days_left is not None and card.days_left >= 0 %} · {{ card.deadline_words|upper }}{% endif %}</div>
+        {% else %}
+          {% comment %}No date was set: said as it is, not dressed as a deadline.{% endcomment %}
+          <div data-testid="replies-by" class="text-[20px] sm:text-[24px] font-semibold text-white">No reply-by date</div>
+          <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">OPEN FOR BIDS</div>
+        {% endif %}
       </div>
       {% if asked_for %}
       <div>
@@ -71,24 +77,19 @@
   </div>
 {% endif %}
 
-<div class="mb-8 max-w-3xl">
-  <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">Where the goods go</h2>
-  <ul class="bg-white border border-brand-border-light rounded-[10px] divide-y divide-gray-100 text-[14px]">
-    {% for p in r.delivery_points %}
-      <li class="px-5 py-3"><span class="font-medium">{% firstof p.name p.city %}</span>{% if p.name and p.city %}<span class="text-gray-600">, {{ p.city }}</span>{% endif %}{% if p.country_name %}<span class="text-gray-600">, {{ p.country_name }}</span>{% endif %}</li>
-    {% endfor %}
-    {% if r.pickup_accepted %}
-      <li class="px-5 py-3"><span class="font-medium">Or the buyer collects from you</span> <span class="text-gray-600">— say where on your bid.</span></li>
-    {% endif %}
-  </ul>
-  {% if r.delivery_points|length > 1 %}<p class="text-[12.5px] text-gray-600 mt-2">Your price can cover one place or several; if it differs by place, send a bid for each.</p>{% endif %}
-</div>
-
+{% comment %}
+The products on the left, the request as a whole on the right: how much, where
+it goes, and what the specification says. The delivery places used to be a
+second full-width box above the products, which put the thing a supplier bids
+on below the fold.
+{% endcomment %}
+<div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] items-start">
+<div class="min-w-0">
 <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-4">
   <h2 class="text-lg font-semibold text-brand-deep-purple">What they are asking for</h2>
   <span class="text-[13px] text-gray-500">One bid per product. State it as you would write it; the buyer's comparison converts.</span>
 </div>
-<div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+<div class="grid gap-4 grid-cols-1 md:grid-cols-2">
   {% for line in listed.lines %}
     <article class="pg-card bg-white border border-brand-border-light rounded-[10px] pl-5 pr-4 sm:pl-6 sm:pr-5 pt-5 pb-4 flex flex-col gap-4" style="--hue: {{ card.hue }}">
       <div class="flex items-start justify-between gap-3">
@@ -102,13 +103,6 @@
           <div class="text-[19px] font-semibold text-gray-600 leading-none">Quantity not stated</div>
         {% endif %}
       </div>
-      {% if line.requirements %}
-        <div class="text-[12.5px] text-gray-600">
-          <div class="text-[11px] font-semibold tracking-wider text-gray-500 mb-1">SPECIFICATION</div>
-          <ul class="space-y-0.5">{% for req in line.requirements %}<li>{{ req }}</li>{% endfor %}</ul>
-          {% if line.commodity.spec_reference %}<div class="text-[11.5px] text-gray-600 mt-1">Reference: {{ line.commodity.spec_reference }}</div>{% endif %}
-        </div>
-      {% endif %}
       <div class="border-t border-gray-100 pt-3 mt-auto flex gap-4 text-[12.5px] font-medium">
         {% if not signed_in %}
           <a href="{% url 'labs:login' %}?next={% url 'supply_chain:market_bid' r.pk line.commodity_slug %}" class="pg-hue hover:underline">Sign in to bid →</a>
@@ -123,6 +117,37 @@
       </div>
     </article>
   {% endfor %}
+</div>
+</div>
+
+<aside data-testid="request-summary" class="bg-white border border-brand-border-light rounded-[10px] px-5 py-4 text-[13.5px]">
+  <h2 class="text-[11.5px] font-semibold tracking-wider text-gray-500 mb-2">THE REQUEST</h2>
+  <dl class="space-y-3">
+    {% if asked_for %}
+      <div>
+        <dt class="text-[12px] text-gray-500">Quantity</dt>
+        <dd class="font-medium text-gray-900 tabular-nums">{{ asked_for }}</dd>
+      </div>
+    {% endif %}
+    <div>
+      <dt class="text-[12px] text-gray-500">Delivered to</dt>
+      {% for p in r.delivery_points %}
+        <dd data-testid="delivery-point" class="text-gray-900"><span class="font-medium">{% firstof p.name p.city %}</span>{% if p.name and p.city %}<span class="text-gray-600">, {{ p.city }}</span>{% endif %}{% if p.country_name %}<span class="text-gray-600">, {{ p.country_name }}</span>{% endif %}</dd>
+      {% empty %}
+        {% if not r.pickup_accepted %}<dd class="text-gray-600">No place stated</dd>{% endif %}
+      {% endfor %}
+      {% if r.pickup_accepted %}<dd class="text-gray-900">Or the buyer collects from you <span class="text-gray-600">— say where on your bid.</span></dd>{% endif %}
+      {% if r.delivery_points|length > 1 %}<dd class="text-[12px] text-gray-600 mt-1">Your price can cover one place or several; if it differs by place, send a bid for each.</dd>{% endif %}
+    </div>
+    {% for line in listed.lines %}{% if line.requirements %}
+      <div>
+        <dt class="text-[12px] text-gray-500">Specification{% if listed.lines|length > 1 %} · {{ line.name }}{% endif %}</dt>
+        {% for req in line.requirements %}<dd data-testid="spec-line" class="text-gray-900">{{ req }}</dd>{% endfor %}
+        {% if line.commodity.spec_reference %}<dd class="text-[12px] text-gray-600 mt-0.5">Reference: {{ line.commodity.spec_reference }}</dd>{% endif %}
+      </div>
+    {% endif %}{% endfor %}
+  </dl>
+</aside>
 </div>
 
 {% if listed.own_quotes %}

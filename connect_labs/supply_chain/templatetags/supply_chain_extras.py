@@ -42,6 +42,27 @@ def also_confirm(row):
     return [q for q in (row.get("questions") or []) if q.get("key") != blocking.get("key")]
 
 
+@register.filter
+def not_blocking(row):
+    """The specification's unstated requirements a blocked row's blocker is not: ["shelf life"].
+
+    Said once, muted, as "also not stated (not blocking)": an amber badge
+    beside the blocker read as a second thing keeping the offer out.
+    """
+    row = row or {}
+    blocker = (row.get("blocking") or {}).get("label") or ""
+    return [label for label in (row.get("specification") or {}).get("not_stated") or [] if label != blocker]
+
+
+@register.filter
+def plain_reason(reason, row):
+    """A pricing reason in the row's commodity's own words: "sachets per carton not stated on the quote"."""
+    from connect_labs.supply_chain.procurement.services.comparison import plain_reason as plain
+
+    row = row or {}
+    return plain(str(reason or ""), row.get("base_unit") or "", row.get("pack_unit") or "")
+
+
 # A human name for each check kind. It lives HERE, in the presentation layer,
 # and not in checks.py, because checks.py must not carry prose -- the whole
 # point of section 22 is that the domain states facts and a client words them.
@@ -199,6 +220,18 @@ def days_ago_and_day(value, now):
     day = timezone.localdate(value)
     short = f"{day.day} {day.strftime('%b')}"
     return relative if relative == (day_text(day) or "") else f"{relative} · {short}"
+
+
+@register.filter
+def day_beside_count(value, now):
+    """ "3 Aug": the day under a count back from `now` -- or "" past a month, where the count is already the day."""
+    relative = days_ago(value, now)
+    if not relative:
+        return ""
+    from django.utils import timezone
+
+    day = timezone.localdate(value)
+    return "" if relative == (day_text(day) or "") else f"{day.day} {day.strftime('%b')}"
 
 
 @register.filter
@@ -782,7 +815,7 @@ def humanise(value):
 # Who the buyer of record is, in words. The enum is the domain's; the screen
 # is a person's, and "as programme org" read like a database column.
 BUYER_LABELS = {
-    "programme_org": "the programme",
+    "programme_org": "the program",
     "partner_org": "a local partner",
     "agency": "a procurement agency",
 }
