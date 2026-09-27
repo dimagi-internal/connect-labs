@@ -690,11 +690,10 @@ CANOPY_SIGNING_KEY = env("CANOPY_SIGNING_KEY", default="").replace("\\n", "\n")
 # and nothing else changes. Needs LABS_PUBLIC_URL and CANOPY_SIGNING_KEY too.
 CANOPY_CLIENT_ID = env("CANOPY_CLIENT_ID", default="")
 # What the canopy SDK (`canopy_sdk.django`) reads. Not a second copy of the
-# values above: a live view of them (and of LABS_PUBLIC_URL, which later
-# settings modules override), plus labs' page and scope registries.
-from connect_labs.labs.canopy import CanopyHost  # noqa: E402
-
-CANOPY_HOST = CanopyHost()
+# values above: a callable the SDK resolves on every read, so it sees them (and
+# LABS_PUBLIC_URL, which later settings modules override) as they are NOW, plus
+# labs' page and scope registries.
+CANOPY_HOST = "connect_labs.labs.canopy.host_settings"
 
 # Audit trail (HIPAA-bar access/change logging — see docs/AUDIT_LOGGING.md)
 # ------------------------------------------------------------------------------
