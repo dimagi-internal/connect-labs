@@ -133,23 +133,7 @@
                 {% if row.quote_id in awarded_quote_ids %}
                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Awarded</span>
                 {% endif %}
-                {% with correction=corrections|dictkey:row.quote_id %}{% if correction %}
-                  {% comment %}Why a once-blocked offer is in the ranking: the correction that
-                  answered it, worded as the timeline words it. It opens on the reply it rested
-                  on, so the evidence is read here rather than on another page.{% endcomment %}
-                  <details data-testid="correction-source" class="mt-0.5 text-xs font-normal max-w-md whitespace-normal">
-                    <summary class="cursor-pointer text-gray-600 hover:underline">Corrected {{ correction.when|date:"j M" }}{% if correction.changes %}: {{ correction.changes }}{% endif %} — {{ correction.actor }}</summary>
-                    {% if correction.excerpt %}
-                      <p class="mt-1 text-gray-500">{{ correction.source_kind|default:"Source" }}, recorded by {{ correction.actor }} on {{ correction.recorded_on|date:"j M" }}</p>
-                      <blockquote data-testid="source-excerpt" class="mt-1 border-l-2 border-gray-300 pl-3 text-gray-700 whitespace-pre-line">{{ correction.excerpt }}</blockquote>
-                    {% else %}
-                      <p class="mt-1 text-gray-500">No source was recorded with this correction.</p>
-                    {% endif %}
-                    <a data-testid="correction-note" href="{{ history_url }}" class="mt-1 inline-block text-brand-indigo hover:underline">In the tender's history</a>
-                  </details>
-                {% endif %}{% endwith %}
                 {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
-                {% include "supply_chain/procurement/_specification.html" with specification=row.specification %}
               </td>
               {% for column in table_columns %}
                 {% with cell=row.figures|dictkey:column.key %}
@@ -172,6 +156,39 @@
                 {% endwith %}
               {% endfor %}
             </tr>
+            {% with correction=corrections|dictkey:row.quote_id %}{% if correction or row.specification %}
+            {% comment %}
+            The specification and, for an offer a correction brought in, the
+            correction and the reply it rested on: one compact line under the
+            row's figures, so the row itself stays one line to scan across.
+            {% endcomment %}
+            <tr data-testid="ranked-row-detail" data-detail-for="{{ row.quote_id }}">
+              <td></td>
+              <td colspan="{{ table_columns|length|add:1 }}" class="pt-0 pb-2 whitespace-normal">
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                  {% include "supply_chain/procurement/_specification.html" with specification=row.specification inline=True %}
+                  {% if correction %}
+                    {% comment %}Why a once-blocked offer is in the ranking: the correction that
+                    answered it, worded as the timeline words it. It opens on the reply it rested
+                    on, so the evidence is read here rather than on another page. Who recorded it
+                    is said once, in the source's heading.{% endcomment %}
+                    <details data-testid="correction-source" class="text-xs font-normal">
+                      <summary class="cursor-pointer text-gray-600 hover:underline">Corrected {{ correction.when|date:"j M" }}{% if correction.changes %}: {{ correction.changes }}{% endif %}</summary>
+                      <div class="mt-1 max-w-2xl">
+                        {% if correction.excerpt %}
+                          <p class="text-gray-600">{{ correction.source_kind|default:"Source" }}{% if correction.sender %} from {{ correction.sender }}{% endif %}, recorded by {{ correction.actor }} on {{ correction.recorded_on|date:"j M Y" }}</p>
+                          <blockquote data-testid="source-excerpt" class="mt-1 rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ correction.excerpt }}</blockquote>
+                        {% else %}
+                          <p class="text-gray-500">No source was recorded with this correction.</p>
+                        {% endif %}
+                        <a data-testid="correction-note" href="{{ history_url }}" class="mt-1 inline-block text-brand-indigo hover:underline">In the tender's history</a>
+                      </div>
+                    </details>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endif %}{% endwith %}
             {% if row.questions or row.quote_id not in awarded_quote_ids and not supply_as_of %}
             {% comment %}
             Two blocks in normal flow, one above the other: the questions, then
@@ -285,13 +302,17 @@
     Needs info — {{ comparison.blocked|length }} supplier{{ comparison.blocked|pluralize }}
   </h2>
   {% for row in comparison.blocked %}
-    <div data-quote-id="{{ row.quote_id }}" class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
-      <h3 class="font-semibold mb-2">
+    {% comment %}Tight: three of these fit below the page header at 900px.{% endcomment %}
+    <div data-quote-id="{{ row.quote_id }}" class="bg-white rounded-lg shadow-sm border border-gray-200 px-4 py-2.5 mb-2">
+      <h3 class="font-semibold">
         <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
            class="text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
         {% if row.item_name %}<span class="text-sm font-normal text-gray-700">· {{ row.item_name }}</span>{% endif %}
         {% include 'supply_chain/procurement/_ai_badge.html' with actor=ai_quotes|dictkey:row.quote_id %}
       </h3>
+      {% comment %}What was offered and when, as the supplier stated it: blocked from
+      the ranking is not the same as having no price.{% endcomment %}
+      <p data-testid="as-quoted" class="text-xs text-gray-600 mb-1">Quoted {{ row.as_quoted }}{% if row.received_on %} · received {{ row.received_on|day }}{% endif %}</p>
       {% comment %}
       The one fact that keeps this offer out of the ranking, and the one
       question that clears it, first. The rest of the checklist still stands,
@@ -299,9 +320,9 @@
       that mattered.
       {% endcomment %}
       {% if row.blocking %}
-        <p data-testid="blocking" class="text-sm font-semibold text-gray-900">Blocking: {{ row.blocking.fact }}</p>
+        <p data-testid="blocking" class="text-sm font-semibold text-gray-900">Blocking: {{ row.blocking.fact }}{% if row.blocking.spec %} <span data-testid="spec-chip" class="ml-1 inline-flex whitespace-nowrap rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-xs font-normal text-gray-700">Spec: {{ row.blocking.spec }}</span>{% endif %}</p>
         {% if row.blocking.question %}
-          <p data-testid="blocking-question" class="text-sm text-gray-800 mt-0.5 mb-2">
+          <p data-testid="blocking-question" class="text-sm text-gray-800 mt-0.5 mb-1">
             {% if row.blocking.question.audience == "internal" %}Ours to do:{% else %}Ask the supplier:{% endif %}
             {{ row.blocking.question.question }}
             {% with q=row.blocking.question %}{% include "supply_chain/procurement/_requirement.html" %}{% endwith %}
@@ -309,10 +330,10 @@
         {% endif %}
       {% endif %}
       {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
-      {% include "supply_chain/procurement/_specification.html" with specification=row.specification %}
+      {% include "supply_chain/procurement/_specification.html" with specification=row.specification hide_not_stated=True %}
       {% with rest=row|also_confirm %}
         {% if rest or row.blocking %}
-          <details data-testid="also-confirm" class="mt-2">
+          <details data-testid="also-confirm" class="mt-1">
             <summary class="cursor-pointer text-sm text-brand-indigo">{% if rest %}Also confirm ({{ rest|length }}){% else %}What each figure is missing{% endif %}</summary>
             {% if rest %}{% include "supply_chain/procurement/_row_questions.html" with row=row questions=rest %}{% endif %}
             {% for column in comparison.columns %}
@@ -320,7 +341,7 @@
                 {% if cell.unconfirmed %}
                   <p class="text-xs text-gray-500 mt-1">
                     <strong class="text-gray-600">{{ column.label }}:</strong>
-                    {% for reason in cell.unconfirmed %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}
+                    {% for reason in cell.unconfirmed %}{{ reason|plain_reason:row }}{% if not forloop.last %}; {% endif %}{% endfor %}
                   </p>
                 {% endif %}
               {% endwith %}
@@ -328,6 +349,9 @@
           </details>
         {% endif %}
       {% endwith %}
+      {% with unstated=row|not_blocking %}{% if unstated %}
+        <p data-testid="not-blocking" class="mt-0.5 text-xs text-gray-500">Also not stated (not blocking): {{ unstated|join:", " }}</p>
+      {% endif %}{% endwith %}
       {% for c in row.compliance %}
         {% if c.claim_conflict %}
           <p class="text-sm text-red-700 mt-2">

@@ -13,13 +13,14 @@ them out on a past date.
       <ol class="divide-y divide-gray-100">
         {% for entry in timeline %}
           <li data-testid="revision-line" data-fields="{{ entry.fields|join:' ' }}" class="py-2 flex items-start gap-3">
-            <time class="w-14 shrink-0 text-xs text-gray-500 tabular-nums pt-0.5"
-                  datetime="{{ entry.when|date:'c' }}">{{ entry.when|date:"j M" }}</time>
+            {% comment %}Every date on the tender page carries its year ("6 Jul 2026"), so the
+            history reads the same way as the panels above it.{% endcomment %}
+            <time class="w-24 shrink-0 whitespace-nowrap text-xs text-gray-500 tabular-nums pt-0.5"
+                  datetime="{{ entry.when|date:'c' }}">{{ entry.when|date:"j M Y" }}</time>
             <div class="min-w-0 flex-1">
-              <div class="text-sm text-gray-900">
-                {% if entry.subject %}<span class="text-xs text-gray-500">{{ entry.subject }} ·</span>{% endif %}
-                {{ entry.sentence }}
-              </div>
+              {% comment %}One grammar for a new record and a change to one: "Shipment · SH-1 ·
+              recorded: ETA 5 Sep" and "Shipment · SH-1 · ETA 5 Sep → 19 Sep".{% endcomment %}
+              <div data-testid="revision-text" class="text-sm text-gray-900">{{ entry.line }}</div>
               <div class="mt-0.5 flex flex-wrap items-center gap-2">
                 {% comment %}
                 The actor badge is how the source opens: with an excerpt it is
@@ -34,8 +35,10 @@ them out on a past date.
                     {% comment %}Where the quote came from, as the call recorded it -- the kind its
                     reference implies, who recorded it and when. A replay of the same evidence
                     was answered from this write, not written again.{% endcomment %}
-                    <p data-testid="source-heading" class="mt-1 text-gray-500">{{ entry.source_kind|default:"Source" }}, recorded by {{ entry.actor }} on {{ entry.recorded_on|date:"j M" }}{% if entry.replayed_at %} · received again {{ entry.replayed_at|date:"j M" }}, recorded once{% endif %}</p>
-                    <blockquote data-testid="source-excerpt" class="mt-1 border-l-2 border-gray-300 pl-3 text-gray-700 whitespace-pre-line">{{ entry.excerpt }}</blockquote>
+                    <p data-testid="source-heading" class="mt-1.5 text-xs text-gray-600">{{ entry.source_kind|default:"Source" }}{% if entry.sender %} from {{ entry.sender }}{% endif %}, recorded by {{ entry.actor }} on {{ entry.recorded_on|date:"j M Y" }}{% if entry.replayed_at %} · received again {{ entry.replayed_at|date:"j M Y" }}, recorded once{% endif %}</p>
+                    {% comment %}The words the change rested on, at reading size and full contrast:
+                    this is the evidence, not a footnote.{% endcomment %}
+                    <blockquote data-testid="source-excerpt" class="mt-1 max-w-2xl rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ entry.excerpt }}</blockquote>
                   </details>
                 {% elif entry.is_ai %}
                   <span data-testid="actor-badge" data-ai class="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs">{% if entry.actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ entry.actor }}</span></span>

@@ -78,7 +78,7 @@ class TestWords:
     @pytest.mark.parametrize(
         "code,said",
         [
-            ("programme_org", "the programme"),
+            ("programme_org", "the program"),
             ("stock_below_minimum", "Below its own minimum"),
             ("at_customs", "at customs"),
             ("per_base_unit", "per single unit"),
@@ -115,7 +115,7 @@ class TestCheckFacts:
             "invoiced": {"count": 0, "unpaid": 0},
         }
         sub = order_stages(order)[0]["sub"]
-        assert sub == "1 bought by the programme, 1 bought by a local partner"
+        assert sub == "1 bought by the program, 1 bought by a local partner"
 
 
 class TestTheOneDateRule:

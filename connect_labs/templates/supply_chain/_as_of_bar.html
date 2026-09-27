@@ -22,9 +22,14 @@ a block inside an include cannot fill the parent's.
         {% for value in values %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
       {% endif %}
     {% endfor %}
-    <label for="supply-as-of">View as of</label>
+    <label for="supply-as-of" class="font-medium text-gray-700">View as of</label>
+    {% comment %}The browser draws a date input in its own locale ("08/20/2026"), which
+    is not how any other date on these pages reads; the chosen day is said
+    beside it in the page's own format.{% endcomment %}
+    {% if supply_as_of %}<span id="supply-as-of-day" data-testid="as-of-date" class="font-medium text-gray-900 whitespace-nowrap">{{ supply_as_of|date:'j M Y' }}</span>{% endif %}
     <input id="supply-as-of" type="date" name="as_of" max="{{ today }}"
            value="{% if supply_as_of %}{{ supply_as_of|date:'Y-m-d' }}{% endif %}"
+           {% if supply_as_of %}aria-describedby="supply-as-of-day" title="{{ supply_as_of|date:'j M Y' }}"{% endif %}
            class="rounded-md border border-gray-300 px-2 py-1 text-sm">
     <button type="submit" class="px-3 py-1 rounded-md border border-gray-300 bg-white hover:bg-gray-50">Go</button>
   </form>

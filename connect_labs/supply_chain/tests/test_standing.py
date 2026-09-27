@@ -221,6 +221,10 @@ _COMPARABLE = dict(
 )
 
 
+# The pack, stated: what is left to block a quote is its freight and duties.
+_PACK = dict(pack_spec_source="stated_on_quote", base_per_pack_stated=150, base_unit_grams_stated=92)
+
+
 def _award(da, tender, quote, when=SEP_1):
     return op(
         da,
@@ -250,7 +254,9 @@ class TestTender:
 
         assert row.kind == "tender"
         assert row.stage == "open"
-        assert row.waiting_on == "3 of 4 suppliers replied"
+        # Who, and since when; the count is the line under it (batch 5).
+        assert row.waiting_on == "Kaduna Mills — no reply since 21 Aug"
+        assert row.waiting_detail == "3 of 4 replied"
         assert row.stale == ["No reply in 20 days: Kaduna Mills"]
         assert row.url == reverse("supply_chain:procurement_tender_detail", args=[tender["id"]])
 
@@ -284,7 +290,7 @@ class TestTender:
     def test_a_quote_counts_as_a_reply_even_when_the_outreach_was_not_marked(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
         _outreach(da, tender, base["suppliers"][0], datetime.date(2026, 8, 1))
-        _quote(da, tender, base["suppliers"][0], freight_basis="included", duties_basis="included")
+        _quote(da, tender, base["suppliers"][0], **_COMPARABLE)
 
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
         assert row.stale == []
@@ -294,35 +300,39 @@ class TestTender:
         tender = _tender(da, "Round 1", AUG_3)
         _outreach(da, tender, base["suppliers"][0], datetime.date(2026, 9, 1), responded=True)
         _outreach(da, tender, base["suppliers"][1], datetime.date(2026, 9, 1), responded=True)
-        _quote(da, tender, base["suppliers"][0])  # freight and duties not stated
-        _quote(da, tender, base["suppliers"][1], freight_basis="included", duties_basis="excluded")
+        _quote(da, tender, base["suppliers"][0], **_PACK)  # freight and duties not stated
+        _quote(da, tender, base["suppliers"][1], freight_basis="included", duties_basis="excluded", **_PACK)
 
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
         # Both are blocked on the comparison, so both are named: duties
         # excluded with no amount cannot be costed any more than unstated ones.
-        assert row.stale == ["Missing a basis: Baobab Nutrition (duties amount), Northwind Foods (freight, duties)"]
+        assert row.stale == ["Can't compare yet: Baobab Nutrition (duties amount), Northwind Foods (freight, duties)"]
         assert row.waiting_on == "award decision"
 
-    def test_a_closed_or_awarded_tender_drops_the_no_reply_flag_but_keeps_the_basis_flag(self, da, base):
+    def test_a_closed_tender_drops_the_no_reply_flag_but_keeps_the_blocked_flag(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
         _outreach(da, tender, base["suppliers"][0], datetime.date(2026, 8, 1))
         _outreach(da, tender, base["suppliers"][1], datetime.date(2026, 8, 1), responded=True)
-        _quote(da, tender, base["suppliers"][1])  # basis not stated
+        _quote(da, tender, base["suppliers"][1], **_PACK)  # basis not stated
         assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == [
             "No reply in 40 days: Northwind Foods",
-            "Missing a basis: Baobab Nutrition (freight, duties)",
+            "Can't compare yet: Baobab Nutrition (freight, duties)",
         ]
 
-        op(da, "tender_update", SEP_1, tender_id=tender["id"], data={"status": "awarded"})
+        op(da, "tender_update", SEP_1, tender_id=tender["id"], data={"status": "closed"})
         assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == [
-            "Missing a basis: Baobab Nutrition (freight, duties)"
+            "Can't compare yet: Baobab Nutrition (freight, duties)"
         ]
+        # Once awarded the decision is made: what is left to flag is the
+        # awarded quote's own gaps, not the offers it was chosen over.
+        op(da, "tender_update", SEP_1, tender_id=tender["id"], data={"status": "awarded"})
+        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == []
 
     def test_an_awarded_tender_waits_on_its_contract(self, da, base):
         _tender(da, "Round 1", AUG_3, status="awarded")
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
         assert row.stage == "awarded"
-        assert row.waiting_on == "contract"
+        assert row.waiting_on == "a contract"
 
     def test_an_award_made_while_a_supplier_was_blocked_reads_provisional(self, da, base):
         from connect_labs.supply_chain.models import Award
@@ -333,7 +343,7 @@ class TestTender:
         award = _award(da, tender, chosen)
 
         assert Award.objects.get(pk=award["id"]).provisional is True
-        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stage == "awarded, provisional"
+        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stage == "awarded to Baobab Nutrition, provisional"
 
     def test_an_award_over_a_complete_comparison_is_not_provisional(self, da, base):
         from connect_labs.supply_chain.models import Award
@@ -342,7 +352,7 @@ class TestTender:
         award = _award(da, tender, _quote(da, tender, base["suppliers"][1], **_COMPARABLE))
 
         assert Award.objects.get(pk=award["id"]).provisional is False
-        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stage == "awarded"
+        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stage == "awarded to Baobab Nutrition"
 
     def test_a_tender_row_and_its_order_row_carry_the_tender_id(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
@@ -599,10 +609,10 @@ class TestHomePage:
         table = body[standing : body.index("</table>", standing)]
         assert reverse("supply_chain:procurement_tender_detail", args=[tender["id"]]) in table
         assert reverse("supply_chain:order_detail", args=[contract["id"]]) in table
-        assert "0 of 1 supplier replied" in table
+        assert "0 of 1 replied" in table
         assert "arrival (ETA 5 Sep)" in table
         assert "Kano Health Partners" in table
-        assert "data-ai" in table and "ACE (agent)" in table
+        assert "data-ai" in table and "AI · ACE" in table
 
     def test_as_of_before_round_2_existed_leaves_it_out(self, client_in_program, da, base):
         _tender(da, "Round 1", AUG_3)

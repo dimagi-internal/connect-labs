@@ -17,7 +17,7 @@ from connect_labs.supply_chain.history.labels import Lookup, quote_field_label
 from connect_labs.supply_chain.models import Award, Commodity, Quote, Tender
 from connect_labs.supply_chain.procurement.services.questions import missing_facts
 from connect_labs.supply_chain.procurement.views import cost_basis
-from connect_labs.supply_chain.standing import BASIS_RULE, standing_rows
+from connect_labs.supply_chain.standing import BLOCKED_RULE, standing_rows
 from connect_labs.supply_chain.tests import test_history_timeline as timeline
 from connect_labs.supply_chain.tests import test_sophie_batch3 as batch3
 from connect_labs.supply_chain.tests.test_history_timeline import (
@@ -113,8 +113,9 @@ class TestTheSpecificationNamesWhatIsMissing:
         assert row["specification"]["summary"] == "Not stated: sachets per carton, shelf life"
 
         body = _page(client_in_program, base["tender"]["id"])
-        badge = re.search(r'data-testid="spec-not-stated"[^>]*>(.*?)</span>', body).group(1)
-        assert badge == "Not stated: sachets per carton, shelf life"
+        # On a blocked card the blocker is said once; the rest reads as not blocking (batch 5).
+        unstated = re.search(r'data-testid="not-blocking"[^>]*>(.*?)</p>', body).group(1)
+        assert unstated == "Also not stated (not blocking): shelf life"
         assert "OF 2 NOT STATED" not in body.upper()
 
     def test_the_pack_question_is_neutral_and_the_requirement_is_said_apart(self, da, base, client_in_program):
@@ -158,11 +159,14 @@ class TestACorrectionSaysItsUnitsAndOpensOnItsSource:
     def test_the_ranked_row_opens_on_the_reply(self, da, base, ace, client_in_program):
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
         corrected = _correct_pack(da, quote, ace)
-        ranked = _ranked(_page(client_in_program, base["tender"]["id"]), corrected["id"])
+        body = _page(client_in_program, base["tender"]["id"])
+        ranked = re.search(
+            rf'<tr data-testid="ranked-row-detail" data-detail-for="{corrected["id"]}">.*?</tr>', body, re.S
+        ).group(0)
 
         source = re.search(r'<details data-testid="correction-source".*?</details>', ranked, re.S).group(0)
         summary = " ".join(re.search(r"<summary[^>]*>(.*?)</summary>", source, re.S).group(1).split())
-        assert summary == "Corrected 28 Aug: sachets per carton 150 (was not stated) — ACE (agent)"
+        assert summary == "Corrected 28 Aug: sachets per carton 150 (was not stated)"
         excerpt = re.search(r'<blockquote data-testid="source-excerpt"[^>]*>(.*?)</blockquote>', source, re.S)
         assert excerpt.group(1) == PACK_EMAIL
 
@@ -172,7 +176,7 @@ class TestACorrectionSaysItsUnitsAndOpensOnItsSource:
         body = client_in_program.get(
             reverse("supply_chain:procurement_tender_detail", args=[base["tender"]["id"]])
         ).content.decode()
-        assert "Quote corrected: sachets per carton 150 (was not stated)" in body
+        assert "Quote · Northwind Foods · corrected: sachets per carton 150 (was not stated)" in body
         assert "units per pack" not in body
 
     def test_a_commodity_without_units_keeps_the_generic_words(self):
@@ -204,9 +208,10 @@ class TestTheBasisFlagNamesWhatTheComparisonBlocks:
         _quote_basis(da, tender_id, lakeside["id"])  # complete
 
         (row,) = (r for r in standing_rows(PROGRAM, datetime.date(2026, 8, 30)) if r.kind == "tender")
-        (flag,) = (f for f in row.stale if f.startswith("Missing a basis"))
-        assert flag == "Missing a basis: Northwind Foods (freight), Sahel Nutrition (duties amount)"
-        assert flag.rule == BASIS_RULE
+        # Since batch 5 one flag covers every blocked quote, whatever blocks it.
+        (flag,) = (f for f in row.stale if f.startswith("Can't compare yet"))
+        assert flag == "Can't compare yet: Northwind Foods (freight), Sahel Nutrition (duties amount)"
+        assert flag.rule == BLOCKED_RULE
 
         blocked = _compare(da, tender_id)["blocked"]
         assert {r["supplier_name"] for r in blocked} == {"Northwind Foods", "Sahel Nutrition"}
@@ -215,7 +220,7 @@ class TestTheBasisFlagNamesWhatTheComparisonBlocks:
         rendered = re.search(
             r'<span data-testid="stale-flag" title="([^"]*)"\s*class="([^"]*)">(.*?)</span></span>', body, re.S
         )
-        assert rendered.group(1) == BASIS_RULE
+        assert rendered.group(1) == BLOCKED_RULE
         assert "amber" in rendered.group(2) and "red" not in rendered.group(2)
         assert "fa-flag" in rendered.group(3)
 
