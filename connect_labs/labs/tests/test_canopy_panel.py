@@ -1,55 +1,51 @@
-"""Vouching for a labs visitor, and the panel that renders from it.
+"""The canopy agent panel on labs' pages: labs' wiring of the canopy SDK.
 
-Two things are worth testing and one is worth testing hard. The easy one is that
-the panel fails closed when the deployment has no key. The hard one is the
-subject of the assertion: labs is telling canopy "this is a real person here",
-and if the subject could come from anywhere but the session, any caller could be
-anybody.
+Signing, the page token and the mint view are the SDK's (``canopy_sdk``) and are
+tested there. What is tested HERE is labs' side of them, through labs' real
+URLs and pages: ``CANOPY_HOST`` is built from labs' existing settings, the mint
+at ``/labs/canopy/token/`` vouches for the SESSION's user with labs' claims and
+labs' page scopes, the key canopy fetches is still at ``/labs/canopy/jwks/``,
+and the panel renders on the marketplace pages exactly as it did.
+
+The one worth testing hard is the subject: labs is telling canopy "this is a
+real person here", and if the subject could come from anywhere but the session,
+any caller could be anybody.
 """
 
 from __future__ import annotations
 
 import json
 from unittest import mock
+from urllib.parse import unquote
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ed25519
+from canopy_sdk.keys import generate_private_key, private_pem
 from django.urls import reverse
+from jwt import PyJWK
 
 from connect_labs.labs import canopy
 
-
-def _keypair() -> tuple[str, str]:
-    private = ed25519.Ed25519PrivateKey.generate()
-    return (
-        private.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
-        ).decode(),
-        private.public_key()
-        .public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo,
-        )
-        .decode(),
-    )
+BASE = "https://labs.example.invalid"
+CANOPY = f"{BASE}/canopy"
+CLIENT_ID = f"{CANOPY}/oauth/client.json"
 
 
 @pytest.fixture
-def keys():
-    return _keypair()
-
-
-@pytest.fixture
-def configured(settings, keys):
-    private, public = keys
-    settings.CANOPY_BASE_URL = "https://labs.example.invalid/canopy"
+def configured(settings):
+    settings.LABS_PUBLIC_URL = BASE
+    settings.CANOPY_BASE_URL = CANOPY
     settings.CANOPY_APP_NAME = "connect-labs"
-    settings.CANOPY_SIGNING_KEY = private
-    return public
+    settings.CANOPY_AGENT_SLUG = "ace"
+    settings.CANOPY_SIGNING_KEY = private_pem(generate_private_key("EdDSA"))
+    settings.CANOPY_CLIENT_ID = CLIENT_ID
+
+
+@pytest.fixture
+def user(db, django_user_model):
+    return django_user_model.objects.create_user(
+        username="staff", password="x", email="staff@dimagi.com", name="Sam Staff"
+    )
 
 
 @pytest.fixture
@@ -61,162 +57,170 @@ def marketplace_round(db):
     )
 
 
-@pytest.fixture
-def user(db, django_user_model):
-    return django_user_model.objects.create_user(
-        username="staff", password="x", email="staff@dimagi.com", name="Sam Staff"
-    )
+class _CanopyStub:
+    """Stands in for canopy's arrival endpoint and records what labs sent it."""
+
+    def __init__(self, status=200, body=b'{"token": "tok", "expires_at": "2026-01-01T00:00:00Z"}'):
+        self.sent: dict = {}
+        self.url = ""
+        self.status = status
+        self.body = body
+
+    def __call__(self, request, timeout=None):
+        import urllib.error
+
+        self.url = request.full_url
+        self.sent = json.loads(request.data)
+        if self.status != 200:
+            raise urllib.error.HTTPError(self.url, self.status, "refused", {}, _Body(self.body))
+        return _Body(self.body)
 
 
-class TestConfiguration:
-    def test_no_key_means_no_panel(self, settings):
-        settings.CANOPY_BASE_URL = "https://labs.example.invalid/canopy"
+class _Body:
+    def __init__(self, body):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self.body
+
+    def close(self):
+        pass
+
+
+def _mint(client, query=""):
+    stub = _CanopyStub()
+    with mock.patch("urllib.request.urlopen", stub):
+        response = client.post(reverse("labs:canopy_token") + query)
+    return response, stub
+
+
+def _published_key(client):
+    return PyJWK.from_dict(client.get(reverse("labs:canopy_jwks")).json()["keys"][0]).key
+
+
+def _token_url(body: str) -> str:
+    """The widget's ``tokenUrl`` as the browser reads it (the template escapes it
+    for a JS string, so ``=`` arrives as ``\\u003D``)."""
+    marker = 'tokenUrl: "'
+    start = body.index(marker) + len(marker)
+    return json.loads('"' + body[start : body.index('"', start)] + '"')
+
+
+def _rendered_page_token(client, name="marketplace:network", args=()):
+    url = _token_url(client.get(reverse(name, args=args)).content.decode())
+    assert "?page=" in url, "the registered page carries its token to the widget"
+    return unquote(url.split("?page=", 1)[1])
+
+
+# ---------------------------------------------------------------------------
+# CANOPY_HOST, from labs' existing settings
+# ---------------------------------------------------------------------------
+
+
+class TestSettings:
+    def test_canopy_host_reads_labs_settings_live(self, configured, settings):
+        from django.conf import settings as live
+
+        host = dict(live.CANOPY_HOST)
+
+        assert host["CANOPY_BASE_URL"] == CANOPY
+        assert host["APP_NAME"] == "connect-labs"
+        assert host["AGENT_SLUG"] == "ace"
+        assert host["CLIENT_ID"] == CLIENT_ID
+        assert host["ISSUER"] == BASE
+        assert host["RESOURCE"] == f"{BASE}/mcp/"
+        assert host["TOKEN_ENDPOINT"] == f"{BASE}/o/token/"
+        assert host["PANEL_TOKEN_URL"] == "/labs/canopy/token/"
+        assert host["PAGE_SCOPES"] is canopy.PAGE_SCOPES
+
+        settings.CANOPY_CLIENT_ID = ""
+        assert live.CANOPY_HOST["CLIENT_ID"] == "", "an override applies without a rebuild"
+
+    def test_no_public_origin_means_no_grant(self, configured, settings):
+        settings.LABS_PUBLIC_URL = ""
+
+        assert canopy.host_config().grant_enabled is False
+        assert canopy.host_config().assertions_enabled is True, "the panel itself still works"
+
+    def test_the_repr_never_shows_the_signing_key(self, configured):
+        from django.conf import settings as live
+
+        assert "PRIVATE KEY" not in repr(live.CANOPY_HOST)
+
+    def test_no_key_means_no_host(self, configured, settings):
         settings.CANOPY_SIGNING_KEY = ""
 
-        assert canopy.is_configured() is False
-        assert canopy.panel_context(resource="x://")["ready"] is False
-
-    def test_all_three_are_required(self, settings, keys):
-        """A launcher that opens onto an unexplainable error is worse than none,
-        so a partial configuration must read as no panel rather than most of one."""
-        settings.CANOPY_BASE_URL = ""
-        settings.CANOPY_APP_NAME = "connect-labs"
-        settings.CANOPY_SIGNING_KEY = keys[0]
-
-        assert canopy.is_configured() is False
+        assert canopy.host_config() is None
 
 
-class TestTheAssertion:
-    def test_it_verifies_against_the_public_half(self, configured, user):
-        claims = jwt.decode(
-            canopy.assertion_for(user),
-            configured,
-            algorithms=["EdDSA"],
-            audience="https://labs.example.invalid/canopy",
-        )
-
-        assert claims["iss"] == "connect-labs"
-        assert claims["sub"] == str(user.pk)
-        assert claims["jti"]
-
-    def test_the_subject_is_our_own_id_and_never_an_email(self, configured, user):
-        """`sub` identifies the person in LABS' namespace. An email here would be
-        a claim about an identity labs did not verify, and canopy pairs `sub`
-        with the app to keep visitors from colliding across sites."""
-        claims = jwt.decode(
-            canopy.assertion_for(user),
-            configured,
-            algorithms=["EdDSA"],
-            audience="https://labs.example.invalid/canopy",
-        )
-
-        assert claims["sub"] == str(user.pk)
-        assert "@" not in claims["sub"]
-
-    def test_it_vouches_for_the_signed_in_users_email(self, configured, user):
-        """`email_verified` is how canopy recognises a member of the site's
-        workspace as their own canopy account rather than a contact."""
-        claims = jwt.decode(
-            canopy.assertion_for(user),
-            configured,
-            algorithms=["EdDSA"],
-            audience="https://labs.example.invalid/canopy",
-        )
-
-        assert claims["email"] == user.email
-        assert claims["email_verified"] is True
-
-    def test_it_never_vouches_for_an_empty_address(self, configured, user):
-        user.email = ""
-        claims = jwt.decode(
-            canopy.assertion_for(user),
-            configured,
-            algorithms=["EdDSA"],
-            audience="https://labs.example.invalid/canopy",
-        )
-
-        assert claims["email_verified"] is False
-
-    def test_it_expires_inside_canopys_cap(self, configured, user):
-        claims = jwt.decode(
-            canopy.assertion_for(user),
-            configured,
-            algorithms=["EdDSA"],
-            audience="https://labs.example.invalid/canopy",
-        )
-
-        assert claims["exp"] - claims["iat"] <= 120, "canopy refuses a longer declared life"
-
-    def test_the_audience_names_one_canopy_without_a_trailing_slash(self, settings, user, keys):
-        """Canopy compares against its own base URL, which carries no trailing
-        slash — and an address bar supplies one."""
-        settings.CANOPY_BASE_URL = "https://labs.example.invalid/canopy/"
-        settings.CANOPY_APP_NAME = "connect-labs"
-        settings.CANOPY_SIGNING_KEY = keys[0]
-
-        claims = jwt.decode(
-            canopy.assertion_for(user),
-            keys[1],
-            algorithms=["EdDSA"],
-            audience="https://labs.example.invalid/canopy",
-        )
-
-        assert claims["aud"] == "https://labs.example.invalid/canopy"
-
-    def test_it_is_signed_asymmetrically(self, configured, user):
-        """Canopy holds the public half, so a symmetric algorithm would make the
-        verification key a signing key — anyone holding it could forge."""
-        header = jwt.get_unverified_header(canopy.assertion_for(user))
-
-        assert header["alg"] == "EdDSA"
-
-    def test_each_assertion_is_single_use(self, configured, user):
-        """Canopy refuses a replayed `jti`, so two mints must not collide."""
-        first = jwt.decode(canopy.assertion_for(user), options={"verify_signature": False})
-        second = jwt.decode(canopy.assertion_for(user), options={"verify_signature": False})
-
-        assert first["jti"] != second["jti"]
+# ---------------------------------------------------------------------------
+# The mint, at /labs/canopy/token/
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestTheEndpoint:
+class TestTheMint:
     def test_it_requires_a_login(self, client, configured):
-        response = client.post(reverse("labs:canopy_token"))
-
-        assert response.status_code in (302, 403)
+        assert client.post(reverse("labs:canopy_token")).status_code in (302, 403)
 
     def test_it_rejects_a_get(self, client, user, configured):
         client.force_login(user)
 
         assert client.get(reverse("labs:canopy_token")).status_code == 405
 
-    def test_it_mints_for_the_session_user(self, client, user, configured):
+    def test_it_vouches_for_the_session_user_with_labs_claims(self, client, user, configured):
         client.force_login(user)
-        with mock.patch.object(
-            canopy, "vouch_for", return_value={"token": "tok", "expires_at": "2026-01-01T00:00:00Z"}
-        ) as vouch:
-            response = client.post(reverse("labs:canopy_token"))
+
+        response, canopy_stub = _mint(client)
 
         assert response.status_code == 200
         assert response.json() == {"token": "tok", "expires_at": "2026-01-01T00:00:00Z"}
-        assert vouch.call_args.args[0].pk == user.pk
+        assert canopy_stub.url == f"{CANOPY}/api/auth/contact-token"
+        assert canopy_stub.sent["agent_slug"] == "ace", "names canopy's tenant (canopy-web #960)"
+        claims = jwt.decode(
+            canopy_stub.sent["assertion"], _published_key(client), algorithms=["EdDSA"], audience=CANOPY
+        )
+        assert claims["iss"] == "connect-labs"
+        assert claims["sub"] == str(user.pk), "labs' own id, never an email"
+        assert claims["name"] == "Sam Staff", "labs' single `name` field, not first/last"
+        assert claims["email"] == "staff@dimagi.com"
+        assert claims["email_verified"] is True, "how canopy recognises a workspace member"
+        assert claims["exp"] - claims["iat"] <= 120
+
+    def test_it_never_vouches_for_an_empty_address(self, client, user, configured):
+        user.email = ""
+        user.save()
+        client.force_login(user)
+
+        _, canopy_stub = _mint(client)
+
+        claims = jwt.decode(canopy_stub.sent["assertion"], options={"verify_signature": False})
+        assert claims["email_verified"] is False
 
     def test_a_subject_in_the_body_is_ignored(self, client, user, django_user_model, configured):
         """The one that matters. Were the subject read from the request, any
         signed-in person could be vouched for as anybody else."""
         victim = django_user_model.objects.create_user(username="someone-else", password="x")
         client.force_login(user)
+        canopy_stub = _CanopyStub()
 
-        with mock.patch.object(canopy, "vouch_for", return_value={"token": "t", "expires_at": ""}) as vouch:
+        with mock.patch("urllib.request.urlopen", canopy_stub):
             client.post(
                 reverse("labs:canopy_token"),
                 data=json.dumps({"sub": str(victim.pk), "username": victim.username}),
                 content_type="application/json",
             )
 
-        assert vouch.call_args.args[0].pk == user.pk
+        claims = jwt.decode(canopy_stub.sent["assertion"], options={"verify_signature": False})
+        assert claims["sub"] == str(user.pk)
 
-    def test_an_unconfigured_deployment_says_so(self, client, user, settings):
+    def test_an_unconfigured_deployment_says_so(self, client, user, configured, settings):
         settings.CANOPY_SIGNING_KEY = ""
         client.force_login(user)
 
@@ -226,114 +230,115 @@ class TestTheEndpoint:
         """Canopy's codes (`replayed`, `bad_signature`) describe labs' credential,
         not the visitor's session, and the visitor can act on none of them."""
         client.force_login(user)
-        with mock.patch.object(
-            canopy, "vouch_for", side_effect=canopy.CanopyMintFailed("canopy returned 401: bad_signature")
-        ):
+        refusing = _CanopyStub(status=401, body=b'{"detail": "bad_signature"}')
+
+        with mock.patch("urllib.request.urlopen", refusing):
             response = client.post(reverse("labs:canopy_token"))
 
         assert response.status_code == 502
         assert "bad_signature" not in response.content.decode()
 
 
+# ---------------------------------------------------------------------------
+# The grant rides the mint: labs' page registry decides it
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.django_db
-class TestTheTenant:
-    """canopy-web #960: a site's name is unique only within one canopy workspace,
-    so the panel names its agent — or canopy refuses once a second workspace
-    registers a `connect-labs`."""
+class TestTheIdJag:
+    def test_a_registered_page_sends_an_id_jag_for_the_same_person(self, client, user, configured):
+        client.force_login(user)
+        token = _rendered_page_token(client)
 
-    def test_the_mint_names_the_agent(self, configured, user, settings):
-        settings.CANOPY_AGENT_SLUG = "ace"
-        sent = {}
+        _, canopy_stub = _mint(client, f"?page={token}")
 
-        class _Resp:
-            def __enter__(self):
-                return self
+        header = jwt.get_unverified_header(canopy_stub.sent["id_jag"])
+        grant = jwt.decode(canopy_stub.sent["id_jag"], _published_key(client), algorithms=["EdDSA"], audience=BASE)
+        assertion = jwt.decode(canopy_stub.sent["assertion"], options={"verify_signature": False})
+        assert header["typ"] == "oauth-id-jag+jwt"
+        assert header["kid"] == jwt.get_unverified_header(canopy_stub.sent["assertion"])["kid"], "one key"
+        assert grant["iss"] == grant["aud"] == BASE, "labs grants for its own authorization server"
+        assert grant["client_id"] == CLIENT_ID
+        assert grant["resource"] == f"{BASE}/mcp/"
+        assert grant["scope"] == "marketplace:read"
+        assert grant["sub"] == assertion["sub"] == str(user.pk)
 
-            def __exit__(self, *a):
-                return False
-
-            def read(self):
-                return b'{"token": "t", "expires_at": ""}'
-
-        def fake_urlopen(request, timeout):
-            sent.update(json.loads(request.data))
-            return _Resp()
-
-        with mock.patch.object(canopy.urllib.request, "urlopen", fake_urlopen):
-            canopy.vouch_for(user)
-
-        assert sent["agent_slug"] == "ace"
-        assert sent["assertion"]
-
-    def test_the_panel_names_the_agent_to_the_widget(self, client, user, configured, settings):
-        settings.CANOPY_AGENT_SLUG = "ace"
+    def test_without_a_page_token_the_request_is_exactly_what_it_was(self, client, user, configured):
         client.force_login(user)
 
-        body = client.get(reverse("marketplace:network")).content.decode()
+        _, canopy_stub = _mint(client)
 
-        assert 'agent: "ace"' in body
+        assert set(canopy_stub.sent) == {"assertion", "agent_slug"}
+
+    def test_the_grant_switched_off_means_no_id_jag(self, client, user, configured, settings):
+        client.force_login(user)
+        token = _rendered_page_token(client)
+        settings.CANOPY_CLIENT_ID = ""
+
+        _, canopy_stub = _mint(client, f"?page={token}")
+
+        assert set(canopy_stub.sent) == {"assertion", "agent_slug"}
+
+    def test_scopes_in_the_body_or_query_are_ignored(self, client, user, configured):
+        client.force_login(user)
+        canopy_stub = _CanopyStub()
+
+        with mock.patch("urllib.request.urlopen", canopy_stub):
+            client.post(
+                f"{reverse('labs:canopy_token')}?scope=admin&page=marketplace:network",
+                data=json.dumps({"scope": "marketplace:read", "page": "marketplace:network"}),
+                content_type="application/json",
+            )
+
+        assert "id_jag" not in canopy_stub.sent
+
+    def test_another_users_page_token_yields_nothing(self, client, user, configured, django_user_model):
+        client.force_login(user)
+        token = _rendered_page_token(client)
+        other = django_user_model.objects.create_user(username="other", password="x", email="o@example.invalid")
+        client.force_login(other)
+
+        _, canopy_stub = _mint(client, f"?page={token}")
+
+        assert "id_jag" not in canopy_stub.sent
+
+    def test_a_page_dropped_from_the_registry_stops_granting_at_once(self, client, user, configured):
+        """Scopes are read from labs' registry at mint time, not from the token."""
+        client.force_login(user)
+        token = _rendered_page_token(client)
+
+        with mock.patch.dict(canopy.PAGE_SCOPES, clear=True):
+            _, canopy_stub = _mint(client, f"?page={token}")
+
+        assert "id_jag" not in canopy_stub.sent
+
+    def test_both_marketplace_pages_are_registered(self, client, user, configured, marketplace_round):
+        client.force_login(user)
+
+        assert _rendered_page_token(client, "marketplace:network")
+        assert _rendered_page_token(client, "marketplace:round", args=["mg-2026"])
+
+
+# ---------------------------------------------------------------------------
+# The key canopy fetches, at the URL canopy has registered for labs
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestTheJwks:
-    """Publishing a URL rather than a pasted key is what makes rotation free:
-    swap the secret and canopy follows by `kid` on its next fetch."""
+    def test_it_is_still_at_the_url_canopy_has_registered(self):
+        assert reverse("labs:canopy_jwks") == "/labs/canopy/jwks/"
 
-    def test_it_needs_no_session(self, client, configured):
-        """A public key is public, and canopy fetches it from outside any session."""
+    def test_it_needs_no_session_and_publishes_only_the_public_half(self, client, configured):
         response = client.get(reverse("labs:canopy_jwks"))
 
         assert response.status_code == 200
-        assert response.json()["keys"][0]["kty"] == "OKP"
+        key = response.json()["keys"][0]
+        assert key["kty"] == "OKP"
+        assert "d" not in key, "`d` is the private scalar of an OKP key"
+        assert "PRIVATE KEY" not in response.content.decode()
 
-    def test_it_publishes_the_public_half_and_never_the_private_one(self, client, configured):
-        response = client.get(reverse("labs:canopy_jwks"))
-
-        body = response.content.decode()
-        assert "PRIVATE KEY" not in body
-        assert "d" not in response.json()["keys"][0], "`d` is the private scalar of an OKP key"
-
-    def test_the_published_key_verifies_what_we_sign(self, client, user, configured):
-        """The whole contract in one assertion: canopy fetches this document and
-        must be able to check our signature with it."""
-        from jwt import PyJWK
-
-        published = client.get(reverse("labs:canopy_jwks")).json()["keys"][0]
-        claims = jwt.decode(
-            canopy.assertion_for(user),
-            PyJWK.from_dict(published).key,
-            algorithms=["EdDSA"],
-            audience="https://labs.example.invalid/canopy",
-        )
-
-        assert claims["sub"] == str(user.pk)
-
-    def test_the_assertion_names_the_key_that_signed_it(self, client, configured, user):
-        """Canopy selects a verification key by `kid`. Without it a rotation has
-        nothing to select on and succeeds only by luck of ordering."""
-        published = client.get(reverse("labs:canopy_jwks")).json()["keys"][0]
-
-        header = jwt.get_unverified_header(canopy.assertion_for(user))
-
-        assert header["kid"] == published["kid"]
-
-    def test_the_kid_is_derived_from_the_key_so_rotation_changes_it(self, settings, keys):
-        """A fixed label would give two different keys the same name."""
-        settings.CANOPY_BASE_URL = "https://labs.example.invalid/canopy"
-        settings.CANOPY_APP_NAME = "connect-labs"
-
-        settings.CANOPY_SIGNING_KEY = keys[0]
-        before = canopy.public_jwk()["kid"]
-        settings.CANOPY_SIGNING_KEY = _keypair()[0]
-        after = canopy.public_jwk()["kid"]
-
-        assert before != after
-
-    def test_an_unreadable_key_publishes_an_empty_set(self, client, settings):
-        """Canopy then refuses our assertions, rather than being handed something
-        it cannot parse."""
-        settings.CANOPY_BASE_URL = "https://labs.example.invalid/canopy"
-        settings.CANOPY_APP_NAME = "connect-labs"
+    def test_an_unreadable_key_publishes_an_empty_set(self, client, configured, settings):
         settings.CANOPY_SIGNING_KEY = "not a pem"
 
         response = client.get(reverse("labs:canopy_jwks"))
@@ -342,56 +347,16 @@ class TestTheJwks:
         assert response.json() == {"keys": []}
 
 
-class TestPageState:
-    def test_it_carries_the_selection_and_not_the_rows(self):
-        state = canopy.panel_context(
-            resource="labs-marketplace://orgs",
-            backing_tool="marketplace_orgs_get",
-            visible_ids=["acme-health", "beta-care"],
-            filters={"country": "Uganda"},
-        )["page_state"]
-
-        assert state["visible_ids"] == ["acme-health", "beta-care"]
-        assert state["backing_tool"] == "marketplace_orgs_get"
-        assert state["filters"] == {"country": "Uganda"}
-
-    def test_a_long_selection_is_truncated_rather_than_refused(self):
-        """Canopy refuses a state over 8 KiB outright, which would leave the agent
-        blind to the whole screen. A truncated selection still describes most of
-        it, so the cap is applied here where the page is built."""
-        state = canopy.panel_context(
-            resource="labs-marketplace://orgs",
-            visible_ids=[f"org-{n}" for n in range(1000)],
-        )["page_state"]
-
-        assert len(state["visible_ids"]) == canopy.MAX_VISIBLE_IDS
-        assert len(json.dumps(state).encode()) < 8192, "canopy's own cap"
-
-    def test_a_full_page_of_org_slugs_fits_canopys_byte_cap(self):
-        """400 realistic slugs are ~11 KiB — over canopy's 8 KiB cap, which
-        refused the whole state and left the agent blind (2026-09-25)."""
-        slugs = [f"some-organisation-name-{i:04d}" for i in range(400)]
-
-        state = canopy.panel_context(
-            resource="labs-marketplace://orgs", visible_ids=slugs, backing_tool="marketplace_orgs_get"
-        )["page_state"]
-
-        assert len(json.dumps(state).encode()) <= 8192
-        assert state["visible_ids"] == slugs[: len(state["visible_ids"])], "a prefix, in order"
-        assert len(state["visible_ids"]) > 100, "trimmed, not emptied"
-
-    def test_no_resource_means_no_declaration(self):
-        """A page that says nothing must not declare an empty screen — the agent
-        would reason about a blank selection as though it were the truth."""
-        assert canopy.panel_context()["page_state"] is None
+# ---------------------------------------------------------------------------
+# The rendered panel
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 class TestTheRenderedPanel:
-    """The include is the part that ships, so assert against rendered HTML rather
-    than the context that feeds it."""
+    """The include is the part that ships, so assert against rendered HTML."""
 
-    def test_it_renders_nothing_without_a_key(self, client, user, settings):
+    def test_it_renders_nothing_without_a_key(self, client, user, configured, settings):
         settings.CANOPY_SIGNING_KEY = ""
         client.force_login(user)
 
@@ -404,30 +369,30 @@ class TestTheRenderedPanel:
 
         body = client.get(reverse("marketplace:network")).content.decode()
 
-        assert "https://labs.example.invalid/canopy/embed/widget.js" in body
+        assert f"{CANOPY}/embed/widget.js" in body
         assert 'id="canopy-page-state"' in body
         assert "labs-marketplace://orgs" in body
         assert "marketplace_orgs_get" in body
+        assert 'agent: "ace"' in body
+        assert _token_url(body).startswith("/labs/canopy/token/?page=")
+        # Labs' look, unchanged.
+        assert "#3F4FA0" in body
+        assert "Ask an agent" in body
         # The CSRF binding: labs' cookie is HttpOnly, so the token comes from the
         # DOM. Without this the mint 403s and the widget never starts.
-        assert "csrfmiddlewaretoken" in body
         assert 'name="csrfmiddlewaretoken"' in body, "the token the panel reads must be on the page"
 
     def test_the_launcher_is_rendered_inside_the_body(self, client, user, configured):
         """`{% block javascript %}` renders in <head>, where `document.body` is
-        still null and the launcher has nothing to attach to — so the panel goes
-        at the end of the body instead. A silent no-launcher is the symptom."""
+        still null and the launcher has nothing to attach to."""
         client.force_login(user)
 
         body = client.get(reverse("marketplace:network")).content.decode()
 
         assert body.index("<body") < body.index("embed/widget.js")
-        # And after the token it reads, which base.html renders in the body.
         assert body.index('name="csrfmiddlewaretoken"') < body.index("canopy-page-state")
 
     def test_the_round_page_declares_its_round(self, client, user, configured, marketplace_round):
-        """So "each of these orgs, for THIS EOI" resolves without the visitor
-        having to name the round."""
         client.force_login(user)
 
         body = client.get(reverse("marketplace:round", args=["mg-2026"])).content.decode()

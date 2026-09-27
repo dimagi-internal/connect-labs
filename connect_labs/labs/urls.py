@@ -1,6 +1,7 @@
+from canopy_sdk.django import views as canopy_views
 from django.urls import include, path
 
-from connect_labs.labs import canopy_views, docs_comment_views, help_site, views, views_test_auth
+from connect_labs.labs import docs_comment_views, help_site, views, views_test_auth
 from connect_labs.labs.analysis import views as analysis_views
 from connect_labs.labs.integrations.commcare import oauth_views as commcare_oauth_views
 from connect_labs.labs.integrations.connect import oauth_views as connect_oauth_views
@@ -12,10 +13,13 @@ app_name = "labs"
 urlpatterns = [
     # Context management
     path("clear-context/", views.clear_context, name="clear_context"),
-    # The canopy agent panel vouches for the signed-in visitor here.
-    path("canopy/token/", canopy_views.token, name="canopy_token"),
+    # The canopy agent panel vouches for the signed-in visitor here (the canopy
+    # SDK's view; labs' registries are in connect_labs/labs/canopy.py). The
+    # subject is the session's user and nothing the request says.
+    path("canopy/token/", canopy_views.panel_token, name="canopy_token"),
     # Public: the verification key canopy fetches, so rotating ours is a secret
-    # swap rather than a person re-pasting a key into canopy.
+    # swap rather than a person re-pasting a key into canopy. canopy has THIS
+    # URL registered for labs' Connected site: do not move it.
     path("canopy/jwks/", canopy_views.jwks, name="canopy_jwks"),
     path("refresh-org-data/", views.refresh_org_data, name="refresh_org_data"),
     # MCP Personal Access Tokens (self-service)

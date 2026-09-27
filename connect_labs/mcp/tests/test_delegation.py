@@ -1,35 +1,34 @@
-"""Canopy acting as a labs visitor: the jwt-bearer grant, DPoP, and the scoped MCP.
+"""Canopy acting as a labs visitor: labs' wiring of the canopy SDK's host half.
 
-The contract under test is canopy-web's host-grant contract v1. Most of this
-file is refusals, because that is where the security lives: every check the
-grant and the MCP gate make is exercised by a request that fails exactly that
-check and nothing else. The happy path is asserted once end to end, over the
-real Streamable-HTTP app. And the other two ways in — PATs and ordinary OAuth
-sign-ins — are asserted to be exactly what they were.
+The protocol — every refusal the jwt-bearer grant and the DPoP gate make — is
+the canopy SDK's (``canopy_sdk.host``) and is tested there, check by check,
+against host grant contract v1. What is tested HERE is that labs is wired to it
+correctly, end to end, through labs' real URLs and its real ASGI app:
+
+* the SDK's own conformance suite (discovery, JWKS, redeem + replay, one MCP
+  session, bearer + replayed-proof refusals) passes against labs in-process;
+* a redeemed token runs only its scope's tools, AS the visitor, and is audited
+  with the client and the actor;
+* the grant is off until configured, shares ``/o/token/`` with the toolkit, and
+  never lands in the toolkit's table;
+* PATs and ordinary OAuth sign-ins are exactly what they were.
 """
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import secrets
-import time
-import uuid
-from datetime import timedelta
 from unittest import mock
 
 import httpx
-import jwt
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec, ed25519
+from canopy_sdk import conformance, contract
+from canopy_sdk.django.models import DelegatedToken
+from canopy_sdk.host import issue_id_jag
 from django.core.cache import cache
-from django.utils import timezone
-from jwt.algorithms import ECAlgorithm, OKPAlgorithm
+from starlette.testclient import TestClient
 
 from connect_labs.labs import canopy
-from connect_labs.mcp import client_metadata, delegation, dpop, oauth
-from connect_labs.mcp.models import DelegatedAccessToken, MCPAccessToken, MCPAuditLog
+from connect_labs.mcp import oauth
+from connect_labs.mcp.models import MCPAccessToken, MCPAuditLog
 from connect_labs.mcp.server import _verify_bearer_sync
 from connect_labs.mcp.tool_registry import get_tool
 from connect_labs.users.models import User
@@ -38,69 +37,35 @@ BASE = "https://labs.example.org"
 ISSUER = BASE
 TOKEN_ENDPOINT = f"{BASE}/o/token/"
 RESOURCE = f"{BASE}/mcp/"
-CLIENT_ID = f"{BASE}/canopy/oauth/client.json"
-JWKS_URI = f"{BASE}/canopy/oauth/jwks.json"
+JWKS_URL = f"{BASE}/labs/canopy/jwks/"
 
 
-# ---------------------------------------------------------------------------
-# Keys and signed things
-# ---------------------------------------------------------------------------
+def _host_key() -> str:
+    from canopy_sdk.keys import generate_private_key, private_pem
 
-
-def _pem(private) -> str:
-    return private.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
-    ).decode()
-
-
-def _okp_jwk(private, kid=None) -> dict:
-    jwk = OKPAlgorithm.to_jwk(private.public_key(), as_dict=True)
-    jwk.update({"use": "sig", "alg": "EdDSA", "kid": kid or dpop.jwk_thumbprint(jwk)})
-    return jwk
-
-
-def _ec_jwk(private) -> dict:
-    return ECAlgorithm.to_jwk(private.public_key(), as_dict=True)
-
-
-class Keys:
-    def __init__(self):
-        self.host = ed25519.Ed25519PrivateKey.generate()
-        self.client = ed25519.Ed25519PrivateKey.generate()
-        self.client_jwk = _okp_jwk(self.client, kid="canopy-client-1")
-        self.dpop = ec.generate_private_key(ec.SECP256R1())
-        self.dpop_jwk = _ec_jwk(self.dpop)
+    return private_pem(generate_private_key("EdDSA"))
 
 
 @pytest.fixture
-def keys():
-    return Keys()
+def enabled(settings, canopy_client, canopy_client_documents):
+    """Labs with the grant on, trusting the conformance plugin's canopy client.
 
-
-@pytest.fixture
-def enabled(settings, keys):
+    Labs fetches canopy's metadata document and JWKS through the SDK's SSRF-safe
+    fetch; here that fetch answers from the plugin's documents instead.
+    """
     settings.LABS_PUBLIC_URL = BASE
+    settings.ALLOWED_HOSTS = ["labs.example.org", "testserver"]
     settings.CANOPY_BASE_URL = f"{BASE}/canopy"
     settings.CANOPY_APP_NAME = "connect-labs"
-    settings.CANOPY_SIGNING_KEY = _pem(keys.host)
-    settings.CANOPY_CLIENT_ID = CLIENT_ID
+    settings.CANOPY_SIGNING_KEY = _host_key()
+    settings.CANOPY_CLIENT_ID = canopy_client.client_id
     cache.clear()
-    documents = {
-        CLIENT_ID: {
-            "client_id": CLIENT_ID,
-            "client_name": "canopy",
-            "jwks_uri": JWKS_URI,
-            "token_endpoint_auth_method": "private_key_jwt",
-            "grant_types": [delegation.JWT_BEARER_GRANT],
-            "dpop_bound_access_tokens": True,
-        },
-        JWKS_URI: {"keys": [keys.client_jwk]},
-    }
-    with mock.patch.object(client_metadata, "_fetch", side_effect=lambda url: documents[url]) as fetch:
-        fetch.documents = documents
-        yield fetch
+
+    def fetch(url, **kwargs):
+        return canopy_client_documents[url]
+
+    with mock.patch("canopy_sdk.fetch.get_json", side_effect=fetch):
+        yield canopy_client
     cache.clear()
 
 
@@ -109,88 +74,85 @@ def visitor(db):
     return User.objects.create(username="gillian", email="g@example.invalid")
 
 
-def _client_assertion(keys, **overrides) -> str:
-    now = int(time.time())
-    claims = {
-        "iss": CLIENT_ID,
-        "sub": CLIENT_ID,
-        "aud": ISSUER,
-        "iat": now,
-        "exp": now + 60,
-        "jti": str(uuid.uuid4()),
-    }
-    claims.update(overrides)
-    return jwt.encode(claims, keys.client, algorithm="EdDSA", headers={"kid": keys.client_jwk["kid"]})
+def _id_jag(user, scopes=("marketplace:read",)) -> str:
+    return issue_id_jag(canopy.host_config(), str(user.pk), scopes)
 
 
-def _proof(keys, htm="POST", htu=TOKEN_ENDPOINT, access_token=None, key=None, jwk=None, alg="ES256", **overrides):
-    claims = {"htm": htm, "htu": htu, "iat": int(time.time()), "jti": str(uuid.uuid4())}
-    if access_token is not None:
-        claims["ath"] = base64.urlsafe_b64encode(hashlib.sha256(access_token.encode()).digest()).decode().rstrip("=")
-    claims.update(overrides)
-    return jwt.encode(
-        claims,
-        key or keys.dpop,
-        algorithm=alg,
-        headers={"typ": "dpop+jwt", "jwk": jwk or keys.dpop_jwk},
-    )
-
-
-def _id_jag(keys, user, *, key=None, alg="EdDSA", headers=None, **overrides) -> str:
-    now = int(time.time())
-    claims = {
-        "iss": ISSUER,
-        "aud": ISSUER,
-        "sub": str(user.pk),
-        "client_id": CLIENT_ID,
-        "resource": RESOURCE,
-        "scope": "marketplace:read",
-        "iat": now,
-        "exp": now + 120,
-        "jti": str(uuid.uuid4()),
-    }
-    claims.update(overrides)
-    host_kid = canopy.public_jwk()["kid"]
-    return jwt.encode(
-        claims,
-        key or keys.host,
-        algorithm=alg,
-        headers=headers or {"kid": host_kid, "typ": "oauth-id-jag+jwt"},
-    )
-
-
-def _redeem(client, keys, user, *, assertion=None, client_assertion=None, proof="default", extra=None, drop=()):
-    data = {
-        "grant_type": delegation.JWT_BEARER_GRANT,
-        "assertion": assertion if assertion is not None else canopy.id_jag_for(user, ["marketplace:read"]),
-        "client_id": CLIENT_ID,
-        "client_assertion_type": delegation.CLIENT_ASSERTION_TYPE,
-        "client_assertion": client_assertion if client_assertion is not None else _client_assertion(keys),
-        "resource": RESOURCE,
-    }
-    data.update(extra or {})
-    for name in drop:
-        data.pop(name, None)
-    headers = {}
-    if proof == "default":
-        proof = _proof(keys)
-    if proof is not None:
-        headers["DPoP"] = proof
-    return client.post("/o/token/", data, headers=headers)
-
-
-def _ath(token: str) -> str:
-    return base64.urlsafe_b64encode(hashlib.sha256(token.encode()).digest()).decode().rstrip("=")
+def _redeem(client, canopy_redeem, user, **extra):
+    form, proof = canopy_redeem(_id_jag(user), TOKEN_ENDPOINT, RESOURCE, ISSUER)
+    form.update(extra)
+    return client.post("/o/token/", form, headers={"DPoP": proof})
 
 
 # ---------------------------------------------------------------------------
-# The grant: success
+# The SDK's own conformance suite, against labs' real app
+# ---------------------------------------------------------------------------
+
+
+class _Labs:
+    """The conformance checks' transports, pointed at labs' ASGI app in-process.
+
+    Labs' own URLs go to the app; canopy's (the client metadata the checks also
+    fetch) answer from the plugin's documents.
+    """
+
+    def __init__(self, http: TestClient, documents: dict):
+        self.http = http
+        self.documents = documents
+
+    def fetch_json(self, url: str) -> dict:
+        if url in self.documents:
+            return self.documents[url]
+        response = self.http.get(url)
+        if response.status_code != 200:
+            from canopy_sdk.fetch import FetchError
+
+            raise FetchError(f"{url} answered {response.status_code}")
+        return response.json()
+
+    def post_form(self, url, data, headers=None, what=""):
+        response = self.http.post(url, data=data, headers=headers or {})
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        return response.status_code, body, dict(response.headers)
+
+    def post_json(self, url, payload, *, headers=None):
+        response = self.http.post(url, json=payload, headers=headers or {})
+        return response.status_code, response.content, dict(response.headers)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_sdk_conformance_suite_passes_against_labs(enabled, canopy_client_documents, visitor):
+    from config.asgi import build_application
+
+    with TestClient(build_application(), base_url=BASE) as http:
+        labs = _Labs(http, canopy_client_documents)
+        report = conformance.run(
+            ISSUER,
+            RESOURCE,
+            jwks_url=JWKS_URL,
+            id_jag=_id_jag(visitor),
+            credentials=enabled,
+            fetch_json=labs.fetch_json,
+            post_form=labs.post_form,
+            post_json=labs.post_json,
+        )
+
+    report.raise_for_failures()
+    names = {check.name for check in report.checks}
+    assert {"grant_redeemed", "grant_single_use", "mcp_tools_list", "mcp_refuses_bound_token_as_bearer"} <= names
+
+
+# ---------------------------------------------------------------------------
+# The grant, through labs' /o/token/
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-def test_a_valid_grant_issues_a_short_dpop_bound_token_with_no_refresh(client, keys, enabled, visitor):
-    response = _redeem(client, keys, visitor)
+def test_a_redeemed_token_is_stored_as_a_hash_bound_to_the_visitor(client, enabled, canopy_redeem, visitor):
+    response = _redeem(client, canopy_redeem, visitor)
 
     assert response.status_code == 200, response.content
     body = response.json()
@@ -198,323 +160,48 @@ def test_a_valid_grant_issues_a_short_dpop_bound_token_with_no_refresh(client, k
     assert 0 < body["expires_in"] <= 900
     assert body["scope"] == "marketplace:read"
     assert "refresh_token" not in body
-    assert response["Cache-Control"] == "no-store"
-
-    row = DelegatedAccessToken.objects.get()
-    assert row.user == visitor
-    assert row.client_id == CLIENT_ID
-    assert row.actor == CLIENT_ID
-    assert row.cnf_jkt == dpop.jwk_thumbprint(keys.dpop_jwk)
-    assert row.token_checksum == hashlib.sha256(body["access_token"].encode()).hexdigest()
-    assert body["access_token"] not in row.token_checksum, "only the hash is stored"
+    row = DelegatedToken.objects.get()
+    assert row.subject == str(visitor.pk)
+    assert row.client_id == enabled.client_id
+    assert row.cnf_jkt == enabled.dpop_jkt
+    assert row.token_checksum == contract.token_checksum(body["access_token"])
 
 
 @pytest.mark.django_db
-def test_the_token_is_not_in_the_toolkits_table(client, keys, enabled, visitor):
+def test_the_token_is_not_in_the_toolkits_table(client, enabled, canopy_redeem, visitor):
     """django-oauth-toolkit authenticates labs' REST API with ANY live row in its
     table, so a delegated token must never be one."""
     from oauth2_provider.models import get_access_token_model
 
-    token = _redeem(client, keys, visitor).json()["access_token"]
+    token = _redeem(client, canopy_redeem, visitor).json()["access_token"]
 
     assert not get_access_token_model().objects.exists()
     assert client.get("/api/", headers={"Authorization": f"Bearer {token}"}).status_code in (401, 403, 404)
 
 
 @pytest.mark.django_db
-def test_a_requested_scope_may_narrow_but_not_widen(client, keys, enabled, visitor):
-    widened = _redeem(client, keys, visitor, extra={"scope": "marketplace:read mcp"})
-    assert widened.status_code == 400
-    assert widened.json()["error"] == "invalid_scope"
-
-    narrowed = _redeem(client, keys, visitor, extra={"scope": "marketplace:read"})
-    assert narrowed.status_code == 200, narrowed.content
-
-
-# ---------------------------------------------------------------------------
-# The grant: refusals
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_the_grant_is_off_until_a_canopy_client_is_configured(client, keys, enabled, visitor, settings):
-    assertion = canopy.id_jag_for(visitor, ["marketplace:read"])
+def test_the_grant_is_off_until_a_canopy_client_is_configured(client, enabled, canopy_redeem, visitor, settings):
+    form, proof = canopy_redeem(_id_jag(visitor), TOKEN_ENDPOINT, RESOURCE, ISSUER)
     settings.CANOPY_CLIENT_ID = ""
 
-    response = _redeem(client, keys, visitor, assertion=assertion)
+    response = client.post("/o/token/", form, headers={"DPoP": proof})
 
     assert response.status_code == 400
     assert response.json()["error"] == "unsupported_grant_type"
-    assert not DelegatedAccessToken.objects.exists()
+    assert not DelegatedToken.objects.exists()
 
 
 @pytest.mark.django_db
-def test_only_the_configured_client_may_redeem(client, keys, enabled, visitor):
-    response = _redeem(client, keys, visitor, extra={"client_id": "https://evil.example/client.json"})
-
-    assert response.status_code == 401
-    assert response.json()["error"] == "invalid_client"
-
-
-@pytest.mark.django_db
-def test_the_client_must_authenticate(client, keys, enabled, visitor):
-    response = _redeem(client, keys, visitor, drop=("client_assertion",))
-
-    assert response.status_code == 401
-    assert response.json()["error"] == "invalid_client"
-
-
-@pytest.mark.django_db
-def test_a_client_assertion_by_an_unpublished_key_is_refused(client, keys, enabled, visitor):
-    forged = jwt.encode(
-        {
-            "iss": CLIENT_ID,
-            "sub": CLIENT_ID,
-            "aud": ISSUER,
-            "iat": int(time.time()),
-            "exp": int(time.time()) + 60,
-            "jti": "x1",
-        },
-        ed25519.Ed25519PrivateKey.generate(),
-        algorithm="EdDSA",
-        headers={"kid": keys.client_jwk["kid"]},
-    )
-
-    response = _redeem(client, keys, visitor, client_assertion=forged)
-
-    assert response.status_code == 401
-    assert response.json()["error"] == "invalid_client"
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        pytest.param({"aud": "https://someone-else.example"}, id="wrong_aud"),
-        pytest.param({"iss": "https://someone-else.example"}, id="wrong_iss"),
-        pytest.param({"exp": int(time.time()) - 120, "iat": int(time.time()) - 150}, id="expired"),
-        pytest.param({"exp": int(time.time()) + 600}, id="lives_too_long"),
-    ],
-)
-def test_a_bad_client_assertion_is_refused(client, keys, enabled, visitor, overrides):
-    response = _redeem(client, keys, visitor, client_assertion=_client_assertion(keys, **overrides))
-
-    assert response.status_code == 401
-    assert response.json()["error"] == "invalid_client"
-
-
-@pytest.mark.django_db
-def test_an_hmac_client_assertion_is_refused(client, keys, enabled, visitor):
-    hmac_assertion = jwt.encode(
-        {
-            "iss": CLIENT_ID,
-            "sub": CLIENT_ID,
-            "aud": ISSUER,
-            "iat": int(time.time()),
-            "exp": int(time.time()) + 60,
-            "jti": "h1",
-        },
-        "a-shared-secret-of-sufficient-length-for-hs256",
-        algorithm="HS256",
-    )
-
-    response = _redeem(client, keys, visitor, client_assertion=hmac_assertion)
-
-    assert response.status_code == 401
-
-
-@pytest.mark.django_db
-def test_unreachable_client_metadata_fails_closed(client, keys, enabled, visitor):
-    enabled.side_effect = client_metadata.MetadataError("timed out")
-
-    response = _redeem(client, keys, visitor)
-
-    assert response.status_code == 401
-    assert response.json()["error"] == "invalid_client"
-
-
-@pytest.mark.django_db
-def test_metadata_naming_a_different_client_is_refused(client, keys, enabled, visitor):
-    enabled.documents[CLIENT_ID] = {**enabled.documents[CLIENT_ID], "client_id": "https://other.example/c.json"}
-
-    assert _redeem(client, keys, visitor).status_code == 401
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        pytest.param({"aud": "https://canopy.example"}, id="wrong_aud"),
-        pytest.param({"iss": "https://canopy.example"}, id="wrong_iss"),
-        pytest.param({"client_id": "https://other-client.example/c.json"}, id="other_client"),
-        pytest.param({"resource": "https://other.example/mcp/"}, id="other_resource"),
-        pytest.param({"exp": int(time.time()) - 120, "iat": int(time.time()) - 200}, id="expired"),
-        pytest.param({"exp": int(time.time()) + 3600}, id="lives_too_long"),
-        pytest.param({"scope": "admin:everything"}, id="unknown_scope"),
-    ],
-)
-def test_a_bad_id_jag_is_refused(client, keys, enabled, visitor, overrides):
-    response = _redeem(client, keys, visitor, assertion=_id_jag(keys, visitor, **overrides))
-
-    assert response.status_code == 400
-    assert response.json()["error"] in ("invalid_grant", "invalid_scope")
-    assert not DelegatedAccessToken.objects.exists()
-
-
-@pytest.mark.django_db
-def test_an_id_jag_not_signed_by_labs_is_refused(client, keys, enabled, visitor):
-    """Canopy holds no key labs trusts to name a user: a grant it signed itself,
-    with its own client key, is worth nothing here."""
-    forged = _id_jag(keys, visitor, key=keys.client)
-
-    response = _redeem(client, keys, visitor, assertion=forged)
-
-    assert response.status_code == 400
-    assert response.json()["error"] == "invalid_grant"
-
-
-@pytest.mark.django_db
-def test_an_id_jag_must_say_it_is_one(client, keys, enabled, visitor):
-    """A visitor assertion is signed by the same key; it must not double as a grant."""
-    response = _redeem(client, keys, visitor, assertion=canopy.assertion_for(visitor))
-
-    assert response.status_code == 400
-    assert response.json()["error"] == "invalid_grant"
-
-
-@pytest.mark.django_db
-def test_an_id_jag_for_an_inactive_user_is_refused(client, keys, enabled, visitor):
-    assertion = canopy.id_jag_for(visitor, ["marketplace:read"])
+def test_an_id_jag_for_a_deactivated_labs_user_is_refused(client, enabled, canopy_redeem, visitor):
+    """The SDK asks labs whether the subject is live; labs answers from its users."""
+    form, proof = canopy_redeem(_id_jag(visitor), TOKEN_ENDPOINT, RESOURCE, ISSUER)
     visitor.is_active = False
     visitor.save()
 
-    response = _redeem(client, keys, visitor, assertion=assertion)
+    response = client.post("/o/token/", form, headers={"DPoP": proof})
 
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_grant"
-
-
-@pytest.mark.django_db
-def test_an_id_jag_works_once(client, keys, enabled, visitor):
-    assertion = canopy.id_jag_for(visitor, ["marketplace:read"])
-
-    first = _redeem(client, keys, visitor, assertion=assertion)
-    second = _redeem(client, keys, visitor, assertion=assertion)
-
-    assert first.status_code == 200
-    assert second.status_code == 400
-    assert second.json()["error"] == "invalid_grant"
-    assert DelegatedAccessToken.objects.count() == 1
-
-
-@pytest.mark.django_db
-def test_a_client_assertion_works_once(client, keys, enabled, visitor):
-    client_assertion = _client_assertion(keys)
-
-    first = _redeem(client, keys, visitor, client_assertion=client_assertion)
-    second = _redeem(client, keys, visitor, client_assertion=client_assertion)
-
-    assert first.status_code == 200
-    assert second.status_code == 400
-    assert second.json()["error"] == "invalid_grant"
-
-
-@pytest.mark.django_db
-def test_a_failed_redemption_does_not_burn_the_grant(client, keys, enabled, visitor):
-    """jtis are consumed only once every check passed, so a request that fails on
-    (say) its proof does not spend the grant it carried."""
-    assertion = canopy.id_jag_for(visitor, ["marketplace:read"])
-
-    refused = _redeem(client, keys, visitor, assertion=assertion, proof=None)
-    accepted = _redeem(client, keys, visitor, assertion=assertion)
-
-    assert refused.status_code == 400
-    assert accepted.status_code == 200
-
-
-@pytest.mark.django_db
-def test_the_resource_must_be_this_mcp(client, keys, enabled, visitor):
-    response = _redeem(client, keys, visitor, extra={"resource": "https://other.example/mcp/"})
-
-    assert response.status_code == 400
-    assert response.json()["error"] == "invalid_target"
-
-
-# --- DPoP at the token endpoint ------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_a_grant_without_a_dpop_proof_is_refused(client, keys, enabled, visitor):
-    response = _redeem(client, keys, visitor, proof=None)
-
-    assert response.status_code == 400
-    assert response.json()["error"] == "invalid_dpop_proof"
-    assert "DPoP" in response["WWW-Authenticate"]
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    "make",
-    [
-        pytest.param(lambda k: _proof(k, htu="https://labs.example.org/o/other/"), id="wrong_htu"),
-        pytest.param(lambda k: _proof(k, htm="GET"), id="wrong_htm"),
-        pytest.param(lambda k: _proof(k, iat=int(time.time()) - 600), id="stale"),
-        pytest.param(lambda k: _proof(k, iat=int(time.time()) + 600), id="from_the_future"),
-        pytest.param(
-            lambda k: _proof(k, jwk=_ec_jwk(ec.generate_private_key(ec.SECP256R1()))), id="signed_by_another_key"
-        ),
-        pytest.param(lambda k: _proof(k, jwk={**k.dpop_jwk, "d": "c2VjcmV0"}), id="private_key_in_header"),
-        pytest.param(lambda k: _proof(k, access_token="some-token"), id="ath_at_token_endpoint"),
-        pytest.param(
-            lambda k: jwt.encode(
-                {"htm": "POST", "htu": TOKEN_ENDPOINT, "iat": int(time.time()), "jti": "j"},
-                k.dpop,
-                algorithm="ES256",
-                headers={"typ": "JWT", "jwk": k.dpop_jwk},
-            ),
-            id="wrong_typ",
-        ),
-        pytest.param(
-            lambda k: jwt.encode(
-                {"htm": "POST", "htu": TOKEN_ENDPOINT, "iat": int(time.time()), "jti": "j"},
-                "secret-secret-secret-secret-secret!",
-                algorithm="HS256",
-                headers={"typ": "dpop+jwt", "jwk": k.dpop_jwk},
-            ),
-            id="hmac",
-        ),
-        pytest.param(lambda k: "not-a-jwt", id="garbage"),
-    ],
-)
-def test_a_bad_dpop_proof_is_refused(client, keys, enabled, visitor, make):
-    response = _redeem(client, keys, visitor, proof=make(keys))
-
-    assert response.status_code == 400
-    assert response.json()["error"] == "invalid_dpop_proof"
-    assert not DelegatedAccessToken.objects.exists()
-
-
-@pytest.mark.django_db
-def test_the_dpop_key_must_not_be_the_client_key(client, keys, enabled, visitor):
-    proof = _proof(
-        keys, key=keys.client, jwk={k: v for k, v in keys.client_jwk.items() if k in ("kty", "crv", "x")}, alg="EdDSA"
-    )
-
-    response = _redeem(client, keys, visitor, proof=proof)
-
-    assert response.status_code == 400
-    assert response.json()["error"] == "invalid_dpop_proof"
-
-
-@pytest.mark.django_db
-def test_a_dpop_proof_works_once(client, keys, enabled, visitor):
-    proof = _proof(keys)
-
-    assert _redeem(client, keys, visitor, proof=proof).status_code == 200
-    replay = _redeem(client, keys, visitor, proof=proof)
-
-    assert replay.status_code == 400
-    assert replay.json()["error"] == "invalid_grant"
 
 
 @pytest.mark.django_db
@@ -533,28 +220,43 @@ def test_other_grant_types_still_reach_the_toolkit(client, enabled):
 
 def test_metadata_advertises_the_grant_only_when_it_is_on(settings):
     settings.LABS_PUBLIC_URL = BASE
+    settings.CANOPY_SIGNING_KEY = _host_key()
     settings.CANOPY_CLIENT_ID = ""
     off = oauth.authorization_server_metadata()
-    assert delegation.JWT_BEARER_GRANT not in off["grant_types_supported"]
+    assert contract.JWT_BEARER_GRANT not in off["grant_types_supported"]
     assert "dpop_signing_alg_values_supported" not in off
+    assert "dpop_signing_alg_values_supported" not in oauth.protected_resource_metadata()
 
-    settings.CANOPY_CLIENT_ID = CLIENT_ID
+    settings.CANOPY_CLIENT_ID = f"{BASE}/canopy/oauth/client.json"
     on = oauth.authorization_server_metadata()
-    assert delegation.JWT_BEARER_GRANT in on["grant_types_supported"]
+    assert on["grant_types_supported"] == ["authorization_code", "refresh_token", contract.JWT_BEARER_GRANT]
+    assert on["token_endpoint_auth_methods_supported"] == ["none", "private_key_jwt"]
     assert set(on["dpop_signing_alg_values_supported"]) == {"EdDSA", "ES256"}
-    assert "private_key_jwt" in on["token_endpoint_auth_methods_supported"]
-    assert oauth.protected_resource_metadata()["dpop_signing_alg_values_supported"] == ["EdDSA", "ES256"]
+    assert on["scopes_supported"] == ["mcp", "marketplace:read"]
+    assert on["token_endpoint"] == TOKEN_ENDPOINT
+    prm = oauth.protected_resource_metadata()
+    assert prm["dpop_signing_alg_values_supported"] == ["EdDSA", "ES256"]
+    assert prm["scopes_supported"] == ["mcp", "marketplace:read"]
+    assert prm["resource"] == RESOURCE
+
+
+def test_no_signing_key_means_no_grant_is_advertised(settings):
+    settings.LABS_PUBLIC_URL = BASE
+    settings.CANOPY_CLIENT_ID = f"{BASE}/canopy/oauth/client.json"
+    settings.CANOPY_SIGNING_KEY = ""
+
+    assert contract.JWT_BEARER_GRANT not in oauth.authorization_server_metadata()["grant_types_supported"]
 
 
 # ---------------------------------------------------------------------------
-# The scope -> tool map
+# Labs' scope -> tool map
 # ---------------------------------------------------------------------------
 
 
 def test_every_scoped_tool_exists_and_is_read_only():
     from connect_labs.mcp import tools  # noqa: F401 -- registers the catalogue
 
-    for scope, names in delegation.SCOPE_TOOLS.items():
+    for scope, names in canopy.SCOPE_TOOLS.items():
         for name in names:
             spec = get_tool(name)
             assert spec is not None, f"{scope} names a tool that does not exist: {name}"
@@ -564,48 +266,39 @@ def test_every_scoped_tool_exists_and_is_read_only():
 def test_every_page_scope_is_one_the_server_offers():
     for page, scopes in canopy.PAGE_SCOPES.items():
         assert scopes, page
-        assert set(scopes) <= set(delegation.SCOPE_TOOLS), page
+        assert set(scopes) <= set(canopy.SCOPE_TOOLS), page
 
 
 # ---------------------------------------------------------------------------
-# The MCP verifier
+# Labs' MCP token verifier
 # ---------------------------------------------------------------------------
-
-
-def _delegated_row(user, jkt, *, scope="marketplace:read", expires_in=timedelta(minutes=10)) -> str:
-    raw = secrets.token_urlsafe(32)
-    DelegatedAccessToken.objects.create(
-        token_checksum=hashlib.sha256(raw.encode()).hexdigest(),
-        user=user,
-        client_id=CLIENT_ID,
-        actor=CLIENT_ID,
-        scope=scope,
-        cnf_jkt=jkt,
-        expires_at=timezone.now() + expires_in,
-    )
-    return raw
 
 
 @pytest.mark.django_db
-def test_a_bound_token_needs_a_proof_by_its_own_key(keys, visitor):
-    jkt = dpop.jwk_thumbprint(keys.dpop_jwk)
-    raw = _delegated_row(visitor, jkt)
+def test_a_bound_token_resolves_to_the_visitor_only_with_its_own_key(client, enabled, canopy_redeem, visitor):
+    raw = _redeem(client, canopy_redeem, visitor).json()["access_token"]
+    jkt = enabled.dpop_jkt
 
     assert _verify_bearer_sync(raw, None) is None, "a bound token is not a bearer token"
     assert _verify_bearer_sync(raw, "some-other-thumbprint") is None
-    resolved = _verify_bearer_sync(raw, jkt)
-    assert resolved[0] == visitor
-    assert resolved[1] == "delegated"
-    assert resolved[3] == ["marketplace:read"]
-    assert resolved[4]["cnf"] == {"jkt": jkt}
+    user, method, client_id, scopes, extra = _verify_bearer_sync(raw, jkt)
+    assert user == visitor
+    assert method == "delegated"
+    assert client_id == enabled.client_id
+    assert scopes == ["marketplace:read"]
+    assert extra["cnf"] == {"jkt": jkt}
+    assert extra["act"] == {"sub": enabled.client_id}
+
+    visitor.is_active = False
+    visitor.save()
+    assert _verify_bearer_sync(raw, jkt) is None, "a deactivated visitor's token stops working at once"
 
 
 @pytest.mark.django_db
-def test_an_expired_delegated_token_is_refused(keys, visitor):
-    jkt = dpop.jwk_thumbprint(keys.dpop_jwk)
-    raw = _delegated_row(visitor, jkt, expires_in=timedelta(seconds=-1))
+def test_a_labs_without_a_signing_key_resolves_no_delegated_token(settings, visitor):
+    settings.CANOPY_SIGNING_KEY = ""
 
-    assert _verify_bearer_sync(raw, jkt) is None
+    assert _verify_bearer_sync("anything", "some-thumbprint") is None
 
 
 # ---------------------------------------------------------------------------
@@ -646,21 +339,19 @@ def _run_mcp(app, headers, on_request, work):
     return anyio.run(_run)
 
 
-def _proving(keys, token, **overrides):
-    async def add_proof(request):
-        request.headers["DPoP"] = _proof(keys, htm=request.method, htu=RESOURCE, access_token=token, **overrides)
-
-    return add_proof
-
-
 @pytest.mark.django_db(transaction=True)
-def test_canopy_redeems_a_grant_and_calls_only_its_scoped_tools_as_the_visitor(keys, enabled, visitor):
+def test_canopy_calls_only_its_scoped_tools_as_the_visitor(enabled, canopy_redeem, visitor):
     from django.test import Client
 
     from config.asgi import build_application
 
-    token = _redeem(Client(), keys, visitor).json()["access_token"]
+    token = _redeem(Client(), canopy_redeem, visitor).json()["access_token"]
     app = build_application()
+
+    async def add_proof(request):
+        # A fresh proof per request, as canopy sends. `htu` is labs' PUBLIC MCP
+        # URL, not the in-process one the request goes to.
+        request.headers["DPoP"] = enabled.dpop_proof(request.method, RESOURCE, access_token=token)
 
     async def work(mcp_client):
         tools = await mcp_client.list_tools()
@@ -668,12 +359,7 @@ def test_canopy_redeems_a_grant_and_calls_only_its_scoped_tools_as_the_visitor(k
         refused = await mcp_client.call_tool("list_templates", {}, raise_on_error=False)
         return tools, called, refused
 
-    tools, called, refused = _run_mcp(
-        app,
-        {"Authorization": f"DPoP {token}", "Canopy-Actor": "ace"},
-        _proving(keys, token),
-        work,
-    )
+    tools, called, refused = _run_mcp(app, {"Authorization": f"DPoP {token}", "Canopy-Actor": "ace"}, add_proof, work)
 
     assert {tool.name for tool in tools} == {"marketplace_orgs_get", "marketplace_rounds_list"}
     assert called.structured_content is not None
@@ -681,7 +367,7 @@ def test_canopy_redeems_a_grant_and_calls_only_its_scoped_tools_as_the_visitor(k
 
     row = MCPAuditLog.objects.get(tool_name="marketplace_rounds_list", success=True)
     assert row.user == visitor, "the tool ran as the visitor"
-    assert row.client_id == CLIENT_ID
+    assert row.client_id == enabled.client_id
     assert row.actor == "ace"
 
 
@@ -700,78 +386,34 @@ def _raw_mcp_post(app, headers):
     return anyio.run(_run)
 
 
-@pytest.fixture
-def bound(keys, settings, transactional_db):
-    settings.LABS_PUBLIC_URL = BASE
-    user = User.objects.create(username="bound-visitor")
-    return _delegated_row(user, dpop.jwk_thumbprint(keys.dpop_jwk))
-
-
 @pytest.mark.django_db(transaction=True)
-def test_a_bound_token_sent_as_a_bearer_is_refused(bound):
+def test_a_bound_token_with_no_proof_is_refused_as_dpop_not_as_bearer(enabled, canopy_redeem, visitor):
+    """The gate sits OUTSIDE labs' Bearer challenge, so its RFC 9449 refusal
+    reaches canopy intact rather than rewritten into a sign-in prompt."""
+    from django.test import Client
+
     from config.asgi import build_application
 
-    response = _raw_mcp_post(build_application(), {"Authorization": f"Bearer {bound}"})
+    token = _redeem(Client(), canopy_redeem, visitor).json()["access_token"]
 
-    assert response.status_code == 401
-
-
-@pytest.mark.django_db(transaction=True)
-def test_a_bound_token_with_no_proof_is_refused(bound):
-    from config.asgi import build_application
-
-    response = _raw_mcp_post(build_application(), {"Authorization": f"DPoP {bound}"})
+    response = _raw_mcp_post(build_application(), {"Authorization": f"DPoP {token}"})
 
     assert response.status_code == 401
     assert response.json()["error"] == "invalid_dpop_proof"
+    assert response.headers["www-authenticate"].startswith("DPoP ")
 
 
 @pytest.mark.django_db(transaction=True)
-@pytest.mark.parametrize(
-    "make",
-    [
-        pytest.param(lambda k, t: _proof(k, htm="POST", htu=RESOURCE, access_token="another-token"), id="wrong_ath"),
-        pytest.param(lambda k, t: _proof(k, htm="POST", htu=RESOURCE), id="no_ath"),
-        pytest.param(lambda k, t: _proof(k, htm="GET", htu=RESOURCE, access_token=t), id="wrong_htm"),
-        pytest.param(lambda k, t: _proof(k, htm="POST", htu=f"{BASE}/o/token/", access_token=t), id="wrong_htu"),
-        pytest.param(
-            lambda k, t: _proof(k, htm="POST", htu=RESOURCE, access_token=t, iat=int(time.time()) - 120), id="stale"
-        ),
-    ],
-)
-def test_a_bad_proof_at_the_mcp_is_refused(keys, bound, make):
+def test_a_dpop_request_to_a_labs_without_a_key_is_refused_not_an_error(enabled, settings):
     from config.asgi import build_application
 
-    response = _raw_mcp_post(build_application(), {"Authorization": f"DPoP {bound}", "DPoP": make(keys, bound)})
+    settings.CANOPY_SIGNING_KEY = ""
+    proof = enabled.dpop_proof("POST", RESOURCE, access_token="whatever")
+
+    response = _raw_mcp_post(build_application(), {"Authorization": "DPoP whatever", "DPoP": proof})
 
     assert response.status_code == 401
     assert response.json()["error"] == "invalid_dpop_proof"
-
-
-@pytest.mark.django_db(transaction=True)
-def test_a_proof_by_a_key_the_token_is_not_bound_to_is_refused(keys, bound):
-    from config.asgi import build_application
-
-    other = ec.generate_private_key(ec.SECP256R1())
-    proof = _proof(keys, htu=RESOURCE, access_token=bound, key=other, jwk=_ec_jwk(other))
-
-    response = _raw_mcp_post(build_application(), {"Authorization": f"DPoP {bound}", "DPoP": proof})
-
-    assert response.status_code == 401
-
-
-@pytest.mark.django_db(transaction=True)
-def test_a_replayed_proof_at_the_mcp_is_refused(keys, bound):
-    from config.asgi import build_application
-
-    proof = _proof(keys, htu=RESOURCE, access_token=bound)
-
-    first = _raw_mcp_post(build_application(), {"Authorization": f"DPoP {bound}", "DPoP": proof})
-    second = _raw_mcp_post(build_application(), {"Authorization": f"DPoP {bound}", "DPoP": proof})
-
-    assert first.status_code == 200, first.content
-    assert second.status_code == 401
-    assert second.json()["error"] == "invalid_dpop_proof"
 
 
 # ---------------------------------------------------------------------------
@@ -781,7 +423,7 @@ def test_a_replayed_proof_at_the_mcp_is_refused(keys, bound):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.parametrize("kind", ["pat", "oauth"])
-def test_pats_and_oauth_sign_ins_are_unchanged(kind, keys, enabled):
+def test_pats_and_oauth_sign_ins_are_unchanged(kind, enabled):
     """No DPoP, the whole catalogue, and no delegation fields in the audit —
     even with the grant switched on."""
     from config.asgi import build_application
@@ -809,70 +451,14 @@ def test_pats_and_oauth_sign_ins_are_unchanged(kind, keys, enabled):
     assert row.actor == "", "the actor header means nothing without a delegated token"
 
 
-# ---------------------------------------------------------------------------
-# Fetching client metadata without SSRF
-# ---------------------------------------------------------------------------
+@pytest.mark.django_db(transaction=True)
+def test_a_pat_sent_with_a_dpop_scheme_is_not_a_delegated_token(enabled):
+    """A token the SDK did not issue gets nothing from the DPoP scheme: the PAT
+    still resolves as a PAT, with the whole catalogue, exactly as before."""
+    user = User.objects.create(username="pat-over-dpop")
+    _, raw = MCPAccessToken.create_token(user, name="regression")
 
+    resolved = _verify_bearer_sync(raw, enabled.dpop_jkt)
 
-@pytest.mark.parametrize(
-    "url",
-    [
-        "http://canopy.example/client.json",
-        "https://user:pw@canopy.example/client.json",
-        "https://canopy.example:8443/client.json",
-        "https://127.0.0.1/client.json",
-        "https://169.254.169.254/latest/meta-data/",
-        "https://10.0.0.5/jwks.json",
-        "https://[::1]/jwks.json",
-        "file:///etc/passwd",
-        "https://canopy.example/a b",
-    ],
-)
-def test_metadata_urls_that_are_not_public_https_are_refused(url):
-    with pytest.raises(client_metadata.MetadataError):
-        client_metadata.vet_url(url)
-
-
-@pytest.mark.parametrize(
-    "addresses",
-    [
-        ["10.1.2.3"],
-        ["169.254.169.254"],
-        ["127.0.0.1"],
-        ["93.184.216.34", "192.168.1.1"],
-        ["::ffff:10.0.0.1"],
-        ["100.64.0.1"],
-    ],
-)
-def test_a_host_resolving_to_a_private_address_is_not_connected_to(addresses):
-    import socket
-
-    import httpcore
-
-    infos = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (a, 443)) for a in addresses]
-    with mock.patch.object(client_metadata.socket, "getaddrinfo", return_value=infos):
-        with mock.patch.object(httpcore.SyncBackend, "connect_tcp") as connect:
-            with pytest.raises(httpcore.ConnectError):
-                client_metadata._VettedBackend().connect_tcp("canopy.example", 443)
-    connect.assert_not_called()
-
-
-def test_a_public_host_is_connected_to_at_the_vetted_address():
-    import socket
-
-    import httpcore
-
-    infos = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
-    with mock.patch.object(client_metadata.socket, "getaddrinfo", return_value=infos):
-        with mock.patch.object(httpcore.SyncBackend, "connect_tcp", return_value="stream") as connect:
-            assert client_metadata._VettedBackend().connect_tcp("canopy.example", 443) == "stream"
-    assert connect.call_args.args[0] == "93.184.216.34", "no second lookup to be rebound"
-
-
-def test_metadata_is_cached():
-    cache.clear()
-    with mock.patch.object(client_metadata, "_fetch", return_value={"a": 1}) as fetch:
-        client_metadata.fetch_json("https://canopy.example/c.json")
-        client_metadata.fetch_json("https://canopy.example/c.json")
-    assert fetch.call_count == 1
-    cache.clear()
+    assert resolved[0] == user
+    assert resolved[1] == "pat"

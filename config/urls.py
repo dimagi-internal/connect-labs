@@ -1,3 +1,4 @@
+from canopy_sdk.django.views import jwt_bearer_view
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
@@ -5,10 +6,10 @@ from django.urls import include, path
 from django.views import defaults as default_views
 from django.views.generic import RedirectView, TemplateView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+from oauth2_provider.views import TokenView
 from rest_framework.authtoken.views import obtain_auth_token
 
 from connect_labs.mcp.admin_views import create_token_browser
-from connect_labs.mcp.delegation import token_endpoint_view as mcp_token_endpoint
 from connect_labs.mcp.oauth import MCPAuthorizationView
 from connect_labs.mcp.oauth import register_client as mcp_register_client
 
@@ -35,9 +36,10 @@ urlpatterns = [
     # Non-MCP applications get the toolkit's behaviour unchanged.
     path("o/authorize/", MCPAuthorizationView.as_view(), name="mcp_oauth_authorize"),
     # The token endpoint, plus the jwt-bearer grant canopy redeems a visitor's
-    # ID-JAG with (connect_labs/mcp/delegation.py). Every other grant type goes
-    # to the toolkit's own view, unchanged.
-    path("o/token/", mcp_token_endpoint, name="mcp_oauth_token"),
+    # ID-JAG with (the canopy SDK; tokens it issues live in its own table, never
+    # the toolkit's). Every other grant type goes to the toolkit's own view,
+    # unchanged.
+    path("o/token/", jwt_bearer_view(TokenView.as_view()), name="mcp_oauth_token"),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
     # Labs apps
     path("solicitations/", include("connect_labs.solicitations.urls", namespace="solicitations")),

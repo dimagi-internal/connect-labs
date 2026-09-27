@@ -148,9 +148,9 @@ def _verify_bearer_sync(raw: str, presented_jkt: str | None = None):
 
     A Personal Access Token first -- unchanged, for scripts and headless agents --
     then an OAuth access token from the standard MCP sign-in (``oauth.py``), then
-    a token canopy redeemed for a visitor (``delegation.py``). Only that last kind
-    is DPoP-bound, so only it looks at ``presented_jkt``: the key the request's
-    DPoP proof was signed with, as checked by ``delegation.DPoPGate``.
+    a token canopy redeemed for a visitor (the canopy SDK's jwt-bearer grant).
+    Only that last kind is DPoP-bound, so only it looks at ``presented_jkt``: the
+    key the request's DPoP proof was signed with, as checked by ``dpop_gate``.
     """
     user = _verify_pat_sync(raw)
     if user is not None:
@@ -163,25 +163,95 @@ def _verify_bearer_sync(raw: str, presented_jkt: str | None = None):
         user, client_id = resolved
         return user, "oauth", client_id, [MCP_SCOPE], {}
 
-    from .delegation import resolve_delegated_token
+    return _resolve_delegated_sync(raw, presented_jkt)
 
-    delegated = resolve_delegated_token(raw, presented_jkt)
-    if delegated is None:
+
+# ---------------------------------------------------------------------------
+# Canopy acting as a visitor — the canopy SDK's host half, wired into labs' MCP.
+# ---------------------------------------------------------------------------
+
+
+def _resource_verifier():
+    """The SDK's verifier for labs' MCP (``LABS_PUBLIC_URL`` + ``/mcp/``).
+
+    A labs with no signing key issues no grants, so a DPoP request there is
+    refused as one (401 ``invalid_dpop_proof``). The SDK's own
+    ``canopy_sdk.django.asgi.dpop_gate`` would let ``HostNotConfigured`` escape
+    as a 500, which is why labs builds the gate itself.
+    """
+    from canopy_sdk.contract import ContractError
+    from canopy_sdk.django.asgi import resource_verifier
+
+    try:
+        return resource_verifier()
+    except Exception as exc:  # noqa: BLE001 - unconfigured or an unreadable key: no grants here
+        raise ContractError("not_configured", "this server accepts no DPoP-bound tokens") from exc
+
+
+def dpop_gate(app):
+    """Wrap the MCP app: ``Authorization: DPoP`` is verified (proof, ``ath``,
+    freshness, single use) and handed on as a plain bearer; everything else
+    passes through untouched. See ``canopy_sdk.host.DPoPGate``."""
+    from canopy_sdk.host import DPoPGate
+
+    def run_sync(fn, *args):
+        # thread_sensitive: the ORM's connections are per-thread.
+        return sync_to_async(_closing_connections(fn), thread_sensitive=True)(*args)
+
+    return DPoPGate(app, _resource_verifier, run_sync=run_sync)
+
+
+def _resolve_delegated_sync(raw: str, presented_jkt: str | None):
+    """A live delegated token as ``_verify_bearer_sync``'s tuple, else None.
+
+    Live means what the SDK checks — known, unexpired, its subject active, and
+    ALWAYS presented with a proof by the key it is bound to — plus that the
+    subject is still a labs user to run the tools as.
+    """
+    from connect_labs.users.models import User
+
+    try:
+        verifier = _resource_verifier()
+    except Exception:  # noqa: BLE001 - no grants here, so no delegated tokens either
         return None
-    user, client_id, scopes, actor, jkt, expires_at = delegated
+    principal = verifier.resolve(raw, presented_jkt)
+    if principal is None:
+        return None
+    try:
+        user = User.objects.get(pk=int(principal.subject), is_active=True)
+    except (TypeError, ValueError, User.DoesNotExist):
+        return None
     return (
         user,
         "delegated",
-        client_id,
-        scopes,
+        principal.client_id,
+        list(principal.scopes),
         {
             # RFC 8693 / RFC 9449 shapes, so what the audit and the tool gate
             # read is the standard vocabulary rather than a private one.
-            "act": {"sub": actor},
-            "cnf": {"jkt": jkt},
-            "expires_at": int(expires_at.timestamp()),
+            "act": {"sub": principal.actor},
+            "cnf": {"jkt": principal.cnf_jkt},
+            "expires_at": int(principal.expires_at),
         },
     )
+
+
+def allowed_tools(access_token) -> frozenset[str] | None:
+    """The tools a caller may reach, or ``None`` for "every tool" (PATs, OAuth sign-ins).
+
+    Only a token issued by the delegated grant is limited. It is recognised by
+    what the verifier stamped on it, and anything that says ``delegated`` is
+    limited to its scopes' tools (``connect_labs.labs.canopy.SCOPE_TOOLS``) —
+    never widened.
+    """
+    if access_token is None:
+        return None
+    claims = getattr(access_token, "claims", None) or {}
+    if claims.get("auth_method") != "delegated":
+        return None
+    from connect_labs.labs import canopy
+
+    return canopy.allowed_tools(getattr(access_token, "scopes", None) or [])
 
 
 class CommCarePATVerifier(TokenVerifier):
@@ -198,7 +268,7 @@ class CommCarePATVerifier(TokenVerifier):
     async def verify_token(self, token: str) -> AccessToken | None:
         if not token:
             return None
-        from .delegation import presented_dpop_jkt
+        from canopy_sdk.host import presented_dpop_jkt
 
         resolved = await sync_to_async(_closing_connections(_verify_bearer_sync), thread_sensitive=True)(
             token, presented_dpop_jkt.get()
@@ -340,8 +410,6 @@ def _run_registry_tool_inner(
     spec: RegistryToolSpec, arguments: dict, user, progress=NULL_PROGRESS, actor_header: str = ""
 ) -> ToolResult:
     """The gate → run → audit body of a tool call, inside an open audit context."""
-    from .delegation import allowed_tools
-
     audit = functools.partial(_write_audit, **_delegation_audit(actor_header))
 
     # A delegated token (canopy acting for a visitor) reaches only the tools its
@@ -485,12 +553,10 @@ class ToolScopeMiddleware(Middleware):
     """A delegated token sees and calls only the tools its scopes map to.
 
     Everyone else — PATs, OAuth sign-ins — gets the whole catalogue, exactly as
-    before: ``delegation.allowed_tools`` answers ``None`` for them.
+    before: ``allowed_tools`` answers ``None`` for them.
     """
 
     async def on_list_tools(self, context, call_next):
-        from .delegation import allowed_tools
-
         tools = await call_next(context)
         permitted = allowed_tools(get_access_token())
         if permitted is None:
@@ -498,8 +564,6 @@ class ToolScopeMiddleware(Middleware):
         return [tool for tool in tools if tool.name in permitted]
 
     async def on_call_tool(self, context, call_next):
-        from .delegation import allowed_tools
-
         permitted = allowed_tools(get_access_token())
         if permitted is not None and context.message.name not in permitted:
             raise ToolError(f"This token's scope does not include {context.message.name}.")
