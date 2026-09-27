@@ -45,6 +45,9 @@ def _source(access, commodity=None):
 
     comparable = total = 0
     provisional = False
+    # Which tenders the evaluation counts across, so "2 of 4 comparable" can
+    # say it is the program's total and not one round's.
+    evaluated = set()
     # An awarded tender was still evaluated: leaving it out read "Evaluation 0
     # of 0 comparable" beside "Award 3" on the tender those awards came from.
     for tender in tenders.filter(status__in=("open", "closed", "awarded")):
@@ -67,6 +70,7 @@ def _source(access, commodity=None):
             )
             comparable += comparison.comparable_count
             total += comparison.total_count
+            evaluated.add(tender.pk)
             provisional = provisional or comparison.provisional
 
     awards = Award.objects.filter(tender__program_id=program_id)
@@ -79,9 +83,15 @@ def _source(access, commodity=None):
         "rfq_issued": {
             "invitations": invitations.count(),
             "awaiting_reply": invitations.filter(responded=False).count(),
+            "tenders": invitations.values("tender_id").distinct().count(),
         },
-        "quotations": {"live": quotes.count()},
-        "evaluation": {"comparable": comparable, "of": total, "provisional": provisional},
+        "quotations": {"live": quotes.count(), "tenders": quotes.values("tender_id").distinct().count()},
+        "evaluation": {
+            "comparable": comparable,
+            "of": total,
+            "provisional": provisional,
+            "tenders": len(evaluated),
+        },
         "award": {
             "count": awards.count(),
             "provisional": awards.filter(provisional=True).count(),

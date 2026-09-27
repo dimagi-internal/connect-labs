@@ -53,6 +53,7 @@ from connect_labs.supply_chain.procurement.forms import (
     TenderLineFormSet,
     TenderPlaceFormSet,
 )
+from connect_labs.supply_chain.procurement.services.comparison import RANKING_RULE
 from connect_labs.supply_chain.values import quantity_phrase, unit_noun
 
 
@@ -305,6 +306,25 @@ def table_columns(comparison) -> list:
     return [column for column in columns if column.get("key") not in folded_columns(comparison, columns)]
 
 
+def unit_equivalence(comparison, columns) -> str:
+    """ "1 carton = 1 course = 1 child treated", when the table's per-pack, per-course and per-child
+    figures are the same in every ranked row -- said once, so three equal columns read as meant.
+
+    "" when any of the three is not shown, or any row differs.
+    """
+    keys = ("usd_per_pack_normalized", "usd_per_course", "usd_per_child_treated")
+    shown = {column.get("key") for column in columns or []}
+    rows = comparison.get("comparable") or []
+    if not rows or not all(key in shown for key in keys):
+        return ""
+    for row in rows:
+        amounts = {((row.get("figures") or {}).get(key) or {}).get("amount") for key in keys}
+        if len(amounts) != 1 or None in amounts:
+            return ""
+    pack = rows[0].get("pack_unit") or "pack"
+    return f"1 {unit_noun(pack, 1)} = 1 course = 1 child treated"
+
+
 def folded_columns(comparison, columns=None) -> dict:
     """{key: label} of the per-course figures that repeat the first column in every ranked row.
 
@@ -377,6 +397,9 @@ def _spec_sources(comparison, corrections) -> None:
         ]
         specification["stated_on_quote"] = [
             label for label in specification.get("stated_on_quote") or [] if label not in supplied
+        ]
+        specification["stated_values"] = [
+            value for value in specification.get("stated_values") or [] if value.get("label") not in supplied
         ]
 
 
@@ -472,6 +495,8 @@ class ComparisonView(_Base):
             else ""
         )
         context["table_columns"] = table_columns(comparison) if comparison else []
+        context["unit_equivalence"] = unit_equivalence(comparison, context["table_columns"]) if comparison else ""
+        context["ranking_rule"] = RANKING_RULE
         if comparison and context["table_columns"]:
             context["folded_columns"] = list(folded_columns(comparison).values())
             context["first_column_label"] = context["table_columns"][0].get("label")

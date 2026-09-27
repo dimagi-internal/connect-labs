@@ -121,7 +121,9 @@ class TestTheSpecificationReadsWhatTheQuoteStates:
             rf'<tr data-testid="ranked-row-detail" data-detail-for="{quote["id"]}">.*?</tr>', body, re.S
         )
         assert "Spec: Meets all 2" in detail.group(0)
-        assert "Stated on the quote: sachets per carton, shelf life" in detail.group(0)
+        # With their figures since batch 6.
+        assert "Sachets per carton: 150 (stated on the quote)" in detail.group(0)
+        assert "Shelf life: 24 months (stated on the quote)" in detail.group(0)
         assert "NOT STATED" not in body.upper().replace("SPEC: MEETS", "")
 
     @pytest.mark.django_db
@@ -236,8 +238,9 @@ class TestACorrectedOfferSaysWhyItJoined:
         history = reverse("supply_chain:procurement_tender_detail", args=[base["tender"]["id"]]) + "#history"
         assert note.group(1) == history
         summary = re.search(r'data-testid="correction-source".*?<summary[^>]*>(.*?)</summary>', ranked.group(0), re.S)
-        # Who recorded it is said once, in the source's heading (batch 5).
-        assert " ".join(summary.group(1).split()) == "Corrected 28 Aug: sachets per carton 150 (was not stated)"
+        # One line of provenance since batch 6; what changed follows the excerpt.
+        assert " ".join(summary.group(1).split()) == "Corrected 28 Aug by ACE (agent) from Northwind Foods email:"
+        assert "Changed: sachets per carton 150 (was not stated)" in ranked.group(0)
 
         tender_page = client_in_program.get(history.split("#")[0]).content.decode()
         assert '<section id="history" data-timeline data-testid="timeline"' in tender_page
@@ -336,7 +339,7 @@ def _open(da, tender_id):
 class TestTheOverview:
     def test_the_first_column_is_headed_where_it_can_be_read(self, da, base, home_client):
         body = _home(home_client)
-        assert '<th class="text-left px-4 py-2">Tender or order</th>' in body
+        assert '<th class="text-left px-4 py-2 whitespace-nowrap">Tender or order</th>' in body
         assert 'sr-only">Tender or order' not in body
 
     def test_the_no_reply_flag_names_the_silent_suppliers(self, da, base, home_client):
@@ -348,10 +351,11 @@ class TestTheOverview:
 
     def test_the_last_change_gives_the_day_beside_the_count_from_the_as_of_date(self, da, base, home_client):
         past = _home(home_client, as_of="2026-08-10")
-        # A line each since batch 5.
+        # Since batch 6 a past date shows the day alone: a count from the chosen
+        # day read as a count from today.
         count = re.search(r'data-testid="last-change"[^>]*>(.*?)</span>', past).group(1)
-        day = re.search(r'data-testid="last-change-day"[^>]*>(.*?)</span>', past).group(1)
-        assert (count, day) == ("7 days ago", "3 Aug")
+        assert count == "3 Aug 2026"
+        assert 'data-testid="last-change-day"' not in past
 
     def test_a_count_and_its_day(self):
         now = datetime.datetime(2026, 9, 26, 18, tzinfo=datetime.UTC)
@@ -383,7 +387,8 @@ class TestTheOverview:
             body.index('id="supply-standing"') : body.index("</table>", body.index('id="supply-standing"'))
         ]
         shown = re.search(r'data-testid="award-why"[^>]*>why: (.*?)</span>', standing).group(1)
-        assert shown.endswith("…") and len(shown) == 80 and why.startswith(shown[:-1])
+        # In full since batch 6; the cell wraps it.
+        assert shown == why
         tenders = body[body.index(">Tenders</h2>") :]
         tenders = tenders[: tenders.index("</table>")]
         assert "awarded, provisional" in tenders

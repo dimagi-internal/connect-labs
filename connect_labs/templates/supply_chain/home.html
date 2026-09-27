@@ -20,7 +20,11 @@ therefore a fact, rather than by urgency, which would be an opinion.
   </div>
 {% else %}
 
+{% comment %}The header's context selector already names the program when one is
+chosen there; the heading is for when it does not, so it is not said twice.{% endcomment %}
+{% if not request.labs_context.program.name %}
 <h2 class="text-lg font-semibold text-gray-900 mb-3">{{ program_heading }}</h2>
+{% endif %}
 
 {% comment %}
 Where everything stands (standing.py): one line per tender and order,
@@ -37,14 +41,27 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
   </h2>
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Where everything stands, scrolls sideways">
-    <table class="min-w-[48rem] w-full text-sm">
+    {% comment %}Fixed layout and set widths, so a column is the same width today and
+    on a past date whatever its rows hold, and a header never wraps. Stage is
+    a few words; flags carry a line per supplier, so they get the room.{% endcomment %}
+    <table data-testid="standing-table" class="min-w-[48rem] w-full table-fixed text-sm">
+      <colgroup>
+        <col data-col="title" style="width: 22%">
+        <col data-col="stage" style="width: 15%">
+        <col data-col="waiting" style="width: 20%">
+        <col data-col="last-change" style="width: 13%">
+        <col data-col="flags" style="width: 30%">
+      </colgroup>
       <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
         <tr>
-          <th class="text-left px-4 py-2">Tender or order</th>
-          <th class="text-left px-4 py-2">Stage</th>
-          <th class="text-left px-4 py-2">Waiting on</th>
-          <th class="text-left px-4 py-2">Last change</th>
-          <th class="text-left px-4 py-2">Flags</th>
+          <th class="text-left px-4 py-2 whitespace-nowrap">Tender or order</th>
+          <th class="text-left px-4 py-2 whitespace-nowrap">Stage</th>
+          <th class="text-left px-4 py-2 whitespace-nowrap">Waiting on</th>
+          <th class="text-left px-4 py-2 whitespace-nowrap">Last change</th>
+          <th class="text-left px-4 py-2 whitespace-nowrap">Flags{% if supply_as_of %}
+            {% comment %}On a past date the flags are still today's checks: said once, here,
+            rather than on every row.{% endcomment %}
+            <span data-testid="flags-as-of" class="ml-1 normal-case tracking-normal font-normal text-gray-500">— checked for today only</span>{% endif %}</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
@@ -57,7 +74,10 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
             </td>
             <td class="px-4 py-2.5">
               {{ row.stage }}
-              {% if row.award_why %}<span data-testid="award-why" class="block text-xs text-gray-600">why: {{ row.award_why }}</span>{% endif %}
+              {% if row.provisional_caveat %}<span data-testid="provisional-caveat" class="block text-xs text-amber-800">{{ row.provisional_caveat }}</span>{% endif %}
+              {% comment %}The reason in full, wrapping: cut short it read as the start of a
+              sentence nobody finished.{% endcomment %}
+              {% if row.award_why %}<span data-testid="award-why" class="block text-xs text-gray-600 whitespace-normal break-words">why: {{ row.award_why }}</span>{% endif %}
             </td>
             <td class="px-4 py-2.5 text-gray-700">
               {{ row.waiting_on }}
@@ -67,8 +87,14 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
               {% if row.last_change_at %}
                 {% comment %}The count and the day on a line each, neither wrapping: "7 days
                 ago" broke inside "3 Aug" in a narrow column.{% endcomment %}
+                {% if supply_as_of %}
+                  {% comment %}On a past date only the day itself: "7 days ago" counted from the
+                  chosen day read as counted from today.{% endcomment %}
+                  <span data-testid="last-change" class="block whitespace-nowrap text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|date:'j M Y' }}</span>
+                {% else %}
                 <span data-testid="last-change" class="block whitespace-nowrap text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|days_ago:standing_now }}</span>
                 {% with day=row.last_change_at|day_beside_count:standing_now %}{% if day %}<span data-testid="last-change-day" class="block whitespace-nowrap text-xs text-gray-500">{{ day }}</span>{% endif %}{% endwith %}
+                {% endif %}
                 {% if row.last_change_is_ai %}
                   <span data-ai data-testid="ai-badge" title="{{ row.last_change_title }}" class="mt-0.5 inline-flex items-center whitespace-nowrap rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs font-medium">{{ row.last_change_badge }}</span>
                 {% else %}
@@ -81,13 +107,11 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
             <td class="px-4 py-2.5">
               {% comment %}A flag is a stated fact, not an alarm: a calm amber marker, with
               the rule that raised it as its title.{% endcomment %}
+              {% comment %}A flag naming several suppliers says its heading, then one line
+              each ("Northwind Foods: freight").{% endcomment %}
               {% for flag in row.stale %}
                 <span data-testid="stale-flag" title="{{ flag.rule }}"
-                      class="mb-1 flex w-fit items-start gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span>{{ flag }}</span></span>
-              {% empty %}
-                {% comment %}On a past date an empty cell read as "all clear then"; the flags
-                are the checks as they run, which is for today.{% endcomment %}
-                {% if supply_as_of %}<span data-testid="flags-as-of" class="text-xs text-gray-500">checked for today only</span>{% endif %}
+                      class="mb-1 flex w-fit items-start gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i>{% if flag.lines %}<span><span class="block font-medium">{{ flag.heading }}</span>{% for line in flag.lines %}<span data-testid="flag-line" class="block">{{ line }}</span>{% endfor %}</span>{% else %}<span>{{ flag }}</span>{% endif %}</span>
               {% endfor %}
             </td>
           </tr>
