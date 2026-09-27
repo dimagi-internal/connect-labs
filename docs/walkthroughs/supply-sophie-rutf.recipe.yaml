@@ -58,6 +58,9 @@ scenes:
   - kind: scroll
     value: top
     note: start from the top of round 1 so the move to its history is seen
+  - kind: hold
+    seconds: 0.8
+    note: let the scroll to the top settle before moving to the history
   - kind: scroll_to
     target: css:[data-testid=revision-line][data-fields~=expected_on]:has-text('→')
   - kind: hover
@@ -218,12 +221,12 @@ scenes:
     seconds: 2.0
     target: text:USD per child treated
   - kind: click
-    target: css:[data-testid=ranked-row] [data-testid=correction-source] summary
+    target: css:[data-testid=ranked-row-detail] [data-testid=correction-source] summary
     note: the correction that let it in, with the supplier's reply
   - kind: hover
-    target: css:[data-testid=ranked-row] [data-testid=ai-badge]
+    target: text:Ranked by
     seconds: 1.2
-    note: rest on who recorded it, off the figures
+    note: park the cursor off the correction and the figures
   - kind: snapshot
     note: one quote comparable, two still waiting
   concept_claim: After the supplier's reply is recorded through the AI as a correction to its quote, round 2's timeline shows
@@ -254,9 +257,10 @@ scenes:
     say: request
     seconds: 2.0
     target: text:FROM THE BUYER
-  - kind: scroll_to
-    target: text:What they are asking for
-    note: the full request in frame
+  - kind: hover
+    target: text:This is the public listing
+    seconds: 0.8
+    note: park the cursor on the boundary note, off the request
   - kind: hold
     note: no prices, no excerpts, no history
     say: private
@@ -284,7 +288,7 @@ scenes:
   - kind: fill
     say: why
     target: css:form:has(input[name=quote_id][value='${answered_quote_id}']) input[name=rationale]
-    value: States everything needed to cost it; same manufacturer as round 1
+    value: States everything needed to cost it and is the same manufacturer as round 1; provisional until the other two answer
   - kind: click
     must_succeed: true
     target: css:form:has(input[name=quote_id][value='${answered_quote_id}']) button:has-text('Award')
@@ -303,7 +307,7 @@ scenes:
     note: round 2 awarded, provisional, by Sophie, today
     say: awarded
     seconds: 2.0
-    target: css:[data-testid=overview-row][data-tender-id='${round2_tender_id}'] a
+    target: css:[data-testid=overview-row][data-tender-id='${round2_tender_id}'] td:nth-child(2)
   - kind: snapshot
     note: the award on the overview, with who and when
   concept_claim: Awarding the quote that answered on round 2's comparison with a typed reason records a provisional award,
