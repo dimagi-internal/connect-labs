@@ -1,0 +1,36 @@
+{% load static %}<!doctype html>
+{% comment %}
+Standalone like network.html: a screen to put in front of someone, with no labs
+navigation above it. Same map stack, same shell, same panels.
+{% endcomment %}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connect Pulse — worker connectivity</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'pulse/pulse.css' %}">
+</head>
+<body class="pulse-body">
+  <div class="net-shell">
+    <header class="pulse-bar">
+      <div class="pulse-brand">Connect <b>Pulse</b></div>
+      <div class="net-sub">worker connectivity</div>
+      <div class="pulse-transport-top">
+        <a class="net-back" href="{% url 'pulse:index' %}">Back to Pulse</a>
+      </div>
+    </header>
+
+    <main class="net-main" id="conn" data-endpoint="{% url 'pulse:api_connectivity' %}">
+      <p class="net-loading" id="conn-loading">Working out who has signal… this takes a few seconds the first time.</p>
+    </main>
+  </div>
+  <script>window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";</script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+  <script src="{% static 'maps/connect_map.js' %}"></script>
+  <script src="{% static 'pulse/connectivity.js' %}"></script>
+</body>
+</html>

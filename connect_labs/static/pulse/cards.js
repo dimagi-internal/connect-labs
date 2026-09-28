@@ -748,9 +748,28 @@
     const line = pts
       .map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1))
       .join(' ');
+    // An optional second rate, drawn dashed and under the first.
+    const pts2 = opts.rate2
+      ? rows
+          .map((w, i) => {
+            const r = opts.rate2(w);
+            return r == null
+              ? null
+              : [i * bw + bw / 2, (H - PAD_B) * (1 - r) + 1];
+          })
+          .filter(Boolean)
+      : [];
+    const line2 = pts2
+      .map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1))
+      .join(' ');
     node.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
         aria-label="${opts.label}">
       ${bars}
+      ${
+        line2
+          ? `<path d="${line2}" fill="none" stroke="${opts.color2}" stroke-width="1.4" stroke-dasharray="3 2" stroke-linejoin="round"/>`
+          : ''
+      }
       <path d="${line}" fill="none" stroke="${
         opts.color
       }" stroke-width="1.8" stroke-linejoin="round"/>
@@ -768,25 +787,73 @@
     return whole.length ? whole[whole.length - 1] : null;
   }
 
-  /* ── act 4 · connectivity ─────────────────────────────────────── */
+  /* ── act 4 · connectivity ───────────────────────────────────────
+     Judged by whether a worker sent each visit before starting the next
+     (pulse/connectivity.py). A worker who syncs once each evening delivers
+     just as well; the card says who had signal, not who did the work. */
+  const CONN = [
+    ['offline', 'Sends in batches', 'var(--idle)'],
+    ['sometimes', 'Online some of the time', 'var(--c-1)'],
+    ['online', 'Online', 'var(--ok)'],
+  ];
+
+  function connHistogram(node, c) {
+    const bins = c.histogram || [];
+    const W = 300;
+    const H = 64;
+    const mx = Math.max(...bins, 1);
+    const bw = W / (bins.length || 1);
+    const m = c.method || {};
+    const colour = (i) => {
+      const lo = i / bins.length;
+      return lo >= (m.online_share ?? 0.8)
+        ? 'var(--ok)'
+        : lo >= (m.sometimes_share ?? 0.2)
+          ? 'var(--c-1)'
+          : 'var(--idle)';
+    };
+    node.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+        aria-label="Workers by share of visits sent before the next was started">
+      ${bins
+        .map((n, i) => {
+          const h = ((H - 2) * n) / mx;
+          return `<rect x="${(i * bw + 1).toFixed(1)}" y="${(H - h).toFixed(
+            1,
+          )}" width="${(bw - 2).toFixed(1)}" height="${Math.max(
+            h,
+            n ? 1 : 0,
+          ).toFixed(1)}" fill="${colour(i)}"><title>${i * 10}–${
+            (i + 1) * 10
+          }% sent promptly: ${nf.format(n)} workers</title></rect>`;
+        })
+        .join('')}
+    </svg>
+    <div class="conn-axis"><span>never sent promptly</span><span>always</span></div>`;
+  }
+
   define('connectivity', 'Online workers', (root, store) => {
     root.innerHTML = `
       <p class="act-lede">These are not people at desks. The question is not how fast one
-        form synced — it is how many <b>workers</b> are effectively online.</p>
+        form synced — it is how many <b>workers</b> have signal while they work.</p>
       <div class="sect">
         <div class="pairs">
           <div><span class="pulse-lbl">Online last week</span><div class="pv num ok" data-x="now">—</div><div class="kpi-sub" data-x="nowsub">—</div></div>
-          <div><span class="pulse-lbl">Active workers</span><div class="pv num" data-x="active">—</div></div>
+          <div><span class="pulse-lbl">Online at least sometimes</span><div class="pv num" data-x="some">—</div><div class="kpi-sub" data-x="somesub">—</div></div>
         </div>
       </div>
       <div class="sect">
-        <span class="pulse-lbl">Share of active workers online, weekly</span>
+        <span class="pulse-lbl">Share of active workers online, weekly <span class="conn-key"><i style="background:var(--ok)"></i>online <i class="dash" style="background:var(--c-1)"></i>at least sometimes</span></span>
         <div class="trend" data-x="trend"></div>
       </div>
       <div class="sect">
-        <p class="act-lede" style="margin:0">A worker counts as online in a week when most of
-          their submissions arrived within a day of the visit. The rest are offline-first
-          working as designed — delivering all week, syncing when signal returns.</p>
+        <span class="pulse-lbl">Every worker, by how often they send as they go</span>
+        <div class="trend" data-x="hist"></div>
+        <div class="conn-classes" data-x="classes"></div>
+      </div>
+      <div class="sect">
+        <p class="act-lede" style="margin:0" data-x="method">A visit counts as sent promptly
+          when it reached Connect before the worker started their next one. The rest are
+          offline-first working as designed — delivering all day, sending when signal returns.</p>
       </div>`;
     const $ = (n) => root.querySelector(`[data-x="${n}"]`);
 
@@ -798,7 +865,9 @@
         const latest = trendChart($('trend'), weeks, {
           volume: (w) => w.workers,
           rate: (w) => w.online_rate,
+          rate2: (w) => w.connected_rate,
           color: 'var(--ok)',
+          color2: 'var(--c-1)',
           label: 'Share of active workers online per week',
         });
         if (latest) {
@@ -806,7 +875,37 @@
           $('nowsub').textContent = `${nf.format(latest.online)} of ${nf.format(
             latest.workers,
           )} active`;
-          $('active').textContent = nf.format(latest.workers);
+          $('some').textContent =
+            Math.round((latest.connected_rate || 0) * 100) + '%';
+          $('somesub').textContent = `${nf.format(
+            latest.online + (latest.sometimes || 0),
+          )} had signal for part of the week or more`;
+        }
+        const c = s.connectivity;
+        if (c && c.workers) {
+          connHistogram($('hist'), c);
+          $('classes').innerHTML = CONN.map(
+            ([k, label, col]) =>
+              `<span><i style="background:${col}"></i>${label} <b>${nf.format(
+                c.classes[k] || 0,
+              )}</b> · ${Math.round(((c.classes[k] || 0) / c.workers) * 100)}%</span>`,
+          ).join('');
+          const m = c.method || {};
+          $('method').textContent =
+            `A visit counts as sent promptly when it reached Connect before the worker ` +
+            `started their next one (visits ${m.pair_min_gap_minutes} min to ${
+              m.pair_max_gap_minutes / 60
+            } h apart). Online: ${Math.round(m.online_share * 100)}% or more sent ` +
+            `promptly; some of the time: ${Math.round(
+              m.sometimes_share * 100,
+            )}% or more. Workers with fewer than ${m.min_pairs_worker} such visits ` +
+            `(${nf.format(c.unjudged)}) are left out. Connect has recorded arrival ` +
+            `times since ${m.reliable_from}. The rest are offline-first working as ` +
+            `designed — delivering all day, sending when signal returns.`;
+        } else {
+          $('hist').innerHTML =
+            '<p class="act-lede">Not enough history yet.</p>';
+          $('classes').innerHTML = '';
         }
       },
       () => store.summary,
