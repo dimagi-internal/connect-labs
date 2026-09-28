@@ -467,6 +467,9 @@ def movement(obj) -> dict:
         "quantity_unit": obj.quantity_unit,
         "opportunity_id": obj.opportunity_id,
         "reference": obj.reference,
+        "visit_id": obj.visit_id,
+        "estimated": obj.estimated,
+        "reverses_movement_id": obj.reverses_id,
         "caused_by": {
             "receipt_id": obj.receipt_id,
             "shipment_id": obj.shipment_id,

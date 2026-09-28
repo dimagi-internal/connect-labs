@@ -1233,9 +1233,17 @@ class MovementQuerySet(models.QuerySet):
             for key in set(inbound) | set(outbound)
         }
 
+    def standing_consumption(self):
+        """Consumption that still stands: not a reversal, and not reversed.
+
+        A reversal carries the visit's date, so dropping the pair nets exactly
+        over any window -- the same as subtracting one from the other.
+        """
+        return self.filter(kind="consumption", reverses__isnull=True, reversal__isnull=True)
+
     def consumption_by_unit(self):
-        """{quantity_unit: Decimal} dispensed. The input to average monthly consumption."""
-        return {unit[0]: total for unit, total in self.filter(kind="consumption")._totals(["quantity_unit"]).items()}
+        """{quantity_unit: Decimal} dispensed, net of reversals. The input to average monthly consumption."""
+        return {unit[0]: total for unit, total in self.standing_consumption()._totals(["quantity_unit"]).items()}
 
 
 class Movement(SourcedModel):
@@ -1275,6 +1283,18 @@ class Movement(SourcedModel):
         "supply_chain.StockCount", null=True, blank=True, on_delete=models.PROTECT, related_name="movements"
     )
 
+    # Set on a movement the stock reader posted from a Connect visit. The
+    # consumption a visit caused and the reversal that cancels it both carry
+    # it, which is what makes re-reading the same visits write nothing.
+    visit_id = models.CharField(max_length=64, blank=True, default="", db_default="", db_index=True)
+    # A reversal: a `consumption` INTO the worker's point cancelling the row
+    # named here (design 2026-09-28 section 3.2). Never an edit -- the ledger
+    # stays append-only. One-to-one, so a movement can be reversed at most once.
+    reverses = models.OneToOneField("self", null=True, blank=True, on_delete=models.PROTECT, related_name="reversal")
+    # True when any part of the quantity came from a protocol -- the form said
+    # only THAT something was given -- rather than a number somebody entered.
+    estimated = models.BooleanField(default=False, db_default=False)
+
     objects = MovementQuerySet.as_manager()
 
     class Meta:
@@ -1299,6 +1319,26 @@ class Movement(SourcedModel):
             models.CheckConstraint(
                 condition=Q(quantity__gt=0) | Q(kind="adjustment"),
                 name="movement_positive_unless_adjustment",
+            ),
+            # Re-reading a visit writes nothing: one consumption and at most
+            # one reversal per visit and item (a visit can dispense several
+            # items). Scoped by program because a synthetic programme's
+            # invented visit ids may repeat another's.
+            models.UniqueConstraint(
+                fields=["program_id", "visit_id", "item"],
+                condition=~Q(visit_id="") & Q(reverses__isnull=True),
+                name="movement_one_consumption_per_visit_item",
+            ),
+            models.UniqueConstraint(
+                fields=["program_id", "visit_id", "item"],
+                condition=~Q(visit_id="") & Q(reverses__isnull=False),
+                name="movement_one_reversal_per_visit_item",
+            ),
+            # A reversal puts stock back: a consumption into a point, from nowhere.
+            models.CheckConstraint(
+                condition=Q(reverses__isnull=True)
+                | Q(kind="consumption", from_supply_point__isnull=True, to_supply_point__isnull=False),
+                name="movement_reversal_is_consumption_back_in",
             ),
         ]
 

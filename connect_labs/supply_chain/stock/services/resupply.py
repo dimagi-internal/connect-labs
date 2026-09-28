@@ -111,7 +111,8 @@ def demand_basis(program_id, supply_point, item=None) -> str:
 def _demand(program_id, supply_point, basis, item=None):
     qs = Movement.objects.for_program(program_id).filter(from_supply_point=supply_point)
     if basis == CONSUMPTION:
-        qs = qs.filter(kind="consumption")
+        # A reversed visit never happened as far as the rate is concerned.
+        qs = qs.filter(kind="consumption", reversal__isnull=True)
     else:
         qs = qs.filter(kind__in=RELEASE_KINDS, to_supply_point__isnull=False).exclude(to_supply_point=supply_point)
     if item is not None:
