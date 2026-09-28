@@ -3243,3 +3243,35 @@
   outline: 2px solid var(--light) !important;
   outline-offset: 2px;
 }
+
+/* ── connectivity page ─────────────────────────────────────────────────── */
+.conn-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+.conn-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.conn-select .net-filter {
+  margin-left: 0;
+  max-width: 320px;
+}
+.conn-kpis {
+  grid-template-columns: repeat(4, 1fr);
+}
+@media (max-width: 720px) {
+  .conn-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .conn-kpis .net-kpi {
+    border-bottom: 1px solid var(--rule-soft);
+  }
+}
