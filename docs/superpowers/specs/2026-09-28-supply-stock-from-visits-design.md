@@ -267,6 +267,8 @@ Two findings for the programme, not for this build:
   is not worker stock and is out of scope here; it is a later "did it reach
   the child" measure.
 
+The exact paths, answer strings and per-item decisions (value-map lines for app-computed doses; AL and paracetamol off in v1; the Screening RUTF deduction already being a total) are recorded in the implementation plan's "Resolved from the released app" section, which supersedes this table where they differ.
+
 Still open: whether the synthetic world should mirror this app's exact paths
 (recommended: yes — a synthetic RUTF opportunity whose fixtures use these
 paths, so the rules written for it transfer unchanged).
