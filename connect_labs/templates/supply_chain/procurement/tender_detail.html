@@ -185,6 +185,70 @@
   </div>
 </div>
 
+{% if drafts %}
+{% comment %}
+The emails due on this round today, drafted for Sophie to copy into her own
+mailbox: nothing is sent from here. Folded shut, and in the order a round runs
+rather than by urgency -- the product drafts when asked; it does not press a
+next action on anyone (design doc section 22).
+{% endcomment %}
+<details id="drafts" class="bg-white rounded-lg shadow-sm mb-8 scroll-mt-20">
+  <summary class="px-4 py-3 cursor-pointer text-sm font-semibold text-gray-900">
+    Draft emails — {{ drafts.drafts|length }}
+    <span class="font-normal text-gray-500">· to copy into your own mailbox; nothing is sent from here</span>
+  </summary>
+  <div class="px-4 pb-4">
+    <p class="text-xs text-gray-500">{{ drafts.reminder_interval_note }}{% if drafts.note %} {{ drafts.note }}{% endif %}</p>
+    {% for d in drafts.drafts %}
+      <div data-testid="draft" class="border-t border-gray-200 pt-3 mt-3">
+        <p class="text-sm">
+          <span class="font-medium text-gray-900">{{ d.supplier_name }}</span>
+          <span class="text-xs text-gray-500">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% else %}Follow-up{% endif %}</span>
+        </p>
+        <p class="text-xs text-gray-600 mt-0.5">{{ d.why }}</p>
+        <p class="text-sm text-gray-700 mt-2">
+          <span class="text-gray-500">To:</span>
+          {% if d.to %}{{ d.to }}{% else %}<span class="text-gray-500">no address on file</span>{% endif %}
+        </p>
+        <label for="draft-subject-{{ forloop.counter }}" class="block text-xs text-gray-500 mt-2 mb-1">Subject</label>
+        <div class="flex gap-2">
+          <input id="draft-subject-{{ forloop.counter }}" type="text" readonly value="{{ d.subject }}"
+                 class="base-input text-sm flex-1" onfocus="this.select()">
+          <button type="button"
+                  class="px-3 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md whitespace-nowrap"
+                  onclick="navigator.clipboard.writeText(document.getElementById('draft-subject-{{ forloop.counter }}').value); this.textContent='Copied';">
+            <i class="fa-regular fa-copy mr-1"></i> Copy
+          </button>
+        </div>
+        <label for="draft-text-{{ forloop.counter }}" class="block text-xs text-gray-500 mt-2 mb-1">Message</label>
+        <div class="flex gap-2 items-start">
+          <textarea id="draft-text-{{ forloop.counter }}" readonly rows="10"
+                    class="base-input text-sm flex-1 font-sans" onfocus="this.select()">{{ d.text }}</textarea>
+          <button type="button"
+                  class="px-3 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md whitespace-nowrap"
+                  onclick="navigator.clipboard.writeText(document.getElementById('draft-text-{{ forloop.counter }}').value); this.textContent='Copied';">
+            <i class="fa-regular fa-copy mr-1"></i> Copy
+          </button>
+        </div>
+        {% if d.kind == "reminder" and d.outreach_id %}
+          <p class="text-xs text-gray-600 mt-1">
+            Once it has gone,
+            <a href="{% url 'supply_chain:procurement_outreach_reply' d.outreach_id %}" class="text-brand-indigo hover:underline">record the day you chased them</a>
+            so the next reminder is counted from it.
+          </p>
+        {% endif %}
+      </div>
+    {% empty %}
+      <p class="text-sm text-gray-500 mt-2">Nothing is due on this tender today.</p>
+    {% endfor %}
+  </div>
+</details>
+<script>
+  // Arriving by the comparison page's "Draft emails" link opens the panel it points at.
+  if (window.location.hash === "#drafts") { document.getElementById("drafts").open = true; }
+</script>
+{% endif %}
+
 <h2 id="quotes" class="text-lg font-semibold text-gray-900 mb-2 scroll-mt-20">Quotes</h2>
 <div class="bg-white rounded-lg shadow-sm overflow-hidden">
   {% comment %}

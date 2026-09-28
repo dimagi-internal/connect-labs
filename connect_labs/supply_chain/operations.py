@@ -579,6 +579,12 @@ _OUTREACH_DATA = _data_with(
     channel={"enum": ["manual", "api", "mcp", "ses"]},
     responded={"type": "boolean"},
     response_kind={"enum": ["quote", "declined", "needs_info", "no_reply"]},
+    # The day the request went out; absent means logged but not yet sent,
+    # which is what tender_drafts_render drafts a request for.
+    sent_on={"type": ["string", "null"], "format": "date"},
+    # The day the latest reminder went out. Setting it is how a reminder
+    # drafted by reminder_render is marked sent, and restarts the interval.
+    last_reminder_on={"type": ["string", "null"], "format": "date"},
 )
 
 # Same split as _QUOTE_DATA_CREATE above, for the same reason:

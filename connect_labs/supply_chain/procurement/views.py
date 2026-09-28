@@ -40,6 +40,7 @@ from connect_labs.supply_chain.history.timeline import (
     corrections_for_quotes,
     timeline_for_tender,
 )
+from connect_labs.supply_chain.identity import person_name as _person_name
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.forms import (
@@ -118,6 +119,16 @@ class TenderDetailView(_Base):
         for o in outreach:
             o["days_waiting"] = None if o.get("responded") else _days_waiting(o.get("sent_on"))
         context["outreach"] = outreach
+        # The emails due on this round now, for Sophie to copy into her own
+        # mailbox. Listed in the order a round runs and then by name -- not
+        # ranked, and folded shut (design doc section 22: the product drafts
+        # when asked; it does not press a next action). Not on a page rewound
+        # with ?as_of=: what is due is a fact about today.
+        context["drafts"] = (
+            None
+            if getattr(self.request, "supply_as_of", None)
+            else self.op("tender_drafts_render", tender_id=tender_id)
+        )
         context["quotes"] = self.op("quote_list", tender_id=tender_id)
         # Each quote's trade item, by name and -- for a kit -- contents. Three
         # co-pack quotes from one distributor read as the same offer three
@@ -557,31 +568,6 @@ class ComparisonView(_Base):
 # does is press a drafted message on the user as the next thing to do.
 # Prioritising and phrasing are judgements about what matters today, which a
 # client can make better than a hardcoded page can.
-
-
-def _person_name(user) -> str:
-    """The signed-in person's own name, or "" when all we have is a handle.
-
-    `User.name` is free text, and on a shared or service account it holds the
-    login itself. Prefilled into "Decided by", that read as though somebody
-    called "ace" had made the purchasing decision -- the exact reading the
-    field exists to prevent. A name that IS the account's handle is not a
-    person's name, so nothing is prefilled and the decider types who decided.
-    """
-    name = (getattr(user, "name", "") or "").strip()
-    if not name:
-        # Not `get_full_name()`: it joins the two halves unconditionally, so a
-        # user with both unset reads "None None" -- which would then be
-        # prefilled as the person who decided.
-        name = " ".join(
-            str(part).strip() for part in (getattr(user, "first_name", ""), getattr(user, "last_name", "")) if part
-        ).strip()
-    handles = {
-        (user.get_username() or "").strip().lower(),
-        (getattr(user, "email", "") or "").split("@")[0].strip().lower(),
-    }
-    handles.discard("")
-    return "" if name.lower() in handles else name
 
 
 def _decider(user) -> str:

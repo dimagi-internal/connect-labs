@@ -135,7 +135,14 @@ class ProcurementRepositoryMixin:
         qs = Outreach.objects.filter(tender__program_id=self._require_program())
         if tender_id is not None:
             qs = qs.filter(tender_id=tender_id)
-        return list(qs.all())
+        return list(qs.select_related("supplier__org__supplier_profile").all())
+
+    def get_outreach(self, outreach_id):
+        return (
+            Outreach.objects.filter(tender__program_id=self._require_program(), pk=outreach_id)
+            .select_related("tender", "supplier__org__supplier_profile")
+            .first()
+        )
 
     def create_outreach(self, data):
         from connect_labs.supply_chain.data_access import _columns, _fresh
