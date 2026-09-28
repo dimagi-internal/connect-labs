@@ -8,7 +8,7 @@ def supplier():
 
 
 def test_the_initial_request_states_quantity_destination_and_every_question(rutf, tender_2000_cartons):
-    text = render_initial_request(rutf, tender_2000_cartons, supplier())
+    text = render_initial_request(rutf, tender_2000_cartons, supplier()).text
     assert "Northwind Nutrition" in text
     assert "2,000" in text
     assert "Kano" in text
@@ -17,7 +17,7 @@ def test_the_initial_request_states_quantity_destination_and_every_question(rutf
 
 
 def test_the_initial_request_numbers_its_questions(rutf, tender_2000_cartons):
-    text = render_initial_request(rutf, tender_2000_cartons, supplier())
+    text = render_initial_request(rutf, tender_2000_cartons, supplier()).text
     assert "1." in text and "2." in text
 
 
@@ -28,20 +28,20 @@ def test_the_initial_request_uses_the_same_destination_phrase_throughout(rutf, t
     lead-time questions a few lines later read "freight to Kano, Nigeria" --
     dropping the site name every time. Both now single-source through
     values.destination_phrase, so the full phrase appears everywhere."""
-    text = render_initial_request(rutf, tender_2000_cartons, supplier())
+    text = render_initial_request(rutf, tender_2000_cartons, supplier()).text
     assert text.count("Central store, Kano, Nigeria") >= 2
 
 
 def test_a_followup_asks_only_what_is_missing(rutf, tender_2000_cartons):
     q = quote(pack_spec_source="not_stated", base_per_pack_stated=None, shelf_life_months_stated=24)
-    text = render_followup(q, rutf, tender_2000_cartons, supplier())
+    text = render_followup(q, rutf, tender_2000_cartons, supplier()).text
     assert "how many sachets" in text.lower()
     assert "minimum order quantity" not in text
 
 
 def test_a_followup_on_a_complete_quote_says_nothing_is_outstanding(comparable_quote, rutf, tender_2000_cartons):
     q = quote(shelf_life_months_stated=24)
-    text = render_followup(q, rutf, tender_2000_cartons, supplier())
+    text = render_followup(q, rutf, tender_2000_cartons, supplier()).text
     assert "nothing outstanding" in text.lower()
 
 
@@ -53,7 +53,7 @@ def test_a_followup_does_not_ask_for_a_pack_spec_the_item_already_states(rutf, t
         item_id=12,
         shelf_life_months_stated=24,
     )
-    text = render_followup(q, rutf, tender_2000_cartons, supplier(), item=item_144)
+    text = render_followup(q, rutf, tender_2000_cartons, supplier(), item=item_144).text
     assert "nothing outstanding" in text.lower()
 
 
@@ -64,6 +64,6 @@ def test_a_followup_never_asks_a_supplier_to_enter_our_treatment_protocol(rutf_w
     fix, not the supplier's, and must never reach an email to a manufacturer.
     """
     q = quote(shelf_life_months_stated=24)
-    text = render_followup(q, rutf_without_course, tender_2000_cartons, supplier())
+    text = render_followup(q, rutf_without_course, tender_2000_cartons, supplier()).text
     assert "treatment protocol" not in text.lower()
     assert "nothing outstanding" in text.lower()

@@ -19,7 +19,16 @@
     {% endfor %}
   </ul>
 {% else %}
-<h1 class="text-xl font-semibold text-gray-900 mb-4">Comparison — {{ commodity_name }}{% if tender.label %} <span class="font-normal text-gray-500">· {{ tender.label }}</span>{% endif %}</h1>
+<h1 class="text-xl font-semibold text-gray-900 mb-1">Comparison — {{ commodity_name }}{% if tender.label %} <span class="font-normal text-gray-500">· {{ tender.label }}</span>{% endif %}</h1>
+{% if not supply_as_of %}
+  <p class="text-sm mb-4">
+    <a data-testid="drafts-link" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#drafts"
+       class="text-brand-indigo hover:underline">Draft emails for this tender</a>
+    <span class="text-gray-500">— the questions below, and reminders to anyone who has not replied, as emails to copy</span>
+  </p>
+{% else %}
+  <div class="mb-4"></div>
+{% endif %}
 
 {% if comparison.provisional %}
   <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-sm text-amber-900">
