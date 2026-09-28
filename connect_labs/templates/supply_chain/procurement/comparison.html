@@ -215,7 +215,10 @@
                     </div>
                   {% endif %}
                   {% if row.quote_id not in awarded_quote_ids and not supply_as_of %}
-                  <form method="post" action="" class="flex flex-wrap items-end gap-2 min-w-0">
+                  {% comment %}data-testid="award-form" is the walkthroughs' hook: the form has
+                  moved three times in its row, and an answered quote's id is only minted on
+                  camera, so a recipe finds the form by what it is, not by where it sits.{% endcomment %}
+                  <form method="post" action="" data-testid="award-form" class="flex flex-wrap items-end gap-2 min-w-0">
                     {% csrf_token %}
                     <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
                     <label class="flex flex-col gap-0.5 text-xs text-gray-600 min-w-0 flex-1 basis-64" for="rationale-{{ row.quote_id }}">Why this offer
