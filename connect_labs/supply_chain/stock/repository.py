@@ -117,7 +117,9 @@ class StockRepositoryMixin:
         the paperwork.
         """
         from connect_labs.supply_chain.data_access import _columns, _fresh
+        from connect_labs.supply_chain.stock.services.posting import VISIT_ONLY_FIELDS
 
+        data = {key: value for key, value in data.items() if key not in VISIT_ONLY_FIELDS}
         frm = (
             self._require_supply_point(data["from_supply_point_id"], "from supply point")
             if data.get("from_supply_point_id") is not None
