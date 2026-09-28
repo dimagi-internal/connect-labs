@@ -13,6 +13,7 @@ from connect_labs.supply_chain.portfolio import views as portfolio_views
 from connect_labs.supply_chain.procurement import views as procurement_views
 from connect_labs.supply_chain.reference import views as reference_views
 from connect_labs.supply_chain.stock import views as stock_views
+from connect_labs.supply_chain.stock import visit_views
 from connect_labs.supply_chain.update_links import views as update_link_views
 
 app_name = "supply_chain"
@@ -282,6 +283,14 @@ urlpatterns = [
     path("stock/movements/", views.MovementsView.as_view(), name="movements"),
     path("stock/movements/new/", stock_views.MovementRecordView.as_view(), name="movement_record"),
     path("stock/counts/new/", stock_views.StockCountRecordView.as_view(), name="stock_count_record"),
+    # What a visit gives out, per opportunity and item. "new" before the id.
+    path("stock/dispensing/", visit_views.DispensingRulesView.as_view(), name="dispensing_rules"),
+    path("stock/dispensing/new/", visit_views.DispensingRuleCreateView.as_view(), name="dispensing_rule_create"),
+    path(
+        "stock/dispensing/<int:rule_id>/edit/",
+        visit_views.DispensingRuleUpdateView.as_view(),
+        name="dispensing_rule_edit",
+    ),
     # Our own stock on the road between two of our places. "new" before the
     # int route, so the literal cannot be read as an id.
     path("stock/consignments/new/", stock_views.ConsignmentDispatchView.as_view(), name="consignment_dispatch"),

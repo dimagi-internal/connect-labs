@@ -30,6 +30,9 @@ SUPPLY_TABS = (
 # Pages that belong under a tab without being it, so the tab still reads as
 # current when you are one level in.
 TAB_FOR_VIEW = {
+    "supply_chain:dispensing_rules": "supply_chain:stock",
+    "supply_chain:dispensing_rule_create": "supply_chain:stock",
+    "supply_chain:dispensing_rule_edit": "supply_chain:stock",
     "supply_chain:procurement_tender_detail": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_comparison": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_quote_entry": "supply_chain:procurement_tender_board",

@@ -548,3 +548,23 @@ def distribution(obj) -> dict:
         "movement_ids": [m.pk for m in obj.movements.all()],
         **_sourced(obj),
     }
+
+
+def dispensing_rule(obj) -> dict:
+    from connect_labs.supply_chain.stock.services import ledger
+
+    return {
+        "id": obj.pk,
+        "opportunity_id": obj.opportunity_id,
+        "item_id": obj.item_id,
+        "item_name": obj.item.name,
+        "commodity_slug": obj.item.commodity.slug,
+        "unit": ledger._pack_spec(obj.item)[1],
+        "lines": obj.lines,
+        "forms": obj.forms,
+        "reports": obj.reports,
+        "resupply_supply_point_id": obj.resupply_point_id,
+        "active_from": _date(obj.active_from),
+        "status": obj.status,
+        "estimated": obj.estimated,
+    }

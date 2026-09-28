@@ -19,6 +19,7 @@ from connect_labs.supply_chain.fulfilment import operations as _fulfilment_opera
 from connect_labs.supply_chain.operations import agent_operations, call_operation
 from connect_labs.supply_chain.procurement import operations as _procurement_operations  # noqa: F401
 from connect_labs.supply_chain.stock import operations as _stock_operations  # noqa: F401
+from connect_labs.supply_chain.stock import visit_operations as _visit_operations  # noqa: F401
 from connect_labs.supply_chain.update_links import operations as _update_link_operations  # noqa: F401
 
 

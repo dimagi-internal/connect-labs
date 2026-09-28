@@ -43,6 +43,7 @@ from connect_labs.supply_chain.models import (
     Commodity,
     Consignment,
     Contract,
+    DispensingRule,
     Distribution,
     DistributionLine,
     Document,
@@ -403,7 +404,7 @@ class SupplyDataAccess(
                 movements = Movement.objects.filter(program_id=program_id)
                 DistributionLine.objects.filter(distribution__program_id=program_id).update(movement=None)
                 StockCount.objects.filter(program_id=program_id).update(adjustment_movement=None)
-                movements.update(distribution=None, receipt=None, shipment=None, stock_count=None)
+                movements.update(distribution=None, receipt=None, shipment=None, stock_count=None, reverses=None)
                 Contract.objects.filter(program_id=program_id).update(duty_relief_document=None)
                 Quote.objects.filter(tender__program_id=program_id).update(superseded_by=None)
                 # Self-references are the same problem one table in: a
@@ -419,6 +420,8 @@ class SupplyDataAccess(
                 from connect_labs.supply_chain.alerts.models import AlertSubscription
                 from connect_labs.supply_chain.update_links.models import UpdateLink
 
+                # Rules PROTECT both the item and the store they name.
+                drop("dispensing rules", DispensingRule.objects.filter(program_id=program_id))
                 drop("update links", UpdateLink.objects.filter(program_id=program_id))
                 drop("alert subscriptions", AlertSubscription.objects.filter(program_id=program_id))
                 drop("documents", Document.objects.filter(program_id=program_id))

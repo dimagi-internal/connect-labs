@@ -1,0 +1,51 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+{% comment %}
+The rules that turn a visit's answers into stock leaving a worker's bag.
+Each line says which question it reads; a protocol or value-map line is
+labelled Estimated here and on every figure it feeds.
+{% endcomment %}
+{% block supply_content %}
+<div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Dispensing rules</h1>
+    <p class="text-sm text-gray-500 mt-1">Which form answers say what each visit gave out, per opportunity and item.</p>
+  </div>
+  {% if has_program_context and not supply_as_of %}
+    <a href="{% url 'supply_chain:dispensing_rule_create' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">New rule</a>
+  {% endif %}
+</div>
+{% if not has_program_context %}
+  <p class="text-sm text-gray-600">Choose a programme above.</p>
+{% elif not rules %}
+  <p class="text-sm text-gray-600">No rules yet. Until there is one, no visit moves any stock.</p>
+{% else %}
+  <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <tr><th class="text-left px-4 py-2">Item</th><th class="text-left px-4 py-2">Opportunity</th><th class="text-left px-4 py-2">Reads</th><th class="text-left px-4 py-2">From</th><th class="text-left px-4 py-2">Status</th><th class="px-4 py-2"><span class="sr-only">Actions</span></th></tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for rule in rules %}
+          <tr>
+            <td class="px-4 py-2 text-gray-900">{{ rule.item_name }}{% if rule.estimated %} <span class="ml-1 px-1.5 py-0.5 rounded text-xs bg-amber-50 text-amber-900 border border-amber-200">Estimated</span>{% endif %}</td>
+            <td class="px-4 py-2 text-gray-700">{{ rule.opportunity_id }}</td>
+            <td class="px-4 py-2 text-gray-700">
+              {% for line in rule.lines %}
+                <div>{% if line.kind == "stated" %}Stated{% elif line.kind == "protocol" %}Protocol{% else %}Dose looked up{% endif %}, in {{ line.unit|unit_plural }}:
+                  {% if line.kind == "protocol" %}{% for p in line.given_paths %}<code class="text-xs">{{ p }}</code>{% if not forloop.last %} or {% endif %}{% endfor %}
+                  {% else %}{% for p in line.paths %}<code class="text-xs">{{ p }}</code>{% if not forloop.last %} or {% endif %}{% endfor %}{% endif %}
+                  {% if line.forms %}<span class="text-xs text-gray-500">(on {{ line.forms|join:", " }})</span>{% endif %}
+                </div>
+              {% endfor %}
+            </td>
+            <td class="px-4 py-2 text-gray-700">{{ rule.active_from|day }}</td>
+            <td class="px-4 py-2 text-gray-700">{% if rule.status == "active" %}On{% else %}Off{% endif %}</td>
+            <td class="px-4 py-2 text-right">{% if not supply_as_of %}<a href="{% url 'supply_chain:dispensing_rule_edit' rule.id %}" class="text-brand-indigo hover:underline">Edit</a>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endblock %}

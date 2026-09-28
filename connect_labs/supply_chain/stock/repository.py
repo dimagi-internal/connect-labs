@@ -15,6 +15,7 @@ from django.db import transaction
 from connect_labs.supply_chain.models import (
     Consignment,
     Distribution,
+    DispensingRule,
     DistributionLine,
     Movement,
     StockCount,
@@ -382,3 +383,57 @@ class StockRepositoryMixin:
 
         posting.post_distribution(distribution, commodity)
         return _fresh(distribution)
+
+    # ---- dispensing rules ------------------------------------------------
+
+    def _dispensing_rules(self):
+        return DispensingRule.objects.filter(program_id=self._require_program()).select_related(
+            "item__commodity", "resupply_point"
+        )
+
+    def list_dispensing_rules(self, opportunity_id=None, include_inactive=False):
+        qs = self._dispensing_rules()
+        if opportunity_id is not None:
+            qs = qs.filter(opportunity_id=opportunity_id)
+        if not include_inactive:
+            qs = qs.filter(status="active")
+        return list(qs)
+
+    def get_dispensing_rule(self, rule_id):
+        return self._dispensing_rules().filter(pk=rule_id).first()
+
+    @transaction.atomic
+    def upsert_dispensing_rule(self, data):
+        """Create or edit the rule for one item on one opportunity.
+
+        Keyed on (opportunity, item) -- and by a database constraint, not only
+        here -- because two rules for one item would post the same sachets
+        twice. Omitting `reports`, `forms` or `status` on an edit keeps what
+        is there.
+        """
+        from connect_labs.supply_chain.data_access import _fresh
+        from connect_labs.supply_chain.stock.services.dispensing import validate_lines, validate_reports
+
+        item = self._resolve_item(data["item_id"])
+        point = self._require_supply_point(data["resupply_point_id"], "resupply point")
+        if point.kind in ("user_held", "in_transit"):
+            raise ValueError(
+                f"{point.name} is not a store: workers are resupplied from a store, so a rule's resupply "
+                "point must be one"
+            )
+        if point.opportunity_id not in (None, data["opportunity_id"]):
+            raise ValueError(f"{point.name} belongs to opportunity {point.opportunity_id}, not {data['opportunity_id']}")
+        defaults = {
+            "lines": validate_lines(data["lines"], item),
+            "resupply_point": point,
+            "active_from": data["active_from"],
+        }
+        for key in ("forms", "status"):
+            if key in data:
+                defaults[key] = data[key]
+        if "reports" in data:
+            defaults["reports"] = validate_reports(data["reports"])
+        rule, _ = DispensingRule.objects.update_or_create(
+            program_id=self._require_program(), opportunity_id=data["opportunity_id"], item=item, defaults=defaults
+        )
+        return _fresh(rule)
