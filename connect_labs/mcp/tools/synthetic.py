@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any
 
@@ -729,6 +730,89 @@ def synthetic_create_labs_only(
         "allowed_domains": list(row.allowed_domains),
         "labs_only": True,
         "enabled": row.enabled,
+    }
+
+
+_DOMAIN_RE = re.compile(r"^@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$")
+
+
+def _normalise_allowed_domains(raw: list[str]) -> list[str]:
+    out: list[str] = []
+    for value in raw:
+        domain = (value or "").strip().lower()
+        if not domain.startswith("@"):
+            domain = "@" + domain
+        if not _DOMAIN_RE.match(domain):
+            raise MCPToolError("INVALID_ARGUMENT", f"not an email domain: {value!r}")
+        if domain not in out:
+            out.append(domain)
+    return out
+
+
+@register(
+    name="synthetic_set_allowed_domains",
+    description=(
+        "Replace a labs-only synthetic opportunity's email-domain allowlist — who, "
+        "besides Dimagi staff and the creator, may open it and its workflows. Use it "
+        "to let ONE partner's domain review ONE run's labs data (ACE "
+        "clone-to-new-workspace), instead of regenerating the cascade. Only the "
+        "opp's creator or a Dimagi-internal caller may change it: a partner who can "
+        "read an opp cannot widen its audience. Refuses an empty list (that would "
+        "mean anyone). Labs-only opps only."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "opportunity_id": {"type": "integer"},
+            "allowed_domains": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "description": "The new allowlist, e.g. ['@sparkmicrogrants.org', '@dimagi.com'].",
+            },
+        },
+        "required": ["opportunity_id", "allowed_domains"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_set_allowed_domains(user, *, opportunity_id: int, allowed_domains: list[str]) -> dict[str, Any]:
+    from connect_labs.labs.synthetic.models import DIMAGI_INTERNAL_DOMAINS
+
+    try:
+        row = SyntheticOpportunity.objects.get(opportunity_id=opportunity_id)
+    except SyntheticOpportunity.DoesNotExist:
+        raise MCPToolError("NOT_FOUND", f"No synthetic entry for opportunity_id={opportunity_id}")
+    if not row.labs_only:
+        raise MCPToolError(
+            "INVALID_ARGUMENT",
+            "Only labs-only opps have an allowlist; a real-backed opp is gated by Connect membership.",
+        )
+    email = (getattr(user, "email", "") or "").lower()
+    is_creator = bool(row.created_by_id) and row.created_by_id == getattr(user, "id", None)
+    if not (is_creator or any(email.endswith(d) for d in DIMAGI_INTERNAL_DOMAINS)):
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            "Only the opp's creator or Dimagi staff may change who can see it.",
+        )
+    if not allowed_domains:
+        raise MCPToolError("INVALID_ARGUMENT", "allowed_domains must not be empty (empty means anyone).")
+    domains = _normalise_allowed_domains(allowed_domains)
+    before = list(row.allowed_domains or [])
+    row.allowed_domains = domains
+    row.save(update_fields=["allowed_domains", "updated_at"])
+    invalidate_cache()
+    logger.info(
+        "synthetic_set_allowed_domains opp=%s by=%s before=%s after=%s",
+        opportunity_id,
+        email or "<no email>",
+        before,
+        domains,
+    )
+    return {
+        "opportunity_id": row.opportunity_id,
+        "allowed_domains": list(row.allowed_domains),
+        "previous_allowed_domains": before,
     }
 
 
