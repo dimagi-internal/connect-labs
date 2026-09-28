@@ -997,7 +997,7 @@ class TestTheAwardControlsFitTheColumn:
     def test_they_sit_in_a_full_width_row_under_the_offer_not_in_a_cell(self, client_in_programme, da, world):
         _comparable_pair(da, world)
         body = client_in_programme.get(_compare_url(world)).content.decode()
-        forms = re.findall(r'<form method="post" action="" class="([^"]*)">(.*?)</form>', body, re.S)
+        forms = re.findall(r'<form method="post" action=""[^>]*? class="([^"]*)"[^>]*>(.*?)</form>', body, re.S)
         award_forms = [(cls, inner) for cls, inner in forms if 'name="rationale"' in inner]
         assert len(award_forms) == 2
         for cls, inner in award_forms:
