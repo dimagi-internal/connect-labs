@@ -361,8 +361,14 @@ def _median_sync_lag(events) -> float | None:
     Read as a bounded sample rather than a database-side percentile: the exact
     median of a capped, ordered sample is close enough for a headline stated to
     one decimal, and it costs one indexed scan instead of a window function.
+
+    Visits before ``connectivity.RELIABLE_FROM`` are left out: Connect dated
+    their arrival as the instant they started, so they would pull the median
+    towards zero for any window reaching back that far.
     """
-    rows = list(events.values_list("field_ts", "sync_ts")[:20000])
+    from connect_labs.pulse.connectivity import RELIABLE_FROM
+
+    rows = list(events.filter(field_ts__gte=RELIABLE_FROM).values_list("field_ts", "sync_ts")[:20000])
     deltas = sorted((s - f).total_seconds() / 60.0 for f, s in rows if f and s and s >= f)
     if not deltas:
         return None

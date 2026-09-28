@@ -973,13 +973,13 @@ class TestSummaryCache:
 class TestTrendSeries:
     """Weekly full-history trends: pass rate and worker connectivity.
 
-    "Online" is a judgement about a worker's week -- most of their submissions
-    within the sync window -- not about any one form. One slow overnight sync
-    must not flip an online worker, and vice versa.
+    Connectivity is judged per worker-week by whether each visit was sent
+    before the next was started (see test_connectivity.py for the pair rules).
+    One slow sync must not flip an online worker, and vice versa.
     """
 
-    def _mk(self, vid, worker, lag_hours, weeks_ago=1):
-        ts = timezone.now() - timedelta(weeks=weeks_ago)
+    def _mk(self, vid, worker, lag_hours, weeks_ago=1, at=None):
+        ts = at or timezone.now() - timedelta(weeks=weeks_ago)
         return PulseEvent.objects.create(
             connect_visit_id=vid,
             opportunity_id=765,
@@ -991,25 +991,27 @@ class TestTrendSeries:
         )
 
     def test_online_is_judged_per_worker_week(self, client, populated):
-        # fast-worker: 3 of 3 timely. slow-worker: 1 of 3 timely (one lucky
-        # fast sync must not make an offline worker online).
+        # Four visits 30 minutes apart each. fast-worker sends each within 10
+        # minutes: every pair prompt. slow-worker holds them for hours, with
+        # one lucky prompt send -- which must not make them online.
         #
-        # Two weeks back, not one, so the bucket holds ONLY these two workers.
-        # The `populated` fixture writes events at now-1h..now-10h, which land in
-        # the PREVIOUS ISO week whenever the suite runs in the first hours of a
-        # Monday (UTC) -- there they joined this test's week-1 bucket and made it
-        # 3 workers, not 2. Observed 2026-08-24 01:00Z. The fixture reaches at
-        # most 10 hours back, so it can never touch a bucket two weeks old.
-        for i, lag in enumerate((1, 2, 3)):
-            self._mk(9000 + i, "fast-worker", lag, weeks_ago=2)
-        for i, lag in enumerate((1, 60, 90)):
-            self._mk(9100 + i, "slow-worker", lag, weeks_ago=2)
+        # Two weeks back, not one, so the bucket holds ONLY these two workers:
+        # the `populated` fixture reaches at most 10 hours back. Wednesday
+        # morning, so the four visits cannot straddle a week boundary.
+        two_weeks = timezone.now() - timedelta(weeks=2)
+        wednesday = (two_weeks - timedelta(days=two_weeks.weekday())).replace(
+            hour=8, minute=0, second=0, microsecond=0
+        ) + timedelta(days=2)
+        for i in range(4):
+            self._mk(9000 + i, "fast-worker", 1 / 6, at=wednesday + timedelta(minutes=30 * i))
+        for i, lag in enumerate((6, 1 / 6, 5, 4)):
+            self._mk(9100 + i, "slow-worker", lag, at=wednesday + timedelta(minutes=30 * i))
 
         trends = client.get(reverse("pulse:api_summary")).json()["trends"]
         week = [w for w in trends if w["workers"] >= 2][-1]
 
         assert week["workers"] == 2
-        assert week["online"] == 1, "only the mostly-timely worker is online"
+        assert week["online"] == 1, "only the promptly-sending worker is online"
         assert week["online_rate"] == 0.5
 
     def test_pass_rate_comes_from_the_works_spine(self, client, populated):
@@ -1027,7 +1029,13 @@ class TestTrendSeries:
         assert week[0]["pass_rate"] == pytest.approx(2 / 3)
 
     def test_the_partial_week_is_flagged(self, client, populated):
-        self._mk(9500, "worker-now", 1, weeks_ago=0)
+        # Four visits early this Monday, so they are in the current week's
+        # bucket whatever time the suite runs (a visit dated a little ahead of
+        # now still belongs to this week, which is not dropped as future).
+        now = timezone.now()
+        monday = (now - timedelta(days=now.weekday())).replace(hour=1, minute=0, second=0, microsecond=0)
+        for i in range(4):
+            self._mk(9500 + i, "worker-now", 1, at=monday + timedelta(minutes=10 * i))
         trends = client.get(reverse("pulse:api_summary")).json()["trends"]
         assert trends and trends[-1]["partial"] is True
 
@@ -1035,7 +1043,9 @@ class TestTrendSeries:
         """A wrong device clock produces visits dated months ahead (observed:
         October 2027). They must not become buckets -- each empty future week
         would stretch every trend chart's axis toward it."""
-        self._mk(9600, "time-traveller", 1, weeks_ago=-60)
+        ahead = timezone.now() + timedelta(weeks=60)
+        for i in range(4):
+            self._mk(9600 + i, "time-traveller", 1, at=ahead + timedelta(minutes=10 * i))
         trends = client.get(reverse("pulse:api_summary")).json()["trends"]
         horizon = timezone.now() + timedelta(days=7)
         assert all(w["t"] < horizon.timestamp() for w in trends)

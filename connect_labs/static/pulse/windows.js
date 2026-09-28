@@ -58,6 +58,12 @@
         })[c],
     );
   const pct = (v) => (v == null ? '—' : Math.round(v * 100) + '%');
+  /* How a worker's connectivity class reads (pulse/connectivity.py). */
+  const ONLINE_LABELS = {
+    online: 'online',
+    sometimes: 'online some of the time',
+    offline: 'sends in batches',
+  };
   const ago = (ts) => {
     if (!ts) return 'never';
     const m = (Date.now() / 1000 - ts) / 60;
@@ -396,6 +402,7 @@
                ${th('works', 'Work', 'rw-num')}
                ${th('approval_rate', 'Approved', 'rw-num')}
                ${th('flag_rate', 'Flagged', 'rw-num')}
+               ${th('online_share', 'Sent promptly', 'rw-num')}
                ${th('usd', 'Earned', 'rw-num')}
                ${th('last_ts', 'Last seen', 'rw-num')}
              </tr></thead>
@@ -420,12 +427,16 @@
                            (w.approval_rate || 0) * 100
                          ).toFixed(0)}%"></i></span></td>
                          <td class="rw-num">${pct(w.flag_rate)}</td>
+                         <td class="rw-num" title="${esc(
+                           ONLINE_LABELS[w.online_class] ||
+                             'too few visits to judge',
+                         )}">${w.online_class ? pct(w.online_share) : '—'}</td>
                          <td class="rw-num">${usdCompact(w.usd)}</td>
                          <td class="rw-num">${ago(w.last_ts)}</td>
                        </tr>`;
                      })
                      .join('')
-                 : '<tr><td colspan="6">No workers have delivered for this partner in range.</td></tr>'
+                 : '<tr><td colspan="7">No workers have delivered for this partner in range.</td></tr>'
              }</tbody>
            </table>
            ${
@@ -441,6 +452,8 @@
            Workers are identified by Connect's own opaque ID. No names or phone
            numbers exist in Pulse. Money is accrued against approved work, and
            counts both the worker's payout and the organisation's share.
+           "Sent promptly" is the share of a worker's visits that reached
+           Connect before they started their next one.
          </div>`;
 
       win.body.querySelectorAll('.pulse-roster th').forEach((h) =>
@@ -563,6 +576,7 @@
 
     const paint = (d) => {
       const t = d.totals || {};
+      const conn = d.connectivity || {};
       win.el.querySelector('.pulse-win-sub').innerHTML = `worker at <b>${esc(
         orgName,
       )}</b> · last delivered ${esc(ago(t.last_ts))}`;
@@ -587,6 +601,12 @@
           ['Approved', pct(t.approval_rate)],
           ['Flagged', pct(t.flag_rate)],
           ['Visits in window', nf.format(t.events || 0)],
+          [
+            'Sent promptly',
+            conn.class
+              ? `${pct(conn.share)} · ${ONLINE_LABELS[conn.class]}`
+              : '—',
+          ],
         ]) +
         `<div class="pulse-win-sect">
            <span class="pulse-lbl">Their delivery, last 26 weeks</span>
