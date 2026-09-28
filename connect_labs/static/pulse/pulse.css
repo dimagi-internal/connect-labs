@@ -637,6 +637,49 @@
   transition: width 0.8s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
+/* connectivity card */
+.conn-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--ink-3);
+  margin-top: 3px;
+}
+.conn-classes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11px;
+  color: var(--ink-2);
+  margin-top: 8px;
+}
+.conn-classes b {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.conn-classes i,
+.conn-key i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: 0;
+}
+.conn-key {
+  margin-left: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink-3);
+}
+.conn-key i {
+  margin-left: 6px;
+}
+.conn-key i.dash {
+  height: 2px;
+  vertical-align: 3px;
+}
+
 /* stat pairs */
 .pairs {
   display: grid;

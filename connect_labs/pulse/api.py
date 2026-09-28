@@ -22,7 +22,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views import View
 
-from connect_labs.pulse import costs, groups, live
+from connect_labs.pulse import connectivity, costs, groups, live
 from connect_labs.pulse.client import PulseAuthError, get_poller_user
 from connect_labs.pulse.ingest import SCALAR_SCOPE_DRIFT
 from connect_labs.pulse.models import (
@@ -774,30 +774,23 @@ def _weekly_spark_by(field: str = "org_slug", qs=None) -> dict:
     return out
 
 
-ONLINE_SYNC_WINDOW = timedelta(hours=24)
-ONLINE_MOSTLY = 0.8
-
-
-def _trend_series(sc) -> list:
-    """Full-history weekly trends for the current scope: verification pass
-    rate and worker connectivity.
+def _trend_series(sc, connectivity_rows=None) -> list:
+    """Full-history weekly trends: verification pass rate and worker connectivity.
 
     Pass rate comes off the works spine (claimed units vs approved), the same
     ledger the money figures use, so the two can never disagree about what
     "approved" means.
 
-    "Online" is a judgement about a *worker's week*, not about a submission:
-    a worker counts as online in a week when most (>= ONLINE_MOSTLY) of their
-    submissions that week reached the server within ONLINE_SYNC_WINDOW of the
-    visit happening. One overnight sync does not mark an online worker
-    offline, and one lucky fast sync does not mark an offline worker online
-    -- which is what a raw latency histogram got wrong: it described
-    submissions, when the operational question is about people.
+    Connectivity is a judgement about a *worker's week*, not about a
+    submission: see ``pulse/connectivity.py`` for the test (was each visit
+    sent before the next one was started?) and why it replaced "arrived
+    within a day". Each judged worker-week is online, online sometimes, or
+    offline; ``online_rate`` is the first share and ``connected_rate`` the
+    first two together -- a worker who had signal at least some of the time.
 
     Only whole weeks tell the truth; the current partial week is flagged the
     same way the delivery series flags it.
     """
-    from django.db.models import F
     from django.db.models.functions import TruncWeek
 
     quality = {}
@@ -810,25 +803,14 @@ def _trend_series(sc) -> list:
         if r["bucket"] is not None:
             quality[r["bucket"]] = r
 
-    connectivity: dict = {}
-    for r in (
-        sc["events"]
-        .exclude(worker_hash="")
-        .annotate(bucket=TruncWeek("field_ts"))
-        .values("bucket", "worker_hash")
-        .annotate(n=Count("id"), timely=Count("id", filter=Q(sync_ts__lte=F("field_ts") + ONLINE_SYNC_WINDOW)))
-    ):
-        if r["bucket"] is None or not r["n"]:
-            continue
-        agg = connectivity.setdefault(r["bucket"], [0, 0])
-        agg[0] += 1
-        if r["timely"] / r["n"] >= ONLINE_MOSTLY:
-            agg[1] += 1
+    if connectivity_rows is None:
+        connectivity_rows = connectivity.worker_weeks(sc["events"])
+    by_week = connectivity.weekly(connectivity_rows)
 
     this_week = timezone.now()
     this_week = (this_week - timedelta(days=this_week.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
     out = []
-    for bucket in sorted(set(quality) | set(connectivity)):
+    for bucket in sorted(set(quality) | set(by_week)):
         # field_ts comes from the device clock, and a wrong clock produces
         # visits dated months into the future (observed: October 2027). Each
         # would become its own bucket and stretch the axis with empty future.
@@ -836,7 +818,10 @@ def _trend_series(sc) -> list:
         if bucket > this_week:
             continue
         q = quality.get(bucket, {})
-        workers, online = connectivity.get(bucket, (0, 0))
+        conn = by_week.get(bucket) or {}
+        workers = conn.get("workers", 0)
+        online = conn.get(connectivity.ONLINE, 0)
+        sometimes = conn.get(connectivity.SOMETIMES, 0)
         works = q.get("works", 0)
         approved = q.get("approved", 0)
         out.append(
@@ -847,7 +832,10 @@ def _trend_series(sc) -> list:
                 "pass_rate": (approved / works) if works else None,
                 "workers": workers,
                 "online": online,
+                "sometimes": sometimes,
+                "offline": conn.get(connectivity.OFFLINE, 0),
                 "online_rate": (online / workers) if workers else None,
+                "connected_rate": ((online + sometimes) / workers) if workers else None,
                 "partial": bucket >= this_week,
             }
         )
@@ -1226,6 +1214,10 @@ class SummaryView(View):
         if view == costs.VIEW_SPREAD:
             total_paid += fixed_total
 
+        # One window-function pass serves both the weekly connectivity trend
+        # and the lifetime distribution across workers.
+        conn_rows = connectivity.worker_weeks(sc["events"])
+
         return JsonResponse(
             {
                 "generated_at": timezone.now().isoformat(),
@@ -1256,7 +1248,8 @@ class SummaryView(View):
                 "services": _service_menu(),
                 "orgs": _org_menu(request),
                 "weekly": _weekly_series(sc),
-                "trends": _trend_series(sc),
+                "trends": _trend_series(sc, conn_rows),
+                "connectivity": connectivity.distribution(connectivity.per_worker(conn_rows)),
                 "activity": _activity_strip(sc),
                 "retention_days": getattr(settings, "PULSE_EVENT_RETENTION_DAYS", 30),
                 "money": {
@@ -1675,6 +1668,7 @@ def _worker_roster(sc) -> list:
         r["worker_hash"]: r["country"]
         for r in sc["events"].exclude(worker_hash="").exclude(country="").values("worker_hash", "country")
     }
+    online = connectivity.per_worker(connectivity.worker_weeks(sc["events"]))
 
     rows = []
     for h in set(money) | set(recent):
@@ -1699,6 +1693,10 @@ def _worker_roster(sc) -> list:
                 "usd": float(m.get("usd") or 0),
                 "country": country_of.get(h, ""),
                 "last_ts": int(e["last_ts"].timestamp()) if e.get("last_ts") else None,
+                # Share of this worker's visits sent before the next was
+                # started, and the class it puts them in (None: too few to say).
+                "online_share": (online.get(h) or {}).get("share"),
+                "online_class": (online.get(h) or {}).get("class"),
             }
         )
     rows.sort(key=lambda r: (-(r["last_ts"] or 0), -r["works"]))
@@ -1938,6 +1936,18 @@ class WorkerView(View):
             usd=Sum("usd_to_worker"),
         )
         ev = events.aggregate(n=Count("id"), flagged=Count("id", filter=Q(flagged=True)), last_ts=Max("field_ts"))
+        conn_rows = connectivity.worker_weeks(events)
+        conn = connectivity.per_worker(conn_rows).get(full) or {"pairs": 0, "prompt": 0, "share": None, "class": None}
+        conn_weeks = [
+            {
+                "t": int(r.week.timestamp()),
+                "pairs": r.pairs,
+                "prompt": r.prompt,
+                "class": connectivity.classify(r.pairs, r.prompt, connectivity.MIN_PAIRS_WEEK),
+            }
+            for r in sorted(conn_rows, key=lambda r: r.week)
+            if r.week >= timezone.now() - timedelta(weeks=WEEKLY_WEEKS)
+        ]
 
         from django.db.models.functions import TruncWeek
 
@@ -1985,6 +1995,7 @@ class WorkerView(View):
                     .order_by("-n")[:6]
                 ],
                 "weekly": weekly,
+                "connectivity": {**conn, "weekly": conn_weeks, "method": connectivity.method()},
                 # Same shape and same town-scale rounding as /api/events/,
                 # so this adds no location exposure beyond the ticker.
                 "recent": [

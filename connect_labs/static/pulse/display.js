@@ -349,7 +349,7 @@
               )}% of active workers were online last week.`
             : 'Most workers are effectively online. The rest are offline-first, as designed.';
         },
-        note: 'Online means most of that worker’s submissions reached the server within a day of the visit.',
+        note: 'Online means that worker sent at least 80% of their visits before starting the next one. Batching the rest is offline-first working as designed.',
         focus: 'ea',
       },
       {
@@ -449,8 +449,8 @@
       {
         card: 'connectivity',
         eyebrow: 'The signal',
-        title: 'How many workers are effectively online.',
-        note: 'Judged per worker-week, not per form — offline-first is a design, not a defect.',
+        title: 'How many workers have signal while they work.',
+        note: 'Judged per worker-week by whether each visit was sent before the next began — offline-first is a design, not a defect.',
         focus: 'ea',
       },
       {
