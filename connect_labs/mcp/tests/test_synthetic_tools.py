@@ -1066,3 +1066,111 @@ def test_every_registration_path_resyncs_the_visit_count():
             f"{label} points an opp at a fixture folder without resyncing visit_count; "
             "the labs picker will print the previous fixture's count (#1197)"
         )
+
+
+# ---------------------------------------------------------------------------
+# synthetic_set_allowed_domains — widen/narrow a labs-only opp's audience
+# (ACE's clone-to-new-workspace: let a partner's domain see ONE run's labs data)
+# ---------------------------------------------------------------------------
+
+
+def _labs_only(opp_id=LABS_ONLY_OPP_ID_FLOOR + 500, **kw):
+    fields = {
+        "opportunity_id": opp_id,
+        "gdrive_folder_id": "f",
+        "enabled": True,
+        "labs_only": True,
+        "allowed_domains": ["@dimagi.com"],
+    }
+    fields.update(kw)
+    return SyntheticOpportunity.objects.create(**fields)
+
+
+@pytest.mark.django_db
+def test_set_allowed_domains_normalises_and_saves(user):
+    user.email = "ace@dimagi-ai.com"
+    user.save()
+    row = _labs_only()
+    result = get_tool("synthetic_set_allowed_domains").handler(
+        user=user,
+        opportunity_id=row.opportunity_id,
+        allowed_domains=["SparkMicrogrants.org", "@dimagi.com", "@dimagi.com"],
+    )
+    assert result["allowed_domains"] == ["@sparkmicrogrants.org", "@dimagi.com"]
+    row.refresh_from_db()
+    assert row.allowed_domains == ["@sparkmicrogrants.org", "@dimagi.com"]
+
+
+@pytest.mark.django_db
+def test_set_allowed_domains_refuses_an_empty_list(user):
+    """Empty means 'anyone' (fail-open) — too easy to do by accident."""
+    user.email = "ace@dimagi-ai.com"
+    user.save()
+    row = _labs_only()
+    with pytest.raises(MCPToolError) as exc:
+        get_tool("synthetic_set_allowed_domains").handler(
+            user=user, opportunity_id=row.opportunity_id, allowed_domains=[]
+        )
+    assert exc.value.code == "INVALID_ARGUMENT"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("bad", ["nodot", "@", "a b.org", "https://x.org"])
+def test_set_allowed_domains_rejects_non_domains(user, bad):
+    user.email = "ace@dimagi-ai.com"
+    user.save()
+    row = _labs_only()
+    with pytest.raises(MCPToolError) as exc:
+        get_tool("synthetic_set_allowed_domains").handler(
+            user=user, opportunity_id=row.opportunity_id, allowed_domains=[bad]
+        )
+    assert exc.value.code == "INVALID_ARGUMENT"
+
+
+@pytest.mark.django_db
+def test_set_allowed_domains_only_for_labs_only_opps(user):
+    user.email = "ace@dimagi-ai.com"
+    user.save()
+    row = _labs_only(opp_id=4242, labs_only=False)
+    with pytest.raises(MCPToolError) as exc:
+        get_tool("synthetic_set_allowed_domains").handler(
+            user=user, opportunity_id=row.opportunity_id, allowed_domains=["@x.org"]
+        )
+    assert exc.value.code == "INVALID_ARGUMENT"
+
+
+@pytest.mark.django_db
+def test_partner_with_access_cannot_widen_the_audience(user):
+    """A partner who can READ an opp must not be able to invite other domains."""
+    user.email = "anne@sparkmicrogrants.org"
+    user.save()
+    row = _labs_only(allowed_domains=["@sparkmicrogrants.org"])
+    with pytest.raises(MCPToolError) as exc:
+        get_tool("synthetic_set_allowed_domains").handler(
+            user=user, opportunity_id=row.opportunity_id, allowed_domains=["@evil.org"]
+        )
+    assert exc.value.code == "PERMISSION_DENIED"
+    row.refresh_from_db()
+    assert row.allowed_domains == ["@sparkmicrogrants.org"]
+
+
+@pytest.mark.django_db
+def test_creator_may_change_the_audience(user):
+    user.email = "someone@partner.org"
+    user.save()
+    row = _labs_only(created_by=user)
+    result = get_tool("synthetic_set_allowed_domains").handler(
+        user=user, opportunity_id=row.opportunity_id, allowed_domains=["@partner.org"]
+    )
+    assert result["allowed_domains"] == ["@partner.org"]
+
+
+@pytest.mark.django_db
+def test_set_allowed_domains_404s_on_missing_row(user):
+    user.email = "ace@dimagi-ai.com"
+    user.save()
+    with pytest.raises(MCPToolError) as exc:
+        get_tool("synthetic_set_allowed_domains").handler(
+            user=user, opportunity_id=LABS_ONLY_OPP_ID_FLOOR + 999_999, allowed_domains=["@x.org"]
+        )
+    assert exc.value.code == "NOT_FOUND"
