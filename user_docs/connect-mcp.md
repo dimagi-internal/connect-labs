@@ -191,6 +191,25 @@ The KMC reports are unchanged and continue to use their own dedicated pages.
 
 ---
 
+## Synthetic Opportunities — Changing the Audience
+
+Labs-only synthetic opportunities (used for ACE runs and other review processes) can have their audience updated after the opportunity is created. This means you can give an outside reviewer access to the dashboards for a specific run without rebuilding any synthetic data.
+
+To change who can see a synthetic opportunity, ask Claude:
+
+<!-- prettier-ignore -->
+> _"Allow reviewers from sparkmicrogrants.org to view the ACE run for [opportunity name]"_
+> _"Remove the external domain from the audience for [opportunity name]"_
+
+Claude will use the `synthetic_set_allowed_domains` tool to update the opportunity's audience on Labs.
+
+!!! warning "Who can do this"
+    Only the opportunity's **creator** or **Dimagi staff** can change the audience. A partner who can already see an opportunity cannot use this to add other domains.
+
+Each domain grant applies to **one opportunity only** — it does not carry over to other runs or opportunities.
+
+---
+
 ## More Information
 
 - **[Reports with Claude](reports-with-claude.md)** — plain-English guide to changing reports, pipelines and indicator definitions through the MCP
