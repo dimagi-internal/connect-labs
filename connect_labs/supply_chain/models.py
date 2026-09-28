@@ -1426,6 +1426,51 @@ class DistributionLine(models.Model):
     )
 
 
+class DispensingRule(TimestampedModel):
+    """What a visit on one opportunity gives out of one item (design 2026-09-28 §3.1).
+
+    One per (program, opportunity, item): an iCCM deliver app gives out many
+    commodities from one visit, so an opportunity carries a rule per item.
+    Data, not code, because forms differ per opportunity and change: a deploy
+    per renamed question is the wrong price for keeping stock honest.
+
+    `lines` is validated by stock/services/dispensing.validate_lines. A rule
+    with any `protocol` or `value_map` line produces ESTIMATED consumption,
+    and says so: the worker did not count those.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    opportunity_id = models.IntegerField(db_index=True)
+    item = models.ForeignKey(Item, on_delete=models.PROTECT, related_name="dispensing_rules")
+    lines = models.JSONField(default=list)
+    # Forms (xmlns or name) this rule reads by default; empty is every form.
+    # A line's own `forms` narrows it further.
+    forms = models.JSONField(default=list, blank=True)
+    # What the worker's own app says: {"balance_paths": [...], "receipt": {...}}.
+    reports = models.JSONField(default=dict, blank=True)
+    # Where a worker point this rule creates hangs from.
+    resupply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="dispensing_rules")
+    # Visits before this are not read, so switching a rule on mid-programme
+    # does not invent history the ledger never saw.
+    active_from = models.DateField()
+    status = models.CharField(max_length=16, default="active", choices=_choices(("active", "inactive")))
+
+    class Meta:
+        ordering = ["opportunity_id", "item_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["program_id", "opportunity_id", "item"], name="uniq_dispensing_rule_opp_item"
+            )
+        ]
+
+    def __str__(self):
+        return f"dispensing rule: {self.item} on opportunity {self.opportunity_id}"
+
+    @property
+    def estimated(self) -> bool:
+        return any(line.get("kind") in ("protocol", "value_map") for line in self.lines or [])
+
+
 class Consignment(SourcedModel):
     """Stock sent from one of our places to another, and not yet arrived.
 

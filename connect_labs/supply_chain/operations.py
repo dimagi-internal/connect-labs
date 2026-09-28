@@ -26,6 +26,7 @@ _SERIALIZERS = {
     LabsOrg: serializers.org,
     models.Commodity: serializers.commodity,
     models.Item: serializers.item,
+    models.DispensingRule: serializers.dispensing_rule,
     models.Supplier: serializers.supplier,
     models.Tender: serializers.tender,
     models.Outreach: serializers.outreach,

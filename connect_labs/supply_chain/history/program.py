@@ -39,6 +39,7 @@ PATHS = {
     "Document": _direct,
     "SupplyPoint": _direct,
     "Movement": _direct,
+    "DispensingRule": _direct,
     "StockCount": _direct,
     "Distribution": _direct,
     "Consignment": _direct,

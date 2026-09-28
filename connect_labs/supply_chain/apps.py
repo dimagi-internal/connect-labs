@@ -14,6 +14,7 @@ class SupplyChainConfig(AppConfig):
         from connect_labs.supply_chain.history import capture
         from connect_labs.supply_chain.procurement import operations  # noqa: F401
         from connect_labs.supply_chain.stock import operations as stock_operations  # noqa: F401
+        from connect_labs.supply_chain.stock import visit_operations  # noqa: F401
         from connect_labs.supply_chain.update_links import operations as update_link_operations  # noqa: F401
 
         # Connects the receivers that write a Revision for every supply record
