@@ -97,7 +97,7 @@
           "verify": "pytest: after changing a shipment expected_on on 2026-09-02, GET /supply/?program_id=10672&as_of=2026-08-20 shows the old date and the database row still holds the new one afterwards"
         },
         {
-          "description": "A header date control (data-testid=as-of-control) that sets ?as_of=, carried forward by supply links, with a persistent banner (data-testid=as-of-banner) \"Viewing as of <date> — back to today\" and all write controls hidden.",
+          "description": "A header date control (data-testid=as-of-control) that sets ?as_of=, carried forward by supply links, with a persistent banner (data-testid=as-of-banner) \"Viewing as of <date> — read-only. Nothing here can be changed while you look at the past.\" and a separate \"Back to today\" link, and all write controls hidden.",
           "id": "as-of-control-banner",
           "verify": "Playwright: set the control to 2026-08-20, assert the as-of-banner text contains \"20 Aug 2026\" and no form with method=post is on the page"
         },
