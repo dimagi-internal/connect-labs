@@ -183,3 +183,100 @@ def test_report_median_lag_ignores_back_filled_arrival_times():
         visit("w-old", old + i * timedelta(minutes=30), timedelta(0))
     online_day("w-new", n=3)
     assert _median_sync_lag(PulseEvent.objects.all()) == pytest.approx(21.0)
+
+
+def visit_at(worker, start, lag, *, country="NG", lat=None, lon=None):
+    return PulseEvent.objects.create(
+        connect_visit_id=next(_vid),
+        opportunity_id=765,
+        org_slug="lakeside",
+        field_ts=start,
+        sync_ts=start + lag,
+        status="approved",
+        service_slug="mbw",
+        worker_hash=worker,
+        country=country,
+        lat=lat,
+        lon=lon,
+    )
+
+
+@pytest.mark.django_db
+class TestBacklogDays:
+    """A day when forwarding to Connect backed up makes every phone look offline."""
+
+    def _backlog(self, day):
+        # 200 workers whose visits all took two hours to arrive: even the
+        # fastest tenth were slow, which no offline worker can cause alone.
+        for i in range(connectivity.BACKLOG_MIN_VISITS):
+            visit(f"crowd-{i}", day + timedelta(minutes=i), timedelta(hours=2))
+
+    def test_a_slow_day_for_everyone_is_found(self):
+        day = _day_start()
+        self._backlog(day)
+        found = connectivity.backlog_days()
+        assert [d["date"] for d in found] == [day.date()]
+        assert found[0]["p10_minutes"] > connectivity.BACKLOG_P10_MINUTES
+
+    def test_pairs_on_a_backlog_day_are_not_evidence(self):
+        day = _day_start()
+        self._backlog(day)
+        online_day("w-caught", n=12, start=day)
+        assert judge("w-caught") is None
+
+    def test_a_thin_day_is_never_called_a_backlog(self):
+        offline_day("w-alone", n=12)
+        assert connectivity.backlog_days() == []
+
+
+@pytest.mark.django_db
+def test_hour_of_day_is_local_to_the_country():
+    # 07:00 UTC is 08:00 in Nigeria (UTC+1) and 10:00 in Kenya (UTC+3).
+    day = _day_start().replace(hour=7)
+    for i in range(3):
+        visit_at("w-ng", day + timedelta(minutes=10 * i), timedelta(minutes=5), country="NG")
+        visit_at("w-ke", day + timedelta(minutes=10 * i), timedelta(minutes=30), country="KE")
+    hours = {r["hour"]: r for r in connectivity.by_hour(PulseEvent.objects.all())}
+    assert (hours[8]["pairs"], hours[8]["prompt"]) == (2, 2)
+    assert (hours[10]["pairs"], hours[10]["prompt"]) == (2, 0)
+    assert hours[3]["share"] is None
+
+
+@pytest.mark.django_db
+def test_map_cells_never_point_at_fewer_than_three_workers():
+    for i in range(3):
+        online_day(f"kano-{i}", n=12)
+    for i in range(2):
+        online_day(f"lone-{i}", n=12)
+    PulseEvent.objects.filter(worker_hash__startswith="kano").update(lat=12.01, lon=8.52)
+    PulseEvent.objects.filter(worker_hash__startswith="lone").update(lat=9.05, lon=7.49)
+    events = PulseEvent.objects.all()
+    out = connectivity.cells(
+        connectivity.per_worker(connectivity.worker_weeks(events)), connectivity.home_cells(events)
+    )
+    assert len(out["cells"]) == 1
+    cell = out["cells"][0]
+    assert (cell["lat"], cell["lon"], cell["workers"], cell["online"]) == (12.05, 8.55, 3, 3)
+    assert out["withheld_workers"] == 2
+
+
+@pytest.mark.django_db
+class TestConnectivityPage:
+    def test_the_api_refuses_an_anonymous_caller(self, client, estate):
+        assert client.get(reverse("pulse:api_connectivity")).status_code == 403
+
+    def test_the_api_carries_every_panel(self, client, estate, django_user_model):
+        client.force_login(django_user_model.objects.create(username="viewer"))
+        data = client.get(reverse("pulse:api_connectivity")).json()
+        assert data["distribution"]["classes"] == {"online": 1, "sometimes": 0, "offline": 1}
+        assert data["weekly"] and data["weekly"][0]["workers"] == 2
+        assert len(data["hours"]) == 24
+        assert set(data["map"]) == {"cells", "withheld_workers", "min_workers_per_cell"}
+        assert data["backlog_days"] == []
+        assert data["method"]["online_share"] == connectivity.ONLINE_SHARE
+
+    def test_the_page_renders_for_a_signed_in_user(self, client, django_user_model):
+        client.force_login(django_user_model.objects.create(username="viewer"))
+        page = client.get(reverse("pulse:connectivity"))
+        assert page.status_code == 200
+        assert b"pulse/connectivity.js" in page.content

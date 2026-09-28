@@ -1900,6 +1900,77 @@ class PartnerView(View):
         )
 
 
+class ConnectivityView(View):
+    """Everything the connectivity page draws, for the current scope.
+
+    Which workers send their work as they go, where they are, and at what hour
+    of the day there is signal -- see ``pulse/connectivity.py`` for the test and
+    its thresholds, which ride along in ``method`` so the page states them.
+
+    Gated like the partner window: it carries the partner menu, and the map
+    places workers (to ~11 km, never fewer than three per cell). Cached per
+    scope, because it is three window-function passes over the scoped events.
+    """
+
+    CACHE_SECONDS = 10 * 60
+
+    def get(self, request):
+        import hashlib
+        from urllib.parse import urlencode
+
+        from django.core.cache import cache
+
+        if not _partner_names_allowed(request):
+            return JsonResponse({"error": "not_authorised"}, status=403)
+
+        key = "pulse:connectivity:v1:" + hashlib.md5(urlencode(sorted(request.GET.items())).encode()).hexdigest()
+        hit = cache.get(key)
+        if hit is not None:
+            return HttpResponse(hit, content_type="application/json")
+        response = self._build(request)
+        if response.status_code == 200:
+            cache.set(key, response.content, self.CACHE_SECONDS)
+        return response
+
+    def _build(self, request):
+        sc = _program_scope(request)
+        events = sc["events"]
+        backlog = connectivity.backlog_days()
+        skip = [d["date"] for d in backlog]
+
+        rows = connectivity.worker_weeks(events, exclude_days=skip)
+        workers = connectivity.per_worker(rows)
+
+        this_week = timezone.now()
+        this_week = (this_week - timedelta(days=this_week.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        weekly = [
+            {"t": int(week.timestamp()), **counts, "partial": week >= this_week}
+            for week, counts in sorted(connectivity.weekly(rows).items())
+            # A wrong device clock dates visits into the future; see _trend_series.
+            if week <= this_week
+        ]
+
+        program = sc["program"]
+        return JsonResponse(
+            {
+                "generated_at": timezone.now().isoformat(),
+                "program": ({"id": program.program_id, "name": program.name} if program else None),
+                "org": ({"slug": sc["org"].slug, "name": sc["org"].display_name} if sc["org"] is not None else None),
+                "service": sc["service"] or None,
+                "programs": [{"id": p["id"], "name": p["name"]} for p in _program_menu()],
+                "orgs": [{"slug": o["slug"], "name": o["name"]} for o in _org_menu(request)],
+                "distribution": connectivity.distribution(workers),
+                "weekly": weekly,
+                "hours": connectivity.by_hour(events, exclude_days=skip),
+                "map": connectivity.cells(workers, connectivity.home_cells(events)),
+                "backlog_days": [{**d, "date": d["date"].isoformat()} for d in backlog],
+                "method": connectivity.method(),
+            }
+        )
+
+
 class WorkerView(View):
     """One worker's delivery record.
 
