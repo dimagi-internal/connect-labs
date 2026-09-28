@@ -536,6 +536,19 @@ class PulseNetworkView(LoginRequiredMixin, View):
         )
 
 
+class PulseConnectivityView(LoginRequiredMixin, View):
+    """Which workers have signal while they work, where, and at what hour."""
+
+    def get(self, request):
+        from django.conf import settings
+
+        return render(
+            request,
+            "pulse/connectivity.html",
+            {"mapbox_token": getattr(settings, "MAPBOX_TOKEN", "") or ""},
+        )
+
+
 class PulseCostsView(LoginRequiredMixin, View):
     """Cost data worth fixing: what labs corrected, and what needs a person.
 

@@ -17,9 +17,11 @@ urlpatterns = [
     path("api/partner/", api.PartnerView.as_view(), name="api_partner"),
     path("api/worker/", api.WorkerView.as_view(), name="api_worker"),
     path("api/opp/", api.OpportunityView.as_view(), name="api_opp"),
+    path("api/connectivity/", api.ConnectivityView.as_view(), name="api_connectivity"),
     # Authenticated views.
     path("", views.PulseIndexView.as_view(), name="index"),
     path("network/", views.PulseNetworkView.as_view(), name="network"),
+    path("connectivity/", views.PulseConnectivityView.as_view(), name="connectivity"),
     path("costs/", views.PulseCostsView.as_view(), name="costs"),
     path("v/<slug:layout>/", views.PulseDisplayView.as_view(), name="display"),
     path("opp/<int:opp_id>/", views.PulseOppView.as_view(), name="opp"),
