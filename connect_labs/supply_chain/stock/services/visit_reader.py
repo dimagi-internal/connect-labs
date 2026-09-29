@@ -88,7 +88,10 @@ def _flagged_duplicate(visit) -> bool:
 def visit_status(visit, until=None) -> str:
     """The visit's status, lower-cased -- as it stood on `until`, when given."""
     status = str(visit.get("status") or "").strip().lower()
-    if status not in REVERSING_STATUSES and _flagged_duplicate(visit):
+    # A duplicate flag is a hint for the reviewer. Once a reviewer has approved
+    # the visit anyway they have judged it genuine, so the flag no longer
+    # reverses it; it still does on a visit nobody has cleared.
+    if status not in REVERSING_STATUSES and status not in APPROVED_STATUSES and _flagged_duplicate(visit):
         status = "duplicate"
     if until is not None and status in REVERSING_STATUSES:
         changed = read_date(visit.get("status_modified_date"))
@@ -488,6 +491,12 @@ def run_scheduled() -> dict:
         key = str(opportunity_id)
         if not scopes.is_synthetic(program_id):
             results[key] = {"skipped": "not a synthetic programme"}
+            continue
+        problem = scopes.opportunity_problem(program_id, opportunity_id)
+        if problem:
+            # Nothing is fetched: a rule naming a real (or another programme's)
+            # opportunity is refused here as well as when it was saved.
+            results[key] = {"skipped": problem}
             continue
         access = SupplyDataAccess(program_id=program_id, opportunity_id=opportunity_id, caller=SYSTEM)
         try:

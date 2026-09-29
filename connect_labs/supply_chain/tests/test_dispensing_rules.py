@@ -40,6 +40,16 @@ RUTF_LINES = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def synthetic_opportunity():
+    """The rule's opportunity is a registered labs-only one of this programme."""
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+    return SyntheticOpportunity.objects.create(
+        opportunity_id=OPP, labs_only=True, enabled=True, label="rule tests", gdrive_folder_id="folder-test"
+    )
+
+
 @pytest.fixture
 def da():
     return SupplyDataAccess(program_id=PROGRAM, caller=SYSTEM)
@@ -453,3 +463,79 @@ def test_the_edit_screen_cannot_move_a_rule_to_another_item(scoped, da, world):
     assert DispensingRule.objects.count() == 1
     assert DispensingRule.objects.get().item_id == world["item"]["id"]
     assert DispensingRule.objects.get().opportunity_id == OPP
+
+
+# ---- the rule's opportunity is a scope of its own -------------------------
+
+
+def test_a_rule_naming_a_real_opportunity_is_refused(da, world):
+    with pytest.raises(ValueError, match="not a registered labs-only opportunity"):
+        upsert(da, world, opportunity_id=2230)
+    assert not DispensingRule.objects.exists()
+
+
+def test_a_rule_naming_another_programmes_labs_only_opportunity_is_refused(da, world):
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10999, labs_only=True, enabled=True, label="someone else's", gdrive_folder_id="f"
+    )
+    with pytest.raises(ValueError, match="belongs to programme 10999"):
+        upsert(da, world, opportunity_id=10999)
+    assert not DispensingRule.objects.exists()
+
+
+def test_a_rule_naming_an_opportunity_the_caller_does_not_hold_is_refused(da, world, monkeypatch):
+    from django.core.exceptions import PermissionDenied
+
+    from connect_labs.labs.access import scopes as access_scopes
+    from connect_labs.labs.access.scopes import Caller
+
+    monkeypatch.setattr(
+        access_scopes,
+        "holdings",
+        lambda caller: access_scopes.Holdings(
+            org_slugs=frozenset(), opportunity_ids=frozenset(), program_ids=frozenset({PROGRAM})
+        ),
+    )
+    da.caller = Caller(access_token="token")
+    with pytest.raises(PermissionDenied, match=f"opportunity {OPP} is not accessible"):
+        upsert(da, world)
+    assert not DispensingRule.objects.exists()
+
+
+# ---- a protocol line that could never match -------------------------------
+
+EMPTY_GIVEN = [{"kind": "protocol", "given_paths": ["form.g"], "given_values": [], "quantity": "4", "unit": "sachet"}]
+
+
+def test_an_empty_given_values_fails_the_schema(da, world):
+    with pytest.raises(jsonschema.ValidationError):
+        upsert(da, world, lines=EMPTY_GIVEN)
+    assert not DispensingRule.objects.exists()
+
+
+def test_an_empty_given_values_is_refused_by_the_line_validator(world):
+    from connect_labs.supply_chain.models import Item
+    from connect_labs.supply_chain.stock.services.dispensing import validate_lines
+
+    with pytest.raises(ValueError, match="given_values is empty"):
+        validate_lines(EMPTY_GIVEN, Item.objects.get(pk=world["item"]["id"]))
+
+
+def test_an_empty_given_values_comes_back_as_an_error_on_the_form(scoped, world):
+    response = scoped.post(
+        reverse("supply_chain:dispensing_rule_create"),
+        {
+            "opportunity_id": str(OPP),
+            "item": str(world["item"]["id"]),
+            "resupply_point": str(world["store"]["id"]),
+            "active_from": "2026-08-01",
+            "lines": json.dumps(EMPTY_GIVEN),
+            "form_names": "",
+            "reports": "",
+            "status": "active",
+        },
+    )
+    assert response.status_code == 200
+    assert not DispensingRule.objects.exists()

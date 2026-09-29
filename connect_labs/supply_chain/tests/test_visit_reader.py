@@ -215,12 +215,29 @@ def test_a_visit_marked_duplicate_is_reversed(da, rutf, rutf_rule):
     assert read(da, [visit(9001, status="duplicate", answers={RUTF_PATH: "14"})])["reversed"] == 1
 
 
-def test_a_visit_flagged_as_a_duplicate_is_reversed(da, rutf, rutf_rule):
+DUPLICATE_FLAG = {"flags": [["duplicate_submission", "seen"]]}
+
+
+def test_a_pending_visit_flagged_as_a_duplicate_is_reversed(da, rutf, rutf_rule):
     read(da, [visit(9001, answers={RUTF_PATH: "14"})])
-    flagged = visit(
-        9001, status="approved", answers={RUTF_PATH: "14"}, flag_reason={"flags": [["duplicate_submission", "seen"]]}
-    )
+    flagged = visit(9001, status="pending", answers={RUTF_PATH: "14"}, flag_reason=DUPLICATE_FLAG)
     assert read(da, [flagged])["reversed"] == 1
+
+
+@pytest.mark.parametrize("status", ["approved", "over_limit"])
+def test_an_approved_visit_carrying_a_duplicate_flag_stands(da, rutf, rutf_rule, status):
+    """A reviewer who approved a flagged visit judged it genuine: the sachets left the bag."""
+    read(da, [visit(9001, answers={RUTF_PATH: "14"})])
+    flagged = visit(9001, status=status, answers={RUTF_PATH: "14"}, flag_reason=DUPLICATE_FLAG)
+
+    assert read(da, [flagged])["reversed"] == 0
+    assert ledger.balance(PROGRAM, _worker(), item=rutf, unit="sachet") == Quantity(Decimal("-14"), "sachet")
+    assert WorkerVisit.objects.get(visit_id="9001").status == status
+
+
+def test_an_approved_flagged_visit_seen_first_is_posted(da, rutf, rutf_rule):
+    flagged = visit(9001, status="approved", answers={RUTF_PATH: "14"}, flag_reason=DUPLICATE_FLAG)
+    assert read(da, [flagged])["posted"] == 1
 
 
 def test_a_visit_first_seen_rejected_is_never_posted(da, rutf, rutf_rule):

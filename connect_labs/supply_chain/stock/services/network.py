@@ -20,22 +20,27 @@ from django.db.models import Sum
 from connect_labs.supply_chain import records
 from connect_labs.supply_chain.models import Contract, Item, Movement, StockCount, SupplyPoint
 from connect_labs.supply_chain.stock.services import ledger, resupply
-from connect_labs.supply_chain.values import Quantity, Unconfirmed
+from connect_labs.supply_chain.values import Quantity, Unconfirmed, unconfirmed
 
 
 def _latest_counts(program_id, points, item=None, on_date=None):
-    """{supply_point_id: StockCount} -- the most recent on-hand count per point, in one query."""
+    """{supply_point_id: StockCount} -- the most recent on-hand count per point, in one query.
+
+    One ROW per point, not only one query: Postgres `DISTINCT ON` keeps the
+    first row of each point in the ordering, so the database drops every older
+    count. The reader records a self-reported balance on every visit that
+    carries one, so loading them all and keeping the first in Python grows
+    with every visit ever read.
+    """
     counts = StockCount.objects.filter(
         program_id=program_id, supply_point__in=points, kind__in=records.ON_HAND_COUNT_KINDS
-    ).order_by("supply_point_id", "-counted_on", "-id")
+    )
     if item is not None:
         counts = counts.filter(item=item)
     if on_date is not None:
         counts = counts.filter(counted_on__lte=on_date)
-    latest: dict[int, StockCount] = {}
-    for count in counts:
-        latest.setdefault(count.supply_point_id, count)
-    return latest
+    counts = counts.order_by("supply_point_id", "-counted_on", "-id").distinct("supply_point_id")
+    return {count.supply_point_id: count for count in counts}
 
 
 def _balances(program_id, points, item=None, on_date=None):
@@ -190,6 +195,34 @@ def _restated(amc, unit, item):
     return converted if isinstance(converted, Quantity) else None
 
 
+NOT_ONE_ITEM = "this point holds several items; choose one to see its rate and cover"
+
+
+def _grouped_rates(program_id, points, resolved, on_date, window_days) -> dict:
+    """{supply point id: (amc, basis)} from belief.py, one grouped pass per item held."""
+    from connect_labs.supply_chain.stock.services import belief
+
+    by_item: dict = {}
+    for point in points:
+        held = resolved(point)
+        if held is not None:
+            by_item.setdefault(held.pk, (held, []))[1].append(point)
+    rates = {}
+    for held, members in by_item.values():
+        for pk, b in belief.beliefs_for(program_id, held, members, on_date=on_date, window_days=window_days).items():
+            rates[pk] = (b.amc, b.amc_basis)
+    return rates
+
+
+def _no_single_item(on_hand, item_ids):
+    """The (amc, basis) of a point with no one item: never a rate summed across items."""
+    if isinstance(on_hand, Unconfirmed):
+        return on_hand, resupply.RELEASES
+    if not item_ids:
+        return unconfirmed(resupply.NO_CONSUMPTION_YET), resupply.RELEASES
+    return unconfirmed(NOT_ONE_ITEM), resupply.RELEASES
+
+
 def network_stock(
     program_id,
     opportunity_id=None,
@@ -197,11 +230,23 @@ def network_stock(
     kind=None,
     on_date=None,
     window_days=resupply.DEFAULT_WINDOW_DAYS,
+    grouped=False,
 ) -> list[dict]:
     """One row per supply point: what it holds, and how long that lasts.
 
     Rows carry the point's own min/max band, so "below minimum" means below
     the band this point is managed to rather than a number chosen here.
+
+    `grouped` takes each point's rate from belief.py's grouped SQL -- one
+    pass per item, whatever the number of points -- instead of a
+    `resupply.plan` per point, which grows with every worker a visit makes a
+    supply point. Cover, status and resupply are then classified by the same
+    `resupply.cover` from the row's own balance. A point holding several
+    items gets no rate: a figure spanning them is not one anybody can act on,
+    and asking for it cost queries per point. A point whose stock was
+    recorded against the product alone (no trade item) is still planned on
+    its own. The Stock page uses this; the other callers still plan per point
+    (a recorded follow-up).
     """
     # Not the road: goods on it are reported at their destination as in
     # transit (ledger.in_transit), never as a point holding stock.
@@ -231,15 +276,21 @@ def network_stock(
         }
     )
 
-    rows = []
-    for point in points:
-        units, item_ids = balances.get(point.pk, ({}, set()))
+    def resolved(point):
         # Convert using the point's own item when it holds exactly one. With
         # several, a single figure spanning them is not a quantity anyone can
         # act on, and `collapse` says so.
-        for_conversion = item
-        if for_conversion is None and len(item_ids) == 1:
-            for_conversion = items_by_id.get(next(iter(item_ids)))
+        if item is not None:
+            return item
+        item_ids = balances.get(point.pk, ({}, set()))[1]
+        return items_by_id.get(next(iter(item_ids))) if len(item_ids) == 1 else None
+
+    rates = _grouped_rates(program_id, points, resolved, on_date, window_days) if grouped else None
+
+    rows = []
+    for point in points:
+        units, item_ids = balances.get(point.pk, ({}, set()))
+        for_conversion = resolved(point)
 
         # Report the whole column in one unit where the item states a pack
         # size: a table mixing cartons and sachets row by row is not
@@ -262,7 +313,19 @@ def network_stock(
         # by a sachet consumption rate, which needs the pack size. Without it
         # every point reported "unknown" for a reason that was not about the
         # data at all.
-        plan = resupply.plan(program_id, point, item=for_conversion, as_of=on_date, window_days=window_days)
+        if rates is None or (for_conversion is None and not item_ids and units):
+            # Per point: every caller but the Stock page, and on it only a point
+            # whose stock was recorded against the product with no trade item,
+            # which belief.py (per item) cannot rate. A point a visit made
+            # always holds a trade item, so this does not grow with the roster.
+            plan = resupply.plan(program_id, point, item=for_conversion, as_of=on_date, window_days=window_days)
+        else:
+            # The balance as `plan` reads it (ledger.balance: the unit held, else
+            # the pack), so cover and the resupply quantity come out in the same
+            # unit and to the same precision as a per-point plan would give.
+            held = ledger.collapse(units, for_conversion, None)
+            amc, basis = rates.get(point.pk) or _no_single_item(held, item_ids)
+            plan = resupply.cover(held, amc, basis, point, item=for_conversion, window_days=window_days)
         rows.append(
             {
                 "supply_point_id": point.pk,

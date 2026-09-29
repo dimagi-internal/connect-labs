@@ -29,7 +29,10 @@ WEEKS = 8
 RATION = Decimal("14")
 APPETITE = Decimal("1")  # the app deducts a whole sachet for the appetite test
 FIRST_RUTF = Decimal("180")
-SECOND_RUTF = Decimal("180")
+# Calibrated so most workers end inside their band (0.5-1.5 months): a worker
+# gives out about 160 sachets a month, so 180 + 240 less eight weeks of visits
+# leaves about three weeks' cover. Only the special workers stand out.
+SECOND_RUTF = Decimal("240")
 RUNS_OUT_RUTF = Decimal("90")
 UNRECORDED_RECEIPT = Decimal("100")
 
@@ -126,28 +129,33 @@ class Product:
     sku: str
     opening: int  # into the central store, in base units
     first_issue: int  # to each worker in week 0, in base units
+    to_partner: int  # central store to the partner store at setup, in base units
 
 
 PRODUCTS = (
     Product(
         "rutf", "Ready-to-use therapeutic food (synthetic)", "therapeutic_food", "sachet", "carton", 150,
-        "syn-rutf-150", 16000, 180,
+        # The partner store releases about 8,200 sachets over the eight weeks;
+        # 13,000 leaves it inside its 1-3 month band on its own releases and on
+        # its subtree's dispensing, whatever the weekday it is seeded on, and
+        # the central store inside its 2-6.
+        "syn-rutf-150", 35000, 180, 13000,
     ),
     Product(
         "vitamin-a-100k", "Vitamin A 100,000 IU (synthetic)", "micronutrient", "capsule", "bottle", 100,
-        "syn-vita100k-100", 1000, 20,
+        "syn-vita100k-100", 1000, 20, 500,
     ),
     Product(
         "vitamin-a-200k", "Vitamin A 200,000 IU (synthetic)", "micronutrient", "capsule", "bottle", 100,
-        "syn-vita200k-100", 1000, 20,
+        "syn-vita200k-100", 1000, 20, 500,
     ),
     Product(
         "amoxicillin-dt", "Amoxicillin 250 mg dispersible (synthetic)", "antibiotic", "tablet", "pack", 100,
-        "syn-amox-100", 10000, 200,
+        "syn-amox-100", 10000, 200, 5000,
     ),
     Product(
         "mrdt", "Malaria rapid diagnostic test (synthetic)", "diagnostic", "test", "kit", 25,
-        "syn-mrdt-25", 1000, 20,
+        "syn-mrdt-25", 1000, 20, 500,
     ),
 )  # fmt: skip
 BY_SKU = {p.sku: p for p in PRODUCTS}
@@ -506,7 +514,7 @@ def seed(*, drive, reset: bool = False, today: date | None = None) -> dict:
         })  # fmt: skip
         op(setup, 11, "movement_record", data={
             **base, "kind": "transfer", "from_supply_point_id": central["id"],
-            "to_supply_point_id": partner["id"], "quantity": str(p.opening // 2),
+            "to_supply_point_id": partner["id"], "quantity": str(p.to_partner),
         })  # fmt: skip
     for data in rule_data(items, partner["id"], start, opportunity_id=opp_id):
         op(setup, 12, "dispensing_rule_upsert", data=data)

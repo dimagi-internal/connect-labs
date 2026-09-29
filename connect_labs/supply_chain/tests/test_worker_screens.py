@@ -584,7 +584,7 @@ def _queries(client, name):
     return len(captured.captured_queries)
 
 
-@pytest.mark.parametrize("page", ["workers", "network"])
+@pytest.mark.parametrize("page", ["workers", "network", "stock"])
 def test_the_page_costs_the_same_whatever_the_number_of_workers(client_in_program, world, page):
     _queries(client_in_program, page)  # warm any per-process caches
     few = _queries(client_in_program, page)
@@ -682,3 +682,84 @@ class TestPassThrough:
         from connect_labs.supply_chain.network.views import band_of
 
         assert band_of(self.row("regional_store", "40", below="270")) == "ok"
+
+
+# ---- a Stock Management form in the visit list ----------------------------
+
+
+def _stock_form(world, worker, visit_id, *, counts):
+    """A Stock Management visit: nothing dispensed, only what the app recorded."""
+    WorkerVisit.objects.create(
+        program_id=PROGRAM,
+        opportunity_id=PROGRAM,
+        visit_id=visit_id,
+        xform_id=f"xf-{visit_id}",
+        supply_point=worker,
+        visit_date=TODAY - timedelta(days=5),
+        status="approved",
+        form_name="Stock Management",
+        outcomes={},
+        answers={},
+    )
+    for kind, quantity, days_ago in counts:
+        StockCount.objects.create(
+            program_id=PROGRAM,
+            supply_point=worker,
+            item=world["item"],
+            commodity=world["item"].commodity,
+            kind=kind,
+            counted_on=TODAY - timedelta(days=days_ago),
+            quantity=Decimal(quantity),
+            quantity_unit="sachet",
+            source="commcare_form",
+            form_submission_id=f"xf-{visit_id}",
+            visit_id=visit_id,
+        )
+
+
+def _read_as(body):
+    return [text_of(cell).strip() for cell in re.findall(r'data-testid="visit-read-as">(.*?)</td>', body, re.S)]
+
+
+def test_a_stock_form_says_what_it_recorded(client_in_program, world):
+    worker = world["worker-acacia"]
+    _stock_form(world, worker, "v-stock", counts=[("self_reported", 50, 5), ("reported_receipt", 100, 11)])
+
+    cells = _read_as(get(client_in_program, "worker_detail", worker.pk))
+
+    received = (TODAY - timedelta(days=11)).strftime("%-d %b %Y")
+    assert f"Reported receiving 100 sachets on {received} Recorded a balance of 50 sachets" in cells
+    assert not any("Not read for this item" in cell for cell in cells)
+
+
+def test_a_stock_form_that_recorded_nothing_for_this_item_says_so(client_in_program, world):
+    worker = world["worker-acacia"]
+    _stock_form(world, worker, "v-stock-empty", counts=[])
+
+    cells = _read_as(get(client_in_program, "worker_detail", worker.pk))
+
+    assert "Stock form — nothing recorded for this item" in cells
+
+
+# ---- the reversal on the chart ---------------------------------------------
+
+
+def test_the_reversed_workers_chart_marks_the_reversal(client_in_program, world):
+    body = get(client_in_program, "worker_detail", world["worker-baobab"].pk)
+    assert 'data-kind="reversed"' in body
+    assert 'data-kind="reversal-mark"' in body
+    assert "10 sachets put back (a visit rejected after it was counted)" in body
+    assert 'data-testid="reversal-key"' in body
+
+
+def test_the_stock_page_rates_workers_as_a_plan_per_point_would(client_in_program, world, da):
+    """The grouped pass is the Stock page's only change: its figures are the per-point plan's."""
+    from connect_labs.supply_chain.stock.operations import network_stock_payload
+
+    grouped = network_stock_payload(da, grouped=True)
+    planned = network_stock_payload(da)
+    for g, p in zip(grouped["points"], planned["points"]):
+        for key in g:
+            assert g[key] == p[key], (g["name"], key, g[key], p[key])
+    assert grouped == planned
+    assert any(p["amc"] and p["amc"].get("amount") for p in grouped["points"])

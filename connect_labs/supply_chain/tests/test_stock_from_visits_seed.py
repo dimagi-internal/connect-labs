@@ -411,3 +411,46 @@ def test_the_command_seeds_through_drive_and_prints_the_summary(db, settings, ca
     printed = json.loads(capsys.readouterr().out)
     assert printed["seeded"] is True and printed["workers"] == 20
     assert DispensingRule.objects.filter(program_id=printed["opportunity_id"]).count() == len(SKUS)
+
+
+def test_most_workers_and_the_partner_store_sit_inside_their_band(seeded):
+    """The special cases stand out against a mostly healthy network, as design §7 tells it."""
+    opp = seeded["opp"]
+    beliefs = by_name(opp)
+    within = {name for name, b in beliefs.items() if b.status == "ok"}
+    assert len(within) >= 14, {name: b.status for name, b in beliefs.items()}
+    assert RUNS_OUT not in within
+
+    roots = belief.network_tree(opp, item(opp))
+    partner = next(node for root in roots for node in [root, *root.children] if node.point.slug == "partner-store")
+    assert partner.status == "ok", (partner.status, partner.months_of_stock)
+    assert partner.subtree["status"] == "ok", partner.subtree
+
+
+def test_the_reversed_workers_chart_shows_the_reversal(seeded):
+    from connect_labs.supply_chain.stock.services.timeline import timeline_svg, worker_timeline
+
+    opp = seeded["opp"]
+    neem = SupplyPoint.objects.get(program_id=opp, connect_username=REJECTED_LATER)
+    svg = timeline_svg(worker_timeline(opp, neem, item(opp)))
+    assert svg.count('data-kind="reversed"') == 1
+    assert "14 sachets put back (a visit rejected after it was counted)" in svg
+
+
+@pytest.mark.parametrize("weekday", [0, 6])  # seeded on a Monday (a full week read) and on a Sunday
+def test_the_band_holds_whatever_day_it_is_seeded(db, settings, weekday):
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    drive = FakeDrive()
+    registry.invalidate_cache()
+    today = date(2026, 9, 28) + timedelta(days=weekday)
+    with patch(FIXTURE_STORE, return_value=FakeStore(drive)):
+        opp = seed(drive=drive, today=today)["opportunity_id"]
+    registry.invalidate_cache()
+    beliefs = {b.point.connect_username: b for b in belief.worker_beliefs(opp, item(opp), on_date=today)}
+    assert sum(b.status == "ok" for b in beliefs.values()) >= 14, {n: b.status for n, b in beliefs.items()}
+    roots = belief.network_tree(opp, item(opp), on_date=today)
+    partner = next(node for root in roots for node in [root, *root.children] if node.point.slug == "partner-store")
+    assert (partner.status, partner.subtree["status"]) == ("ok", "ok"), (
+        partner.months_of_stock,
+        partner.subtree["months_of_stock"],
+    )
