@@ -403,6 +403,12 @@ class SupplyDataAccess(
                 # weakening the constraints that make the ledger
                 # trustworthy the rest of the time.
                 movements = Movement.objects.filter(program_id=program_id)
+                # A visit's reversal is the one link that cannot be severed:
+                # with `reverses` cleared it reads as a second consumption of
+                # the same visit and item, which a constraint forbids. Nothing
+                # points at a reversal, so it simply goes first.
+                _, gone = movements.filter(reverses__isnull=False).delete()
+                reversals = gone.get(Movement._meta.label, 0)
                 DistributionLine.objects.filter(distribution__program_id=program_id).update(movement=None)
                 StockCount.objects.filter(program_id=program_id).update(adjustment_movement=None)
                 movements.update(distribution=None, receipt=None, shipment=None, stock_count=None, reverses=None)
@@ -433,6 +439,8 @@ class SupplyDataAccess(
                 # A consignment holds its two ledger legs, so it goes before them.
                 drop("consignments", Consignment.objects.filter(program_id=program_id))
                 drop("movements", movements)
+                if reversals:
+                    counts["movements"] = counts.get("movements", 0) + reversals
                 drop("invoices", Invoice.objects.filter(contract__program_id=program_id))
                 drop("receipts", Receipt.objects.filter(supply_point__program_id=program_id))
                 drop("shipments", Shipment.objects.filter(contract__program_id=program_id))
