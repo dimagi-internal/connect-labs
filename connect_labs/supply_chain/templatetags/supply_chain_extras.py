@@ -1195,7 +1195,10 @@ def on_hand_words(cell, parts):
 
 @register.filter
 def dispensed_words(cell, parts):
-    """A dispensed figure and its unsettled parts: "90 sachets dispensed — 30 on visits not yet approved, 30 estimated"."""
+    """A dispensed figure and its unsettled parts.
+
+    "90 sachets dispensed — 30 on visits not yet approved, 30 estimated".
+    """
     text = f"{figure_text(cell)} dispensed"
     said = _unsettled_parts(parts)
     return f"{text} — {', '.join(said)}" if said else text

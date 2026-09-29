@@ -9,8 +9,8 @@ here: the list costs the same for two workers as for six hundred.
 from decimal import Decimal
 
 from django.http import Http404
-from django.utils.safestring import mark_safe
 from django.urls import reverse
+from django.utils.safestring import mark_safe
 
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationFormView

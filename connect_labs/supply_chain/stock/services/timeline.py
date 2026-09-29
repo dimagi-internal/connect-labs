@@ -97,7 +97,9 @@ def worker_timeline(program_id, point, item, *, on_date=None) -> dict:
     for count in counts.order_by("counted_on", "id"):
         converted = ledger.convert(count.quantity, count.quantity_unit, unit, item)
         if isinstance(converted, Quantity):
-            count_rows.append({"on": count.counted_on.isoformat(), "quantity": str(converted.amount), "kind": count.kind})
+            count_rows.append(
+                {"on": count.counted_on.isoformat(), "quantity": str(converted.amount), "kind": count.kind}
+            )
         else:
             unconverted.append({"on": count.counted_on.isoformat(), "reasons": list(converted.reasons)})
     return {"unit": unit, "days": out, "counts": count_rows, "unconverted": unconverted}
@@ -170,7 +172,8 @@ def timeline_svg(line: dict, *, width: int = 720, height: int = 220) -> str:
         f'data-testid="worker-timeline">',
         f'<title id="worker-timeline-title">Stock held, in {plural}, day by day</title>',
         f'<desc id="worker-timeline-desc">{_description(days, counts, unit)}</desc>',
-        f'<g stroke-opacity="0.35">{_segment(pad, y(ZERO), width - pad, y(ZERO), "axis", "currentColor", width=1)}</g>',
+        '<g stroke-opacity="0.35">'
+        f'{_segment(pad, y(ZERO), width - pad, y(ZERO), "axis", "currentColor", width=1)}</g>',
     ]
     previous = None
     for d in days:

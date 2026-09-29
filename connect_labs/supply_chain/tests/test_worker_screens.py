@@ -368,7 +368,12 @@ def own_line(body, name):
 
 def test_the_tree_is_the_directory_every_point_once(client_in_program, world):
     SupplyPoint.objects.create(
-        program_id=PROGRAM, slug="old-depot", name="Old depot", kind="facility", source="we_recorded", status="inactive"
+        program_id=PROGRAM,
+        slug="old-depot",
+        name="Old depot",
+        kind="facility",
+        source="we_recorded",
+        status="inactive",
     )
     body = get(client_in_program, "network")
     # Four points, four nodes, and no second per-kind table listing them again.
@@ -606,10 +611,13 @@ class TestFigureWords:
         assert on_hand_words({"amount": "412", "unit": "sachet"}, {"unapproved": {"amount": "0"}}) == (
             "412 sachets on hand"
         )
-        assert on_hand_words(
-            {"amount": "4", "unit": "sachet"},
-            {"dispensed": {"amount": "2", "unit": "sachet"}, "estimated": {"unconfirmed": ["x"]}},
-        ) == "4 sachets on hand — of the 2 sachets dispensed, an unknown part estimated"
+        assert (
+            on_hand_words(
+                {"amount": "4", "unit": "sachet"},
+                {"dispensed": {"amount": "2", "unit": "sachet"}, "estimated": {"unconfirmed": ["x"]}},
+            )
+            == "4 sachets on hand — of the 2 sachets dispensed, an unknown part estimated"
+        )
 
     def test_a_dispensed_figure_names_its_unsettled_parts(self):
         from connect_labs.supply_chain.templatetags.supply_chain_extras import dispensed_words

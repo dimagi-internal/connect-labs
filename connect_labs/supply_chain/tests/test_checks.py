@@ -428,13 +428,17 @@ class TestStock:
         assert found == [], "150 sachets that arrived after the count were read as a discrepancy in it"
 
         StockCount.objects.filter(supply_point=worker).update(quantity=Decimal("280"))
-        (check,) = [
+        (check,) = (
             c
             for c in _read(da, opportunity_id=OPP)["checks"]
             if c["kind"] == "stock_variance" and c["subject"]["id"] == worker.pk
-        ]
+        )
         mine = belief.point_belief(PROGRAM, worker, item)
-        assert (check["facts"]["ledger"], check["facts"]["variance"], check["facts"]["unit"]) == ("300", "-20", "sachet")
+        assert (check["facts"]["ledger"], check["facts"]["variance"], check["facts"]["unit"]) == (
+            "300",
+            "-20",
+            "sachet",
+        )
         assert (mine.ledger_on_count_day, mine.variance) == (
             Quantity(Decimal("300"), "sachet"),
             Quantity(Decimal("-20"), "sachet"),

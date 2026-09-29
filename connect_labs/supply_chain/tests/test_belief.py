@@ -37,7 +37,12 @@ def ago(days):
 @pytest.fixture
 def item():
     commodity = Commodity.objects.create(
-        scope_key=f"prog:{PROGRAM}", slug="rutf", name="RUTF", base_unit="sachet", pack_unit="carton", base_per_pack=150
+        scope_key=f"prog:{PROGRAM}",
+        slug="rutf",
+        name="RUTF",
+        base_unit="sachet",
+        pack_unit="carton",
+        base_per_pack=150,
     )
     Item.objects.create(
         scope_key=f"prog:{PROGRAM}",

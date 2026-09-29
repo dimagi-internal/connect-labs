@@ -28,7 +28,8 @@ Per point, in the item's single unit:
 
 Stores carry the same figures summed over their subtree, except that what
 came in is `received_from_outside` (each unit once), never a hop-summed
-`issued`, which stays a per-point figure. Counts sum up the hierarchy; cover is recomputed at each level from the subtree's own
+`issued`, which stays a per-point figure. Counts sum up the hierarchy;
+cover is recomputed at each level from the subtree's own
 consumption and never summed -- two workers at one month each are not a
 store at two months.
 

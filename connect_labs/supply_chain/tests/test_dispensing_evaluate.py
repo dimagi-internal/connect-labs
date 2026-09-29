@@ -24,12 +24,27 @@ VISIT = "http://openrosa.org/formdesigner/visit-invented"
 
 
 def _item(base_per_pack=150, unit="sachet"):
-    commodity = Commodity(scope_key="prog:1", slug="x", name="X", base_unit=unit, pack_unit="carton", base_per_pack=base_per_pack)
-    return Item(scope_key="prog:1", sku="x", name="X 150", commodity=commodity, base_unit=unit, pack_unit="carton", base_per_pack=base_per_pack)
+    commodity = Commodity(
+        scope_key="prog:1", slug="x", name="X", base_unit=unit, pack_unit="carton", base_per_pack=base_per_pack
+    )
+    return Item(
+        scope_key="prog:1",
+        sku="x",
+        name="X 150",
+        commodity=commodity,
+        base_unit=unit,
+        pack_unit="carton",
+        base_per_pack=base_per_pack,
+    )
 
 
 RUTF = [
-    {"kind": "stated", "paths": ["form.screening_outcome.rutf_stock_deduction"], "unit": "sachet", "forms": [SCREENING]},
+    {
+        "kind": "stated",
+        "paths": ["form.screening_outcome.rutf_stock_deduction"],
+        "unit": "sachet",
+        "forms": [SCREENING],
+    },
     {"kind": "stated", "paths": ["form.rutf_dispensing.rutf_sachets_dispensed"], "unit": "sachet", "forms": [VISIT]},
     {"kind": "stated", "paths": ["form.var.appetite_test_stock_deduction"], "unit": "sachet", "forms": [VISIT]},
 ]
@@ -51,7 +66,15 @@ AMOX = [
         "unit": "tablet",
     }
 ]
-MRDT = [{"kind": "protocol", "given_paths": ["form.fever.mrdt_result"], "given_values": None, "quantity": "1", "unit": "sachet"}]
+MRDT = [
+    {
+        "kind": "protocol",
+        "given_paths": ["form.fever.mrdt_result"],
+        "given_values": None,
+        "quantity": "1",
+        "unit": "sachet",
+    }
+]
 
 
 def form(xmlns=None, **answers):
@@ -69,14 +92,30 @@ def form(xmlns=None, **answers):
 
 
 def test_visit_form_sums_ration_and_appetite_test():
-    result = evaluate(RUTF, form(VISIT, rutf_dispensing__rutf_sachets_dispensed="14", var__appetite_test_stock_deduction="0"), _item())
-    assert (result.outcome, result.quantity, result.unit, result.estimated) == (DISPENSED, Decimal("14"), "sachet", False)
-    assert result.answers == {"form.rutf_dispensing.rutf_sachets_dispensed": "14", "form.var.appetite_test_stock_deduction": "0"}
+    result = evaluate(
+        RUTF,
+        form(VISIT, rutf_dispensing__rutf_sachets_dispensed="14", var__appetite_test_stock_deduction="0"),
+        _item(),
+    )
+    assert (result.outcome, result.quantity, result.unit, result.estimated) == (
+        DISPENSED,
+        Decimal("14"),
+        "sachet",
+        False,
+    )
+    assert result.answers == {
+        "form.rutf_dispensing.rutf_sachets_dispensed": "14",
+        "form.var.appetite_test_stock_deduction": "0",
+    }
 
 
 def test_screening_reads_only_its_own_total():
     # The visit-form answers are present too, but the Screening form must not read them.
-    result = evaluate(RUTF, form(SCREENING, screening_outcome__rutf_stock_deduction="14", rutf_dispensing__rutf_sachets_dispensed="14"), _item())
+    result = evaluate(
+        RUTF,
+        form(SCREENING, screening_outcome__rutf_stock_deduction="14", rutf_dispensing__rutf_sachets_dispensed="14"),
+        _item(),
+    )
     assert result.quantity == Decimal("14")
 
 
@@ -104,27 +143,55 @@ def test_appetite_test_alone_stands_when_no_ration_was_dispensed():
 
 @pytest.mark.parametrize("answer", ["two", "-3", "NaN", "Infinity", True])
 def test_an_unreadable_answer_is_unknown_not_zero(answer):
-    result = evaluate(RUTF, form(VISIT, rutf_dispensing__rutf_sachets_dispensed=answer, var__appetite_test_stock_deduction="1"), _item())
+    result = evaluate(
+        RUTF,
+        form(VISIT, rutf_dispensing__rutf_sachets_dispensed=answer, var__appetite_test_stock_deduction="1"),
+        _item(),
+    )
     assert result.outcome == NO_ANSWER
     assert "form.rutf_dispensing.rutf_sachets_dispensed" in result.reasons[0]
 
 
 def test_zero_answered_is_nothing_given():
-    assert evaluate(RUTF, form(VISIT, rutf_dispensing__rutf_sachets_dispensed="0", var__appetite_test_stock_deduction="0"), _item()).outcome == NOTHING_GIVEN
+    assert (
+        evaluate(
+            RUTF,
+            form(VISIT, rutf_dispensing__rutf_sachets_dispensed="0", var__appetite_test_stock_deduction="0"),
+            _item(),
+        ).outcome
+        == NOTHING_GIVEN
+    )
 
 
 def test_protocol_given_is_estimated():
-    result = evaluate(VITA, form(vita_group__va_delivered="child_fine", prepare_vita_dosage__va_eligible_dose_6mo_to_11mo="x"), _item(unit="capsule"))
-    assert (result.outcome, result.quantity, result.unit, result.estimated) == (DISPENSED, Decimal("1"), "capsule", True)
+    result = evaluate(
+        VITA,
+        form(vita_group__va_delivered="child_fine", prepare_vita_dosage__va_eligible_dose_6mo_to_11mo="x"),
+        _item(unit="capsule"),
+    )
+    assert (result.outcome, result.quantity, result.unit, result.estimated) == (
+        DISPENSED,
+        Decimal("1"),
+        "capsule",
+        True,
+    )
 
 
 def test_multi_select_matches_any_token():
-    result = evaluate(VITA, form(vita_group__va_delivered="referred child_fine", prepare_vita_dosage__va_eligible_dose_6mo_to_11mo="x"), _item(unit="capsule"))
+    result = evaluate(
+        VITA,
+        form(vita_group__va_delivered="referred child_fine", prepare_vita_dosage__va_eligible_dose_6mo_to_11mo="x"),
+        _item(unit="capsule"),
+    )
     assert result.outcome == DISPENSED
 
 
 def test_given_something_else_is_nothing_given():
-    result = evaluate(VITA, form(vita_group__va_delivered="child_unwell", prepare_vita_dosage__va_eligible_dose_6mo_to_11mo="x"), _item(unit="capsule"))
+    result = evaluate(
+        VITA,
+        form(vita_group__va_delivered="child_unwell", prepare_vita_dosage__va_eligible_dose_6mo_to_11mo="x"),
+        _item(unit="capsule"),
+    )
     assert (result.outcome, result.quantity) == (NOTHING_GIVEN, Decimal("0"))
 
 
@@ -149,7 +216,10 @@ def test_value_map_looks_the_answer_up_exactly_and_is_estimated():
 def test_value_map_first_path_wins():
     result = evaluate(
         AMOX,
-        form(visit_1__dosage_pneumonia="1 tablet every 12 hours (total 10 tablets)", visit_2_or_greater__dosage_pneumonia="2 tablets every 12 hours(total 20 tablets)"),
+        form(
+            visit_1__dosage_pneumonia="1 tablet every 12 hours (total 10 tablets)",
+            visit_2_or_greater__dosage_pneumonia="2 tablets every 12 hours(total 20 tablets)",
+        ),
         _item(unit="tablet"),
     )
     assert result.quantity == Decimal("10")
@@ -178,6 +248,18 @@ def test_a_unit_the_item_cannot_convert_is_refused():
     assert result.reasons
 
 
-@pytest.mark.parametrize("value,expected", [("14", Decimal("14")), (3, Decimal("3")), ("0.5", Decimal("0.5")), (None, None), (True, None), ("1e999", None), (" 2 ", Decimal("2")), ("", None)])
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("14", Decimal("14")),
+        (3, Decimal("3")),
+        ("0.5", Decimal("0.5")),
+        (None, None),
+        (True, None),
+        ("1e999", None),
+        (" 2 ", Decimal("2")),
+        ("", None),
+    ],
+)
 def test_read_number(value, expected):
     assert read_number(value) == expected

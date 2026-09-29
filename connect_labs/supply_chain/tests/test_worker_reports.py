@@ -35,15 +35,35 @@ def real_shaped(vid, answers, xform="xf-1", on="2026-09-20", username="worker-ac
         for part in parts[:-1]:
             node = node.setdefault(part, {})
         node[parts[-1]] = value
-    return {"id": vid, "xform_id": xform, "username": username, "user_id": "uuid-a", "visit_date": on, "status": "pending", "flag_reason": {}, "form_json": {"id": xform, "form": body}}
+    return {
+        "id": vid,
+        "xform_id": xform,
+        "username": username,
+        "user_id": "uuid-a",
+        "visit_date": on,
+        "status": "pending",
+        "flag_reason": {},
+        "form_json": {"id": xform, "form": body},
+    }
 
 
 # ---- extract_rows, the old path -------------------------------------------
 
 
 def test_extract_rows_reads_the_answer_under_form_json():
-    rows = extract_rows([real_shaped(9001, {"form.stock_balance.sachets_remaining": "40"}, xform="xf-9")], quantity_path="form.stock_balance.sachets_remaining")
-    assert rows == [{"connect_username": "worker-acacia", "quantity": "40", "counted_on": "2026-09-20", "form_submission_id": "xf-9", "visit_id": "9001"}]
+    rows = extract_rows(
+        [real_shaped(9001, {"form.stock_balance.sachets_remaining": "40"}, xform="xf-9")],
+        quantity_path="form.stock_balance.sachets_remaining",
+    )
+    assert rows == [
+        {
+            "connect_username": "worker-acacia",
+            "quantity": "40",
+            "counted_on": "2026-09-20",
+            "form_submission_id": "xf-9",
+            "visit_id": "9001",
+        }
+    ]
 
 
 def test_a_top_level_path_reads_nothing_from_a_real_row():
@@ -56,15 +76,33 @@ def test_a_row_with_no_xform_id_still_has_a_stable_submission_id():
     visit = real_shaped(9001, {"form.stock_balance.sachets_remaining": "40"})
     visit["xform_id"] = None
     del visit["form_json"]["id"]
-    assert extract_rows([visit], quantity_path="form.stock_balance.sachets_remaining")[0]["form_submission_id"] == "visit-9001"
+    assert (
+        extract_rows([visit], quantity_path="form.stock_balance.sachets_remaining")[0]["form_submission_id"]
+        == "visit-9001"
+    )
 
 
 def test_the_stock_report_command_reads_through_the_visit_source():
     from connect_labs.supply_chain.management.commands import supply_ingest_stock_reports as command
 
     assert not hasattr(command, "ExportAPIClient")
-    with patch.object(command, "fetch_visits", return_value=[]) as fetch, patch.dict("os.environ", {"SUPPLY_EXPORT_TOKEN": "t"}):
-        call_command("supply_ingest_stock_reports", "--program", str(PROGRAM), "--opportunity", str(OPP), "--commodity", "rutf", "--unit", "sachet", "--quantity-path", "form.stock_balance.sachets_remaining")
+    with (
+        patch.object(command, "fetch_visits", return_value=[]) as fetch,
+        patch.dict("os.environ", {"SUPPLY_EXPORT_TOKEN": "t"}),
+    ):
+        call_command(
+            "supply_ingest_stock_reports",
+            "--program",
+            str(PROGRAM),
+            "--opportunity",
+            str(OPP),
+            "--commodity",
+            "rutf",
+            "--unit",
+            "sachet",
+            "--quantity-path",
+            "form.stock_balance.sachets_remaining",
+        )
     fetch.assert_called_once_with(OPP, "t")
 
 
@@ -73,18 +111,53 @@ def test_the_stock_report_command_reads_through_the_visit_source():
 
 @pytest.fixture
 def world():
-    commodity = Commodity.objects.create(scope_key=f"prog:{PROGRAM}", slug="rutf", name="RUTF", base_unit="sachet", pack_unit="carton", base_per_pack=150)
-    item = Item.objects.create(scope_key=f"prog:{PROGRAM}", sku="rutf", name="RUTF", commodity=commodity, base_unit="sachet", pack_unit="carton", base_per_pack=150)
-    store = SupplyPoint.objects.create(program_id=PROGRAM, slug="partner-store", name="Partner store", kind="regional_store", source="we_recorded")
+    commodity = Commodity.objects.create(
+        scope_key=f"prog:{PROGRAM}",
+        slug="rutf",
+        name="RUTF",
+        base_unit="sachet",
+        pack_unit="carton",
+        base_per_pack=150,
+    )
+    item = Item.objects.create(
+        scope_key=f"prog:{PROGRAM}",
+        sku="rutf",
+        name="RUTF",
+        commodity=commodity,
+        base_unit="sachet",
+        pack_unit="carton",
+        base_per_pack=150,
+    )
+    store = SupplyPoint.objects.create(
+        program_id=PROGRAM, slug="partner-store", name="Partner store", kind="regional_store", source="we_recorded"
+    )
     return {"item": item, "store": store}
 
 
 def _count(world, point, kind, quantity, on):
-    return StockCount.objects.create(program_id=PROGRAM, supply_point=point, item=world["item"], commodity=world["item"].commodity, kind=kind, counted_on=on, quantity=Decimal(quantity), quantity_unit="sachet", source="commcare_form")
+    return StockCount.objects.create(
+        program_id=PROGRAM,
+        supply_point=point,
+        item=world["item"],
+        commodity=world["item"].commodity,
+        kind=kind,
+        counted_on=on,
+        quantity=Decimal(quantity),
+        quantity_unit="sachet",
+        source="commcare_form",
+    )
 
 
 def test_a_reported_receipt_never_becomes_the_last_count(world):
-    worker = SupplyPoint.objects.create(program_id=PROGRAM, opportunity_id=OPP, slug="w", name="w", kind="user_held", connect_username="w", source="we_recorded")
+    worker = SupplyPoint.objects.create(
+        program_id=PROGRAM,
+        opportunity_id=OPP,
+        slug="w",
+        name="w",
+        kind="user_held",
+        connect_username="w",
+        source="we_recorded",
+    )
     _count(world, worker, "self_reported", 40, date(2026, 9, 1))
     _count(world, worker, "reported_receipt", 300, date(2026, 9, 10))
 
@@ -98,7 +171,17 @@ def test_a_receipt_cannot_be_typed_in_as_a_count(world):
         call_operation(
             "stock_count_record",
             da,
-            {"data": {"supply_point_id": world["store"].pk, "commodity_slug": "rutf", "kind": "reported_receipt", "counted_on": "2026-09-01", "quantity": "1", "quantity_unit": "sachet", "source": "we_recorded"}},
+            {
+                "data": {
+                    "supply_point_id": world["store"].pk,
+                    "commodity_slug": "rutf",
+                    "kind": "reported_receipt",
+                    "counted_on": "2026-09-01",
+                    "quantity": "1",
+                    "quantity_unit": "sachet",
+                    "source": "we_recorded",
+                }
+            },
         )
 
 
@@ -106,7 +189,10 @@ def test_a_receipt_cannot_be_typed_in_as_a_count(world):
 
 REPORTS = {
     "balance_paths": ["form.var.new_stock_balance", "form.stock_balance.sachets_remaining"],
-    "receipt": {"quantity_paths": ["form.current_stock.sachets_received"], "date_paths": ["form.current_stock.date_received"]},
+    "receipt": {
+        "quantity_paths": ["form.current_stock.sachets_received"],
+        "date_paths": ["form.current_stock.date_received"],
+    },
 }
 
 
@@ -114,9 +200,16 @@ REPORTS = {
 def rule(world):
     item = world["item"]
     return DispensingRule.objects.create(
-        program_id=PROGRAM, opportunity_id=OPP, item=item, resupply_point=world["store"], active_from=date(2026, 8, 1),
-        lines=validate_lines([{"kind": "stated", "paths": ["form.rutf_dispensing.rutf_sachets_dispensed"], "unit": "sachet"}], item),
-        forms=["Visit Form"], reports=validate_reports(REPORTS),
+        program_id=PROGRAM,
+        opportunity_id=OPP,
+        item=item,
+        resupply_point=world["store"],
+        active_from=date(2026, 8, 1),
+        lines=validate_lines(
+            [{"kind": "stated", "paths": ["form.rutf_dispensing.rutf_sachets_dispensed"], "unit": "sachet"}], item
+        ),
+        forms=["Visit Form"],
+        reports=validate_reports(REPORTS),
     )
 
 
@@ -126,20 +219,34 @@ def read(visits):
 
 
 def test_the_apps_balance_is_recorded_as_a_self_reported_count(rule):
-    visit = real_shaped(9001, {"form.rutf_dispensing.rutf_sachets_dispensed": "14", "form.var.new_stock_balance": "86"}, xform="xf-9001", name="Visit Form")
+    visit = real_shaped(
+        9001,
+        {"form.rutf_dispensing.rutf_sachets_dispensed": "14", "form.var.new_stock_balance": "86"},
+        xform="xf-9001",
+        name="Visit Form",
+    )
 
     report = read([visit])
     again = read([visit])
 
     count = StockCount.objects.get(kind="self_reported")
-    assert (count.quantity, count.counted_on, count.form_submission_id, count.visit_id) == (Decimal("86"), date(2026, 9, 20), "xf-9001", "9001")
+    assert (count.quantity, count.counted_on, count.form_submission_id, count.visit_id) == (
+        Decimal("86"),
+        date(2026, 9, 20),
+        "xf-9001",
+        "9001",
+    )
     assert (report["balances_recorded"], again["balances_recorded"], again["reports_already_recorded"]) == (1, 0, 1)
 
 
 def test_a_stock_management_form_records_both_its_receipt_and_its_balance(rule):
     visit = real_shaped(
         9002,
-        {"form.current_stock.sachets_received": "300", "form.current_stock.date_received": "2026-09-18", "form.stock_balance.sachets_remaining": "320"},
+        {
+            "form.current_stock.sachets_received": "300",
+            "form.current_stock.date_received": "2026-09-18",
+            "form.stock_balance.sachets_remaining": "320",
+        },
         xform="xf-9002",
     )
 
@@ -159,25 +266,41 @@ def test_a_balance_of_zero_is_recorded_it_is_a_stockout(rule):
 
 
 def test_a_rejected_visits_balance_is_not_recorded(rule):
-    visit = {**real_shaped(9004, {"form.stock_balance.sachets_remaining": "12"}, xform="xf-9004"), "status": "rejected"}
+    visit = {
+        **real_shaped(9004, {"form.stock_balance.sachets_remaining": "12"}, xform="xf-9004"),
+        "status": "rejected",
+    }
     report = read([visit])
     assert not StockCount.objects.exists()
     assert report["balances_recorded"] == 0
 
 
 def test_a_rule_whose_item_lost_its_unit_is_refused_and_the_rest_of_the_run_goes_on(world, rule):
-    other_commodity = Commodity.objects.create(scope_key=f"prog:{PROGRAM}", slug="zinc", name="Zinc", base_unit="tablet")
-    other = Item.objects.create(scope_key=f"prog:{PROGRAM}", sku="zinc", name="Zinc", commodity=other_commodity, base_unit="tablet")
+    other_commodity = Commodity.objects.create(
+        scope_key=f"prog:{PROGRAM}", slug="zinc", name="Zinc", base_unit="tablet"
+    )
+    other = Item.objects.create(
+        scope_key=f"prog:{PROGRAM}", sku="zinc", name="Zinc", commodity=other_commodity, base_unit="tablet"
+    )
     bad = DispensingRule.objects.create(
-        program_id=PROGRAM, opportunity_id=OPP, item=other, resupply_point=world["store"], active_from=date(2026, 8, 1),
+        program_id=PROGRAM,
+        opportunity_id=OPP,
+        item=other,
+        resupply_point=world["store"],
+        active_from=date(2026, 8, 1),
         lines=validate_lines([{"kind": "stated", "paths": ["form.zinc.given"], "unit": "tablet"}], other),
-        forms=["Visit Form"], reports=validate_reports(REPORTS),
+        forms=["Visit Form"],
+        reports=validate_reports(REPORTS),
     )
     Item.objects.filter(pk=other.pk).update(base_unit="")
     Commodity.objects.filter(pk=other_commodity.pk).update(base_unit="")
     visit = real_shaped(
         9005,
-        {"form.rutf_dispensing.rutf_sachets_dispensed": "14", "form.var.new_stock_balance": "86", "form.zinc.given": "2"},
+        {
+            "form.rutf_dispensing.rutf_sachets_dispensed": "14",
+            "form.var.new_stock_balance": "86",
+            "form.zinc.given": "2",
+        },
         xform="xf-9005",
         name="Visit Form",
     )
@@ -187,4 +310,6 @@ def test_a_rule_whose_item_lost_its_unit_is_refused_and_the_rest_of_the_run_goes
     assert report["posted"] == 1
     assert report["balances_recorded"] == 1  # the sound rule only
     assert StockCount.objects.get(kind="self_reported").item == world["item"]
-    assert [(row["rule_id"], row["item_id"]) for row in report["unit_refused"] if "rule_id" in row] == [(bad.pk, other.pk)]
+    assert [(row["rule_id"], row["item_id"]) for row in report["unit_refused"] if "rule_id" in row] == [
+        (bad.pk, other.pk)
+    ]
