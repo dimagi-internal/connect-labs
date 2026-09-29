@@ -3430,12 +3430,28 @@ def semantic_explain_api(request, definition_id):
     try:
         data_access = WorkflowDataAccess(request=request)
         definition = data_access.get_definition(definition_id)
+        scope_kwargs = {}
+        program_hint = _run_program_hint(request)
+        if definition is None and program_hint is not None and data_access.program_id != program_hint:
+            # The session's labs scope is shared by every tab, so a program report
+            # left open while another tab visits an opportunity page gets that
+            # opportunity stamped on its next call -- and a program-owned
+            # definition is invisible at opportunity scope. Measured: workflow 6371
+            # (program 10082) 404'd on a column click after an audit tab moved the
+            # session to opportunity 1978. The page sends its owner as
+            # owning_program_id, so retry there; the registry is read at the same
+            # scope. Untrusted like every _run_program_hint: the caller's own token,
+            # the server's own per-user check.
+            data_access.close()
+            scope_kwargs = {"program_id": program_hint}
+            data_access = WorkflowDataAccess(request=request, **scope_kwargs)
+            definition = data_access.get_definition(definition_id)
         if definition is None:
             return JsonResponse({"error": "Workflow not found"}, status=404)
         try:
             props_doc, full_registry, llo_map, reg_settings, _deployment, registry_source = resolve_registry_for(
                 definition,
-                registry_access_factory=lambda: SemanticRegistryDataAccess(request=request),
+                registry_access_factory=lambda: SemanticRegistryDataAccess(request=request, **scope_kwargs),
             )
         except SemanticRuntimeError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
