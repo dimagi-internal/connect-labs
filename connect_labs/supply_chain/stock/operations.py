@@ -385,6 +385,7 @@ def stock_on_hand(access, supply_point_id, item_id=None, unit=None):
     return {
         "supply_point_id": point.pk,
         "ledger": figure(result["ledger"]),
+        "ledger_on_count_day": figure(result["ledger_on_count_day"]) if result["ledger_on_count_day"] else None,
         "reported": figure(result["reported"]) if result["reported"] else None,
         "variance": figure(result["variance"]) if result["variance"] else None,
         "basis": result["basis"],

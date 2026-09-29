@@ -200,9 +200,11 @@ def worker_stock(access, item_id, opportunity_id=None, as_of=None, window_days=9
     name="network_tree",
     summary=(
         "The network from central store to workers for one item, in its single unit. Each point carries its "
-        "own figures (as worker_stock); a store also carries its subtree's -- on hand, issued, dispensed and "
-        "its unapproved/estimated parts summed, cover recomputed from the subtree's own consumption (never "
-        "summed), and how many workers below it are under their minimum. as_of reads a past day."
+        "own figures (as worker_stock; its issued is what arrived at that one point). A store also carries "
+        "subtree figures: received_from_outside (what entered the subtree from beyond it, each unit counted "
+        "once), on hand, dispensed and its unapproved/estimated parts summed, cover recomputed from the "
+        "subtree's own consumption (never summed), and how many workers below it are under their minimum. "
+        "as_of reads a past day."
     ),
     input_schema=obj({"item_id": ID, "as_of": _DATE, "window_days": _WINDOW}, required=("item_id",)),
 )

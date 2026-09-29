@@ -238,14 +238,22 @@ def test_a_stores_subtree_is_its_own_stock_plus_its_childrens(item, world):
     assert sorted(c.point.slug for c in partner.children) == ["worker-a", "worker-b"]
 
 
-def test_issued_sums_every_hop_and_received_from_outside_counts_each_sachet_once(item, world):
+def test_a_store_shows_what_came_in_from_outside_once_never_a_hop_summed_issued(item, world):
+    """1000 sachets came into the network. Central -> partner -> workers moves them
+    twice more, and a store level must still say 1000, never 2000."""
     (central,) = belief.network_tree(PROGRAM, item, on_date=TODAY)
     (partner,) = central.children
 
-    assert partner.subtree["issued"] == sachets(1000)  # 600 into the partner + 400 into its workers
-    assert partner.subtree["received_from_outside"] == sachets(600)
-    assert central.subtree["issued"] == sachets(2000)
     assert central.subtree["received_from_outside"] == sachets(1000)
+    assert partner.subtree["received_from_outside"] == sachets(600)
+    assert "issued" not in central.subtree and "issued" not in partner.subtree
+    # `issued` stays a per-point figure: what arrived at that one point.
+    assert (central.issued, partner.issued) == (sachets(1000), sachets(600))
+
+    da = SupplyDataAccess(program_id=PROGRAM, caller=SYSTEM)
+    wired = call_operation("network_tree", da, {"item_id": item.pk, "as_of": TODAY.isoformat()})["roots"][0]
+    assert wired["subtree"]["received_from_outside"] == {"amount": "1000", "unit": "sachet"}
+    assert "issued" not in wired["subtree"]
 
 
 def test_subtree_cover_is_recomputed_from_its_consumption_not_summed(item, world):
@@ -402,3 +410,19 @@ def test_the_chain_summarys_network_balance_nets_a_reversal_with_its_visit(item,
 
     # 1000 received; 110 dispensed and standing; the rejected visit's 20 out and back in.
     assert _network_balance(moves, points) == {"sachet": Decimal("890")}
+
+
+def test_the_grouped_count_day_ledger_is_stock_on_hands_own(item, world):
+    """belief's grouped figure and soh.stock_on_hand -- which the checks feed reads --
+    are one definition: the ledger at the end of the count day, and reported minus it."""
+    from connect_labs.supply_chain.stock.services import soh
+
+    move(item, "distribution", 50, ago(2), frm=world["partner"], to=world["a"])
+    count(item, world["partner"], "physical_count", ago(40), 180)
+    move(item, "transfer", 30, ago(40), frm=world["central"], to=world["partner"])
+
+    found = belief.beliefs_for(PROGRAM, item, list(world.values()), on_date=TODAY)
+    for name, pt in world.items():
+        mine, theirs = found[pt.pk], soh.stock_on_hand(PROGRAM, pt, item=item, unit="sachet", on_date=TODAY)
+        assert (mine.ledger_on_count_day, mine.variance) == (theirs["ledger_on_count_day"], theirs["variance"]), name
+    assert found[world["a"].pk].variance == sachets(-10)
