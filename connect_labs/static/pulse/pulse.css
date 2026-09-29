@@ -3265,7 +3265,57 @@
   max-width: 320px;
 }
 .conn-kpis {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.conn-kpis .net-kpi-n {
+  font-size: 26px;
+}
+.conn-date {
+  min-width: 0;
+  color-scheme: dark;
+}
+.conn-clear,
+.conn-more {
+  background: transparent;
+  cursor: pointer;
+  align-self: center;
+}
+.conn-more {
+  margin: 10px 18px 16px;
+}
+.conn-colour {
+  margin-left: auto;
+}
+.conn-colour + .net-legend {
+  margin-left: 0;
+}
+.conn-table {
+  font-size: 12.5px;
+}
+.conn-table .net-td {
+  padding: 7px 12px;
+  border-top: 1px solid var(--rule-soft);
+}
+.conn-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.conn-row {
+  cursor: pointer;
+}
+.conn-row:hover,
+.conn-row:focus-visible {
+  background: var(--panel-2);
+  outline: none;
+}
+.conn-name {
+  color: var(--ink);
+}
+.conn-sub {
+  color: var(--ink-3);
+  font-size: 11px;
+  margin-top: 2px;
 }
 @media (max-width: 720px) {
   .conn-kpis {
