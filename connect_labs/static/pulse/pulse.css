@@ -3286,8 +3286,46 @@
 .conn-colour {
   margin-left: auto;
 }
-.conn-colour + .net-legend {
+.conn-colour + .conn-modes + .net-legend {
   margin-left: 0;
+}
+.conn-modes {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.conn-mode {
+  background: transparent;
+  border: 0;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.conn-mode + .conn-mode {
+  border-left: 1px solid var(--rule);
+}
+.conn-mode[aria-pressed='true'] {
+  background: var(--brand-indigo);
+  color: var(--ink);
+}
+.conn-mode:focus-visible {
+  outline: 1px solid var(--brand-sky);
+}
+.conn-ramp {
+  display: inline-block;
+  width: 110px;
+  height: 9px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+.conn-ramp-lab {
+  font-variant-numeric: tabular-nums;
+}
+.conn-ramp-hot {
+  color: var(--ink-3);
 }
 .conn-table {
   font-size: 12.5px;
@@ -3324,4 +3362,8 @@
   .conn-kpis .net-kpi {
     border-bottom: 1px solid var(--rule-soft);
   }
+}
+.net-legend:has(.conn-ramp) {
+  gap: 8px;
+  align-items: center;
 }
