@@ -41,7 +41,8 @@ function WorkflowUI({
   var eligibleRows = [];
   ELIGIBLE_PIPELINE_ALIASES.forEach(function (p) {
     if (wantedDomain && p.domain !== wantedDomain) return;
-    var rows = (pipelines && pipelines[p.alias] && pipelines[p.alias].rows) || [];
+    var rows =
+      (pipelines && pipelines[p.alias] && pipelines[p.alias].rows) || [];
     eligibleRows = eligibleRows.concat(rows);
   });
   var eligibleUsernames = React.useMemo(
@@ -92,7 +93,8 @@ function WorkflowUI({
   var allVisitRows = [];
   VISIT_PIPELINE_ALIASES.forEach(function (p) {
     if (wantedDomain && p.domain !== wantedDomain) return;
-    var rows = (pipelines && pipelines[p.alias] && pipelines[p.alias].rows) || [];
+    var rows =
+      (pipelines && pipelines[p.alias] && pipelines[p.alias].rows) || [];
     rows.forEach(function (row) {
       allVisitRows.push(Object.assign({}, row, { domain: p.domain }));
     });
@@ -448,7 +450,7 @@ function WorkflowUI({
         {
           name: 'Domain filter',
           field:
-            'domainFilter state (\'production\' default / \'test\' / \'both\') -- gates which pipeline aliases are read at all: production = only the _prod pipelines (visits_prod_*, eligible_flws_prod), test = only the non-_prod pipelines, both = every pipeline, unfiltered.',
+            "domainFilter state ('production' default / 'test' / 'both') -- gates which pipeline aliases are read at all: production = only the _prod pipelines (visits_prod_*, eligible_flws_prod), test = only the non-_prod pipelines, both = every pipeline, unfiltered.",
         },
         {
           name: 'FLW eligibility gate',
@@ -474,7 +476,7 @@ function WorkflowUI({
           name: 'CC Domain',
           def: 'Which CommCare project space this visit was submitted in.',
           field:
-            "Computed client-side (domain) -- tagged onto each row from which pipeline alias it came from (visits_prod_* -> \"ccc-mbw-production\", the rest -> \"ccc-mbw-experiments-1\"), not a raw pipeline field.",
+            'Computed client-side (domain) -- tagged onto each row from which pipeline alias it came from (visits_prod_* -> "ccc-mbw-production", the rest -> "ccc-mbw-experiments-1"), not a raw pipeline field.',
         },
         {
           name: 'Mother ID',
