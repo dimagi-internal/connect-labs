@@ -114,6 +114,25 @@ def dispensing_rule_upsert(access, data):
     return record(access.upsert_dispensing_rule(data))
 
 
+def parse_until(until):
+    """`until` as a day, or None when not given; ValueError for anything that is not YYYY-MM-DD.
+
+    Strict, because a replay's posts are permanent: an `until` read as "no
+    limit" would post every visit to today and the history could never be
+    rebuilt as intended.
+    """
+    if until is None:
+        return None
+    from datetime import date
+
+    try:
+        if len(str(until)) != 10:
+            raise ValueError
+        return date.fromisoformat(str(until))
+    except ValueError:
+        raise ValueError(f"until {until!r} is not a YYYY-MM-DD day") from None
+
+
 @register_operation(
     name="visit_consumption_ingest",
     summary=(
@@ -131,14 +150,9 @@ def dispensing_rule_upsert(access, data):
 def visit_consumption_ingest(access, opportunity_id, until=None, refresh=False):
     from connect_labs.supply_chain import scopes
     from connect_labs.supply_chain.stock.services import visit_reader, visit_source
-    from connect_labs.supply_chain.stock.services.dispensing import read_date
 
-    # Before any read: a real programme's visits are not even fetched.
+    # Before any read or write: a bad day, or a real programme, stops the run here.
+    day = parse_until(until)
     scopes.require_synthetic(access.program_id, "read visits into the stock ledger")
     visits = visit_source.fetch_visits(opportunity_id, access.access_token, force_refresh=refresh)
-    return visit_reader.ingest_visit_consumption(
-        access,
-        opportunity_id=opportunity_id,
-        visits=visits,
-        until=read_date(until) if until else None,
-    )
+    return visit_reader.ingest_visit_consumption(access, opportunity_id=opportunity_id, visits=visits, until=day)

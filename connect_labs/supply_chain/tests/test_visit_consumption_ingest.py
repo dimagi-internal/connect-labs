@@ -190,6 +190,49 @@ def test_the_beat_task_runs_the_scheduled_reader():
 
 
 def test_the_beat_schedule_exists():
+    """Runs the migration's own function rather than trusting the seeded row: a
+    TransactionTestCase elsewhere can flush the table (as test_alerts notes)."""
+    import importlib
+
+    importlib.import_module(
+        "connect_labs.supply_chain.migrations.0039_seed_visit_consumption_beat_task"
+    ).create_periodic_task(None, None)
     task = PeriodicTask.objects.get(name="supply_chain_visit_consumption")
     assert task.task == "connect_labs.supply_chain.tasks.ingest_visit_consumption"
     assert (task.interval.every, task.interval.period) == (1, "hours")
+
+
+@pytest.mark.parametrize("bad", ["2026/09/19", "yesterday", "2026-9-19", "20260919", "", "2026-09-19T00:00"])
+def test_a_bad_until_is_refused_before_anything_is_read(da, rule, bad):
+    with patch(FETCH) as fetch, pytest.raises(ValueError, match="is not a YYYY-MM-DD day"):
+        call_operation("visit_consumption_ingest", da, {"opportunity_id": OPP, "until": bad})
+    fetch.assert_not_called()
+    assert not OperationCall.objects.filter(operation="visit_consumption_ingest").exists()
+
+
+def test_the_command_refuses_a_bad_until(da, rule):
+    from django.core.management.base import CommandError
+
+    with patch(FETCH) as fetch, pytest.raises(CommandError, match="is not a YYYY-MM-DD day"):
+        call_command(
+            "supply_ingest_visit_consumption",
+            "--program",
+            str(OPP),
+            "--opportunity",
+            str(OPP),
+            "--until",
+            "21/09/2026",
+        )
+    fetch.assert_not_called()
+
+
+def test_the_scheduled_run_reverses_under_a_rule_since_switched_off(da, rule):
+    with patch(FETCH, return_value=[export_record(9001, 14)]):
+        visit_reader.run_scheduled()
+    DispensingRule.objects.filter(pk=rule.pk).update(status="inactive")
+
+    with patch(FETCH, return_value=[export_record(9001, 14, status="rejected")]):
+        results = visit_reader.run_scheduled()
+
+    assert results[str(OPP)]["reversed"] == 1
+    assert Movement.objects.filter(visit_id="9001", reverses__isnull=False).count() == 1
