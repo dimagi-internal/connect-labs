@@ -10,8 +10,7 @@ Everything is written through the same operations a person or an agent uses,
 dated with `seed_overrides` so the history reads week by week: an as-of page
 on week 3 shows week 3. Visits are uploaded as synthetic fixtures and read by
 the real reader through `fetch_raw_visits`, so a rule written here transfers
-to the real opportunity unchanged -- once the few STAND-IN paths (see
-README) are confirmed against the released app.
+to the real opportunity unchanged.
 """
 
 import random
@@ -61,15 +60,19 @@ OVER_COUNTS = "worker-marula"
 REJECTED_LATER = "worker-neem"
 NEVER_ANSWERS = "worker-sapele"
 
-# The released app's form names, which the rules' `forms` filters name.
+# The released app's form names, carried as `@name` on every fixture.
 FORM_SCREENING, FORM_VISIT, FORM_STOCK = "Screening", "Visit Form", "Stock Management"
+# The released app's form identifiers (`@xmlns`), which the rules' `forms`
+# filters name: a form's name can be retranslated, its xmlns cannot. Stock
+# Management's xmlns was not read, so its fixtures carry only `@name`; no rule
+# filters on it (reports read every form a rule sees).
+XMLNS = {
+    FORM_SCREENING: "http://openrosa.org/formdesigner/92026AF7-291B-4E25-A60B-82486FD0C799",
+    FORM_VISIT: "http://openrosa.org/formdesigner/991BB731-417A-46D2-B1F5-1E4CD65C8D89",
+}
 
-# form_json paths. Everything not marked STAND-IN is copied verbatim from the
-# released app (plan addendum, items 2, 3, 6 and 11). The Vitamin A paths are
-# elided there ("…vita_group", "…prepare_vita_dosage"); the stand-ins put them
-# where the same app keeps albendazole (Screening `form.chc_commodities.dw_group`,
-# Visit Form `form.visit_2_or_greater.dw_group`). Confirm them against the
-# released app before copying the Vitamin A rules to a real opportunity.
+# form_json paths, every one copied verbatim from the released app's
+# definition (plan addendum items 2, 3, 6 and 11; Vitamin A read afterwards).
 PATHS = {
     # RUTF, Screening: the deduction is already the total (ration, or 1 for an appetite test alone).
     "rutf_screening_total": "form.screening_outcome.rutf_stock_deduction",
@@ -90,15 +93,12 @@ PATHS = {
     # mRDT.
     "mrdt_screening": "form.visit_1.fever_treatment.mrdt_result",
     "mrdt_visit": "form.visit_2_or_greater.fever.mrdt_result",
-    # Vitamin A -- every path below is a STAND-IN (see above).
-    "vita_screening": "form.chc_commodities.vita_group.va_delivered",
-    "vita_visit": "form.visit_2_or_greater.vita_group.va_delivered",
-    "vita_6_11_screening": "form.chc_commodities.vita_group.prepare_vita_dosage.va_eligible_dose_6mo_to_11mo",
-    "vita_1_2_screening": "form.chc_commodities.vita_group.prepare_vita_dosage.va_eligible_dose_1yr_2year",
-    "vita_2_5_screening": "form.chc_commodities.vita_group.prepare_vita_dosage.va_eligible_dose_2yr_5yr",
-    "vita_6_11_visit": "form.visit_2_or_greater.vita_group.prepare_vita_dosage.va_eligible_dose_6mo_to_11mo",
-    "vita_1_2_visit": "form.visit_2_or_greater.vita_group.prepare_vita_dosage.va_eligible_dose_1yr_2year",
-    "vita_2_5_visit": "form.visit_2_or_greater.vita_group.prepare_vita_dosage.va_eligible_dose_2yr_5yr",
+    # Vitamin A: on the Screening form only (the Visit Form has no Vitamin A
+    # step). The dose question answered says the strength.
+    "vita_given": "form.chc_commodities.vita_group.va_delivered",
+    "vita_6_11": "form.chc_commodities.vita_group.prepare_vita_dosage.va_eligible_dose_6mo_to_11mo",
+    "vita_1_2": "form.chc_commodities.vita_group.prepare_vita_dosage.va_eligible_dose_1yr_2year",
+    "vita_2_5": "form.chc_commodities.vita_group.prepare_vita_dosage.va_eligible_dose_2yr_5yr",
 }
 
 # The app's own answer strings. The missing space in the second is the app's:
@@ -110,9 +110,8 @@ AMOX_DOSES = {
 # Presumptive amoxicillin's dose is a label in the app, not a field: a fixed protocol quantity.
 AMOX_PRESUMPTIVE_TABLETS = 10
 MRDT_RESULTS = ("positive", "negative", "invalid")
-# What a dose question holds is not in the addendum; only that it was answered
-# matters to the rule (requires_paths). STAND-IN value.
-DOSE_ANSWERED = "OK"
+# What a prepared Vitamin A dose question holds (an MSelect).
+DOSE_PREPARED = "prepared_dosage"
 
 
 @dataclass(frozen=True)
@@ -173,6 +172,13 @@ def _nest(answers: dict) -> dict:
     return body
 
 
+def _identity(form_name) -> dict:
+    found = {"@name": form_name}
+    if form_name in XMLNS:
+        found["@xmlns"] = XMLNS[form_name]
+    return found
+
+
 def _visit(visit_id, username, user_id, on, status, form_name, answers, modified=None):
     """One row shaped as Connect's user_visits export holds it."""
     xform = str(uuid.UUID(int=visit_id))
@@ -191,7 +197,7 @@ def _visit(visit_id, username, user_id, on, status, form_name, answers, modified
         "location": "",
         "flagged": False,
         "flag_reason": {},
-        "form_json": {"id": xform, "form": {"@name": form_name, **_nest(answers)}},
+        "form_json": {"id": xform, "form": {**_identity(form_name), **_nest(answers)}},
         "completed_work": "",
         "status_modified_date": f"{(modified or on).isoformat()}T12:00:00Z",
         "review_status": "",
@@ -229,12 +235,10 @@ def _rutf(rng, answers, screening, app, *, force_ration=False) -> Decimal:
 
 def _protocol(rng, answers, screening) -> None:
     """The protocol items' answers. A question the app did not show is absent, as in a real submission."""
-    roll = rng.random()
-    if roll < 0.2:
-        where = "screening" if screening else "visit"
+    if screening and rng.random() < 0.5:
         dose = rng.choice(("vita_6_11", "vita_1_2", "vita_2_5"))
-        answers[PATHS[f"vita_{where}"]] = "child_fine" if rng.random() < 0.9 else "child_unwell"
-        answers[PATHS[f"{dose}_{where}"]] = DOSE_ANSWERED
+        answers[PATHS["vita_given"]] = "child_fine"
+        answers[PATHS[dose]] = DOSE_PREPARED
     roll = rng.random()
     if screening and roll < 0.1:
         answers[PATHS["amox_presumptive"]] = "yes"
@@ -339,25 +343,24 @@ def rule_data(items: dict, resupply_point_id: int, start: date, *, opportunity_i
         "opportunity_id": opportunity_id,
         "resupply_point_id": resupply_point_id,
         "active_from": start.isoformat(),
-        "forms": [FORM_SCREENING, FORM_VISIT],
+        "forms": [XMLNS[FORM_SCREENING], XMLNS[FORM_VISIT]],
     }
 
     def stated(key, form):
-        return {"kind": "stated", "paths": [PATHS[key]], "unit": "sachet", "forms": [form]}
+        return {"kind": "stated", "paths": [PATHS[key]], "unit": "sachet", "forms": [XMLNS[form]]}
 
     def vitamin_a(doses):
-        """One line per (form, dose question): requires_paths needs every path it names."""
+        """One line per dose question: requires_paths needs EVERY path it names, so "either" is two lines."""
         return [
             {
                 "kind": "protocol",
-                "given_paths": [PATHS[f"vita_{where}"]],
+                "given_paths": [PATHS["vita_given"]],
                 "given_values": ["child_fine"],
-                "requires_paths": [PATHS[f"{dose}_{where}"]],
+                "requires_paths": [PATHS[dose]],
                 "quantity": "1",
                 "unit": "capsule",
-                "forms": [form],
+                "forms": [XMLNS[FORM_SCREENING]],
             }
-            for where, form in (("screening", FORM_SCREENING), ("visit", FORM_VISIT))
             for dose in doses
         ]
 

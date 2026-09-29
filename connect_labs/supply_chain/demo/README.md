@@ -30,9 +30,15 @@ app" section, which overrides the spec's §9 table):
   questions with the app's exact strings -- including the missing space in
   `"2 tablets every 12 hours(total 20 tablets)"` -- plus presumptive
   amoxicillin (`form.visit_1.presumptive_amoxicillin_given = yes`, 10 tablets).
-- **Vitamin A** (estimated), as two items: 100,000 IU when the 6-11 month
-  dose question was answered, 200,000 IU for either older band; given only
-  when `va_delivered` contains `child_fine`.
+- **Vitamin A** (estimated), on the Screening form only (the Visit Form has
+  no Vitamin A step), as two items. Given when
+  `form.chc_commodities.vita_group.va_delivered` contains `child_fine`; the
+  dose question answered (`prepared_dosage`) under
+  `form.chc_commodities.vita_group.prepare_vita_dosage` says the strength:
+  `va_eligible_dose_6mo_to_11mo` is one 100,000 IU capsule,
+  `va_eligible_dose_1yr_2year` or `va_eligible_dose_2yr_5yr` one 200,000 IU
+  capsule (two lines on that rule, because `requires_paths` needs every path
+  it names).
 - **mRDT** (estimated): one per answered `mrdt_result`, `invalid` included.
 - **Off, deliberately**: AL and paracetamol (no dose field / mixed units),
   ORS and zinc (the app says both 4 sachets and 2 co-packs), albendazole (not
@@ -55,16 +61,17 @@ and the reversal appears from week 4's Sunday.
 Where to look: `/supply/network/`, `/supply/workers/`, one worker's page,
 and `?as_of=` any day in the eight weeks.
 
-## Stand-ins
+## Paths and form identifiers
 
-Marked `STAND-IN` in `PATHS`: the Vitamin A paths. The addendum elides them
-(`…vita_group.va_delivered`, `…prepare_vita_dosage.va_eligible_dose_*`); the
-seeder puts them where the same app keeps albendazole
-(`form.chc_commodities.…` on Screening, `form.visit_2_or_greater.…` on Visit
-Form). The dose questions' own answer (`"OK"`) is a stand-in too; the rule
-only needs them answered. `child_unwell` is an invented "not given" value.
-Before copying the Vitamin A rules to opportunity 2230, read the released
-app with `get_opportunity_apps` and replace each stand-in.
+Every path and answer string in `PATHS`, `AMOX_DOSES` and `DOSE_PREPARED` is
+the released app's own, read from its definition. The rules filter forms by
+xmlns (`XMLNS`): Screening is
+`http://openrosa.org/formdesigner/92026AF7-291B-4E25-A60B-82486FD0C799`,
+Visit Form `http://openrosa.org/formdesigner/991BB731-417A-46D2-B1F5-1E4CD65C8D89`.
+Every fixture also carries its form's `@name`. **Stock Management's xmlns
+was not read**, so its fixtures carry only `@name: "Stock Management"`. No
+rule filters on it (the balance and receipt reports read every form a rule
+sees), so nothing depends on it; add it to `XMLNS` once known.
 
 ## Running it
 

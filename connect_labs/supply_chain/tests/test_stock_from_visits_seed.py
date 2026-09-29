@@ -28,6 +28,7 @@ from connect_labs.supply_chain.demo.stock_from_visits import (
     REJECTED_LATER,
     RUNS_OUT,
     WORKERS,
+    XMLNS,
     build_world,
     seed,
 )
@@ -118,6 +119,27 @@ def test_the_screening_deduction_is_the_total_and_the_appetite_test_is_a_whole_s
             assert total == ration  # enrolled: the deduction IS the ration, never ration + 1
     appetite = {answer(v, PATHS["appetite_visit"]) for v in forms_named(world, FORM_VISIT)} - {None}
     assert appetite == {"0", "1"}
+
+
+def test_vitamin_a_is_asked_on_the_screening_form_only():
+    world = build_world(START)
+    vita = [p for p in PATHS if p.startswith("vita_")]
+    assert any(answer(v, PATHS["vita_given"]) for v in forms_named(world, FORM_SCREENING))
+    for v in forms_named(world, FORM_VISIT) + forms_named(world, FORM_STOCK):
+        assert all(answer(v, PATHS[k]) is None for k in vita)
+    for v in forms_named(world, FORM_SCREENING):
+        if answer(v, PATHS["vita_given"]) is not None:
+            doses = [k for k in ("vita_6_11", "vita_1_2", "vita_2_5") if answer(v, PATHS[k]) is not None]
+            assert len(doses) == 1 and answer(v, PATHS[doses[0]]) == "prepared_dosage"
+
+
+def test_the_app_forms_carry_the_released_apps_xmlns():
+    world = build_world(START)
+    for name in (FORM_SCREENING, FORM_VISIT):
+        assert {v["form_json"]["form"]["@xmlns"] for v in forms_named(world, name)} == {XMLNS[name]}
+    assert XMLNS[FORM_SCREENING].endswith("92026AF7-291B-4E25-A60B-82486FD0C799")
+    assert XMLNS[FORM_VISIT].endswith("991BB731-417A-46D2-B1F5-1E4CD65C8D89")
+    assert all("@xmlns" not in v["form_json"]["form"] for v in forms_named(world, FORM_STOCK))
 
 
 def test_one_visit_is_rejected_after_it_was_counted():
@@ -248,21 +270,27 @@ def test_a_screening_posts_its_deduction_alone_and_a_visit_adds_the_whole_appeti
 def test_vitamin_a_strength_follows_the_dose_question_answered(seeded):
     opp, world = seeded["opp"], world_of(seeded)
 
-    def given(v, dose_keys):
-        return any(answer(v, PATHS[k]) is not None for k in dose_keys) and "child_fine" in str(
-            answer(v, PATHS["vita_screening"]) or answer(v, PATHS["vita_visit"])
+    def prepared(v, doses):
+        return answer(v, PATHS["vita_given"]) == "child_fine" and any(
+            answer(v, PATHS[d]) == "prepared_dosage" for d in doses
         )
 
-    infant = next(v for v in world.visits if given(v, ("vita_6_11_screening", "vita_6_11_visit")))
-    older = next(
-        v
-        for v in world.visits
-        if given(v, ("vita_1_2_screening", "vita_1_2_visit", "vita_2_5_screening", "vita_2_5_visit"))
-    )
+    infant = next(v for v in world.visits if prepared(v, ("vita_6_11",)))
+    one_to_two = next(v for v in world.visits if prepared(v, ("vita_1_2",)))
+    two_to_five = next(v for v in world.visits if prepared(v, ("vita_2_5",)))
     assert posted_for(opp, infant, "syn-vita100k-100").quantity == Decimal("1")
     assert posted_for(opp, infant, "syn-vita200k-100") is None
-    assert posted_for(opp, older, "syn-vita200k-100").quantity == Decimal("1")
-    assert posted_for(opp, older, "syn-vita100k-100") is None
+    for older in (one_to_two, two_to_five):  # either dose question: one 200,000 IU capsule, never two
+        assert posted_for(opp, older, "syn-vita200k-100").quantity == Decimal("1")
+        assert posted_for(opp, older, "syn-vita100k-100") is None
+
+
+def test_vitamin_a_rules_read_the_screening_form_by_its_xmlns(seeded):
+    rules = DispensingRule.objects.filter(program_id=seeded["opp"], item__sku__startswith="syn-vita")
+    for rule in rules:
+        assert {f for line in rule.lines for f in line["forms"]} == {XMLNS[FORM_SCREENING]}
+        assert {p for line in rule.lines for p in line["given_paths"]} == {PATHS["vita_given"]}
+    assert len(rules.get(item__sku="syn-vita200k-100").lines) == 2  # one line per dose question
 
 
 def test_amoxicillin_reads_the_dose_the_app_chose(seeded):
