@@ -14,6 +14,8 @@ where they sit in the work: you need somewhere for stock to arrive before
 there is any stock to look at.
 """
 
+from decimal import Decimal
+
 from django.http import Http404
 from django.urls import reverse
 
@@ -24,8 +26,8 @@ from connect_labs.supply_chain.models import SupplyPoint
 from connect_labs.supply_chain.network.forms import OrgForm, OrgMergeForm, SupplyPointForm
 from connect_labs.supply_chain.views import OperationBase
 
-# The kinds, in the order a network reads top-down. A dict rather than a sort
-# key so a kind nobody has any of simply does not appear.
+# The kinds, in the order a network reads top-down: siblings in the tree are
+# ordered by it, so a store comes before the workers beside it.
 KIND_ORDER = [
     ("central_store", "Central stores"),
     ("regional_store", "Regional stores"),
@@ -41,14 +43,17 @@ KIND_ORDER = [
 
 
 class NetworkView(OperationBase):
-    """Where stock can rest in this programme, grouped by what each place is.
+    """Where stock can rest in this programme, as one tree from the top store down to each worker.
 
-    Above the directory, the network as a tree -- central store down to each
-    worker -- with what each place holds of one item (design 2026-09-28 §6.1).
+    Every point appears once, in the tree, under the point it is resupplied
+    from (design 2026-09-28 §6.1): the tree IS the directory. Each node carries
+    what the old per-kind tables said (where, band, how it is known, Edit)
+    and, for one item, what it holds -- from `network_tree`, one grouped read
+    whatever the network's size. Inactive and in-transit points sit in the
+    tree too, without figures (belief reads only active holdings).
 
-    Grouped rather than sorted, because the groups are the network's shape:
-    four central stores and two hundred field workers is a different thing
-    from the reverse, and a flat alphabetical list hides which it is.
+    Siblings read top-down, stores before the workers they supply, in the
+    order of KIND_ORDER and then by name.
     """
 
     template_name = "supply_chain/network.html"
@@ -59,41 +64,123 @@ class NetworkView(OperationBase):
         if not context["has_program_context"]:
             return context
 
-        points = self.op("supply_point_list", include_inactive=True)
-        by_id = {p["id"]: p for p in points}
-        for point in points:
-            parent = by_id.get(point.get("parent_id"))
-            point["parent_name"] = parent["name"] if parent else ""
-
-        grouped = []
-        for kind, label in KIND_ORDER:
-            of_kind = [p for p in points if p["kind"] == kind]
-            if of_kind:
-                grouped.append({"kind": kind, "label": label, "points": of_kind})
-        context["groups"] = grouped
-        context["total"] = len(points)
-
-        # Stock through the network for one item a dispensing rule gives out,
-        # from `network_tree` alone: one grouped read whatever the network's size.
         from connect_labs.supply_chain.stock.visit_views import as_of_payload, chosen_item, rule_items
 
+        points = self.op("supply_point_list", include_inactive=True)
+        context["total"] = len(points)
+
+        # The item whose stock the tree shows: one a dispensing rule gives
+        # out, else any item in the catalogue (a network with no rule yet
+        # still has stores holding stock).
         items = rule_items(self.op)
+        if not items and points:
+            items = [{"id": i["id"], "name": i["name"]} for i in self.op("item_list")]
         item = chosen_item(self.request, items)
-        context.update(tree_items=items, tree_item=item)
+        figures, stock = {}, None
         if item is not None:
-            tree = self.op("network_tree", item_id=item["id"], **as_of_payload(self.request))
-            for root in tree["roots"]:
-                _split_children(root)
-            context["tree"] = tree
+            stock = self.op("network_tree", item_id=item["id"], **as_of_payload(self.request))
+            _flatten(stock["roots"], figures)
+        context.update(
+            tree_items=items,
+            tree_item=item,
+            stock=stock,
+            roots=build_tree(points, figures),
+        )
         return context
 
 
-def _split_children(node):
-    """Stores below a node are shown; its workers wait behind one "show" so a store of 200 stays one row."""
-    node["store_children"] = [c for c in node["children"] if c["kind"] != "user_held"]
-    node["worker_children"] = [c for c in node["children"] if c["kind"] == "user_held"]
-    for child in node["store_children"]:
-        _split_children(child)
+_KIND_RANK = {kind: n for n, (kind, _) in enumerate(KIND_ORDER)}
+
+
+def _flatten(rows, into):
+    for row in rows:
+        into[row["supply_point_id"]] = row
+        _flatten(row["children"], into)
+
+
+def passes_stock_on(stock) -> bool:
+    """Whether a point holds nothing BY DESIGN: it hands on everything it receives.
+
+    True for a point that is not a worker, has points below it, holds
+    exactly zero itself, and whose points below hold some of the item. Such
+    a store's own empty holding is not a stock-out -- it is how it works --
+    so the page says "passes stock on" in grey instead of a red alarm. A
+    point meant to hold stock (a worker, a store with nothing below it) or
+    a store whose whole subtree is empty keeps the alarm: there, empty is the
+    finding.
+    """
+    if not stock or stock.get("kind") == "user_held" or not stock.get("subtree"):
+        return False
+    own, below = _amount(stock.get("on_hand")), _amount(stock["subtree"].get("on_hand"))
+    return own is not None and below is not None and own == 0 and below > 0
+
+
+def _amount(cell):
+    try:
+        return Decimal(cell["amount"]) if isinstance(cell, dict) and cell.get("amount") is not None else None
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+
+
+def band_of(stock) -> str | None:
+    """The band a node's own holding shows, or None for a store that passes stock on.
+
+    As the stock page has it, nothing left of stock that did arrive is a
+    stock-out whatever the rate -- "cover unknown" beside a 0 read as if the
+    point's state were unknown. A pass-through store is the exception: its
+    empty shelf is by design (`passes_stock_on`).
+    """
+    if not stock or passes_stock_on(stock):
+        return None
+    if _amount(stock.get("on_hand")) == 0 and (_amount(stock.get("issued")) or 0) > 0:
+        return "stockout"
+    return stock.get("status")
+
+
+def build_tree(points, figures) -> list[dict]:
+    """The points as a forest by `parent_supply_point_id`, each point exactly once.
+
+    A point whose parent is not in the programme is a root; a parent loop is
+    broken at the first point met again, and the rest of it shown under it.
+    Each node gets `stock` (its `network_tree` row, or None), `passes_on`,
+    `band` (`band_of`) and its children split into `store_children` (always shown) and
+    `worker_children` (behind one "show", so a store of 200 stays one row).
+    """
+    by_id = {p["id"]: p for p in points}
+
+    def order(p):
+        return (_KIND_RANK.get(p["kind"], len(_KIND_RANK)), p["name"].lower(), p["id"])
+
+    children: dict = {}
+    for p in points:
+        parent = p.get("parent_supply_point_id")
+        if parent in by_id and parent != p["id"]:
+            children.setdefault(parent, []).append(p)
+    visited: set = set()
+
+    def node(p):
+        visited.add(p["id"])
+        stock = figures.get(p["id"])
+        below = [node(c) for c in sorted(children.get(p["id"], []), key=order) if c["id"] not in visited]
+        return {
+            **p,
+            "stock": stock,
+            "passes_on": passes_stock_on(stock),
+            "band": band_of(stock),
+            "store_children": [c for c in below if c["kind"] != "user_held"],
+            "worker_children": [c for c in below if c["kind"] == "user_held"],
+        }
+
+    roots = [
+        node(p)
+        for p in sorted(points, key=order)
+        if (p.get("parent_supply_point_id") not in by_id or p.get("parent_supply_point_id") == p["id"])
+        and p["id"] not in visited
+    ]
+    for p in sorted(points, key=order):  # only a parent loop leaves anything unvisited
+        if p["id"] not in visited:
+            roots.append(node(p))
+    return roots
 
 
 class OrganisationDirectoryView(OperationBase):

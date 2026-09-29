@@ -59,8 +59,8 @@ outside instead, on the Network page.
   <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6 text-sm">
     <div class="bg-white border border-brand-border-light rounded-lg p-3">
       <dt class="text-gray-500">On hand (ledger)</dt>
-      <dd class="text-lg text-gray-900 tabular-nums">{{ worker.on_hand|resting_on:worker }}</dd>
-      <dd class="mt-1">{% include 'supply_chain/_stock_band.html' with status=worker.status %}</dd>
+      <dd class="text-base text-gray-900 tabular-nums">{{ worker.on_hand|on_hand_words:worker }}</dd>
+      <dd class="mt-1">{% include 'supply_chain/_stock_band.html' with status=worker.band %}</dd>
     </div>
     <div class="bg-white border border-brand-border-light rounded-lg p-3">
       <dt class="text-gray-500">Issued</dt>
@@ -69,7 +69,7 @@ outside instead, on the Network page.
     </div>
     <div class="bg-white border border-brand-border-light rounded-lg p-3">
       <dt class="text-gray-500">Dispensed</dt>
-      <dd class="text-lg text-gray-900 tabular-nums">{{ worker.dispensed|resting_on:worker }}</dd>
+      <dd class="text-base text-gray-900 tabular-nums">{{ worker.dispensed|dispensed_words:worker }}</dd>
       {% if worker.no_answer_visits %}<dd class="text-xs text-gray-600">{{ worker.no_answer_visits }} visit{{ worker.no_answer_visits|pluralize }} did not say, so not counted</dd>{% endif %}
     </div>
     <div class="bg-white border border-brand-border-light rounded-lg p-3">
@@ -87,7 +87,7 @@ outside instead, on the Network page.
       <dt class="text-gray-500">Days to stock-out</dt>
       <dd class="text-lg text-gray-900 tabular-nums">{{ worker.days_to_stockout|days_text }}</dd>
       {% for reason in worker.days_to_stockout|unconfirmed_reasons %}<dd class="text-xs text-gray-500">{{ reason }}</dd>{% endfor %}
-      <dd class="text-xs text-gray-600">{{ worker.months_of_stock|months_text }} of cover{% if worker.min_months_of_stock %} (band {{ worker.min_months_of_stock|floatformat:"-2" }}–{{ worker.max_months_of_stock|floatformat:"-2"|default:"—" }} months){% endif %}</dd>
+      <dd class="text-xs text-gray-600">{{ worker.months_of_stock|months_text }}{% if worker.min_months_of_stock %} (band {{ worker.min_months_of_stock|floatformat:"-2" }}–{{ worker.max_months_of_stock|floatformat:"-2"|default:"—" }} months){% endif %}</dd>
       {% if worker|rests_on_unsettled %}
         <dd class="text-xs text-amber-900">rate includes the unapproved and estimated dispensing above</dd>
       {% endif %}
