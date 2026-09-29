@@ -156,3 +156,65 @@ def visit_consumption_ingest(access, opportunity_id, until=None, refresh=False):
     scopes.require_synthetic(access.program_id, "read visits into the stock ledger")
     visits = visit_source.fetch_visits(opportunity_id, access.access_token, force_refresh=refresh)
     return visit_reader.ingest_visit_consumption(access, opportunity_id=opportunity_id, visits=visits, until=day)
+
+
+_WINDOW = {"type": "integer", "minimum": 30, "maximum": 730}
+
+
+def _on(as_of):
+    from datetime import date
+
+    return date.fromisoformat(as_of) if as_of else None
+
+
+@register_operation(
+    name="worker_stock",
+    summary=(
+        "What we believe each field worker holds of one item, in its single unit: issued, dispensed (and how "
+        "much of that rests on visits not yet approved or on protocol estimates), ledger on hand, the last "
+        "count, the ledger on the count day and variance_reported_minus_ledger, days since checked, months "
+        "of cover, days to stock-out, and receipts the worker reported that no recorded delivery explains. "
+        "One row per worker, by name -- nothing is ranked. as_of reads a past day."
+    ),
+    input_schema=obj(
+        {"item_id": ID, "opportunity_id": ID, "as_of": _DATE, "window_days": _WINDOW}, required=("item_id",)
+    ),
+)
+def worker_stock(access, item_id, opportunity_id=None, as_of=None, window_days=90):
+    from connect_labs.supply_chain.stock.services import belief
+
+    item = access._resolve_item(item_id)
+    rows = belief.worker_beliefs(
+        access._require_program(), item, opportunity_id=opportunity_id, on_date=_on(as_of), window_days=window_days
+    )
+    return {
+        "item_id": item.pk,
+        "item_name": item.name,
+        "unit": belief.unit_of(item),
+        "as_of": as_of,
+        "workers": [belief.wire(r) for r in rows],
+    }
+
+
+@register_operation(
+    name="network_tree",
+    summary=(
+        "The network from central store to workers for one item, in its single unit. Each point carries its "
+        "own figures (as worker_stock); a store also carries its subtree's -- on hand, issued, dispensed and "
+        "its unapproved/estimated parts summed, cover recomputed from the subtree's own consumption (never "
+        "summed), and how many workers below it are under their minimum. as_of reads a past day."
+    ),
+    input_schema=obj({"item_id": ID, "as_of": _DATE, "window_days": _WINDOW}, required=("item_id",)),
+)
+def network_tree(access, item_id, as_of=None, window_days=90):
+    from connect_labs.supply_chain.stock.services import belief
+
+    item = access._resolve_item(item_id)
+    roots = belief.network_tree(access._require_program(), item, on_date=_on(as_of), window_days=window_days)
+    return {
+        "item_id": item.pk,
+        "item_name": item.name,
+        "unit": belief.unit_of(item),
+        "as_of": as_of,
+        "roots": [belief.wire(r) for r in roots],
+    }
