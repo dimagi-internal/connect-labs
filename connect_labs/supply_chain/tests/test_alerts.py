@@ -322,6 +322,42 @@ class TestMovements:
         service.run_alerts()
         assert sent == []
 
+    def test_a_reversed_visit_is_said_to_be_a_reversal_not_stock_arriving(self, da, rutf, sent):
+        """A reversal is a `consumption` INTO the worker. Mailed as "Consumption ...
+        To: Worker amina" it reads as a delivery nobody made."""
+        from datetime import date
+        from decimal import Decimal
+
+        from connect_labs.supply_chain.models import Commodity, Item, SupplyPoint
+        from connect_labs.supply_chain.stock.services import posting
+
+        worker = SupplyPoint.objects.get(pk=_worker(da, "w-amina", "amina")["id"])
+        commodity = Commodity.objects.get(pk=rutf["id"])
+        item = Item.objects.create(scope_key=commodity.scope_key, sku="rutf-sachet", name="RUTF", commodity=commodity)
+        _subscribe(da, movement_kinds=["consumption"])
+        given = posting.post_visit_consumption(
+            program_id=PROGRAM,
+            opportunity_id=None,
+            point=worker,
+            item=item,
+            quantity=Decimal("7"),
+            unit="sachet",
+            occurred_on=date(2026, 9, 20),
+            visit_id="v-rejected",
+            estimated=False,
+        )
+        posting.post_visit_reversal(given, reason="visit rejected")
+        service.run_alerts()
+
+        (email,) = sent
+        dispensed, reversed_ = email["body"].split("\n- ")[1:3]
+        assert dispensed.startswith("Consumption:") and "From: Worker amina" in dispensed
+        assert reversed_.startswith("Consumption reversed (visit v-rejected):")
+        assert "To: Worker amina" not in reversed_ and "Back into: Worker amina" in reversed_
+        assert "Consumption reversed (visit v-rejected)" in email["html"]
+        notice = AlertNotice.objects.get(facts__reverses_visit="v-rejected")
+        assert notice.subject["label"] == "reversal of consumption of RUTF"
+
 
 class TestDigest:
     def test_a_digest_holds_notices_until_a_day_has_passed_then_sends_one_email(self, da, rutf, sent):
