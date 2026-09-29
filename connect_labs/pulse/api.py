@@ -1923,7 +1923,7 @@ class ConnectivityView(View):
         if not _partner_names_allowed(request):
             return JsonResponse({"error": "not_authorised"}, status=403)
 
-        key = "pulse:connectivity:v1:" + hashlib.md5(urlencode(sorted(request.GET.items())).encode()).hexdigest()
+        key = "pulse:connectivity:v2:" + hashlib.md5(urlencode(sorted(request.GET.items())).encode()).hexdigest()
         hit = cache.get(key)
         if hit is not None:
             return HttpResponse(hit, content_type="application/json")
@@ -1935,11 +1935,16 @@ class ConnectivityView(View):
     def _build(self, request):
         sc = _program_scope(request)
         events = sc["events"]
+        # Where the visit happened, which is what a map of connectivity is
+        # about. Local to this view: no other card filters by country.
+        country = (request.GET.get("country") or "").strip().upper()[:2]
+        if country:
+            events = events.filter(country=country)
         backlog = connectivity.backlog_days()
         skip = [d["date"] for d in backlog]
 
         rows = connectivity.worker_weeks(events, exclude_days=skip)
-        workers = connectivity.per_worker(rows)
+        workers = connectivity.merge(connectivity.per_worker(rows), connectivity.worker_profiles(events))
 
         this_week = timezone.now()
         this_week = (this_week - timedelta(days=this_week.weekday())).replace(
@@ -1952,19 +1957,63 @@ class ConnectivityView(View):
             if week <= this_week
         ]
 
+        org_menu = _org_menu(request)
+        by_org = connectivity.breakdown(workers, "org")
+        # The menu omits partners it would not offer as a filter; a partner
+        # that has workers here still gets its own name rather than its slug.
+        org_name = {
+            o.slug: o.display_name for o in PulseOrganization.objects.filter(slug__in=[r["key"] for r in by_org])
+        }
+        org_name.update({o["slug"]: o["name"] for o in org_menu})
+        for r in by_org:
+            r["name"] = org_name.get(r["key"]) or r["key"]
+        by_opp = connectivity.breakdown(workers, "opportunity")
+        opp_rows = {
+            o.opportunity_id: o for o in PulseOpportunity.objects.filter(opportunity_id__in=[r["key"] for r in by_opp])
+        }
+        for r in by_opp:
+            o = opp_rows.get(r["key"])
+            r["name"] = (o.name if o else "") or f"Opportunity {r['key']}"
+            r["org"] = o.org_slug if o else ""
+            r["org_name"] = org_name.get(r["org"]) or r["org"]
+            r["active"] = bool(o and o.is_active)
+            r["end_date"] = o.end_date.isoformat() if o and o.end_date else None
+        by_country = connectivity.breakdown(workers, "country")
+        for r in by_country:
+            r["name"] = COUNTRY_NAMES.get(r["key"], r["key"])
+
         program = sc["program"]
+        opportunity = sc["opportunity"]
         return JsonResponse(
             {
                 "generated_at": timezone.now().isoformat(),
                 "program": ({"id": program.program_id, "name": program.name} if program else None),
                 "org": ({"slug": sc["org"].slug, "name": sc["org"].display_name} if sc["org"] is not None else None),
                 "service": sc["service"] or None,
+                "opportunity": (
+                    {"key": request.GET.get("opportunity"), "name": getattr(opportunity, "name", "")}
+                    if opportunity is not None
+                    else None
+                ),
+                "country": country or None,
+                "window": {
+                    "from": sc["window_from"].date().isoformat() if sc["window_from"] else None,
+                    "to": request.GET.get("to") or None,
+                },
                 "programs": [{"id": p["id"], "name": p["name"]} for p in _program_menu()],
-                "orgs": [{"slug": o["slug"], "name": o["name"]} for o in _org_menu(request)],
+                "orgs": [{"slug": o["slug"], "name": o["name"]} for o in org_menu],
+                "services": [{"slug": m["slug"], "name": m["name"]} for m in _service_menu()],
+                "countries": sorted(
+                    ({"code": r["key"], "name": r["name"]} for r in by_country), key=lambda c: c["name"]
+                ),
+                "summary": connectivity.summarise(workers.values()),
                 "distribution": connectivity.distribution(workers),
                 "weekly": weekly,
                 "hours": connectivity.by_hour(events, exclude_days=skip),
                 "map": connectivity.cells(workers, connectivity.home_cells(events)),
+                "by_org": by_org,
+                "by_opportunity": by_opp,
+                "by_country": by_country,
                 "backlog_days": [{**d, "date": d["date"].isoformat()} for d in backlog],
                 "method": connectivity.method(),
             }

@@ -217,7 +217,7 @@ def _pair_counts(events, select_sql: str, group_by: str, exclude_days) -> list[t
 BACKLOG_P10_MINUTES = 120
 # Below this many visits a day's percentile is too thin to call a backlog.
 BACKLOG_MIN_VISITS = 200
-_BACKLOG_CACHE_KEY = "pulse:connectivity:backlog:v1"
+_BACKLOG_CACHE_KEY = "pulse:connectivity:backlog:v2"
 _BACKLOG_CACHE_SECONDS = 6 * 60 * 60
 
 
@@ -290,15 +290,140 @@ def home_cells(events) -> dict[str, tuple[int, int]]:
         return {h: (la, lo) for h, la, lo in cur.fetchall()}
 
 
-def cells(workers: dict[str, dict], homes: dict[str, tuple[int, int]]) -> dict:
-    """Judged workers per home cell: how many, which classes, and the mean share.
+# A visit that reached Connect within this long of being STARTED was sent from
+# a phone with signal, whatever came before or after it -- even the shortest
+# form plus forwarding takes most of it. The pair test above cannot judge a
+# worker whose visits are sparse (a handful, days apart); this can. It is
+# evidence one way only: a visit that took longer proves nothing, because the
+# form may simply have taken longer.
+#
+# Why it exists: the interview cohorts. 1,404 interviewers, every one of them
+# working online by the nature of the work, and the pair test could judge none
+# of them (2026-09-29) -- while 97% of their visits arrived within 15 minutes.
+SEEN_ONLINE_WITHIN = dt.timedelta(minutes=15)
 
-    Cells under MIN_WORKERS_PER_CELL are withheld and only counted, so the
-    display can say how many workers are not on the map and why.
+# Delay is how long a visit sat on the phone: from when it was started to when
+# Connect received it. Offline-first means a delay is the design working, not a
+# fault -- these thresholds are where it starts to matter to someone else:
+# verification, payment and supervision all wait on it, and a phone lost before
+# it syncs loses the work.
+DELAY_BANDS = (
+    ("delayed_1d", dt.timedelta(days=1)),
+    ("delayed_3d", dt.timedelta(days=3)),
+    ("delayed_7d", dt.timedelta(days=7)),
+)
+
+# A worker with fewer visits than this in scope says nothing about a place.
+MIN_VISITS_TO_MAP = 5
+
+
+def worker_profiles(events) -> dict[str, dict]:
+    """Per worker in scope: where they mostly work, how many visits, and how delayed.
+
+    One pass. ``org``/``opportunity``/``country`` are each worker's most common
+    value, so a worker counts once in any breakdown rather than once per
+    opportunity they touched. Delays are over visits whose clock is plausible
+    (arrived no earlier than started).
+    """
+    inner = (
+        events.filter(field_ts__gte=RELIABLE_FROM)
+        .exclude(worker_hash="")
+        .values("worker_hash", "org_slug", "opportunity_id", "country", "field_ts", "sync_ts")
+    )
+    try:
+        sql, params = inner.query.sql_with_params()
+    except EmptyResultSet:
+        return {}
+    bands = ", ".join(f"COUNT(*) FILTER (WHERE ok AND delay > %s) AS {name}" for name, _ in DELAY_BANDS)
+    query = f"""
+        WITH ev AS ({sql}),
+        d AS (SELECT *, sync_ts >= field_ts AS ok, sync_ts - field_ts AS delay FROM ev)
+        SELECT worker_hash,
+               mode() WITHIN GROUP (ORDER BY org_slug) AS org,
+               mode() WITHIN GROUP (ORDER BY opportunity_id) AS opportunity,
+               mode() WITHIN GROUP (ORDER BY country) AS country,
+               COUNT(*) AS visits,
+               COUNT(*) FILTER (WHERE ok) AS timed,
+               COUNT(*) FILTER (WHERE ok AND delay <= %s) AS seen_online,
+               {bands},
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM delay)) FILTER (WHERE ok) / 60.0
+                   AS median_delay_minutes
+        FROM d GROUP BY worker_hash
+    """
+    with connection.cursor() as cur:
+        cur.execute(query, [*params, SEEN_ONLINE_WITHIN, *(t for _, t in DELAY_BANDS)])
+        cols = [c[0] for c in cur.description]
+        rows = cur.fetchall()
+    out = {}
+    for r in rows:
+        row = dict(zip(cols, r))
+        h = row.pop("worker_hash")
+        m = row["median_delay_minutes"]
+        row["median_delay_minutes"] = float(m) if m is not None else None
+        out[h] = row
+    return out
+
+
+def merge(pairs: dict[str, dict], profiles: dict[str, dict]) -> dict[str, dict]:
+    """One record per worker: the pair-test judgement beside the delay profile."""
+    blank = {"pairs": 0, "prompt": 0, "share": None, "class": None}
+    return {h: {**blank, **pairs.get(h, {}), **p} for h, p in profiles.items()}
+
+
+def summarise(workers) -> dict:
+    """The figures every slice reports -- the page's headline, a partner row, a map cell.
+
+    Class counts are over judged workers; ``seen_online`` over workers with any
+    timed visit; delay shares over visits, so a partner's figure is what share
+    of its work was held that long rather than an average of averages.
+    """
+    ws = list(workers)
+    judged = [w for w in ws if w["class"]]
+    classes = {c: sum(1 for w in judged if w["class"] == c) for c in CLASSES}
+    timed = sum(w.get("timed", 0) for w in ws)
+    medians = sorted(w["median_delay_minutes"] for w in ws if w.get("median_delay_minutes") is not None)
+    out = {
+        "workers": len(ws),
+        "judged": len(judged),
+        **classes,
+        "online_rate": (classes[ONLINE] / len(judged)) if judged else None,
+        "connected_rate": ((classes[ONLINE] + classes[SOMETIMES]) / len(judged)) if judged else None,
+        "seen_online": sum(1 for w in ws if w.get("seen_online")),
+        "seen_online_rate": (sum(1 for w in ws if w.get("seen_online")) / len(ws)) if ws else None,
+        "visits": sum(w.get("visits", 0) for w in ws),
+        # The typical worker's typical delay: the median across workers of each
+        # worker's own median. A visit-weighted median would be one busy
+        # worker's habit.
+        "median_delay_minutes": medians[len(medians) // 2] if medians else None,
+    }
+    for name, _ in DELAY_BANDS:
+        n = sum(w.get(name, 0) for w in ws)
+        out[name] = n
+        out[f"{name}_rate"] = (n / timed) if timed else None
+    return out
+
+
+def breakdown(workers: dict[str, dict], key: str, min_workers: int = 1) -> list[dict]:
+    """``summarise`` per value of ``key`` (``org``, ``opportunity``, ``country``)."""
+    groups: dict = {}
+    for w in workers.values():
+        groups.setdefault(w.get(key), []).append(w)
+    rows = [{"key": k, **summarise(ws)} for k, ws in groups.items() if k not in (None, "") and len(ws) >= min_workers]
+    rows.sort(key=lambda r: -r["workers"])
+    return rows
+
+
+def cells(workers: dict[str, dict], homes: dict[str, tuple[int, int]]) -> dict:
+    """Workers per home cell, summarised like any other slice.
+
+    A worker is mapped when they have been judged or have at least
+    MIN_VISITS_TO_MAP visits in scope. Cells under MIN_WORKERS_PER_CELL are
+    withheld and only counted, so the display can say how many workers are not
+    on the map and why.
     """
     by_cell: dict[tuple[int, int], list[dict]] = {}
     for h, w in workers.items():
-        if w["class"] is None or h not in homes:
+        if h not in homes or not (w.get("class") or w.get("visits", 0) >= MIN_VISITS_TO_MAP):
             continue
         by_cell.setdefault(homes[h], []).append(w)
     shown, withheld = [], 0
@@ -306,15 +431,13 @@ def cells(workers: dict[str, dict], homes: dict[str, tuple[int, int]]) -> dict:
         if len(ws) < MIN_WORKERS_PER_CELL:
             withheld += len(ws)
             continue
-        classes = {c: sum(1 for w in ws if w["class"] == c) for c in CLASSES}
+        judged = [w for w in ws if w.get("class")]
         shown.append(
             {
                 "lat": round((la + 0.5) * CELL_DEGREES, 2),
                 "lon": round((lo + 0.5) * CELL_DEGREES, 2),
-                "workers": len(ws),
-                **classes,
-                "share": sum(w["share"] for w in ws) / len(ws),
-                "connected_rate": (classes[ONLINE] + classes[SOMETIMES]) / len(ws),
+                **summarise(ws),
+                "share": (sum(w["share"] for w in judged) / len(judged)) if judged else None,
             }
         )
     shown.sort(key=lambda c: -c["workers"])
@@ -393,4 +516,7 @@ def method() -> dict:
         "min_pairs_worker": MIN_PAIRS_WORKER,
         "backlog_p10_minutes": BACKLOG_P10_MINUTES,
         "backlog_min_visits": BACKLOG_MIN_VISITS,
+        "seen_online_within_minutes": int(SEEN_ONLINE_WITHIN.total_seconds() // 60),
+        "delay_bands_days": {name: t.days for name, t in DELAY_BANDS},
+        "min_visits_to_map": MIN_VISITS_TO_MAP,
     }
