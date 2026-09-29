@@ -809,10 +809,9 @@ function WorkflowUI({
                   {summary.anyMethodFailCount} of {summary.total} visits shown
                   failed at least one individual method, but only{' '}
                   {summary.failCount} {summary.failCount === 1 ? 'is' : 'are'}{' '}
-                  recorded Fail in the Final verification outcome above --
-                  that field is set independently on the form and doesn't
-                  automatically follow the per-method checks (see
-                  Definitions).
+                  recorded Fail in the Final verification outcome above -- that
+                  field is set independently on the form and doesn't
+                  automatically follow the per-method checks (see Definitions).
                 </span>
               )}
             </p>
