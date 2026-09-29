@@ -33,7 +33,7 @@ what is labs':
 | Piece | Where |
 | --- | --- |
 | Page → scope and scope → tool registries, what labs vouches for, `CANOPY_HOST` built from labs' settings | `connect_labs/labs/canopy.py` |
-| The mint and the published key (SDK views, labs' URLs) | `connect_labs/labs/urls.py` → `/labs/canopy/token/`, `/labs/canopy/jwks/` |
+| The mint and the published key (SDK views, labs' URLs) | `connect_labs/labs/urls.py` → `/labs/canopy/token/`, `/labs/canopy/jwks/`, `/labs/canopy/probe/` |
 | The overlay | the SDK's `canopy_host/panel.html`, styled by `canopy.PANEL` |
 | What the agent reads | `connect_labs/mcp/tools/marketplace.py` |
 
@@ -226,6 +226,34 @@ CANOPY_CLIENT_ID=https://labs.connect.dimagi.com/canopy/oauth/client.json
 
 Unset, nothing changes: no ID-JAG is issued, `/o/token/` answers the grant with
 `unsupported_grant_type`, and the metadata does not advertise it.
+
+### canopy's live probe (on with the grant)
+
+A broken grant used to surface only when a visitor asked an agent for something
+and it could not do it: a real grant needs an ID-JAG signed by labs' key, which
+canopy never holds. So labs offers canopy a **probe** (SDK 0.4.0): canopy POSTs
+to `/labs/canopy/probe/`, authenticated as its client exactly as at `/o/token/`
+(`private_key_jwt` + a DPoP proof), and gets back a real ID-JAG for ONE fixed
+principal, which it redeems at `/o/token/` and uses at `/mcp/` — every step a
+visitor's grant takes. canopy runs it every 30 minutes and on **Test
+connection**, and checks that (a) the probe tool succeeds, (b) a tool outside
+the scope is neither listed nor callable, and (c) the call without a valid DPoP
+proof is refused.
+
+| | |
+| --- | --- |
+| Principal | `canopy:probe` — a service account, never a person. Created by `mcp/migrations/0006` (the deploy runs `migrate` whenever a migration changes). Active, no usable password, no staff bit, no email, no PAT; the `:` is a character no Connect username can have, and the OAuth callback refuses the name besides |
+| Scope / tool | `marketplace:read` → `marketplace_rounds_list` with `{"open_only": true}`: no per-user gate, so it succeeds for the probe user; an empty list is still a success |
+| Denied tool | `list_templates` — a real read tool outside the scope |
+| Page | `marketplace:network` (audit only) |
+| Endpoint | `{LABS_PUBLIC_URL}/labs/canopy/probe/` — must be the public URL exactly (a DPoP proof's `htu`), and is advertised as `canopy_probe_endpoint` in `/.well-known/oauth-authorization-server` |
+
+All of it is in `connect_labs/labs/canopy.py` (`PROBE_*`, `probe_subject`), and
+none of it is a secret. It is **on wherever the grant is** and needs no env var
+of its own: without `CANOPY_CLIENT_ID` the endpoint 404s, and it 404s too until
+the probe user exists. MCP calls made with a probe token land in `MCPAuditLog` as
+`canopy:probe`, with canopy's client id. To stop it, deactivate the user (canopy
+then reports a refused probe rather than an unconfigured one).
 
 ## When it does not work
 

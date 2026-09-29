@@ -21,6 +21,11 @@ urlpatterns = [
     # swap rather than a person re-pasting a key into canopy. canopy has THIS
     # URL registered for labs' Connected site: do not move it.
     path("canopy/jwks/", canopy_views.jwks, name="canopy_jwks"),
+    # Public: canopy's live probe (the SDK's view, csrf-exempt; it authenticates
+    # canopy's client itself with private_key_jwt + DPoP). 404s until the probe
+    # is configured. Its public URL is CANOPY_HOST["PROBE"]["ENDPOINT"] in
+    # connect_labs/labs/canopy.py — a DPoP proof names it, so the two move together.
+    path("canopy/probe/", canopy_views.probe_endpoint, name="canopy_probe"),
     path("refresh-org-data/", views.refresh_org_data, name="refresh_org_data"),
     # MCP Personal Access Tokens (self-service)
     path("mcp/tokens/", mcp_token_views.tokens_index, name="mcp_tokens_index"),

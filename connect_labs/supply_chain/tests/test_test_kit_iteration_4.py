@@ -89,7 +89,9 @@ class TestDecidedByIsNotTheAccount:
     def test_with_no_person_s_name_the_account_is_who_decided(self, scoped, django_user_model, world):
         # "Decided by" is no longer typed: it is whoever is signed in, shown
         # read-only. With no person's name on file, the account is that.
-        user = django_user_model.objects.get()
+        # The signed-in account, not "the only user": a migration seeds a
+        # service account (the canopy probe) into every database.
+        user = django_user_model.objects.get(pk=scoped.session["_auth_user_id"])
         user.name = user.username
         user.save()
         url = reverse("supply_chain:procurement_comparison", args=[world["award"]["tender_id"]])
@@ -98,7 +100,7 @@ class TestDecidedByIsNotTheAccount:
         assert response.context["decider"] == user.username
 
     def test_the_comparison_offers_a_real_name(self, scoped, django_user_model, world):
-        user = django_user_model.objects.get()
+        user = django_user_model.objects.get(pk=scoped.session["_auth_user_id"])
         user.name = "Hauwa Bello"
         user.save()
         url = reverse("supply_chain:procurement_comparison", args=[world["award"]["tender_id"]])
