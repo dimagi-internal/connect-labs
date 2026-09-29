@@ -38,10 +38,10 @@ styles because mail clients drop stylesheets.
     <h2 style="font-size:15px;margin:16px 0 8px 0;">Movements recorded ({{ movements|length }})</h2>
     {% for notice in movements %}
       <div style="border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin-bottom:10px;">
-        <div style="font-weight:bold;">{{ notice.subject_kind|words|capfirst }}:
+        <div style="font-weight:bold;">{% if notice.facts.reverses_visit %}Consumption reversed (visit {{ notice.facts.reverses_visit }}){% else %}{{ notice.subject_kind|words|capfirst }}{% endif %}:
           {{ notice.facts.quantity|qty:notice.facts.quantity_unit }} of {{ notice.facts.commodity }}</div>
         <div style="color:#666666;margin-top:4px;">
-          {% if notice.facts.from %}from {{ notice.facts.from }} {% endif %}{% if notice.facts.to %}to {{ notice.facts.to }} {% endif %}on {{ notice.facts.occurred_on }}
+          {% if notice.facts.from %}from {{ notice.facts.from }} {% endif %}{% if notice.facts.to %}{% if notice.facts.reverses_visit %}back into{% else %}to{% endif %} {{ notice.facts.to }} {% endif %}on {{ notice.facts.occurred_on }}
           {% if notice.facts.batch %}· batch {{ notice.facts.batch }}{% endif %}
         </div>
         <div style="color:#666666;margin-top:4px;">Source: {{ notice.facts.source|source_label }}{% if notice.facts.recorded_by %} ({{ notice.facts.recorded_by }}){% endif %}</div>

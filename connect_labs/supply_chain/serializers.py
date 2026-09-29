@@ -437,6 +437,7 @@ def supply_point(obj) -> dict:
         "managed_by_org_id": obj.managed_by_org_id,
         "connect_username": obj.connect_username,
         "connect_user_id": obj.connect_user_id,
+        "connect_user_uuid": obj.connect_user_uuid,
         "admin_area": obj.admin_area,
         "latitude": obj.latitude,
         "longitude": obj.longitude,
@@ -467,6 +468,9 @@ def movement(obj) -> dict:
         "quantity_unit": obj.quantity_unit,
         "opportunity_id": obj.opportunity_id,
         "reference": obj.reference,
+        "visit_id": obj.visit_id,
+        "estimated": obj.estimated,
+        "reverses_movement_id": obj.reverses_id,
         "caused_by": {
             "receipt_id": obj.receipt_id,
             "shipment_id": obj.shipment_id,
@@ -544,4 +548,24 @@ def distribution(obj) -> dict:
         ],
         "movement_ids": [m.pk for m in obj.movements.all()],
         **_sourced(obj),
+    }
+
+
+def dispensing_rule(obj) -> dict:
+    from connect_labs.supply_chain.stock.services import ledger
+
+    return {
+        "id": obj.pk,
+        "opportunity_id": obj.opportunity_id,
+        "item_id": obj.item_id,
+        "item_name": obj.item.name,
+        "commodity_slug": obj.item.commodity.slug,
+        "unit": ledger._pack_spec(obj.item)[1],
+        "lines": obj.lines,
+        "forms": obj.forms,
+        "reports": obj.reports,
+        "resupply_supply_point_id": obj.resupply_point_id,
+        "active_from": _date(obj.active_from),
+        "status": obj.status,
+        "estimated": obj.estimated,
     }

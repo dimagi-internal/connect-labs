@@ -155,5 +155,6 @@ silently lacks.
 
 {% block inline_javascript %}
   {{ block.super }}
+  <script src="{% static 'supply_chain/marker_size.js' %}"></script>
   <script src="{% static 'supply_chain/portfolio_map.js' %}"></script>
 {% endblock %}

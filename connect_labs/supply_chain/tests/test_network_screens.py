@@ -272,7 +272,8 @@ class TestSupplyPoints:
 
 
 class TestTheScreensAreReachable:
-    def test_the_network_page_groups_points_by_kind(self, scoped, store):
+    def test_the_network_page_reads_top_down(self, scoped, store):
+        """One tree, stores before workers: the order the network runs."""
         SupplyPoint.objects.create(
             program_id=PROGRAM,
             slug="a-worker",
@@ -282,9 +283,8 @@ class TestTheScreensAreReachable:
             source="we_recorded",
         )
         body = scoped.get(reverse("supply_chain:network")).content.decode()
-        assert "Central stores" in body
-        assert "Field workers" in body
-        assert body.index("Central stores") < body.index("Field workers"), "read top-down, as the network runs"
+        assert body.count('data-testid="network-node"') == 2
+        assert body.index("Central store") < body.index("A worker"), "read top-down, as the network runs"
 
     def test_the_network_page_offers_adding_and_editing(self, scoped, store):
         body = scoped.get(reverse("supply_chain:network")).content.decode()

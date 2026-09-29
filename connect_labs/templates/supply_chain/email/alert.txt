@@ -13,9 +13,9 @@ New checks ({{ checks|length }})
 {% endfor %}{% endif %}{% if movements %}
 Movements recorded ({{ movements|length }})
 {% for notice in movements %}
-- {{ notice.subject_kind|words|capfirst }}: {{ notice.facts.quantity|qty:notice.facts.quantity_unit }} of {{ notice.facts.commodity }}{% if notice.facts.batch %}, batch {{ notice.facts.batch }}{% endif %}
+- {% if notice.facts.reverses_visit %}Consumption reversed (visit {{ notice.facts.reverses_visit }}){% else %}{{ notice.subject_kind|words|capfirst }}{% endif %}: {{ notice.facts.quantity|qty:notice.facts.quantity_unit }} of {{ notice.facts.commodity }}{% if notice.facts.batch %}, batch {{ notice.facts.batch }}{% endif %}
   {% if notice.facts.from %}From: {{ notice.facts.from }}
-  {% endif %}{% if notice.facts.to %}To: {{ notice.facts.to }}
+  {% endif %}{% if notice.facts.to %}{% if notice.facts.reverses_visit %}Back into: {% else %}To: {% endif %}{{ notice.facts.to }}
   {% endif %}On: {{ notice.facts.occurred_on }}
   Source: {{ notice.facts.source|source_label }}{% if notice.facts.recorded_by %} ({{ notice.facts.recorded_by }}){% endif %}
   Record: {{ notice.record_url }}

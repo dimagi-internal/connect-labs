@@ -1145,3 +1145,145 @@ def has_field_errors(form) -> bool:
     marked would send the reader hunting for a field that is fine.
     """
     return any(name != "__all__" for name in getattr(form, "errors", {}) or {})
+
+
+# ---- stock from visits: what we believe each worker holds -------------------
+
+
+def _nonzero_amount(cell):
+    """The cell's amount as a Decimal when it is a nonzero number, else None."""
+    if not isinstance(cell, dict) or cell.get("amount") in (None, ""):
+        return None
+    number = _as_decimal(cell["amount"])
+    return number if number else None
+
+
+def _unsettled_parts(parts) -> list[str]:
+    """ "30 on visits not yet approved", "30 estimated": the dispensing that is not settled, in words."""
+    parts = parts or {}
+    said = []
+    for key, words_for in (("unapproved", "on visits not yet approved"), ("estimated", "estimated")):
+        part = parts.get(key)
+        if isinstance(part, dict) and "unconfirmed" in part:
+            said.append(f"an unknown part {words_for}")
+            continue
+        amount = _nonzero_amount(part)
+        if amount is not None:
+            said.append(f"{quantity_digits(amount)} {words_for}")
+    return said
+
+
+@register.filter
+def on_hand_words(cell, parts):
+    """An on-hand figure, and what the dispensing behind it rests on.
+
+    "120 sachets on hand — of the 90 sachets dispensed, 30 on visits not yet
+    approved, 30 estimated". `parts` is the row (or a store's subtree): its
+    `dispensed`, `unapproved` and `estimated`, all in the figure's own unit.
+    The parts are DISPENSING, never stock on hand, so they are said as parts
+    of what was dispensed -- set beside on hand with no noun, "30 unapproved"
+    read as though 30 of the sachets on hand were. Said ON the figure, never
+    in a footnote (design 2026-09-28 §6); a figure resting on nothing
+    unsettled is just "120 sachets on hand".
+    """
+    text = f"{figure_text(cell)} on hand"
+    said = _unsettled_parts(parts)
+    if not said:
+        return text
+    return f"{text} — of the {figure_text((parts or {}).get('dispensed'))} dispensed, {', '.join(said)}"
+
+
+@register.filter
+def dispensed_words(cell, parts):
+    """A dispensed figure and its unsettled parts.
+
+    "90 sachets dispensed — 30 on visits not yet approved, 30 estimated".
+    """
+    text = f"{figure_text(cell)} dispensed"
+    said = _unsettled_parts(parts)
+    return f"{text} — {', '.join(said)}" if said else text
+
+
+@register.filter
+def signed_figure(cell):
+    """A difference with its sign always said: "−5 sachets", "+12 sachets", "0 sachets".
+
+    For a variance, where the sign is the finding. A true minus sign, not a
+    hyphen, so it does not vanish against the number.
+    """
+    if not isinstance(cell, dict) or "unconfirmed" in cell:
+        return figure_text(cell)
+    number = _as_decimal(cell.get("amount"))
+    if number is None:
+        return figure_text(cell)
+    text = qty(abs(number), cell.get("unit"))
+    if number > 0:
+        return f"+{text}"
+    if number < 0:
+        return f"−{text}"
+    return text
+
+
+@register.filter
+def days_text(value):
+    """Days to stock-out as a reader wants it: "102 days", "under a day", or why there is no figure."""
+    if isinstance(value, dict):
+        if "unconfirmed" in value:
+            return "unknown"
+        if "not_forecast" in value:
+            return "not forecast"
+        return figure_text(value)
+    number = _as_decimal(value)
+    if number is None:
+        return "—"
+    if number < 1:
+        return "under a day"
+    whole = int(number)
+    return f"{whole:,} day{'' if whole == 1 else 's'}"
+
+
+@register.filter
+def months_text(value):
+    """Months of cover to one place, with its noun: "3.4 months of cover", or why there is no figure."""
+    if isinstance(value, dict):
+        if "unconfirmed" in value:
+            return "cover unknown"
+        if "not_forecast" in value:
+            return "durable — not forecast"
+        return figure_text(value)
+    number = _as_decimal(value)
+    if number is None:
+        return "—"
+    shown = number.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    return f"{shown.normalize():f} month{'' if shown == 1 else 's'} of cover"
+
+
+# What the visit reader made of one visit for one item (WorkerVisit.outcomes),
+# in words. "" is a visit whose form this item's rule does not read.
+VISIT_OUTCOMES = {
+    "dispensed": "Gave some out",
+    "nothing_given": "Gave none",
+    "no_answer": "Did not say",
+    "unmapped": "Answer not in the rule's list",
+    "unit_refused": "Unit could not be converted",
+    "skipped": "Skipped",
+    "reversed": "Reversed — stock put back",
+    "not_counted": "Not counted — rejected before it was read",
+    "": "Not read for this item",
+}
+
+
+@register.filter
+def visit_outcome(outcome):
+    return VISIT_OUTCOMES.get(outcome or "", humanise(outcome).capitalize())
+
+
+@register.filter
+def rests_on_unsettled(parts):
+    """Whether any of a row's dispensing is unapproved or estimated (or could not be told)."""
+    parts = parts or {}
+    for key in ("unapproved", "estimated"):
+        part = parts.get(key)
+        if (isinstance(part, dict) and "unconfirmed" in part) or _nonzero_amount(part) is not None:
+            return True
+    return False

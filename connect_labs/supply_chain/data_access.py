@@ -43,6 +43,7 @@ from connect_labs.supply_chain.models import (
     Commodity,
     Consignment,
     Contract,
+    DispensingRule,
     Distribution,
     DistributionLine,
     Document,
@@ -57,6 +58,7 @@ from connect_labs.supply_chain.models import (
     Supplier,
     SupplyPoint,
     Tender,
+    WorkerVisit,
     fill_profile,
     scope_key,
 )
@@ -328,6 +330,9 @@ class SupplyDataAccess(
         # Connect token but no session.
         self.request = request
         self.user = user or getattr(request, "user", None)
+        # Kept so a write naming a further scope in its payload (a dispensing
+        # rule's opportunity) can authorise that scope against the same caller.
+        self.caller = caller
 
     # ---- synthetic scopes ------------------------------------------------
 
@@ -401,9 +406,15 @@ class SupplyDataAccess(
                 # weakening the constraints that make the ledger
                 # trustworthy the rest of the time.
                 movements = Movement.objects.filter(program_id=program_id)
+                # A visit's reversal is the one link that cannot be severed:
+                # with `reverses` cleared it reads as a second consumption of
+                # the same visit and item, which a constraint forbids. Nothing
+                # points at a reversal, so it simply goes first.
+                _, gone = movements.filter(reverses__isnull=False).delete()
+                reversals = gone.get(Movement._meta.label, 0)
                 DistributionLine.objects.filter(distribution__program_id=program_id).update(movement=None)
                 StockCount.objects.filter(program_id=program_id).update(adjustment_movement=None)
-                movements.update(distribution=None, receipt=None, shipment=None, stock_count=None)
+                movements.update(distribution=None, receipt=None, shipment=None, stock_count=None, reverses=None)
                 Contract.objects.filter(program_id=program_id).update(duty_relief_document=None)
                 Quote.objects.filter(tender__program_id=program_id).update(superseded_by=None)
                 # Self-references are the same problem one table in: a
@@ -419,6 +430,10 @@ class SupplyDataAccess(
                 from connect_labs.supply_chain.alerts.models import AlertSubscription
                 from connect_labs.supply_chain.update_links.models import UpdateLink
 
+                # Rules PROTECT both the item and the store they name.
+                drop("dispensing rules", DispensingRule.objects.filter(program_id=program_id))
+                # A remembered visit PROTECTs the worker point it was read against.
+                drop("worker visits", WorkerVisit.objects.filter(program_id=program_id))
                 drop("update links", UpdateLink.objects.filter(program_id=program_id))
                 drop("alert subscriptions", AlertSubscription.objects.filter(program_id=program_id))
                 drop("documents", Document.objects.filter(program_id=program_id))
@@ -427,6 +442,8 @@ class SupplyDataAccess(
                 # A consignment holds its two ledger legs, so it goes before them.
                 drop("consignments", Consignment.objects.filter(program_id=program_id))
                 drop("movements", movements)
+                if reversals:
+                    counts["movements"] = counts.get("movements", 0) + reversals
                 drop("invoices", Invoice.objects.filter(contract__program_id=program_id))
                 drop("receipts", Receipt.objects.filter(supply_point__program_id=program_id))
                 drop("shipments", Shipment.objects.filter(contract__program_id=program_id))

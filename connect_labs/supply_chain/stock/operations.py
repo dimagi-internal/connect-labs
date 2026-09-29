@@ -38,6 +38,7 @@ _SUPPLY_POINT_DATA = _data_with(
     managed_by_org_id=ID,
     connect_username={"type": "string"},
     connect_user_id=ID,
+    connect_user_uuid={"type": "string"},
     admin_area={"type": "string"},
     latitude={"type": "number"},
     longitude={"type": "number"},
@@ -74,7 +75,7 @@ _STOCK_COUNT_DATA = _data_with(
     item_id=ID,
     commodity_slug={"type": "string", "minLength": 1},
     batch={"type": "string"},
-    kind={"enum": list(records.STOCK_COUNT_KINDS)},
+    kind={"enum": list(records.ON_HAND_COUNT_KINDS)},
     counted_on=_DATE,
     # A count of zero is a real and important observation -- it is a
     # stockout -- so this is not the nonzero variant.
@@ -384,6 +385,7 @@ def stock_on_hand(access, supply_point_id, item_id=None, unit=None):
     return {
         "supply_point_id": point.pk,
         "ledger": figure(result["ledger"]),
+        "ledger_on_count_day": figure(result["ledger_on_count_day"]) if result["ledger_on_count_day"] else None,
         "reported": figure(result["reported"]) if result["reported"] else None,
         "variance": figure(result["variance"]) if result["variance"] else None,
         "basis": result["basis"],
@@ -489,6 +491,15 @@ def resupply_plan(access, supply_point_id, item_id=None, window_days=resupply.DE
     ),
 )
 def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_days=resupply.DEFAULT_WINDOW_DAYS):
+    return network_stock_payload(
+        access, opportunity_id=opportunity_id, item_id=item_id, kind=kind, window_days=window_days
+    )
+
+
+def network_stock_payload(
+    access, opportunity_id=None, item_id=None, kind=None, window_days=resupply.DEFAULT_WINDOW_DAYS, grouped=False
+):
+    """The network_stock operation's answer; `grouped` rates every point in one pass per item (the Stock page)."""
     item = access._resolve_item(item_id)
     rows = network.network_stock(
         access.program_id,
@@ -496,6 +507,7 @@ def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_d
         item=item,
         kind=kind,
         window_days=window_days,
+        grouped=grouped,
     )
     return {
         "summary": network.summarise(rows),

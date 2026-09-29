@@ -67,3 +67,40 @@ def require_synthetic(program_id, action: str) -> None:
             f"programmes (id >= {SYNTHETIC_FLOOR}) may be reset wholesale. "
             "Delete the specific records instead."
         )
+
+
+def opportunity_problem(program_id, opportunity_id) -> str | None:
+    """Why this programme may not read this opportunity's visits, or None.
+
+    The synthetic guard above checks the PROGRAMME; the visits come from the
+    OPPORTUNITY a dispensing rule names, and that is a separate number the
+    caller supplies. A synthetic programme's rule naming a real opportunity
+    would otherwise pull that opportunity's visits -- served from the shared
+    visit cache with no Connect access check -- into the ledger. So the
+    opportunity must itself be a registered labs-only one, and filed under
+    this programme (the same test `is_labs_only_program_id` uses: its
+    `program_id`, or, when that is unset, the opportunity is its own
+    programme). Fails closed on anything unparseable.
+    """
+    from connect_labs.labs.synthetic.local_records_backend import is_labs_only_opportunity_id
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+    opp = _as_int(opportunity_id)
+    prog = _as_int(program_id)
+    if opp is None or not is_labs_only_opportunity_id(opp):
+        return (
+            f"opportunity {opportunity_id!r} is not a registered labs-only opportunity: visits are read into "
+            "the stock ledger only from synthetic opportunities"
+        )
+    registered = SyntheticOpportunity.objects.get(opportunity_id=opp)
+    owner = registered.program_id if registered.program_id is not None else registered.opportunity_id
+    if prog is None or owner != prog:
+        return f"opportunity {opp} belongs to programme {owner}, not {program_id!r}"
+    return None
+
+
+def require_programme_opportunity(program_id, opportunity_id) -> None:
+    """Raise unless `opportunity_id` is a labs-only opportunity of this programme."""
+    problem = opportunity_problem(program_id, opportunity_id)
+    if problem:
+        raise ValueError(f"refusing to read visits: {problem}")

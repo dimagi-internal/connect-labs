@@ -1111,6 +1111,9 @@ class SupplyPoint(SourcedModel):
 
     connect_username = models.CharField(max_length=150, blank=True, default="", db_index=True)
     connect_user_id = models.IntegerField(null=True, blank=True, db_index=True)
+    # The visit cache's `user_id` is Connect's user UUID, a string; the integer
+    # `connect_user_id` above cannot hold it. Matched second, after the username.
+    connect_user_uuid = models.CharField(max_length=64, blank=True, default="", db_default="", db_index=True)
 
     admin_area = models.CharField(max_length=255, blank=True, default="")
     latitude = models.FloatField(null=True, blank=True)
@@ -1153,7 +1156,7 @@ class SupplyPoint(SourcedModel):
         return self.kind == "user_held"
 
     def clean(self):
-        if self.kind == "user_held" and not (self.connect_username or self.connect_user_id):
+        if self.kind == "user_held" and not (self.connect_username or self.connect_user_id or self.connect_user_uuid):
             raise ValidationError(
                 {"connect_username": "A user_held supply point must name the Connect user whose stock it is."}
             )
@@ -1233,9 +1236,17 @@ class MovementQuerySet(models.QuerySet):
             for key in set(inbound) | set(outbound)
         }
 
+    def standing_consumption(self):
+        """Consumption that still stands: not a reversal, and not reversed.
+
+        A reversal carries the visit's date, so dropping the pair nets exactly
+        over any window -- the same as subtracting one from the other.
+        """
+        return self.filter(kind="consumption", reverses__isnull=True, reversal__isnull=True)
+
     def consumption_by_unit(self):
-        """{quantity_unit: Decimal} dispensed. The input to average monthly consumption."""
-        return {unit[0]: total for unit, total in self.filter(kind="consumption")._totals(["quantity_unit"]).items()}
+        """{quantity_unit: Decimal} dispensed, net of reversals. The input to average monthly consumption."""
+        return {unit[0]: total for unit, total in self.standing_consumption()._totals(["quantity_unit"]).items()}
 
 
 class Movement(SourcedModel):
@@ -1275,6 +1286,18 @@ class Movement(SourcedModel):
         "supply_chain.StockCount", null=True, blank=True, on_delete=models.PROTECT, related_name="movements"
     )
 
+    # Set on a movement the stock reader posted from a Connect visit. The
+    # consumption a visit caused and the reversal that cancels it both carry
+    # it, which is what makes re-reading the same visits write nothing.
+    visit_id = models.CharField(max_length=64, blank=True, default="", db_default="", db_index=True)
+    # A reversal: a `consumption` INTO the worker's point cancelling the row
+    # named here (design 2026-09-28 section 3.2). Never an edit -- the ledger
+    # stays append-only. One-to-one, so a movement can be reversed at most once.
+    reverses = models.OneToOneField("self", null=True, blank=True, on_delete=models.PROTECT, related_name="reversal")
+    # True when any part of the quantity came from a protocol -- the form said
+    # only THAT something was given -- rather than a number somebody entered.
+    estimated = models.BooleanField(default=False, db_default=False)
+
     objects = MovementQuerySet.as_manager()
 
     class Meta:
@@ -1299,6 +1322,26 @@ class Movement(SourcedModel):
             models.CheckConstraint(
                 condition=Q(quantity__gt=0) | Q(kind="adjustment"),
                 name="movement_positive_unless_adjustment",
+            ),
+            # Re-reading a visit writes nothing: one consumption and at most
+            # one reversal per visit and item (a visit can dispense several
+            # items). Scoped by program because a synthetic programme's
+            # invented visit ids may repeat another's.
+            models.UniqueConstraint(
+                fields=["program_id", "visit_id", "item"],
+                condition=~Q(visit_id="") & Q(reverses__isnull=True),
+                name="movement_one_consumption_per_visit_item",
+            ),
+            models.UniqueConstraint(
+                fields=["program_id", "visit_id", "item"],
+                condition=~Q(visit_id="") & Q(reverses__isnull=False),
+                name="movement_one_reversal_per_visit_item",
+            ),
+            # A reversal puts stock back: a consumption into a point, from nowhere.
+            models.CheckConstraint(
+                condition=Q(reverses__isnull=True)
+                | Q(kind="consumption", from_supply_point__isnull=True, to_supply_point__isnull=False),
+                name="movement_reversal_is_consumption_back_in",
             ),
         ]
 
@@ -1384,6 +1427,91 @@ class DistributionLine(models.Model):
     movement = models.OneToOneField(
         Movement, null=True, blank=True, on_delete=models.PROTECT, related_name="distribution_line"
     )
+
+
+class DispensingRule(TimestampedModel):
+    """What a visit on one opportunity gives out of one item (design 2026-09-28 §3.1).
+
+    One per (program, opportunity, item): an iCCM deliver app gives out many
+    commodities from one visit, so an opportunity carries a rule per item.
+    Data, not code, because forms differ per opportunity and change: a deploy
+    per renamed question is the wrong price for keeping stock honest.
+
+    `lines` is validated by stock/services/dispensing.validate_lines. A rule
+    with any `protocol` or `value_map` line produces ESTIMATED consumption,
+    and says so: the worker did not count those.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    opportunity_id = models.IntegerField(db_index=True)
+    item = models.ForeignKey(Item, on_delete=models.PROTECT, related_name="dispensing_rules")
+    lines = models.JSONField(default=list)
+    # Forms (xmlns or name) this rule reads by default; empty is every form.
+    # A line's own `forms` narrows it further.
+    forms = models.JSONField(default=list, blank=True)
+    # What the worker's own app says: {"balance_paths": [...], "receipt": {...}}.
+    reports = models.JSONField(default=dict, blank=True)
+    # Where a worker point this rule creates hangs from.
+    resupply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="dispensing_rules")
+    # Visits before this are not read, so switching a rule on mid-programme
+    # does not invent history the ledger never saw.
+    active_from = models.DateField()
+    status = models.CharField(max_length=16, default="active", choices=_choices(("active", "inactive")))
+
+    class Meta:
+        ordering = ["opportunity_id", "item_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["program_id", "opportunity_id", "item"], name="uniq_dispensing_rule_opp_item"
+            )
+        ]
+
+    def __str__(self):
+        return f"dispensing rule: {self.item} on opportunity {self.opportunity_id}"
+
+    @property
+    def estimated(self) -> bool:
+        return any(line.get("kind") in ("protocol", "value_map") for line in self.lines or [])
+
+
+class WorkerVisit(TimestampedModel):
+    """A Connect visit the stock reader has read, and what it made of it.
+
+    The ledger cannot hold a visit's STATUS: a movement is append-only, and a
+    visit goes pending -> approved (or rejected) after its stock has already
+    left the bag. "How much of this figure is unapproved" (design §5) needs
+    the status as it stands, so it lives here, updated on every read and
+    revisioned like any supply record -- which is what lets an as-of page show
+    the status a visit had that day.
+
+    `outcomes` is {"item-<id>": dispensed | nothing_given | no_answer |
+    unmapped | unit_refused | skipped | reversed | not_counted}; an item whose
+    rule does not read this visit's form has no key at all. `answers` holds
+    only the answers at the rule's own paths (a count, a yes/no, a dose), never
+    the rest of the form.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    opportunity_id = models.IntegerField(db_index=True)
+    visit_id = models.CharField(max_length=64)
+    xform_id = models.CharField(max_length=64, blank=True, default="")
+    connect_username = models.CharField(max_length=150, blank=True, default="")
+    supply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="visits")
+    visit_date = models.DateField(db_index=True)
+    status = models.CharField(max_length=32, blank=True, default="")
+    form_name = models.CharField(max_length=255, blank=True, default="")
+    outcomes = models.JSONField(default=dict, blank=True)
+    answers = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-visit_date", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["program_id", "visit_id"], name="uniq_worker_visit_program_visit")
+        ]
+        indexes = [models.Index(fields=["supply_point", "visit_date"])]
+
+    def __str__(self):
+        return f"visit {self.visit_id} by {self.connect_username or self.supply_point_id}"
 
 
 class Consignment(SourcedModel):

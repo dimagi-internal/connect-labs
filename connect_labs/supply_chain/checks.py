@@ -1009,15 +1009,22 @@ def _stock(access, as_of, opportunity_id=None):
         # both are kept and the gap between them is a finding rather than
         # something one side silently wins.
         if row["reported"] is not None and not isinstance(row["on_hand"], Unconfirmed):
-            variance = soh.stock_on_hand(access.program_id, _point_by_id[row["supply_point_id"]])["variance"]
+            # Against the ledger ON THE COUNT DAY (soh.stock_on_hand), the figure
+            # the Workers page shows: stock that arrived after the count is not
+            # a discrepancy in it.
+            found = soh.stock_on_hand(access.program_id, _point_by_id[row["supply_point_id"]])
+            variance, counted_against = found["variance"], found["ledger_on_count_day"]
+            if not isinstance(counted_against, Quantity):
+                counted_against = row["on_hand"]
             if isinstance(variance, Unconfirmed):
                 out.append(
                     _check(
                         "stock_variance",
                         **subject,
                         facts={
-                            "ledger": decimal_string(row["on_hand"].amount),
-                            "ledger_unit": row["on_hand"].unit,
+                            "ledger": decimal_string(counted_against.amount),
+                            "ledger_unit": counted_against.unit,
+                            "ledger_on": found["as_of"].isoformat() if found["as_of"] else None,
                             "reported": decimal_string(row["reported"].amount),
                             "reported_unit": row["reported"].unit,
                             "reconcilable": False,
@@ -1036,8 +1043,12 @@ def _stock(access, as_of, opportunity_id=None):
                         "stock_variance",
                         **subject,
                         facts={
-                            "ledger": decimal_string(row["on_hand"].amount),
+                            # The ledger the count is compared with: as it stood
+                            # at the end of the count day (`ledger_on`).
+                            "ledger": decimal_string(counted_against.amount),
+                            "ledger_on": found["as_of"].isoformat() if found["as_of"] else None,
                             "reported": decimal_string(row["reported"].amount),
+                            # reported minus ledger: negative means fewer counted.
                             "variance": decimal_string(variance.amount),
                             "unit": variance.unit,
                             "reconcilable": True,

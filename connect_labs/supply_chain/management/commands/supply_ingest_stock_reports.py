@@ -25,14 +25,13 @@ double-posting.
 import json
 from pathlib import Path
 
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from connect_labs.labs.access.scopes import SYSTEM
-from connect_labs.labs.integrations.connect.export_client import ExportAPIClient
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.stock.services.ingest import extract_rows
+from connect_labs.supply_chain.stock.services.visit_source import fetch_visits
 
 
 class Command(BaseCommand):
@@ -49,7 +48,6 @@ class Command(BaseCommand):
             help="Dotted path to the form question holding stock on hand, " "e.g. form.stock.cartons_on_hand",
         )
         parser.add_argument("--item-sku", help="Restrict the count to one trade item.")
-        parser.add_argument("--since", help="Only visits on or after this date (YYYY-MM-DD).")
         parser.add_argument(
             "--from-json",
             help="Read visits from a file instead of Connect -- for a backfill or a dry run.",
@@ -129,24 +127,9 @@ class Command(BaseCommand):
             payload = json.loads(Path(options["from_json"]).read_text())
             return payload["results"] if isinstance(payload, dict) else payload
 
-        token = self._token(options)
-        params = {}
-        if options.get("since"):
-            params["visit_date__gte"] = options["since"]
-        visits = []
-        with ExportAPIClient(base_url=self._base_url(), access_token=token) as client:
-            for page in client.paginate(f"/export/opportunity/{options['opportunity']}/user_visits/", params=params):
-                visits.extend(page)
-        return visits
-
-    def _base_url(self):
-        url = getattr(settings, "CONNECT_PRODUCTION_URL", None)
-        if not url:
-            raise CommandError(
-                "no Connect base URL in settings (CONNECT_PRODUCTION_URL). Use --from-json to "
-                "ingest a saved export instead."
-            )
-        return url
+        # Through the analysis pipeline, so get_export_client decides between
+        # Connect and a synthetic opportunity's fixtures (design 4, "Fix alongside").
+        return fetch_visits(options["opportunity"], self._token(options))
 
     def _token(self, options):
         """An export-scoped token, or empty when reading from a file.
