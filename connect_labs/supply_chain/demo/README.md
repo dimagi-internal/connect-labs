@@ -67,11 +67,11 @@ Every path and answer string in `PATHS`, `AMOX_DOSES` and `DOSE_PREPARED` is
 the released app's own, read from its definition. The rules filter forms by
 xmlns (`XMLNS`): Screening is
 `http://openrosa.org/formdesigner/92026AF7-291B-4E25-A60B-82486FD0C799`,
-Visit Form `http://openrosa.org/formdesigner/991BB731-417A-46D2-B1F5-1E4CD65C8D89`.
-Every fixture also carries its form's `@name`. **Stock Management's xmlns
-was not read**, so its fixtures carry only `@name: "Stock Management"`. No
-rule filters on it (the balance and receipt reports read every form a rule
-sees), so nothing depends on it; add it to `XMLNS` once known.
+Visit Form `http://openrosa.org/formdesigner/991BB731-417A-46D2-B1F5-1E4CD65C8D89`,
+Stock Management `http://openrosa.org/formdesigner/5D7EBBAD-CB58-4238-BF27-368E344AD16E`.
+Every fixture carries its form's `@xmlns` and `@name`. No rule filters on
+Stock Management: the balance and receipt reports read every form a rule
+sees.
 
 ## Running it
 

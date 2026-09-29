@@ -62,13 +62,14 @@ NEVER_ANSWERS = "worker-sapele"
 
 # The released app's form names, carried as `@name` on every fixture.
 FORM_SCREENING, FORM_VISIT, FORM_STOCK = "Screening", "Visit Form", "Stock Management"
-# The released app's form identifiers (`@xmlns`), which the rules' `forms`
-# filters name: a form's name can be retranslated, its xmlns cannot. Stock
-# Management's xmlns was not read, so its fixtures carry only `@name`; no rule
-# filters on it (reports read every form a rule sees).
+# The released app's form identifiers (`@xmlns`), carried on every fixture
+# and named by the rules' `forms` filters: a form's name can be retranslated,
+# its xmlns cannot. No rule filters on Stock Management -- the balance and
+# receipt reports read every form a rule sees -- but its fixtures carry it.
 XMLNS = {
     FORM_SCREENING: "http://openrosa.org/formdesigner/92026AF7-291B-4E25-A60B-82486FD0C799",
     FORM_VISIT: "http://openrosa.org/formdesigner/991BB731-417A-46D2-B1F5-1E4CD65C8D89",
+    FORM_STOCK: "http://openrosa.org/formdesigner/5D7EBBAD-CB58-4238-BF27-368E344AD16E",
 }
 
 # form_json paths, every one copied verbatim from the released app's
@@ -173,10 +174,7 @@ def _nest(answers: dict) -> dict:
 
 
 def _identity(form_name) -> dict:
-    found = {"@name": form_name}
-    if form_name in XMLNS:
-        found["@xmlns"] = XMLNS[form_name]
-    return found
+    return {"@name": form_name, "@xmlns": XMLNS[form_name]}
 
 
 def _visit(visit_id, username, user_id, on, status, form_name, answers, modified=None):

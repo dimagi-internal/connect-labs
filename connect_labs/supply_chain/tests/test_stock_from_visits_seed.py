@@ -135,11 +135,13 @@ def test_vitamin_a_is_asked_on_the_screening_form_only():
 
 def test_the_app_forms_carry_the_released_apps_xmlns():
     world = build_world(START)
-    for name in (FORM_SCREENING, FORM_VISIT):
+    assert XMLNS == {
+        FORM_SCREENING: "http://openrosa.org/formdesigner/92026AF7-291B-4E25-A60B-82486FD0C799",
+        FORM_VISIT: "http://openrosa.org/formdesigner/991BB731-417A-46D2-B1F5-1E4CD65C8D89",
+        FORM_STOCK: "http://openrosa.org/formdesigner/5D7EBBAD-CB58-4238-BF27-368E344AD16E",
+    }
+    for name in (FORM_SCREENING, FORM_VISIT, FORM_STOCK):
         assert {v["form_json"]["form"]["@xmlns"] for v in forms_named(world, name)} == {XMLNS[name]}
-    assert XMLNS[FORM_SCREENING].endswith("92026AF7-291B-4E25-A60B-82486FD0C799")
-    assert XMLNS[FORM_VISIT].endswith("991BB731-417A-46D2-B1F5-1E4CD65C8D89")
-    assert all("@xmlns" not in v["form_json"]["form"] for v in forms_named(world, FORM_STOCK))
 
 
 def test_one_visit_is_rejected_after_it_was_counted():
