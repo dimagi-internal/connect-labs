@@ -356,111 +356,180 @@
     return (minutes / 1440).toFixed(1) + ' days';
   }
 
-  /* ── what the map can be coloured by ────────────────────────────────
-     Each measure names the field it reads off a cell and a colour ramp.
-     Connectivity measures run grey-blue (little) to green (much); delay
-     measures run green (little) to marigold and sunset (much). A delay is the
-     design working, so the ramp says "held longer", not "wrong". */
-  var GOOD = ['#6d76b5', '#8ea1ff', '#35b39d'];
-  var HELD = ['#35b39d', '#feaf31', '#e44434'];
+  /* ── what the map shows ─────────────────────────────────────────────
+     One rule for every measure: HOTTER MEANS MORE OF A CONCERN. Few workers
+     with signal and long delays both glow; "fine" fades into the dark
+     basemap. The ramp is inferno-like (dark purple, magenta, coral, pale
+     yellow): sequential, readable on a dark map, and its lightness climbs
+     steadily, so it still reads in greyscale and to colour-blind eyes.
+
+     Each measure says how to turn a cell into a concern between 0 and 1
+     (`concern`, saturating at `sat`) and how much of the concern a cell holds
+     (`weight`), which drives the heat layer. Rates must not be summed, so the
+     heat is built from COUNTS -- workers without signal, visits delayed --
+     and the rates colour the circles. */
+  var HEAT = ['#3b0f70', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf'];
+  var NO_DATA = '#4a4470';
+  function heatColour(t) {
+    if (t == null || isNaN(t)) return NO_DATA;
+    t = Math.max(0, Math.min(1, t));
+    var i = Math.min(Math.floor(t * (HEAT.length - 1)), HEAT.length - 2);
+    var f = t * (HEAT.length - 1) - i;
+    var a = HEAT[i].match(/\w\w/g).map(function (x) {
+      return parseInt(x, 16);
+    });
+    var b = HEAT[i + 1].match(/\w\w/g).map(function (x) {
+      return parseInt(x, 16);
+    });
+    return (
+      '#' +
+      a
+        .map(function (v, k) {
+          return Math.round(v + (b[k] - v) * f)
+            .toString(16)
+            .padStart(2, '0');
+        })
+        .join('')
+    );
+  }
+  function inv(v) {
+    return v == null ? null : 1 - v;
+  }
   var MEASURES = {
     connected: {
-      label: 'Online at least some of the time',
-      field: 'connected_rate',
-      stops: [0, 0.5, 1],
-      colours: GOOD,
+      label: 'Rarely or never online',
+      hot: 'more workers rarely or never online',
+      rate: function (c) {
+        return inv(c.connected_rate);
+      },
+      weight: function (c) {
+        return c.offline || 0;
+      },
+      sat: 0.5,
       fmt: pct,
     },
     online: {
-      label: 'Online (sends as they go)',
-      field: 'online_rate',
-      stops: [0, 0.5, 1],
-      colours: GOOD,
+      label: 'Not online most of the time',
+      hot: 'more workers without steady signal',
+      rate: function (c) {
+        return inv(c.online_rate);
+      },
+      weight: function (c) {
+        return (c.sometimes || 0) + (c.offline || 0);
+      },
+      sat: 1,
       fmt: pct,
     },
     seen: {
-      label: 'Seen online at least once',
-      field: 'seen_online_rate',
-      stops: [0.5, 0.8, 1],
-      colours: GOOD,
+      label: 'Never seen online',
+      hot: 'more workers never seen online',
+      rate: function (c) {
+        return inv(c.seen_online_rate);
+      },
+      weight: function (c) {
+        return (c.workers || 0) - (c.seen_online || 0);
+      },
+      sat: 0.3,
       fmt: pct,
     },
     delayed_1d: {
       label: 'Visits delayed over a day',
-      field: 'delayed_1d_rate',
-      stops: [0, 0.1, 0.3],
-      colours: HELD,
+      hot: 'more visits waiting over a day',
+      rate: function (c) {
+        return c.delayed_1d_rate;
+      },
+      weight: function (c) {
+        return c.delayed_1d || 0;
+      },
+      sat: 0.3,
       fmt: pct,
     },
     delayed_3d: {
       label: 'Visits delayed over 3 days',
-      field: 'delayed_3d_rate',
-      stops: [0, 0.05, 0.2],
-      colours: HELD,
+      hot: 'more visits waiting over 3 days',
+      rate: function (c) {
+        return c.delayed_3d_rate;
+      },
+      weight: function (c) {
+        return c.delayed_3d || 0;
+      },
+      sat: 0.15,
       fmt: pct,
     },
     delayed_7d: {
       label: 'Visits delayed over a week',
-      field: 'delayed_7d_rate',
-      stops: [0, 0.02, 0.1],
-      colours: HELD,
+      hot: 'more visits waiting over a week',
+      rate: function (c) {
+        return c.delayed_7d_rate;
+      },
+      weight: function (c) {
+        return c.delayed_7d || 0;
+      },
+      sat: 0.08,
       fmt: pct,
     },
     median: {
       label: 'Typical delay',
-      field: 'median_delay_minutes',
-      stops: [0, 240, 1440],
-      colours: HELD,
+      hot: 'longer typical delay',
+      rate: function (c) {
+        return c.median_delay_minutes;
+      },
+      weight: function (c) {
+        return c.median_delay_minutes == null
+          ? 0
+          : (c.workers || 0) * Math.min(c.median_delay_minutes / 1440, 1);
+      },
+      sat: 1440,
       fmt: delay,
     },
   };
-  var NO_DATA = '#3a3470';
-
-  function colourExpr(m) {
-    return [
-      'case',
-      ['has', m.field],
-      [
-        'interpolate',
-        ['linear'],
-        ['get', m.field],
-        m.stops[0],
-        m.colours[0],
-        m.stops[1],
-        m.colours[1],
-        m.stops[2],
-        m.colours[2],
-      ],
-      NO_DATA,
-    ];
+  function concern(m, c) {
+    var v = m.rate(c);
+    return v == null ? null : Math.min(v / m.sat, 1);
   }
+  // For a table cell or headline figure: the same heat, on the same scale.
   function colourFor(m, v) {
-    if (v == null) return NO_DATA;
-    var s = m.stops,
-      c = m.colours;
-    return v >= s[2] ? c[2] : v >= s[1] ? c[1] : c[0];
+    return v == null ? NO_DATA : heatColour(Math.min(v / m.sat, 1));
   }
   function measureLegend(m) {
-    return m.stops
-      .map(function (s, i) {
-        return (
-          '<span><i style="background:' +
-          m.colours[i] +
-          '"></i>' +
-          (i === 2 ? '≥ ' : i === 0 ? '' : '') +
-          m.fmt(s) +
-          '</span>'
-        );
-      })
-      .join('');
+    return (
+      '<span class="conn-ramp-lab">' +
+      m.fmt(0) +
+      '</span><span class="conn-ramp" style="background:linear-gradient(90deg,' +
+      HEAT.join(',') +
+      ')"></span><span class="conn-ramp-lab">≥ ' +
+      m.fmt(m.sat) +
+      '</span><span class="conn-ramp-hot">hotter = ' +
+      m.hot +
+      '</span>'
+    );
   }
 
-  /* ── where: one circle per ~11 km cell of workers ───────────────── */
+  /* ── where: one point per ~11 km cell of workers ─────────────────── */
   function cellFeatures(cells) {
+    var maxW = {};
+    Object.keys(MEASURES).forEach(function (k) {
+      maxW[k] = Math.max.apply(
+        null,
+        cells
+          .map(function (c) {
+            return MEASURES[k].weight(c);
+          })
+          .concat([1]),
+      );
+    });
     return cells.map(function (c) {
       var props = {};
       Object.keys(c).forEach(function (k) {
         if (c[k] != null) props[k] = c[k];
+      });
+      // Precomputed per measure, so switching is a paint change: k_* is the
+      // cell's concern (0..1, absent when unknown), w_* its share of the
+      // largest cell's weight for the heat layer.
+      Object.keys(MEASURES).forEach(function (k) {
+        var t = concern(MEASURES[k], c);
+        if (t != null) props['k_' + k] = t;
+        props['w_' + k] = MEASURES[k].weight(c) / maxW[k];
       });
       return {
         type: 'Feature',
@@ -490,7 +559,17 @@
       pct(c.delayed_7d_rate)
     );
   }
-  function liveMap(container, cells, measure) {
+  function circleColour(k) {
+    var ramp = ['interpolate', ['linear'], ['get', 'k_' + k]];
+    HEAT.forEach(function (col, i) {
+      ramp.push(i / (HEAT.length - 1), col);
+    });
+    return ['case', ['has', 'k_' + k], ramp, NO_DATA];
+  }
+  // Heat, zoomed out: where the concern is concentrated. It hands over to
+  // circles as you zoom in, where each area's own rate is what you want.
+  var HEAT_UNTIL_ZOOM = 6.5;
+  function liveMap(container, cells, key, mode) {
     var map = window.ConnectMap.createMap(container, {
       center: [20, 5],
       zoom: 2.4,
@@ -509,10 +588,85 @@
     });
     var data = { type: 'FeatureCollection', features: cellFeatures(cells) };
     var ready = false;
-    var pending = measure;
+    var state = { key: key, mode: mode };
+    function circleOpacity() {
+      return state.mode === 'heat'
+        ? [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            HEAT_UNTIL_ZOOM - 1,
+            0,
+            HEAT_UNTIL_ZOOM,
+            0.85,
+          ]
+        : 0.85;
+    }
+    function apply() {
+      if (!ready) return;
+      var k = state.key;
+      map.setPaintProperty('cells-heat', 'heatmap-weight', ['get', 'w_' + k]);
+      map.setLayoutProperty(
+        'cells-heat',
+        'visibility',
+        state.mode === 'heat' ? 'visible' : 'none',
+      );
+      map.setPaintProperty('cells', 'circle-color', circleColour(k));
+      map.setPaintProperty('cells', 'circle-opacity', circleOpacity());
+      map.setPaintProperty('cells', 'circle-stroke-opacity', circleOpacity());
+    }
     map.on('load', function () {
       window.ConnectMap.calmBasemap(map, { text: 0.45 });
       map.addSource('cells', { type: 'geojson', data: data });
+      var density = [
+        'interpolate',
+        ['linear'],
+        ['heatmap-density'],
+        0,
+        'rgba(59,15,112,0)',
+      ];
+      [0.12, 0.35, 0.6, 0.82, 1].forEach(function (d, i) {
+        density.push(d, HEAT[i]);
+      });
+      map.addLayer({
+        id: 'cells-heat',
+        type: 'heatmap',
+        source: 'cells',
+        maxzoom: HEAT_UNTIL_ZOOM + 0.5,
+        paint: {
+          'heatmap-weight': ['get', 'w_' + state.key],
+          'heatmap-intensity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            1,
+            0.9,
+            6,
+            2.2,
+          ],
+          'heatmap-radius': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            1,
+            14,
+            4,
+            30,
+            6,
+            48,
+          ],
+          'heatmap-color': density,
+          'heatmap-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            HEAT_UNTIL_ZOOM - 1,
+            0.9,
+            HEAT_UNTIL_ZOOM + 0.5,
+            0,
+          ],
+        },
+      });
       map.addLayer({
         id: 'cells',
         type: 'circle',
@@ -521,21 +675,41 @@
           'circle-radius': [
             'interpolate',
             ['linear'],
-            ['sqrt', ['get', 'workers']],
-            1,
-            4,
-            10,
-            18,
-            30,
-            40,
+            ['zoom'],
+            3,
+            [
+              'interpolate',
+              ['linear'],
+              ['sqrt', ['get', 'workers']],
+              1,
+              3,
+              10,
+              12,
+              30,
+              26,
+            ],
+            8,
+            [
+              'interpolate',
+              ['linear'],
+              ['sqrt', ['get', 'workers']],
+              1,
+              6,
+              10,
+              22,
+              30,
+              44,
+            ],
           ],
-          'circle-color': colourExpr(pending),
-          'circle-opacity': 0.78,
-          'circle-stroke-color': colourExpr(pending),
-          'circle-stroke-width': 1,
+          'circle-color': circleColour(state.key),
+          'circle-opacity': circleOpacity(),
+          'circle-stroke-color': '#08042a',
+          'circle-stroke-width': 0.8,
+          'circle-stroke-opacity': circleOpacity(),
         },
       });
       ready = true;
+      apply();
       if (cells.length) window.ConnectMap.fit(map, data, 60);
       var popup = new window.mapboxgl.Popup({
         closeButton: false,
@@ -555,16 +729,16 @@
       });
     });
     return {
-      colourBy: function (m) {
-        pending = m;
-        if (!ready) return;
-        map.setPaintProperty('cells', 'circle-color', colourExpr(m));
-        map.setPaintProperty('cells', 'circle-stroke-color', colourExpr(m));
+      set: function (key2, mode2) {
+        state = { key: key2, mode: mode2 };
+        apply();
       },
     };
   }
-  function flatMap(box, cells, measure) {
-    function draw(m) {
+  // No Mapbox token: a flat plot with the same colours, circles only.
+  function flatMap(box, cells, key) {
+    function draw(k) {
+      var m = MEASURES[k];
       var W = 1000,
         H = 520;
       var svg = el('svg', {
@@ -583,30 +757,40 @@
           la1 = Math.max.apply(null, lats) + 1,
           lo0 = Math.min.apply(null, lons) - 1,
           lo1 = Math.max.apply(null, lons) + 1;
-        cells.forEach(function (c) {
-          svg.appendChild(
-            titled(
-              el('circle', {
-                cx: ((c.lon - lo0) / (lo1 - lo0)) * W,
-                cy: H - ((c.lat - la0) / (la1 - la0)) * H,
-                r: 3 + Math.sqrt(c.workers) * 1.6,
-                fill: colourFor(m, c[m.field]),
-                opacity: 0.78,
-              }),
-              nf.format(c.workers) +
-                ' workers · ' +
-                m.label +
-                ': ' +
-                m.fmt(c[m.field]),
-            ),
-          );
-        });
+        // Coolest first, so the hot spots are drawn on top.
+        cells
+          .slice()
+          .sort(function (a, b) {
+            return (concern(m, a) || 0) - (concern(m, b) || 0);
+          })
+          .forEach(function (c) {
+            svg.appendChild(
+              titled(
+                el('circle', {
+                  cx: ((c.lon - lo0) / (lo1 - lo0)) * W,
+                  cy: H - ((c.lat - la0) / (la1 - la0)) * H,
+                  r: 3 + Math.sqrt(c.workers) * 1.6,
+                  fill: heatColour(concern(m, c)),
+                  opacity: 0.9,
+                }),
+                nf.format(c.workers) +
+                  ' workers · ' +
+                  m.label +
+                  ': ' +
+                  m.fmt(m.rate(c)),
+              ),
+            );
+          });
       }
       box.innerHTML = '';
       box.appendChild(svg);
     }
-    draw(measure);
-    return { colourBy: draw };
+    draw(key);
+    return {
+      set: function (k) {
+        draw(k);
+      },
+    };
   }
 
   /* ── the URL is the state ───────────────────────────────────────── */
@@ -623,6 +807,7 @@
   function apiQuery() {
     var q = new URLSearchParams(params);
     q.delete('colour');
+    q.delete('view');
     var s = q.toString();
     return s ? '?' + s : '';
   }
@@ -712,13 +897,15 @@
     );
     date('From', 'from');
     date('To', 'to');
-    if (Array.from(params.keys()).some((k) => k !== 'colour')) {
+    if (Array.from(params.keys()).some((k) => k !== 'colour' && k !== 'view')) {
       var clear = h('button', 'net-back conn-clear', 'Clear filters');
       clear.type = 'button';
       clear.addEventListener('click', function () {
         var keep = params.get('colour');
+        var view = params.get('view');
         params = new URLSearchParams();
         if (keep) params.set('colour', keep);
+        if (view) params.set('view', view);
         location.search = params.toString();
       });
       bar.appendChild(clear);
@@ -890,11 +1077,13 @@
     var mp = data.map || { cells: [] };
     var chosen = MEASURES[params.get('colour')]
       ? params.get('colour')
-      : 'connected';
+      : 'delayed_3d';
+    var mode = params.get('view') === 'circles' ? 'circles' : 'heat';
     var p3 = panel('Where', measureLegend(MEASURES[chosen]));
+    var bar3 = p3.querySelector('.net-panel-bar');
     var legendNode = p3.querySelector('.net-legend');
     var pick = h('label', 'conn-select conn-colour');
-    pick.appendChild(h('span', '', 'Colour by'));
+    pick.appendChild(h('span', '', 'Show'));
     var sel = document.createElement('select');
     sel.className = 'net-filter';
     Object.keys(MEASURES).forEach(function (k) {
@@ -902,14 +1091,32 @@
     });
     sel.value = chosen;
     pick.appendChild(sel);
-    p3.querySelector('.net-panel-bar').insertBefore(pick, legendNode);
+    bar3.insertBefore(pick, legendNode);
+    var modes = h('div', 'conn-modes');
+    modes.setAttribute('role', 'group');
+    modes.setAttribute('aria-label', 'Show as');
+    [
+      ['heat', 'Heat'],
+      ['circles', 'Circles'],
+    ].forEach(function (mdef) {
+      var b = h('button', 'conn-mode', mdef[1]);
+      b.type = 'button';
+      b.dataset.mode = mdef[0];
+      b.setAttribute('aria-pressed', String(mdef[0] === mode));
+      modes.appendChild(b);
+    });
+    bar3.insertBefore(modes, legendNode);
     var canMap = window.ConnectMap && window.mapboxgl && window.MAPBOX_TOKEN;
     var box = h('div', canMap ? 'net-globe' : 'net-chartbox');
     p3.appendChild(box);
     note(
       p3,
-      'Each circle is an area about 11 km across, placed where its workers do most of their visits and ' +
-        'sized by how many workers it holds. Hover for every measure. Areas with fewer than ' +
+      'Hotter means more of a concern, for every choice. Heat shows where the concern is concentrated: ' +
+        'it is built from counts (workers without signal, visits delayed), so a big programme with a ' +
+        'small problem and a small programme with a big one can both glow. Zoom in, or choose Circles, ' +
+        'to see each area’s own rate: one circle per area about 11 km across, placed where its workers ' +
+        'do most of their visits and sized by how many workers it holds. Hover a circle for every ' +
+        'measure. Areas with fewer than ' +
         mp.min_workers_per_cell +
         ' workers are left off (' +
         nf.format(mp.withheld_workers || 0) +
@@ -917,15 +1124,30 @@
     );
     root.appendChild(p3);
     var painter = canMap
-      ? liveMap(box, mp.cells || [], MEASURES[chosen])
-      : flatMap(box, mp.cells || [], MEASURES[chosen]);
-    sel.addEventListener('change', function () {
-      var k = sel.value;
-      painter.colourBy(MEASURES[k]);
-      legendNode.innerHTML = measureLegend(MEASURES[k]);
-      params.set('colour', k);
+      ? liveMap(box, mp.cells || [], chosen, mode)
+      : flatMap(box, mp.cells || [], chosen);
+    function repaint() {
+      painter.set(chosen, mode);
+      legendNode.innerHTML = measureLegend(MEASURES[chosen]);
+      modes.querySelectorAll('button').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
+      });
+      params.set('colour', chosen);
+      if (mode === 'circles') params.set('view', 'circles');
+      else params.delete('view');
       history.replaceState(null, '', '?' + params.toString());
+    }
+    sel.addEventListener('change', function () {
+      chosen = sel.value;
+      repaint();
     });
+    modes.addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      mode = b.dataset.mode;
+      repaint();
+    });
+    if (!canMap) modes.hidden = true;
 
     var pOrg = panel('Partners');
     note(
