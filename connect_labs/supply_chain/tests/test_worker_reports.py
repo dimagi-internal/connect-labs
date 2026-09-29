@@ -163,3 +163,28 @@ def test_a_rejected_visits_balance_is_not_recorded(rule):
     report = read([visit])
     assert not StockCount.objects.exists()
     assert report["balances_recorded"] == 0
+
+
+def test_a_rule_whose_item_lost_its_unit_is_refused_and_the_rest_of_the_run_goes_on(world, rule):
+    other_commodity = Commodity.objects.create(scope_key=f"prog:{PROGRAM}", slug="zinc", name="Zinc", base_unit="tablet")
+    other = Item.objects.create(scope_key=f"prog:{PROGRAM}", sku="zinc", name="Zinc", commodity=other_commodity, base_unit="tablet")
+    bad = DispensingRule.objects.create(
+        program_id=PROGRAM, opportunity_id=OPP, item=other, resupply_point=world["store"], active_from=date(2026, 8, 1),
+        lines=validate_lines([{"kind": "stated", "paths": ["form.zinc.given"], "unit": "tablet"}], other),
+        forms=["Visit Form"], reports=validate_reports(REPORTS),
+    )
+    Item.objects.filter(pk=other.pk).update(base_unit="")
+    Commodity.objects.filter(pk=other_commodity.pk).update(base_unit="")
+    visit = real_shaped(
+        9005,
+        {"form.rutf_dispensing.rutf_sachets_dispensed": "14", "form.var.new_stock_balance": "86", "form.zinc.given": "2"},
+        xform="xf-9005",
+        name="Visit Form",
+    )
+
+    report = read([visit])
+
+    assert report["posted"] == 1
+    assert report["balances_recorded"] == 1  # the sound rule only
+    assert StockCount.objects.get(kind="self_reported").item == world["item"]
+    assert [(row["rule_id"], row["item_id"]) for row in report["unit_refused"] if "rule_id" in row] == [(bad.pk, other.pk)]
