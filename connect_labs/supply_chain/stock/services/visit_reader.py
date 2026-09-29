@@ -297,6 +297,12 @@ def _record_reports(access, report, pending, opportunity_id):
     """
     for rows in pending.values():
         rule = rows["rule"]
+        try:
+            unit = base_unit(rule.item)
+        except ValueError as error:
+            # One rule's item lost its unit: refuse that rule's reports, not the run.
+            report["unit_refused"].append({"rule_id": rule.pk, "item_id": rule.item_id, "reasons": [str(error)]})
+            continue
         for kind, counter, batch in (
             ("self_reported", "balances_recorded", rows["balance"]),
             ("reported_receipt", "receipts_recorded", rows["receipt"]),
@@ -307,7 +313,7 @@ def _record_reports(access, report, pending, opportunity_id):
                 access,
                 rows=batch,
                 commodity_slug=rule.item.commodity.slug,
-                quantity_unit=base_unit(rule.item),
+                quantity_unit=unit,
                 opportunity_id=opportunity_id,
                 item_id=rule.item_id,
                 kind=kind,
