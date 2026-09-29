@@ -1,6 +1,6 @@
 # Supply: stock we believe each worker holds, from their submitted visits
 
-Status: design agreed in conversation 2026-09-28; §9 mapped from the real app the same day.
+Status: design agreed in conversation 2026-09-28; §9 mapped from the real app the same day; implemented on branch emdash/supply-3sl96 (plan: docs/superpowers/plans/2026-09-28-supply-stock-from-visits.md — see its "Deviations from the spec" and "Resolved from the released app" sections).
 Builds on `2026-09-11-rutf-procurement-design.md` Part 2 (§18 a worker is a
 supply point, §19.2 consumption is derived, §20 counts and overrides, §22 the
 product derives and does not recommend).
