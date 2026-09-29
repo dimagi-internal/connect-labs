@@ -201,3 +201,62 @@ def post_override(count, program_id):
 def expected_from_ledger(program_id, supply_point, item=None) -> Quantity | Unconfirmed:
     """What the ledger says should be here -- the figure an override overrides."""
     return ledger.balance(program_id, supply_point, item=item)
+
+
+# Fields only the stock reader sets. A movement typed by a person or an agent
+# through movement_record must never claim to be a visit or to reverse one.
+VISIT_ONLY_FIELDS = frozenset({"visit_id", "reverses", "reverses_id", "estimated"})
+
+
+def post_visit_consumption(
+    *, program_id, opportunity_id, point, item, quantity, unit, occurred_on, visit_id, estimated
+) -> Movement:
+    """What one visit gave out of one item, leaving the worker's own stock."""
+    movement = Movement(
+        program_id=program_id,
+        opportunity_id=opportunity_id,
+        kind="consumption",
+        occurred_on=occurred_on,
+        from_supply_point=point,
+        item=item,
+        commodity=item.commodity,
+        quantity=quantity,
+        quantity_unit=unit,
+        visit_id=str(visit_id),
+        estimated=estimated,
+        reference=f"visit {visit_id}"[:64],
+        source="connect_visit",
+    )
+    movement.save()
+    return movement
+
+
+def post_visit_reversal(original: Movement, *, reason: str) -> Movement:
+    """Cancel a visit's consumption: the same quantity back into the same point.
+
+    Dated with the visit, not with the day the rejection was read, so a
+    monthly rate over any window loses the pair exactly. What the page showed
+    on a past day is reproduced by the as-of rewind (history/rewind.py), which
+    removes this row for any date before it was recorded.
+    """
+    if original.kind != "consumption" or original.from_supply_point_id is None or not original.visit_id:
+        raise ValueError("only a visit's consumption can be reversed; correct anything else with an adjustment")
+    movement = Movement(
+        program_id=original.program_id,
+        opportunity_id=original.opportunity_id,
+        kind="consumption",
+        occurred_on=original.occurred_on,
+        to_supply_point_id=original.from_supply_point_id,
+        item_id=original.item_id,
+        commodity_id=original.commodity_id,
+        quantity=original.quantity,
+        quantity_unit=original.quantity_unit,
+        visit_id=original.visit_id,
+        estimated=original.estimated,
+        reverses=original,
+        reference=f"reverses visit {original.visit_id}"[:64],
+        note=reason,
+        source="connect_visit",
+    )
+    movement.save()
+    return movement

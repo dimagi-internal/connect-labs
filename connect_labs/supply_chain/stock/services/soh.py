@@ -11,16 +11,19 @@ the count matters: a worker's phone is not a warehouse system, and an
 override is how reality gets in (see overrides in stock/services/counts.py).
 """
 
+from connect_labs.supply_chain import records
 from connect_labs.supply_chain.models import StockCount
 from connect_labs.supply_chain.stock.services import ledger
 from connect_labs.supply_chain.values import Quantity, Unconfirmed, unconfirmed
 
 
 def last_count(program_id, supply_point, item=None, on_date=None):
-    """The most recent count at this point, or None. Overrides do not win on
+    """The most recent on-hand count at this point, or None (a reported receipt is not one). Overrides do not win on
     kind -- only on recency, because an older override has been overtaken by
     a newer physical count as surely as by another override."""
-    counts = StockCount.objects.filter(program_id=program_id, supply_point=supply_point)
+    counts = StockCount.objects.filter(
+        program_id=program_id, supply_point=supply_point, kind__in=records.ON_HAND_COUNT_KINDS
+    )
     if item is not None:
         counts = counts.filter(item=item)
     if on_date:
@@ -29,7 +32,14 @@ def last_count(program_id, supply_point, item=None, on_date=None):
 
 
 def stock_on_hand(program_id, supply_point, item=None, unit=None, on_date=None) -> dict:  # noqa: C901
-    """{ledger, reported, variance, basis, as_of, reported_kind, reported_source}.
+    """{ledger, ledger_on_count_day, reported, variance, basis, as_of, reported_kind, reported_source}.
+
+    `variance` is reported MINUS the ledger ON THE COUNT DAY (`ledger_on_count_day`,
+    every movement dated on or before it), not today's ledger: stock that moved
+    after the count is not a discrepancy in it. This is the one per-point
+    definition; belief.py computes the same figure grouped for many points,
+    and the checks feed reads it here, so the Workers page and the checks
+    cannot disagree.
 
     `basis` names which figure a planner should use, and it is never a silent
     choice: `ledger` when no count exists, `count` when a count is more
@@ -47,6 +57,7 @@ def stock_on_hand(program_id, supply_point, item=None, unit=None, on_date=None) 
     if count is None:
         return {
             "ledger": balance,
+            "ledger_on_count_day": None,
             "reported": None,
             "variance": None,
             "basis": "ledger",
@@ -56,7 +67,8 @@ def stock_on_hand(program_id, supply_point, item=None, unit=None, on_date=None) 
         }
 
     reported = Quantity(count.quantity, count.quantity_unit)
-    variance = _variance(balance, reported, item)
+    on_count_day = ledger.balance(program_id, supply_point, item=item, unit=unit, on_date=count.counted_on)
+    variance = _variance(on_count_day, reported, item)
     basis = "ledger"
     if isinstance(variance, Unconfirmed):
         basis = "disagreement"
@@ -65,6 +77,7 @@ def stock_on_hand(program_id, supply_point, item=None, unit=None, on_date=None) 
 
     return {
         "ledger": balance,
+        "ledger_on_count_day": on_count_day,
         "reported": reported,
         "variance": variance,
         "basis": basis,

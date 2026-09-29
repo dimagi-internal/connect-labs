@@ -32,19 +32,24 @@ import logging
 from django.db import transaction
 
 from connect_labs.supply_chain.models import StockCount
+from connect_labs.supply_chain.stock.services.workers import worker_slug
 
 logger = logging.getLogger(__name__)
 
 
-def existing_submission_ids(program_id, submission_ids) -> set[str]:
-    """Which of these submissions have already been ingested, in one query."""
+def existing_submission_ids(program_id, submission_ids, kind="self_reported", item=None) -> set[str]:
+    """Which of these submissions already produced a count of this kind, in one query.
+
+    Kind-aware because one Stock Management form carries both a receipt and a
+    balance under the same submission id; keyed on the id alone, the second
+    was skipped as "already ingested".
+    """
     if not submission_ids:
         return set()
-    return set(
-        StockCount.objects.filter(program_id=program_id, form_submission_id__in=list(submission_ids)).values_list(
-            "form_submission_id", flat=True
-        )
-    )
+    counts = StockCount.objects.filter(program_id=program_id, kind=kind, form_submission_id__in=list(submission_ids))
+    if item is not None:
+        counts = counts.filter(item=item)
+    return set(counts.values_list("form_submission_id", flat=True))
 
 
 @transaction.atomic
@@ -57,6 +62,7 @@ def ingest_stock_reports(
     opportunity_id,
     item_id=None,
     create_missing_points=False,
+    kind="self_reported",
 ) -> dict:
     """Record a batch of worker-reported stock figures.
 
@@ -69,7 +75,7 @@ def ingest_stock_reports(
     program_id = access._require_program()
 
     already = existing_submission_ids(
-        program_id, [r.get("form_submission_id") for r in rows if r.get("form_submission_id")]
+        program_id, [r.get("form_submission_id") for r in rows if r.get("form_submission_id")], kind=kind, item=item
     )
 
     created, skipped, unmatched, created_points = [], 0, [], []
@@ -101,7 +107,7 @@ def ingest_stock_reports(
                 continue
             point = access.upsert_supply_point(
                 {
-                    "slug": f"user-{opportunity_id}-{username}"[:96],
+                    "slug": worker_slug(opportunity_id, username),
                     "name": username,
                     "kind": "user_held",
                     "opportunity_id": opportunity_id,
@@ -117,7 +123,7 @@ def ingest_stock_reports(
             supply_point=point,
             commodity=commodity,
             item=item,
-            kind="self_reported",
+            kind=kind,
             counted_on=row["counted_on"],
             quantity=row["quantity"],
             quantity_unit=quantity_unit,
@@ -148,26 +154,32 @@ def ingest_stock_reports(
 
 
 def extract_rows(visits, *, quantity_path, username_key="username", date_key="visit_date"):
-    """Pull the reported quantity out of raw export rows.
+    """Pull the reported quantity out of visit rows.
 
-    The form question that holds stock on hand differs per programme, so the
-    path is a parameter rather than a constant here -- and a visit that does
-    not answer it is skipped rather than read as zero. "The worker did not
-    report" and "the worker reported none" are different facts, and only one
-    of them is a stockout.
+    The path is a form_json path (`form.stock.cartons_on_hand`): export and
+    cache rows keep a submission's answers under `form_json`, so a path
+    applied to the visit dict itself -- as this once did -- reads nothing, and
+    "nobody reported" looks identical to nobody having reported.
+
+    A visit that does not answer is skipped rather than read as zero. The
+    submission id is the xform id (one form, one report); a row carrying none
+    falls back to its visit id so a re-read still cannot double-post.
     """
     out = []
     for visit in visits:
-        raw = _dig(visit, quantity_path)
+        form_json = visit.get("form_json") if isinstance(visit.get("form_json"), dict) else {}
+        raw = _dig(form_json, quantity_path)
         if raw in (None, ""):
             continue
+        visit_id = str(visit.get("id") or "")
+        xform_id = visit.get("xform_id") or form_json.get("id") or ""
         out.append(
             {
                 "connect_username": visit.get(username_key) or visit.get("flw_username"),
                 "quantity": raw,
                 "counted_on": visit.get(date_key) or visit.get("visit_date"),
-                "form_submission_id": str(visit.get("id") or visit.get("xform_id") or ""),
-                "visit_id": str(visit.get("id") or ""),
+                "form_submission_id": str(xform_id) if xform_id else f"visit-{visit_id}",
+                "visit_id": visit_id,
             }
         )
     return out

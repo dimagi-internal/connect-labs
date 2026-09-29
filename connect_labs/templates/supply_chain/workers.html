@@ -1,0 +1,104 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+{% comment %}
+One row per field worker, from `worker_stock`. Sorted by name until a column
+is chosen: the page states facts and ranks nobody (September design §22), so
+there is no "worst first" and no colour ranking the rows.
+
+Every figure that rests on unapproved visits or on protocol estimates says so
+in its own cell ("120 sachets · 30 unapproved · 30 estimated"). The variance
+names its sign and its day: reported minus the ledger ON THE COUNT DAY, so
+stock that arrived after the count is not read as a discrepancy. A receipt
+the worker reports that no store recorded is said on the worker's own row.
+{% endcomment %}
+{% block supply_content %}
+<div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Workers</h1>
+    <p class="text-sm text-gray-500 mt-1">What we believe each field worker holds: what was issued to them, less what their visits say they gave out.</p>
+  </div>
+  {% if has_program_context %}
+    <a href="{% url 'supply_chain:dispensing_rules' %}" class="text-sm text-brand-indigo hover:underline">Dispensing rules</a>
+  {% endif %}
+</div>
+{% if not has_program_context %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
+    <p class="text-sm text-message-warning-text/90">Choose a programme above. Workers belong to one.</p>
+  </div>
+{% elif not item %}
+  <p class="text-sm text-gray-600">No dispensing rule yet, so no visit has moved any stock and there is nothing to show per worker.</p>
+{% else %}
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <p class="text-sm text-gray-700">{{ item.name }}, in {{ data.unit|unit_plural }} · {{ rows|length }} worker{{ rows|length|pluralize }}</p>
+    {% if items|length > 1 %}
+      <form method="get" class="text-sm">
+        <label for="workers-item" class="sr-only">Item</label>
+        <input type="hidden" name="sort" value="{{ sort }}">
+        <input type="hidden" name="dir" value="{% if descending %}desc{% else %}asc{% endif %}">
+        {% if supply_as_of %}<input type="hidden" name="as_of" value="{{ supply_as_of|date:'Y-m-d' }}">{% endif %}
+        <select id="workers-item" name="item_id" onchange="this.form.submit()" class="rounded-md border border-gray-300 px-2 py-1">
+          {% for choice in items %}<option value="{{ choice.id }}" {% if choice.id == item.id %}selected{% endif %}>{{ choice.name }}</option>{% endfor %}
+        </select>
+        <noscript><button type="submit" class="ml-1 px-2 py-1 rounded-md border border-gray-300">Show</button></noscript>
+      </form>
+    {% endif %}
+  </div>
+  {% if not rows %}
+    <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
+      <p class="text-sm text-gray-600">No field worker's holding yet.</p>
+      <p class="text-sm text-gray-500 mt-1">A worker appears here once a visit of theirs is read, or once stock is issued to them.</p>
+    </div>
+  {% else %}
+    <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+      <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Workers table, scrolls sideways">
+        <table class="min-w-[60rem] w-full text-sm">
+          <caption class="sr-only">Each worker's stock of {{ item.name }}. Sorted by {% for key, label, help in columns %}{% if key == sort %}{{ label|lower }}{% endif %}{% endfor %}{% if descending %}, highest first{% endif %}; choose a column heading to sort by it.</caption>
+          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+            <tr>
+              {% for key, label, help in columns %}
+                <th scope="col" class="text-left px-4 py-2 align-bottom"
+                    {% if sort == key %}aria-sort="{% if descending %}descending{% else %}ascending{% endif %}"{% endif %}>
+                  <a class="hover:underline {% if sort == key %}text-gray-900{% endif %}"
+                     href="?item_id={{ item.id }}&amp;sort={{ key }}&amp;dir={% if sort == key and not descending %}desc{% else %}asc{% endif %}{% if supply_as_of %}&amp;as_of={{ supply_as_of|date:'Y-m-d' }}{% endif %}">{{ label }}{% if sort == key %} <span aria-hidden="true">{% if descending %}↓{% else %}↑{% endif %}</span>{% endif %}</a>
+                  {% if help %}<div class="normal-case tracking-normal font-normal text-[11px] text-gray-600 mt-0.5">{{ help }}</div>{% endif %}
+                </th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for row in rows %}
+              <tr>
+                <td class="px-4 py-2 align-top">
+                  <a data-testid="worker-name" class="text-gray-900 hover:underline" href="{% url 'supply_chain:worker_detail' row.supply_point_id %}?item_id={{ item.id }}">{{ row.name }}</a>
+                  {% for receipt in row.unmatched_receipts %}
+                    <div class="text-xs text-amber-900 mt-0.5" data-testid="unmatched-receipt">Reports receiving {{ receipt.quantity|figure_text }} on {{ receipt.reported_on|day }}; no store recorded a delivery between {{ receipt.recorded_from|day }} and {{ receipt.recorded_to|day }}.</div>
+                  {% endfor %}
+                </td>
+                <td class="px-4 py-2 align-top tabular-nums">
+                  {{ row.on_hand|on_hand_words:row }}
+                  <div class="mt-0.5">{% include 'supply_chain/_stock_band.html' with status=row.band %}</div>
+                </td>
+                <td class="px-4 py-2 align-top tabular-nums">
+                  {{ row.days_to_stockout|days_text }}
+                  {% for reason in row.days_to_stockout|unconfirmed_reasons %}<div class="text-xs text-gray-500 mt-0.5">{{ reason }}</div>{% endfor %}
+                </td>
+                <td class="px-4 py-2 align-top tabular-nums">
+                  {% if row.variance_reported_minus_ledger %}
+                    {{ row.variance_reported_minus_ledger|signed_figure }}
+                    <div class="text-xs text-gray-500 mt-0.5">counted {{ row.reported_on|day }}</div>
+                  {% else %}<span class="text-gray-600">no count</span>{% endif %}
+                </td>
+                <td class="px-4 py-2 align-top tabular-nums">{% if row.days_since_checked is None %}<span class="text-gray-600">never</span>{% else %}{{ row.days_since_checked }}{% endif %}</td>
+                <td class="px-4 py-2 align-top tabular-nums">{% if row.unapproved_share is None %}—{% else %}{{ row.unapproved_share }}%{% endif %}</td>
+                <td class="px-4 py-2 align-top tabular-nums">{% if row.estimated_share is None %}—{% else %}{{ row.estimated_share }}%{% endif %}</td>
+                <td class="px-4 py-2 align-top tabular-nums">{{ row.no_answer_visits }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -30,7 +30,7 @@ def test_internal_operations_are_not_exposed_as_mcp_tools():
 
     internal = {name for name, op in all_operations().items() if op.internal}
     assert internal, "no operation is marked internal; this test would pass vacuously"
-    assert internal >= {"catalogue_seed", "tracker_import", "stock_report_ingest"}
+    assert internal >= {"catalogue_seed", "tracker_import", "stock_report_ingest", "visit_consumption_ingest"}
     for name in internal:
         assert get_tool(f"{TOOL_PREFIX}{name}") is None, f"{name} is internal but on the MCP catalogue"
 

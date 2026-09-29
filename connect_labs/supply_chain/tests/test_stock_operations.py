@@ -643,24 +643,36 @@ class TestStockReportIngest:
 
 
 class TestExtractRows:
+    @staticmethod
+    def _visit(vid, xform, answers):
+        return {
+            "id": vid,
+            "xform_id": xform,
+            "username": "a",
+            "visit_date": "2026-09-01",
+            "form_json": {"id": xform, "form": answers},
+        }
+
     def test_a_visit_that_did_not_answer_is_skipped_not_read_as_zero(self):
         from connect_labs.supply_chain.stock.services.ingest import extract_rows
 
         visits = [
-            {"id": 1, "username": "a", "visit_date": "2026-09-01", "form": {"stock": {"cartons_on_hand": "6"}}},
-            {"id": 2, "username": "b", "visit_date": "2026-09-01", "form": {"stock": {}}},
-            {"id": 3, "username": "c", "visit_date": "2026-09-01"},
+            self._visit(1, "xf-1", {"stock": {"cartons_on_hand": "6"}}),
+            {**self._visit(2, "xf-2", {"stock": {}}), "username": "b"},
+            {"id": 3, "xform_id": "xf-3", "username": "c", "visit_date": "2026-09-01"},
         ]
         rows = extract_rows(visits, quantity_path="form.stock.cartons_on_hand")
         assert [r["connect_username"] for r in rows] == ["a"]
         assert rows[0]["quantity"] == "6"
-        assert rows[0]["form_submission_id"] == "1"
+        # One form, one report: the xform id, not the visit id.
+        assert rows[0]["form_submission_id"] == "xf-1"
+        assert rows[0]["visit_id"] == "1"
 
     def test_a_reported_zero_is_kept(self):
         from connect_labs.supply_chain.stock.services.ingest import extract_rows
 
         rows = extract_rows(
-            [{"id": 4, "username": "d", "visit_date": "2026-09-01", "form": {"stock": {"cartons_on_hand": 0}}}],
+            [self._visit(4, "xf-4", {"stock": {"cartons_on_hand": 0}})],
             quantity_path="form.stock.cartons_on_hand",
         )
         assert rows[0]["quantity"] == 0

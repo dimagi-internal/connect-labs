@@ -58,13 +58,24 @@ def average_monthly_consumption(program_id, supply_point, item=None, as_of=None,
     # it is, and a short one read idler.
     end = as_of or date.today()
     start = end - timedelta(days=window_days)
-    basis = demand_basis(program_id, supply_point, item=item)
-    demand = _demand(program_id, supply_point, basis, item=item)
-    in_window = demand.between(start, end)
+    basis = demand_basis(program_id, supply_point, item=item, as_of=end)
+    # Only demand on or before the end: on a past day, dispensing that had not
+    # happened yet must not set the rate (or its earliest day).
+    demand = _demand(program_id, supply_point, basis, item=item).as_of(end)
     earliest = demand.order_by("occurred_on").values_list("occurred_on", flat=True).first()
+    by_unit = {unit[0]: total for unit, total in demand.between(start, end)._totals(["quantity_unit"]).items()}
+    return rate_from(ledger.collapse(by_unit, item, None), earliest, end, window_days, basis)
+
+
+def rate_from(total, earliest, end, window_days, basis):
+    """A monthly rate from a window's total and the earliest demand ever recorded.
+
+    The one rule, shared by one point's plan and by the grouped figures in
+    belief.py, so a worker's cover on the Workers page and on the resupply
+    plan cannot disagree.
+    """
     if earliest is None:
         return unconfirmed(NO_CONSUMPTION_YET)
-
     observed_days = min(window_days, (end - earliest).days + 1)
     if observed_days < MINIMUM_WINDOW_DAYS:
         what = "dispensing" if basis == CONSUMPTION else "releases"
@@ -72,9 +83,6 @@ def average_monthly_consumption(program_id, supply_point, item=None, as_of=None,
             f"only {observed_days} days of {what} have been recorded here; "
             f"at least {MINIMUM_WINDOW_DAYS} are needed before a monthly rate means anything"
         )
-
-    by_unit = {unit[0]: total for unit, total in in_window._totals(["quantity_unit"]).items()}
-    total = ledger.collapse(by_unit, item, None)
     if isinstance(total, Unconfirmed):
         return total
     if total.amount == 0:
@@ -94,15 +102,21 @@ RELEASES = "releases"
 RELEASE_KINDS = ("issue", "transfer", "distribution")
 
 
-def demand_basis(program_id, supply_point, item=None) -> str:
+def demand_basis(program_id, supply_point, item=None, as_of=None) -> str:
     """What a point's rate is averaged from, stated rather than assumed.
 
     A point that dispenses is rated on what it dispenses -- that is demand.
     A point that never has is rated on what it releases to other points, which
     is the demand placed on it; without this a warehouse had no rate at all,
     and so no months of stock and no reorder figure, however busy it was.
+
+    On a past day (`as_of`) only what had happened by then decides it.
     """
-    dispensed = Movement.objects.for_program(program_id).filter(kind="consumption", from_supply_point=supply_point)
+    dispensed = (
+        Movement.objects.for_program(program_id)
+        .as_of(as_of)
+        .filter(kind="consumption", from_supply_point=supply_point)
+    )
     if item is not None:
         dispensed = dispensed.filter(item=item)
     return CONSUMPTION if dispensed.exists() else RELEASES
@@ -111,7 +125,8 @@ def demand_basis(program_id, supply_point, item=None) -> str:
 def _demand(program_id, supply_point, basis, item=None):
     qs = Movement.objects.for_program(program_id).filter(from_supply_point=supply_point)
     if basis == CONSUMPTION:
-        qs = qs.filter(kind="consumption")
+        # A reversed visit never happened as far as the rate is concerned.
+        qs = qs.filter(kind="consumption", reversal__isnull=True)
     else:
         qs = qs.filter(kind__in=RELEASE_KINDS, to_supply_point__isnull=False).exclude(to_supply_point=supply_point)
     if item is not None:
@@ -148,9 +163,18 @@ def plan(program_id, supply_point, item=None, as_of=None, window_days=DEFAULT_WI
     section 22).
     """
     on_hand = ledger.balance(program_id, supply_point, item=item, on_date=as_of)
-    basis = demand_basis(program_id, supply_point, item=item)
+    basis = demand_basis(program_id, supply_point, item=item, as_of=as_of or date.today())
     amc = average_monthly_consumption(program_id, supply_point, item=item, as_of=as_of, window_days=window_days)
+    return cover(on_hand, amc, basis, supply_point, item=item, window_days=window_days)
 
+
+def cover(on_hand, amc, basis, supply_point, item=None, window_days=DEFAULT_WINDOW_DAYS) -> dict:
+    """Months of stock, days to stock-out, reorder point, resupply and status, from on-hand and a rate.
+
+    Split from `plan` so belief.py can hand it figures it computed in grouped
+    SQL for many points at once and still classify them by exactly this rule.
+    `status` is a classification, not advice (design doc section 22).
+    """
     if _is_durable(item):
         # The balance is real -- "which site has which dispenser" -- and is
         # returned as it stands. Everything derived from consumption says why
@@ -160,7 +184,6 @@ def plan(program_id, supply_point, item=None, as_of=None, window_days=DEFAULT_WI
             "on_hand": on_hand,
             "amc": DURABLE,
             "amc_window_days": window_days,
-            "amc_basis": basis,
             "amc_basis": basis,
             "months_of_stock": DURABLE,
             "days_to_stockout": DURABLE,
@@ -181,7 +204,6 @@ def plan(program_id, supply_point, item=None, as_of=None, window_days=DEFAULT_WI
             "on_hand": on_hand,
             "amc": amc,
             "amc_window_days": window_days,
-            "amc_basis": basis,
             "amc_basis": basis,
             "months_of_stock": reason,
             "days_to_stockout": reason,

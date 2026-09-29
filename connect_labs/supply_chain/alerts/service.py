@@ -283,7 +283,7 @@ def detect_checks(subscription, found: list[dict], now) -> int:
 
 
 def _movement_facts(movement) -> dict:
-    return {
+    facts = {
         "quantity": str(movement.quantity.normalize()) if movement.quantity is not None else None,
         "quantity_unit": movement.quantity_unit,
         "commodity": movement.commodity.name,
@@ -296,6 +296,13 @@ def _movement_facts(movement) -> dict:
         "recorded_by": movement.recorded_by_org.name if movement.recorded_by_org_id else "",
         "reference": movement.reference,
     }
+    if movement.reverses_id:
+        # A reversal is a `consumption` INTO the worker's point: the sachets a
+        # rejected visit claimed going back in the bag. Said as what it is, so
+        # "to Worker X" is never read as a delivery nobody made.
+        facts["reverses_visit"] = movement.visit_id
+        facts["reverses_movement_id"] = movement.reverses_id
+    return facts
 
 
 def detect_movements(subscription, now) -> int:
@@ -318,12 +325,17 @@ def detect_movements(subscription, now) -> int:
         if not _within_filters(subscription, scope):
             continue
         point_id = movement.to_supply_point_id or movement.from_supply_point_id
+        reversal = "reversal of " if movement.reverses_id else ""
         AlertNotice.objects.create(
             subscription=subscription,
             program_id=subscription.program_id,
             kind="movement",
             subject_kind=movement.kind,
-            subject={"type": "movement", "id": movement.pk, "label": f"{movement.kind} of {movement.commodity.name}"},
+            subject={
+                "type": "movement",
+                "id": movement.pk,
+                "label": f"{reversal}{movement.kind} of {movement.commodity.name}",
+            },
             facts=_movement_facts(movement),
             since=movement.occurred_on,
             record_url=record_url("supply_point", point_id, {}, subscription.program_id),

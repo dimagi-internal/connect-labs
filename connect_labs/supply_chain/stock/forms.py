@@ -596,6 +596,10 @@ class StockCountForm(ProvenancedForm):
         self.fields["supply_point"].queryset = self.in_program(SupplyPoint).order_by("name")
         self.fields["commodity"].queryset = self.scoped(Commodity).order_by("name")
         self.fields["item"].queryset = self.scoped(Item).order_by("name")
+        # A reported receipt comes only from a worker's app, never from a person keying a count.
+        self.fields["kind"].choices = [
+            choice for choice in self.fields["kind"].choices if choice[0] in ("", *records.ON_HAND_COUNT_KINDS)
+        ]
         # The trade item by its name. "(kpw-orszinc-copack)" after it wrapped
         # the chosen item onto three lines, and the ledger note beside "Found"
         # repeated the slug.
