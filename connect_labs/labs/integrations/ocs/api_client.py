@@ -1,8 +1,8 @@
 """
 Open Chat Studio API Client.
 
-Provides OAuth-based access to OCS APIs for listing experiments/bots and triggering conversations.
-Uses the OCS OAuth token stored in request.session["ocs_oauth"].
+Provides OAuth-based access to OCS APIs for listing experiments/bots and triggering conversations,
+as one user: from the browser session's token, or from the user's stored ``UserOCSToken``.
 """
 
 import logging
@@ -22,26 +22,68 @@ class OCSAPIError(Exception):
 
 class OCSDataAccess:
     """
-    Access OCS APIs using session OAuth.
+    Access OCS APIs as one user.
 
-    Uses the OCS OAuth token stored in request.session["ocs_oauth"].
+    With a ``request``, the token is the browser session's (``request.session
+    ["ocs_oauth"]``), mirrored to the user's ``UserOCSToken`` row. With only a
+    ``user`` — a workflow action run from the MCP, or its background execution —
+    the token is that row. Either way a refresh goes through
+    ``ocs_tokens.refresh_ocs_token``, which owns the token chain.
     """
 
-    def __init__(self, request: HttpRequest):
+    def __init__(self, request: HttpRequest | None = None, *, user=None):
         """
-        Initialize OCS data access.
-
         Args:
-            request: HttpRequest with ocs_oauth in session
+            request: a browser request (its session holds the OCS token).
+            user: the user to act as when there is no request.
         """
         self.request = request
-
-        # Get OCS OAuth token from session
-        self.ocs_oauth = request.session.get("ocs_oauth", {})
-        self.access_token = self.ocs_oauth.get("access_token")
+        self.user = user if user is not None else getattr(request, "user", None)
         self.base_url = getattr(settings, "OCS_URL", "https://www.openchatstudio.com").rstrip("/")
-
         self._client = None
+
+        session_oauth = (request.session.get("ocs_oauth") or {}) if request is not None else {}
+        if session_oauth.get("access_token"):
+            self.ocs_oauth = session_oauth
+            self._mirror_session_to_row()
+        else:
+            self.ocs_oauth = self._row_oauth()
+        self.access_token = self.ocs_oauth.get("access_token")
+
+    def _authenticated_user(self):
+        user = self.user
+        if user is None or getattr(user, "is_authenticated", False) is not True:
+            return None
+        return user if isinstance(getattr(user, "pk", None), int) else None
+
+    def _row_oauth(self) -> dict:
+        from connect_labs.labs.integrations.ocs.ocs_tokens import token_to_session_oauth
+        from connect_labs.labs.models import UserOCSToken
+
+        user = self._authenticated_user()
+        if user is None:
+            return {}
+        try:
+            token = UserOCSToken.objects.filter(user=user).first()
+        except Exception:  # noqa: BLE001 -- no stored token is "not connected", never an error here
+            logger.warning("Could not read the stored OCS token for user %s", user.pk, exc_info=True)
+            return {}
+        return token_to_session_oauth(token) if token else {}
+
+    def _mirror_session_to_row(self) -> None:
+        """A session token with no row (connected before rows existed) becomes the row,
+        so the user's actions can reach OCS without their browser."""
+        from connect_labs.labs.integrations.ocs.ocs_tokens import save_ocs_token
+        from connect_labs.labs.models import UserOCSToken
+
+        user = self._authenticated_user()
+        if user is None:
+            return
+        try:
+            if not UserOCSToken.objects.filter(user=user).exists():
+                save_ocs_token(user, self.ocs_oauth)
+        except Exception:  # noqa: BLE001 -- a mirror that fails must not break the session's own call
+            logger.warning("Could not mirror the OCS session token for user %s", user.pk, exc_info=True)
 
     @property
     def http_client(self) -> httpx.Client:
@@ -96,68 +138,43 @@ class OCSDataAccess:
         return True
 
     def _refresh_token(self) -> bool:
-        """
-        Attempt to refresh the OCS OAuth token using the stored refresh token.
-
-        Updates both the instance state and the session so the new token persists.
+        """Refresh through the user's token row (the one owner of the chain) and
+        mirror the result into the session when there is one.
 
         Returns:
             True if refresh succeeded, False otherwise
         """
-        refresh_token = self.ocs_oauth.get("refresh_token")
-        if not refresh_token:
-            logger.debug("No refresh token available for OCS OAuth")
-            return False
+        from connect_labs.labs.integrations.ocs.ocs_tokens import (
+            OCSTokenError,
+            refresh_ocs_token,
+            token_to_session_oauth,
+        )
 
-        client_id = getattr(settings, "OCS_OAUTH_CLIENT_ID", "")
-        client_secret = getattr(settings, "OCS_OAUTH_CLIENT_SECRET", "")
-        if not client_id or not client_secret:
-            logger.warning("OCS OAuth client credentials not configured for token refresh")
-            return False
-
+        user = self._authenticated_user()
         try:
-            from django.utils import timezone
+            if user is not None:
+                oauth = token_to_session_oauth(
+                    refresh_ocs_token(user, stale_access_token=self.access_token, session_oauth=self.ocs_oauth)
+                )
+            else:
+                # A session with no signed-in user behind it: refresh the session's
+                # own copy, as before rows existed. There is no row to keep in step.
+                oauth = _refresh_session_only(self.ocs_oauth)
+        except OCSTokenError as e:
+            logger.warning("OCS token refresh failed: %s", e)
+            return False
 
-            response = httpx.post(
-                f"{self.base_url}/o/token/",
-                data={
-                    "grant_type": "refresh_token",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "refresh_token": refresh_token,
-                },
-                timeout=30.0,
-            )
-
-            if response.status_code != 200:
-                logger.warning(f"OCS token refresh failed: {response.status_code} - {response.text}")
-                return False
-
-            token_data = response.json()
-            new_oauth = {
-                "access_token": token_data["access_token"],
-                "refresh_token": token_data.get("refresh_token", refresh_token),
-                "expires_at": timezone.now().timestamp() + token_data.get("expires_in", 3600),
-                "token_type": token_data.get("token_type", "Bearer"),
-                "scope": token_data.get("scope", self.ocs_oauth.get("scope", "")),
-            }
-
-            self.access_token = new_oauth["access_token"]
-            self.ocs_oauth = new_oauth
-
-            self.request.session["ocs_oauth"] = new_oauth
+        self.ocs_oauth = oauth
+        self.access_token = oauth["access_token"]
+        if self.request is not None and hasattr(self.request, "session"):
+            self.request.session["ocs_oauth"] = self.ocs_oauth
             if hasattr(self.request.session, "modified"):
                 self.request.session.modified = True
-
-            # Invalidate cached HTTP client so next call uses the new token
-            if self._client is not None:
-                self._client.close()
-                self._client = None
-
-            return True
-        except Exception as e:
-            logger.warning(f"OCS token refresh error: {e}")
-            return False
+        # Invalidate the cached HTTP client so the next call uses the new token.
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+        return True
 
     def list_experiments(self) -> list[dict]:
         """
@@ -393,6 +410,25 @@ class OCSDataAccess:
             return out
         except httpx.HTTPError as e:
             raise OCSAPIError(f"Failed to fetch participants: {e}") from e
+
+
+def _refresh_session_only(ocs_oauth: dict) -> dict:
+    """Redeem a session's refresh token with no user row involved."""
+    from django.utils import timezone
+
+    from connect_labs.labs.integrations.ocs.ocs_tokens import OCSTokenError, _exchange
+
+    refresh_token = (ocs_oauth or {}).get("refresh_token")
+    if not refresh_token:
+        raise OCSTokenError("no refresh token in the session")
+    token_data = _exchange(refresh_token)
+    return {
+        "access_token": token_data["access_token"],
+        "refresh_token": token_data.get("refresh_token", refresh_token),
+        "expires_at": timezone.now().timestamp() + token_data.get("expires_in", 3600),
+        "token_type": token_data.get("token_type", "Bearer"),
+        "scope": token_data.get("scope", ocs_oauth.get("scope", "")),
+    }
 
 
 def is_ocs_oauth_active(request: HttpRequest) -> bool:

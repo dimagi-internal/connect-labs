@@ -1,0 +1,516 @@
+"""A workflow run, for an agent: read its grading, run its actions.
+
+For any agent on the labs MCP — a person's own (PAT or MCP sign-in), or canopy
+acting as the visitor on a run page that shares its run (``config.agent.share``,
+``workflow/agent_sharing.py``). The run page hands canopy its SELECTION (the run,
+its scope, the worker keys on screen); these read the substance live, as the caller:
+
+* ``workflow_run_context``      — what the run is, the indicators it is graded on,
+                                   and the actions the workflow offers;
+* ``workflow_run_indicators``   — the graded cells, filterable by band ("red");
+* ``workflow_indicator_explain``— how an indicator is computed, from the run's registry;
+* ``workflow_run_action``       — run one of the workflow's OWN actions (the same one
+                                   its button runs): a preview first, then the call
+                                   that acts, carrying the preview's confirm token;
+* ``workflow_action_status``    — how an action run is going.
+
+A canopy (delegated) call is held to the workflow's opt-in to sharing; a person's
+own agent is not, since it already reaches every tool.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from ..tool_registry import MCPToolError, register
+
+logger = logging.getLogger(__name__)
+
+#: A live run's grading is rebuilt from the visit cache on every read, which is
+#: seconds of work. An agent reads it several times in one exchange, so a short
+#: per-person cache keeps that to one build.
+GRADED_CACHE_SECONDS = 120
+
+_SCOPE = {
+    "run_id": {"type": "integer", "description": "The workflow run (on a run page: the page state's filters.run_id)."},
+    "opportunity_id": {
+        "type": "integer",
+        "description": "The run's scope when it is opportunity-owned. Give exactly one of this or program_id.",
+    },
+    "program_id": {
+        "type": "integer",
+        "description": "The run's scope when it is program-owned. Give exactly one of this or opportunity_id.",
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Shared plumbing
+# ---------------------------------------------------------------------------
+
+
+def _wda_for_user(user, opportunity_id: int | None = None, program_id: int | None = None):
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+
+    from ..connect_token import require_connect_token
+
+    return WorkflowDataAccess(
+        opportunity_id=opportunity_id, program_id=program_id, access_token=require_connect_token(user)
+    )
+
+
+def _delegated_token():
+    """The delegated (canopy-for-a-visitor) access token of this call, or None."""
+    try:
+        from fastmcp.server.dependencies import get_access_token
+
+        from connect_labs.mcp.server import allowed_tools
+
+        token = get_access_token()
+    except Exception:  # noqa: BLE001 -- no MCP request context (direct calls, tests)
+        return None
+    return token if allowed_tools(token) is not None else None
+
+
+def _caller_actor() -> str:
+    try:
+        from fastmcp.server.dependencies import get_http_headers
+
+        return (get_http_headers().get("canopy-actor") or "")[:100]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+class _Run:
+    """A run and its definition, read as the caller, in the run's own scope."""
+
+    def __init__(self, user, run_id: int, opportunity_id: int | None, program_id: int | None):
+        from connect_labs.workflow.agent_sharing import definition_shares_with_agent
+
+        if (opportunity_id is None) == (program_id is None):
+            raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+        self.user = user
+        self.opportunity_id = opportunity_id
+        self.program_id = program_id
+        self.delegated = _delegated_token() is not None
+        self.wda = _wda_for_user(user, opportunity_id=opportunity_id, program_id=program_id)
+        try:
+            self.run = self.wda.get_run(run_id)
+            if self.run is None:
+                raise MCPToolError("NOT_FOUND", f"workflow run {run_id} not found in this scope")
+            definition_id = (self.run.data or {}).get("definition_id")
+            self.definition = self.wda.get_definition(definition_id) if definition_id else None
+            if self.definition is None:
+                raise MCPToolError("NOT_FOUND", f"the workflow behind run {run_id} could not be read")
+            if self.delegated and not definition_shares_with_agent(self.definition):
+                raise MCPToolError(
+                    "PERMISSION_DENIED",
+                    "This workflow does not share its runs with the embedded agent "
+                    "(its definition's config.agent.share is off).",
+                )
+        except BaseException:
+            self.wda.close()
+            raise
+
+    def close(self):
+        self.wda.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+    @property
+    def page_url(self) -> str:
+        scope = f"opportunity_id={self.opportunity_id}" if self.opportunity_id else f"program_id={self.program_id}"
+        return f"/labs/workflow/{self.definition.id}/run/?run_id={self.run.id}&{scope}"
+
+    def graded(self) -> dict:
+        """The run's grading, trimmed to what an agent reads, with its provenance.
+
+        A completed run answers from its stored snapshot — the week as published. A
+        live run is graded now by the same builder a save would run, and cached
+        briefly per person (the cache holds only what this person could build).
+        """
+        from django.core.cache import cache
+
+        from connect_labs.workflow.agent_sharing import graded_payload
+        from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run, cache_state
+
+        run = self.run
+        if run.is_completed and run.snapshot:
+            payload = graded_payload(run.snapshot)
+            if payload is None:
+                raise _not_semantic(run.id)
+            return {**_slim(payload), "source": "stored", "cache": None}
+
+        key = f"wf-agent-graded:v1:{self.user.pk}:{run.id}"
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
+        try:
+            built = build_snapshot_for_run(
+                self.wda, run, requested_opportunity_id=self.opportunity_id, program_id=self.program_id
+            )
+        except SnapshotBuildError as e:
+            raise MCPToolError("UPSTREAM_ERROR", e.message) from e
+        payload = graded_payload(built["payload"])
+        if payload is None:
+            raise _not_semantic(run.id)
+        out = {**_slim(payload), "source": "live", "cache": cache_state(built["opportunity_ids"])}
+        cache.set(key, out, GRADED_CACHE_SECONDS)
+        return out
+
+
+def _not_semantic(run_id) -> MCPToolError:
+    return MCPToolError(
+        "INVALID_SCHEMA",
+        f"run {run_id} is not graded by the semantic layer (its snapshot has no per-worker "
+        "indicator grading), so there is nothing to read by band.",
+    )
+
+
+def _slim(payload: dict) -> dict:
+    """The graded payload without its case records: every cell and catalog, none of
+    the rows behind them (``byFLW[].rows`` indexes a case list that can be MBs)."""
+    by_flw = [{k: v for k, v in f.items() if k != "rows"} for f in payload.get("byFLW") or []]
+    by_llo = [{k: v for k, v in r.items() if k not in ("rows", "opps")} for r in payload.get("byLLO") or []]
+    by_opp = [{k: v for k, v in r.items() if k != "rows"} for r in payload.get("byOpp") or []]
+    return {
+        "byFLW": by_flw,
+        "byLLO": by_llo,
+        "byOpp": by_opp,
+        "programInd": payload.get("programInd") or {},
+        "cMeasures": payload.get("cMeasures") or [],
+        "display": payload.get("display") or {},
+        "generated_at": payload.get("generated_at"),
+        "opportunity_labels": (payload.get("deployment") or {}).get("opportunity_labels") or {},
+    }
+
+
+def _action_error(e) -> MCPToolError:
+    code = "VERSION_CONFLICT" if e.code.startswith("confirm") else "INVALID_SCHEMA"
+    if e.code == "not_offered":
+        code = "PERMISSION_DENIED"
+    return MCPToolError(code, str(e), {"reason": e.code})
+
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+
+
+@register(
+    name="workflow_run_context",
+    description=(
+        "Start here for a workflow run. What the run is, the indicators it is graded on "
+        "(label, plain meaning, direction, thresholds, target, unit -- the thresholds these "
+        "bands were computed with), what each band means, and the ACTIONS the workflow offers "
+        "(the same ones its buttons run) with their argument schemas and defaults. On a run "
+        "page, read the run and scope from the page state's filters (run_id and "
+        "opportunity_id or program_id)."
+    ),
+    input_schema={"type": "object", "properties": dict(_SCOPE), "required": ["run_id"], "additionalProperties": False},
+)
+def workflow_run_context(user, *, run_id: int, opportunity_id=None, program_id=None) -> dict[str, Any]:
+    from connect_labs.workflow.actions import definition_actions
+    from connect_labs.workflow.agent_sharing import BAND_MEANING, indicator_catalog
+
+    with _Run(user, run_id, opportunity_id, program_id) as r:
+        run = r.run
+        try:
+            graded = r.graded()
+            indicators = indicator_catalog(graded)
+            display = graded.get("display") or {}
+            grading = {
+                "source": graded["source"],
+                "generated_at": graded.get("generated_at"),
+                "cache": graded["cache"],
+            }
+        except MCPToolError as e:
+            indicators, display, grading = None, {}, {"unavailable": e.message}
+        return {
+            "workflow": {
+                "id": r.definition.id,
+                "name": r.definition.name,
+                "template_type": r.definition.template_type,
+            },
+            "run": {
+                "id": run.id,
+                "name": run.name,
+                "status": run.status,
+                "period_start": run.period_start,
+                "period_end": run.period_end,
+                "completed_at": run.completed_at,
+            },
+            "page_url": r.page_url,
+            "nouns": {k: display.get(k) for k in ("entity", "worker", "organisation") if display.get(k)},
+            "indicators": indicators,
+            "bands": BAND_MEANING,
+            "grading": grading,
+            "actions": definition_actions(r.definition),
+        }
+
+
+@register(
+    name="workflow_run_indicators",
+    description=(
+        "The run's graded indicators -- the same cells the report colours. scope='worker' "
+        "(default) lists workers with their worker `key` (what workflow_run_action takes), "
+        "organisation, case count, red/yellow counts and a cell per indicator {band, value, n}. "
+        "`band='red'` keeps only workers with at least one red indicator (among `indicators` "
+        "if given) and names them in `matched`, most-matched first. Bands come from the "
+        "server's grading; never infer them from values. scope='organisation' | 'opportunity' "
+        "| 'programme' returns those rows instead. `cache.cold` true means the live figures "
+        "are all zero because no visits are loaded -- say so rather than reporting zeros."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            **_SCOPE,
+            "scope": {"type": "string", "enum": ["worker", "organisation", "opportunity", "programme"]},
+            "band": {
+                "type": "string",
+                "enum": [
+                    "red",
+                    "yellow",
+                    "green",
+                    "insufficient",
+                    "notcredible",
+                    "notinapp",
+                    "unrecorded",
+                    "unbanded",
+                    "nodata",
+                ],
+            },
+            "indicators": {"type": "array", "items": {"type": "string"}},
+            "worker_keys": {"type": "array", "items": {"type": "string"}},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 500},
+        },
+        "required": ["run_id"],
+        "additionalProperties": False,
+    },
+)
+def workflow_run_indicators(
+    user,
+    *,
+    run_id: int,
+    opportunity_id=None,
+    program_id=None,
+    scope: str = "worker",
+    band: str | None = None,
+    indicators: list[str] | None = None,
+    worker_keys: list[str] | None = None,
+    limit: int = 200,
+) -> dict[str, Any]:
+    from connect_labs.workflow.agent_sharing import BAND_MEANING, GradingError, scope_rows, select_workers
+
+    with _Run(user, run_id, opportunity_id, program_id) as r:
+        graded = r.graded()
+        known = {m.get("indicator") or m.get("id") for m in graded.get("cMeasures") or []}
+        unknown = sorted(set(indicators or []) - known)
+        if unknown:
+            raise MCPToolError("NOT_FOUND", f"not indicators of this run: {unknown}; known: {sorted(known)}")
+        head = {
+            "run_id": r.run.id,
+            "source": graded["source"],
+            "generated_at": graded.get("generated_at"),
+            "cache": graded["cache"],
+            "legend": BAND_MEANING,
+        }
+        try:
+            if scope == "worker":
+                return {
+                    **head,
+                    **select_workers(graded, band=band, indicators=indicators, worker_keys=worker_keys, limit=limit),
+                }
+            rows = scope_rows(graded, scope, indicators)
+        except GradingError as e:
+            raise MCPToolError("INVALID_SCHEMA", str(e)) from e
+        return {**head, "rows": rows, "opportunity_labels": graded.get("opportunity_labels")}
+
+
+@register(
+    name="workflow_indicator_explain",
+    description=(
+        "How this run's indicators are computed, from the semantic registry the workflow is "
+        "bound to. With no `indicators`: an index -- id, title, unit, category, the authored "
+        "plain meaning and a definition rendered from the SQL. With ids: the full chain "
+        "(measure, components, properties, filters) and the compiled statement once."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            **_SCOPE,
+            "indicators": {"type": "array", "items": {"type": "string"}},
+            "scope": {"type": "string", "enum": ["programme", "llo", "opportunity", "flw"]},
+        },
+        "required": ["run_id"],
+        "additionalProperties": False,
+    },
+)
+def workflow_indicator_explain(
+    user,
+    *,
+    run_id: int,
+    opportunity_id=None,
+    program_id=None,
+    indicators: list[str] | None = None,
+    scope: str = "programme",
+) -> dict[str, Any]:
+    from connect_labs.semantic.explain import UnknownIndicator, english, explain
+    from connect_labs.semantic.runtime import SemanticRuntimeError
+    from connect_labs.semantic.workflow_binding import resolve_registry_for
+    from connect_labs.workflow.data_access import SemanticRegistryDataAccess
+
+    with _Run(user, run_id, opportunity_id, program_id) as r:
+        # Read by the workflow's OWNER scope, which is the scope the run was opened
+        # with (see snapshot_builders.semantic_snapshot).
+        try:
+            props_doc, full_registry, llo_map, reg_settings, _deployment, source = resolve_registry_for(
+                r.definition,
+                registry_access_factory=lambda: SemanticRegistryDataAccess(
+                    access_token=r.wda.access_token, opportunity_id=opportunity_id, program_id=program_id
+                ),
+            )
+        except SemanticRuntimeError as e:
+            raise MCPToolError("INVALID_SCHEMA", str(e)) from e
+
+        if not indicators:
+            index = []
+            for measure in full_registry.get("measures") or []:
+                meta = measure.get("meta") or {}
+                if not meta.get("indicator"):
+                    continue
+                index.append(
+                    {
+                        "indicator": meta["indicator"],
+                        "title": measure.get("title"),
+                        "unit": meta.get("unit"),
+                        "category": meta.get("category"),
+                        "plain": meta.get("plain"),
+                        "definition": (english(full_registry, props_doc, measure["name"]) or {}).get("definition"),
+                    }
+                )
+            return {"registry": source, "indicators": index}
+
+        out = []
+        for ind in indicators:
+            try:
+                out.append(
+                    explain(
+                        props_doc,
+                        full_registry,
+                        ind,
+                        scope=scope,
+                        llo_map=llo_map or None,
+                        settings=reg_settings or None,
+                    )
+                )
+            except UnknownIndicator:
+                raise MCPToolError("NOT_FOUND", f"No indicator or measure named {ind!r} in this run's registry")
+        compiled_sql = out[0].pop("compiled_sql", None) if out else None
+        for explanation in out:
+            explanation.pop("compiled_sql", None)
+            explanation.pop("layer1", None)
+        return {"registry": source, "scope": scope, "indicators": out, "compiled_sql": compiled_sql}
+
+
+@register(
+    name="workflow_run_action",
+    description=(
+        "Run one of the workflow's own actions (workflow_run_context -> actions), e.g. "
+        "'Initiate AI coach' -- the same action its button runs, as the person you act for.\n\n"
+        "TWO CALLS, ALWAYS. (1) Without `confirm`: a PREVIEW of exactly what would happen -- "
+        "which workers, which bot, which text -- and a single-use `confirm` token; nothing is "
+        "done. SHOW the preview to the person and get their explicit yes. (2) Call again with "
+        "the preview's `arguments` and its `confirm`: the action is queued and an execution id "
+        "returned; follow it with workflow_action_status. Changing anything between the two "
+        "invalidates the token. If the preview lists `needs`, settle them first: `bot` -- ask "
+        "which of `bot_choices` to use, then preview again with `bot`; `connect_ocs` -- the "
+        "person must connect Open Chat Studio at `connect_url` first.\n\n"
+        "`arguments.workers[].key` are worker keys from workflow_run_indicators; an item's own "
+        "`prompt` is how to address that worker's own red indicators."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            **_SCOPE,
+            "action": {"type": "string", "description": "An action key the workflow offers."},
+            "arguments": {"type": "object"},
+            "confirm": {"type": "string", "description": "The token from this action's preview. Omit to preview."},
+        },
+        "required": ["run_id", "action", "arguments"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_run_action(
+    user,
+    *,
+    run_id: int,
+    action: str,
+    arguments: dict,
+    opportunity_id=None,
+    program_id=None,
+    confirm: str | None = None,
+) -> dict[str, Any]:
+    from connect_labs.workflow.actions import ActionError, commit, preview
+
+    with _Run(user, run_id, opportunity_id, program_id) as r:
+        try:
+            if not confirm:
+                out = preview(user, wda=r.wda, run=r.run, definition=r.definition, key=action, arguments=arguments)
+                out["next"] = (
+                    "Nothing has been done. Settle `needs`, then preview again."
+                    if out["needs"]
+                    else "Nothing has been done. Show this to the person; on their yes, call again with "
+                    "these `arguments` and `confirm`."
+                )
+                return out
+            execution = commit(
+                user,
+                wda=r.wda,
+                run=r.run,
+                definition=r.definition,
+                key=action,
+                arguments=arguments,
+                confirm=confirm,
+                via="canopy" if r.delegated else "mcp",
+                actor=_caller_actor(),
+            )
+        except ActionError as e:
+            raise _action_error(e) from e
+        return {
+            "execution": execution.as_dict(),
+            "page_url": r.page_url,
+            "next": "Queued. Follow it with workflow_action_status.",
+        }
+
+
+@register(
+    name="workflow_action_status",
+    description=(
+        "How an action run is going: status (queued, running, completed, "
+        "completed_with_errors, failed), progress, and per-worker results (task_id, "
+        "session_id, or error). Give execution_id, or none for your recent runs on this run."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {**_SCOPE, "execution_id": {"type": "integer"}},
+        "required": ["run_id"],
+        "additionalProperties": False,
+    },
+)
+def workflow_action_status(
+    user, *, run_id: int, opportunity_id=None, program_id=None, execution_id: int | None = None
+) -> dict[str, Any]:
+    from connect_labs.workflow.models import WorkflowActionExecution
+
+    with _Run(user, run_id, opportunity_id, program_id) as r:
+        qs = WorkflowActionExecution.objects.filter(user=user, run_id=r.run.id)
+        if execution_id is not None:
+            qs = qs.filter(pk=execution_id)
+        return {"run_id": r.run.id, "executions": [e.as_dict() for e in qs[:20]]}

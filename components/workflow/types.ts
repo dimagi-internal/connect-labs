@@ -80,6 +80,21 @@ export interface RunView {
   complete(opts?: { confirm?: string }): Promise<boolean>;
 
   /**
+   * Tell the embedded agent what the page now shows: the worker keys in view
+   * (`<opportunity_id>::<username>`) and what is drilled into. A no-op unless
+   * the workflow shares its runs (config.agent.share). See
+   * workflow/agent_sharing.py.
+   */
+  /** The actions this workflow offers, for its buttons: pass a `key` to
+   * `actions.runAction`. Empty when it declares none. */
+  workflowActions?: WorkflowActionSpec[];
+
+  shareSelection?(selection: {
+    visible_ids?: string[];
+    drilled?: Record<string, unknown>;
+  }): void;
+
+  /**
    * Flags raised against this run, newest first. Always queried live from
    * the Flag records (not snapshot-frozen). A Flag is a finding derived
    * from the metrics (`source: 'auto'`) or appended by a human
@@ -598,6 +613,18 @@ export interface TaskUrlParams {
  * Action handlers available to workflow components.
  */
 export interface ActionHandlers {
+  /**
+   * Run one of this workflow's declared actions (`view.workflowActions`) for some
+   * workers -- e.g. "Initiate AI coach". The runner previews it, shows the person
+   * exactly what will happen, and runs it only on their confirm. Resolves with the
+   * finished run, or null if they cancelled. The same action an agent runs through
+   * the labs MCP's `workflow_run_action`.
+   */
+  runAction?(
+    key: string,
+    args: { workers: WorkflowActionWorker[]; [key: string]: unknown },
+  ): Promise<WorkflowActionExecution | null>;
+
   createTask(params: CreateTaskParams): Promise<TaskResult>;
   checkOCSStatus(): Promise<OCSStatusResult>;
   listOCSBots(): Promise<OCSBotsResult>;
@@ -954,6 +981,70 @@ export type WorkflowComponent = React.FC<WorkflowProps>;
 /**
  * Data passed from Django template to React.
  */
+/** One action a workflow offers (connect_labs/workflow/actions.py): its own
+ * name for it, the framework action it is, and what its button says. */
+export interface WorkflowActionSpec {
+  key: string;
+  type: string;
+  label: string;
+  description: string;
+}
+
+/** A worker named in an action's arguments, with any text of its own. */
+export interface WorkflowActionWorker {
+  key: string;
+  prompt?: string;
+  title?: string;
+  description?: string;
+}
+
+/** What running an action would do (POST .../actions/<key>/preview/). */
+export interface WorkflowActionPreview {
+  action: string;
+  type: string;
+  label: string;
+  summary: string;
+  workers: Array<{
+    key: string;
+    name: string;
+    opportunity_id: number;
+    prompt?: string;
+    title?: string;
+  }>;
+  arguments: Record<string, unknown> & { workers: WorkflowActionWorker[] };
+  /** What must be settled before it can be confirmed: `bot`, `connect_ocs`. */
+  needs: string[];
+  bot?: { id: string; name: string };
+  bot_choices?: Array<{ id: string; name: string }>;
+  unknown_bot?: string;
+  connect_url?: string;
+  synthetic?: boolean;
+  /** Present only when nothing is needed: the single-use token that runs it. */
+  confirm?: string;
+}
+
+/** An action run (WorkflowActionExecution.as_dict()). */
+export interface WorkflowActionExecution {
+  id: number;
+  action: string;
+  type: string;
+  status:
+    'queued' | 'running' | 'completed' | 'completed_with_errors' | 'failed';
+  via: string;
+  run_id: number;
+  progress: { total: number; done: number; ok: number; failed: number };
+  results: Record<
+    string,
+    {
+      status: 'ok' | 'failed';
+      task_id?: number;
+      session_id?: string | null;
+      error?: string;
+    }
+  >;
+  error: string;
+}
+
 export interface WorkflowDataFromDjango {
   definition: WorkflowDefinition;
   definition_id: number;
@@ -991,7 +1082,12 @@ export interface WorkflowDataFromDjango {
     saveWorkerResult?: string;
     completeRun?: string | null;
     getSnapshot?: string | null;
+    /** Base URL of this run's workflow actions (workflow/actions.py). */
+    actionBase?: string;
+    actionExecutionBase?: string;
   };
   render_code?: string;
   is_edit_mode?: boolean;
+  /** The actions this workflow offers (workflow/actions.py); absent in edit mode. */
+  actions?: WorkflowActionSpec[];
 }

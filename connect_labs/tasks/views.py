@@ -19,6 +19,7 @@ from django.views.generic import ListView, TemplateView
 
 from connect_labs.labs.context import get_org_data
 from connect_labs.labs.integrations.ocs.api_client import OCSAPIError, OCSDataAccess
+from connect_labs.tasks.ai_sessions import start_ai_session
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.tasks.models import TASK_REVIEW_VALUES, TaskRecord
 from connect_labs.utils.json_safe import safe_json_for_script
@@ -849,120 +850,23 @@ def task_initiate_ai(request, task_id):
         if not prompt_text:
             return JsonResponse({"error": "Prompt instructions are required"}, status=400)
 
-        # Synthetic-opp short circuit: skip the real OCS call and attach a
-        # canned coaching transcript directly onto the task. Triggered when
-        # the modal selected the synthetic bot from OCSBotsListAPIView's
-        # short-circuit return — keeps the manager-flow demo self-contained
-        # without requiring a real OCS account / experiment.
-        from connect_labs.labs.synthetic.manager_flow_views import _coaching_conversation
-        from connect_labs.labs.synthetic.registry import get_synthetic_opp
-
-        is_synthetic = (
-            experiment == "synthetic-muac-coaching" or get_synthetic_opp(int(task.opportunity_id)) is not None
-        )
-        if is_synthetic:
-            updated_data = dict(task.data or {})
-            updated_data["ocs_conversation"] = _coaching_conversation(
-                prompt_text, flw_name=task.flw_name or task.username or "there"
-            )
-            updated_data["ocs_status"] = "in_progress"
-            updated_data.pop("coaching_pending", None)
-            task.data = updated_data
-            data_access.save_task(task)
-
-            actor_name = request.user.get_display_name()
-            data_access.add_ai_session(
+        ocs_client = OCSDataAccess(request)
+        try:
+            outcome = start_ai_session(
+                request.user,
+                data_access,
                 task,
-                actor=actor_name,
-                session_params={
-                    "identifier": identifier,
-                    "experiment": experiment,
-                    "platform": platform,
-                    "prompt_text": prompt_text,
-                },
-                session_id="synthetic-coaching-session",
-                status="completed",
+                ocs=ocs_client,
+                identifier=identifier,
+                experiment=experiment,
+                prompt_text=prompt_text,
+                platform=platform,
+                start_new_session=start_new_session,
             )
-            return JsonResponse(
-                {
-                    "success": True,
-                    "session_id": "synthetic-coaching-session",
-                    "status": "completed",
-                    "message": "Synthetic coaching conversation started.",
-                }
-            )
-
-        # Prepare session data to link back to Connect
-        session_data = {
-            "task_id": str(task.id),
-            "opportunity_id": str(task.opportunity_id),
-            "username": task.task_username,
-            "created_by": request.user.username if hasattr(request.user, "username") else "unknown",
-        }
-
-        # Trigger bot with OCS using OAuth
-        ocs_client = OCSDataAccess(request=request)
-        result = ocs_client.trigger_bot(
-            identifier=identifier,
-            platform=platform,
-            experiment_id=experiment,
-            prompt_text=prompt_text,
-            start_new_session=start_new_session,
-            session_data=session_data,
-        )
-        ocs_client.close()
-
-        # Log minimal diagnostics (avoid leaking participant data)
-        logger.info(
-            "trigger_bot response for task %s: status=%s keys=%s",
-            task_id,
-            result.get("status") if isinstance(result, dict) else type(result).__name__,
-            list(result.keys()) if isinstance(result, dict) else None,
-        )
-
-        # Extract session_id from trigger_bot response
-        session_id = None
-        status = "pending"
-        if isinstance(result, dict):
-            session = result.get("session")
-            session_id = (
-                (session.get("id") if isinstance(session, dict) else None)
-                or result.get("session_id")
-                or result.get("id")
-            )
-            if session_id:
-                session_id = str(session_id)
-                status = "completed"
-                logger.info(f"Session linked immediately from trigger_bot: {session_id}")
-            else:
-                logger.warning(f"trigger_bot response has no session_id. Keys: {list(result.keys())}")
-
-        # Add AI session event with session_id if available from trigger_bot response
-        actor_name = request.user.get_display_name()
-        session_params = {
-            "identifier": identifier,
-            "experiment": experiment,
-            "platform": platform,
-            "prompt_text": prompt_text,
-        }
-        task.add_ai_session(
-            actor=actor_name,
-            session_params=session_params,
-            session_id=session_id,
-            status=status,
-        )
-
-        # Save task via data access
-        data_access.save_task(task)
+        finally:
+            ocs_client.close()
         data_access.close()
-
-        return JsonResponse(
-            {
-                "success": True,
-                "message": "AI conversation initiated.",
-                "session_id": session_id,
-            }
-        )
+        return JsonResponse({"success": True, **outcome})
 
     except OCSAPIError:
         logger.exception("OCS error when initiating AI for task %s", task_id)

@@ -1827,3 +1827,53 @@ GET /labs/workflow/api/<workflow_id>/semantic/?scopes=opportunity,flw[&series=<f
 - Don't hand-write Layer 1 SQL. It is generated from the pipeline named in `pipelines.entity`, and that's where form paths and their fallbacks live.
 - Don't copy indicator logic into render code. That's the two-copies drift the semantic layer exists to end.
 - Don't create a report from a template without `registry_source` when a registry for that indicator family already exists.
+
+---
+
+## 14. Workflow actions, and sharing a run with an agent
+
+Two separate things. Neither one depends on the other.
+
+### Workflow actions (`config.actions`)
+
+An action is something a workflow lets you **do**, such as "Initiate AI coach". You define it once, and every entry point runs the same code (`connect_labs/workflow/actions.py`):
+
+- **A button on the report.** Render code calls `actions.runAction(key, {workers: [{key}]})`. The runner previews the action in its own dialog and runs it only when the person confirms. `view.workflowActions` lists the declared actions so a render can draw their buttons (`indicator_report_render.js` does).
+- **The labs MCP.** An agent calls `workflow_run_action`. That agent can be a person's own, signed in with a PAT, or canopy acting as the visitor on a page that shares its run.
+
+```python
+"config": {
+    "actions": [
+        {
+            "key": "initiate_ai_coach",       # the workflow's name for it
+            "type": "start_ocs_outreach",     # which framework action it is (actions.ACTION_TYPES)
+            "label": "Initiate AI coach",     # what its button says
+            "defaults": {"bot": "<OCS bot id>", "prompt": "..."},
+        }
+    ]
+}
+```
+
+- **Types are framework code, not render code.**
+  - `create_task` makes one follow-up task per worker, attached to the run.
+  - `start_ocs_outreach` makes that task plus an Open Chat Studio conversation. On synthetic opportunities it attaches a sample coaching conversation instead, and no message is sent.
+  - To add a type, add it to `ACTION_TYPES` and give it an executor branch.
+  - A config entry with no known `type` is not offered. §10's catalog entries document render-code buttons; they are not actions.
+- **Preview, then commit.** Running an action takes two calls.
+  - The **preview** returns exactly what would happen: the workers, the bot and the text. It also returns a single-use `confirm` token, bound to the person, the run, the action and those arguments.
+  - The **commit** must carry that token. Change anything in between and it is refused.
+  - `needs` lists what the preview is waiting for: `bot` (choose from `bot_choices`) or `connect_ocs` (the person connects OCS at `connect_url`).
+- **It runs in the background, as the person.** Execution is the `execute_workflow_action` celery task. It uses the person's stored Connect token (`UserConnectToken`) and OCS token (`UserOCSToken`, saved when they connect OCS). No browser is needed.
+  - Each task is filed in its **worker's** opportunity, which matters on program reports that span several.
+  - `WorkflowActionExecution` records who ran the action, through which entry point (`page`, `mcp` or `canopy`), for which workers, and the outcome per worker.
+- **Off by default, and never inherited from a template that says nothing.** Set it per workflow with `workflow_update_definition`.
+
+### Sharing a run with the embedded agent (`config.agent.share`)
+
+`{"agent": {"share": true}}` puts the canopy SDK's agent panel on the run page (`workflow/agent_sharing.py`). It is off by default and set per workflow.
+
+- **What the agent is handed** is the selection, not the rows: the run, the scope it is filed under and the worker keys (`<opportunity_id>::<username>`).
+- **When the report drills** into an organisation, opportunity or worker, render code calls `view.shareSelection({visible_ids, drilled})`, and the agent follows. That call is a no-op on a page that does not share.
+- **The agent reads the run as the visitor.** `workflow_run_context` gives the indicators with their thresholds and the workflow's actions. `workflow_run_indicators(band="red")` gives the graded cells; bands come from the server's grading, `semantic/snapshot.py:band_of`. `workflow_indicator_explain` explains the bound registry.
+- **The agent acts** through the same `workflow_run_action` as everyone else.
+- **Canopy calls** to the `workflow_*` run tools are refused on a workflow that does not share. A person's own agent is not affected.

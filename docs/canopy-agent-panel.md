@@ -1,9 +1,12 @@
 # The canopy agent panel in labs
 
 A floating launcher on a labs page opens a chat with a canopy agent that can see
-what the visitor is looking at. It is live on the marketplace network page and on
-a round's page, which is where it earns its keep: "draft an email to each of
-these organisations for this EOI" is a question about the rows on screen.
+what the visitor is looking at. It is live on the marketplace network page, on
+a round's page, and on the run page of any workflow that opts in
+(`config.agent.share`, see [Workflow run pages](#workflow-run-pages)). That is
+where it earns its keep: "draft an email to each of these organisations for this
+EOI" and "start OCS conversations with everyone who is red" are questions about
+what is on screen.
 
 Canopy's own guide is the authority on the widget
 (`docs/architecture/embedding-a-canopy-agent.md` in `dimagi-internal/canopy-web`).
@@ -114,15 +117,59 @@ Two things a capability cannot fix, learned the same way: a confined turn has no
 `AskUserQuestion`, so an agent must ask in the chat; and a Drive write needs a
 `parentFolderId` the agent can actually discover.
 
-**The agent reads as itself, not as the visitor.** Its tools run with its own
-labs credential, so the ids in the page state narrow what it looks at but do not
-*limit* what it could look at. Every labs user can already read the whole
-directory including contacts, so this adds no exposure between labs users — but
-it does mean an embedded agent should only ever hold access that is fine for
-every visitor who can reach it. Canopy has an on-behalf-of assertion
-(`/api/tokens/on-behalf-of/jwks`) that would let labs run a tool call *as* the
-visitor; verifying it in labs' MCP server is the next piece of work, and until
-then this paragraph stands.
+**Who the agent reads as.** With the delegated grant on (`CANOPY_CLIENT_ID`,
+[below](#letting-canopy-act-as-the-visitor-off-by-default)), a registered page's
+tools run **as the visitor**, limited to that page's scopes. Without it they run
+with the agent's own labs credential, so the ids in the page state narrow what it
+looks at but do not *limit* what it could look at. For the marketplace that adds no
+exposure, since every labs user can already read the whole directory. Workflow run
+pages need the grant: a run's data is scoped to the people with access to its
+opportunities, and an agent reading as itself would see that person's run with
+somebody else's access.
+
+## Workflow run pages
+
+A workflow shares its runs by turning it on for itself:
+`config.agent = {"share": true}` (`connect_labs/workflow/agent_sharing.py`). What the
+agent can then do is the workflow's own declared actions (`config.actions`,
+`connect_labs/workflow/actions.py`), the same ones its buttons run. The full
+contract is in `connect_labs/workflow/WORKFLOW_REFERENCE.md` §14. What is specific
+to canopy:
+
+- **Nothing about workflows is configured on canopy's side.** ACE's `connect`
+  capability names the connect-labs SITE. A conversation on any labs page reaches
+  labs' tools through canopy's gateway, as the visitor, and the agent learns what
+  they are from labs' own tool list and descriptions. Labs alone decides what each
+  page may do: the page's scopes (`PAGE_SCOPES`, here `workflow:read` +
+  `workflow:act`) and the visitor's own access. Canopy's ceiling defers to that
+  (`mcp__*connect_labs__*`), and after canopy-web#1031 canopy stops filtering by
+  tool name altogether.
+- **The selection follows the page.** When the page renders it declares the run,
+  its own scope (`filters.run_id` and `opportunity_id` or `program_id`, which every
+  run tool is called with) and the worker keys. When the report drills in, render
+  code calls `view.shareSelection(...)`, which narrows `visible_ids` and sets
+  `filters.drilled` through the SDK's `window.canopyHost.updatePageState` (SDK ≥ 0.5).
+  `backing_tool` (`workflow_run_indicators`) is a hint about where to read, not a limit.
+- **One page registration, every workflow.** `PAGE_SCOPES` is keyed by URL name, so
+  the registration covers every run page. What limits it to workflows that share is
+  the view: without `share` it renders no panel, so it issues no page token and no
+  grant. Every `workflow_*` run tool also refuses a canopy call on a workflow that
+  does not share, whatever the token carries.
+
+| Scope | Tools |
+| --- | --- |
+| `workflow:read` | `workflow_run_context`, `workflow_run_indicators`, `workflow_indicator_explain`, `workflow_action_status` |
+| `workflow:act` | `workflow_run_action` |
+
+**The one write scope, and why it is safe to hand to a page.** `workflow_run_action`
+cannot act in one call. Its first call is a preview of exactly what would happen,
+with a single-use token bound to the visitor, the run and those arguments. Only a
+second call carrying that token acts, and changing anything in between refuses it.
+The tool tells the agent to show the preview and get the person's yes in between.
+Labs enforces that a preview came first; it cannot enforce the yes itself, which is
+what a canopy-side confirm (MCP `input_required`) would add. `PREVIEWED_WRITE_SCOPES`
+names this scope, and `test_every_scoped_tool_exists_and_only_previewed_scopes_write`
+holds any future write scope to the same rule.
 
 ## Contact details and transcripts
 
