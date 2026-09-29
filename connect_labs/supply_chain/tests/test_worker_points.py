@@ -139,3 +139,27 @@ def test_supply_point_upsert_carries_the_uuid(da):
         },
     )
     assert point["connect_user_uuid"] == UUID_B
+
+
+def test_the_plain_username_slug_is_unchanged():
+    assert worker_slug(OPP, "worker-acacia") == "user-10514-worker-acacia"
+
+
+@pytest.mark.parametrize("username", ["a.b@example.org", "worker acacia", "wörker-é", "日本語"])
+def test_an_odd_username_still_gets_a_valid_point(da, store, username):
+    slug = worker_slug(OPP, username)
+    assert slug.startswith("user-10514-") and len(slug) <= 96
+    point = WorkerIndex(da, OPP).ensure(username, UUID_A, parent=store)
+    assert point.slug == slug
+
+
+def test_odd_usernames_that_slugify_alike_stay_distinct():
+    assert worker_slug(OPP, "a.b") != worker_slug(OPP, "a b")
+    assert worker_slug(OPP, "a.b") == worker_slug(OPP, "a.b")
+
+
+def test_a_long_username_keeps_its_hash_and_stays_distinct(da, store):
+    one, two = "w" * 120 + "1", "w" * 120 + "2"
+    a, b = worker_slug(OPP, one), worker_slug(OPP, two)
+    assert len(a) <= 96 and len(b) <= 96 and a != b
+    assert WorkerIndex(da, OPP).ensure(one, "", parent=store).slug == a

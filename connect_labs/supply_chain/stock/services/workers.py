@@ -15,11 +15,27 @@ Loaded once per run, so a thousand visits resolve their workers in memory
 rather than with a query each.
 """
 
+import hashlib
+
+from django.utils.text import slugify
+
 from connect_labs.supply_chain.models import SupplyPoint
+
+SLUG_MAX = 96
 
 
 def worker_slug(opportunity_id, username) -> str:
-    return f"user-{opportunity_id}-{username}"[:96]
+    """`user-{opp}-{username}`; a username that is not itself a valid slug (or is
+    too long) gets slugify(username) plus a short hash of the raw name, hashed
+    before truncation so it survives and distinct names stay distinct."""
+    prefix = f"user-{opportunity_id}-"
+    plain = f"{prefix}{username}"
+    if slugify(username) == username and len(plain) <= SLUG_MAX:
+        return plain
+    digest = hashlib.sha1(username.encode("utf-8")).hexdigest()[:8]
+    room = SLUG_MAX - len(prefix) - len(digest) - 1
+    base = slugify(username)[:room].strip("-_")
+    return f"{prefix}{base}-{digest}" if base else f"{prefix}{digest}"
 
 
 class WorkerIndex:
