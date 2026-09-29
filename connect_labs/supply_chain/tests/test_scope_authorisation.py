@@ -177,6 +177,10 @@ def test_the_system_escape_hatch_is_greppable():
         "supply_chain/management/commands/supply_dev_seed.py",
         "supply_chain/management/commands/supply_ingest_stock_reports.py",
         "supply_chain/management/commands/supply_load_bootstrap.py",
+        # Operator-run: reads visits into the ledger; the operation refuses real programmes.
+        "supply_chain/management/commands/supply_ingest_visit_consumption.py",
+        # The visit-reader beat task: no user, synthetic programmes only, a real one skipped by name.
+        "supply_chain/stock/services/visit_reader.py",
         # The alert beat task: no user, reads only programmes that already
         # hold a subscription a member created.
         "supply_chain/alerts/service.py",

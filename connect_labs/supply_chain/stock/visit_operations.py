@@ -1,4 +1,4 @@
-"""Stock from visits: dispensing rules, and (later tasks) the visit reader.
+"""Stock from visits: dispensing rules, and the visit reader that applies them.
 
 Registered into the single registry in operations.py, like stock/operations.py,
 so the HTTP API and the MCP server both get them with no second list.
@@ -112,3 +112,33 @@ def dispensing_rule_get(access, rule_id):
 )
 def dispensing_rule_upsert(access, data):
     return record(access.upsert_dispensing_rule(data))
+
+
+@register_operation(
+    name="visit_consumption_ingest",
+    summary=(
+        "Read an opportunity's visits and post what each gave out as consumption from the worker's own "
+        "stock, per its dispensing rules. Idempotent per visit and item; a visit later rejected or marked "
+        "duplicate gets a reversal. until replays history (visits after it wait; a later rejection reads "
+        "as pending). Synthetic programmes only until the product owner says otherwise."
+    ),
+    input_schema=obj(
+        {"opportunity_id": ID, "until": _DATE, "refresh": {"type": "boolean"}}, required=("opportunity_id",)
+    ),
+    is_write=True,
+    internal=True,
+)
+def visit_consumption_ingest(access, opportunity_id, until=None, refresh=False):
+    from connect_labs.supply_chain import scopes
+    from connect_labs.supply_chain.stock.services import visit_reader, visit_source
+    from connect_labs.supply_chain.stock.services.dispensing import read_date
+
+    # Before any read: a real programme's visits are not even fetched.
+    scopes.require_synthetic(access.program_id, "read visits into the stock ledger")
+    visits = visit_source.fetch_visits(opportunity_id, access.access_token, force_refresh=refresh)
+    return visit_reader.ingest_visit_consumption(
+        access,
+        opportunity_id=opportunity_id,
+        visits=visits,
+        until=read_date(until) if until else None,
+    )

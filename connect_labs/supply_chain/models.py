@@ -1156,9 +1156,7 @@ class SupplyPoint(SourcedModel):
         return self.kind == "user_held"
 
     def clean(self):
-        if self.kind == "user_held" and not (
-            self.connect_username or self.connect_user_id or self.connect_user_uuid
-        ):
+        if self.kind == "user_held" and not (self.connect_username or self.connect_user_id or self.connect_user_uuid):
             raise ValidationError(
                 {"connect_username": "A user_held supply point must name the Connect user whose stock it is."}
             )
@@ -1474,6 +1472,46 @@ class DispensingRule(TimestampedModel):
     @property
     def estimated(self) -> bool:
         return any(line.get("kind") in ("protocol", "value_map") for line in self.lines or [])
+
+
+class WorkerVisit(TimestampedModel):
+    """A Connect visit the stock reader has read, and what it made of it.
+
+    The ledger cannot hold a visit's STATUS: a movement is append-only, and a
+    visit goes pending -> approved (or rejected) after its stock has already
+    left the bag. "How much of this figure is unapproved" (design §5) needs
+    the status as it stands, so it lives here, updated on every read and
+    revisioned like any supply record -- which is what lets an as-of page show
+    the status a visit had that day.
+
+    `outcomes` is {"item-<id>": dispensed | nothing_given | no_answer |
+    unmapped | unit_refused | skipped | reversed | not_counted}; an item whose
+    rule does not read this visit's form has no key at all. `answers` holds
+    only the answers at the rule's own paths (a count, a yes/no, a dose), never
+    the rest of the form.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    opportunity_id = models.IntegerField(db_index=True)
+    visit_id = models.CharField(max_length=64)
+    xform_id = models.CharField(max_length=64, blank=True, default="")
+    connect_username = models.CharField(max_length=150, blank=True, default="")
+    supply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="visits")
+    visit_date = models.DateField(db_index=True)
+    status = models.CharField(max_length=32, blank=True, default="")
+    form_name = models.CharField(max_length=255, blank=True, default="")
+    outcomes = models.JSONField(default=dict, blank=True)
+    answers = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-visit_date", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["program_id", "visit_id"], name="uniq_worker_visit_program_visit")
+        ]
+        indexes = [models.Index(fields=["supply_point", "visit_date"])]
+
+    def __str__(self):
+        return f"visit {self.visit_id} by {self.connect_username or self.supply_point_id}"
 
 
 class Consignment(SourcedModel):
