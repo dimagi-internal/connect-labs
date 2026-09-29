@@ -26,8 +26,10 @@ because reading the top-level visit dict (the bug extract_rows had) returns
 nothing and looks exactly like "nobody answered".
 """
 
-from decimal import Decimal
+from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 
+from connect_labs.labs.analysis.utils import extract_json_path
 from connect_labs.supply_chain.stock.services import ledger
 from connect_labs.supply_chain.values import Unconfirmed, decimal_string
 
@@ -122,3 +124,161 @@ def validate_reports(reports) -> dict:
             "date_paths": _paths(receipt.get("date_paths"), "the receipt date"),
         }
     return clean
+
+
+DISPENSED = "dispensed"
+NOTHING_GIVEN = "nothing_given"
+NO_ANSWER = "no_answer"
+UNMAPPED = "unmapped"
+UNIT_REFUSED = "unit_refused"
+NOT_APPLICABLE = "not_applicable"
+
+# 1e6 of anything at one visit is a typo, not a ration.
+_MOST_AT_ONE_VISIT = Decimal("1000000")
+
+
+@dataclass(frozen=True)
+class Dispensed:
+    """What one visit gave out of one item, in the item's single unit.
+
+    `outcome` is one of the constants above. `unmapped` is ((path, answer), ...)
+    for a value_map answer the map does not know: reported, never zero.
+    """
+
+    outcome: str
+    quantity: Decimal = Decimal(0)
+    unit: str = ""
+    estimated: bool = False
+    answers: dict = field(default_factory=dict)
+    reasons: tuple = ()
+    unmapped: tuple = ()
+
+
+def read_number(value) -> Decimal | None:
+    """A form answer as a non-negative quantity, or None when it is not one."""
+    if value is None or isinstance(value, bool):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        number = Decimal(text)
+    except InvalidOperation:
+        return None
+    if not number.is_finite() or number < 0 or number > _MOST_AT_ONE_VISIT:
+        return None
+    return number
+
+
+def _answer(form_json, path):
+    value = extract_json_path(form_json, path)
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    return value
+
+
+def first_answer(form_json, paths):
+    """(path, raw answer) for the first path answered, or (None, None)."""
+    for path in paths:
+        value = _answer(form_json, path)
+        if value is not None:
+            return path, value
+    return None, None
+
+
+def _given(value, given_values) -> bool:
+    if given_values is None:
+        return True
+    # A CommCare multiple-choice answer is its choices joined by spaces.
+    return any(word in given_values for word in str(value).split())
+
+
+def _form_identity(form_json) -> set:
+    form = form_json.get("form") if isinstance(form_json, dict) else None
+    form = form if isinstance(form, dict) else {}
+    return {str(v).strip() for v in (form.get("@xmlns"), form.get("@name")) if v}
+
+
+def _applies(line, rule_forms, identity) -> bool:
+    wanted = line.get("forms") or rule_forms
+    return not wanted or bool(identity & set(wanted))
+
+
+def _refused(to_unit, answers, reasons):
+    return Dispensed(UNIT_REFUSED, Decimal(0), to_unit, False, answers, tuple(reasons))
+
+
+def evaluate(lines, form_json, item, rule_forms=()) -> Dispensed:
+    """Sum a rule's lines over one visit's answers.
+
+    `rule_forms` is the rule's default form filter; a line's own `forms` wins.
+    A visit whose form no line applies to is NOT_APPLICABLE (no movement, not
+    a missing answer). Otherwise: stated lines read a number (absent lines add
+    nothing; an answered-but-unreadable one makes the item NO_ANSWER, as does
+    every stated line being unanswered when nothing else contributed);
+    protocol and value_map lines whose given-path is absent are simply not
+    given; an answer a value_map does not know is UNMAPPED. Units must all
+    convert to the item's unit, else UNIT_REFUSED.
+    """
+    to_unit = base_unit(item)
+    identity = _form_identity(form_json)
+    lines = [line for line in lines if _applies(line, rule_forms, identity)]
+    if not lines:
+        return Dispensed(NOT_APPLICABLE, unit=to_unit, answers={})
+
+    total = Decimal(0)
+    estimated = stated_seen = stated_answered = False
+    answers: dict = {}
+    reasons: list[str] = []
+    unmapped: list[tuple] = []
+    for line in lines:
+        kind = line["kind"]
+        if kind == "stated":
+            stated_seen = True
+            path, raw = first_answer(form_json, line["paths"])
+            if path is None:
+                continue
+            answers[path] = raw
+            stated_answered = True
+            quantity = read_number(raw)
+            if quantity is None:
+                reasons.append(f"{path} answered {raw!r}, which is not a quantity")
+                continue
+        else:
+            paths = line["given_paths"] if kind == "protocol" else line["paths"]
+            path, raw = first_answer(form_json, paths)
+            if path is None:
+                continue
+            answers[path] = raw
+            required = line.get("requires_paths") or []
+            missing = [r for r in required if _answer(form_json, r) is None]
+            for r in required:
+                if r not in missing:
+                    answers[r] = _answer(form_json, r)
+            if missing:
+                continue
+            if kind == "protocol":
+                if not _given(raw, line.get("given_values")):
+                    continue
+                quantity = Decimal(line["quantity"])
+            else:
+                text = str(raw).strip()
+                if text not in line["map"]:
+                    unmapped.append((path, text))
+                    continue
+                quantity = Decimal(line["map"][text])
+            if quantity > 0:
+                estimated = True
+        converted = ledger.convert(quantity, line["unit"], to_unit, item)
+        if isinstance(converted, Unconfirmed):
+            return _refused(to_unit, answers, converted.reasons)
+        total += converted.amount
+
+    if unmapped:
+        reasons += [f"{path} answered {text!r}, which the rule does not know" for path, text in unmapped]
+        return Dispensed(UNMAPPED, Decimal(0), to_unit, False, answers, tuple(reasons), tuple(unmapped))
+    if reasons or (stated_seen and not stated_answered and total == 0):
+        return Dispensed(NO_ANSWER, Decimal(0), to_unit, False, answers, tuple(reasons))
+    if total == 0:
+        return Dispensed(NOTHING_GIVEN, Decimal(0), to_unit, False, answers)
+    return Dispensed(DISPENSED, total.quantize(ledger.QUANTITY_SCALE), to_unit, estimated, answers)
