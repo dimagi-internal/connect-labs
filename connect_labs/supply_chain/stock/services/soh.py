@@ -11,16 +11,19 @@ the count matters: a worker's phone is not a warehouse system, and an
 override is how reality gets in (see overrides in stock/services/counts.py).
 """
 
+from connect_labs.supply_chain import records
 from connect_labs.supply_chain.models import StockCount
 from connect_labs.supply_chain.stock.services import ledger
 from connect_labs.supply_chain.values import Quantity, Unconfirmed, unconfirmed
 
 
 def last_count(program_id, supply_point, item=None, on_date=None):
-    """The most recent count at this point, or None. Overrides do not win on
+    """The most recent on-hand count at this point, or None (a reported receipt is not one). Overrides do not win on
     kind -- only on recency, because an older override has been overtaken by
     a newer physical count as surely as by another override."""
-    counts = StockCount.objects.filter(program_id=program_id, supply_point=supply_point)
+    counts = StockCount.objects.filter(
+        program_id=program_id, supply_point=supply_point, kind__in=records.ON_HAND_COUNT_KINDS
+    )
     if item is not None:
         counts = counts.filter(item=item)
     if on_date:

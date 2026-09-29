@@ -75,7 +75,7 @@ _STOCK_COUNT_DATA = _data_with(
     item_id=ID,
     commodity_slug={"type": "string", "minLength": 1},
     batch={"type": "string"},
-    kind={"enum": list(records.STOCK_COUNT_KINDS)},
+    kind={"enum": list(records.ON_HAND_COUNT_KINDS)},
     counted_on=_DATE,
     # A count of zero is a real and important observation -- it is a
     # stockout -- so this is not the nonzero variant.

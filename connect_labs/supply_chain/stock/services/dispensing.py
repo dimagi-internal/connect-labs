@@ -193,6 +193,30 @@ def read_date(value) -> date | None:
         return None
 
 
+def read_reports(reports, form_json) -> dict:
+    """What the worker's app says on this visit: its balance, and any receipt.
+
+    `balance` is None when the balance is unanswered (a stated 0 is a stockout
+    and is kept). `received` is set only for a positive quantity; `received_on`
+    is the form's own date answer, None when it gave none.
+    """
+    found = {"balance": None, "received": None, "received_on": None}
+    if not reports:
+        return found
+    if reports.get("balance_paths"):
+        path, raw = first_answer(form_json, reports["balance_paths"])
+        found["balance"] = read_number(raw) if path else None
+    receipt = reports.get("receipt")
+    if receipt:
+        path, raw = first_answer(form_json, receipt["quantity_paths"])
+        quantity = read_number(raw) if path else None
+        if quantity is not None and quantity > 0:
+            found["received"] = quantity
+            date_path, date_raw = first_answer(form_json, receipt["date_paths"])
+            found["received_on"] = read_date(date_raw) if date_path else None
+    return found
+
+
 def _answer(form_json, path):
     value = extract_json_path(form_json, path)
     if value is None or (isinstance(value, str) and not value.strip()):

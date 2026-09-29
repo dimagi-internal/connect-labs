@@ -112,7 +112,12 @@ MOVEMENT_KINDS = (
 # stock count's variance gets into the ledger (design doc section 20).
 SIGNED_MOVEMENT_KINDS = ("adjustment",)
 
-STOCK_COUNT_KINDS = ("self_reported", "physical_count", "override")
+# A worker's reported RECEIPT is kept beside the counts so the gap between it
+# and what the store recorded is visible (design 2026-09-28 3.4). It is not
+# a statement of what is on hand, so every on-hand reader filters to
+# ON_HAND_COUNT_KINDS.
+STOCK_COUNT_KINDS = ("self_reported", "physical_count", "override", "reported_receipt")
+ON_HAND_COUNT_KINDS = ("self_reported", "physical_count", "override")
 
 SHIPMENT_STATUSES = (
     "planned",
