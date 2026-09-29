@@ -103,7 +103,10 @@ def test_amoxicillin_doses_are_the_apps_exact_answer_strings():
     }
     # The missing space before "(total 20" is the app's, and must match exactly.
     assert answered == {"1 tablet every 12 hours (total 10 tablets)", "2 tablets every 12 hours(total 20 tablets)"}
-    assert AMOX_DOSES == {"1 tablet every 12 hours (total 10 tablets)": 10, "2 tablets every 12 hours(total 20 tablets)": 20}
+    assert AMOX_DOSES == {
+        "1 tablet every 12 hours (total 10 tablets)": 10,
+        "2 tablets every 12 hours(total 20 tablets)": 20,
+    }
 
 
 def test_the_screening_deduction_is_the_total_and_the_appetite_test_is_a_whole_sachet():
@@ -264,7 +267,9 @@ def test_vitamin_a_strength_follows_the_dose_question_answered(seeded):
 
 def test_amoxicillin_reads_the_dose_the_app_chose(seeded):
     opp, world = seeded["opp"], world_of(seeded)
-    twenty = next(v for v in world.visits if answer(v, PATHS["amox_visit"]) == "2 tablets every 12 hours(total 20 tablets)")
+    twenty = next(
+        v for v in world.visits if answer(v, PATHS["amox_visit"]) == "2 tablets every 12 hours(total 20 tablets)"
+    )
     assert posted_for(opp, twenty, "syn-amox-100").quantity == Decimal("20")
 
 
