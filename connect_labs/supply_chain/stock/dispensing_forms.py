@@ -51,7 +51,9 @@ class DispensingRuleForm(forms.Form):
         widget=forms.Textarea(attrs={**TEXTAREA, "rows": 4}),
         help_text=_('Optional: {"balance_paths": [...], "receipt": {"quantity_paths": [...], "date_paths": [...]}}'),
     )
-    status = forms.ChoiceField(choices=[("active", _("On")), ("inactive", _("Off"))], widget=forms.Select(attrs=SELECT))
+    status = forms.ChoiceField(
+        choices=[("active", _("On")), ("inactive", _("Off"))], widget=forms.Select(attrs=SELECT)
+    )
 
     def __init__(self, *args, access=None, editing=False, **kwargs):
         self.access = access

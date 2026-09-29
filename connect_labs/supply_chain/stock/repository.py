@@ -14,8 +14,8 @@ from django.db import transaction
 
 from connect_labs.supply_chain.models import (
     Consignment,
-    Distribution,
     DispensingRule,
+    Distribution,
     DistributionLine,
     Movement,
     StockCount,
@@ -422,7 +422,9 @@ class StockRepositoryMixin:
                 "point must be one"
             )
         if point.opportunity_id not in (None, data["opportunity_id"]):
-            raise ValueError(f"{point.name} belongs to opportunity {point.opportunity_id}, not {data['opportunity_id']}")
+            raise ValueError(
+                f"{point.name} belongs to opportunity {point.opportunity_id}, not {data['opportunity_id']}"
+            )
         defaults = {
             "lines": validate_lines(data["lines"], item),
             "resupply_point": point,

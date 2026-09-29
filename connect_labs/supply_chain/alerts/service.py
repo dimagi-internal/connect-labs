@@ -333,7 +333,9 @@ def detect_movements(subscription, now) -> int:
             subject={
                 "type": "movement",
                 "id": movement.pk,
-                "label": f"{'reversal of ' if movement.reverses_id else ''}{movement.kind} of {movement.commodity.name}",
+                "label": (
+                    f"{'reversal of ' if movement.reverses_id else ''}" f"{movement.kind} of {movement.commodity.name}"
+                ),
             },
             facts=_movement_facts(movement),
             since=movement.occurred_on,

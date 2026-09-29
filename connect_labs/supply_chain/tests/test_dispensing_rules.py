@@ -26,7 +26,10 @@ OPP = 10512
 RUTF_LINES = [
     {
         "kind": "stated",
-        "paths": ["form.rutf_dispensing.rutf_sachets_dispensed", "form.visit_1.rutf_dispensing.rutf_sachets_dispensed"],
+        "paths": [
+            "form.rutf_dispensing.rutf_sachets_dispensed",
+            "form.visit_1.rutf_dispensing.rutf_sachets_dispensed",
+        ],
         "unit": "sachet",
     },
     {
@@ -48,17 +51,39 @@ def op(da, name, **payload):
 
 @pytest.fixture
 def world(da):
-    op(da, "commodity_upsert", data={"slug": "rutf", "name": "RUTF", "base_unit": "sachet", "pack_unit": "carton", "base_per_pack": 150})
+    op(
+        da,
+        "commodity_upsert",
+        data={"slug": "rutf", "name": "RUTF", "base_unit": "sachet", "pack_unit": "carton", "base_per_pack": 150},
+    )
     item = op(
         da,
         "item_upsert",
-        data={"sku": "rutf-150", "name": "RUTF 150", "commodity_slug": "rutf", "base_unit": "sachet", "pack_unit": "carton", "base_per_pack": 150},
+        data={
+            "sku": "rutf-150",
+            "name": "RUTF 150",
+            "commodity_slug": "rutf",
+            "base_unit": "sachet",
+            "pack_unit": "carton",
+            "base_per_pack": 150,
+        },
     )
-    store = op(da, "supply_point_upsert", data={"slug": "partner-store", "name": "Partner store", "kind": "regional_store", "source": "we_recorded"})
+    store = op(
+        da,
+        "supply_point_upsert",
+        data={"slug": "partner-store", "name": "Partner store", "kind": "regional_store", "source": "we_recorded"},
+    )
     worker = op(
         da,
         "supply_point_upsert",
-        data={"slug": "user-10512-worker-acacia", "name": "worker-acacia", "kind": "user_held", "opportunity_id": OPP, "connect_username": "worker-acacia", "source": "we_recorded"},
+        data={
+            "slug": "user-10512-worker-acacia",
+            "name": "worker-acacia",
+            "kind": "user_held",
+            "opportunity_id": OPP,
+            "connect_username": "worker-acacia",
+            "source": "we_recorded",
+        },
     )
     return {"item": item, "store": store, "worker": worker}
 
@@ -107,7 +132,15 @@ def test_a_protocol_line_marks_the_rule_estimated(da, world):
     rule = upsert(
         da,
         world,
-        lines=[{"kind": "protocol", "given_paths": ["form.ors_group.ors_given"], "given_values": ["yes"], "quantity": 4, "unit": "sachet"}],
+        lines=[
+            {
+                "kind": "protocol",
+                "given_paths": ["form.ors_group.ors_given"],
+                "given_values": ["yes"],
+                "quantity": 4,
+                "unit": "sachet",
+            }
+        ],
     )
     assert rule["estimated"] is True
     assert rule["lines"][0]["quantity"] == "4"
@@ -135,8 +168,29 @@ AMOX_MAP = {"1 tablet every 12 hours (total 10 tablets)": 10, "2 tablets every 1
 
 
 def _tablet_world(da):
-    op(da, "commodity_upsert", data={"slug": "amox", "name": "Amoxicillin DT", "base_unit": "tablet", "pack_unit": "blister", "base_per_pack": 10})
-    return op(da, "item_upsert", data={"sku": "amox-dt", "name": "Amox DT", "commodity_slug": "amox", "base_unit": "tablet", "pack_unit": "blister", "base_per_pack": 10})
+    op(
+        da,
+        "commodity_upsert",
+        data={
+            "slug": "amox",
+            "name": "Amoxicillin DT",
+            "base_unit": "tablet",
+            "pack_unit": "blister",
+            "base_per_pack": 10,
+        },
+    )
+    return op(
+        da,
+        "item_upsert",
+        data={
+            "sku": "amox-dt",
+            "name": "Amox DT",
+            "commodity_slug": "amox",
+            "base_unit": "tablet",
+            "pack_unit": "blister",
+            "base_per_pack": 10,
+        },
+    )
 
 
 def test_a_value_map_line_is_kept_estimated_and_normalised(da, world):
@@ -145,7 +199,14 @@ def test_a_value_map_line_is_kept_estimated_and_normalised(da, world):
         da,
         world,
         item_id=item["id"],
-        lines=[{"kind": "value_map", "paths": ["form.visit_1.dosage_pneumonia", "form.visit_2.dosage_pneumonia"], "map": AMOX_MAP, "unit": "tablet"}],
+        lines=[
+            {
+                "kind": "value_map",
+                "paths": ["form.visit_1.dosage_pneumonia", "form.visit_2.dosage_pneumonia"],
+                "map": AMOX_MAP,
+                "unit": "tablet",
+            }
+        ],
     )
     assert rule["estimated"] is True
     assert rule["lines"][0]["map"] == {
@@ -216,7 +277,12 @@ def test_rule_payloads_need_an_opportunity(da, world):
         op(
             da,
             "dispensing_rule_upsert",
-            data={"item_id": world["item"]["id"], "resupply_point_id": world["store"]["id"], "active_from": "2026-08-01", "lines": RUTF_LINES},
+            data={
+                "item_id": world["item"]["id"],
+                "resupply_point_id": world["store"]["id"],
+                "active_from": "2026-08-01",
+                "lines": RUTF_LINES,
+            },
         )
 
 
@@ -251,7 +317,10 @@ def test_reports_paths_are_validated(da, world):
         world,
         reports={
             "balance_paths": ["form.var.new_stock_balance"],
-            "receipt": {"quantity_paths": ["form.current_stock.sachets_received"], "date_paths": ["form.current_stock.date_received"]},
+            "receipt": {
+                "quantity_paths": ["form.current_stock.sachets_received"],
+                "date_paths": ["form.current_stock.date_received"],
+            },
         },
     )
     assert rule["reports"]["receipt"]["date_paths"] == ["form.current_stock.date_received"]
@@ -359,7 +428,14 @@ def test_the_edit_screen_cannot_move_a_rule_to_another_item(scoped, da, world):
     other = op(
         da,
         "item_upsert",
-        data={"sku": "rutf-144", "name": "RUTF 144", "commodity_slug": "rutf", "base_unit": "sachet", "pack_unit": "carton", "base_per_pack": 144},
+        data={
+            "sku": "rutf-144",
+            "name": "RUTF 144",
+            "commodity_slug": "rutf",
+            "base_unit": "sachet",
+            "pack_unit": "carton",
+            "base_per_pack": 144,
+        },
     )
     scoped.post(
         reverse("supply_chain:dispensing_rule_edit", args=[rule["id"]]),
