@@ -1,6 +1,15 @@
-"""Screens for stock from visits: the rules (this task), the workers (Task 8)."""
+"""Screens for stock from visits: the dispensing rules, the Workers list and one worker's page.
+
+The Workers list and a worker's page render the figures `worker_stock` and
+`worker_stock_get` return (stock/services/belief.py) and derive nothing of
+their own beyond a share and a sort order, so no per-worker query is made
+here: the list costs the same for two workers as for six hundred.
+"""
+
+from decimal import Decimal
 
 from django.http import Http404
+from django.utils.safestring import mark_safe
 from django.urls import reverse
 
 from connect_labs.supply_chain.api_views import _access, has_program_context
@@ -71,3 +80,152 @@ class DispensingRuleUpdateView(_RuleScreen):
             "reports": rule.reports or None,
             "status": rule.status,
         }
+
+
+# ---- workers ---------------------------------------------------------------
+
+
+def rule_items(op) -> list[dict]:
+    """The items some dispensing rule gives out, in rule order, once each."""
+    seen, items = set(), []
+    for rule in op("dispensing_rule_list", include_inactive=True):
+        if rule["item_id"] not in seen:
+            seen.add(rule["item_id"])
+            items.append({"id": rule["item_id"], "name": rule["item_name"]})
+    return items
+
+
+def chosen_item(request, items):
+    """The item asked for by `?item_id=`, else the first a rule gives out, else None."""
+    wanted = request.GET.get("item_id")
+    for item in items:
+        if wanted and str(item["id"]) == wanted:
+            return item
+    return items[0] if items else None
+
+
+def as_of_payload(request) -> dict:
+    """`{"as_of": "YYYY-MM-DD"}` while a past day is on view, so figures stop on that day."""
+    day = getattr(request, "supply_as_of", None)
+    return {"as_of": day.isoformat()} if day else {}
+
+
+def _amount(cell):
+    try:
+        return Decimal(cell["amount"]) if isinstance(cell, dict) and cell.get("amount") is not None else None
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+
+
+def _share(part, whole):
+    """`part` as a whole percentage of `whole`, or None when either is not a number or whole is 0."""
+    part, whole = _amount(part), _amount(whole)
+    if part is None or not whole:
+        return None
+    return int((part / whole * 100).to_integral_value())
+
+
+def _plain_number(value):
+    try:
+        return Decimal(value) if isinstance(value, str) else None
+    except ArithmeticError:
+        return None
+
+
+# Every column of the Workers list, and how it sorts. A row with no figure in
+# the column (never counted, no rate yet) goes last whichever way.
+SORTS = {
+    "name": lambda row: row["name"].lower(),
+    "on_hand": lambda row: _amount(row["on_hand"]),
+    "days_to_stockout": lambda row: _plain_number(row["days_to_stockout"]),
+    "variance": lambda row: _amount(row["variance_reported_minus_ledger"]),
+    "days_since_checked": lambda row: row["days_since_checked"],
+    "unapproved": lambda row: row["unapproved_share"],
+    "estimated": lambda row: row["estimated_share"],
+    "no_answer": lambda row: row["no_answer_visits"],
+}
+
+COLUMNS = (
+    ("name", "Worker", ""),
+    ("on_hand", "On hand", "the ledger: issued minus dispensed"),
+    ("days_to_stockout", "Days to stock-out", ""),
+    ("variance", "Count − ledger on count day", "negative: fewer counted than the ledger held that day"),
+    ("days_since_checked", "Days since checked", ""),
+    ("unapproved", "Unapproved", "share of dispensing on visits not yet approved"),
+    ("estimated", "Estimated", "share of dispensing from protocol quantities"),
+    ("no_answer", "No answer", "visits whose form did not say"),
+)
+
+
+def sort_rows(rows, key, descending):
+    """Sorted by the column asked for, by name within it; a row with no figure goes last either way."""
+    value = SORTS[key]
+    by_name = sorted(rows, key=SORTS["name"])
+    present = [row for row in by_name if value(row) is not None]
+    missing = [row for row in by_name if value(row) is None]
+    return sorted(present, key=value, reverse=descending) + missing
+
+
+class WorkersView(OperationBase):
+    """One row per worker. Sorted by name until the reader picks a column (§22: facts, no ranking)."""
+
+    template_name = "supply_chain/workers.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+        if not context["has_program_context"]:
+            return context
+        items = rule_items(self.op)
+        item = chosen_item(self.request, items)
+        context.update(items=items, item=item)
+        if item is None:
+            return context
+        data = self.op("worker_stock", item_id=item["id"], **as_of_payload(self.request))
+        for row in data["workers"]:
+            row["unapproved_share"] = _share(row["unapproved"], row["dispensed"])
+            row["estimated_share"] = _share(row["estimated"], row["dispensed"])
+        # An unknown column is no choice at all: back to by name, A to Z.
+        chosen = self.request.GET.get("sort") in SORTS
+        sort = self.request.GET["sort"] if chosen else "name"
+        descending = chosen and self.request.GET.get("dir") == "desc"
+        context.update(
+            data=data,
+            rows=sort_rows(data["workers"], sort, descending),
+            sort=sort,
+            descending=descending,
+            columns=COLUMNS,
+        )
+        return context
+
+
+class WorkerDetailView(OperationBase):
+    """One worker's stock of one item: the figures, the timeline, and the visits and arrivals behind it."""
+
+    template_name = "supply_chain/worker_detail.html"
+
+    def get_context_data(self, **kwargs):
+        from connect_labs.supply_chain.stock.services.timeline import timeline_svg
+
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+        if not context["has_program_context"]:
+            return context
+        items = rule_items(self.op)
+        item = chosen_item(self.request, items)
+        context.update(items=items, item=item)
+        if item is None:
+            return context
+        try:
+            data = self.op(
+                "worker_stock_get",
+                supply_point_id=self.kwargs["supply_point_id"],
+                item_id=item["id"],
+                **as_of_payload(self.request),
+            )
+        except ValueError as error:
+            raise Http404(str(error)) from error
+        # Safe: timeline_svg builds its markup from numbers and ISO dates and
+        # escapes the one string that comes from data, the unit (test_timeline pins it).
+        context.update(data=data, worker=data["worker"], chart=mark_safe(timeline_svg(data["timeline"])))
+        return context

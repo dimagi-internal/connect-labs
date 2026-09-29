@@ -20,6 +20,7 @@ SUPPLY_TABS = (
     ("supply_chain:orders", "Orders"),
     ("supply_chain:network", "Network"),
     ("supply_chain:stock", "Stock"),
+    ("supply_chain:workers", "Workers"),
     ("supply_chain:distribution", "Distribution"),
     # After the chain, because they cut across it: who is told when something
     # in it changes, and how a supplier records its own part.
@@ -31,6 +32,7 @@ SUPPLY_TABS = (
 # current when you are one level in.
 TAB_FOR_VIEW = {
     "supply_chain:dispensing_rules": "supply_chain:stock",
+    "supply_chain:worker_detail": "supply_chain:workers",
     "supply_chain:dispensing_rule_create": "supply_chain:stock",
     "supply_chain:dispensing_rule_edit": "supply_chain:stock",
     "supply_chain:procurement_tender_detail": "supply_chain:procurement_tender_board",

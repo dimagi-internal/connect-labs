@@ -220,3 +220,74 @@ def network_tree(access, item_id, as_of=None, window_days=90):
         "as_of": as_of,
         "roots": [belief.wire(r) for r in roots],
     }
+
+
+@register_operation(
+    name="worker_stock_get",
+    summary=(
+        "One field worker's stock of one item: the figures worker_stock gives, their day-by-day timeline "
+        "(issued up, dispensed down, counts as points), the visits behind each step (status, what the reader "
+        "made of it, and the answers at the rule's paths), the stock that arrived, and any receipt the worker "
+        "reported that no recorded delivery explains. as_of reads a past day."
+    ),
+    input_schema=obj(
+        {"supply_point_id": ID, "item_id": ID, "as_of": _DATE, "window_days": _WINDOW},
+        required=("supply_point_id", "item_id"),
+    ),
+)
+def worker_stock_get(access, supply_point_id, item_id, as_of=None, window_days=90):
+    from connect_labs.supply_chain.models import Movement, WorkerVisit
+    from connect_labs.supply_chain.stock.services import belief, timeline
+    from connect_labs.supply_chain.stock.services.visit_reader import APPROVED_STATUSES, outcome_key
+
+    program_id = access._require_program()
+    point = access._require_supply_point(supply_point_id)
+    if point.kind != "user_held":
+        raise ValueError(f"supply point {supply_point_id} is not a field worker's own holding")
+    item = access._resolve_item(item_id)
+    on_date = _on(as_of)
+    visits = WorkerVisit.objects.filter(program_id=program_id, supply_point=point)
+    if on_date is not None:
+        visits = visits.filter(visit_date__lte=on_date)
+    arrivals = (
+        Movement.objects.for_program(program_id)
+        .as_of(on_date)
+        .filter(to_supply_point=point, item=item, kind__in=belief.ISSUE_KINDS)
+        .select_related("from_supply_point")
+    )
+    key = outcome_key(item.pk)
+    worker = belief.point_belief(program_id, point, item, on_date=on_date, window_days=window_days)
+    return {
+        "item_id": item.pk,
+        "item_name": item.name,
+        "as_of": as_of,
+        "worker": belief.wire(worker),
+        "timeline": timeline.worker_timeline(program_id, point, item, on_date=on_date),
+        "visits": [
+            {
+                "visit_id": v.visit_id,
+                "xform_id": v.xform_id,
+                "visit_date": v.visit_date.isoformat(),
+                "status": v.status,
+                "approved": v.status in APPROVED_STATUSES,
+                "form_name": v.form_name,
+                "outcome": v.outcomes.get(key, ""),
+                "answers": v.answers,
+            }
+            for v in visits.order_by("-visit_date", "-id")[:200]
+        ],
+        "arrivals": [
+            {
+                "occurred_on": m.occurred_on.isoformat(),
+                "kind": m.kind,
+                "quantity": str(m.quantity),
+                "unit": m.quantity_unit,
+                "from_supply_point_id": m.from_supply_point_id,
+                "from_name": m.from_supply_point.name if m.from_supply_point else "",
+                "reference": m.reference,
+                "distribution_id": m.distribution_id,
+            }
+            for m in arrivals.order_by("-occurred_on", "-id")[:100]
+        ],
+        "unmatched_receipts": worker.unmatched_receipts,
+    }

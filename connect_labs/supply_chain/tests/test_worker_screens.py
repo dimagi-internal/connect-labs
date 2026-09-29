@@ -1,0 +1,529 @@
+"""Network, Workers and Worker, driven through the browser, live and as of a day.
+
+THIS REPOSITORY IS PUBLIC. Every name and figure here is invented.
+
+The world: a partner store received 300 sachets and handed 150 to each of two
+workers. worker-baobab dispensed 40 on an approved visit, had a further visit
+of 10 rejected (so posted and reversed), counted 110 two days ago, and reports
+receiving 50 sachets that no store recorded. worker-acacia dispensed 30 on a
+visit still pending, read from a protocol line (so estimated), and counted 115
+against a ledger of 120.
+"""
+
+import datetime
+import re
+from contextlib import contextmanager
+from datetime import timedelta
+from decimal import Decimal
+
+import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
+from django.utils import timezone
+
+from connect_labs.labs.access.scopes import SYSTEM
+from connect_labs.labs.synthetic import registry
+from connect_labs.labs.synthetic.models import SyntheticOpportunity
+from connect_labs.supply_chain.data_access import SupplyDataAccess
+from connect_labs.supply_chain.history.context import seed_overrides
+from connect_labs.supply_chain.models import (
+    Commodity,
+    DispensingRule,
+    Item,
+    Movement,
+    StockCount,
+    SupplyPoint,
+    WorkerVisit,
+)
+from connect_labs.supply_chain.stock.services import posting
+from connect_labs.supply_chain.stock.services.dispensing import validate_lines
+from connect_labs.supply_chain.stock.services.visit_reader import outcome_key
+
+pytestmark = pytest.mark.django_db
+
+PROGRAM = 20883
+TODAY = timezone.localdate()
+
+
+class _ProgramContextMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        request.labs_context = {"program_id": PROGRAM} if request.user.is_authenticated else {}
+        return self.get_response(request)
+
+
+@pytest.fixture
+def da():
+    SyntheticOpportunity.objects.create(
+        opportunity_id=PROGRAM,
+        program_id=PROGRAM,
+        labs_only=True,
+        enabled=True,
+        label="worker screens",
+        allowed_domains=["dimagi.com"],
+    )
+    registry.invalidate_cache()
+    return SupplyDataAccess(program_id=PROGRAM, caller=SYSTEM)
+
+
+@pytest.fixture
+def client_in_program(client, django_user_model, monkeypatch, settings, da):
+    from connect_labs.supply_chain import api_views, form_views, views  # noqa: F401  -- bind before patching
+    from connect_labs.supply_chain.network import views as network_views  # noqa: F401
+    from connect_labs.supply_chain.stock import visit_views  # noqa: F401
+
+    settings.MIDDLEWARE = [*settings.MIDDLEWARE, f"{__name__}._ProgramContextMiddleware"]
+    for module in ("api_views", "form_views", "views", "network.views", "stock.visit_views"):
+        monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", lambda request: da)
+    client.force_login(django_user_model.objects.create_user(username="sophie", password="x"))
+    return client
+
+
+@contextmanager
+def recorded(days_ago):
+    """Write as if on that day, so the as-of rewind (which works on recorded time) sees it then."""
+    day = TODAY - timedelta(days=days_ago)
+    at = timezone.make_aware(datetime.datetime.combine(day, datetime.time(9, 0)))
+    with seed_overrides(PROGRAM, channel="command", recorded_at=at):
+        yield
+
+
+def _worker(world, name, *, dispensed, status, estimated, counted, days_ago=45):
+    with recorded(60):
+        worker = _issue(world, name)
+    with recorded(days_ago):
+        _visit(world, worker, name, dispensed=dispensed, status=status, estimated=estimated, days_ago=days_ago)
+    with recorded(2):
+        StockCount.objects.create(
+            program_id=PROGRAM,
+            supply_point=worker,
+            item=world["item"],
+            commodity=world["item"].commodity,
+            kind="self_reported",
+            counted_on=TODAY - timedelta(days=2),
+            quantity=Decimal(counted),
+            quantity_unit="sachet",
+            source="commcare_form",
+        )
+    return worker
+
+
+def _issue(world, name):
+    item, store, commodity = world["item"], world["store"], world["item"].commodity
+    worker = SupplyPoint.objects.create(
+        program_id=PROGRAM,
+        opportunity_id=PROGRAM,
+        slug=f"user-{name}",
+        name=name,
+        kind="user_held",
+        connect_username=name,
+        parent=store,
+        source="connect_visit",
+        min_months_of_stock=Decimal("1"),
+        max_months_of_stock=Decimal("2"),
+    )
+    Movement.objects.create(
+        program_id=PROGRAM,
+        kind="distribution",
+        occurred_on=TODAY - timedelta(days=60),
+        from_supply_point=store,
+        to_supply_point=worker,
+        item=item,
+        commodity=commodity,
+        quantity=Decimal("150"),
+        quantity_unit="sachet",
+        source="we_recorded",
+    )
+    return worker
+
+
+def _visit(world, worker, name, *, dispensed, status, estimated, days_ago):
+    item = world["item"]
+    posting.post_visit_consumption(
+        program_id=PROGRAM,
+        opportunity_id=PROGRAM,
+        point=worker,
+        item=item,
+        quantity=Decimal(dispensed),
+        unit="sachet",
+        occurred_on=TODAY - timedelta(days=days_ago),
+        visit_id=f"v-{name}",
+        estimated=estimated,
+    )
+    WorkerVisit.objects.create(
+        program_id=PROGRAM,
+        opportunity_id=PROGRAM,
+        visit_id=f"v-{name}",
+        xform_id=f"xf-{name}",
+        supply_point=worker,
+        visit_date=TODAY - timedelta(days=days_ago),
+        status=status,
+        outcomes={outcome_key(item.pk): "dispensed"},
+        answers={"form.x": str(dispensed)},
+    )
+
+
+@pytest.fixture
+def world(da):
+    with recorded(70):
+        commodity = Commodity.objects.create(
+            scope_key=f"prog:{PROGRAM}",
+            slug="rutf",
+            name="RUTF",
+            base_unit="sachet",
+            pack_unit="carton",
+            base_per_pack=150,
+        )
+        item = Item.objects.create(
+            scope_key=f"prog:{PROGRAM}",
+            sku="rutf",
+            name="RUTF 150",
+            commodity=commodity,
+            base_unit="sachet",
+            pack_unit="carton",
+            base_per_pack=150,
+        )
+        store = SupplyPoint.objects.create(
+            program_id=PROGRAM, slug="partner", name="Partner store", kind="regional_store", source="we_recorded"
+        )
+        # The store receives exactly what it hands on: its own balance is 0 and its subtree is its workers'.
+        Movement.objects.create(
+            program_id=PROGRAM,
+            kind="receipt",
+            occurred_on=TODAY - timedelta(days=70),
+            to_supply_point=store,
+            item=item,
+            commodity=commodity,
+            quantity=Decimal("300"),
+            quantity_unit="sachet",
+            source="we_recorded",
+        )
+        DispensingRule.objects.create(
+            program_id=PROGRAM,
+            opportunity_id=PROGRAM,
+            item=item,
+            resupply_point=store,
+            active_from=TODAY - timedelta(days=90),
+            lines=validate_lines([{"kind": "stated", "paths": ["form.x"], "unit": "sachet"}], item),
+        )
+    world = {"item": item, "store": store}
+    baobab = _worker(world, "worker-baobab", dispensed=40, status="approved", estimated=False, counted=110)
+    acacia = _worker(world, "worker-acacia", dispensed=30, status="pending", estimated=True, counted=115)
+
+    with recorded(30):
+        # A later visit of baobab's, posted and then rejected: its stock came back.
+        rejected = posting.post_visit_consumption(
+            program_id=PROGRAM,
+            opportunity_id=PROGRAM,
+            point=baobab,
+            item=item,
+            quantity=Decimal("10"),
+            unit="sachet",
+            occurred_on=TODAY - timedelta(days=30),
+            visit_id="v-rejected",
+            estimated=False,
+        )
+        posting.post_visit_reversal(rejected, reason="visit rejected")
+        WorkerVisit.objects.create(
+            program_id=PROGRAM,
+            opportunity_id=PROGRAM,
+            visit_id="v-rejected",
+            xform_id="xf-rejected",
+            supply_point=baobab,
+            visit_date=TODAY - timedelta(days=30),
+            status="rejected",
+            outcomes={outcome_key(item.pk): "reversed"},
+            answers={"form.x": "10"},
+        )
+    with recorded(10):
+        # A visit of acacia's, approved over a payment cap, whose form did not say what it gave.
+        WorkerVisit.objects.create(
+            program_id=PROGRAM,
+            opportunity_id=PROGRAM,
+            visit_id="v-silent",
+            xform_id="xf-silent",
+            supply_point=acacia,
+            visit_date=TODAY - timedelta(days=10),
+            status="over_limit",
+            outcomes={outcome_key(item.pk): "no_answer"},
+            answers={},
+        )
+    with recorded(20):
+        # A receipt baobab reports that no store recorded.
+        StockCount.objects.create(
+            program_id=PROGRAM,
+            supply_point=baobab,
+            item=item,
+            commodity=commodity,
+            kind="reported_receipt",
+            counted_on=TODAY - timedelta(days=20),
+            quantity=Decimal("50"),
+            quantity_unit="sachet",
+            source="commcare_form",
+        )
+    return {**world, "worker-baobab": baobab, "worker-acacia": acacia}
+
+
+def names_in_order(body):
+    return re.findall(r'data-testid="worker-name"[^>]*>([^<]+)<', body)
+
+
+def text_of(body):
+    """The page as a reader sees it: tags dropped, whitespace collapsed."""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
+
+
+def get(client, name, *args, **params):
+    response = client.get(reverse(f"supply_chain:{name}", args=args), params)
+    assert response.status_code == 200, response.content[:500]
+    return response.content.decode()
+
+
+# ---- Workers -------------------------------------------------------------
+
+
+def test_workers_are_listed_by_name_with_no_worst_first(client_in_program, world):
+    body = get(client_in_program, "workers")
+    assert names_in_order(body) == ["worker-acacia", "worker-baobab"]
+
+
+def test_workers_sort_by_a_column_when_asked(client_in_program, world):
+    body = get(client_in_program, "workers", sort="on_hand", dir="desc")
+    assert names_in_order(body) == ["worker-acacia", "worker-baobab"]  # 120 before 110
+    body = get(client_in_program, "workers", sort="on_hand", dir="asc")
+    assert names_in_order(body) == ["worker-baobab", "worker-acacia"]
+    body = get(client_in_program, "workers", sort="variance", dir="asc")
+    assert names_in_order(body) == ["worker-acacia", "worker-baobab"]  # -5 before 0
+
+
+def test_every_column_sorts_both_ways(client_in_program, world):
+    from connect_labs.supply_chain.stock.visit_views import SORTS
+
+    body = get(client_in_program, "workers")
+    for key in SORTS:
+        assert f"sort={key}&amp;" in body, f"no header link sorts by {key}"
+        for direction in ("asc", "desc"):
+            assert sorted(names_in_order(get(client_in_program, "workers", sort=key, dir=direction))) == [
+                "worker-acacia",
+                "worker-baobab",
+            ]
+
+
+def test_an_unknown_sort_falls_back_to_the_name(client_in_program, world):
+    body = get(client_in_program, "workers", sort="worst", dir="desc")
+    assert names_in_order(body) == ["worker-acacia", "worker-baobab"]
+
+
+def test_the_unapproved_and_estimated_parts_are_said_on_the_figure(client_in_program, world):
+    text = text_of(get(client_in_program, "workers"))
+    assert "120 sachets · 30 unapproved · 30 estimated" in text
+    # baobab's figure rests on nothing unapproved: it carries no caveat at all.
+    assert "110 sachets ·" not in text
+
+
+def test_the_variance_says_its_sign_and_its_day(client_in_program, world):
+    text = text_of(get(client_in_program, "workers"))
+    assert "Count − ledger on count day" in text
+    assert "−5 sachets" in text
+    assert f"counted {(TODAY - timedelta(days=2)).strftime('%-d %b')}" in text
+
+
+def test_a_receipt_no_store_recorded_is_a_fact_on_the_row(client_in_program, world):
+    text = text_of(get(client_in_program, "workers"))
+    day = (TODAY - timedelta(days=20)).strftime("%-d %b %Y")
+    assert f"Reports receiving 50 sachets on {day}; no store recorded a delivery" in text
+
+
+# ---- Network -------------------------------------------------------------
+
+
+def test_the_network_shows_a_stores_workers_and_their_totals(client_in_program, world):
+    body = get(client_in_program, "network")
+    assert 'data-testid="network-tree"' in body
+    text = text_of(body)
+    assert "2 workers" in text
+    assert "230 sachets · 30 unapproved · 30 estimated" in text  # 120 + 110 below the partner store
+
+
+def test_a_store_row_shows_what_came_in_once_never_a_hop_summed_issued(client_in_program, world):
+    body = get(client_in_program, "network")
+    tree = text_of(re.search(r'data-testid="network-tree".*?</section>', body, re.S).group(0))
+    assert "300 sachets came in from outside" in tree
+    assert "issued" not in tree.lower()
+
+
+def test_a_worker_in_the_tree_links_to_their_page(client_in_program, world):
+    body = get(client_in_program, "network")
+    assert reverse("supply_chain:worker_detail", args=[world["worker-baobab"].pk]) in body
+
+
+# ---- Worker --------------------------------------------------------------
+
+
+def test_a_worker_page_shows_the_timeline_and_the_visits_behind_it(client_in_program, world):
+    worker = world["worker-acacia"]
+    body = get(client_in_program, "worker_detail", worker.pk)
+    assert 'data-testid="worker-timeline"' in body
+    assert "xf-worker-acacia" in body
+    assert "form.x" in body
+    assert "Not yet approved" in body
+    text = text_of(body)
+    assert "Issued" in text and "150 sachets" in text
+    assert "120 sachets · 30 unapproved · 30 estimated" in text
+    # The chart's figures, as a table, for anyone who cannot see the chart.
+    assert 'data-testid="timeline-table"' in body
+
+
+def test_a_worker_page_says_what_the_count_is_against(client_in_program, world):
+    text = text_of(get(client_in_program, "worker_detail", world["worker-acacia"].pk))
+    assert "Count − ledger on count day" in text
+    assert "−5 sachets" in text
+    assert "ledger that day 120 sachets" in text
+
+
+def test_a_worker_page_carries_the_unrecorded_receipt(client_in_program, world):
+    text = text_of(get(client_in_program, "worker_detail", world["worker-baobab"].pk))
+    day = (TODAY - timedelta(days=20)).strftime("%-d %b %Y")
+    assert f"Reports receiving 50 sachets on {day}; no store recorded a delivery" in text
+
+
+def test_a_rejected_visit_is_shown_reversed_not_arrived(client_in_program, world):
+    body = get(client_in_program, "worker_detail", world["worker-baobab"].pk)
+    text = text_of(body)
+    assert "Reversed — stock put back" in text
+    assert "Rejected" in text
+    assert "Not yet approved" not in text  # a rejected visit is not one still waiting
+    arrived = text.split("Stock that arrived")[1]
+    assert "10 sachets" not in arrived
+
+
+def test_a_worker_in_another_programme_is_a_404(client_in_program, world):
+    other = SupplyPoint.objects.create(
+        program_id=PROGRAM + 1, slug="x", name="x", kind="user_held", connect_username="x", source="we_recorded"
+    )
+    assert client_in_program.get(reverse("supply_chain:worker_detail", args=[other.pk])).status_code == 404
+
+
+def test_a_store_is_not_a_worker_page(client_in_program, world):
+    url = reverse("supply_chain:worker_detail", args=[world["store"].pk])
+    assert client_in_program.get(url).status_code == 404
+
+
+def test_a_visit_that_did_not_say_is_counted_and_said_in_words(client_in_program, world):
+    rows = text_of(get(client_in_program, "workers"))
+    assert "worker-acacia" in rows
+    page = text_of(get(client_in_program, "worker_detail", world["worker-acacia"].pk))
+    assert "Did not say" in page
+    assert "1 visit did not say, so not counted" in page
+    assert "Approved" in page  # over a payment cap is still approved
+
+
+@pytest.mark.parametrize("page", ["workers", "network", "worker_detail", "movements"])
+def test_no_code_reaches_the_reader(client_in_program, world, page):
+    from connect_labs.supply_chain.tests.test_no_raw_codes import CODES, visible_text
+
+    args = [world["worker-baobab"].pk] if page == "worker_detail" else []
+    params = {"supply_point_id": world["worker-baobab"].pk} if page == "movements" else {}
+    codes = [*CODES, "no_answer", "nothing_given", "not_counted", "unit_refused", "over_limit", "below_min"]
+    for worker in ("worker-baobab", "worker-acacia"):
+        if page == "worker_detail":
+            args = [world[worker].pk]
+        text = visible_text(get(client_in_program, page, *args, **params))
+        assert [c for c in codes if re.search(rf"(?<![\w-]){re.escape(c)}(?![\w-])", text)] == []
+
+
+# ---- the stock page's movement list --------------------------------------
+
+
+def test_the_movement_list_shows_a_reversal_going_back_in(client_in_program, world):
+    worker = world["worker-baobab"]
+    text = text_of(get(client_in_program, "movements", supply_point_id=worker.pk, item_id=world["item"].pk))
+    assert "Reversed (visit v-rejected)" in text
+    assert "back into worker-baobab" in text
+    # The two consumption rows name their visits.
+    assert "Consumption (visit v-rejected)" in text
+    assert "Consumption (visit v-worker-baobab)" in text
+
+
+# ---- as of a past day ------------------------------------------------------
+
+
+def test_as_of_hides_the_write_controls(client_in_program, world):
+    worker = world["worker-acacia"]
+    past = {"as_of": TODAY.isoformat()}
+    new_point = reverse("supply_chain:supply_point_create")
+    record_count = reverse("supply_chain:stock_count_record")
+    rules = reverse("supply_chain:dispensing_rule_create")
+
+    assert new_point in get(client_in_program, "network")
+    assert new_point not in get(client_in_program, "network", **past)
+    assert record_count in get(client_in_program, "worker_detail", worker.pk)
+    detail_past = get(client_in_program, "worker_detail", worker.pk, **past)
+    assert record_count not in detail_past
+    assert "read-only" in detail_past
+    assert rules not in get(client_in_program, "workers", **past)
+
+
+def test_as_of_shows_the_day_as_it_stood(client_in_program, world):
+    """Before any visit, each worker held all 150 they were given."""
+    past = {"as_of": (TODAY - timedelta(days=50)).isoformat()}
+    text = text_of(get(client_in_program, "workers", **past))
+    assert text.count("150 sachets") >= 2
+    assert "· 30 unapproved" not in text
+    detail = get(client_in_program, "worker_detail", world["worker-acacia"].pk, **past)
+    assert "xf-worker-acacia" not in detail  # that visit had not happened yet
+
+
+# ---- cost ------------------------------------------------------------------
+
+
+def _queries(client, name):
+    with CaptureQueriesContext(connection) as captured:
+        get(client, name)
+    return len(captured.captured_queries)
+
+
+@pytest.mark.parametrize("page", ["workers", "network"])
+def test_the_page_costs_the_same_whatever_the_number_of_workers(client_in_program, world, page):
+    _queries(client_in_program, page)  # warm any per-process caches
+    few = _queries(client_in_program, page)
+    for n in range(6):
+        _worker(world, f"worker-extra-{n}", dispensed=5, status="approved", estimated=n % 2 == 0, counted=140)
+    assert _queries(client_in_program, page) == few
+
+
+# ---- the filters these pages speak through --------------------------------
+
+
+class TestFigureWords:
+    def test_a_figure_says_what_it_rests_on(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import resting_on
+
+        parts = {"unapproved": {"amount": "38.0000", "unit": "sachet"}, "estimated": {"amount": "60", "unit": "sachet"}}
+        assert resting_on({"amount": "412.0000", "unit": "sachet"}, parts) == "412 sachets · 38 unapproved · 60 estimated"
+        assert resting_on({"amount": "412", "unit": "sachet"}, {"unapproved": {"amount": "0"}}) == "412 sachets"
+        assert resting_on({"amount": "4", "unit": "sachet"}, {"estimated": {"unconfirmed": ["x"]}}) == (
+            "4 sachets · estimated part unknown"
+        )
+
+    def test_a_difference_always_says_its_sign(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import signed_figure
+
+        assert signed_figure({"amount": "-5.0000", "unit": "sachet"}) == "−5 sachets"
+        assert signed_figure({"amount": "12", "unit": "sachet"}) == "+12 sachets"
+        assert signed_figure({"amount": "0", "unit": "sachet"}) == "0 sachets"
+        assert signed_figure({"unconfirmed": ["no pack size"]}) == "Unconfirmed"
+
+    def test_days_and_months_read_as_words(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import days_text, months_text
+
+        assert days_text("102.60") == "102 days"
+        assert days_text("0.40") == "under a day"
+        assert days_text({"unconfirmed": ["no rate yet"]}) == "unknown"
+        assert days_text(None) == "—"
+        assert months_text("3.40") == "3.4 months"
+        assert months_text("1.00") == "1 month"
+        assert months_text({"unconfirmed": ["no rate yet"]}) == "cover unknown"

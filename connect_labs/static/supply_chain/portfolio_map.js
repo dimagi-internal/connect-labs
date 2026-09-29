@@ -2048,7 +2048,8 @@
         source: 'pm-workers',
         minzoom: 9,
         paint: {
-          'circle-radius': 3.5,
+          // In Stock mode a worker's dot is sized by what they hold.
+          'circle-radius': ['get', 'r'],
           'circle-color': ['get', 'color'],
           'circle-stroke-color': '#0b1020',
           'circle-stroke-width': 1,
@@ -2275,23 +2276,22 @@
     });
     var stockMode = state.colour === 'stock' && state.commodity;
     if (stockMode) needCover(state.commodity);
+    // Size is on-hand against the biggest holding of the same unit among
+    // places of the same kind (marker_size.js): workers against workers.
+    var SIZE = window.SupplyMarkerSize;
     var biggest = {};
     if (stockMode) {
       vis.forEach(function (pt) {
         var c = coverOf(pt);
         if (!c || !c.amount) return;
-        var unit = (c.on_hand || {}).unit || '';
-        biggest[unit] = Math.max(biggest[unit] || 0, c.amount);
+        var key = SIZE.biggestKey(pt.kind, (c.on_hand || {}).unit);
+        biggest[key] = Math.max(biggest[key] || 0, c.amount);
       });
     }
     var feature = function (pt) {
       if (stockMode) {
         var c = coverOf(pt);
         var unit = c && c.on_hand ? c.on_hand.unit || '' : '';
-        var share =
-          c && c.amount && biggest[unit]
-            ? Math.sqrt(c.amount / biggest[unit])
-            : 0;
         return {
           type: 'Feature',
           geometry: { type: 'Point', coordinates: [pt._x, pt._y] },
@@ -2299,7 +2299,11 @@
             key: pt._key,
             name: pt.name,
             color: c ? (COVER[c.status] || COVER.unknown).color : '#1f2937',
-            r: pt.kind === 'user_held' ? 4 : 5 + 15 * share,
+            r: SIZE.markerRadius(
+              pt.kind,
+              c && c.amount,
+              biggest[SIZE.biggestKey(pt.kind, unit)],
+            ),
             approx: whereIs(pt).coarse,
             sel: state.place === pt._key,
           },
@@ -2312,7 +2316,8 @@
           key: pt._key,
           name: pt.name,
           color: ATTN[pt._attn].color,
-          r: KIND_RADIUS[pt.kind] || 6,
+          // Workers keep their small fixed dot outside Stock mode.
+          r: pt.kind === 'user_held' ? 3.5 : KIND_RADIUS[pt.kind] || 6,
           approx: whereIs(pt).coarse,
           sel: state.place === pt._key,
         },
@@ -2702,7 +2707,7 @@
           '<span class="pm-dot" style="background:#1f2937;border:1px solid #475569"></span>',
           'Holds none',
         ) +
-        '<div style="opacity:.7;margin-top:3px">Size: how much it holds</div>';
+        '<div style="opacity:.7;margin-top:3px">Size: how much it holds, against others of its kind (workers against workers)</div>';
       return;
     }
     var h = ['blocked', 'waiting', 'clear']
