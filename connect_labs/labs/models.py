@@ -153,6 +153,44 @@ class UserCCHQToken(models.Model):
         return timezone.now() >= (self.expires_at - timedelta(seconds=60))
 
 
+class UserOCSToken(models.Model):
+    """Persistent store of a user's Open Chat Studio OAuth token.
+
+    Populated when the user connects OCS (/labs/ocs/initiate/), and mirrored from
+    the browser session for anyone who connected before this row existed. It lets
+    an OCS call be made for a user with no browser request behind it — a workflow
+    action run from the labs MCP (a person's own agent, or canopy acting as the
+    visitor), or its background execution — exactly as UserConnectToken and
+    UserCCHQToken do for Connect and CommCare HQ.
+
+    OCS is django-oauth-toolkit, which rotates refresh tokens, so every refresh
+    goes through ``ocs_tokens.refresh_ocs_token`` under one per-user lock and is
+    written back here; the session keeps a mirror of this row, not a second chain.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ocs_token",
+    )
+    access_token = models.TextField()
+    refresh_token = models.TextField(blank=True)
+    expires_at = models.DateTimeField()
+    scope = models.CharField(max_length=255, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "labs_user_ocs_token"
+
+    def __str__(self) -> str:
+        return f"OCSToken({self.user.username})"
+
+    @property
+    def is_expired(self) -> bool:
+        # Treat tokens within 60 seconds of expiry as expired to avoid races.
+        return timezone.now() >= (self.expires_at - timedelta(seconds=60))
+
+
 class DeletedWorkflowBackup(models.Model):
     """Safety copy of a workflow definition, written just before it is deleted.
 

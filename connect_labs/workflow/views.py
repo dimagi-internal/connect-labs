@@ -898,6 +898,48 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 workers.append({**w, "opportunity_id": oid})
         return workers
 
+    def _add_actions_and_agent(self, context, definition, run_data, workers):
+        """The workflow's own actions, and — if it shares its runs — the agent panel.
+
+        * ``workflow_data.actions`` — what this workflow lets you do (workflow/actions.py),
+          for its buttons: render code calls ``actions.runAction(key, {workers})`` and
+          the runner previews it and asks the person to confirm. Nothing about agents.
+        * ``canopy_panel`` — the canopy SDK's agent panel, only when the workflow shares
+          its runs (``config.agent.share``, workflow/agent_sharing.py). Its page state is
+          the SELECTION: the run, the scope it is filed under (the scope every run tool
+          is called with) and the worker keys on it — never the rows, which the agent
+          reads as the visitor. ``backing_tool`` names where those rows are read; which
+          tools the agent may call is labs' decision (the page's scopes, and the
+          visitor's own access), not the page state's.
+        """
+        from connect_labs.workflow.actions import definition_actions
+        from connect_labs.workflow.agent_sharing import definition_shares_with_agent, worker_key
+
+        run_id = run_data["id"]
+        context["workflow_data"]["actions"] = [
+            {k: a[k] for k in ("key", "type", "label", "description")} for a in definition_actions(definition)
+        ]
+        context["workflow_data"]["apiEndpoints"]["actionBase"] = f"/labs/workflow/api/run/{run_id}/actions/"
+        context["workflow_data"]["apiEndpoints"]["actionExecutionBase"] = "/labs/workflow/api/actions/executions/"
+        if not definition_shares_with_agent(definition):
+            return
+
+        from canopy_sdk.django.pages import panel_context
+
+        scope = (
+            {"opportunity_id": run_data["opportunity_id"]}
+            if run_data.get("opportunity_id")
+            else {"program_id": run_data.get("program_id")}
+        )
+        context["canopy_panel"] = panel_context(
+            self.request,
+            resource=f"labs-workflow://{definition.id}/runs/{run_id}",
+            backing_tool="workflow_run_indicators",
+            visible_ids=[worker_key(w.get("opportunity_id"), w.get("username")) for w in workers if w.get("username")],
+            filters={"definition_id": definition.id, "run_id": run_id, **scope, "workflow": definition.name},
+            path=self.request.get_full_path(),
+        )
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         definition_id = self.kwargs.get("definition_id")
@@ -1265,6 +1307,10 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     ),
                 },
             }
+            # Not in edit mode (no real run), and not on a presentation link: a page
+            # shared with a funder carries no actions and no agent.
+            if not is_edit_mode and not context["present_mode"]:
+                self._add_actions_and_agent(context, definition, run_data, workers)
 
         except LabsAPIError as e:
             # A 404 here means the scoped opportunity fetch was rejected — the

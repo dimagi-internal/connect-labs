@@ -1304,3 +1304,16 @@ def hand_down_task(
     )
     logger.info("hand-down (workflow %s, run %s): %s", workflow_id, run_id, report)
     return report
+
+
+@celery_app.task(bind=True, acks_late=True, max_retries=0)
+def execute_workflow_action(self, execution_id: int):
+    """Carry out a confirmed workflow action (workflow/actions.py).
+
+    Runs as the person the action was confirmed by, from their stored Connect and
+    OCS tokens -- no browser involved -- and records each worker as it goes, so a
+    redelivered task resumes rather than repeats.
+    """
+    from connect_labs.workflow.actions import execute
+
+    execute(execution_id)

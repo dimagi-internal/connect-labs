@@ -232,11 +232,11 @@ def test_metadata_advertises_the_grant_only_when_it_is_on(settings):
     assert on["grant_types_supported"] == ["authorization_code", "refresh_token", contract.JWT_BEARER_GRANT]
     assert on["token_endpoint_auth_methods_supported"] == ["none", "private_key_jwt"]
     assert set(on["dpop_signing_alg_values_supported"]) == {"EdDSA", "ES256"}
-    assert on["scopes_supported"] == ["mcp", "marketplace:read"]
+    assert on["scopes_supported"] == ["mcp", "marketplace:read", "workflow:act", "workflow:read"]
     assert on["token_endpoint"] == TOKEN_ENDPOINT
     prm = oauth.protected_resource_metadata()
     assert prm["dpop_signing_alg_values_supported"] == ["EdDSA", "ES256"]
-    assert prm["scopes_supported"] == ["mcp", "marketplace:read"]
+    assert prm["scopes_supported"] == ["mcp", "marketplace:read", "workflow:act", "workflow:read"]
     assert prm["resource"] == RESOURCE
 
 
@@ -253,14 +253,20 @@ def test_no_signing_key_means_no_grant_is_advertised(settings):
 # ---------------------------------------------------------------------------
 
 
-def test_every_scoped_tool_exists_and_is_read_only():
+def test_every_scoped_tool_exists_and_only_previewed_scopes_write():
+    """A scope reaches writes only if every tool in it acts solely on a confirmed
+    preview (workflow/actions.py) -- never on one call."""
     from connect_labs.mcp import tools  # noqa: F401 -- registers the catalogue
 
     for scope, names in canopy.SCOPE_TOOLS.items():
         for name in names:
             spec = get_tool(name)
             assert spec is not None, f"{scope} names a tool that does not exist: {name}"
-            assert not spec.is_write, f"{scope} is a read scope but {name} writes"
+            if scope not in canopy.PREVIEWED_WRITE_SCOPES:
+                assert not spec.is_write, f"{scope} is a read scope but {name} writes"
+    assert canopy.PREVIEWED_WRITE_SCOPES == {"workflow:act"}
+    assert canopy.SCOPE_TOOLS["workflow:act"] == {"workflow_run_action"}
+    assert all(scope.endswith(":read") for scope in set(canopy.SCOPE_TOOLS) - canopy.PREVIEWED_WRITE_SCOPES)
 
 
 def test_every_page_scope_is_one_the_server_offers():
