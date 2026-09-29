@@ -2,14 +2,16 @@
 {% load supply_chain_extras %}
 
 {% comment %}
-Where stock can rest. Grouped by kind rather than sorted by name, because the
-groups are the network's shape: four central stores and two hundred field
-workers is a different programme from the reverse, and an alphabetical list
-hides which one you are looking at.
+Where stock can rest, as one tree: the top store down to each field worker,
+every point once, under the point it is resupplied from. The tree is the
+directory -- each node carries where it is, its band, how it is known and
+its Edit link -- and, for one item, what it holds (NetworkView, design
+2026-09-28 §6.1).
 
 A field worker's own holding is a supply point like any other -- that ruling is
 what lets a delivery to one reuse the movement ledger instead of needing its
-own arithmetic -- so it appears here as a group, not as a footnote.
+own arithmetic -- so workers sit in the tree under their store, behind one
+"show" so a store with two hundred of them stays one row.
 {% endcomment %}
 
 {% block supply_content %}
@@ -18,7 +20,8 @@ own arithmetic -- so it appears here as a group, not as a footnote.
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Network</h1>
     <p class="text-sm text-gray-500 mt-1">
-      Every place stock can rest in this programme, including each field worker's own holding.
+      Every place stock can rest in this programme, each under the place it is resupplied from,
+      down to each field worker's own holding.
     </p>
   </div>
   {% if has_program_context %}
@@ -34,37 +37,6 @@ own arithmetic -- so it appears here as a group, not as a footnote.
   {% endif %}
 </div>
 
-{% if tree %}
-  <section class="mb-8" data-testid="network-tree">
-    <div class="flex flex-wrap items-end justify-between gap-2 mb-2">
-      <div>
-        <h2 class="text-sm font-semibold text-gray-900">Stock of {{ tree.item_name }} through the network, in {{ tree.unit|unit_plural }}</h2>
-        <p class="text-xs text-gray-500 mt-0.5">
-          On hand is the ledger. Where it rests on visits not yet approved, or on a protocol's quantity
-          rather than the form's own number, the figure says how much.
-        </p>
-      </div>
-      {% if tree_items|length > 1 %}
-        <form method="get" class="text-sm">
-          <label for="tree-item" class="sr-only">Item</label>
-          <select id="tree-item" name="item_id" onchange="this.form.submit()" class="rounded-md border border-gray-300 px-2 py-1">
-            {% for choice in tree_items %}<option value="{{ choice.id }}" {% if choice.id == tree.item_id %}selected{% endif %}>{{ choice.name }}</option>{% endfor %}
-          </select>
-          {% if supply_as_of %}<input type="hidden" name="as_of" value="{{ supply_as_of|date:'Y-m-d' }}">{% endif %}
-          <noscript><button type="submit" class="ml-1 px-2 py-1 rounded-md border border-gray-300">Show</button></noscript>
-        </form>
-      {% endif %}
-    </div>
-    {% if tree.roots %}
-      <ul class="bg-white border border-brand-border-light rounded-lg px-4 divide-y divide-gray-100">
-        {% for node in tree.roots %}{% include 'supply_chain/_network_node.html' with node=node tree=tree %}{% endfor %}
-      </ul>
-    {% else %}
-      <p class="text-sm text-gray-600">No active supply point yet.</p>
-    {% endif %}
-  </section>
-{% endif %}
-
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
     <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
@@ -72,7 +44,7 @@ own arithmetic -- so it appears here as a group, not as a footnote.
       Choose a programme above. A network belongs to one.
     </p>
   </div>
-{% elif not groups %}
+{% elif not roots %}
   <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
     <p class="text-sm text-gray-600">Nothing here yet.</p>
     <p class="text-sm text-gray-500 mt-1 max-w-lg mx-auto">
@@ -87,62 +59,35 @@ own arithmetic -- so it appears here as a group, not as a footnote.
     {% endif %}
   </div>
 {% else %}
-  {% for group in groups %}
-    <section class="mb-6">
-      <h2 class="text-sm font-semibold text-gray-900 mb-2">
-        {{ group.label }}
-        <span class="ml-1 font-normal text-gray-500">{{ group.points|length }}</span>
-      </h2>
-      <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
-        <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
-          <table class="min-w-[44rem] w-full text-sm">
-            <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-              <tr>
-                <th class="text-left px-4 py-2">Name</th>
-                <th class="text-left px-4 py-2">Where</th>
-                <th class="text-left px-4 py-2">Resupplied from</th>
-                <th class="text-right px-4 py-2">Stock band</th>
-                <th class="text-left px-4 py-2">Known</th>
-                <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100">
-              {% for point in group.points %}
-                <tr class="{% if point.status != 'active' %}opacity-60{% endif %}">
-                  <td class="px-4 py-2">
-                    <span class="text-gray-900">{{ point.name }}</span>
-                    {% if point.status != 'active' %}
-                      <span class="ml-1.5 px-1.5 py-0.5 rounded text-[11px] bg-gray-100 text-gray-600">inactive</span>
-                    {% endif %}
-                    <div class="text-xs text-gray-500 mt-0.5">
-                      <code>{{ point.slug }}</code>
-                      {% if point.connect_username %}· {{ point.connect_username }}{% endif %}
-                    </div>
-                  </td>
-                  <td class="px-4 py-2 text-gray-700">{{ point.admin_area|default:"—" }}</td>
-                  <td class="px-4 py-2 text-gray-700">{{ point.parent_name|default:"—" }}</td>
-                  <td class="px-4 py-2 text-right tabular-nums text-gray-700">
-                    {% if point.min_months_of_stock or point.max_months_of_stock %}
-                      {{ point.min_months_of_stock|default:"—" }}–{{ point.max_months_of_stock|default:"—" }} mo
-                    {% else %}
-                      <span class="text-gray-600">not set</span>
-                    {% endif %}
-                  </td>
-                  <td class="px-4 py-2 text-gray-600 text-xs">{{ point.source|humanise }}</td>
-                  <td class="px-4 py-2 text-right whitespace-nowrap">
-                    {% if not supply_as_of %}
-                      <a href="{% url 'supply_chain:supply_point_edit' point.id %}"
-                         class="text-brand-indigo hover:underline">Edit</a>
-                    {% endif %}
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+  <section class="mb-8" data-testid="network-tree">
+    <div class="flex flex-wrap items-end justify-between gap-2 mb-2">
+      <div>
+        {% if stock %}
+          <h2 class="text-sm font-semibold text-gray-900">Stock of {{ stock.item_name }} through the network, in {{ stock.unit|unit_plural }}</h2>
+          <p class="text-xs text-gray-500 mt-0.5">
+            On hand is the ledger. Where the dispensing behind it was on visits not yet approved, or
+            is a protocol's estimate rather than the form's own number, the figure says how much.
+          </p>
+        {% else %}
+          <h2 class="text-sm font-semibold text-gray-900">The network</h2>
+          <p class="text-xs text-gray-500 mt-0.5">No item is catalogued yet, so there is no stock to show.</p>
+        {% endif %}
       </div>
-    </section>
-  {% endfor %}
+      {% if tree_items|length > 1 %}
+        <form method="get" class="text-sm">
+          <label for="tree-item" class="sr-only">Item</label>
+          <select id="tree-item" name="item_id" onchange="this.form.submit()" class="rounded-md border border-gray-300 px-2 py-1">
+            {% for choice in tree_items %}<option value="{{ choice.id }}" {% if choice.id == tree_item.id %}selected{% endif %}>{{ choice.name }}</option>{% endfor %}
+          </select>
+          {% if supply_as_of %}<input type="hidden" name="as_of" value="{{ supply_as_of|date:'Y-m-d' }}">{% endif %}
+          <noscript><button type="submit" class="ml-1 px-2 py-1 rounded-md border border-gray-300">Show</button></noscript>
+        </form>
+      {% endif %}
+    </div>
+    <ul class="bg-white border border-brand-border-light rounded-lg px-4 divide-y divide-gray-100">
+      {% for node in roots %}{% include 'supply_chain/_network_node.html' with node=node %}{% endfor %}
+    </ul>
+  </section>
 {% endif %}
 
 {% endblock %}

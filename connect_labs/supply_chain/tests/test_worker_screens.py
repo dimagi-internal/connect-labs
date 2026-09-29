@@ -319,9 +319,11 @@ def test_an_unknown_sort_falls_back_to_the_name(client_in_program, world):
 
 def test_the_unapproved_and_estimated_parts_are_said_on_the_figure(client_in_program, world):
     text = text_of(get(client_in_program, "workers"))
-    assert "120 sachets · 30 unapproved · 30 estimated" in text
-    # baobab's figure rests on nothing unapproved: it carries no caveat at all.
-    assert "110 sachets ·" not in text
+    # The parts are said as parts of what was DISPENSED, never as stock on hand.
+    assert "120 sachets on hand — of the 30 sachets dispensed, 30 on visits not yet approved, 30 estimated" in text
+    # baobab's figure rests on nothing unsettled: it carries no caveat at all.
+    assert "110 sachets on hand —" not in text
+    assert "110 sachets on hand" in text
 
 
 def test_the_variance_says_its_sign_and_its_day(client_in_program, world):
@@ -345,7 +347,8 @@ def test_the_network_shows_a_stores_workers_and_their_totals(client_in_program, 
     assert 'data-testid="network-tree"' in body
     text = text_of(body)
     assert "2 workers" in text
-    assert "230 sachets · 30 unapproved · 30 estimated" in text  # 120 + 110 below the partner store
+    # 120 + 110 on hand below the partner store; 40 + 30 dispensed there.
+    assert "230 sachets on hand — of the 70 sachets dispensed, 30 on visits not yet approved, 30 estimated" in text
 
 
 def test_a_store_row_shows_what_came_in_once_never_a_hop_summed_issued(client_in_program, world):
@@ -353,6 +356,95 @@ def test_a_store_row_shows_what_came_in_once_never_a_hop_summed_issued(client_in
     tree = text_of(re.search(r'data-testid="network-tree".*?</section>', body, re.S).group(0))
     assert "300 sachets came in from outside" in tree
     assert "issued" not in tree.lower()
+
+
+def own_line(body, name):
+    """The text of one tree node's own row (not what is below it)."""
+    for row in re.findall(r'data-testid="network-node">\s*<div[^>]*>(.*?)</div>', body, re.S):
+        if re.search(rf">\s*{re.escape(name)}\s*<", row):
+            return text_of(row)
+    raise AssertionError(f"no tree row for {name}")
+
+
+def test_the_tree_is_the_directory_every_point_once(client_in_program, world):
+    SupplyPoint.objects.create(
+        program_id=PROGRAM, slug="old-depot", name="Old depot", kind="facility", source="we_recorded", status="inactive"
+    )
+    body = get(client_in_program, "network")
+    # Four points, four nodes, and no second per-kind table listing them again.
+    assert body.count('data-testid="network-node"') == 4
+    assert "<table" not in body
+    names = re.findall(r'data-testid="point-name"[^>]*>([^<]+)<', body)
+    assert sorted(names) == ["Old depot", "Partner store", "worker-acacia", "worker-baobab"]
+    # What only the old tables said now rides on the node.
+    assert "user-worker-acacia" in body
+    assert "band 1–2 months" in text_of(body)
+    assert "inactive" in own_line(body, "Old depot")
+    for point in SupplyPoint.objects.filter(program_id=PROGRAM):
+        assert reverse("supply_chain:supply_point_edit", args=[point.pk]) in body
+
+
+def test_a_worker_sits_under_the_store_that_supplies_them(client_in_program, world):
+    body = get(client_in_program, "network")
+    store_at = body.index(">Partner store<")
+    assert store_at < body.index(">worker-acacia<") and store_at < body.index(">worker-baobab<")
+    assert "Show the 2 workers Partner store supplies" in text_of(body)
+
+
+def test_a_store_that_passes_stock_on_is_not_an_alarm(client_in_program, world):
+    """The partner store holds nothing because it hands everything on: that is how it works."""
+    line = own_line(get(client_in_program, "network"), "Partner store")
+    assert "passes stock on" in line
+    assert "none left" not in line
+
+
+def test_an_empty_store_over_an_empty_subtree_is_still_an_alarm(client_in_program, world):
+    item, commodity = world["item"], world["item"].commodity
+    depot = SupplyPoint.objects.create(
+        program_id=PROGRAM, slug="empty-depot", name="Empty depot", kind="regional_store", source="we_recorded"
+    )
+    cedar = SupplyPoint.objects.create(
+        program_id=PROGRAM,
+        opportunity_id=PROGRAM,
+        slug="user-worker-cedar",
+        name="worker-cedar",
+        kind="user_held",
+        connect_username="worker-cedar",
+        parent=depot,
+        source="connect_visit",
+        min_months_of_stock=Decimal("1"),
+        max_months_of_stock=Decimal("2"),
+    )
+    for kind, frm, to in (("receipt", None, depot), ("distribution", depot, cedar)):
+        Movement.objects.create(
+            program_id=PROGRAM,
+            kind=kind,
+            occurred_on=TODAY - timedelta(days=20),
+            from_supply_point=frm,
+            to_supply_point=to,
+            item=item,
+            commodity=commodity,
+            quantity=Decimal("20"),
+            quantity_unit="sachet",
+            source="we_recorded",
+        )
+    posting.post_visit_consumption(
+        program_id=PROGRAM,
+        opportunity_id=PROGRAM,
+        point=cedar,
+        item=item,
+        quantity=Decimal("20"),
+        unit="sachet",
+        occurred_on=TODAY - timedelta(days=10),
+        visit_id="v-cedar",
+        estimated=False,
+    )
+    body = get(client_in_program, "network")
+    depot_line = own_line(body, "Empty depot")
+    assert "none left" in depot_line and "passes stock on" not in depot_line
+    # A worker is meant to hold stock: empty is the finding.
+    cedar_line = own_line(body, "worker-cedar")
+    assert "none left" in cedar_line and "passes stock on" not in cedar_line
 
 
 def test_a_worker_in_the_tree_links_to_their_page(client_in_program, world):
@@ -372,7 +464,8 @@ def test_a_worker_page_shows_the_timeline_and_the_visits_behind_it(client_in_pro
     assert "Not yet approved" in body
     text = text_of(body)
     assert "Issued" in text and "150 sachets" in text
-    assert "120 sachets · 30 unapproved · 30 estimated" in text
+    assert "120 sachets on hand — of the 30 sachets dispensed, 30 on visits not yet approved, 30 estimated" in text
+    assert "30 sachets dispensed — 30 on visits not yet approved, 30 estimated" in text
     # The chart's figures, as a table, for anyone who cannot see the chart.
     assert 'data-testid="timeline-table"' in body
 
@@ -472,7 +565,7 @@ def test_as_of_shows_the_day_as_it_stood(client_in_program, world):
     past = {"as_of": (TODAY - timedelta(days=50)).isoformat()}
     text = text_of(get(client_in_program, "workers", **past))
     assert text.count("150 sachets") >= 2
-    assert "· 30 unapproved" not in text
+    assert "not yet approved, 30 estimated" not in text
     detail = get(client_in_program, "worker_detail", world["worker-acacia"].pk, **past)
     assert "xf-worker-acacia" not in detail  # that visit had not happened yet
 
@@ -499,15 +592,33 @@ def test_the_page_costs_the_same_whatever_the_number_of_workers(client_in_progra
 
 
 class TestFigureWords:
-    def test_a_figure_says_what_it_rests_on(self):
-        from connect_labs.supply_chain.templatetags.supply_chain_extras import resting_on
+    def test_an_on_hand_figure_says_its_parts_are_dispensing(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import on_hand_words
 
-        parts = {"unapproved": {"amount": "38.0000", "unit": "sachet"}, "estimated": {"amount": "60", "unit": "sachet"}}
-        assert resting_on({"amount": "412.0000", "unit": "sachet"}, parts) == "412 sachets · 38 unapproved · 60 estimated"
-        assert resting_on({"amount": "412", "unit": "sachet"}, {"unapproved": {"amount": "0"}}) == "412 sachets"
-        assert resting_on({"amount": "4", "unit": "sachet"}, {"estimated": {"unconfirmed": ["x"]}}) == (
-            "4 sachets · estimated part unknown"
+        parts = {
+            "dispensed": {"amount": "90.0000", "unit": "sachet"},
+            "unapproved": {"amount": "38.0000", "unit": "sachet"},
+            "estimated": {"amount": "60", "unit": "sachet"},
+        }
+        assert on_hand_words({"amount": "412.0000", "unit": "sachet"}, parts) == (
+            "412 sachets on hand — of the 90 sachets dispensed, 38 on visits not yet approved, 60 estimated"
         )
+        assert on_hand_words({"amount": "412", "unit": "sachet"}, {"unapproved": {"amount": "0"}}) == (
+            "412 sachets on hand"
+        )
+        assert on_hand_words(
+            {"amount": "4", "unit": "sachet"},
+            {"dispensed": {"amount": "2", "unit": "sachet"}, "estimated": {"unconfirmed": ["x"]}},
+        ) == "4 sachets on hand — of the 2 sachets dispensed, an unknown part estimated"
+
+    def test_a_dispensed_figure_names_its_unsettled_parts(self):
+        from connect_labs.supply_chain.templatetags.supply_chain_extras import dispensed_words
+
+        parts = {"unapproved": {"amount": "30", "unit": "sachet"}}
+        assert dispensed_words({"amount": "90", "unit": "sachet"}, parts) == (
+            "90 sachets dispensed — 30 on visits not yet approved"
+        )
+        assert dispensed_words({"amount": "90", "unit": "sachet"}, {}) == "90 sachets dispensed"
 
     def test_a_difference_always_says_its_sign(self):
         from connect_labs.supply_chain.templatetags.supply_chain_extras import signed_figure
@@ -524,6 +635,42 @@ class TestFigureWords:
         assert days_text("0.40") == "under a day"
         assert days_text({"unconfirmed": ["no rate yet"]}) == "unknown"
         assert days_text(None) == "—"
-        assert months_text("3.40") == "3.4 months"
-        assert months_text("1.00") == "1 month"
+        assert months_text("3.40") == "3.4 months of cover"
+        assert months_text("1.00") == "1 month of cover"
         assert months_text({"unconfirmed": ["no rate yet"]}) == "cover unknown"
+
+
+class TestPassThrough:
+    """The rule behind "passes stock on" (network/views.py passes_stock_on, band_of)."""
+
+    @staticmethod
+    def row(kind, own, below=None, issued="10"):
+        return {
+            "kind": kind,
+            "on_hand": {"amount": own, "unit": "sachet"},
+            "issued": {"amount": issued, "unit": "sachet"},
+            "status": "stockout" if own == "0" else "ok",
+            "subtree": None if below is None else {"on_hand": {"amount": below, "unit": "sachet"}},
+        }
+
+    def test_an_empty_store_whose_points_below_hold_stock_passes_it_on(self):
+        from connect_labs.supply_chain.network.views import band_of, passes_stock_on
+
+        store = self.row("regional_store", "0", below="230")
+        assert passes_stock_on(store) and band_of(store) is None
+
+    def test_empty_is_still_an_alarm_everywhere_else(self):
+        from connect_labs.supply_chain.network.views import band_of, passes_stock_on
+
+        for row in (
+            self.row("regional_store", "0", below="0"),  # nothing below either
+            self.row("facility", "0"),  # nothing below it at all
+            self.row("user_held", "0"),  # a worker is meant to hold stock
+        ):
+            assert not passes_stock_on(row)
+            assert band_of(row) == "stockout"
+
+    def test_a_store_holding_some_itself_shows_its_own_band(self):
+        from connect_labs.supply_chain.network.views import band_of
+
+        assert band_of(self.row("regional_store", "40", below="270")) == "ok"

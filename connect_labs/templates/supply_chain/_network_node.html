@@ -1,55 +1,70 @@
 {% load supply_chain_extras %}
 {% comment %}
-One point in the network tree and, for a store, what is below it. Recursive:
-a store includes this template for each store below it. Its workers sit
-behind a <details>, so a store with two hundred of them stays one row until
-opened.
+One point in the network tree and what is below it (NetworkView.build_tree).
+Recursive: a store includes this template for each store below it; its
+workers sit behind a <details>, so a store with two hundred of them stays one
+row until opened.
 
-A store's own figures are what is AT it; "with everything below it" sums on
-hand and what came in from outside the subtree (each unit once -- never the
-hop-summed "issued", which would count a sachet once per store it passed
-through). Cover is recomputed for the subtree, never summed. Every figure
-resting on unapproved visits or estimates says so beside itself.
+The node is the directory row -- slug, Connect user, where, the band set on
+it, how it is known, Edit -- and, when an item is chosen, `node.stock`: what
+the point holds (a `network_tree` row). A store's own figures are what is AT
+it; "with everything below it" sums on hand and what came in from outside the
+subtree (each unit once, never a hop-summed "issued"). Cover is recomputed
+for the subtree, never summed.
+
+A store that passes stock on (holds nothing itself while the points below it
+hold some -- `passes_stock_on`) says so in grey: its empty shelf is how it
+works, not a stock-out. The red alarm stays for points meant to hold stock.
 {% endcomment %}
-<li class="py-2" data-testid="network-node">
-  {% if node.kind == "user_held" %}
-    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-      <a class="text-gray-900 hover:underline" href="{% url 'supply_chain:worker_detail' node.supply_point_id %}?item_id={{ tree.item_id }}">{{ node.name }}</a>
-      <span class="text-sm text-gray-700 tabular-nums">{{ node.on_hand|resting_on:node }}</span>
-      <span class="text-sm text-gray-600">{{ node.months_of_stock|months_text }}</span>
-      {% include 'supply_chain/_stock_band.html' with status=node.status %}
-      <span class="text-xs text-gray-600">{% if node.reported_on %}counted {{ node.reported_on|day }}{% else %}never counted{% endif %}</span>
-      {% if node.unmatched_receipts %}<span class="text-xs text-amber-900">reports a receipt no store recorded</span>{% endif %}
-    </div>
-  {% else %}
-    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-      <span class="font-medium text-gray-900">{{ node.name }}</span>
-      <span class="text-xs text-gray-500">{{ node.kind|words }}</span>
-      <span class="text-sm text-gray-700 tabular-nums">here: {{ node.on_hand|resting_on:node }}</span>
-      <span class="text-sm text-gray-600">{{ node.months_of_stock|months_text }}</span>
-      {% include 'supply_chain/_stock_band.html' with status=node.status %}
-      <span class="text-xs text-gray-600">{% if node.reported_on %}counted {{ node.reported_on|day }}{% else %}never counted{% endif %}</span>
-    </div>
-    {% if node.subtree %}
-      <div class="text-sm text-gray-700 mt-1 flex flex-wrap gap-x-3 gap-y-0.5" data-testid="subtree">
-        <span>With everything below it: <span class="tabular-nums">{{ node.subtree.on_hand|resting_on:node.subtree }}</span> on hand</span>
-        <span>· {{ node.subtree.received_from_outside|figure_text }} came in from outside</span>
-        <span>· {{ node.subtree.months_of_stock|months_text }} of cover, recomputed for all of it {% include 'supply_chain/_stock_band.html' with status=node.subtree.status %}</span>
-        {% if node.workers %}<span>· {{ node.workers }} worker{{ node.workers|pluralize }}{% if node.workers_below_min %}, <span class="text-amber-900">{{ node.workers_below_min }} below minimum</span>{% endif %}</span>{% endif %}
-      </div>
-      {% if node.store_children %}
-        <ul class="ml-4 border-l border-gray-200 pl-4">
-          {% for child in node.store_children %}{% include 'supply_chain/_network_node.html' with node=child tree=tree %}{% endfor %}
-        </ul>
-      {% endif %}
-      {% if node.worker_children %}
-        <details class="mt-1 ml-4">
-          <summary class="text-sm text-brand-indigo cursor-pointer">Show the {{ node.worker_children|length }} worker{{ node.worker_children|length|pluralize }} {{ node.name }} supplies</summary>
-          <ul class="ml-2 border-l border-gray-200 pl-4 divide-y divide-gray-100">
-            {% for child in node.worker_children %}{% include 'supply_chain/_network_node.html' with node=child tree=tree %}{% endfor %}
-          </ul>
-        </details>
-      {% endif %}
+<li class="py-2{% if node.status != 'active' %} opacity-60{% endif %}" data-testid="network-node">
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    {% if node.kind == "user_held" and node.stock %}
+      <a data-testid="point-name" class="text-gray-900 hover:underline" href="{% url 'supply_chain:worker_detail' node.id %}?item_id={{ stock.item_id }}">{{ node.name }}</a>
+    {% else %}
+      <span data-testid="point-name" class="{% if node.kind != 'user_held' %}font-medium {% endif %}text-gray-900">{{ node.name }}</span>
     {% endif %}
+    <span class="text-xs text-gray-600">{{ node.kind|words }}</span>
+    {% if node.status != 'active' %}<span class="px-1.5 py-0.5 rounded text-[11px] bg-gray-100 text-gray-600">inactive</span>{% endif %}
+    {% if node.stock %}
+      <span class="text-sm text-gray-700 tabular-nums">{% if node.kind != "user_held" %}here: {% endif %}{{ node.stock.on_hand|on_hand_words:node.stock }}</span>
+      {% if node.passes_on %}
+        <span class="text-xs text-gray-600" data-testid="passes-on">passes stock on</span>
+      {% else %}
+        <span class="text-sm text-gray-600">{{ node.stock.months_of_stock|months_text }}</span>
+        {% include 'supply_chain/_stock_band.html' with status=node.band %}
+      {% endif %}
+      <span class="text-xs text-gray-600">{% if node.stock.reported_on %}counted {{ node.stock.reported_on|day }}{% else %}never counted{% endif %}</span>
+      {% if node.stock.unmatched_receipts %}<span class="text-xs text-amber-900">reports a receipt no store recorded</span>{% endif %}
+    {% endif %}
+    {% if not supply_as_of %}
+      <a href="{% url 'supply_chain:supply_point_edit' node.id %}" class="ml-auto text-sm text-brand-indigo hover:underline">Edit<span class="sr-only"> {{ node.name }}</span></a>
+    {% endif %}
+  </div>
+  <div class="text-xs text-gray-600 mt-0.5">
+    <code>{{ node.slug }}</code>{% if node.connect_username %} · Connect user {{ node.connect_username }}{% endif %}
+    · {{ node.admin_area|default:"place not recorded" }}
+    · {% if node.min_months_of_stock or node.max_months_of_stock %}band {{ node.min_months_of_stock|floatformat:"-2"|default:"—" }}–{{ node.max_months_of_stock|floatformat:"-2"|default:"—" }} months{% else %}no band set{% endif %}
+    · {{ node.source|source_label }}
+  </div>
+  {% if node.stock.subtree %}
+    <div class="text-sm text-gray-700 mt-1 flex flex-wrap gap-x-3 gap-y-0.5" data-testid="subtree">
+      <span>With everything below it: <span class="tabular-nums">{{ node.stock.subtree.on_hand|on_hand_words:node.stock.subtree }}</span></span>
+      <span>· {{ node.stock.subtree.received_from_outside|figure_text }} came in from outside</span>
+      <span>· {{ node.stock.subtree.months_of_stock|months_text }}, recomputed for all of it {% include 'supply_chain/_stock_band.html' with status=node.stock.subtree.status %}</span>
+      {% if node.stock.workers %}<span>· {{ node.stock.workers }} worker{{ node.stock.workers|pluralize }}{% if node.stock.workers_below_min %}, <span class="text-amber-900">{{ node.stock.workers_below_min }} below minimum</span>{% endif %}</span>{% endif %}
+    </div>
+  {% endif %}
+  {% if node.store_children %}
+    <ul class="ml-4 border-l border-gray-200 pl-4">
+      {% for child in node.store_children %}{% include 'supply_chain/_network_node.html' with node=child %}{% endfor %}
+    </ul>
+  {% endif %}
+  {% if node.worker_children %}
+    <details class="mt-1 ml-4">
+      <summary class="text-sm text-brand-indigo cursor-pointer">Show the {{ node.worker_children|length }} worker{{ node.worker_children|length|pluralize }} {{ node.name }} supplies</summary>
+      <ul class="ml-2 border-l border-gray-200 pl-4 divide-y divide-gray-100">
+        {% for child in node.worker_children %}{% include 'supply_chain/_network_node.html' with node=child %}{% endfor %}
+      </ul>
+    </details>
   {% endif %}
 </li>

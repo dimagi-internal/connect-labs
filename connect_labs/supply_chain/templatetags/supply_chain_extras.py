@@ -1158,29 +1158,47 @@ def _nonzero_amount(cell):
     return number if number else None
 
 
-@register.filter
-def resting_on(cell, parts):
-    """A figure with what it rests on said beside it: "412 sachets · 38 unapproved · 60 estimated".
-
-    `{{ row.on_hand|resting_on:row }}`, where `parts` carries `unapproved` and
-    `estimated` in the figure's own unit (belief.py speaks one unit at every
-    level). Said ON the figure, never in a footnote (design 2026-09-28 §6): a
-    figure that rests on visits nobody has approved, or on a protocol's
-    quantity rather than the form's own number, must not read as settled.
-    A part that could not be worked out is said too, as unknown.
-    """
-    text = figure_text(cell)
+def _unsettled_parts(parts) -> list[str]:
+    """ "30 on visits not yet approved", "30 estimated": the dispensing that is not settled, in words."""
     parts = parts or {}
     said = []
-    for key in ("unapproved", "estimated"):
+    for key, words_for in (("unapproved", "on visits not yet approved"), ("estimated", "estimated")):
         part = parts.get(key)
         if isinstance(part, dict) and "unconfirmed" in part:
-            said.append(f"{key} part unknown")
+            said.append(f"an unknown part {words_for}")
             continue
         amount = _nonzero_amount(part)
         if amount is not None:
-            said.append(f"{quantity_digits(amount)} {key}")
-    return " · ".join([text, *said])
+            said.append(f"{quantity_digits(amount)} {words_for}")
+    return said
+
+
+@register.filter
+def on_hand_words(cell, parts):
+    """An on-hand figure, and what the dispensing behind it rests on.
+
+    "120 sachets on hand — of the 90 sachets dispensed, 30 on visits not yet
+    approved, 30 estimated". `parts` is the row (or a store's subtree): its
+    `dispensed`, `unapproved` and `estimated`, all in the figure's own unit.
+    The parts are DISPENSING, never stock on hand, so they are said as parts
+    of what was dispensed -- set beside on hand with no noun, "30 unapproved"
+    read as though 30 of the sachets on hand were. Said ON the figure, never
+    in a footnote (design 2026-09-28 §6); a figure resting on nothing
+    unsettled is just "120 sachets on hand".
+    """
+    text = f"{figure_text(cell)} on hand"
+    said = _unsettled_parts(parts)
+    if not said:
+        return text
+    return f"{text} — of the {figure_text((parts or {}).get('dispensed'))} dispensed, {', '.join(said)}"
+
+
+@register.filter
+def dispensed_words(cell, parts):
+    """A dispensed figure and its unsettled parts: "90 sachets dispensed — 30 on visits not yet approved, 30 estimated"."""
+    text = f"{figure_text(cell)} dispensed"
+    said = _unsettled_parts(parts)
+    return f"{text} — {', '.join(said)}" if said else text
 
 
 @register.filter
@@ -1223,7 +1241,7 @@ def days_text(value):
 
 @register.filter
 def months_text(value):
-    """Months of cover to one place: "3.4 months", or why there is no figure."""
+    """Months of cover to one place, with its noun: "3.4 months of cover", or why there is no figure."""
     if isinstance(value, dict):
         if "unconfirmed" in value:
             return "cover unknown"
@@ -1234,7 +1252,7 @@ def months_text(value):
     if number is None:
         return "—"
     shown = number.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-    return f"{shown.normalize():f} month{'' if shown == 1 else 's'}"
+    return f"{shown.normalize():f} month{'' if shown == 1 else 's'} of cover"
 
 
 # What the visit reader made of one visit for one item (WorkerVisit.outcomes),

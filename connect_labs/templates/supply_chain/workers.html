@@ -76,8 +76,8 @@ the worker reports that no store recorded is said on the worker's own row.
                   {% endfor %}
                 </td>
                 <td class="px-4 py-2 align-top tabular-nums">
-                  {{ row.on_hand|resting_on:row }}
-                  <div class="mt-0.5">{% include 'supply_chain/_stock_band.html' with status=row.status %}</div>
+                  {{ row.on_hand|on_hand_words:row }}
+                  <div class="mt-0.5">{% include 'supply_chain/_stock_band.html' with status=row.band %}</div>
                 </td>
                 <td class="px-4 py-2 align-top tabular-nums">
                   {{ row.days_to_stockout|days_text }}

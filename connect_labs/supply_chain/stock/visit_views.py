@@ -182,7 +182,10 @@ class WorkersView(OperationBase):
         if item is None:
             return context
         data = self.op("worker_stock", item_id=item["id"], **as_of_payload(self.request))
+        from connect_labs.supply_chain.network.views import band_of
+
         for row in data["workers"]:
+            row["band"] = band_of(row)
             row["unapproved_share"] = _share(row["unapproved"], row["dispensed"])
             row["estimated_share"] = _share(row["estimated"], row["dispensed"])
         # An unknown column is no choice at all: back to by name, A to Z.
@@ -227,5 +230,8 @@ class WorkerDetailView(OperationBase):
             raise Http404(str(error)) from error
         # Safe: timeline_svg builds its markup from numbers and ISO dates and
         # escapes the one string that comes from data, the unit (test_timeline pins it).
+        from connect_labs.supply_chain.network.views import band_of
+
+        data["worker"]["band"] = band_of(data["worker"])
         context.update(data=data, worker=data["worker"], chart=mark_safe(timeline_svg(data["timeline"])))
         return context
