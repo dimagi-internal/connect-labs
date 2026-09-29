@@ -236,3 +236,42 @@ def test_the_scheduled_run_reverses_under_a_rule_since_switched_off(da, rule):
 
     assert results[str(OPP)]["reversed"] == 1
     assert Movement.objects.filter(visit_id="9001", reverses__isnull=False).count() == 1
+
+
+def _rule_on(rule, opportunity_id):
+    """A rule written straight to the database, past every save-time check."""
+    return DispensingRule.objects.create(
+        program_id=OPP,
+        opportunity_id=opportunity_id,
+        item=rule.item,
+        resupply_point=rule.resupply_point,
+        active_from=date(2026, 8, 1),
+        lines=rule.lines,
+    )
+
+
+def test_ingest_refuses_a_real_opportunity_under_a_synthetic_programme_and_fetches_nothing(da, rule):
+    _rule_on(rule, 2230)
+    with patch(FETCH) as fetch, pytest.raises(ValueError, match="not a registered labs-only opportunity"):
+        call_operation("visit_consumption_ingest", da, {"opportunity_id": 2230})
+    fetch.assert_not_called()
+    assert not Movement.objects.filter(kind="consumption").exists()
+
+
+def test_ingest_refuses_another_programmes_labs_only_opportunity(da, rule):
+    SyntheticOpportunity.objects.create(
+        opportunity_id=20999, labs_only=True, enabled=True, label="someone else's", gdrive_folder_id="f"
+    )
+    with patch(FETCH) as fetch, pytest.raises(ValueError, match="belongs to programme 20999"):
+        call_operation("visit_consumption_ingest", da, {"opportunity_id": 20999})
+    fetch.assert_not_called()
+
+
+def test_the_scheduled_run_skips_a_rule_on_a_real_opportunity_without_fetching_it(da, rule):
+    _rule_on(rule, 2230)
+    with patch(FETCH, return_value=[export_record(9001, 14)]) as fetch:
+        results = visit_reader.run_scheduled()
+
+    assert "not a registered labs-only opportunity" in results["2230"]["skipped"]
+    assert results[str(OPP)]["posted"] == 1
+    assert [c.args[0] for c in fetch.call_args_list] == [OPP]

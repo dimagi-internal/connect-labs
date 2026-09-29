@@ -87,6 +87,11 @@ def validate_lines(lines, item) -> list[dict]:
         if kind == "stated":
             out = {"kind": "stated", "paths": _paths(line.get("paths"), what), "unit": unit}
         elif kind == "protocol":
+            if line.get("given_values") == []:
+                raise ValueError(
+                    f"{what}: given_values is empty, so no answer would ever count as given; "
+                    "leave it out to accept any answer"
+                )
             out = {
                 "kind": "protocol",
                 "given_paths": _paths(line.get("given_paths"), what),

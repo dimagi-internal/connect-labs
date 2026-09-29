@@ -32,7 +32,8 @@ class DispensingRuleForm(forms.Form):
         help_text=_(
             'A list. Stated: {"kind": "stated", "paths": ["form.x"], "unit": "sachet"}. Protocol: '
             '{"kind": "protocol", "given_paths": ["form.y"], "given_values": ["yes"], "quantity": "4", '
-            '"unit": "sachet"}. Value map: {"kind": "value_map", "paths": ["form.z"], '
+            '"unit": "sachet"} (leave given_values out to accept any answer; it is never empty). '
+            'Value map: {"kind": "value_map", "paths": ["form.z"], '
             '"map": {"<answer>": 10}, "unit": "tablet"}. Any line may add "forms": [...] and, for a '
             'protocol, "requires_paths": [...].'
         ),

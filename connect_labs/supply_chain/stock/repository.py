@@ -411,8 +411,23 @@ class StockRepositoryMixin:
         twice. Omitting `reports`, `forms` or `status` on an edit keeps what
         is there.
         """
+        from django.core.exceptions import PermissionDenied
+
+        from connect_labs.labs.access.scopes import may_use
+        from connect_labs.supply_chain import scopes
         from connect_labs.supply_chain.data_access import _fresh
         from connect_labs.supply_chain.stock.services.dispensing import validate_lines, validate_reports
+
+        # The rule's opportunity is where visits are read FROM, so it is a scope
+        # in its own right: labs-only and this programme's, before anything else
+        # (a rule on a real opportunity must not be savable at all), and one the
+        # caller may use.
+        problem = scopes.opportunity_problem(self._require_program(), data["opportunity_id"])
+        if problem:
+            raise ValueError(f"a dispensing rule cannot name this opportunity: {problem}")
+        denied = may_use(self.caller, opportunity_id=data["opportunity_id"])
+        if denied:
+            raise PermissionDenied(denied)
 
         item = self._resolve_item(data["item_id"])
         point = self._require_supply_point(data["resupply_point_id"], "resupply point")

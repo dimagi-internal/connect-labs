@@ -102,11 +102,15 @@ def test_the_timeline_steps_up_for_issues_and_down_for_dispensing(world):
     line = worker_timeline(PROGRAM, world["worker"], world["item"])
 
     assert line["unit"] == "sachet"
-    assert [(d["on"], Decimal(d["issued"]), Decimal(d["dispensed"]), Decimal(d["balance"])) for d in line["days"]] == [
-        ("2026-09-01", Decimal("150"), Decimal("0"), Decimal("150")),
-        ("2026-09-03", Decimal("0"), Decimal("14"), Decimal("136")),
-        # The rejected visit and its reversal on the same day cancel.
-        ("2026-09-05", Decimal("0"), Decimal("0"), Decimal("136")),
+    assert [
+        (d["on"], Decimal(d["issued"]), Decimal(d["dispensed"]), Decimal(d["reversed"]), Decimal(d["balance"]))
+        for d in line["days"]
+    ] == [
+        ("2026-09-01", Decimal("150"), Decimal("0"), Decimal("0"), Decimal("150")),
+        ("2026-09-03", Decimal("0"), Decimal("14"), Decimal("0"), Decimal("136")),
+        # The rejected visit and its reversal land on one day: the ledger nets
+        # to nothing, but each is kept, so the step back up can be drawn.
+        ("2026-09-05", Decimal("0"), Decimal("14"), Decimal("14"), Decimal("136")),
     ]
     # Counts only: a reported receipt is not a statement of what is on hand.
     assert line["counts"] == [{"on": "2026-09-06", "quantity": "136.0000", "kind": "self_reported"}]
@@ -130,7 +134,7 @@ def test_the_chart_draws_each_step_and_each_count(world):
 
     assert svg.startswith("<svg") and svg.endswith("</svg>")
     assert svg.count('data-kind="issued"') == 1
-    assert svg.count('data-kind="dispensed"') == 1
+    assert svg.count('data-kind="dispensed"') == 2
     assert svg.count('data-kind="count"') == 1
     assert "counted 136 sachets" in svg
 
@@ -169,3 +173,18 @@ def test_the_unit_is_escaped():
         }
     )
     assert "<b>" not in svg and "&lt;b&gt;" in svg
+
+
+def test_a_reversal_is_drawn_as_its_own_step_back_up(world):
+    svg = timeline_svg(worker_timeline(PROGRAM, world["worker"], world["item"]))
+
+    assert svg.count('data-kind="reversed"') == 1
+    assert svg.count('data-kind="reversal-mark"') == 1
+    assert "5 Sep 2026: 14 sachets put back (a visit rejected after it was counted)" in svg
+    assert "of which 14 sachets was put back when visits were rejected" in svg
+
+
+def test_a_day_without_a_reversal_draws_no_reversal_mark(world):
+    svg = timeline_svg(worker_timeline(PROGRAM, world["worker"], world["item"], on_date=date(2026, 9, 4)))
+    assert 'data-kind="reversed"' not in svg
+    assert "put back" not in svg

@@ -24,7 +24,9 @@ _PROTOCOL_LINE = obj(
     {
         "kind": {"const": "protocol"},
         "given_paths": _PATHS,
-        "given_values": {"type": ["array", "null"], "items": {"type": "string", "minLength": 1}},
+        # null (or absent) means any answer; an empty list would match none,
+        # so the rule would silently never post.
+        "given_values": {"type": ["array", "null"], "items": {"type": "string", "minLength": 1}, "minItems": 1},
         "quantity": QUANTITY,
         "unit": _UNIT,
         **_COMMON,
@@ -154,6 +156,10 @@ def visit_consumption_ingest(access, opportunity_id, until=None, refresh=False):
     # Before any read or write: a bad day, or a real programme, stops the run here.
     day = parse_until(until)
     scopes.require_synthetic(access.program_id, "read visits into the stock ledger")
+    # The programme being synthetic says nothing about where the visits come
+    # from: the opportunity must be a labs-only one of this programme too, and
+    # this runs even for a rule written straight to the database.
+    scopes.require_programme_opportunity(access.program_id, opportunity_id)
     visits = visit_source.fetch_visits(opportunity_id, access.access_token, force_refresh=refresh)
     return visit_reader.ingest_visit_consumption(access, opportunity_id=opportunity_id, visits=visits, until=day)
 
@@ -194,6 +200,37 @@ def worker_stock(access, item_id, opportunity_id=None, as_of=None, window_days=9
         "as_of": as_of,
         "workers": [belief.wire(r) for r in rows],
     }
+
+
+def _reported_on_visits(program_id, point, item, visit_ids) -> dict:
+    """{"item": {visit_id: [count, ...]}, "any": {visit_id, ...}} -- the counts these visits recorded.
+
+    One query. "item" is this item's balances and receipts, oldest kind
+    first; "any" is every visit that recorded a count for any item, which is
+    what makes it a stock form rather than a form this item is not read from.
+    """
+    from connect_labs.supply_chain.models import StockCount
+
+    out = {"item": {}, "any": set()}
+    if not visit_ids:
+        return out
+    rows = (
+        StockCount.objects.filter(program_id=program_id, supply_point=point, visit_id__in=visit_ids)
+        .order_by("kind", "id")
+        .values("visit_id", "item_id", "kind", "quantity", "quantity_unit", "counted_on")
+    )
+    for row in rows:
+        out["any"].add(row["visit_id"])
+        if row["item_id"] == item.pk:
+            out["item"].setdefault(row["visit_id"], []).append(
+                {
+                    "kind": row["kind"],
+                    "quantity": str(row["quantity"]),
+                    "unit": row["quantity_unit"],
+                    "on": row["counted_on"].isoformat(),
+                }
+            )
+    return out
 
 
 @register_operation(
@@ -257,6 +294,8 @@ def worker_stock_get(access, supply_point_id, item_id, as_of=None, window_days=9
     )
     key = outcome_key(item.pk)
     worker = belief.point_belief(program_id, point, item, on_date=on_date, window_days=window_days)
+    shown = list(visits.order_by("-visit_date", "-id")[:200])
+    reported = _reported_on_visits(program_id, point, item, [v.visit_id for v in shown])
     return {
         "item_id": item.pk,
         "item_name": item.name,
@@ -273,8 +312,12 @@ def worker_stock_get(access, supply_point_id, item_id, as_of=None, window_days=9
                 "form_name": v.form_name,
                 "outcome": v.outcomes.get(key, ""),
                 "answers": v.answers,
+                # What a stock form recorded for this item: its balance and
+                # receipt, which are counts beside the ledger, not an outcome.
+                "reported": reported["item"].get(v.visit_id, []),
+                "stock_form": v.visit_id in reported["any"] or "stock" in (v.form_name or "").lower(),
             }
-            for v in visits.order_by("-visit_date", "-id")[:200]
+            for v in shown
         ],
         "arrivals": [
             {

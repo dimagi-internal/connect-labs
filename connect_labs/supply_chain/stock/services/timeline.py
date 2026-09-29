@@ -1,7 +1,9 @@
 """A worker's stock day by day, and the chart drawn from it (design 2026-09-28 §6.3).
 
-Issued steps up, dispensed steps down, reported counts are points, and the
-ledger line runs between them. Everything is in the item's single unit.
+Issued steps up, dispensed steps down, a reversal (a rejected visit's
+dispensing put back) steps back up as a mark of its own, reported counts are
+points, and the ledger line runs between them. Everything is in the item's
+single unit.
 
 The chart is inline SVG because no chart library is loaded on supply pages,
 and an SVG renders inside the as-of rewind with the rest of the page. It is
@@ -33,15 +35,22 @@ DISPENSED_COLOUR = "#ea580c"
 OTHER_COLOUR = "#6b7280"
 LEDGER_COLOUR = "#6b7280"
 COUNT_COLOUR = "#3b82f6"
+REVERSED_COLOUR = "#9333ea"
+# A reversal usually lands on the day of the dispensing it undoes, so its step
+# would sit on top of that one; it is drawn this far to the right, dashed, and
+# capped with a ringed square, so it reads as its own step without colour.
+REVERSAL_OFFSET = 5
 
 
 def worker_timeline(program_id, point, item, *, on_date=None) -> dict:
     """{"unit", "days": [...], "counts": [...], "unconverted": [...]} for one worker and item.
 
-    A day is {"on", "before", "issued", "dispensed", "other", "balance"}, all
-    strings. A reversal (a rejected visit's consumption put back) takes that
-    day's dispensing back; it is never an issue. `other` is what moved for
-    any other reason: an adjustment, stock sent on, a loss.
+    A day is {"on", "before", "issued", "dispensed", "reversed", "other",
+    "balance"}, all strings. `dispensed` is every visit's consumption that
+    day; `reversed` is what came back because a visit was later rejected or
+    marked a duplicate -- kept apart, never netted into `dispensed` and never
+    an issue, so the chart can show the step back up. `other` is what moved
+    for any other reason: an adjustment, stock sent on, a loss.
     """
     unit = belief.unit_of(item)
     moves = (
@@ -62,10 +71,13 @@ def worker_timeline(program_id, point, item, *, on_date=None) -> dict:
             unconverted.append({"on": m["occurred_on"].isoformat(), "reasons": list(converted.reasons)})
             continue
         amount = converted.amount
-        day = days.setdefault(m["occurred_on"], {"issued": ZERO, "dispensed": ZERO, "other": ZERO})
+        day = days.setdefault(m["occurred_on"], {"issued": ZERO, "dispensed": ZERO, "reversed": ZERO, "other": ZERO})
         inbound = m["to_supply_point_id"] == point.pk
         if m["kind"] == "consumption":
-            day["dispensed"] += -amount if inbound else amount
+            if inbound:
+                day["reversed"] += amount  # only a reversal brings consumption back in
+            else:
+                day["dispensed"] += amount
         elif inbound and m["kind"] in belief.ISSUE_KINDS:
             day["issued"] += amount
         else:
@@ -76,13 +88,14 @@ def worker_timeline(program_id, point, item, *, on_date=None) -> dict:
     for on in sorted(days):
         day = days[on]
         before = balance
-        balance = balance + day["issued"] - day["dispensed"] + day["other"]
+        balance = balance + day["issued"] - day["dispensed"] + day["reversed"] + day["other"]
         out.append(
             {
                 "on": on.isoformat(),
                 "before": str(before),
                 "issued": str(day["issued"]),
                 "dispensed": str(day["dispensed"]),
+                "reversed": str(day["reversed"]),
                 "other": str(day["other"]),
                 "balance": str(balance),
             }
@@ -119,7 +132,13 @@ def _segment(x1, y1, x2, y2, kind, colour, title="", width=3, dash=""):
     )
 
 
-_STEPS = (("issued", ISSUED_COLOUR, 1), ("dispensed", DISPENSED_COLOUR, -1), ("other", OTHER_COLOUR, 1))
+_STEPS = (
+    ("issued", ISSUED_COLOUR, 1),
+    ("dispensed", DISPENSED_COLOUR, -1),
+    ("reversed", REVERSED_COLOUR, 1),
+    ("other", OTHER_COLOUR, 1),
+)
+_VERBS = {"issued": "issued", "dispensed": "dispensed", "reversed": "put back", "other": "moved"}
 
 
 def _description(days, counts, unit) -> str:
@@ -127,12 +146,14 @@ def _description(days, counts, unit) -> str:
     dates = [d["on"] for d in days] + [c["on"] for c in counts]
     issued = sum((Decimal(d["issued"]) for d in days), ZERO)
     dispensed = sum((Decimal(d["dispensed"]) for d in days), ZERO)
+    reversed_ = sum((Decimal(d.get("reversed") or 0) for d in days), ZERO)
     parts = [f"From {day_text(min(dates))} to {day_text(max(dates))}:"]
     if days:
-        parts.append(
-            f"{_amount(issued, unit)} issued and {_amount(dispensed, unit)} dispensed; "
-            f"the ledger ends at {_amount(Decimal(days[-1]['balance']), unit)}."
-        )
+        parts.append(f"{_amount(issued, unit)} issued and {_amount(dispensed, unit)} dispensed")
+        if reversed_:
+            parts[-1] += f", of which {_amount(reversed_, unit)} was put back when visits were rejected"
+        parts[-1] += f"; the ledger ends at {_amount(Decimal(days[-1]['balance']), unit)}."
+
     if counts:
         last = counts[-1]
         parts.append(
@@ -182,13 +203,21 @@ def timeline_svg(line: dict, *, width: int = 720, height: int = 220) -> str:
         if previous is not None:
             parts.append(_segment(previous, y(level), at, y(level), "ledger", LEDGER_COLOUR, width=1.5, dash="4 3"))
         for key, colour, sign in _STEPS:
-            amount = Decimal(d[key])
+            amount = Decimal(d.get(key) or 0)
             if amount == 0:
                 continue
             after = level + sign * amount
-            verb = {"issued": "issued", "dispensed": "dispensed", "other": "moved"}[key]
-            title = f"{day_text(d['on'])}: {_amount(abs(amount), unit)} {verb}"
-            parts.append(_segment(at, y(level), at, y(after), key, colour, title))
+            title = f"{day_text(d['on'])}: {_amount(abs(amount), unit)} {_VERBS[key]}"
+            if key == "reversed":
+                title += " (a visit rejected after it was counted)"
+                step = at + REVERSAL_OFFSET
+                parts.append(_segment(step, y(level), step, y(after), key, colour, title, dash="3 2"))
+                parts.append(
+                    f'<rect x="{step - 4:.1f}" y="{y(after) - 4:.1f}" width="8" height="8" fill="none" '
+                    f'stroke="{colour}" stroke-width="2" data-kind="reversal-mark"><title>{title}</title></rect>'
+                )
+            else:
+                parts.append(_segment(at, y(level), at, y(after), key, colour, title))
             level = after
         previous = at
     if days:

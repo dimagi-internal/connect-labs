@@ -313,3 +313,45 @@ def test_a_rule_whose_item_lost_its_unit_is_refused_and_the_rest_of_the_run_goes
     assert [(row["rule_id"], row["item_id"]) for row in report["unit_refused"] if "rule_id" in row] == [
         (bad.pk, other.pk)
     ]
+
+
+def test_latest_counts_loads_one_row_per_point(world):
+    """The newest on-hand count per point -- and ONLY that row comes back from the database."""
+    from django.db.models.signals import post_init
+
+    workers = [
+        SupplyPoint.objects.create(
+            program_id=PROGRAM,
+            opportunity_id=OPP,
+            slug=f"w{n}",
+            name=f"w{n}",
+            kind="user_held",
+            connect_username=f"w{n}",
+            source="we_recorded",
+        )
+        for n in range(2)
+    ]
+    for day in range(1, 11):
+        for worker in workers:
+            _count(world, worker, "self_reported", 100 - day, date(2026, 9, day))
+    _count(world, workers[0], "reported_receipt", 300, date(2026, 9, 20))
+    _count(world, workers[1], "physical_count", 55, date(2026, 9, 10))  # same day, later id: wins
+
+    loaded = []
+
+    def seen(sender, instance, **kwargs):
+        loaded.append(instance)
+
+    post_init.connect(seen, sender=StockCount)
+    try:
+        latest = network._latest_counts(PROGRAM, workers, item=world["item"])
+        as_of = network._latest_counts(PROGRAM, workers, item=world["item"], on_date=date(2026, 9, 4))
+    finally:
+        post_init.disconnect(seen, sender=StockCount)
+
+    assert {w.name: (latest[w.pk].kind, latest[w.pk].quantity) for w in workers} == {
+        "w0": ("self_reported", Decimal("90")),
+        "w1": ("physical_count", Decimal("55")),
+    }
+    assert {w.name: as_of[w.pk].quantity for w in workers} == {"w0": Decimal("96"), "w1": Decimal("96")}
+    assert len(loaded) == 4  # two points, two calls: one row each

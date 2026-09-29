@@ -330,6 +330,9 @@ class SupplyDataAccess(
         # Connect token but no session.
         self.request = request
         self.user = user or getattr(request, "user", None)
+        # Kept so a write naming a further scope in its payload (a dispensing
+        # rule's opportunity) can authorise that scope against the same caller.
+        self.caller = caller
 
     # ---- synthetic scopes ------------------------------------------------
 

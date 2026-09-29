@@ -491,6 +491,15 @@ def resupply_plan(access, supply_point_id, item_id=None, window_days=resupply.DE
     ),
 )
 def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_days=resupply.DEFAULT_WINDOW_DAYS):
+    return network_stock_payload(
+        access, opportunity_id=opportunity_id, item_id=item_id, kind=kind, window_days=window_days
+    )
+
+
+def network_stock_payload(
+    access, opportunity_id=None, item_id=None, kind=None, window_days=resupply.DEFAULT_WINDOW_DAYS, grouped=False
+):
+    """The network_stock operation's answer; `grouped` rates every point in one pass per item (the Stock page)."""
     item = access._resolve_item(item_id)
     rows = network.network_stock(
         access.program_id,
@@ -498,6 +507,7 @@ def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_d
         item=item,
         kind=kind,
         window_days=window_days,
+        grouped=grouped,
     )
     return {
         "summary": network.summarise(rows),
