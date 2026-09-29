@@ -325,6 +325,7 @@ def detect_movements(subscription, now) -> int:
         if not _within_filters(subscription, scope):
             continue
         point_id = movement.to_supply_point_id or movement.from_supply_point_id
+        reversal = "reversal of " if movement.reverses_id else ""
         AlertNotice.objects.create(
             subscription=subscription,
             program_id=subscription.program_id,
@@ -333,9 +334,7 @@ def detect_movements(subscription, now) -> int:
             subject={
                 "type": "movement",
                 "id": movement.pk,
-                "label": (
-                    f"{'reversal of ' if movement.reverses_id else ''}" f"{movement.kind} of {movement.commodity.name}"
-                ),
+                "label": f"{reversal}{movement.kind} of {movement.commodity.name}",
             },
             facts=_movement_facts(movement),
             since=movement.occurred_on,
