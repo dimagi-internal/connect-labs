@@ -354,11 +354,24 @@ function WorkflowUI({
       var passCount = 0;
       var failCount = 0;
       var pendingCount = 0;
+      // How many visits failed at least one individual method (GPS/QR/
+      // Signature/Mother Questions/ANC Card), regardless of what the
+      // visit's own Final verification outcome says -- the reconciling
+      // number behind the "why don't the chart bars match this card"
+      // question: Final verification outcome is a separately-recorded
+      // field, not derived from these method checks, so a visit can fail
+      // one or more methods while still being recorded Pass overall (a
+      // reviewer override, or just not yet reconciled).
+      var anyMethodFailCount = 0;
       displayRows.forEach(function (row) {
         if (row.visit_verification_outcome === 'Pass') passCount += 1;
         else if (row.visit_verification_outcome === 'Fail') failCount += 1;
         else if (row.visit_verification_outcome === 'Pending Audit')
           pendingCount += 1;
+        var failedAnyMethod = METHODS.some(function (m) {
+          return m.getOutcome(row) === 'Fail';
+        });
+        if (failedAnyMethod) anyMethodFailCount += 1;
       });
       function pct(n) {
         return total > 0 ? Math.round((n / total) * 100) : 0;
@@ -371,6 +384,7 @@ function WorkflowUI({
         passPct: pct(passCount),
         failPct: pct(failCount),
         pendingPct: pct(pendingCount),
+        anyMethodFailCount: anyMethodFailCount,
       };
     },
     [displayRows],
@@ -601,9 +615,9 @@ function WorkflowUI({
         },
         {
           name: 'Stacked bar chart',
-          def: "One bar per verification method (GPS, QR, Signature, Mother Questions, ANC Card), showing how many visits landed Pass (green) / Pending (yellow) / Fail (red) for that specific method -- independent of the overall Final verification outcome above. A single visit can fail one method and pass another (e.g. fail GPS but pass QR), so it's counted in more than one bar. That means these counts are NOT meant to add up to the % Passed/Pending/Failed totals above -- a bar's Fail count can be, and usually is, larger than the overall Failed Verification n= at the top, since one visit's failure can show up in several bars at once.",
+          def: "One bar per verification method (GPS, QR, Signature, Mother Questions, ANC Card), showing how many visits landed Pass (green) / Pending (yellow) / Fail (red) for that specific method -- independent of the overall Final verification outcome above. A single visit can fail one method and pass another (e.g. fail GPS but pass QR), so it's counted in more than one bar. That means these counts are NOT meant to add up to the % Passed/Pending/Failed totals above -- a bar's Fail count can be, and usually is, larger than the overall Failed Verification n= at the top, since one visit's failure can show up in several bars at once. The caption above the chart states the reconciling number directly: how many visits failed at least one method vs. how many are recorded Fail overall.",
           field:
-            'Per row, per method: gpsOutcome() / qrOutcome() / signatureOutcome() / motherQuestionsOutcome() / ancCardOutcome() (same functions and underlying fields as the Outcome Columns section above), tallied into Pass/Pending/Fail counts.',
+            'Per row, per method: gpsOutcome() / qrOutcome() / signatureOutcome() / motherQuestionsOutcome() / ancCardOutcome() (same functions and underlying fields as the Outcome Columns section above), tallied into Pass/Pending/Fail counts. The caption reconciling number is summary.anyMethodFailCount (displayRows where METHODS.some(m => m.getOutcome(row) === "Fail")) vs. summary.failCount (visit_verification_outcome === "Fail").',
         },
       ],
     },
@@ -789,7 +803,17 @@ function WorkflowUI({
             <p className="mb-2 text-xs text-gray-500">
               Each visit can appear in more than one bar below -- e.g. it may
               fail GPS but pass QR -- so these method counts don't need to add
-              up to the totals above, and can be larger.
+              up to the totals above, and can be larger.{' '}
+              {summary.total > 0 && (
+                <span className="font-medium text-gray-700">
+                  {summary.anyMethodFailCount} of {summary.total} visits shown
+                  failed at least one individual method, but only{' '}
+                  {summary.failCount} {summary.failCount === 1 ? 'is' : 'are'}{' '}
+                  recorded Fail in the Final verification outcome above -- that
+                  field is set independently on the form and doesn't
+                  automatically follow the per-method checks (see Definitions).
+                </span>
+              )}
             </p>
             <div style={{ height: '320px' }}>
               <canvas ref={chartRef}></canvas>
