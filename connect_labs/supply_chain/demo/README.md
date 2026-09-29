@@ -5,7 +5,7 @@ opportunity (its own programme, id >= 10,000, labelled "Stock from visits:
 synthetic RUTF (invented)") whose visits are shaped like the released RUTF
 deliver app's submissions, and reads them into the supply ledger week by
 week. Invented names only; this repository is public. The paths and answer
-strings are the app's *structure*; no submission was read or copied.
+strings are the app's _structure_; no submission was read or copied.
 
 ## What it shows
 

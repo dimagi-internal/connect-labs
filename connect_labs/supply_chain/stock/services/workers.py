@@ -32,7 +32,7 @@ def worker_slug(opportunity_id, username) -> str:
     plain = f"{prefix}{username}"
     if slugify(username) == username and len(plain) <= SLUG_MAX:
         return plain
-    digest = hashlib.sha1(username.encode("utf-8")).hexdigest()[:8]
+    digest = hashlib.sha256(username.encode("utf-8")).hexdigest()[:8]
     room = SLUG_MAX - len(prefix) - len(digest) - 1
     base = slugify(username)[:room].strip("-_")
     return f"{prefix}{base}-{digest}" if base else f"{prefix}{digest}"
