@@ -24,13 +24,46 @@ own arithmetic -- so it appears here as a group, not as a footnote.
   {% if has_program_context %}
     <div class="flex items-center gap-4">
       <p class="text-sm text-gray-500">{{ total }} point{{ total|pluralize }}</p>
-      <a href="{% url 'supply_chain:supply_point_create' %}"
-         class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-        <i class="fa-solid fa-plus mr-1"></i> New supply point
-      </a>
+      {% if not supply_as_of %}
+        <a href="{% url 'supply_chain:supply_point_create' %}"
+           class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+          <i class="fa-solid fa-plus mr-1"></i> New supply point
+        </a>
+      {% endif %}
     </div>
   {% endif %}
 </div>
+
+{% if tree %}
+  <section class="mb-8" data-testid="network-tree">
+    <div class="flex flex-wrap items-end justify-between gap-2 mb-2">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-900">Stock of {{ tree.item_name }} through the network, in {{ tree.unit|unit_plural }}</h2>
+        <p class="text-xs text-gray-500 mt-0.5">
+          On hand is the ledger. Where it rests on visits not yet approved, or on a protocol's quantity
+          rather than the form's own number, the figure says how much.
+        </p>
+      </div>
+      {% if tree_items|length > 1 %}
+        <form method="get" class="text-sm">
+          <label for="tree-item" class="sr-only">Item</label>
+          <select id="tree-item" name="item_id" onchange="this.form.submit()" class="rounded-md border border-gray-300 px-2 py-1">
+            {% for choice in tree_items %}<option value="{{ choice.id }}" {% if choice.id == tree.item_id %}selected{% endif %}>{{ choice.name }}</option>{% endfor %}
+          </select>
+          {% if supply_as_of %}<input type="hidden" name="as_of" value="{{ supply_as_of|date:'Y-m-d' }}">{% endif %}
+          <noscript><button type="submit" class="ml-1 px-2 py-1 rounded-md border border-gray-300">Show</button></noscript>
+        </form>
+      {% endif %}
+    </div>
+    {% if tree.roots %}
+      <ul class="bg-white border border-brand-border-light rounded-lg px-4 divide-y divide-gray-100">
+        {% for node in tree.roots %}{% include 'supply_chain/_network_node.html' with node=node tree=tree %}{% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-sm text-gray-600">No active supply point yet.</p>
+    {% endif %}
+  </section>
+{% endif %}
 
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
@@ -46,10 +79,12 @@ own arithmetic -- so it appears here as a group, not as a footnote.
       Stock has to arrive somewhere before there is any to look at, so a receipt needs at least
       one supply point to name.
     </p>
-    <a href="{% url 'supply_chain:supply_point_create' %}"
-       class="inline-block mt-4 px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-      Add the first one
-    </a>
+    {% if not supply_as_of %}
+      <a href="{% url 'supply_chain:supply_point_create' %}"
+         class="inline-block mt-4 px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+        Add the first one
+      </a>
+    {% endif %}
   </div>
 {% else %}
   {% for group in groups %}
@@ -95,8 +130,10 @@ own arithmetic -- so it appears here as a group, not as a footnote.
                   </td>
                   <td class="px-4 py-2 text-gray-600 text-xs">{{ point.source|humanise }}</td>
                   <td class="px-4 py-2 text-right whitespace-nowrap">
-                    <a href="{% url 'supply_chain:supply_point_edit' point.id %}"
-                       class="text-brand-indigo hover:underline">Edit</a>
+                    {% if not supply_as_of %}
+                      <a href="{% url 'supply_chain:supply_point_edit' point.id %}"
+                         class="text-brand-indigo hover:underline">Edit</a>
+                    {% endif %}
                   </td>
                 </tr>
               {% endfor %}

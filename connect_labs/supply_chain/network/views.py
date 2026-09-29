@@ -43,6 +43,9 @@ KIND_ORDER = [
 class NetworkView(OperationBase):
     """Where stock can rest in this programme, grouped by what each place is.
 
+    Above the directory, the network as a tree -- central store down to each
+    worker -- with what each place holds of one item (design 2026-09-28 §6.1).
+
     Grouped rather than sorted, because the groups are the network's shape:
     four central stores and two hundred field workers is a different thing
     from the reverse, and a flat alphabetical list hides which it is.
@@ -69,7 +72,28 @@ class NetworkView(OperationBase):
                 grouped.append({"kind": kind, "label": label, "points": of_kind})
         context["groups"] = grouped
         context["total"] = len(points)
+
+        # Stock through the network for one item a dispensing rule gives out,
+        # from `network_tree` alone: one grouped read whatever the network's size.
+        from connect_labs.supply_chain.stock.visit_views import as_of_payload, chosen_item, rule_items
+
+        items = rule_items(self.op)
+        item = chosen_item(self.request, items)
+        context.update(tree_items=items, tree_item=item)
+        if item is not None:
+            tree = self.op("network_tree", item_id=item["id"], **as_of_payload(self.request))
+            for root in tree["roots"]:
+                _split_children(root)
+            context["tree"] = tree
         return context
+
+
+def _split_children(node):
+    """Stores below a node are shown; its workers wait behind one "show" so a store of 200 stays one row."""
+    node["store_children"] = [c for c in node["children"] if c["kind"] != "user_held"]
+    node["worker_children"] = [c for c in node["children"] if c["kind"] == "user_held"]
+    for child in node["store_children"]:
+        _split_children(child)
 
 
 class OrganisationDirectoryView(OperationBase):

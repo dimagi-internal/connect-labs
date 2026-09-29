@@ -1,0 +1,19 @@
+{% comment %}
+Where a place's cover sits against its own band, as a word: the same badges
+the stock page uses, so a band reads the same wherever it appears.
+{% endcomment %}
+{% if status == "ok" %}
+  <span class="text-xs font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">within</span>
+{% elif status == "below_min" %}
+  <span class="text-xs font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">below min</span>
+{% elif status == "stockout" %}
+  <span class="text-xs font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">none left</span>
+{% elif status == "negative" %}
+  <span class="text-xs font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5" title="more left here than ever arrived">negative</span>
+{% elif status == "durable" %}
+  <span class="text-xs font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">durable</span>
+{% elif status == "overstocked" %}
+  <span class="text-xs font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">over max</span>
+{% else %}
+  <span class="text-xs font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">band unknown</span>
+{% endif %}

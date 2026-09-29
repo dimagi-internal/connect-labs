@@ -48,6 +48,15 @@ uses, so nothing ships purged.
         <tr>
           <td class="px-4 py-2.5 text-gray-600">{{ movement.occurred_on }}</td>
           <td class="px-4 py-2.5">
+            {% comment %}A reversal is consumption INTO the worker: a rejected visit's
+            stock put back. Said as what it is, never as a consumption or a
+            delivery arriving.{% endcomment %}
+            {% if movement.reverses_movement_id %}
+              Reversed (visit {{ movement.visit_id }})
+              <div class="text-xs text-gray-500">back into {{ points|dictkey:movement.to_supply_point_id }}, undoing that visit's consumption{% if movement.note %} · {{ movement.note }}{% endif %}</div>
+            {% elif movement.visit_id %}
+              {{ movement.kind|words|capfirst }} (visit {{ movement.visit_id }}){% if movement.estimated %} <span class="ml-1 px-1.5 py-0.5 rounded text-xs bg-amber-50 text-amber-900 border border-amber-200">Estimated</span>{% endif %}
+            {% else %}
             {{ movement.kind|words|capfirst }}
             {% with receipt=receipts|dictkey:movement.caused_by.receipt_id %}
               {% if receipt %}
@@ -59,6 +68,7 @@ uses, so nothing ships purged.
                 <div class="text-xs text-gray-500">{{ movement.reference }}</div>
               {% endif %}
             {% endwith %}
+            {% endif %}
           </td>
           <td class="px-4 py-2.5 text-gray-600">
             {% with receipt=receipts|dictkey:movement.caused_by.receipt_id %}

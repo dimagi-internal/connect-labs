@@ -1145,3 +1145,124 @@ def has_field_errors(form) -> bool:
     marked would send the reader hunting for a field that is fine.
     """
     return any(name != "__all__" for name in getattr(form, "errors", {}) or {})
+
+
+# ---- stock from visits: what we believe each worker holds -------------------
+
+
+def _nonzero_amount(cell):
+    """The cell's amount as a Decimal when it is a nonzero number, else None."""
+    if not isinstance(cell, dict) or cell.get("amount") in (None, ""):
+        return None
+    number = _as_decimal(cell["amount"])
+    return number if number else None
+
+
+@register.filter
+def resting_on(cell, parts):
+    """A figure with what it rests on said beside it: "412 sachets · 38 unapproved · 60 estimated".
+
+    `{{ row.on_hand|resting_on:row }}`, where `parts` carries `unapproved` and
+    `estimated` in the figure's own unit (belief.py speaks one unit at every
+    level). Said ON the figure, never in a footnote (design 2026-09-28 §6): a
+    figure that rests on visits nobody has approved, or on a protocol's
+    quantity rather than the form's own number, must not read as settled.
+    A part that could not be worked out is said too, as unknown.
+    """
+    text = figure_text(cell)
+    parts = parts or {}
+    said = []
+    for key in ("unapproved", "estimated"):
+        part = parts.get(key)
+        if isinstance(part, dict) and "unconfirmed" in part:
+            said.append(f"{key} part unknown")
+            continue
+        amount = _nonzero_amount(part)
+        if amount is not None:
+            said.append(f"{quantity_digits(amount)} {key}")
+    return " · ".join([text, *said])
+
+
+@register.filter
+def signed_figure(cell):
+    """A difference with its sign always said: "−5 sachets", "+12 sachets", "0 sachets".
+
+    For a variance, where the sign is the finding. A true minus sign, not a
+    hyphen, so it does not vanish against the number.
+    """
+    if not isinstance(cell, dict) or "unconfirmed" in cell:
+        return figure_text(cell)
+    number = _as_decimal(cell.get("amount"))
+    if number is None:
+        return figure_text(cell)
+    text = qty(abs(number), cell.get("unit"))
+    if number > 0:
+        return f"+{text}"
+    if number < 0:
+        return f"−{text}"
+    return text
+
+
+@register.filter
+def days_text(value):
+    """Days to stock-out as a reader wants it: "102 days", "under a day", or why there is no figure."""
+    if isinstance(value, dict):
+        if "unconfirmed" in value:
+            return "unknown"
+        if "not_forecast" in value:
+            return "not forecast"
+        return figure_text(value)
+    number = _as_decimal(value)
+    if number is None:
+        return "—"
+    if number < 1:
+        return "under a day"
+    whole = int(number)
+    return f"{whole:,} day{'' if whole == 1 else 's'}"
+
+
+@register.filter
+def months_text(value):
+    """Months of cover to one place: "3.4 months", or why there is no figure."""
+    if isinstance(value, dict):
+        if "unconfirmed" in value:
+            return "cover unknown"
+        if "not_forecast" in value:
+            return "durable — not forecast"
+        return figure_text(value)
+    number = _as_decimal(value)
+    if number is None:
+        return "—"
+    shown = number.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    return f"{shown.normalize():f} month{'' if shown == 1 else 's'}"
+
+
+# What the visit reader made of one visit for one item (WorkerVisit.outcomes),
+# in words. "" is a visit whose form this item's rule does not read.
+VISIT_OUTCOMES = {
+    "dispensed": "Gave some out",
+    "nothing_given": "Gave none",
+    "no_answer": "Did not say",
+    "unmapped": "Answer not in the rule's list",
+    "unit_refused": "Unit could not be converted",
+    "skipped": "Skipped",
+    "reversed": "Reversed — stock put back",
+    "not_counted": "Not counted — rejected before it was read",
+    "": "Not read for this item",
+}
+
+
+@register.filter
+def visit_outcome(outcome):
+    return VISIT_OUTCOMES.get(outcome or "", humanise(outcome).capitalize())
+
+
+@register.filter
+def rests_on_unsettled(parts):
+    """Whether any of a row's dispensing is unapproved or estimated (or could not be told)."""
+    parts = parts or {}
+    for key in ("unapproved", "estimated"):
+        part = parts.get(key)
+        if (isinstance(part, dict) and "unconfirmed" in part) or _nonzero_amount(part) is not None:
+            return True
+    return False
