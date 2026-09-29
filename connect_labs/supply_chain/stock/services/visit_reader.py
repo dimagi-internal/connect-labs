@@ -37,7 +37,7 @@ from django.db import connection, transaction
 from django.utils import timezone
 
 from connect_labs.supply_chain.models import DispensingRule, Movement, WorkerVisit
-from connect_labs.supply_chain.stock.services import ledger, posting
+from connect_labs.supply_chain.stock.services import ingest, ledger, posting
 from connect_labs.supply_chain.stock.services.dispensing import (
     DISPENSED,
     NO_ANSWER,
@@ -46,8 +46,10 @@ from connect_labs.supply_chain.stock.services.dispensing import (
     UNIT_REFUSED,
     UNMAPPED,
     Dispensed,
+    base_unit,
     evaluate,
     read_date,
+    read_reports,
 )
 from connect_labs.supply_chain.stock.services.workers import WorkerIndex
 
@@ -118,6 +120,9 @@ def _report(opportunity_id, visits, rules) -> dict:
         "unit_refused": [],
         "skipped": [],
         "reinstated_after_reversal": [],
+        "balances_recorded": 0,
+        "receipts_recorded": 0,
+        "reports_already_recorded": 0,
         "created_supply_points": [],
     }
 
@@ -181,6 +186,7 @@ def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, toda
     )
     seen = {w.visit_id: w for w in WorkerVisit.objects.filter(program_id=program_id, visit_id__in=ids)}
     index = WorkerIndex(access, opportunity_id)
+    pending_reports: dict[int, dict] = {}
 
     for visit in visits:
         visit_id = str(visit.get("id") or "")
@@ -226,6 +232,9 @@ def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, toda
             report["unmatched"].append({"visit_id": visit_id, "reason": reason})
             continue
 
+        if status not in REVERSING_STATUSES:
+            _collect_reports(pending_reports, dated, visit, visit_id, form_json, point, on)
+
         outcomes, answers = {}, {}
         for rule in dated:
             key = (visit_id, rule.item_id)
@@ -253,9 +262,58 @@ def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, toda
 
         _remember(seen, program_id, opportunity_id, visit, visit_id, point, on, status, form_name, outcomes, answers)
 
+    _record_reports(access, report, pending_reports, opportunity_id)
     report["created_supply_points"] = list(index.created)
     _log(report)
     return report
+
+
+def _collect_reports(pending, rules, visit, visit_id, form_json, point, on):
+    """Gather what the worker's app says on this visit, per rule that reads reports.
+
+    A rejected or duplicate visit is not collected: its figures are disowned,
+    and a disowned balance must not become a worker's last count.
+    """
+    submission = str(visit.get("xform_id") or form_json.get("id") or f"visit-{visit_id}")
+    common = {"connect_username": point.connect_username, "form_submission_id": submission, "visit_id": visit_id}
+    for rule in rules:
+        if not rule.reports:
+            continue
+        said = read_reports(rule.reports, form_json)
+        rows = pending.setdefault(rule.pk, {"rule": rule, "balance": [], "receipt": []})
+        if said["balance"] is not None:
+            rows["balance"].append({**common, "quantity": str(said["balance"]), "counted_on": on.isoformat()})
+        if said["received"] is not None:
+            counted_on = (said["received_on"] or on).isoformat()
+            rows["receipt"].append({**common, "quantity": str(said["received"]), "counted_on": counted_on})
+
+
+def _record_reports(access, report, pending, opportunity_id):
+    """Record the collected balances and receipts as counts beside the ledger, never movements.
+
+    Through the existing stock_report_ingest path (design 2026-09-28 3.4):
+    idempotent on (submission, kind), so a re-read records nothing twice, and
+    a form carrying both a receipt and a balance records both.
+    """
+    for rows in pending.values():
+        rule = rows["rule"]
+        for kind, counter, batch in (
+            ("self_reported", "balances_recorded", rows["balance"]),
+            ("reported_receipt", "receipts_recorded", rows["receipt"]),
+        ):
+            if not batch:
+                continue
+            result = ingest.ingest_stock_reports(
+                access,
+                rows=batch,
+                commodity_slug=rule.item.commodity.slug,
+                quantity_unit=base_unit(rule.item),
+                opportunity_id=opportunity_id,
+                item_id=rule.item_id,
+                kind=kind,
+            )
+            report[counter] += result["created"]
+            report["reports_already_recorded"] += result["skipped_already_ingested"]
 
 
 def _reverse_visit(report, seen, visit, visit_id, status, standing, reversed_):

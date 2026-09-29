@@ -17,18 +17,21 @@ from datetime import date, timedelta
 
 from django.db.models import Sum
 
+from connect_labs.supply_chain import records
 from connect_labs.supply_chain.models import Contract, Item, Movement, StockCount, SupplyPoint
 from connect_labs.supply_chain.stock.services import ledger, resupply
 from connect_labs.supply_chain.values import Quantity, Unconfirmed
 
 
-def _latest_counts(program_id, points, item=None):
-    """{supply_point_id: StockCount} -- the most recent count per point, in one query."""
-    counts = StockCount.objects.filter(program_id=program_id, supply_point__in=points).order_by(
-        "supply_point_id", "-counted_on", "-id"
-    )
+def _latest_counts(program_id, points, item=None, on_date=None):
+    """{supply_point_id: StockCount} -- the most recent on-hand count per point, in one query."""
+    counts = StockCount.objects.filter(
+        program_id=program_id, supply_point__in=points, kind__in=records.ON_HAND_COUNT_KINDS
+    ).order_by("supply_point_id", "-counted_on", "-id")
     if item is not None:
         counts = counts.filter(item=item)
+    if on_date is not None:
+        counts = counts.filter(counted_on__lte=on_date)
     latest: dict[int, StockCount] = {}
     for count in counts:
         latest.setdefault(count.supply_point_id, count)
@@ -213,7 +216,7 @@ def network_stock(
 
     balances = _balances(program_id, points, item=item, on_date=on_date)
     expected = _expected_inbound(program_id, points, item=item, as_of=on_date)
-    counts = _latest_counts(program_id, points, item=item)
+    counts = _latest_counts(program_id, points, item=item, on_date=on_date)
     receipts = _latest_receipts(program_id, points, item=item, on_date=on_date)
     # One fetch for every item any of these points has held, so resolving a
     # point's sole item costs no extra query per point.
