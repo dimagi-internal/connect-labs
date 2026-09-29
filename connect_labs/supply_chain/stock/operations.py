@@ -38,6 +38,7 @@ _SUPPLY_POINT_DATA = _data_with(
     managed_by_org_id=ID,
     connect_username={"type": "string"},
     connect_user_id=ID,
+    connect_user_uuid={"type": "string"},
     admin_area={"type": "string"},
     latitude={"type": "number"},
     longitude={"type": "number"},

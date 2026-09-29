@@ -437,6 +437,7 @@ def supply_point(obj) -> dict:
         "managed_by_org_id": obj.managed_by_org_id,
         "connect_username": obj.connect_username,
         "connect_user_id": obj.connect_user_id,
+        "connect_user_uuid": obj.connect_user_uuid,
         "admin_area": obj.admin_area,
         "latitude": obj.latitude,
         "longitude": obj.longitude,
