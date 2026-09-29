@@ -382,6 +382,40 @@ class TestSyntheticScopes:
         assert Movement.objects.count() == 0
         assert da.get_commodity("rutf") is None
 
+    def test_purge_clears_a_reversed_visit(self, da, registered_synthetic):
+        """A reversal cannot be unlinked before the delete: without `reverses`
+        it reads as a second consumption of the same visit and item, which
+        the ledger's constraint forbids. The seeder's --reset hit exactly this."""
+        from connect_labs.supply_chain.stock.services import posting
+
+        da.upsert_commodity({"slug": "rutf-rev", "name": "RUTF", "base_unit": "sachet"})
+        item = da.upsert_item({"sku": "rutf-rev", "name": "RUTF", "commodity_slug": "rutf-rev", "base_unit": "sachet"})
+        worker = SupplyPoint.objects.create(
+            program_id=SYNTHETIC_PROGRAM,
+            slug="user-worker",
+            name="worker",
+            kind="user_held",
+            connect_username="worker-acacia",
+            source="connect_visit",
+        )
+        consumption = posting.post_visit_consumption(
+            program_id=SYNTHETIC_PROGRAM,
+            opportunity_id=SYNTHETIC_PROGRAM,
+            point=worker,
+            item=item,
+            quantity=Decimal("14"),
+            unit="sachet",
+            occurred_on="2026-06-01",
+            visit_id="9001",
+            estimated=False,
+        )
+        posting.post_visit_reversal(consumption, reason="visit rejected")
+
+        counts = da.purge()
+
+        assert counts["movements"] == 2
+        assert not Movement.objects.filter(program_id=SYNTHETIC_PROGRAM).exists()
+
     def test_purge_leaves_another_programmes_data_alone(self, da, open_tender, registered_synthetic):
         other = access(program_id=SYNTHETIC_PROGRAM + 1)
         other.upsert_commodity({"slug": "rutf", "name": "RUTF"})
