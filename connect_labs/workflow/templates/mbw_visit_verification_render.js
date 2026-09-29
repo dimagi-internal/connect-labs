@@ -7,20 +7,43 @@ function WorkflowUI({
   actions,
   onUpdateState,
 }) {
+  // --- Domain filter (default: production only) --------------------------
+  // Which CommCare project space(s) to include: this opp's real production
+  // domain (the default, so the dashboard shows real data with zero clicks
+  // once the verification block ships there), the test domain the block was
+  // built and is being piloted in, or both. Gates BOTH the FLW-eligibility
+  // set and the visit rows below, so the two domains are never silently
+  // mixed unless "Both domains" is explicitly picked.
+  var TEST_DOMAIN_NAME = 'ccc-mbw-experiments-1';
+  var PROD_DOMAIN_NAME = 'ccc-mbw-production';
+  var DOMAIN_FILTER_OPTIONS = [
+    { key: 'production', label: 'Production only' },
+    { key: 'test', label: 'Test domain only' },
+    { key: 'both', label: 'Both domains' },
+  ];
+  var _domainFilter = React.useState('production');
+  var domainFilter = _domainFilter[0];
+  var setDomainFilter = _domainFilter[1];
+  var wantedDomain =
+    domainFilter === 'production'
+      ? PROD_DOMAIN_NAME
+      : domainFilter === 'test'
+        ? TEST_DOMAIN_NAME
+        : null; // null => both domains, no filtering
+
   // --- Eligible-FLW set (commcare-user cases, visit_verification='yes') ---
   // entity_name is the built-in row field cchq_cases populates from each
   // case's case_name, which for commcare-user cases is the FLW's username.
-  // Two pipelines -- test domain and opp 765's real production domain --
-  // merged the same way the visit pipelines are below.
-  var eligibleRows = (
-    (pipelines && pipelines.eligible_flws && pipelines.eligible_flws.rows) ||
-    []
-  ).concat(
-    (pipelines &&
-      pipelines.eligible_flws_prod &&
-      pipelines.eligible_flws_prod.rows) ||
-      [],
-  );
+  var ELIGIBLE_PIPELINE_ALIASES = [
+    { alias: 'eligible_flws', domain: TEST_DOMAIN_NAME },
+    { alias: 'eligible_flws_prod', domain: PROD_DOMAIN_NAME },
+  ];
+  var eligibleRows = [];
+  ELIGIBLE_PIPELINE_ALIASES.forEach(function (p) {
+    if (wantedDomain && p.domain !== wantedDomain) return;
+    var rows = (pipelines && pipelines[p.alias] && pipelines[p.alias].rows) || [];
+    eligibleRows = eligibleRows.concat(rows);
+  });
   var eligibleUsernames = React.useMemo(
     function () {
       var set = {};
@@ -41,33 +64,38 @@ function WorkflowUI({
   // -- the true 1st/2nd/3rd... sequence, independent of which rows the
   // verification-data filter below ends up keeping.
   //
-  // Twelve pipelines -- one per visit-type form, times two domains (the test
-  // domain that has the verification block today, and opp 765's real
-  // production domain, which will get it eventually with zero code changes
-  // needed here). cchq_forms fetches one form_name at a time, unlike
-  // connect_csv, which merges across form types automatically. Keep this
-  // list in sync with the aliases in PIPELINE_SCHEMAS. Forms/domains that
-  // haven't grown the verification block yet just contribute an empty rows
-  // array -- harmless.
+  // Twelve pipelines -- one per visit-type form, times two domains. Gated by
+  // the same domain filter as the eligibility set above -- windowing never
+  // mixes rows across domains even in "Both domains" mode (their
+  // mother_case_ids come from different CommCare project spaces and can't
+  // collide in practice, so this is a safety property more than a behavior
+  // change from before the filter existed). cchq_forms fetches one
+  // form_name at a time, unlike connect_csv, which merges across form types
+  // automatically. Keep this list in sync with the aliases in
+  // PIPELINE_SCHEMAS. Forms/domains that haven't grown the verification
+  // block yet just contribute an empty rows array -- harmless.
   var VISIT_PIPELINE_ALIASES = [
-    'visits_anc_visit',
-    'visits_post_delivery_visit',
-    'visits_1_week_visit',
-    'visits_1_month_visit',
-    'visits_3_month_visit',
-    'visits_6_month_visit',
-    'visits_prod_anc_visit',
-    'visits_prod_post_delivery_visit',
-    'visits_prod_1_week_visit',
-    'visits_prod_1_month_visit',
-    'visits_prod_3_month_visit',
-    'visits_prod_6_month_visit',
+    { alias: 'visits_anc_visit', domain: TEST_DOMAIN_NAME },
+    { alias: 'visits_post_delivery_visit', domain: TEST_DOMAIN_NAME },
+    { alias: 'visits_1_week_visit', domain: TEST_DOMAIN_NAME },
+    { alias: 'visits_1_month_visit', domain: TEST_DOMAIN_NAME },
+    { alias: 'visits_3_month_visit', domain: TEST_DOMAIN_NAME },
+    { alias: 'visits_6_month_visit', domain: TEST_DOMAIN_NAME },
+    { alias: 'visits_prod_anc_visit', domain: PROD_DOMAIN_NAME },
+    { alias: 'visits_prod_post_delivery_visit', domain: PROD_DOMAIN_NAME },
+    { alias: 'visits_prod_1_week_visit', domain: PROD_DOMAIN_NAME },
+    { alias: 'visits_prod_1_month_visit', domain: PROD_DOMAIN_NAME },
+    { alias: 'visits_prod_3_month_visit', domain: PROD_DOMAIN_NAME },
+    { alias: 'visits_prod_6_month_visit', domain: PROD_DOMAIN_NAME },
   ];
 
   var allVisitRows = [];
-  VISIT_PIPELINE_ALIASES.forEach(function (alias) {
-    var rows = (pipelines && pipelines[alias] && pipelines[alias].rows) || [];
-    allVisitRows = allVisitRows.concat(rows);
+  VISIT_PIPELINE_ALIASES.forEach(function (p) {
+    if (wantedDomain && p.domain !== wantedDomain) return;
+    var rows = (pipelines && pipelines[p.alias] && pipelines[p.alias].rows) || [];
+    rows.forEach(function (row) {
+      allVisitRows.push(Object.assign({}, row, { domain: p.domain }));
+    });
   });
 
   var enrichedRows = React.useMemo(
@@ -241,6 +269,7 @@ function WorkflowUI({
 
   var columns = [
     { key: 'username', label: 'FLW ID' },
+    { key: 'domain', label: 'CC Domain' },
     { key: 'mother_case_id', label: 'Mother ID' },
     { key: 'form_instance_id', label: 'Visit ID' },
     { key: 'visit_datetime', label: 'Visit date' },
@@ -414,12 +443,17 @@ function WorkflowUI({
   var DEFINITION_SECTIONS = [
     {
       title: 'Which visits appear in this report',
-      body: "A visit only shows up if BOTH are true: (1) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes' (checked against both the test domain and opp 765's production domain), and (2) the visit's form has the verification block at all, detected via visit_location_has_prev_home_gps being present/non-blank. Visits from FLWs not flagged for verification, or submitted before the verification questions existed on that form, are excluded entirely -- not shown as blank rows.",
+      body: "A visit only shows up if ALL are true: (1) it's from the CommCare domain(s) selected in the \"CommCare domain\" toggle at the top (Production only by default), (2) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes' in that same domain, and (3) the visit's form has the verification block at all, detected via visit_location_has_prev_home_gps being present/non-blank. Visits from FLWs not flagged for verification, from a domain not selected in the toggle, or submitted before the verification questions existed on that form, are excluded entirely -- not shown as blank rows.",
       items: [
+        {
+          name: 'Domain filter',
+          field:
+            'domainFilter state (\'production\' default / \'test\' / \'both\') -- gates which pipeline aliases are read at all: production = only the _prod pipelines (visits_prod_*, eligible_flws_prod), test = only the non-_prod pipelines, both = every pipeline, unfiltered.',
+        },
         {
           name: 'FLW eligibility gate',
           field:
-            "pipelines: eligible_flws + eligible_flws_prod (cchq_cases, case_type='commcare-user'). Fields: visit_verification (case.properties.visit_verification), entity_name (built-in, = case_name = FLW username). Joined to each visit row on username === entity_name.",
+            "pipelines: eligible_flws (test domain) and/or eligible_flws_prod (production domain), per the domain filter (cchq_cases, case_type='commcare-user'). Fields: visit_verification (case.properties.visit_verification), entity_name (built-in, = case_name = FLW username). Joined to each visit row on username === entity_name.",
         },
         {
           name: 'Verification-block-present gate',
@@ -435,6 +469,12 @@ function WorkflowUI({
           name: 'FLW ID',
           def: "The FLW's CommCare username.",
           field: 'username (built-in row field)',
+        },
+        {
+          name: 'CC Domain',
+          def: 'Which CommCare project space this visit was submitted in.',
+          field:
+            "Computed client-side (domain) -- tagged onto each row from which pipeline alias it came from (visits_prod_* -> \"ccc-mbw-production\", the rest -> \"ccc-mbw-experiments-1\"), not a raw pipeline field.",
         },
         {
           name: 'Mother ID',
@@ -559,7 +599,7 @@ function WorkflowUI({
         },
         {
           name: 'Stacked bar chart',
-          def: 'One bar per verification method (GPS, QR, Signature, Mother Questions, ANC Card), showing how many visits landed Pass (green) / Pending (yellow) / Fail (red) for that specific method -- independent of the overall Final verification outcome above.',
+          def: "One bar per verification method (GPS, QR, Signature, Mother Questions, ANC Card), showing how many visits landed Pass (green) / Pending (yellow) / Fail (red) for that specific method -- independent of the overall Final verification outcome above. A single visit can fail one method and pass another (e.g. fail GPS but pass QR), so it's counted in more than one bar. That means these counts are NOT meant to add up to the % Passed/Pending/Failed totals above -- a bar's Fail count can be, and usually is, larger than the overall Failed Verification n= at the top, since one visit's failure can show up in several bars at once.",
           field:
             'Per row, per method: gpsOutcome() / qrOutcome() / signatureOutcome() / motherQuestionsOutcome() / ancCardOutcome() (same functions and underlying fields as the Outcome Columns section above), tallied into Pass/Pending/Fail counts.',
         },
@@ -672,6 +712,39 @@ function WorkflowUI({
         <p className="text-gray-600">{definition.description}</p>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+        <span className="text-sm font-medium text-gray-700">
+          CommCare domain:
+        </span>
+        {DOMAIN_FILTER_OPTIONS.map(function (opt) {
+          var isActive = domainFilter === opt.key;
+          return (
+            <button
+              key={opt.key}
+              onClick={function () {
+                setDomainFilter(opt.key);
+              }}
+              className={
+                'rounded border px-3 py-1 text-sm font-medium ' +
+                (isActive
+                  ? 'border-blue-600 bg-blue-600 text-white'
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50')
+              }
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {domainFilter === 'production' && summary.total === 0 && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+          No visits yet from the production domain ({PROD_DOMAIN_NAME}) -- the
+          verification block hasn't shipped there yet. Switch to "Test domain
+          only" or "Both domains" above to see current data.
+        </div>
+      )}
+
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex gap-4">
           {TABS.map(function (t) {
@@ -698,8 +771,24 @@ function WorkflowUI({
 
       {activeTab === 'summary' && (
         <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">
+              Overall Verification Outcome (per visit)
+            </h3>
+            <p className="text-xs text-gray-500">
+              Based on each visit's single Final verification outcome.
+            </p>
+          </div>
           {summaryCards}
           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-gray-900">
+              Per-Method Outcome Breakdown
+            </h3>
+            <p className="mb-2 text-xs text-gray-500">
+              Each visit can appear in more than one bar below -- e.g. it may
+              fail GPS but pass QR -- so these method counts don't need to add
+              up to the totals above, and can be larger.
+            </p>
             <div style={{ height: '320px' }}>
               <canvas ref={chartRef}></canvas>
             </div>
