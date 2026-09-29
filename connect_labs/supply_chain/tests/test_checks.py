@@ -352,6 +352,95 @@ class TestStock:
         assert found[0]["facts"]["variance"] == "-4"
         assert found[0]["facts"]["reconcilable"] is True
 
+    def test_stock_arriving_after_the_count_is_not_a_variance_and_matches_the_workers_page(self, da):
+        """The worker counted what they held. Stock that reached them afterwards is
+        not a discrepancy in that count, and the checks feed must say what the
+        Workers page (belief) says."""
+        from datetime import timedelta
+        from decimal import Decimal
+
+        from connect_labs.supply_chain.models import Commodity, Item, Movement, StockCount, SupplyPoint
+        from connect_labs.supply_chain.stock.services import belief
+        from connect_labs.supply_chain.values import Quantity
+
+        commodity = Commodity.objects.create(
+            scope_key=f"prog:{PROGRAM}", slug="rutf-v", name="RUTF", base_unit="sachet", pack_unit="carton"
+        )
+        item = Item.objects.create(
+            scope_key=f"prog:{PROGRAM}",
+            sku="rutf-v",
+            name="RUTF",
+            commodity=commodity,
+            base_unit="sachet",
+            pack_unit="carton",
+            base_per_pack=150,
+        )
+        store = SupplyPoint.objects.create(
+            program_id=PROGRAM, slug="store-v", name="Store V", kind="central_store", source="we_recorded"
+        )
+        worker = SupplyPoint.objects.create(
+            program_id=PROGRAM,
+            slug="flw-v",
+            name="Worker V",
+            kind="user_held",
+            parent=store,
+            opportunity_id=OPP,
+            connect_username="flw-v",
+            source="we_recorded",
+        )
+
+        def move(sachets, days_ago, **sides):
+            Movement.objects.create(
+                program_id=PROGRAM,
+                opportunity_id=OPP,
+                kind="distribution" if sides.get("from_supply_point") else "receipt",
+                occurred_on=TODAY - timedelta(days=days_ago),
+                item=item,
+                commodity=commodity,
+                quantity=Decimal(sachets),
+                quantity_unit="sachet",
+                source="we_recorded",
+                **sides,
+            )
+
+        move(1000, 20, to_supply_point=store)
+        move(300, 10, from_supply_point=store, to_supply_point=worker)
+        StockCount.objects.create(
+            program_id=PROGRAM,
+            supply_point=worker,
+            item=item,
+            commodity=commodity,
+            kind="self_reported",
+            counted_on=TODAY - timedelta(days=5),
+            quantity=Decimal("300"),
+            quantity_unit="sachet",
+            source="commcare_form",
+        )
+        move(150, 2, from_supply_point=store, to_supply_point=worker)  # after the count
+
+        found = [
+            c
+            for c in _read(da, opportunity_id=OPP)["checks"]
+            if c["kind"] == "stock_variance" and c["subject"]["id"] == worker.pk
+        ]
+        mine = belief.point_belief(PROGRAM, worker, item)
+        assert mine.variance.amount == 0
+        assert found == [], "150 sachets that arrived after the count were read as a discrepancy in it"
+
+        StockCount.objects.filter(supply_point=worker).update(quantity=Decimal("280"))
+        (check,) = [
+            c
+            for c in _read(da, opportunity_id=OPP)["checks"]
+            if c["kind"] == "stock_variance" and c["subject"]["id"] == worker.pk
+        ]
+        mine = belief.point_belief(PROGRAM, worker, item)
+        assert (check["facts"]["ledger"], check["facts"]["variance"], check["facts"]["unit"]) == ("300", "-20", "sachet")
+        assert (mine.ledger_on_count_day, mine.variance) == (
+            Quantity(Decimal("300"), "sachet"),
+            Quantity(Decimal("-20"), "sachet"),
+        )
+        assert check["facts"]["ledger_on"] == (TODAY - timedelta(days=5)).isoformat()
+
     def test_a_variance_that_cannot_be_reconciled_says_so_rather_than_computing_one(self, da, rutf_without_course):
         """The store counts cartons, the worker counted sachets, and the
         supplier never stated how many sachets are in a carton."""

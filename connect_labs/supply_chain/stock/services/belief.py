@@ -15,7 +15,8 @@ Per point, in the item's single unit:
     estimated   of which from protocol lines -- both shown, never netted
   on hand       the ledger balance
   reported      the latest on-hand count (never a reported receipt) and its day
-  variance      reported MINUS the ledger ON THE COUNT DAY -- the sign
+  variance      reported MINUS the ledger ON THE COUNT DAY (the grouped form
+                of soh.stock_on_hand's own figure; a parity test pins them) -- the sign
                 `stock_on_hand` has always used, so a negative variance means
                 fewer counted than the ledger says. Against the count day, not
                 today: stock that arrived after the count is not a discrepancy
@@ -25,8 +26,9 @@ Per point, in the item's single unit:
                 receipts the worker reported with no delivery recorded into
                 the point around that day -- a fact on the row, never a rank
 
-Stores carry the same figures summed over their subtree. Counts sum up the
-hierarchy; cover is recomputed at each level from the subtree's own
+Stores carry the same figures summed over their subtree, except that what
+came in is `received_from_outside` (each unit once), never a hop-summed
+`issued`, which stays a per-point figure. Counts sum up the hierarchy; cover is recomputed at each level from the subtree's own
 consumption and never summed -- two workers at one month each are not a
 store at two months.
 
@@ -387,9 +389,10 @@ def _merge(total, raw):
 def _subtree_figures(point, total, members, item, unit, end, window_days) -> dict:
     """A store and everything below it.
 
-    Counts are summed. `issued` is summed too, hop by hop, so a sachet sent
-    central -> partner -> worker is in it twice; `received_from_outside` is
-    what came in from beyond the subtree, each sachet once. The rate is the
+    Counts are summed. What came in is `received_from_outside` -- arrivals
+    from beyond the subtree, each sachet once. There is deliberately no
+    subtree `issued`: summed hop by hop, a sachet sent central -> partner ->
+    worker would be in it three times and read as intake. The rate is the
     subtree's CONSUMPTION -- releases between points inside it move stock
     around, they do not use it -- and cover is recomputed from it by the
     point's own band, never summed or averaged from the children.
@@ -404,7 +407,6 @@ def _subtree_figures(point, total, members, item, unit, end, window_days) -> dic
     plan = resupply.cover(on_hand, amc, resupply.CONSUMPTION, point, item=item, window_days=window_days)
     return {
         "on_hand": on_hand,
-        "issued": ledger.collapse(total["issued"], item, unit),
         "received_from_outside": ledger.collapse(outside, item, unit),
         "dispensed": ledger.collapse(total["dispensed"], item, unit),
         "unapproved": ledger.collapse(total["unapproved"], item, unit),
