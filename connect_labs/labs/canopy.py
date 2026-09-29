@@ -12,6 +12,10 @@ can decide:
   which scopes;
 * ``SCOPE_TOOLS`` — what each scope unlocks at labs' MCP;
 * ``user_claims`` — what labs vouches for about its signed-in user;
+* ``PROBE_*`` — canopy's LIVE PROBE: a dedicated, low-privilege principal
+  (``PROBE_USERNAME``, created by ``mcp/migrations/0006``) canopy may ask a
+  real ID-JAG for, so it can walk the whole grant chain on a schedule with no
+  visitor at the keyboard;
 * ``host_settings`` — ``settings.CANOPY_HOST`` (the SDK resolves a callable
   on every read), built from labs' existing ``CANOPY_*`` settings and
   ``LABS_PUBLIC_URL``, so no environment variable was renamed and the task
@@ -60,6 +64,62 @@ PANEL = {
 }
 
 
+#: canopy's live probe (SDK 0.4.0, ``canopy_sdk.host.ProbeHandler``). canopy
+#: asks ``/labs/canopy/probe/`` — authenticated as its client with
+#: ``private_key_jwt`` + DPoP, exactly as at ``/o/token/`` — for a real ID-JAG,
+#: redeems it through the normal jwt-bearer grant, and makes real MCP calls
+#: with the token. The principal is fixed here, never chosen by the request.
+#:
+#: The username has a ``:`` on purpose: a Connect username cannot (Django's
+#: ``UnicodeUsernameValidator``), so no Connect login can resolve to this row —
+#: and the OAuth callback refuses the name outright as well
+#: (``is_probe_username``). The account has no usable password, no staff bit and
+#: no PAT: the only thing that can act as it is a probe grant.
+PROBE_USERNAME = "canopy:probe"
+PROBE_DISPLAY_NAME = "canopy live probe (service account)"
+#: One READ-ONLY scope and the one call canopy makes with it. The call must
+#: SUCCEED as the probe user: ``marketplace_rounds_list`` has no per-user gate
+#: (every labs user reads the same directory), and ``open_only`` keeps the answer
+#: to the rounds currently taking submissions — an empty list is still a success.
+PROBE_SCOPE = "marketplace:read"
+PROBE_TOOL = "marketplace_rounds_list"
+PROBE_ARGUMENTS = {"open_only": True}
+#: A REAL tool outside ``PROBE_SCOPE`` that labs' MCP must neither list nor run
+#: for a probe token. A read tool, so a regression that let it through would
+#: still write nothing.
+PROBE_DENIED_TOOL = "list_templates"
+#: The page the probe stands in for (audit only).
+PROBE_PAGE = "marketplace:network"
+
+
+def is_probe_username(username) -> bool:
+    """True for the probe principal's username: nobody may sign in as it."""
+    return (username or "").strip().lower() == PROBE_USERNAME
+
+
+def probe_subject() -> str:
+    """The probe principal's subject (``str(pk)``), or ``""`` — which turns the
+    probe OFF — while the row does not exist here.
+
+    Deliberately not filtered on ``is_active``: a deactivated probe user should
+    show up in canopy as a REFUSED probe (the SDK checks ``SUBJECT_ACTIVE``), not
+    as a site that never configured one.
+
+    The SDK resolves this whenever it builds the host config, and one of those
+    callers is the MCP's DPoP gate, which runs on the event loop and never needs
+    the probe — so the ORM refusing to run there (``SynchronousOnlyOperation``),
+    or a database that cannot answer, means "no probe for this read", never an
+    error.
+    """
+    from connect_labs.users.models import User
+
+    try:
+        pk = User.objects.filter(username=PROBE_USERNAME).values_list("pk", flat=True).first()
+    except Exception:  # noqa: BLE001 - see above: off for this read, never a failure
+        return ""
+    return str(pk) if pk is not None else ""
+
+
 def user_claims(user) -> dict:
     """What labs vouches for about ``user`` in the visitor assertion.
 
@@ -94,7 +154,7 @@ def host_settings() -> dict:
     as before.
     """
     public = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
-    return {
+    config = {
         "SIGNING_KEY": getattr(settings, "CANOPY_SIGNING_KEY", ""),
         "CANOPY_BASE_URL": getattr(settings, "CANOPY_BASE_URL", ""),
         "APP_NAME": getattr(settings, "CANOPY_APP_NAME", ""),
@@ -110,6 +170,21 @@ def host_settings() -> dict:
         "PANEL_TOKEN_URL_NAME": "labs:canopy_token",
         "PANEL": PANEL,
     }
+    if public:
+        # Configured wherever the grant can be. The SDK runs the probe only on
+        # top of a working grant (CANOPY_CLIENT_ID set), and ``probe_subject``
+        # keeps it off until the probe user exists. ENDPOINT must be the public
+        # URL exactly: a DPoP proof's ``htu`` is compared to it.
+        config["PROBE"] = {
+            "ENDPOINT": f"{public}/labs/canopy/probe/",
+            "SUBJECT_RESOLVER": probe_subject,
+            "SCOPE": PROBE_SCOPE,
+            "TOOL": PROBE_TOOL,
+            "ARGUMENTS": PROBE_ARGUMENTS,
+            "DENIED_TOOL": PROBE_DENIED_TOOL,
+            "PAGE": PROBE_PAGE,
+        }
+    return config
 
 
 def host_config():

@@ -385,7 +385,12 @@ user, audit rows attribute to them):
   `Authorization: DPoP`. Tools run as the visitor, limited to the scope's tools.
   The protocol is the canopy SDK (`canopy_sdk`, canopy-web `sdk/python`); labs
   owns only its registries in `connect_labs/labs/canopy.py`. See
-  `docs/canopy-agent-panel.md`.
+  `docs/canopy-agent-panel.md`. With the grant on, canopy also runs a **live
+  probe** every 30 min (`/labs/canopy/probe/`): a real ID-JAG for the dedicated
+  service account `canopy:probe` (created by `mcp/migrations/0006`; no password,
+  no staff bit, refused by the OAuth callback), redeemed and used to call
+  `marketplace_rounds_list` — so a broken grant shows up in canopy before a
+  visitor hits it. Never point the probe at a real person's account.
 
 Labs was PAT-only until 2026-09-11, with OAuth discovery deliberately suppressed
 (#431) because nothing stood behind it. It was changed so labs works like any

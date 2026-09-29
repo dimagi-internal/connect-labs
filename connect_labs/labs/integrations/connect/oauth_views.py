@@ -22,6 +22,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
+from connect_labs.labs.canopy import is_probe_username
 from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data, introspect_token
 from connect_labs.labs.models import UserConnectToken
 from connect_labs.users.models import User
@@ -187,6 +188,14 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
         logger.error("Could not retrieve user information from token introspection")
         messages.error(request, "Could not retrieve your profile from Connect. Please try again.")
         return redirect("labs:oauth_initiate")
+
+    # The canopy probe's service account is never a login, whatever Connect says
+    # (connect_labs/labs/canopy.py). Checked before the user row is touched, so a
+    # colliding Connect identity cannot rename, re-email or sign in as it.
+    if is_probe_username(profile_data.get("username")):
+        logger.error("Refusing a Connect sign-in that resolves to the canopy probe's reserved username")
+        messages.error(request, "This account cannot sign in to labs.")
+        return redirect("labs:login")
 
     # Calculate token expiration
     expires_in = token_json.get("expires_in", 1209600)  # Default 2 weeks
