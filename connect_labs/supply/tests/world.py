@@ -59,15 +59,21 @@ def _models():
 
 
 def _capture():
-    """Seed the world, take every row, then roll the seeding back."""
+    """Seed the world, take every row it added, then roll the seeding back.
+
+    Only the rows the SEEDER added: rows already in the database (the users a
+    migration seeds, e.g. the canopy probe's service account) are still there
+    in every test, so replaying them would collide on their primary keys.
+    """
     from connect_labs.supply.demo import seed_demo_world
 
     ordered = _models()
     snapshot = []
     with transaction.atomic():
+        before = {model: set(model.objects.values_list("pk", flat=True)) for model in ordered}
         seed_demo_world()
         for model in ordered:
-            rows = list(model.objects.all())
+            rows = [row for row in model.objects.all() if row.pk not in before[model]]
             if rows:
                 snapshot.append((model, rows))
         transaction.set_rollback(True)

@@ -53,7 +53,7 @@ from starlette.responses import JSONResponse, Response  # noqa: E402
 from starlette.routing import Mount, Route  # noqa: E402
 
 from connect_labs.mcp import oauth  # noqa: E402
-from connect_labs.mcp.server import build_http_app, dpop_gate  # noqa: E402
+from connect_labs.mcp.server import _closing_connections, build_http_app, dpop_gate  # noqa: E402
 
 
 class _ClosingConnectionsApp:
@@ -257,7 +257,12 @@ def _metadata_endpoint(build_body, status_code: int = 200, needs_sign_in: bool =
                 status_code=404,
                 headers=_CORS_HEADERS,
             )
-        return JSONResponse(build_body(), status_code=status_code, headers=_CORS_HEADERS)
+        # Built off the event loop: the authorization-server document names the
+        # canopy probe endpoint only once the probe user exists, which is an ORM
+        # read (connect_labs.labs.canopy.probe_subject) that Django refuses to run
+        # on the loop — so built inline, the document would silently never name it.
+        body = await sync_to_async(_closing_connections(build_body), thread_sensitive=True)()
+        return JSONResponse(body, status_code=status_code, headers=_CORS_HEADERS)
 
     return endpoint
 
