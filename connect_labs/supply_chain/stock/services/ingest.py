@@ -32,6 +32,7 @@ import logging
 from django.db import transaction
 
 from connect_labs.supply_chain.models import StockCount
+from connect_labs.supply_chain.stock.services.workers import worker_slug
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ def ingest_stock_reports(
                 continue
             point = access.upsert_supply_point(
                 {
-                    "slug": f"user-{opportunity_id}-{username}"[:96],
+                    "slug": worker_slug(opportunity_id, username),
                     "name": username,
                     "kind": "user_held",
                     "opportunity_id": opportunity_id,

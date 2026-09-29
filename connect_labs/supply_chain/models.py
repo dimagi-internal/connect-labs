@@ -1111,6 +1111,9 @@ class SupplyPoint(SourcedModel):
 
     connect_username = models.CharField(max_length=150, blank=True, default="", db_index=True)
     connect_user_id = models.IntegerField(null=True, blank=True, db_index=True)
+    # The visit cache's `user_id` is Connect's user UUID, a string; the integer
+    # `connect_user_id` above cannot hold it. Matched second, after the username.
+    connect_user_uuid = models.CharField(max_length=64, blank=True, default="", db_default="", db_index=True)
 
     admin_area = models.CharField(max_length=255, blank=True, default="")
     latitude = models.FloatField(null=True, blank=True)
@@ -1153,7 +1156,9 @@ class SupplyPoint(SourcedModel):
         return self.kind == "user_held"
 
     def clean(self):
-        if self.kind == "user_held" and not (self.connect_username or self.connect_user_id):
+        if self.kind == "user_held" and not (
+            self.connect_username or self.connect_user_id or self.connect_user_uuid
+        ):
             raise ValidationError(
                 {"connect_username": "A user_held supply point must name the Connect user whose stock it is."}
             )
