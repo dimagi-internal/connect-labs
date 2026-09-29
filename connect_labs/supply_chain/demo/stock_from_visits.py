@@ -90,15 +90,15 @@ PATHS = {
     # mRDT.
     "mrdt_screening": "form.visit_1.fever_treatment.mrdt_result",
     "mrdt_visit": "form.visit_2_or_greater.fever.mrdt_result",
-    # Vitamin A -- STAND-IN prefixes, see above.
-    "vita_screening": "form.chc_commodities.vita_group.va_delivered",  # STAND-IN
-    "vita_visit": "form.visit_2_or_greater.vita_group.va_delivered",  # STAND-IN
-    "vita_6_11_screening": "form.chc_commodities.vita_group.prepare_vita_dosage.va_eligible_dose_6mo_to_11mo",  # STAND-IN
-    "vita_1_2_screening": "form.chc_commodities.vita_group.prepare_vita_dosage.va_eligible_dose_1yr_2year",  # STAND-IN
-    "vita_2_5_screening": "form.chc_commodities.vita_group.prepare_vita_dosage.va_eligible_dose_2yr_5yr",  # STAND-IN
-    "vita_6_11_visit": "form.visit_2_or_greater.vita_group.prepare_vita_dosage.va_eligible_dose_6mo_to_11mo",  # STAND-IN
-    "vita_1_2_visit": "form.visit_2_or_greater.vita_group.prepare_vita_dosage.va_eligible_dose_1yr_2year",  # STAND-IN
-    "vita_2_5_visit": "form.visit_2_or_greater.vita_group.prepare_vita_dosage.va_eligible_dose_2yr_5yr",  # STAND-IN
+    # Vitamin A -- every path below is a STAND-IN (see above).
+    "vita_screening": "form.chc_commodities.vita_group.va_delivered",
+    "vita_visit": "form.visit_2_or_greater.vita_group.va_delivered",
+    "vita_6_11_screening": "form.chc_commodities.vita_group.prepare_vita_dosage.va_eligible_dose_6mo_to_11mo",
+    "vita_1_2_screening": "form.chc_commodities.vita_group.prepare_vita_dosage.va_eligible_dose_1yr_2year",
+    "vita_2_5_screening": "form.chc_commodities.vita_group.prepare_vita_dosage.va_eligible_dose_2yr_5yr",
+    "vita_6_11_visit": "form.visit_2_or_greater.vita_group.prepare_vita_dosage.va_eligible_dose_6mo_to_11mo",
+    "vita_1_2_visit": "form.visit_2_or_greater.vita_group.prepare_vita_dosage.va_eligible_dose_1yr_2year",
+    "vita_2_5_visit": "form.visit_2_or_greater.vita_group.prepare_vita_dosage.va_eligible_dose_2yr_5yr",
 }
 
 # The app's own answer strings. The missing space in the second is the app's:
@@ -266,7 +266,11 @@ def build_world(start: date, *, weeks: int = WEEKS, seed: int = 7) -> World:
             lines[RUNS_OUT] = RUNS_OUT_RUTF
         world.issues.append({"on": start, "sku": product.sku, "lines": lines})
     world.issues.append(
-        {"on": start + timedelta(weeks=4), "sku": RUTF_SKU, "lines": {w: SECOND_RUTF for w in WORKERS if w != RUNS_OUT}}
+        {
+            "on": start + timedelta(weeks=4),
+            "sku": RUTF_SKU,
+            "lines": {w: SECOND_RUTF for w in WORKERS if w != RUNS_OUT},
+        }
     )
     rutf_issues = {(i["on"], w): q for i in world.issues if i["sku"] == RUTF_SKU for w, q in i["lines"].items()}
     rejected_on_day = start + timedelta(weeks=4, days=2)
