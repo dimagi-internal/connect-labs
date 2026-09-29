@@ -206,10 +206,10 @@ class TestBacklogDays:
     """A day when forwarding to Connect backed up makes every phone look offline."""
 
     def _backlog(self, day):
-        # 200 workers whose visits all took two hours to arrive: even the
+        # 200 workers whose visits all took five hours to arrive: even the
         # fastest tenth were slow, which no offline worker can cause alone.
         for i in range(connectivity.BACKLOG_MIN_VISITS):
-            visit(f"crowd-{i}", day + timedelta(minutes=i), timedelta(hours=2))
+            visit(f"crowd-{i}", day + timedelta(minutes=i), timedelta(hours=5))
 
     def test_a_slow_day_for_everyone_is_found(self):
         day = _day_start()
@@ -223,6 +223,14 @@ class TestBacklogDays:
         self._backlog(day)
         online_day("w-caught", n=12, start=day)
         assert judge("w-caught") is None
+
+    def test_a_day_that_is_merely_slow_is_not_a_backlog(self):
+        """The shape production flagged at the old 30-minute threshold: every
+        visit about 35 minutes late. Slow partners, not stalled forwarding."""
+        day = _day_start()
+        for i in range(connectivity.BACKLOG_MIN_VISITS):
+            visit(f"slow-{i}", day + timedelta(minutes=i), timedelta(minutes=35))
+        assert connectivity.backlog_days() == []
 
     def test_a_thin_day_is_never_called_a_backlog(self):
         offline_day("w-alone", n=12)
