@@ -30,9 +30,10 @@ many visits there are: every lookup is loaded once up front, and an
 unchanged visit writes nothing -- not even a revision.
 """
 
+import hashlib
 import logging
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
 from connect_labs.supply_chain.models import DispensingRule, Movement, WorkerVisit
@@ -134,19 +135,32 @@ def _evaluate(rule, form_json) -> Dispensed:
         return Dispensed(UNIT_REFUSED, reasons=(str(error),))
 
 
+def _lock_opportunity(opportunity_id) -> None:
+    """Serialise runs per opportunity for the rest of this transaction.
+
+    Two overlapping runs (the beat and an operator's command) would both see a
+    visit as unposted, and the loser would hit the one-consumption constraint
+    and roll back its whole batch. A transaction-scoped advisory lock makes
+    the second wait, then read what the first posted.
+    """
+    digest = hashlib.sha256(f"visit_consumption_ingest:{opportunity_id}".encode()).digest()
+    key = int.from_bytes(digest[:8], "big", signed=True)
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [key])
+
+
 @transaction.atomic
 def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, today=None) -> dict:
     program_id = access._require_program()
     today = today or timezone.localdate()
+    _lock_opportunity(opportunity_id)
     rules = list(
         DispensingRule.objects.filter(program_id=program_id, opportunity_id=opportunity_id, status="active")
         .select_related("item__commodity", "resupply_point")
         .order_by("pk")
     )
     report = _report(opportunity_id, visits, rules)
-    if not rules:
-        return report
-    earliest = min(rule.active_from for rule in rules)
+    earliest = min((rule.active_from for rule in rules), default=None)
 
     # Everything a visit needs to be decided, loaded once: a per-visit query
     # would make every hourly re-read grow with the opportunity.
@@ -157,6 +171,9 @@ def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, toda
             program_id=program_id, visit_id__in=ids, kind="consumption", reverses__isnull=True
         )
     }
+    by_visit: dict[str, list] = {}
+    for (visit_id, _), movement in posted.items():
+        by_visit.setdefault(visit_id, []).append(movement)
     reversed_ = set(
         Movement.objects.filter(program_id=program_id, visit_id__in=ids, reverses__isnull=False).values_list(
             "visit_id", "item_id"
@@ -167,8 +184,21 @@ def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, toda
 
     for visit in visits:
         visit_id = str(visit.get("id") or "")
+        if not visit_id:
+            report["undated"] += 1
+            continue
+        status = visit_status(visit, until)
+
+        # Reversals first, from what was posted -- not from the rules. A rule
+        # deactivated, or its active_from moved, after its visits were posted
+        # must not leave a rejected visit's consumption standing; nor may a
+        # worker who no longer resolves. The reversal credits the point the
+        # consumption debited.
+        if status in REVERSING_STATUSES and visit_id in by_visit:
+            _reverse_visit(report, seen, visit, visit_id, status, by_visit[visit_id], reversed_)
+
         on = read_date(visit.get("visit_date"))
-        if not visit_id or on is None:
+        if on is None:
             report["undated"] += 1
             continue
         if on > today:
@@ -177,11 +207,12 @@ def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, toda
         if until is not None and on > until:
             report["after_until"] += 1
             continue
+        if earliest is None:
+            continue
         if on < earliest:
             report["before_active_from"] += 1
             continue
 
-        status = visit_status(visit, until)
         form_json = visit.get("form_json") if isinstance(visit.get("form_json"), dict) else {}
         form = form_json.get("form") if isinstance(form_json.get("form"), dict) else {}
         form_name = str(form.get("@name") or "")
@@ -201,19 +232,11 @@ def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, toda
             standing = posted.get(key)
             outcome = None
             if status in REVERSING_STATUSES:
-                if standing is None:
-                    # Never posted: nothing to reverse. Reported only where the
-                    # rule reads this form at all.
-                    if _evaluate(rule, form_json).outcome != NOT_APPLICABLE:
-                        report["rejected_unposted"] += 1
-                        outcome = NOT_COUNTED
-                elif key in reversed_:
-                    report["skipped_already_reversed"] += 1
-                else:
-                    posting.post_visit_reversal(standing, reason=f"visit {status}")
-                    reversed_.add(key)
-                    report["reversed"] += 1
-                    outcome = REVERSED
+                # A posted item was reversed above; only the never-posted are left.
+                # Reported only where the rule reads this form at all.
+                if standing is None and _evaluate(rule, form_json).outcome != NOT_APPLICABLE:
+                    report["rejected_unposted"] += 1
+                    outcome = NOT_COUNTED
             elif standing is not None:
                 if key in reversed_:
                     report["reinstated_after_reversal"].append(visit_id)
@@ -233,6 +256,34 @@ def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, toda
     report["created_supply_points"] = list(index.created)
     _log(report)
     return report
+
+
+def _reverse_visit(report, seen, visit, visit_id, status, standing, reversed_):
+    """Reverse every item this visit posted that is not reversed yet, and say so on its WorkerVisit."""
+    outcomes = {}
+    for movement in standing:
+        key = (visit_id, movement.item_id)
+        if key in reversed_:
+            report["skipped_already_reversed"] += 1
+            continue
+        posting.post_visit_reversal(movement, reason=f"visit {status}")
+        reversed_.add(key)
+        report["reversed"] += 1
+        outcomes[outcome_key(movement.item_id)] = REVERSED
+    existing = seen.get(visit_id)
+    if existing is None:
+        # Posted before the reader remembered visits: nothing to update.
+        return
+    changed = []
+    if existing.status != status[:32]:
+        existing.status = status[:32]
+        changed.append("status")
+    merged = {**existing.outcomes, **outcomes}
+    if merged != existing.outcomes:
+        existing.outcomes = merged
+        changed.append("outcomes")
+    if changed:
+        existing.save(update_fields=[*changed, "updated_at"])
 
 
 def _read_one(report, rule, form_json, answers, program_id, opportunity_id, point, on, visit_id):
@@ -345,7 +396,11 @@ def _remember(seen, program_id, opportunity_id, visit, visit_id, point, on, stat
 
 
 def run_scheduled() -> dict:
-    """The beat task's body: every opportunity with an active rule, synthetic programmes only.
+    """The beat task's body, synthetic programmes only.
+
+    Every opportunity with an active rule -- and every opportunity still
+    holding a visit's consumption that stands unreversed, rule or no rule, so
+    a visit rejected after its rule was switched off is still reversed.
 
     A real programme is skipped by name, not read: nothing reads a real
     programme's visits into the ledger until the product owner says so.
@@ -356,12 +411,15 @@ def run_scheduled() -> dict:
     from connect_labs.supply_chain.operations import call_operation
 
     results = {}
-    pairs = (
-        DispensingRule.objects.filter(status="active")
+    ruled = DispensingRule.objects.filter(status="active").values_list("program_id", "opportunity_id").distinct()
+    standing = (
+        Movement.objects.filter(kind="consumption", source="connect_visit", opportunity_id__isnull=False)
+        .standing_consumption()
+        .exclude(visit_id="")
         .values_list("program_id", "opportunity_id")
         .distinct()
-        .order_by("program_id", "opportunity_id")
     )
+    pairs = sorted(set(ruled) | set(standing))
     for program_id, opportunity_id in pairs:
         key = str(opportunity_id)
         if not scopes.is_synthetic(program_id):

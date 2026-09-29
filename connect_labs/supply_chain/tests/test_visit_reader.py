@@ -426,3 +426,45 @@ def test_visit_status_reads_a_later_rejection_as_pending_then():
     assert visit_status(rejected) == "rejected"
     assert visit_status(rejected, until=date(2026, 9, 24)) == "pending"
     assert visit_status(rejected, until=date(2026, 9, 25)) == "rejected"
+
+
+def test_a_visit_rejected_after_its_rule_was_switched_off_is_still_reversed(da, rutf, rutf_rule):
+    read(da, [visit(9001, answers={RUTF_PATH: "14"})])
+    DispensingRule.objects.filter(pk=rutf_rule.pk).update(status="inactive")
+
+    report = read(da, [visit(9001, status="rejected", answers={RUTF_PATH: "14"})])
+
+    assert (report["rules"], report["reversed"]) == (0, 1)
+    assert ledger.balance(PROGRAM, _worker(), item=rutf, unit="sachet") == Quantity(Decimal("0"), "sachet")
+    remembered = WorkerVisit.objects.get(visit_id="9001")
+    assert (remembered.status, remembered.outcomes) == ("rejected", {outcome_key(rutf.pk): "reversed"})
+    assert read(da, [visit(9001, status="rejected", answers={RUTF_PATH: "14"})])["skipped_already_reversed"] == 1
+
+
+def test_a_visit_rejected_after_its_rule_moved_past_it_is_still_reversed(da, rutf, rutf_rule):
+    read(da, [visit(9001, answers={RUTF_PATH: "14"})])
+    DispensingRule.objects.filter(pk=rutf_rule.pk).update(active_from=date(2026, 9, 25))
+
+    report = read(da, [visit(9001, status="rejected", answers={RUTF_PATH: "14"})])
+
+    assert (report["reversed"], report["before_active_from"]) == (1, 1)
+    assert ledger.balance(PROGRAM, _worker(), item=rutf, unit="sachet") == Quantity(Decimal("0"), "sachet")
+
+
+def test_a_rejected_visit_whose_worker_no_longer_resolves_is_still_reversed(da, rutf, rutf_rule):
+    read(da, [visit(9001, answers={RUTF_PATH: "14"})])
+
+    report = read(da, [visit(9001, status="rejected", username="", user_id="", answers={RUTF_PATH: "14"})])
+
+    assert report["reversed"] == 1
+    assert ledger.balance(PROGRAM, _worker(), item=rutf, unit="sachet") == Quantity(Decimal("0"), "sachet")
+
+
+def test_two_runs_in_one_transaction_take_the_lock_and_post_once(da, rutf, rutf_rule):
+    visits = [visit(9001, answers={RUTF_PATH: "14"})]
+    with CaptureQueriesContext(connection) as queries:
+        first, second = read(da, visits), read(da, visits)
+
+    assert (first["posted"], second["posted"], second["skipped_already_posted"]) == (1, 0, 1)
+    assert Movement.objects.filter(kind="consumption").count() == 1
+    assert sum("pg_advisory_xact_lock" in q["sql"] for q in queries.captured_queries) == 2

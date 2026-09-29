@@ -14,12 +14,13 @@ product owner says otherwise.
 
 import os
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.stock.visit_operations import parse_until
 
 
 class Command(BaseCommand):
@@ -33,6 +34,10 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true", help="Run it all, report it, keep nothing.")
 
     def handle(self, *args, **options):
+        try:
+            parse_until(options.get("until"))
+        except ValueError as error:
+            raise CommandError(str(error)) from None
         access = SupplyDataAccess(
             access_token=os.environ.get("SUPPLY_EXPORT_TOKEN", ""),
             program_id=options["program"],
