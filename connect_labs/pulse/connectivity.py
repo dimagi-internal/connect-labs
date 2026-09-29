@@ -207,7 +207,14 @@ def _pair_counts(events, select_sql: str, group_by: str, exclude_days) -> list[t
 # form time plus HQ-to-Connect forwarding. When forwarding backs up, every
 # phone looks offline at once and that floor jumps; a genuinely offline worker
 # cannot move it, since the online ones still set it.
-BACKLOG_P10_MINUTES = 30
+#
+# Two hours, not the 30 minutes this shipped with. At 30, production flagged 27
+# days (2026-09-29), every one of them between 30 and 37 minutes and most in
+# May-June 2026 -- quiet days (~500 visits) on which a few batch-sending
+# partners made up the fastest tenth. That is a thin day, not an outage, and
+# skipping it threw away real evidence about exactly those partners. A real
+# backlog holds EVERY phone's work for hours.
+BACKLOG_P10_MINUTES = 120
 # Below this many visits a day's percentile is too thin to call a backlog.
 BACKLOG_MIN_VISITS = 200
 _BACKLOG_CACHE_KEY = "pulse:connectivity:backlog:v1"
