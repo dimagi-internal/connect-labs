@@ -288,3 +288,81 @@ class TestConnectivityPage:
         page = client.get(reverse("pulse:connectivity"))
         assert page.status_code == 200
         assert b"pulse/connectivity.js" in page.content
+
+
+@pytest.mark.django_db
+class TestDelays:
+    """How long work waited on the phone. Offline-first makes a delay normal, so
+    these report how much waited how long, not whether anything went wrong."""
+
+    def test_a_worker_profile_counts_delays_in_bands(self):
+        day = _day_start()
+        for i, lag in enumerate(
+            (timedelta(minutes=5), timedelta(hours=2), timedelta(days=2), timedelta(days=4), timedelta(days=8))
+        ):
+            visit("w-held", day + i * timedelta(minutes=30), lag)
+        p = connectivity.worker_profiles(PulseEvent.objects.all())["w-held"]
+        assert p["visits"] == 5 and p["timed"] == 5
+        assert p["seen_online"] == 1, "only the five-minute visit proves signal on its own"
+        assert (p["delayed_1d"], p["delayed_3d"], p["delayed_7d"]) == (3, 2, 1)
+        assert p["median_delay_minutes"] == pytest.approx(2 * 24 * 60)
+
+    def test_sparse_workers_are_seen_online_though_the_pair_test_cannot_judge_them(self):
+        # One visit a day, sent at once: no usable pair, but plainly online.
+        day = _day_start()
+        for i in range(4):
+            visit("w-sparse", day + timedelta(days=i), timedelta(minutes=3))
+        workers = connectivity.merge(
+            connectivity.per_worker(connectivity.worker_weeks(PulseEvent.objects.all())),
+            connectivity.worker_profiles(PulseEvent.objects.all()),
+        )
+        s = connectivity.summarise(workers.values())
+        assert s["judged"] == 0
+        assert s["seen_online"] == 1 and s["seen_online_rate"] == 1.0
+
+    def test_breakdown_counts_each_worker_once_under_their_main_partner(self):
+        online_day("w-a", n=12, org="lakeside")
+        offline_day("w-b", n=12, org="hillside")
+        visit("w-a", _day_start() + timedelta(hours=9), timedelta(minutes=5), org="hillside")
+        workers = connectivity.merge(
+            connectivity.per_worker(connectivity.worker_weeks(PulseEvent.objects.all())),
+            connectivity.worker_profiles(PulseEvent.objects.all()),
+        )
+        rows = {r["key"]: r for r in connectivity.breakdown(workers, "org")}
+        assert rows["lakeside"]["workers"] == 1 and rows["lakeside"]["online"] == 1
+        assert rows["hillside"]["workers"] == 1 and rows["hillside"]["offline"] == 1
+        # The whole day's work waited ~10h for the evening sync: none of it a day.
+        assert rows["hillside"]["delayed_1d_rate"] == 0.0
+
+
+@pytest.mark.django_db
+class TestConnectivityFilters:
+    def _viewer(self, client, django_user_model):
+        client.force_login(django_user_model.objects.create(username="viewer"))
+        return client
+
+    def test_the_api_carries_the_tables_and_every_menu(self, client, estate, django_user_model):
+        data = self._viewer(client, django_user_model).get(reverse("pulse:api_connectivity")).json()
+        assert {r["key"] for r in data["by_org"]} == {"lakeside"}
+        assert data["by_org"][0]["name"] == "Lakeside Health"
+        assert data["by_opportunity"][0]["name"] == "MBW"
+        assert data["summary"]["workers"] == 2
+        # The fixture's forms take 20 minutes, so even the online worker never
+        # lands inside 15: "seen online" is evidence one way only, by design.
+        assert data["summary"]["seen_online"] == 0
+        assert {"programs", "orgs", "services", "countries"} <= set(data)
+
+    def test_country_narrows_to_where_the_visits_happened(self, client, estate, django_user_model):
+        PulseEvent.objects.filter(worker_hash="bbbb2222off").update(country="KE")
+        c = self._viewer(client, django_user_model)
+        ke = c.get(reverse("pulse:api_connectivity"), {"country": "KE"}).json()
+        assert ke["summary"]["workers"] == 1 and ke["summary"]["offline"] == 1
+        assert ke["country"] == "KE"
+        everywhere = c.get(reverse("pulse:api_connectivity")).json()
+        assert everywhere["summary"]["workers"] == 2
+
+    def test_a_date_window_narrows_every_figure(self, client, estate, django_user_model):
+        c = self._viewer(client, django_user_model)
+        future = (timezone.now() + timedelta(days=1)).date().isoformat()
+        data = c.get(reverse("pulse:api_connectivity"), {"from": future}).json()
+        assert data["summary"]["workers"] == 0 and data["by_org"] == []
