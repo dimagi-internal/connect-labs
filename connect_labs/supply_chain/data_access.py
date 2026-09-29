@@ -58,6 +58,7 @@ from connect_labs.supply_chain.models import (
     Supplier,
     SupplyPoint,
     Tender,
+    WorkerVisit,
     fill_profile,
     scope_key,
 )
@@ -422,6 +423,8 @@ class SupplyDataAccess(
 
                 # Rules PROTECT both the item and the store they name.
                 drop("dispensing rules", DispensingRule.objects.filter(program_id=program_id))
+                # A remembered visit PROTECTs the worker point it was read against.
+                drop("worker visits", WorkerVisit.objects.filter(program_id=program_id))
                 drop("update links", UpdateLink.objects.filter(program_id=program_id))
                 drop("alert subscriptions", AlertSubscription.objects.filter(program_id=program_id))
                 drop("documents", Document.objects.filter(program_id=program_id))

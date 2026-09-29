@@ -27,6 +27,7 @@ nothing and looks exactly like "nobody answered".
 """
 
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from connect_labs.labs.analysis.utils import extract_json_path
@@ -97,7 +98,10 @@ def validate_lines(lines, item) -> list[dict]:
             out = {
                 "kind": "value_map",
                 "paths": _paths(line.get("paths"), what),
-                "map": {answer: _quantity(quantity, f"{what}, answer {answer!r}") for answer, quantity in line["map"].items()},
+                "map": {
+                    answer: _quantity(quantity, f"{what}, answer {answer!r}")
+                    for answer, quantity in line["map"].items()
+                },
                 "unit": unit,
             }
         else:
@@ -168,6 +172,25 @@ def read_number(value) -> Decimal | None:
     if not number.is_finite() or number < 0 or number > _MOST_AT_ONE_VISIT:
         return None
     return number
+
+
+def read_date(value) -> date | None:
+    """A day from a visit or a form answer, or None when there is none.
+
+    The one reader of Connect's dates in the stock-from-visits code: a visit's
+    `visit_date`, its `status_modified_date` (a timestamp, read as its day),
+    and a form's own date answers. Anything that is not a day is None --
+    never today, never a guess.
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value or "").strip()[:10]
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
 
 
 def _answer(form_json, path):

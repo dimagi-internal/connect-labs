@@ -40,6 +40,7 @@ PATHS = {
     "SupplyPoint": _direct,
     "Movement": _direct,
     "DispensingRule": _direct,
+    "WorkerVisit": _direct,
     "StockCount": _direct,
     "Distribution": _direct,
     "Consignment": _direct,
