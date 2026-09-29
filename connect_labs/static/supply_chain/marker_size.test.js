@@ -32,8 +32,14 @@ describe('markerRadius', () => {
 
 describe('biggestKey', () => {
   it('compares workers only with workers, per unit', () => {
-    expect(biggestKey('user_held', 'sachet')).not.toBe(biggestKey('central_store', 'sachet'));
-    expect(biggestKey('user_held', 'sachet')).not.toBe(biggestKey('user_held', 'carton'));
-    expect(biggestKey('central_store', 'sachet')).toBe(biggestKey('regional_store', 'sachet'));
+    expect(biggestKey('user_held', 'sachet')).not.toBe(
+      biggestKey('central_store', 'sachet'),
+    );
+    expect(biggestKey('user_held', 'sachet')).not.toBe(
+      biggestKey('user_held', 'carton'),
+    );
+    expect(biggestKey('central_store', 'sachet')).toBe(
+      biggestKey('regional_store', 'sachet'),
+    );
   });
 });

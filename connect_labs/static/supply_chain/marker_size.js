@@ -23,5 +23,8 @@
     return (kind === 'user_held' ? 'worker|' : 'place|') + (unit || '');
   }
 
-  root.SupplyMarkerSize = { markerRadius: markerRadius, biggestKey: biggestKey };
+  root.SupplyMarkerSize = {
+    markerRadius: markerRadius,
+    biggestKey: biggestKey,
+  };
 })(typeof window !== 'undefined' ? window : globalThis);
