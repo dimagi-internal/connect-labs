@@ -3787,6 +3787,16 @@ def semantic_indicators_api(request, definition_id):
         with_data, missing = _cached_opportunities(requested)
         cold = not with_data
         partial = bool(with_data) and bool(missing)
+        # A lookup reads ANOTHER pipeline's rows (CommCare HQ forms, say) from that
+        # pipeline's own slot, and a cold one reads as NULL on every visit -- the
+        # same silent understatement as a partial visit cache. Name them.
+        from connect_labs.semantic.layer1 import LOOKUPS_KEY
+
+        lookups_missing = {}
+        for name, lookup_config in ((extra_fields or {}).get(LOOKUPS_KEY) or {}).items():
+            gaps = _cached_opportunities(requested, slot=lookup_config.raw_slot_id)[1]
+            if gaps:
+                lookups_missing[name] = gaps
 
         return JsonResponse(
             {
@@ -3803,6 +3813,7 @@ def semantic_indicators_api(request, definition_id):
                 "partial_cache": partial,
                 "opportunities_with_data": with_data,
                 "opportunities_missing": missing,
+                "lookups_missing": lookups_missing,
                 "cold_cache_hint": (
                     "No cached visits for these opportunities, so every metric is zero "
                     "rather than genuinely zero. Load the workflow's data once (the "

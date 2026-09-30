@@ -660,3 +660,33 @@ def test_another_sources_rows_do_not_make_the_visits_look_cached(client, django_
     body = resp.json()
     assert body["cold_cache"] is True
     assert body["opportunities_missing"] == [10042]
+
+
+def test_a_lookup_with_nothing_cached_is_named(client, django_user_model):
+    """A lookup reads its own pipeline's slot; cold, it is NULL on every visit, which
+    reads as "nobody eligible" rather than "not loaded". The endpoint names it."""
+    from types import SimpleNamespace
+
+    from connect_labs.semantic.layer1 import LOOKUPS_KEY
+
+    user = django_user_model.objects.create_user(username="u32", password="p")
+    client.force_login(user)
+
+    class _Def:
+        pipeline_sources = [{"alias": "children", "pipeline_id": 5108}]
+        opportunity_ids = [10042, 10013]
+
+    inputs = (object(), {LOOKUPS_KEY: {"registration": SimpleNamespace(raw_slot_id=5501)}})
+    with (
+        patch("connect_labs.workflow.views.WorkflowDataAccess") as wda,
+        patch("connect_labs.semantic.workflow_binding.build_evaluate_inputs", return_value=inputs),
+        patch("connect_labs.semantic.runtime.evaluate") as ev,
+    ):
+        wda.return_value.get_definition.return_value = _Def()
+        ev.return_value = []
+        _cache_visits(10042, 10013)
+        resp = client.get(_url(1), {"series": "KMC"})
+
+    body = resp.json()
+    assert body["cold_cache"] is False
+    assert body["lookups_missing"] == {"registration": [10042, 10013]}
