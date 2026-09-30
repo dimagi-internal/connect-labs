@@ -150,14 +150,18 @@ def visit_cache(db):
         ("b2", "ravi", "2026-01-02", 1.400, "Registration"),
         ("b2", "ravi", "2026-02-10", 1.800, "Follow-up"),
     ]
-    for pid in (ENTITY_PIPELINE, VISIT_PIPELINE):
+    # Both pipelines read the Connect visits export, which since #1921 is ONE shared
+    # raw slot per opportunity -- so the visits are cached once, in that slot.
+    from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
+
+    for pid in (USER_VISITS_RAW_SLOT,):
         for i, (case, user, date, wkg, form) in enumerate(rows):
             RawVisitCache.objects.create(
                 opportunity_id=OPP,
                 pipeline_id=pid,
                 visit_count=len(rows),
                 expires_at=expires,
-                visit_id=f"{pid}-{i}",
+                visit_id=f"v-{i}",
                 username=user,
                 entity_id=case,
                 visit_date=dt.date.fromisoformat(date),
