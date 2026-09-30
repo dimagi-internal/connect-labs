@@ -88,7 +88,7 @@ When you create a token you choose an **Access** level:
 | Access level | What it can do |
 | --- | --- |
 | **Standard** | Full access matching your Connect permissions, including reading visit data and making workflow edits. |
-| **No user visit data** | Read-only access to workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds, the organisation directory, targeting data, and microplan sampling. Cannot read visits — raw or computed — and cannot change anything. |
+| **No user visit data** | Read-only access to workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds, the organisation directory, targeting data, and microplan sampling. Cannot access individual visit rows or per-visit values — including through the export API and data reseed endpoints. Opportunity-level counts and dates, and contact details of people who submitted as an organisation, are allowed. |
 
 Tools the token is not allowed to use do not appear to the agent at all, so the agent cannot accidentally attempt a blocked action.
 
