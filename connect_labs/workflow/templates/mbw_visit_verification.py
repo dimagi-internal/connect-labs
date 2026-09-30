@@ -101,6 +101,28 @@ _VISIT_FIELDS = [
         "aggregation": "first",
     },
     {
+        # CommCare's own distance() XPath result (meters) between this visit's
+        # captured GPS and the mother's registered home_gps case property.
+        # Only relevant/populated when where_is_the_visit_being_conducted ==
+        # 'mothers_home' and a home_gps reference point exists -- same gate
+        # as visit_location_has_prev_home_gps. Threshold that sets
+        # gps_visit_verification_matches: <= 200 -> pass, > 200 -> fail
+        # (form's own "home_gps_within_range" calc). Verified identical
+        # (field paths and the 200m threshold) on both the test domain's
+        # and opp 765's production app.
+        "name": "gps_distance_from_home_meters",
+        "path": "form.gps_verification.location_check.calculation_distance_from_home_gps",
+        "aggregation": "first",
+        "transform": "float",
+    },
+    {
+        # Same as gps_distance_from_home_meters, for the health-facility leg.
+        "name": "gps_distance_from_health_facility_meters",
+        "path": "form.gps_verification.location_check.calculation_distance_from_health_facility_gps",
+        "aggregation": "first",
+        "transform": "float",
+    },
+    {
         "name": "qr_code_visit_verification",
         "path": "form.qr_code_verification.qr_code_visit_verification",
         "aggregation": "first",
