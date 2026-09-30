@@ -440,7 +440,9 @@ def synthetic_disable(user, *, opportunity_id: int) -> dict[str, Any]:
         "--no-register` on a fast machine (heavy copula generation + GDrive upload, no "
         "DB), then call this once per printed `source_opp -> gdrive_folder_id` line to "
         "repoint the existing opps — no prod-DB connection needed on the generating box, "
-        "and no slow/timeout-prone server-side generation."
+        "and no slow/timeout-prone server-side generation. Re-pointing never marks the opp "
+        "as generated data (it cannot see what the folder holds); an engineer runs "
+        "manage.py synthetic_mark_generated to mark generator-named folders."
     ),
     input_schema={
         "type": "object",

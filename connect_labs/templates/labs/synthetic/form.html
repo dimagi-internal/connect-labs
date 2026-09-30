@@ -92,11 +92,14 @@
           <input type="radio" name="source_mode" value="dump" id="mode-dump"
                  class="mt-1 text-purple-600 focus:ring-purple-500">
           <div class="flex-1">
-            <div class="font-medium text-gray-900">Dump fresh data from Connect</div>
+            <div class="font-medium text-gray-900">Dump real data from Connect (profiling input only)</div>
             <div class="text-sm text-gray-600 mb-3">
-              Pull the 5 export endpoints from prod Connect and upload them to a new timestamped
-              folder under the labs-synthetic parent. Streams progress; folder ID is populated
-              automatically on success.
+              For people with full production access. Copies the 5 real export endpoints, personal
+              data included, to a new timestamped Drive folder under the labs-synthetic parent,
+              as input for <code>manage.py synthetic_profile_dump</code>. Profile it, then generate a
+              synthetic opp from the profile. An opp pointed at a dump serves real data and never
+              counts as generated. To make synthetic data, profile on the server instead
+              (<code>synthetic_profile_opp</code>, then <code>synthetic_generate_opp</code>).
             </div>
             <div id="dump-pane" hidden>
               <button type="button" id="dump-btn"
