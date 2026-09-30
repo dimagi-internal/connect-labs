@@ -110,6 +110,64 @@ series: [KMC]                       # the indicator family (or families)
 cohorted on the first visit, visit columns built from `status` and `flagged`, one `visits` pipeline, no weight
 series and no organisations.
 
+#### Data from another source: lookups
+
+`extra_fields` only works when both pipelines read the **same forms**: it evaluates the other pipeline's
+field paths against the entity pipeline's own visit rows. A pipeline on a **different source** (CommCare HQ
+registration forms, or a supervisor app's checklist) has rows of its own, so its fields are **joined** onto each
+visit instead, with a lookup:
+
+```yaml
+pipelines:
+  entity: visits
+  lookups:
+    registration:                  # a name for the lookup
+      pipeline: registrations      # the report's pipeline to read (an HQ form pipeline here)
+      on: mother_case_id           # the visit column to match...
+      key: mother_case_id          # ...against this field of the lookup pipeline (or `username`)
+      fields: { eligible_at_reg: eligible_full_intervention_bonus }   # new column: its field
+      pick: latest                 # several rows per key: latest | earliest | max | min | count
+    gs:
+      pipeline: gs_forms
+      on: username                 # one Gold Standard score per worker
+      key: username
+      fields: { gs_score: gs_score }
+      pick: max                    # compares numbers, so "100" beats "90"; non-numbers are ignored
+```
+
+Each lookup matches within one opportunity. A visit with no matching row keeps its place, with NULLs, and a
+lookup never duplicates a visit. `latest` and `earliest` go by the row's date (for an HQ form, when HQ
+received it). The lookup's fields must be ones its pipeline computes in SQL. A field its pipeline builds in
+Python (an `extractor`) is refused by name, so give the pipeline plain path fields for what the registry needs.
+
+If a lookup's pipeline has no data loaded for an opportunity, every visit there reads NULL. The semantic
+endpoint says so in `lookups_missing: {<lookup>: [opportunity ids]}`, beside `opportunities_missing`.
+
+#### The previous visit: window columns
+
+Some rules compare a visit with the **previous visit to the same case**, such as the distance moved or the
+days since. Two visit-column kinds do that:
+
+```yaml
+visit_columns:
+  - name: prev_visit_date
+    previous: { column: visit_date, partition_by: [mother_case_id], order_by: visit_date }
+  - name: metres_from_prev
+    distance_from_previous: { lat: latitude, lon: longitude,
+                              partition_by: [mother_case_id], order_by: visit_date }
+  - name: far_from_prev
+    sql: 'metres_from_prev > 1000'      # a row-level column may read a window or lookup column
+```
+
+- `previous` gives the value of `column` on the case's previous visit. With `skip_null: true` it takes the
+  previous visit that *has* a value.
+- `distance_from_previous` gives metres from the case's previous visit with a GPS reading. Visits without a
+  reading are skipped, as the pipelines' `lag_haversine` does.
+
+Both are always partitioned by opportunity as well (a case id can repeat across opportunities), and ties
+on `order_by` break by visit id. The previous visit can be another worker's, so a report for one worker still
+reads every visit to that worker's cases.
+
 Registries saved before these sections existed (the live KMC records) have none of them. For those, and only
 those, Labs supplies KMC's values; a registry that declares `entity:` as a mapping gets nothing it didn't declare.
 
@@ -392,8 +450,8 @@ Every registry starts by saying what it counts. Answer these questions in the re
 | --- | --- |
 | What is one row, and which visit column identifies it? | `entity: {name, plural, key}` |
 | Which month does a row belong to? | `entity.cohort_date` (defaults to a `first_visit` aggregate) |
-| Which extra per-visit columns do the rules need? | `visit_columns` (`word_match`, `sql` or `column`) |
-| Which of the report's pipelines feed it? | `pipelines: {entity, extra_fields}` |
+| Which extra per-visit columns do the rules need? | `visit_columns` (`word_match`, `sql`, `column`, or a window: `previous`, `distance_from_previous`) |
+| Which of the report's pipelines feed it? | `pipelines: {entity, extra_fields}`, plus `lookups` for a pipeline on another source (CommCare HQ forms) |
 | Is there a per-entity reading series (weights, MUAC…)? | `weight_series` with its `value_column`, or leave it out |
 | Are there organisations? | `llo_map` in the deployment facts, or leave it out |
 | What is the minimum denominator? | `defaults.min_denominator` in the indicators document |
@@ -407,7 +465,7 @@ These steps are the same for any programme:
 1. **Pipelines.** The report needs the pipeline named in `pipelines.entity`, with one row per visit and the fields your rules read. If you have a series, it also needs the pipelines named in `pipelines.extra_fields`. Check with `pipeline_preview` that every column comes back filled in.
 2. **Registry.** If a registry for this indicator family already exists, bind to it (see [Managing registries](#managing-registries-across-programmes)). Otherwise create one with `semantic_registry_create`: `seed_from: kmc` or `seed_from: visit_quality` to start from an example, or supply your own documents. Validation runs on every save.
 3. **Bind.** `workflow_update_definition` with `registry_source: {registry_id: N}`. Or create the report from a template with `registry_source` set, so it binds to that registry instead of seeding a copy of its own.
-4. **Page.** The page fetches `/api/<id>/semantic/?scopes=opportunity,flw` (add `&series=<family>` if the registry has several) and grades the rows. The KMC Opportunity Report is a working example. The definitions popup reads `/api/<id>/indicator-definitions/`. The KMC templates' pages are built for KMC. A non-KMC registry needs its own page. There isn't a generic "indicator report" template yet.
+4. **Page.** The page fetches `/api/<id>/semantic/?scopes=opportunity,flw` (add `&series=<family>` if the registry has several) and grades the rows. The KMC Opportunity Report is a working example. The definitions popup reads `/api/<id>/indicator-definitions/`. For a registry-driven page with no code of your own, use the generic `indicator_programme_report` / `indicator_opp_report` templates (see [Shared Report Templates](shared-report-templates.md)).
 5. **Saved runs.** For a weekly trend, set `snapshot_inputs` to `{builder: semantic_snapshot, series, scopes, case_index, credibility, …}`. `case_index.date_fields` names the fields that date a case; the default is KMC's `reg_date` and `first_visit_date`, so set it for other data. Copy the rest from the KMC Programme Report. Then [rebuild history](reports-with-claude.md#rebuild-the-trend-after-a-definition-change).
 6. **Prove it.** Before switching anyone over, compare the new numbers with the old report on the same date, at every level, for every indicator. That's how KMC was converted, and the comparison found seven real defects, each invisible on its own. Keep the old report until it matches.
 

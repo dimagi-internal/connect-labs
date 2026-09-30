@@ -88,8 +88,14 @@ def build_evaluate_inputs(
                     against a `weight_g` column; without this the compiled SQL
                     fails with `column "weight_g" does not exist`.
 
+      lookups       name -> {pipeline, on, key, fields, pick}: fields JOINED from
+                    another pipeline's own rows (CommCare HQ registration forms, a
+                    supervisor checklist) -- see `semantic.model.Lookup`. Their
+                    configs ride in `extra_fields` under `layer1.LOOKUPS_KEY`.
+
     An extra-field pipeline the workflow does not carry is skipped, as it always
-    was: the compile then names the missing column.
+    was: the compile then names the missing column. A lookup whose pipeline the
+    workflow does not carry is left out too, and Layer 1 then refuses it by name.
     """
     from connect_labs.semantic.model import resolve_model
 
@@ -140,6 +146,20 @@ def build_evaluate_inputs(
                 # Keyed by the column the registry expects, which is also the
                 # field's own name in that pipeline.
                 extra_fields[column] = pipeline_access._schema_to_config(source_def.schema, source["pipeline_id"])
+        lookup_configs: dict[str, Any] = {}
+        for lookup in model.lookups:
+            source = next((s for s in sources if s.get("alias") == lookup.pipeline), None)
+            if not source:
+                continue
+            source_def = pipeline_access.get_definition(source["pipeline_id"])
+            if source_def and source_def.schema:
+                lookup_configs[lookup.name] = pipeline_access._schema_to_config(
+                    source_def.schema, source["pipeline_id"]
+                )
+        if lookup_configs:
+            from connect_labs.semantic.layer1 import LOOKUPS_KEY
+
+            extra_fields[LOOKUPS_KEY] = lookup_configs
     except SemanticBindingError:
         raise
     except Exception as exc:
