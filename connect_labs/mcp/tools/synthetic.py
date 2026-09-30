@@ -11,6 +11,7 @@ import httpx
 from django.conf import settings
 
 from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
+from connect_labs.labs.synthetic.access import labs_only_program_denied_reason, labs_only_target_denied_reason
 from connect_labs.labs.synthetic.bundle import read_bundle
 from connect_labs.labs.synthetic.clone_from_prod import generate_cohort, generate_opp_from_bundle, generate_opps_bulk
 from connect_labs.labs.synthetic.cohort import CohortSpec
@@ -29,6 +30,7 @@ from connect_labs.labs.synthetic.generator.fixtures.schema_loader import FormSch
 from connect_labs.labs.synthetic.generator.io.uploader import upload_and_register
 from connect_labs.labs.synthetic.invalidation import invalidate_synthetic_caches
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
+from connect_labs.labs.synthetic.provenance import is_generated, mark_generated
 from connect_labs.labs.synthetic.provisioning import register_labs_only_opp
 from connect_labs.labs.synthetic.registry import invalidate_cache
 from connect_labs.labs.synthetic.visit_count import resync_visit_count
@@ -242,6 +244,49 @@ def _require_opportunity_access(user, opportunity_id: int) -> None:
         )
 
 
+def _require_labs_only_target(user, opportunity_id) -> None:
+    """Refuse to write generated data onto ``opportunity_id`` unless it is the caller's to write.
+
+    See ``labs_only_target_denied_reason``: labs-only ids only, and an existing opp
+    must already be accessible to the caller.
+    """
+    reason = labs_only_target_denied_reason(user, opportunity_id)
+    if reason:
+        raise MCPToolError("PERMISSION_DENIED", reason)
+
+
+def _require_labs_only_program(user, program_id) -> None:
+    """Refuse to file an opp under a labs-only program the caller cannot already see."""
+    reason = labs_only_program_denied_reason(user, program_id)
+    if reason:
+        raise MCPToolError("PERMISSION_DENIED", reason)
+
+
+# A queued profiling job's result is a manifest built from a real opportunity, so it
+# is readable only by whoever queued it. Celery hands any task's result to anyone
+# holding its id, so the owner is written down HERE, at enqueue, before the worker
+# can possibly finish. The TTL outlives the Celery result backend's default (1 day).
+_PROFILE_OWNER_KEY = "synthetic_profile_owner:{task_id}"
+_PROFILE_OWNER_TTL_SECONDS = 7 * 24 * 3600
+
+
+def _new_profile_task_id(user) -> str:
+    import uuid
+
+    from django.core.cache import cache
+
+    task_id = str(uuid.uuid4())
+    cache.set(_PROFILE_OWNER_KEY.format(task_id=task_id), getattr(user, "id", None), _PROFILE_OWNER_TTL_SECONDS)
+    return task_id
+
+
+def _profile_task_owned_by(user, task_id: str) -> bool:
+    from django.core.cache import cache
+
+    owner = cache.get(_PROFILE_OWNER_KEY.format(task_id=task_id))
+    return owner is not None and owner == getattr(user, "id", None)
+
+
 @register(
     name="synthetic_register",
     description=(
@@ -274,12 +319,17 @@ def synthetic_register(
     defaults: dict[str, Any] = {
         "gdrive_folder_id": gdrive_folder_id,
         "enabled": enabled,
-        "created_by": user,
     }
     if label is not None:
         defaults["label"] = label
     existing = SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id).first()
     previous_folder_id = existing.gdrive_folder_id if existing else None
+    if existing is None:
+        # The creator is an access grant (is_accessible_to), so it is recorded on
+        # create only. Re-registering someone else's opp must not make it yours.
+        defaults["created_by"] = user
+    # Never marks the opp generated: the caller names the folder, and nothing here
+    # knows what is in it. Pointing at a new folder un-marks it (provenance.py).
     row, _created = SyntheticOpportunity.objects.update_or_create(
         opportunity_id=opportunity_id,
         defaults=defaults,
@@ -707,6 +757,9 @@ def synthetic_create_labs_only(
     enabled: bool = True,
     notes: str = "",
 ) -> dict[str, Any]:
+    if program_id is not None:
+        _require_labs_only_program(user, program_id)
+    # Not marked generated: the folder is the caller's, so its contents are unknown.
     row = register_labs_only_opp(
         label=label,
         gdrive_folder_id=gdrive_folder_id,
@@ -821,12 +874,10 @@ def synthetic_set_allowed_domains(user, *, opportunity_id: int, allowed_domains:
     description=(
         "Clone an existing SyntheticOpportunity (real-backed or labs-only) into a "
         "new labs-only opp. Reuses the source's gdrive_folder_id (same fixture set, "
-        "new opp_id from the 10_000+ range). Open to any authenticated MCP caller: "
-        "once a source has been registered as a SyntheticOpportunity it's already a "
-        "labs-controlled fixture artifact, so cloning it doesn't grant any new data "
-        "access — it just creates a second view onto the same GDrive fixture folder. "
-        "Use this to make existing synthetic fixture data accessible to users who "
-        "lack Connect membership for the original opp (e.g. ACE)."
+        "new opp_id from the 10_000+ range). The caller must already be able to see "
+        "the source (its labs-only allowlist, or Connect membership for a real-backed "
+        "source), because the clone re-exposes the source's folder to a new audience. "
+        "The clone counts as generated data only if the source does."
     ),
     input_schema={
         "type": "object",
@@ -873,11 +924,13 @@ def synthetic_clone_to_labs_only(
             "synthetic_generate_from_manifest.",
         )
 
-    # Auth: any authenticated MCP caller may clone an existing SyntheticOpportunity.
-    # The source row's existence is the gate — it was registered by a human with
-    # Connect access, the underlying data is already a synthetic fixture, and the
-    # clone creates only a second view onto the same GDrive folder (no new data).
-    # Visibility of the new opp is controlled by allowed_domains + view_synthetic_opps.
+    # The clone is a second view onto the source's folder, so it hands whatever the
+    # source's data is to a new audience. That folder may be a dump of REAL exports
+    # (dump.py) or a real-backed opp's fixtures, so the caller must already be able to
+    # see the source: its labs-only access model, or Connect membership for a
+    # real-backed one. Without this a caller could re-expose any registered folder
+    # under an allowlist of their choosing.
+    _require_opportunity_access(user, source_opportunity_id)
     row = register_labs_only_opp(
         label=label or f"Clone of {source.label or source.opportunity_id}",
         gdrive_folder_id=source.gdrive_folder_id,
@@ -890,6 +943,10 @@ def synthetic_clone_to_labs_only(
     SyntheticOpportunity.objects.filter(opportunity_id=row.opportunity_id).update(
         notes=f"Cloned from opp {source_opportunity_id} via MCP."
     )
+    # Provenance travels only with the SAME generated folder: the clone serves exactly
+    # what the source serves, so it is generated exactly when the source is.
+    if is_generated(source) and source.generated_folder_id == row.gdrive_folder_id:
+        mark_generated(row.opportunity_id, row.gdrive_folder_id)
     return {
         "opportunity_id": row.opportunity_id,
         "source_opportunity_id": source_opportunity_id,
@@ -1087,47 +1144,6 @@ def synthetic_set_my_visibility(user, *, enabled: bool) -> dict[str, Any]:
     }
 
 
-@register(
-    name="synthetic_profile_from_prod",
-    description=(
-        "Analyze real production data for an opportunity and produce a "
-        "synthetic-data manifest that reproduces the same statistical shape. "
-        "Reads the five export endpoints server-side, computes per-FLW "
-        "distributions (approval rates, flag rates, visit cadence), field "
-        "value distributions from form_json, and timeline parameters. "
-        "Returns a YAML manifest string (no PII) ready to pass to "
-        "synthetic_generate_from_manifest."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "opportunity_id": {"type": "integer"},
-            "form_json_paths": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": (
-                    "Optional explicit list of form_json dot-paths to profile "
-                    "(e.g. ['form.case.update.soliciter_muac_cm']). If omitted, "
-                    "auto-discovers numeric fields from a sample of visits."
-                ),
-            },
-            "mirror": {
-                "type": "boolean",
-                "description": (
-                    "High-fidelity 'close mirror' mode. When true, the manifest carries a "
-                    "de-identified per-entity transplant pool so the clone reproduces the "
-                    "source's exact visits-per-case and cases-per-FLW ratios, timing, and "
-                    "per-entity value trajectories (e.g. an infant growth curve) — not just "
-                    "per-column means. Numerics + structure only; identifiers/text are never "
-                    "copied. Default false (fast marginal mode)."
-                ),
-            },
-        },
-        "required": ["opportunity_id"],
-        "additionalProperties": False,
-    },
-    is_write=False,
-)
 def _profile_from_prod_inner(
     *, opportunity_id: int, token: str, form_json_paths=None, mirror: bool = False, progress=None
 ) -> dict[str, Any]:
@@ -1172,6 +1188,47 @@ def _profile_from_prod_inner(
     }
 
 
+@register(
+    name="synthetic_profile_from_prod",
+    description=(
+        "Analyze real production data for an opportunity and produce a "
+        "synthetic-data manifest that reproduces the same statistical shape. "
+        "Reads the five export endpoints server-side, computes per-FLW "
+        "distributions (approval rates, flag rates, visit cadence), field "
+        "value distributions from form_json, and timeline parameters. "
+        "Returns a YAML manifest string (no PII) ready to pass to "
+        "synthetic_generate_from_manifest."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "opportunity_id": {"type": "integer"},
+            "form_json_paths": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional explicit list of form_json dot-paths to profile "
+                    "(e.g. ['form.case.update.soliciter_muac_cm']). If omitted, "
+                    "auto-discovers numeric fields from a sample of visits."
+                ),
+            },
+            "mirror": {
+                "type": "boolean",
+                "description": (
+                    "High-fidelity 'close mirror' mode. When true, the manifest carries a "
+                    "de-identified per-entity transplant pool so the clone reproduces the "
+                    "source's exact visits-per-case and cases-per-FLW ratios, timing, and "
+                    "per-entity value trajectories (e.g. an infant growth curve) — not just "
+                    "per-column means. Numerics + structure only; identifiers/text are never "
+                    "copied. Default false (fast marginal mode)."
+                ),
+            },
+        },
+        "required": ["opportunity_id"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
 def synthetic_profile_from_prod(
     user,
     *,
@@ -1180,8 +1237,6 @@ def synthetic_profile_from_prod(
     mirror: bool = False,
 ) -> dict[str, Any]:
     """QUEUED. Returns a task_id; poll synthetic_profile_status."""
-    import uuid
-
     from connect_labs.labs.synthetic.tasks import run_synthetic_profile_from_prod
 
     _require_opportunity_access(user, opportunity_id)
@@ -1190,7 +1245,7 @@ def synthetic_profile_from_prod(
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
 
-    task_id = str(uuid.uuid4())
+    task_id = _new_profile_task_id(user)
     run_synthetic_profile_from_prod.apply_async(
         kwargs={
             "opportunity_id": opportunity_id,
@@ -1385,8 +1440,6 @@ def synthetic_profile_opp(
     curate: bool = False,
     mirror: bool = False,
 ) -> dict[str, Any]:
-    import uuid
-
     from connect_labs.labs.synthetic.tasks import run_synthetic_profile_opp
 
     # Access is checked HERE, in the request, while we still have the user. The
@@ -1398,7 +1451,7 @@ def synthetic_profile_opp(
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
 
-    task_id = str(uuid.uuid4())
+    task_id = _new_profile_task_id(user)
     run_synthetic_profile_opp.apply_async(
         kwargs={
             "source_opportunity_id": source_opportunity_id,
@@ -1420,7 +1473,9 @@ def synthetic_profile_opp(
 @register(
     name="synthetic_profile_status",
     description=(
-        "Poll a queued profiling job started by synthetic_profile_opp_async. Returns "
+        "Poll a queued profiling job started by synthetic_profile_opp, synthetic_profile_opps_bulk, "
+        "synthetic_profile_from_prod or synthetic_clone_profile. Only the account that queued "
+        "the job can read it. Returns "
         "state (PENDING | PROGRESS | SUCCESS | FAILURE), the last progress message, and "
         "on success the bundle_dir/bundle_root the inline tool would have returned."
     ),
@@ -1437,6 +1492,11 @@ def synthetic_profile_status(user, *, task_id: str) -> dict[str, Any]:
 
     from config import celery_app
 
+    # Only the caller who queued the job may read it. An unknown id and somebody
+    # else's id get the same answer, so a guessed id reveals nothing, not even that
+    # the job exists.
+    if not _profile_task_owned_by(user, task_id):
+        raise MCPToolError("NOT_FOUND", f"No profiling job {task_id!r} started by your account.")
     res = AsyncResult(task_id, app=celery_app)
     out: dict[str, Any] = {"task_id": task_id, "state": res.state}
     if res.state == "PROGRESS" and isinstance(res.info, dict):
@@ -1511,8 +1571,6 @@ def synthetic_profile_opps_bulk(
     mirror: bool = False,
 ) -> dict[str, Any]:
     """QUEUED. Returns a task_id; poll synthetic_profile_status."""
-    import uuid
-
     from connect_labs.labs.synthetic.tasks import run_synthetic_profile_opps_bulk
 
     for opp_id in source_opportunity_ids:
@@ -1522,7 +1580,7 @@ def synthetic_profile_opps_bulk(
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
 
-    task_id = str(uuid.uuid4())
+    task_id = _new_profile_task_id(user)
     run_synthetic_profile_opps_bulk.apply_async(
         kwargs={
             "source_opportunity_ids": source_opportunity_ids,
@@ -1688,6 +1746,9 @@ def synthetic_generate_opp(
     fresh: bool = False,
     target_opportunity_id: int | None = None,
 ) -> dict[str, Any]:
+    _require_labs_only_program(user, program_id)
+    if target_opportunity_id is not None:
+        _require_labs_only_target(user, target_opportunity_id)
     drive = DriveClient()
     result = generate_opp_from_bundle(
         bundle_dir,
@@ -1697,6 +1758,10 @@ def synthetic_generate_opp(
         org_name=org_name,
         fresh=fresh,
         target_opportunity_id=target_opportunity_id,
+        # A fresh regeneration overwrites the source's existing twin, which the
+        # SOURCE picks, not the caller, so it may be somebody else's.
+        authorize=lambda opp_id: _require_labs_only_target(user, opp_id),
+        created_by=user,
     )
     return {
         "source_opportunity_id": result.source_opportunity_id,
@@ -1754,6 +1819,11 @@ def synthetic_generate_opps_bulk(
         program_name=program_name,
         org_name=org_name,
         fresh=fresh,
+        # Each bundle's existing twin is found by its source id, not chosen by the
+        # caller, so a fresh run must not regenerate over one the caller cannot see.
+        # A refused bundle is logged and skipped like any other per-opp failure.
+        authorize=lambda opp_id: _require_labs_only_target(user, opp_id),
+        created_by=user,
     )
     return {
         "results": [
@@ -1854,8 +1924,6 @@ def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
     spec, one after another — so this is the one that could never have run
     inline.
     """
-    import uuid
-
     from connect_labs.labs.synthetic.tasks import run_synthetic_clone_profile
 
     try:
@@ -1869,7 +1937,7 @@ def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
 
-    task_id = str(uuid.uuid4())
+    task_id = _new_profile_task_id(user)
     run_synthetic_clone_profile.apply_async(kwargs={"spec_yaml": spec_yaml, "oauth_token": token}, task_id=task_id)
     return {
         "task_id": task_id,
@@ -1908,8 +1976,17 @@ def synthetic_clone_generate(user, *, spec_yaml: str, fresh: bool = False, progr
         spec = CohortSpec.from_yaml(spec_yaml)
     except ValueError as exc:
         raise MCPToolError("INVALID_SCHEMA", str(exc))
+    if spec.program_id is not None:
+        _require_labs_only_program(user, spec.program_id)
     drive = DriveClient()
-    spec, results = generate_cohort(spec, drive=drive, fresh=fresh, progress=progress)
+    spec, results = generate_cohort(
+        spec,
+        drive=drive,
+        fresh=fresh,
+        progress=progress,
+        authorize=lambda opp_id: _require_labs_only_target(user, opp_id),
+        created_by=user,
+    )
     return {
         "spec_yaml": spec.to_yaml(),
         "program_id": spec.program_id,

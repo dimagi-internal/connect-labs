@@ -216,6 +216,8 @@ def generate_opp_from_bundle(
     fresh: bool = False,
     target_opportunity_id: int | None = None,
     image_config: dict | None = None,
+    authorize=None,
+    created_by=None,
 ) -> CloneResult:
     """Generate fixtures and register a labs-only opp from a profile bundle.
 
@@ -242,6 +244,12 @@ def generate_opp_from_bundle(
             ``cloned_from`` idempotency lookup entirely. This is how a source that
             already has a twin elsewhere (e.g. one claimed by an env-owned opp)
             gets a second, explicitly-placed twin without clobbering the first.
+        authorize: Optional ``callable(opportunity_id)`` that raises when the caller
+            may not write onto an opp that ALREADY exists (an explicit target, or the
+            twin a ``fresh`` regeneration would overwrite). The MCP tools pass one so
+            no caller can regenerate over another tenant's opp.
+        created_by: Recorded as the creator of a row this call CREATES (never
+            reassigned on an existing row), so a partner keeps access to what they made.
 
     Returns:
         :class:`CloneResult` describing the created (or skipped) opportunity.
@@ -264,6 +272,8 @@ def generate_opp_from_bundle(
         fresh=fresh,
         target_opportunity_id=target_opportunity_id,
         image_config=image_config,
+        authorize=authorize,
+        created_by=created_by,
     )
 
 
@@ -279,6 +289,8 @@ def _generate_one(
     fresh: bool = False,
     target_opportunity_id: int | None = None,
     image_config: dict | None = None,
+    authorize=None,
+    created_by=None,
 ) -> CloneResult:
     """Generate fixtures + register a labs-only opp from an already-read bundle.
 
@@ -305,6 +317,19 @@ def _generate_one(
             skipped=True,
         )
 
+    if target_opportunity_id is not None:
+        opp_id = target_opportunity_id
+    elif existing:
+        opp_id = existing.opportunity_id
+    else:
+        opp_id = max(SyntheticOpportunity.next_labs_only_opp_id(), program_id + 1)
+    # Checked before any work: the destination is chosen by the caller (a target) or
+    # by the source (a twin somebody else may own), so it is the caller's to write
+    # only if the authorizer says so.
+    pre_existing = SyntheticOpportunity.objects.filter(opportunity_id=opp_id).exists()
+    if authorize is not None and (target_opportunity_id is not None or pre_existing):
+        authorize(opp_id)
+
     manifest = Manifest.from_yaml(bundle.manifest_yaml)
     if image_config:
         # A CHOICE layered on at replay time, never baked into the bundle. The
@@ -320,13 +345,6 @@ def _generate_one(
         form_schema=form_schema,
         app_structure=bundle.app_structure,
     )
-
-    if target_opportunity_id is not None:
-        opp_id = target_opportunity_id
-    elif existing:
-        opp_id = existing.opportunity_id
-    else:
-        opp_id = max(SyntheticOpportunity.next_labs_only_opp_id(), program_id + 1)
     # The pool is the contract: everything in it was observed in the source and
     # captured to be replayed. Anything missing from every generated visit is a
     # generator defect — and a wholly absent field costs nothing in a
@@ -369,6 +387,7 @@ def _generate_one(
         program_id=program_id,
         allowed_domains=allowed_domains if allowed_domains is not None else ["@dimagi.com", "@dimagi-ai.com"],
         cloned_from=source,
+        created_by=None if pre_existing else created_by,
     )
     SyntheticOpportunity.objects.filter(opportunity_id=row.opportunity_id).update(
         visit_count=len(fixtures.get("user_visits") or [])
@@ -398,6 +417,8 @@ def generate_opps_bulk(
     only_source_ids=None,
     progress=NULL_PROGRESS,
     image_config: dict | None = None,
+    authorize=None,
+    created_by=None,
 ) -> list[CloneResult]:
     """Generate fixtures for every bundle subdirectory under *bundle_root*.
 
@@ -449,6 +470,8 @@ def generate_opps_bulk(
                     org_name=org_name,
                     fresh=fresh,
                     image_config=image_config,
+                    authorize=authorize,
+                    created_by=created_by,
                 )
             )
             outcome = f"generated opportunity {bundle.source_opp_id}"
@@ -584,7 +607,13 @@ def profile_cohort(
 
 
 def generate_cohort(
-    spec: CohortSpec, *, drive, fresh: bool = False, progress=NULL_PROGRESS
+    spec: CohortSpec,
+    *,
+    drive,
+    fresh: bool = False,
+    progress=NULL_PROGRESS,
+    authorize=None,
+    created_by=None,
 ) -> tuple[CohortSpec, list[CloneResult]]:
     """Phase 2 (offline) for a whole cohort spec.
 
@@ -607,5 +636,7 @@ def generate_cohort(
         only_source_ids=spec.opportunity_ids,
         progress=progress,
         image_config=spec.image_config,
+        authorize=authorize,
+        created_by=created_by,
     )
     return spec, results
