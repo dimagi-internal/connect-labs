@@ -124,20 +124,21 @@ scenes:
     note: the program on 20 Aug
   - kind: click
     note: the banner's way out
-    target: text:back to today
+    target: css:[data-testid=as-of-banner] a[data-as-of-exempt]
   - kind: wait_for
     target: css:[data-testid=overview-row][data-tender-id='${round2_tender_id}']
   - kind: hold
     seconds: 1.0
   concept_claim: Setting the supply header's date control to 20 Aug reloads the overview with a banner naming that date and
-    no write controls, showing round 1 in transit with an expected arrival of 5 Sep and no round 2 row, and the banner's "back
+    no write controls, showing round 1 in transit with an expected arrival of 5 Sep and no round 2 row, and the banner's "Back
     to today" link restores the current overview.
   design_intent: '"What did we think on 20 Aug?" becomes a page, not an argument; hiding every write control keeps a look
     at the past from becoming an edit to the present.'
   full_page: false
-  show: From the overview Sophie sets the header's date control to 20 Aug. A banner reads "Viewing as of 20 Aug 2026 — back
-    to today"; the write controls are gone; round 1 reads in transit with an expected arrival of 5 Sep, and round 2 is not
-    on the page. She clicks "back to today" and the present overview returns.
+  show: From the overview Sophie sets the header's date control to 20 Aug. A banner reads "Viewing as of 20 Aug 2026 — read-only.
+    Nothing here can be changed while you look at the past.", with a "Back to today" link beside it; the write controls
+    are gone; round 1 reads in transit with an expected arrival of 5 Sep, and round 2 is not on the page. She clicks "Back
+    to today" and the present overview returns.
   url: /supply/?program_id=${program_id}
 - id: round-two-cannot-be-compared
   actions:
@@ -215,11 +216,6 @@ scenes:
   - kind: wait_for
     must_succeed: true
     target: Ranked by
-  - attr: data-quote-id
-    kind: capture
-    source: element
-    target: css:[data-testid=ranked-row]
-    var: answered_quote_id
   - kind: hover
     note: landed cost per carton and per child treated, provisional while two are blocked
     say: per child
@@ -291,17 +287,17 @@ scenes:
   - kind: wait_for
     target: Ranked by
   - kind: scroll_to
-    target: css:form:has(input[name=quote_id][value='${answered_quote_id}'])
+    target: testid:award-form
   - kind: fill
     say: why
-    target: css:form:has(input[name=quote_id][value='${answered_quote_id}']) input[name=rationale]
+    target: css:[data-testid=award-form] input[name=rationale]
     value: States everything needed to cost it and is the same manufacturer as round 1; provisional until the other two answer
   - kind: hold
     seconds: 1.5
     note: her reason, typed, before the award
   - kind: click
     must_succeed: true
-    target: css:form:has(input[name=quote_id][value='${answered_quote_id}']) button:has-text('Award')
+    target: css:[data-testid=award-form] button[type=submit]
     timeout_ms: 30000
   - kind: wait_for
     target: css:a[href*='/procurement/awards/']
