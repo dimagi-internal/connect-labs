@@ -273,9 +273,29 @@ Each domain grant applies to **one opportunity only** — it does not carry over
 
 ---
 
-## More Information
+## Synthetic Opportunities — How Data Is Generated
 
-- **[Reports with Claude](reports-with-claude.md)** — plain-English guide to changing reports, pipelines and indicator definitions through the MCP
-- **[MCP_SETUP.md](https://github.com/dimagi-internal/connect-labs/blob/main/docs/MCP_SETUP.md)** — Labs MCP server and token details
-- For security guardrails when working with real program data, see [Safe Mode](connect-safe-mode.md)
-- For help, post in **#connect-labs** on Slack
+Synthetic data is kept clearly separate from real programme data. Every synthetic opportunity records whether it is using generated data — it counts as generated only while it still uses the exact files the generator wrote. If you point it at any other folder (such as a production export dump), that mark is removed automatically.
+
+### The main flow: profile, then generate
+
+The standard way to create synthetic data is:
+
+1. **Profile** a real opportunity on the server. This captures the statistical shape of the data — visit patterns, outcome distributions, measurement ranges — without copying any real records.
+2. **Keep the profile.** It is stored on the server and you can reuse it for future runs.
+3. **Generate** a synthetic dataset from the profile. The generator produces new, artificial records that match the programme's patterns.
+
+You verify the result in your browser the same way you would any other synthetic opportunity.
+
+!!! note "Power-user path: profiling from a dump"
+    If you need to profile from a local export rather than directly from the server, you can export production data to Drive and run `manage.py synthetic_profile_dump` to profile the dump directly. This path requires full data access and is documented separately. A dump is only ever an input to profiling — it is never loaded directly as synthetic data.
+
+### Mirror mode and privacy protections
+
+**Mirror mode** creates a longitudinal clone that follows each real case over time. To ensure no real case is copied exactly:
+
+- Each synthetic case's timeline is shifted by 1–14 days.
+- Measurements are adjusted by up to ±3% (approximately measurement error).
+- Ages, visit spacing, and outcomes are preserved, so programme-level analyses produce the same results.
+
+**Free-text answers are never included in profiles.** Any question with more than
