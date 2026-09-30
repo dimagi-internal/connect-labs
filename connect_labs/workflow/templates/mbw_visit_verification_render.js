@@ -456,87 +456,40 @@ function WorkflowUI({
         var pass = 0;
         var fail = 0;
         var pending = 0;
+        // GPS-only: how often gpsOutcome() lands on 'NA' -- either the
+        // visit was at 'other' (GPS verification doesn't apply) or there
+        // was no previously-saved point for that location type to compare
+        // against. Not tracked for the other 4 methods -- "no location to
+        // match on" is a GPS-specific concept.
+        var noMatch = 0;
         displayRows.forEach(function (row) {
           var v = m.getOutcome(row);
           if (v === 'Pass') pass += 1;
           else if (v === 'Fail') fail += 1;
           else if (typeof v === 'string' && v.indexOf('Pending') !== -1)
             pending += 1;
+          else if (m.label === 'GPS' && v === 'NA') noMatch += 1;
         });
-        return { label: m.label, pass: pass, pending: pending, fail: fail };
+        return {
+          label: m.label,
+          pass: pass,
+          pending: pending,
+          fail: fail,
+          noMatch: noMatch,
+        };
       });
     },
     [displayRows],
   );
 
-  // --- GPS distance histograms (Failed Verification Analysis tab) --------
-  // gps_distance_from_home_meters / gps_distance_from_health_facility_meters
-  // are CommCare's own distance() XPath result (meters) between this
-  // visit's captured GPS and the mother's registered home_gps /
-  // health_facility_gps case property -- only populated when the visit was
-  // at that location type AND a reference point existed there, i.e.
-  // exactly "did a GPS check happen against a previous point". The form's
-  // own pass/fail threshold on that distance is <= 200m (see
-  // gpsOutcome()/Definitions), so bins are 50m wide to keep 200 on a clean
-  // bin boundary. One overflow bucket catches anything >= 1000m so a rare
-  // wild outlier can't flatten the rest of the chart.
-  var GPS_DISTANCE_BIN_WIDTH_METERS = 50;
-  var GPS_DISTANCE_BIN_MAX_METERS = 1000;
-
-  function buildGpsDistanceHistogram(rows, distanceKey) {
-    var bins = [];
-    for (
-      var lo = 0;
-      lo < GPS_DISTANCE_BIN_MAX_METERS;
-      lo += GPS_DISTANCE_BIN_WIDTH_METERS
-    ) {
-      bins.push({
-        label: lo + '-' + (lo + GPS_DISTANCE_BIN_WIDTH_METERS),
-        pass: 0,
-        fail: 0,
-      });
-    }
-    var overflow = {
-      label: GPS_DISTANCE_BIN_MAX_METERS + '+',
-      pass: 0,
-      fail: 0,
-    };
-    rows.forEach(function (row) {
-      var d = row[distanceKey];
-      if (typeof d !== 'number' || isNaN(d)) return;
-      // Color from the form's own gps_visit_verification_matches, not
-      // re-derived from distance here, so this stays correct even if the
-      // form's threshold logic ever changes.
-      var isPass = row.gps_visit_verification_matches === 'yes';
-      var bucket =
-        d >= GPS_DISTANCE_BIN_MAX_METERS
-          ? overflow
-          : bins[Math.floor(d / GPS_DISTANCE_BIN_WIDTH_METERS)];
-      if (isPass) bucket.pass += 1;
-      else bucket.fail += 1;
-    });
-    bins.push(overflow);
-    return bins;
-  }
-
   // --- By-FLW failed-visit breakdown (Failed Verification Analysis tab) --
   // For every FLW with at least one failed visit (Final verification
-  // outcome === 'Fail'), count that distinct failed-visit total AND, for
-  // those same failed visits, tally how many failed EACH individual
-  // method (GPS/QR/Signature/Mother Questions/ANC Card) via the same
-  // METHODS/getOutcome functions the rest of the dashboard uses. A visit
-  // can fail more than one method, so the per-method segments can sum
-  // higher than the FLW's own failedVisits count -- same relationship as
-  // the Verification Summary tab's per-method chart, called out in the
-  // caption next to this chart.
-  var METHOD_COLORS = {
-    GPS: '#3b82f6',
-    QR: '#f59e0b',
-    Signature: '#8b5cf6',
-    'Mother Questions': '#ec4899',
-    'ANC Card': '#10b981',
-  };
-
+  // outcome === 'Fail'), one bar segment per visit, colored/grouped by
+  // that visit's exact "Final verification method(s)" combo string (the
+  // same finalVerificationMethods() used in the table column) -- e.g. a
+  // visit with both GPS and Mother Questions attempted is its own "GPS,
+  // Mother Questions" category, not split across two separate segments.
+  // Segments always sum to exactly the FLW's failedVisits count.
   var byFlwFailureStats = React.useMemo(
     function () {
       var byFlw = {};
@@ -544,22 +497,11 @@ function WorkflowUI({
         if (row.visit_verification_outcome !== 'Fail') return;
         var key = row.username || '(unknown)';
         if (!byFlw[key]) {
-          var methodFails = {};
-          METHODS.forEach(function (m) {
-            methodFails[m.label] = 0;
-          });
-          byFlw[key] = {
-            username: key,
-            failedVisits: 0,
-            methodFails: methodFails,
-          };
+          byFlw[key] = { username: key, failedVisits: 0, combos: {} };
         }
         byFlw[key].failedVisits += 1;
-        METHODS.forEach(function (m) {
-          if (m.getOutcome(row) === 'Fail') {
-            byFlw[key].methodFails[m.label] += 1;
-          }
-        });
+        var combo = finalVerificationMethods(row);
+        byFlw[key].combos[combo] = (byFlw[key].combos[combo] || 0) + 1;
       });
       return Object.keys(byFlw)
         .map(function (k) {
@@ -572,21 +514,132 @@ function WorkflowUI({
     [displayRows],
   );
 
-  var homeGpsHistogram = React.useMemo(
+  // Every distinct combo string appearing across all FLWs' failed visits,
+  // ordered by how many total visits carry it (most common first), so the
+  // chart's stacked segments and legend stay in a stable, sensible order.
+  // One Chart.js dataset per combo; each dataset is 0 for FLWs that don't
+  // have that combo, which is how a stacked bar with a variable number of
+  // categories works.
+  var byFlwCombos = React.useMemo(
     function () {
-      return buildGpsDistanceHistogram(
+      var totals = {};
+      byFlwFailureStats.forEach(function (f) {
+        Object.keys(f.combos).forEach(function (combo) {
+          totals[combo] = (totals[combo] || 0) + f.combos[combo];
+        });
+      });
+      return Object.keys(totals).sort(function (a, b) {
+        return totals[b] - totals[a];
+      });
+    },
+    [byFlwFailureStats],
+  );
+
+  // Stable color per combo, generated by index rather than hardcoded, so
+  // any combination of the 5 methods gets a distinct color without a
+  // lookup table that would need updating if new combos show up.
+  function comboColor(i) {
+    var hue = Math.round((i * 360) / 7) % 360;
+    return 'hsl(' + hue + ', 65%, 55%)';
+  }
+
+  // --- GPS distance-vs-accuracy scatter (Failed Verification Analysis) ---
+  // gps_distance_from_home_meters / gps_distance_from_health_facility_meters
+  // are CommCare's own distance() XPath result (meters) between this
+  // visit's captured GPS and the mother's registered home_gps /
+  // health_facility_gps case property -- only populated when the visit was
+  // at that location type AND a reference point existed there, i.e.
+  // exactly "did a GPS check happen against a previous point". Accuracy
+  // comes from gps_normalized_location, CommCare's raw geopoint string
+  // ("lat lon altitude accuracy") for the SAME point the distance was
+  // measured from -- parsed client-side since accuracy isn't exposed as
+  // its own form field. The form's own pass/fail threshold on distance is
+  // <= 200m (see gpsOutcome()/Definitions).
+  function parseGpsAccuracyMeters(geopointStr) {
+    if (!geopointStr || typeof geopointStr !== 'string') return null;
+    var parts = geopointStr.trim().split(/\s+/);
+    if (parts.length < 4) return null;
+    var acc = parseFloat(parts[3]);
+    return isNaN(acc) ? null : acc;
+  }
+
+  function buildGpsScatterPoints(rows, distanceKey) {
+    var pass = [];
+    var fail = [];
+    rows.forEach(function (row) {
+      var d = row[distanceKey];
+      if (typeof d !== 'number' || isNaN(d)) return;
+      var acc = parseGpsAccuracyMeters(row.gps_normalized_location);
+      if (acc === null) return;
+      // Color from the form's own gps_visit_verification_matches, not
+      // re-derived from distance here, so this stays correct even if the
+      // form's threshold logic ever changes.
+      var point = { x: d, y: acc };
+      if (row.gps_visit_verification_matches === 'yes') pass.push(point);
+      else fail.push(point);
+    });
+    return { pass: pass, fail: fail };
+  }
+
+  var homeGpsScatter = React.useMemo(
+    function () {
+      return buildGpsScatterPoints(
         displayRows,
         'gps_distance_from_home_meters',
       );
     },
     [displayRows],
   );
-  var facilityGpsHistogram = React.useMemo(
+  var facilityGpsScatter = React.useMemo(
     function () {
-      return buildGpsDistanceHistogram(
+      return buildGpsScatterPoints(
         displayRows,
         'gps_distance_from_health_facility_meters',
       );
+    },
+    [displayRows],
+  );
+
+  // --- Mother Questions Answered (Failed Verification Analysis tab) ------
+  // Up to 4 random spot-check questions are picked and administered per
+  // visit (mother_q_pick_1..4, each holding a question key like "q1" when
+  // that slot was used, blank when not). "Number answered" for a visit is
+  // just how many of those 4 slots are non-blank.
+  function motherQuestionsAskedCount(row) {
+    var picks = [
+      row.mother_q_pick_1,
+      row.mother_q_pick_2,
+      row.mother_q_pick_3,
+      row.mother_q_pick_4,
+    ];
+    var n = 0;
+    picks.forEach(function (p) {
+      if (p !== null && p !== undefined && p !== '') n += 1;
+    });
+    return n;
+  }
+
+  var motherQuestionsAskedStats = React.useMemo(
+    function () {
+      var buckets = {};
+      for (var i = 0; i <= 4; i += 1) {
+        buckets[i] = { count: i, pass: 0, fail: 0, na: 0 };
+      }
+      displayRows.forEach(function (row) {
+        var n = motherQuestionsAskedCount(row);
+        if (!buckets[n]) buckets[n] = { count: n, pass: 0, fail: 0, na: 0 };
+        var outcome = motherQuestionsOutcome(row);
+        if (outcome === 'Pass') buckets[n].pass += 1;
+        else if (outcome === 'Fail') buckets[n].fail += 1;
+        else buckets[n].na += 1;
+      });
+      return Object.keys(buckets)
+        .map(function (k) {
+          return buckets[k];
+        })
+        .sort(function (a, b) {
+          return a.count - b.count;
+        });
     },
     [displayRows],
   );
@@ -818,40 +871,46 @@ function WorkflowUI({
           field:
             'Per row, per method: gpsOutcome() / qrOutcome() / signatureOutcome() / motherQuestionsOutcome() / ancCardOutcome() (same functions and underlying fields as the Outcome Columns section above), tallied into Pass/Pending/Fail counts. The caption reconciling number is summary.anyMethodFailCount (displayRows where METHODS.some(m => m.getOutcome(row) === "Fail")) vs. summary.failCount (visit_verification_outcome === "Fail").',
         },
+        {
+          name: 'Stacked bar chart -- "No location to match on" (grey)',
+          def: 'GPS-only 4th segment, after Pass/Pending/Fail. Counts visits where gpsOutcome() landed on NA -- either the visit was at a location other than the mother\'s home or a health facility (GPS verification doesn\'t apply there), or that location had no previously-saved reference point to compare against. Not tracked for the other 4 methods, since "no location to match on" is specifically a GPS concept.',
+          field:
+            'methodStats[gps].noMatch -- count of displayRows where gpsOutcome(row) === "NA" (GPS method only).',
+        },
       ],
     },
     {
       title: 'Failed Verification Analysis Tab',
-      body: 'Reports here use the same filtered/eligible row set as the rest of the dashboard (domain toggle + FLW eligibility + verification-block-present gate) -- NOT the table-only Status/FLW filters from the Per FLW Verification View tab, which are scoped to that table alone. Two sections: By FLW (top) and GPS Verification (below).',
+      body: 'Reports here use the same filtered/eligible row set as the rest of the dashboard (domain toggle + FLW eligibility + verification-block-present gate) -- NOT the table-only Status/FLW filters from the Per FLW Verification View tab, which are scoped to that table alone. Three sections: By FLW, GPS Verification, and Mother Questions Answered.',
       items: [
         {
           name: 'By FLW -- chart',
-          def: 'Every FLW with at least one failed visit (Final verification outcome = Fail), ordered most failed visits first. Each name\'s bar label includes that FLW\'s actual distinct failed-visit count in parentheses, e.g. "jdoe (7)". Bars are stacked by which individual method(s) -- GPS, QR, Signature, Mother Questions, ANC Card -- failed on those same visits.',
+          def: 'Every FLW with at least one failed visit (Final verification outcome = Fail), ordered most failed visits first. Each name\'s bar label includes that FLW\'s actual distinct failed-visit count in parentheses, e.g. "jdoe (7)". One bar segment per failed visit -- segments always sum to exactly that count.',
           field:
             'Computed client-side (byFlwFailureStats) from displayRows filtered to visit_verification_outcome === "Fail", grouped by username. Not a raw pipeline field.',
         },
         {
-          name: 'By FLW -- stacked segments vs. the labeled count',
-          def: "A single failed visit can fail more than one method (e.g. both GPS and Signature), so a bar's segments can sum to MORE than the failed-visit count in that FLW's name label -- same relationship as the Verification Summary tab's per-method chart vs. its top cards. The label always reflects the true distinct failed-visit count; the segments show which methods were involved.",
+          name: 'By FLW -- segment categories',
+          def: 'Each segment is colored/grouped by that specific visit\'s exact "Final verification method(s)" combo -- the same value shown in that table column -- so a visit where both GPS and Mother Questions were attempted is its own "GPS, Mother Questions" category, distinct from a visit where only GPS was attempted. Colors are generated per distinct combo (not a fixed palette), most-common combo listed first in the legend.',
           field:
-            'Per method, per failed visit: gpsOutcome() / qrOutcome() / signatureOutcome() / motherQuestionsOutcome() / ancCardOutcome() === "Fail" (same functions as the Outcome Columns and Verification Summary sections above).',
+            'finalVerificationMethods(row) (same function as the table\'s "Final verification method(s)" column) used as the grouping key per visit; byFlwCombos lists every distinct combo across all FLWs, most total visits first.',
         },
         {
-          name: 'GPS Verification -- Home / Health Facility GPS distance (meters)',
-          def: "CommCare's own distance() XPath calculation between this visit's captured GPS and the mother's registered home_gps / health_facility_gps case property. Only present when the visit was at that location type AND a reference point existed there -- i.e. a GPS check actually ran. This is the SAME distance the form itself uses to decide GPS outcome, just exposed as a number instead of collapsed to Pass/Fail.",
+          name: 'GPS Verification -- scatter axes',
+          def: "One dot per visit that actually ran a GPS check (only present when the visit was at the matching location type AND a reference point existed there). X is CommCare's own distance() calculation (meters) between this visit's captured GPS and the mother's registered reference point -- the SAME distance the form itself uses to decide GPS outcome. Y is the GPS accuracy (meters) of that same captured point, read from the raw geopoint string.",
           field:
-            'gps_distance_from_home_meters (form.gps_verification.location_check.calculation_distance_from_home_gps); gps_distance_from_health_facility_meters (form.gps_verification.location_check.calculation_distance_from_health_facility_gps). Both transform: "float". Verified identical field paths and the 200m pass/fail threshold on both the test domain\'s and opp 765\'s production app.',
+            'X: gps_distance_from_home_meters / gps_distance_from_health_facility_meters (form.gps_verification.location_check.calculation_distance_from_{home,health_facility}_gps, transform: "float"). Y: parseGpsAccuracyMeters(gps_normalized_location) -- index 3 of the raw "lat lon altitude accuracy" geopoint string (form.gps_block_anc_visit.normalized_location, fallback form.gps_block_pnc_visit.normalized_location). Verified identical paths and the 200m pass/fail threshold on both the test domain\'s and opp 765\'s production app.',
         },
         {
-          name: 'Histogram bins',
-          def: '50m-wide buckets from 0m up to 1000m, plus a single "1000+" bucket for any visit at or beyond 1000m -- keeps one extreme outlier from flattening the rest of the chart. 50m width keeps the 200m pass/fail threshold exactly on a bin boundary, so the green-to-red color change in the chart lands precisely where the threshold sits.',
-          field:
-            'Computed client-side (buildGpsDistanceHistogram) -- not a raw pipeline field. GPS_DISTANCE_BIN_WIDTH_METERS = 50, GPS_DISTANCE_BIN_MAX_METERS = 1000.',
-        },
-        {
-          name: 'Bar color (Pass / Fail)',
-          def: "Green = Pass, red = Fail, per bin. Colored from the form's own gps_visit_verification_matches value for that visit (same field the GPS outcome column uses) -- not re-derived from the 200m threshold here, so the chart stays correct even if the form's threshold logic ever changes.",
+          name: 'GPS Verification -- dot color (Pass / Fail)',
+          def: "Green = Pass (≤200m), red = Fail (>200m). Colored from the form's own gps_visit_verification_matches value for that visit (same field the GPS outcome column uses) -- not re-derived from distance here, so the chart stays correct even if the form's threshold logic ever changes. A visit is only plotted if BOTH distance and accuracy are available -- one without the other is dropped rather than plotted with a guessed value.",
           field: 'gps_visit_verification_matches === "yes" ? Pass : Fail',
+        },
+        {
+          name: 'Mother Questions Answered -- chart',
+          def: "Up to 4 questions are randomly picked from a bank of 14 and administered per visit. X axis is how many of those 4 were actually answered (0-4) for a visit; Y axis is the number of visits at that count, stacked by that visit's Mother questions outcome (green Pass / red Fail / grey NA).",
+          field:
+            'Computed client-side (motherQuestionsAskedCount, motherQuestionsAskedStats) over displayRows -- not raw pipeline fields on their own. Count = non-blank among mother_q_pick_1..4 (form.additional_visit_verification_block.verification_page.random_test_setup_page.random_test_setup.pick_1..4 -- each holds a question key like "q1" when that slot was used this visit, blank when not; shared path across all 6 visit-type forms and both domains). Color = motherQuestionsOutcome(row) (same function as the table\'s Mother questions outcome column).',
         },
       ],
     },
@@ -906,6 +965,13 @@ function WorkflowUI({
               }),
               backgroundColor: '#ef4444',
             },
+            {
+              label: 'No location to match on',
+              data: methodStats.map(function (m) {
+                return m.noMatch;
+              }),
+              backgroundColor: '#9ca3af',
+            },
           ],
         },
         options: {
@@ -943,13 +1009,13 @@ function WorkflowUI({
           labels: byFlwFailureStats.map(function (f) {
             return f.username + ' (' + f.failedVisits + ')';
           }),
-          datasets: METHODS.map(function (m) {
+          datasets: byFlwCombos.map(function (combo, i) {
             return {
-              label: m.label,
+              label: combo,
               data: byFlwFailureStats.map(function (f) {
-                return f.methodFails[m.label];
+                return f.combos[combo] || 0;
               }),
-              backgroundColor: METHOD_COLORS[m.label],
+              backgroundColor: comboColor(i),
             };
           }),
         },
@@ -969,35 +1035,28 @@ function WorkflowUI({
         if (byFlwChartInstance.current) byFlwChartInstance.current.destroy();
       };
     },
-    [byFlwFailureStats, activeTab],
+    [byFlwFailureStats, byFlwCombos, activeTab],
   );
 
-  // --- GPS distance histograms (Failed Verification Analysis tab) --------
+  // --- GPS distance-vs-accuracy scatter (Failed Verification Analysis) ---
   var homeGpsChartRef = React.useRef(null);
   var homeGpsChartInstance = React.useRef(null);
   var facilityGpsChartRef = React.useRef(null);
   var facilityGpsChartInstance = React.useRef(null);
 
-  function buildGpsHistogramChart(canvasEl, histogram) {
+  function buildGpsScatterChart(canvasEl, scatter) {
     return new window.Chart(canvasEl, {
-      type: 'bar',
+      type: 'scatter',
       data: {
-        labels: histogram.map(function (b) {
-          return b.label;
-        }),
         datasets: [
           {
             label: 'Pass (≤200m)',
-            data: histogram.map(function (b) {
-              return b.pass;
-            }),
+            data: scatter.pass,
             backgroundColor: '#22c55e',
           },
           {
             label: 'Fail (>200m)',
-            data: histogram.map(function (b) {
-              return b.fail;
-            }),
+            data: scatter.fail,
             backgroundColor: '#ef4444',
           },
         ],
@@ -1007,15 +1066,12 @@ function WorkflowUI({
         maintainAspectRatio: false,
         scales: {
           x: {
-            stacked: true,
+            beginAtZero: true,
             title: { display: true, text: 'Distance from previous point (m)' },
-            ticks: { maxRotation: 90, minRotation: 90 },
           },
           y: {
-            stacked: true,
             beginAtZero: true,
-            ticks: { precision: 0 },
-            title: { display: true, text: 'Visits' },
+            title: { display: true, text: 'GPS accuracy (m)' },
           },
         },
         plugins: { legend: { position: 'bottom' } },
@@ -1028,16 +1084,16 @@ function WorkflowUI({
       if (activeTab !== 'failed_analysis') return;
       if (!homeGpsChartRef.current || !window.Chart) return;
       if (homeGpsChartInstance.current) homeGpsChartInstance.current.destroy();
-      homeGpsChartInstance.current = buildGpsHistogramChart(
+      homeGpsChartInstance.current = buildGpsScatterChart(
         homeGpsChartRef.current,
-        homeGpsHistogram,
+        homeGpsScatter,
       );
       return function () {
         if (homeGpsChartInstance.current)
           homeGpsChartInstance.current.destroy();
       };
     },
-    [homeGpsHistogram, activeTab],
+    [homeGpsScatter, activeTab],
   );
 
   React.useEffect(
@@ -1046,16 +1102,83 @@ function WorkflowUI({
       if (!facilityGpsChartRef.current || !window.Chart) return;
       if (facilityGpsChartInstance.current)
         facilityGpsChartInstance.current.destroy();
-      facilityGpsChartInstance.current = buildGpsHistogramChart(
+      facilityGpsChartInstance.current = buildGpsScatterChart(
         facilityGpsChartRef.current,
-        facilityGpsHistogram,
+        facilityGpsScatter,
       );
       return function () {
         if (facilityGpsChartInstance.current)
           facilityGpsChartInstance.current.destroy();
       };
     },
-    [facilityGpsHistogram, activeTab],
+    [facilityGpsScatter, activeTab],
+  );
+
+  // --- Mother Questions Answered chart (Failed Verification Analysis) ----
+  var motherQChartRef = React.useRef(null);
+  var motherQChartInstance = React.useRef(null);
+
+  React.useEffect(
+    function () {
+      if (activeTab !== 'failed_analysis') return;
+      if (!motherQChartRef.current || !window.Chart) return;
+      if (motherQChartInstance.current) motherQChartInstance.current.destroy();
+
+      motherQChartInstance.current = new window.Chart(motherQChartRef.current, {
+        type: 'bar',
+        data: {
+          labels: motherQuestionsAskedStats.map(function (b) {
+            return String(b.count);
+          }),
+          datasets: [
+            {
+              label: 'Pass',
+              data: motherQuestionsAskedStats.map(function (b) {
+                return b.pass;
+              }),
+              backgroundColor: '#22c55e',
+            },
+            {
+              label: 'Fail',
+              data: motherQuestionsAskedStats.map(function (b) {
+                return b.fail;
+              }),
+              backgroundColor: '#ef4444',
+            },
+            {
+              label: 'NA',
+              data: motherQuestionsAskedStats.map(function (b) {
+                return b.na;
+              }),
+              backgroundColor: '#9ca3af',
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              stacked: true,
+              title: { display: true, text: 'Questions answered' },
+            },
+            y: {
+              stacked: true,
+              beginAtZero: true,
+              ticks: { precision: 0 },
+              title: { display: true, text: 'Visits' },
+            },
+          },
+          plugins: { legend: { position: 'bottom' } },
+        },
+      });
+
+      return function () {
+        if (motherQChartInstance.current)
+          motherQChartInstance.current.destroy();
+      };
+    },
+    [motherQuestionsAskedStats, activeTab],
   );
 
   var summaryCards = (
@@ -1179,7 +1302,12 @@ function WorkflowUI({
                   field is set independently on the form and doesn't
                   automatically follow the per-method checks (see Definitions).
                 </span>
-              )}
+              )}{' '}
+              The GPS bar's grey segment ("No location to match on") is visits
+              where GPS verification couldn't run at all -- either the visit was
+              somewhere other than the mother's home or a health facility, or
+              there was no previously-saved point for that location to compare
+              against.
             </p>
             <div style={{ height: '320px' }}>
               <canvas ref={chartRef}></canvas>
@@ -1380,13 +1508,14 @@ function WorkflowUI({
               <p className="text-xs text-gray-500">
                 Every FLW with at least one failed visit (Final verification
                 outcome = Fail), most failed visits first -- the number next to
-                each name is that FLW's actual failed-visit count. Each bar is
-                broken down by which individual method(s) (GPS, QR, Signature,
-                Mother Questions, ANC Card) failed on those visits; a single
-                visit can fail more than one method, so a bar's segments can add
-                up to more than the FLW's labeled failed-visit count. Respects
-                the domain and eligibility filters above, same row set as the
-                other tabs.
+                each name is that FLW's failed-visit count, and each bar segment
+                is exactly one visit. Segments are colored/grouped by that
+                visit's exact "Final verification method(s)" combo -- the same
+                value shown in that table column -- so a visit where both GPS
+                and Mother Questions were attempted gets its own "GPS, Mother
+                Questions" category, separate from a visit with only GPS.
+                Respects the domain and eligibility filters above, same row set
+                as the other tabs.
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -1414,30 +1543,19 @@ function WorkflowUI({
               <p className="text-xs text-gray-500">
                 Every visit that ran a GPS check against a previously-saved
                 point (the mother's registered home location, or her registered
-                health facility), bucketed by how far the visit's GPS was from
-                that point. Pass is ≤200m, Fail is &gt;200m -- that's the form's
-                own threshold, so the color change lands exactly at the 200m bin
-                edge below. Respects the domain and eligibility filters above,
+                health facility) -- one dot per visit, X is how far the visit's
+                GPS was from that point, Y is the GPS accuracy of the reading.
+                Pass is ≤200m, Fail is &gt;200m -- that's the form's own
+                threshold. Respects the domain and eligibility filters above,
                 same row set as the other tabs.
               </p>
             </div>
 
             {(function () {
-              var homeTotal = homeGpsHistogram.reduce(function (sum, b) {
-                return sum + b.pass + b.fail;
-              }, 0);
-              var homeFail = homeGpsHistogram.reduce(function (sum, b) {
-                return sum + b.fail;
-              }, 0);
-              var facilityTotal = facilityGpsHistogram.reduce(function (
-                sum,
-                b,
-              ) {
-                return sum + b.pass + b.fail;
-              }, 0);
-              var facilityFail = facilityGpsHistogram.reduce(function (sum, b) {
-                return sum + b.fail;
-              }, 0);
+              var homeTotal =
+                homeGpsScatter.pass.length + homeGpsScatter.fail.length;
+              var facilityTotal =
+                facilityGpsScatter.pass.length + facilityGpsScatter.fail.length;
               return (
                 <div className="space-y-4">
                   <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -1446,8 +1564,11 @@ function WorkflowUI({
                     </h4>
                     <p className="mb-2 text-xs text-gray-500">
                       {homeTotal > 0
-                        ? homeFail + ' of ' + homeTotal + ' failed (>200m).'
-                        : 'No home GPS checks in the current filter.'}
+                        ? homeGpsScatter.fail.length +
+                          ' of ' +
+                          homeTotal +
+                          ' failed (>200m).'
+                        : 'No home GPS checks with accuracy data in the current filter.'}
                     </p>
                     <div style={{ height: '320px' }}>
                       <canvas ref={homeGpsChartRef}></canvas>
@@ -1459,11 +1580,11 @@ function WorkflowUI({
                     </h4>
                     <p className="mb-2 text-xs text-gray-500">
                       {facilityTotal > 0
-                        ? facilityFail +
+                        ? facilityGpsScatter.fail.length +
                           ' of ' +
                           facilityTotal +
                           ' failed (>200m).'
-                        : 'No health facility GPS checks in the current filter.'}
+                        : 'No health facility GPS checks with accuracy data in the current filter.'}
                     </p>
                     <div style={{ height: '320px' }}>
                       <canvas ref={facilityGpsChartRef}></canvas>
@@ -1472,6 +1593,26 @@ function WorkflowUI({
                 </div>
               );
             })()}
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">
+                Mother Questions Answered
+              </h3>
+              <p className="text-xs text-gray-500">
+                How many of the 4 randomly-picked spot-check questions were
+                actually answered per visit, colored by that visit's Mother
+                questions outcome (green Pass / red Fail / grey NA). Respects
+                the domain and eligibility filters above, same row set as the
+                other tabs.
+              </p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <div style={{ height: '320px' }}>
+                <canvas ref={motherQChartRef}></canvas>
+              </div>
+            </div>
           </div>
         </div>
       )}
