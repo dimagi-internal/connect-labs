@@ -666,12 +666,14 @@ function WorkflowUI({
         {
           name: 'Status',
           def: 'Single-select: All (default) / Passed / Pending Audit / Failed. Filters rows by Final verification outcome.',
-          field: 'statusFilter state; row kept when row.visit_verification_outcome === statusFilter (or always, for "All").',
+          field:
+            'statusFilter state; row kept when row.visit_verification_outcome === statusFilter (or always, for "All").',
         },
         {
           name: 'FLW',
           def: "Multi-select with search: pick one or more FLW IDs to show only their visits, or leave empty for all. The list of names offered is every username present in the domain+eligibility-filtered set (displayRows), independent of the Status filter, so switching Status can't make an FLW's name disappear from the picker.",
-          field: 'flwFilter state (array of usernames); row kept when flwFilter is empty or flwFilter.indexOf(row.username) !== -1.',
+          field:
+            'flwFilter state (array of usernames); row kept when flwFilter is empty or flwFilter.indexOf(row.username) !== -1.',
         },
       ],
     },
@@ -820,11 +822,11 @@ function WorkflowUI({
     },
     {
       title: 'Failed Verification Analysis Tab',
-      body: "Reports here use the same filtered/eligible row set as the rest of the dashboard (domain toggle + FLW eligibility + verification-block-present gate) -- NOT the table-only Status/FLW filters from the Per FLW Verification View tab, which are scoped to that table alone. Two sections: By FLW (top) and GPS Verification (below).",
+      body: 'Reports here use the same filtered/eligible row set as the rest of the dashboard (domain toggle + FLW eligibility + verification-block-present gate) -- NOT the table-only Status/FLW filters from the Per FLW Verification View tab, which are scoped to that table alone. Two sections: By FLW (top) and GPS Verification (below).',
       items: [
         {
           name: 'By FLW -- chart',
-          def: "Every FLW with at least one failed visit (Final verification outcome = Fail), ordered most failed visits first. Each name's bar label includes that FLW's actual distinct failed-visit count in parentheses, e.g. \"jdoe (7)\". Bars are stacked by which individual method(s) -- GPS, QR, Signature, Mother Questions, ANC Card -- failed on those same visits.",
+          def: 'Every FLW with at least one failed visit (Final verification outcome = Fail), ordered most failed visits first. Each name\'s bar label includes that FLW\'s actual distinct failed-visit count in parentheses, e.g. "jdoe (7)". Bars are stacked by which individual method(s) -- GPS, QR, Signature, Mother Questions, ANC Card -- failed on those same visits.',
           field:
             'Computed client-side (byFlwFailureStats) from displayRows filtered to visit_verification_outcome === "Fail", grouped by username. Not a raw pipeline field.',
         },
@@ -1189,9 +1191,7 @@ function WorkflowUI({
       {activeTab === 'table' && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-sm font-medium text-gray-700">
-              Status:
-            </span>
+            <span className="text-sm font-medium text-gray-700">Status:</span>
             {STATUS_FILTER_OPTIONS.map(function (opt) {
               var isActive = statusFilter === opt.key;
               return (
@@ -1212,9 +1212,7 @@ function WorkflowUI({
               );
             })}
 
-            <span className="ml-2 text-sm font-medium text-gray-700">
-              FLW:
-            </span>
+            <span className="ml-2 text-sm font-medium text-gray-700">FLW:</span>
             <div style={{ position: 'relative' }}>
               <button
                 onClick={function () {
@@ -1378,19 +1376,17 @@ function WorkflowUI({
         <div className="space-y-8">
           <div className="space-y-4">
             <div>
-              <h3 className="text-base font-semibold text-gray-900">
-                By FLW
-              </h3>
+              <h3 className="text-base font-semibold text-gray-900">By FLW</h3>
               <p className="text-xs text-gray-500">
                 Every FLW with at least one failed visit (Final verification
-                outcome = Fail), most failed visits first -- the number next
-                to each name is that FLW's actual failed-visit count. Each
-                bar is broken down by which individual method(s) (GPS, QR,
-                Signature, Mother Questions, ANC Card) failed on those
-                visits; a single visit can fail more than one method, so a
-                bar's segments can add up to more than the FLW's labeled
-                failed-visit count. Respects the domain and eligibility
-                filters above, same row set as the other tabs.
+                outcome = Fail), most failed visits first -- the number next to
+                each name is that FLW's actual failed-visit count. Each bar is
+                broken down by which individual method(s) (GPS, QR, Signature,
+                Mother Questions, ANC Card) failed on those visits; a single
+                visit can fail more than one method, so a bar's segments can add
+                up to more than the FLW's labeled failed-visit count. Respects
+                the domain and eligibility filters above, same row set as the
+                other tabs.
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -1416,62 +1412,65 @@ function WorkflowUI({
                 GPS Verification
               </h3>
               <p className="text-xs text-gray-500">
-                Every visit that ran a GPS check against a previously-saved point
-                (the mother's registered home location, or her registered health
-                facility), bucketed by how far the visit's GPS was from that
-                point. Pass is ≤200m, Fail is &gt;200m -- that's the form's own
-                threshold, so the color change lands exactly at the 200m bin edge
-                below. Respects the domain and eligibility filters above, same row
-                set as the other tabs.
+                Every visit that ran a GPS check against a previously-saved
+                point (the mother's registered home location, or her registered
+                health facility), bucketed by how far the visit's GPS was from
+                that point. Pass is ≤200m, Fail is &gt;200m -- that's the form's
+                own threshold, so the color change lands exactly at the 200m bin
+                edge below. Respects the domain and eligibility filters above,
+                same row set as the other tabs.
               </p>
             </div>
 
             {(function () {
-            var homeTotal = homeGpsHistogram.reduce(function (sum, b) {
-              return sum + b.pass + b.fail;
-            }, 0);
-            var homeFail = homeGpsHistogram.reduce(function (sum, b) {
-              return sum + b.fail;
-            }, 0);
-            var facilityTotal = facilityGpsHistogram.reduce(function (sum, b) {
-              return sum + b.pass + b.fail;
-            }, 0);
-            var facilityFail = facilityGpsHistogram.reduce(function (sum, b) {
-              return sum + b.fail;
-            }, 0);
-            return (
-              <div className="space-y-4">
-                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                  <h4 className="mb-1 text-sm font-medium text-gray-800">
-                    Home GPS checks
-                  </h4>
-                  <p className="mb-2 text-xs text-gray-500">
-                    {homeTotal > 0
-                      ? homeFail + ' of ' + homeTotal + ' failed (>200m).'
-                      : 'No home GPS checks in the current filter.'}
-                  </p>
-                  <div style={{ height: '320px' }}>
-                    <canvas ref={homeGpsChartRef}></canvas>
+              var homeTotal = homeGpsHistogram.reduce(function (sum, b) {
+                return sum + b.pass + b.fail;
+              }, 0);
+              var homeFail = homeGpsHistogram.reduce(function (sum, b) {
+                return sum + b.fail;
+              }, 0);
+              var facilityTotal = facilityGpsHistogram.reduce(function (
+                sum,
+                b,
+              ) {
+                return sum + b.pass + b.fail;
+              }, 0);
+              var facilityFail = facilityGpsHistogram.reduce(function (sum, b) {
+                return sum + b.fail;
+              }, 0);
+              return (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                    <h4 className="mb-1 text-sm font-medium text-gray-800">
+                      Home GPS checks
+                    </h4>
+                    <p className="mb-2 text-xs text-gray-500">
+                      {homeTotal > 0
+                        ? homeFail + ' of ' + homeTotal + ' failed (>200m).'
+                        : 'No home GPS checks in the current filter.'}
+                    </p>
+                    <div style={{ height: '320px' }}>
+                      <canvas ref={homeGpsChartRef}></canvas>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                    <h4 className="mb-1 text-sm font-medium text-gray-800">
+                      Health facility GPS checks
+                    </h4>
+                    <p className="mb-2 text-xs text-gray-500">
+                      {facilityTotal > 0
+                        ? facilityFail +
+                          ' of ' +
+                          facilityTotal +
+                          ' failed (>200m).'
+                        : 'No health facility GPS checks in the current filter.'}
+                    </p>
+                    <div style={{ height: '320px' }}>
+                      <canvas ref={facilityGpsChartRef}></canvas>
+                    </div>
                   </div>
                 </div>
-                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                  <h4 className="mb-1 text-sm font-medium text-gray-800">
-                    Health facility GPS checks
-                  </h4>
-                  <p className="mb-2 text-xs text-gray-500">
-                    {facilityTotal > 0
-                      ? facilityFail +
-                        ' of ' +
-                        facilityTotal +
-                        ' failed (>200m).'
-                      : 'No health facility GPS checks in the current filter.'}
-                  </p>
-                  <div style={{ height: '320px' }}>
-                    <canvas ref={facilityGpsChartRef}></canvas>
-                  </div>
-                </div>
-              </div>
-            );
+              );
             })()}
           </div>
         </div>
