@@ -583,7 +583,10 @@ function WorkflowUI({
 
   var homeGpsScatter = React.useMemo(
     function () {
-      return buildGpsScatterPoints(displayRows, 'gps_distance_from_home_meters');
+      return buildGpsScatterPoints(
+        displayRows,
+        'gps_distance_from_home_meters',
+      );
     },
     [displayRows],
   );
@@ -905,7 +908,7 @@ function WorkflowUI({
         },
         {
           name: 'Mother Questions Answered -- chart',
-          def: 'Up to 4 questions are randomly picked from a bank of 14 and administered per visit. X axis is how many of those 4 were actually answered (0-4) for a visit; Y axis is the number of visits at that count, stacked by that visit\'s Mother questions outcome (green Pass / red Fail / grey NA).',
+          def: "Up to 4 questions are randomly picked from a bank of 14 and administered per visit. X axis is how many of those 4 were actually answered (0-4) for a visit; Y axis is the number of visits at that count, stacked by that visit's Mother questions outcome (green Pass / red Fail / grey NA).",
           field:
             'Computed client-side (motherQuestionsAskedCount, motherQuestionsAskedStats) over displayRows -- not raw pipeline fields on their own. Count = non-blank among mother_q_pick_1..4 (form.additional_visit_verification_block.verification_page.random_test_setup_page.random_test_setup.pick_1..4 -- each holds a question key like "q1" when that slot was used this visit, blank when not; shared path across all 6 visit-type forms and both domains). Color = motherQuestionsOutcome(row) (same function as the table\'s Mother questions outcome column).',
         },
@@ -1171,7 +1174,8 @@ function WorkflowUI({
       });
 
       return function () {
-        if (motherQChartInstance.current) motherQChartInstance.current.destroy();
+        if (motherQChartInstance.current)
+          motherQChartInstance.current.destroy();
       };
     },
     [motherQuestionsAskedStats, activeTab],
@@ -1548,7 +1552,8 @@ function WorkflowUI({
             </div>
 
             {(function () {
-              var homeTotal = homeGpsScatter.pass.length + homeGpsScatter.fail.length;
+              var homeTotal =
+                homeGpsScatter.pass.length + homeGpsScatter.fail.length;
               var facilityTotal =
                 facilityGpsScatter.pass.length + facilityGpsScatter.fail.length;
               return (
