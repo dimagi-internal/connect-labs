@@ -6,8 +6,9 @@ sends ``Authorization: Bearer <pat>`` exactly as it would against the MCP server
 
 from drf_spectacular.extensions import OpenApiAuthenticationExtension
 from rest_framework.authentication import BaseAuthentication
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 
+from connect_labs.mcp import token_scopes
 from connect_labs.mcp.models import MCPAccessToken
 
 _BEARER_PREFIX = "bearer "
@@ -31,6 +32,11 @@ class MCPTokenAuthentication(BaseAuthentication):
         token = MCPAccessToken.verify(raw)
         if token is None:
             raise AuthenticationFailed("Invalid or expired token")
+        # This API serves visit data (user_visits, completed_works, ...), so only a
+        # full-access token may use it. Anything else is refused, including a
+        # scope added later that nobody taught this check about.
+        if token.scope != token_scopes.FULL:
+            raise PermissionDenied("This token cannot use the export API: it has no access to user visit data.")
         token.touch()
         return (token.user, token)
 

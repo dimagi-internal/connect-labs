@@ -4,8 +4,11 @@ A PAT acts as the person who minted it. ``full`` reaches every tool, as PATs
 always have. ``no-uservisit-data`` is for handing an agent a token that can read how
 things are BUILT -- workflow definitions, pipeline schemas, indicator
 registries, app structure, solicitations, the org directory, targeting -- but
-never visit data: no rows, raw or computed from them by a pipeline, a workflow
-run, a snapshot or a report. It writes nothing either.
+never user visit data: no visit rows or per-visit values, raw or computed by a
+pipeline, a workflow run, a snapshot or a report. Opportunity-level counts and
+dates (``visit_count``, an org's first-visit date) and contact details of people
+who submitted as an organisation are on the allowed side of that line. It
+writes nothing either.
 
 The list is deny-by-default: a tool added to the catalogue is out of reach of a
 no-uservisit-data token until someone adds it here on purpose, having checked that
@@ -59,7 +62,9 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "get_review",
         "list_funds",
         "get_fund",
-        # The organisation directory and EOI rounds.
+        # The organisation directory and EOI rounds. Contacts are people who
+        # submitted as an organisation; a round's applicant outcome is dated
+        # from the org's first visit (a date, not a visit).
         "marketplace_orgs_get",
         "marketplace_rounds_list",
         # Targeting: population and burden data, not visits.
@@ -70,7 +75,9 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "targeting_admin_levels",
         "targeting_research",
         "targeting_compare_criteria",
-        # Microplans: sampled areas drawn from boundaries.
+        # Microplans. A plan handed off from WA Revisit carries per-ward
+        # figures computed from visits (children per building) -- aggregates,
+        # not visits, which is on the allowed side of the line.
         "microplans_list_plans",
         "microplans_plan_work_areas",
         "microplans_coverage_param_schema",
@@ -109,8 +116,12 @@ USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
 )
 
 
+def is_restricted(scopes) -> bool:
+    return TOKEN_SCOPE_STRINGS[NO_USERVISIT_DATA] in (scopes or [])
+
+
 def allowed_tools(scopes) -> frozenset[str] | None:
     """The tools a PAT with these scopes may reach, or ``None`` for every tool."""
-    if TOKEN_SCOPE_STRINGS[NO_USERVISIT_DATA] in (scopes or []):
+    if is_restricted(scopes):
         return NO_USERVISIT_DATA_TOOLS
     return None
