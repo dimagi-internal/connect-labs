@@ -61,7 +61,6 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "get_fund",
         # The organisation directory and EOI rounds.
         "marketplace_orgs_get",
-        "marketplace_rounds_list",
         # Targeting: population and burden data, not visits.
         "targeting_indicators",
         "targeting_select",
@@ -70,9 +69,10 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "targeting_admin_levels",
         "targeting_research",
         "targeting_compare_criteria",
-        # Microplans: sampled areas drawn from boundaries.
-        "microplans_list_plans",
-        "microplans_plan_work_areas",
+        # Microplans: the parameter schema only. A plan's work areas are not
+        # here: a plan handed off from WA Revisit carries per-ward figures
+        # computed from approved visits (mopup/core/handoff.py), and its set of
+        # work areas is itself the set that failed visit-derived coverage.
         "microplans_coverage_param_schema",
         # Page and cohort definitions, synthetic env templates.
         "pages_list_providers",
@@ -105,12 +105,44 @@ USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "synthetic_fidelity_report",
         "synthetic_fidelity_vs_source",
         "synthetic_clone_profile",
+        # Plan work areas carry WA Revisit's visit-derived ward figures.
+        "microplans_list_plans",
+        "microplans_plan_work_areas",
+        # include_applicants dates each org's outcome from its first visit.
+        "marketplace_rounds_list",
     }
 )
+
+#: Fields a no-uservisit-data token must not see in an otherwise allowed tool's
+#: result, stripped at any depth. ``labs_context`` carries each opportunity's
+#: ``visit_count``, which is an aggregate of visits.
+REDACTED_FIELDS: dict[str, frozenset[str]] = {
+    "labs_context": frozenset({"visit_count"}),
+}
+
+
+def is_restricted(scopes) -> bool:
+    return TOKEN_SCOPE_STRINGS[NO_USERVISIT_DATA] in (scopes or [])
 
 
 def allowed_tools(scopes) -> frozenset[str] | None:
     """The tools a PAT with these scopes may reach, or ``None`` for every tool."""
-    if TOKEN_SCOPE_STRINGS[NO_USERVISIT_DATA] in (scopes or []):
+    if is_restricted(scopes):
         return NO_USERVISIT_DATA_TOOLS
     return None
+
+
+def redact(scopes, tool_name: str, result):
+    """``result`` with ``REDACTED_FIELDS[tool_name]`` removed at any depth, for a restricted token."""
+    fields = REDACTED_FIELDS.get(tool_name)
+    if not fields or not is_restricted(scopes):
+        return result
+    return _strip(result, fields)
+
+
+def _strip(value, fields: frozenset[str]):
+    if isinstance(value, dict):
+        return {k: _strip(v, fields) for k, v in value.items() if k not in fields}
+    if isinstance(value, list):
+        return [_strip(v, fields) for v in value]
+    return value

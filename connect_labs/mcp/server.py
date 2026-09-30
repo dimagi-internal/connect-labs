@@ -474,6 +474,9 @@ def _run_registry_tool_inner(
         version_after = result.get("_version_after")
         # Strip private keys before returning to the caller.
         result = {k: v for k, v in result.items() if not k.startswith("_")}
+    # A no-uservisit-data token gets an allowed tool's result without the fields
+    # that aggregate visits (``token_scopes.REDACTED_FIELDS``).
+    result = token_scopes.redact(getattr(get_access_token(), "scopes", None), spec.name, result)
 
     audit(
         user,
@@ -545,10 +548,10 @@ def _build_registry_tools() -> list[RegistryTool]:
 
 
 class ToolScopeMiddleware(Middleware):
-    """A delegated token sees and calls only the tools its scopes map to.
+    """A limited token sees and calls only the tools its scopes map to.
 
-    Everyone else — PATs, OAuth sign-ins — gets the whole catalogue, exactly as
-    before: ``allowed_tools`` answers ``None`` for them.
+    Limited means a delegated token or a no-uservisit-data PAT. A full PAT and an
+    OAuth sign-in get the whole catalogue: ``allowed_tools`` answers ``None``.
     """
 
     async def on_list_tools(self, context, call_next):
