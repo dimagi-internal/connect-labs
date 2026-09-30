@@ -51,9 +51,7 @@ class TestTheDefaultPlatformIsARealOCSChannel:
         assert started.call_args.kwargs["platform"] == "commcare_connect"
 
     def test_an_explicit_platform_is_still_honoured(self):
-        _, started = _post(
-            {"identifier": "asha", "experiment": "bot-1", "prompt_text": "Hi", "platform": "whatsapp"}
-        )
+        _, started = _post({"identifier": "asha", "experiment": "bot-1", "prompt_text": "Hi", "platform": "whatsapp"})
 
         assert started.call_args.kwargs["platform"] == "whatsapp"
 
