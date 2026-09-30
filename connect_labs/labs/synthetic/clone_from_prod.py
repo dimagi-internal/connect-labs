@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 
@@ -100,6 +101,59 @@ def profile_opp_to_bundle(
         manifest_yaml=manifest_yaml,
         app_structure=app_structure if isinstance(app_structure, dict) else {},
         opportunity=detail if isinstance(detail, dict) else {},
+    )
+
+
+def profile_dump_to_bundle(
+    dump_folder_id: str,
+    *,
+    drive,
+    store,
+    app_structure: dict | None = None,
+    curate: bool = False,
+    mirror: bool = False,
+) -> str:
+    """Profile a DUMP of real exports (``dump.py``) into a bundle, exactly as a live profile would.
+
+    The power-user route for opportunities too large to profile on the server in
+    reasonable time: the dump was already taken, so this reads it from Drive instead
+    of production. The dump is only an INPUT here. What leaves is the same bundle
+    ``profile_opp_to_bundle`` writes (aggregate stats, a perturbed mirror pool, the
+    app structure, a scrubbed opportunity detail), and a synthetic opp is then
+    generated from it. The dump folder itself is never served.
+
+    A dump carries no app structure; pass one (fetched from production) to type the
+    fields, or the profile falls back to observed values only.
+    """
+    files = drive.list_folder(dump_folder_id)
+
+    def _load(name, default):
+        file_id = files.get(name)
+        return json.loads(drive.download_file(file_id).decode()) if file_id else default
+
+    detail = _load("opportunity.json", {})
+    user_visits = _load("user_visits.json", [])
+    user_data = _load("user_data.json", [])
+    source_opp_id = detail.get("id") if isinstance(detail, dict) else None
+    if source_opp_id is None:
+        raise ValueError(f"Dump folder {dump_folder_id} has no opportunity.json with an id")
+    if not isinstance(user_visits, list) or not user_visits:
+        raise ValueError(f"Dump folder {dump_folder_id} has no user_visits")
+
+    manifest_yaml = _profile(
+        opportunity_id=int(source_opp_id),
+        user_visits=user_visits,
+        user_data=user_data if isinstance(user_data, list) else [],
+        opportunity_detail=detail,
+        app_structure=app_structure if isinstance(app_structure, dict) else None,
+        curate=curate,
+        mirror=mirror,
+    )
+    return store.write(
+        int(source_opp_id),
+        manifest_yaml=manifest_yaml,
+        app_structure=app_structure if isinstance(app_structure, dict) else {},
+        opportunity=detail,
     )
 
 
