@@ -107,6 +107,21 @@ def test_invalid_token_returns_401(monkeypatch):
     assert resp.status_code == 401
 
 
+@pytest.mark.django_db
+def test_a_no_uservisit_data_token_cannot_read_visits(monkeypatch):
+    """The export API serves visit rows, so a restricted PAT is refused on it."""
+    _install(monkeypatch, {"folder-a": {"user_visits.json": [{"id": 1, "form": "sentinel"}]}})
+    _make_opp()
+    _, raw = MCPAccessToken.create_token(_user(), name="restricted", scope="no-uservisit-data")
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
+
+    for url in (VISITS_URL, DETAIL_URL, OPPS_URL):
+        resp = client.get(url)
+        assert resp.status_code == 403, url
+        assert b"sentinel" not in resp.content
+
+
 # --------------------------------------------------------------------------- #
 # Authorization / visibility
 # --------------------------------------------------------------------------- #

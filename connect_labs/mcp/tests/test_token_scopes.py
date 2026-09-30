@@ -155,3 +155,24 @@ def test_the_command_mints_a_no_uservisit_data_token(db):
     call_command("mcp_create_token", user="cli-user", name="agent", scope="no-uservisit-data")
 
     assert MCPAccessToken.objects.get(user=user, name="agent").scope == token_scopes.NO_USERVISIT_DATA
+
+
+# ---------------------------------------------------------------------------
+# Endpoints outside the MCP tool gate that take a PAT
+# ---------------------------------------------------------------------------
+
+
+def test_the_shared_pat_verifier_refuses_a_restricted_token(db, rf):
+    from connect_labs.mcp.auth import authenticate_request
+
+    user = User.objects.create(username="reseed-caller")
+    _, restricted = MCPAccessToken.create_token(user, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
+    _, full = MCPAccessToken.create_token(user, name="laptop")
+
+    denied_user, failure = authenticate_request(rf.post("/", HTTP_AUTHORIZATION=f"Bearer {restricted}"))
+    allowed_user, no_failure = authenticate_request(rf.post("/", HTTP_AUTHORIZATION=f"Bearer {full}"))
+
+    assert denied_user is None
+    assert failure.status_code == 403
+    assert allowed_user == user
+    assert no_failure is None

@@ -545,10 +545,10 @@ def _build_registry_tools() -> list[RegistryTool]:
 
 
 class ToolScopeMiddleware(Middleware):
-    """A delegated token sees and calls only the tools its scopes map to.
+    """A limited token sees and calls only the tools its scopes map to.
 
-    Everyone else — PATs, OAuth sign-ins — gets the whole catalogue, exactly as
-    before: ``allowed_tools`` answers ``None`` for them.
+    Limited means a delegated token or a no-uservisit-data PAT. A full PAT and an
+    OAuth sign-in get the whole catalogue: ``allowed_tools`` answers ``None``.
     """
 
     async def on_list_tools(self, context, call_next):
