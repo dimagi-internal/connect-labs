@@ -225,4 +225,4 @@ The dashboard brings together the programme's key indicators in one place, each 
 - **Caregiver counseling engagement** — counts and rates for caregiver counseling sessions.
 - **Referral counts** — the number of beneficiaries referred onward.
 
-Indicators that the CommCare app captures automatically are pulled live from the data. A small number of indicators that the app does not currently collect — including immunization linkage, LLO contracts, MOUs, and field worker anom
+Indicators that the CommCare app captures automatically are pulled live from the data. A small number of indicators that the app does not currently collect — including immunization linkage, LLO contracts, MOUs, and field worker a
