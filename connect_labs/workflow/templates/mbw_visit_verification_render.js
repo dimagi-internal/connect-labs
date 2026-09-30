@@ -410,6 +410,75 @@ function WorkflowUI({
     [displayRows],
   );
 
+  // --- GPS distance histograms (Failed Verification Analysis tab) --------
+  // gps_distance_from_home_meters / gps_distance_from_health_facility_meters
+  // are CommCare's own distance() XPath result (meters) between this
+  // visit's captured GPS and the mother's registered home_gps /
+  // health_facility_gps case property -- only populated when the visit was
+  // at that location type AND a reference point existed there, i.e.
+  // exactly "did a GPS check happen against a previous point". The form's
+  // own pass/fail threshold on that distance is <= 200m (see
+  // gpsOutcome()/Definitions), so bins are 50m wide to keep 200 on a clean
+  // bin boundary. One overflow bucket catches anything >= 1000m so a rare
+  // wild outlier can't flatten the rest of the chart.
+  var GPS_DISTANCE_BIN_WIDTH_METERS = 50;
+  var GPS_DISTANCE_BIN_MAX_METERS = 1000;
+
+  function buildGpsDistanceHistogram(rows, distanceKey) {
+    var bins = [];
+    for (
+      var lo = 0;
+      lo < GPS_DISTANCE_BIN_MAX_METERS;
+      lo += GPS_DISTANCE_BIN_WIDTH_METERS
+    ) {
+      bins.push({
+        label: lo + '-' + (lo + GPS_DISTANCE_BIN_WIDTH_METERS),
+        pass: 0,
+        fail: 0,
+      });
+    }
+    var overflow = {
+      label: GPS_DISTANCE_BIN_MAX_METERS + '+',
+      pass: 0,
+      fail: 0,
+    };
+    rows.forEach(function (row) {
+      var d = row[distanceKey];
+      if (typeof d !== 'number' || isNaN(d)) return;
+      // Color from the form's own gps_visit_verification_matches, not
+      // re-derived from distance here, so this stays correct even if the
+      // form's threshold logic ever changes.
+      var isPass = row.gps_visit_verification_matches === 'yes';
+      var bucket =
+        d >= GPS_DISTANCE_BIN_MAX_METERS
+          ? overflow
+          : bins[Math.floor(d / GPS_DISTANCE_BIN_WIDTH_METERS)];
+      if (isPass) bucket.pass += 1;
+      else bucket.fail += 1;
+    });
+    bins.push(overflow);
+    return bins;
+  }
+
+  var homeGpsHistogram = React.useMemo(
+    function () {
+      return buildGpsDistanceHistogram(
+        displayRows,
+        'gps_distance_from_home_meters',
+      );
+    },
+    [displayRows],
+  );
+  var facilityGpsHistogram = React.useMemo(
+    function () {
+      return buildGpsDistanceHistogram(
+        displayRows,
+        'gps_distance_from_health_facility_meters',
+      );
+    },
+    [displayRows],
+  );
+
   // --- CSV export -----------------------------------------------------------
   function csvEscape(value) {
     var s = value === null || value === undefined ? '' : String(value);
@@ -621,12 +690,36 @@ function WorkflowUI({
         },
       ],
     },
+    {
+      title: 'Failed Verification Analysis Tab',
+      body: "Reports here use the same filtered/eligible row set as the rest of the dashboard (domain toggle + FLW eligibility + verification-block-present gate). First report: GPS Distance from Previous Point -- two histograms (Home, Health Facility) of how far each visit's captured GPS was from the mother's registered reference point for that location, for every visit that actually ran that comparison.",
+      items: [
+        {
+          name: 'Home / Health Facility GPS distance (meters)',
+          def: "CommCare's own distance() XPath calculation between this visit's captured GPS and the mother's registered home_gps / health_facility_gps case property. Only present when the visit was at that location type AND a reference point existed there -- i.e. a GPS check actually ran. This is the SAME distance the form itself uses to decide GPS outcome, just exposed as a number instead of collapsed to Pass/Fail.",
+          field:
+            'gps_distance_from_home_meters (form.gps_verification.location_check.calculation_distance_from_home_gps); gps_distance_from_health_facility_meters (form.gps_verification.location_check.calculation_distance_from_health_facility_gps). Both transform: "float". Verified identical field paths and the 200m pass/fail threshold on both the test domain\'s and opp 765\'s production app.',
+        },
+        {
+          name: 'Histogram bins',
+          def: '50m-wide buckets from 0m up to 1000m, plus a single "1000+" bucket for any visit at or beyond 1000m -- keeps one extreme outlier from flattening the rest of the chart. 50m width keeps the 200m pass/fail threshold exactly on a bin boundary, so the green-to-red color change in the chart lands precisely where the threshold sits.',
+          field:
+            'Computed client-side (buildGpsDistanceHistogram) -- not a raw pipeline field. GPS_DISTANCE_BIN_WIDTH_METERS = 50, GPS_DISTANCE_BIN_MAX_METERS = 1000.',
+        },
+        {
+          name: 'Bar color (Pass / Fail)',
+          def: "Green = Pass, red = Fail, per bin. Colored from the form's own gps_visit_verification_matches value for that visit (same field the GPS outcome column uses) -- not re-derived from the 200m threshold here, so the chart stays correct even if the form's threshold logic ever changes.",
+          field: 'gps_visit_verification_matches === "yes" ? Pass : Fail',
+        },
+      ],
+    },
   ];
 
   // --- Tabs ----------------------------------------------------------------
   var TABS = [
     { key: 'summary', label: 'Verification Summary' },
     { key: 'table', label: 'Per FLW Verification View' },
+    { key: 'failed_analysis', label: 'Failed Verification Analysis' },
     { key: 'definitions', label: 'Definitions' },
   ];
   var _tab = React.useState('summary');
@@ -690,6 +783,92 @@ function WorkflowUI({
       };
     },
     [methodStats, activeTab],
+  );
+
+  // --- GPS distance histograms (Failed Verification Analysis tab) --------
+  var homeGpsChartRef = React.useRef(null);
+  var homeGpsChartInstance = React.useRef(null);
+  var facilityGpsChartRef = React.useRef(null);
+  var facilityGpsChartInstance = React.useRef(null);
+
+  function buildGpsHistogramChart(canvasEl, histogram) {
+    return new window.Chart(canvasEl, {
+      type: 'bar',
+      data: {
+        labels: histogram.map(function (b) {
+          return b.label;
+        }),
+        datasets: [
+          {
+            label: 'Pass (≤200m)',
+            data: histogram.map(function (b) {
+              return b.pass;
+            }),
+            backgroundColor: '#22c55e',
+          },
+          {
+            label: 'Fail (>200m)',
+            data: histogram.map(function (b) {
+              return b.fail;
+            }),
+            backgroundColor: '#ef4444',
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            stacked: true,
+            title: { display: true, text: 'Distance from previous point (m)' },
+            ticks: { maxRotation: 90, minRotation: 90 },
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            ticks: { precision: 0 },
+            title: { display: true, text: 'Visits' },
+          },
+        },
+        plugins: { legend: { position: 'bottom' } },
+      },
+    });
+  }
+
+  React.useEffect(
+    function () {
+      if (activeTab !== 'failed_analysis') return;
+      if (!homeGpsChartRef.current || !window.Chart) return;
+      if (homeGpsChartInstance.current) homeGpsChartInstance.current.destroy();
+      homeGpsChartInstance.current = buildGpsHistogramChart(
+        homeGpsChartRef.current,
+        homeGpsHistogram,
+      );
+      return function () {
+        if (homeGpsChartInstance.current)
+          homeGpsChartInstance.current.destroy();
+      };
+    },
+    [homeGpsHistogram, activeTab],
+  );
+
+  React.useEffect(
+    function () {
+      if (activeTab !== 'failed_analysis') return;
+      if (!facilityGpsChartRef.current || !window.Chart) return;
+      if (facilityGpsChartInstance.current)
+        facilityGpsChartInstance.current.destroy();
+      facilityGpsChartInstance.current = buildGpsHistogramChart(
+        facilityGpsChartRef.current,
+        facilityGpsHistogram,
+      );
+      return function () {
+        if (facilityGpsChartInstance.current)
+          facilityGpsChartInstance.current.destroy();
+      };
+    },
+    [facilityGpsHistogram, activeTab],
   );
 
   var summaryCards = (
@@ -885,6 +1064,73 @@ function WorkflowUI({
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'failed_analysis' && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">
+              GPS Distance from Previous Point
+            </h3>
+            <p className="text-xs text-gray-500">
+              Every visit that ran a GPS check against a previously-saved point
+              (the mother's registered home location, or her registered health
+              facility), bucketed by how far the visit's GPS was from that
+              point. Pass is ≤200m, Fail is &gt;200m -- that's the form's own
+              threshold, so the color change lands exactly at the 200m bin edge
+              below. Respects the domain and eligibility filters above, same row
+              set as the other tabs.
+            </p>
+          </div>
+
+          {(function () {
+            var homeTotal = homeGpsHistogram.reduce(function (sum, b) {
+              return sum + b.pass + b.fail;
+            }, 0);
+            var homeFail = homeGpsHistogram.reduce(function (sum, b) {
+              return sum + b.fail;
+            }, 0);
+            var facilityTotal = facilityGpsHistogram.reduce(function (sum, b) {
+              return sum + b.pass + b.fail;
+            }, 0);
+            var facilityFail = facilityGpsHistogram.reduce(function (sum, b) {
+              return sum + b.fail;
+            }, 0);
+            return (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                  <h4 className="mb-1 text-sm font-medium text-gray-800">
+                    Home GPS checks
+                  </h4>
+                  <p className="mb-2 text-xs text-gray-500">
+                    {homeTotal > 0
+                      ? homeFail + ' of ' + homeTotal + ' failed (>200m).'
+                      : 'No home GPS checks in the current filter.'}
+                  </p>
+                  <div style={{ height: '320px' }}>
+                    <canvas ref={homeGpsChartRef}></canvas>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                  <h4 className="mb-1 text-sm font-medium text-gray-800">
+                    Health facility GPS checks
+                  </h4>
+                  <p className="mb-2 text-xs text-gray-500">
+                    {facilityTotal > 0
+                      ? facilityFail +
+                        ' of ' +
+                        facilityTotal +
+                        ' failed (>200m).'
+                      : 'No health facility GPS checks in the current filter.'}
+                  </p>
+                  <div style={{ height: '320px' }}>
+                    <canvas ref={facilityGpsChartRef}></canvas>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
