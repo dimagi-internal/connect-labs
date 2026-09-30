@@ -3,6 +3,8 @@
 Handlers take a SupplyDataAccess first and return JSON-serialisable dicts.
 """
 
+from datetime import date
+
 from django.db.models import Q
 
 from connect_labs.supply_chain import records
@@ -22,9 +24,15 @@ from connect_labs.supply_chain.operations import (
 from connect_labs.supply_chain.procurement.services.comparison import COURSE_FIGURES, compare_tender
 from connect_labs.supply_chain.procurement.services.compliance import check_compliance
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
-from connect_labs.supply_chain.procurement.services.questions import missing_facts
-from connect_labs.supply_chain.procurement.services.render import render_followup, render_initial_request
+from connect_labs.supply_chain.procurement.services.questions import SUPPLIER, missing_facts
+from connect_labs.supply_chain.procurement.services.render import (
+    Sender,
+    render_followup,
+    render_initial_request,
+    render_reminder,
+)
 from connect_labs.supply_chain.procurement.services.supply_base import supply_base, wire
+from connect_labs.supply_chain.values import day_text
 
 # ---- tenders and outreach ----------------------------------------------
 
@@ -122,8 +130,10 @@ def tender_close(access, tender_id):
 @register_operation(
     name="request_render",
     summary=(
-        "Render the quote-request text for one supplier on one tender. Asks "
-        "for exactly the facts needed to make the reply comparable."
+        "Draft the quote-request email for one supplier on one tender: subject, text, and the "
+        "supplier's address when one is on file. Asks for exactly the facts needed to make the reply "
+        "comparable, greets the supplier's named contact, gives the tender's reply-by date when it has "
+        "one, and is signed by the caller. Nothing is sent: the person sends it from their own mailbox."
     ),
     input_schema=obj(
         {"tender_id": ID, "supplier_id": ID, "commodity_slug": {"type": "string"}},
@@ -134,12 +144,15 @@ def request_render(access, tender_id, supplier_id, commodity_slug):
     tender = access.get_tender(tender_id)
     supplier = access.get_supplier(supplier_id)
     commodity = access.get_commodity(commodity_slug)
-    return {"text": render_initial_request(commodity, tender, supplier)}
+    return render_initial_request(commodity, tender, supplier, sender=_sender(access)).as_dict()
 
 
 @register_operation(
     name="followup_render",
-    summary="Render a follow-up email for a quote, asking only for the facts still missing before it can be compared.",
+    summary=(
+        "Draft a follow-up email for a quote -- subject and text -- naming the quote by its date and "
+        "as-quoted price and asking only for the facts still missing before it can be compared."
+    ),
     input_schema=obj({"quote_id": ID}, required=("quote_id",)),
 )
 def followup_render(access, quote_id):
@@ -148,7 +161,253 @@ def followup_render(access, quote_id):
     commodity = access.get_commodity(quote.commodity_slug)
     supplier = access.get_supplier(quote.supplier_id)
     item = access.get_item(quote.item_id) if quote.item_id else None
-    return {"text": render_followup(quote, commodity, tender, supplier, item=item)}
+    return render_followup(quote, commodity, tender, supplier, item=item, sender=_sender(access)).as_dict()
+
+
+_TODAY = {
+    "type": "string",
+    "format": "date",
+    "description": "The day to draft for, which decides what is overdue. Defaults to today.",
+}
+
+
+@register_operation(
+    name="reminder_render",
+    summary=(
+        "Draft a polite reminder to a supplier who has not answered a quote request: it names the day "
+        "we asked and what we asked for, and repeats the questions. Takes the outreach row the request "
+        "was logged on. Once the person has sent it, mark it sent with outreach_update setting "
+        "last_reminder_on (the result's `mark_sent` is that call), which restarts the reminder interval."
+    ),
+    input_schema=obj(
+        {"outreach_id": ID, "commodity_slug": {"type": "string"}, "today": _TODAY},
+        required=("outreach_id",),
+    ),
+)
+def reminder_render(access, outreach_id, commodity_slug=None, today=None):
+    outreach = access.get_outreach(outreach_id)
+    if outreach is None:
+        raise ValueError(f"outreach {outreach_id} not found")
+    if not outreach.sent_on:
+        raise ValueError(
+            f"outreach {outreach_id} has no send date: the request was logged but never sent, so there is "
+            "nothing to remind them of. Draft the request itself with request_render."
+        )
+    tender = outreach.tender
+    commodity = _line_commodity(access, tender, commodity_slug)
+    day = _day(today)
+    draft = render_reminder(
+        commodity,
+        tender,
+        outreach.supplier,
+        sent_on=outreach.sent_on,
+        last_reminder_on=outreach.last_reminder_on,
+        sender=_sender(access),
+        today=day,
+    )
+    return {
+        **draft.as_dict(),
+        "outreach_id": outreach.pk,
+        "tender_id": tender.pk,
+        "supplier_id": outreach.supplier_id,
+        "supplier_name": outreach.supplier.name,
+        "commodity_slug": commodity.slug,
+        "mark_sent": _mark_sent(outreach.pk, day),
+    }
+
+
+DEFAULT_REMINDER_INTERVAL_DAYS = 7
+
+# The order drafts are listed in: the order a round runs, then by name.
+# Deliberately not an urgency ranking (design doc section 22).
+_KIND_ORDER = {"request": 0, "reminder": 1, "followup": 2}
+
+
+@register_operation(
+    name="tender_drafts_render",
+    summary=(
+        "Every email due on a tender now, drafted: a `request` for each invitation logged but never "
+        "sent; a `reminder` for each supplier who was asked, has neither replied nor quoted, and has "
+        "waited at least the tender's reminder_interval_days since the request or the last reminder "
+        "(7 days when the tender sets none -- the result says which applied); and a `followup` for each "
+        "live quote with questions still outstanding for the supplier. Each draft carries supplier, "
+        "kind, subject, text, address and `why` it is due. No requests or reminders once the tender is "
+        "closed or awarded; no follow-ups once it is awarded. Writes nothing."
+    ),
+    input_schema=obj({"tender_id": ID, "today": _TODAY}, required=("tender_id",)),
+)
+def tender_drafts_render(access, tender_id, today=None):
+    tender = access.get_tender(tender_id)
+    if tender is None:
+        raise ValueError(f"tender {tender_id} not found")
+    day = _day(today)
+    interval = tender.reminder_interval_days
+    is_default = interval is None
+    if is_default:
+        interval = DEFAULT_REMINDER_INTERVAL_DAYS
+    sender = _sender(access)
+    commodities = _line_commodities(access, tender)
+    quotes = [q for q in access.list_quotes(tender_id=tender_id) if q.is_live]
+    accepting = tender.status not in ("closed", "awarded")
+
+    drafts = []
+    if accepting:
+        drafts += _requests_and_reminders(access, tender, commodities, quotes, day, interval, is_default, sender)
+    if tender.status != "awarded":
+        drafts += _followups(access, tender, commodities, quotes, day, sender)
+    drafts.sort(key=lambda d: (_KIND_ORDER[d["kind"]], d["supplier_name"].lower(), d["commodity_slug"]))
+
+    result = {
+        "tender_id": tender.pk,
+        "today": day.isoformat(),
+        "reminder_interval_days": interval,
+        "reminder_interval_is_default": is_default,
+        "reminder_interval_note": f"A reminder falls due {_days(interval)} after the request or the last "
+        "reminder"
+        + (
+            " -- the default, because this tender sets no reminder interval."
+            if is_default
+            else ", as this tender sets."
+        ),
+        "accepting_quotes": accepting,
+        "drafts": drafts,
+    }
+    if not accepting:
+        result["note"] = f"This tender is {tender.status}, so no requests or reminders are drafted."
+    return result
+
+
+def _requests_and_reminders(access, tender, commodities, quotes, day, interval, is_default, sender):
+    """A request for an invitation never sent; a reminder for a silence past the interval."""
+    quoted = {q.supplier_id for q in quotes}
+    rows_by_supplier = {}
+    for row in access.list_outreach(tender_id=tender.pk):
+        rows_by_supplier.setdefault(row.supplier_id, []).append(row)
+    drafts = []
+    for supplier_id, rows in rows_by_supplier.items():
+        if supplier_id in quoted or any(r.responded for r in rows):
+            continue
+        supplier = rows[0].supplier
+        sent = [r for r in rows if r.sent_on]
+        if not sent:
+            why = (
+                "An invitation is logged for this supplier with no send date, so the request has not gone "
+                "out yet. Once it has, record the day it was sent on the invitation."
+            )
+            for commodity in commodities:
+                draft = render_initial_request(commodity, tender, supplier, sender=sender, today=day)
+                drafts.append(_draft_item(draft, "request", supplier, commodity, why=why, outreach_id=rows[0].pk))
+            continue
+        latest = max(sent, key=lambda r: r.sent_on)
+        reminded = max((r.last_reminder_on for r in rows if r.last_reminder_on), default=None)
+        since = max(latest.sent_on, reminded) if reminded else latest.sent_on
+        if (day - since).days < interval:
+            continue
+        why = f"Asked on {day_text(latest.sent_on)} ({_days(day - latest.sent_on)} ago) and no reply is recorded"
+        if reminded:
+            why += f"; last reminded on {day_text(reminded)} ({_days(day - reminded)} ago)"
+        why += f". A reminder is due every {_days(interval)}" + (
+            " (the default: this tender sets no reminder interval)." if is_default else ", as this tender sets."
+        )
+        for commodity in commodities:
+            draft = render_reminder(
+                commodity,
+                tender,
+                supplier,
+                sent_on=latest.sent_on,
+                last_reminder_on=reminded,
+                sender=sender,
+                today=day,
+            )
+            drafts.append(
+                _draft_item(
+                    draft,
+                    "reminder",
+                    supplier,
+                    commodity,
+                    why=why,
+                    outreach_id=latest.pk,
+                    mark_sent=_mark_sent(latest.pk, day),
+                )
+            )
+    return drafts
+
+
+def _followups(access, tender, commodities, quotes, day, sender):
+    """A follow-up for each live quote with a question only the supplier can answer."""
+    by_slug = {c.slug: c for c in commodities}
+    drafts = []
+    for quote in quotes:
+        commodity = by_slug.get(quote.commodity_slug) or access.get_commodity(quote.commodity_slug)
+        if commodity is None:
+            continue
+        item = access.get_item(quote.item_id) if quote.item_id else None
+        facts = [f for f in missing_facts(quote, commodity, tender, item=item) if f.audience == SUPPLIER]
+        if not facts:
+            continue
+        draft = render_followup(quote, commodity, tender, quote.supplier, item=item, sender=sender, today=day)
+        count = len(facts)
+        why = (
+            f"{count} question{'s' if count != 1 else ''} still outstanding for the supplier on this quote "
+            "before it can be compared or accepted."
+        )
+        drafts.append(_draft_item(draft, "followup", quote.supplier, commodity, why=why, quote_id=quote.pk))
+    return drafts
+
+
+def _sender(access) -> Sender:
+    """Who signs a draft: the signed-in person (over MCP, the token's user) and their organisation."""
+    from connect_labs.supply_chain.identity import acting_org_name, person_name
+
+    return Sender(name=person_name(getattr(access, "user", None)), organisation=acting_org_name(access))
+
+
+def _day(value) -> date:
+    return date.fromisoformat(str(value)) if value else date.today()
+
+
+def _days(value) -> str:
+    count = value.days if hasattr(value, "days") else int(value)
+    return f"{count} day{'s' if count != 1 else ''}"
+
+
+def _line_commodities(access, tender) -> list:
+    slugs = [line.get("commodity_slug") for line in tender.lines or [] if isinstance(line, dict)]
+    found = [access.get_commodity(slug) for slug in dict.fromkeys(s for s in slugs if s)]
+    return [c for c in found if c is not None]
+
+
+def _line_commodity(access, tender, commodity_slug):
+    slugs = [line.get("commodity_slug") for line in tender.lines or [] if isinstance(line, dict)]
+    slugs = [slug for slug in slugs if slug]
+    if commodity_slug is None:
+        if len(slugs) != 1:
+            raise ValueError(
+                f"tender {tender.pk} has {len(slugs)} lines ({', '.join(slugs) or 'none'}); name the "
+                "commodity_slug the reminder is about"
+            )
+        commodity_slug = slugs[0]
+    commodity = access.get_commodity(commodity_slug)
+    if commodity is None:
+        raise ValueError(f"commodity {commodity_slug!r} not found")
+    return commodity
+
+
+def _mark_sent(outreach_id, day) -> dict:
+    """The call that records a reminder as sent, for a client to make once it has been."""
+    return {"operation": "outreach_update", "outreach_id": outreach_id, "data": {"last_reminder_on": day.isoformat()}}
+
+
+def _draft_item(draft, kind, supplier, commodity, *, why, **ids) -> dict:
+    return {
+        "kind": kind,
+        "supplier_id": supplier.pk,
+        "supplier_name": supplier.name,
+        "commodity_slug": commodity.slug,
+        **draft.as_dict(),
+        "why": why,
+        **ids,
+    }
 
 
 @register_operation(
@@ -172,7 +431,11 @@ def outreach_log(access, data):
 
 @register_operation(
     name="outreach_update",
-    summary="Update an outreach row — typically to record that a supplier responded, and how.",
+    summary=(
+        "Update an outreach row -- typically to record that a supplier responded, and how, or that a "
+        "reminder went out: set last_reminder_on to the day it was sent, which restarts the reminder "
+        "interval tender_drafts_render counts from."
+    ),
     input_schema=obj({"outreach_id": ID, "data": _OUTREACH_DATA}, required=("outreach_id", "data")),
     is_write=True,
 )
