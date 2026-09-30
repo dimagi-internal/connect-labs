@@ -69,6 +69,8 @@ class ActionError(ValueError):
 
     def __init__(self, code: str, message: str):
         self.code = code
+        #: Written for the person or agent that asked; safe to show them.
+        self.public_message = message
         super().__init__(message)
 
 

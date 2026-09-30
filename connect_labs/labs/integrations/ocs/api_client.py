@@ -132,7 +132,7 @@ class OCSDataAccess:
             if self._refresh_token():
                 logger.info("Successfully refreshed OCS OAuth token")
                 return True
-            logger.warning(f"OCS OAuth token expired at {expires_at} and refresh failed")
+            logger.warning("OCS OAuth token expired and refresh failed")
             return False
 
         return True
