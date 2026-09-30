@@ -331,7 +331,11 @@ class TestTheTenderPage:
         assert '<section id="history"' in body
         assert "6 Jul 2026" in body
         assert "2026-07-06" not in body
-        assert "30 Sep 2026" in body and "2026-09-30" not in body  # the response deadline
+        # The response deadline reads as words. Date inputs' min/max attributes are
+        # machine format by design, and one carries TODAY -- which is the deadline's
+        # date on 30 Sep 2026 -- so they are not the reader's text.
+        readable = re.sub(r'\b(min|max)="[^"]*"', "", body)
+        assert "30 Sep 2026" in body and "2026-09-30" not in readable  # the response deadline
 
 
 # ---- 9. a past date agrees with itself -------------------------------------
