@@ -298,7 +298,9 @@ jobs:
           path: /tmp/geo-debs
           # Bump the version suffix to force a refetch; the runner image's own
           # base libraries move under us occasionally.
-          key: geo-debs-${{ runner.os }}-v1
+          # v2 (2026-09-30): the v1 debs pinned libcurl4-gnutls-dev to a
+          # libcurl the runner image had moved past, and every run failed.
+          key: geo-debs-${{ runner.os }}-v2
 
       - name: Install Geo Dependencies
         # --no-install-recommends: Django reaches libgdal/libgeos through ctypes, so
@@ -322,6 +324,13 @@ jobs:
             sudo grep -lE 'dl\.google\.com|packages\.microsoft\.com' \
               /etc/apt/sources.list.d/* 2>/dev/null | xargs -r sudo rm -f
             sudo apt-get update -o Acquire::Retries=3
+            # A stale cache can fail `dpkg -i` halfway and leave packages
+            # unpacked but unconfigured. apt then refuses every install until
+            # that is resolved, so the fallback failed exactly when it was
+            # needed (2026-09-30: libcurl4-gnutls-dev against a newer libcurl).
+            # Let apt repair it first -- it replaces the stale versions.
+            sudo dpkg --configure -a || true
+            sudo apt-get install -y -f --no-install-recommends -o Acquire::Retries=3
             # apt refuses to use an archives dir without a `partial` inside it.
             sudo rm -rf /tmp/geo-debs && mkdir -p /tmp/geo-debs/partial
             sudo apt-get install -y --no-install-recommends \
