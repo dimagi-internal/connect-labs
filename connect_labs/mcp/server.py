@@ -127,8 +127,8 @@ def _closing_connections(fn):
 
 # Coarse scope advertised for a full-access PAT. Those act as the user; per-tool
 # authorization happens inside each handler and the write rate limiter. A
-# no-uservisit-data PAT is stamped ``connect_labs:no-uservisit-data`` instead and reaches only
-# ``token_scopes.NO_USERVISIT_DATA_TOOLS``.
+# no-uservisit-data PAT is stamped ``connect_labs:no-uservisit-data`` instead, which
+# makes it a restricted caller (``token_scopes``).
 PAT_SCOPES = [token_scopes.TOKEN_SCOPE_STRINGS[token_scopes.FULL]]
 
 
@@ -167,8 +167,8 @@ def _verify_bearer_sync(raw: str, presented_jkt: str | None = None):
 
     resolved = resolve_mcp_access_token(raw)
     if resolved is not None:
-        user, client_id = resolved
-        return user, "oauth", client_id, [MCP_SCOPE], {}
+        user, client_id, scopes = resolved
+        return user, "oauth", client_id, scopes or [MCP_SCOPE], {}
 
     return _resolve_delegated_sync(raw, presented_jkt)
 
@@ -229,24 +229,54 @@ def _resolve_delegated_sync(raw: str, presented_jkt: str | None):
     )
 
 
+def endpoint_restricted() -> bool:
+    """True when this request came in on ``/mcp/no_user_visit/``.
+
+    ``config/asgi.py`` marks the ASGI scope of every request on that mount. Read per
+    MCP message from the HTTP request it arrived on, so a session opened on one URL
+    and continued on the other is judged by the URL of each request.
+    """
+    try:
+        from fastmcp.server.dependencies import get_http_request
+
+        request = get_http_request()
+    except Exception:  # noqa: BLE001 -- no HTTP request (in-process calls, tests)
+        return False
+    return request.scope.get("labs_mcp_endpoint") == token_scopes.NO_USER_VISIT_ENDPOINT
+
+
+def restricted_call(access_token) -> bool:
+    """True when this call must keep to "no user visit data", by endpoint or by credential."""
+    if endpoint_restricted():
+        return True
+    claims = getattr(access_token, "claims", None) or {}
+    if claims.get("auth_method") in ("pat", "oauth"):
+        return token_scopes.is_restricted(getattr(access_token, "scopes", None))
+    return False
+
+
 def allowed_tools(access_token) -> frozenset[str] | None:
     """The tools a caller may reach, or ``None`` for "every tool" (full PATs, OAuth sign-ins).
 
-    Two kinds of token are limited, each recognised by what the verifier stamped
-    on it. A no-uservisit-data PAT reaches ``token_scopes.NO_USERVISIT_DATA_TOOLS``. A token issued
-    by the delegated grant is limited to its scopes' tools
-    (``connect_labs.labs.canopy.SCOPE_TOOLS``) — never widened.
-    """
-    if access_token is None:
-        return None
-    claims = getattr(access_token, "claims", None) or {}
-    if claims.get("auth_method") == "pat":
-        return token_scopes.allowed_tools(getattr(access_token, "scopes", None))
-    if claims.get("auth_method") != "delegated":
-        return None
-    from connect_labs.labs import canopy
+    A call is limited by its credential and by its endpoint, and the two only ever
+    narrow each other:
 
-    return canopy.allowed_tools(getattr(access_token, "scopes", None) or [])
+    * a token issued by the delegated grant reaches its scopes' tools
+      (``connect_labs.labs.canopy.SCOPE_TOOLS``) — never widened;
+    * a restricted call (``restricted_call``: the ``/mcp/no_user_visit/`` endpoint, a
+      no-uservisit-data PAT, or an ``mcp:no-uservisit-data`` sign-in) reaches
+      ``token_scopes.RESTRICTED_TOOLS``, some of them only on generated data
+      (``visit_access``).
+    """
+    permitted: frozenset[str] | None = None
+    claims = getattr(access_token, "claims", None) or {}
+    if claims.get("auth_method") == "delegated":
+        from connect_labs.labs import canopy
+
+        permitted = canopy.allowed_tools(getattr(access_token, "scopes", None) or [])
+    if restricted_call(access_token):
+        permitted = token_scopes.RESTRICTED_TOOLS if permitted is None else permitted & token_scopes.RESTRICTED_TOOLS
+    return permitted
 
 
 class CommCarePATVerifier(TokenVerifier):
@@ -410,10 +440,20 @@ def _run_registry_tool_inner(
     # A delegated token (canopy acting for a visitor) reaches only the tools its
     # scopes map to. Checked here as well as in ToolScopeMiddleware, so a path
     # that reaches the tool without the middleware still cannot widen it.
-    permitted = allowed_tools(get_access_token())
+    access_token = get_access_token()
+    permitted = allowed_tools(access_token)
     if permitted is not None and spec.name not in permitted:
         audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
         raise ToolError(f"This token's scope does not include {spec.name}.")
+    # Without access to user visit data, a tool that reads visits runs only when every
+    # opportunity the call reads holds generated data.
+    if spec.name in token_scopes.GENERATED_ONLY_TOOLS and restricted_call(access_token):
+        from .visit_access import denied_reason
+
+        reason = denied_reason(user, spec.name, arguments)
+        if reason:
+            audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
+            raise ToolError(reason)
     # Central labs-only access gate. Any tool scoped to a labs-only opp/program
     # routes to the local backend with no downstream Connect membership check, so
     # enforce the synthetic access model here — one place every tool passes through,

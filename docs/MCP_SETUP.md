@@ -7,6 +7,28 @@ The labs MCP server is a standard remote MCP server at:
 (Streamable HTTP.) Any MCP client can connect to it. Tools run as you, with
 your Connect permissions.
 
+## Two endpoints
+
+| URL | What it reaches |
+|---|---|
+| `https://labs.connect.dimagi.com/mcp/` | Every tool, as you. |
+| `https://labs.connect.dimagi.com/mcp/no_user_visit/` | The same tools **without access to real user visit data** — the one to give a whole team by default. |
+
+The second is the same server behind a different URL, and it can only narrow
+what you reach, never widen it: whatever credential you connect with, a request
+on it gets the restricted tools. It can read how things are built (workflow,
+pipeline and indicator definitions, app structure, solicitations, the org
+directory, targeting), profile a real opportunity server-side and generate a
+synthetic set from the profile. Tools that read visits (pipeline previews,
+workflow runs, record dumps) run there only on synthetic opportunities whose
+data was **generated** (`connect_labs/labs/synthetic/provenance.py`). The
+profile is aggregate statistics; the visits themselves never reach the AI.
+
+Signing in through it asks for the `mcp:no-uservisit-data` scope, so that
+token is restricted even if it is later used against `/mcp/`. The lists are in
+`connect_labs/mcp/token_scopes.py`, deny-by-default: a new tool reaches neither
+until someone adds it on purpose.
+
 ## Connect — people
 
 1. Add `https://labs.connect.dimagi.com/mcp/` to your MCP client as a remote
@@ -38,13 +60,9 @@ A process with no browser uses a Personal Access Token (PAT) instead:
    rotate, revoke). The raw token is shown once — copy it then. Pick the access
    level there:
    - **Full access** reaches every tool, as you.
-   - **No user visit data** reads how things are built (workflow definitions,
-     pipeline and indicator definitions, app structure, solicitations, the org
-     directory, targeting) and nothing else. It cannot read visit data, raw or
-     computed by a pipeline, workflow run or report, and it cannot write. Other
-     tools are neither listed nor callable with it. The list is
-     `connect_labs/mcp/token_scopes.py`, and a new tool stays out of it until
-     someone adds it on purpose. Rotating keeps the access level.
+   - **No user visit data** is restricted the same way as the
+     `/mcp/no_user_visit/` endpoint above, on either URL. Rotating keeps the
+     access level.
 2. Send it as `Authorization: Bearer <token>`. For a client that takes a JSON
    config:
 

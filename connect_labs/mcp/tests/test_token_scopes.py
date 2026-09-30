@@ -49,7 +49,7 @@ def test_a_no_uservisit_data_pat_resolves_to_its_tools():
         claims = {"auth_method": "pat"}
 
     _Token.scopes = scopes
-    assert allowed_tools(_Token) == token_scopes.NO_USERVISIT_DATA_TOOLS
+    assert allowed_tools(_Token) == token_scopes.RESTRICTED_TOOLS
 
 
 @pytest.mark.django_db
@@ -82,13 +82,15 @@ def test_a_no_uservisit_data_pat_sees_and_calls_only_its_tools():
 
     tools, called, visit_data, write = _run_mcp(build_application(), {"Authorization": f"Bearer {raw}"}, None, work)
 
-    assert {tool.name for tool in tools} == token_scopes.NO_USERVISIT_DATA_TOOLS
+    assert {tool.name for tool in tools} == token_scopes.RESTRICTED_TOOLS
     assert called.structured_content is not None
     assert visit_data.is_error
     assert "pipeline_preview" in visit_data.content[0].text
     assert write.is_error
     assert MCPAuditLog.objects.filter(user=user, tool_name="list_templates", success=True).exists()
-    assert not MCPAuditLog.objects.filter(user=user, tool_name__in=["pipeline_preview", "workflow_delete"]).exists()
+    assert not MCPAuditLog.objects.filter(
+        user=user, tool_name__in=["pipeline_preview", "workflow_delete"], success=True
+    ).exists()
 
 
 # ---------------------------------------------------------------------------
