@@ -197,7 +197,7 @@ def test_registration_creates_a_public_client_confined_to_mcp(client):
     body = resp.json()
     assert body["token_endpoint_auth_method"] == "none"
     assert body["redirect_uris"] == [LOOPBACK]
-    assert body["scope"] == "mcp"
+    assert body["scope"] == "mcp mcp:no-uservisit-data"
     assert "client_secret" not in body
     application = get_application_model().objects.get(client_id=body["client_id"])
     assert application.client_type == application.CLIENT_PUBLIC
@@ -361,10 +361,13 @@ def test_no_other_application_can_be_granted_the_mcp_scope():
     mcp_client = _mcp_application()
     scopes = oauth.MCPScopes()
 
-    assert "mcp" not in scopes.get_available_scopes(application=other)
-    assert "mcp" not in scopes.get_default_scopes(application=other)
+    for scope in oauth.MCP_SCOPES:
+        assert scope not in scopes.get_available_scopes(application=other)
+        assert scope not in scopes.get_default_scopes(application=other)
     assert "export" in scopes.get_available_scopes(application=other)
-    assert scopes.get_available_scopes(application=mcp_client) == ["mcp"]
+    assert scopes.get_available_scopes(application=mcp_client) == ["mcp", "mcp:no-uservisit-data"]
+    # A client that asks for nothing gets full access; the restricted endpoint
+    # names the restricted scope in its challenge and metadata.
     assert scopes.get_default_scopes(application=mcp_client) == ["mcp"]
 
 
