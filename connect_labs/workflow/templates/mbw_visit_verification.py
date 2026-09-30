@@ -123,6 +123,26 @@ _VISIT_FIELDS = [
         "transform": "float",
     },
     {
+        # The actual GPS point used for the distance calc above, as CommCare's
+        # raw geopoint string ("lat lon altitude accuracy"). Parsed client-side
+        # for the accuracy component (index 3) -- not exposed as its own form
+        # field, so this is the only way to get the accuracy of the SAME point
+        # that produced gps_distance_from_*_meters, rather than a possibly
+        # different accuracy reading from earlier in the capture flow.
+        # Group name is "gps_block_anc_visit" on 5 of the 6 visit-type forms
+        # (ANC/1 Week/1 Month/3 Month/6 Month all share the ANC form's
+        # internal block name -- confirmed via commcare_hq_mcp, not renamed
+        # per form) and "gps_block_pnc_visit" on Post delivery visit only.
+        # Only one of the two paths is ever populated for a given form's
+        # submissions, so both as fallbacks is safe across all 6 pipelines.
+        "name": "gps_normalized_location",
+        "paths": [
+            "form.gps_block_anc_visit.normalized_location",
+            "form.gps_block_pnc_visit.normalized_location",
+        ],
+        "aggregation": "first",
+    },
+    {
         "name": "qr_code_visit_verification",
         "path": "form.qr_code_verification.qr_code_visit_verification",
         "aggregation": "first",
@@ -152,6 +172,46 @@ _VISIT_FIELDS = [
     {
         "name": "mother_questions_visit_verification",
         "path": "form.additional_visit_verification_block.mother_questions_visit_verification",
+        "aggregation": "first",
+    },
+    # The random spot-check question bank: up to 4 questions are randomly
+    # picked per visit (pick_1..pick_4, each holding a question key like "q1"
+    # when a slot is used, blank when not) and administered to the mother.
+    # "Number of questions answered" for a visit = count of these 4 that are
+    # non-blank. Confirmed via commcare_hq_mcp: this group's path is shared
+    # identically across all 6 visit-type forms and both domains (same
+    # "additional_visit_verification_block" umbrella as the fields above),
+    # unlike the per-form-named GPS block.
+    {
+        "name": "mother_q_pick_1",
+        "path": (
+            "form.additional_visit_verification_block.verification_page."
+            "random_test_setup_page.random_test_setup.pick_1"
+        ),
+        "aggregation": "first",
+    },
+    {
+        "name": "mother_q_pick_2",
+        "path": (
+            "form.additional_visit_verification_block.verification_page."
+            "random_test_setup_page.random_test_setup.pick_2"
+        ),
+        "aggregation": "first",
+    },
+    {
+        "name": "mother_q_pick_3",
+        "path": (
+            "form.additional_visit_verification_block.verification_page."
+            "random_test_setup_page.random_test_setup.pick_3"
+        ),
+        "aggregation": "first",
+    },
+    {
+        "name": "mother_q_pick_4",
+        "path": (
+            "form.additional_visit_verification_block.verification_page."
+            "random_test_setup_page.random_test_setup.pick_4"
+        ),
         "aggregation": "first",
     },
     {
