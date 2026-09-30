@@ -210,19 +210,18 @@ Create it from **Workflows → Create Workflow → "Indicator Opportunity Report
 !!! note "The KMC reports are unchanged"
     The Indicator report templates are a new set of templates for programmes that do not already have a custom report cascade. The existing KMC Programme Metrics, KMC Worker Review, and related reports are unaffected and continue to work exactly as before.
 
-### RUTF CIFF Program KPIs
+#### What indicator registries can now measure
 
-The **RUTF CIFF Program KPIs** template creates a single dashboard for tracking a CIFF-funded RUTF (ready-to-use therapeutic food) programme's M&E indicator framework against its funder-agreed targets. Create it from **Workflows → Create Workflow → "RUTF CIFF Program KPIs"** (listed under *Programme reports*).
+Indicator definitions (the semantic registry) can now express a wider range of metrics without any custom report-building. Two new capabilities make this possible:
 
-This template is intended for use on opportunity **2230 (RUTF - NG - CBI - P1 - Sept 26)**.
+**Data from CommCare HQ forms in a separate app**
 
-#### What the dashboard shows
+Some metrics are recorded in a supervisor or quality-assurance app rather than the main field worker app — for example, Gold Standard assessment scores entered by a supervisor, or Register Mother forms completed centrally. The registry can now join that data onto each visit automatically, matching records by a shared key (such as a mother ID) within the same opportunity, and choosing which value to use when several records share a key (the most recent, the earliest, the highest, the lowest, or a count).
 
-The dashboard brings together the programme's key indicators in one place, each displayed alongside its stated target:
+This means metrics like a **GS Score** (drawn from Gold Standard forms in a supervisor app) or a **Follow-up Rate** and **% Still Eligible** (drawn from Register Mother forms) can be defined in the registry and appear in reports alongside visit-level data — without a separate manual extract.
 
-- **Screening & enrollment** — SAM and MAM screening counts and enrollment figures.
-- **Treatment outcomes** — recovery rates, exit rates, and the 3-month relapse rate.
-- **Caregiver counseling engagement** — counts and rates for caregiver counseling sessions.
-- **Referral counts** — the number of beneficiaries referred onward.
+**Comparisons with the previous visit**
 
-Indicators that the CommCare app captures automatically are pulled live from the data. A small number of indicators that the app does not currently collect — including immunization linkage, LLO contracts, MOUs, and field worker a
+Some metrics only make sense when compared to what happened last time — for example, how far a field worker travelled between consecutive visits to the same mother, or whether a reading improved since the previous visit. The registry can now surface:
+
+- The **value from the case's previous visit**
