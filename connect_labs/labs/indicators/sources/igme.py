@@ -1,6 +1,7 @@
 """UN IGME loader — national child mortality, via UNICEF's SDMX endpoint.
 
-IGME is the authoritative national series for under-5 and infant mortality: an
+IGME is the authoritative national series for under-5, infant and neonatal
+mortality: an
 annual modelled estimate for every country, reconciled across surveys and vital
 registration. It is the *fallback* rather than the primary source because it is
 national only — but for countries with no recent DHS, it is the difference
@@ -35,6 +36,10 @@ SERIES_START = 1990
 INDICATORS = {
     "u5mr": "CME_MRY0T4",
     "imr": "CME_MRY0",
+    # Neonatal mortality (first 28 days). National only, like the others; it
+    # is what makes nmr answerable under national_igme for every country,
+    # where the subnational sources reach about half of them.
+    "nmr": "CME_MRM0",
 }
 
 METHOD = (
