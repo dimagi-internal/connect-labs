@@ -77,6 +77,43 @@ This means each workflow appears in exactly one place. If you cannot find a work
 
 ---
 
+## Taking Actions from a Report
+
+Some reports can offer **action buttons** — for example, **"Initiate AI coach"** or **"Create follow-up task"** — that let you act on the data you are looking at without leaving the page. The same actions can also be run by an AI assistant. Both features are off by default and must be switched on for each report individually; at present they are enabled for the **Spark facilitator program report** only.
+
+### Running an action from a button
+
+Clicking an action button opens a confirmation screen before anything happens. The confirmation shows:
+
+- Exactly which workers the action will reach
+- What the coaching bot will be told
+- Which bot will be used (you can choose if more than one is available)
+
+Nothing is sent until you press **Confirm**. Once you confirm, the page shows each worker's result as it completes, so you can see in real time which actions succeeded.
+
+### Running an action from an AI assistant
+
+An AI assistant — either the agent panel on the report itself or your own assistant connected to Connect Labs — can run the same actions. The assistant must show you the same confirmation preview before acting, and it acts as you, using your access and permissions. It cannot bypass the confirmation step.
+
+### The agent panel on a report
+
+When the agent panel is switched on for a report, an AI assistant appears alongside the report. The assistant:
+
+- Sees what you are currently looking at on the report
+- Follows you as you drill into an organisation or an individual worker
+- Can read the report's indicators, what "red" means for each one, and how each is calculated
+
+This means you can give the assistant instructions like **"start AI coaching for everyone with a red metric"** and it will identify the right workers from the live report data and walk you through the confirmation before sending anything.
+
+### Keeping Chat Studio connected
+
+If your program uses Open Chat Studio for its coaching bots, connecting it once is enough. After that, actions can start conversations on your behalf even when the report page is not open in your browser.
+
+!!! note "These features are off unless switched on for your report"
+    Action buttons and the agent panel are not available on every report. If you do not see an action button or an agent panel on a report you work with, the feature has not yet been enabled for that report. Contact your program administrator if you believe it should be turned on.
+
+---
+
 ## Creating a Workflow from a Template
 
 You can create new workflows from ready-made templates rather than building them from scratch. The template picker is available from the program's own Workflows page (the URL includes `?program_id=…`) via the **Create Workflow** button. Using the program-level page means you can create whole-program reports — such as the KMC Programme Metrics report — without having to start from an individual opportunity.
@@ -188,47 +225,4 @@ The dashboard brings together the programme's key indicators in one place, each 
 - **Caregiver counseling engagement** — counts and rates for caregiver counseling sessions.
 - **Referral counts** — the number of beneficiaries referred onward.
 
-Indicators that the CommCare app captures automatically are pulled live from the data. A small number of indicators that the app does not currently collect — including immunization linkage, LLO contracts, MOUs, and field worker anomaly and suspension counts — appear as **manual-entry fields** on the same dashboard, so the programme team can fill them in directly without needing a separate tracking sheet.
-
-### Photo Audit Report
-
-The **Photo Audit Report** shows the photo verification success rate from the bulk image audits your team runs — that is, the percentage of audited photos that passed review. Create it from **Workflows → Create Workflow → "Photo Audit Report"** (listed under *Programme reports*).
-
-#### Choosing what the report covers
-
-The report follows the top-right context selector:
-
-- **Select a program** — the report shows the program-wide success rate (all its opportunities pooled together) plus a per-opportunity breakdown table. A dropdown lets you drill into any single opportunity from that same view.
-- **Select a single opportunity** — the report shows data for that opportunity only.
-
-Because the report is tied to your access permissions rather than to a fixed program or opportunity, the same report can be reused across any program or opportunity you have access to.
-
-#### Key metrics
-
-The report surfaces two headline figures:
-
-- **Overall success rate** — the percentage of audited photos that passed.
-- **Photos not yet reviewed** — the count of photos that have been submitted but not yet reviewed. These are kept out of the success rate calculation entirely.
-
-**How the success rate is calculated:** pass ÷ (pass + fail + duplicate/fake). Photos marked as duplicate or fake count as failures. Unreviewed photos are excluded from both the numerator and denominator.
-
-#### Per-opportunity breakdown table
-
-When viewing at program level, a table lists each opportunity with:
-
-- **Auditor(s)** — who carried out the audit for that opportunity
-- Underlying counts: **pass**, **fail**, **duplicate/fake**, **reviewed**, **not reviewed**, and **audits**
-
-#### Filters
-
-All filters are chosen from the values already present in your data — there is no free-text typing required:
-
-- **Auditors** multi-select
-- **Audits** multi-select
-- **Date range**
-
-Your filter selections are saved on the report, so they persist between sessions.
-
-### MBW Visit Verification template
-
-The **MBW Visit Verification** template creates a single-table dashboard for opportunity 765. Each row represents one visit and shows whether GPS location, QR code scan, mother's signature
+Indicators that the CommCare app captures automatically are pulled live from the data. A small number of indicators that the app does not currently collect — including immunization linkage, LLO contracts, MOUs, and field worker anom
