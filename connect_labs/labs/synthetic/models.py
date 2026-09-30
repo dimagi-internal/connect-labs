@@ -77,6 +77,15 @@ class SyntheticOpportunity(models.Model):
         help_text="Email-domain allowlist for labs-only opps (e.g. ['@dimagi.com']). "
         "Empty means no domain restriction beyond view_synthetic_opps being on.",
     )
+    generated_folder_id = models.CharField(
+        max_length=200,
+        null=True,
+        blank=True,
+        help_text="The fixture folder the synthetic GENERATOR wrote for this opp. The opp's data is "
+        "generated (never real) only while gdrive_folder_id still equals this, so pointing the opp "
+        "at any other folder un-marks it with no code path to remember. Null = not generated. "
+        "Set only by server code: see connect_labs/labs/synthetic/provenance.py.",
+    )
     visit_count = models.IntegerField(
         null=True,
         blank=True,
