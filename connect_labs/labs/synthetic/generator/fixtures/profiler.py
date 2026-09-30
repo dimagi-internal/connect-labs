@@ -24,7 +24,7 @@ import pandas as pd
 import yaml
 
 from .manifest import Manifest, ManifestValidationError
-from .mirror import build_entity_resolver, profile_entity_structure
+from .mirror import build_entity_resolver, perturb_transplant_pool, profile_entity_structure
 from .schema_loader import FormSchema, parse_form_schema_from_app_json
 
 
@@ -939,6 +939,28 @@ def _profile_kpis(
     return kpis
 
 
+def _mirror_noise_seed(opportunity_id: int) -> int:
+    """A per-opp seed only this server can reproduce.
+
+    Seeding from the opportunity id alone would let anyone holding a manifest (it
+    carries the id) replay the same random stream and subtract the noise. Keyed on
+    the Django secret instead; outside a configured Django process there is no
+    secret, so the seed is random (a profile is then simply not reproducible).
+    """
+    import hashlib
+    import hmac
+    import secrets
+
+    try:
+        from django.conf import settings
+
+        key = str(settings.SECRET_KEY).encode()
+    except Exception:  # noqa: BLE001 — no configured settings: no stable secret to key on
+        return secrets.randbits(64)
+    digest = hmac.new(key, f"synthetic-mirror-noise:{opportunity_id}".encode(), hashlib.sha256).digest()
+    return int.from_bytes(digest[:8], "big")
+
+
 def profile(
     *,
     opportunity_id: int,
@@ -949,6 +971,7 @@ def profile(
     app_structure: dict | None = None,
     curate: bool = False,
     mirror: bool = False,
+    noise_seed: int | None = None,
 ) -> str:
     """Analyze real export data and return a Manifest YAML string.
 
@@ -963,6 +986,10 @@ def profile(
             When provided, used to type fields — select/multiselect paths get
             categorical distributions and all profiled paths get null_rate.
             Callers that omit this arg get identical prior behaviour.
+        noise_seed: Seed for the mirror pool's privacy noise (tests pin it). Left
+            None, it is derived from the server secret and the opportunity id, so a
+            re-profile is reproducible on this server but the noise cannot be
+            recomputed, and so subtracted, from the manifest alone.
 
     Returns:
         YAML string that validates against Manifest.from_yaml().
@@ -985,11 +1012,13 @@ def profile(
     field_dists = _profile_field_distributions(user_visits, form_json_paths)
 
     kinds: dict[str, str] = {}
+    computed_paths: set[str] = set()
 
     # If caller provided app_structure, derive field types and enrich distributions.
     if app_structure is not None:
         form_schema = parse_form_schema_from_app_json(app_structure, app_type="deliver")
         kinds = _classify_paths(form_schema)
+        computed_paths = {q.json_path for q in form_schema.questions if getattr(q, "calculated", False)}
 
         # Model every numeric schema field, even one too sparsely present to be
         # auto-discovered, so nothing real is left for the engine's randint(0,10)
@@ -1114,6 +1143,25 @@ def profile(
                 continue
             pool.append({**series, "owner": persona})
         if pool:
+            # The pool is each real case exactly, so it is perturbed HERE, at profile
+            # time, rather than when a clone is generated: the manifest is what gets
+            # saved (bundles in Drive, returned over MCP), and a saved profile must not
+            # hold any real case's exact series either. See perturb_transplant_pool.
+            computed_whole = {
+                p
+                for p in computed_paths
+                if all(
+                    float(v["values"][p]).is_integer()
+                    for s in pool
+                    for v in s["visits"]
+                    if p in (v.get("values") or {})
+                )
+            }
+            pool = perturb_transplant_pool(
+                pool,
+                seed=noise_seed if noise_seed is not None else _mirror_noise_seed(opportunity_id),
+                frozen_paths=computed_whole,
+            )
             cohort["longitudinal"] = {"mode": "mirror", "transplant_pool": pool}
 
     # Seed deliberate QA anomalies (only under curation) so dashboards/evals have
