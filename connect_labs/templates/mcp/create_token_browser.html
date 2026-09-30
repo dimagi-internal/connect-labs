@@ -16,6 +16,17 @@
       Claude Code is requesting a Personal Access Token to call the labs MCP server
       as <strong>{{ request.user.username }}</strong>.
     </p>
+    {% if is_no_uservisit_data %}
+    <p class="text-sm text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-2">
+      <strong>{{ scope_label }}.</strong> This token can read workflow definitions, pipeline and indicator
+      definitions, app structure, solicitations, the org directory and targeting. It cannot read visit data
+      or change anything.
+    </p>
+    {% else %}
+    <p class="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+      <strong>{{ scope_label }}.</strong> This token can do anything you can do in labs, including reading visit data.
+    </p>
+    {% endif %}
     <p class="text-sm text-gray-500 mb-6">
       Tokens default to a 90-day lifetime and can be managed (rotated, revoked) anytime at
       <a href="{% url 'labs:mcp_tokens_index' %}" class="text-indigo-600 hover:text-indigo-800 underline">/labs/mcp/tokens/</a>.
@@ -27,6 +38,7 @@
       {% csrf_token %}
       <input type="hidden" name="callback" value="{{ callback }}">
       <input type="hidden" name="state" value="{{ state }}">
+      <input type="hidden" name="scope" value="{{ scope }}">
 
       <div>
         <label for="id_name" class="block text-sm font-medium text-gray-700 mb-1">

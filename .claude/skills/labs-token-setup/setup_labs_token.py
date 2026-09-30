@@ -172,7 +172,7 @@ def _register_mcp_server(raw_token: str, labs_base_url: str) -> None:
         )
 
 
-def main(labs_base_url: str) -> int:
+def main(labs_base_url: str, scope: str = "full") -> int:
     if not labs_base_url.startswith(("http://", "https://")):
         print(
             f"error: labs base URL must start with http:// or https://, got {labs_base_url!r}",
@@ -197,6 +197,7 @@ def main(labs_base_url: str) -> int:
             {
                 "callback": f"http://127.0.0.1:{port}/cb",
                 "state": state,
+                "scope": scope,
             }
         )
     )
@@ -232,7 +233,10 @@ def main(labs_base_url: str) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("usage: setup_labs_token.py <labs_base_url>", file=sys.stderr)
+    args = sys.argv[1:]
+    no_uservisit_data = "--no-uservisit-data" in args
+    args = [a for a in args if a != "--no-uservisit-data"]
+    if len(args) != 1:
+        print("usage: setup_labs_token.py <labs_base_url> [--no-uservisit-data]", file=sys.stderr)
         sys.exit(2)
-    sys.exit(main(sys.argv[1]))
+    sys.exit(main(args[0], scope="no-uservisit-data" if no_uservisit_data else "full"))
