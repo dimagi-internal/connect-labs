@@ -87,6 +87,9 @@ The prompt shown in the modal is an instruction to the assistant describing what
 !!! note
     The OCS bot is only available for programs that have been configured to use it. Ask your program administrator if you're unsure whether it's enabled.
 
+!!! note
+    If the OCS bot is unable to start a conversation, you will now see a specific error message explaining why — for example, if the worker is not reachable or the request was declined by the messaging service. If you see such a message, note the details and contact your program administrator.
+
 ---
 
 ## Report Actions — Buttons and the Agent Panel
@@ -170,3 +173,6 @@ Tasks created from an audit session link back to that session automatically. You
 
 **Can the agent panel act on my behalf when I'm not on the page?**
 Yes — if you have connected an external assistant such as Chat Studio, it stays connected after you leave the page and can start conversations or create tasks for you without you needing to return to the report.
+
+**The OCS bot showed an error when I tried to start a coaching conversation. What should I do?**
+The error message should now describe the specific reason the request failed — for example, if the worker could not be reached through CommCare Connect or if the messaging service declined the request. Note the exact message and share it with your program administrator so they can investigate.
