@@ -82,6 +82,15 @@ class TestTheQuestionsAndTheAwardFormAreTwoBlocks:
         assert row.index('data-testid="row-questions"') < row.index("<form")
         assert not re.search(r"\b(absolute|fixed|relative|-mt-\d|z-\d+)\b", row)
 
+    def test_the_form_carries_a_stable_hook(self, da, base, client_in_program):
+        # The walkthrough recipe finds the award form, its reason and its button by these.
+        quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _COMPARABLE)
+        row = _actions(_page(client_in_program, base["tender"]["id"]), quote["id"])
+        form = re.search(r'<form [^>]*data-testid="award-form"[^>]*>.*?</form>', row, re.S).group(0)
+        assert f'name="quote_id" value="{quote["id"]}"' in form
+        assert 'name="rationale"' in form
+        assert re.search(r'<button [^>]*type="submit"[^>]*>\s*Award\s*</button>', form)
+
 
 # ---- 2. who decided is who is signed in ------------------------------------
 
