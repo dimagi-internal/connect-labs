@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -46,12 +47,23 @@ def _folder_url(folder_id: str) -> str:
     return f"https://drive.google.com/drive/folders/{folder_id}"
 
 
+# Every folder the generator writes is named this way, and nothing else is: a dump of
+# real exports is ``opp-<id>-<timestamp>`` with no suffix (dump.py). The
+# ``synthetic_mark_generated`` backfill relies on the difference, so the pattern and
+# the name are defined side by side.
+GENERATED_FOLDER_NAME_RE = re.compile(r"^opp-\d+-\d{8}-\d{6}-generated$")
+
+
+def generated_folder_name(opportunity_id: int) -> str:
+    return f"opp-{opportunity_id}-{timezone.now():%Y%m%d-%H%M%S}-generated"
+
+
 def upload_fixtures(*, drive: _Drive, opportunity_id: int, fixtures: dict[str, Any]) -> UploadResult:
     parent_id = getattr(settings, "LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID", "")
     if not parent_id:
         raise RuntimeError("LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID is not set.")
 
-    folder_name = f"opp-{opportunity_id}-{timezone.now():%Y%m%d-%H%M%S}-generated"
+    folder_name = generated_folder_name(opportunity_id)
     folder_id = drive.create_folder(folder_name, parent_id=parent_id)
 
     counts: dict[str, int] = {}

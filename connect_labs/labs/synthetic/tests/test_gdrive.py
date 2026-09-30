@@ -301,3 +301,16 @@ def test_drive_telemetry_never_breaks_the_call_it_measures(httpx_mock, fake_cred
 
     client = gdrive.DriveClient()
     assert client.download_file("file-1") == b"payload"
+
+
+def test_get_name_returns_the_folders_name(httpx_mock, fake_creds):
+    httpx_mock.add_response(
+        url="https://www.googleapis.com/drive/v3/files/folder-abc?fields=name&supportsAllDrives=true",
+        json={"name": "opp-10001-20260601-101500-generated"},
+    )
+    assert gdrive.DriveClient().get_name("folder-abc") == "opp-10001-20260601-101500-generated"
+
+
+def test_get_name_refuses_an_id_that_is_not_a_drive_id(fake_creds):
+    with pytest.raises(gdrive.DriveAPIError):
+        gdrive.DriveClient().get_name("a b")
