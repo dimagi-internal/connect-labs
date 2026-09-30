@@ -368,7 +368,10 @@
      (`weight`), which drives the heat layer. Rates must not be summed, so the
      heat is built from COUNTS -- workers without signal, visits delayed --
      and the rates colour the circles. */
-  var HEAT = ['#3b0f70', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf'];
+  // The cool end is a visible slate, not inferno's near-black: an area with
+  // no concern is still an area with workers in it, and a ramp that starts at
+  // the basemap's own darkness made most of Connect disappear.
+  var HEAT = ['#5d68a8', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf'];
   var NO_DATA = '#4a4470';
   function heatColour(t) {
     if (t == null || isNaN(t)) return NO_DATA;
@@ -570,6 +573,9 @@
     });
     return ['case', ['has', 'k_' + k], ramp, NO_DATA];
   }
+  function sortKey(k) {
+    return ['coalesce', ['get', 'k_' + k], -1];
+  }
   // Heat, zoomed out: where the concern is concentrated. It hands over to
   // circles as you zoom in, where each area's own rate is what you want.
   var HEAT_UNTIL_ZOOM = 6.5;
@@ -618,46 +624,13 @@
         );
       });
       map.setPaintProperty('cells', 'circle-color', circleColour(k));
+      map.setLayoutProperty('cells', 'circle-sort-key', sortKey(k));
       map.setPaintProperty('cells', 'circle-opacity', circleOpacity());
       map.setPaintProperty('cells', 'circle-stroke-opacity', circleOpacity());
     }
     map.on('load', function () {
       window.ConnectMap.calmBasemap(map, { text: 0.45 });
       map.addSource('cells', { type: 'geojson', data: data });
-      // The footprint: every area with workers, as a quiet dot under the heat.
-      // Heat only draws where there is a concern, so without this a view like
-      // "delayed over 3 days" showed a handful of glows on an empty map and
-      // read as though Connect had a handful of workers.
-      map.addLayer({
-        id: 'cells-base',
-        type: 'circle',
-        source: 'cells',
-        maxzoom: HEAT_UNTIL_ZOOM + 0.5,
-        paint: {
-          'circle-radius': [
-            'interpolate',
-            ['linear'],
-            ['sqrt', ['get', 'workers']],
-            1,
-            2,
-            10,
-            6,
-            30,
-            12,
-          ],
-          'circle-color': '#a9b3e8',
-          'circle-opacity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            HEAT_UNTIL_ZOOM - 1,
-            0.45,
-            HEAT_UNTIL_ZOOM,
-            0,
-          ],
-          'circle-stroke-width': 0,
-        },
-      });
       var density = [
         'interpolate',
         ['linear'],
@@ -707,6 +680,53 @@
           ],
         },
       });
+      // The footprint: every area with workers, drawn OVER the heat so it is
+      // never hidden by it. Heat only draws where there is a concern, so
+      // without this a view like "delayed over 3 days" showed a handful of
+      // glows on an empty map and read as though Connect had a handful of
+      // workers.
+      map.addLayer({
+        id: 'cells-base',
+        type: 'circle',
+        source: 'cells',
+        maxzoom: HEAT_UNTIL_ZOOM + 0.5,
+        paint: {
+          'circle-radius': [
+            'interpolate',
+            ['linear'],
+            ['sqrt', ['get', 'workers']],
+            1,
+            3,
+            5,
+            6,
+            10,
+            9,
+            20,
+            13,
+          ],
+          'circle-color': '#c3caf0',
+          'circle-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            HEAT_UNTIL_ZOOM - 1,
+            0.7,
+            HEAT_UNTIL_ZOOM,
+            0,
+          ],
+          'circle-stroke-color': '#08042a',
+          'circle-stroke-width': 0.6,
+          'circle-stroke-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            HEAT_UNTIL_ZOOM - 1,
+            0.7,
+            HEAT_UNTIL_ZOOM,
+            0,
+          ],
+        },
+      });
       map.addLayer({
         id: 'cells',
         type: 'circle',
@@ -716,17 +736,19 @@
             'interpolate',
             ['linear'],
             ['zoom'],
-            3,
+            2,
             [
               'interpolate',
               ['linear'],
               ['sqrt', ['get', 'workers']],
               1,
-              3,
+              4,
+              5,
+              9,
               10,
-              12,
-              30,
-              26,
+              14,
+              20,
+              22,
             ],
             8,
             [
@@ -734,19 +756,24 @@
               ['linear'],
               ['sqrt', ['get', 'workers']],
               1,
-              6,
+              7,
+              5,
+              16,
               10,
-              22,
-              30,
-              44,
+              26,
+              20,
+              40,
             ],
           ],
           'circle-color': circleColour(state.key),
           'circle-opacity': circleOpacity(),
           'circle-stroke-color': '#08042a',
-          'circle-stroke-width': 0.8,
+          'circle-stroke-width': 1,
           'circle-stroke-opacity': circleOpacity(),
         },
+        // The hottest areas are drawn last, so a concern is never buried
+        // under a crowd of healthy neighbours.
+        layout: { 'circle-sort-key': sortKey(state.key) },
       });
       ready = true;
       apply();
