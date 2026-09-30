@@ -13,6 +13,10 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DynamicWorkflow } from '@/components/workflow/DynamicWorkflow';
+import {
+  ActionDialog,
+  type ActionRequest,
+} from '@/components/workflow/ActionDialog';
 import { AIChat } from '@/components/AIChat';
 import { DEFAULT_RENDER_CODE } from '@/components/workflow/defaultRenderCode';
 import { streamTaskProgress } from './task-progress';
@@ -44,6 +48,8 @@ import type {
   Task,
   WorkerData,
   WorkflowState,
+  WorkflowActionExecution,
+  WorkflowActionWorker,
 } from '@/components/workflow/types';
 import {
   MessageCircle,
@@ -71,6 +77,48 @@ window.LabsReport = LabsReport;
 /**
  * Create action handlers for workflow operations.
  */
+/**
+ * Tell the embedded agent what the page now shows.
+ *
+ * The canopy SDK's panel (`canopy_host/panel.html`, >= 0.5) declares the run's
+ * selection when the page renders and exposes `window.canopyHost`; a report that
+ * drills (an organisation, an opportunity, a worker) narrows that selection here
+ * so the agent's "these workers" means the ones on screen. The run, its scope
+ * and the tools on offer stay as the server declared them -- the SDK keeps them
+ * -- and so do the server's filters, which the drill is layered over.
+ * A no-op on a page with no panel (a workflow that does not share its runs).
+ */
+interface CanopyHost {
+  pageState(): { filters?: Record<string, unknown> } | null;
+  updatePageState(patch: Record<string, unknown>): unknown;
+}
+let agentBaseFilters: Record<string, unknown> | null = null;
+let lastSelection: AgentSelection | null = null;
+export interface AgentSelection {
+  visible_ids?: string[];
+  drilled?: Record<string, unknown>;
+}
+function shareSelection(selection: AgentSelection): void {
+  lastSelection = selection;
+  const host = (window as unknown as { canopyHost?: CanopyHost }).canopyHost;
+  if (!host || typeof host.updatePageState !== 'function') return;
+  if (agentBaseFilters === null) {
+    agentBaseFilters = { ...(host.pageState()?.filters || {}) };
+  }
+  // Nested, never spread: the server's filters name the run's own scope
+  // (opportunity_id OR program_id), which every agent tool must be called with,
+  // and a drill into an opportunity must not read as a change of that scope.
+  const patch: Record<string, unknown> = {
+    filters: { ...agentBaseFilters, drilled: selection.drilled || {} },
+  };
+  if (selection.visible_ids) patch.visible_ids = selection.visible_ids;
+  host.updatePageState(patch);
+}
+// A selection shared before the panel finished loading is replayed once it has.
+document.addEventListener('canopy:ready', () => {
+  if (lastSelection) shareSelection(lastSelection);
+});
+
 function createActionHandlers(csrfToken: string): ActionHandlers {
   return {
     createTask: async (params: CreateTaskParams): Promise<TaskResult> => {
@@ -1519,9 +1567,39 @@ function WorkflowRunner({
   }, [editingCode]);
 
   // Create action handlers
+  // A workflow action a button asked to run (actions.runAction): the dialog's
+  // request and the promise it settles.
+  const [actionRequest, setActionRequest] = useState<{
+    request: ActionRequest;
+    resolve: (execution: WorkflowActionExecution | null) => void;
+  } | null>(null);
+  const workflowActions = useMemo(
+    () => initialData.actions || [],
+    [initialData.actions],
+  );
+
   const actions = useMemo(() => {
-    return createActionHandlers(csrfToken);
-  }, [csrfToken]);
+    return {
+      ...createActionHandlers(csrfToken),
+      runAction: (
+        key: string,
+        args: { workers: WorkflowActionWorker[]; [k: string]: unknown },
+      ): Promise<WorkflowActionExecution | null> => {
+        const spec = workflowActions.find((a) => a.key === key);
+        if (!spec) {
+          return Promise.reject(
+            new Error(`This workflow has no action "${key}".`),
+          );
+        }
+        return new Promise((resolve) =>
+          setActionRequest({
+            request: { key, label: spec.label, args },
+            resolve,
+          }),
+        );
+      },
+    };
+  }, [csrfToken, workflowActions]);
 
   // useRunView: abstracts snapshot-vs-live data reads and exposes view.complete().
   //
@@ -1714,6 +1792,8 @@ function WorkflowRunner({
         auditsFor,
         tasks: tasksList,
         tasksFor,
+        shareSelection,
+        workflowActions,
       };
     }
 
@@ -1731,6 +1811,8 @@ function WorkflowRunner({
       auditsFor,
       tasks: tasksList,
       tasksFor,
+      shareSelection,
+      workflowActions,
     };
   }, [
     initialData.instance,
@@ -1743,6 +1825,7 @@ function WorkflowRunner({
     instanceState,
     actions,
     csrfToken,
+    workflowActions,
   ]);
 
   // Create props for workflow component
@@ -1762,6 +1845,21 @@ function WorkflowRunner({
 
   return (
     <div className="flex h-full">
+      {/* A workflow action a button asked to run: previewed, confirmed, followed.
+          Owned by the runner, not render code, so no template can skip the
+          confirmation. */}
+      {actionRequest && initialData.apiEndpoints.actionBase && (
+        <ActionDialog
+          request={actionRequest.request}
+          actionBase={initialData.apiEndpoints.actionBase}
+          executionBase={initialData.apiEndpoints.actionExecutionBase || ''}
+          csrfToken={csrfToken}
+          onClose={(execution) => {
+            actionRequest.resolve(execution);
+            setActionRequest(null);
+          }}
+        />
+      )}
       {/* Main Content */}
       <div
         className={`flex-1 min-w-0 transition-all duration-300 ${

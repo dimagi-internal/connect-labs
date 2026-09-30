@@ -441,6 +441,12 @@ class TestTheOrderShowsWhatCameThroughTheLink:
         assert "No dispatch was recorded" in body
 
 
+def _days_ago(n: int) -> str:
+    import datetime
+
+    return (datetime.date.today() - datetime.timedelta(days=n)).isoformat()
+
+
 class TestTheStockPageSaysSendOrReorder:
     """A point restocked from its supplier reorders; one restocked from another point is sent to."""
 
@@ -478,7 +484,11 @@ class TestTheStockPageSaysSendOrReorder:
             "movement_record",
             data={
                 "kind": "transfer",
-                "occurred_on": "2026-07-01",
+                # Relative to today, not fixed: the page judges a point over the
+                # 90-day window back from today (resupply.DEFAULT_WINDOW_DAYS), so a
+                # fixed July date fell out of it on 30 Sep and the warehouse became
+                # "cannot be assessed".
+                "occurred_on": _days_ago(75),
                 "commodity_slug": "ors-zinc-copack",
                 "item_id": item_id,
                 "from_supply_point_id": warehouse["id"],
@@ -488,7 +498,7 @@ class TestTheStockPageSaysSendOrReorder:
                 "source": "we_recorded",
             },
         )
-        for day, amount in (("2026-08-01", "1500"), ("2026-09-01", "1501")):
+        for day, amount in ((_days_ago(60), "1500"), (_days_ago(30), "1501")):
             op(
                 da,
                 "movement_record",

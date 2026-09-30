@@ -303,6 +303,36 @@ function WorkflowUI({
     [payload],
   );
 
+  // ══ What the agent panel sees ═══════════════════════════════════════════════
+  // When the workflow shares its runs (config.agent.share), the embedded agent
+  // is told what is on screen: the workers in the drilled scope and the scope
+  // itself. Keys only; the agent reads their indicators itself, as the visitor.
+  // A no-op when the workflow does not share.
+  React.useEffect(
+    function () {
+      if (!view || !view.shareSelection) return;
+      var keys = workerRows
+        .filter(function (w) {
+          if (openWorker) return w.key === openWorker;
+          if (selOpp !== null) return String(w.opp) === String(selOpp);
+          if (selOrg) return w.org === selOrg;
+          return true;
+        })
+        .map(function (w) {
+          return w.key;
+        });
+      view.shareSelection({
+        visible_ids: keys,
+        drilled: {
+          organisation: selOrg || null,
+          opportunity_id: selOpp !== null ? selOpp : null,
+          worker: openWorker || null,
+        },
+      });
+    },
+    [workerRows, selOrg, selOpp, openWorker],
+  );
+
   // ══ History of saved reports: deltas and trends ════════════════════════════
   var sHistory = React.useState(null);
   var history = sHistory[0],
@@ -868,6 +898,25 @@ function WorkflowUI({
       </table>
     );
   }
+  // ══ The workflow's own actions ══════════════════════════════════════════════
+  // Whatever this workflow declares (config.actions -- e.g. "Initiate AI coach"),
+  // one button each: for every worker in view, and on each worker's row. The
+  // runner previews the action and runs it only on the person's confirm; an agent
+  // runs the same actions through the labs MCP (workflow/actions.py).
+  var WF_ACTIONS = (view && view.workflowActions) || [];
+  function runWorkflowAction(key, rows) {
+    if (!actions || !actions.runAction || !rows.length) return;
+    actions
+      .runAction(key, {
+        workers: rows.map(function (w) {
+          return { key: w.key };
+        }),
+      })
+      .catch(function (e) {
+        window.alert(e && e.message ? e.message : String(e));
+      });
+  }
+
   function WorkerTable() {
     var list = workerRows.filter(function (w) {
       if (selOpp !== null) return String(w.opp) === String(selOpp);
@@ -908,6 +957,21 @@ function WorkflowUI({
         title={R.cap(WRK.plural)}
         right={
           <span className="inline-flex items-center gap-2">
+            {WF_ACTIONS.map(function (a) {
+              return (
+                <button
+                  key={'act:' + a.key}
+                  type="button"
+                  title={a.description}
+                  className="rounded border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                  onClick={function () {
+                    runWorkflowAction(a.key, list);
+                  }}
+                >
+                  {a.label + ' · ' + R.nounCount(list.length, WRK)}
+                </button>
+              );
+            })}
             <span>{R.nounCount(list.length, WRK) + ' · compare with'}</span>
             <select
               className="border border-gray-200 rounded px-1 py-0.5 text-xs"
@@ -971,6 +1035,22 @@ function WorkflowUI({
                       Review →
                     </a>
                   ) : null}
+                  {WF_ACTIONS.map(function (a) {
+                    return (
+                      <button
+                        key={'act:' + a.key}
+                        type="button"
+                        title={a.description}
+                        className="ml-2 text-xs text-indigo-600 hover:underline"
+                        onClick={function (ev) {
+                          ev.stopPropagation();
+                          runWorkflowAction(a.key, [w]);
+                        }}
+                      >
+                        {a.label}
+                      </button>
+                    );
+                  })}
                   <div className="text-gray-400">
                     {oppLabel(w.opp) +
                       (w.org && oppLabel(w.opp).indexOf(w.org) === -1
