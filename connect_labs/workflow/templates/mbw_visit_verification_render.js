@@ -307,6 +307,65 @@ function WorkflowUI({
     return row[key];
   }
 
+  // --- Per FLW Verification View table filters (status + FLW) ------------
+  // Table-only filters -- narrow what the table/CSV show without touching
+  // displayRows itself, so the Verification Summary tab, the Failed
+  // Verification Analysis tab, and everything computed from displayRows
+  // stay on the full domain+eligibility-filtered set regardless of what's
+  // selected here.
+  var STATUS_FILTER_OPTIONS = [
+    { key: 'all', label: 'All' },
+    { key: 'Pass', label: 'Passed' },
+    { key: 'Pending Audit', label: 'Pending Audit' },
+    { key: 'Fail', label: 'Failed' },
+  ];
+  var _statusFilter = React.useState('all');
+  var statusFilter = _statusFilter[0];
+  var setStatusFilter = _statusFilter[1];
+
+  var _flwFilter = React.useState([]);
+  var flwFilter = _flwFilter[0];
+  var setFlwFilter = _flwFilter[1];
+  var _flwSearch = React.useState('');
+  var flwSearch = _flwSearch[0];
+  var setFlwSearch = _flwSearch[1];
+  var _flwDropdownOpen = React.useState(false);
+  var flwDropdownOpen = _flwDropdownOpen[0];
+  var setFlwDropdownOpen = _flwDropdownOpen[1];
+
+  var allFlwUsernames = React.useMemo(
+    function () {
+      var set = {};
+      displayRows.forEach(function (row) {
+        if (row.username) set[row.username] = true;
+      });
+      return Object.keys(set).sort();
+    },
+    [displayRows],
+  );
+
+  function toggleFlwFilter(username) {
+    setFlwFilter(function (prev) {
+      var idx = prev.indexOf(username);
+      if (idx === -1) return prev.concat([username]);
+      return prev.slice(0, idx).concat(prev.slice(idx + 1));
+    });
+  }
+
+  var filteredTableRows = React.useMemo(
+    function () {
+      return displayRows.filter(function (row) {
+        var statusOk =
+          statusFilter === 'all' ||
+          row.visit_verification_outcome === statusFilter;
+        var flwOk =
+          flwFilter.length === 0 || flwFilter.indexOf(row.username) !== -1;
+        return statusOk && flwOk;
+      });
+    },
+    [displayRows, statusFilter, flwFilter],
+  );
+
   // --- Sortable columns ---------------------------------------------------
   var _sort = React.useState({ key: null, dir: 'asc' });
   var sort = _sort[0];
@@ -321,10 +380,10 @@ function WorkflowUI({
 
   var sortedRows = React.useMemo(
     function () {
-      if (!sort.key) return displayRows;
+      if (!sort.key) return filteredTableRows;
       var key = sort.key;
       var dir = sort.dir === 'asc' ? 1 : -1;
-      return displayRows.slice().sort(function (a, b) {
+      return filteredTableRows.slice().sort(function (a, b) {
         var av = cellValue(a, key);
         var bv = cellValue(b, key);
         var an = typeof av === 'number' ? av : parseFloat(av);
@@ -344,7 +403,7 @@ function WorkflowUI({
         return as.localeCompare(bs) * dir;
       });
     },
-    [displayRows, sort],
+    [filteredTableRows, sort],
   );
 
   // --- Summary metrics (over the displayed/filtered set) ------------------
@@ -460,6 +519,59 @@ function WorkflowUI({
     return bins;
   }
 
+  // --- By-FLW failed-visit breakdown (Failed Verification Analysis tab) --
+  // For every FLW with at least one failed visit (Final verification
+  // outcome === 'Fail'), count that distinct failed-visit total AND, for
+  // those same failed visits, tally how many failed EACH individual
+  // method (GPS/QR/Signature/Mother Questions/ANC Card) via the same
+  // METHODS/getOutcome functions the rest of the dashboard uses. A visit
+  // can fail more than one method, so the per-method segments can sum
+  // higher than the FLW's own failedVisits count -- same relationship as
+  // the Verification Summary tab's per-method chart, called out in the
+  // caption next to this chart.
+  var METHOD_COLORS = {
+    GPS: '#3b82f6',
+    QR: '#f59e0b',
+    Signature: '#8b5cf6',
+    'Mother Questions': '#ec4899',
+    'ANC Card': '#10b981',
+  };
+
+  var byFlwFailureStats = React.useMemo(
+    function () {
+      var byFlw = {};
+      displayRows.forEach(function (row) {
+        if (row.visit_verification_outcome !== 'Fail') return;
+        var key = row.username || '(unknown)';
+        if (!byFlw[key]) {
+          var methodFails = {};
+          METHODS.forEach(function (m) {
+            methodFails[m.label] = 0;
+          });
+          byFlw[key] = {
+            username: key,
+            failedVisits: 0,
+            methodFails: methodFails,
+          };
+        }
+        byFlw[key].failedVisits += 1;
+        METHODS.forEach(function (m) {
+          if (m.getOutcome(row) === 'Fail') {
+            byFlw[key].methodFails[m.label] += 1;
+          }
+        });
+      });
+      return Object.keys(byFlw)
+        .map(function (k) {
+          return byFlw[k];
+        })
+        .sort(function (a, b) {
+          return b.failedVisits - a.failedVisits;
+        });
+    },
+    [displayRows],
+  );
+
   var homeGpsHistogram = React.useMemo(
     function () {
       return buildGpsDistanceHistogram(
@@ -544,6 +656,22 @@ function WorkflowUI({
           name: 'Verification-block-present gate',
           field:
             'visit_location_has_prev_home_gps (form.gps_verification.location_check.visit_location_has_prev_home_gps) must be non-null/undefined/empty-string.',
+        },
+      ],
+    },
+    {
+      title: 'Per FLW Verification View Filters',
+      body: "Status and FLW are table-only filters -- they narrow the table (and what CSV export downloads) without affecting anything else on the page. The Verification Summary tab, the Failed Verification Analysis tab, and the FLW picker's own list of available names all stay on the full domain+eligibility-filtered set regardless of what's selected here.",
+      items: [
+        {
+          name: 'Status',
+          def: 'Single-select: All (default) / Passed / Pending Audit / Failed. Filters rows by Final verification outcome.',
+          field: 'statusFilter state; row kept when row.visit_verification_outcome === statusFilter (or always, for "All").',
+        },
+        {
+          name: 'FLW',
+          def: "Multi-select with search: pick one or more FLW IDs to show only their visits, or leave empty for all. The list of names offered is every username present in the domain+eligibility-filtered set (displayRows), independent of the Status filter, so switching Status can't make an FLW's name disappear from the picker.",
+          field: 'flwFilter state (array of usernames); row kept when flwFilter is empty or flwFilter.indexOf(row.username) !== -1.',
         },
       ],
     },
@@ -692,10 +820,22 @@ function WorkflowUI({
     },
     {
       title: 'Failed Verification Analysis Tab',
-      body: "Reports here use the same filtered/eligible row set as the rest of the dashboard (domain toggle + FLW eligibility + verification-block-present gate). First report: GPS Distance from Previous Point -- two histograms (Home, Health Facility) of how far each visit's captured GPS was from the mother's registered reference point for that location, for every visit that actually ran that comparison.",
+      body: "Reports here use the same filtered/eligible row set as the rest of the dashboard (domain toggle + FLW eligibility + verification-block-present gate) -- NOT the table-only Status/FLW filters from the Per FLW Verification View tab, which are scoped to that table alone. Two sections: By FLW (top) and GPS Verification (below).",
       items: [
         {
-          name: 'Home / Health Facility GPS distance (meters)',
+          name: 'By FLW -- chart',
+          def: "Every FLW with at least one failed visit (Final verification outcome = Fail), ordered most failed visits first. Each name's bar label includes that FLW's actual distinct failed-visit count in parentheses, e.g. \"jdoe (7)\". Bars are stacked by which individual method(s) -- GPS, QR, Signature, Mother Questions, ANC Card -- failed on those same visits.",
+          field:
+            'Computed client-side (byFlwFailureStats) from displayRows filtered to visit_verification_outcome === "Fail", grouped by username. Not a raw pipeline field.',
+        },
+        {
+          name: 'By FLW -- stacked segments vs. the labeled count',
+          def: "A single failed visit can fail more than one method (e.g. both GPS and Signature), so a bar's segments can sum to MORE than the failed-visit count in that FLW's name label -- same relationship as the Verification Summary tab's per-method chart vs. its top cards. The label always reflects the true distinct failed-visit count; the segments show which methods were involved.",
+          field:
+            'Per method, per failed visit: gpsOutcome() / qrOutcome() / signatureOutcome() / motherQuestionsOutcome() / ancCardOutcome() === "Fail" (same functions as the Outcome Columns and Verification Summary sections above).',
+        },
+        {
+          name: 'GPS Verification -- Home / Health Facility GPS distance (meters)',
           def: "CommCare's own distance() XPath calculation between this visit's captured GPS and the mother's registered home_gps / health_facility_gps case property. Only present when the visit was at that location type AND a reference point existed there -- i.e. a GPS check actually ran. This is the SAME distance the form itself uses to decide GPS outcome, just exposed as a number instead of collapsed to Pass/Fail.",
           field:
             'gps_distance_from_home_meters (form.gps_verification.location_check.calculation_distance_from_home_gps); gps_distance_from_health_facility_meters (form.gps_verification.location_check.calculation_distance_from_health_facility_gps). Both transform: "float". Verified identical field paths and the 200m pass/fail threshold on both the test domain\'s and opp 765\'s production app.',
@@ -783,6 +923,51 @@ function WorkflowUI({
       };
     },
     [methodStats, activeTab],
+  );
+
+  // --- By-FLW failed-visit chart (Failed Verification Analysis tab) ------
+  var byFlwChartRef = React.useRef(null);
+  var byFlwChartInstance = React.useRef(null);
+
+  React.useEffect(
+    function () {
+      if (activeTab !== 'failed_analysis') return;
+      if (!byFlwChartRef.current || !window.Chart) return;
+      if (byFlwChartInstance.current) byFlwChartInstance.current.destroy();
+
+      byFlwChartInstance.current = new window.Chart(byFlwChartRef.current, {
+        type: 'bar',
+        data: {
+          labels: byFlwFailureStats.map(function (f) {
+            return f.username + ' (' + f.failedVisits + ')';
+          }),
+          datasets: METHODS.map(function (m) {
+            return {
+              label: m.label,
+              data: byFlwFailureStats.map(function (f) {
+                return f.methodFails[m.label];
+              }),
+              backgroundColor: METHOD_COLORS[m.label],
+            };
+          }),
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+            y: { stacked: true },
+          },
+          plugins: { legend: { position: 'bottom' } },
+        },
+      });
+
+      return function () {
+        if (byFlwChartInstance.current) byFlwChartInstance.current.destroy();
+      };
+    },
+    [byFlwFailureStats, activeTab],
   );
 
   // --- GPS distance histograms (Failed Verification Analysis tab) --------
@@ -1003,6 +1188,128 @@ function WorkflowUI({
 
       {activeTab === 'table' && (
         <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm font-medium text-gray-700">
+              Status:
+            </span>
+            {STATUS_FILTER_OPTIONS.map(function (opt) {
+              var isActive = statusFilter === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={function () {
+                    setStatusFilter(opt.key);
+                  }}
+                  className={
+                    'rounded border px-3 py-1 text-sm font-medium ' +
+                    (isActive
+                      ? 'border-blue-600 bg-blue-600 text-white'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50')
+                  }
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+
+            <span className="ml-2 text-sm font-medium text-gray-700">
+              FLW:
+            </span>
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={function () {
+                  setFlwDropdownOpen(!flwDropdownOpen);
+                }}
+                className="rounded border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                {flwFilter.length === 0
+                  ? 'All'
+                  : flwFilter.length + ' selected'}
+                {' ▾'}
+              </button>
+              {flwDropdownOpen && (
+                <div
+                  style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                  onClick={function () {
+                    setFlwDropdownOpen(false);
+                  }}
+                ></div>
+              )}
+              {flwDropdownOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    zIndex: 50,
+                    top: '100%',
+                    left: 0,
+                    marginTop: '4px',
+                    width: '260px',
+                  }}
+                  className="overflow-hidden rounded border border-gray-200 bg-white shadow-lg"
+                >
+                  <div className="border-b border-gray-200 p-2">
+                    <input
+                      type="text"
+                      value={flwSearch}
+                      onChange={function (e) {
+                        setFlwSearch(e.target.value);
+                      }}
+                      placeholder="Search FLW ID..."
+                      className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                    />
+                  </div>
+                  <div
+                    style={{ maxHeight: '220px', overflowY: 'auto' }}
+                    className="p-1"
+                  >
+                    {allFlwUsernames
+                      .filter(function (u) {
+                        return (
+                          u.toLowerCase().indexOf(flwSearch.toLowerCase()) !==
+                          -1
+                        );
+                      })
+                      .map(function (u) {
+                        var checked = flwFilter.indexOf(u) !== -1;
+                        return (
+                          <label
+                            key={u}
+                            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-gray-50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={function () {
+                                toggleFlwFilter(u);
+                              }}
+                            />
+                            {u}
+                          </label>
+                        );
+                      })}
+                    {allFlwUsernames.length === 0 && (
+                      <div className="px-2 py-1 text-sm text-gray-400">
+                        No FLWs
+                      </div>
+                    )}
+                  </div>
+                  {flwFilter.length > 0 && (
+                    <div className="border-t border-gray-200 p-2">
+                      <button
+                        onClick={function () {
+                          setFlwFilter([]);
+                        }}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        Clear selection
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="flex items-start justify-between">
             <div className="text-sm text-gray-500">
               {sortedRows.length} visits shown
@@ -1068,23 +1375,58 @@ function WorkflowUI({
       )}
 
       {activeTab === 'failed_analysis' && (
-        <div className="space-y-4">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">
-              GPS Distance from Previous Point
-            </h3>
-            <p className="text-xs text-gray-500">
-              Every visit that ran a GPS check against a previously-saved point
-              (the mother's registered home location, or her registered health
-              facility), bucketed by how far the visit's GPS was from that
-              point. Pass is ≤200m, Fail is &gt;200m -- that's the form's own
-              threshold, so the color change lands exactly at the 200m bin edge
-              below. Respects the domain and eligibility filters above, same row
-              set as the other tabs.
-            </p>
+        <div className="space-y-8">
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">
+                By FLW
+              </h3>
+              <p className="text-xs text-gray-500">
+                Every FLW with at least one failed visit (Final verification
+                outcome = Fail), most failed visits first -- the number next
+                to each name is that FLW's actual failed-visit count. Each
+                bar is broken down by which individual method(s) (GPS, QR,
+                Signature, Mother Questions, ANC Card) failed on those
+                visits; a single visit can fail more than one method, so a
+                bar's segments can add up to more than the FLW's labeled
+                failed-visit count. Respects the domain and eligibility
+                filters above, same row set as the other tabs.
+              </p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              {byFlwFailureStats.length > 0 ? (
+                <div
+                  style={{
+                    height: Math.max(240, byFlwFailureStats.length * 28) + 'px',
+                  }}
+                >
+                  <canvas ref={byFlwChartRef}></canvas>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  No failed visits in the current filter.
+                </p>
+              )}
+            </div>
           </div>
 
-          {(function () {
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">
+                GPS Verification
+              </h3>
+              <p className="text-xs text-gray-500">
+                Every visit that ran a GPS check against a previously-saved point
+                (the mother's registered home location, or her registered health
+                facility), bucketed by how far the visit's GPS was from that
+                point. Pass is ≤200m, Fail is &gt;200m -- that's the form's own
+                threshold, so the color change lands exactly at the 200m bin edge
+                below. Respects the domain and eligibility filters above, same row
+                set as the other tabs.
+              </p>
+            </div>
+
+            {(function () {
             var homeTotal = homeGpsHistogram.reduce(function (sum, b) {
               return sum + b.pass + b.fail;
             }, 0);
@@ -1130,7 +1472,8 @@ function WorkflowUI({
                 </div>
               </div>
             );
-          })()}
+            })()}
+          </div>
         </div>
       )}
 
