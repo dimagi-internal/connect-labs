@@ -468,3 +468,67 @@ class TestEveryTargetableIndicatorIsReachable:
         for code in ("share_beyond_2h", "travel_time_healthcare", "share_rural"):
             measures.get(code)  # raises if the measure went away
         assert {"map", "map_worldpop", "ghsl"} <= declared
+
+
+class TestNationalNeonatal:
+    """nmr at national resolution — a country ranking must read it everywhere.
+
+    Before IGME's national neonatal series was eligible, national_igme could
+    answer u5mr for 54 countries and nmr for none, so a ranking on "high
+    neonatal mortality" fell back to survey rows reaching about half of them
+    (ace#2560).
+    """
+
+    @pytest.fixture
+    def neonatal(self):
+        ng = make_boundary("NGA", 0, "Nigeria", "NGA-0")
+        ng1 = make_boundary("NGA", 1, "Kano", "NGA-1", x=2)
+        so = make_boundary("SOM", 0, "Somalia", "SOM-0", x=6)
+        so1 = make_boundary("SOM", 1, "Banadir", "SOM-1", x=8)
+        set_value(ng, "nmr", 39.0, source=Source.IGME)
+        set_value(so, "nmr", 34.2, source=Source.IGME)
+        for b in (ng1, so1):
+            set_value(b, "births", 100_000, source=Source.DERIVED)
+        return {"ng": ng, "so": so}
+
+    def test_igme_is_an_eligible_source_for_nmr(self):
+        from connect_labs.labs.indicators import policy
+        from connect_labs.labs.indicators.sources import igme
+
+        assert Source.IGME in policy.sources("nmr")
+        assert igme.INDICATORS["nmr"] == "CME_MRM0"
+
+    def test_national_igme_answers_nmr_for_every_country_with_a_series(self, neonatal):
+        sel = select_above("nmr", threshold=30, iso_codes=["NGA", "SOM"], method="national_igme")
+        assert {a.name for a in sel.areas} == {"Nigeria", "Somalia"}
+        assert not sel.countries_unsupported
+
+    def test_the_national_series_never_answers_a_subnational_question(self, neonatal):
+        # The same rule the u5mr fixture pins: no silent national fallback.
+        sel = select_above("nmr", threshold=30, iso_codes=["SOM"], method="subnational_survey")
+        assert sel.areas == []
+        assert sel.countries_unsupported == ["Somalia"]
+
+
+class TestLoadOneMortalityMeasure:
+    """`--measure nmr` tops up one national series and touches nothing else."""
+
+    def test_measure_nmr_loads_only_the_igme_national_neonatal_series(self, monkeypatch):
+        from django.core.management import call_command
+
+        from connect_labs.labs.indicators.management.commands import load_indicators as cmd
+
+        # The command refuses to run for a country with no ADM1 boundaries.
+        make_boundary("NGA", 0, "Nigeria", "NGA-0")
+        make_boundary("NGA", 1, "Kano", "NGA-1", x=2)
+
+        calls = []
+        monkeypatch.setattr(cmd.dhs, "load", lambda m, iso_codes=None: calls.append(("dhs", m)) or [])
+        monkeypatch.setattr(cmd.igme, "load", lambda m, iso_codes=None: calls.append(("igme", m)) or [])
+        monkeypatch.setattr(
+            cmd.igme_subnational, "load", lambda m, iso_codes=None: calls.append(("igme_subnational", m)) or []
+        )
+
+        call_command("load_indicators", stage="mortality", measure="nmr", iso="NGA")
+
+        assert calls == [("igme", "nmr")]
