@@ -1964,7 +1964,9 @@ class ConnectivityView(View):
         org_name = {
             o.slug: o.display_name for o in PulseOrganization.objects.filter(slug__in=[r["key"] for r in by_org])
         }
-        org_name.update({o["slug"]: o["name"] for o in org_menu})
+        # The menu's `name` is Connect's, which for most partners is only the
+        # slug; `partner` is the real organisation from the directory.
+        org_name.update({o["slug"]: o.get("partner") or o["name"] for o in org_menu})
         for r in by_org:
             r["name"] = org_name.get(r["key"]) or r["key"]
         by_opp = connectivity.breakdown(workers, "opportunity")
