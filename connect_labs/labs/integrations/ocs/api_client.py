@@ -261,7 +261,7 @@ class OCSDataAccess:
 
         Args:
             identifier: Unique identifier for the participant
-            platform: Channel platform (e.g., 'connect_labs', 'whatsapp')
+            platform: Channel platform (e.g., 'commcare_connect', 'whatsapp')
             experiment_id: OCS Experiment ID (UUID)
             prompt_text: Instructions for the bot
             start_new_session: Whether to start a new session
