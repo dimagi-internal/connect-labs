@@ -317,3 +317,15 @@ def test_a_live_run_is_graded_now_and_reread_from_a_short_cache(user, wda, monke
     assert second["grading"]["source"] == "live"
     built.assert_called_once()
     assert "cases" not in cache.get(f"wf-agent-graded:v1:{user.pk}:70")
+
+
+def test_saving_an_invalid_action_declaration_is_refused_before_anything_is_read(user):
+    tool = get_tool("workflow_update_definition")
+    with pytest.raises(MCPToolError, match="not an action type"):
+        tool.handler(
+            user=user,
+            workflow_id=7,
+            program_id=25,
+            expected_version=1,
+            patch={"config": {"actions": [{"key": "x", "type": "send_sms"}]}},
+        )
