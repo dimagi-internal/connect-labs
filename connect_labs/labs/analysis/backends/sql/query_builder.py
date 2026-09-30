@@ -1768,14 +1768,12 @@ def execute_flw_aggregation(
 # -----------------------------------------------------------------------------
 
 
-def build_visit_extraction_query(
-    config: AnalysisPipelineConfig,
-    opportunity_id: int,
-) -> str:
-    """
-    Build SQL query to extract computed fields for each visit (no aggregation).
+def _visit_select_parts(config: AnalysisPipelineConfig, only_fields=None) -> tuple[list[str], list[str]]:
+    """The SELECT list of a visit extraction: the base visit columns, then one term
+    per field (`only_fields` narrows it to those names), and the computed names.
 
-    Returns one row per visit with base fields + computed fields from config.
+    One builder for the single-opportunity extraction and the multi-opportunity one
+    the semantic layer reads, so the two cannot disagree about a field.
     """
     # Base visit fields. Shared with the window-reference and shadow-collision
     # checks so a column can't be validatable-but-unselectable, or the reverse
@@ -1785,7 +1783,7 @@ def build_visit_extraction_query(
 
     # Check if any field needs full visit context (form_json, images)
     needs_full_context = False
-    for field in config.fields:
+    for field in _selected_fields(config, only_fields):
         if field.extractor and callable(field.extractor):
             needs_full_context = True
             break
@@ -1806,7 +1804,7 @@ def build_visit_extraction_query(
     computed_field_names = []
 
     # Add computed fields from config (no aggregation, just extraction + transform)
-    for field in config.fields:
+    for field in _selected_fields(config, only_fields):
         # Handle extractor fields — need post-processing with full visit context
         if field.extractor and callable(field.extractor):
             select_parts.append(f"NULL as {_sql_ident(field.name)}")
@@ -1830,6 +1828,27 @@ def build_visit_extraction_query(
         transformed_expr = _transform_to_sql(field, value_expr)
         select_parts.append(f"{transformed_expr} as {_sql_ident(field.name)}")
         computed_field_names.append(field.name)
+
+    return select_parts, computed_field_names
+
+
+def _selected_fields(config: AnalysisPipelineConfig, only_fields) -> list:
+    if only_fields is None:
+        return list(config.fields)
+    wanted = set(only_fields)
+    return [f for f in config.fields if f.name in wanted]
+
+
+def build_visit_extraction_query(
+    config: AnalysisPipelineConfig,
+    opportunity_id: int,
+) -> str:
+    """
+    Build SQL query to extract computed fields for each visit (no aggregation).
+
+    Returns one row per visit with base fields + computed fields from config.
+    """
+    select_parts, computed_field_names = _visit_select_parts(config)
 
     select_clause = ",\n    ".join(select_parts)
 
@@ -1905,6 +1924,83 @@ def build_visit_extraction_query(
         ORDER BY visit_id
     """
     return query, computed_field_names
+
+
+def build_multi_opportunity_visit_extraction(
+    config: AnalysisPipelineConfig,
+    opportunity_ids,
+    *,
+    only_fields=None,
+    extra_select=(),
+    extra_predicates=(),
+) -> str:
+    """One row per visit across SEVERAL opportunities -- the semantic layer's Layer 1.
+
+    The engine builds this itself, from the same SELECT list as
+    `build_visit_extraction_query`, so the scope, the pipeline's row filters and the
+    in-progress-download guard are the engine's, in one place. The semantic layer
+    used to take the single-opportunity SQL as TEXT, cut its WHERE at the scope and
+    write its own, and every cut lost something the engine had put there: the
+    pipeline's status filter, then the `visit_count > 0` guard (#1684), then the
+    raw-cache slot, which read every other source cached for the opportunity -- HQ
+    forms, OCS sessions -- as visits. Three bugs of one shape; building the query
+    here ends the shape.
+
+    Each visit is kept once: the freshest finalized copy (latest `expires_at`),
+    since a slot can hold a stale generation beside the current one.
+
+    `only_fields` narrows the field list (a lookup reads just the fields it names);
+    `extra_select` adds `<expr> as <name>` terms over the same rows (another
+    pipeline's field on the same forms -- see `field_value_sql`).
+    `extra_predicates` are caller conditions on base columns, applied in the scan so
+    a one-worker read costs one worker. A pipeline's `joins` read the computed cache
+    of ONE opportunity and are refused; its `window_fields` belong to the pipeline's
+    own output and are not computed here (a registry declares its own).
+    """
+    if config.joins:
+        raise ValueError(
+            "a pipeline with joins cannot feed a multi-opportunity extraction: its join reads "
+            "one opportunity's computed cache"
+        )
+    opps = [int(o) for o in opportunity_ids]
+    if not opps:
+        raise ValueError("build_multi_opportunity_visit_extraction needs at least one opportunity")
+
+    select_parts, _ = _visit_select_parts(config, only_fields)
+    select_clause = ",\n    ".join(["opportunity_id", "pipeline_id", *select_parts, *extra_select])
+    slot = config.raw_slot_id
+    slot_sql = "pipeline_id IS NULL" if slot is None else f"pipeline_id = {int(slot)}"
+    where = [
+        f"opportunity_id IN ({','.join(str(o) for o in opps)})",
+        slot_sql,
+        "visit_count > 0",
+        *_visit_filter_predicates(config),
+        *extra_predicates,
+    ]
+    return f"""SELECT DISTINCT ON (opportunity_id, visit_id)
+    {select_clause}
+FROM labs_raw_visit_cache
+WHERE {" AND ".join(where)}
+ORDER BY opportunity_id, visit_id, expires_at DESC, pipeline_id"""
+
+
+def field_value_sql(config: AnalysisPipelineConfig, name: str) -> str | None:
+    """The SQL one field of `config` computes over a raw-cache row, or None when the
+    pipeline has no such field or computes it in Python (an extractor, or a
+    transform that reads the whole visit) -- which SQL cannot read."""
+    import inspect
+
+    for field in config.fields:
+        if field.name != name:
+            continue
+        if field.extractor and callable(field.extractor):
+            return None
+        if field.transform and callable(field.transform):
+            params = list(inspect.signature(field.transform).parameters)
+            if "visit_data" in params or not params:
+                return None
+        return _transform_to_sql(field, _field_value_sql(field))
+    return None
 
 
 def _window_field_to_sql(wf: "WindowFieldComputation") -> str:  # noqa: F821
