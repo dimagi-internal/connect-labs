@@ -3394,14 +3394,22 @@ def _deployment_facts_for_render(deployment: dict | None) -> dict:
     }
 
 
-def _cached_opportunities(opportunity_ids) -> tuple[list[int], list[int]]:
-    """(opportunities with live cached visits, opportunities without), in request order."""
+def _cached_opportunities(opportunity_ids, slot=None) -> tuple[list[int], list[int]]:
+    """(opportunities with live cached rows in `slot`, opportunities without), in request order.
+
+    `slot` defaults to the Connect visits slot. It must be a slot: an opportunity
+    also caches its other sources' rows (CommCare HQ forms, each pipeline in its
+    own slot), and counting any slot read an opportunity whose visits were cold as
+    cached.
+    """
     from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+    from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
 
     requested = [int(o) for o in opportunity_ids]
     present = set(
         RawVisitCache.objects.filter(
             opportunity_id__in=requested,
+            pipeline_id=USER_VISITS_RAW_SLOT if slot is None else slot,
             visit_count__gt=0,
             expires_at__gt=dj_timezone.now(),
         ).values_list("opportunity_id", flat=True)
@@ -3779,6 +3787,16 @@ def semantic_indicators_api(request, definition_id):
         with_data, missing = _cached_opportunities(requested)
         cold = not with_data
         partial = bool(with_data) and bool(missing)
+        # A lookup reads ANOTHER pipeline's rows (CommCare HQ forms, say) from that
+        # pipeline's own slot, and a cold one reads as NULL on every visit -- the
+        # same silent understatement as a partial visit cache. Name them.
+        from connect_labs.semantic.layer1 import LOOKUPS_KEY
+
+        lookups_missing = {}
+        for name, lookup_config in ((extra_fields or {}).get(LOOKUPS_KEY) or {}).items():
+            gaps = _cached_opportunities(requested, slot=lookup_config.raw_slot_id)[1]
+            if gaps:
+                lookups_missing[name] = gaps
 
         return JsonResponse(
             {
@@ -3795,6 +3813,7 @@ def semantic_indicators_api(request, definition_id):
                 "partial_cache": partial,
                 "opportunities_with_data": with_data,
                 "opportunities_missing": missing,
+                "lookups_missing": lookups_missing,
                 "cold_cache_hint": (
                     "No cached visits for these opportunities, so every metric is zero "
                     "rather than genuinely zero. Load the workflow's data once (the "

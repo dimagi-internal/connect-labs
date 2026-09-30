@@ -35,7 +35,14 @@ import re
 from typing import Any
 
 from connect_labs.semantic import legacy
-from connect_labs.semantic.model import RegistryModel, indicator_series, resolve_model
+from connect_labs.semantic.model import (
+    LOOKUP_PICKS,
+    VISIT_COLUMN_KINDS,
+    WINDOW_KINDS,
+    RegistryModel,
+    indicator_series,
+    resolve_model,
+)
 
 # Cube's real measure types. Anything outside this set is rejected at load: the
 # whole point of borrowing Cube's notation is that we do not invent dialect.
@@ -626,6 +633,77 @@ def _identifier_problem(value: Any, label: str) -> list[str]:
     return []
 
 
+def _window_column_problems(spec: Any, label: str, kind: str) -> list[str]:
+    """A `previous` / `distance_from_previous` visit column: every name it reads is a
+    Layer-1 column, so each must be a plain identifier -- they are spliced into a
+    window clause, never parsed as SQL."""
+    if not isinstance(spec, dict):
+        return [f"{label}: must be a mapping"]
+    problems: list[str] = []
+    reads = ("column",) if kind == "previous" else ("lat", "lon")
+    for key in reads:
+        problems += _identifier_problem(spec.get(key), f"{label}.{key}")
+    partition = spec.get("partition_by")
+    names = [partition] if isinstance(partition, str) else partition
+    if not isinstance(names, list) or not names or len(names) > 4:
+        problems.append(f"{label}.partition_by: must name 1 to 4 Layer-1 columns (the visit's case, say)")
+    else:
+        for n in names:
+            problems += _identifier_problem(n, f"{label}.partition_by")
+    problems += _identifier_problem(spec.get("order_by"), f"{label}.order_by")
+    if "skip_null" in spec and not isinstance(spec["skip_null"], bool):
+        problems.append(f"{label}.skip_null: must be true or false")
+    if kind == "distance_from_previous" and "skip_null" in spec:
+        problems.append(f"{label}.skip_null: not an option here -- visits without a GPS reading are always skipped")
+    return problems
+
+
+def _declared_visit_columns(columns: Any) -> set[str]:
+    return {c["name"] for c in (columns or []) if isinstance(c, dict) and isinstance(c.get("name"), str)}
+
+
+def _lookup_problems(lookups: Any, *, seen_columns: set[str]) -> list[str]:
+    """`pipelines.lookups`: name -> {pipeline, on, key, fields, pick}.
+
+    Every value is an identifier spliced into a join, so the grammar is the
+    identifier rule. An output column may not repeat a visit column or another
+    lookup's, since both land on the same Layer-1 row.
+    """
+    if lookups is None:
+        return []
+    if not isinstance(lookups, dict):
+        return ["pipelines.lookups: must be a mapping of name -> {pipeline, on, key, fields, pick}"]
+    problems: list[str] = []
+    outputs = set(seen_columns)
+    for lname, spec in lookups.items():
+        label = f"pipelines.lookups.{lname}"
+        problems += _identifier_problem(lname, "pipelines.lookups")
+        if not isinstance(spec, dict):
+            problems.append(f"{label}: must be a mapping of pipeline, on, key, fields and pick")
+            continue
+        for key in ("pipeline", "on", "key"):
+            problems += _identifier_problem(spec.get(key), f"{label}.{key}")
+        fields = spec.get("fields")
+        if not isinstance(fields, dict) or not fields:
+            problems.append(
+                f"{label}.fields: must map at least one output column to a field of {spec.get('pipeline')!r}"
+            )
+        else:
+            for out, src in fields.items():
+                problems += _identifier_problem(out, f"{label}.fields")
+                problems += _identifier_problem(src, f"{label}.fields.{out}")
+                if isinstance(out, str):
+                    if out in outputs:
+                        problems.append(
+                            f"{label}.fields.{out}: already a Layer-1 column (a visit column or another lookup)"
+                        )
+                    outputs.add(out)
+        pick = spec.get("pick", "latest")
+        if pick not in LOOKUP_PICKS:
+            problems.append(f"{label}.pick: {pick!r} must be one of {', '.join(LOOKUP_PICKS)}")
+    return problems
+
+
 def _model_problems(props_doc: dict[str, Any], constants: dict[str, Any]) -> list[str]:
     """The model sections: entity, visit_columns, pipelines, weight_series.value_column.
 
@@ -678,11 +756,13 @@ def _model_problems(props_doc: dict[str, Any], constants: dict[str, Any]) -> lis
             if name in seen:
                 problems.append(f"{label}: declared twice")
             seen.add(name)
-            kinds = [k for k in ("word_match", "sql", "column") if k in col]
+            kinds = [k for k in VISIT_COLUMN_KINDS if k in col]
             if len(kinds) != 1:
-                problems.append(f"{label}: needs exactly one of word_match, sql or column")
+                problems.append(f"{label}: needs exactly one of {', '.join(VISIT_COLUMN_KINDS)}")
                 continue
-            if kinds == ["word_match"]:
+            if kinds[0] in WINDOW_KINDS:
+                problems += _window_column_problems(col[kinds[0]], f"{label}.{kinds[0]}", kinds[0])
+            elif kinds == ["word_match"]:
                 wm = col["word_match"]
                 if not isinstance(wm, dict):
                     problems.append(f"{label}.word_match: must be a mapping of column and word")
@@ -701,7 +781,7 @@ def _model_problems(props_doc: dict[str, Any], constants: dict[str, Any]) -> lis
     pipelines = legacy.PIPELINES if old and props_doc.get("pipelines") is None else props_doc.get("pipelines")
     if pipelines is not None:
         if not isinstance(pipelines, dict):
-            problems.append("pipelines: must be a mapping of entity and extra_fields")
+            problems.append("pipelines: must be a mapping of entity, extra_fields and lookups")
         else:
             if pipelines.get("entity") is not None:
                 problems += _identifier_problem(pipelines["entity"], "pipelines.entity")
@@ -712,6 +792,7 @@ def _model_problems(props_doc: dict[str, Any], constants: dict[str, Any]) -> lis
                 for col, alias in extra.items():
                     problems += _identifier_problem(col, "pipelines.extra_fields")
                     problems += _identifier_problem(alias, f"pipelines.extra_fields.{col}")
+            problems += _lookup_problems(pipelines.get("lookups"), seen_columns=_declared_visit_columns(columns))
 
     ws = props_doc.get("weight_series")
     if ws is not None and not isinstance(ws, dict):

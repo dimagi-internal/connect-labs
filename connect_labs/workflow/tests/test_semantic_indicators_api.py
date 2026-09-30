@@ -246,12 +246,13 @@ def _cache_visits(*opportunity_ids, expired=False):
     from django.utils import timezone
 
     from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+    from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
 
     delta = timedelta(hours=-1) if expired else timedelta(hours=1)
     for opp in opportunity_ids:
         RawVisitCache.objects.create(
             opportunity_id=opp,
-            pipeline_id=5108,
+            pipeline_id=USER_VISITS_RAW_SLOT,  # where Connect visits are cached (#1921)
             visit_count=1,
             expires_at=timezone.now() + delta,
             visit_id=f"v-{opp}",
@@ -615,3 +616,77 @@ def test_a_worker_from_outside_the_workflow_is_refused(client, django_user_model
     resp, ensure, _ = _call_worker_cases(client, _ProgrammeDef(), "999::nurse1")
     assert resp.status_code == 400
     assert ensure.call_count == 0
+
+
+def test_another_sources_rows_do_not_make_the_visits_look_cached(client, django_user_model):
+    """An opportunity caches its CommCare HQ form pipelines' rows too, each in its own
+    slot (MBW: Register Mother, Gold Standard). Those are not visits: with only them
+    cached, the visits are cold and the page must say so."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+
+    user = django_user_model.objects.create_user(username="u31", password="p")
+    client.force_login(user)
+
+    class _Def:
+        pipeline_sources = [{"alias": "children", "pipeline_id": 5108}]
+        opportunity_ids = [10042]
+
+    class _Pipe:
+        schema = {"fields": [], "terminal_stage": "entity"}
+
+    RawVisitCache.objects.create(
+        opportunity_id=10042,
+        pipeline_id=5501,  # an HQ registration-forms pipeline's own slot
+        visit_count=1,
+        expires_at=timezone.now() + timedelta(hours=1),
+        visit_id="hq-form-1",
+        username="flw_001",
+    )
+    with (
+        patch("connect_labs.workflow.views.WorkflowDataAccess") as wda,
+        patch("connect_labs.workflow.data_access.PipelineDataAccess") as pda,
+        patch("connect_labs.semantic.runtime.evaluate") as ev,
+    ):
+        wda.return_value.get_definition.return_value = _Def()
+        pda.return_value.get_definition.return_value = _Pipe()
+        pda.return_value._schema_to_config.return_value = object()
+        ev.return_value = []
+        resp = client.get(_url(1), {"series": "KMC"})
+
+    body = resp.json()
+    assert body["cold_cache"] is True
+    assert body["opportunities_missing"] == [10042]
+
+
+def test_a_lookup_with_nothing_cached_is_named(client, django_user_model):
+    """A lookup reads its own pipeline's slot; cold, it is NULL on every visit, which
+    reads as "nobody eligible" rather than "not loaded". The endpoint names it."""
+    from types import SimpleNamespace
+
+    from connect_labs.semantic.layer1 import LOOKUPS_KEY
+
+    user = django_user_model.objects.create_user(username="u32", password="p")
+    client.force_login(user)
+
+    class _Def:
+        pipeline_sources = [{"alias": "children", "pipeline_id": 5108}]
+        opportunity_ids = [10042, 10013]
+
+    inputs = (object(), {LOOKUPS_KEY: {"registration": SimpleNamespace(raw_slot_id=5501)}})
+    with (
+        patch("connect_labs.workflow.views.WorkflowDataAccess") as wda,
+        patch("connect_labs.semantic.workflow_binding.build_evaluate_inputs", return_value=inputs),
+        patch("connect_labs.semantic.runtime.evaluate") as ev,
+    ):
+        wda.return_value.get_definition.return_value = _Def()
+        ev.return_value = []
+        _cache_visits(10042, 10013)
+        resp = client.get(_url(1), {"series": "KMC"})
+
+    body = resp.json()
+    assert body["cold_cache"] is False
+    assert body["lookups_missing"] == {"registration": [10042, 10013]}
