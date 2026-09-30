@@ -17,6 +17,7 @@ sees clicking through the report.
 """
 
 from connect_labs.labs.synthetic.models import LabsLocalRecord, SyntheticOpportunity
+from connect_labs.labs.synthetic.provenance import mark_generated
 
 # ── Fixed identifiers, referenced by tests and the management command ──────────
 # The program id is in the labs-only range (>= 10_000) so program-scoped reads
@@ -111,7 +112,7 @@ def seed_demo():
         (EHA_OPP_ID, "Readers Nigeria — EHA (demo)"),
         (C3HD_OPP_ID, "Readers Nigeria — C3HD (demo)"),
     ):
-        SyntheticOpportunity.objects.update_or_create(
+        row, _ = SyntheticOpportunity.objects.update_or_create(
             opportunity_id=opp_id,
             defaults=dict(
                 labs_only=True,
@@ -122,6 +123,11 @@ def seed_demo():
                 program_name=PROGRAM_NAME,
             ),
         )
+        # Everything this opp holds is the invented audit sessions below, authored
+        # into labs-local records (folder ""). A row somebody pointed at a fixture
+        # folder is left alone: this seeder does not know what is in it.
+        if not row.gdrive_folder_id:
+            mark_generated(opp_id, "")
 
     # EHA (opp 10001) -- (pass, fail, dup, pending)
     _session(80001, EHA_OPP_ID, 5064, AUDITOR, (10, 1, 1, 0), "EHA weekly review A")

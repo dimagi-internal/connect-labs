@@ -130,3 +130,27 @@ def test_reset_round_is_safe_when_nothing_exists(study):
     manifest, da = study
     out = study_seed.reset_round(da, manifest, "r6")  # nothing seeded yet
     assert out["group_id"] is None and out["plan_ids"] == []
+
+
+@pytest.mark.django_db
+def test_a_study_opp_the_seeder_creates_is_generated():
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+    from connect_labs.labs.synthetic.provenance import is_generated
+
+    manifest = study_seed.load_manifest()
+    study_seed.ensure_synthetic_program(manifest)
+    assert is_generated(SyntheticOpportunity.objects.get(opportunity_id=manifest.opportunity_id))
+
+
+@pytest.mark.django_db
+def test_the_seeder_never_marks_an_opp_it_did_not_create():
+    """An existing row may serve fixtures somebody else registered; the seeder cannot vouch for them."""
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+    from connect_labs.labs.synthetic.provenance import is_generated
+
+    manifest = study_seed.load_manifest()
+    SyntheticOpportunity.objects.create(
+        opportunity_id=manifest.opportunity_id, gdrive_folder_id="", labs_only=True, enabled=True
+    )
+    study_seed.ensure_synthetic_program(manifest)
+    assert not is_generated(SyntheticOpportunity.objects.get(opportunity_id=manifest.opportunity_id))

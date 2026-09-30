@@ -24,7 +24,7 @@ import pandas as pd
 import yaml
 
 from .manifest import Manifest, ManifestValidationError
-from .mirror import build_entity_resolver, profile_entity_structure
+from .mirror import build_entity_resolver, perturb_transplant_pool, profile_entity_structure
 from .schema_loader import FormSchema, parse_form_schema_from_app_json
 
 
@@ -335,17 +335,61 @@ def _classify_paths(form_schema: FormSchema) -> dict[str, str]:
 
 
 def _profile_categorical(visits: list[dict], path: str) -> dict[str, float]:
-    """Return value -> rate mapping for a categorical field at dotted path."""
+    """Return value -> rate mapping for a categorical field at dotted path.
+
+    Empty when the field is not really categorical (see ``_looks_like_free_text``):
+    its values are then never copied anywhere.
+    """
+    counts = _observed_values(visits, path)
+    total = sum(counts.values())
+    if total == 0 or _looks_like_free_text(counts):
+        return {}
+    return {k: round(c / total, 4) for k, c in counts.items()}
+
+
+def _observed_values(visits: list[dict], path: str) -> Counter:
     counts: Counter[str] = Counter()
     for v in visits:
         raw = _extract_nested(v.get("form_json") or {}, path)
-        if raw in (None, ""):
+        if raw in (None, "") or isinstance(raw, (dict, list)):
             continue
         counts[str(raw)] += 1
-    total = sum(counts.values())
-    if total == 0:
-        return {}
-    return {k: round(c / total, 4) for k, c in counts.items()}
+    return counts
+
+
+# A categorical's values are copied into the manifest, and in mirror mode into every
+# replayed case, so a field is only treated as a category when it behaves like a
+# closed list someone wrote into the app. Past this many DISTINCT observed values it
+# does not: a real select has a handful of options and a multiselect's observed
+# combinations a few dozen at most (which is why this is looser than the text path's
+# 25), while a field typed "select" whose answers are names, hand-typed places or ids
+# comes back with hundreds. 50 keeps genuine enumerations and drops those.
+_MAX_CATEGORY_VALUES = 50
+
+# A category value shaped like an identifier is refused however few distinct values
+# there are: a uuid (a case id) or a long run of digits (a phone or national id).
+_IDENTIFIER_VALUE_RE = re.compile(
+    r"^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\+?\d{7,})$", re.IGNORECASE
+)
+
+
+def _looks_like_free_text(counts: Counter) -> bool:
+    """True when observed values are not a closed list of choice codes.
+
+    Such a field is treated as free text: none of its values may be copied into the
+    profile, the manifest or the transplant pool. Shares the text-replay path's
+    length bound (``_MAX_REPLAYABLE_VALUE_LEN``), applied per space-separated token so
+    a multiselect's joined codes are judged code by code. Deliberately value-based,
+    not leaf-name based: a yes/no select named ``photo_taken`` is a real category, and
+    the text path's leaf filter would refuse it.
+    """
+    if len(counts) > _MAX_CATEGORY_VALUES:
+        return True
+    for value in counts:
+        for token in str(value).split():
+            if len(token) > _MAX_REPLAYABLE_VALUE_LEN or _IDENTIFIER_VALUE_RE.match(token):
+                return True
+    return False
 
 
 _NEGATIVE_TOKENS = {"no", "0", "false", "absent", "none", "negative", "n", "normal"}
@@ -686,7 +730,9 @@ def _distribution_for_values(values: list) -> dict[str, Any] | None:
             }
     counts = Counter(str(x) for x in values)
     total = sum(counts.values())
-    if total == 0:
+    # A repeat child that is free text (names, remarks, ids) gets no distribution, so
+    # its values never enter the manifest.
+    if total == 0 or _looks_like_free_text(counts):
         return None
     return {"distribution": "categorical", "values": {k: round(c / total, 4) for k, c in counts.items()}}
 
@@ -893,6 +939,28 @@ def _profile_kpis(
     return kpis
 
 
+def _mirror_noise_seed(opportunity_id: int) -> int:
+    """A per-opp seed only this server can reproduce.
+
+    Seeding from the opportunity id alone would let anyone holding a manifest (it
+    carries the id) replay the same random stream and subtract the noise. Keyed on
+    the Django secret instead; outside a configured Django process there is no
+    secret, so the seed is random (a profile is then simply not reproducible).
+    """
+    import hashlib
+    import hmac
+    import secrets
+
+    try:
+        from django.conf import settings
+
+        key = str(settings.SECRET_KEY).encode()
+    except Exception:  # noqa: BLE001 — no configured settings: no stable secret to key on
+        return secrets.randbits(64)
+    digest = hmac.new(key, f"synthetic-mirror-noise:{opportunity_id}".encode(), hashlib.sha256).digest()
+    return int.from_bytes(digest[:8], "big")
+
+
 def profile(
     *,
     opportunity_id: int,
@@ -903,6 +971,7 @@ def profile(
     app_structure: dict | None = None,
     curate: bool = False,
     mirror: bool = False,
+    noise_seed: int | None = None,
 ) -> str:
     """Analyze real export data and return a Manifest YAML string.
 
@@ -917,6 +986,10 @@ def profile(
             When provided, used to type fields — select/multiselect paths get
             categorical distributions and all profiled paths get null_rate.
             Callers that omit this arg get identical prior behaviour.
+        noise_seed: Seed for the mirror pool's privacy noise (tests pin it). Left
+            None, it is derived from the server secret and the opportunity id, so a
+            re-profile is reproducible on this server but the noise cannot be
+            recomputed, and so subtracted, from the manifest alone.
 
     Returns:
         YAML string that validates against Manifest.from_yaml().
@@ -939,11 +1012,13 @@ def profile(
     field_dists = _profile_field_distributions(user_visits, form_json_paths)
 
     kinds: dict[str, str] = {}
+    computed_paths: set[str] = set()
 
     # If caller provided app_structure, derive field types and enrich distributions.
     if app_structure is not None:
         form_schema = parse_form_schema_from_app_json(app_structure, app_type="deliver")
         kinds = _classify_paths(form_schema)
+        computed_paths = {q.json_path for q in form_schema.questions if getattr(q, "calculated", False)}
 
         # Model every numeric schema field, even one too sparsely present to be
         # auto-discovered, so nothing real is left for the engine's randint(0,10)
@@ -1019,6 +1094,11 @@ def profile(
         # clone answer "do slow-growing babies die more?" the same way the source does.
         categorical_paths = {p for p, d in field_dists.items() if d.get("distribution") == "categorical"}
         categorical_paths |= {p for p, k in kinds.items() if k in {"select", "multiselect"}}
+        # A path the schema calls a select whose answers are free text or ids is not
+        # replayed: the same rule _profile_categorical applies.
+        categorical_paths = {
+            p for p in categorical_paths if not _looks_like_free_text(_observed_values(user_visits, p))
+        }
         # Everything the schema calls "text" is still unclaimed at this point, and on a
         # real CommCare app that is the majority of the form — HQ reports hidden
         # calculated fields as DataBindOnly, which falls back to "text". Promote the
@@ -1063,6 +1143,25 @@ def profile(
                 continue
             pool.append({**series, "owner": persona})
         if pool:
+            # The pool is each real case exactly, so it is perturbed HERE, at profile
+            # time, rather than when a clone is generated: the manifest is what gets
+            # saved (bundles in Drive, returned over MCP), and a saved profile must not
+            # hold any real case's exact series either. See perturb_transplant_pool.
+            computed_whole = {
+                p
+                for p in computed_paths
+                if all(
+                    float(v["values"][p]).is_integer()
+                    for s in pool
+                    for v in s["visits"]
+                    if p in (v.get("values") or {})
+                )
+            }
+            pool = perturb_transplant_pool(
+                pool,
+                seed=noise_seed if noise_seed is not None else _mirror_noise_seed(opportunity_id),
+                frozen_paths=computed_whole,
+            )
             cohort["longitudinal"] = {"mode": "mirror", "transplant_pool": pool}
 
     # Seed deliberate QA anomalies (only under curation) so dashboards/evals have

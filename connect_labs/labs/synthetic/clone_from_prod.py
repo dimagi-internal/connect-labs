@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 
@@ -17,6 +18,7 @@ from .generator.fixtures.profiler import profile as _profile
 from .generator.fixtures.schema_loader import parse_form_schema_from_app_json
 from .generator.io.uploader import upload_fixtures
 from .models import SyntheticOpportunity
+from .provenance import mark_generated
 from .provisioning import allocate_shared_program_id, register_labs_only_opp
 
 logger = logging.getLogger(__name__)
@@ -99,6 +101,59 @@ def profile_opp_to_bundle(
         manifest_yaml=manifest_yaml,
         app_structure=app_structure if isinstance(app_structure, dict) else {},
         opportunity=detail if isinstance(detail, dict) else {},
+    )
+
+
+def profile_dump_to_bundle(
+    dump_folder_id: str,
+    *,
+    drive,
+    store,
+    app_structure: dict | None = None,
+    curate: bool = False,
+    mirror: bool = False,
+) -> str:
+    """Profile a DUMP of real exports (``dump.py``) into a bundle, exactly as a live profile would.
+
+    The power-user route for opportunities too large to profile on the server in
+    reasonable time: the dump was already taken, so this reads it from Drive instead
+    of production. The dump is only an INPUT here. What leaves is the same bundle
+    ``profile_opp_to_bundle`` writes (aggregate stats, a perturbed mirror pool, the
+    app structure, a scrubbed opportunity detail), and a synthetic opp is then
+    generated from it. The dump folder itself is never served.
+
+    A dump carries no app structure; pass one (fetched from production) to type the
+    fields, or the profile falls back to observed values only.
+    """
+    files = drive.list_folder(dump_folder_id)
+
+    def _load(name, default):
+        file_id = files.get(name)
+        return json.loads(drive.download_file(file_id).decode()) if file_id else default
+
+    detail = _load("opportunity.json", {})
+    user_visits = _load("user_visits.json", [])
+    user_data = _load("user_data.json", [])
+    source_opp_id = detail.get("id") if isinstance(detail, dict) else None
+    if source_opp_id is None:
+        raise ValueError(f"Dump folder {dump_folder_id} has no opportunity.json with an id")
+    if not isinstance(user_visits, list) or not user_visits:
+        raise ValueError(f"Dump folder {dump_folder_id} has no user_visits")
+
+    manifest_yaml = _profile(
+        opportunity_id=int(source_opp_id),
+        user_visits=user_visits,
+        user_data=user_data if isinstance(user_data, list) else [],
+        opportunity_detail=detail,
+        app_structure=app_structure if isinstance(app_structure, dict) else None,
+        curate=curate,
+        mirror=mirror,
+    )
+    return store.write(
+        int(source_opp_id),
+        manifest_yaml=manifest_yaml,
+        app_structure=app_structure if isinstance(app_structure, dict) else {},
+        opportunity=detail,
     )
 
 
@@ -215,6 +270,8 @@ def generate_opp_from_bundle(
     fresh: bool = False,
     target_opportunity_id: int | None = None,
     image_config: dict | None = None,
+    authorize=None,
+    created_by=None,
 ) -> CloneResult:
     """Generate fixtures and register a labs-only opp from a profile bundle.
 
@@ -241,6 +298,12 @@ def generate_opp_from_bundle(
             ``cloned_from`` idempotency lookup entirely. This is how a source that
             already has a twin elsewhere (e.g. one claimed by an env-owned opp)
             gets a second, explicitly-placed twin without clobbering the first.
+        authorize: Optional ``callable(opportunity_id)`` that raises when the caller
+            may not write onto an opp that ALREADY exists (an explicit target, or the
+            twin a ``fresh`` regeneration would overwrite). The MCP tools pass one so
+            no caller can regenerate over another tenant's opp.
+        created_by: Recorded as the creator of a row this call CREATES (never
+            reassigned on an existing row), so a partner keeps access to what they made.
 
     Returns:
         :class:`CloneResult` describing the created (or skipped) opportunity.
@@ -263,6 +326,8 @@ def generate_opp_from_bundle(
         fresh=fresh,
         target_opportunity_id=target_opportunity_id,
         image_config=image_config,
+        authorize=authorize,
+        created_by=created_by,
     )
 
 
@@ -278,6 +343,8 @@ def _generate_one(
     fresh: bool = False,
     target_opportunity_id: int | None = None,
     image_config: dict | None = None,
+    authorize=None,
+    created_by=None,
 ) -> CloneResult:
     """Generate fixtures + register a labs-only opp from an already-read bundle.
 
@@ -304,6 +371,19 @@ def _generate_one(
             skipped=True,
         )
 
+    if target_opportunity_id is not None:
+        opp_id = target_opportunity_id
+    elif existing:
+        opp_id = existing.opportunity_id
+    else:
+        opp_id = max(SyntheticOpportunity.next_labs_only_opp_id(), program_id + 1)
+    # Checked before any work: the destination is chosen by the caller (a target) or
+    # by the source (a twin somebody else may own), so it is the caller's to write
+    # only if the authorizer says so.
+    pre_existing = SyntheticOpportunity.objects.filter(opportunity_id=opp_id).exists()
+    if authorize is not None and (target_opportunity_id is not None or pre_existing):
+        authorize(opp_id)
+
     manifest = Manifest.from_yaml(bundle.manifest_yaml)
     if image_config:
         # A CHOICE layered on at replay time, never baked into the bundle. The
@@ -319,13 +399,6 @@ def _generate_one(
         form_schema=form_schema,
         app_structure=bundle.app_structure,
     )
-
-    if target_opportunity_id is not None:
-        opp_id = target_opportunity_id
-    elif existing:
-        opp_id = existing.opportunity_id
-    else:
-        opp_id = max(SyntheticOpportunity.next_labs_only_opp_id(), program_id + 1)
     # The pool is the contract: everything in it was observed in the source and
     # captured to be replayed. Anything missing from every generated visit is a
     # generator defect — and a wholly absent field costs nothing in a
@@ -368,10 +441,12 @@ def _generate_one(
         program_id=program_id,
         allowed_domains=allowed_domains if allowed_domains is not None else ["@dimagi.com", "@dimagi-ai.com"],
         cloned_from=source,
+        created_by=None if pre_existing else created_by,
     )
     SyntheticOpportunity.objects.filter(opportunity_id=row.opportunity_id).update(
         visit_count=len(fixtures.get("user_visits") or [])
     )
+    mark_generated(row.opportunity_id, upload.folder_id)
     return CloneResult(
         source_opportunity_id=source,
         opportunity_id=row.opportunity_id,
@@ -396,6 +471,8 @@ def generate_opps_bulk(
     only_source_ids=None,
     progress=NULL_PROGRESS,
     image_config: dict | None = None,
+    authorize=None,
+    created_by=None,
 ) -> list[CloneResult]:
     """Generate fixtures for every bundle subdirectory under *bundle_root*.
 
@@ -447,6 +524,8 @@ def generate_opps_bulk(
                     org_name=org_name,
                     fresh=fresh,
                     image_config=image_config,
+                    authorize=authorize,
+                    created_by=created_by,
                 )
             )
             outcome = f"generated opportunity {bundle.source_opp_id}"
@@ -582,7 +661,13 @@ def profile_cohort(
 
 
 def generate_cohort(
-    spec: CohortSpec, *, drive, fresh: bool = False, progress=NULL_PROGRESS
+    spec: CohortSpec,
+    *,
+    drive,
+    fresh: bool = False,
+    progress=NULL_PROGRESS,
+    authorize=None,
+    created_by=None,
 ) -> tuple[CohortSpec, list[CloneResult]]:
     """Phase 2 (offline) for a whole cohort spec.
 
@@ -605,5 +690,7 @@ def generate_cohort(
         only_source_ids=spec.opportunity_ids,
         progress=progress,
         image_config=spec.image_config,
+        authorize=authorize,
+        created_by=created_by,
     )
     return spec, results

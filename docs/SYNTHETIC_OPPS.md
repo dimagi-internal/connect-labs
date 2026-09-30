@@ -26,38 +26,83 @@ prod. Clean up by deleting the demo opp's `LabsRecord`s manually.
 
 ## Creating a synthetic opp
 
-**Recommended flow: dump from prod via the UI.**
+Synthetic data is never real. A synthetic opp is made in two steps: **profile** a
+real opportunity into a saved statistical profile, then **generate** a synthetic
+data set from that profile into a labs-only opp. Real rows are read only while
+profiling, on the server; they never land in a folder a synthetic opp serves.
 
-1. Pick an existing opportunity in the labs context selector (top nav).
-2. Go to `/labs/synthetic/` and click "+ New synthetic opp".
-3. Select "Dump fresh data from prod → new GDrive folder" and click **Start dump**.
-4. Watch the stream: the service account creates a timestamped folder under the
-   labs-synthetic parent, pulls the five export endpoints one at a time, and
-   uploads them as JSON. On completion the Drive folder ID is auto-populated.
-5. Fill in a label (e.g. "Baobab demo starter"), hit **Save**.
-6. Edit the JSON files in Drive to anonymize names, flip statuses, etc.
-7. Back in `/labs/synthetic/`, click **Reload fixtures** on the row so the in-process
-   fixture cache picks up your edits.
+### The flow: profile on the server, then generate
 
-**Fallback: manual dump via `curl`.** Use when the UI dump isn't available (no
-SA configured, no labs access for the opp, etc.):
+Both steps are `connect_labs` MCP tools, so they run inside labs with your own
+Connect access.
+
+1. **Profile.** `synthetic_profile_opp(source_opportunity_id, out_dir="gdrive:")`
+   (or `synthetic_profile_opps_bulk` / `synthetic_clone_profile` for several opps)
+   queues a job that reads the opportunity's exports with your token and writes a
+   profile bundle (`manifest.yaml`, the app structure and the scrubbed opportunity
+   detail) to Drive. It returns a `task_id`; poll `synthetic_profile_status(task_id)`
+   until it reports the `bundle_dir`. Only you can poll your own job. Profiling a
+   large opportunity takes several minutes.
+2. **Generate.** `synthetic_generate_opp(bundle_dir, program_id)` (or
+   `synthetic_generate_opps_bulk` / `synthetic_clone_generate`) generates the
+   fixtures from the profile, uploads them to a new
+   `opp-<id>-<timestamp>-generated` folder, and registers a labs-only opp that you
+   own. It makes no production calls.
+
+What a profile holds: per-field distributions (including the real minimum,
+maximum and spread, which is expected), FLW personas, timing, and, with
+`mirror=true`, one series per real case so a clone keeps each case's visits,
+trajectory and outcomes. Mirror series are perturbed before they are saved: each
+case moves by 1 to 14 days in time, and its numbers are scaled by up to 3% (whole
+numbers stay whole, values stay inside the observed range). A select whose answers
+are free text or identifiers (more than 50 distinct values, or values shaped like
+ids) is treated as free text and none of its values are copied.
+
+`synthetic_generate_from_manifest` generates from a manifest you write by hand, for
+an opp that has no real source at all.
+
+### Power user: dump → profile → generate (full access only)
+
+Server-side profiling is slow for very large opportunities, so there is a second
+route **for people with full production access only**: dump the real exports to
+Drive, profile the dump, and generate from the profile.
+
+- **A dump is only ever an input to profiling.** It is a copy of real production
+  rows, including personal data. Never serve it: do not point a synthetic opp at
+  a dump folder, and never share one.
+- An opp that does point at a dump folder (or at any folder you name yourself,
+  through `/labs/synthetic/`, `synthetic_register`, `synthetic_create_labs_only`
+  or `synthetic_repoint_by_source`) is **never "generated"**, whatever its label
+  says.
+
+To dump: pick the opportunity in the labs context selector, open `/labs/synthetic/`,
+click "+ New synthetic opp", choose "Dump real data from Connect (profiling input
+only)" and click **Start dump**. The folder it creates is
+`opp-<id>-<timestamp>` (no `-generated` suffix). Profile it into a bundle with
 
 ```bash
-TOKEN=<your prod token>
-OPP=<reference opp id>
-BASE="https://connect.dimagi.com"
-
-for EP in "" user_visits user_data completed_works completed_module; do
-  FILE="${EP:-opportunity}.json"
-  curl -s -H "Authorization: Bearer $TOKEN" \
-       -H "Accept: application/json; version=2.0" \
-       "$BASE/export/opportunity/$OPP/$EP${EP:+/}" \
-    | jq '.results // .' > "$FILE"
-done
+python manage.py synthetic_profile_dump --folder <dump_folder_id> --out gdrive: --mirror \
+    --base-url https://connect.dimagi.com   # optional: fetches the app structure a dump lacks
 ```
 
-Upload the resulting files to a folder under the labs-synthetic parent, copy
-the folder ID, select "Use existing folder ID" in the create form, and paste it in.
+then generate from the bundle it prints, exactly as above. The bundle is the same
+kind a server-side profile writes (aggregates and a perturbed mirror pool); the
+dump folder stays where it is, unserved.
+
+### Provenance: which opps hold generated data
+
+"Labs-only" and "synthetic" say where data is served from, not whether it is real.
+`SyntheticOpportunity.generated_folder_id` records the folder the generator wrote
+for an opp, and an opp counts as generated only while it is labs-only, enabled
+and still serving that exact folder (`labs/synthetic/provenance.py`). Only
+generation code sets it: the generate tools, the env ensurer and the demo seeders.
+Pointing an opp at any other folder un-marks it automatically, and a clone
+(`synthetic_clone_to_labs_only`) is generated only when its source is.
+
+Opps generated before provenance existed, or generated on a laptop
+(`synthetic_generate_opps --no-register`) and then repointed, are unmarked. Run
+`python manage.py synthetic_mark_generated` to list them and `--apply` to mark
+those whose Drive folder has the generator's `-generated` name.
 
 ## Updating fixtures
 
