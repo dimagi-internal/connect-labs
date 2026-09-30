@@ -3,6 +3,7 @@
 **Date:** 2026-04-20
 **Author:** jjackson + Claude
 **Status:** Design approved; implementation plan pending
+**Superseded (2026-09-30):** dumping is no longer a way to CREATE a synthetic opp. A dump is only a profiling input for people with full production access; synthetic opps are generated from a saved profile, and an opp pointed at a dump never counts as generated. See `docs/SYNTHETIC_OPPS.md` § Creating a synthetic opp.
 **Builds on:** `docs/superpowers/specs/2026-04-20-synthetic-sample-data-design.md`
 
 ## Problem

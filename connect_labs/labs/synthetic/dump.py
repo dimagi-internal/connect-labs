@@ -4,10 +4,14 @@ Called from DumpStreamView. No error recovery — the first exception propagates
 and is rendered as a final SSE error event by the outer view.
 
 Note: this intentionally bypasses `get_export_client` (the factory used for
-read-side fixture serving) and hits prod Connect directly via httpx. Users
-who click "Dump fresh data from prod" want real production data even if the
-opp is already registered as synthetic — the factory would otherwise loop
-back to the existing fixture and shuffle it around.
+read-side fixture serving) and hits prod Connect directly via httpx: a dump is
+real production data even if the opp is already registered as synthetic, and the
+factory would otherwise loop back to the existing fixture.
+
+A dump is REAL data, personal data included. It exists only as an input to
+profiling for people with full production access (``manage.py
+synthetic_profile_dump``); a synthetic opp is generated from the resulting profile.
+An opp pointed at a dump folder is never "generated" (see provenance.py).
 """
 
 from __future__ import annotations
