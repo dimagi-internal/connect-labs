@@ -28,7 +28,7 @@ def start_ai_session(
     identifier: str,
     experiment: str,
     prompt_text: str,
-    platform: str = "connect_labs",
+    platform: str = "commcare_connect",
     start_new_session: bool = False,
 ) -> dict:
     """Start (or attach) the conversation as ``user`` and record it on ``task``,

@@ -33,6 +33,21 @@ def test_a_real_bot_is_triggered_and_its_session_linked_to_the_task():
     client.close.assert_not_called()  # the caller's client; the caller closes it
 
 
+def test_the_default_platform_is_a_real_OCS_channel():
+    """OCS's ChannelPlatform enum has no 'connect_labs' choice -- sending it 500s on OCS's
+    side (an unhandled ValueError) before it ever gets to "no channel for this platform".
+    A caller that omits `platform` (workflow/actions.py's `_execute_ocs_outreach` is the one
+    that does) must still land on a channel OCS actually recognises. Caught once already
+    (PR #797 renamed this same substring by accident); this pins it against a repeat."""
+    task, tda = _task(), MagicMock()
+    client = MagicMock()
+    client.trigger_bot.return_value = {"session_id": "1"}
+    with patch("connect_labs.labs.synthetic.registry.get_synthetic_opp", return_value=None):
+        start_ai_session(_user(), tda, task, ocs=client, identifier="asha", experiment="bot-1", prompt_text="Hi")
+
+    assert client.trigger_bot.call_args.kwargs["platform"] == "commcare_connect"
+
+
 def test_with_no_client_one_is_made_from_the_users_stored_token_and_closed():
     task, tda, user = _task(), MagicMock(), _user()
     client = MagicMock()
