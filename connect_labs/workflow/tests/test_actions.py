@@ -365,3 +365,44 @@ def test_synthetic_outreach_never_opens_ocs(user):
         actions.execute(execution.pk)
     ocs.assert_not_called()
     assert all(c.kwargs["ocs"] is None for c in start.call_args_list)
+
+
+# ---------------------------------------------------------------------------
+# Checking a declaration when it is saved
+# ---------------------------------------------------------------------------
+
+
+def test_a_valid_declaration_has_no_problems():
+    assert actions.declaration_problems([COACH, TASK]) == []
+    assert actions.declaration_problems(None) == []
+
+
+def test_a_declaration_is_checked_against_the_known_types_and_their_schemas():
+    problems = actions.declaration_problems(
+        [
+            {"key": "coach", "type": "start_ocs_outreach", "defaults": {"priority": "urgent"}},
+            {"key": "coach", "type": "create_task"},
+            {"key": "x", "type": "send_sms"},
+            {"key": "has space", "type": "create_task"},
+            {"key": "w", "type": "create_task", "defaults": {"workers": [{"key": "10::a"}]}},
+        ]
+    )
+    assert any("defaults" in p and "urgent" in p for p in problems)
+    assert any("used twice" in p for p in problems)
+    assert any("'send_sms' is not an action type" in p for p in problems)
+    assert any("must be a slug" in p for p in problems)
+    assert any("cannot name workers" in p for p in problems)
+
+
+def test_every_templates_declared_actions_are_valid():
+    from connect_labs.workflow.templates import TEMPLATES
+
+    for key, template in TEMPLATES.items():
+        declared = ((template.get("definition") or {}).get("config") or {}).get("actions")
+        assert actions.declaration_problems(declared) == [], key
+
+
+def test_every_action_type_can_execute():
+    for kind, action_type in actions.ACTION_TYPES.items():
+        assert callable(action_type.execute), kind
+        assert action_type.parameters["required"] == ["workers"], kind

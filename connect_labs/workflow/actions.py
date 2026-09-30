@@ -46,7 +46,7 @@ import copy
 import hashlib
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from django.core import signing
@@ -96,12 +96,86 @@ _PRIORITY = {"type": "string", "enum": ["low", "medium", "high"]}
 
 
 @dataclass(frozen=True)
+class WorkerContext:
+    """What one worker's execution has to work with."""
+
+    execution: Any  # WorkflowActionExecution
+    item: dict  # this worker's entry in the arguments: {"key", ...its own text}
+    prior: dict  # what an earlier attempt recorded for this worker, if any
+    opportunity_id: int
+    username: str
+    tasks: Any  # TaskDataAccess scoped to the worker's opportunity, as the person
+    ocs: Any  # OCSDataAccess as the person, or None when the type needs none
+    #: What to record for this worker. An executor writes into it as it goes, so a
+    #: worker that fails part-way still records what was done (a task it made).
+    record: dict = field(default_factory=dict)
+
+    @property
+    def arguments(self) -> dict:
+        return self.execution.arguments
+
+
+@dataclass(frozen=True)
 class ActionType:
+    """A kind of action the framework can run: what it takes and what it does.
+
+    ``execute`` does ONE worker, writing what to record for them into
+    ``ctx.record`` (``task_id``, ``session_id``, ...); raising marks that worker
+    failed -- keeping what it had recorded -- and the rest carry on.
+    Resolved from a workflow's declaration by ``type`` -- ``ACTION_TYPES[type]`` --
+    in ``declared_actions`` (to describe it) and ``execute`` (to run it).
+    """
+
     type: str
     default_label: str
     description: str
     parameters: dict
+    execute: Any  # Callable[[WorkerContext], None]
     uses_ocs: bool = False
+
+
+def _follow_up_task(ctx: WorkerContext):
+    """The worker's follow-up task on this run -- the one an earlier attempt made,
+    if it made one, so a retry never files a second."""
+    args = ctx.arguments
+    task = ctx.tasks.get_task(ctx.prior["task_id"]) if ctx.prior.get("task_id") else None
+    if task is None:
+        task = ctx.tasks.create_task(
+            username=ctx.username,
+            opportunity_id=ctx.opportunity_id,
+            priority=args.get("priority") or "medium",
+            title=ctx.item.get("title") or args.get("title") or "Follow-up",
+            description=ctx.item.get("description")
+            or args.get("description")
+            or ctx.item.get("prompt")
+            or args.get("prompt")
+            or "",
+            creator_name=ctx.execution.user.get_display_name(),
+            workflow_run_id=ctx.execution.run_id,
+        )
+    ctx.record["task_id"] = task.id
+    return task
+
+
+def _execute_create_task(ctx: WorkerContext) -> None:
+    _follow_up_task(ctx)
+
+
+def _execute_ocs_outreach(ctx: WorkerContext) -> None:
+    from connect_labs.tasks.ai_sessions import start_ai_session
+
+    task = _follow_up_task(ctx)
+    started = start_ai_session(
+        ctx.execution.user,
+        ctx.tasks,
+        task,
+        ocs=ctx.ocs,
+        identifier=ctx.username,
+        experiment=ctx.arguments["bot"],
+        prompt_text=ctx.item.get("prompt") or ctx.arguments.get("prompt") or "",
+        start_new_session=True,
+    )
+    ctx.record["session_id"] = started.get("session_id")
 
 
 ACTION_TYPES: dict[str, ActionType] = {
@@ -127,6 +201,7 @@ ACTION_TYPES: dict[str, ActionType] = {
                 "required": ["workers"],
                 "additionalProperties": False,
             },
+            execute=_execute_create_task,
         ),
         ActionType(
             type="start_ocs_outreach",
@@ -155,6 +230,7 @@ ACTION_TYPES: dict[str, ActionType] = {
                 "required": ["workers"],
                 "additionalProperties": False,
             },
+            execute=_execute_ocs_outreach,
             uses_ocs=True,
         ),
     )
@@ -197,6 +273,51 @@ def declared_actions(definition_data: dict | None, template_type: str | None = N
             }
         )
     return out
+
+
+def declaration_problems(raw: Any) -> list[str]:
+    """What is wrong with a ``config.actions`` value, for whoever is saving it.
+
+    ``declared_actions`` quietly skips what it cannot run, so a page never breaks
+    on a bad entry; this is the loud half, called where a definition is written
+    (``workflow_update_definition``) so an author learns at save time rather than
+    from a button that never appears.
+    """
+    import jsonschema
+
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        return ["config.actions must be a list"]
+    problems, seen = [], set()
+    for n, entry in enumerate(raw):
+        where = f"config.actions[{n}]"
+        if not isinstance(entry, dict):
+            problems.append(f"{where} must be an object")
+            continue
+        key, kind = entry.get("key"), entry.get("type")
+        if not isinstance(key, str) or not key.replace("_", "").replace("-", "").isalnum():
+            problems.append(f"{where}.key must be a slug (letters, digits, _ and -)")
+        elif key in seen:
+            problems.append(f"{where}.key {key!r} is used twice")
+        seen.add(key)
+        if kind not in ACTION_TYPES:
+            problems.append(f"{where}.type {kind!r} is not an action type; known: {sorted(ACTION_TYPES)}")
+            continue
+        defaults = entry.get("defaults", {})
+        if not isinstance(defaults, dict):
+            problems.append(f"{where}.defaults must be an object")
+            continue
+        # Defaults are arguments minus the workers: check them against the schema.
+        schema = dict(ACTION_TYPES[kind].parameters)
+        schema = {**schema, "required": [r for r in schema.get("required", []) if r != "workers"]}
+        try:
+            jsonschema.validate(defaults, schema)
+        except jsonschema.ValidationError as e:
+            problems.append(f"{where}.defaults: {e.message}")
+        if "workers" in defaults:
+            problems.append(f"{where}.defaults cannot name workers; the button or caller does")
+    return problems
 
 
 def definition_actions(definition) -> list[dict]:
@@ -490,55 +611,39 @@ def execute(execution_id: int) -> None:
 
 
 def _execute_item(execution, item: dict, prior: dict, connect_token: str, ocs) -> dict:
-    """One worker: its task, and for outreach its conversation. Never raises."""
+    """One worker, by the action's TYPE (``ACTION_TYPES[type].execute``). Never raises."""
     from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason
-    from connect_labs.tasks.ai_sessions import start_ai_session
     from connect_labs.tasks.data_access import TaskDataAccess
     from connect_labs.workflow.agent_sharing import split_worker_key
 
-    args = execution.arguments
     user = execution.user
     opportunity_id, username = split_worker_key(item["key"])
     denied = labs_only_scope_denied_reason(user, opportunity_id=opportunity_id)
     if denied:
         return {"status": "failed", "error": denied}
 
-    out: dict = {}
     tda = None
+    record: dict = {}
     try:
         # Scoped to the WORKER's opportunity: a program report spans several, and a
         # task belongs to the one its worker delivers in.
         tda = TaskDataAccess(user=user, access_token=connect_token, opportunity_id=opportunity_id)
-        prompt = item.get("prompt") or args.get("prompt") or ""
-        task = tda.get_task(prior["task_id"]) if prior.get("task_id") else None
-        if task is None:
-            task = tda.create_task(
-                username=username,
+        ACTION_TYPES[execution.action_type].execute(
+            WorkerContext(
+                execution=execution,
+                item=item,
+                prior=prior,
                 opportunity_id=opportunity_id,
-                priority=args.get("priority") or "medium",
-                title=item.get("title") or args.get("title") or "Follow-up",
-                description=item.get("description") or args.get("description") or prompt,
-                creator_name=user.get_display_name(),
-                workflow_run_id=execution.run_id,
-            )
-        out["task_id"] = task.id
-        if execution.action_type == "start_ocs_outreach":
-            started = start_ai_session(
-                user,
-                tda,
-                task,
+                username=username,
+                tasks=tda,
                 ocs=ocs,
-                identifier=username,
-                experiment=args["bot"],
-                prompt_text=prompt,
-                start_new_session=True,
+                record=record,
             )
-            out["session_id"] = started.get("session_id")
-        out["status"] = "ok"
-        return out
+        )
+        return {**record, "status": "ok"}
     except Exception as e:  # noqa: BLE001 -- reported per worker; the rest carry on
         logger.warning("action %s: %s failed for %s", execution.pk, execution.action_type, item["key"], exc_info=True)
-        return {**out, "status": "failed", "error": _plain_error(e)}
+        return {**record, "status": "failed", "error": _plain_error(e)}
     finally:
         if tda is not None:
             tda.close()

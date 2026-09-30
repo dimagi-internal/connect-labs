@@ -562,7 +562,9 @@ def _validate_snapshot_inputs(value) -> None:
         "workflow FOLLOW the deployed template -- a deploy updates it, nothing to sync, and "
         "edits to its stored render are refused; null forks it back onto a stored copy "
         "(seeded with the template's current code, so the page does not change). "
-        "`statuses` replaces wholesale; `config` shallow-merges; "
+        "`statuses` replaces wholesale; `config` shallow-merges (a `config.actions` list -- the "
+        "workflow's own actions, e.g. {key, type: 'start_ocs_outreach', label, defaults} -- is "
+        "checked against the known action types and refused if invalid); "
         "`snapshot_inputs` (the instance-owned completion-snapshot manifest: "
         "{pipelines: [aliases]|null, workers: bool, state_keys: [keys]|null}) "
         "replaces wholesale, or pass null to revert the workflow to "
@@ -609,6 +611,15 @@ def workflow_update_definition(
             "INVALID_SCHEMA",
             f"Unknown patch keys: {sorted(unknown_keys)}. " f"Allowed: {sorted(_DEFINITION_PATCH_ALLOWED)}",
         )
+    if isinstance(patch.get("config"), dict) and "actions" in patch["config"]:
+        # The workflow's own actions (workflow/actions.py). A page skips an action it
+        # cannot run, so a bad declaration would otherwise surface only as a button
+        # that never appears. `config` shallow-merges, so this list is the saved one.
+        from connect_labs.workflow.actions import declaration_problems
+
+        problems = declaration_problems(patch["config"]["actions"])
+        if problems:
+            raise MCPToolError("INVALID_SCHEMA", "; ".join(problems))
 
     token = require_connect_token(user)
     wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
