@@ -493,6 +493,7 @@
   }
   function measureLegend(m) {
     return (
+      '<span><i style="background:#a9b3e8;opacity:.6"></i>workers</span>' +
       '<span class="conn-ramp-lab">' +
       m.fmt(0) +
       '</span><span class="conn-ramp" style="background:linear-gradient(90deg,' +
@@ -529,7 +530,10 @@
       Object.keys(MEASURES).forEach(function (k) {
         var t = concern(MEASURES[k], c);
         if (t != null) props['k_' + k] = t;
-        props['w_' + k] = MEASURES[k].weight(c) / maxW[k];
+        // Square root, so the single worst area does not wash every other
+        // concern out to nothing: one Tanzanian cell held 10x the delayed
+        // visits of the next, and on a linear scale it was the only glow.
+        props['w_' + k] = Math.sqrt(MEASURES[k].weight(c) / maxW[k]);
       });
       return {
         type: 'Feature',
@@ -606,11 +610,13 @@
       if (!ready) return;
       var k = state.key;
       map.setPaintProperty('cells-heat', 'heatmap-weight', ['get', 'w_' + k]);
-      map.setLayoutProperty(
-        'cells-heat',
-        'visibility',
-        state.mode === 'heat' ? 'visible' : 'none',
-      );
+      ['cells-heat', 'cells-base'].forEach(function (id) {
+        map.setLayoutProperty(
+          id,
+          'visibility',
+          state.mode === 'heat' ? 'visible' : 'none',
+        );
+      });
       map.setPaintProperty('cells', 'circle-color', circleColour(k));
       map.setPaintProperty('cells', 'circle-opacity', circleOpacity());
       map.setPaintProperty('cells', 'circle-stroke-opacity', circleOpacity());
@@ -618,6 +624,40 @@
     map.on('load', function () {
       window.ConnectMap.calmBasemap(map, { text: 0.45 });
       map.addSource('cells', { type: 'geojson', data: data });
+      // The footprint: every area with workers, as a quiet dot under the heat.
+      // Heat only draws where there is a concern, so without this a view like
+      // "delayed over 3 days" showed a handful of glows on an empty map and
+      // read as though Connect had a handful of workers.
+      map.addLayer({
+        id: 'cells-base',
+        type: 'circle',
+        source: 'cells',
+        maxzoom: HEAT_UNTIL_ZOOM + 0.5,
+        paint: {
+          'circle-radius': [
+            'interpolate',
+            ['linear'],
+            ['sqrt', ['get', 'workers']],
+            1,
+            2,
+            10,
+            6,
+            30,
+            12,
+          ],
+          'circle-color': '#a9b3e8',
+          'circle-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            HEAT_UNTIL_ZOOM - 1,
+            0.45,
+            HEAT_UNTIL_ZOOM,
+            0,
+          ],
+          'circle-stroke-width': 0,
+        },
+      });
       var density = [
         'interpolate',
         ['linear'],
@@ -1111,7 +1151,8 @@
     p3.appendChild(box);
     note(
       p3,
-      'Hotter means more of a concern, for every choice. Heat shows where the concern is concentrated: ' +
+      'Grey dots are every area with workers in view, so you can see where Connect is working. ' +
+        'Hotter means more of a concern, for every choice. Heat shows where the concern is concentrated: ' +
         'it is built from counts (workers without signal, visits delayed), so a big programme with a ' +
         'small problem and a small programme with a big one can both glow. Zoom in, or choose Circles, ' +
         'to see each area’s own rate: one circle per area about 11 km across, placed where its workers ' +
