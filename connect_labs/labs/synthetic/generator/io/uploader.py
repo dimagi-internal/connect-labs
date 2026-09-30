@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from connect_labs.labs.synthetic.invalidation import invalidate_synthetic_caches
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
+from connect_labs.labs.synthetic.provenance import mark_generated
 from connect_labs.labs.synthetic.visit_count import resync_visit_count
 
 _FILES = (
@@ -88,6 +89,8 @@ def upload_and_register(
     # We just replaced the fixture bytes, so every cache derived from them is
     # stale — including the analysis rows, which are keyed on config_hash and so
     # survive even a brand-new pipeline (#1034).
+    # The generator wrote this folder, so the opp's data is generated.
+    mark_generated(opportunity_id, result.folder_id)
     invalidate_synthetic_caches(opportunity_id)
     # And the count on the row describes whatever was there before (#1197).
     resync_visit_count(row, previous_folder_id=previous_folder_id)

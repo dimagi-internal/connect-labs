@@ -60,6 +60,9 @@ def ensure_opp_data(resource, ctx) -> dict:
         # Cluster exactly this way). It also makes env ensure the one-call
         # restore path after such a trample.
         "cloned_from_opportunity_id": None,
+        # Authored from the env manifest into labs-local records: generated. See
+        # connect_labs/labs/synthetic/provenance.py.
+        "generated_folder_id": "",
     }
     # File the opp under a program when the env declares one — this is what makes
     # is_labs_only_program_id(program_id) True, so a PROGRAM-owned cross-opp rollup
