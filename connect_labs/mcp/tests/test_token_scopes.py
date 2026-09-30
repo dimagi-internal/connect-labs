@@ -29,21 +29,6 @@ def test_no_visit_data_tool_is_no_uservisit_data():
         assert name in _REGISTRY, f"USERVISIT_DATA_TOOLS names a tool that does not exist: {name}"
 
 
-def test_labs_context_loses_visit_counts_only_for_a_restricted_token():
-    result = {"organizations": [{"programs": [{"opportunities": [{"id": 1, "visit_count": 42}]}]}]}
-    restricted = [token_scopes.TOKEN_SCOPE_STRINGS[token_scopes.NO_USERVISIT_DATA]]
-    full = [token_scopes.TOKEN_SCOPE_STRINGS[token_scopes.FULL]]
-
-    assert token_scopes.redact(restricted, "labs_context", result) == {
-        "organizations": [{"programs": [{"opportunities": [{"id": 1}]}]}]
-    }
-    assert token_scopes.redact(full, "labs_context", result) == result
-
-
-def test_every_redacted_tool_is_reachable_by_a_restricted_token():
-    assert set(token_scopes.REDACTED_FIELDS) <= token_scopes.NO_USERVISIT_DATA_TOOLS
-
-
 def test_create_token_refuses_an_unknown_scope(db):
     user = User.objects.create(username="scope-typo")
     with pytest.raises(ValueError):

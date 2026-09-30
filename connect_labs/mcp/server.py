@@ -474,9 +474,6 @@ def _run_registry_tool_inner(
         version_after = result.get("_version_after")
         # Strip private keys before returning to the caller.
         result = {k: v for k, v in result.items() if not k.startswith("_")}
-    # A no-uservisit-data token gets an allowed tool's result without the fields
-    # that aggregate visits (``token_scopes.REDACTED_FIELDS``).
-    result = token_scopes.redact(getattr(get_access_token(), "scopes", None), spec.name, result)
 
     audit(
         user,

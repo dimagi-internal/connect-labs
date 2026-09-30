@@ -4,8 +4,11 @@ A PAT acts as the person who minted it. ``full`` reaches every tool, as PATs
 always have. ``no-uservisit-data`` is for handing an agent a token that can read how
 things are BUILT -- workflow definitions, pipeline schemas, indicator
 registries, app structure, solicitations, the org directory, targeting -- but
-never visit data: no rows, raw or computed from them by a pipeline, a workflow
-run, a snapshot or a report. It writes nothing either.
+never user visit data: no visit rows or per-visit values, raw or computed by a
+pipeline, a workflow run, a snapshot or a report. Opportunity-level counts and
+dates (``visit_count``, an org's first-visit date) and contact details of people
+who submitted as an organisation are on the allowed side of that line. It
+writes nothing either.
 
 The list is deny-by-default: a tool added to the catalogue is out of reach of a
 no-uservisit-data token until someone adds it here on purpose, having checked that
@@ -59,8 +62,11 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "get_review",
         "list_funds",
         "get_fund",
-        # The organisation directory and EOI rounds.
+        # The organisation directory and EOI rounds. Contacts are people who
+        # submitted as an organisation; a round's applicant outcome is dated
+        # from the org's first visit (a date, not a visit).
         "marketplace_orgs_get",
+        "marketplace_rounds_list",
         # Targeting: population and burden data, not visits.
         "targeting_indicators",
         "targeting_select",
@@ -69,10 +75,11 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "targeting_admin_levels",
         "targeting_research",
         "targeting_compare_criteria",
-        # Microplans: the parameter schema only. A plan's work areas are not
-        # here: a plan handed off from WA Revisit carries per-ward figures
-        # computed from approved visits (mopup/core/handoff.py), and its set of
-        # work areas is itself the set that failed visit-derived coverage.
+        # Microplans. A plan handed off from WA Revisit carries per-ward
+        # figures computed from visits (children per building) -- aggregates,
+        # not visits, which is on the allowed side of the line.
+        "microplans_list_plans",
+        "microplans_plan_work_areas",
         "microplans_coverage_param_schema",
         # Page and cohort definitions, synthetic env templates.
         "pages_list_providers",
@@ -105,20 +112,8 @@ USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "synthetic_fidelity_report",
         "synthetic_fidelity_vs_source",
         "synthetic_clone_profile",
-        # Plan work areas carry WA Revisit's visit-derived ward figures.
-        "microplans_list_plans",
-        "microplans_plan_work_areas",
-        # include_applicants dates each org's outcome from its first visit.
-        "marketplace_rounds_list",
     }
 )
-
-#: Fields a no-uservisit-data token must not see in an otherwise allowed tool's
-#: result, stripped at any depth. ``labs_context`` carries each opportunity's
-#: ``visit_count``, which is an aggregate of visits.
-REDACTED_FIELDS: dict[str, frozenset[str]] = {
-    "labs_context": frozenset({"visit_count"}),
-}
 
 
 def is_restricted(scopes) -> bool:
@@ -130,19 +125,3 @@ def allowed_tools(scopes) -> frozenset[str] | None:
     if is_restricted(scopes):
         return NO_USERVISIT_DATA_TOOLS
     return None
-
-
-def redact(scopes, tool_name: str, result):
-    """``result`` with ``REDACTED_FIELDS[tool_name]`` removed at any depth, for a restricted token."""
-    fields = REDACTED_FIELDS.get(tool_name)
-    if not fields or not is_restricted(scopes):
-        return result
-    return _strip(result, fields)
-
-
-def _strip(value, fields: frozenset[str]):
-    if isinstance(value, dict):
-        return {k: _strip(v, fields) for k, v in value.items() if k not in fields}
-    if isinstance(value, list):
-        return [_strip(v, fields) for v in value]
-    return value
