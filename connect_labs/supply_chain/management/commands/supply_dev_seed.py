@@ -29,6 +29,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
 from connect_labs.labs.access.scopes import SYSTEM
+from connect_labs.labs.synthetic.provenance import mark_generated
 from connect_labs.labs.synthetic.provisioning import register_labs_only_opp
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
@@ -650,5 +651,7 @@ class Command(BaseCommand):
             program_id=PROGRAMME_ID,
             allowed_domains=[],
         )
+        # Invented from end to end, and held in the labs DB (folder ""): generated.
+        mark_generated(PROGRAMME_ID, "")
         self.stdout.write(f"synthetic programme {PROGRAMME_ID} registered")
         return opp
