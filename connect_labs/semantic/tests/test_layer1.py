@@ -134,14 +134,14 @@ def test_rejected_and_pending_visits_never_reach_the_metrics():
     from django.utils import timezone
 
     from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
-    from connect_labs.labs.analysis.config import AnalysisPipelineConfig, FieldComputation
+    from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT, AnalysisPipelineConfig, FieldComputation
 
     opp, pipeline = 976543, 88
     future = timezone.now() + timezone.timedelta(days=1)
     for i, status in enumerate(["approved", "over_limit", "rejected", "pending"]):
         RawVisitCache.objects.create(
             opportunity_id=opp,
-            pipeline_id=pipeline,
+            pipeline_id=USER_VISITS_RAW_SLOT,  # the visits export's shared slot (#1921)
             visit_count=4,
             expires_at=future,
             visit_id=str(70000 + i),
@@ -168,9 +168,13 @@ def test_rejected_and_pending_visits_never_reach_the_metrics():
 
 @pytest.mark.django_db
 def test_the_freshest_copy_of_a_visit_wins_and_half_written_copies_are_ignored():
-    """One visit cached by three pipelines: an OLD copy under the lowest pipeline id
-    (another workflow's, with a stale status), a FRESH copy, and an in-progress
-    sentinel copy (negative visit_count). Layer 1 must read the fresh one."""
+    """One visit cached three times in the visits slot: an OLD copy (a stale status),
+    a FRESH copy, and an in-progress sentinel copy (negative visit_count). Layer 1
+    must read the fresh one.
+
+    (Before #1921 these were three pipelines' slots; since then every visits pipeline
+    shares one slot per opportunity, and the same three copies arise inside it -- a
+    stale generation not yet replaced, and a rebuild in flight.)"""
     from datetime import timedelta
 
     from django.db import connection
@@ -180,11 +184,13 @@ def test_the_freshest_copy_of_a_visit_wins_and_half_written_copies_are_ignored()
     from connect_labs.labs.analysis.config import AnalysisPipelineConfig, FieldComputation
 
     opp, now = 976544, timezone.now()
+    from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT as SLOT
+
     rows = [
         # (pipeline_id, visit_count, expires_at, status) -- the same visit_id throughout
-        (5, 1, now + timedelta(minutes=1), "pending"),  # old copy, lowest id
-        (99, 1, now + timedelta(minutes=55), "approved"),  # fresh copy
-        (3, -7, now + timedelta(minutes=58), "rejected"),  # in-progress sentinel
+        (SLOT, 1, now + timedelta(minutes=1), "pending"),  # old copy
+        (SLOT, 2, now + timedelta(minutes=55), "approved"),  # fresh copy (a later generation)
+        (SLOT, -7, now + timedelta(minutes=58), "rejected"),  # in-progress sentinel
     ]
     for pid, count, expires, status in rows:
         RawVisitCache.objects.create(
@@ -205,9 +211,9 @@ def test_the_freshest_copy_of_a_visit_wins_and_half_written_copies_are_ignored()
     config.pipeline_id = 99
     sql = build_visit_sql(config, [opp], props_doc=KMC_PROPS)
     with connection.cursor() as cur:
-        cur.execute(f"SELECT pipeline_id FROM ({sql}) q")
+        cur.execute(f"SELECT status FROM ({sql}) q")
         got = [r[0] for r in cur.fetchall()]
-    assert got == [99], "the most recently fetched finalized copy, not the lowest id or a half-written one"
+    assert got == ["approved"], "the most recently fetched finalized copy, not a stale or half-written one"
 
 
 def test_a_worker_filter_is_applied_in_the_scan_and_a_computed_key_is_not():
@@ -239,11 +245,11 @@ def test_one_workers_evaluation_scans_only_that_workers_visits():
     from django.utils import timezone
 
     from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
-    from connect_labs.labs.analysis.config import AnalysisPipelineConfig, FieldComputation
+    from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT, AnalysisPipelineConfig, FieldComputation
 
     opp, future = 976545, timezone.now() + timezone.timedelta(days=1)
     for i in range(6):
-        for pid in (1, 2):  # two cached copies of every visit
+        for pid in (USER_VISITS_RAW_SLOT, 2):  # the visit, plus another source's row in its own slot
             RawVisitCache.objects.create(
                 opportunity_id=opp,
                 pipeline_id=pid,
@@ -281,3 +287,38 @@ def test_one_workers_evaluation_scans_only_that_workers_visits():
     for node in found:
         conds = " ".join(str(node.get(k, "")) for k in ("Filter", "Index Cond", "Recheck Cond"))
         assert "flw_a" in conds, f"the worker predicate must be applied at the scan, got: {conds}"
+
+
+@pytest.mark.django_db
+def test_another_sources_rows_on_the_opportunity_never_arrive_as_visits():
+    """The raw cache holds, per opportunity, the visits slot AND a slot per pipeline on
+    any other source (#116, #1921) -- MBW caches its CommCare HQ Register Mother and
+    Gold Standard forms beside its visits. Widening the extraction's WHERE to a set of
+    opportunities dropped its slot scope, so those forms reached Layer 1 as visits."""
+    from django.db import connection
+    from django.utils import timezone
+
+    from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+    from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT, AnalysisPipelineConfig, FieldComputation
+
+    opp, future = 976546, timezone.now() + timezone.timedelta(days=1)
+    for slot, visit_id in ((USER_VISITS_RAW_SLOT, "91000"), (5501, "hq-registration-form"), (5502, "hq-gs-form")):
+        RawVisitCache.objects.create(
+            opportunity_id=opp,
+            pipeline_id=slot,
+            visit_count=1,
+            expires_at=future,
+            visit_id=visit_id,
+            username="flw",
+            status="approved",
+            form_json={"form": {"@name": "Record Visit Details"}},
+            visit_date="2026-09-01",
+        )
+    config = AnalysisPipelineConfig(
+        grouping_key="username", fields=[FieldComputation(name=c, path="form.@name") for c in KMC_VISIT_INPUTS]
+    )
+    config.pipeline_id = 22143
+    sql = build_visit_sql(config, [opp], props_doc=KMC_PROPS)
+    with connection.cursor() as cur:
+        cur.execute(f"SELECT visit_id FROM ({sql}) q")
+        assert [r[0] for r in cur.fetchall()] == ["91000"]

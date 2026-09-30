@@ -204,11 +204,16 @@ def cache_state(opportunity_ids) -> dict[str, Any]:
     from django.utils import timezone as dj_timezone
 
     from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+    from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
 
     requested = [int(o) for o in (opportunity_ids or [])]
+    # The VISITS slot only. An opportunity also caches its other sources' rows --
+    # CommCare HQ registration or checklist forms, each in its own slot -- and
+    # counting those read an opportunity whose visits were cold as cached.
     present = set(
         RawVisitCache.objects.filter(
             opportunity_id__in=requested,
+            pipeline_id=USER_VISITS_RAW_SLOT,
             visit_count__gt=0,
             expires_at__gt=dj_timezone.now(),
         ).values_list("opportunity_id", flat=True)

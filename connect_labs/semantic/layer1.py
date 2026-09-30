@@ -61,6 +61,9 @@ def build_visit_sql(
       4. merges fields from OTHER pipelines via `extra_fields`,
       5. applies `visit_filter`'s base-column keys (opportunity, worker) in the scan.
 
+    It also scopes the scan to the entity pipeline's OWN raw-cache slot (see
+    `_slot_predicate`).
+
     (5) is what makes a one-worker evaluation cost one worker. The compiler also
     applies the filter, but after this subquery -- and Postgres cannot push a
     `username` predicate below the DISTINCT ON (it is not a DISTINCT key), so the
@@ -122,7 +125,8 @@ def build_visit_sql(
     # statuses -- so what the indicators saw depended on what else existed.
     ex = (
         head
-        + f"WHERE opportunity_id IN ({opp_list}) AND visit_count > 0{filters}{_scan_filter_sql(visit_filter)}\n"
+        + f"WHERE opportunity_id IN ({opp_list}){_slot_predicate(pipeline_schema)} AND visit_count > 0"
+        + f"{filters}{_scan_filter_sql(visit_filter)}\n"
         + "ORDER BY opportunity_id, visit_id, expires_at DESC, pipeline_id"
     )
 
@@ -171,3 +175,24 @@ def visit_columns_sql(columns) -> str:
         else:
             terms.append(f"x.{col.column} AS {col.name}")
     return "".join(f",\n  {t}" for t in terms)
+
+
+def _slot_predicate(pipeline_config: Any) -> str:
+    """` AND pipeline_id = <slot>` for the entity pipeline's raw-cache slot.
+
+    `labs_raw_visit_cache` holds, per opportunity, one slot shared by every pipeline
+    on the Connect visits export AND one slot per pipeline on any other source --
+    CommCare HQ registration forms, a supervisor app's checklist (#116, #1921). The
+    extraction the engine generates is scoped to its own slot; widening its WHERE to
+    a set of opportunities dropped that scope, so every OTHER source's rows on the
+    opportunity reached Layer 1 as visits. On MBW (opp 765) that is each
+    registration form and each Gold Standard checklist, counted as a visit by the
+    worker who submitted it.
+
+    A config without a slot -- a test double, a raw schema -- keeps the old
+    unscoped read.
+    """
+    if isinstance(pipeline_config, dict) or not hasattr(pipeline_config, "raw_slot_id"):
+        return ""
+    slot = pipeline_config.raw_slot_id
+    return " AND pipeline_id IS NULL" if slot is None else f" AND pipeline_id = {int(slot)}"
