@@ -335,17 +335,61 @@ def _classify_paths(form_schema: FormSchema) -> dict[str, str]:
 
 
 def _profile_categorical(visits: list[dict], path: str) -> dict[str, float]:
-    """Return value -> rate mapping for a categorical field at dotted path."""
+    """Return value -> rate mapping for a categorical field at dotted path.
+
+    Empty when the field is not really categorical (see ``_looks_like_free_text``):
+    its values are then never copied anywhere.
+    """
+    counts = _observed_values(visits, path)
+    total = sum(counts.values())
+    if total == 0 or _looks_like_free_text(counts):
+        return {}
+    return {k: round(c / total, 4) for k, c in counts.items()}
+
+
+def _observed_values(visits: list[dict], path: str) -> Counter:
     counts: Counter[str] = Counter()
     for v in visits:
         raw = _extract_nested(v.get("form_json") or {}, path)
-        if raw in (None, ""):
+        if raw in (None, "") or isinstance(raw, (dict, list)):
             continue
         counts[str(raw)] += 1
-    total = sum(counts.values())
-    if total == 0:
-        return {}
-    return {k: round(c / total, 4) for k, c in counts.items()}
+    return counts
+
+
+# A categorical's values are copied into the manifest, and in mirror mode into every
+# replayed case, so a field is only treated as a category when it behaves like a
+# closed list someone wrote into the app. Past this many DISTINCT observed values it
+# does not: a real select has a handful of options and a multiselect's observed
+# combinations a few dozen at most (which is why this is looser than the text path's
+# 25), while a field typed "select" whose answers are names, hand-typed places or ids
+# comes back with hundreds. 50 keeps genuine enumerations and drops those.
+_MAX_CATEGORY_VALUES = 50
+
+# A category value shaped like an identifier is refused however few distinct values
+# there are: a uuid (a case id) or a long run of digits (a phone or national id).
+_IDENTIFIER_VALUE_RE = re.compile(
+    r"^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\+?\d{7,})$", re.IGNORECASE
+)
+
+
+def _looks_like_free_text(counts: Counter) -> bool:
+    """True when observed values are not a closed list of choice codes.
+
+    Such a field is treated as free text: none of its values may be copied into the
+    profile, the manifest or the transplant pool. Shares the text-replay path's
+    length bound (``_MAX_REPLAYABLE_VALUE_LEN``), applied per space-separated token so
+    a multiselect's joined codes are judged code by code. Deliberately value-based,
+    not leaf-name based: a yes/no select named ``photo_taken`` is a real category, and
+    the text path's leaf filter would refuse it.
+    """
+    if len(counts) > _MAX_CATEGORY_VALUES:
+        return True
+    for value in counts:
+        for token in str(value).split():
+            if len(token) > _MAX_REPLAYABLE_VALUE_LEN or _IDENTIFIER_VALUE_RE.match(token):
+                return True
+    return False
 
 
 _NEGATIVE_TOKENS = {"no", "0", "false", "absent", "none", "negative", "n", "normal"}
@@ -686,7 +730,9 @@ def _distribution_for_values(values: list) -> dict[str, Any] | None:
             }
     counts = Counter(str(x) for x in values)
     total = sum(counts.values())
-    if total == 0:
+    # A repeat child that is free text (names, remarks, ids) gets no distribution, so
+    # its values never enter the manifest.
+    if total == 0 or _looks_like_free_text(counts):
         return None
     return {"distribution": "categorical", "values": {k: round(c / total, 4) for k, c in counts.items()}}
 
@@ -1019,6 +1065,11 @@ def profile(
         # clone answer "do slow-growing babies die more?" the same way the source does.
         categorical_paths = {p for p, d in field_dists.items() if d.get("distribution") == "categorical"}
         categorical_paths |= {p for p, k in kinds.items() if k in {"select", "multiselect"}}
+        # A path the schema calls a select whose answers are free text or ids is not
+        # replayed: the same rule _profile_categorical applies.
+        categorical_paths = {
+            p for p in categorical_paths if not _looks_like_free_text(_observed_values(user_visits, p))
+        }
         # Everything the schema calls "text" is still unclaimed at this point, and on a
         # real CommCare app that is the majority of the form — HQ reports hidden
         # calculated fields as DataBindOnly, which falls back to "text". Promote the
