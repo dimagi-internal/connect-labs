@@ -15,6 +15,7 @@ from django.http import HttpResponseBadRequest
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
+from . import token_scopes
 from .models import MCPAccessToken
 
 _LOCALHOST_HOSTS = {"localhost", "127.0.0.1"}
@@ -54,6 +55,12 @@ def create_token_browser(request):
         return HttpResponseBadRequest(f"Invalid callback: {err}")
     if len(state) < 16:
         return HttpResponseBadRequest("state nonce required (min 16 chars)")
+    # The caller asks for a scope (``?scope=no-uservisit-data``); the consent page names it
+    # so the person approving sees what they are handing over.
+    scope = request.GET.get("scope") or request.POST.get("scope") or token_scopes.FULL
+    scope_labels = dict(token_scopes.SCOPE_CHOICES)
+    if scope not in scope_labels:
+        return HttpResponseBadRequest(f"Unknown scope {scope!r}")
 
     if request.method == "GET":
         return render(
@@ -62,6 +69,9 @@ def create_token_browser(request):
             {
                 "callback": callback,
                 "state": state,
+                "scope": scope,
+                "scope_label": scope_labels[scope],
+                "is_no_uservisit_data": scope == token_scopes.NO_USERVISIT_DATA,
                 "default_name": f"claude-code-{datetime.now():%Y%m%d-%H%M%S}",
             },
         )
@@ -71,7 +81,7 @@ def create_token_browser(request):
     if not name:
         name = f"claude-code-{datetime.now():%Y%m%d-%H%M%S}"
 
-    _, raw = MCPAccessToken.create_token(request.user, name=name)
+    _, raw = MCPAccessToken.create_token(request.user, name=name, scope=scope)
 
     sep = "&" if "?" in callback else "?"
     redirect_url = f"{callback}{sep}" + urlencode({"token": raw, "state": state, "name": name})
