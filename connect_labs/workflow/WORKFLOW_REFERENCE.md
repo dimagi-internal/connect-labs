@@ -1786,7 +1786,22 @@ entity:
 visit_columns: # derived per-visit columns added to Layer 1
   - { name: is_approved, word_match: { column: status, word: approved } }
   - { name: is_flagged, sql: 'COALESCE(flagged, FALSE)' }
-pipelines: { entity: visits } # + extra_fields: {<column>: <pipeline alias>} to merge a column in
+  # window kinds: the case's previous visit (the value, or the GPS distance from it)
+  - name: prev_date
+    previous:
+      { column: visit_date, partition_by: [entity_id], order_by: visit_date }
+  - name: metres_moved
+    distance_from_previous:
+      { lat: lat, lon: lon, partition_by: [entity_id], order_by: visit_date }
+pipelines:
+  entity: visits # + extra_fields: {<column>: <pipeline alias>} -- same forms, another pipeline's paths
+  lookups: # another SOURCE's own rows (CommCare HQ forms), joined per opportunity on a key
+    reg:
+      pipeline: registrations
+      on: entity_id
+      key: case_id
+      fields: { eligible: eligible_flag }
+      pick: latest
 # weight_series: {...}               # optional per-entity reading series (KMC's weights); needs value_column
 ```
 
@@ -1812,7 +1827,8 @@ GET /labs/workflow/api/<workflow_id>/semantic/?scopes=opportunity,flw[&series=<f
 → { rows: [{scope, opportunity_id?, username?, llo?, cohort_month?, case_id?, n_cases,
             <measure>, <measure>_numerator, <measure>_denominator, <measure>_suppressed?, anyrec_<input>?}],
     measures: <catalog: titles, units, directions, bands, min_denominator, inputs…>,
-    deployment, cold_cache, partial_cache, opportunities_missing, … }
+    deployment, cold_cache, partial_cache, opportunities_missing,
+    lookups_missing: {<lookup>: [opportunity ids whose lookup pipeline has no cached rows]}, … }
 ```
 
 - **Grade in the page, from `measures`**: minimum denominator, bands, n/a from `anyrec_*` and `inputs`, and not-credible from `_suppressed`. The SQL returns counts only. (Better: save runs with the `semantic_snapshot` builder, which grades server-side, and render the stored payload -- as every KMC report now does.)

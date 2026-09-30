@@ -15,9 +15,21 @@ engine with a registry attached. A registry now declares it, in `properties_doc`
       - {name: child_alive_no, word_match: {column: death_visits, word: 'no'}}
       - {name: ebf_recorded, sql: 'ebf_visits IS NOT NULL'}
       - {name: form_name, column: form_names}
+      - {name: prev_visit_date, previous: {column: visit_date, partition_by: [mother_case_id],
+                                           order_by: visit_date}}
+      - {name: metres_from_prev, distance_from_previous: {lat: latitude, lon: longitude,
+                                                          partition_by: [mother_case_id],
+                                                          order_by: visit_date}}
     pipelines:                    # which workflow pipeline sources feed Layer 1
       entity: children
       extra_fields: {weight_g: visits}
+      lookups:                    # fields from ANOTHER pipeline's rows, joined on a key
+        registration:             #   (an HQ form pipeline, say) -- see `Lookup`
+          pipeline: registrations
+          on: mother_case_id      #   Layer-1 column of the visit
+          key: mother_case_id     #   field (or base column) of the lookup pipeline
+          fields: {eligible_at_reg: eligible_full_intervention_bonus}
+          pick: latest            #   latest | earliest | max | min | count
     weight_series:                # OPTIONAL: a per-entity reading series
       value_column: weight_g
       ...
@@ -47,13 +59,54 @@ from connect_labs.semantic import legacy
 DEFAULT_COHORT_DATE = "first_visit"
 
 
+# Visit-column kinds that read NEIGHBOURING visits (a window), not the visit alone.
+# They are computed over Layer 1's own rows before the row-level kinds, so a `sql`
+# column may read them.
+WINDOW_KINDS = ("previous", "distance_from_previous")
+VISIT_COLUMN_KINDS = ("word_match", "sql", "column", *WINDOW_KINDS)
+
+LOOKUP_PICKS = ("latest", "earliest", "max", "min", "count")
+
+
 @dataclass(frozen=True)
 class VisitColumn:
     name: str
-    kind: str  # 'word_match' | 'sql' | 'column'
+    kind: str  # one of VISIT_COLUMN_KINDS
     column: str | None = None
     word: str | None = None
     sql: str | None = None
+    # Window kinds. The window is always ALSO partitioned by opportunity (a case id
+    # can recur across opportunities) and ordered by visit_id after `order_by`, so
+    # ties resolve the same way every time.
+    partition_by: tuple[str, ...] = ()
+    order_by: str | None = None
+    skip_null: bool = False
+    lat: str | None = None
+    lon: str | None = None
+
+
+@dataclass(frozen=True)
+class Lookup:
+    """Fields drawn from ANOTHER pipeline's rows, joined to each visit on a key.
+
+    `extra_fields` cannot do this: it evaluates the other pipeline's field paths
+    against the entity pipeline's OWN visit rows, which is right only when both
+    pipelines read the same forms. A pipeline on a different source -- CommCare HQ
+    registration forms, a supervisor app's checklist -- has rows of its own, so its
+    fields have to be JOINED: `on` (a Layer-1 column) = `key` (a field of the lookup
+    pipeline, or one of its base columns such as `username`), within one opportunity.
+
+    Several lookup rows can share a key (a worker assessed twice), so `pick` says
+    which value a visit gets: `latest` / `earliest` by the row's visit_date, or
+    `max` / `min` of a numeric value, or `count` of rows.
+    """
+
+    name: str
+    pipeline: str | None
+    on: str | None
+    key: str | None
+    fields: dict[str, str]
+    pick: str = "latest"
 
 
 @dataclass(frozen=True)
@@ -68,6 +121,7 @@ class RegistryModel:
     weight_series: dict[str, Any] | None
     value_column: str | None
     min_denominator: int | None
+    lookups: tuple[Lookup, ...] = ()
     # Which sections came from `legacy.py`. Empty for a registry that declares its model.
     shimmed: tuple[str, ...] = field(default=())
 
@@ -82,12 +136,40 @@ class RegistryModel:
         return f"{self.entity_name}_id"
 
 
+def _names(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, (list, tuple)):
+        return tuple(v for v in value if isinstance(v, str))
+    return ()
+
+
 def _visit_column(item: Any) -> VisitColumn:
     item = item if isinstance(item, dict) else {}
     name = str(item.get("name") or "")
     if isinstance(item.get("word_match"), dict):
         wm = item["word_match"]
         return VisitColumn(name, "word_match", column=wm.get("column"), word=wm.get("word"))
+    if isinstance(item.get("previous"), dict):
+        w = item["previous"]
+        return VisitColumn(
+            name,
+            "previous",
+            column=w.get("column"),
+            partition_by=_names(w.get("partition_by")),
+            order_by=w.get("order_by"),
+            skip_null=bool(w.get("skip_null")),
+        )
+    if isinstance(item.get("distance_from_previous"), dict):
+        w = item["distance_from_previous"]
+        return VisitColumn(
+            name,
+            "distance_from_previous",
+            lat=w.get("lat"),
+            lon=w.get("lon"),
+            partition_by=_names(w.get("partition_by")),
+            order_by=w.get("order_by"),
+        )
     if "sql" in item:
         return VisitColumn(name, "sql", sql=item.get("sql"))
     return VisitColumn(name, "column", column=item.get("column"))
@@ -132,6 +214,20 @@ def resolve_model(props_doc: dict[str, Any] | None, indicators_doc: dict[str, An
         min_den = legacy.INDICATOR_DEFAULTS["min_denominator"]
         shimmed.append("defaults.min_denominator")
 
+    raw_lookups = pipelines.get("lookups") if isinstance(pipelines, dict) else None
+    lookups = tuple(
+        Lookup(
+            name=str(lname),
+            pipeline=spec.get("pipeline"),
+            on=spec.get("on"),
+            key=spec.get("key"),
+            fields=dict(spec["fields"]) if isinstance(spec.get("fields"), dict) else {},
+            pick=str(spec.get("pick") or "latest"),
+        )
+        for lname, spec in (raw_lookups.items() if isinstance(raw_lookups, dict) else ())
+        if isinstance(spec, dict)
+    )
+
     return RegistryModel(
         entity_name=name,
         entity_plural=str(entity.get("plural") or name + "s"),
@@ -143,6 +239,7 @@ def resolve_model(props_doc: dict[str, Any] | None, indicators_doc: dict[str, An
         weight_series=ws,
         value_column=value_column,
         min_denominator=int(min_den) if isinstance(min_den, (int, float)) and not isinstance(min_den, bool) else None,
+        lookups=lookups,
         shimmed=tuple(shimmed),
     )
 

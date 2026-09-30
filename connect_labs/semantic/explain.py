@@ -202,7 +202,9 @@ def explain(
 
 
 def _pipeline_aliases(model: RegistryModel) -> str:
-    aliases = [a for a in [model.entity_pipeline, *model.extra_fields.values()] if a]
+    aliases = [
+        a for a in [model.entity_pipeline, *model.extra_fields.values(), *(lk.pipeline for lk in model.lookups)] if a
+    ]
     return " + ".join(dict.fromkeys(aliases)) or "as bound"
 
 
