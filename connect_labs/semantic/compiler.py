@@ -1163,7 +1163,12 @@ _FILTER_COLUMNS = {"opportunity_id": int, "username": str}
 
 
 def visit_filter_sql(visit_filter: dict[str, Any] | None, entity_key: str | None = None) -> str:
-    """AND-clauses restricting the visit set BEFORE Layer 2 runs, or ''.
+    """AND-clauses restricting the visit set BEFORE Layer 2 runs, or ''."""
+    return "".join(f"\n      AND {p}" for p in visit_filter_predicates(visit_filter, entity_key))
+
+
+def visit_filter_predicates(visit_filter: dict[str, Any] | None, entity_key: str | None = None) -> list[str]:
+    """The predicates of `visit_filter_sql`, one per filter key.
 
     A per-worker case table needs the case scope for ONE worker. Filtering the
     grouped output would still pay for the whole cohort's extraction (the 28-30 s
@@ -1172,7 +1177,7 @@ def visit_filter_sql(visit_filter: dict[str, Any] | None, entity_key: str | None
     unknown key is an error rather than a clause that silently matches nothing.
     """
     if not visit_filter:
-        return ""
+        return []
     allowed = dict(_FILTER_COLUMNS)
     if entity_key and _IDENTIFIER.match(entity_key):
         allowed[entity_key] = str
@@ -1187,7 +1192,7 @@ def visit_filter_sql(visit_filter: dict[str, Any] | None, entity_key: str | None
         else:
             escaped = str(value).replace("'", "''")
             parts.append(f"{key} = '{escaped}'")
-    return "".join(f"\n      AND {p}" for p in parts)
+    return parts
 
 
 def _series_ctes(ws: dict[str, Any], C, model: RegistryModel) -> str:
