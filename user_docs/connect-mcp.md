@@ -77,6 +77,28 @@ The `.env` holds the CommCare HQ credentials Safe Mode's read-only app-structure
 
 ---
 
+## Personal Access Tokens
+
+Personal Access Tokens let you connect an MCP client (such as Claude Code in Safe Mode) to Labs without going through the browser sign-in flow. You create and manage them at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
+
+### Access levels
+
+When you create a token you choose an **Access** level:
+
+| Access level | What it can do |
+| --- | --- |
+| **Standard** | Full access matching your Connect permissions, including reading visit data and making workflow edits. |
+| **No user visit data** | Read-only access to workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds, the organisation directory, targeting data, and microplan sampling. Cannot read visits — raw or computed — and cannot change anything. |
+
+Tools the token is not allowed to use do not appear to the agent at all, so the agent cannot accidentally attempt a blocked action.
+
+The token list on the tokens page shows the access level of each token. When you rotate a token, its access level stays the same.
+
+!!! tip "When to use 'No user visit data'"
+    Choose this level when you want an AI assistant to help you navigate programme structure, explore indicator definitions, or query the organisation directory — but you do not want it to have access to any beneficiary visit data. It is a good default for any automated or shared setup where full data access is not needed.
+
+---
+
 ## Editing Workflows
 
 !!! tip "Working with real program data?"
