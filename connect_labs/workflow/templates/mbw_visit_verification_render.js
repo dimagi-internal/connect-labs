@@ -841,7 +841,7 @@ function WorkflowUI({
         },
         {
           name: 'Stacked bar chart -- "No location to match on" (grey)',
-          def: "GPS-only 4th segment, after Pass/Pending/Fail. Counts visits where gpsOutcome() landed on NA -- either the visit was at a location other than the mother's home or a health facility (GPS verification doesn't apply there), or that location had no previously-saved reference point to compare against. Not tracked for the other 4 methods, since \"no location to match on\" is specifically a GPS concept.",
+          def: 'GPS-only 4th segment, after Pass/Pending/Fail. Counts visits where gpsOutcome() landed on NA -- either the visit was at a location other than the mother\'s home or a health facility (GPS verification doesn\'t apply there), or that location had no previously-saved reference point to compare against. Not tracked for the other 4 methods, since "no location to match on" is specifically a GPS concept.',
           field:
             'methodStats[gps].noMatch -- count of displayRows where gpsOutcome(row) === "NA" (GPS method only).',
         },
@@ -859,7 +859,7 @@ function WorkflowUI({
         },
         {
           name: 'By FLW -- segment categories',
-          def: "Each segment is colored/grouped by that specific visit's exact \"Final verification method(s)\" combo -- the same value shown in that table column -- so a visit where both GPS and Mother Questions were attempted is its own \"GPS, Mother Questions\" category, distinct from a visit where only GPS was attempted. Colors are generated per distinct combo (not a fixed palette), most-common combo listed first in the legend.",
+          def: 'Each segment is colored/grouped by that specific visit\'s exact "Final verification method(s)" combo -- the same value shown in that table column -- so a visit where both GPS and Mother Questions were attempted is its own "GPS, Mother Questions" category, distinct from a visit where only GPS was attempted. Colors are generated per distinct combo (not a fixed palette), most-common combo listed first in the legend.',
           field:
             'finalVerificationMethods(row) (same function as the table\'s "Final verification method(s)" column) used as the grouping key per visit; byFlwCombos lists every distinct combo across all FLWs, most total visits first.',
         },
@@ -1214,11 +1214,11 @@ function WorkflowUI({
                   automatically follow the per-method checks (see Definitions).
                 </span>
               )}{' '}
-              The GPS bar's grey segment ("No location to match on") is
-              visits where GPS verification couldn't run at all -- either the
-              visit was somewhere other than the mother's home or a health
-              facility, or there was no previously-saved point for that
-              location to compare against.
+              The GPS bar's grey segment ("No location to match on") is visits
+              where GPS verification couldn't run at all -- either the visit was
+              somewhere other than the mother's home or a health facility, or
+              there was no previously-saved point for that location to compare
+              against.
             </p>
             <div style={{ height: '320px' }}>
               <canvas ref={chartRef}></canvas>
@@ -1419,14 +1419,14 @@ function WorkflowUI({
               <p className="text-xs text-gray-500">
                 Every FLW with at least one failed visit (Final verification
                 outcome = Fail), most failed visits first -- the number next to
-                each name is that FLW's failed-visit count, and each bar
-                segment is exactly one visit. Segments are colored/grouped by
-                that visit's exact "Final verification method(s)" combo -- the
-                same value shown in that table column -- so a visit where both
-                GPS and Mother Questions were attempted gets its own "GPS,
-                Mother Questions" category, separate from a visit with only
-                GPS. Respects the domain and eligibility filters above, same
-                row set as the other tabs.
+                each name is that FLW's failed-visit count, and each bar segment
+                is exactly one visit. Segments are colored/grouped by that
+                visit's exact "Final verification method(s)" combo -- the same
+                value shown in that table column -- so a visit where both GPS
+                and Mother Questions were attempted gets its own "GPS, Mother
+                Questions" category, separate from a visit with only GPS.
+                Respects the domain and eligibility filters above, same row set
+                as the other tabs.
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
