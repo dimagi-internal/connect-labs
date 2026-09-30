@@ -232,3 +232,14 @@
     {% endif %}
 </div>
 {% endblock content %}
+
+{% comment %}
+The embedded agent panel, present only when the workflow shares its runs
+(config.agent.share -> WorkflowRunView._add_agent_context sets canopy_panel). At the
+END of the body, not in `javascript`: that block renders inside <head>, where
+`document.body` is still null and the launcher has nothing to attach to.
+{% endcomment %}
+{% block inline_javascript %}
+{{ block.super }}
+{% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
+{% endblock inline_javascript %}

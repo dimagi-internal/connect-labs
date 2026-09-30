@@ -2,7 +2,7 @@ from django.urls import include, path
 
 from connect_labs.labs.synthetic import manager_flow_views
 
-from . import views
+from . import action_views, views
 
 app_name = "workflow"
 
@@ -57,6 +57,19 @@ urlpatterns = [
     # visit to /workflow/<def>/run/ with no run_id.
     path("api/<int:definition_id>/run/start/", views.start_run_api, name="api_start_run"),
     path("api/run/<int:run_id>/", views.get_run_api, name="api_get_run"),
+    # A workflow's declared actions (workflow/actions.py): preview, then run with the
+    # preview's confirm token -- the same two steps as the MCP's workflow_run_action.
+    path(
+        "api/run/<int:run_id>/actions/<slug:key>/preview/",
+        action_views.action_preview_api,
+        name="api_action_preview",
+    ),
+    path("api/run/<int:run_id>/actions/<slug:key>/run/", action_views.action_run_api, name="api_action_run"),
+    path(
+        "api/actions/executions/<int:execution_id>/",
+        action_views.action_execution_api,
+        name="api_action_execution",
+    ),
     # API endpoints - Chat history
     path("api/<int:definition_id>/chat/history/", views.get_chat_history_api, name="api_chat_history"),
     path("api/<int:definition_id>/chat/message/", views.add_chat_message_api, name="api_chat_message"),

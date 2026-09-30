@@ -35,21 +35,46 @@ from django.conf import settings
 
 #: What each scope unlocks. THE only place a delegated token's reach is decided:
 #: a tool not listed under one of the token's scopes is neither listed nor
-#: callable with it. v1 is read-only on purpose — a write reached through a page
-#: should come with a write scope AND a per-call confirmation from the visitor
-#: (the design's decision 3), neither of which exists yet.
+#: callable with it.
+#:
+#: A ``:read`` scope holds read tools only. The one write scope, ``workflow:act``,
+#: holds ``workflow_run_action``, which runs a workflow's own declared action (the
+#: same one its button runs) and cannot run without a preview first: the call that
+#: acts must carry the single-use token its preview issued, bound to the person,
+#: the run and exactly what was previewed (``workflow/actions.py``). The agent is
+#: told to show that preview and get the person's yes in between. A new write
+#: scope must hold to the same rule -- ``PREVIEWED_WRITE_SCOPES`` is the list, and a
+#: test pins it.
 SCOPE_TOOLS: dict[str, frozenset[str]] = {
     "marketplace:read": frozenset({"marketplace_orgs_get", "marketplace_rounds_list"}),
+    "workflow:read": frozenset(
+        {
+            "workflow_run_context",
+            "workflow_run_indicators",
+            "workflow_indicator_explain",
+            "workflow_action_status",
+        }
+    ),
+    "workflow:act": frozenset({"workflow_run_action"}),
 }
+
+#: Write scopes whose every tool acts only on a confirmed preview.
+PREVIEWED_WRITE_SCOPES: frozenset[str] = frozenset({"workflow:act"})
 
 #: Which pages may let canopy act as the visitor, and with which scopes, keyed by
 #: URL name. A page's scopes are decided here, server-side, and never from
 #: anything the browser sends. A page not listed gets no grant at all — the panel
 #: still opens, and the agent works as it did before. Every scope here must be a
 #: key of ``SCOPE_TOOLS`` (the SDK refuses to build its page registry otherwise).
+#:
+#: The workflow run page is registered for every workflow, but a workflow that has
+#: not opted in (``config.agent.share``) renders no panel, so no page token and no
+#: grant is ever issued for it -- and every ``workflow_*`` run tool refuses a
+#: delegated call on a workflow that has not opted in, whatever the token says.
 PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "marketplace:network": ("marketplace:read",),
     "marketplace:round": ("marketplace:read",),
+    "labs:workflow:run": ("workflow:read", "workflow:act"),
 }
 
 #: The panel's look on labs' pages. Rendered by the SDK's ``canopy_host/panel.html``.

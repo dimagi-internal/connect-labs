@@ -144,6 +144,13 @@ def labs_ocs_callback(request: HttpRequest) -> HttpResponseRedirect:
             "scope": token_data.get("scope", ""),
         }
 
+        # Also the user's row, so a workflow action can reach OCS for them with no
+        # browser session (the labs MCP, background execution) -- as the Connect
+        # and CommCare HQ callbacks persist theirs. See ocs_tokens.py.
+        from connect_labs.labs.integrations.ocs.ocs_tokens import save_ocs_token
+
+        save_ocs_token(request.user, request.session["ocs_oauth"])
+
         # Clean up OAuth flow data
         request.session.pop("ocs_oauth_next", None)
         request.session.pop("ocs_oauth_state", None)
@@ -171,8 +178,13 @@ def labs_ocs_logout(request: HttpRequest) -> HttpResponseRedirect:
 
     Redirects back to the referring page or labs overview.
     """
-    # Clear OCS OAuth data from session
+    # Clear OCS OAuth data from session, and the stored row: disconnecting means no
+    # caller -- browser or not -- may act in OCS as this user any more.
     request.session.pop("ocs_oauth", None)
+    if request.user.is_authenticated:
+        from connect_labs.labs.integrations.ocs.ocs_tokens import forget_ocs_token
+
+        forget_ocs_token(request.user)
 
     logger.info(f"User {request.user.username} disconnected from Open Chat Studio")
     messages.info(request, "Disconnected from Open Chat Studio.")
