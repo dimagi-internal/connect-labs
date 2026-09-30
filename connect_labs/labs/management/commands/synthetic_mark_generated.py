@@ -2,8 +2,11 @@
 
 ``SyntheticOpportunity.generated_folder_id`` is set by generation code as it writes
 (see ``connect_labs/labs/synthetic/provenance.py``), so opps generated before that
-field existed are unmarked. This finds them by the one thing that distinguishes a
-generated folder from anything else: its NAME. The generator names every folder
+field existed are unmarked, and so is an opp generated on a laptop
+(``synthetic_generate_opps --no-register``) and then pointed at its folder with
+``synthetic_repoint_by_source``: re-pointing never marks. This finds them by the one
+thing that distinguishes a generated folder from anything else: its NAME. The
+generator names every folder
 ``opp-<id>-<YYYYmmdd-HHMMSS>-generated``; a dump of real exports is the same
 without the ``-generated`` suffix, and a hand-made folder is anything at all. Only an
 exact match is marked. Everything else stays unmarked, which is the safe default.
@@ -15,6 +18,7 @@ exact match is marked. Everything else stays unmarked, which is the safe default
 from __future__ import annotations
 
 from django.core.management.base import BaseCommand
+from django.db.models import F
 
 from connect_labs.labs.synthetic.generator.io.uploader import GENERATED_FOLDER_NAME_RE
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
@@ -35,9 +39,13 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         apply = options["apply"]
+        # Unmarked (null) rows, and rows marked for a folder they no longer serve: the
+        # local flow (synthetic_generate_opps --no-register, then repoint) leaves a
+        # generator-written folder behind a row that still names the previous one.
         rows = (
-            SyntheticOpportunity.objects.filter(labs_only=True, generated_folder_id__isnull=True)
+            SyntheticOpportunity.objects.filter(labs_only=True)
             .exclude(gdrive_folder_id="")
+            .exclude(generated_folder_id=F("gdrive_folder_id"))
             .order_by("opportunity_id")
         )
         drive = None

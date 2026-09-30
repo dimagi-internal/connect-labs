@@ -75,10 +75,25 @@ def test_apply_marks_only_generator_named_folders(world):
     assert _generated() == {10_001}
 
 
-def test_an_already_marked_row_is_left_alone(world):
+def test_a_marked_row_now_serving_a_dump_stays_unmarked(world):
     mark_generated(10_002, "something-else")
     _run("--apply")
     assert SyntheticOpportunity.objects.get(opportunity_id=10_002).generated_folder_id == "something-else"
+    assert 10_002 not in _generated()
+
+
+def test_a_row_repointed_at_a_generator_folder_is_marked(world):
+    """The local flow: generate on a laptop, then repoint. Repointing never marks."""
+    mark_generated(10_001, "the-previous-generated-folder")
+    assert 10_001 not in _generated()
+    _run("--apply")
+    assert 10_001 in _generated()
+
+
+def test_a_row_already_generated_is_not_rechecked(world):
+    mark_generated(10_001, "gen")
+    out = _run()
+    assert "opp 10001" not in out
 
 
 def test_the_pattern_matches_what_the_generator_names_and_not_what_a_dump_names(monkeypatch, settings):
