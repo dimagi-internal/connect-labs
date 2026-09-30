@@ -174,6 +174,13 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
             "the underlying surveys support it. The only second source for neonatal "
             "mortality, which no other source here publishes below the region.",
         ),
+        Eligible(
+            Source.IGME,
+            "IGME's national series. Eligible only because a country row IS a "
+            "national figure -- it is what lets a country ranking read neonatal "
+            "mortality for every country rather than the half the subnational "
+            "sources reach.",
+        ),
     ),
     # -- Population and its derivations -----------------------------------
     "pop_total": _POPULATION,
