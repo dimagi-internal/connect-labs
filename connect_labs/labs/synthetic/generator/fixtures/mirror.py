@@ -5,16 +5,38 @@ cases-per-FLW ratios, per-entity value trajectories — rather than re-sampling
 from fitted summary statistics. This module groups source visits by entity and
 extracts the empirical structure the engine replays.
 
-De-identification: only numbers and counts ever leave the source here. No names,
-phones, GPS, or free text are carried out.
+What leaves the source: per-case numbers, bounded categorical answers (select
+codes, never free text: see the profiler's category cap), date leaves as day
+offsets, form names, and each case's first-visit date. No names, phones, GPS or
+free text. That structure is still each real case exactly, so it is a MEASUREMENT,
+used as-is to score fidelity. Before it goes into a manifest the profiler passes
+it through ``perturb_transplant_pool``, which shifts every case in time and
+jitters its numbers, so no synthetic case is a real one.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import random
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
+
+# How far a replayed case may move in time, each way. Two weeks keeps a case inside
+# the same season and roughly the same programme phase (a KMC opp runs for months),
+# while making its calendar dates useless for matching it to a real case. The shift
+# is never zero, so no case keeps its real first-visit date.
+MIRROR_START_SHIFT_DAYS = 14
+
+# Multiplicative jitter on a case's numeric values, drawn once per case per field.
+# 3% is inside ordinary measurement error for the fields this replays (a KMC scale
+# reads to 10-20 g on a ~2 kg baby, a MUAC tape to 0.1-0.2 cm on ~12 cm), so the
+# distribution an analysis sees barely moves, yet a real case's exact numbers do not
+# survive. Drawn per case rather than per visit so a case's trajectory keeps its
+# shape: a constant stays constant, a zero stays zero, and every within-case ratio
+# (growth velocity as a fraction of weight) is preserved.
+MIRROR_VALUE_JITTER = 0.03
 
 
 @dataclass(frozen=True)
@@ -44,8 +66,9 @@ class EntityStructure:
     # plus an optional ``"dates": {path: <signed day-offset from first visit>}`` for
     # declared date leaves (e.g. ``child_dob``). Replaying a series reproduces that
     # case's owner, timing, visit count, value trajectory, and date-derived axes
-    # (age = visit_date - dob) exactly. Numerics + date offsets only — names, phones,
-    # free text, and absolute calendar dates never enter.
+    # (age = visit_date - dob) exactly. ``start_date`` is the case's REAL first-visit
+    # date and the values are its real values: this is the unperturbed measurement.
+    # Anything that ships it (a manifest) must pass it through perturb_transplant_pool.
     transplant_pool: list[dict[str, Any]]
 
 
@@ -123,8 +146,9 @@ def _date_offsets(form_json: dict, date_paths: set[str] | None, first: dt.date) 
     is a *date*, not a number — so ``_numeric_leaves`` never carries it. Storing
     each date as a signed offset from the entity's first visit (negative for a DOB
     that precedes it) lets the clone reconstruct the exact relationship while
-    leaking no absolute calendar date beyond the ``start_date`` the pool already
-    records. Constant per-entity dates (a DOB repeated each visit) yield the same
+    recording no absolute calendar date beyond the series' ``start_date``, which
+    perturb_transplant_pool shifts before it ships, carrying these dates with it so
+    ages stay exact. Constant per-entity dates (a DOB repeated each visit) yield the same
     offset every visit, so the replayed date stays stable across the child's series.
     """
     out: dict[str, int] = {}
@@ -325,3 +349,75 @@ def profile_entity_structure(
         owner_visit_counts={k: sorted(v) for k, v in owner_visit_counts.items()},
         transplant_pool=transplant_pool,
     )
+
+
+def _decimals(value: float) -> int:
+    """Decimal places a value was recorded with (capped), so jitter keeps its precision."""
+    exponent = Decimal(repr(float(value))).as_tuple().exponent
+    return min(max(-exponent, 0), 6) if isinstance(exponent, int) else 6
+
+
+def perturb_transplant_pool(
+    pool: list[dict[str, Any]],
+    *,
+    seed: int,
+    frozen_paths: set[str] | frozenset = frozenset(),
+) -> list[dict[str, Any]]:
+    """Return a copy of ``pool`` in which no series is a real case any more.
+
+    Per series: ``start_date`` moves by a non-zero whole number of days within
+    ±``MIRROR_START_SHIFT_DAYS``; visit ``day`` offsets and ``dates`` offsets are
+    relative to it and are untouched, so the gaps between visits and every age
+    (visit_date - dob) stay exact. Each numeric field is scaled by one factor drawn
+    from 1 ± ``MIRROR_VALUE_JITTER`` for that series, then rounded back to the
+    precision the field was recorded at (a field whose every value is a whole number
+    stays whole, so counters and small codes do not move) and clamped into the
+    range the source observed for that field (so never negative where the source
+    never was, and never beyond a real extreme). Categorical answers, form names and owners are kept:
+    a case's outcome sequence is what makes a mirror worth having.
+
+    ``frozen_paths`` are replayed exactly: the profiler passes the app's integer
+    CALCULATED fields (ages, visit counters), which are identities with the case's
+    timing that the shift already preserves.
+
+    Deterministic in ``seed``, which must not be derivable from the manifest (the
+    profiler derives it from a server secret), or the noise could be subtracted.
+    """
+    rng = random.Random(seed)
+    whole: dict[str, bool] = {}
+    places: dict[str, int] = {}
+    bounds: dict[str, tuple[float, float]] = {}
+    for series in pool:
+        for visit in series.get("visits") or []:
+            for path, value in (visit.get("values") or {}).items():
+                value = float(value)
+                whole[path] = whole.get(path, True) and value.is_integer()
+                places[path] = max(places.get(path, 0), _decimals(value))
+                lo, hi = bounds.get(path, (value, value))
+                bounds[path] = (min(lo, value), max(hi, value))
+
+    shifts = [d for d in range(-MIRROR_START_SHIFT_DAYS, MIRROR_START_SHIFT_DAYS + 1) if d != 0]
+    out: list[dict[str, Any]] = []
+    for series in pool:
+        start = dt.date.fromisoformat(series["start_date"]) + dt.timedelta(days=rng.choice(shifts))
+        factors: dict[str, float] = {}
+        visits = []
+        for visit in series.get("visits") or []:
+            values = {}
+            for path, value in (visit.get("values") or {}).items():
+                value = float(value)
+                if path in frozen_paths:
+                    values[path] = value
+                    continue
+                if path not in factors:
+                    factors[path] = 1.0 + rng.uniform(-MIRROR_VALUE_JITTER, MIRROR_VALUE_JITTER)
+                noisy = value * factors[path]
+                noisy = float(round(noisy)) if whole[path] else round(noisy, places[path])
+                # Never outside what the source observed for the field: a clone must
+                # not invent a heavier baby than any real one, and a real value's sign
+                # (a non-negative weight) is kept by the same bound.
+                lo, hi = bounds[path]
+                values[path] = min(max(noisy, lo), hi)
+            visits.append({**visit, "values": values})
+        out.append({**series, "start_date": start.isoformat(), "visits": visits})
+    return out
