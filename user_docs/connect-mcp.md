@@ -38,6 +38,20 @@ Ask in **#engineering-connect** if you're unsure about any of these.
 
 ---
 
+## MCP Addresses
+
+Connect Labs provides two MCP addresses. Choose the one that matches how much data access you need.
+
+| Address | What it can access |
+| --- | --- |
+| `https://labs.connect.dimagi.com/mcp/` | Full access matching your Connect permissions, including real visit data. |
+| `https://labs.connect.dimagi.com/mcp/no_user_visit/` | Never shows real user visit data. Can read programme structure (workflows, pipelines, indicator registries, app structure, solicitations, org directory, targeting) and can profile real opportunities and generate synthetic data. Tools that read visits work only on synthetic opportunities whose data was generated. |
+
+!!! tip "Using the restricted address for a whole team"
+    `mcp/no_user_visit/` is designed as a safe default for a shared or team setup. Signing in through this address gives a restricted token that stays restricted even if it is later used on the main `/mcp/` address.
+
+---
+
 ## First-Time Setup
 
 ### 1. Connect Claude to Labs
@@ -48,11 +62,17 @@ Ask in **#engineering-connect** if you're unsure about any of these.
     claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/
     ```
 
+    To use the restricted address instead:
+
+    ```bash
+    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/no_user_visit/
+    ```
+
     Then type `/mcp`, choose `connect_labs` and sign in with CommCare Connect when the browser opens. There is no token to copy.
 
 === "Claude desktop or claude.ai"
 
-    Open **Settings → Connectors**, choose **Add custom connector**, and add `https://labs.connect.dimagi.com/mcp/`. Click **Connect** and sign in with CommCare Connect.
+    Open **Settings → Connectors**, choose **Add custom connector**, and add `https://labs.connect.dimagi.com/mcp/` (or `https://labs.connect.dimagi.com/mcp/no_user_visit/` for the restricted version). Click **Connect** and sign in with CommCare Connect.
 
 Claude acts as you, with your Connect permissions. To see or disconnect the apps you have signed in, visit [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
 
@@ -88,14 +108,14 @@ When you create a token you choose an **Access** level:
 | Access level | What it can do |
 | --- | --- |
 | **Standard** | Full access matching your Connect permissions, including reading visit data and making workflow edits. |
-| **No user visit data** | Read-only access to workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds, the organisation directory, targeting data, and microplan sampling. Cannot access individual visit rows or per-visit values — including through the export API and data reseed endpoints. Opportunity-level counts and dates, and contact details of people who submitted as an organisation, are allowed. |
+| **No user visit data** | Read-only access to workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds, the organisation directory, targeting data, and microplan sampling. Can also profile real opportunities on the server and generate synthetic data from those profiles. Cannot access individual visit rows or per-visit values — including through the export API and data reseed endpoints — except on synthetic opportunities whose data was generated. Opportunity-level counts and dates, and contact details of people who submitted as an organisation, are allowed. |
 
 Tools the token is not allowed to use do not appear to the agent at all, so the agent cannot accidentally attempt a blocked action.
 
 The token list on the tokens page shows the access level of each token. When you rotate a token, its access level stays the same.
 
 !!! tip "When to use 'No user visit data'"
-    Choose this level when you want an AI assistant to help you navigate programme structure, explore indicator definitions, or query the organisation directory — but you do not want it to have access to any beneficiary visit data. It is a good default for any automated or shared setup where full data access is not needed.
+    Choose this level when you want an AI assistant to help you navigate programme structure, explore indicator definitions, or query the organisation directory — but you do not want it to have access to any beneficiary visit data. It is a good default for any automated or shared setup where full data access is not needed. Tokens at this level can still profile real opportunities and generate synthetic data.
 
 ---
 
@@ -275,27 +295,4 @@ Each domain grant applies to **one opportunity only** — it does not carry over
 
 ## Synthetic Opportunities — How Data Is Generated
 
-Synthetic data is kept clearly separate from real programme data. Every synthetic opportunity records whether it is using generated data — it counts as generated only while it still uses the exact files the generator wrote. If you point it at any other folder (such as a production export dump), that mark is removed automatically.
-
-### The main flow: profile, then generate
-
-The standard way to create synthetic data is:
-
-1. **Profile** a real opportunity on the server. This captures the statistical shape of the data — visit patterns, outcome distributions, measurement ranges — without copying any real records.
-2. **Keep the profile.** It is stored on the server and you can reuse it for future runs.
-3. **Generate** a synthetic dataset from the profile. The generator produces new, artificial records that match the programme's patterns.
-
-You verify the result in your browser the same way you would any other synthetic opportunity.
-
-!!! note "Power-user path: profiling from a dump"
-    If you need to profile from a local export rather than directly from the server, you can export production data to Drive and run `manage.py synthetic_profile_dump` to profile the dump directly. This path requires full data access and is documented separately. A dump is only ever an input to profiling — it is never loaded directly as synthetic data.
-
-### Mirror mode and privacy protections
-
-**Mirror mode** creates a longitudinal clone that follows each real case over time. To ensure no real case is copied exactly:
-
-- Each synthetic case's timeline is shifted by 1–14 days.
-- Measurements are adjusted by up to ±3% (approximately measurement error).
-- Ages, visit spacing, and outcomes are preserved, so programme-level analyses produce the same results.
-
-**Free-text answers are never included in profiles.** Any question with more than
+Synthetic data is kept clearly separate from real programme data. Every synthetic opportunity records whether it is using generated data — it counts as generated only while it still uses the exact files the generator wrote. If you point it at any
