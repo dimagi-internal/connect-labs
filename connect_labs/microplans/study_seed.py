@@ -173,6 +173,12 @@ def ensure_synthetic_program(manifest: StudyManifest, *, user=None) -> int:
         },
     )
     if created:
+        from connect_labs.labs.synthetic.provenance import mark_generated
+
+        # A row this seeder creates holds only what the seeder authors into labs-local
+        # records (folder ""), so it is generated. An existing row is never marked: it
+        # may serve fixtures somebody else registered.
+        mark_generated(manifest.opportunity_id, "")
         logger.info("study_seed: created labs-only synthetic opp %s", manifest.opportunity_id)
     elif not (row.labs_only and row.enabled):
         logger.warning(
