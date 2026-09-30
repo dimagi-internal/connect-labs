@@ -20,6 +20,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+from connect_labs.labs.analysis.backends.sql.query_builder import (
+    build_multi_opportunity_visit_extraction,
+    field_value_sql,
+)
 from connect_labs.semantic.model import WINDOW_KINDS, resolve_model
 
 # `visit_filter` keys that are real columns of labs_raw_visit_cache, and so can be
@@ -28,50 +32,44 @@ from connect_labs.semantic.model import WINDOW_KINDS, resolve_model
 _SCAN_FILTER_COLUMNS = ("opportunity_id", "username")
 
 
-def _scan_filter_sql(visit_filter: dict[str, Any] | None) -> str:
+def _scan_predicates(visit_filter: dict[str, Any] | None) -> list[str]:
+    """`visit_filter`'s base-column keys (opportunity, worker) as scan predicates."""
     if not visit_filter:
-        return ""
-    from connect_labs.semantic.compiler import visit_filter_sql
+        return []
+    from connect_labs.semantic.compiler import visit_filter_predicates
 
     scan = {k: v for k, v in visit_filter.items() if k in _SCAN_FILTER_COLUMNS}
     # The compiler's own clause builder: whitelisted keys, escaped values.
-    return visit_filter_sql(scan)
+    return visit_filter_predicates(scan)
 
 
 def build_visit_sql(
     pipeline_schema: dict[str, Any],
     opportunity_ids: Iterable[int],
     *,
-    generate_sql_preview=None,
     extra_fields: dict[str, Any] | None = None,
     visit_filter: dict[str, Any] | None = None,
     props_doc: dict[str, Any],
 ) -> str:
     """Return the visit-level SQL for a set of opportunities.
 
-    The extraction itself comes from the pipeline engine, so every fallback path
-    is whatever the pipeline actually uses. This function only:
+    The extraction itself -- every fallback path, the scope to the pipeline's own
+    raw-cache slot, its row filters, the in-progress-download guard and the
+    de-duplication -- is built by the pipeline ENGINE
+    (`query_builder.build_multi_opportunity_visit_extraction`). This function never
+    edits that SQL; it only:
 
-      1. widens the WHERE from one opportunity to the requested set,
-      2. de-duplicates across cache partitions -- `labs_raw_visit_cache` is keyed
-         by (opportunity, pipeline), so the same visit is present once per
-         pipeline that has cached it, and counting it twice inflates everything,
-      3. adds `opportunity_id` (the extraction does not select it) and the
-         registry's `visit_columns` (see `visit_columns_sql`),
-      4. merges fields from OTHER pipelines via `extra_fields`,
-      5. applies `visit_filter`'s base-column keys (opportunity, worker) in the scan.
-
-    It also:
-
-      6. scopes the scan to the entity pipeline's OWN raw-cache slot (see
-         `_slot_predicate`),
-      7. joins the registry's `pipelines.lookups` (fields from another pipeline's
-         rows -- CommCare HQ forms, say -- matched on a key; see `lookups_sql`),
-      8. computes window visit columns (`previous`, `distance_from_previous`) over
+      1. asks the engine for it over the requested opportunities,
+      2. adds the registry's `visit_columns` (see `visit_columns_sql`),
+      3. adds fields from OTHER pipelines on the same forms via `extra_fields`,
+      4. passes `visit_filter`'s base-column keys (opportunity, worker) to the scan,
+      5. joins the registry's `pipelines.lookups` (fields from another pipeline's
+         own rows -- CommCare HQ forms, say -- matched on a key; see `lookups_sql`),
+      6. computes window visit columns (`previous`, `distance_from_previous`) over
          the de-duplicated, filtered visits, before the row-level visit columns so
          those may read them.
 
-    (5) is what makes a one-worker evaluation cost one worker. The compiler also
+    (4) is what makes a one-worker evaluation cost one worker. The compiler also
     applies the filter, but after this subquery -- and Postgres cannot push a
     `username` predicate below the DISTINCT ON (it is not a DISTINCT key), so the
     whole opportunity's visits were extracted, every form path pulled out of every
@@ -80,7 +78,7 @@ def build_visit_sql(
     rows are dropped before the extraction runs. It is the same set: every cached
     copy of a visit carries the same worker.
 
-    (4) is not a convenience -- which pipelines supply which fields is the
+    (3) is not a convenience -- which pipelines supply which fields is the
     registry's `pipelines` model. KMC's case: the dashboard reads its weight series
     from a SECOND pipeline ("KMC Weight Series", 5109) whose `weight_g` has five fallback
     paths, while the case pipeline's `weights` has six -- the extra
@@ -90,11 +88,6 @@ def build_visit_sql(
     is *right* is a question for the workbook; for a like-for-like comparison the
     series has to come from the pipeline the dashboard actually uses.
     """
-    if generate_sql_preview is None:  # pragma: no cover - import at call time
-        from connect_labs.labs.analysis.backends.sql.query_builder import generate_sql_preview as _gen
-
-        generate_sql_preview = _gen
-
     opps = [int(o) for o in opportunity_ids]
     if not opps:
         raise ValueError("build_visit_sql needs at least one opportunity")
@@ -115,53 +108,23 @@ def build_visit_sql(
     if windows and visit_filter:
         visit_filter = {k: v for k, v in visit_filter.items() if k != "username"}
 
-    preview = generate_sql_preview(pipeline_schema, opps[0])
-    ex = preview["visit_extraction_sql"]
-
-    # The extraction selects visit columns but not opportunity_id/pipeline_id;
-    # the rollup groups by the former and the dedup orders by the latter.
-    ex = ex.replace(
-        "SELECT\nvisit_id,",
-        "SELECT DISTINCT ON (opportunity_id, visit_id)\nopportunity_id,\npipeline_id,\nvisit_id,",
-        1,
+    # The ENGINE builds the multi-opportunity extraction -- scope, the pipeline's row
+    # filters, the in-progress-download guard, de-duplication -- so none of it can be
+    # lost here. This module used to take the single-opportunity SQL as text and
+    # rewrite its WHERE, and each rewrite dropped something the engine had put there
+    # (a status filter; `visit_count > 0`, #1684; the raw-cache slot).
+    extra_select = []
+    for name, cfg in extra_fields.items():
+        expr = field_value_sql(cfg, name)
+        if expr is None:
+            raise ValueError(f"extra_fields: {name!r} is not a SQL field of its pipeline")
+        extra_select.append(f"{expr} as {name}")
+    ex = build_multi_opportunity_visit_extraction(
+        pipeline_schema,
+        opps,
+        extra_select=extra_select,
+        extra_predicates=_scan_predicates(visit_filter),
     )
-    opp_list = ",".join(str(o) for o in opps)
-    old_where = f"WHERE opportunity_id = {opps[0]} AND pipeline_id"
-    idx = ex.find(old_where)
-    if idx == -1:
-        raise ValueError("could not locate the extraction's WHERE clause to widen")
-    head = ex[:idx]
-    # Re-apply the pipeline's own row filters. Cutting the WHERE at the scope
-    # predicate dropped everything after it -- including a declared status filter,
-    # so rule 0 (only approved and over_limit visits are valid) reached the
-    # pipeline's rows and none of the metrics built from them.
-    filters = "".join(f" AND {p}" for p in preview.get("visit_filter_predicates") or [])
-    # `visit_count > 0` excludes an in-progress streaming generation -- rows written
-    # under a NEGATIVE visit_count until the download finalizes (#1684). The scope
-    # predicate carries it, and cutting the WHERE at the scope dropped it, so Layer 1
-    # could read a half-written second copy of an opportunity's visits.
-    #
-    # The dedupe keeps the most recently fetched copy of each visit (latest expiry),
-    # not the lowest pipeline_id: the raw cache holds one copy per pipeline that has
-    # cached the opportunity, and picking by id read whichever OTHER workflow happened
-    # to own the lowest-numbered pipeline -- possibly a stale copy, with outdated
-    # statuses -- so what the indicators saw depended on what else existed.
-    ex = (
-        head
-        + f"WHERE opportunity_id IN ({opp_list}){_slot_predicate(pipeline_schema)} AND visit_count > 0"
-        + f"{filters}{_scan_filter_sql(visit_filter)}\n"
-        + "ORDER BY opportunity_id, visit_id, expires_at DESC, pipeline_id"
-    )
-
-    extra_cols = ""
-    if extra_fields:
-        parts = []
-        for name, cfg in extra_fields.items():
-            prev = generate_sql_preview(cfg, opps[0])
-            expr = prev["field_expressions"][name]["transformed_sql"]
-            parts.append(f"{expr} as {name}")
-        extra_cols = ",\n" + ",\n".join(parts)
-    ex = ex.replace("\nFROM labs_raw_visit_cache", extra_cols + "\nFROM labs_raw_visit_cache", 1)
 
     # The visit columns are spliced into Layer 1, which runs BEFORE the compiler's
     # own validation gets to look at the statement -- so they are checked here too.
@@ -180,9 +143,7 @@ FROM (
 {ex}
 ) x"""
 
-    lookup_cols, lookup_joins = lookups_sql(
-        model.lookups, lookup_configs, opps, generate_sql_preview=generate_sql_preview
-    )
+    lookup_cols, lookup_joins = lookups_sql(model.lookups, lookup_configs, opps)
     window_cols = "".join(f",\n  {window_column_sql(c)}" for c in windows)
     return f"""SELECT
   x.*{extra}
@@ -217,27 +178,6 @@ def visit_columns_sql(columns) -> str:
     return "".join(f",\n  {t}" for t in terms)
 
 
-def _slot_predicate(pipeline_config: Any) -> str:
-    """` AND pipeline_id = <slot>` for the entity pipeline's raw-cache slot.
-
-    `labs_raw_visit_cache` holds, per opportunity, one slot shared by every pipeline
-    on the Connect visits export AND one slot per pipeline on any other source --
-    CommCare HQ registration forms, a supervisor app's checklist (#116, #1921). The
-    extraction the engine generates is scoped to its own slot; widening its WHERE to
-    a set of opportunities dropped that scope, so every OTHER source's rows on the
-    opportunity reached Layer 1 as visits. On MBW (opp 765) that is each
-    registration form and each Gold Standard checklist, counted as a visit by the
-    worker who submitted it.
-
-    A config without a slot -- a test double, a raw schema -- keeps the old
-    unscoped read.
-    """
-    if isinstance(pipeline_config, dict) or not hasattr(pipeline_config, "raw_slot_id"):
-        return ""
-    slot = pipeline_config.raw_slot_id
-    return " AND pipeline_id IS NULL" if slot is None else f" AND pipeline_id = {int(slot)}"
-
-
 # `extra_fields` key carrying `{lookup name: pipeline config}`. Not an identifier, so
 # no registry column can collide with it.
 LOOKUPS_KEY = "@lookups"
@@ -248,40 +188,16 @@ LOOKUPS_KEY = "@lookups"
 _LOOKUP_BASE_COLUMNS = ("visit_id", "username", "visit_date", "entity_id")
 
 
-def _computed_in_python(field: Any) -> bool:
-    """The engine's own rule (`query_builder.build_visit_extraction_query`): a field
-    SQL cannot compute is one with an `extractor`, or a transform that reads the
-    whole visit (`visit_data`, or no parameters). An ordinary callable transform --
-    `gps_lat`, a float cast -- is translated to SQL from its source and is fine."""
-    import inspect
-
-    if callable(getattr(field, "extractor", None)):
-        return True
-    transform = getattr(field, "transform", None)
-    if not callable(transform):
-        return False
-    try:
-        params = list(inspect.signature(transform).parameters)
-    except (TypeError, ValueError):
-        return False
-    return "visit_data" in params or not params
-
-
-def _lookup_value_sql(config: Any, preview: dict[str, Any], name: str, lookup: str, role: str) -> str:
-    """The SQL for one field of a lookup pipeline, from that pipeline's own schema."""
-    field = None
-    for f in getattr(config, "fields", None) or []:
-        if getattr(f, "name", None) == name:
-            field = f
-            break
-    if field is not None and _computed_in_python(field):
+def _lookup_value_sql(config: Any, name: str, lookup: str, role: str) -> str:
+    """One field of a lookup pipeline, as the engine computes it -- or a base column."""
+    expr = field_value_sql(config, name)
+    if expr is not None:
+        return expr
+    if any(getattr(f, "name", None) == name for f in getattr(config, "fields", None) or []):
         raise ValueError(
             f"lookup {lookup!r}: {role} {name!r} is computed in Python by its pipeline "
             "(an extractor or a full-context transform), so SQL cannot read it -- declare it with paths instead"
         )
-    expr = (preview.get("field_expressions") or {}).get(name)
-    if expr:
-        return expr["transformed_sql"]
     if name in _LOOKUP_BASE_COLUMNS:
         return name
     raise ValueError(f"lookup {lookup!r}: {role} {name!r} is not a field of its pipeline")
@@ -300,34 +216,30 @@ def _lookup_pick_sql(pick: str, value: str) -> str:
     raise ValueError(f"unknown pick {pick!r}")
 
 
-def lookups_sql(lookups, configs: dict[str, Any], opps: list[int], *, generate_sql_preview) -> tuple[str, str]:
+def lookups_sql(lookups, configs: dict[str, Any], opps: list[int]) -> tuple[str, str]:
     """`(select terms, join clauses)` for the registry's lookups over Layer 1's `b`.
 
-    Each lookup reads its pipeline's rows from that pipeline's OWN raw-cache slot,
-    de-duplicated per row like Layer 1, reduced to one row per (opportunity, key) by
-    `pick`, and LEFT JOINed on `b.<on> = key` within the opportunity -- so a visit
-    with no matching row keeps its place with NULLs, and never multiplies.
+    Each lookup's rows come from the engine's extraction of ITS pipeline -- that
+    pipeline's own slot, filters and de-duplication -- reduced to one row per
+    (opportunity, key) by `pick`, and LEFT JOINed on `b.<on> = key` within the
+    opportunity: a visit with no matching row keeps its place with NULLs, and never
+    multiplies.
     """
-    opp_list = ",".join(str(o) for o in opps)
     cols: list[str] = []
     joins: list[str] = []
     for lk in lookups:
         config = configs.get(lk.name)
         if config is None:
             raise ValueError(f"lookup {lk.name!r}: the workflow has no pipeline source with alias {lk.pipeline!r}")
-        preview = generate_sql_preview(config, opps[0])
-        key_sql = _lookup_value_sql(config, preview, lk.key, lk.name, "key")
-        values = {out: _lookup_value_sql(config, preview, src, lk.name, "field") for out, src in lk.fields.items()}
-        filters = "".join(f" AND {p}" for p in preview.get("visit_filter_predicates") or [])
-        value_terms = "".join(f",\n      {v} AS {out}" for out, v in values.items())
-        rows = f"""SELECT DISTINCT ON (opportunity_id, visit_id)
-      opportunity_id,
-      visit_id,
-      visit_date,
-      ({key_sql})::text AS lookup_key{value_terms}
-    FROM labs_raw_visit_cache
-    WHERE opportunity_id IN ({opp_list}){_slot_predicate(config)} AND visit_count > 0{filters}
-    ORDER BY opportunity_id, visit_id, expires_at DESC"""
+        key_sql = _lookup_value_sql(config, lk.key, lk.name, "key")
+        values = {out: _lookup_value_sql(config, src, lk.name, "field") for out, src in lk.fields.items()}
+        extraction = build_multi_opportunity_visit_extraction(
+            config,
+            opps,
+            only_fields=[],
+            extra_select=[f"({key_sql})::text AS lookup_key", *(f"{v} AS {out}" for out, v in values.items())],
+        )
+        rows = extraction.replace("\n", "\n    ")
         alias = f"lk_{lk.name}"
         if lk.pick in ("latest", "earliest"):
             direction = "DESC" if lk.pick == "latest" else "ASC"

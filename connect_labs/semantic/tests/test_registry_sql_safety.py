@@ -422,9 +422,9 @@ def test_layer1_refuses_an_unsafe_visit_column_before_the_compiler_sees_it(shipp
     from connect_labs.semantic.layer1 import build_visit_sql
 
     props = _with_visit_column(shipped, {"name": "probe_col", "sql": "(SELECT 1) = 1"})
-    extraction = {
-        "visit_extraction_sql": "SELECT\nvisit_id,\nvisit_date\nFROM labs_raw_visit_cache AS labs_raw_visit_cache\n"
-        "WHERE opportunity_id = 1 AND pipeline_id = 2"
-    }
+    from connect_labs.labs.analysis.config import AnalysisPipelineConfig
+
+    config = AnalysisPipelineConfig(grouping_key="username", fields=[])
+    config.pipeline_id = 2
     with pytest.raises(ValueError, match="subquery"):
-        build_visit_sql({}, [1], generate_sql_preview=lambda s, o: extraction, props_doc=props)
+        build_visit_sql(config, [1], props_doc=props)
