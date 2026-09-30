@@ -1857,8 +1857,9 @@ An action is something a workflow lets you **do**, such as "Initiate AI coach". 
 - **Types are framework code, not render code.**
   - `create_task` makes one follow-up task per worker, attached to the run.
   - `start_ocs_outreach` makes that task plus an Open Chat Studio conversation. On synthetic opportunities it attaches a sample coaching conversation instead, and no message is sent.
-  - To add a type, add it to `ACTION_TYPES` and give it an executor branch.
+  - A type is an `ActionType` in `ACTION_TYPES`: its argument schema plus an `execute(ctx)` that does ONE worker and writes what to record into `ctx.record`. A declaration's `type` is resolved by looking it up there, both to describe the action (`declared_actions`) and to run it (`execute`). To add a type, add one entry; nothing else dispatches on it.
   - A config entry with no known `type` is not offered. §10's catalog entries document render-code buttons; they are not actions.
+- **Checked when it is saved.** `workflow_update_definition` refuses a `config.actions` with an unknown type, a duplicate or non-slug key, or `defaults` that don't fit the type's schema (`actions.declaration_problems`). A test holds every template's declaration to the same rule.
 - **Preview, then commit.** Running an action takes two calls.
   - The **preview** returns exactly what would happen: the workers, the bot and the text. It also returns a single-use `confirm` token, bound to the person, the run, the action and those arguments.
   - The **commit** must carry that token. Change anything in between and it is refused.
