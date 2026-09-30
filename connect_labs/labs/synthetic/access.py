@@ -20,7 +20,7 @@ from __future__ import annotations
 from django.db.models import Q
 
 from connect_labs.labs.synthetic.local_records_backend import is_labs_only_opportunity_id, is_labs_only_program_id
-from connect_labs.labs.synthetic.models import SyntheticOpportunity
+from connect_labs.labs.synthetic.models import LABS_ONLY_OPP_ID_FLOOR, SyntheticOpportunity
 
 
 def _safe_int(value) -> int | None:
@@ -74,4 +74,46 @@ def labs_only_scope_denied_reason(user, *, opportunity_id=None, program_id=None)
         and not user_can_access_labs_only_program(user, prog_id)
     ):
         return f"labs-only program {prog_id} is not accessible to your account"
+    return None
+
+
+def labs_only_program_denied_reason(user, program_id) -> str | None:
+    """Why ``user`` may not file a labs-only opp under ``program_id``, or None.
+
+    A program is a READ scope: ``user_can_access_labs_only_program`` grants a program
+    to anyone who can reach one opp in it. So filing an opp you own under someone
+    else's program would hand you their program-scoped records. A new program id is
+    fine; an existing one must already be yours to see.
+    """
+    pid = _safe_int(program_id)
+    if pid is None or pid < LABS_ONLY_OPP_ID_FLOOR:
+        return f"program_id {program_id} is not a labs-only program id (must be >= {LABS_ONLY_OPP_ID_FLOOR})"
+    if is_labs_only_program_id(pid) and not user_can_access_labs_only_program(user, pid):
+        return f"labs-only program {pid} is not accessible to your account"
+    return None
+
+
+def labs_only_target_denied_reason(user, opportunity_id) -> str | None:
+    """Why ``user`` may not write (generate, register, seed) onto ``opportunity_id``, or None.
+
+    The target must be in the labs-only namespace, never a real Connect opp id. It may
+    be an id nobody holds yet, or an existing labs-only opp the caller can already
+    access. An unallocated id that is somebody's PROGRAM id is refused like the
+    program itself, since registering it would join that program's read scope.
+    """
+    opp_id = _safe_int(opportunity_id)
+    if opp_id is None or opp_id < LABS_ONLY_OPP_ID_FLOOR:
+        return (
+            f"opportunity_id {opportunity_id} is not a labs-only id (must be >= {LABS_ONLY_OPP_ID_FLOOR}); "
+            "generated data is never written onto a real Connect opportunity"
+        )
+    row = SyntheticOpportunity.objects.filter(opportunity_id=opp_id).first()
+    if row is not None:
+        if not row.labs_only:
+            return f"opportunity_id {opp_id} is registered as a real-backed opportunity, not a labs-only one"
+        if not row.is_accessible_to(user):
+            return f"labs-only opportunity {opp_id} is not accessible to your account"
+        return None
+    if is_labs_only_program_id(opp_id) and not user_can_access_labs_only_program(user, opp_id):
+        return f"labs-only id {opp_id} is a program that is not accessible to your account"
     return None

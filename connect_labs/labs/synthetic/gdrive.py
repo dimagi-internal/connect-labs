@@ -8,6 +8,7 @@ folder (which may live inside a Shared Drive).
 Operations:
     - list immediate children of a folder (filename -> file ID)
     - download a file's bytes by ID
+    - read a file or folder's name by ID
     - create a folder under a parent
     - upload a file into a folder (multipart)
 """
@@ -139,6 +140,22 @@ class DriveClient:
             raise DriveAPIError(f"download_file({file_id}) failed: {e}") from e
 
         return resp.content
+
+    def get_name(self, file_id: str) -> str:
+        """Return the name of a Drive file or folder."""
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", file_id or ""):
+            raise DriveAPIError(f"get_name: invalid file_id {file_id!r}")
+        try:
+            resp = self._timed_get(
+                f"{DRIVE_API}/files/{file_id}",
+                headers=self._headers(),
+                params={"fields": "name", **_SHARED_DRIVES},
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            raise DriveAPIError(f"get_name({file_id}) failed: {e}") from e
+        return resp.json()["name"]
 
     def create_folder(self, name: str, parent_id: str) -> str:
         """Create a folder inside `parent_id`; return the new folder ID."""
