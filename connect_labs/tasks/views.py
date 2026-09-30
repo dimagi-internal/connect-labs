@@ -838,7 +838,7 @@ def task_initiate_ai(request, task_id):
         # Extract parameters from request
         identifier = body.get("identifier", "").strip()
         experiment = body.get("experiment", "").strip()
-        platform = body.get("platform", "connect_labs")
+        platform = body.get("platform", "commcare_connect")
         prompt_text = body.get("prompt_text", "").strip()
         start_new_session = body.get("start_new_session", False)
 
@@ -868,9 +868,9 @@ def task_initiate_ai(request, task_id):
         data_access.close()
         return JsonResponse({"success": True, **outcome})
 
-    except OCSAPIError:
-        logger.exception("OCS error when initiating AI for task %s", task_id)
-        return JsonResponse({"error": "An internal error occurred"}, status=500)
+    except OCSAPIError as e:
+        logger.warning("OCS refused to initiate AI for task %s: %s", task_id, e)
+        return JsonResponse({"error": f"Open Chat Studio could not start the conversation: {e}"}, status=502)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON in request body"}, status=400)
     except Exception:

@@ -238,7 +238,7 @@ def test_experiment_task_flow():
     # Step 12: Add AI session (mock)
     print("\n[12] Adding AI session...")
     try:
-        session_params = {"platform": "connect_labs", "experiment": "test-bot"}
+        session_params = {"platform": "commcare_connect", "experiment": "test-bot"}
         data_access.add_ai_session(
             task,
             actor=oauth_user.username,

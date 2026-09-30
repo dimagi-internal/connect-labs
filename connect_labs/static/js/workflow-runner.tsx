@@ -201,7 +201,7 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
             identifier: params.identifier,
             experiment: params.experiment,
             prompt_text: params.prompt_text,
-            platform: params.platform || 'connect_labs',
+            platform: params.platform || 'commcare_connect',
             start_new_session: params.start_new_session ?? true,
           }),
         });
