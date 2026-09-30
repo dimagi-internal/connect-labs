@@ -85,7 +85,41 @@ To trigger the OCS bot:
 The prompt shown in the modal is an instruction to the assistant describing what to coach the worker about and why — for example, noting which flag was raised and what it typically means. The assistant then opens the conversation with the worker in its own words. You can edit the instructions before clicking **Initiate AI** if you want to adjust the focus or add context.
 
 !!! note
-The OCS bot is only available for programs that have been configured to use it. Ask your program administrator if you're unsure whether it's enabled.
+    The OCS bot is only available for programs that have been configured to use it. Ask your program administrator if you're unsure whether it's enabled.
+
+---
+
+## Report Actions — Buttons and the Agent Panel
+
+Some reports offer **actions** — for example, **Initiate AI coach** or **Create follow-up task** — that you can run directly from the report without opening each task individually. This is currently available on the **Spark facilitator program report** only; it is off by default on all other reports.
+
+### Running an action from a button
+
+Action buttons appear in the report alongside worker or indicator rows.
+
+1. Click the action button (for example, **Initiate AI coach**) for a worker or group of workers.
+2. A confirmation panel opens showing exactly who will be contacted, what the coaching bot will be told, and — if more than one bot is available — a prompt to choose which one to use.
+3. Review the details. Nothing is sent until you confirm.
+4. Click **Confirm**. The panel then shows each worker's result as it completes.
+
+### Running an action from the agent panel
+
+Reports that have actions enabled also have an **agent panel** — an AI assistant that can see the same data you are viewing. The agent panel follows you as you drill into an organisation or an individual worker, and it understands each indicator: what "red" means for that metric and how it is calculated.
+
+This means you can ask the assistant to act on what it sees — for example:
+
+- *"Start AI coaching for everyone with a red metric."*
+- *"Create follow-up tasks for the workers flagged this week."*
+
+Before the assistant carries out any action, it shows you the same confirmation preview that the button does — who will be reached, what the bot will say, and which bot will be used. Nothing is sent until you approve. The assistant acts as you, using your access level.
+
+You can also connect your own assistant (outside Labs) to the report if your program uses a separate tool. Once connected, it can run actions on your behalf even if the report page is not open — you do not need to keep the browser tab active.
+
+!!! note
+    The agent panel and report action buttons are turned on for the Spark facilitator program report only. If you do not see them on a report you use, contact your program administrator.
+
+!!! tip
+    Once Chat Studio (or another connected assistant) is linked, it stays connected — so it can start coaching conversations for you without requiring you to return to the page each time.
 
 ---
 
@@ -105,7 +139,7 @@ Click **Create Task with Coaching** in the Actions column for a worker who needs
 The task page shows a short, readable description of what the follow-up is about — for example, "Coach Maria on household visit selection." The full instructions the OCS bot will use are kept separate: they pre-fill the **Instructions to assistant** prompt field inside the **Initiate AI Assistant** modal when you're ready to send. The prompt textarea is tall enough to show the whole message without scrolling, and you can resize it vertically if you want more room to review or edit.
 
 !!! tip
-Rows marked No Issues are visually distinct — the green pill makes it easy to scan the table and see which workers still need a decision.
+    Rows marked No Issues are visually distinct — the green pill makes it easy to scan the table and see which workers still need a decision.
 
 ---
 
@@ -133,3 +167,6 @@ Labs doesn't currently send email notifications. Check the task list regularly, 
 
 **How do tasks connect to audits?**
 Tasks created from an audit session link back to that session automatically. You can navigate between a task and its source audit from either view.
+
+**Can the agent panel act on my behalf when I'm not on the page?**
+Yes — if you have connected an external assistant such as Chat Studio, it stays connected after you leave the page and can start conversations or create tasks for you without you needing to return to the report.

@@ -191,6 +191,47 @@ The KMC reports are unchanged and continue to use their own dedicated pages.
 
 ---
 
+## Report Actions and the Agent Panel
+
+!!! note "Recent change"
+    Reports can now offer real actions — such as **Initiate AI coach** or **Create follow-up task** — as buttons, and the same actions can be run by an AI assistant. Currently switched on for the **Spark facilitator program report** only.
+
+### Running actions from a button
+
+When a report has actions enabled, you will see action buttons alongside the relevant rows or at the top of a view. Clicking one opens a confirmation panel that shows:
+
+- Exactly which workers it will reach
+- What the coaching bot will be told
+- A prompt to choose which bot to use, if more than one is available
+
+Nothing happens until you press **Confirm**. Once confirmed, the panel shows each worker's result as it completes, so you can see what succeeded and what did not.
+
+### Running actions from an AI assistant
+
+An assistant — either the agent panel on the report or your own assistant connected to Labs — can run the same actions. Before acting, it must show you the same preview a button would show. The assistant acts as you, with your access, so it can only do what you could do yourself.
+
+### The agent panel on a report
+
+A report can have an agent panel switched on. When it is:
+
+- The assistant sees what you are currently looking at on the report.
+- It follows you as you drill into an organisation or a worker.
+- It can read the report's indicators, what "red" means for each one, and how each is calculated.
+
+This means instructions like _"start AI coaching for everyone with a red metric"_ work without you having to list names or numbers yourself.
+
+!!! tip "What the assistant can see"
+    The agent panel gives the assistant a live view of the report you have open. If you navigate to a different worker or organisation, the assistant's context updates automatically.
+
+### Keeping Open Chat Studio connected
+
+Once you connect Open Chat Studio to Labs, actions can start conversations on your behalf without the report page being open. The connection stays active so you do not need to re-authorise it each time.
+
+!!! warning "Actions are off by default"
+    Both the action buttons and the agent panel are disabled unless a report has been explicitly switched on for them. At launch, only the Spark facilitator program report has these features enabled.
+
+---
+
 ## Synthetic Opportunities — Changing the Audience
 
 Labs-only synthetic opportunities (used for ACE runs and other review processes) can have their audience updated after the opportunity is created. This means you can give an outside reviewer access to the dashboards for a specific run without rebuilding any synthetic data.
