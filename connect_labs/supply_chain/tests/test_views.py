@@ -953,6 +953,7 @@ def test_the_tender_detail_page_links_each_supplier_it_names(client, sophie):
     responses = {
         "tender_get": {"id": 5, "label": "Tender 1", "status": "open", "lines": [{"commodity_slug": "rutf"}]},
         "outreach_list": [{"id": 1, "tender_id": 5, "supplier_id": 1, "sent_on": "2026-04-28", "responded": False}],
+        "tender_drafts_render": {"reminder_interval_note": "", "drafts": []},
         "quote_list": [QUOTE],
         "supplier_list": [SUPPLIER],
         "commodity_list": [],

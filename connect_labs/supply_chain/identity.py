@@ -382,3 +382,51 @@ def find_or_mint_supplier_org(name: str, *, country: str = "", connect_organizat
         org.connect_organization_id = connect_organization_id
         org.save(update_fields=["connect_organization_id", "updated_at"])
     return org
+
+
+def person_name(user) -> str:
+    """The signed-in person's own name, or "" when all we have is a handle.
+
+    `User.name` is free text, and on a shared or service account it holds the
+    login itself. Prefilled into "Decided by", that read as though somebody
+    called "ace" had made the purchasing decision -- the exact reading the
+    field exists to prevent. A name that IS the account's handle is not a
+    person's name, so nothing is prefilled and the decider types who decided.
+    The same rule signs a drafted email: a signature reading "ace" is worse
+    than a visible "[your name]".
+    """
+    if user is None:
+        return ""
+    name = (getattr(user, "name", "") or "").strip()
+    if not name:
+        # Not `get_full_name()`: it joins the two halves unconditionally, so a
+        # user with both unset reads "None None" -- which would then be
+        # prefilled as the person who decided.
+        name = " ".join(
+            str(part).strip() for part in (getattr(user, "first_name", ""), getattr(user, "last_name", "")) if part
+        ).strip()
+    handles = {
+        (user.get_username() or "").strip().lower(),
+        (getattr(user, "email", "") or "").split("@")[0].strip().lower(),
+    }
+    handles.discard("")
+    return "" if name.lower() in handles else name
+
+
+def acting_org_name(access) -> str:
+    """The name of the organisation this caller acts for, or "" when it cannot be said.
+
+    For a signature, not for provenance: a read must not create Dimagi's row
+    the way `dimagi_org()` does, and a caller who belongs to two organisations
+    here signs with a placeholder rather than having one chosen for them.
+    """
+    user = getattr(access, "user", None)
+    if user is not None and is_dimagi_user(user):
+        return LabsOrg.objects.filter(slug=DIMAGI_ORG_SLUG).values_list("name", flat=True).first() or "Dimagi"
+    if user is None and getattr(access, "request", None) is None:
+        return ""
+    try:
+        org = resolve_org(access)
+    except IdentityUnresolved:
+        return ""
+    return org.name if org is not None else ""
