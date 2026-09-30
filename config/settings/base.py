@@ -549,6 +549,9 @@ OAUTH2_PROVIDER = {
         # The standard MCP sign-in (connect_labs/mcp/oauth.py). Only MCP clients
         # can hold this scope, and they can hold nothing else -- see MCPScopes.
         "mcp": "Use Connect Labs tools as you, from an MCP client",
+        "mcp:no-uservisit-data": (
+            "Use Connect Labs tools as you, from an MCP client, without access to user visit data"
+        ),
     },
     "SCOPES_BACKEND_CLASS": "connect_labs.mcp.oauth.MCPScopes",
     "OAUTH2_VALIDATOR_CLASS": "connect_labs.mcp.oauth.MCPOAuth2Validator",

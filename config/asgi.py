@@ -52,7 +52,7 @@ from starlette.applications import Starlette  # noqa: E402
 from starlette.responses import JSONResponse, Response  # noqa: E402
 from starlette.routing import Mount, Route  # noqa: E402
 
-from connect_labs.mcp import oauth  # noqa: E402
+from connect_labs.mcp import oauth, token_scopes  # noqa: E402
 from connect_labs.mcp.server import _closing_connections, build_http_app, dpop_gate  # noqa: E402
 
 
@@ -126,8 +126,11 @@ class _BearerChallenge:
     401 responses are touched; streaming/SSE 200 responses pass through.
     """
 
-    def __init__(self, app):
+    def __init__(self, app, restricted: bool = False):
         self.app = app
+        # The restricted endpoint names its own metadata and the restricted scope,
+        # so a client signing in there asks for ``mcp:no-uservisit-data``.
+        self.restricted = restricted
 
     @staticmethod
     def _had_token(scope) -> bool:
@@ -141,7 +144,10 @@ class _BearerChallenge:
         # no public origin offers no sign-in, and naming another one's would send
         # the user somewhere that cannot issue a token for this server.
         if oauth.sign_in_configured():
-            parts.append(f'resource_metadata="{oauth.protected_resource_metadata_url()}"')
+            parts.append(f'resource_metadata="{oauth.protected_resource_metadata_url(self.restricted)}"')
+            # MCP authorization spec, "Scope Selection Strategy": a client asks for
+            # the scope the challenge names.
+            parts.append(f'scope="{oauth.resource_scope(self.restricted)}"')
         return ", ".join(parts).encode()
 
     def _body(self, had_token: bool) -> bytes:
@@ -298,6 +304,32 @@ _OPENID_CONFIGURATION_PATHS = [
 ]
 
 
+class _EndpointMarker:
+    """Mark every request on a mount with the endpoint it came in on.
+
+    The tool gate (``connect_labs.mcp.server.endpoint_restricted``) reads the mark
+    from each MCP message's HTTP request, so the same MCP app serves ``/mcp/`` and
+    ``/mcp/no_user_visit/`` and the second can only ever narrow what a caller
+    reaches.
+    """
+
+    def __init__(self, endpoint: str, app):
+        self.endpoint = endpoint
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") in ("http", "websocket"):
+            scope = {**scope, "labs_mcp_endpoint": self.endpoint}
+        await self.app(scope, receive, send)
+
+
+# RFC 9728 metadata for the restricted endpoint, suffixed with its resource path.
+_RESTRICTED_PROTECTED_RESOURCE_METADATA_PATHS = [
+    "/.well-known/oauth-protected-resource/mcp/no_user_visit",
+    "/.well-known/oauth-protected-resource/mcp/no_user_visit/",
+]
+
+
 class _ReprefixApp:
     """Re-prepend the stripped Starlette Mount prefix before forwarding to app.
 
@@ -344,6 +376,14 @@ def build_application() -> Starlette:
                 for path in _PROTECTED_RESOURCE_METADATA_PATHS
             ],
             *[
+                Route(
+                    path,
+                    _metadata_endpoint(lambda: oauth.protected_resource_metadata(restricted=True)),
+                    methods=methods,
+                )
+                for path in _RESTRICTED_PROTECTED_RESOURCE_METADATA_PATHS
+            ],
+            *[
                 Route(path, _metadata_endpoint(oauth.authorization_server_metadata), methods=methods)
                 for path in _AUTHORIZATION_SERVER_METADATA_PATHS
             ],
@@ -370,6 +410,20 @@ def build_application() -> Starlette:
             # bearer; it sits OUTSIDE _BearerChallenge so its RFC 9449
             # `invalid_dpop_proof` 401 is not rewritten into a Bearer challenge.
             # Bearer requests pass through it untouched.
+            # The same MCP app without access to user visit data. Mounted ahead of
+            # /mcp, which would otherwise match it. Every request on it is marked,
+            # and the tool gate keeps a marked request to token_scopes.RESTRICTED_TOOLS
+            # whatever credential it carries.
+            Mount(
+                "/mcp/no_user_visit",
+                app=_ClosingConnectionsApp(
+                    dpop_gate(
+                        _BearerChallenge(
+                            _EndpointMarker(token_scopes.NO_USER_VISIT_ENDPOINT, mcp_app), restricted=True
+                        )
+                    )
+                ),
+            ),
             Mount("/mcp", app=_ClosingConnectionsApp(dpop_gate(_BearerChallenge(mcp_app)))),
             # Django handles everything else (catch-all, mounted last).
             Mount("/", app=_django_asgi_app),

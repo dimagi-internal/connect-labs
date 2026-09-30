@@ -65,12 +65,13 @@ def _delegated_token():
     try:
         from fastmcp.server.dependencies import get_access_token
 
-        from connect_labs.mcp.server import allowed_tools
-
         token = get_access_token()
     except Exception:  # noqa: BLE001 -- no MCP request context (direct calls, tests)
         return None
-    return token if allowed_tools(token) is not None else None
+    # Recognised by what the verifier stamped, not by whether the call is limited:
+    # a restricted ("no user visit data") call is limited too, and is not canopy.
+    claims = getattr(token, "claims", None) or {}
+    return token if claims.get("auth_method") == "delegated" else None
 
 
 def _caller_actor() -> str:

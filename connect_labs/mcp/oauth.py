@@ -61,6 +61,13 @@ logger = logging.getLogger(__name__)
 
 #: The one scope an MCP client can hold. It means "use the labs MCP tools as me".
 MCP_SCOPE = "mcp"
+#: The same tools, without access to user visit data (``connect_labs.mcp.token_scopes``).
+#: What a sign-in through ``/mcp/no_user_visit/`` asks for.
+MCP_NO_USERVISIT_SCOPE = "mcp:no-uservisit-data"
+#: Every scope an MCP client can hold.
+MCP_SCOPES = (MCP_SCOPE, MCP_NO_USERVISIT_SCOPE)
+#: The restricted endpoint's path, under the public origin.
+NO_USER_VISIT_PATH = "/mcp/no_user_visit/"
 
 REGISTRATION_PATH = "/o/register/"
 
@@ -100,13 +107,19 @@ def sign_in_configured() -> bool:
     return bool(public_base_url())
 
 
-def resource_url() -> str:
+def resource_url(restricted: bool = False) -> str:
     """The MCP endpoint, exactly as users enter it (RFC 9728 ``resource``)."""
-    return f"{public_base_url()}/mcp/"
+    return f"{public_base_url()}{NO_USER_VISIT_PATH if restricted else '/mcp/'}"
 
 
-def protected_resource_metadata_url() -> str:
-    return f"{public_base_url()}/.well-known/oauth-protected-resource/mcp"
+def protected_resource_metadata_url(restricted: bool = False) -> str:
+    suffix = NO_USER_VISIT_PATH.rstrip("/") if restricted else "/mcp"
+    return f"{public_base_url()}/.well-known/oauth-protected-resource{suffix}"
+
+
+def resource_scope(restricted: bool = False) -> str:
+    """The scope a client signing in for this endpoint should ask for."""
+    return MCP_NO_USERVISIT_SCOPE if restricted else MCP_SCOPE
 
 
 def _grant_config():
@@ -117,13 +130,18 @@ def _grant_config():
     return config if config is not None and config.grant_enabled else None
 
 
-def protected_resource_metadata() -> dict:
-    """RFC 9728 protected-resource metadata for the MCP endpoint."""
+def protected_resource_metadata(restricted: bool = False) -> dict:
+    """RFC 9728 protected-resource metadata for an MCP endpoint.
+
+    ``scopes_supported`` is the one scope that endpoint's sign-in should ask for:
+    the restricted endpoint names only ``mcp:no-uservisit-data``, so a client that
+    follows the spec signs in restricted there.
+    """
     base = public_base_url()
     doc = {
-        "resource": resource_url(),
+        "resource": resource_url(restricted),
         "authorization_servers": [base],
-        "scopes_supported": [MCP_SCOPE],
+        "scopes_supported": [resource_scope(restricted)],
         "bearer_methods_supported": ["header"],
         "resource_name": "Connect Labs",
         "resource_documentation": f"{base}/labs/mcp/tokens/",
@@ -153,7 +171,7 @@ def authorization_server_metadata() -> dict:
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
         "revocation_endpoint_auth_methods_supported": ["none"],
-        "scopes_supported": [MCP_SCOPE],
+        "scopes_supported": list(MCP_SCOPES),
     }
     config = _grant_config()
     if config is not None:
@@ -248,19 +266,19 @@ def _loopback_match_any_port(requested: str, registered: list[str]) -> bool:
 
 
 class MCPScopes(SettingsScopes):
-    """Confine the ``mcp`` scope to MCP clients, and MCP clients to it."""
+    """Confine the MCP scopes to MCP clients, and MCP clients to them."""
 
     def get_available_scopes(self, application=None, request=None, *args, **kwargs):
         if is_mcp_client(application):
-            return [MCP_SCOPE]
+            return list(MCP_SCOPES)
         scopes = super().get_available_scopes(application, request, *args, **kwargs)
-        return [s for s in scopes if s != MCP_SCOPE]
+        return [s for s in scopes if s not in MCP_SCOPES]
 
     def get_default_scopes(self, application=None, request=None, *args, **kwargs):
         if is_mcp_client(application):
             return [MCP_SCOPE]
         scopes = super().get_default_scopes(application, request, *args, **kwargs)
-        return [s for s in scopes if s != MCP_SCOPE]
+        return [s for s in scopes if s not in MCP_SCOPES]
 
 
 class MCPAwareOAuth2Authentication(OAuth2Authentication):
@@ -461,8 +479,10 @@ def register_client(request):
         return _registration_error("invalid_client_metadata", "response_types must be ['code'].")
 
     scope = payload.get("scope")
-    if scope is not None and (not isinstance(scope, str) or set(scope.split()) - {MCP_SCOPE}):
-        return _registration_error("invalid_client_metadata", f"The only scope available is '{MCP_SCOPE}'.")
+    if scope is not None and (not isinstance(scope, str) or set(scope.split()) - set(MCP_SCOPES)):
+        return _registration_error(
+            "invalid_client_metadata", f"The scopes available are {', '.join(repr(s) for s in MCP_SCOPES)}."
+        )
 
     client_name = payload.get("client_name")
     name = client_name.strip() if isinstance(client_name, str) and client_name.strip() else "MCP client"
@@ -489,7 +509,7 @@ def register_client(request):
             "grant_types": sorted(set(grant_types)),
             "response_types": ["code"],
             "token_endpoint_auth_method": "none",
-            "scope": MCP_SCOPE,
+            "scope": " ".join(MCP_SCOPES),
         },
         status=201,
     )
@@ -501,10 +521,12 @@ def register_client(request):
 
 
 def resolve_mcp_access_token(raw: str):
-    """Return ``(user, client_id)`` for a live MCP access token, else None.
+    """Return ``(user, client_id, scopes)`` for a live MCP access token, else None.
 
-    Live means: known, not expired, carrying the ``mcp`` scope, issued to an MCP
-    client, and belonging to an active user.
+    Live means: known, not expired, carrying an MCP scope, issued to an MCP
+    client, and belonging to an active user. ``scopes`` are the MCP scopes it
+    carries; ``mcp:no-uservisit-data`` among them makes the caller restricted,
+    whatever else it holds.
     """
     if not raw:
         return None
@@ -516,8 +538,9 @@ def resolve_mcp_access_token(raw: str):
         return None
     if token.user is None or not token.user.is_active:
         return None
-    if not token.is_valid([MCP_SCOPE]):
+    scopes = [s for s in MCP_SCOPES if token.is_valid([s])]
+    if not scopes:
         return None
     if not is_mcp_client(token.application):
         return None
-    return token.user, token.application.client_id
+    return token.user, token.application.client_id, scopes
