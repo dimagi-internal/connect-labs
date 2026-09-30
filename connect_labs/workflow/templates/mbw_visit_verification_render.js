@@ -482,56 +482,6 @@ function WorkflowUI({
     [displayRows],
   );
 
-  // --- GPS distance histograms (Failed Verification Analysis tab) --------
-  // gps_distance_from_home_meters / gps_distance_from_health_facility_meters
-  // are CommCare's own distance() XPath result (meters) between this
-  // visit's captured GPS and the mother's registered home_gps /
-  // health_facility_gps case property -- only populated when the visit was
-  // at that location type AND a reference point existed there, i.e.
-  // exactly "did a GPS check happen against a previous point". The form's
-  // own pass/fail threshold on that distance is <= 200m (see
-  // gpsOutcome()/Definitions), so bins are 50m wide to keep 200 on a clean
-  // bin boundary. One overflow bucket catches anything >= 1000m so a rare
-  // wild outlier can't flatten the rest of the chart.
-  var GPS_DISTANCE_BIN_WIDTH_METERS = 50;
-  var GPS_DISTANCE_BIN_MAX_METERS = 1000;
-
-  function buildGpsDistanceHistogram(rows, distanceKey) {
-    var bins = [];
-    for (
-      var lo = 0;
-      lo < GPS_DISTANCE_BIN_MAX_METERS;
-      lo += GPS_DISTANCE_BIN_WIDTH_METERS
-    ) {
-      bins.push({
-        label: lo + '-' + (lo + GPS_DISTANCE_BIN_WIDTH_METERS),
-        pass: 0,
-        fail: 0,
-      });
-    }
-    var overflow = {
-      label: GPS_DISTANCE_BIN_MAX_METERS + '+',
-      pass: 0,
-      fail: 0,
-    };
-    rows.forEach(function (row) {
-      var d = row[distanceKey];
-      if (typeof d !== 'number' || isNaN(d)) return;
-      // Color from the form's own gps_visit_verification_matches, not
-      // re-derived from distance here, so this stays correct even if the
-      // form's threshold logic ever changes.
-      var isPass = row.gps_visit_verification_matches === 'yes';
-      var bucket =
-        d >= GPS_DISTANCE_BIN_MAX_METERS
-          ? overflow
-          : bins[Math.floor(d / GPS_DISTANCE_BIN_WIDTH_METERS)];
-      if (isPass) bucket.pass += 1;
-      else bucket.fail += 1;
-    });
-    bins.push(overflow);
-    return bins;
-  }
-
   // --- By-FLW failed-visit breakdown (Failed Verification Analysis tab) --
   // For every FLW with at least one failed visit (Final verification
   // outcome === 'Fail'), one bar segment per visit, colored/grouped by
@@ -593,21 +543,100 @@ function WorkflowUI({
     return 'hsl(' + hue + ', 65%, 55%)';
   }
 
-  var homeGpsHistogram = React.useMemo(
+  // --- GPS distance-vs-accuracy scatter (Failed Verification Analysis) ---
+  // gps_distance_from_home_meters / gps_distance_from_health_facility_meters
+  // are CommCare's own distance() XPath result (meters) between this
+  // visit's captured GPS and the mother's registered home_gps /
+  // health_facility_gps case property -- only populated when the visit was
+  // at that location type AND a reference point existed there, i.e.
+  // exactly "did a GPS check happen against a previous point". Accuracy
+  // comes from gps_normalized_location, CommCare's raw geopoint string
+  // ("lat lon altitude accuracy") for the SAME point the distance was
+  // measured from -- parsed client-side since accuracy isn't exposed as
+  // its own form field. The form's own pass/fail threshold on distance is
+  // <= 200m (see gpsOutcome()/Definitions).
+  function parseGpsAccuracyMeters(geopointStr) {
+    if (!geopointStr || typeof geopointStr !== 'string') return null;
+    var parts = geopointStr.trim().split(/\s+/);
+    if (parts.length < 4) return null;
+    var acc = parseFloat(parts[3]);
+    return isNaN(acc) ? null : acc;
+  }
+
+  function buildGpsScatterPoints(rows, distanceKey) {
+    var pass = [];
+    var fail = [];
+    rows.forEach(function (row) {
+      var d = row[distanceKey];
+      if (typeof d !== 'number' || isNaN(d)) return;
+      var acc = parseGpsAccuracyMeters(row.gps_normalized_location);
+      if (acc === null) return;
+      // Color from the form's own gps_visit_verification_matches, not
+      // re-derived from distance here, so this stays correct even if the
+      // form's threshold logic ever changes.
+      var point = { x: d, y: acc };
+      if (row.gps_visit_verification_matches === 'yes') pass.push(point);
+      else fail.push(point);
+    });
+    return { pass: pass, fail: fail };
+  }
+
+  var homeGpsScatter = React.useMemo(
     function () {
-      return buildGpsDistanceHistogram(
+      return buildGpsScatterPoints(displayRows, 'gps_distance_from_home_meters');
+    },
+    [displayRows],
+  );
+  var facilityGpsScatter = React.useMemo(
+    function () {
+      return buildGpsScatterPoints(
         displayRows,
-        'gps_distance_from_home_meters',
+        'gps_distance_from_health_facility_meters',
       );
     },
     [displayRows],
   );
-  var facilityGpsHistogram = React.useMemo(
+
+  // --- Mother Questions Answered (Failed Verification Analysis tab) ------
+  // Up to 4 random spot-check questions are picked and administered per
+  // visit (mother_q_pick_1..4, each holding a question key like "q1" when
+  // that slot was used, blank when not). "Number answered" for a visit is
+  // just how many of those 4 slots are non-blank.
+  function motherQuestionsAskedCount(row) {
+    var picks = [
+      row.mother_q_pick_1,
+      row.mother_q_pick_2,
+      row.mother_q_pick_3,
+      row.mother_q_pick_4,
+    ];
+    var n = 0;
+    picks.forEach(function (p) {
+      if (p !== null && p !== undefined && p !== '') n += 1;
+    });
+    return n;
+  }
+
+  var motherQuestionsAskedStats = React.useMemo(
     function () {
-      return buildGpsDistanceHistogram(
-        displayRows,
-        'gps_distance_from_health_facility_meters',
-      );
+      var buckets = {};
+      for (var i = 0; i <= 4; i += 1) {
+        buckets[i] = { count: i, pass: 0, fail: 0, na: 0 };
+      }
+      displayRows.forEach(function (row) {
+        var n = motherQuestionsAskedCount(row);
+        if (!buckets[n]) buckets[n] = { count: n, pass: 0, fail: 0, na: 0 };
+        var outcome = motherQuestionsOutcome(row);
+        if (outcome === 'Pass') buckets[n].pass += 1;
+        else if (outcome === 'Fail') buckets[n].fail += 1;
+        else buckets[n].na += 1;
+      });
+      return Object.keys(buckets)
+        .map(function (k) {
+          return buckets[k];
+        })
+        .sort(function (a, b) {
+          return a.count - b.count;
+        });
     },
     [displayRows],
   );
@@ -849,7 +878,7 @@ function WorkflowUI({
     },
     {
       title: 'Failed Verification Analysis Tab',
-      body: 'Reports here use the same filtered/eligible row set as the rest of the dashboard (domain toggle + FLW eligibility + verification-block-present gate) -- NOT the table-only Status/FLW filters from the Per FLW Verification View tab, which are scoped to that table alone. Two sections: By FLW (top) and GPS Verification (below).',
+      body: 'Reports here use the same filtered/eligible row set as the rest of the dashboard (domain toggle + FLW eligibility + verification-block-present gate) -- NOT the table-only Status/FLW filters from the Per FLW Verification View tab, which are scoped to that table alone. Three sections: By FLW, GPS Verification, and Mother Questions Answered.',
       items: [
         {
           name: 'By FLW -- chart',
@@ -864,21 +893,21 @@ function WorkflowUI({
             'finalVerificationMethods(row) (same function as the table\'s "Final verification method(s)" column) used as the grouping key per visit; byFlwCombos lists every distinct combo across all FLWs, most total visits first.',
         },
         {
-          name: 'GPS Verification -- Home / Health Facility GPS distance (meters)',
-          def: "CommCare's own distance() XPath calculation between this visit's captured GPS and the mother's registered home_gps / health_facility_gps case property. Only present when the visit was at that location type AND a reference point existed there -- i.e. a GPS check actually ran. This is the SAME distance the form itself uses to decide GPS outcome, just exposed as a number instead of collapsed to Pass/Fail.",
+          name: 'GPS Verification -- scatter axes',
+          def: "One dot per visit that actually ran a GPS check (only present when the visit was at the matching location type AND a reference point existed there). X is CommCare's own distance() calculation (meters) between this visit's captured GPS and the mother's registered reference point -- the SAME distance the form itself uses to decide GPS outcome. Y is the GPS accuracy (meters) of that same captured point, read from the raw geopoint string.",
           field:
-            'gps_distance_from_home_meters (form.gps_verification.location_check.calculation_distance_from_home_gps); gps_distance_from_health_facility_meters (form.gps_verification.location_check.calculation_distance_from_health_facility_gps). Both transform: "float". Verified identical field paths and the 200m pass/fail threshold on both the test domain\'s and opp 765\'s production app.',
+            'X: gps_distance_from_home_meters / gps_distance_from_health_facility_meters (form.gps_verification.location_check.calculation_distance_from_{home,health_facility}_gps, transform: "float"). Y: parseGpsAccuracyMeters(gps_normalized_location) -- index 3 of the raw "lat lon altitude accuracy" geopoint string (form.gps_block_anc_visit.normalized_location, fallback form.gps_block_pnc_visit.normalized_location). Verified identical paths and the 200m pass/fail threshold on both the test domain\'s and opp 765\'s production app.',
         },
         {
-          name: 'Histogram bins',
-          def: '50m-wide buckets from 0m up to 1000m, plus a single "1000+" bucket for any visit at or beyond 1000m -- keeps one extreme outlier from flattening the rest of the chart. 50m width keeps the 200m pass/fail threshold exactly on a bin boundary, so the green-to-red color change in the chart lands precisely where the threshold sits.',
-          field:
-            'Computed client-side (buildGpsDistanceHistogram) -- not a raw pipeline field. GPS_DISTANCE_BIN_WIDTH_METERS = 50, GPS_DISTANCE_BIN_MAX_METERS = 1000.',
-        },
-        {
-          name: 'Bar color (Pass / Fail)',
-          def: "Green = Pass, red = Fail, per bin. Colored from the form's own gps_visit_verification_matches value for that visit (same field the GPS outcome column uses) -- not re-derived from the 200m threshold here, so the chart stays correct even if the form's threshold logic ever changes.",
+          name: 'GPS Verification -- dot color (Pass / Fail)',
+          def: "Green = Pass (≤200m), red = Fail (>200m). Colored from the form's own gps_visit_verification_matches value for that visit (same field the GPS outcome column uses) -- not re-derived from distance here, so the chart stays correct even if the form's threshold logic ever changes. A visit is only plotted if BOTH distance and accuracy are available -- one without the other is dropped rather than plotted with a guessed value.",
           field: 'gps_visit_verification_matches === "yes" ? Pass : Fail',
+        },
+        {
+          name: 'Mother Questions Answered -- chart',
+          def: 'Up to 4 questions are randomly picked from a bank of 14 and administered per visit. X axis is how many of those 4 were actually answered (0-4) for a visit; Y axis is the number of visits at that count, stacked by that visit\'s Mother questions outcome (green Pass / red Fail / grey NA).',
+          field:
+            'Computed client-side (motherQuestionsAskedCount, motherQuestionsAskedStats) over displayRows -- not raw pipeline fields on their own. Count = non-blank among mother_q_pick_1..4 (form.additional_visit_verification_block.verification_page.random_test_setup_page.random_test_setup.pick_1..4 -- each holds a question key like "q1" when that slot was used this visit, blank when not; shared path across all 6 visit-type forms and both domains). Color = motherQuestionsOutcome(row) (same function as the table\'s Mother questions outcome column).',
         },
       ],
     },
@@ -1006,32 +1035,25 @@ function WorkflowUI({
     [byFlwFailureStats, byFlwCombos, activeTab],
   );
 
-  // --- GPS distance histograms (Failed Verification Analysis tab) --------
+  // --- GPS distance-vs-accuracy scatter (Failed Verification Analysis) ---
   var homeGpsChartRef = React.useRef(null);
   var homeGpsChartInstance = React.useRef(null);
   var facilityGpsChartRef = React.useRef(null);
   var facilityGpsChartInstance = React.useRef(null);
 
-  function buildGpsHistogramChart(canvasEl, histogram) {
+  function buildGpsScatterChart(canvasEl, scatter) {
     return new window.Chart(canvasEl, {
-      type: 'bar',
+      type: 'scatter',
       data: {
-        labels: histogram.map(function (b) {
-          return b.label;
-        }),
         datasets: [
           {
             label: 'Pass (≤200m)',
-            data: histogram.map(function (b) {
-              return b.pass;
-            }),
+            data: scatter.pass,
             backgroundColor: '#22c55e',
           },
           {
             label: 'Fail (>200m)',
-            data: histogram.map(function (b) {
-              return b.fail;
-            }),
+            data: scatter.fail,
             backgroundColor: '#ef4444',
           },
         ],
@@ -1041,15 +1063,12 @@ function WorkflowUI({
         maintainAspectRatio: false,
         scales: {
           x: {
-            stacked: true,
+            beginAtZero: true,
             title: { display: true, text: 'Distance from previous point (m)' },
-            ticks: { maxRotation: 90, minRotation: 90 },
           },
           y: {
-            stacked: true,
             beginAtZero: true,
-            ticks: { precision: 0 },
-            title: { display: true, text: 'Visits' },
+            title: { display: true, text: 'GPS accuracy (m)' },
           },
         },
         plugins: { legend: { position: 'bottom' } },
@@ -1062,16 +1081,16 @@ function WorkflowUI({
       if (activeTab !== 'failed_analysis') return;
       if (!homeGpsChartRef.current || !window.Chart) return;
       if (homeGpsChartInstance.current) homeGpsChartInstance.current.destroy();
-      homeGpsChartInstance.current = buildGpsHistogramChart(
+      homeGpsChartInstance.current = buildGpsScatterChart(
         homeGpsChartRef.current,
-        homeGpsHistogram,
+        homeGpsScatter,
       );
       return function () {
         if (homeGpsChartInstance.current)
           homeGpsChartInstance.current.destroy();
       };
     },
-    [homeGpsHistogram, activeTab],
+    [homeGpsScatter, activeTab],
   );
 
   React.useEffect(
@@ -1080,16 +1099,82 @@ function WorkflowUI({
       if (!facilityGpsChartRef.current || !window.Chart) return;
       if (facilityGpsChartInstance.current)
         facilityGpsChartInstance.current.destroy();
-      facilityGpsChartInstance.current = buildGpsHistogramChart(
+      facilityGpsChartInstance.current = buildGpsScatterChart(
         facilityGpsChartRef.current,
-        facilityGpsHistogram,
+        facilityGpsScatter,
       );
       return function () {
         if (facilityGpsChartInstance.current)
           facilityGpsChartInstance.current.destroy();
       };
     },
-    [facilityGpsHistogram, activeTab],
+    [facilityGpsScatter, activeTab],
+  );
+
+  // --- Mother Questions Answered chart (Failed Verification Analysis) ----
+  var motherQChartRef = React.useRef(null);
+  var motherQChartInstance = React.useRef(null);
+
+  React.useEffect(
+    function () {
+      if (activeTab !== 'failed_analysis') return;
+      if (!motherQChartRef.current || !window.Chart) return;
+      if (motherQChartInstance.current) motherQChartInstance.current.destroy();
+
+      motherQChartInstance.current = new window.Chart(motherQChartRef.current, {
+        type: 'bar',
+        data: {
+          labels: motherQuestionsAskedStats.map(function (b) {
+            return String(b.count);
+          }),
+          datasets: [
+            {
+              label: 'Pass',
+              data: motherQuestionsAskedStats.map(function (b) {
+                return b.pass;
+              }),
+              backgroundColor: '#22c55e',
+            },
+            {
+              label: 'Fail',
+              data: motherQuestionsAskedStats.map(function (b) {
+                return b.fail;
+              }),
+              backgroundColor: '#ef4444',
+            },
+            {
+              label: 'NA',
+              data: motherQuestionsAskedStats.map(function (b) {
+                return b.na;
+              }),
+              backgroundColor: '#9ca3af',
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              stacked: true,
+              title: { display: true, text: 'Questions answered' },
+            },
+            y: {
+              stacked: true,
+              beginAtZero: true,
+              ticks: { precision: 0 },
+              title: { display: true, text: 'Visits' },
+            },
+          },
+          plugins: { legend: { position: 'bottom' } },
+        },
+      });
+
+      return function () {
+        if (motherQChartInstance.current) motherQChartInstance.current.destroy();
+      };
+    },
+    [motherQuestionsAskedStats, activeTab],
   );
 
   var summaryCards = (
@@ -1454,30 +1539,18 @@ function WorkflowUI({
               <p className="text-xs text-gray-500">
                 Every visit that ran a GPS check against a previously-saved
                 point (the mother's registered home location, or her registered
-                health facility), bucketed by how far the visit's GPS was from
-                that point. Pass is ≤200m, Fail is &gt;200m -- that's the form's
-                own threshold, so the color change lands exactly at the 200m bin
-                edge below. Respects the domain and eligibility filters above,
+                health facility) -- one dot per visit, X is how far the visit's
+                GPS was from that point, Y is the GPS accuracy of the reading.
+                Pass is ≤200m, Fail is &gt;200m -- that's the form's own
+                threshold. Respects the domain and eligibility filters above,
                 same row set as the other tabs.
               </p>
             </div>
 
             {(function () {
-              var homeTotal = homeGpsHistogram.reduce(function (sum, b) {
-                return sum + b.pass + b.fail;
-              }, 0);
-              var homeFail = homeGpsHistogram.reduce(function (sum, b) {
-                return sum + b.fail;
-              }, 0);
-              var facilityTotal = facilityGpsHistogram.reduce(function (
-                sum,
-                b,
-              ) {
-                return sum + b.pass + b.fail;
-              }, 0);
-              var facilityFail = facilityGpsHistogram.reduce(function (sum, b) {
-                return sum + b.fail;
-              }, 0);
+              var homeTotal = homeGpsScatter.pass.length + homeGpsScatter.fail.length;
+              var facilityTotal =
+                facilityGpsScatter.pass.length + facilityGpsScatter.fail.length;
               return (
                 <div className="space-y-4">
                   <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -1486,8 +1559,11 @@ function WorkflowUI({
                     </h4>
                     <p className="mb-2 text-xs text-gray-500">
                       {homeTotal > 0
-                        ? homeFail + ' of ' + homeTotal + ' failed (>200m).'
-                        : 'No home GPS checks in the current filter.'}
+                        ? homeGpsScatter.fail.length +
+                          ' of ' +
+                          homeTotal +
+                          ' failed (>200m).'
+                        : 'No home GPS checks with accuracy data in the current filter.'}
                     </p>
                     <div style={{ height: '320px' }}>
                       <canvas ref={homeGpsChartRef}></canvas>
@@ -1499,11 +1575,11 @@ function WorkflowUI({
                     </h4>
                     <p className="mb-2 text-xs text-gray-500">
                       {facilityTotal > 0
-                        ? facilityFail +
+                        ? facilityGpsScatter.fail.length +
                           ' of ' +
                           facilityTotal +
                           ' failed (>200m).'
-                        : 'No health facility GPS checks in the current filter.'}
+                        : 'No health facility GPS checks with accuracy data in the current filter.'}
                     </p>
                     <div style={{ height: '320px' }}>
                       <canvas ref={facilityGpsChartRef}></canvas>
@@ -1512,6 +1588,26 @@ function WorkflowUI({
                 </div>
               );
             })()}
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">
+                Mother Questions Answered
+              </h3>
+              <p className="text-xs text-gray-500">
+                How many of the 4 randomly-picked spot-check questions were
+                actually answered per visit, colored by that visit's Mother
+                questions outcome (green Pass / red Fail / grey NA). Respects
+                the domain and eligibility filters above, same row set as the
+                other tabs.
+              </p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <div style={{ height: '320px' }}>
+                <canvas ref={motherQChartRef}></canvas>
+              </div>
+            </div>
           </div>
         </div>
       )}
