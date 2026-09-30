@@ -25,106 +25,102 @@ WORD_MATCHES = {
 # Every Layer-1 column the KMC visit columns read.
 KMC_VISIT_INPUTS = sorted({col for col, _word in WORD_MATCHES.values()} | {"ebf_visits", "form_names"})
 
-# A miniature stand-in for the engine: enough shape to exercise the rewrites,
-# with a multi-path COALESCE so the "every path survives" test means something.
-FAKE_EXTRACTION = {
-    "visit_extraction_sql": (
-        "SELECT\n"
-        "visit_id,\n"
-        "username,\n"
-        "visit_date,\n"
-        "COALESCE(a->>'p1', a->>'p2', a->>'p3') as danger_visits,\n"
-        "COALESCE(a->>'r1', a->>'r2') as referral_visits,\n"
-        "COALESCE(a->>'k1') as kmc_hours_mean,\n"
-        "COALESCE(a->>'c1') as death_visits,\n"
-        "COALESCE(a->>'s1') as self_referral_visits,\n"
-        "COALESCE(a->>'e1') as ebf_visits,\n"
-        "COALESCE(a->>'f1') as form_names\n"
-        "FROM labs_raw_visit_cache AS labs_raw_visit_cache\n"
-        "WHERE opportunity_id = 10042 AND pipeline_id = 5108\n"
-        "ORDER BY visit_id"
-    )
-}
+
+# A real pipeline config -- the engine builds Layer 1's extraction from it, so the
+# tests read the SQL the engine actually emits, not a stand-in for it. Multi-path
+# fields make the "every path survives" test mean something.
+def _kmc_like_config(filters=None):
+    from connect_labs.labs.analysis.config import AnalysisPipelineConfig, FieldComputation
+
+    paths = {
+        "danger_visits": ["form.p1", "form.p2", "form.p3"],
+        "referral_visits": ["form.r1", "form.r2"],
+        "kmc_hours_mean": ["form.k1"],
+    }
+    fields = [FieldComputation(name=n, paths=p) for n, p in paths.items()]
+    fields += [FieldComputation(name=c, path="form.@name") for c in KMC_VISIT_INPUTS if c not in paths]
+    config = AnalysisPipelineConfig(grouping_key="username", fields=fields, filters=filters or {})
+    config.pipeline_id = 5108
+    return config
 
 
-def _gen(schema, opportunity_id):
-    return FAKE_EXTRACTION
+def _where(sql):
+    return sql[sql.index("WHERE opportunity_id IN") : sql.index("ORDER BY opportunity_id")]
 
 
 def test_every_extraction_path_survives():
     """The whole point: nothing in the pipeline's expressions is dropped."""
-    sql = build_visit_sql({}, [10042, 10016], generate_sql_preview=_gen, props_doc=KMC_PROPS)
+    sql = build_visit_sql(_kmc_like_config(), [10042, 10016], props_doc=KMC_PROPS)
     for path in ("'p1'", "'p2'", "'p3'", "'r1'", "'r2'", "'k1'"):
-        assert path in sql, f"path {path} was lost in the rewrite"
+        assert path in sql, f"path {path} was lost"
 
 
-def test_widens_to_every_requested_opportunity():
-    sql = build_visit_sql({}, [10042, 10016, 10014], generate_sql_preview=_gen, props_doc=KMC_PROPS)
-    assert "opportunity_id IN (10042,10016,10014)" in sql
-    assert "opportunity_id = 10042 AND pipeline_id" not in sql
+def test_reads_every_requested_opportunity_in_its_own_slot():
+    from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
+
+    where = _where(build_visit_sql(_kmc_like_config(), [10042, 10016, 10014], props_doc=KMC_PROPS))
+    assert "opportunity_id IN (10042,10016,10014)" in where
+    assert f"pipeline_id = {USER_VISITS_RAW_SLOT}" in where, "the visits slot, never every slot"
+    assert "visit_count > 0" in where, "a half-written download is never read (#1684)"
 
 
-def test_dedupes_across_cache_partitions():
-    """labs_raw_visit_cache is keyed by (opportunity, pipeline).
-
-    The same visit is present once per pipeline that cached it; without the
-    DISTINCT ON, opp 10042's rows were counted from two partitions and every
-    denominator inflated.
-    """
-    sql = build_visit_sql({}, [10042], generate_sql_preview=_gen, props_doc=KMC_PROPS)
+def test_dedupes_to_the_freshest_copy():
+    sql = build_visit_sql(_kmc_like_config(), [10042], props_doc=KMC_PROPS)
     assert "DISTINCT ON (opportunity_id, visit_id)" in sql
-    # The freshest copy wins, not the lowest pipeline id -- see the freshness test below.
     assert "ORDER BY opportunity_id, visit_id, expires_at DESC, pipeline_id" in sql
 
 
-def test_selects_opportunity_id_which_the_extraction_omits():
-    sql = build_visit_sql({}, [10042], generate_sql_preview=_gen, props_doc=KMC_PROPS)
-    assert "opportunity_id,\npipeline_id,\nvisit_id," in sql
+def test_selects_opportunity_id():
+    sql = build_visit_sql(_kmc_like_config(), [10042], props_doc=KMC_PROPS)
+    assert "SELECT DISTINCT ON (opportunity_id, visit_id)\n    opportunity_id,\n    pipeline_id," in sql
 
 
 def test_marker_booleans_use_the_pipelines_own_word_test():
-    sql = build_visit_sql({}, [10042], generate_sql_preview=_gen, props_doc=KMC_PROPS)
+    sql = build_visit_sql(_kmc_like_config(), [10042], props_doc=KMC_PROPS)
     for name, (col, word) in WORD_MATCHES.items():
         assert f"(x.{col} ~* '\\y{word}\\y') AS {name}" in sql
 
 
 def test_no_opportunities_is_an_error():
     with pytest.raises(ValueError, match="at least one opportunity"):
-        build_visit_sql({}, [], generate_sql_preview=_gen, props_doc=KMC_PROPS)
+        build_visit_sql(_kmc_like_config(), [], props_doc=KMC_PROPS)
 
 
 # ---------------------------------------------------------------------------
-# A pipeline's row filters survive the rewrite.
+# A pipeline's row filters reach Layer 1.
 #
-# Layer 1 widened the extraction by cutting its WHERE at the pipeline-scope
+# Layer 1 used to widen the extraction by cutting its WHERE at the pipeline-scope
 # predicate and writing its own -- so every row filter the pipeline declared
 # (`filters: {status: [...]}`, flagged, dates) was silently dropped for the
-# metrics while still applying to the pipeline's own rows. Neal's compute spec
-# rule 0 -- only approved and over_limit visits are valid -- could therefore be
-# declared on the pipeline and have no effect on a single indicator.
+# metrics while still applying to the pipeline's own rows. The engine now builds
+# the multi-opportunity extraction itself, filters included.
 # ---------------------------------------------------------------------------
 
-FILTERED_EXTRACTION = {
-    **FAKE_EXTRACTION,
-    "visit_extraction_sql": FAKE_EXTRACTION["visit_extraction_sql"].replace(
-        "WHERE opportunity_id = 10042 AND pipeline_id = 5108\n",
-        "WHERE opportunity_id = 10042 AND pipeline_id = 5108 AND status IN ('approved', 'over_limit')\n",
-    ),
-    "visit_filter_predicates": ["status IN ('approved', 'over_limit')"],
-}
 
-
-def test_declared_row_filters_are_reapplied_to_the_widened_where():
-    sql = build_visit_sql(
-        {}, [10042, 10016], generate_sql_preview=lambda s, o: FILTERED_EXTRACTION, props_doc=KMC_PROPS
+def test_declared_row_filters_apply():
+    where = _where(
+        build_visit_sql(
+            _kmc_like_config(filters={"status": ["approved", "over_limit"]}), [10042, 10016], props_doc=KMC_PROPS
+        )
     )
-    assert "WHERE opportunity_id IN (10042,10016) AND visit_count > 0 AND status IN ('approved', 'over_limit')" in sql
+    assert "status IN ('approved', 'over_limit')" in where
 
 
-def test_no_declared_filters_leaves_the_rewrite_unchanged():
-    # Every KMC pipeline before this change declared none; their SQL must not move.
-    sql = build_visit_sql({}, [10042, 10016], generate_sql_preview=_gen, props_doc=KMC_PROPS)
-    assert "WHERE opportunity_id IN (10042,10016) AND visit_count > 0\nORDER BY" in sql
+def test_no_declared_filters_adds_none():
+    assert "status IN" not in _where(build_visit_sql(_kmc_like_config(), [10042, 10016], props_doc=KMC_PROPS))
+
+
+def test_a_worker_filter_is_applied_in_the_scan_and_a_computed_key_is_not():
+    where = _where(
+        build_visit_sql(
+            _kmc_like_config(),
+            [10042, 10016],
+            visit_filter={"opportunity_id": 10042, "username": "o'brien", "baby_case_id": "B1"},
+            props_doc=KMC_PROPS,
+        )
+    )
+    assert "opportunity_id = 10042" in where and "username = 'o''brien'" in where, "escaped, in the scan"
+    assert "baby_case_id" not in where, "a computed key is not a column of the raw cache; the compiler applies it"
 
 
 @pytest.mark.django_db
@@ -214,19 +210,6 @@ def test_the_freshest_copy_of_a_visit_wins_and_half_written_copies_are_ignored()
         cur.execute(f"SELECT status FROM ({sql}) q")
         got = [r[0] for r in cur.fetchall()]
     assert got == ["approved"], "the most recently fetched finalized copy, not a stale or half-written one"
-
-
-def test_a_worker_filter_is_applied_in_the_scan_and_a_computed_key_is_not():
-    sql = build_visit_sql(
-        {},
-        [10042, 10016],
-        generate_sql_preview=_gen,
-        visit_filter={"opportunity_id": 10042, "username": "o'brien", "baby_case_id": "B1"},
-        props_doc=KMC_PROPS,
-    )
-    where = sql[sql.index("WHERE opportunity_id IN") : sql.index("ORDER BY")]
-    assert "opportunity_id = 10042" in where and "username = 'o''brien'" in where, "escaped, in the scan"
-    assert "baby_case_id" not in where, "a computed key is not a column of the raw cache; the compiler applies it"
 
 
 @pytest.mark.django_db

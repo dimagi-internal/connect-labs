@@ -102,14 +102,11 @@ def test_undeclared_series_are_read_off_the_indicator_ids(registry):
 
 def test_layer1_adds_its_visit_columns(registry):
     props, _ = registry
-    extraction = {
-        "visit_extraction_sql": (
-            "SELECT\nvisit_id,\nusername,\nentity_id,\nvisit_date,\nstatus,\nflagged\n"
-            "FROM labs_raw_visit_cache AS labs_raw_visit_cache\n"
-            "WHERE opportunity_id = 101 AND pipeline_id = 9\nORDER BY visit_id"
-        )
-    }
-    sql = build_visit_sql({}, [101, 102], generate_sql_preview=lambda s, o: extraction, props_doc=props)
+    from connect_labs.labs.analysis.config import AnalysisPipelineConfig
+
+    config = AnalysisPipelineConfig(grouping_key="username", fields=[])
+    config.pipeline_id = 9
+    sql = build_visit_sql(config, [101, 102], props_doc=props)
     assert "(x.status ~* '\\yapproved\\y') AS is_approved" in sql
     assert "(x.status ~* '\\yrejected\\y') AS is_rejected" in sql
     assert "(COALESCE(x.flagged, FALSE)) AS is_flagged" in sql
