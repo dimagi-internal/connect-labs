@@ -8,6 +8,7 @@ finds fewer inputs and says so.
     python manage.py load_indicators --stage mortality
     python manage.py load_indicators --iso NGA,KEN
     python manage.py load_indicators --stage population --iso NGA
+    python manage.py load_indicators --stage mortality --measure nmr   # one series only
 """
 
 from __future__ import annotations
@@ -94,6 +95,15 @@ class Command(BaseCommand):
             choices=("hapi", "worldpop"),
             help="Population stage: run just one source; default runs HAPI then WorldPop",
         )
+        parser.add_argument(
+            "--measure",
+            choices=("u5mr", "imr", "nmr"),
+            help=(
+                "Mortality stage: load just this measure's NATIONAL series (DHS and "
+                "IGME), so adding one does not re-fetch every other mortality source. "
+                "Skips IGME's small-area model, which only runs on a full stage"
+            ),
+        )
 
     def handle(self, *args, **opts):
         codes = (
@@ -120,7 +130,12 @@ class Command(BaseCommand):
     # -- stages ------------------------------------------------------------
 
     def _stage_mortality(self, codes, opts):
+        only = opts.get("measure")
+        wanted = lambda m: only is None or m == only  # noqa: E731
+
         for measure in ("u5mr", "imr"):
+            if not wanted(measure):
+                continue
             with self._run(Source.DHS, measure) as ctx:
                 rows = dhs.load(measure, iso_codes=codes)
                 ctx["rows"] = base.upsert(rows)
@@ -131,7 +146,19 @@ class Command(BaseCommand):
                 ctx["rows"] = base.upsert(rows)
                 ctx["countries"] = len({r.boundary.iso_code for r in rows})
 
+        # Neonatal: IGME's national series only. DHS's subnational nmr is not
+        # loaded here, and the survey-based routes reach ~24 countries.
+        if wanted("nmr"):
+            with self._run(Source.IGME, "nmr") as ctx:
+                rows = igme.load("nmr", iso_codes=codes)
+                ctx["rows"] = base.upsert(rows)
+                ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
         # IGME's own small-area model — preferred over anything we derive.
+        # Not narrowed by --measure: this loader retracts rows it refuses, so a
+        # targeted top-up of one national series must never re-run it.
+        if only is not None:
+            return
         for measure in ("u5mr", "nmr"):
             with self._run(Source.IGME_SUBNATIONAL, measure) as ctx:
                 rows = igme_subnational.load(measure, iso_codes=codes)

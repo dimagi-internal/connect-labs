@@ -150,12 +150,12 @@ read timeouts rather than throughput. This is why HAPI exists in the pipeline.
 
 ## Resolution and method
 
-| method                   | resolution  | countries | depth                                  |
-| ------------------------ | ----------- | --------- | -------------------------------------- |
-| `subnational_igme`       | subnational | 25 / 55   | **ADM2 in 11 countries** — the default |
-| `subnational_relevelled` | subnational | 41 / 55   | ADM1, survey pattern scaled to today   |
-| `subnational_survey`     | subnational | 41 / 55   | ADM1, the survey as measured           |
-| `national_igme`          | national    | 54 / 55   | one number per country                 |
+| method                   | resolution  | countries | depth                                   |
+| ------------------------ | ----------- | --------- | --------------------------------------- |
+| `subnational_igme`       | subnational | 25 / 55   | **ADM2 in 11 countries** — the default  |
+| `subnational_relevelled` | subnational | 41 / 55   | ADM1, survey pattern scaled to today    |
+| `subnational_survey`     | subnational | 41 / 55   | ADM1, the survey as measured            |
+| `national_igme`          | national    | 54 / 55   | one number per country (u5mr, imr, nmr) |
 
 IGME's own small-area model is preferred wherever it reaches; the re-levelled
 survey is the fallback for the countries it does not cover. That inverted an
