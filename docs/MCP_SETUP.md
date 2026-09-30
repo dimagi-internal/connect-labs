@@ -35,7 +35,16 @@ refresh token, so the app signs itself back in.
 A process with no browser uses a Personal Access Token (PAT) instead:
 
 1. Create one at `https://labs.connect.dimagi.com/labs/mcp/tokens/` (create,
-   rotate, revoke). The raw token is shown once — copy it then.
+   rotate, revoke). The raw token is shown once — copy it then. Pick the access
+   level there:
+   - **Full access** reaches every tool, as you.
+   - **No user visit data** reads how things are built (workflow definitions,
+     pipeline and indicator definitions, app structure, solicitations, the org
+     directory, targeting) and nothing else. It cannot read visit data, raw or
+     computed by a pipeline, workflow run or report, and it cannot write. Other
+     tools are neither listed nor callable with it. The list is
+     `connect_labs/mcp/token_scopes.py`, and a new tool stays out of it until
+     someone adds it on purpose. Rotating keeps the access level.
 2. Send it as `Authorization: Bearer <token>`. For a client that takes a JSON
    config:
 

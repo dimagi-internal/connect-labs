@@ -54,6 +54,7 @@ from fastmcp.tools import Tool, ToolResult
 from connect_labs.audit_trail.context import audit_context, get_audit_context
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 
+from . import token_scopes
 from .models import MCPAccessToken, MCPAuditLog
 from .progress import NULL_PROGRESS, make_thread_safe_reporter
 from .rate_limit import enforce_write_limit
@@ -124,14 +125,15 @@ def _closing_connections(fn):
 # Auth — per-user PAT verifier wrapping the existing MCPAccessToken model.
 # ---------------------------------------------------------------------------
 
-# Coarse scope advertised for PAT callers. PATs are full-user tokens (they
-# act as the user); per-tool authorization happens inside each handler and
-# the write rate limiter.
-PAT_SCOPES = ["connect_labs:user"]
+# Coarse scope advertised for a full-access PAT. Those act as the user; per-tool
+# authorization happens inside each handler and the write rate limiter. A
+# no-uservisit-data PAT is stamped ``connect_labs:no-uservisit-data`` instead and reaches only
+# ``token_scopes.NO_USERVISIT_DATA_TOOLS``.
+PAT_SCOPES = [token_scopes.TOKEN_SCOPE_STRINGS[token_scopes.FULL]]
 
 
 def _verify_pat_sync(raw: str):
-    """Synchronous PAT lookup + touch. Returns the user or None.
+    """Synchronous PAT lookup + touch. Returns the token or None.
 
     Wraps the UNCHANGED ``MCPAccessToken.verify`` + ``touch`` exactly as the
     old ``auth.authenticate_request`` did.
@@ -140,7 +142,7 @@ def _verify_pat_sync(raw: str):
     if token is None:
         return None
     token.touch()
-    return token.user
+    return token
 
 
 def _verify_bearer_sync(raw: str, presented_jkt: str | None = None):
@@ -152,9 +154,14 @@ def _verify_bearer_sync(raw: str, presented_jkt: str | None = None):
     Only that last kind is DPoP-bound, so only it looks at ``presented_jkt``: the
     key the request's DPoP proof was signed with, as checked by ``dpop_gate``.
     """
-    user = _verify_pat_sync(raw)
-    if user is not None:
-        return user, "pat", str(user.pk), PAT_SCOPES, {}
+    pat = _verify_pat_sync(raw)
+    if pat is not None:
+        scopes = [
+            token_scopes.TOKEN_SCOPE_STRINGS.get(
+                pat.scope, token_scopes.TOKEN_SCOPE_STRINGS[token_scopes.NO_USERVISIT_DATA]
+            )
+        ]
+        return pat.user, "pat", str(pat.user.pk), scopes, {}
 
     from .oauth import MCP_SCOPE, resolve_mcp_access_token
 
@@ -223,16 +230,18 @@ def _resolve_delegated_sync(raw: str, presented_jkt: str | None):
 
 
 def allowed_tools(access_token) -> frozenset[str] | None:
-    """The tools a caller may reach, or ``None`` for "every tool" (PATs, OAuth sign-ins).
+    """The tools a caller may reach, or ``None`` for "every tool" (full PATs, OAuth sign-ins).
 
-    Only a token issued by the delegated grant is limited. It is recognised by
-    what the verifier stamped on it, and anything that says ``delegated`` is
-    limited to its scopes' tools (``connect_labs.labs.canopy.SCOPE_TOOLS``) —
-    never widened.
+    Two kinds of token are limited, each recognised by what the verifier stamped
+    on it. A no-uservisit-data PAT reaches ``token_scopes.NO_USERVISIT_DATA_TOOLS``. A token issued
+    by the delegated grant is limited to its scopes' tools
+    (``connect_labs.labs.canopy.SCOPE_TOOLS``) — never widened.
     """
     if access_token is None:
         return None
     claims = getattr(access_token, "claims", None) or {}
+    if claims.get("auth_method") == "pat":
+        return token_scopes.allowed_tools(getattr(access_token, "scopes", None))
     if claims.get("auth_method") != "delegated":
         return None
     from connect_labs.labs import canopy

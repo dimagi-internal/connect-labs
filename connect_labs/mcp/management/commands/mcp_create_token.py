@@ -3,10 +3,12 @@
 Usage:
     python manage.py mcp_create_token --user alice --name my-laptop
     python manage.py mcp_create_token --user alice --name ci --ttl-days 30
+    python manage.py mcp_create_token --user alice --name agent --scope no-uservisit-data
 """
 
 from django.core.management.base import BaseCommand, CommandError
 
+from connect_labs.mcp import token_scopes
 from connect_labs.mcp.models import MCPAccessToken
 from connect_labs.mcp.snippets import build_mcp_json_snippet
 from connect_labs.users.models import User
@@ -24,6 +26,12 @@ class Command(BaseCommand):
             default=90,
             help="Lifetime in days (default: 90, max 365 — 0 or larger values clamp to 365).",
         )
+        parser.add_argument(
+            "--scope",
+            choices=[value for value, _ in token_scopes.SCOPE_CHOICES],
+            default=token_scopes.FULL,
+            help="full (default) or no-uservisit-data: definitions only, no visit data, no writes.",
+        )
 
     def handle(self, *args, **opts):
         username = opts["user"]
@@ -35,7 +43,7 @@ class Command(BaseCommand):
         except User.DoesNotExist:
             raise CommandError(f"No user with username {username!r}")
 
-        _, raw = MCPAccessToken.create_token(user, name=name, ttl_days=ttl)
+        _, raw = MCPAccessToken.create_token(user, name=name, ttl_days=ttl, scope=opts["scope"])
 
         self.stdout.write(self.style.SUCCESS("Token created. Store it now — it is not retrievable later.\n"))
         self.stdout.write(f"Token: {raw}\n")
