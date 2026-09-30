@@ -462,7 +462,10 @@ function WorkflowUI({
 
   var homeGpsHistogram = React.useMemo(
     function () {
-      return buildGpsDistanceHistogram(displayRows, 'gps_distance_from_home_meters');
+      return buildGpsDistanceHistogram(
+        displayRows,
+        'gps_distance_from_home_meters',
+      );
     },
     [displayRows],
   );
@@ -843,7 +846,8 @@ function WorkflowUI({
         homeGpsHistogram,
       );
       return function () {
-        if (homeGpsChartInstance.current) homeGpsChartInstance.current.destroy();
+        if (homeGpsChartInstance.current)
+          homeGpsChartInstance.current.destroy();
       };
     },
     [homeGpsHistogram, activeTab],
@@ -1070,13 +1074,13 @@ function WorkflowUI({
               GPS Distance from Previous Point
             </h3>
             <p className="text-xs text-gray-500">
-              Every visit that ran a GPS check against a previously-saved
-              point (the mother's registered home location, or her
-              registered health facility), bucketed by how far the visit's
-              GPS was from that point. Pass is ≤200m, Fail is &gt;200m --
-              that's the form's own threshold, so the color change lands
-              exactly at the 200m bin edge below. Respects the domain and
-              eligibility filters above, same row set as the other tabs.
+              Every visit that ran a GPS check against a previously-saved point
+              (the mother's registered home location, or her registered health
+              facility), bucketed by how far the visit's GPS was from that
+              point. Pass is ≤200m, Fail is &gt;200m -- that's the form's own
+              threshold, so the color change lands exactly at the 200m bin edge
+              below. Respects the domain and eligibility filters above, same row
+              set as the other tabs.
             </p>
           </div>
 
@@ -1087,16 +1091,10 @@ function WorkflowUI({
             var homeFail = homeGpsHistogram.reduce(function (sum, b) {
               return sum + b.fail;
             }, 0);
-            var facilityTotal = facilityGpsHistogram.reduce(function (
-              sum,
-              b,
-            ) {
+            var facilityTotal = facilityGpsHistogram.reduce(function (sum, b) {
               return sum + b.pass + b.fail;
             }, 0);
-            var facilityFail = facilityGpsHistogram.reduce(function (
-              sum,
-              b,
-            ) {
+            var facilityFail = facilityGpsHistogram.reduce(function (sum, b) {
               return sum + b.fail;
             }, 0);
             return (
