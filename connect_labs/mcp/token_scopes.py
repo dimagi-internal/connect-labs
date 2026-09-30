@@ -1,20 +1,27 @@
-"""What a Personal Access Token may reach.
+"""What a restricted MCP caller may reach: "no user visit data".
 
-A PAT acts as the person who minted it. ``full`` reaches every tool, as PATs
-always have. ``no-uservisit-data`` is for handing an agent a token that can read how
-things are BUILT -- workflow definitions, pipeline schemas, indicator
-registries, app structure, solicitations, the org directory, targeting -- but
-never user visit data: no visit rows or per-visit values, raw or computed by a
-pipeline, a workflow run, a snapshot or a report. Opportunity-level counts and
-dates (``visit_count``, an org's first-visit date) and contact details of people
-who submitted as an organisation are on the allowed side of that line. It
-writes nothing either.
+A caller is restricted when it comes in on the ``/mcp/no_user_visit/`` endpoint, or
+holds a restricted credential (a ``no-uservisit-data`` Personal Access Token, or an
+OAuth sign-in with the ``mcp:no-uservisit-data`` scope). Either is enough; the rule
+is the same.
 
-The list is deny-by-default: a tool added to the catalogue is out of reach of a
-no-uservisit-data token until someone adds it here on purpose, having checked that
-nothing it returns is read from visits. ``USERVISIT_DATA_TOOLS`` names the read
-tools that DO return visit data, so a test can refuse them here even if
-someone reaches for them.
+The rule: a restricted caller never sees REAL user visit data -- no visit rows or
+per-visit values, raw or computed by a pipeline, a workflow run, a snapshot or a
+report. Opportunity-level counts and dates, and contact details of people who
+submitted as an organisation, are on the allowed side of that line. It may profile
+real opportunities server-side (a profile is aggregate statistics) and generate
+synthetic data from a profile, because generated data is never real.
+
+Three sets, all deny-by-default -- a tool added to the catalogue reaches no
+restricted caller until someone adds it here on purpose:
+
+* ``NO_USERVISIT_DATA_TOOLS`` -- reachable outright: definitions, directories,
+  targeting, and the synthetic profile-and-generate flow.
+* ``GENERATED_ONLY_TOOLS`` -- tools that read visit data, reachable only when every
+  opportunity the call reads holds GENERATED data (``connect_labs.mcp.visit_access``,
+  on ``connect_labs.labs.synthetic.provenance``).
+* ``USERVISIT_DATA_TOOLS`` -- read tools that return visit data. None of them may be
+  reachable outright; a test pins it.
 """
 
 from __future__ import annotations
@@ -24,15 +31,23 @@ NO_USERVISIT_DATA = "no-uservisit-data"
 
 SCOPE_CHOICES = [
     (FULL, "Full access"),
-    (NO_USERVISIT_DATA, "No user visit data (no writes)"),
+    (NO_USERVISIT_DATA, "No user visit data"),
 ]
 
-#: The scope string stamped on the resolved access token, which is what the
-#: tool gate in ``server.allowed_tools`` reads.
+#: The scope string stamped on a resolved PAT, which is what the tool gate reads.
 TOKEN_SCOPE_STRINGS = {
     FULL: "connect_labs:user",
     NO_USERVISIT_DATA: "connect_labs:no-uservisit-data",
 }
+
+#: The OAuth scope an MCP sign-in through the restricted endpoint asks for.
+OAUTH_NO_USERVISIT_SCOPE = "mcp:no-uservisit-data"
+
+#: Scope strings that make a caller restricted, whichever way it authenticated.
+RESTRICTED_SCOPE_STRINGS = frozenset({TOKEN_SCOPE_STRINGS[NO_USERVISIT_DATA], OAUTH_NO_USERVISIT_SCOPE})
+
+#: The endpoint marker ``config/asgi.py`` puts on a request to ``/mcp/no_user_visit/``.
+NO_USER_VISIT_ENDPOINT = "no_user_visit"
 
 NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
     {
@@ -91,11 +106,59 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-#: Read tools that return visit data, raw or computed. Never reachable by a no-uservisit-data token.
+
+#: The synthetic flow: profile a real opp server-side, keep the profile, generate a
+#: synthetic set from it. A profile is aggregate statistics (distributions, real
+#: min/max) by design; generation writes only generated data, which the generator
+#: marks as such. Reaching these needs no check on the target opp.
+SYNTHETIC_TOOLS: frozenset[str] = frozenset(
+    {
+        "synthetic_env_ensure",
+        "synthetic_generate_from_manifest",
+        "synthetic_profile_from_prod",
+        "synthetic_profile_opp",
+        "synthetic_profile_opps_bulk",
+        "synthetic_profile_status",
+        "synthetic_clone_profile",
+        "synthetic_fidelity_vs_source",
+        "synthetic_generate_opp",
+        "synthetic_generate_opps_bulk",
+        "synthetic_clone_generate",
+        "synthetic_set_my_visibility",
+        "synthetic_image_server_status",
+        "synthetic_local_records_count",
+        # Compiles a pipeline to SQL text; executes nothing.
+        "pipeline_sql",
+    }
+)
+
+#: Tools that read visit data, or change an opp's registry row, reachable only when
+#: every opportunity the call reads holds generated data. Each has a resolver in
+#: ``connect_labs.mcp.visit_access.RESOLVERS``; a test pins that they match.
+GENERATED_ONLY_TOOLS: frozenset[str] = frozenset(
+    {
+        "pipeline_preview",
+        "custom_analysis_run",
+        "synthetic_local_record_dump",
+        "synthetic_reload_fixtures",
+        "synthetic_disable",
+        "synthetic_set_allowed_domains",
+        "task_create_synthetic",
+        "workflow_run_context",
+        "workflow_run_indicators",
+        "workflow_indicator_explain",
+        "workflow_action_status",
+        "workflow_preview_snapshot",
+        "workflow_history_runs",
+        "workflow_preview_as_of",
+    }
+)
+
+#: Read tools that return visit data (real, unless the opp is generated). None may
+#: be reachable outright.
 USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
     {
         "pipeline_preview",
-        "pipeline_sql",
         "workflow_run_context",
         "workflow_run_indicators",
         "workflow_indicator_explain",
@@ -106,22 +169,16 @@ USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "custom_analysis_run",
         "get_sample_ids",
         "synthetic_local_record_dump",
-        "synthetic_profile_from_prod",
-        "synthetic_profile_opp",
-        "synthetic_profile_opps_bulk",
+        # Reads a bundle at any server path it is given.
         "synthetic_fidelity_report",
-        "synthetic_fidelity_vs_source",
-        "synthetic_clone_profile",
     }
 )
 
+#: Everything a restricted caller can list. The generated-only tools are listed and
+#: then checked per call, on the opportunities that call reads.
+RESTRICTED_TOOLS: frozenset[str] = NO_USERVISIT_DATA_TOOLS | SYNTHETIC_TOOLS | GENERATED_ONLY_TOOLS
+
 
 def is_restricted(scopes) -> bool:
-    return TOKEN_SCOPE_STRINGS[NO_USERVISIT_DATA] in (scopes or [])
-
-
-def allowed_tools(scopes) -> frozenset[str] | None:
-    """The tools a PAT with these scopes may reach, or ``None`` for every tool."""
-    if is_restricted(scopes):
-        return NO_USERVISIT_DATA_TOOLS
-    return None
+    """True when any of these scope strings makes the caller restricted."""
+    return bool(RESTRICTED_SCOPE_STRINGS & set(scopes or []))

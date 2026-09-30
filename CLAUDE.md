@@ -381,10 +381,18 @@ user, audit rows attribute to them):
 - **Personal Access Tokens (PAT)** — for scripts and headless agents. Mint/rotate
   self-service at `/labs/mcp/tokens/` (the `labs-token-setup` skill automates
   this). The verifier tries a PAT first, then an OAuth token. A PAT is
-  **full** or **no-uservisit-data**: the latter reaches only
-  `mcp/token_scopes.py:NO_USERVISIT_DATA_TOOLS` (definitions, never visit data, no
-  writes), enforced by the same `ToolScopeMiddleware` gate as canopy's scopes.
-  Adding a tool to that list means checking that nothing it returns is read from visits.
+  **full** or **no-uservisit-data**.
+- **"No user visit data"** — `/mcp/no_user_visit/` is the same MCP app mounted
+  a second time (`config/asgi.py` marks each request; `server.endpoint_restricted`
+  reads the mark). A request there, a no-uservisit-data PAT, or an OAuth token
+  with the `mcp:no-uservisit-data` scope (which that endpoint's challenge asks
+  for) is a restricted call: it reaches only `mcp/token_scopes.py:RESTRICTED_TOOLS`,
+  and the visit-reading ones among them (`GENERATED_ONLY_TOOLS`) run only when
+  every opportunity the call reads is generated synthetic data
+  (`mcp/visit_access.py` resolves the opps; `labs/synthetic/provenance.py` decides
+  "generated"). Enforced by the same `ToolScopeMiddleware` gate as canopy's scopes,
+  re-checked in `_run_registry_tool_inner`. Adding a tool to those lists means
+  checking what it returns; a tool that reads visits needs a resolver.
 - **Canopy acting as a visitor (off unless `CANOPY_CLIENT_ID` is set)** — labs
   issues an ID-JAG for the person on a registered page, canopy redeems it at
   `/o/token/` (jwt-bearer + `private_key_jwt` + DPoP), and calls the MCP with

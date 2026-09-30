@@ -232,7 +232,13 @@ def test_metadata_advertises_the_grant_only_when_it_is_on(settings):
     assert on["grant_types_supported"] == ["authorization_code", "refresh_token", contract.JWT_BEARER_GRANT]
     assert on["token_endpoint_auth_methods_supported"] == ["none", "private_key_jwt"]
     assert set(on["dpop_signing_alg_values_supported"]) == {"EdDSA", "ES256"}
-    assert on["scopes_supported"] == ["mcp", "marketplace:read", "workflow:act", "workflow:read"]
+    assert on["scopes_supported"] == [
+        "mcp",
+        "mcp:no-uservisit-data",
+        "marketplace:read",
+        "workflow:act",
+        "workflow:read",
+    ]
     assert on["token_endpoint"] == TOKEN_ENDPOINT
     prm = oauth.protected_resource_metadata()
     assert prm["dpop_signing_alg_values_supported"] == ["EdDSA", "ES256"]
