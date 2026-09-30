@@ -12,6 +12,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from . import token_scopes
+
 
 def _hash_token(raw: str) -> str:
     """SHA-256 hash a raw token for storage.
@@ -46,6 +48,12 @@ class MCPAccessToken(models.Model):
     last_used_at = models.DateTimeField(null=True, blank=True)
     expires_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    scope = models.CharField(
+        max_length=20,
+        choices=token_scopes.SCOPE_CHOICES,
+        default=token_scopes.FULL,
+        help_text="What the token may reach. See connect_labs/mcp/token_scopes.py.",
+    )
 
     class Meta:
         db_table = "mcp_access_token"
@@ -67,6 +75,7 @@ class MCPAccessToken(models.Model):
         user,
         name: str,
         ttl_days: int | None = 90,
+        scope: str = token_scopes.FULL,
     ) -> tuple["MCPAccessToken", str]:
         """Create a new token and return (model_instance, raw_token).
 
@@ -75,7 +84,12 @@ class MCPAccessToken(models.Model):
 
         ttl_days is clamped to MAX_TTL_DAYS; None / 0 (historically "no
         expiry") also becomes MAX_TTL_DAYS.
+
+        scope is one of ``token_scopes.SCOPE_CHOICES``; anything else raises
+        rather than minting a token whose reach nobody decided.
         """
+        if scope not in dict(token_scopes.SCOPE_CHOICES):
+            raise ValueError(f"Unknown token scope {scope!r}")
         raw = secrets.token_urlsafe(32)
         if not ttl_days or ttl_days > cls.MAX_TTL_DAYS:
             ttl_days = cls.MAX_TTL_DAYS
@@ -85,6 +99,7 @@ class MCPAccessToken(models.Model):
             name=name,
             token_hash=_hash_token(raw),
             expires_at=expires_at,
+            scope=scope,
         )
         return token, raw
 

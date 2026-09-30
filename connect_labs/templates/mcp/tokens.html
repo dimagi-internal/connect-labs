@@ -108,6 +108,19 @@
           <p class="text-xs text-gray-400 mt-1">Max 365 days.</p>
         </div>
       </div>
+      <fieldset>
+        <legend class="block text-sm font-medium text-gray-700 mb-2">Access</legend>
+        <div class="space-y-2">
+          <label class="flex items-start gap-2 text-sm text-gray-700">
+            <input type="radio" name="scope" value="full" checked class="mt-1">
+            <span><strong>Full access.</strong> Everything you can do in labs, including reading visit data and making changes.</span>
+          </label>
+          <label class="flex items-start gap-2 text-sm text-gray-700">
+            <input type="radio" name="scope" value="{{ no_uservisit_data_scope }}" class="mt-1">
+            <span><strong>No user visit data.</strong> Workflow definitions, pipeline and indicator definitions, app structure, solicitations, the org directory and targeting. It cannot read visit data (raw, or from pipelines, workflow runs and reports) and cannot change anything.</span>
+          </label>
+        </div>
+      </fieldset>
       <div>
         <button
           type="submit"
@@ -128,6 +141,7 @@
         <thead class="text-xs uppercase text-gray-500 border-b border-gray-200">
           <tr>
             <th class="text-left py-2 pr-4 font-medium">Name</th>
+            <th class="text-left py-2 pr-4 font-medium">Access</th>
             <th class="text-left py-2 pr-4 font-medium">Created</th>
             <th class="text-left py-2 pr-4 font-medium">Last used</th>
             <th class="text-left py-2 pr-4 font-medium">Expires</th>
@@ -138,6 +152,9 @@
           {% for token in tokens %}
           <tr>
             <td class="py-3 pr-4 font-medium text-gray-900">{{ token.name }}</td>
+            <td class="py-3 pr-4 text-gray-600">
+              {% if token.scope == no_uservisit_data_scope %}<span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-xs">No user visit data</span>{% else %}Full{% endif %}
+            </td>
             <td class="py-3 pr-4 text-gray-600">{{ token.created_at|date:"Y-m-d" }}</td>
             <td class="py-3 pr-4 text-gray-600">
               {% if token.last_used_at %}{{ token.last_used_at|date:"Y-m-d H:i" }}{% else %}<span class="text-gray-400">never</span>{% endif %}

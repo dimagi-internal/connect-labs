@@ -20,6 +20,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 from oauth2_provider.models import get_access_token_model, get_application_model, get_refresh_token_model
 
+from . import token_scopes
 from .models import MCPAccessToken
 from .snippets import build_mcp_json_snippet
 
@@ -62,6 +63,8 @@ def _render_index(request, *, raw_token: str | None = None, raw_token_name: str 
         "raw_token": raw_token,
         "raw_token_name": raw_token_name,
         "mcp_json_snippet": build_mcp_json_snippet(raw_token) if raw_token else None,
+        "scope_choices": token_scopes.SCOPE_CHOICES,
+        "no_uservisit_data_scope": token_scopes.NO_USERVISIT_DATA,
     }
     return render(request, "mcp/tokens.html", context)
 
@@ -99,8 +102,13 @@ def tokens_create(request):
     if len(name) > 100:
         name = name[:100]
 
+    scope = request.POST.get("scope") or token_scopes.FULL
+    if scope not in dict(token_scopes.SCOPE_CHOICES):
+        messages.error(request, "Unknown token access level.")
+        return redirect(reverse("labs:mcp_tokens_index"))
+
     ttl_days = _parse_ttl(request.POST.get("ttl_days"))
-    _, raw = MCPAccessToken.create_token(request.user, name=name, ttl_days=ttl_days)
+    _, raw = MCPAccessToken.create_token(request.user, name=name, ttl_days=ttl_days, scope=scope)
     return _render_index(request, raw_token=raw, raw_token_name=name)
 
 
@@ -145,7 +153,8 @@ def tokens_rotate(request, pk: int):
     """Revoke + recreate-with-same-name in one step.
 
     Common when migrating between machines. Original TTL is not preserved —
-    the new token defaults to 90 days, matching the management command.
+    the new token defaults to 90 days, matching the management command. The
+    scope IS preserved: rotating a no-uservisit-data token must never widen it.
     """
     old = get_object_or_404(MCPAccessToken, pk=pk, user=request.user)
     name = old.name
@@ -153,5 +162,5 @@ def tokens_rotate(request, pk: int):
         if old.is_active:
             old.is_active = False
             old.save(update_fields=["is_active"])
-        _, raw = MCPAccessToken.create_token(request.user, name=name, ttl_days=90)
+        _, raw = MCPAccessToken.create_token(request.user, name=name, ttl_days=90, scope=old.scope)
     return _render_index(request, raw_token=raw, raw_token_name=name)

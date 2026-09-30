@@ -380,7 +380,11 @@ user, audit rows attribute to them):
   `connect_labs/mcp/oauth.py`; discovery routes are in `config/asgi.py`.
 - **Personal Access Tokens (PAT)** — for scripts and headless agents. Mint/rotate
   self-service at `/labs/mcp/tokens/` (the `labs-token-setup` skill automates
-  this). The verifier tries a PAT first, then an OAuth token.
+  this). The verifier tries a PAT first, then an OAuth token. A PAT is
+  **full** or **no-uservisit-data**: the latter reaches only
+  `mcp/token_scopes.py:NO_USERVISIT_DATA_TOOLS` (definitions, never visit data, no
+  writes), enforced by the same `ToolScopeMiddleware` gate as canopy's scopes.
+  Adding a tool to that list means checking that nothing it returns is read from visits.
 - **Canopy acting as a visitor (off unless `CANOPY_CLIENT_ID` is set)** — labs
   issues an ID-JAG for the person on a registered page, canopy redeems it at
   `/o/token/` (jwt-bearer + `private_key_jwt` + DPoP), and calls the MCP with
