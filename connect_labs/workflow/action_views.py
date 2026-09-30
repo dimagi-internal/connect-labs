@@ -45,7 +45,9 @@ def _run_and_definition(request, run_id):
 
 
 def _refusal(e: ActionError) -> JsonResponse:
-    return JsonResponse({"error": str(e), "code": e.code}, status=409 if e.code.startswith("confirm") else 400)
+    return JsonResponse(
+        {"error": e.public_message, "code": e.code}, status=409 if e.code.startswith("confirm") else 400
+    )
 
 
 @login_required
