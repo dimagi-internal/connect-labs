@@ -236,13 +236,14 @@ def test_metadata_advertises_the_grant_only_when_it_is_on(settings):
         "mcp",
         "mcp:no-uservisit-data",
         "marketplace:read",
+        "targeting:read",
         "workflow:act",
         "workflow:read",
     ]
     assert on["token_endpoint"] == TOKEN_ENDPOINT
     prm = oauth.protected_resource_metadata()
     assert prm["dpop_signing_alg_values_supported"] == ["EdDSA", "ES256"]
-    assert prm["scopes_supported"] == ["mcp", "marketplace:read", "workflow:act", "workflow:read"]
+    assert prm["scopes_supported"] == ["mcp", "marketplace:read", "targeting:read", "workflow:act", "workflow:read"]
     assert prm["resource"] == RESOURCE
 
 
