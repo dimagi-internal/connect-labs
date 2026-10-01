@@ -122,6 +122,22 @@ def test_a_no_uservisit_data_token_cannot_read_visits(monkeypatch):
         assert b"sentinel" not in resp.content
 
 
+@pytest.mark.django_db
+def test_a_person_set_to_no_uservisit_data_cannot_read_visits_even_with_a_full_token(monkeypatch):
+    _install(monkeypatch, {"folder-a": {"user_visits.json": [{"id": 1, "form": "sentinel"}]}})
+    _make_opp()
+    user = _user()
+    user.mcp_no_uservisit_data = True
+    user.save()
+    _, raw = MCPAccessToken.create_token(user, name="full")
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
+
+    resp = client.get(VISITS_URL)
+    assert resp.status_code == 403
+    assert b"sentinel" not in resp.content
+
+
 # --------------------------------------------------------------------------- #
 # Authorization / visibility
 # --------------------------------------------------------------------------- #
