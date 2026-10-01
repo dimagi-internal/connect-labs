@@ -229,7 +229,12 @@ def workflow_preview_snapshot(
         run = wda.get_run(run_id)
         if run is None:
             raise MCPToolError("NOT_FOUND", f"workflow run {run_id} not found")
-        if run.is_completed and run.snapshot:
+        from ..visit_access import caller_restricted
+
+        # A restricted caller gets a live build over today's (generated) data, never
+        # the stored snapshot: provenance as it is now does not vouch for what a run
+        # read when it was saved (visit_access.caller_restricted).
+        if run.is_completed and run.snapshot and not caller_restricted():
             return {"run_id": run_id, "source": "stored", "snapshot": run.snapshot, "cache": None}
         try:
             built = build_snapshot_for_run(wda, run, requested_opportunity_id=opportunity_id, program_id=program_id)

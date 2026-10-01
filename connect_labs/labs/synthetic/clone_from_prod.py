@@ -18,7 +18,7 @@ from .generator.fixtures.profiler import profile as _profile
 from .generator.fixtures.schema_loader import parse_form_schema_from_app_json
 from .generator.io.uploader import upload_fixtures
 from .models import SyntheticOpportunity
-from .provenance import mark_generated
+from .provenance import mark_generated, replays_real_cases
 from .provisioning import allocate_shared_program_id, register_labs_only_opp
 
 logger = logging.getLogger(__name__)
@@ -446,7 +446,12 @@ def _generate_one(
     SyntheticOpportunity.objects.filter(opportunity_id=row.opportunity_id).update(
         visit_count=len(fixtures.get("user_visits") or [])
     )
-    mark_generated(row.opportunity_id, upload.folder_id)
+    # Mirror mode replays real cases near-verbatim: that is not generated data, and a
+    # regeneration over an opp that was generated before must not keep its mark.
+    if replays_real_cases(manifest):
+        SyntheticOpportunity.objects.filter(opportunity_id=row.opportunity_id).update(generated_folder_id=None)
+    else:
+        mark_generated(row.opportunity_id, upload.folder_id)
     return CloneResult(
         source_opportunity_id=source,
         opportunity_id=row.opportunity_id,

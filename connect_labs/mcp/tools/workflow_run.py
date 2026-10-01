@@ -140,14 +140,23 @@ class _Run:
         from connect_labs.workflow.agent_sharing import graded_payload
         from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run, cache_state
 
+        from ..visit_access import caller_restricted
+
         run = self.run
-        if run.is_completed and run.snapshot:
+        # A restricted caller is graded live, never from the stored snapshot: that was
+        # built from whatever the run read when it was saved, which provenance as it is
+        # now does not vouch for (visit_access.caller_restricted).
+        restricted = caller_restricted()
+        if run.is_completed and run.snapshot and not restricted:
             payload = graded_payload(run.snapshot)
             if payload is None:
                 raise _not_semantic(run.id)
             return {**_slim(payload), "source": "stored", "cache": None}
 
-        key = f"wf-agent-graded:v1:{self.user.pk}:{run.id}"
+        # Scoped by opportunity/program as well as run id: labs-local run ids and
+        # production run ids are separate sequences and overlap.
+        scope = f"o{self.opportunity_id}" if self.opportunity_id is not None else f"p{self.program_id}"
+        key = f"wf-agent-graded:v2:{self.user.pk}:{scope}:{run.id}:{'r' if restricted else 'f'}"
         hit = cache.get(key)
         if hit is not None:
             return hit
@@ -511,7 +520,15 @@ def workflow_action_status(
     from connect_labs.workflow.models import WorkflowActionExecution
 
     with _Run(user, run_id, opportunity_id, program_id) as r:
+        from ..visit_access import caller_restricted
+
         qs = WorkflowActionExecution.objects.filter(user=user, run_id=r.run.id)
+        if caller_restricted():
+            # Labs-local and production run ids are separate sequences and overlap, so
+            # without visit access an execution must also match the run's own
+            # opportunity/program (what actions.py records), or a real run's
+            # executions -- worker keys, statuses, errors -- could come back.
+            qs = qs.filter(opportunity_id=r.run.opportunity_id, program_id=getattr(r.run, "program_id", None))
         if execution_id is not None:
             qs = qs.filter(pk=execution_id)
         return {"run_id": r.run.id, "executions": [e.as_dict() for e in qs[:20]]}

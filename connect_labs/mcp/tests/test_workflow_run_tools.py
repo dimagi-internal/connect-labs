@@ -316,7 +316,9 @@ def test_a_live_run_is_graded_now_and_reread_from_a_short_cache(user, wda, monke
     assert [w["key"] for w in first["workers"]] == ["10::asha"]
     assert second["grading"]["source"] == "live"
     built.assert_called_once()
-    assert "cases" not in cache.get(f"wf-agent-graded:v1:{user.pk}:70")
+    # Keyed by scope as well as run id (labs-local and production run ids overlap),
+    # and by whether the call was restricted.
+    assert "cases" not in cache.get(f"wf-agent-graded:v2:{user.pk}:p25:70:f")
 
 
 def test_saving_an_invalid_action_declaration_is_refused_before_anything_is_read(user):

@@ -30,7 +30,7 @@ from connect_labs.labs.synthetic.generator.fixtures.schema_loader import FormSch
 from connect_labs.labs.synthetic.generator.io.uploader import upload_and_register
 from connect_labs.labs.synthetic.invalidation import invalidate_synthetic_caches
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
-from connect_labs.labs.synthetic.provenance import is_generated, mark_generated
+from connect_labs.labs.synthetic.provenance import is_generated, mark_generated, replays_real_cases
 from connect_labs.labs.synthetic.provisioning import register_labs_only_opp
 from connect_labs.labs.synthetic.registry import invalidate_cache
 from connect_labs.labs.synthetic.visit_count import resync_visit_count
@@ -270,13 +270,39 @@ _PROFILE_OWNER_KEY = "synthetic_profile_owner:{task_id}"
 _PROFILE_OWNER_TTL_SECONDS = 7 * 24 * 3600
 
 
-def _new_profile_task_id(user) -> str:
+def _admit_profile(user, *, kind: str, opportunity_ids: list[int], args: dict) -> dict[str, Any] | None:
+    """Apply the per-person profiling limits (``mcp.profile_limits``) before queueing.
+
+    Returns the response for an identical job already running -- hand it back instead
+    of queueing the same work twice -- or None to go ahead. Raises RATE_LIMITED.
+    """
+    from .. import profile_limits
+    from ..visit_access import caller_restricted
+
+    existing = profile_limits.admit(
+        user, kind=kind, opportunity_ids=opportunity_ids, args=args, restricted=caller_restricted()
+    )
+    if existing is None:
+        return None
+    return {
+        "task_id": existing,
+        "deduplicated": True,
+        "note": "An identical profiling job of yours is already running; this is its task_id.",
+        "poll_with": "synthetic_profile_status",
+    }
+
+
+def _new_profile_task_id(user, *, kind: str = "", opportunity_ids: list[int] = (), args: dict | None = None) -> str:
     import uuid
 
     from django.core.cache import cache
 
+    from .. import profile_limits
+
     task_id = str(uuid.uuid4())
     cache.set(_PROFILE_OWNER_KEY.format(task_id=task_id), getattr(user, "id", None), _PROFILE_OWNER_TTL_SECONDS)
+    # Counted before the job is queued, so it holds its slot from the start.
+    profile_limits.record(user, task_id, kind=kind, opportunity_ids=list(opportunity_ids), args=args or {})
     return task_id
 
 
@@ -624,7 +650,15 @@ def synthetic_generate_from_manifest(
     opportunity_id: int,
     manifest_yaml: str,
 ) -> dict[str, Any]:
-    _require_opportunity_access(user, opportunity_id)
+    from ..visit_access import caller_restricted
+
+    if caller_restricted():
+        # Generating onto a REAL opp id wraps it (labs_only=False): labs then serves
+        # these fixtures for that opportunity to everyone. Only a labs-only target
+        # without access to user visit data.
+        _require_labs_only_target(user, opportunity_id)
+    else:
+        _require_opportunity_access(user, opportunity_id)
     try:
         manifest = Manifest.from_yaml(manifest_yaml)
     except ManifestValidationError as exc:
@@ -645,6 +679,7 @@ def synthetic_generate_from_manifest(
         opportunity_id=opportunity_id,
         opportunity_name=manifest.opportunity_name,
         fixtures=fixtures,
+        replays_real_cases=replays_real_cases(manifest),
     )
 
     task_records = fixtures.get("task_records", [])
@@ -1247,7 +1282,11 @@ def synthetic_profile_from_prod(
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
 
-    task_id = _new_profile_task_id(user)
+    limit_args = {"opportunity_id": opportunity_id, "form_json_paths": form_json_paths, "mirror": mirror}
+    running = _admit_profile(user, kind="from_prod", opportunity_ids=[opportunity_id], args=limit_args)
+    if running:
+        return running
+    task_id = _new_profile_task_id(user, kind="from_prod", opportunity_ids=[opportunity_id], args=limit_args)
     run_synthetic_profile_from_prod.apply_async(
         kwargs={
             "opportunity_id": opportunity_id,
@@ -1453,7 +1492,11 @@ def synthetic_profile_opp(
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
 
-    task_id = _new_profile_task_id(user)
+    limit_args = {"opportunity_id": source_opportunity_id, "out_dir": out_dir, "curate": curate, "mirror": mirror}
+    running = _admit_profile(user, kind="opp", opportunity_ids=[source_opportunity_id], args=limit_args)
+    if running:
+        return running
+    task_id = _new_profile_task_id(user, kind="opp", opportunity_ids=[source_opportunity_id], args=limit_args)
     run_synthetic_profile_opp.apply_async(
         kwargs={
             "source_opportunity_id": source_opportunity_id,
@@ -1582,7 +1625,12 @@ def synthetic_profile_opps_bulk(
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
 
-    task_id = _new_profile_task_id(user)
+    opp_ids = list(source_opportunity_ids)
+    limit_args = {"opportunity_ids": sorted(opp_ids), "out_dir": out_dir, "curate": curate, "mirror": mirror}
+    running = _admit_profile(user, kind="bulk", opportunity_ids=opp_ids, args=limit_args)
+    if running:
+        return running
+    task_id = _new_profile_task_id(user, kind="bulk", opportunity_ids=opp_ids, args=limit_args)
     run_synthetic_profile_opps_bulk.apply_async(
         kwargs={
             "source_opportunity_ids": source_opportunity_ids,
@@ -1939,7 +1987,11 @@ def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
 
-    task_id = _new_profile_task_id(user)
+    limit_args = {"spec_yaml": spec_yaml}
+    running = _admit_profile(user, kind="cohort", opportunity_ids=list(spec.opportunity_ids), args=limit_args)
+    if running:
+        return running
+    task_id = _new_profile_task_id(user, kind="cohort", opportunity_ids=list(spec.opportunity_ids), args=limit_args)
     run_synthetic_clone_profile.apply_async(kwargs={"spec_yaml": spec_yaml, "oauth_token": token}, task_id=task_id)
     return {
         "task_id": task_id,
