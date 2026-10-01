@@ -267,6 +267,28 @@ def _require_labs_only_program(user, program_id) -> None:
 # holding its id, so the owner is written down HERE, at enqueue, before the worker
 # can possibly finish. The TTL outlives the Celery result backend's default (1 day).
 _PROFILE_OWNER_KEY = "synthetic_profile_owner:{task_id}"
+
+# Modelled case timelines (labs/synthetic/generator/fixtures/case_model.py). This was
+# "mirror", which shipped each real case lightly perturbed; the switch is the same and
+# the old name still works, but what ships now is cases SAMPLED from models.
+_CASE_TIMELINES_PARAM = {
+    "type": "boolean",
+    "default": False,
+    "description": (
+        "Model each worker's caseload and each case's timeline, so the clone follows cases "
+        "over time like the source does: every worker keeps its number of cases and their "
+        "lengths, and each case's growth, spacing, constants (birth weight, date of birth) "
+        "and outcomes are drawn from models of the real cases -- a slow grower is as likely "
+        "to die as in the source. Every case is NEW: no real case, date or rare answer is "
+        "copied. Use it when an analysis follows individual cases (growth curves, outcomes "
+        "by trajectory). Default false: the faster field-by-field profile."
+    ),
+}
+_MIRROR_ALIAS_PARAM = {
+    "type": "boolean",
+    "default": False,
+    "description": "Old name for case_timelines; does the same thing.",
+}
 _PROFILE_OWNER_TTL_SECONDS = 7 * 24 * 3600
 
 
@@ -1218,7 +1240,7 @@ def _profile_from_prod_inner(
     _tick(4, 4, "built manifest")
     return {
         "manifest_yaml": manifest_yaml,
-        "mode": "mirror" if mirror else "marginal",
+        "mode": "case_timelines" if mirror else "marginal",
         "source_visit_count": len(user_visits),
         "source_flw_count": len({v.get("username") for v in user_visits if v.get("username")}),
         "source_entity_count": len({v.get("entity_id") for v in user_visits if v.get("entity_id")}),
@@ -1249,17 +1271,8 @@ def _profile_from_prod_inner(
                     "auto-discovers numeric fields from a sample of visits."
                 ),
             },
-            "mirror": {
-                "type": "boolean",
-                "description": (
-                    "High-fidelity 'close mirror' mode. When true, the manifest carries a "
-                    "de-identified per-entity transplant pool so the clone reproduces the "
-                    "source's exact visits-per-case and cases-per-FLW ratios, timing, and "
-                    "per-entity value trajectories (e.g. an infant growth curve) — not just "
-                    "per-column means. Numerics + structure only; identifiers/text are never "
-                    "copied. Default false (fast marginal mode)."
-                ),
-            },
+            "case_timelines": _CASE_TIMELINES_PARAM,
+            "mirror": _MIRROR_ALIAS_PARAM,
         },
         "required": ["opportunity_id"],
         "additionalProperties": False,
@@ -1271,10 +1284,13 @@ def synthetic_profile_from_prod(
     *,
     opportunity_id: int,
     form_json_paths: list[str] | None = None,
+    case_timelines: bool = False,
     mirror: bool = False,
 ) -> dict[str, Any]:
     """QUEUED. Returns a task_id; poll synthetic_profile_status."""
     from connect_labs.labs.synthetic.tasks import run_synthetic_profile_from_prod
+
+    mirror = mirror or case_timelines  # the profiler's switch is still named mirror internally
 
     _require_opportunity_access(user, opportunity_id)
     try:
@@ -1459,7 +1475,8 @@ def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, An
         "properties": {
             "source_opportunity_id": {"type": "integer"},
             "curate": {"type": "boolean", "default": False},
-            "mirror": {"type": "boolean", "default": False},
+            "case_timelines": _CASE_TIMELINES_PARAM,
+            "mirror": _MIRROR_ALIAS_PARAM,
             "out_dir": {
                 "type": "string",
                 "description": (
@@ -1479,9 +1496,12 @@ def synthetic_profile_opp(
     source_opportunity_id: int,
     out_dir: str,
     curate: bool = False,
+    case_timelines: bool = False,
     mirror: bool = False,
 ) -> dict[str, Any]:
     from connect_labs.labs.synthetic.tasks import run_synthetic_profile_opp
+
+    mirror = mirror or case_timelines  # the profiler's switch is still named mirror internally
 
     # Access is checked HERE, in the request, while we still have the user. The
     # worker runs with no request and cannot re-derive it, so an unchecked queue
@@ -1583,16 +1603,8 @@ def synthetic_profile_status(user, *, task_id: str) -> dict[str, Any]:
                     "are never curated (#1189)."
                 ),
             },
-            "mirror": {
-                "type": "boolean",
-                "default": False,
-                "description": (
-                    "High-fidelity close mirror (#713): carry a de-identified per-entity transplant "
-                    "pool so the clone reproduces the source opp's exact visits-per-case, "
-                    "cases-per-FLW, timing and per-entity value trajectories rather than "
-                    "re-sampling from marginals."
-                ),
-            },
+            "case_timelines": _CASE_TIMELINES_PARAM,
+            "mirror": _MIRROR_ALIAS_PARAM,
             "out_dir": {
                 "type": "string",
                 "description": (
@@ -1613,10 +1625,13 @@ def synthetic_profile_opps_bulk(
     source_opportunity_ids: list[int],
     out_dir: str,
     curate: bool = False,
+    case_timelines: bool = False,
     mirror: bool = False,
 ) -> dict[str, Any]:
     """QUEUED. Returns a task_id; poll synthetic_profile_status."""
     from connect_labs.labs.synthetic.tasks import run_synthetic_profile_opps_bulk
+
+    mirror = mirror or case_timelines  # the profiler's switch is still named mirror internally
 
     for opp_id in source_opportunity_ids:
         _require_opportunity_access(user, opp_id)

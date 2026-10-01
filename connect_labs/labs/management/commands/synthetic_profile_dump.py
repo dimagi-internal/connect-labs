@@ -7,7 +7,7 @@ the same bundle a live profile writes, and a synthetic opp is generated from THA
 (``synthetic_generate_opp`` / ``synthetic_generate_opps``). Never point an opp at the
 dump folder itself.
 
-    python manage.py synthetic_profile_dump --folder <dump_folder_id> --out gdrive: --mirror
+    python manage.py synthetic_profile_dump --folder <dump_folder_id> --out gdrive: --case-timelines
 
 A dump has no app structure. Pass ``--base-url`` (with a token in ``--token-env``) to
 fetch it from production so fields are typed as a live profile would type them.
@@ -33,7 +33,13 @@ class Command(BaseCommand):
         parser.add_argument(
             "--out", required=True, help="Bundle root: a local directory, or 'gdrive:' / 'gdrive:<id>'."
         )
-        parser.add_argument("--mirror", action="store_true", help="Carry the (perturbed) per-case transplant pool.")
+        parser.add_argument(
+            "--case-timelines",
+            "--mirror",
+            dest="mirror",
+            action="store_true",
+            help="Model each worker's caseload and each case's timeline (--mirror is the old name).",
+        )
         parser.add_argument("--curate", action="store_true", help="Curate for analytics signal (see profiler).")
         parser.add_argument("--base-url", help="Connect base URL, to fetch the app structure the dump lacks.")
         parser.add_argument("--token-env", default="CONNECT_OAUTH_TOKEN", help="Env var holding the OAuth token.")

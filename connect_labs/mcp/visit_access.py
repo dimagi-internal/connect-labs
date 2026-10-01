@@ -134,19 +134,16 @@ _BUNDLE_PATH_ARGS = ("out_dir", "bundle_dir", "bundle_root")
 def synthetic_denied_reason(tool_name: str, arguments: dict) -> str | None:
     """Why a restricted caller may not make this synthetic call, or None.
 
-    * Mirror mode replays real cases near-verbatim (``provenance.replays_real_cases``),
-      so neither profiling nor generating with it is open without visit access.
     * Bundles live in Drive; a local path is the server's own filesystem.
     * ``synthetic_env_ensure(fresh=true)`` deletes shared demo data for everyone.
+    * A manifest from the RETIRED mirror mode replays real cases near-verbatim
+      (``provenance.replays_real_cases``). Profiling with ``case_timelines`` (or its
+      old name ``mirror``) is allowed: it ships cases sampled from models, never real
+      ones (generator/fixtures/case_model.py).
     """
     if not tool_name.startswith("synthetic_"):
         return None
     no_visit = "without access to user visit data"
-    if arguments.get("mirror"):
-        return (
-            f"mirror=true replays real cases near-verbatim, so it is not available {no_visit}. "
-            "Profile without mirror (the default)."
-        )
     paths = {name: arguments.get(name) for name in _BUNDLE_PATH_ARGS if arguments.get(name) is not None}
     spec_yaml = arguments.get("spec_yaml")
     if spec_yaml:
@@ -156,8 +153,6 @@ def synthetic_denied_reason(tool_name: str, arguments: dict) -> str | None:
             spec = CohortSpec.from_yaml(spec_yaml)
         except ValueError:
             return None  # the tool reports the malformed spec itself
-        if spec.mirror:
-            return f"This cohort spec sets mirror: true, which replays real cases; not available {no_visit}."
         paths["bundle_root"] = spec.bundle_root
     for name, value in paths.items():
         if not str(value).startswith("gdrive:"):
@@ -173,7 +168,10 @@ def synthetic_denied_reason(tool_name: str, arguments: dict) -> str | None:
         except Exception:  # noqa: BLE001 -- the tool reports the malformed manifest itself
             return None
         if replays_real_cases(manifest):
-            return f"This manifest is a mirror profile, which replays real cases; not available {no_visit}."
+            return (
+                f"This manifest is from the retired mirror mode, which replays real cases; not available "
+                f"{no_visit}. Re-profile with case_timelines=true for a pool of modelled cases."
+            )
     return None
 
 
