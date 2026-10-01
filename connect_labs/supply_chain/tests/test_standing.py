@@ -312,7 +312,8 @@ class TestTender:
         ]
         # Waiting on the answers that unblock them, by who owes them -- not on
         # an award decision nobody can make yet.
-        assert row.waiting_on == "Missing facts: Baobab Nutrition, Northwind Foods"
+        # Since batch 8 each with what it is missing, as the comparison words it.
+        assert row.waiting_on == "Missing facts: Baobab Nutrition (duties amount), Northwind Foods (freight, duties)"
 
     def test_a_closed_tender_drops_the_no_reply_flag_but_keeps_the_blocked_flag(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
@@ -351,9 +352,9 @@ class TestTender:
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
         # "Provisional" once, on the caveat line; the stage names who.
         assert row.stage == "awarded to Baobab Nutrition"
-        assert row.provisional_caveat == "provisional — 1 of 2 quotes not comparable"
+        assert row.provisional_caveat == "provisional — 1 of 2 quotes not yet comparable"
         # Stage, waiting-on and flags agree: it waits on the blocked supplier's answers.
-        assert row.waiting_on == "Missing facts: Northwind Foods"
+        assert row.waiting_on == "Missing facts: Northwind Foods (sachets per carton, freight, duties)"
         assert row.stale == ["Can't compare yet: Northwind Foods — missing: sachets per carton, freight, duties"]
 
     def test_an_award_over_a_complete_comparison_is_not_provisional(self, da, base):
@@ -625,7 +626,7 @@ class TestHomePage:
         assert "0 of 1 replied" in table
         assert "arrival (ETA 5 Sep)" in table
         assert "Kano Health Partners" in table
-        assert "data-ai" in table and "AI · ACE" in table
+        assert "data-ai" in table and "<span>ACE (agent)</span>" in table and 'aria-label="AI"' in table
 
     def test_as_of_before_round_2_existed_leaves_it_out(self, client_in_program, da, base):
         _tender(da, "Round 1", AUG_3)

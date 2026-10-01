@@ -199,9 +199,11 @@ class TestTheLastChange:
             source={"ref": "<msg-9@northwind.example>", "excerpt": "Our price is 42.50 a carton."},
         )
         cell = _cells(_standing_row(_home(home_client), base["tender"]["id"]))[3]
-        badge = re.search(r'<span data-ai data-testid="ai-badge" title="([^"]*)"[^>]*>(.*?)</span>', cell, re.S)
-        assert badge.group(2) == "AI · ACE"
-        assert badge.group(1) == "Entered by the ACE agent from a forwarded email"
+        badge = re.search(r'<span data-ai data-testid="ai-badge" title="([^"]*)"[^>]*>(.*?)</span></span>', cell, re.S)
+        # Since batch 8: who told us, beside the AI glyph, and on hover what was recorded.
+        assert _text(re.sub(r"<[^>]+>", "", badge.group(2))) == "ACE (agent)"
+        assert 'aria-label="AI"' in badge.group(2)
+        assert badge.group(1) == "ACE recorded Quote · Northwind Foods from a forwarded email"
 
 
 # ---- 4. the as-of control and the flags under it ---------------------------
@@ -213,7 +215,9 @@ class TestTheAsOfControl:
         body = _home(home_client, as_of="2026-08-20")
         control = re.search(r'data-testid="as-of-control".*?</form>', body, re.S).group(0)
         assert re.search(r"<label[^>]*>View as of</label>", control)
-        assert re.search(r'data-testid="as-of-date"[^>]*>20 Aug 2026<', control)
+        # Since batch 8 the day is the field's own value; the banner says it in the page's format.
+        assert re.search(r'<input id="supply-as-of"[^>]*value="2026-08-20"[^>]*data-testid="as-of-date"', control)
+        assert "Viewing as of 20 Aug 2026" in body
         assert 'data-testid="as-of-date"' not in _home(home_client)
 
     def test_the_flags_are_said_to_be_for_today_once_in_their_header(self, da, base, home_client):
@@ -472,9 +476,13 @@ class TestABlockedCard:
         assert re.search(r'data-testid="as-quoted"[^>]*>Quoted 42.50 USD per carton<', card)
         assert re.search(r'data-testid="received-on"[^>]*>Received 20 Aug 2026<', card)
         blocking = re.search(r'data-testid="blocking"[^>]*>(.*?)</p>', card, re.S).group(1)
-        assert _text(blocking) == "Blocking: Sachets per carton not stated on the quote Spec: 150 sachets per carton"
+        assert _text(blocking) == "Blocking: Sachets per carton not stated on the quote"
         assert "units per pack" not in card.lower()
-        assert re.search(r'data-testid="spec-chip"[^>]*>Spec: 150 sachets per carton<', blocking)
+        # Since batch 8 the requirement is a grey line under the blocker, not a chip.
+        assert re.search(
+            r'data-testid="blocker-spec-line"[^>]*>Sachets per carton: not stated \(tender requires 150\)<', card
+        )
+        assert 'data-testid="spec-chip"' not in card
         assert 'data-testid="spec-not-stated"' not in card
         not_blocking = re.search(r'data-testid="not-blocking"[^>]*>(.*?)</p>', card, re.S).group(1)
         assert " ".join(re.sub(r"<[^>]+>", "", not_blocking).split()) == "Not stated: shelf life"

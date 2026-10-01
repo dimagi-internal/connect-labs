@@ -121,9 +121,10 @@ scenes:
     say: in transit
     seconds: 2.0
     target: css:[data-testid=overview-row][data-tender-id='${round1_tender_id}']:has-text('in transit')
-  - kind: hold
-    note: no round 2 row, and no write controls
+  - kind: hover
+    note: what only the past shows, the read-only banner over a program with no round 2 and no write controls
     seconds: 1.5
+    target: testid:as-of-banner
   - kind: snapshot
     note: the program on 20 Aug
   - kind: click
@@ -172,6 +173,10 @@ scenes:
     say: request
     seconds: 2.0
     target: text:FROM THE BUYER
+  - kind: hover
+    note: the pack the round requires, the fact scene 5's blocked quote leaves out
+    seconds: 1.2
+    target: text:150 sachets (exact)
   - kind: hover
     note: park the cursor on the title, off the request's sentence
     seconds: 0.6
@@ -280,7 +285,7 @@ scenes:
     note: landed cost per carton and per child treated, provisional while two are blocked
     say: per child
     seconds: 2.0
-    target: text:USD per child treated
+    target: text:1 child treated
   - kind: click
     target: css:[data-testid=ranked-row-detail] [data-testid=correction-source] summary
     note: the correction that let it in, with the supplier's reply

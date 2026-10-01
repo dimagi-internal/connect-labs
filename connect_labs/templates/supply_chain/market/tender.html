@@ -67,7 +67,7 @@
 {% block body %}
 {% with r=listed.tender %}
 {% if program_view_url %}
-  <div data-testid="public-listing-note" class="bg-white border border-brand-border-light rounded-[10px] px-5 py-3 mb-6 max-w-3xl text-[13.5px] text-gray-700">
+  <div data-testid="public-listing-note" class="bg-white border border-brand-border-light rounded-[10px] px-5 py-3 mb-6 text-[13.5px] text-gray-700">
     This is the public listing, as every supplier sees it. Quotes, sources and history stay in your program.
     <a href="{{ program_view_url }}" class="ml-1 font-medium text-brand-indigo hover:underline">Back to the tender in your program →</a>
     {% if preview_url %}<a data-testid="preview-as-supplier" href="{{ preview_url }}" class="ml-3 font-medium text-brand-indigo hover:underline">Preview as a supplier</a>{% endif %}
@@ -86,7 +86,7 @@
   </div>
 {% endif %}
 {% if r.notes_to_supplier %}
-  <div class="bg-white border border-brand-border-light rounded-[10px] px-5 py-4 mb-8 max-w-3xl">
+  <div class="bg-white border border-brand-border-light rounded-[10px] px-5 py-4 mb-8">
     <div class="text-[11.5px] font-semibold tracking-wider text-gray-600 mb-1">FROM THE BUYER</div>
     <p class="text-[14px] text-gray-800 whitespace-pre-line leading-relaxed">{{ r.notes_to_supplier }}</p>
   </div>
@@ -105,12 +105,12 @@ carries the bid action.
 </div>
 {% if listed.lines|length == 1 %}
   {% with line=listed.lines.0 %}
-  <aside data-testid="request-summary" class="pg-card bg-white border border-brand-border-light rounded-[10px] px-5 py-4 text-[13.5px] max-w-3xl" style="--hue: {{ card.hue }}">
+  <aside data-testid="request-summary" class="pg-card bg-white border border-brand-border-light rounded-[10px] px-5 py-4 text-[13.5px]" style="--hue: {{ card.hue }}">
     <div class="flex items-start justify-between gap-3 mb-3">
       <div data-testid="request-product" class="text-[17px] font-semibold text-gray-900 leading-snug">{{ line.name }}</div>
       {% if line.matches %}<span class="pg-chip shrink-0 inline-flex items-center gap-1.5 text-[10.5px] font-semibold tracking-wide px-2 py-1 rounded-md"><span class="pg-dot w-1.5 h-1.5 rounded-full"></span>MATCHES YOU</span>{% endif %}
     </div>
-    {% include "supply_chain/market/_request.html" %}
+    {% include "supply_chain/market/_request.html" with split=True %}
     <div class="border-t border-gray-100 pt-3 mt-4 flex gap-4 text-[12.5px] font-medium">
       {% include "supply_chain/market/_bid_action.html" %}
     </div>
@@ -153,7 +153,7 @@ carries the bid action.
     <h2 class="text-lg font-semibold text-brand-deep-purple">Your bids on this tender</h2>
     <a href="{% url 'supply_chain:market_bids' %}" class="text-[13px] text-brand-indigo hover:underline">All my bids →</a>
   </div>
-  <ul class="bg-white border border-brand-border-light rounded-[10px] divide-y divide-gray-100 text-[13px] max-w-3xl">
+  <ul class="bg-white border border-brand-border-light rounded-[10px] divide-y divide-gray-100 text-[13px]">
     {% for q in listed.own_quotes %}
       <li class="px-5 py-3 flex flex-wrap justify-between gap-2">
         <span><span class="font-semibold text-gray-900">{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}</span> {{ q.per_words }} <span class="text-gray-600">· {{ q.commodity.name }}</span></span>
