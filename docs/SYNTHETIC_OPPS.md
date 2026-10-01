@@ -51,10 +51,23 @@ Connect access.
 
 What a profile holds: per-field distributions (including the real minimum,
 maximum and spread, which is expected), FLW personas, timing, and, with
-`mirror=true`, one series per real case so a clone keeps each case's visits,
-trajectory and outcomes. Mirror series are perturbed before they are saved: each
-case moves by 1 to 14 days in time, and its numbers are scaled by up to 3% (whole
-numbers stay whole, values stay inside the observed range). A select whose answers
+`case_timelines=true`, a pool of **modelled cases** so a clone follows cases over
+time the way the source does. Every worker keeps its number of cases and their
+lengths, and each case's growth, visit spacing, per-case constants (birth weight,
+date of birth) and outcomes are drawn from models fitted to the real cases. Outcomes
+are tied to the case's growth, so a slow grower dies as often as in the source. No
+real case is in the pool:
+
+- The real cases are used only to fit the models, at profile time.
+- A categorical answer seen in fewer than 5 cases is never modelled, nor is a field
+  recorded in fewer than 5 cases.
+- Start dates are smoothed.
+- A sampled case that lands on a real one is redrawn.
+
+The code is `labs/synthetic/generator/fixtures/case_model.py`. `mirror=true` is the
+old name for the same switch. Profiles saved before 2026-10 in mirror mode held each
+real case lightly perturbed; data generated from one never counts as generated, so
+re-profile them. A select whose answers
 are free text or identifiers (more than 50 distinct values, or values shaped like
 ids) is treated as free text and none of its values are copied.
 
@@ -81,12 +94,12 @@ only)" and click **Start dump**. The folder it creates is
 `opp-<id>-<timestamp>` (no `-generated` suffix). Profile it into a bundle with
 
 ```bash
-python manage.py synthetic_profile_dump --folder <dump_folder_id> --out gdrive: --mirror \
+python manage.py synthetic_profile_dump --folder <dump_folder_id> --out gdrive: --case-timelines \
     --base-url https://connect.dimagi.com   # optional: fetches the app structure a dump lacks
 ```
 
 then generate from the bundle it prints, exactly as above. The bundle is the same
-kind a server-side profile writes (aggregates and a perturbed mirror pool); the
+kind a server-side profile writes (aggregates and a pool of modelled cases); the
 dump folder stays where it is, unserved.
 
 ### Provenance: which opps hold generated data

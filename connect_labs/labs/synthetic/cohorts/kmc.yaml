@@ -23,10 +23,10 @@ bundle_root: 'gdrive:'
 # danger signs, which leaves those dimensions with no variance for Scout's modeling.
 # Numeric bounds + text fabrication apply regardless of this flag. See issue #670.
 curate: true
-# High-fidelity 'close mirror' (issue #713): carry a de-identified per-entity
-# transplant pool so each clone reproduces its source opp's exact visits/case,
-# cases/FLW, timing, and per-child weight-vs-age growth curve — not just marginals.
-mirror: true
+# Modelled case timelines: each worker keeps its caseload, and each child's growth,
+# visit spacing and outcome are drawn from models of the source's children, so the
+# weight-vs-age growth curve reproduces without any real child's series being copied.
+case_timelines: true
 # 2166 (PIPN) was in the LLO map from the start but never in the clone list, so
 # the programme had eleven synthetic sites for twelve real ones (Jon, 2026-09-10).
 opportunity_ids:

@@ -34,11 +34,12 @@ class CohortSpec:
     # degenerate clinical categoricals, per-opp varied) instead of reproducing the
     # real opps' degeneracy. Numeric bounds + text fabrication apply regardless.
     curate: bool = False
-    # When True, Phase 1 profiling captures a de-identified per-entity transplant pool
-    # so each clone reproduces the source's exact visits/case, cases/FLW, timing, and
-    # per-entity value trajectories — including date-derived axes like an infant growth
-    # curve (age = visit_date - dob, #734) — not just marginals. Opt-in per cohort
-    # (e.g. cohorts/kmc.yaml sets mirror: true); the curve only reproduces under mirror.
+    # Modelled case timelines (spec key ``case_timelines``; ``mirror`` is its old name
+    # and still read). Phase 1 models each worker's caseload and each case's timeline
+    # and ships cases SAMPLED from those models (generator/fixtures/case_model.py), so
+    # each clone reproduces the source's visits/case, cases/FLW, spacing, growth and
+    # date-derived axes like an infant growth curve (age = visit_date - dob, #734)
+    # without copying any real case. Opt-in per cohort (cohorts/kmc.yaml sets it).
     mirror: bool = False
     # Image behaviour for every clone in the cohort, as a raw ImageConfig dict
     # (corpus, paths, showcase cases). Applied in PHASE 2, not Phase 1.
@@ -64,7 +65,7 @@ class CohortSpec:
             program_id=int(data["program_id"]) if data.get("program_id") is not None else None,
             bundle_root=str(data.get("bundle_root", "gdrive:")),
             curate=bool(data.get("curate", False)),
-            mirror=bool(data.get("mirror", False)),
+            mirror=bool(data.get("case_timelines", False) or data.get("mirror", False)),
             image_config=data.get("image_config") or None,
         )
 
@@ -85,7 +86,7 @@ class CohortSpec:
                 "org_name": self.org_name,
                 "bundle_root": self.bundle_root,
                 "curate": self.curate,
-                "mirror": self.mirror,
+                "case_timelines": self.mirror,
                 **({"image_config": self.image_config} if self.image_config else {}),
                 "opportunity_ids": self.opportunity_ids,
             },

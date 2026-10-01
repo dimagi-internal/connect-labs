@@ -330,7 +330,7 @@ def generate(
     # bypasses the FLW-cadence slot schedule because it reproduces the source's
     # exact owner/timing/visit-count structure directly.
     longitudinal = cohort.longitudinal
-    if longitudinal is not None and longitudinal.mode == "mirror":
+    if longitudinal is not None and longitudinal.mode in ("modelled", "mirror"):
         visits = _build_mirror_visits(
             manifest=manifest,
             cohort=cohort,
