@@ -50,6 +50,9 @@ Connect Labs provides two MCP addresses. Choose the one that matches how much da
 !!! tip "Using the restricted address for a whole team"
     `mcp/no_user_visit/` is designed as a safe default for a shared or team setup. Signing in through this address gives a restricted token that stays restricted even if it is later used on the main `/mcp/` address.
 
+!!! note "Locking a person to restricted access"
+    An administrator can permanently lock an individual account to "no user visit data" (Django admin → Users → **MCP: no user visit data**). Once set, everything that person does through MCP is restricted — on either address, with any token, and including sign-ins and any automated action taken on their behalf. The Labs export API and the demo reseed endpoint also refuse them. This is stronger than the team default above, because it cannot be stepped around by switching to the full `/mcp/` address.
+
 ---
 
 ## First-Time Setup
@@ -117,6 +120,9 @@ The token list on the tokens page shows the access level of each token. When you
 !!! tip "When to use 'No user visit data'"
     Choose this level when you want an AI assistant to help you navigate programme structure, explore indicator definitions, or query the organisation directory — but you do not want it to have access to any beneficiary visit data. It is a good default for any automated or shared setup where full data access is not needed. Tokens at this level can still profile real opportunities and generate synthetic data.
 
+!!! note "Account-level lock overrides token access level"
+    If an administrator has locked your account to "no user visit data" (see [MCP Addresses](#mcp-addresses) above), that restriction applies regardless of which token you use or which address you connect through. A Standard token issued to a locked account behaves as a No user visit data token.
+
 ---
 
 ## What the Restricted Address Blocks
@@ -155,6 +161,17 @@ If you submit a request that is identical to one already running, Labs returns t
 
 !!! note "Change for all callers"
     When naming a pipeline export, the name must now be a **single plain word** — no spaces, punctuation, or special characters. This applies to both the full-access and restricted addresses.
+
+---
+
+## Pipeline Reads of Open Chat Studio
+
+When a pipeline reads Open Chat Studio (OCS) chat sessions, it now uses **your own OCS connection** rather than a shared server key. This means the pipeline sees exactly the sessions you can see when you log in to OCS directly — no more and no less.
+
+If you have not connected OCS to your Labs account yet, the pipeline will tell you to connect at [labs.connect.dimagi.com/labs/ocs/initiate/](https://labs.connect.dimagi.com/labs/ocs/initiate/) before it can read your sessions.
+
+!!! note "Web dashboards are unchanged"
+    This change affects only pipelines run through MCP. Web dashboards that read OCS data continue to work as before.
 
 ---
 
@@ -257,31 +274,4 @@ Several workbook indicators were not covered by the old scorecard rules. These a
 
 - Indicators now have plain descriptive names instead of codes such as C14 or N13.
 - The **Scorecard (N) / Workbook (C)** toggle on the opportunity report is gone — there is only one view now.
-- Mortality figures are no longer automatically withheld on the opportunity report.
-- Three headline figures have changed values because they now use the unified rules instead of the old scorecard rules.
-- **Reports saved before this update** will show only the indicators whose definition did not change. A note on the report explains this.
-
-### KMC opportunity report
-
-!!! note "Recent change"
-    The opportunity report has been rebuilt. Network managers now see the same view the programme report shows, scoped to their own opportunity.
-
-When a network manager opens the KMC report for their opportunity, they now see:
-
-- **Five headline figures** with the change since the previous saved report.
-- **Registrations and visits by week**, and indicator trends across all saved reports for that opportunity.
-- **A row per field worker** on the programme's scorecard, showing each worker's last visit date and an "attention" count. Clicking a worker opens their cases.
-- **"Against its peers"** — the anonymous peer bars and trend lines are still available here.
-
-The opportunity report and the programme report are now drawn from the same shared components, so they look and behave consistently.
-
-**How figures are saved:** whenever the programme report saves a week, each opportunity automatically receives that opportunity's figures for that week, labelled "From the programme report". Network managers do not need access to the programme report and do not need to save anything themselves. An opportunity can also save its own weeks independently, and a live unsaved view remains available at any time.
-
----
-
-## Generic Indicator Report Cascade
-
-!!! note "Recent change"
-    Any programme can now have the same report cascade as KMC — a programme report, a worker review, and a per-opportunity report with benchmarks — without anyone writing a page.
-
-Three new
+- Mortality figures are no longer automatically withheld on
