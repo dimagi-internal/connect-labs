@@ -2,11 +2,22 @@
 
 A floating launcher on a labs page opens a chat with a canopy agent that can see
 what the visitor is looking at. It is live on the marketplace network page, on
-a round's page, and on the run page of any workflow that opts in
-(`config.agent.share`, see [Workflow run pages](#workflow-run-pages)). That is
-where it earns its keep: "draft an email to each of these organisations for this
-EOI" and "start OCS conversations with everyone who is red" are questions about
-what is on screen.
+a round's page, on the targeting map (`/labs/targeting/`), and on the run page of
+any workflow that opts in (`config.agent.share`, see
+[Workflow run pages](#workflow-run-pages)). That is where it earns its keep: "draft
+an email to each of these organisations for this EOI", "start OCS conversations
+with everyone who is red" and "what would $50K of door-to-door ORS buy in Borno at
+$2.50 a visit?" are questions about what is on screen.
+
+## The targeting map
+
+Registered as `targeting:index` with the `targeting:read` scope: every
+`targeting_*` read tool, including `targeting_cost_effectiveness` (deaths averted,
+cost per death and the multiple of GiveWell's bar for a round of ORS in one area).
+Everything the page shows is public open data, so the scope adds no exposure; the
+page state carries only the query parameters that describe the view
+(`PANEL_FILTER_KEYS` in `labs/indicators/views.py`). The panel renders for
+signed-in visitors only — the page itself is open to anonymous visitors locally.
 
 Canopy's own guide is the authority on the widget
 (`docs/architecture/embedding-a-canopy-agent.md` in `dimagi-internal/canopy-web`).
@@ -160,6 +171,7 @@ to canopy:
 | --- | --- |
 | `workflow:read` | `workflow_run_context`, `workflow_run_indicators`, `workflow_indicator_explain`, `workflow_action_status` |
 | `workflow:act` | `workflow_run_action` |
+| `targeting:read` | every `targeting_*` read tool, incl. `targeting_cost_effectiveness` |
 
 **The one write scope, and why it is safe to hand to a page.** `workflow_run_action`
 cannot act in one call. Its first call is a preview of exactly what would happen,
