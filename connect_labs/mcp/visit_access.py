@@ -15,6 +15,8 @@ makes the tool's own reads against a real opportunity just to be told no.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from connect_labs.labs.synthetic.provenance import all_generated
@@ -184,6 +186,13 @@ def caller_restricted() -> bool:
     built from whatever it read then. So a restricted caller is never served stored run
     data -- it gets a live build over today's (generated) data, or a refusal.
     """
+    # A background job carries its caller's answer with it (restricted_job): the
+    # worker has no MCP request to read it from, and without this a tool's own
+    # restricted checks would quietly read False there.
+    carried = _job_restricted.get()
+    if carried is not None:
+        return carried
+
     from fastmcp.server.dependencies import get_access_token
 
     from .server import restricted_call
@@ -191,6 +200,19 @@ def caller_restricted() -> bool:
     # Outside an MCP request get_access_token() is None and there is no endpoint mark,
     # so this is False there -- and an unexpected error raises rather than failing open.
     return restricted_call(get_access_token())
+
+
+_job_restricted: ContextVar[bool | None] = ContextVar("labs_mcp_job_restricted", default=None)
+
+
+@contextmanager
+def restricted_job(restricted: bool):
+    """Run a background job as restricted (or not) as the MCP call that queued it."""
+    reset = _job_restricted.set(bool(restricted))
+    try:
+        yield
+    finally:
+        _job_restricted.reset(reset)
 
 
 def denied_reason(user, tool_name: str, arguments: dict) -> str | None:
