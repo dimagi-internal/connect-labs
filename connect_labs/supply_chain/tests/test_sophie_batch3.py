@@ -163,9 +163,9 @@ class TestABlockedCardLeadsWithWhatBlocksIt:
         assert "Blocking: Sachets per carton not stated on the quote" in card
         blocking_question = re.search(r'data-testid="blocking-question"[^>]*>(.*?)</p>', card, re.S).group(1)
         assert "How many sachets are in one carton" in blocking_question
-        # The rest is folded, counted, and does not repeat the blocking question.
+        # The rest is folded into one list, and does not repeat the blocking question.
         rest = card[card.index('data-testid="also-confirm"') :]
-        assert f"Also confirm ({len(row['questions']) - 1})" in rest
+        assert "Other things to confirm (" in rest
         assert "How many sachets are in one carton" not in rest
 
     def test_questions_about_one_figure_are_asked_once_as_a_sentence(self, da, base):
@@ -292,7 +292,8 @@ class TestTheSourceSaysWhereItCameFrom:
     def test_the_excerpt_is_headed_by_its_kind_who_recorded_it_and_when(self, da, base, ace, client_in_program):
         contract, _shipment, _source = _order_with_emailed_shipment(da, base, ace)
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
-        assert _source_heading(body) == "Email, recorded by ACE (agent) on 20 Aug 2026"
+        # The shipment says its supplier reported it, so the email is the supplier's.
+        assert _source_heading(body) == "Email from Northwind Foods, recorded by ACE (agent) on 20 Aug 2026"
 
     def test_the_same_email_again_is_answered_once_and_says_so(self, da, base, ace, client_in_program):
         contract, shipment, source = _order_with_emailed_shipment(da, base, ace)
@@ -305,11 +306,12 @@ class TestTheSourceSaysWhereItCameFrom:
         live = client_in_program.get(url).content.decode()
         assert (
             _source_heading(live)
-            == "Email, recorded by ACE (agent) on 20 Aug 2026 · received again 28 Aug 2026, recorded once"
+            == "Email from Northwind Foods, recorded by ACE (agent) on 20 Aug 2026 · received again 28 Aug 2026, "
+            "recorded once"
         )
         # Before it arrived again, it had not.
         past = client_in_program.get(url, {"as_of": "2026-08-25"}).content.decode()
-        assert _source_heading(past) == "Email, recorded by ACE (agent) on 20 Aug 2026"
+        assert _source_heading(past) == "Email from Northwind Foods, recorded by ACE (agent) on 20 Aug 2026"
 
 
 # ---- 5 and 6. the overview ------------------------------------------------
@@ -448,8 +450,8 @@ def _sign_in(client, user, programs):
 class TestThePublicListing:
     def test_no_deadline_reads_as_none(self, client, listed_tender):
         body = client.get(reverse("supply_chain:market_tender", args=[listed_tender.pk])).content.decode()
-        # "No reply-by date" since batch 5; never a bare dash.
-        assert "No reply-by date" in body and ">—<" not in body
+        # "Open for bids", captioned "no deadline set"; never a bare dash.
+        assert "Open for bids" in body and "NO DEADLINE SET" in body and ">—<" not in body
 
     def test_the_owning_program_is_told_this_is_the_public_view(self, client, django_user_model, listed_tender):
         user = django_user_model.objects.create_user(username="sophie2", password="x", email="s2@example.org")

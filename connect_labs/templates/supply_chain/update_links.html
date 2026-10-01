@@ -13,11 +13,11 @@ apart. The token is shown once, when the link is issued.
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Update links</h1>
-    <p class="text-sm text-gray-500 mt-1 max-w-2xl">
+    <p class="text-sm text-gray-600 mt-1 max-w-2xl">
       Private links that let an organisation with no labs login record its own part — a supplier or
       stock-holding partner its orders, deliveries and stock, an approver its answer.
     </p>
-    <details class="text-xs text-gray-500 mt-1 max-w-2xl">
+    <details class="text-xs text-gray-600 mt-1 max-w-2xl">
       <summary class="cursor-pointer text-brand-indigo">What a link covers</summary>
       <p class="mt-1">
         Either only the orders, supply points and approvals it was issued for, or everything involving that
@@ -44,12 +44,12 @@ apart. The token is shown once, when the link is issued.
 {% for group in link_groups %}
   <section class="mb-8">
     <h2 class="text-sm font-semibold text-gray-900 mb-2">
-      {{ group.label }} <span class="ml-1 font-normal text-gray-500">{{ group.links|length }}</span>
+      {{ group.label }} <span class="ml-1 font-normal text-gray-600">{{ group.links|length }}</span>
     </h2>
     <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
       <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
         <table class="min-w-[52rem] w-full text-sm">
-          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
             <tr>
               <th class="text-left px-4 py-2">Organisation</th>
               <th class="text-left px-4 py-2">Covers</th>
@@ -63,21 +63,21 @@ apart. The token is shown once, when the link is issued.
               <tr class="align-top">
                 <td class="px-4 py-2">
                   <span class="text-gray-900">{{ link.org_name }}</span>
-                  <div class="text-xs text-gray-500 mt-0.5">
+                  <div class="text-xs text-gray-600 mt-0.5">
                     {{ link.label|default:"" }}{% if link.label %} · {% endif %}<code>{{ link.token_hint }}…</code>
                   </div>
                 </td>
                 <td class="px-4 py-2 text-gray-700" data-coverage="{{ link.coverage }}">
                   {% if link.follows_org %}
                     <div class="text-gray-900">Everything involving {{ link.org_name }}</div>
-                    <div class="text-xs text-gray-500 mb-1">including orders created after it was issued · today:</div>
+                    <div class="text-xs text-gray-600 mb-1">including orders created after it was issued · today:</div>
                   {% else %}
-                    <div class="text-xs text-gray-500 mb-1">Only these</div>
+                    <div class="text-xs text-gray-600 mb-1">Only these</div>
                   {% endif %}
                   {% for contract in link.contracts %}
                     <div>
                       <a href="{% url 'supply_chain:order_detail' contract.id %}" class="text-brand-indigo hover:underline">{% if contract.reference %}{{ contract.reference }}{% else %}Order {{ contract.id }}{% endif %}</a>
-                      <span class="text-xs text-gray-500">{{ contract.status_label }}</span>
+                      <span class="text-xs text-gray-600">{{ contract.status_label }}</span>
                     </div>
                   {% endfor %}
                   {% for point in link.supply_points %}
@@ -95,16 +95,16 @@ apart. The token is shown once, when the link is issued.
                     {{ link.expires|date:"j M Y" }}
                   {% elif link.state == "revoked" %}
                     <span class="px-2 py-0.5 rounded-full text-xs bg-message-error text-message-error-text">revoked</span>
-                    <div class="text-xs text-gray-500 mt-0.5">{{ link.revoked|date:"j M Y" }}</div>
+                    <div class="text-xs text-gray-600 mt-0.5">{{ link.revoked|date:"j M Y" }}</div>
                   {% else %}
                     <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">expired</span>
-                    <div class="text-xs text-gray-500 mt-0.5">{{ link.expires|date:"j M Y" }}</div>
+                    <div class="text-xs text-gray-600 mt-0.5">{{ link.expires|date:"j M Y" }}</div>
                   {% endif %}
                 </td>
                 <td class="px-4 py-2 text-gray-700">
                   {% if link.submission_count %}
                     {{ link.submission_count }} update{{ link.submission_count|pluralize }}
-                    <div class="text-xs text-gray-500 mt-0.5">last {{ link.last_used|date:"j M Y, H:i" }}</div>
+                    <div class="text-xs text-gray-600 mt-0.5">last {{ link.last_used|date:"j M Y, H:i" }}</div>
                   {% else %}
                     <span class="text-gray-600">not yet</span>
                   {% endif %}
@@ -127,7 +127,7 @@ apart. The token is shown once, when the link is issued.
 {% empty %}
   <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
     <p class="text-sm text-gray-600">No links yet.</p>
-    <p class="text-sm text-gray-500 mt-1 max-w-lg mx-auto">
+    <p class="text-sm text-gray-600 mt-1 max-w-lg mx-auto">
       Every status update is asked for by email or WhatsApp until there is one. Issue a link to the
       organisation that holds the stock or ships the order, and they can record it themselves.
     </p>

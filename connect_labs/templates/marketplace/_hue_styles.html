@@ -12,6 +12,8 @@ classes cannot express per element.
     }
     .pg-card:hover { box-shadow: 0 6px 22px -12px color-mix(in srgb, var(--hue) 55%, transparent); }
     .pg-hue { color: var(--hue); }
+    /* Link text: the hue a fifth toward black, so the food orange clears 4.5:1 on white (4.30:1 bare). */
+    .pg-link { color: color-mix(in srgb, var(--hue) 80%, black); }
     .pg-chip { background: color-mix(in srgb, var(--hue) 12%, white); color: var(--hue); }
     .pg-spent { background: var(--hue); }
     .pg-left { background: repeating-linear-gradient(135deg,

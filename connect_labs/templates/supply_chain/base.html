@@ -20,6 +20,9 @@ without it the bar covered a page's title and the banner under it.{% endcomment 
   <div class="flex gap-4 items-center p-4 profile-bg bg-brand-indigo rounded-2xl mb-6">
     <div class="flex flex-col justify-center text-white">
       <h1 class="text-2xl font-bold mb-1">Supply</h1>
+      {% comment %}Which program, and who buys for it in that role (banner.py): said on
+      every supply page, so no screen leaves whose purchasing it is to be guessed.{% endcomment %}
+      {% if supply_program_line %}<p data-testid="supply-program-line" class="text-sm font-medium mb-1">{{ supply_program_line }}</p>{% endif %}
       <p class="text-sm opacity-90">
         Source commodities, compare quotes on one basis, and track what reaches whom.
       </p>

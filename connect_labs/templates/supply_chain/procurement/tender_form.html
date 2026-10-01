@@ -14,7 +14,7 @@ Alpine is what this project bundles.
 {% block extra_fields %}
 <div class="pt-4 border-t border-gray-100" x-data="{ count: {{ lines.total_form_count }} }">
   <h2 class="text-sm font-semibold text-gray-900">What this tender is asking for</h2>
-  <p class="text-xs text-gray-500 mt-0.5 mb-3 max-w-2xl">
+  <p class="text-xs text-gray-600 mt-0.5 mb-3 max-w-2xl">
     One row per commodity. The quantity is what suppliers are quoting against, so
     it is also what a landed total for this tender is computed from.
   </p>
@@ -38,7 +38,7 @@ Alpine is what this project bundles.
             </div>
           {% endif %}
         {% endfor %}
-        <label class="flex items-center gap-1.5 text-xs text-gray-500 md:pt-6 whitespace-nowrap">
+        <label class="flex items-center gap-1.5 text-xs text-gray-600 md:pt-6 whitespace-nowrap">
           {{ line.DELETE }} Remove
         </label>
       </div>
@@ -73,7 +73,7 @@ its price covers. Leave them all empty only if the tender accepts collection.
 {% endcomment %}
 <div class="pt-4 mt-6 border-t border-gray-100" x-data="{ count: {{ places.total_form_count }} }">
   <h2 class="text-sm font-semibold text-gray-900">Where the goods go</h2>
-  <p class="text-xs text-gray-500 mt-0.5 mb-3 max-w-2xl">
+  <p class="text-xs text-gray-600 mt-0.5 mb-3 max-w-2xl">
     One row per place you can take delivery at. One total quantity per product: each
     supplier says which of these places its price covers, and may price each separately.
   </p>
@@ -92,7 +92,7 @@ its price covers. Leave them all empty only if the tender accepts collection.
             </div>
           {% endif %}
         {% endfor %}
-        <label class="flex items-center gap-1.5 text-xs text-gray-500 md:pt-6 whitespace-nowrap">
+        <label class="flex items-center gap-1.5 text-xs text-gray-600 md:pt-6 whitespace-nowrap">
           {{ place.DELETE }} Remove
         </label>
       </div>

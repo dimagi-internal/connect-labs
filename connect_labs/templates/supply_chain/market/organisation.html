@@ -28,25 +28,25 @@
       </form>
     {% else %}
       <dl class="text-sm space-y-1">
-        <div><dt class="inline text-gray-500">What you are:</dt> <dd class="inline">{{ profile.type|default:"—" }}</dd></div>
-        <div><dt class="inline text-gray-500">Where:</dt> <dd class="inline">{{ profile.city|default:"" }} {{ org.country }}</dd></div>
-        <div><dt class="inline text-gray-500">Website:</dt> <dd class="inline">{{ profile.website|default:"—" }}</dd></div>
+        <div><dt class="inline text-gray-600">What you are:</dt> <dd class="inline">{{ profile.type|default:"—" }}</dd></div>
+        <div><dt class="inline text-gray-600">Where:</dt> <dd class="inline">{{ profile.city|default:"" }} {{ org.country }}</dd></div>
+        <div><dt class="inline text-gray-600">Website:</dt> <dd class="inline">{{ profile.website|default:"—" }}</dd></div>
       </dl>
-      <p class="text-xs text-gray-500 mt-2">Only an admin of {{ org.name }} can change the profile.</p>
+      <p class="text-xs text-gray-600 mt-2">Only an admin of {{ org.name }} can change the profile.</p>
     {% endif %}
   </section>
 
   <section class="bg-white border border-brand-border-light rounded-[10px] p-5">
     <h2 class="text-lg font-semibold text-brand-deep-purple mb-1">What you offer</h2>
-    <p class="text-xs text-gray-500 mb-3">Tenders for these come first on the marketplace, and buyers looking for them can find you even before you have quoted.</p>
+    <p class="text-xs text-gray-600 mb-3">Tenders for these come first on the marketplace, and buyers looking for them can find you even before you have quoted.</p>
     <ul class="divide-y text-sm mb-4">
       {% for o in offerings %}
         <li class="py-2 flex justify-between gap-2">
-          <span><span class="font-medium">{{ o.product_name }}</span> <span class="text-gray-500">· {{ o.get_category_display }}{% if o.pack_description %} · {{ o.pack_description }}{% endif %}{% if o.unicef_material_number %} · {{ o.unicef_material_number }}{% endif %}{% if o.certifications %} · {{ o.certifications|join:", " }}{% endif %}</span></span>
+          <span><span class="font-medium">{{ o.product_name }}</span> <span class="text-gray-600">· {{ o.get_category_display }}{% if o.pack_description %} · {{ o.pack_description }}{% endif %}{% if o.unicef_material_number %} · {{ o.unicef_material_number }}{% endif %}{% if o.certifications %} · {{ o.certifications|join:", " }}{% endif %}</span></span>
           {% if admin %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="offering_delete"><input type="hidden" name="org" value="{{ org.pk }}"><input type="hidden" name="offering" value="{{ o.pk }}"><button class="text-xs text-red-700 hover:underline">Remove</button></form>{% endif %}
         </li>
       {% empty %}
-        <li class="py-2 text-gray-500">Nothing yet.</li>
+        <li class="py-2 text-gray-600">Nothing yet.</li>
       {% endfor %}
     </ul>
     {% if admin %}<details {% if offering_form.errors %}open{% endif %}>
@@ -73,8 +73,8 @@
   <section class="bg-white border border-brand-border-light rounded-[10px] p-5 md:col-span-2">
     <h2 class="text-lg font-semibold text-brand-deep-purple mb-3">People</h2>
     <ul class="text-sm divide-y mb-3">
-      {% for m in members %}<li class="py-1.5">{% firstof m.user.name m.user.email m.user.username %} <span class="text-gray-500">· {{ m.get_role_display }}</span></li>
-      {% empty %}<li class="py-1.5 text-gray-500">Members come through Connect for this organisation.</li>{% endfor %}
+      {% for m in members %}<li class="py-1.5">{% firstof m.user.name m.user.email m.user.username %} <span class="text-gray-600">· {{ m.get_role_display }}</span></li>
+      {% empty %}<li class="py-1.5 text-gray-600">Members come through Connect for this organisation.</li>{% endfor %}
     </ul>
     {% if admin %}
       <form method="post" class="flex flex-wrap items-end gap-3">

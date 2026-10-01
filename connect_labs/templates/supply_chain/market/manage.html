@@ -16,7 +16,7 @@
       {% csrf_token %}<input type="hidden" name="action" value="listing">
       <label class="block text-sm font-medium text-gray-700 mb-1" for="id_brief">Brief</label>
       <textarea id="id_brief" name="brief" rows="6" class="base-input !h-auto py-2 w-full">{{ tender.brief }}</textarea>
-      <p class="text-xs text-gray-500 mt-1 mb-4">A few paragraphs suppliers read above the products: the program, what matters to you, anything the lines cannot say.</p>
+      <p class="text-xs text-gray-600 mt-1 mb-4">A few paragraphs suppliers read above the products: the program, what matters to you, anything the lines cannot say.</p>
 
       <div class="text-sm font-medium text-gray-700 mb-1">Colour</div>
       <div class="flex flex-wrap gap-3 mb-4">
@@ -37,15 +37,15 @@
 
   <section class="bg-white border border-brand-border-light rounded-[10px] p-5">
     <h2 class="text-lg font-semibold text-brand-deep-purple mb-1">Invited suppliers</h2>
-    <p class="text-xs text-gray-500 mb-3">{% if tender.visibility == "private" %}Only these organisations can see and bid on this tender.{% else %}The tender is open, so anyone can bid; these organisations are also marked as invited.{% endif %}</p>
+    <p class="text-xs text-gray-600 mb-3">{% if tender.visibility == "private" %}Only these organisations can see and bid on this tender.{% else %}The tender is open, so anyone can bid; these organisations are also marked as invited.{% endif %}</p>
     <ul class="divide-y text-sm mb-4">
       {% for org in invited %}
         <li class="py-2 flex items-center justify-between gap-2">
-          <span>{{ org.name }}{% if org.country %} <span class="text-gray-500">· {{ org.country }}</span>{% endif %}</span>
+          <span>{{ org.name }}{% if org.country %} <span class="text-gray-600">· {{ org.country }}</span>{% endif %}</span>
           <form method="post">{% csrf_token %}<input type="hidden" name="action" value="uninvite"><input type="hidden" name="org" value="{{ org.pk }}"><button class="text-xs text-red-700 hover:underline">Remove</button></form>
         </li>
       {% empty %}
-        <li class="py-2 text-gray-500">Nobody yet.</li>
+        <li class="py-2 text-gray-600">Nobody yet.</li>
       {% endfor %}
     </ul>
 
@@ -57,11 +57,11 @@
       <ul class="divide-y text-sm">
         {% for org in candidates %}
           <li class="py-2 flex items-center justify-between gap-2">
-            <span>{{ org.name }}{% if org.country %} <span class="text-gray-500">· {{ org.country }}</span>{% endif %}</span>
+            <span>{{ org.name }}{% if org.country %} <span class="text-gray-600">· {{ org.country }}</span>{% endif %}</span>
             <form method="post">{% csrf_token %}<input type="hidden" name="action" value="invite"><input type="hidden" name="org" value="{{ org.pk }}"><button class="px-3 py-1 text-xs rounded-md bg-brand-deep-purple text-white">Invite</button></form>
           </li>
         {% empty %}
-          <li class="py-2 text-gray-500">No registered supplier matches “{{ query }}”. Suppliers register themselves on the marketplace; you can send them its address.</li>
+          <li class="py-2 text-gray-600">No registered supplier matches “{{ query }}”. Suppliers register themselves on the marketplace; you can send them its address.</li>
         {% endfor %}
       </ul>
     {% endif %}

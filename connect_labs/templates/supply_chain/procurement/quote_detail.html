@@ -23,7 +23,7 @@ unconfirmed figures on the right.
   </div>
 {% else %}
 
-<nav class="text-sm text-gray-500 mb-3">
+<nav class="text-sm text-gray-600 mb-3">
   <a href="{% url 'supply_chain:procurement_tender_board' %}" class="text-brand-indigo hover:underline">Sourcing</a>
   <span class="mx-1.5 text-gray-300">/</span>
   <a href="{% url 'supply_chain:procurement_tender_detail' quote.tender_id %}"
@@ -106,24 +106,24 @@ unconfirmed figures on the right.
   <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
     <header class="px-4 py-2.5 border-b border-brand-border-light">
       <h2 class="text-sm font-semibold text-gray-900">What they stated</h2>
-      <p class="text-xs text-gray-500 mt-0.5">On the supplier's own terms. Blanks are facts nobody supplied.</p>
+      <p class="text-xs text-gray-600 mt-0.5">On the supplier's own terms. Blanks are facts nobody supplied.</p>
     </header>
     <dl class="divide-y divide-brand-border-light/70">
       {% if item %}
         <div class="flex items-baseline gap-3 px-4 py-2.5">
-          <dt class="w-44 shrink-0 text-xs text-gray-500">Trade item</dt>
+          <dt class="w-44 shrink-0 text-xs text-gray-600">Trade item</dt>
           <dd class="text-sm text-gray-900">{{ item.name }}</dd>
         </div>
       {% endif %}
       {% if contents %}
         <div class="flex items-baseline gap-3 px-4 py-2.5">
-          <dt class="w-44 shrink-0 text-xs text-gray-500">One unit holds</dt>
+          <dt class="w-44 shrink-0 text-xs text-gray-600">One unit holds</dt>
           <dd class="text-sm text-gray-900">{{ contents }}</dd>
         </div>
       {% endif %}
       {% for row in quote|stated_rows %}
         <div class="flex items-baseline gap-3 px-4 py-2.5">
-          <dt class="w-44 shrink-0 text-xs text-gray-500">{{ row.label }}</dt>
+          <dt class="w-44 shrink-0 text-xs text-gray-600">{{ row.label }}</dt>
           <dd class="text-sm {% if row.value %}text-gray-900{% else %}text-gray-600 italic{% endif %}">
             {% if row.value %}{{ row.value }}{% else %}not stated{% endif %}
           </dd>
@@ -135,13 +135,13 @@ unconfirmed figures on the right.
   <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
     <header class="px-4 py-2.5 border-b border-brand-border-light">
       <h2 class="text-sm font-semibold text-gray-900">What we derive</h2>
-      <p class="text-xs text-gray-500 mt-0.5">Computed on read, never stored. A gap names its missing input.</p>
+      <p class="text-xs text-gray-600 mt-0.5">Computed on read, never stored. A gap names its missing input.</p>
     </header>
     <dl class="divide-y divide-brand-border-light/70">
       {% for key, figure in detail.figures.items %}
         <div class="px-4 py-2.5">
           <div class="flex items-baseline gap-3">
-            <dt class="w-44 shrink-0 text-xs text-gray-500">{{ key|figure_label:commodity }}</dt>
+            <dt class="w-44 shrink-0 text-xs text-gray-600">{{ key|figure_label:commodity }}</dt>
             <dd class="text-sm">
               {% if figure.unconfirmed %}
                 <span class="text-gray-600">Unconfirmed</span>
@@ -151,7 +151,7 @@ unconfirmed figures on the right.
             </dd>
           </div>
           {% for reason in figure.unconfirmed %}
-            <p class="text-xs text-gray-500 mt-1 ml-[11.75rem]">{{ reason }}</p>
+            <p class="text-xs text-gray-600 mt-1 ml-[11.75rem]">{{ reason }}</p>
           {% endfor %}
         </div>
       {% endfor %}
@@ -164,7 +164,7 @@ unconfirmed figures on the right.
   <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-6">
     <header class="px-4 py-2.5 border-b border-brand-border-light flex items-baseline justify-between gap-3">
       <h2 class="text-sm font-semibold text-gray-900">Still to answer</h2>
-      <span class="text-xs text-gray-500">{{ questions|length }} outstanding</span>
+      <span class="text-xs text-gray-600">{{ questions|length }} outstanding</span>
     </header>
     <ul class="divide-y divide-brand-border-light/70">
       {% for q in questions %}
@@ -187,13 +187,13 @@ unconfirmed figures on the right.
         <h2 class="text-sm font-semibold text-gray-900">Evidence for this quote</h2>
         <a href="{% url 'supply_chain:quote_document_attach' quote.id %}" class="text-xs text-brand-indigo hover:underline">+ Attach document</a>
       </div>
-      <p class="text-xs text-gray-500 mt-0.5">Documents filed with this offer — the quotation, a pro-forma invoice, the product's registration or certificate.</p>
+      <p class="text-xs text-gray-600 mt-0.5">Documents filed with this offer — the quotation, a pro-forma invoice, the product's registration or certificate.</p>
     </header>
     {% if documents %}
       <ul class="divide-y divide-brand-border-light/70">
         {% for doc in documents %}
           <li class="flex items-baseline gap-3 px-4 py-3">
-            <span class="text-xs text-gray-500 w-36 shrink-0">{{ doc.kind|words|capfirst }}</span>
+            <span class="text-xs text-gray-600 w-36 shrink-0">{{ doc.kind|words|capfirst }}</span>
             <span class="text-sm text-gray-900">{{ doc.title|default:doc.filename|default:"untitled" }}</span>
             <a href="{% url 'supply_chain:document_open' doc.id %}" rel="noopener noreferrer" target="_blank"
                class="text-sm text-brand-indigo hover:underline ml-auto">Open</a>
@@ -201,7 +201,7 @@ unconfirmed figures on the right.
         {% endfor %}
       </ul>
     {% else %}
-      <p class="px-4 py-6 text-sm text-gray-500">
+      <p class="px-4 py-6 text-sm text-gray-600">
         Nothing attached yet. A document attached here — the quotation, a pro-forma invoice, the product's
         registration or certificate — is filed with this offer.
       </p>
@@ -211,13 +211,13 @@ unconfirmed figures on the right.
   <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
     <header class="px-4 py-2.5 border-b border-brand-border-light">
       <h2 class="text-sm font-semibold text-gray-900">On file for {{ supplier.name }}</h2>
-      <p class="text-xs text-gray-500 mt-0.5">The company's own standing documents — its trading licence, a GDP certificate — recorded against the supplier, not against any one offer.</p>
+      <p class="text-xs text-gray-600 mt-0.5">The company's own standing documents — its trading licence, a GDP certificate — recorded against the supplier, not against any one offer.</p>
     </header>
     {% if supplier_documents %}
       <ul class="divide-y divide-brand-border-light/70">
         {% for doc in supplier_documents %}
           <li class="flex items-baseline gap-3 px-4 py-3">
-            <span class="text-xs text-gray-500 w-36 shrink-0">{{ doc.kind|words|capfirst }}</span>
+            <span class="text-xs text-gray-600 w-36 shrink-0">{{ doc.kind|words|capfirst }}</span>
             <span class="text-sm text-gray-900">{{ doc.title|default:doc.filename|default:"untitled" }}</span>
             <a href="{% url 'supply_chain:document_open' doc.id %}" rel="noopener noreferrer" target="_blank"
                class="text-sm text-brand-indigo hover:underline ml-auto">Open</a>
@@ -225,7 +225,7 @@ unconfirmed figures on the right.
         {% endfor %}
       </ul>
     {% else %}
-      <p class="px-4 py-6 text-sm text-gray-500">Nothing on file for this supplier.</p>
+      <p class="px-4 py-6 text-sm text-gray-600">Nothing on file for this supplier.</p>
     {% endif %}
   </section>
 </div>
