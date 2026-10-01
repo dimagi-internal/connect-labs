@@ -4,3 +4,4 @@ outputs.json
 watcher.log
 .drive-folder
 .sophie-storage-state.json
+.seal-key.pem
