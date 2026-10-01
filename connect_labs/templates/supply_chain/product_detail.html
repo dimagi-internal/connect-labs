@@ -14,7 +14,7 @@ numbers of sachets and adding them needs the pack spec.
 
 {% block supply_content %}
 
-<nav class="text-sm text-gray-500 mb-3">
+<nav class="text-sm text-gray-600 mb-3">
   <a href="{% url 'supply_chain:catalogue' %}" class="text-brand-indigo hover:underline">Catalogue</a>
   <span class="mx-1.5 text-gray-300">/</span>
   <span class="text-gray-700">{{ product.name }}</span>
@@ -30,7 +30,7 @@ numbers of sachets and adding them needs the pack spec.
     </p>
   </div>
   <div class="flex flex-wrap items-center gap-3">
-    <span class="text-sm text-gray-500">
+    <span class="text-sm text-gray-600">
       {{ product.items|length }} trade item{{ product.items|length|pluralize }}
     </span>
     <a href="{% url 'supply_chain:item_create' %}?product={{ product.slug }}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">
@@ -90,7 +90,7 @@ numbers of sachets and adding them needs the pack spec.
             <li>
               {% comment %}The rationale is the sentence a person reads; the rule is the check behind it.{% endcomment %}
               {% if requirement.rationale %}<span class="text-gray-900">{{ requirement.rationale|capfirst }}</span>
-                <span class="text-gray-500">({{ requirement|requirement_text }})</span>
+                <span class="text-gray-600">({{ requirement|requirement_text }})</span>
               {% else %}{{ requirement|requirement_text }}{% endif %}
             </li>
           {% endfor %}
@@ -101,9 +101,9 @@ numbers of sachets and adding them needs the pack spec.
     {% if product.course_applies %}
       {% if product.has_course_definition %}
         <p class="mt-4 text-sm text-gray-700">
-          <span class="text-gray-500">Ration table</span>
+          <span class="text-gray-600">Ration table</span>
           {{ product.course_definition.base_units_per_course|qty:product.base_unit }} per course
-          {% if product.course_definition.source %}<span class="text-gray-500">({{ product.course_definition.source }})</span>{% endif %}
+          {% if product.course_definition.source %}<span class="text-gray-600">({{ product.course_definition.source }})</span>{% endif %}
         </p>
       {% else %}
         <div class="mt-4 rounded-md bg-message-warning border border-message-warning-border/50 px-3 py-2.5">
@@ -136,7 +136,7 @@ numbers of sachets and adding them needs the pack spec.
 <div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
   <div class="px-5 py-4 border-b border-brand-border-light">
     <h2 class="text-base font-semibold text-gray-900">What you can actually order</h2>
-    <p class="text-sm text-gray-500 mt-0.5">
+    <p class="text-sm text-gray-600 mt-0.5">
       One row per manufacturer's version. Only these can be quoted against,
       shipped, or counted.
     </p>
@@ -144,7 +144,7 @@ numbers of sachets and adding them needs the pack spec.
   {% if product.items %}
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
       <table class="min-w-[40rem] w-full text-sm">
-        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
           <tr>
             <th class="text-left px-4 py-2">Trade item</th>
             <th class="text-left px-4 py-2">Manufacturer</th>
@@ -160,7 +160,7 @@ numbers of sachets and adding them needs the pack spec.
               <td class="px-4 py-2.5">
                 <a class="font-medium text-brand-indigo hover:underline"
                    href="{% url 'supply_chain:item_detail' item.id %}">{{ item.name }}</a>
-                <div class="text-xs text-gray-500">{{ item.sku }}</div>
+                <div class="text-xs text-gray-600">{{ item.sku }}</div>
               </td>
               <td class="px-4 py-2.5 text-gray-700">{{ item.manufacturer|default:"—" }}</td>
               <td class="px-4 py-2.5 tabular-nums">
@@ -190,7 +190,7 @@ numbers of sachets and adding them needs the pack spec.
       </table>
     </div>
   {% else %}
-    <p class="px-5 py-5 text-sm text-gray-500 max-w-2xl">
+    <p class="px-5 py-5 text-sm text-gray-600 max-w-2xl">
       No trade items yet. Nothing can be ordered against a product until at
       least one manufacturer's version of it is on file, and a quote naming no
       trade item cannot be turned into a per&#8209;{{ product.base_unit|default:"unit"|unit_words }} price.
@@ -211,13 +211,13 @@ numbers of sachets and adding them needs the pack spec.
     {% if market_offers %}
       <div class="mt-4 bg-white border border-brand-border-light rounded-lg px-5 py-4">
         <h3 class="text-sm font-semibold text-gray-900">On the supplier marketplace, not yet suppliers here</h3>
-        <p class="text-xs text-gray-500 mt-0.5">Companies that say they sell this. Their own claim, unverified — who to approach next.</p>
+        <p class="text-xs text-gray-600 mt-0.5">Companies that say they sell this. Their own claim, unverified — who to approach next.</p>
         <ul class="mt-2 text-sm divide-y">
           {% for offer in market_offers %}
             <li class="py-1.5">
-              <span class="font-medium">{{ offer.org_name }}</span>{% if offer.country %} <span class="text-xs text-gray-500">{{ offer.country }}</span>{% endif %}
+              <span class="font-medium">{{ offer.org_name }}</span>{% if offer.country %} <span class="text-xs text-gray-600">{{ offer.country }}</span>{% endif %}
               <span class="text-gray-600">· {{ offer.product_name }}</span>
-              <span class="text-xs text-gray-500">· {% if offer.match == "exact" %}matched on its product number{% else %}same kind of product{% endif %}{% if offer.certifications %} · {{ offer.certifications|join:", " }}{% endif %}{% if offer.updated_on %} · {{ offer.updated_on }}{% endif %}</span>
+              <span class="text-xs text-gray-600">· {% if offer.match == "exact" %}matched on its product number{% else %}same kind of product{% endif %}{% if offer.certifications %} · {{ offer.certifications|join:", " }}{% endif %}{% if offer.updated_on %} · {{ offer.updated_on }}{% endif %}</span>
             </li>
           {% endfor %}
         </ul>
@@ -229,7 +229,7 @@ numbers of sachets and adding them needs the pack spec.
   <div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
     <div class="px-5 py-4 border-b border-brand-border-light">
       <h2 class="text-base font-semibold text-gray-900">What has been quoted</h2>
-      <p class="text-sm text-gray-500 mt-0.5">
+      <p class="text-sm text-gray-600 mt-0.5">
         As each supplier stated it, on their own terms — not normalised. Two
         prices here are only comparable once both name a pack specification,
         which is what the tender's comparison does.
@@ -238,7 +238,7 @@ numbers of sachets and adding them needs the pack spec.
     {% if quotes %}
       <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
         <table class="min-w-[40rem] w-full text-sm">
-          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
             <tr>
               <th class="text-left px-4 py-2">Supplier</th>
               <th class="text-left px-4 py-2">As quoted</th>
@@ -260,7 +260,7 @@ numbers of sachets and adding them needs the pack spec.
                      href="{% url 'supply_chain:procurement_quote_detail' quote.id %}">
                     {% if quote.as_quoted_amount %}{{ quote.as_quoted_currency }} {{ quote.as_quoted_amount|money }}{% else %}no price{% endif %}
                   </a>
-                  <div class="text-xs text-gray-500">{{ quote.as_quoted_unit|words|default:"basis not stated" }}</div>
+                  <div class="text-xs text-gray-600">{{ quote.as_quoted_unit|words|default:"basis not stated" }}</div>
                 </td>
                 <td class="px-4 py-2.5">
                   {% if quote.item_id %}
@@ -286,7 +286,7 @@ numbers of sachets and adding them needs the pack spec.
         </table>
       </div>
     {% else %}
-      <p class="px-5 py-5 text-sm text-gray-500">No quotes recorded against this product yet.</p>
+      <p class="px-5 py-5 text-sm text-gray-600">No quotes recorded against this product yet.</p>
     {% endif %}
   </div>
 
@@ -301,10 +301,10 @@ numbers of sachets and adding them needs the pack spec.
             <li class="px-5 py-3 text-sm">
               <a class="text-brand-indigo hover:underline"
                  href="{% url 'supply_chain:procurement_tender_detail' tender.id %}">{{ tender.label }}</a>
-              <span class="text-gray-500">· {{ tender.status|words }}</span>
+              <span class="text-gray-600">· {{ tender.status|words }}</span>
               {% for line in tender.lines %}
                 {% if line.commodity_slug == product.slug and line.quantity %}
-                  <div class="text-xs text-gray-500">
+                  <div class="text-xs text-gray-600">
                     {{ line.quantity|qty:line.quantity_unit }} sought
                   </div>
                 {% endif %}
@@ -313,7 +313,7 @@ numbers of sachets and adding them needs the pack spec.
           {% endfor %}
         </ul>
       {% else %}
-        <p class="px-5 py-5 text-sm text-gray-500">No tender has asked for this yet.</p>
+        <p class="px-5 py-5 text-sm text-gray-600">No tender has asked for this yet.</p>
       {% endif %}
     </div>
 
@@ -327,8 +327,8 @@ numbers of sachets and adding them needs the pack spec.
             <li class="px-5 py-3 text-sm">
               <a class="text-brand-indigo hover:underline"
                  href="{% url 'supply_chain:order_detail' contract.id %}">{{ contract.reference|default:"contract" }} {{ contract.id }}</a>
-              <span class="text-gray-500">· {{ contract.status|humanise }}</span>
-              <div class="text-xs text-gray-500">
+              <span class="text-gray-600">· {{ contract.status|humanise }}</span>
+              <div class="text-xs text-gray-600">
                 {% if contract.quantity %}{{ contract.quantity|qty:contract.quantity_unit }}{% endif %}
                 {% if contract.unit_price %}at {{ contract.currency }} {{ contract.unit_price|money }}{% endif %}
                 · bought by {{ contract.buyer_of_record|buyer_label }}
@@ -337,7 +337,7 @@ numbers of sachets and adding them needs the pack spec.
           {% endfor %}
         </ul>
       {% else %}
-        <p class="px-5 py-5 text-sm text-gray-500">Nothing contracted against this product yet.</p>
+        <p class="px-5 py-5 text-sm text-gray-600">Nothing contracted against this product yet.</p>
       {% endif %}
     </div>
   </div>

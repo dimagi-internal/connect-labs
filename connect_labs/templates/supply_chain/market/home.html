@@ -47,12 +47,12 @@
 
 {% block body %}
 <form method="get" class="flex flex-wrap items-center gap-2 mb-6 text-[12.5px]">
-  <span class="text-gray-500">Kind of product</span>
+  <span class="text-gray-600">Kind of product</span>
   <select name="category" class="base-input !h-8 !py-0 !text-[12.5px] !w-auto" onchange="this.form.submit()">
     <option value="">Any</option>
     {% for code, label in categories %}<option value="{{ code }}" {% if code == category %}selected{% endif %}>{{ label }}</option>{% endfor %}
   </select>
-  <span class="text-gray-500 ml-2">Delivered to</span>
+  <span class="text-gray-600 ml-2">Delivered to</span>
   <input name="country" value="{{ country }}" class="base-input !h-8 !py-0 !text-[12.5px] !w-40" placeholder="e.g. Nigeria">
   <button class="px-3 py-1 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50">Filter</button>
   {% if category or country %}<a href="{% url 'supply_chain:market' %}" class="px-3 py-1 text-brand-indigo hover:underline">Clear</a>{% endif %}
@@ -62,7 +62,7 @@
   <section class="{% if not forloop.first %}mt-12{% endif %}">
     <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-4">
       <h2 class="text-lg font-semibold text-brand-deep-purple">{{ section.title }}</h2>
-      <span class="text-[13px] text-gray-500">{{ section.why }}</span>
+      <span class="text-[13px] text-gray-600">{{ section.why }}</span>
     </div>
     <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
       {% for c in section.cards %}{% include 'supply_chain/market/_tender_card.html' %}{% endfor %}
@@ -71,7 +71,7 @@
 {% empty %}
   <div class="bg-white border border-brand-border-light rounded-[10px] p-10 text-center">
     <div class="text-[19px] font-semibold text-gray-600">No tenders open{% if category or country %} that match{% endif %}</div>
-    <p class="text-[13px] text-gray-500 mt-1">Buyers open tenders as they need supplies. Register now and you are ready when they do.</p>
+    <p class="text-[13px] text-gray-600 mt-1">Buyers open tenders as they need supplies. Register now and you are ready when they do.</p>
   </div>
 {% endfor %}
 {% endblock %}

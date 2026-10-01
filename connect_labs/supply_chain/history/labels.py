@@ -431,16 +431,24 @@ def sender(model, values, lookup) -> str:
     """Who a quoted source on this record came from, when the record says so; "" otherwise.
 
     Never invented: a quote's source is its supplier's reply, and a
-    shipment's is its carrier's notice when a carrier is recorded. Anything
-    else reads only as its kind ("Email, recorded by ...").
+    shipment's is its carrier's notice when a carrier is recorded, else the
+    order's supplier when the shipment itself says the supplier reported it
+    (`source == "supplier_reported"`). Anything else reads only as its kind
+    ("Email, recorded by ...").
     """
-    from connect_labs.supply_chain.models import Supplier
+    from connect_labs.supply_chain.models import Contract, Supplier
 
     values = values or {}
     if model.__name__ == "Quote":
         return lookup.name(Supplier, values.get("supplier_id")) if values.get("supplier_id") else ""
     if model.__name__ == "Shipment":
-        return (values.get("carrier") or "").strip()
+        carrier = (values.get("carrier") or "").strip()
+        if carrier:
+            return carrier
+        if values.get("source") != "supplier_reported":
+            return ""
+        contract = lookup.row(Contract, values.get("contract_id"))
+        return lookup.name(Supplier, contract.supplier_id) if contract is not None else ""
     return ""
 
 

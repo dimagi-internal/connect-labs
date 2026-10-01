@@ -16,7 +16,7 @@ the record it is about, because that is where it gets answered.
 {% else %}
 
 <div class="mb-4">
-  <div class="text-xs text-gray-500">
+  <div class="text-xs text-gray-600">
     <a class="hover:underline" href="{% url 'supply_chain:home' %}">Overview</a> › Checks
   </div>
   <h2 class="text-lg font-semibold text-brand-indigo">Checks: what is missing, in conflict or overdue</h2>
@@ -40,7 +40,7 @@ the record it is about, because that is where it gets answered.
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden mb-4">
     <div class="px-4 py-2.5 border-b border-gray-100 flex items-baseline gap-2">
       <a href="?kind={{ group.kind }}" class="text-sm font-semibold text-gray-900 hover:underline">{{ group.kind|check_label }}</a>
-      <span class="text-xs text-gray-500">{{ group.items|length }} · {{ group.category|category_label }}</span>
+      <span class="text-xs text-gray-600">{{ group.items|length }} · {{ group.category|category_label }}</span>
     </div>
     <ul class="divide-y divide-gray-100">
       {% for check in group.items %}
@@ -53,9 +53,9 @@ the record it is about, because that is where it gets answered.
                 <span class="font-medium text-gray-900">{{ check.subject.label }}</span>
               {% endif %}
             {% endwith %}
-            <span class="text-xs text-gray-500">{{ check|check_audience }}</span>
+            <span class="text-xs text-gray-600">{{ check|check_audience }}</span>
             {% if check.days_open is not None %}
-              <span class="text-xs text-gray-500 tabular-nums">{{ check|check_age }}</span>
+              <span class="text-xs text-gray-600 tabular-nums">{{ check|check_age }}</span>
             {% endif %}
           </div>
           {% with readout=check|check_readout %}
@@ -68,7 +68,7 @@ the record it is about, because that is where it gets answered.
             {% if rows %}
               <dl class="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-xs">
                 {% for row in rows %}
-                  <div class="flex gap-1 break-words"><dt class="text-gray-500">{{ row.label }}:</dt><dd class="text-gray-800">{% if row.href %}<a class="text-brand-indigo hover:underline" href="{{ row.href }}">{{ row.text }}</a>{% else %}{{ row.text }}{% endif %}</dd></div>
+                  <div class="flex gap-1 break-words"><dt class="text-gray-600">{{ row.label }}:</dt><dd class="text-gray-800">{% if row.href %}<a class="text-brand-indigo hover:underline" href="{{ row.href }}">{{ row.text }}</a>{% else %}{{ row.text }}{% endif %}</dd></div>
                 {% endfor %}
               </dl>
             {% endif %}
@@ -80,7 +80,7 @@ the record it is about, because that is where it gets answered.
 {% empty %}
   <div class="bg-white border border-brand-border-light rounded-lg px-5 py-4">
     <p class="text-sm font-semibold text-gray-900">Nothing to report{% if kind or category %} of this kind{% endif %}.</p>
-    <p class="text-sm text-gray-500 mt-0.5">Every check is read from the records as they stand{% if as_of %} at {{ as_of }}{% endif %}: nothing is missing, nothing disagrees, nothing is past a limit.</p>
+    <p class="text-sm text-gray-600 mt-0.5">Every check is read from the records as they stand{% if as_of %} at {{ as_of }}{% endif %}: nothing is missing, nothing disagrees, nothing is past a limit.</p>
     {% if arrived %}
       {% comment %}What the list would have said about, and what it says now: the consignments that
       have arrived, each with its documents, so an empty list reads as settled rather than blank.{% endcomment %}
@@ -90,7 +90,7 @@ the record it is about, because that is where it gets answered.
           {% for shipment in arrived %}
             <li class="text-sm text-gray-700">
               <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:shipment_detail' shipment.id %}">{{ shipment.reference|default:shipment.id }}</a>
-              <span class="text-xs text-gray-500">— {{ shipment.status|humanise }}{% if shipment.expected_on %} · expected {{ shipment.expected_on }}{% endif %}{% if shipment.required %} · {{ shipment.on_file }} of {{ shipment.required }} documents on file{% endif %}</span>
+              <span class="text-xs text-gray-600">— {{ shipment.status|humanise }}{% if shipment.expected_on %} · expected {{ shipment.expected_on }}{% endif %}{% if shipment.required %} · {{ shipment.on_file }} of {{ shipment.required }} documents on file{% endif %}</span>
             </li>
           {% endfor %}
         </ul>

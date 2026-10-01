@@ -22,6 +22,7 @@ from django.views.generic import View
 from django.views.generic.edit import FormView
 
 from connect_labs.supply_chain.api_views import _access, has_program_context
+from connect_labs.supply_chain.banner import program_line
 from connect_labs.supply_chain.identity import IdentityUnresolved
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation, get_operation
@@ -83,6 +84,7 @@ class OperationFormView(SupplyWriteMixin, FormView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["supply_tabs"] = supply_tabs(self.request)
+        context["supply_program_line"] = program_line(self.request)
         context["has_program_context"] = has_program_context(self.request)
         context.update(
             title=self.title,

@@ -22,7 +22,7 @@ therefore a fact, rather than by urgency, which would be an opinion.
 
 {% comment %}The header's context selector already names the program when one is
 chosen there; the heading is for when it does not, so it is not said twice.{% endcomment %}
-{% if not request.labs_context.program.name %}
+{% if not request.labs_context.program.name and not supply_program_line %}
 <h2 class="text-lg font-semibold text-gray-900 mb-3">{{ program_heading }}</h2>
 {% endif %}
 
@@ -35,7 +35,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
 <section id="supply-standing" class="mb-8">
   <h2 class="text-sm font-semibold text-gray-900 mb-2">
     Where everything stands
-    <span class="normal-case tracking-normal font-normal text-gray-500">
+    <span class="normal-case tracking-normal font-normal text-gray-600">
       — newest change first
     </span>
   </h2>
@@ -52,7 +52,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
         <col data-col="last-change" style="width: 13%">
         <col data-col="flags" style="width: 30%">
       </colgroup>
-      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
         <tr>
           <th class="text-left px-4 py-2 whitespace-nowrap">Tender or order</th>
           <th class="text-left px-4 py-2 whitespace-nowrap">Stage</th>
@@ -61,27 +61,27 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
           <th class="text-left px-4 py-2 whitespace-nowrap">Flags{% if supply_as_of %}
             {% comment %}On a past date the flags are still today's checks: said once, here,
             rather than on every row.{% endcomment %}
-            <span data-testid="flags-as-of" class="ml-1 normal-case tracking-normal font-normal text-gray-500">— checked for today only</span>{% endif %}</th>
+            <span data-testid="flags-as-of" class="ml-1 normal-case tracking-normal font-normal text-gray-600">— checked for today only</span>{% endif %}</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for row in standing %}
           <tr class="align-top" data-testid="overview-row"{% if row.tender_id %} data-tender-id="{{ row.tender_id }}"{% endif %}>
             <td class="px-4 py-2.5">
-              <span class="block text-xs text-gray-500">{% if row.kind == "tender" %}Tender{% else %}Order{% endif %}</span>
+              <span class="block text-xs text-gray-600">{% if row.kind == "tender" %}Tender{% else %}Order{% endif %}</span>
               <a class="font-medium text-brand-indigo hover:underline" href="{{ row.url }}">{{ row.title }}</a>
-              {% if row.buyer %}<span class="block text-xs text-gray-500">bought by {{ row.buyer }}</span>{% endif %}
+              {% if row.buyer %}<span class="block text-xs text-gray-600">bought by {{ row.buyer }}</span>{% endif %}
             </td>
             <td class="px-4 py-2.5">
               {{ row.stage }}
               {% if row.provisional_caveat %}<span data-testid="provisional-caveat" class="block text-xs text-amber-800">{{ row.provisional_caveat }}</span>{% endif %}
-              {% comment %}The reason in full, wrapping: cut short it read as the start of a
-              sentence nobody finished.{% endcomment %}
-              {% if row.award_why %}<span data-testid="award-why" class="block text-xs text-gray-600 whitespace-normal break-words">why: {{ row.award_why }}</span>{% endif %}
+              {% comment %}The reason in full, wrapping, on its own line at body size: it is the
+              decision's reason, and in caption size it was the smallest text on the screen.{% endcomment %}
+              {% if row.award_why %}<span data-testid="award-why" class="mt-1 block text-sm text-gray-800 whitespace-normal break-words">why: {{ row.award_why }}</span>{% endif %}
             </td>
             <td class="px-4 py-2.5 text-gray-700">
               {{ row.waiting_on }}
-              {% if row.waiting_detail %}<span data-testid="waiting-detail" class="block text-xs text-gray-500">{{ row.waiting_detail }}</span>{% endif %}
+              {% if row.waiting_detail %}<span data-testid="waiting-detail" class="block text-xs text-gray-600">{{ row.waiting_detail }}</span>{% endif %}
             </td>
             <td class="px-4 py-2.5">
               {% if row.last_change_at %}
@@ -93,7 +93,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
                   <span data-testid="last-change" class="block whitespace-nowrap text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|date:'j M Y' }}</span>
                 {% else %}
                 <span data-testid="last-change" class="block whitespace-nowrap text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|days_ago:standing_now }}</span>
-                {% with day=row.last_change_at|day_beside_count:standing_now %}{% if day %}<span data-testid="last-change-day" class="block whitespace-nowrap text-xs text-gray-500">{{ day }}</span>{% endif %}{% endwith %}
+                {% with day=row.last_change_at|day_beside_count:standing_now %}{% if day %}<span data-testid="last-change-day" class="block whitespace-nowrap text-xs text-gray-600">{{ day }}</span>{% endif %}{% endwith %}
                 {% endif %}
                 {% if row.last_change_is_ai %}
                   <span data-ai data-testid="ai-badge" title="{{ row.last_change_title }}" class="mt-0.5 inline-flex items-center whitespace-nowrap rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs font-medium">{{ row.last_change_badge }}</span>
@@ -116,7 +116,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">No tenders or orders yet.</td></tr>
+          <tr><td colspan="5" class="px-4 py-6 text-center text-gray-600">No tenders or orders yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -126,7 +126,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
 
 {% if commodities|length > 1 %}
   <div class="flex items-center gap-2 mb-4 text-sm">
-    <span class="text-gray-500">Commodity</span>
+    <span class="text-gray-600">Commodity</span>
     <a href="?" class="px-2 py-1 rounded border {% if not commodity_slug %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700{% endif %}">All</a>
     {% for c in commodities %}
       <a href="?commodity={{ c.slug }}"
@@ -137,7 +137,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
 
 <h2 class="text-sm font-semibold text-gray-900 mb-2">
   The chain
-  <span class="normal-case tracking-normal font-normal text-gray-500">
+  <span class="normal-case tracking-normal font-normal text-gray-600">
     — where records sit. Counts, not judgements.
   </span>
 </h2>
@@ -164,10 +164,10 @@ figures, and the catalogue is where our own gaps get closed.
   reference rows a rewind does not touch, so on a past date they would be
   today's answers under a past date's banner. Said once, not shown.
   {% endcomment %}
-  <p data-testid="checks-as-of-note" class="text-xs text-gray-500 mt-8">Checks are worked out for today; back to today to see them.</p>
+  <p data-testid="checks-as-of-note" class="text-xs text-gray-600 mt-8">Checks are worked out for today; back to today to see them.</p>
 {% elif checks.count %}
   <h2 class="text-sm font-semibold text-gray-900 mt-8 mb-1">Needs an answer</h2>
-  <p class="text-xs text-gray-500 mb-3">
+  <p class="text-xs text-gray-600 mb-3">
     Worked out from the records each time this page opens, so it is the state now.
     <a class="text-brand-indigo hover:underline ml-1" href="{% url 'supply_chain:checks' %}">Read every check, with its facts</a>
   </p>
@@ -182,7 +182,7 @@ figures, and the catalogue is where our own gaps get closed.
                        group-hover:text-brand-deep-purple">{{ group.items|length }}</span>
           <span>
             <span class="block text-sm text-gray-900">{{ group.headline }}</span>
-            <span class="block text-xs text-gray-500">{{ group.audience|audience_label }}</span>
+            <span class="block text-xs text-gray-600">{{ group.audience|audience_label }}</span>
           </span>
         </a>
       {% endif %}
@@ -202,7 +202,7 @@ figures, and the catalogue is where our own gaps get closed.
   <div class="overflow-x-auto" tabindex="0" role="region"
        aria-label="Table, scrolls sideways">
   <table class="min-w-[44rem] w-full text-sm">
-    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
       <tr>
         <th class="text-left px-4 py-2">Tender</th>
         <th class="text-left px-4 py-2">Status</th>
@@ -226,7 +226,7 @@ figures, and the catalogue is where our own gaps get closed.
           </td>
         </tr>
       {% empty %}
-        <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">No tenders yet.</td></tr>
+        <tr><td colspan="5" class="px-4 py-6 text-center text-gray-600">No tenders yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -236,7 +236,7 @@ figures, and the catalogue is where our own gaps get closed.
 {% if contracts %}
   <h2 class="text-sm font-semibold text-gray-900 mt-8 mb-2">
     Contracts
-    <span class="normal-case tracking-normal font-normal text-gray-500">
+    <span class="normal-case tracking-normal font-normal text-gray-600">
       — who is actually buying
     </span>
   </h2>
@@ -251,7 +251,7 @@ figures, and the catalogue is where our own gaps get closed.
     <div class="overflow-x-auto" tabindex="0" role="region"
          aria-label="Table, scrolls sideways">
     <table class="min-w-[44rem] w-full text-sm">
-      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
         <tr>
           <th class="text-left px-4 py-2">Reference</th>
           <th class="text-left px-4 py-2">Buyer of record</th>
@@ -269,7 +269,7 @@ figures, and the catalogue is where our own gaps get closed.
             </td>
             <td class="px-4 py-2.5">
               {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"" }}
-              <div class="text-xs text-gray-500">{{ contract.buyer_of_record|buyer_label }}</div>
+              <div class="text-xs text-gray-600">{{ contract.buyer_of_record|buyer_label }}</div>
               {% if contract.duty_relief_claimed and not contract.duty_relief_evidenced %}
                 <span class="ml-1 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded px-1.5 py-0.5">
                   relief unevidenced
@@ -282,7 +282,7 @@ figures, and the catalogue is where our own gaps get closed.
             status is the rewound record's and the stage is read from its
             shipments, receipts and payments.{% endcomment %}
             <td class="px-4 py-2.5">{% with stage=order_stages|dictkey:contract.id %}{% if stage %}{{ stage }}{% else %}{{ contract.status|humanise }}{% endif %}{% endwith %}</td>
-            <td class="px-4 py-2.5 text-xs text-gray-500">{{ contract.source|humanise }}</td>
+            <td class="px-4 py-2.5 text-xs text-gray-600">{{ contract.source|humanise }}</td>
             <td class="px-4 py-2.5 text-right">
               <a class="text-brand-indigo hover:underline"
                  href="{% url 'supply_chain:order_detail' contract.id %}">Open</a>

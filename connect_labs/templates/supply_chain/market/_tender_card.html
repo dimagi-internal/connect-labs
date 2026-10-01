@@ -14,13 +14,13 @@
     {% else %}
       <div class="text-[19px] font-semibold text-gray-600 leading-none">Quantity not stated</div>
     {% endif %}
-    <div class="text-[12px] text-gray-500 mt-1">{{ c.headline_product }}{% if c.more_products %} <span class="pg-hue font-medium">+ {{ c.more_products }} more product{{ c.more_products|pluralize }}</span>{% endif %}</div>
+    <div class="text-[12px] text-gray-600 mt-1">{{ c.headline_product }}{% if c.more_products %} <span class="pg-hue font-medium">+ {{ c.more_products }} more product{{ c.more_products|pluralize }}</span>{% endif %}</div>
   </div>
 
   <div class="flex flex-col gap-1.5">
     <div class="flex flex-wrap items-baseline justify-between gap-x-3 text-[12.5px]">
-      <span class="text-gray-500">{% if c.tender.response_deadline %}replies by <span class="font-semibold text-gray-900">{{ c.tender.response_deadline|day }}</span>{% else %}open until the buyer closes it{% endif %}</span>
-      <span class="{% if c.closing_soon %}pg-hue font-semibold{% else %}text-gray-500{% endif %} whitespace-nowrap">{{ c.deadline_words }}</span>
+      <span class="text-gray-600">{% if c.tender.response_deadline %}replies by <span class="font-semibold text-gray-900">{{ c.tender.response_deadline|day }}</span>{% else %}open until the buyer closes it{% endif %}</span>
+      <span class="{% if c.closing_soon %}pg-hue font-semibold{% else %}text-gray-600{% endif %} whitespace-nowrap">{{ c.deadline_words }}</span>
     </div>
     <div class="h-2 rounded-full bg-gray-100 overflow-hidden flex" title="{{ c.deadline_words }}">
       {% if c.elapsed_pct is not None %}
@@ -42,7 +42,7 @@
   <div class="border-t border-gray-100 pt-3 mt-auto flex gap-4 text-[12px] font-medium">
     <a href="{{ c.url }}" class="pg-hue hover:underline">Read the tender →</a>
     {% if c.listed.lines|length == 1 %}
-      <a href="{% url 'supply_chain:market_bid' c.tender.pk c.listed.lines.0.commodity_slug %}" class="pg-hue hover:underline">Bid →</a>
+      <a href="{% url 'supply_chain:market_bid' c.tender.pk c.listed.lines.0.commodity_slug %}" class="pg-link hover:underline">Bid →</a>
     {% endif %}
   </div>
 </article>

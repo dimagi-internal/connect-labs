@@ -44,7 +44,7 @@ paragraphs of method above a one-row table.{% endcomment %}
 
 {% if items|length > 1 %}
   <div class="flex items-center gap-2 mb-4 text-sm">
-    <span class="text-gray-500">Trade item</span>
+    <span class="text-gray-600">Trade item</span>
     <a href="?" class="px-2 py-1 rounded border {% if not item_id %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700{% endif %}">All</a>
     {% for item in items %}
       <a href="?item_id={{ item.id }}"
@@ -90,7 +90,7 @@ paragraphs of method above a one-row table.{% endcomment %}
   <div class="overflow-x-auto" tabindex="0" role="region"
        aria-label="Table, scrolls sideways">
   <table class="min-w-[44rem] w-full text-sm">
-    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
       <tr>
         <th class="text-left px-4 py-2">Supply point</th>
         <th class="text-left px-4 py-2">Ledger says</th>
@@ -106,7 +106,7 @@ paragraphs of method above a one-row table.{% endcomment %}
         <tr>
           <td class="px-4 py-2.5">
             <div class="font-medium text-gray-900">{{ point.name }}</div>
-            <div class="text-xs text-gray-500">
+            <div class="text-xs text-gray-600">
               {{ point.kind|humanise }}{% if point.admin_area %} · {{ point.admin_area }}{% endif %}
             </div>
           </td>
@@ -121,7 +121,7 @@ paragraphs of method above a one-row table.{% endcomment %}
                href="{% url 'supply_chain:movements' %}?supply_point_id={{ point.supply_point_id }}{% if point.item_id %}&amp;item_id={{ point.item_id }}{% endif %}">
             {% if point.counted_in_base and point.on_hand_in_base %}
               {{ point.on_hand_in_base|figure_text }}</a>
-              <div class="text-xs text-gray-500">{{ point.on_hand|figure_text }}</div>
+              <div class="text-xs text-gray-600">{{ point.on_hand|figure_text }}</div>
             {% else %}
               {{ point.on_hand|figure_text }}</a>
               {% if point.on_hand_in_base %}
@@ -162,7 +162,7 @@ paragraphs of method above a one-row table.{% endcomment %}
           <td class="px-4 py-2.5 tabular-nums">
             {% if point.reported %}
               {{ point.reported|figure_text }}
-              <div class="text-xs text-gray-500">{{ point.reported_kind|words|capfirst }} · {{ point.reported_on|day }}</div>
+              <div class="text-xs text-gray-600">{{ point.reported_kind|words|capfirst }} · {{ point.reported_on|day }}</div>
             {% else %}
               <span class="text-gray-600">no count yet</span>
             {% endif %}
@@ -175,8 +175,8 @@ paragraphs of method above a one-row table.{% endcomment %}
           <td colspan="4" class="px-4 py-2.5 text-gray-600">{% if point.stocked_out %}<span class="font-semibold text-orange-700">Stocked out</span> — nothing on hand; no consumption yet to measure cover against{% else %}No consumption yet — cover can't be computed{% endif %}</td>
           {% else %}
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
-            {{ point.amc|demand_text }}{% if point.amc.amount %} <span class="text-xs text-gray-500">{% if point.amc_basis == "releases" %}releases{% else %}dispensed{% endif %} a month</span>{% endif %}
-            {% if point.amc_in_display_unit %}<div class="text-xs text-gray-500">(= {{ point.amc_in_display_unit|demand_text }})</div>{% endif %}
+            {{ point.amc|demand_text }}{% if point.amc.amount %} <span class="text-xs text-gray-600">{% if point.amc_basis == "releases" %}releases{% else %}dispensed{% endif %} a month</span>{% endif %}
+            {% if point.amc_in_display_unit %}<div class="text-xs text-gray-600">(= {{ point.amc_in_display_unit|demand_text }})</div>{% endif %}
           </td>
           {% comment %}Durable equipment: said once, in the demand column. Repeating
           "durable — not forecast" in every forecast column read as three findings.{% endcomment %}
@@ -187,7 +187,7 @@ paragraphs of method above a one-row table.{% endcomment %}
           <td class="px-4 py-2.5 tabular-nums text-gray-600">
             {{ point.months_of_stock|derived_text }}
             {% for reason in point.months_of_stock|unconfirmed_reasons %}
-              <div class="text-xs text-gray-500 mt-0.5">{{ reason }}</div>
+              <div class="text-xs text-gray-600 mt-0.5">{{ reason }}</div>
             {% endfor %}
             {% if point.min_months_of_stock %}
               <span class="text-xs text-gray-600">
@@ -218,7 +218,7 @@ paragraphs of method above a one-row table.{% endcomment %}
             {% comment %}Grey, as under months of stock: no rate yet is not a threshold
             crossed, and the same sentence read red here and grey beside it.{% endcomment %}
             {% for reason in point.resupply_quantity|unconfirmed_reasons %}
-              <div class="text-xs text-gray-500 mt-0.5">{{ reason }}</div>
+              <div class="text-xs text-gray-600 mt-0.5">{{ reason }}</div>
             {% endfor %}
           </td>
           {% endif %}
@@ -234,7 +234,7 @@ paragraphs of method above a one-row table.{% endcomment %}
               <div class="text-xs text-red-700 mt-0.5">more left here than ever arrived</div>
             {% elif point.status == "durable" %}
               <span class="text-xs font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">durable</span>
-              <div class="text-xs text-gray-500 mt-0.5">held, not consumed — no cover to assess</div>
+              <div class="text-xs text-gray-600 mt-0.5">held, not consumed — no cover to assess</div>
             {% elif point.status == "overstocked" %}
               <span class="text-xs font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">over max</span>
             {% else %}
@@ -250,7 +250,7 @@ paragraphs of method above a one-row table.{% endcomment %}
           {% endif %}
         </tr>
       {% empty %}
-        <tr><td colspan="7" class="px-4 py-6 text-center text-gray-500">
+        <tr><td colspan="7" class="px-4 py-6 text-center text-gray-600">
           No supply points yet. Stock needs somewhere to be.
         </td></tr>
       {% endfor %}

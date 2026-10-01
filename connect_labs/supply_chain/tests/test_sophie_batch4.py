@@ -124,7 +124,7 @@ class TestTheSpecificationNamesWhatIsMissing:
         body = _page(client_in_program, base["tender"]["id"])
         # On a blocked card the blocker is said once; the rest reads as not blocking (batch 5).
         unstated = re.search(r'data-testid="not-blocking"[^>]*>(.*?)</p>', body).group(1)
-        assert " ".join(re.sub(r"<[^>]+>", "", unstated).split()) == "Also not stated (not blocking): shelf life"
+        assert " ".join(re.sub(r"<[^>]+>", "", unstated).split()) == "Not stated: shelf life"
         assert "OF 2 NOT STATED" not in body.upper()
 
     def test_the_pack_question_is_neutral_and_the_requirement_is_said_apart(self, da, base, client_in_program):
@@ -221,7 +221,9 @@ class TestTheBasisFlagNamesWhatTheComparisonBlocks:
         (row,) = (r for r in standing_rows(PROGRAM, datetime.date(2026, 8, 30)) if r.kind == "tender")
         # Since batch 5 one flag covers every blocked quote, whatever blocks it.
         (flag,) = (f for f in row.stale if f.startswith("Can't compare yet"))
-        assert flag == "Can't compare yet: Northwind Foods: freight; Sahel Nutrition: duties amount"
+        assert (
+            flag == "Can't compare yet: Northwind Foods — missing: freight; Sahel Nutrition — missing: duties amount"
+        )
         assert flag.rule == BLOCKED_RULE
 
         blocked = _compare(da, tender_id)["blocked"]

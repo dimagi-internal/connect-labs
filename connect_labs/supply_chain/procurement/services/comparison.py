@@ -52,6 +52,7 @@ from connect_labs.supply_chain.values import (
     destination_phrase,
     merge,
     money_digits,
+    quantity_phrase,
     to_wire,
     unconfirmed,
     unit_noun,
@@ -180,6 +181,8 @@ class ComparisonRow:
     # What the landed figures assume, and whose word it is: "Delivered to
     # Kano · freight included · duties included, per quote".
     landed_basis: str = ""
+    # The quantity the quote's landed total is for: "2,000 cartons".
+    quantity_quoted: str = ""
 
     @property
     def gaps(self) -> list[str]:
@@ -203,32 +206,44 @@ class ComparisonRow:
 
     @property
     def blocking(self) -> dict | None:
-        """What keeps this offer out of the ranking, and the ONE question that clears it.
+        """The first of `blockers`; None for a row nothing blocks."""
+        blockers = self.blockers
+        return blockers[0] if blockers else None
 
-        The first gap among the comparability figures, in words, with the
-        question the same reason table asks for it. A blocked card led with
-        its whole checklist, and the one fact that mattered read as one bullet
-        among eight. Everything else is still asked -- under "also confirm".
-        None for a row nothing blocks.
+    @property
+    def blockers(self) -> list[dict]:
+        """Every gap that keeps this offer out of the ranking, each with the question that clears it.
+
+        One per gap word, in the order and with the dedupe `gaps` uses -- so
+        the card says exactly what the overview's "Can't compare yet" flag
+        says for the same quote. It showed only the first, and a quote
+        missing freight AND its quantity read as missing freight on the card.
         """
+        out, seen = [], set()
         for key in COMPARABILITY_FIELDS:
             value = self.figures.get(key)
             if not isinstance(value, Unconfirmed):
                 continue
             for reason in value.reasons:
+                label = gap_word(reason, self.base_unit, self.pack_unit)
+                if label in seen:
+                    continue
+                seen.add(label)
                 wanted = key_for_reason(reason) or ("kit_composition" if "kit composition" in reason else None)
                 question = next((q for q in self.questions if q.key == wanted), None)
                 fact = plain_reason(reason, self.base_unit, self.pack_unit)
-                return {
-                    "fact": fact[:1].upper() + fact[1:],
-                    "question": (question.as_dict() if question is not None else None),
-                    # What the gap is called, so the card can leave it out of
-                    # "also not stated" -- and the specification's figure for
-                    # it, said beside the blocker as a chip.
-                    "label": gap_word(reason, self.base_unit, self.pack_unit),
-                    "spec": self.pack_requirement if wanted == "pack_spec" else "",
-                }
-        return None
+                out.append(
+                    {
+                        "fact": fact[:1].upper() + fact[1:],
+                        "question": (question.as_dict() if question is not None else None),
+                        # What the gap is called, so the card can leave it out of
+                        # "also not stated" -- and the specification's figure for
+                        # it, said beside the blocker as a chip.
+                        "label": label,
+                        "spec": self.pack_requirement if wanted == "pack_spec" else "",
+                    }
+                )
+        return out
 
     @property
     def specification(self) -> dict | None:
@@ -368,6 +383,8 @@ class Comparison:
                 "item_name": row.item_name,
                 "specification": row.specification,
                 "blocking": row.blocking,
+                "blockers": row.blockers,
+                "quantity_quoted": row.quantity_quoted,
                 "entered_by": row.entered_by,
                 "supplier_awaiting_review": row.supplier_awaiting_review,
                 "delivery": row.delivery,
@@ -745,6 +762,8 @@ def compare_tender(
         )
         row.as_quoted = as_quoted_words(quote, row.base_unit, row.pack_unit)
         row.landed_basis = landed_basis_words(quote, tender)
+        if quote.quantity_basis is not None and quote.quantity_basis_unit:
+            row.quantity_quoted = quantity_phrase(quote.quantity_basis, quote.quantity_basis_unit)
         if not course_applies:
             row.figures = {key: value for key, value in figures.items() if key not in COURSE_FIGURES}
             row.questions = [q for q in row.questions if q.key != "course_definition"]

@@ -15,7 +15,7 @@ invitation evidence and so "send an invitation" is not the way to start it.
 <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
   <div class="px-5 py-4 border-b border-brand-border-light">
     <h2 class="text-base font-semibold text-gray-900">Who can supply this</h2>
-    <p class="text-sm text-gray-500 mt-0.5 max-w-2xl">
+    <p class="text-sm text-gray-600 mt-0.5 max-w-2xl">
       Nobody is recorded as "a supplier of" anything — this is read back off
       what actually happened{% if scope_note %}, {{ scope_note }}{% endif %}. A
       contract and an unanswered email are both connections; they are not the
@@ -31,7 +31,7 @@ invitation evidence and so "send an invitation" is not the way to start it.
             <a class="font-medium text-brand-indigo hover:underline"
                href="{% url 'supply_chain:supplier_detail' claim.supplier_id %}">{{ claim.supplier_name }}</a>
             {% if claim.supplier_country %}
-              <span class="text-xs text-gray-500">{{ claim.supplier_country }}</span>
+              <span class="text-xs text-gray-600">{{ claim.supplier_country }}</span>
             {% endif %}
             <span class="text-xs font-semibold uppercase tracking-wide rounded px-1.5 py-0.5
               {% if claim.basis == 'contracted' or claim.basis == 'awarded' %}
@@ -44,17 +44,17 @@ invitation evidence and so "send an invitation" is not the way to start it.
                 text-amber-800 bg-amber-50 border border-amber-200
               {% endif %}">{{ claim.basis|evidence_label }}</span>
             {% if claim.last_heard %}
-              <span class="ml-auto text-xs text-gray-500">last dated record {{ claim.last_heard }}</span>
+              <span class="ml-auto text-xs text-gray-600">last dated record {{ claim.last_heard }}</span>
             {% endif %}
           </div>
 
           <ul class="mt-2 space-y-1">
             {% for evidence in claim.evidence %}
               <li class="text-sm text-gray-700 flex flex-wrap gap-x-2">
-                <span class="text-gray-500 min-w-[10rem]">{{ evidence.kind|evidence_label }}</span>
+                <span class="text-gray-600 min-w-[10rem]">{{ evidence.kind|evidence_label }}</span>
                 <span>
                   {{ evidence.detail }}
-                  {% if evidence.on %}<span class="text-gray-500">· {{ evidence.on }}</span>{% endif %}
+                  {% if evidence.on %}<span class="text-gray-600">· {{ evidence.on }}</span>{% endif %}
                   {% if evidence.quote_id %}
                     · <a class="text-brand-indigo hover:underline"
                          href="{% url 'supply_chain:procurement_quote_detail' evidence.quote_id %}">quote {{ evidence.quote_id }}</a>
@@ -73,12 +73,12 @@ invitation evidence and so "send an invitation" is not the way to start it.
           </ul>
 
           {% if claim.basis == 'declared' %}
-            <p class="mt-2 text-xs text-gray-500 max-w-2xl">
+            <p class="mt-2 text-xs text-gray-600 max-w-2xl">
               Their own statement on the supplier marketplace, unverified. They have never quoted here.
             </p>
           {% endif %}
           {% if claim.basis == 'named_as_manufacturer' %}
-            <p class="mt-2 text-xs text-gray-500 max-w-2xl">
+            <p class="mt-2 text-xs text-gray-600 max-w-2xl">
               Matched on the manufacturer name typed on the trade item, which is
               free text with no link to this company's record. They have never
               quoted here.
@@ -89,7 +89,7 @@ invitation evidence and so "send an invitation" is not the way to start it.
     </ul>
   {% else %}
     {% if narrowed_to_item %}
-      <p class="px-5 py-5 text-sm text-gray-500 max-w-2xl">
+      <p class="px-5 py-5 text-sm text-gray-600 max-w-2xl">
         Nobody yet. No quote, award or contract names this trade item — and an
         invitation would not count here, because an RFQ is issued against the
         product and says nothing about which manufacturer's version a supplier
@@ -97,7 +97,7 @@ invitation evidence and so "send an invitation" is not the way to start it.
         what starts it.
       </p>
     {% else %}
-      <p class="px-5 py-5 text-sm text-gray-500 max-w-2xl">
+      <p class="px-5 py-5 text-sm text-gray-600 max-w-2xl">
         Nobody yet. Nothing has been quoted, awarded or contracted against this,
         and no invitation has gone out — so there is nothing to read a supply
         base off. Recording an RFQ invitation is what starts it.

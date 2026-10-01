@@ -7,7 +7,7 @@ header, browser history or an access log; only a keyed fingerprint is kept.
 {% endcomment %}
 
 {% block supply_content %}
-<nav class="text-sm text-gray-500 mb-3">
+<nav class="text-sm text-gray-600 mb-3">
   <a href="{% url 'supply_chain:suppliers' %}" class="text-brand-indigo hover:underline">Suppliers</a>
   <span class="mx-1.5 text-gray-300">/</span>
   <span class="text-gray-700">Marketplace invitation</span>
@@ -15,7 +15,7 @@ header, browser history or an access log; only a keyed fingerprint is kept.
 <div class="max-w-3xl bg-white border border-brand-border-light rounded-lg overflow-hidden">
   <div class="px-5 py-4 border-b border-brand-border-light">
     <h1 class="text-base font-semibold text-gray-900">Invitation for {{ invite.org_name }}</h1>
-    <p class="text-sm text-gray-500 mt-0.5">
+    <p class="text-sm text-gray-600 mt-0.5">
       Send this to {{ invite.email|default:"them" }}. They sign in to labs with their own Connect account, open the link,
       and can then keep {{ invite.org_name }}'s profile up to date and bid on open tenders themselves. It works once, until {{ invite.expires_at|slice:":10" }}.
     </p>

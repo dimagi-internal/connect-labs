@@ -17,7 +17,7 @@ checks feed cannot disagree about what is outstanding.
 {% else %}
 
 <div class="mb-4">
-  <div class="text-xs text-gray-500">
+  <div class="text-xs text-gray-600">
     <a class="hover:underline" href="{% url 'supply_chain:orders' %}">Orders</a> ›
     <a class="hover:underline" href="{% url 'supply_chain:order_detail' contract.id %}">{{ contract.reference|default:"no reference" }}</a> ›
     Shipment {{ shipment.reference|default:shipment.id }}
@@ -81,7 +81,7 @@ checks feed cannot disagree about what is outstanding.
               {% endif %}
             </div>
             <div class="flex items-baseline justify-between gap-3 mt-1">
-              <span class="text-xs text-gray-500">owed by {{ line.owed_by.name|default:"—" }}</span>
+              <span class="text-xs text-gray-600">owed by {{ line.owed_by.name|default:"—" }}</span>
               <span class="flex items-baseline gap-3 text-right">
                 {% if line.documents %}
                   {% for document in line.documents %}
@@ -102,7 +102,7 @@ checks feed cannot disagree about what is outstanding.
         {% endfor %}
       </ul>
     {% else %}
-      <p class="px-4 py-4 text-sm text-gray-500">
+      <p class="px-4 py-4 text-sm text-gray-600">
         Nothing required. For an import, list what it needs to clear — an airway bill, a packing
         list, a product registration — and who owes each; anything not attached then shows on the
         checks list, naming who to ask.
@@ -123,7 +123,7 @@ checks feed cannot disagree about what is outstanding.
               <tr>
                 <td class="px-4 py-2 text-gray-700">
                   {{ charge.kind|humanise|capfirst }}
-                  <div class="text-xs text-gray-500">to {{ orgs|dictkey:charge.payee_org_id|dictkey:"name" }}{% if charge.paid_on %} · paid {{ charge.paid_on }}{% else %} · not yet paid{% endif %}</div>
+                  <div class="text-xs text-gray-600">to {{ orgs|dictkey:charge.payee_org_id|dictkey:"name" }}{% if charge.paid_on %} · paid {{ charge.paid_on }}{% else %} · not yet paid{% endif %}</div>
                 </td>
                 <td class="px-4 py-2 text-right tabular-nums">
                   {{ charge.currency }} {{ charge.amount|money }}
@@ -134,11 +134,11 @@ checks feed cannot disagree about what is outstanding.
           </tbody>
         </table>
       </div>
-      <p class="px-4 py-2.5 text-xs text-gray-500 border-t border-gray-100">
+      <p class="px-4 py-2.5 text-xs text-gray-600 border-t border-gray-100">
         Added to the order's landed cost, one line each. Paid to these organisations, not to the supplier.
       </p>
     {% else %}
-      <p class="px-4 py-4 text-sm text-gray-500">
+      <p class="px-4 py-4 text-sm text-gray-600">
         No charges recorded. Customs fees, clearing and the haul from the port are paid to somebody
         other than the supplier, and belong here rather than in the contract price.
       </p>
@@ -150,7 +150,7 @@ checks feed cannot disagree about what is outstanding.
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
     <table class="min-w-[32rem] w-full text-sm">
-      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
         <tr>
           <th class="text-left px-4 py-2">Batch</th>
           <th class="text-left px-4 py-2">Best before</th>
@@ -165,7 +165,7 @@ checks feed cannot disagree about what is outstanding.
             <td class="px-4 py-2 tabular-nums">{{ line.quantity|qty:line.quantity_unit }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="3" class="px-4 py-4 text-center text-gray-500">No lines recorded on the dispatch.</td></tr>
+          <tr><td colspan="3" class="px-4 py-4 text-center text-gray-600">No lines recorded on the dispatch.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -179,7 +179,7 @@ checks feed cannot disagree about what is outstanding.
       {% for document in documents %}
         <li class="py-1.5 flex items-baseline gap-2">
           <span class="text-gray-900">{{ document.title|default:document.kind|humanise }}</span>
-          <span class="text-xs text-gray-500">{{ document.kind|humanise }}</span>
+          <span class="text-xs text-gray-600">{{ document.kind|humanise }}</span>
           <span class="text-xs text-gray-600 ml-auto">
             {% if document.is_stored %}stored{% else %}linked{% endif %} · {{ document.source|humanise }}
           </span>
@@ -187,7 +187,7 @@ checks feed cannot disagree about what is outstanding.
       {% endfor %}
     </ul>
   {% else %}
-    <p class="text-sm text-gray-500">Nothing attached to this shipment yet.</p>
+    <p class="text-sm text-gray-600">Nothing attached to this shipment yet.</p>
   {% endif %}
 </div>
 

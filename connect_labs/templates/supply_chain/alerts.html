@@ -15,7 +15,7 @@ The log says how each notice left, including when it did not: "email off" and
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Alerts</h1>
-    <p class="text-sm text-gray-500 mt-1 max-w-2xl">
+    <p class="text-sm text-gray-600 mt-1 max-w-2xl">
       An email when a check becomes true or stock moves. Each states what is now true and links to the
       record — no advice, no ranking. A check that stays true is sent once.
     </p>
@@ -48,12 +48,12 @@ The log says how each notice left, including when it did not: "email off" and
 
 <section class="mb-8">
   <h2 class="text-sm font-semibold text-gray-900 mb-2">
-    Subscriptions <span class="ml-1 font-normal text-gray-500">{{ subscriptions|length }}</span>
+    Subscriptions <span class="ml-1 font-normal text-gray-600">{{ subscriptions|length }}</span>
   </h2>
   <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
       <table class="min-w-[52rem] w-full text-sm">
-        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
           <tr>
             <th class="text-left px-4 py-2">Alert</th>
             <th class="text-left px-4 py-2">Watches</th>
@@ -91,7 +91,7 @@ The log says how each notice left, including when it did not: "email off" and
               </td>
               <td class="px-4 py-2 text-gray-700">
                 {{ sub.recipient }}
-                {% if sub.recipient_email %}<div class="text-xs text-gray-500">{% if sub.recipient_name %}{{ sub.recipient_email }} · {% endif %}by email</div>{% endif %}
+                {% if sub.recipient_email %}<div class="text-xs text-gray-600">{% if sub.recipient_name %}{{ sub.recipient_email }} · {% endif %}by email</div>{% endif %}
               </td>
               <td class="px-4 py-2 text-gray-700">
                 {% if sub.cadence == "daily_digest" %}once a day{% else %}as it happens{% endif %}
@@ -108,7 +108,7 @@ The log says how each notice left, including when it did not: "email off" and
             <tr>
               <td colspan="6" class="px-4 py-8 text-center">
                 <p class="text-sm text-gray-600">No alerts yet.</p>
-                <p class="text-sm text-gray-500 mt-1 max-w-lg mx-auto">
+                <p class="text-sm text-gray-600 mt-1 max-w-lg mx-auto">
                   Start with the one the field asked for: stock below its minimum, sent to whoever
                   restocks it.
                 </p>
@@ -127,11 +127,11 @@ The log says how each notice left, including when it did not: "email off" and
 
 <section>
   <h2 class="text-sm font-semibold text-gray-900 mb-1">Sent log</h2>
-  <p class="text-sm text-gray-500 mb-2">The newest fifty notices. Each is a fact as it stood when it was found.</p>
+  <p class="text-sm text-gray-600 mb-2">The newest fifty notices. Each is a fact as it stood when it was found.</p>
   <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
       <table class="min-w-[52rem] w-full text-sm">
-        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
           <tr>
             <th class="text-left px-4 py-2">Found</th>
             <th class="text-left px-4 py-2">What</th>
@@ -155,13 +155,13 @@ The log says how each notice left, including when it did not: "email off" and
               </td>
               <td class="px-4 py-2">
                 <a href="{{ notice.record_url }}" class="text-brand-indigo hover:underline">{% if notice.subject.label %}{{ notice.subject.label }}{% else %}{{ notice.subject.type|words|capfirst }}{% endif %}</a>
-                {% if notice.since %}<div class="text-xs text-gray-500">since {{ notice.since }}</div>{% endif %}
+                {% if notice.since %}<div class="text-xs text-gray-600">since {{ notice.since }}</div>{% endif %}
               </td>
               <td class="px-4 py-2 text-gray-700">{{ notice.subscription_name }}</td>
               <td class="px-4 py-2">
                 {% if notice.delivery == "queued" %}
                   <span class="px-2 py-0.5 rounded-full text-xs bg-message-success text-message-success-text">sent</span>
-                  <div class="text-xs text-gray-500 mt-0.5">to {{ notice.sent_to_name }}{% if notice.sent_to_name != notice.sent_to %} · {{ notice.sent_to }}{% endif %}</div>
+                  <div class="text-xs text-gray-600 mt-0.5">to {{ notice.sent_to_name }}{% if notice.sent_to_name != notice.sent_to %} · {{ notice.sent_to }}{% endif %}</div>
                 {% elif notice.delivery == "pending" %}
                   <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">in the next digest</span>
                 {% elif notice.delivery == "email_disabled" %}
@@ -173,7 +173,7 @@ The log says how each notice left, including when it did not: "email off" and
             </tr>
           {% empty %}
             <tr>
-              <td colspan="5" class="px-4 py-6 text-center text-sm text-gray-500">
+              <td colspan="5" class="px-4 py-6 text-center text-sm text-gray-600">
                 Nothing has been sent yet. Alerts are checked every five minutes.
               </td>
             </tr>

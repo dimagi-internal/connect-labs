@@ -14,7 +14,7 @@ until it is set.
 
 {% block supply_content %}
 
-<nav class="text-sm text-gray-500 mb-3">
+<nav class="text-sm text-gray-600 mb-3">
   <a href="{% url 'supply_chain:suppliers' %}" class="text-brand-indigo hover:underline">Suppliers</a>
   <span class="mx-1.5 text-gray-300">/</span>
   <span class="text-gray-700">Organisations</span>
@@ -23,7 +23,7 @@ until it is set.
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Organisations</h1>
-    <p class="text-sm text-gray-500 mt-1 max-w-2xl">
+    <p class="text-sm text-gray-600 mt-1 max-w-2xl">
       Everyone labs needs to name — manufacturers, implementing partners, procurement agencies, us.
       Shared across every programme: a change here shows everywhere this organisation appears.
     </p>
@@ -39,7 +39,7 @@ until it is set.
 </div>
 
 {% if orgs %}
-  <p class="text-sm text-gray-500 mb-3">
+  <p class="text-sm text-gray-600 mb-3">
     {{ linked }} of {{ orgs|length }} {{ linked|pluralize:"is,are" }} bound to a Connect organisation.
     The rest we record on behalf of.
   </p>
@@ -48,7 +48,7 @@ until it is set.
 <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
     <table class="min-w-[44rem] w-full text-sm">
-      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
         <tr>
           <th class="text-left px-4 py-2">Organisation</th>
           <th class="text-left px-4 py-2">Country</th>
@@ -61,7 +61,7 @@ until it is set.
           <tr>
             <td class="px-4 py-2">
               <span class="text-gray-900">{{ org.name }}</span>
-              <div class="text-xs text-gray-500 mt-0.5">
+              <div class="text-xs text-gray-600 mt-0.5">
                 <code>{{ org.slug }}</code>
                 {% if org.aliases %}
                   · also known as {{ org.aliases|join:", " }}
@@ -88,7 +88,7 @@ until it is set.
           <tr>
             <td colspan="4" class="px-4 py-8 text-center">
               <p class="text-sm text-gray-600">No organisations yet.</p>
-              <p class="text-sm text-gray-500 mt-1 max-w-lg mx-auto">
+              <p class="text-sm text-gray-600 mt-1 max-w-lg mx-auto">
                 A contract needs a buyer of record, and it has to be one of these — so this is
                 the first thing to fill in before anything can be ordered.
               </p>
