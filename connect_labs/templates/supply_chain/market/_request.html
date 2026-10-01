@@ -5,12 +5,12 @@ Takes `listed`, `r` (the tender) and `asked_for`.
 <dl class="space-y-3">
   {% if asked_for %}
     <div>
-      <dt class="text-[12px] text-gray-500">Quantity</dt>
+      <dt class="text-[12px] text-gray-600">Quantity</dt>
       <dd class="font-medium text-gray-900 tabular-nums">{{ asked_for }}</dd>
     </div>
   {% endif %}
   <div>
-    <dt class="text-[12px] text-gray-500">Delivered to</dt>
+    <dt class="text-[12px] text-gray-600">Delivered to</dt>
     {% for p in r.delivery_points %}
       <dd data-testid="delivery-point" class="text-gray-900"><span class="font-medium">{% firstof p.name p.city %}</span>{% if p.name and p.city %}<span class="text-gray-600">, {{ p.city }}</span>{% endif %}{% if p.country_name %}<span class="text-gray-600">, {{ p.country_name }}</span>{% endif %}</dd>
     {% empty %}
@@ -21,7 +21,7 @@ Takes `listed`, `r` (the tender) and `asked_for`.
   </div>
   {% for line in listed.lines %}{% if line.requirements %}
     <div>
-      <dt class="text-[12px] text-gray-500">Specification{% if listed.lines|length > 1 %} · {{ line.name }}{% endif %}</dt>
+      <dt class="text-[12px] text-gray-600">Specification{% if listed.lines|length > 1 %} · {{ line.name }}{% endif %}</dt>
       {% for req in line.requirements %}<dd data-testid="spec-line" class="text-gray-900">{{ req }}</dd>{% endfor %}
       {% if line.commodity.spec_reference %}<dd class="text-[12px] text-gray-600 mt-0.5">Reference: {{ line.commodity.spec_reference }}</dd>{% endif %}
     </div>

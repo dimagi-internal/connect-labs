@@ -21,11 +21,11 @@ them out on a past date.
             <div class="min-w-0 flex-1">
               {% comment %}One grammar for a new record and a change to one: "Shipment · SH-1 ·
               recorded: ETA 5 Sep" and "Shipment · SH-1 · ETA 5 Sep → 19 Sep".{% endcomment %}
-              <div data-testid="revision-text" class="text-sm text-gray-900">{{ entry.line }}</div>
+              {% comment %}How far the arrival moved, as a signed count of days, so "5 Sep → 19 Sep"
+              need not be worked out: inline, after the sentence it measures, in the neutral pill --
+              amber on a line of its own read as a warning about something else.{% endcomment %}
+              <div data-testid="revision-text" class="text-sm text-gray-900">{{ entry.line }}{% if entry.eta_moved %} <span data-testid="eta-moved" class="ml-1 inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ entry.eta_moved }}</span>{% endif %}</div>
               <div class="mt-0.5 flex flex-wrap items-center gap-2">
-                {% comment %}How far the arrival moved, as a signed count of days, so "5 Sep → 19 Sep"
-                need not be worked out.{% endcomment %}
-                {% if entry.eta_moved %}<span data-testid="eta-moved" class="inline-flex items-center whitespace-nowrap rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-900">{{ entry.eta_moved }}</span>{% endif %}
                 {% comment %}
                 The actor badge is how the source opens: with an excerpt it is
                 the <summary> of the <details> holding it, so clicking who told
@@ -61,7 +61,7 @@ them out on a past date.
         {% endfor %}
       </ol>
     {% else %}
-      <p class="py-2 text-sm text-gray-500">No changes recorded yet.</p>
+      <p class="py-2 text-sm text-gray-600">No changes recorded yet.</p>
     {% endif %}
   </div>
 </section>

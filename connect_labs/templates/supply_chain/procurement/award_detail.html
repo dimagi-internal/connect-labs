@@ -16,7 +16,7 @@ the award, so the page says so where the order button would otherwise be.
 {% else %}
 
 <div class="mb-4">
-  <div class="text-xs text-gray-500">
+  <div class="text-xs text-gray-600">
     <a class="hover:underline" href="{% url 'supply_chain:procurement_tender_board' %}">Sourcing</a> ›
     <a class="hover:underline" href="{% url 'supply_chain:procurement_tender_detail' award.tender_id %}">{{ tender.label }}</a> ›
     Award
@@ -35,7 +35,7 @@ the award, so the page says so where the order button would otherwise be.
          href="{% url 'supply_chain:procurement_comparison' award.tender_id %}?commodity={{ award.commodity_slug }}">the comparison it was chosen from</a>
   </p>
   {% if award.rationale %}
-    <p class="text-sm text-gray-800 mt-2 max-w-3xl"><span class="text-gray-500">Why:</span> {{ award.rationale }}</p>
+    <p class="text-sm text-gray-800 mt-2 max-w-3xl"><span class="text-gray-600">Why:</span> {{ award.rationale }}</p>
   {% endif %}
   {% comment %}What was actually awarded, in figures: the offer's own money,
   read from the comparison rather than recomputed, and the awarded kit against
@@ -48,7 +48,7 @@ the award, so the page says so where the order button would otherwise be.
       {% for column in awarded_columns %}
         {% with cell=awarded_row.figures|dictkey:column.key %}
           {% if not cell.unconfirmed and cell.amount is not None %}
-            <span class="text-gray-800"><span class="text-gray-500">{{ column.label }}</span> <span class="tabular-nums">{{ cell|money_text }}</span></span>
+            <span class="text-gray-800"><span class="text-gray-600">{{ column.label }}</span> <span class="tabular-nums">{{ cell|money_text }}</span></span>
           {% endif %}
         {% endwith %}
       {% endfor %}
@@ -68,7 +68,7 @@ the award, so the page says so where the order button would otherwise be.
   {% if approvals %}
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
       <table class="min-w-[44rem] w-full text-sm">
-        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
           <tr>
             <th class="text-left px-4 py-2">Who</th>
             <th class="text-left px-4 py-2">As</th>
@@ -82,7 +82,7 @@ the award, so the page says so where the order button would otherwise be.
             <tr>
               <td class="px-4 py-2 text-gray-900">
                 {{ approval.approver.name|default:"—" }}
-                {% if approval.note %}<div class="text-xs text-gray-500">{{ approval.note }}</div>{% endif %}
+                {% if approval.note %}<div class="text-xs text-gray-600">{{ approval.note }}</div>{% endif %}
                 {% comment %}The evidence, where the approval is read: what it rests on, and
                 the approver's own letter. Open signs a fresh link for a stored file.{% endcomment %}
                 {% if approval.rests_on %}
@@ -103,16 +103,16 @@ the award, so the page says so where the order button would otherwise be.
               <td class="px-4 py-2">
                 {% if approval.status == "approved" %}
                   <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-success text-message-success-text">approved</span>
-                  <span class="text-xs text-gray-500 whitespace-nowrap">{{ approval.decided_on|day }}</span>
+                  <span class="text-xs text-gray-600 whitespace-nowrap">{{ approval.decided_on|day }}</span>
                 {% elif approval.status == "declined" %}
                   <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-800">declined</span>
-                  <span class="text-xs text-gray-500 whitespace-nowrap">{{ approval.decided_on|day }}</span>
+                  <span class="text-xs text-gray-600 whitespace-nowrap">{{ approval.decided_on|day }}</span>
                 {% else %}
                   <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-message-warning text-message-warning-text">requested</span>
                 {% endif %}
-                {% if approval.decision_note %}<div class="text-xs text-gray-500 mt-0.5">{{ approval.decision_note }}</div>{% endif %}
+                {% if approval.decision_note %}<div class="text-xs text-gray-600 mt-0.5">{{ approval.decision_note }}</div>{% endif %}
                 {% if approval.status != "requested" %}
-                  <div class="text-xs text-gray-500 mt-0.5">
+                  <div class="text-xs text-gray-600 mt-0.5">
                     {% if approval.answered_by_approver %}Answered by {{ approval.approver.name }} through {{ approval.approver.name }}'s own link{% else %}Recorded by the programme team{% endif %}
                   </div>
                 {% endif %}
@@ -134,7 +134,7 @@ the award, so the page says so where the order button would otherwise be.
       </table>
     </div>
   {% else %}
-    <p class="px-4 py-4 text-sm text-gray-500">
+    <p class="px-4 py-4 text-sm text-gray-600">
       None asked for. If a technical partner has to confirm the product, or a funder approve its use,
       record it here — an order cannot then be placed until they have said yes.
     </p>
@@ -169,12 +169,12 @@ the award, so the page says so where the order button would otherwise be.
       {% for contract in contracts %}
         <li class="px-4 py-2.5 text-sm">
           <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.id %}">{{ contract.reference|default:"order" }} {{ contract.id }}</a>
-          <span class="text-gray-500">· {{ contract.status|humanise }}</span>
+          <span class="text-gray-600">· {{ contract.status|humanise }}</span>
         </li>
       {% endfor %}
     </ul>
   {% elif not blocking %}
-    <p class="px-4 py-4 text-sm text-gray-500">Nothing ordered yet. An award on its own commits nothing.</p>
+    <p class="px-4 py-4 text-sm text-gray-600">Nothing ordered yet. An award on its own commits nothing.</p>
   {% endif %}
 </div>
 

@@ -10,7 +10,7 @@ questions -- and those must be just as visible as a Blocked row's.
 {% with supplier_questions=questions|default:row.questions|questions_for:"supplier" internal_questions=questions|default:row.questions|questions_for:"internal" %}
   {% if supplier_questions %}
     <div class="mt-2">
-      <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Ask the supplier</p>
+      <p class="text-xs font-medium text-gray-600 uppercase tracking-wide mb-1">Ask the supplier</p>
       <ul class="list-disc list-inside text-sm text-gray-700 space-y-0.5">
         {% for q in supplier_questions %}<li>{{ q.question }}{% include "supply_chain/procurement/_requirement.html" %}</li>{% endfor %}
       </ul>
@@ -18,7 +18,7 @@ questions -- and those must be just as visible as a Blocked row's.
   {% endif %}
   {% if internal_questions %}
     <div class="mt-2">
-      <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Our own outstanding work</p>
+      <p class="text-xs font-medium text-gray-600 uppercase tracking-wide mb-1">Our own outstanding work</p>
       <ul class="list-disc list-inside text-sm text-gray-700 space-y-0.5">
         {% for q in internal_questions %}<li>{{ q.question }}{% include "supply_chain/procurement/_requirement.html" %}</li>{% endfor %}
       </ul>

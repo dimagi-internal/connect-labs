@@ -22,13 +22,13 @@ outside instead, on the Network page.
 {% elif not item %}
   <p class="text-sm text-gray-600">No dispensing rule yet, so no visit has moved any stock.</p>
 {% else %}
-  <div class="text-xs text-gray-500">
+  <div class="text-xs text-gray-600">
     <a class="hover:underline" href="{% url 'supply_chain:workers' %}?item_id={{ item.id }}">Workers</a> › {{ worker.name }}
   </div>
   <div class="flex flex-wrap items-end justify-between gap-4 mb-4">
     <div>
       <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{{ worker.name }}</h1>
-      <p class="text-sm text-gray-500 mt-1">
+      <p class="text-sm text-gray-600 mt-1">
         {{ item.name }}, in {{ worker.unit|unit_plural }}{% if worker.connect_username %} · Connect user {{ worker.connect_username }}{% endif %}
       </p>
     </div>
@@ -59,35 +59,35 @@ outside instead, on the Network page.
 
   <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6 text-sm">
     <div class="bg-white border border-brand-border-light rounded-lg p-3">
-      <dt class="text-gray-500">On hand (ledger)</dt>
+      <dt class="text-gray-600">On hand (ledger)</dt>
       <dd class="text-base text-gray-900 tabular-nums">{{ worker.on_hand|on_hand_words:worker }}</dd>
       <dd class="mt-1">{% include 'supply_chain/_stock_band.html' with status=worker.band %}</dd>
     </div>
     <div class="bg-white border border-brand-border-light rounded-lg p-3">
-      <dt class="text-gray-500">Issued</dt>
+      <dt class="text-gray-600">Issued</dt>
       <dd class="text-lg text-gray-900 tabular-nums">{{ worker.issued|figure_text }}</dd>
-      <dd class="text-xs text-gray-500">what arrived at {{ worker.name }}</dd>
+      <dd class="text-xs text-gray-600">what arrived at {{ worker.name }}</dd>
     </div>
     <div class="bg-white border border-brand-border-light rounded-lg p-3">
-      <dt class="text-gray-500">Dispensed</dt>
+      <dt class="text-gray-600">Dispensed</dt>
       <dd class="text-base text-gray-900 tabular-nums">{{ worker.dispensed|dispensed_words:worker }}</dd>
       {% if worker.no_answer_visits %}<dd class="text-xs text-gray-600">{{ worker.no_answer_visits }} visit{{ worker.no_answer_visits|pluralize }} did not say, so not counted</dd>{% endif %}
     </div>
     <div class="bg-white border border-brand-border-light rounded-lg p-3">
-      <dt class="text-gray-500">Last count</dt>
+      <dt class="text-gray-600">Last count</dt>
       {% if worker.reported %}
         <dd class="text-lg text-gray-900 tabular-nums">{{ worker.reported|figure_text }}</dd>
         <dd class="text-xs text-gray-600">{{ worker.reported_kind|words|capfirst }} · {{ worker.reported_on|day }} · {{ worker.days_since_checked }} day{{ worker.days_since_checked|pluralize }} ago</dd>
         <dd class="text-xs text-gray-700 mt-1">Count − ledger on count day: <span class="tabular-nums font-medium">{{ worker.variance_reported_minus_ledger|signed_figure }}</span></dd>
-        <dd class="text-xs text-gray-500">ledger that day {{ worker.ledger_on_count_day|figure_text }}</dd>
+        <dd class="text-xs text-gray-600">ledger that day {{ worker.ledger_on_count_day|figure_text }}</dd>
       {% else %}
         <dd class="text-lg text-gray-600">never counted</dd>
       {% endif %}
     </div>
     <div class="bg-white border border-brand-border-light rounded-lg p-3">
-      <dt class="text-gray-500">Days to stock-out</dt>
+      <dt class="text-gray-600">Days to stock-out</dt>
       <dd class="text-lg text-gray-900 tabular-nums">{{ worker.days_to_stockout|days_text }}</dd>
-      {% for reason in worker.days_to_stockout|unconfirmed_reasons %}<dd class="text-xs text-gray-500">{{ reason }}</dd>{% endfor %}
+      {% for reason in worker.days_to_stockout|unconfirmed_reasons %}<dd class="text-xs text-gray-600">{{ reason }}</dd>{% endfor %}
       <dd class="text-xs text-gray-600">{{ worker.months_of_stock|months_text }}{% if worker.min_months_of_stock %} (band {{ worker.min_months_of_stock|floatformat:"-2" }}–{{ worker.max_months_of_stock|floatformat:"-2"|default:"—" }} months){% endif %}</dd>
       {% if worker|rests_on_unsettled %}
         <dd class="text-xs text-amber-900">rate includes the unapproved and estimated dispensing above</dd>
@@ -115,7 +115,7 @@ outside instead, on the Network page.
         <div class="overflow-x-auto mt-2" tabindex="0" role="region" aria-label="Timeline figures, scrolls sideways">
           <table class="min-w-[36rem] w-full text-sm" data-testid="timeline-table">
             <caption class="text-left text-xs text-gray-600 pb-1">In {{ data.timeline.unit|unit_plural }}. Put back is a visit's dispensing undone because the visit was later rejected or marked a duplicate.</caption>
-            <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+            <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
               <tr><th scope="col" class="text-left px-3 py-2">Day</th><th scope="col" class="text-left px-3 py-2">Issued</th><th scope="col" class="text-left px-3 py-2">Dispensed</th><th scope="col" class="text-left px-3 py-2">Put back</th><th scope="col" class="text-left px-3 py-2">Other</th><th scope="col" class="text-left px-3 py-2">Ledger after</th></tr>
             </thead>
             <tbody class="divide-y divide-gray-100 tabular-nums">
@@ -138,14 +138,14 @@ outside instead, on the Network page.
   <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-6">
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Visits table, scrolls sideways">
       <table class="min-w-[40rem] w-full text-sm">
-        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
           <tr><th scope="col" class="text-left px-4 py-2">Day</th><th scope="col" class="text-left px-4 py-2">Status</th><th scope="col" class="text-left px-4 py-2">Read as</th><th scope="col" class="text-left px-4 py-2">Form answer</th></tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
           {% for v in data.visits %}
             <tr>
               <td class="px-4 py-2 align-top whitespace-nowrap">{{ v.visit_date|day }}</td>
-              <td class="px-4 py-2 align-top">{% if v.approved %}Approved{% elif v.status == "rejected" %}Rejected{% elif v.status == "duplicate" %}Marked a duplicate{% else %}<span class="text-amber-900">Not yet approved</span> <span class="text-xs text-gray-500">({{ v.status|humanise|default:"no status" }})</span>{% endif %}</td>
+              <td class="px-4 py-2 align-top">{% if v.approved %}Approved{% elif v.status == "rejected" %}Rejected{% elif v.status == "duplicate" %}Marked a duplicate{% else %}<span class="text-amber-900">Not yet approved</span> <span class="text-xs text-gray-600">({{ v.status|humanise|default:"no status" }})</span>{% endif %}</td>
               <td class="px-4 py-2 align-top" data-testid="visit-read-as">{% if v.outcome %}{{ v.outcome|visit_outcome }}{% elif v.reported %}{% for r in v.reported %}<div>{% if r.kind == "reported_receipt" %}Reported receiving {{ r.quantity|qty:r.unit }} on {{ r.on|day }}{% else %}Recorded a balance of {{ r.quantity|qty:r.unit }}{% endif %}</div>{% endfor %}{% elif v.stock_form %}Stock form — nothing recorded for this item{% else %}{{ v.outcome|visit_outcome }}{% endif %}</td>
               <td class="px-4 py-2 align-top">
                 <details>
@@ -176,7 +176,7 @@ outside instead, on the Network page.
       <li class="px-4 py-2 text-gray-600">Nothing issued to {{ worker.name }}.</li>
     {% endfor %}
   </ul>
-  <p class="text-xs text-gray-500 mt-2">
+  <p class="text-xs text-gray-600 mt-2">
     A rejected visit's stock put back is a reversal of that visit, shown above under Visits, not stock that arrived.
     <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:movements' %}?supply_point_id={{ worker.supply_point_id }}&amp;item_id={{ item.id }}">Every movement</a>
   </p>

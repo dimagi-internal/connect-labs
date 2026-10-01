@@ -4,7 +4,7 @@
 
 {% block body %}
 {% with r=listed.tender %}
-<nav class="text-sm text-gray-500 mb-3">
+<nav class="text-sm text-gray-600 mb-3">
   <a href="{% url 'supply_chain:market' %}" class="text-brand-indigo hover:underline">Open tenders</a> <span class="mx-1 text-gray-300">/</span>
   <a href="{% url 'supply_chain:market_tender' r.pk %}" class="text-brand-indigo hover:underline">{{ r.label }}</a> <span class="mx-1 text-gray-300">/</span>
   {% if revising %}Revise your bid{% else %}Bid{% endif %}
@@ -64,7 +64,7 @@
           <div class="flex flex-wrap gap-x-5 gap-y-1 text-sm">
             {% for choice in form.delivery_point_keys %}<label class="inline-flex items-center gap-2">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>{% endfor %}
           </div>
-          <p class="text-xs text-gray-500 mt-1">{{ form.delivery_point_keys.help_text }}</p>
+          <p class="text-xs text-gray-600 mt-1">{{ form.delivery_point_keys.help_text }}</p>
           {% for error in form.delivery_point_keys.errors %}<p class="text-xs text-red-700 mt-1">{{ error }}</p>{% endfor %}
         </div>
       {% elif form.places|length == 1 %}
@@ -99,7 +99,7 @@
     {% if form.requirement_fields %}
       <fieldset class="grid md:grid-cols-2 gap-x-6 mt-2">
         <legend class="text-sm font-semibold mb-1">Your product against the specification</legend>
-        <p class="md:col-span-2 text-xs text-gray-500 mb-2">{% for req in line.requirements %}{{ req }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+        <p class="md:col-span-2 text-xs text-gray-600 mb-2">{% for req in line.requirements %}{{ req }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
         {% for name in form.requirement_fields %}{% for field in form %}{% if field.name == name %}{% include 'supply_chain/market/_field.html' %}{% endif %}{% endfor %}{% endfor %}
       </fieldset>
     {% endif %}

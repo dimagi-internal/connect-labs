@@ -80,7 +80,7 @@ omissions.
           the total -- a chain holding nothing still has a commodity, and the
           total is exactly where that fact disappears.
           {% endcomment %}
-          {% if row.commodity_name %}<span class="font-normal text-gray-500">· {{ row.commodity_name }}</span>{% endif %}
+          {% if row.commodity_name %}<span class="font-normal text-gray-600">· {{ row.commodity_name }}</span>{% endif %}
         </h2>
         <a class="text-sm text-brand-indigo hover:underline" href="{{ row.home_url }}">Open this chain →</a>
       </div>
@@ -159,7 +159,7 @@ omissions.
           {% if not row.situation.empty or row.situation.count %}
             <table class="w-full text-sm mt-4">
               <thead>
-                <tr class="text-xs uppercase tracking-wide text-gray-500 text-left">
+                <tr class="text-xs uppercase tracking-wide text-gray-600 text-left">
                   <th class="font-medium pb-1">Place</th>
                   <th class="font-medium pb-1 text-right tabular-nums">Ledger says</th>
                   <th class="font-medium pb-1 text-right tabular-nums">They say</th>
@@ -170,16 +170,16 @@ omissions.
                   <tr class="border-t border-gray-100">
                     <td class="py-1.5 pr-2">
                       {{ place.name }}
-                      {% if place.worker %}<span class="text-xs text-gray-500">· field worker</span>{% endif %}
+                      {% if place.worker %}<span class="text-xs text-gray-600">· field worker</span>{% endif %}
                     </td>
                     <td class="py-1.5 text-right tabular-nums text-gray-900">
                       {% if place.held is None %}—{% else %}{{ place.held|qty:place.unit }}{% endif %}
                     </td>
                     <td class="py-1.5 text-right tabular-nums {% if place.variance %}text-orange-700{% else %}text-gray-600{% endif %}">
                       {% if place.never_counted %}
-                        <span class="text-gray-500">never counted</span>
+                        <span class="text-gray-600">never counted</span>
                       {% else %}
-                        {{ place.said|qty:place.unit }}{% if place.said_on %} <span class="text-xs text-gray-500">{{ place.said_on|day }}</span>{% endif %}
+                        {{ place.said|qty:place.unit }}{% if place.said_on %} <span class="text-xs text-gray-600">{{ place.said_on|day }}</span>{% endif %}
                       {% endif %}
                     </td>
                   </tr>
@@ -198,7 +198,7 @@ omissions.
             <summary class="text-sm text-brand-indigo cursor-pointer hover:underline list-none">
               Sourcing, orders and delivery in detail
               {% if row.commodity_count and not row.commodity_name %}
-                <span class="text-gray-500">· {{ row.commodity_count }} commodities, units differ</span>
+                <span class="text-gray-600">· {{ row.commodity_count }} commodities, units differ</span>
               {% endif %}
             </summary>
             <div class="mt-3">

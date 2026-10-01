@@ -13,7 +13,7 @@ on the Stock page.
 <div class="flex flex-wrap items-end justify-between gap-4 mb-1">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Catalogue</h1>
-    <p class="text-sm text-gray-500 mt-1">
+    <p class="text-sm text-gray-600 mt-1">
       {{ products|length }} product{{ products|length|pluralize }} this programme can buy against
     </p>
   </div>
@@ -61,9 +61,9 @@ of the reader who does not.
           <a href="{% url 'supply_chain:product_detail' product.slug %}"
              class="text-gray-900 hover:text-brand-indigo hover:underline">{{ product.name }}</a>
         </h2>
-        <code class="text-xs text-gray-500 bg-gray-50 border border-brand-border-light rounded px-1.5 py-0.5">{{ product.slug }}</code>
+        <code class="text-xs text-gray-600 bg-gray-50 border border-brand-border-light rounded px-1.5 py-0.5">{{ product.slug }}</code>
         {% if product.category %}
-          <span class="text-xs text-gray-500">{{ product.category|humanise }}</span>
+          <span class="text-xs text-gray-600">{{ product.category|humanise }}</span>
         {% endif %}
         <a href="{% url 'supply_chain:product_detail' product.slug %}"
            class="ml-auto text-xs font-medium hover:underline {% if product.items %}text-gray-600{% else %}text-message-warning-text{% endif %}">
@@ -126,10 +126,10 @@ of the reader who does not.
       {% if product.course_applies %}
         {% if product.has_course_definition %}
           <div class="mt-4 text-sm text-gray-700">
-            <span class="text-gray-500">Ration table</span>
+            <span class="text-gray-600">Ration table</span>
             {{ product.course_definition.base_units_per_course|qty:product.base_unit }} per course
             {% if product.course_definition.source %}
-              <span class="text-gray-500">({{ product.course_definition.source }})</span>
+              <span class="text-gray-600">({{ product.course_definition.source }})</span>
             {% endif %}
           </div>
         {% else %}
@@ -193,7 +193,7 @@ of the reader who does not.
       <div class="overflow-x-auto" tabindex="0" role="region"
            aria-label="Table, scrolls sideways">
       <table class="min-w-[44rem] w-full text-sm">
-        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
           <tr>
             <th class="text-left px-4 py-2">Trade item</th>
             <th class="text-left px-4 py-2">Manufacturer</th>
@@ -211,14 +211,14 @@ of the reader who does not.
               <td class="px-4 py-2.5">
                 <a href="{% url 'supply_chain:item_detail' item.id %}"
                    class="font-medium text-brand-indigo hover:underline">{{ item.name }}</a>
-                <div class="text-xs text-gray-500">{{ item.sku }}</div>
+                <div class="text-xs text-gray-600">{{ item.sku }}</div>
               </td>
               <td class="px-4 py-2.5 text-gray-700">{{ item.manufacturer|default:"—" }}</td>
               <td class="px-4 py-2.5 tabular-nums">
                 {% if item.base_per_pack %}
                   {{ item.base_per_pack }} / {{ item.pack_unit|default:product.pack_unit|unit_words }}
                   {% if item.differs_from_product %}
-                    <div class="text-xs text-gray-500">
+                    <div class="text-xs text-gray-600">
                       product says {{ product.base_per_pack }}
                     </div>
                   {% endif %}
@@ -262,7 +262,7 @@ of the reader who does not.
       </table>
       </div>
     {% else %}
-      <p class="px-4 py-4 text-sm text-gray-500">
+      <p class="px-4 py-4 text-sm text-gray-600">
         No trade items yet. Nothing can be ordered against a product until at
         least one manufacturer's version of it is recorded, and a quote that
         names no trade item cannot be converted to a per&#8209;{{ product.base_unit|unit_words }}
@@ -271,7 +271,7 @@ of the reader who does not.
     {% endif %}
   </div>
 {% empty %}
-  <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-gray-500">
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-gray-600">
     Nothing in the catalogue yet.
   </div>
 {% endfor %}

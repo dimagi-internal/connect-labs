@@ -15,6 +15,7 @@ from django.views.generic import TemplateView
 
 from connect_labs.labs.context import get_org_data
 from connect_labs.supply_chain.api_views import _access, has_program_context
+from connect_labs.supply_chain.banner import program_line
 from connect_labs.supply_chain.checks import course_applies_to_category, courses_carried_by_kits
 from connect_labs.supply_chain.history.as_of import end_of_day
 from connect_labs.supply_chain.history.timeline import timeline_for_contract
@@ -34,6 +35,7 @@ class OperationBase(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["supply_tabs"] = supply_tabs(self.request)
+        context["supply_program_line"] = program_line(self.request)
         return context
 
 

@@ -10,7 +10,7 @@ __prefix__ for the next index, bump TOTAL_FORMS.
 {% block extra_fields %}
 <div class="pt-4 border-t border-gray-100" x-data="{ count: {{ components.total_form_count }} }">
   <h2 class="text-sm font-semibold text-gray-900">What is inside, if this is a kit</h2>
-  <p class="text-xs text-gray-500 mt-0.5 mb-3 max-w-2xl">
+  <p class="text-xs text-gray-600 mt-0.5 mb-3 max-w-2xl">
     Leave empty for an ordinary item. For a co-pack, a treatment packet or a test
     kit, one row per product inside it. Stock is still counted in whole kits; the
     rows are what let each product be checked against its own specification, and
@@ -36,7 +36,7 @@ __prefix__ for the next index, bump TOTAL_FORMS.
             </div>
           {% endif %}
         {% endfor %}
-        <label class="flex items-center gap-1.5 text-xs text-gray-500 md:pt-6 whitespace-nowrap">
+        <label class="flex items-center gap-1.5 text-xs text-gray-600 md:pt-6 whitespace-nowrap">
           {{ component.DELETE }} Remove
         </label>
       </div>
@@ -68,7 +68,7 @@ __prefix__ for the next index, bump TOTAL_FORMS.
 {% if stated %}
 <div class="pt-4 border-t border-gray-100 mt-4">
   <h2 class="text-sm font-semibold text-gray-900">What the manufacturer states</h2>
-  <p class="text-xs text-gray-500 mt-0.5 mb-3 max-w-2xl">
+  <p class="text-xs text-gray-600 mt-0.5 mb-3 max-w-2xl">
     The figures the specification check reads — for this item itself, or for a product
     inside the kit. Use the figure names the product's requirements use.
   </p>
