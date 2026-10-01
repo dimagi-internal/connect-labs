@@ -109,6 +109,12 @@ This means you can give the assistant instructions like **"start AI coaching for
 
 If your program uses Open Chat Studio for its coaching bots, connecting it once is enough. After that, actions can start conversations on your behalf even when the report page is not open in your browser.
 
+### What an AI assistant can see in Open Chat Studio
+
+When an AI assistant reads Open Chat Studio chat sessions through Connect Labs, it sees only what your own OCS account can see — not every bot's sessions across the whole team. This means the assistant's view of conversations is scoped to your connection, the same as if you logged into OCS directly.
+
+If you have not yet connected your OCS account, the assistant will prompt you to do so at **Settings → Open Chat Studio** (or follow the link it provides). Web dashboards are unaffected by this change — they continue to work as before.
+
 !!! note "These features are off unless switched on for your report"
     Action buttons and the agent panel are not available on every report. If you do not see an action button or an agent panel on a report you work with, the feature has not yet been enabled for that report. Contact your program administrator if you believe it should be turned on.
 
@@ -218,8 +224,4 @@ Create it from **Workflows → Create Workflow → "Indicator Opportunity Report
 
 #### What indicator registries can now measure
 
-Indicator definitions (the semantic registry) can now express a wider range of metrics without any custom report-building. Two new capabilities make this possible:
-
-**Data from CommCare HQ forms in a separate app**
-
-Some metrics are recorded in a supervisor or quality-assurance app rather than the main field worker app — for example, Gold Standard assessment scores entered by a supervisor, or Register Mother forms completed centrally. The registry can now join that data onto each visit automatically, matching records by a shared key (such as a mother ID) within the same opportunity, and choosing which value to use when several records share a key (the most recent, the
+Indicator definitions (the semantic
