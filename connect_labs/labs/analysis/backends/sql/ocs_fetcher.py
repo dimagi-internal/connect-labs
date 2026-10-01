@@ -121,11 +121,14 @@ def fetch_ocs_sessions_as_visit_dicts(
     # ECS. Inlining the credential was the only path that worked.
     api_key = data_source.api_key
 
-    if api_key:
+    if api_key or data_source.bearer_token:
         import httpx
 
         base_url = getattr(settings, "OCS_URL", "https://www.openchatstudio.com").rstrip("/")
-        http_client = httpx.Client(headers={"X-API-KEY": api_key}, timeout=30.0)
+        # A person's own token (an MCP caller) reads only what they can see in OCS;
+        # a key reads its team's sessions.
+        headers = {"X-API-KEY": api_key} if api_key else {"Authorization": f"Bearer {data_source.bearer_token}"}
+        http_client = httpx.Client(headers=headers, timeout=30.0)
         close_client = http_client.close
     else:
         if request is None:

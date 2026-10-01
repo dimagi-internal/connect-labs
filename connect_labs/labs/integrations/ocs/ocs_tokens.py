@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import ExitStack, contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 
@@ -27,6 +28,30 @@ _REFRESH_LOCK_TIMEOUT_SECONDS = 60
 _REFRESH_LOCK_WAIT_SECONDS = 15
 
 CONNECT_PATH = "/labs/ocs/initiate/"
+
+# The person an MCP tool call is running for. Set around every MCP tool call
+# (connect_labs.mcp.server); unset for web requests and background jobs. A pipeline
+# that reads OCS sessions with no key of its own uses settings.OCS_API_KEY -- the
+# server's team key, which reads EVERY bot's sessions. That is a deliberate choice
+# for the web dashboards built on it; it is not a choice an MCP caller gets to make
+# by naming an experiment id in a preview. So under an MCP call it reads as the
+# caller instead, with their own OCS token, and sees exactly what they can see in OCS.
+_mcp_caller: ContextVar = ContextVar("labs_ocs_mcp_caller", default=None)
+
+
+def current_mcp_caller():
+    """The user an MCP tool call is running for, or None outside one."""
+    return _mcp_caller.get()
+
+
+@contextmanager
+def mcp_caller(user):
+    """Mark the duration of an MCP tool call as running for ``user``."""
+    reset = _mcp_caller.set(user)
+    try:
+        yield
+    finally:
+        _mcp_caller.reset(reset)
 
 
 class OCSTokenError(Exception):

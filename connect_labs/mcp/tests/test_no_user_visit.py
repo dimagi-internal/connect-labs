@@ -337,3 +337,45 @@ def test_a_restricted_call_is_not_mistaken_for_canopy(monkeypatch, auth_method, 
     monkeypatch.setattr(dependencies, "get_access_token", lambda: _Token())
 
     assert (workflow_run._delegated_token() is not None) is is_delegated
+
+
+# ---------------------------------------------------------------------------
+# A person an admin set to "no user visit data" is restricted everywhere
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("url", [FULL_URL, SAFE_URL])
+def test_a_person_set_to_no_uservisit_data_is_restricted_with_a_full_token_on_either_address(url):
+    user = _user(f"locked-{'safe' if url == SAFE_URL else 'full'}")
+    user.mcp_no_uservisit_data = True
+    user.save()
+    _, raw = MCPAccessToken.create_token(user, name="laptop")  # a FULL token
+
+    async def work(mcp_client):
+        return await mcp_client.list_tools()
+
+    assert {tool.name for tool in _call(url, raw, work)} == token_scopes.RESTRICTED_TOOLS
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_person_set_to_no_uservisit_data_is_restricted_when_signed_in_with_oauth():
+    user = _user("locked-oauth")
+    user.mcp_no_uservisit_data = True
+    user.save()
+    raw = _access_token(user, _mcp_application())  # the full `mcp` scope
+
+    async def work(mcp_client):
+        return await mcp_client.list_tools()
+
+    assert {tool.name for tool in _call(FULL_URL, raw, work)} == token_scopes.RESTRICTED_TOOLS
+
+
+def test_the_person_flag_restricts_a_delegated_call_too():
+    from connect_labs.mcp.server import restricted_call
+
+    class _Token:
+        claims = {"auth_method": "delegated", "labs_restricted_user": True}
+        scopes = []
+
+    assert restricted_call(_Token())

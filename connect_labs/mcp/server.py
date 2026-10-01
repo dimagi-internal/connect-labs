@@ -250,6 +250,10 @@ def restricted_call(access_token) -> bool:
     if endpoint_restricted():
         return True
     claims = getattr(access_token, "claims", None) or {}
+    # A person an admin set to "no user visit data" is restricted on every address,
+    # with every kind of credential, including a delegated one.
+    if claims.get("labs_restricted_user"):
+        return True
     if claims.get("auth_method") in ("pat", "oauth"):
         return token_scopes.is_restricted(getattr(access_token, "scopes", None))
     return False
@@ -306,6 +310,9 @@ class CommCarePATVerifier(TokenVerifier):
             "user_id": user.pk,
             "username": getattr(user, "username", "") or "",
             "auth_method": auth_method,
+            # The person is held to "no user visit data" whatever credential and
+            # address they use (User.mcp_no_uservisit_data; restricted_call).
+            "labs_restricted_user": bool(getattr(user, "mcp_no_uservisit_data", False)),
         }
         expires_at = extra.pop("expires_at", None)
         claims.update(extra)
@@ -422,11 +429,18 @@ def _run_registry_tool(
     # error paths below report to Sentry. It wraps the WHOLE call, not just the
     # handler, because the most valuable events to attribute are the ones the
     # except-branches log.
-    with audit_context(
-        user=user,
-        source="mcp",
-        request_id=f"mcp:{uuid.uuid4().hex}",
-        path=f"mcp:{spec.name}",
+    from connect_labs.labs.integrations.ocs.ocs_tokens import mcp_caller
+
+    # mcp_caller: any pipeline this call runs reads Open Chat Studio as this user, never
+    # with the server's team key (ocs_tokens.current_mcp_caller).
+    with (
+        audit_context(
+            user=user,
+            source="mcp",
+            request_id=f"mcp:{uuid.uuid4().hex}",
+            path=f"mcp:{spec.name}",
+        ),
+        mcp_caller(user),
     ):
         return _run_registry_tool_inner(spec, arguments, user, progress, actor_header)
 

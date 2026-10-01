@@ -37,6 +37,8 @@ class MCPTokenAuthentication(BaseAuthentication):
         # scope added later that nobody taught this check about.
         if token.scope != token_scopes.FULL:
             raise PermissionDenied("This token cannot use the export API: it has no access to user visit data.")
+        if getattr(token.user, "mcp_no_uservisit_data", False):
+            raise PermissionDenied("Your account has no access to user visit data, so it cannot use the export API.")
         token.touch()
         return (token.user, token)
 

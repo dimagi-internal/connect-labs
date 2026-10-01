@@ -49,6 +49,13 @@ class User(AbstractUser):
         help_text="When on, labs-only synthetic opportunities matching the user's email "
         "domain are merged into their labs_context org/program/opportunity lists.",
     )
+    mcp_no_uservisit_data = models.BooleanField(
+        "MCP: no user visit data",
+        default=False,
+        help_text="When on, every MCP call this person makes keeps to 'no user visit data' -- "
+        "on either MCP address and with any token -- and the labs export API refuses them. "
+        "For people who may use labs through Claude but must never see real visit data there.",
+    )
 
     REQUIRED_FIELDS = []
 

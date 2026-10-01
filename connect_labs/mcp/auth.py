@@ -26,7 +26,7 @@ def authenticate_request(request) -> tuple[object, JsonResponse | None]:
         return None, _unauthorized("Invalid or expired token")
     # Callers of this verifier (outside the MCP server's tool gate) act with the
     # user's full reach, so only a full-access token may pass.
-    if token.scope != token_scopes.FULL:
+    if token.scope != token_scopes.FULL or getattr(token.user, "mcp_no_uservisit_data", False):
         return None, JsonResponse(
             {"error": {"code": "PERMISSION_DENIED", "message": "This token's scope does not allow this endpoint."}},
             status=403,
