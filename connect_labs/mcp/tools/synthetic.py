@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 import re
 import time
+from contextvars import ContextVar
 from typing import Any
 
 import httpx
@@ -37,7 +39,7 @@ from connect_labs.labs.synthetic.visit_count import resync_visit_count
 
 from ..connect_token import require_connect_token
 from ..progress import NULL_PROGRESS
-from ..tool_registry import MCPToolError, register
+from ..tool_registry import MCPToolError, get_tool, register
 
 logger = logging.getLogger(__name__)
 
@@ -326,6 +328,118 @@ def _new_profile_task_id(user, *, kind: str = "", opportunity_ids: list[int] = (
     # Counted before the job is queued, so it holds its slot from the start.
     profile_limits.record(user, task_id, kind=kind, opportunity_ids=list(opportunity_ids), args=args or {})
     return task_id
+
+
+def _set_job_owner(user, task_id: str) -> None:
+    from django.core.cache import cache
+
+    cache.set(_PROFILE_OWNER_KEY.format(task_id=task_id), getattr(user, "id", None), _PROFILE_OWNER_TTL_SECONDS)
+
+
+# ---------------------------------------------------------------------------
+# Heavy tools run on the worker (connect_labs.labs.synthetic.tasks.run_synthetic_tool)
+# ---------------------------------------------------------------------------
+
+#: How long a tool waits for its job before handing back a job id instead. Under the
+#: web tier's 600s request cap, with room for the reply.
+_WAIT_SECONDS = 480
+
+_WAIT_PARAM = {
+    "type": "boolean",
+    "default": True,
+    "description": (
+        "true (default): wait for the result, up to 8 minutes, then return a task_id to poll with "
+        "synthetic_job_status if it is still running. false: return the task_id at once."
+    ),
+}
+
+_on_worker: ContextVar[bool] = ContextVar("labs_synthetic_on_worker", default=False)
+
+
+def _runs_on_worker(fn):
+    """Run this tool's work as a background job on the worker, not in the web request.
+
+    The tool's reply is unchanged: by default it waits for the job and returns its
+    result. Only on the worker (run_on_this_worker) does the body itself run.
+    """
+
+    @functools.wraps(fn)
+    def tool(user, *, wait: bool = True, **kwargs):
+        # Only a call arriving over HTTP is moved: that is the web request this keeps
+        # the work out of. In-process callers (the worker itself, management commands,
+        # tests) run the body directly, as they always have.
+        if _on_worker.get() or not _in_web_request():
+            return fn(user, **kwargs)
+        kwargs.pop("progress", None)  # the worker reports its own progress
+        return _run_on_worker(user, fn.__name__, kwargs, wait=wait)
+
+    tool.runs_on_worker = fn
+    return tool
+
+
+def _in_web_request() -> bool:
+    """True when this tool call arrived over HTTP (the MCP endpoint)."""
+    try:
+        from fastmcp.server.dependencies import get_http_request
+
+        get_http_request()
+    except Exception:  # noqa: BLE001 -- no HTTP request: in-process call
+        return False
+    return True
+
+
+def _run_on_worker(user, tool_name: str, arguments: dict, *, wait: bool) -> dict[str, Any]:
+    import uuid
+
+    from celery.result import AsyncResult
+
+    from config import celery_app
+    from connect_labs.labs.synthetic.tasks import run_synthetic_tool
+
+    from ..visit_access import caller_restricted
+
+    task_id = str(uuid.uuid4())
+    _set_job_owner(user, task_id)
+    run_synthetic_tool.apply_async(
+        kwargs={
+            "tool_name": tool_name,
+            "arguments": arguments,
+            "user_id": user.pk,
+            "restricted": caller_restricted(),
+        },
+        task_id=task_id,
+    )
+    queued = {"task_id": task_id, "state": "QUEUED", "poll_with": "synthetic_job_status"}
+    if not wait:
+        return queued
+    result = AsyncResult(task_id, app=celery_app)
+    deadline = time.monotonic() + _WAIT_SECONDS
+    while not result.ready() and time.monotonic() < deadline:
+        time.sleep(1)
+    if not result.ready():
+        return {**queued, "state": result.state, "note": "Still running. Poll synthetic_job_status with task_id."}
+    if result.failed():
+        error = result.result
+        if isinstance(error, MCPToolError):
+            raise error
+        raise MCPToolError("UPSTREAM_ERROR", f"{tool_name} failed on the worker: {error}")
+    value = result.result
+    return {**value, "task_id": task_id} if isinstance(value, dict) else {"value": value, "task_id": task_id}
+
+
+def run_on_this_worker(tool_name: str, user, arguments: dict, *, progress=NULL_PROGRESS):
+    """The worker side of _run_on_worker: run the tool's own body, as ``user``."""
+    tool = get_tool(tool_name)
+    if tool is None or not hasattr(tool.handler, "runs_on_worker"):
+        raise MCPToolError("NOT_FOUND", f"{tool_name} is not a tool that runs on the worker")
+    reset = _on_worker.set(True)
+    try:
+        kwargs = dict(arguments)
+        if tool.wants_progress:
+            kwargs["progress"] = progress
+        return tool.handler(user=user, **kwargs)
+    finally:
+        _on_worker.reset(reset)
 
 
 def _profile_task_owned_by(user, task_id: str) -> bool:
@@ -666,6 +780,7 @@ def _load_form_schema_for_opp(opportunity_id: int, user) -> FormSchema:
     },
     is_write=True,
 )
+@_runs_on_worker
 def synthetic_generate_from_manifest(
     user,
     *,
@@ -1440,6 +1555,7 @@ def synthetic_env_get(user, *, env: str) -> dict[str, Any]:
     },
     is_write=True,
 )
+@_runs_on_worker
 def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, Any]:
     from connect_labs.labs.synthetic.ensure.engine import ensure_synthetic_data
     from connect_labs.labs.synthetic.ensure.registry import get_env_path
@@ -1459,7 +1575,9 @@ def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, An
 @register(
     name="synthetic_profile_opp",
     description=(
-        "PHASE 1 (prod-touching), QUEUED. Profile one real opportunity into a "
+        "ADVANCED -- most people want synthetic_clone_opp, which does this and the next step in one "
+        "call. Step 1 of 2 of a clone: measures one real opportunity on the server (reads production; "
+        "runs in the background, poll synthetic_job_status) into a "
         "self-contained bundle (manifest.yaml + app_structure.json + scrubbed "
         "opportunity.json) on a Celery worker; returns a task_id immediately. Poll with "
         "synthetic_profile_status. Reads real exports with the caller's OAuth token and "
@@ -1485,7 +1603,7 @@ def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, An
                 ),
             },
         },
-        "required": ["source_opportunity_id", "out_dir"],
+        "required": ["source_opportunity_id"],
         "additionalProperties": False,
     },
     is_write=False,
@@ -1494,7 +1612,7 @@ def synthetic_profile_opp(
     user,
     *,
     source_opportunity_id: int,
-    out_dir: str,
+    out_dir: str = "gdrive:",
     curate: bool = False,
     case_timelines: bool = False,
     mirror: bool = False,
@@ -1538,11 +1656,10 @@ def synthetic_profile_opp(
 @register(
     name="synthetic_profile_status",
     description=(
-        "Poll a queued profiling job started by synthetic_profile_opp, synthetic_profile_opps_bulk, "
-        "synthetic_profile_from_prod or synthetic_clone_profile. Only the account that queued "
-        "the job can read it. Returns "
+        "Older name for synthetic_job_status, which follows any synthetic background job (prefer it). "
+        "Only the account that queued the job can read it. Returns "
         "state (PENDING | PROGRESS | SUCCESS | FAILURE), the last progress message, and "
-        "on success the bundle_dir/bundle_root the inline tool would have returned."
+        "on success the job's result."
     ),
     input_schema={
         "type": "object",
@@ -1561,7 +1678,7 @@ def synthetic_profile_status(user, *, task_id: str) -> dict[str, Any]:
     # else's id get the same answer, so a guessed id reveals nothing, not even that
     # the job exists.
     if not _profile_task_owned_by(user, task_id):
-        raise MCPToolError("NOT_FOUND", f"No profiling job {task_id!r} started by your account.")
+        raise MCPToolError("NOT_FOUND", f"No synthetic job {task_id!r} started by your account.")
     res = AsyncResult(task_id, app=celery_app)
     out: dict[str, Any] = {"task_id": task_id, "state": res.state}
     if res.state == "PROGRESS" and isinstance(res.info, dict):
@@ -1578,8 +1695,9 @@ def synthetic_profile_status(user, *, task_id: str) -> dict[str, Any]:
 @register(
     name="synthetic_profile_opps_bulk",
     description=(
-        "PHASE 1 (prod-touching), QUEUED. Returns a task_id; poll "
-        "synthetic_profile_status. Profile multiple real opportunities into "
+        "ADVANCED -- most people want synthetic_clone_opp. Step 1 of 2 of a clone, for several "
+        "opportunities: reads production, runs in the background; returns a task_id, poll "
+        "synthetic_job_status. Profile multiple real opportunities into "
         "self-contained profile bundles. Each opp is profiled independently; "
         "failures are logged and skipped so a single bad opp doesn't abort the rest. "
         "Returns the resolved bundle_root (pass it to synthetic_generate_opps_bulk) "
@@ -1614,7 +1732,7 @@ def synthetic_profile_status(user, *, task_id: str) -> dict[str, Any]:
                 ),
             },
         },
-        "required": ["source_opportunity_ids", "out_dir"],
+        "required": ["source_opportunity_ids"],
         "additionalProperties": False,
     },
     is_write=False,
@@ -1623,7 +1741,7 @@ def synthetic_profile_opps_bulk(
     user,
     *,
     source_opportunity_ids: list[int],
-    out_dir: str,
+    out_dir: str = "gdrive:",
     curate: bool = False,
     case_timelines: bool = False,
     mirror: bool = False,
@@ -1699,6 +1817,7 @@ def synthetic_profile_opps_bulk(
     },
     is_write=False,
 )
+@_runs_on_worker
 def synthetic_fidelity_vs_source(user, *, bundle_dir: str, top_n_fields: int = 15) -> dict[str, Any]:
     try:
         token = require_connect_token(user)
@@ -1759,7 +1878,8 @@ def synthetic_fidelity_vs_source(user, *, bundle_dir: str, top_n_fields: int = 1
 @register(
     name="synthetic_generate_opp",
     description=(
-        "PHASE 2 (offline, no prod). Generate fixture data and register a labs-only "
+        "ADVANCED -- most people want synthetic_clone_opp. Step 2 of 2 of a clone (reads no "
+        "production data). Generate fixture data and register a labs-only "
         "synthetic opportunity from a profile bundle written by synthetic_profile_opp. "
         "Idempotent: if a SyntheticOpportunity cloned from the same source already "
         "exists and fresh=False, returns the existing row immediately (skipped=True). "
@@ -1779,7 +1899,7 @@ def synthetic_fidelity_vs_source(user, *, bundle_dir: str, top_n_fields: int = 1
             },
             "program_id": {
                 "type": "integer",
-                "description": "Labs-only program ID to file this opp under.",
+                "description": "Labs-only program to file this opp under. Optional: a new program is made if omitted.",
             },
             "program_name": {"type": "string", "default": "Labs Synthetic"},
             "org_name": {"type": "string", "default": "Labs Synthetic"},
@@ -1796,22 +1916,28 @@ def synthetic_fidelity_vs_source(user, *, bundle_dir: str, top_n_fields: int = 1
                 ),
             },
         },
-        "required": ["bundle_dir", "program_id"],
+        "required": ["bundle_dir"],
         "additionalProperties": False,
     },
     is_write=True,
 )
+@_runs_on_worker
 def synthetic_generate_opp(
     user,
     *,
     bundle_dir: str,
-    program_id: int,
+    program_id: int | None = None,
     program_name: str = "Labs Synthetic",
     org_name: str = "Labs Synthetic",
     fresh: bool = False,
     target_opportunity_id: int | None = None,
 ) -> dict[str, Any]:
-    _require_labs_only_program(user, program_id)
+    if program_id is None:
+        from connect_labs.labs.synthetic.provisioning import allocate_shared_program_id
+
+        program_id = allocate_shared_program_id()
+    else:
+        _require_labs_only_program(user, program_id)
     if target_opportunity_id is not None:
         _require_labs_only_target(user, target_opportunity_id)
     drive = DriveClient()
@@ -1844,7 +1970,8 @@ def synthetic_generate_opp(
 @register(
     name="synthetic_generate_opps_bulk",
     description=(
-        "PHASE 2 (offline, no prod). Generate fixtures and register labs-only "
+        "ADVANCED -- most people want synthetic_clone_opp. Step 2 of 2 of a clone, for several "
+        "bundles (reads no production data). Generate fixtures and register labs-only "
         "synthetic opportunities for every bundle subdirectory under bundle_root. "
         "Allocates one shared program_id for the cohort. Per-opp failures are "
         "logged and skipped. Returns a list of CloneResult dicts."
@@ -1869,6 +1996,7 @@ def synthetic_generate_opp(
     },
     is_write=True,
 )
+@_runs_on_worker
 def synthetic_generate_opps_bulk(
     user,
     *,
@@ -1959,7 +2087,8 @@ def synthetic_fidelity_report(user, *, bundle_dir: str) -> dict[str, Any]:
 @register(
     name="synthetic_clone_profile",
     description=(
-        "PHASE 1 (safe mode) for a whole cohort described by a YAML spec. The spec "
+        "ADVANCED -- most people want synthetic_clone_opp. Step 1 of 2 of a cohort clone (reads "
+        "production; runs in the background) for a whole cohort described by a YAML spec. The spec "
         "names opportunity_ids, the program (id + names), and bundle_root (use "
         "'gdrive:' for durable Drive storage). Profiles every opp into bundle_root and "
         "returns the UPDATED spec_yaml with the resolved bundle_root recorded — hand "
@@ -2019,7 +2148,8 @@ def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
 @register(
     name="synthetic_clone_generate",
     description=(
-        "PHASE 2 (offline, no prod) for a whole cohort described by a YAML spec — the "
+        "ADVANCED -- most people want synthetic_clone_opp. Step 2 of 2 of a cohort clone (reads no "
+        "production data) for a whole cohort described by a YAML spec — the "
         "spec returned by synthetic_clone_profile. Reads the bundles from bundle_root "
         "and registers every opp as a labs-only opportunity under the spec's program_id "
         "(allocated + recorded back if unset) with program_name/org_name. Idempotent; "
@@ -2040,6 +2170,7 @@ def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
     is_write=True,
     wants_progress=True,
 )
+@_runs_on_worker
 def synthetic_clone_generate(user, *, spec_yaml: str, fresh: bool = False, progress=NULL_PROGRESS) -> dict[str, Any]:
     try:
         spec = CohortSpec.from_yaml(spec_yaml)
@@ -2074,3 +2205,129 @@ def synthetic_clone_generate(user, *, spec_yaml: str, fresh: bool = False, progr
             for r in results
         ],
     }
+
+
+# Every tool that runs on the worker takes `wait` (see _WAIT_PARAM).
+for _name in (
+    "synthetic_generate_from_manifest",
+    "synthetic_env_ensure",
+    "synthetic_fidelity_vs_source",
+    "synthetic_generate_opp",
+    "synthetic_generate_opps_bulk",
+    "synthetic_clone_generate",
+):
+    get_tool(_name).input_schema["properties"]["wait"] = _WAIT_PARAM
+
+
+# =============================================================================
+# The starting point: clone an opportunity in one call, then follow one job.
+# =============================================================================
+
+_STATE_WORDS = {
+    "PENDING": "Waiting to start (queued, or waiting for a free synthetic slot).",
+    "RETRY": "Waiting for a free synthetic slot -- other clones are running.",
+    "STARTED": "Running.",
+    "PROGRESS": "Running.",
+    "SUCCESS": "Done.",
+    "FAILURE": "Failed.",
+}
+
+
+@register(
+    name="synthetic_clone_opp",
+    description=(
+        "START HERE to make synthetic data. Clones one or more real opportunities into new synthetic "
+        "(labs-only) opportunities, in one call, as a background job. It measures each real "
+        "opportunity on the server and generates a clone from the measurements: every worker keeps "
+        "its caseload, each case follows a timeline modelled on the real cases (growth, visit "
+        "spacing, outcomes), and no real visit, case, name or date is copied. Returns a task_id at "
+        "once; follow it with synthetic_job_status (a small opportunity takes a few minutes, a "
+        "large one up to about 20). When it finishes you get the new opportunity ids, filed under "
+        "a new program, already visible in your labs lists. You need access to each source "
+        "opportunity."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "source_opportunity_ids": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "minItems": 1,
+                "description": "The real opportunities to clone (labs_context lists the ones you can access).",
+            },
+            "program_name": {
+                "type": "string",
+                "description": "Name for the new synthetic program the clones are filed under. Optional.",
+            },
+            "case_timelines": {
+                "type": "boolean",
+                "default": True,
+                "description": (
+                    "Model each case's timeline (default). false makes a faster clone that matches each "
+                    "field's overall spread but does not follow individual cases over time."
+                ),
+            },
+        },
+        "required": ["source_opportunity_ids"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_clone_opp(
+    user, *, source_opportunity_ids: list[int], program_name: str | None = None, case_timelines: bool = True
+) -> dict[str, Any]:
+    from connect_labs.labs.synthetic.tasks import run_synthetic_clone_opp
+
+    from ..visit_access import caller_restricted
+
+    opp_ids = [int(x) for x in source_opportunity_ids]
+    for opp_id in opp_ids:
+        _require_opportunity_access(user, opp_id)
+    try:
+        token = require_connect_token(user)
+    except MCPToolError:
+        raise MCPToolError("PERMISSION_DENIED", "No Connect token -- cannot read the real opportunities.")
+    limit_args = {"opportunity_ids": sorted(opp_ids), "case_timelines": bool(case_timelines)}
+    running = _admit_profile(user, kind="clone_opp", opportunity_ids=opp_ids, args=limit_args)
+    if running:
+        return {**running, "poll_with": "synthetic_job_status"}
+    task_id = _new_profile_task_id(user, kind="clone_opp", opportunity_ids=opp_ids, args=limit_args)
+    run_synthetic_clone_opp.apply_async(
+        kwargs={
+            "source_opportunity_ids": opp_ids,
+            "program_name": program_name or f"Synthetic clone of {', '.join(str(i) for i in opp_ids)}",
+            "case_timelines": bool(case_timelines),
+            "oauth_token": token,
+            "user_id": user.pk,
+            "restricted": caller_restricted(),
+        },
+        task_id=task_id,
+    )
+    return {
+        "task_id": task_id,
+        "state": "QUEUED",
+        "poll_with": "synthetic_job_status",
+        "what_happens": "Step 1 of 2 measures the real opportunities; step 2 generates the clones.",
+    }
+
+
+@register(
+    name="synthetic_job_status",
+    description=(
+        "Follow a synthetic background job: synthetic_clone_opp, a profile, or a generation that returned "
+        "a task_id. Says in plain words where it is ('Step 1 of 2: measuring...'), and when it is done, "
+        "returns its result (for a clone: the new opportunity ids and how to open them). Only the "
+        "account that started the job can read it."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"task_id": {"type": "string"}},
+        "required": ["task_id"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_job_status(user, *, task_id: str) -> dict[str, Any]:
+    out = synthetic_profile_status(user, task_id=task_id)
+    out["status"] = out.get("message") or _STATE_WORDS.get(out["state"], out["state"])
+    return out

@@ -113,19 +113,17 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
 #: marks as such. Reaching these needs no check on the target opp.
 SYNTHETIC_TOOLS: frozenset[str] = frozenset(
     {
-        "synthetic_env_ensure",
-        "synthetic_generate_from_manifest",
-        "synthetic_profile_from_prod",
-        "synthetic_profile_opp",
-        "synthetic_profile_opps_bulk",
+        # The starting point and its status: clone an opportunity in one call. The
+        # step-by-step profile/generate tools stay on the full address for the people
+        # who build with them; a restricted caller gets the one flow that is enough.
+        "synthetic_clone_opp",
+        "synthetic_job_status",
         "synthetic_profile_status",
-        "synthetic_clone_profile",
+        # Score a clone against its source (aggregate statistics only).
         "synthetic_fidelity_vs_source",
-        "synthetic_generate_opp",
-        "synthetic_generate_opps_bulk",
-        "synthetic_clone_generate",
+        # Demo environments (fresh=true is refused: visit_access.synthetic_denied_reason).
+        "synthetic_env_ensure",
         "synthetic_set_my_visibility",
-        "synthetic_image_server_status",
         "synthetic_local_records_count",
         # Compiles a pipeline to SQL text; executes nothing.
         "pipeline_sql",
