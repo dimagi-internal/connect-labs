@@ -811,6 +811,30 @@ function WorkflowUI({
     q14: 'Sibling count',
   };
 
+  // Exact question wording as asked on the form -- read from each
+  // question_N_* field's own "Question:" label in the CommCare app
+  // (random_test_question_bank group, shared verbatim across all 6
+  // visit-type forms and both domains; spot-checked identical on both ANC
+  // Visit and 1 Week Visit). Only the form builder's own "**Question**:"
+  // markdown prefix and an internal line break have been stripped for
+  // display -- the question text itself is unedited.
+  var QUESTION_TEXT = {
+    q1: "Enter the full name of the baby's father.",
+    q2: "What is this mother's date of birth?",
+    q3: "What is this baby's date of birth?",
+    q4: "What is this mother's level of education?",
+    q5: 'How many live births or stillbirths after 24 weeks has this mother had?',
+    q6: 'How many total pregnancies has this mother had?',
+    q7: "What is this baby's father's main occupation?",
+    q8: "What is this mother's main occupation?",
+    q9: 'How many living children did this mother have at the time of registration, not including the current baby?',
+    q10: 'Which LGA did this mother grow up in?',
+    q11: 'Enter the name of the village or town where the mother grew up.',
+    q12: "Enter the mother's father's first name.",
+    q13: "Enter the mother's mother's first name.",
+    q14: "How many children did mother's mother give birth to?",
+  };
+
   var motherQuestionFailRateStats = React.useMemo(
     function () {
       var stats = {};
@@ -839,6 +863,7 @@ function WorkflowUI({
           return {
             key: k,
             label: QUESTION_LABELS[k] || k,
+            questionText: QUESTION_TEXT[k] || '',
             correct: s.correct,
             incorrect: s.incorrect,
             total: total,
@@ -1141,6 +1166,12 @@ function WorkflowUI({
           field:
             'mother_q_pick_1..4 (form.additional_visit_verification_block.verification_page.random_test_setup_page.random_test_setup.pick_1..4 -- each holds a question key like "q1" when that slot was used this visit) gates whether mother_q_score_1..14 (…random_test_setup.expected_answer.score_q1..14, transform: "float", 1 = correct / 0 = incorrect) counts for that visit. Shared path across all 6 visit-type forms and both domains.',
         },
+        {
+          name: 'Mother question fail rate -- hover for exact question wording',
+          def: "Hovering a question name on the chart's left-hand axis shows that question's exact wording as asked on the form, via the browser's own tooltip. The short name shown as the axis label (e.g. \"Baby's father's name\") is a paraphrase for chart readability -- the hover text is the real question text.",
+          field:
+            "QUESTION_TEXT[key] -- hardcoded per question key, read from each question_N_* field's own \"**Question**:\" label in the CommCare app (random_test_question_bank group inside additional_visit_verification_block.verification_page.random_test_setup_page), with only that markdown prefix and an internal line break stripped for display. Verified identical wording on both the ANC Visit and 1 Week Visit test-domain forms. Chart.js has no built-in hover tooltip for axis tick labels, so this is implemented via the chart's onHover callback: it checks whether the cursor is in the y-axis label gutter (left of chartArea) and which row (an even split of chartArea's height, one per plotted question) it's over, then sets the canvas element's native title attribute to that row's text -- cleared on canvas onMouseLeave.",
+        },
       ],
     },
   ];
@@ -1408,6 +1439,42 @@ function WorkflowUI({
             y: { stacked: true },
           },
           plugins: { legend: { position: 'bottom' } },
+          // Chart.js has no built-in hover tooltip for axis tick labels
+          // (its tooltip plugin only responds to bar/point elements), so
+          // hovering a question name uses the browser's own native title
+          // tooltip instead: on every mousemove over the canvas, check
+          // whether the cursor is in the y-axis label gutter (left of
+          // chartArea) and, if so, which row it's over (rows are an even
+          // split of chartArea's height, one per category), then set the
+          // canvas's title to that row's exact form question text. Cleared
+          // via onMouseLeave on the <canvas> itself below.
+          onHover: function (event, _activeElements, chart) {
+            var canvas = chart.canvas;
+            var area = chart.chartArea;
+            var x = event.x;
+            var y = event.y;
+            var count = motherQuestionFailRateStats.length;
+            if (
+              count === 0 ||
+              x === null ||
+              x === undefined ||
+              x >= area.left ||
+              y === null ||
+              y === undefined ||
+              y < area.top ||
+              y > area.bottom
+            ) {
+              canvas.title = '';
+              return;
+            }
+            var rowHeight = (area.bottom - area.top) / count;
+            var idx = Math.floor((y - area.top) / rowHeight);
+            if (idx < 0 || idx >= count) {
+              canvas.title = '';
+              return;
+            }
+            canvas.title = motherQuestionFailRateStats[idx].questionText || '';
+          },
         },
       });
 
@@ -1797,8 +1864,9 @@ function WorkflowUI({
                 picks -- not just "ever asked" at some earlier visit -- so
                 right/wrong/not-asked-this-visit stays unambiguous. Each bar's
                 label shows the fail rate and the number of responses it's based
-                on. Respects the domain and eligibility filters above, plus this
-                tab's own FLW filter if set.
+                on. Hover a question name on the left to see its exact wording
+                from the form. Respects the domain and eligibility filters
+                above, plus this tab's own FLW filter if set.
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -1810,7 +1878,13 @@ function WorkflowUI({
                       'px',
                   }}
                 >
-                  <canvas ref={motherQChartRef}></canvas>
+                  <canvas
+                    ref={motherQChartRef}
+                    onMouseLeave={function () {
+                      if (motherQChartRef.current)
+                        motherQChartRef.current.title = '';
+                    }}
+                  ></canvas>
                 </div>
               ) : (
                 <p className="text-sm text-gray-500">
