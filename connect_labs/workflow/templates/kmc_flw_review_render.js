@@ -2471,9 +2471,7 @@ function WorkflowUI({
             <div className="px-4 pt-4">
               <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
                 <div className="text-sm font-medium text-gray-900">
-                  {built.dob && c.gestational_age_wks
-                    ? 'Weight for postmenstrual age'
-                    : 'Weight for age'}
+                  Weight for age
                 </div>
                 <div className="flex gap-4 text-[11px] text-gray-500">
                   <span>
