@@ -193,6 +193,20 @@ function WorkflowUI({
     return 'ERROR';
   }
 
+  // Same location-based field pick as gpsOutcome() -- the distance actually
+  // measured depends on whether the visit was at the mother's home or a
+  // health facility, never both.
+  function gpsDistanceMeters(row) {
+    var locType = row.where_is_the_visit_being_conducted;
+    var d =
+      locType === 'mothers_home'
+        ? row.gps_distance_from_home_meters
+        : locType === 'health_facility'
+          ? row.gps_distance_from_health_facility_meters
+          : null;
+    return typeof d === 'number' && !isNaN(d) ? Math.round(d) : 'NA';
+  }
+
   function qrOutcome(row) {
     if (row.qr_code_visit_verification) return row.qr_code_visit_verification;
     // Confirmed by scanning real submissions: whenever the mother didn't
@@ -279,6 +293,7 @@ function WorkflowUI({
     { key: 'visit_number', label: 'Visit #' },
     { key: 'where_is_the_visit_being_conducted', label: 'GPS location' },
     { key: 'gps_outcome', label: 'GPS outcome' },
+    { key: 'gps_distance_meters', label: 'Distance from previous point (m)' },
     { key: 'qr_outcome', label: 'QR outcome' },
     { key: 'signature_outcome', label: 'Signature outcome' },
     { key: 'mother_questions_outcome', label: 'Mother questions outcome' },
@@ -298,6 +313,7 @@ function WorkflowUI({
     if (key === 'visit_datetime')
       return formatVisitDateTime(row.visit_datetime);
     if (key === 'gps_outcome') return gpsOutcome(row);
+    if (key === 'gps_distance_meters') return gpsDistanceMeters(row);
     if (key === 'qr_outcome') return qrOutcome(row);
     if (key === 'signature_outcome') return signatureOutcome(row);
     if (key === 'mother_questions_outcome') return motherQuestionsOutcome(row);
@@ -573,8 +589,9 @@ function WorkflowUI({
       if (acc === null) return;
       // Color from the form's own gps_visit_verification_matches, not
       // re-derived from distance here, so this stays correct even if the
-      // form's threshold logic ever changes.
-      var point = { x: d, y: acc };
+      // form's threshold logic ever changes. username rides along on the
+      // point so the tooltip can show which FLW it belongs to.
+      var point = { x: d, y: acc, username: row.username };
       if (row.gps_visit_verification_matches === 'yes') pass.push(point);
       else fail.push(point);
     });
@@ -600,45 +617,74 @@ function WorkflowUI({
     [displayRows],
   );
 
-  // --- Mother Questions Answered (Failed Verification Analysis tab) ------
-  // Up to 4 random spot-check questions are picked and administered per
-  // visit (mother_q_pick_1..4, each holding a question key like "q1" when
-  // that slot was used, blank when not). "Number answered" for a visit is
-  // just how many of those 4 slots are non-blank.
-  function motherQuestionsAskedCount(row) {
-    var picks = [
-      row.mother_q_pick_1,
-      row.mother_q_pick_2,
-      row.mother_q_pick_3,
-      row.mother_q_pick_4,
-    ];
-    var n = 0;
-    picks.forEach(function (p) {
-      if (p !== null && p !== undefined && p !== '') n += 1;
-    });
-    return n;
-  }
+  // --- Mother question fail rate (Failed Verification Analysis tab) ------
+  // Up to 4 questions are randomly picked from a bank of 14 and
+  // administered per visit (mother_q_pick_1..4, each holding a question
+  // key like "q1" when that slot was used this visit). Each question's
+  // score_qN is CommCare's own calc, and it is 0 for BOTH "answered wrong"
+  // and "wasn't one of this visit's 4 picks" -- the form conflates the
+  // two. Gate on mother_q_pick_1..4 (this visit's actual picks), NOT on
+  // asked_qN: that field is a rolling case property that stays 'yes' on
+  // every later visit once a question has ever been asked (until a reset
+  // cycle clears it), so it would misreport "wrong" on visits that didn't
+  // re-ask the question at all. Gating on the picks instead gives a clean
+  // right/wrong/not-asked-this-visit split with no ambiguity.
+  var QUESTION_LABELS = {
+    q1: "Baby's father's name",
+    q2: "Mother's date of birth",
+    q3: "Baby's date of birth",
+    q4: "Mother's education level",
+    q5: 'Parity',
+    q6: 'Gravidity',
+    q7: "Father's occupation",
+    q8: "Mother's occupation",
+    q9: 'Number of living children',
+    q10: "Mother's LGA",
+    q11: 'Village name',
+    q12: "Mother's father's name",
+    q13: "Mother's mother's name",
+    q14: 'Sibling count',
+  };
 
-  var motherQuestionsAskedStats = React.useMemo(
+  var motherQuestionFailRateStats = React.useMemo(
     function () {
-      var buckets = {};
-      for (var i = 0; i <= 4; i += 1) {
-        buckets[i] = { count: i, pass: 0, fail: 0, na: 0 };
+      var stats = {};
+      for (var i = 1; i <= 14; i += 1) {
+        stats['q' + i] = { correct: 0, incorrect: 0 };
       }
       displayRows.forEach(function (row) {
-        var n = motherQuestionsAskedCount(row);
-        if (!buckets[n]) buckets[n] = { count: n, pass: 0, fail: 0, na: 0 };
-        var outcome = motherQuestionsOutcome(row);
-        if (outcome === 'Pass') buckets[n].pass += 1;
-        else if (outcome === 'Fail') buckets[n].fail += 1;
-        else buckets[n].na += 1;
+        var picks = [
+          row.mother_q_pick_1,
+          row.mother_q_pick_2,
+          row.mother_q_pick_3,
+          row.mother_q_pick_4,
+        ];
+        for (var i = 1; i <= 14; i += 1) {
+          var qKey = 'q' + i;
+          if (picks.indexOf(qKey) === -1) continue; // not asked this visit
+          var score = row['mother_q_score_' + i];
+          if (score === 1) stats[qKey].correct += 1;
+          else stats[qKey].incorrect += 1;
+        }
       });
-      return Object.keys(buckets)
+      return Object.keys(stats)
         .map(function (k) {
-          return buckets[k];
+          var s = stats[k];
+          var total = s.correct + s.incorrect;
+          return {
+            key: k,
+            label: QUESTION_LABELS[k] || k,
+            correct: s.correct,
+            incorrect: s.incorrect,
+            total: total,
+            failRate: total > 0 ? Math.round((s.incorrect / total) * 100) : 0,
+          };
+        })
+        .filter(function (s) {
+          return s.total > 0;
         })
         .sort(function (a, b) {
-          return a.count - b.count;
+          return b.failRate - a.failRate;
         });
     },
     [displayRows],
@@ -790,6 +836,12 @@ function WorkflowUI({
             'where_is_the_visit_being_conducted (form.visit_location.where_is_the_visit_being_conducted); visit_location_has_prev_home_gps (form.gps_verification.location_check.visit_location_has_prev_home_gps); visit_location_has_prev_health_facility_gps (form.gps_verification.location_check.visit_location_has_prev_health_facility_gps); gps_visit_verification_matches (form.gps_verification.location_check.gps_visit_verification_matches)',
         },
         {
+          name: 'Distance from previous point (m)',
+          def: "The same distance CommCare's own gpsOutcome threshold is based on (≤200m = Pass), rounded to the nearest meter for display. Picks the field matching GPS location (home vs health facility), same as GPS outcome. NA when the location was 'other' or there was no prior point to measure against -- i.e. whenever GPS outcome is also NA.",
+          field:
+            "gpsDistanceMeters(row) -- picks gps_distance_from_home_meters or gps_distance_from_health_facility_meters by where_is_the_visit_being_conducted (same fields as the GPS Verification scatter plot's X axis on the Failed Verification Analysis tab).",
+        },
+        {
           name: 'QR outcome',
           def: "The FLW's direct answer when a value is present. If blank AND the FLW separately indicated the mother didn't have her QR code photo available at this visit, shown as 'Not available' rather than NA (it wasn't skipped -- it genuinely couldn't be done). NA otherwise.",
           field:
@@ -881,7 +933,7 @@ function WorkflowUI({
     },
     {
       title: 'Failed Verification Analysis Tab',
-      body: 'Reports here use the same filtered/eligible row set as the rest of the dashboard (domain toggle + FLW eligibility + verification-block-present gate) -- NOT the table-only Status/FLW filters from the Per FLW Verification View tab, which are scoped to that table alone. Three sections: By FLW, GPS Verification, and Mother Questions Answered.',
+      body: 'Reports here use the same filtered/eligible row set as the rest of the dashboard (domain toggle + FLW eligibility + verification-block-present gate) -- NOT the table-only Status/FLW filters from the Per FLW Verification View tab, which are scoped to that table alone. Three sections: By FLW, GPS Verification, and Mother question fail rate.',
       items: [
         {
           name: 'By FLW -- chart',
@@ -907,10 +959,22 @@ function WorkflowUI({
           field: 'gps_visit_verification_matches === "yes" ? Pass : Fail',
         },
         {
-          name: 'Mother Questions Answered -- chart',
-          def: "Up to 4 questions are randomly picked from a bank of 14 and administered per visit. X axis is how many of those 4 were actually answered (0-4) for a visit; Y axis is the number of visits at that count, stacked by that visit's Mother questions outcome (green Pass / red Fail / grey NA).",
+          name: 'GPS Verification -- hover tooltip',
+          def: 'Hovering a dot shows the distance, accuracy, and which FLW submitted that visit.',
           field:
-            'Computed client-side (motherQuestionsAskedCount, motherQuestionsAskedStats) over displayRows -- not raw pipeline fields on their own. Count = non-blank among mother_q_pick_1..4 (form.additional_visit_verification_block.verification_page.random_test_setup_page.random_test_setup.pick_1..4 -- each holds a question key like "q1" when that slot was used this visit, blank when not; shared path across all 6 visit-type forms and both domains). Color = motherQuestionsOutcome(row) (same function as the table\'s Mother questions outcome column).',
+            'Each scatter point carries username alongside {x, y}; a custom Chart.js tooltip.callbacks.label reads it back out. Same username field as the FLW ID column.',
+        },
+        {
+          name: 'Mother question fail rate -- chart',
+          def: "Every question from the 14-question spot-check bank that's been asked at least once across the current filter, ordered highest fail rate first. Each bar is stacked Correct (green) / Incorrect (red); the label includes the fail rate % and the response count (n=) it's based on.",
+          field:
+            'Computed client-side (motherQuestionFailRateStats) over displayRows -- not a raw pipeline field on its own, built from mother_q_pick_1..4 and mother_q_score_1..14.',
+        },
+        {
+          name: 'Mother question fail rate -- right/wrong/not-asked logic',
+          def: "A question only counts toward a visit's tally when it was actually one of that visit's 4 random picks. CommCare's own score_qN calc is 0 for BOTH \"answered wrong\" AND \"wasn't picked this visit\" -- the form conflates the two -- so gating on the picks (not on asked_qN) is what makes right/wrong/not-asked-this-visit unambiguous. asked_qN was deliberately NOT used for this: it's a rolling case property that stays 'yes' on every later visit once a question has ever been asked (until a reset cycle clears it), so it would misreport \"wrong\" on visits that didn't re-ask the question at all.",
+          field:
+            'mother_q_pick_1..4 (form.additional_visit_verification_block.verification_page.random_test_setup_page.random_test_setup.pick_1..4 -- each holds a question key like "q1" when that slot was used this visit) gates whether mother_q_score_1..14 (…random_test_setup.expected_answer.score_q1..14, transform: "float", 1 = correct / 0 = incorrect) counts for that visit. Shared path across all 6 visit-type forms and both domains.',
         },
       ],
     },
@@ -1074,7 +1138,25 @@ function WorkflowUI({
             title: { display: true, text: 'GPS accuracy (m)' },
           },
         },
-        plugins: { legend: { position: 'bottom' } },
+        plugins: {
+          legend: { position: 'bottom' },
+          tooltip: {
+            callbacks: {
+              label: function (context) {
+                var p = context.raw;
+                return (
+                  context.dataset.label +
+                  ': ' +
+                  p.x +
+                  'm, ' +
+                  p.y +
+                  'm accuracy -- FLW ' +
+                  (p.username || 'unknown')
+                );
+              },
+            },
+          },
+        },
       },
     });
   }
@@ -1114,7 +1196,7 @@ function WorkflowUI({
     [facilityGpsScatter, activeTab],
   );
 
-  // --- Mother Questions Answered chart (Failed Verification Analysis) ----
+  // --- Mother question fail rate chart (Failed Verification Analysis) ----
   var motherQChartRef = React.useRef(null);
   var motherQChartInstance = React.useRef(null);
 
@@ -1127,47 +1209,38 @@ function WorkflowUI({
       motherQChartInstance.current = new window.Chart(motherQChartRef.current, {
         type: 'bar',
         data: {
-          labels: motherQuestionsAskedStats.map(function (b) {
-            return String(b.count);
+          labels: motherQuestionFailRateStats.map(function (s) {
+            return s.label + ' -- ' + s.failRate + '% fail (n=' + s.total + ')';
           }),
           datasets: [
             {
-              label: 'Pass',
-              data: motherQuestionsAskedStats.map(function (b) {
-                return b.pass;
+              label: 'Correct',
+              data: motherQuestionFailRateStats.map(function (s) {
+                return s.correct;
               }),
               backgroundColor: '#22c55e',
             },
             {
-              label: 'Fail',
-              data: motherQuestionsAskedStats.map(function (b) {
-                return b.fail;
+              label: 'Incorrect',
+              data: motherQuestionFailRateStats.map(function (s) {
+                return s.incorrect;
               }),
               backgroundColor: '#ef4444',
-            },
-            {
-              label: 'NA',
-              data: motherQuestionsAskedStats.map(function (b) {
-                return b.na;
-              }),
-              backgroundColor: '#9ca3af',
             },
           ],
         },
         options: {
+          indexAxis: 'y',
           responsive: true,
           maintainAspectRatio: false,
           scales: {
             x: {
               stacked: true,
-              title: { display: true, text: 'Questions answered' },
-            },
-            y: {
-              stacked: true,
               beginAtZero: true,
               ticks: { precision: 0 },
-              title: { display: true, text: 'Visits' },
+              title: { display: true, text: 'Responses' },
             },
+            y: { stacked: true },
           },
           plugins: { legend: { position: 'bottom' } },
         },
@@ -1178,7 +1251,7 @@ function WorkflowUI({
           motherQChartInstance.current.destroy();
       };
     },
-    [motherQuestionsAskedStats, activeTab],
+    [motherQuestionFailRateStats, activeTab],
   );
 
   var summaryCards = (
@@ -1598,20 +1671,35 @@ function WorkflowUI({
           <div className="space-y-4">
             <div>
               <h3 className="text-base font-semibold text-gray-900">
-                Mother Questions Answered
+                Mother question fail rate
               </h3>
               <p className="text-xs text-gray-500">
-                How many of the 4 randomly-picked spot-check questions were
-                actually answered per visit, colored by that visit's Mother
-                questions outcome (green Pass / red Fail / grey NA). Respects
-                the domain and eligibility filters above, same row set as the
-                other tabs.
+                Every question from the 14-question spot-check bank that's been
+                asked at least once, most-failed first. A question only counts
+                for a visit when it was actually one of that visit's 4 random
+                picks -- not just "ever asked" at some earlier visit -- so
+                right/wrong/not-asked-this-visit stays unambiguous. Each bar's
+                label shows the fail rate and the number of responses it's based
+                on. Respects the domain and eligibility filters above, same row
+                set as the other tabs.
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-              <div style={{ height: '320px' }}>
-                <canvas ref={motherQChartRef}></canvas>
-              </div>
+              {motherQuestionFailRateStats.length > 0 ? (
+                <div
+                  style={{
+                    height:
+                      Math.max(240, motherQuestionFailRateStats.length * 32) +
+                      'px',
+                  }}
+                >
+                  <canvas ref={motherQChartRef}></canvas>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  No answered spot-check questions in the current filter.
+                </p>
+              )}
             </div>
           </div>
         </div>
