@@ -125,7 +125,7 @@ The `mcp/no_user_visit/` address enforces a strict set of rules to prevent real 
 
 - **Reading stored workflow snapshots.** Workflow runs are rebuilt live from generated data instead of reading a stored snapshot that might contain real visits.
 - **Pointing `pipeline_preview` at another opportunity's export or at Open Chat Studio sessions.** This prevents a restricted caller from pulling in visit-level data through a pipeline preview.
-- **Generating from an old mirror-mode profile.** Profiles saved in mirror mode before October 2026 hold real cases lightly perturbed, so their data never counts as "generated". Profiling with `case_timelines=true` *is* allowed: it models each worker's caseload and each case's timeline and saves only newly sampled cases.
+- **Generating from an old mirror-mode profile.** Profiles saved in the old mirror mode (before case timelines were introduced) hold real cases lightly perturbed, so their data never counts as "generated". Profiling with `case_timelines=true` *is* allowed: it models each worker's caseload and each case's timeline and saves only newly sampled cases, which are generated — not copies of real data. Re-profile any old mirror-mode profiles to use this safer approach.
 - **Writing synthetic data onto a real opportunity, wiping a shared demo environment, or reading or writing a profile bundle outside Drive.**
 
 !!! note "No change for full-access callers"
@@ -155,6 +155,32 @@ If you submit a request that is identical to one already running, Labs returns t
 
 !!! note "Change for all callers"
     When naming a pipeline export, the name must now be a **single plain word** — no spaces, punctuation, or special characters. This applies to both the full-access and restricted addresses.
+
+---
+
+## High-Fidelity Synthetic Data (Case Timelines)
+
+When you profile an opportunity and generate synthetic data, you can request **case timelines** (`case_timelines=true`). This is the high-fidelity mode: it produces realistic, fully generated data rather than near-copies of real records.
+
+### How it works
+
+Profiling with case timelines uses real cases only to **fit statistical models**. The profile then saves **new cases sampled from those models** — no real case is ever stored or shipped. When synthetic data is generated from that profile:
+
+- **Every worker keeps its caseload.** Each worker gets the same number of cases, with the same case lengths, as its real counterpart.
+- **Each case's timeline is modelled.** Growth, visit spacing, per-case constants (such as birth weight and date of birth), and the links between them are drawn together, so patterns like heavier babies growing faster are preserved.
+- **Outcomes are tied to growth.** A slow grower ends as often as in the source data, and a case closes when its baby's outcome is reached.
+- **App-computed fields keep their meaning.** Visit counters and ages are rebuilt from each case's timing rather than copied.
+
+### Safety guarantees
+
+- Any categorical answer seen in fewer than 5 real cases is never modelled. Any field recorded in fewer than 5 cases is excluded entirely.
+- Start dates are smoothed so no individual worker's start date is identifiable.
+- A sampled case that lands too close to a real one is redrawn (a distance-to-closest-record check).
+
+Because no real case values are stored or replicated, data generated this way counts as **generated** and is allowed on the restricted MCP address.
+
+!!! warning "Old mirror-mode profiles are not the same"
+    The previous high-fidelity mode (mirror mode, `mirror=true`) stored real cases with small perturbations — a near-copy of real data. Those profiles are still supported as an alias (`mirror=true` maps to `case_timelines=true` going forward) but **profiles saved in the old mirror mode before case timelines were introduced are not re-usable as generated data**. Re-profile any such opportunity to get a safe, fully generated profile.
 
 ---
 
@@ -258,41 +284,4 @@ The opportunity report and the programme report are now drawn from the same shar
 !!! note "Recent change"
     Any programme can now have the same report cascade as KMC — a programme report, a worker review, and a per-opportunity report with benchmarks — without anyone writing a page.
 
-Three new report templates are available for any programme whose indicators are defined in the semantic registry:
-
-- **Indicator Programme Report** — headline figures with their targets and the change since the last saved week, a scorecard by organisation grouped by indicator category, workers (with "started the same month" and "similar caseload" peer groups), activity by week, trends across saved reports, and the definition of every number. Click an organisation, then an opportunity, then a worker to drill down.
-- **Indicator Worker Review** — created automatically alongside the programme report. Shows one worker's indicators against their peers, their cases, and each case's visits — including a chart of the programme's reading series (for example, weight) where one exists, and photos where visits carry them.
-- **Indicator Opportunity Report** — the programme report scoped to a single opportunity, for its network manager, with a Benchmarks tab. It receives each week the programme report saves, so network managers never need to save anything themselves.
-
-### What drives the report content
-
-Everything the pages say about a programme — which figures are the headline, their targets, what a "case" is called (baby, community, beneficiary), the columns of the case table — comes from the programme's indicator definitions in the semantic registry. See *How a report reads it* in the Semantic Layer guide.
-
-The KMC reports are unchanged and continue to use their own dedicated pages.
-
----
-
-## Report Actions and the Agent Panel
-
-!!! note "Recent change"
-    Reports can now offer real actions — such as **Initiate AI coach** or **Create follow-up task** — as buttons, and the same actions can be run by an AI assistant. Currently switched on for the **Spark facilitator program report** only.
-
-### Running actions from a button
-
-When a report has actions enabled, you will see action buttons alongside the relevant rows or at the top of a view. Clicking one opens a confirmation panel that shows:
-
-- Exactly which workers it will reach
-- What the coaching bot will be told
-- A prompt to choose which bot to use, if more than one is available
-
-Nothing happens until you press **Confirm**. Once confirmed, the panel shows each worker's result as it completes, so you can see what succeeded and what did not.
-
-### Running actions from an AI assistant
-
-An assistant — either the agent panel on the report or your own assistant connected to Labs — can run the same actions. Before acting, it must show you the same preview a button would show. The assistant acts as you, with your access, so it can only do what you could do yourself.
-
-### The agent panel on a report
-
-A report can have an agent panel switched on. When it is:
-
-- The assistant sees what you
+Three new
