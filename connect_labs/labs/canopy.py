@@ -56,6 +56,20 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
         }
     ),
     "workflow:act": frozenset({"workflow_run_action"}),
+    # Public open data (WorldPop, DHS, UN IGME, geoBoundaries) and arithmetic on it:
+    # nothing here is specific to the visitor, so the scope adds no exposure.
+    "targeting:read": frozenset(
+        {
+            "targeting_indicators",
+            "targeting_select",
+            "targeting_methodology",
+            "targeting_scenario",
+            "targeting_admin_levels",
+            "targeting_research",
+            "targeting_compare_criteria",
+            "targeting_cost_effectiveness",
+        }
+    ),
 }
 
 #: Write scopes whose every tool acts only on a confirmed preview.
@@ -75,6 +89,7 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "marketplace:network": ("marketplace:read",),
     "marketplace:round": ("marketplace:read",),
     "labs:workflow:run": ("workflow:read", "workflow:act"),
+    "targeting:index": ("targeting:read",),
 }
 
 #: The panel's look on labs' pages. Rendered by the SDK's ``canopy_host/panel.html``.
