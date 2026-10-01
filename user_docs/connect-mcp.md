@@ -119,6 +119,45 @@ The token list on the tokens page shows the access level of each token. When you
 
 ---
 
+## What the Restricted Address Blocks
+
+The `mcp/no_user_visit/` address enforces a strict set of rules to prevent real visit data from reaching a restricted caller. The following actions are **not available** on that address, regardless of your token's access level:
+
+- **Reading stored workflow snapshots.** Workflow runs are rebuilt live from generated data instead of reading a stored snapshot that might contain real visits.
+- **Pointing `pipeline_preview` at another opportunity's export or at Open Chat Studio sessions.** This prevents a restricted caller from pulling in visit-level data through a pipeline preview.
+- **Profiling in mirror mode.** Data generated from a mirror profile does not count as "generated", so the restricted address will not allow it.
+- **Writing synthetic data onto a real opportunity, wiping a shared demo environment, or reading or writing a profile bundle outside Drive.**
+
+!!! note "No change for full-access callers"
+    If you use the main `/mcp/` address, none of the above restrictions apply to you. The only change that affects everyone is described in the pipeline export name note below.
+
+---
+
+## Profiling Limits
+
+The following limits apply when using the profiling and synthetic-data tools. Most limits apply to everyone; the per-call limit applies only to the restricted address.
+
+| Limit | Value | Who it applies to |
+| --- | --- | --- |
+| Jobs running at the same time per person | 2 | Everyone |
+| Opportunities profiled per person per day | 40 | Everyone |
+| Opportunities per single call | 10 | Restricted address only |
+| Time limit per job | 2 hours | Everyone |
+
+If you submit a request that is identical to one already running, Labs returns the existing job rather than starting a duplicate.
+
+!!! tip "If you hit a limit"
+    Wait for a running job to finish before starting a new one, or spread your profiling requests across the day if you are working with a large list of opportunities.
+
+---
+
+## Pipeline Export Names
+
+!!! note "Change for all callers"
+    When naming a pipeline export, the name must now be a **single plain word** — no spaces, punctuation, or special characters. This applies to both the full-access and restricted addresses.
+
+---
+
 ## Editing Workflows
 
 !!! tip "Working with real program data?"
@@ -256,43 +295,4 @@ An assistant — either the agent panel on the report or your own assistant conn
 
 A report can have an agent panel switched on. When it is:
 
-- The assistant sees what you are currently looking at on the report.
-- It follows you as you drill into an organisation or a worker.
-- It can read the report's indicators, what "red" means for each one, and how each is calculated.
-
-This means instructions like _"start AI coaching for everyone with a red metric"_ work without you having to list names or numbers yourself.
-
-!!! tip "What the assistant can see"
-    The agent panel gives the assistant a live view of the report you have open. If you navigate to a different worker or organisation, the assistant's context updates automatically.
-
-### Keeping Open Chat Studio connected
-
-Once you connect Open Chat Studio to Labs, actions can start conversations on your behalf without the report page being open. The connection stays active so you do not need to re-authorise it each time.
-
-!!! warning "Actions are off by default"
-    Both the action buttons and the agent panel are disabled unless a report has been explicitly switched on for them. At launch, only the Spark facilitator program report has these features enabled.
-
----
-
-## Synthetic Opportunities — Changing the Audience
-
-Labs-only synthetic opportunities (used for ACE runs and other review processes) can have their audience updated after the opportunity is created. This means you can give an outside reviewer access to the dashboards for a specific run without rebuilding any synthetic data.
-
-To change who can see a synthetic opportunity, ask Claude:
-
-<!-- prettier-ignore -->
-> _"Allow reviewers from sparkmicrogrants.org to view the ACE run for [opportunity name]"_
-> _"Remove the external domain from the audience for [opportunity name]"_
-
-Claude will use the `synthetic_set_allowed_domains` tool to update the opportunity's audience on Labs.
-
-!!! warning "Who can do this"
-    Only the opportunity's **creator** or **Dimagi staff** can change the audience. A partner who can already see an opportunity cannot use this to add other domains.
-
-Each domain grant applies to **one opportunity only** — it does not carry over to other runs or opportunities.
-
----
-
-## Synthetic Opportunities — How Data Is Generated
-
-Synthetic data is kept clearly separate from real programme data. Every synthetic opportunity records whether it is using generated data — it counts as generated only while it still uses the exact files the generator wrote. If you point it at any
+- The assistant sees what you
