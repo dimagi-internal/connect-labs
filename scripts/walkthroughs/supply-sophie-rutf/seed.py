@@ -19,16 +19,14 @@ Three things happen here.
 
 2. **Outputs** for the recorder's `${var}` substitution (gitignored file).
 
-3. **The supplier's answer, between scenes 4 and 5.** When
-   `SOPHIE_CLARIFY_SNAPSHOTS` names the render's snapshot directory, a
-   detached watcher waits for scene 4's frame to be written and then records
-   the supplier's reply exactly the way the story says it arrives: the ACE
-   agent calls `quote_correct` over the labs MCP with the reply as its source
-   (`source.ref` is the reply's Message-ID, so a second forwarding replays
-   rather than correcting twice). Nothing is staged: it is the product's own
-   agent path, run by the agent account, at the moment in the film when the
-   reply lands. Without the variable (a preflight walk, a manual run) no
-   watcher starts.
+3. **The supplier's answer, between the comparison scene and the next.** The
+   recipe runs `seed.py --answer-now` as that scene's `before:` hook, which the
+   recorder (and `recipe_preflight`) runs off camera after the comparison is
+   filmed. It records the supplier's reply exactly the way the story says it
+   arrives: the ACE agent calls `quote_correct` over the labs MCP with the
+   reply as its source (`source.ref` is the reply's Message-ID, so a second
+   forwarding replays rather than correcting twice). Nothing is staged: it is
+   the product's own agent path, run by the agent account.
 
 The partner data is not in this repository: it is read on the worker from the
 private Drive seed document. Set `OES_DEMO_DRIVE_FOLDER` (or put the folder id
@@ -45,7 +43,6 @@ import calendar
 import json
 import os
 import re
-import signal
 import subprocess
 import sys
 import time
@@ -59,13 +56,9 @@ import ensure_demo as oes  # noqa: E402
 
 PROGRAM_ID = 10672
 AS_OF_DATE = "2026-08-20"
-SCENE_BEFORE_ANSWER = 4
 MARK = "SOPHIE_RUTF_RESULT"
 SIDECAR = HERE / ".clarification.json"
-PIDFILE = HERE / ".watcher.pid"
-WATCH_LOG = HERE / "watcher.log"
 MCP_URL = os.environ.get("LABS_MCP_URL", "https://labs.connect.dimagi.com/mcp/")
-WATCH_TIMEOUT_SECONDS = 1800
 
 DRIVER = """
 import base64
@@ -89,6 +82,35 @@ _seed["SCOPES"] = {"rutf": _seed["SCOPES"]["rutf"]}
 assert _seed["SCOPES"]["rutf"]["program_id"] == PID
 
 data = _loader["load_seed_data"]("__FOLDER__", filename="__FILENAME__")
+
+# The story's dates and round 2's request come from the document, so check
+# here that they make the points the scenes make, before anything is written.
+# Only the failed check is named: this route's log can be public.
+import datetime as _dt
+_rounds = data.get("rutf_rounds") or {}
+_ship = (_rounds.get("round_one") or {}).get("shipment") or {}
+_two = _rounds.get("round_two") or {}
+_out = _two.get("outreach") or {}
+_asof = "__ASOF__"
+_opens = _out.get("sent_on") or min([q.get("received_on") or "9999" for q in _two.get("quotes") or []] or ["9999"])
+_notes = ((_two.get("round") or {}).get("notes_to_supplier") or "").lower()
+_checks = {
+    "round 1 dispatched on or before the as-of date": bool(_ship.get("dispatched_on"))
+    and _ship["dispatched_on"] <= _asof,
+    "round 1's ETA slip states both ETAs": bool(_ship.get("eta_original") and _ship.get("expected_on"))
+    and _ship["eta_original"] != _ship["expected_on"],
+    "the ETA slip was learned after the as-of date": (_ship.get("eta_slip_learned_on") or "") > _asof,
+    "round 2 opened after the as-of date": _opens > _asof,
+    "round 2's requests went out 14 or more days ago": bool(_out.get("sent_on"))
+    and _dt.date.fromisoformat(_out["sent_on"]) <= _dt.date.today() - _dt.timedelta(days=14),
+    "round 2 has a supplier who never answered": bool(_out.get("non_responders")),
+    "round 2 asks suppliers for sachets per carton, freight and duties": all(
+        word in _notes for word in ("sachet", "freight", "dut")
+    ),
+}
+_failed = [name for name, ok in _checks.items() if not ok]
+if _failed:
+    raise SystemExit("REFUSED: the seed document does not make the story's points: " + "; ".join(_failed))
 scopes = _seed["seed_scopes"](data)
 rounds = _seed["seed_rutf_rounds"](data, scopes)
 
@@ -145,8 +167,18 @@ store.set_expiry(_hours * 3600)
 if MINT:
     store.create()
 
+_session = {"key": store.session_key, "expires": int(_time.time() + _hours * 3600)} if MINT else None
+SEAL = __SEAL__
+if _session and SEAL:
+    # The GitHub route's log is public: the session leaves sealed to a key
+    # that exists only on the machine that asked for it.
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+    _pub = serialization.load_pem_public_key(base64.b64decode(SEAL))
+    _session = {"sealed": base64.b64encode(_pub.encrypt(json.dumps(_session).encode(), padding.OAEP(
+        mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None))).decode()}
 print("__MARK__" + json.dumps({
-    "sophie_session": {"key": store.session_key, "expires": int(_time.time() + _hours * 3600)} if MINT else None,
+    "sophie_session": _session,
     "program_id": PID,
     "round1_tender_id": rounds["round_one"]["round"]["id"],
     "round2_tender_id": rounds["round_two"]["round"]["id"],
@@ -192,15 +224,17 @@ exec(compile(_fetch("scripts/walkthroughs/oes-demo/seed_remote.py"), "seed_remot
 """
 
 
-def _driver(filename: str, *, modules: str, mint: bool) -> str:
+def _driver(filename: str, *, modules: str, mint: bool, seal: str = "") -> str:
     return (
         DRIVER.replace("__MODULES__", modules)
+        .replace("__SEAL__", repr(seal))
         .replace("__LOADER_B64__", base64.b64encode(oes.LOADER.read_bytes()).decode())
         .replace("__SEEDER_B64__", base64.b64encode((oes.HERE / "seed_remote.py").read_bytes()).decode())
         .replace("__FOLDER__", _folder())
         .replace("__FILENAME__", filename)
         .replace("__MARK__", MARK)
         .replace("__PID__", str(PROGRAM_ID))
+        .replace("__ASOF__", AS_OF_DATE)
         .replace("__MINT__", "True" if mint else "False")
     )
 
@@ -226,14 +260,16 @@ def reset_and_seed_via_github(filename: str) -> dict:
     """Same payload, run as a one-off task by the repo's run-labs-command workflow.
 
     For when the local AWS SSO session has expired (renewing it needs a person).
-    That workflow assumes its role through GitHub OIDC. Its log is PUBLIC, so this
-    route never mints Sophie's session (the key would be printed there); the
-    previous take's session is reused while it is still valid.
+    That workflow assumes its role through GitHub OIDC. Its log is PUBLIC, so
+    Sophie's session is minted SEALED: a throwaway RSA key pair is made here, the
+    task encrypts the session to the public half, and only this machine can open
+    it (``_unseal``). Nothing usable is printed.
     """
     sha = subprocess.run(
         ["git", "rev-parse", "origin/main"], cwd=HERE, capture_output=True, text=True, check=True
     ).stdout.strip()
-    driver = _driver(filename, modules=FETCHED_MODULES.replace("__SHA__", sha), mint=False)
+    seal = base64.b64encode(_seal_public_key()).decode()
+    driver = _driver(filename, modules=FETCHED_MODULES.replace("__SHA__", sha), mint=True, seal=seal)
     packed = base64.b64encode(zlib.compress(driver.encode(), 9)).decode()
     command = (
         "shell -c \"exec(__import__('zlib').decompress(" f"__import__('base64').b64decode('{packed}')).decode())\""
@@ -293,6 +329,46 @@ def reset_and_seed_via_github(filename: str) -> dict:
     subprocess.run(["gh", "run", "watch", run_id, "--repo", repo], capture_output=True, timeout=1500)
     log = subprocess.run(["gh", "run", "view", run_id, "--repo", repo, "--log"], capture_output=True, text=True)
     return _parse_result(log.stdout + log.stderr, f"run {run_id}")
+
+
+SEAL_KEY = HERE / ".seal-key.pem"
+
+
+def _seal_public_key() -> bytes:
+    """A fresh RSA key pair (gitignored private half); returns the public PEM."""
+    SEAL_KEY.unlink(missing_ok=True)
+    subprocess.run(
+        ["openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", str(SEAL_KEY)],
+        check=True,
+        capture_output=True,
+    )
+    os.chmod(SEAL_KEY, 0o600)
+    return subprocess.run(["openssl", "pkey", "-in", str(SEAL_KEY), "-pubout"], check=True, capture_output=True).stdout
+
+
+def _unseal(sealed: str) -> dict:
+    try:
+        opened = subprocess.run(
+            [
+                "openssl",
+                "pkeyutl",
+                "-decrypt",
+                "-inkey",
+                str(SEAL_KEY),
+                "-pkeyopt",
+                "rsa_padding_mode:oaep",
+                "-pkeyopt",
+                "rsa_oaep_md:sha256",
+                "-pkeyopt",
+                "rsa_mgf1_md:sha256",
+            ],
+            input=base64.b64decode(sealed),
+            check=True,
+            capture_output=True,
+        ).stdout
+    finally:
+        SEAL_KEY.unlink(missing_ok=True)
+    return json.loads(opened)
 
 
 def reset_and_seed(filename: str) -> dict:
@@ -358,7 +434,7 @@ def write_storage_state(session: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# The supplier's answer, recorded by the agent over MCP between scenes 4 and 5
+# The supplier's answer, recorded by the agent over MCP before the answer scene
 # ---------------------------------------------------------------------------
 
 
@@ -429,60 +505,27 @@ def record_answer(mcp: Mcp, realized: dict, clarification: dict) -> dict:
     )
 
 
-def watch(snapshots: Path, since: float) -> None:
-    """Wait for scene 4's frame, then record the supplier's answer. Detached."""
-    state = json.loads(SIDECAR.read_text())
-    mcp = Mcp()  # opened before the wait, so the answer costs one call
-    frame = snapshots / f"scene_{SCENE_BEFORE_ANSWER}.png"
-    deadline = time.time() + WATCH_TIMEOUT_SECONDS
-    print(f"{time.strftime('%X')} watching {frame}", flush=True)
-    while time.time() < deadline:
-        if frame.exists() and frame.stat().st_mtime >= since:
-            started = time.time()
-            result = record_answer(mcp, state["realized"], state["clarification"])
-            print(
-                f"{time.strftime('%X')} answer recorded in {time.time() - started:.2f}s: "
-                f"{json.dumps(result.get('structuredContent') or result)[:300]}",
-                flush=True,
-            )
-            return
-        time.sleep(0.1)
-    print(f"{time.strftime('%X')} gave up: scene {SCENE_BEFORE_ANSWER} never rendered", flush=True)
-
-
-def _stop_previous_watcher() -> None:
-    if not PIDFILE.exists():
-        return
-    try:
-        os.kill(int(PIDFILE.read_text().strip()), signal.SIGTERM)
-    except (ValueError, ProcessLookupError, PermissionError):
-        pass
-    PIDFILE.unlink(missing_ok=True)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--outputs", required=False)
     parser.add_argument("--filename", default="oes-demo.json")
-    parser.add_argument("--watch", help=argparse.SUPPRESS)
-    parser.add_argument("--since", type=float, help=argparse.SUPPRESS)
     parser.add_argument(
-        "--answer-now", action="store_true", help="record the supplier's answer immediately (manual use)"
+        "--answer-now",
+        action="store_true",
+        help="record the supplier's answer now (the answer scene's before: hook)",
     )
     args = parser.parse_args()
 
-    if args.watch:
-        watch(Path(args.watch), args.since)
-        return
     if args.answer_now:
         state = json.loads(SIDECAR.read_text())
         print(json.dumps(record_answer(Mcp(), state["realized"], state["clarification"]))[:500])
         return
 
-    _stop_previous_watcher()
     realized = reset_and_seed(args.filename)
     clarification = realized.pop("clarification")
     session = realized.pop("sophie_session")
+    if session and "sealed" in session:
+        session = _unseal(session["sealed"])
     if session:
         write_storage_state(session)
     else:
@@ -490,8 +533,8 @@ def main() -> None:
         left = min((c.get("expires", 0) for c in state["cookies"]), default=0) - time.time()
         if left < 3600:
             sys.exit(
-                "no fresh Sophie session: the GitHub route cannot mint one and the last one expires "
-                "within the hour; renew AWS SSO (aws sso login --profile labs)"
+                "no fresh Sophie session and the last one expires within the hour; "
+                "renew AWS SSO (aws sso login --profile labs)"
             )
         print(f"reusing Sophie's session ({left / 3600:.1f} h left)", file=sys.stderr)
     if not realized.get("quote_pack_missing_id") or not clarification:
@@ -501,19 +544,6 @@ def main() -> None:
     if args.outputs:
         Path(args.outputs).write_text(json.dumps(outputs, indent=2) + "\n")
     print(json.dumps(outputs))
-
-    snapshots = os.environ.get("SOPHIE_CLARIFY_SNAPSHOTS", "").strip()
-    if snapshots:
-        log = open(WATCH_LOG, "a")
-        proc = subprocess.Popen(
-            [sys.executable, __file__, "--watch", snapshots, "--since", str(time.time())],
-            stdout=log,
-            stderr=log,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        PIDFILE.write_text(str(proc.pid))
-        print(f"watcher {proc.pid}: records the supplier's answer after scene {SCENE_BEFORE_ANSWER}", file=sys.stderr)
 
 
 if __name__ == "__main__":
