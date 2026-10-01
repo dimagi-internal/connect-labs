@@ -25,8 +25,14 @@ from config import celery_app
 
 logger = logging.getLogger(__name__)
 
+# The worker is shared (audits, AI reviews, beat) and the project sets no global task
+# time limit, so a profiling job that never finishes would hold its slot forever.
+# opp 874 (11,581 visits) takes ~10 minutes; two hours is generous for a cohort.
+PROFILE_SOFT_TIME_LIMIT = 2 * 3600
+PROFILE_TIME_LIMIT = PROFILE_SOFT_TIME_LIMIT + 300
 
-@celery_app.task(bind=True)
+
+@celery_app.task(bind=True, soft_time_limit=PROFILE_SOFT_TIME_LIMIT, time_limit=PROFILE_TIME_LIMIT)
 def run_synthetic_profile_opp(
     self,
     *,
@@ -97,7 +103,7 @@ def _progress_reporter(task, **context):
     return _report
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, soft_time_limit=PROFILE_SOFT_TIME_LIMIT, time_limit=PROFILE_TIME_LIMIT)
 def run_synthetic_profile_opps_bulk(
     self,
     *,
@@ -130,7 +136,7 @@ def run_synthetic_profile_opps_bulk(
     }
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, soft_time_limit=PROFILE_SOFT_TIME_LIMIT, time_limit=PROFILE_TIME_LIMIT)
 def run_synthetic_clone_profile(self, *, spec_yaml: str, oauth_token: str) -> dict[str, Any]:
     """Phase 1 for a whole cohort spec. The longest of these by far."""
     from connect_labs.labs.synthetic.clone_from_prod import profile_cohort
@@ -153,7 +159,7 @@ def run_synthetic_clone_profile(self, *, spec_yaml: str, oauth_token: str) -> di
     }
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, soft_time_limit=PROFILE_SOFT_TIME_LIMIT, time_limit=PROFILE_TIME_LIMIT)
 def run_synthetic_profile_from_prod(
     self,
     *,

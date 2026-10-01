@@ -445,9 +445,28 @@ def _run_registry_tool_inner(
     if permitted is not None and spec.name not in permitted:
         audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
         raise ToolError(f"This token's scope does not include {spec.name}.")
+    restricted = restricted_call(access_token)
+    if restricted:
+        # Registry tools receive raw arguments -- FastMCP validates only its own
+        # function tools -- so a declared "integer" is not enforced, and an id that is
+        # interpolated into a URL path can carry a path. A restricted call is held to
+        # the schema each tool declares.
+        import jsonschema
+
+        try:
+            jsonschema.validate(arguments, spec.input_schema)
+        except jsonschema.ValidationError as e:
+            audit(user, spec.name, arguments, success=False, error_code="INVALID_SCHEMA", is_write=spec.is_write)
+            raise ToolError(f"Invalid arguments for {spec.name}: {e.message}") from e
+        from .visit_access import synthetic_denied_reason
+
+        reason = synthetic_denied_reason(spec.name, arguments)
+        if reason:
+            audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
+            raise ToolError(reason)
     # Without access to user visit data, a tool that reads visits runs only when every
     # opportunity the call reads holds generated data.
-    if spec.name in token_scopes.GENERATED_ONLY_TOOLS and restricted_call(access_token):
+    if spec.name in token_scopes.GENERATED_ONLY_TOOLS and restricted:
         from .visit_access import denied_reason
 
         reason = denied_reason(user, spec.name, arguments)

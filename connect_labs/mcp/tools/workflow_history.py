@@ -551,6 +551,17 @@ def workflow_history_runs(
 
     if (opportunity_id is None) == (program_id is None):
         raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+    from ..visit_access import caller_restricted
+
+    if include_snapshot and caller_restricted():
+        # A stored run holds what it read when it was saved, which provenance as it is
+        # now does not vouch for. The run list (dates, status) is still available.
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            "include_snapshot returns stored run data, which is not available without access "
+            "to user visit data. Call again without include_snapshot for the run list, or use "
+            "workflow_preview_snapshot for a live build of one run.",
+        )
 
     wda = _wda_for_user(user, opportunity_id=opportunity_id, program_id=program_id)
     try:

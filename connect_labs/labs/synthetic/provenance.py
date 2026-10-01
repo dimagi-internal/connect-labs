@@ -54,6 +54,28 @@ def all_generated(opportunity_ids: Iterable) -> bool:
     return generated_opportunity_ids(wanted) == wanted
 
 
+def replays_real_cases(manifest) -> bool:
+    """True when ``manifest`` carries a mirror-mode transplant pool.
+
+    Mirror mode replays each real case's series with small noise (±3% per case, a
+    1-14 day shift, categorical answers verbatim), so data generated from it is a
+    near-copy of real cases, not invented data. It must never count as generated.
+    Walks the whole dumped manifest so a mirror spec anywhere in it is found.
+    """
+    data = manifest.model_dump() if hasattr(manifest, "model_dump") else manifest
+
+    def _walk(node) -> bool:
+        if isinstance(node, dict):
+            if node.get("mode") == "mirror" or node.get("transplant_pool"):
+                return True
+            return any(_walk(v) for v in node.values())
+        if isinstance(node, list):
+            return any(_walk(v) for v in node)
+        return False
+
+    return _walk(data)
+
+
 def mark_generated(opportunity_id: int, folder_id: str) -> None:
     """Record that ``folder_id`` holds data the generator just wrote for this opp.
 
