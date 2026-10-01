@@ -193,6 +193,20 @@ function WorkflowUI({
     return 'ERROR';
   }
 
+  // Same location-based field pick as gpsOutcome() -- the distance actually
+  // measured depends on whether the visit was at the mother's home or a
+  // health facility, never both.
+  function gpsDistanceMeters(row) {
+    var locType = row.where_is_the_visit_being_conducted;
+    var d =
+      locType === 'mothers_home'
+        ? row.gps_distance_from_home_meters
+        : locType === 'health_facility'
+          ? row.gps_distance_from_health_facility_meters
+          : null;
+    return typeof d === 'number' && !isNaN(d) ? Math.round(d) : 'NA';
+  }
+
   function qrOutcome(row) {
     if (row.qr_code_visit_verification) return row.qr_code_visit_verification;
     // Confirmed by scanning real submissions: whenever the mother didn't
@@ -279,6 +293,7 @@ function WorkflowUI({
     { key: 'visit_number', label: 'Visit #' },
     { key: 'where_is_the_visit_being_conducted', label: 'GPS location' },
     { key: 'gps_outcome', label: 'GPS outcome' },
+    { key: 'gps_distance_meters', label: 'Distance from previous point (m)' },
     { key: 'qr_outcome', label: 'QR outcome' },
     { key: 'signature_outcome', label: 'Signature outcome' },
     { key: 'mother_questions_outcome', label: 'Mother questions outcome' },
@@ -298,6 +313,7 @@ function WorkflowUI({
     if (key === 'visit_datetime')
       return formatVisitDateTime(row.visit_datetime);
     if (key === 'gps_outcome') return gpsOutcome(row);
+    if (key === 'gps_distance_meters') return gpsDistanceMeters(row);
     if (key === 'qr_outcome') return qrOutcome(row);
     if (key === 'signature_outcome') return signatureOutcome(row);
     if (key === 'mother_questions_outcome') return motherQuestionsOutcome(row);
@@ -818,6 +834,12 @@ function WorkflowUI({
           def: "NA if the location was 'other' (GPS verification doesn't apply there), or if there was no prior-visit GPS point on record for that location type to compare against. Otherwise Pass if the visit's GPS matched the prior point on file, Fail if it didn't. ERROR means the location was home/health-facility with a prior GPS point on record, but the match field itself was missing -- flags a data issue worth investigating.",
           field:
             'where_is_the_visit_being_conducted (form.visit_location.where_is_the_visit_being_conducted); visit_location_has_prev_home_gps (form.gps_verification.location_check.visit_location_has_prev_home_gps); visit_location_has_prev_health_facility_gps (form.gps_verification.location_check.visit_location_has_prev_health_facility_gps); gps_visit_verification_matches (form.gps_verification.location_check.gps_visit_verification_matches)',
+        },
+        {
+          name: 'Distance from previous point (m)',
+          def: "The same distance CommCare's own gpsOutcome threshold is based on (≤200m = Pass), rounded to the nearest meter for display. Picks the field matching GPS location (home vs health facility), same as GPS outcome. NA when the location was 'other' or there was no prior point to measure against -- i.e. whenever GPS outcome is also NA.",
+          field:
+            'gpsDistanceMeters(row) -- picks gps_distance_from_home_meters or gps_distance_from_health_facility_meters by where_is_the_visit_being_conducted (same fields as the GPS Verification scatter plot\'s X axis on the Failed Verification Analysis tab).',
         },
         {
           name: 'QR outcome',
