@@ -150,12 +150,11 @@ scenes:
     seconds: 1.0
     note: let the scene's own page paint before the before-frame
   - kind: wait_for
-    target: css:a[href*='/market/tenders/${round2_tender_id}/']
-  - kind: click
-    must_succeed: true
-    target: css:a[href*='/market/tenders/${round2_tender_id}/']
-  - kind: wait_for
-    target: css:body:not(:has([data-testid=timeline]))
+    target: testid:preview-as-supplier
+    note: her own view of the listing, the before-frame the preview is compared against
+  - kind: hold
+    seconds: 1.2
+    note: the owner's view, with the note that this is the public listing
   - kind: click
     target: testid:preview-as-supplier
     must_succeed: true
@@ -167,6 +166,10 @@ scenes:
     say: request
     seconds: 2.0
     target: text:FROM THE BUYER
+  - kind: hover
+    note: park the cursor on the title, off the request's sentence
+    seconds: 0.6
+    target: css:h1
   - kind: hold
     note: no prices, no excerpts, no history
     say: private
@@ -181,7 +184,7 @@ scenes:
   show: 'Sophie opens the market and her round 2 listing. It shows the request: the quantity, where the goods go, and what
     she asks every supplier to state (sachets per carton, freight and import duties). It shows no supplier''s price, no AI
     source excerpt and no history; those open only to members of her program.'
-  url: /supply/market/
+  url: /supply/market/tenders/${round2_tender_id}/
 - id: round-two-cannot-be-compared
   actions:
   - kind: wait_for
@@ -203,9 +206,14 @@ scenes:
     note: the card the next scene answers, in frame
     seconds: 0.8
     target: css:[data-quote-id='${quote_pack_missing_id}']
-  - kind: scroll_to
-    target: text:Needs info
-    note: all three blocked quotes in frame, the answered one included
+  - kind: scroll
+    value: '330'
+    note: all three blocked quotes in frame, the answered one included (a pixel scroll; scroll_to the heading is a no-op
+      because the heading is already in view)
+  - kind: hover
+    target: css:[data-quote-id='${quote_pack_missing_id}'] >> text=Ask the supplier
+    seconds: 0.6
+    note: the cursor rests on the answered card's question, off the other cards' text
   - kind: hold
     seconds: 0.6
   - kind: snapshot
@@ -270,9 +278,9 @@ scenes:
     target: css:[data-testid=ranked-row-detail] [data-testid=correction-source] summary
     note: the correction that let it in, with the supplier's reply
   - kind: hover
-    target: text:Ranked by
+    target: css:h2:has-text("Comparable")
     seconds: 1.2
-    note: park the cursor off the correction and the figures
+    note: park the cursor on the section heading, off the ranking basis and the figures
   - kind: snapshot
     note: one quote comparable, two still waiting
   concept_claim: After the supplier's reply is recorded through the AI as a correction to its quote, round 2's timeline shows
@@ -293,12 +301,18 @@ scenes:
     note: let the scene's own page paint before the before-frame
   - kind: wait_for
     target: Ranked by
+  - kind: scroll
+    value: top
+    note: scene 6 left the page framed on the ranking; start from the top so the move to the form is filmed
+  - kind: hold
+    seconds: 0.8
+    note: let the scroll to the top settle before framing the form
   - kind: scroll_to
     target: testid:award-form
   - kind: fill
     say: why
     target: css:[data-testid=award-form] input[name=rationale]
-    value: States everything needed to cost it; provisional until the other two answer
+    value: States everything needed to cost it; same manufacturer as round 1; provisional until the other two answer
   - kind: hold
     seconds: 1.5
     note: her reason, typed, before the award
@@ -321,6 +335,10 @@ scenes:
     say: awarded
     seconds: 2.0
     target: css:[data-testid=overview-row][data-tender-id='${round2_tender_id}'] td:nth-child(2)
+  - kind: hover
+    note: who and when; the cursor leaves the stage text it would otherwise cover
+    seconds: 0.8
+    target: css:[data-testid=overview-row][data-tender-id='${round2_tender_id}'] td:nth-child(4)
   - kind: snapshot
     note: the award on the overview, with who and when
   concept_claim: Awarding the quote that answered on round 2's comparison with a typed reason records a provisional award,
