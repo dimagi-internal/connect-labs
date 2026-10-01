@@ -18,6 +18,11 @@ in a tab row between them.
 {% block content %}
   {% block hero %}{% endblock %}
 
+  {% comment %}Not when the row would hold "Open tenders" alone under a hero whose
+  "← OPEN TENDERS" already leads there (a page sets hide_lone_tab when its hero carries
+  that link): the program's team on its own listing, or previewing it, has no bids, no
+  organisation tab and no Register button.{% endcomment %}
+  {% if hide_lone_tab and signed_in and not supplier_orgs and not orgs and program_view_url or hide_lone_tab and signed_in and not supplier_orgs and not orgs and previewing_as_supplier %}{% else %}
   <nav class="bg-white border-b border-brand-border-light -mx-4 px-4 sm:mx-0 sm:px-8 lg:px-10" aria-label="Supply marketplace">
     <div class="flex flex-wrap items-center gap-1 sm:gap-2 py-2 text-[13px] font-medium">
       {% url 'supply_chain:market' as market_url %}
@@ -37,6 +42,7 @@ in a tab row between them.
       {% endif %}
     </div>
   </nav>
+  {% endif %}
 
   <div class="px-0 sm:px-8 lg:px-10 py-6 sm:py-8">
     {% block body %}{% endblock %}

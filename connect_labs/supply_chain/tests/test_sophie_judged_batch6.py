@@ -77,10 +77,15 @@ class TestAProvisionalAwardWaitsOnAnswers:
     def test_waiting_on_names_the_blocked_then_the_silent(self, da, base):
         self._award(da, base)
         row = _tender_row()
-        assert row.waiting_on == "answers from Sahel Nutrition, Plateau Mills"
+        # Since batch 7: two kinds of answer owed, a line each, and the silent
+        # supplier's flag stays up while "waiting on" names it.
+        assert row.waiting_lines == ("No reply: Plateau Mills", "Missing facts: Sahel Nutrition")
         assert "a contract" not in row.waiting_on
         # The flag names the same blocked supplier, with what it is missing.
-        assert row.stale == ["Can't compare yet: Sahel Nutrition — missing: sachets per carton, freight, duties"]
+        assert row.stale == [
+            "No reply in 33 days: Plateau Mills",
+            "Can't compare yet: Sahel Nutrition — missing: sachets per carton, freight, duties",
+        ]
 
     def test_provisional_is_said_once_and_the_why_reads_at_body_size(self, da, base, home_client):
         self._award(da, base)
@@ -88,10 +93,11 @@ class TestAProvisionalAwardWaitsOnAnswers:
         standing = batch6._standing(_home(home_client))
         cell = re.search(r'<td class="px-4 py-2.5">\s*awarded to Northwind Foods(.*?)</td>', standing, re.S).group(1)
         assert batch6._text(cell).count("provisional") == 1
-        why = re.search(r'<span data-testid="award-why" class="([^"]*)">why: (.*?)</span>', cell)
+        # Since batch 7 the why is a full-width row under the tender's, not in the cell.
+        assert "award-why" not in cell
+        why = re.search(r'<p data-testid="award-why" class="([^"]*)"><span[^>]*>Why:</span> (.*?)</p>', standing)
         assert why.group(2) == self.WHY
         assert "text-sm" in why.group(1).split() and "text-xs" not in why.group(1).split()
-        assert "block" in why.group(1).split()
 
 
 @pytest.mark.django_db
@@ -101,7 +107,7 @@ class TestABlockedOpenTenderWaitsOnAnswers:
         _outreach(da, base["tender"]["id"], base["supplier"]["id"], datetime.date(2026, 8, 10), responded=True)
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {})
         row = _tender_row()
-        assert row.waiting_on == "answers from Northwind Foods"
+        assert row.waiting_on == "Missing facts: Northwind Foods"
         assert row.waiting_detail == "1 of 1 replied"
         assert row.stale[0].lines == ("Northwind Foods — missing: sachets per carton, freight, duties",)
 
@@ -185,13 +191,10 @@ class TestTheListing:
 
     def test_the_preview_says_what_a_supplier_does_not_see(self, owner, listed_tender):
         body = batch6._listing(owner, listed_tender, as_supplier="1")
-        assert re.search(
-            r'data-testid="supplier-preview-hidden"[^>]*>Suppliers do not see other suppliers&#x27; quotes or '
-            r"prices, email excerpts, or this tender&#x27;s history.<",
-            body,
-        ) or (
-            "Suppliers do not see other suppliers' quotes or prices, email excerpts, or this tender's history." in body
-        )
+        # Counted since batch 7 (test_sophie_judged_batch7); with nothing on the
+        # tender yet, the rule in words.
+        hidden = re.search(r'data-testid="supplier-preview-hidden"[^>]*>(.*?)</p>', body, re.S).group(1)
+        assert hidden.startswith("Hidden from suppliers: ") or hidden.startswith("Suppliers do not see")
         assert 'data-testid="supplier-preview-hidden"' not in batch6._listing(owner, listed_tender)
 
     def test_no_pulse_ticker_in_the_market_header(self, client, listed_tender):

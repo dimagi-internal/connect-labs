@@ -175,6 +175,9 @@ class ComparisonRow:
     # day the quote arrived: a blocked card still says what was offered.
     as_quoted: str = ""
     received_on: str = ""
+    # Said after a price stated per base unit, which the ranking reads per
+    # pack: "converted to per carton for the ranking". "" otherwise.
+    as_quoted_note: str = ""
     # What the specification requires of the pack figure, as a chip beside a
     # pack blocker: "150 sachets per carton".
     pack_requirement: str = ""
@@ -393,6 +396,7 @@ class Comparison:
                 "base_unit": row.base_unit,
                 "pack_unit": row.pack_unit,
                 "as_quoted": row.as_quoted,
+                "as_quoted_note": row.as_quoted_note,
                 "received_on": row.received_on,
             }
 
@@ -761,6 +765,8 @@ def compare_tender(
             pack_requirement=pack_requirement,
         )
         row.as_quoted = as_quoted_words(quote, row.base_unit, row.pack_unit)
+        if quote.as_quoted_amount is not None and quote.as_quoted_unit == "per_base_unit" and row.pack_unit:
+            row.as_quoted_note = f"converted to per {unit_noun(row.pack_unit)} for the ranking"
         row.landed_basis = landed_basis_words(quote, tender)
         if quote.quantity_basis is not None and quote.quantity_basis_unit:
             row.quantity_quoted = quantity_phrase(quote.quantity_basis, quote.quantity_basis_unit)

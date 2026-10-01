@@ -33,16 +33,20 @@ them out on a past date.
                 "AI" only where the label does not already say "via AI".
                 {% endcomment %}
                 {% if entry.excerpt %}
-                  <details class="text-xs">
+                  {% comment %}Who told us is one badge ("AI ACE (agent)"), and the way to the
+                  source a small button beside it ("View email"): run together in one pill they
+                  read as one name. Both sit in the summary, so either opens it; the details
+                  spans the line, so the excerpt it opens runs the line's full width.{% endcomment %}
+                  <details class="w-full text-xs">
                     <summary data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}title="{% if entry.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
-                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-700{% endif %}">{% if entry.is_ai and entry.actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ entry.actor }}</span><span data-testid="source-link" class="underline underline-offset-2 opacity-80">{{ entry.source_link_text }}</span></summary>
+                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-2 text-xs"><span data-testid="actor-pill" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-700{% endif %}">{% if entry.is_ai and entry.actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ entry.actor }}</span></span><span data-testid="source-link" class="inline-flex items-center rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50">{{ entry.source_link_text }}</span></summary>
                     {% comment %}Where the quote came from, as the call recorded it -- the kind its
                     reference implies, who recorded it and when. A replay of the same evidence
                     was answered from this write, not written again.{% endcomment %}
-                    <p data-testid="source-heading" class="mt-1.5 text-sm text-gray-900">{{ entry.source_kind|default:"Source" }}{% if entry.sender %} from {{ entry.sender }}{% endif %}, recorded by {{ entry.actor }} on {{ entry.recorded_on|date:"j M Y" }}{% if entry.replayed_at %} · received again {{ entry.replayed_at|date:"j M Y" }}, recorded once{% endif %}</p>
+                    <p data-testid="source-heading" class="mt-1.5 text-sm text-gray-900">{{ entry.source_kind|default:"Source" }}{% if entry.sender %} from {{ entry.sender }}{% endif %}, recorded by {{ entry.actor }} on {{ entry.recorded_on|date:"j M Y" }}{% if entry.replayed_at %} · forwarded again {{ entry.replayed_at|date:"j M Y" }} — recorded once{% endif %}</p>
                     {% comment %}The words the change rested on, at reading size and full contrast:
                     this is the evidence, not a footnote.{% endcomment %}
-                    <blockquote data-testid="source-excerpt" class="mt-1 max-w-2xl rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ entry.excerpt }}</blockquote>
+                    <blockquote data-testid="source-excerpt" class="mt-1 w-full rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ entry.excerpt }}</blockquote>
                   </details>
                 {% elif entry.is_ai %}
                   <span data-testid="actor-badge" data-ai class="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs">{% if entry.actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ entry.actor }}</span></span>
