@@ -3019,6 +3019,26 @@ class PipelineDataAccess(BaseDataAccess):
 
         # Parse data source config
         data_source_dict = schema.get("data_source") or {}
+        from connect_labs.labs.integrations.ocs.ocs_tokens import (
+            OCSTokenError,
+            current_mcp_caller,
+            get_valid_ocs_access_token,
+        )
+
+        mcp_ocs_caller = current_mcp_caller()
+        mcp_ocs_bearer = ""
+        if (
+            mcp_ocs_caller is not None
+            and data_source_dict.get("type") == "ocs_sessions"
+            and not data_source_dict.get("api_key")
+        ):
+            try:
+                mcp_ocs_bearer = get_valid_ocs_access_token(mcp_ocs_caller)
+            except OCSTokenError as e:
+                raise ValueError(
+                    f"This pipeline reads Open Chat Studio sessions, which an MCP call reads with your own "
+                    f"OCS access: {e}"
+                ) from e
         data_source = DataSourceConfig(
             type=data_source_dict.get("type", "connect_csv"),
             form_name=data_source_dict.get("form_name", ""),
@@ -3034,7 +3054,10 @@ class PipelineDataAccess(BaseDataAccess):
             # key to reach a NON-default OCS instance; when it does not, use
             # the configured one. (2026-09-07: the interviews_reporting_v2
             # template carried a live OCS key inline since 2026-06-30.)
-            api_key=data_source_dict.get("api_key") or settings.OCS_API_KEY,
+            # Under an MCP call the server's key is never used: the pipeline reads
+            # OCS as the caller (ocs_tokens.current_mcp_caller).
+            api_key=data_source_dict.get("api_key") or ("" if mcp_ocs_caller is not None else settings.OCS_API_KEY),
+            bearer_token=mcp_ocs_bearer,
             endpoint=data_source_dict.get("endpoint", ""),
             case_type=data_source_dict.get("case_type", ""),
             form_lookback_days=data_source_dict.get("form_lookback_days", 0) or 0,

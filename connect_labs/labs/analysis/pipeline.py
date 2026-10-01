@@ -615,6 +615,12 @@ class AnalysisPipeline:
             is_cchq = config.data_source.type in ("cchq_forms", "cchq_cases")
             is_ocs = config.data_source.type == "ocs_sessions"
             expected_count = 0 if (is_cchq or is_ocs or has_filters) else self.expected_visits_for(opp_id)
+            # Read as a particular person (an MCP caller's own OCS token): never from the
+            # cache, which the data source is not part of the key of and which a web
+            # dashboard may have filled under the server's team key -- every bot's
+            # sessions. Fetching fresh is what makes "what you can see in OCS" hold.
+            if is_ocs and config.data_source.bearer_token:
+                force_refresh = True
             if not force_refresh:
                 cached_result = _get_cached_for_stage(expected_count)
 
