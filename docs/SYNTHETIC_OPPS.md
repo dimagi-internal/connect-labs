@@ -31,7 +31,36 @@ real opportunity into a saved statistical profile, then **generate** a synthetic
 data set from that profile into a labs-only opp. Real rows are read only while
 profiling, on the server; they never land in a folder a synthetic opp serves.
 
-### The flow: profile on the server, then generate
+### Start here: one call
+
+`synthetic_clone_opp(source_opportunity_ids=[...])` clones one or more real
+opportunities in one background job. It profiles each one on the server and
+generates a labs-only clone with case timelines (the default). The clones are
+filed under a new program and made visible in your labs lists. It returns a
+`task_id`; follow it with `synthetic_job_status(task_id)`, which says in plain
+words where the job is ("Step 1 of 2: measuring the real opportunities") and
+returns the new opportunity ids when it is done. You need access to each source
+opportunity.
+
+It is the only cloning tool on the safe MCP address (`/mcp/no_user_visit/`). The
+step-by-step tools below stay on the full address.
+
+### Where the work runs, and limits
+
+**All synthetic work runs on the background worker, never in the web request.** That
+covers profiling, generation, cloning and fidelity scoring. A generation tool called
+over MCP still returns its result as before: it queues a job and waits for it, up to
+8 minutes. Pass `wait=false` to get a `task_id` at once.
+
+**Limits:**
+- At most 2 synthetic jobs run at once across the whole system (`SYNTHETIC_JOB_SLOTS`).
+  The rest wait their turn on the queue, so audits and AI reviews keep the worker's
+  other slots.
+- Each person may have 2 profiling jobs in flight and profile 40 opportunities a day.
+  On the safe address, one call may profile at most 10 opportunities.
+- An identical request returns the job already running.
+
+### The flow, step by step: profile on the server, then generate
 
 Both steps are `connect_labs` MCP tools, so they run inside labs with your own
 Connect access.
