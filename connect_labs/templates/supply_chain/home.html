@@ -104,7 +104,8 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
                 {% with day=row.last_change_at|day_beside_count:standing_now %}{% if day %}<span data-testid="last-change-day" class="block whitespace-nowrap text-xs text-gray-600">{{ day }}</span>{% endif %}{% endwith %}
                 {% endif %}
                 {% if row.last_change_is_ai %}
-                  <span data-ai data-testid="ai-badge" title="{{ row.last_change_title }}" class="mt-0.5 inline-flex items-center whitespace-nowrap rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs font-medium">{{ row.last_change_badge }}</span>
+                  {% comment %}Who told us, beside the AI glyph; on hover, what was recorded and from what.{% endcomment %}
+                  <span data-ai data-testid="ai-badge" title="{{ row.last_change_title }}" class="mt-0.5 inline-flex cursor-help items-center gap-1 whitespace-nowrap rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs font-medium">{% include "supply_chain/_ai_glyph.html" with actor=row.last_change_badge %}<span>{{ row.last_change_badge }}</span></span>
                 {% else %}
                   <span class="mt-0.5 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ row.last_change_by }}</span>
                 {% endif %}
@@ -121,8 +122,10 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
               freight") folds under it, opened on a click.{% endcomment %}
               {% for flag in row.stale %}
                 {% if flag.lines %}
-                <details data-testid="stale-flag" title="{{ flag.rule }}" class="mb-1 text-xs text-amber-900">
-                  <summary class="flex w-fit cursor-pointer list-none items-start gap-1.5 rounded px-1.5 py-0.5 hover:bg-amber-50 [&::-webkit-details-marker]:hidden"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span data-testid="flag-heading" class="font-medium">{{ flag.heading }}</span></summary>
+                {% comment %}The same boxed amber chip as every other flag, with a chevron that
+                says it opens.{% endcomment %}
+                <details data-testid="stale-flag" title="{{ flag.rule }}" class="group mb-1 text-xs text-amber-900">
+                  <summary class="flex w-fit cursor-pointer list-none items-start gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 hover:bg-amber-100 [&::-webkit-details-marker]:hidden"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span data-testid="flag-heading">{{ flag.heading }}</span><i class="fa-solid fa-chevron-right mt-0.5 text-[9px] text-amber-700 transition-transform group-open:rotate-90" aria-hidden="true"></i></summary>
                   <span class="block pl-5 pt-0.5">{% for line in flag.lines %}<span data-testid="flag-line" class="block">{{ line }}</span>{% endfor %}</span>
                 </details>
                 {% else %}

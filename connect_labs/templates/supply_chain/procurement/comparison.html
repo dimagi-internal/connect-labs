@@ -163,7 +163,7 @@
                       Unconfirmed
                     </td>
                   {% else %}
-                    <td class="tabular-nums">{{ cell|money_text }}</td>
+                    <td class="tabular-nums">{{ cell|money_text:3 }}</td>
                   {% endif %}
                 {% endwith %}
               {% endfor %}
@@ -336,7 +336,7 @@
       {% comment %}What was offered, as the supplier stated it, on its own line under the
       name -- blocked from the ranking is not the same as having no price -- and when it
       arrived, as the metadata it is.{% endcomment %}
-      <p data-testid="as-quoted" class="text-sm text-gray-900">Quoted {{ row.as_quoted }}{% if row.as_quoted_note %} <span data-testid="as-quoted-note" class="text-gray-600">({{ row.as_quoted_note }})</span>{% endif %}</p>
+      <p data-testid="as-quoted" class="text-sm text-gray-900">Quoted {{ row.as_quoted }}{% if row.as_quoted_note %} <span data-testid="as-quoted-note" class="text-gray-600">{{ row.as_quoted_note }}</span>{% endif %}</p>
       {% if row.received_on %}<p data-testid="received-on" class="text-xs text-gray-600 mb-1">Received {{ row.received_on|day }}</p>{% endif %}
       {% comment %}
       Every fact that keeps this offer out of the ranking, each with the one
@@ -346,12 +346,16 @@
       that do not block, fold into one list under them.
       {% endcomment %}
       {% for blocker in row.blockers %}
-        <p data-testid="blocking" class="text-[15px] font-semibold text-gray-900{% if not forloop.first %} mt-1{% endif %}">Blocking: {{ blocker.fact }}{% if blocker.spec %} <span data-testid="spec-chip" class="ml-1 inline-flex whitespace-nowrap rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-xs font-normal text-gray-700">Spec: {{ blocker.spec }}</span>{% endif %}</p>
+        <p data-testid="blocking" class="text-[15px] font-semibold text-gray-900{% if not forloop.first %} mt-1{% endif %}">Blocking: {{ blocker.fact }}</p>
+        {% comment %}What the tender requires of the missing figure, as the grey line the
+        specification's other figures read in on these cards -- a chip beside the
+        blocker read as a second badge.{% endcomment %}
+        {% if blocker.spec_line %}<p data-testid="blocker-spec-line" class="text-xs text-gray-600">{{ blocker.spec_line }}</p>{% elif blocker.spec %}<p data-testid="blocker-spec-line" class="text-xs text-gray-600">Tender requires {{ blocker.spec }}</p>{% endif %}
         {% if blocker.question %}
           <p data-testid="blocking-question" class="text-sm text-gray-800 mt-0.5 mb-1">
             {% if blocker.question.audience == "internal" %}Ours to do:{% else %}Ask the supplier:{% endif %}
             {{ blocker.question.question }}
-            {% comment %}The spec chip beside the blocker already says what we require.{% endcomment %}
+            {% comment %}The spec line under the blocker already says what we require.{% endcomment %}
             {% if not blocker.spec %}{% with q=blocker.question %}{% include "supply_chain/procurement/_requirement.html" %}{% endwith %}{% endif %}
           </p>
         {% endif %}

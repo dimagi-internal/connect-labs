@@ -1,7 +1,10 @@
 {% comment %}
 The request as a whole: how much, where it goes, what the specification says.
-Takes `listed`, `r` (the tender) and `asked_for`.
+Takes `listed`, `r` (the tender) and `asked_for`. `split`: the quantity and the
+place on the left, the specification on the right, so a one-product listing's
+panel spans the hero's width instead of leaving its right third empty.
 {% endcomment %}
+<div {% if split %}data-testid="request-columns" class="grid gap-x-10 gap-y-3 md:grid-cols-2"{% endif %}>
 <dl class="space-y-3">
   {% if asked_for %}
     <div>
@@ -19,6 +22,8 @@ Takes `listed`, `r` (the tender) and `asked_for`.
     {% if r.pickup_accepted %}<dd class="text-gray-900">Or the buyer collects from you <span class="text-gray-600">— say where on your bid.</span></dd>{% endif %}
     {% if r.delivery_points|length > 1 %}<dd class="text-[12px] text-gray-600 mt-1">Your price can cover one place or several; if it differs by place, send a bid for each.</dd>{% endif %}
   </div>
+</dl>
+<dl class="space-y-3{% if not split %} mt-3{% endif %}">
   {% for line in listed.lines %}{% if line.requirements %}
     <div>
       <dt class="text-[12px] text-gray-600">Specification{% if listed.lines|length > 1 %} · {{ line.name }}{% endif %}</dt>
@@ -27,3 +32,4 @@ Takes `listed`, `r` (the tender) and `asked_for`.
     </div>
   {% endif %}{% endfor %}
 </dl>
+</div>

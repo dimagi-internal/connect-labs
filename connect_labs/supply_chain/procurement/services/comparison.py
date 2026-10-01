@@ -176,11 +176,15 @@ class ComparisonRow:
     as_quoted: str = ""
     received_on: str = ""
     # Said after a price stated per base unit, which the ranking reads per
-    # pack: "converted to per carton for the ranking". "" otherwise.
+    # pack: the figure it converts to, "= USD 43.50 per carton", or, while the
+    # pack is the missing fact, "(per carton once sachets per carton is
+    # known)". "" otherwise.
     as_quoted_note: str = ""
-    # What the specification requires of the pack figure, as a chip beside a
-    # pack blocker: "150 sachets per carton".
+    # What the specification requires of the pack figure: "150 sachets per
+    # carton", and the figure alone ("150", "at least 150"), for the line
+    # under a pack blocker: "Sachets per carton: not stated (tender requires 150)".
     pack_requirement: str = ""
+    pack_requirement_figure: str = ""
     # What the landed figures assume, and whose word it is: "Delivered to
     # Kano · freight included · duties included, per quote".
     landed_basis: str = ""
@@ -244,6 +248,14 @@ class ComparisonRow:
                         # it, said beside the blocker as a chip.
                         "label": label,
                         "spec": self.pack_requirement if wanted == "pack_spec" else "",
+                        # The same, as the grey line the specification's other figures
+                        # read in: "Sachets per carton: not stated (tender requires 150)".
+                        "spec_line": (
+                            f"{label[:1].upper() + label[1:]}: not stated "
+                            f"(tender requires {self.pack_requirement_figure})"
+                            if wanted == "pack_spec" and self.pack_requirement_figure
+                            else ""
+                        ),
                     }
                 )
         return out
@@ -629,6 +641,12 @@ def _ranking_key(comparable: list[ComparisonRow]) -> str | None:
 
 def pack_requirement_words(commodity) -> str:
     """ "150 sachets per carton" (or "at least 150 ..."): the specification's pack figure, or ""."""
+    figure = pack_requirement_figure(commodity)
+    return f"{figure} {pack_words(commodity.base_unit, commodity.pack_unit)}" if figure else ""
+
+
+def pack_requirement_figure(commodity) -> str:
+    """ "150" (or "at least 150"): the specification's pack figure without its units, or ""."""
     from connect_labs.supply_chain.procurement.services.compliance import is_pack_count_field
 
     prefixes = {"==": "", ">=": "at least ", "<=": "at most ", ">": "more than ", "<": "fewer than "}
@@ -638,8 +656,26 @@ def pack_requirement_words(commodity) -> str:
         prefix = prefixes.get(requirement.get("operator"))
         if prefix is None or requirement.get("value") in (None, ""):
             continue
-        return f"{prefix}{requirement['value']} {pack_words(commodity.base_unit, commodity.pack_unit)}"
+        return f"{prefix}{requirement['value']}"
     return ""
+
+
+def per_pack_note(figures, base_unit, pack_unit) -> str:
+    """What a price stated per base unit comes to per pack, said after it.
+
+    "= USD 43.50 per carton" when the pack is known; "(per carton once sachets
+    per carton is known)" when the pack is the fact missing; otherwise the
+    conversion is only named, since its figure cannot be given.
+    """
+    pack = unit_noun(pack_unit)
+    per_pack = (figures or {}).get("usd_per_pack_normalized")
+    amount = getattr(per_pack, "amount", None)
+    if amount is not None:
+        return f"= {getattr(per_pack, 'currency', 'USD') or 'USD'} {money_digits(amount)} per {pack}"
+    reasons = getattr(per_pack, "reasons", ()) or ()
+    if any(key_for_reason(reason) == "pack_spec" for reason in reasons):
+        return f"(per {pack} once {pack_words(base_unit, pack_unit)} is known)"
+    return f"(converted to per {pack} for the ranking)"
 
 
 def as_quoted_words(quote, base_unit="", pack_unit="") -> str:
@@ -734,6 +770,7 @@ def compare_tender(
     course_applies = course_applies_to_category(commodity.category)
     figure_fields = [key for key in FIGURE_FIELDS if course_applies or key not in COURSE_FIGURES]
     pack_requirement = pack_requirement_words(commodity)
+    pack_figure = pack_requirement_figure(commodity)
 
     for quote in quotes:
         if not _is_live(quote):
@@ -763,10 +800,11 @@ def compare_tender(
             pack_unit=(item.pack_unit if item is not None and item.pack_unit else "") or commodity.pack_unit or "",
             received_on=str(quote.received_on)[:10] if quote.received_on else "",
             pack_requirement=pack_requirement,
+            pack_requirement_figure=pack_figure,
         )
         row.as_quoted = as_quoted_words(quote, row.base_unit, row.pack_unit)
         if quote.as_quoted_amount is not None and quote.as_quoted_unit == "per_base_unit" and row.pack_unit:
-            row.as_quoted_note = f"converted to per {unit_noun(row.pack_unit)} for the ranking"
+            row.as_quoted_note = per_pack_note(figures, row.base_unit, row.pack_unit)
         row.landed_basis = landed_basis_words(quote, tender)
         if quote.quantity_basis is not None and quote.quantity_basis_unit:
             row.quantity_quoted = quantity_phrase(quote.quantity_basis, quote.quantity_basis_unit)

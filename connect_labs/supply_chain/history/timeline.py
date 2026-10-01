@@ -89,6 +89,11 @@ class Entry:
         return "View email" if self.source_kind == "Email" else "source"
 
     @property
+    def source_hide_text(self) -> str:
+        """What the same affordance says while the source is open: "Hide email"."""
+        return "Hide email" if self.source_kind == "Email" else "Hide source"
+
+    @property
     def line(self) -> str:
         if not self.what:
             return self.sentence
