@@ -214,6 +214,27 @@ _VISIT_FIELDS = [
         ),
         "aggregation": "first",
     },
+    # Per-question score (0 or 1) for all 14 questions in the bank. Each
+    # score_qN is CommCare's own calc, and it is 0 for BOTH "answered wrong"
+    # and "not one of this visit's 4 picks" -- the form conflates the two.
+    # Render code disambiguates by only counting a question's score for a
+    # visit where mother_q_pick_1..4 actually included that question this
+    # time -- NOT by checking asked_qN, which is a rolling case property
+    # that stays 'yes' on every later visit once a question has ever been
+    # asked (until a reset cycle clears it), so it would misreport "wrong"
+    # on visits that didn't re-ask the question at all.
+    *[
+        {
+            "name": f"mother_q_score_{i}",
+            "path": (
+                "form.additional_visit_verification_block.verification_page."
+                f"random_test_setup_page.random_test_setup.expected_answer.score_q{i}"
+            ),
+            "aggregation": "first",
+            "transform": "float",
+        }
+        for i in range(1, 15)
+    ],
     {
         "name": "capture_anc_card_visit_verification",
         "path": "form.additional_visit_verification_block.capture_anc_card_visit_verification",
