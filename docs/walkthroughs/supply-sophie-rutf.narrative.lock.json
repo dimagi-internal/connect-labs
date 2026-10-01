@@ -3,14 +3,14 @@
     "sophie-reads-her-program",
     "the-eta-that-moved",
     "back-to-twenty-august",
+    "her-tender-on-the-market",
     "round-two-cannot-be-compared",
     "the-answer-arrives",
-    "her-tender-on-the-market",
     "sophie-awards-with-a-reason"
   ],
-  "fetched_at": "2026-09-26T20:08:11.311824+00:00",
+  "fetched_at": "2026-10-01T20:33:23.304365+00:00",
   "name": "supply-sophie-rutf",
-  "narrative": "Sophie runs Connect-RUTF procurement for Dimagi, and she is the only person inside the record: suppliers and the freight forwarder email her, and an AI she forwards that email to does the typing. She opens her program and reads, line by line, where round 1 and round 2 stand, which suppliers have been silent for two weeks, and which rows the AI wrote last. Sophie opens round 1's timeline and finds the day the shipment's arrival moved from 5 Sep to 19 Sep, entered by the ACE agent from an email she forwarded twice yet recorded once, and opens the forwarder's own words behind it. Sophie sets the date back to 20 Aug and reads what her program believed then: round 1 in transit, due 5 Sep, and no round 2 at all; then she comes back to today. Sophie opens round 2's comparison and reads, for each of the three quotes, the one thing that keeps it out of the ranking and the question already written out to ask that supplier. The supplier that had not said how many sachets a carton holds replies, 150 per carton; the AI reading Sophie's forwarded mail records the answer against its quote, and Sophie finds the correction on round 2's timeline with the reply quoted beside it, then sees that quote ranked with a cost per carton and per child treated. Sophie opens round 2 on the market as a supplier would and reads the request she published, and nothing she keeps private. Sophie awards round 2 provisionally to the quote that answered, writing why, and her overview shows round 2 awarded, by her, today.",
+  "narrative": "Sophie runs Connect-RUTF procurement for Dimagi, and she is the only person inside the record: suppliers and the freight forwarder email her, and an AI she forwards that email to does the typing. She opens her program and reads, line by line, where round 1 and round 2 stand, which suppliers have been silent for two weeks, and which rows the AI wrote last. Sophie opens round 1's timeline and finds the day the shipment's arrival moved from 5 Sep to 19 Sep, entered by the ACE agent from an email she forwarded twice yet recorded once, and opens the forwarder's own words behind it. Sophie sets the date back to 20 Aug and reads what her program believed then: round 1 in transit, due 5 Sep, and no round 2 at all; then she comes back to today. Sophie opens round 2 on the market as a supplier would and reads the request she published, what she asked every supplier to state, and nothing she keeps private. Sophie opens round 2's comparison and reads, for each of the three quotes, the one thing that keeps it out of the ranking and the question already written out to ask that supplier. The supplier that had not said how many sachets a carton holds replies, 150 per carton; the AI reading Sophie's forwarded mail records the answer against its quote, and Sophie finds the correction on round 2's timeline with the reply quoted beside it, then sees that quote ranked with a cost per carton and per child treated. Sophie awards round 2 provisionally to the quote that answered, writing why, and her overview shows round 2 awarded, by her, today.",
   "personas": {
     "sophie": {
       "color": "#4F46E5",
@@ -97,7 +97,7 @@
           "verify": "pytest: after changing a shipment expected_on on 2026-09-02, GET /supply/?program_id=10672&as_of=2026-08-20 shows the old date and the database row still holds the new one afterwards"
         },
         {
-          "description": "A header date control (data-testid=as-of-control) that sets ?as_of=, carried forward by supply links, with a persistent banner (data-testid=as-of-banner) \"Viewing as of <date> — read-only. Nothing here can be changed while you look at the past.\" and a separate \"Back to today\" link, and all write controls hidden.",
+          "description": "A header date control (data-testid=as-of-control) that sets ?as_of=, carried forward by supply links, with a persistent banner (data-testid=as-of-banner) \"Viewing as of <date> — back to today\" and all write controls hidden.",
           "id": "as-of-control-banner",
           "verify": "Playwright: set the control to 2026-08-20, assert the as-of-banner text contains \"20 Aug 2026\" and no form with method=post is on the page"
         },
@@ -112,6 +112,30 @@
       "persona": "sophie",
       "provenance": "S3",
       "title": "Sophie looks at her program as it stood on 20 Aug"
+    },
+    {
+      "features": [
+        {
+          "description": "The market tender page and its serializer carry no revisions, source excerpts or other suppliers' quotes, and ignore as_of.",
+          "id": "market-no-history",
+          "verify": "pytest: GET /supply/market/tenders/<round2>/ as a non-member contains no source_excerpt text, no data-testid=timeline and no quoted amount"
+        },
+        {
+          "description": "Revisions and excerpts are visible only to members of the program, following access to the underlying records.",
+          "id": "revisions-member-only",
+          "verify": "pytest: a non-member requesting round 2 tender detail gets 404 and no Revision is serialized for them"
+        },
+        {
+          "description": "The seeder publishes round 2 on the market with its quantity, delivery point, deadline, pack requirement and minimum shelf life; no other buyer organisations are invented.",
+          "id": "seed-round2-public",
+          "verify": "pytest: after seeding, visible_tender(round2) succeeds for an anonymous visitor and the page shows the deadline and shelf-life minimum"
+        }
+      ],
+      "id": "her-tender-on-the-market",
+      "narrative": "Sophie opens round 2 on the market as a supplier would and reads the request she published, what she asked every supplier to state, and nothing she keeps private.",
+      "persona": "sophie",
+      "provenance": "S5",
+      "title": "Sophie sees exactly what a supplier sees of round 2"
     },
     {
       "features": [
@@ -164,30 +188,6 @@
     {
       "features": [
         {
-          "description": "The market tender page and its serializer carry no revisions, source excerpts or other suppliers' quotes, and ignore as_of.",
-          "id": "market-no-history",
-          "verify": "pytest: GET /supply/market/tenders/<round2>/ as a non-member contains no source_excerpt text, no data-testid=timeline and no quoted amount"
-        },
-        {
-          "description": "Revisions and excerpts are visible only to members of the program, following access to the underlying records.",
-          "id": "revisions-member-only",
-          "verify": "pytest: a non-member requesting round 2 tender detail gets 404 and no Revision is serialized for them"
-        },
-        {
-          "description": "The seeder publishes round 2 on the market with its quantity, delivery point, deadline, pack requirement and minimum shelf life; no other buyer organisations are invented.",
-          "id": "seed-round2-public",
-          "verify": "pytest: after seeding, visible_tender(round2) succeeds for an anonymous visitor and the page shows the deadline and shelf-life minimum"
-        }
-      ],
-      "id": "her-tender-on-the-market",
-      "narrative": "Sophie opens round 2 on the market as a supplier would and reads the request she published, and nothing she keeps private.",
-      "persona": "sophie",
-      "provenance": "S5",
-      "title": "Sophie sees exactly what a supplier sees of round 2"
-    },
-    {
-      "features": [
-        {
           "description": "After award_create the tender's overview row shows stage \"awarded (provisional)\" when the award is provisional, with last change \"today · Sophie\" from the award's web-channel revision.",
           "id": "overview-award-row",
           "verify": "pytest: award_create via the comparison view as Sophie, then GET /supply/?program_id=10672 shows round 2 row text containing \"provisional\" and \"Sophie\""
@@ -206,5 +206,5 @@
     }
   ],
   "slug": "supply-sophie-rutf",
-  "version": 1
+  "version": 4
 }

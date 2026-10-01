@@ -12,6 +12,7 @@ loop:
   mode: auto
   backlog_min_findings: 8
   full_rejudge_every: 3
+  judge_tiering: auto
 deploy_gate:
   health_url: https://labs.connect.dimagi.com/health/
   sha_field: git_sha
@@ -19,3 +20,22 @@ deploy_gate:
   interval_seconds: 5
   attempts: 12
   retry_seconds: 30
+# Sub-step watchdog (canopy >= 0.2.533): a render, seed or fixer that runs past
+# its budget, or a fixer that stops touching its heartbeat file, ends as
+# timed_out instead of stalling the loop (run 1's batch 3 sat 4 h on a shared
+# test database).
+timeouts:
+  default_minutes: 45
+  heartbeat_minutes: 15
+  fixer_minutes: 45
+# Checked before every iteration: seeding runs over ECS exec (AWS profile labs)
+# and every fix batch merges and deploys through gh.
+auth_preflight:
+  timeout_seconds: 20
+  commands:
+    # Seeding needs ONE live route: ECS exec (AWS SSO, needs a person to renew)
+    # or the run-labs-command Actions workflow (GitHub OIDC) seed.py falls back to.
+    - name: labs-seed-route
+      run: aws sts get-caller-identity --profile labs >/dev/null 2>&1 || gh workflow view run-labs-command.yml --repo dimagi-internal/connect-labs >/dev/null
+    - name: gh
+      run: gh auth status
