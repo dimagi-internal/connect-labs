@@ -323,12 +323,15 @@ function WorkflowUI({
     return row[key];
   }
 
-  // --- Per FLW Verification View table filters (status + FLW) ------------
-  // Table-only filters -- narrow what the table/CSV show without touching
-  // displayRows itself, so the Verification Summary tab, the Failed
-  // Verification Analysis tab, and everything computed from displayRows
-  // stay on the full domain+eligibility-filtered set regardless of what's
-  // selected here.
+  // --- Status + FLW filters --------------------------------------------
+  // Status is table-only (Per FLW Verification View tab), narrowing the
+  // table/CSV without touching displayRows itself. FLW is available
+  // independently on all three data tabs (Verification Summary, Per FLW
+  // Verification View, Failed Verification Analysis) -- each tab keeps its
+  // own separate selection, so picking FLWs on one tab never silently
+  // changes what another tab shows. The picker's list of names is the same
+  // everywhere: every username in the domain+eligibility-filtered set
+  // (displayRows), independent of any filter.
   var STATUS_FILTER_OPTIONS = [
     { key: 'all', label: 'All' },
     { key: 'Pass', label: 'Passed' },
@@ -349,6 +352,26 @@ function WorkflowUI({
   var flwDropdownOpen = _flwDropdownOpen[0];
   var setFlwDropdownOpen = _flwDropdownOpen[1];
 
+  var _summaryFlwFilter = React.useState([]);
+  var summaryFlwFilter = _summaryFlwFilter[0];
+  var setSummaryFlwFilter = _summaryFlwFilter[1];
+  var _summaryFlwSearch = React.useState('');
+  var summaryFlwSearch = _summaryFlwSearch[0];
+  var setSummaryFlwSearch = _summaryFlwSearch[1];
+  var _summaryFlwDropdownOpen = React.useState(false);
+  var summaryFlwDropdownOpen = _summaryFlwDropdownOpen[0];
+  var setSummaryFlwDropdownOpen = _summaryFlwDropdownOpen[1];
+
+  var _failedFlwFilter = React.useState([]);
+  var failedFlwFilter = _failedFlwFilter[0];
+  var setFailedFlwFilter = _failedFlwFilter[1];
+  var _failedFlwSearch = React.useState('');
+  var failedFlwSearch = _failedFlwSearch[0];
+  var setFailedFlwSearch = _failedFlwSearch[1];
+  var _failedFlwDropdownOpen = React.useState(false);
+  var failedFlwDropdownOpen = _failedFlwDropdownOpen[0];
+  var setFailedFlwDropdownOpen = _failedFlwDropdownOpen[1];
+
   var allFlwUsernames = React.useMemo(
     function () {
       var set = {};
@@ -360,12 +383,25 @@ function WorkflowUI({
     [displayRows],
   );
 
-  function toggleFlwFilter(username) {
-    setFlwFilter(function (prev) {
+  // Shared toggle logic for a username multi-select array, parameterized by
+  // which filter's setter to use -- keeps the three independent FLW filters
+  // (table, summary, failed-analysis) from needing three near-identical
+  // toggle functions.
+  function toggleUsernameInFilter(setFilterFn, username) {
+    setFilterFn(function (prev) {
       var idx = prev.indexOf(username);
       if (idx === -1) return prev.concat([username]);
       return prev.slice(0, idx).concat(prev.slice(idx + 1));
     });
+  }
+  function toggleFlwFilter(username) {
+    toggleUsernameInFilter(setFlwFilter, username);
+  }
+  function toggleSummaryFlwFilter(username) {
+    toggleUsernameInFilter(setSummaryFlwFilter, username);
+  }
+  function toggleFailedFlwFilter(username) {
+    toggleUsernameInFilter(setFailedFlwFilter, username);
   }
 
   var filteredTableRows = React.useMemo(
@@ -381,6 +417,135 @@ function WorkflowUI({
     },
     [displayRows, statusFilter, flwFilter],
   );
+
+  // Verification Summary tab's own FLW-filtered row set -- independent of
+  // the table tab's filteredTableRows above.
+  var summaryDisplayRows = React.useMemo(
+    function () {
+      if (summaryFlwFilter.length === 0) return displayRows;
+      return displayRows.filter(function (row) {
+        return summaryFlwFilter.indexOf(row.username) !== -1;
+      });
+    },
+    [displayRows, summaryFlwFilter],
+  );
+
+  // Failed Verification Analysis tab's own FLW-filtered row set --
+  // independent of the other two tabs' filters.
+  var failedAnalysisDisplayRows = React.useMemo(
+    function () {
+      if (failedFlwFilter.length === 0) return displayRows;
+      return displayRows.filter(function (row) {
+        return failedFlwFilter.indexOf(row.username) !== -1;
+      });
+    },
+    [displayRows, failedFlwFilter],
+  );
+
+  // Reusable FLW multi-select dropdown control (button + search + checkbox
+  // list), parameterized by which filter's state to read/write. Returns
+  // plain host-element JSX (div/button/input) rather than being invoked as
+  // a JSX component -- it's called as a function at each use site, so React
+  // reconciles by the underlying tag, not by which JS function produced it,
+  // avoiding a remount (and lost search-input focus) on every keystroke.
+  function renderFlwFilterDropdown(
+    filter,
+    setFilter,
+    toggle,
+    search,
+    setSearch,
+    open,
+    setOpen,
+  ) {
+    return (
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={function () {
+            setOpen(!open);
+          }}
+          className="rounded border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          {filter.length === 0 ? 'All' : filter.length + ' selected'}
+          {' ▾'}
+        </button>
+        {open && (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+            onClick={function () {
+              setOpen(false);
+            }}
+          ></div>
+        )}
+        {open && (
+          <div
+            style={{
+              position: 'absolute',
+              zIndex: 50,
+              top: '100%',
+              left: 0,
+              marginTop: '4px',
+              width: '260px',
+            }}
+            className="overflow-hidden rounded border border-gray-200 bg-white shadow-lg"
+          >
+            <div className="border-b border-gray-200 p-2">
+              <input
+                type="text"
+                value={search}
+                onChange={function (e) {
+                  setSearch(e.target.value);
+                }}
+                placeholder="Search FLW ID..."
+                className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              />
+            </div>
+            <div
+              style={{ maxHeight: '220px', overflowY: 'auto' }}
+              className="p-1"
+            >
+              {allFlwUsernames
+                .filter(function (u) {
+                  return u.toLowerCase().indexOf(search.toLowerCase()) !== -1;
+                })
+                .map(function (u) {
+                  var checked = filter.indexOf(u) !== -1;
+                  return (
+                    <label
+                      key={u}
+                      className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-gray-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={function () {
+                          toggle(u);
+                        }}
+                      />
+                      {u}
+                    </label>
+                  );
+                })}
+              {allFlwUsernames.length === 0 && (
+                <div className="px-2 py-1 text-sm text-gray-400">No FLWs</div>
+              )}
+            </div>
+            {filter.length > 0 && (
+              <div className="border-t border-gray-200 p-2">
+                <button
+                  onClick={function () {
+                    setFilter([]);
+                  }}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Clear selection
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // --- Sortable columns ---------------------------------------------------
   var _sort = React.useState({ key: null, dir: 'asc' });
@@ -425,7 +590,7 @@ function WorkflowUI({
   // --- Summary metrics (over the displayed/filtered set) ------------------
   var summary = React.useMemo(
     function () {
-      var total = displayRows.length;
+      var total = summaryDisplayRows.length;
       var passCount = 0;
       var failCount = 0;
       var pendingCount = 0;
@@ -438,7 +603,7 @@ function WorkflowUI({
       // one or more methods while still being recorded Pass overall (a
       // reviewer override, or just not yet reconciled).
       var anyMethodFailCount = 0;
-      displayRows.forEach(function (row) {
+      summaryDisplayRows.forEach(function (row) {
         if (row.visit_verification_outcome === 'Pass') passCount += 1;
         else if (row.visit_verification_outcome === 'Fail') failCount += 1;
         else if (row.visit_verification_outcome === 'Pending Audit')
@@ -462,7 +627,7 @@ function WorkflowUI({
         anyMethodFailCount: anyMethodFailCount,
       };
     },
-    [displayRows],
+    [summaryDisplayRows],
   );
 
   // --- Per-method Pass/Pending/Fail counts, for the summary chart --------
@@ -478,7 +643,7 @@ function WorkflowUI({
         // against. Not tracked for the other 4 methods -- "no location to
         // match on" is a GPS-specific concept.
         var noMatch = 0;
-        displayRows.forEach(function (row) {
+        summaryDisplayRows.forEach(function (row) {
           var v = m.getOutcome(row);
           if (v === 'Pass') pass += 1;
           else if (v === 'Fail') fail += 1;
@@ -495,7 +660,7 @@ function WorkflowUI({
         };
       });
     },
-    [displayRows],
+    [summaryDisplayRows],
   );
 
   // --- By-FLW failed-visit breakdown (Failed Verification Analysis tab) --
@@ -509,7 +674,7 @@ function WorkflowUI({
   var byFlwFailureStats = React.useMemo(
     function () {
       var byFlw = {};
-      displayRows.forEach(function (row) {
+      failedAnalysisDisplayRows.forEach(function (row) {
         if (row.visit_verification_outcome !== 'Fail') return;
         var key = row.username || '(unknown)';
         if (!byFlw[key]) {
@@ -527,7 +692,7 @@ function WorkflowUI({
           return b.failedVisits - a.failedVisits;
         });
     },
-    [displayRows],
+    [failedAnalysisDisplayRows],
   );
 
   // Every distinct combo string appearing across all FLWs' failed visits,
@@ -601,20 +766,20 @@ function WorkflowUI({
   var homeGpsScatter = React.useMemo(
     function () {
       return buildGpsScatterPoints(
-        displayRows,
+        failedAnalysisDisplayRows,
         'gps_distance_from_home_meters',
       );
     },
-    [displayRows],
+    [failedAnalysisDisplayRows],
   );
   var facilityGpsScatter = React.useMemo(
     function () {
       return buildGpsScatterPoints(
-        displayRows,
+        failedAnalysisDisplayRows,
         'gps_distance_from_health_facility_meters',
       );
     },
-    [displayRows],
+    [failedAnalysisDisplayRows],
   );
 
   // --- Mother question fail rate (Failed Verification Analysis tab) ------
@@ -652,7 +817,7 @@ function WorkflowUI({
       for (var i = 1; i <= 14; i += 1) {
         stats['q' + i] = { correct: 0, incorrect: 0 };
       }
-      displayRows.forEach(function (row) {
+      failedAnalysisDisplayRows.forEach(function (row) {
         var picks = [
           row.mother_q_pick_1,
           row.mother_q_pick_2,
@@ -687,7 +852,7 @@ function WorkflowUI({
           return b.failRate - a.failRate;
         });
     },
-    [displayRows],
+    [failedAnalysisDisplayRows],
   );
 
   // --- CSV export -----------------------------------------------------------
@@ -759,20 +924,20 @@ function WorkflowUI({
       ],
     },
     {
-      title: 'Per FLW Verification View Filters',
-      body: "Status and FLW are table-only filters -- they narrow the table (and what CSV export downloads) without affecting anything else on the page. The Verification Summary tab, the Failed Verification Analysis tab, and the FLW picker's own list of available names all stay on the full domain+eligibility-filtered set regardless of what's selected here.",
+      title: 'Status and FLW Filters',
+      body: "Status is table-only (Per FLW Verification View tab), narrowing the table and what CSV export downloads without affecting anything else on the page. FLW is available independently on all three data tabs -- Verification Summary, Per FLW Verification View, and Failed Verification Analysis -- and each tab keeps its OWN separate FLW selection: picking FLWs on one tab never changes what another tab shows. On every tab, the list of names offered is the same -- every username present in the domain+eligibility-filtered set (displayRows), independent of any filter (so switching Status on the table tab can't make an FLW's name disappear from any picker).",
       items: [
         {
-          name: 'Status',
-          def: 'Single-select: All (default) / Passed / Pending Audit / Failed. Filters rows by Final verification outcome.',
+          name: 'Status (Per FLW Verification View tab only)',
+          def: 'Single-select: All (default) / Passed / Pending Audit / Failed. Filters table rows by Final verification outcome.',
           field:
             'statusFilter state; row kept when row.visit_verification_outcome === statusFilter (or always, for "All").',
         },
         {
-          name: 'FLW',
-          def: "Multi-select with search: pick one or more FLW IDs to show only their visits, or leave empty for all. The list of names offered is every username present in the domain+eligibility-filtered set (displayRows), independent of the Status filter, so switching Status can't make an FLW's name disappear from the picker.",
+          name: 'FLW (independent selection per tab)',
+          def: 'Multi-select with search: pick one or more FLW IDs to narrow that tab to just their visits, or leave empty for all.',
           field:
-            'flwFilter state (array of usernames); row kept when flwFilter is empty or flwFilter.indexOf(row.username) !== -1.',
+            'Verification Summary: summaryFlwFilter state, applied to summaryDisplayRows. Per FLW Verification View: flwFilter state, applied to filteredTableRows. Failed Verification Analysis: failedFlwFilter state, applied to failedAnalysisDisplayRows. Each is an array of usernames; a row is kept when the array is empty or indexOf(row.username) !== -1.',
         },
       ],
     },
@@ -900,7 +1065,7 @@ function WorkflowUI({
     },
     {
       title: 'Verification Summary Tab',
-      body: 'The three percentages and the "n=" counts are all computed over the same filtered/eligible visit set as the table (see "Which visits appear" above), using each visit\'s Final verification outcome:',
+      body: 'The three percentages and the "n=" counts are computed over the domain+eligibility-filtered visit set (see "Which visits appear" above), further narrowed by this tab\'s own FLW filter if any FLWs are selected (summaryDisplayRows), using each visit\'s Final verification outcome:',
       items: [
         {
           name: '% Passed Verification',
@@ -921,25 +1086,25 @@ function WorkflowUI({
           name: 'Stacked bar chart',
           def: "One bar per verification method (GPS, QR, Signature, Mother Questions, ANC Card), showing how many visits landed Pass (green) / Pending (yellow) / Fail (red) for that specific method -- independent of the overall Final verification outcome above. A single visit can fail one method and pass another (e.g. fail GPS but pass QR), so it's counted in more than one bar. That means these counts are NOT meant to add up to the % Passed/Pending/Failed totals above -- a bar's Fail count can be, and usually is, larger than the overall Failed Verification n= at the top, since one visit's failure can show up in several bars at once. The caption above the chart states the reconciling number directly: how many visits failed at least one method vs. how many are recorded Fail overall.",
           field:
-            'Per row, per method: gpsOutcome() / qrOutcome() / signatureOutcome() / motherQuestionsOutcome() / ancCardOutcome() (same functions and underlying fields as the Outcome Columns section above), tallied into Pass/Pending/Fail counts. The caption reconciling number is summary.anyMethodFailCount (displayRows where METHODS.some(m => m.getOutcome(row) === "Fail")) vs. summary.failCount (visit_verification_outcome === "Fail").',
+            'Per row, per method: gpsOutcome() / qrOutcome() / signatureOutcome() / motherQuestionsOutcome() / ancCardOutcome() (same functions and underlying fields as the Outcome Columns section above), tallied into Pass/Pending/Fail counts. The caption reconciling number is summary.anyMethodFailCount (summaryDisplayRows where METHODS.some(m => m.getOutcome(row) === "Fail")) vs. summary.failCount (visit_verification_outcome === "Fail").',
         },
         {
           name: 'Stacked bar chart -- "No location to match on" (grey)',
           def: 'GPS-only 4th segment, after Pass/Pending/Fail. Counts visits where gpsOutcome() landed on NA -- either the visit was at a location other than the mother\'s home or a health facility (GPS verification doesn\'t apply there), or that location had no previously-saved reference point to compare against. Not tracked for the other 4 methods, since "no location to match on" is specifically a GPS concept.',
           field:
-            'methodStats[gps].noMatch -- count of displayRows where gpsOutcome(row) === "NA" (GPS method only).',
+            'methodStats[gps].noMatch -- count of summaryDisplayRows where gpsOutcome(row) === "NA" (GPS method only).',
         },
       ],
     },
     {
       title: 'Failed Verification Analysis Tab',
-      body: 'Reports here use the same filtered/eligible row set as the rest of the dashboard (domain toggle + FLW eligibility + verification-block-present gate) -- NOT the table-only Status/FLW filters from the Per FLW Verification View tab, which are scoped to that table alone. Three sections: By FLW, GPS Verification, and Mother question fail rate.',
+      body: "Reports here use the domain+eligibility-filtered row set (domain toggle + FLW eligibility + verification-block-present gate), further narrowed by this tab's own FLW filter if any FLWs are selected (failedAnalysisDisplayRows) -- NOT the Status/FLW filters from the Per FLW Verification View tab or the Verification Summary tab's FLW filter, which are each scoped to their own tab alone. Three sections: By FLW, GPS Verification, and Mother question fail rate.",
       items: [
         {
           name: 'By FLW -- chart',
           def: 'Every FLW with at least one failed visit (Final verification outcome = Fail), ordered most failed visits first. Each name\'s bar label includes that FLW\'s actual distinct failed-visit count in parentheses, e.g. "jdoe (7)". One bar segment per failed visit -- segments always sum to exactly that count.',
           field:
-            'Computed client-side (byFlwFailureStats) from displayRows filtered to visit_verification_outcome === "Fail", grouped by username. Not a raw pipeline field.',
+            'Computed client-side (byFlwFailureStats) from failedAnalysisDisplayRows filtered to visit_verification_outcome === "Fail", grouped by username. Not a raw pipeline field.',
         },
         {
           name: 'By FLW -- segment categories',
@@ -968,7 +1133,7 @@ function WorkflowUI({
           name: 'Mother question fail rate -- chart',
           def: "Every question from the 14-question spot-check bank that's been asked at least once across the current filter, ordered highest fail rate first. Each bar is stacked Correct (green) / Incorrect (red); the label includes the fail rate % and the response count (n=) it's based on.",
           field:
-            'Computed client-side (motherQuestionFailRateStats) over displayRows -- not a raw pipeline field on its own, built from mother_q_pick_1..4 and mother_q_score_1..14.',
+            'Computed client-side (motherQuestionFailRateStats) over failedAnalysisDisplayRows -- not a raw pipeline field on its own, built from mother_q_pick_1..4 and mother_q_score_1..14.',
         },
         {
           name: 'Mother question fail rate -- right/wrong/not-asked logic',
@@ -1349,6 +1514,24 @@ function WorkflowUI({
 
       {activeTab === 'summary' && (
         <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+            <span className="text-sm font-medium text-gray-700">FLW:</span>
+            {renderFlwFilterDropdown(
+              summaryFlwFilter,
+              setSummaryFlwFilter,
+              toggleSummaryFlwFilter,
+              summaryFlwSearch,
+              setSummaryFlwSearch,
+              summaryFlwDropdownOpen,
+              setSummaryFlwDropdownOpen,
+            )}
+            {summaryFlwFilter.length > 0 && (
+              <span className="text-xs text-gray-500">
+                Showing {summaryDisplayRows.length} of {displayRows.length}{' '}
+                visits
+              </span>
+            )}
+          </div>
           <div>
             <h3 className="text-sm font-semibold text-gray-900">
               Overall Verification Outcome (per visit)
@@ -1414,99 +1597,15 @@ function WorkflowUI({
             })}
 
             <span className="ml-2 text-sm font-medium text-gray-700">FLW:</span>
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={function () {
-                  setFlwDropdownOpen(!flwDropdownOpen);
-                }}
-                className="rounded border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                {flwFilter.length === 0
-                  ? 'All'
-                  : flwFilter.length + ' selected'}
-                {' ▾'}
-              </button>
-              {flwDropdownOpen && (
-                <div
-                  style={{ position: 'fixed', inset: 0, zIndex: 40 }}
-                  onClick={function () {
-                    setFlwDropdownOpen(false);
-                  }}
-                ></div>
-              )}
-              {flwDropdownOpen && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    zIndex: 50,
-                    top: '100%',
-                    left: 0,
-                    marginTop: '4px',
-                    width: '260px',
-                  }}
-                  className="overflow-hidden rounded border border-gray-200 bg-white shadow-lg"
-                >
-                  <div className="border-b border-gray-200 p-2">
-                    <input
-                      type="text"
-                      value={flwSearch}
-                      onChange={function (e) {
-                        setFlwSearch(e.target.value);
-                      }}
-                      placeholder="Search FLW ID..."
-                      className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
-                    />
-                  </div>
-                  <div
-                    style={{ maxHeight: '220px', overflowY: 'auto' }}
-                    className="p-1"
-                  >
-                    {allFlwUsernames
-                      .filter(function (u) {
-                        return (
-                          u.toLowerCase().indexOf(flwSearch.toLowerCase()) !==
-                          -1
-                        );
-                      })
-                      .map(function (u) {
-                        var checked = flwFilter.indexOf(u) !== -1;
-                        return (
-                          <label
-                            key={u}
-                            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-gray-50"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={function () {
-                                toggleFlwFilter(u);
-                              }}
-                            />
-                            {u}
-                          </label>
-                        );
-                      })}
-                    {allFlwUsernames.length === 0 && (
-                      <div className="px-2 py-1 text-sm text-gray-400">
-                        No FLWs
-                      </div>
-                    )}
-                  </div>
-                  {flwFilter.length > 0 && (
-                    <div className="border-t border-gray-200 p-2">
-                      <button
-                        onClick={function () {
-                          setFlwFilter([]);
-                        }}
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        Clear selection
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            {renderFlwFilterDropdown(
+              flwFilter,
+              setFlwFilter,
+              toggleFlwFilter,
+              flwSearch,
+              setFlwSearch,
+              flwDropdownOpen,
+              setFlwDropdownOpen,
+            )}
           </div>
 
           <div className="flex items-start justify-between">
@@ -1575,6 +1674,24 @@ function WorkflowUI({
 
       {activeTab === 'failed_analysis' && (
         <div className="space-y-8">
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+            <span className="text-sm font-medium text-gray-700">FLW:</span>
+            {renderFlwFilterDropdown(
+              failedFlwFilter,
+              setFailedFlwFilter,
+              toggleFailedFlwFilter,
+              failedFlwSearch,
+              setFailedFlwSearch,
+              failedFlwDropdownOpen,
+              setFailedFlwDropdownOpen,
+            )}
+            {failedFlwFilter.length > 0 && (
+              <span className="text-xs text-gray-500">
+                Showing {failedAnalysisDisplayRows.length} of{' '}
+                {displayRows.length} visits
+              </span>
+            )}
+          </div>
           <div className="space-y-4">
             <div>
               <h3 className="text-base font-semibold text-gray-900">By FLW</h3>
@@ -1587,8 +1704,8 @@ function WorkflowUI({
                 value shown in that table column -- so a visit where both GPS
                 and Mother Questions were attempted gets its own "GPS, Mother
                 Questions" category, separate from a visit with only GPS.
-                Respects the domain and eligibility filters above, same row set
-                as the other tabs.
+                Respects the domain and eligibility filters above, plus this
+                tab's own FLW filter if set.
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -1620,7 +1737,7 @@ function WorkflowUI({
                 GPS was from that point, Y is the GPS accuracy of the reading.
                 Pass is ≤200m, Fail is &gt;200m -- that's the form's own
                 threshold. Respects the domain and eligibility filters above,
-                same row set as the other tabs.
+                plus this tab's own FLW filter if set.
               </p>
             </div>
 
@@ -1680,8 +1797,8 @@ function WorkflowUI({
                 picks -- not just "ever asked" at some earlier visit -- so
                 right/wrong/not-asked-this-visit stays unambiguous. Each bar's
                 label shows the fail rate and the number of responses it's based
-                on. Respects the domain and eligibility filters above, same row
-                set as the other tabs.
+                on. Respects the domain and eligibility filters above, plus this
+                tab's own FLW filter if set.
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
