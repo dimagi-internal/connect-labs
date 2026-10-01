@@ -839,7 +839,7 @@ function WorkflowUI({
           name: 'Distance from previous point (m)',
           def: "The same distance CommCare's own gpsOutcome threshold is based on (≤200m = Pass), rounded to the nearest meter for display. Picks the field matching GPS location (home vs health facility), same as GPS outcome. NA when the location was 'other' or there was no prior point to measure against -- i.e. whenever GPS outcome is also NA.",
           field:
-            'gpsDistanceMeters(row) -- picks gps_distance_from_home_meters or gps_distance_from_health_facility_meters by where_is_the_visit_being_conducted (same fields as the GPS Verification scatter plot\'s X axis on the Failed Verification Analysis tab).',
+            "gpsDistanceMeters(row) -- picks gps_distance_from_home_meters or gps_distance_from_health_facility_meters by where_is_the_visit_being_conducted (same fields as the GPS Verification scatter plot's X axis on the Failed Verification Analysis tab).",
         },
         {
           name: 'QR outcome',
@@ -1210,9 +1210,7 @@ function WorkflowUI({
         type: 'bar',
         data: {
           labels: motherQuestionFailRateStats.map(function (s) {
-            return (
-              s.label + ' -- ' + s.failRate + '% fail (n=' + s.total + ')'
-            );
+            return s.label + ' -- ' + s.failRate + '% fail (n=' + s.total + ')';
           }),
           datasets: [
             {
@@ -1676,14 +1674,14 @@ function WorkflowUI({
                 Mother question fail rate
               </h3>
               <p className="text-xs text-gray-500">
-                Every question from the 14-question spot-check bank that's
-                been asked at least once, most-failed first. A question only
-                counts for a visit when it was actually one of that visit's 4
-                random picks -- not just "ever asked" at some earlier visit --
-                so right/wrong/not-asked-this-visit stays unambiguous. Each
-                bar's label shows the fail rate and the number of responses
-                it's based on. Respects the domain and eligibility filters
-                above, same row set as the other tabs.
+                Every question from the 14-question spot-check bank that's been
+                asked at least once, most-failed first. A question only counts
+                for a visit when it was actually one of that visit's 4 random
+                picks -- not just "ever asked" at some earlier visit -- so
+                right/wrong/not-asked-this-visit stays unambiguous. Each bar's
+                label shows the fail rate and the number of responses it's based
+                on. Respects the domain and eligibility filters above, same row
+                set as the other tabs.
               </p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
