@@ -99,8 +99,9 @@ class Row:
     last_change_by: str
     last_change_is_ai: bool
     stale: list[str] = field(default_factory=list)
-    # The AI pill's words and its title: "AI · ACE", "Entered by the ACE
-    # agent from a forwarded email". Blank when a person made the change.
+    # The AI pill's words and its title: "ACE (agent)" (beside an AI glyph),
+    # "ACE recorded Quote · Northwind Foods from a forwarded email". Blank
+    # when a person made the change.
     last_change_badge: str = ""
     last_change_title: str = ""
     # A second line under "waiting on": "3 of 4 replied".
@@ -120,12 +121,11 @@ class Row:
     # the reason the buyer gave for it, so "provisional" reads with its why.
     provisional: bool = False
     award_why: str = ""
-    # Why the award is provisional, from the comparison it froze and who
-    # is still silent: "provisional — 2 of 3 quotes not comparable; 1 invited
-    # supplier has not replied".
+    # Why the award is provisional, from the comparison it froze:
+    # "provisional — 2 of 3 quotes not yet comparable".
     provisional_caveat: str = ""
-    # The awarded quote's headline price, beside "awarded to <supplier>":
-    # "USD 41.00 per carton".
+    # The awarded quote's headline price, beside "awarded to <supplier>",
+    # and what it commits: "USD 41.00 per carton · USD 82,000.00 for 2,000 cartons".
     award_price: str = ""
 
 
@@ -162,21 +162,17 @@ def _one_line(text) -> str:
 
 
 def _provisional_caveat(award, silent=0) -> str:
-    """ "provisional — 2 of 3 quotes not comparable; 1 invited supplier has not replied".
+    """ "provisional — 2 of 3 quotes not yet comparable".
 
-    The quotes are counted off the comparison the award froze; `silent` is how
-    many invited suppliers have still neither replied nor quoted -- the same
-    suppliers "waiting on" names under "No reply".
+    The quotes are counted off the comparison the award froze. Who has not
+    replied is "waiting on"'s to say ("No reply: ..."), and the flags', so it
+    is not said a third time here; `silent` is kept for callers that pass it.
     """
     snapshot = getattr(award, "comparison_snapshot", None) or {}
     total, comparable = snapshot.get("total_count"), snapshot.get("comparable_count")
-    parts = []
     if isinstance(total, int) and isinstance(comparable, int) and total > comparable:
-        parts.append(f"{total - comparable} of {_plural(total, 'quote')} not comparable")
-    if silent:
-        verb = "has" if silent == 1 else "have"
-        parts.append(f"{_plural(silent, 'invited supplier')} {verb} not replied")
-    return "provisional — " + "; ".join(parts) if parts else "provisional"
+        return f"provisional — {total - comparable} of {_plural(total, 'quote')} not yet comparable"
+    return "provisional"
 
 
 def _award_price(award) -> str:
@@ -194,7 +190,8 @@ def _award_price(award) -> str:
             break
         label = next((c.get("label") or "" for c in snapshot.get("columns") or [] if c.get("key") == key), "")
         per = label.split(" ", 1)[1] if label.startswith("USD per ") else ""
-        return f"{cell.get('currency') or 'USD'} {money_digits(cell['amount'])}" + (f" {per}" if per else "")
+        price = f"{cell.get('currency') or 'USD'} {money_digits(cell['amount'])}" + (f" {per}" if per else "")
+        return price + _committed_total(row)
     quote = award.quote
     if quote is None or quote.as_quoted_amount is None:
         return ""
@@ -207,29 +204,68 @@ def _award_price(award) -> str:
     return f"{currency} {amount}" + (f" {per}" if per else "")
 
 
+def _committed_total(row) -> str:
+    """ " · USD 82,000.00 for 2,000 cartons": what the award commits, worded as the comparison's
+    "Landed total ... for ..." line words it. "" when the frozen row does not hold both."""
+    from connect_labs.supply_chain.values import money_digits
+
+    total = (row.get("figures") or {}).get("landed_total_as_quoted") or {}
+    quantity = row.get("quantity_quoted") or ""
+    if not isinstance(total, dict) or total.get("amount") in (None, "") or not quantity:
+        return ""
+    return f" · {total.get('currency') or 'USD'} {money_digits(total['amount'])} for {quantity}"
+
+
 def _names(names, limit=NAMED_SILENT) -> str:
     """ "Northwind Foods, Sahel Nutrition +1": up to `limit` names, then how many more."""
     shown = ", ".join(names[:limit])
     return f"{shown} +{len(names) - limit}" if len(names) > limit else shown
 
 
-def _ai_badge(label: str, call) -> tuple[str, str]:
-    """ "AI · ACE" and its title, from who told us: one compact pill, the long form on hover."""
+def _ai_badge(label: str, call, revision=None) -> tuple[str, str]:
+    """The AI pill's words and its title.
+
+    The words are who told us, as the timeline says it -- "ACE (agent)" -- with
+    the AI marker a glyph beside them, not the word "AI" said a second time.
+    The title says what was recorded and from what: "ACE recorded Quote ·
+    Northwind Foods from a forwarded email".
+    """
     agent = label.endswith(" (agent)")
     if agent:
-        name = label.removesuffix(" (agent)")
-        badge, title = f"AI · {name}", f"Entered by the {name} agent"
+        who = label.removesuffix(" (agent)")
     elif label.startswith("via AI · "):
-        name = label.removeprefix("via AI · ")
-        badge, title = f"AI · {name}", f"Entered by {name} through an AI assistant"
+        who = f"{label.removeprefix('via AI · ')} via an AI assistant"
     else:
-        badge, title = "AI", "Entered through an AI assistant"
+        who = "An AI assistant"
+    verb = _ACTION_VERBS.get(getattr(revision, "action", ""), "recorded")
+    title = f"{who} {verb} {_record_words(revision)}"
     ref = getattr(call, "source_ref", "") or ""
     if "@" in ref:
         title += " from a forwarded email" if agent else " from an email"
     elif ref:
         title += " from a document"
-    return badge, title
+    return label, title
+
+
+_ACTION_VERBS = {"create": "recorded", "update": "updated", "delete": "removed"}
+
+
+def _record_words(revision) -> str:
+    """Which record a revision is on, as the timeline names it: "Quote · Northwind Foods"."""
+    from connect_labs.supply_chain.history.labels import Lookup, _values_of, subject
+
+    model = revision.content_type.model_class() if revision is not None else None
+    if model is None:
+        return "a change"
+    lookup = Lookup()
+    if revision.action == "create":
+        values = {k: v[1] for k, v in (revision.changes or {}).items()}
+    elif revision.action == "delete":
+        values = dict(revision.changes or {})
+    else:
+        row = lookup.row(model, revision.object_id)
+        values = _values_of(row) if row is not None else None
+    return subject(model, values, lookup)
 
 
 def _last_change(revisions):
@@ -238,7 +274,7 @@ def _last_change(revisions):
         return {"last_change_at": None, "last_change_by": "", "last_change_is_ai": False}
     label = actor_label(latest.call)
     ai = is_ai(latest.call)
-    badge, title = _ai_badge(label, latest.call) if ai else ("", "")
+    badge, title = _ai_badge(label, latest.call, latest) if ai else ("", "")
     return {
         "last_change_at": latest.recorded_at,
         "last_change_by": label,
@@ -435,15 +471,16 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
 
 
 def _blocked(tender, live, skip_quote=None) -> tuple[list[str], list[str]]:
-    """ "Northwind Foods — missing: freight" for every live quote the comparison blocks,
-    and the blocked suppliers' names in the same order. `skip_quote`: the awarded quote,
-    which is judged on its own flag rather than counted among the blocked."""
+    """ "Northwind Foods — missing: freight" for every live quote the comparison blocks, and
+    each blocked supplier with what it lacks, in the same order: "Northwind Foods (freight,
+    lot size)". `skip_quote`: the awarded quote, which is judged on its own flag rather
+    than counted among the blocked."""
     from connect_labs.supply_chain.procurement.services.comparison import compare_tender
 
     by_commodity = {}
     for quote in live:
         by_commodity.setdefault(quote.commodity_id, []).append(quote)
-    named, names = [], {}
+    named, names, gaps = [], {}, {}
     for quotes in by_commodity.values():
         comparison = compare_tender(
             tender,
@@ -459,12 +496,14 @@ def _blocked(tender, live, skip_quote=None) -> tuple[list[str], list[str]]:
             if text not in named:
                 named.append(text)
                 names[text] = row.supplier_name
+            held = gaps.setdefault(row.supplier_name, [])
+            held.extend(g for g in row.gaps if g not in held)
     named.sort()
     ordered = []
     for text in named:
         if names[text] not in ordered:
             ordered.append(names[text])
-    return named, ordered
+    return named, [f"{name} ({', '.join(gaps[name])})" if gaps.get(name) else name for name in ordered]
 
 
 def _award_gaps(award) -> str:

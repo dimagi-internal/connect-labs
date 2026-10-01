@@ -137,9 +137,12 @@ class TestTheSpecificationNamesWhatIsMissing:
         card = batch3._card(_page(client_in_program, base["tender"]["id"]), quote["id"])
         asked = re.search(r'data-testid="blocking-question"[^>]*>(.*?)</p>', card, re.S).group(1)
         assert "We require" not in asked and "weigh" not in asked
-        # Since batch 6 the spec chip beside the blocker says it, so the line under the question does not.
+        # Since batch 6 the blocker's spec says it (since batch 8 a grey line, not a chip),
+        # so the line under the question does not.
         assert "Our specification" not in asked
-        assert re.search(r'data-testid="spec-chip"[^>]*>Spec: 150 sachets per carton<', card)
+        assert re.search(
+            r'data-testid="blocker-spec-line"[^>]*>Sachets per carton: not stated \(tender requires 150\)<', card
+        )
 
     def test_a_supplier_message_still_says_the_requirement(self, da, base):
         _with_spec(da)

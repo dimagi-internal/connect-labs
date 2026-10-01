@@ -79,7 +79,10 @@ class TestAProvisionalAwardWaitsOnAnswers:
         row = _tender_row()
         # Since batch 7: two kinds of answer owed, a line each, and the silent
         # supplier's flag stays up while "waiting on" names it.
-        assert row.waiting_lines == ("No reply: Plateau Mills", "Missing facts: Sahel Nutrition")
+        assert row.waiting_lines == (
+            "No reply: Plateau Mills",
+            "Missing facts: Sahel Nutrition (sachets per carton, freight, duties)",
+        )
         assert "a contract" not in row.waiting_on
         # The flag names the same blocked supplier, with what it is missing.
         assert row.stale == [
@@ -107,7 +110,7 @@ class TestABlockedOpenTenderWaitsOnAnswers:
         _outreach(da, base["tender"]["id"], base["supplier"]["id"], datetime.date(2026, 8, 10), responded=True)
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {})
         row = _tender_row()
-        assert row.waiting_on == "Missing facts: Northwind Foods"
+        assert row.waiting_on == "Missing facts: Northwind Foods (sachets per carton, freight, duties)"
         assert row.waiting_detail == "1 of 1 replied"
         assert row.stale[0].lines == ("Northwind Foods — missing: sachets per carton, freight, duties",)
 
@@ -210,9 +213,12 @@ class TestAnEtaMoveReadsInline:
     def test_the_chip_sits_in_the_sentence_in_the_neutral_pill(self, da, base, order, client_in_program):
         body = batch6._order_page(client_in_program, order["contract"]["id"])
         text = re.search(
-            r'<div data-testid="revision-text"[^>]*>([^<]*)<span data-testid="eta-moved" class="([^"]*)"', body
+            r'<div data-testid="revision-text"[^>]*>(.*?)<span data-testid="eta-moved" class="([^"]*)"', body
         )
-        assert " ".join(text.group(1).split()) == "Shipment · SH-1 · ETA 5 Sep → 19 Sep"
+        # Since batch 8 the value after the arrow is bold.
+        assert " ".join(text.group(1).split()) == (
+            'Shipment · SH-1 · ETA 5 Sep → <strong class="font-semibold">19 Sep</strong>'
+        )
         classes = text.group(2).split()
         assert {"bg-gray-100", "text-gray-700"} <= set(classes)
         assert not any(c.startswith(("bg-amber", "text-amber", "border-amber")) for c in classes)

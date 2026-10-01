@@ -97,14 +97,14 @@ class TestAProvisionalAward:
         self._award(da, base)
         (row,) = (r for r in standing_rows(PROGRAM, datetime.date(2026, 9, 12)) if r.kind == "tender")
         # Counted as quotes since batch 7 (nobody was invited and silent here).
-        assert row.provisional_caveat == "provisional — 2 of 3 quotes not comparable"
+        assert row.provisional_caveat == "provisional — 2 of 3 quotes not yet comparable"
         assert row.award_why == self.WHY
 
     def test_the_page_renders_both_under_the_stage(self, da, base, home_client):
         self._award(da, base)
         standing = _standing(_home(home_client))
         assert re.search(
-            r'data-testid="provisional-caveat"[^>]*>provisional — 2 of 3 quotes not comparable<', standing
+            r'data-testid="provisional-caveat"[^>]*>provisional — 2 of 3 quotes not yet comparable<', standing
         )
         # A full-width row of its own under the tender's since batch 7.
         why = re.search(r'<p data-testid="award-why" class="([^"]*)"><span[^>]*>Why:</span> (.*?)</p>', standing)
@@ -177,10 +177,10 @@ class TestAsOf:
     def test_the_applied_day_is_said_and_the_native_field_steps_back(self, da, base, home_client):
         past = _home(home_client, as_of="2026-08-20")
         control = re.search(r'data-testid="as-of-control".*?</form>', past, re.S).group(0)
-        assert re.search(r'data-testid="as-of-date"[^>]*>20 Aug 2026<', control)
+        # Since batch 8 the day stays inside the boxed field, which looks as it does today.
         field = re.search(r'<input id="supply-as-of" type="date"[^>]*>', control).group(0)
-        assert "supply-as-of-applied" in field and 'value="2026-08-20"' in field
-        assert "::-webkit-datetime-edit { display: none; }" in past
+        assert 'value="2026-08-20"' in field and 'data-testid="as-of-date"' in field
+        assert "supply-as-of-applied" not in past and "::-webkit-datetime-edit" not in past
         # Still a working control: the walkthrough fills the date and presses the button.
         assert re.search(r'<button type="submit"[^>]*>Go</button>', control)
 
@@ -283,7 +283,7 @@ class TestTheTimelineReads:
     def test_an_email_source_reads_view_email(self, da, base, order, client_in_program):
         body = _order_page(client_in_program, order["contract"]["id"])
         badge = re.search(r'<summary data-testid="actor-badge".*?</summary>', body, re.S).group(0)
-        assert re.search(r'data-testid="source-link"[^>]*>View email<', badge)
+        assert re.search(r'data-testid="source-link"[^>]*><span[^>]*>View email<', badge)
         # The same excerpt still opens under it.
         details = body[body.index(badge) :]
         assert re.search(r'<blockquote data-testid="source-excerpt"', details[: details.index("</details>")])
@@ -301,7 +301,7 @@ class TestTheTimelineReads:
         )
         assert quote
         body = _tender_page(client_in_program, base["tender"]["id"])
-        assert re.search(r'data-testid="source-link"[^>]*>source<', body)
+        assert re.search(r'data-testid="source-link"[^>]*><span[^>]*>source<', body)
         assert "View email" not in body
 
 
@@ -346,7 +346,9 @@ class TestABlockedCard:
         _with_spec(da)
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
         card = _card(_page(client_in_program, base["tender"]["id"]), quote["id"])
-        assert re.search(r'data-testid="spec-chip"[^>]*>Spec: 150 sachets per carton<', card)
+        assert re.search(
+            r'data-testid="blocker-spec-line"[^>]*>Sachets per carton: not stated \(tender requires 150\)<', card
+        )
         assert "Our specification: exactly 150" not in card
 
     def test_not_blocking_says_the_rule(self, da, base, client_in_program):
@@ -509,8 +511,8 @@ class TestPreviewAsASupplier:
         assert "Your program&#x27;s tender" not in body and "Your program's tender" not in body
         assert reverse("supply_chain:procurement_tender_detail", args=[listed_tender.pk]) not in body
         assert "Register as a supplier" not in body
-        # The Bid action is drawn, and goes nowhere.
-        assert re.search(r'<span data-testid="preview-bid" aria-disabled="true"[^>]*>Bid →</span>', body)
+        # The Bid action is drawn disabled (since batch 8 saying where suppliers act), and goes nowhere.
+        assert re.search(r'<span data-testid="preview-bid" aria-disabled="true"[^>]*>Suppliers bid here</span>', body)
         assert reverse("supply_chain:market_bid", args=[listed_tender.pk, "rutf"]) not in body
         assert re.search(r'data-testid="exit-supplier-preview" href="([^"]*)"', body).group(1) == reverse(
             "supply_chain:market_tender", args=[listed_tender.pk]

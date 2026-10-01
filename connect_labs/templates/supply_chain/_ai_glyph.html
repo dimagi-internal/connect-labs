@@ -1,0 +1,5 @@
+{% comment %}
+The AI marker: a small glyph, read out as "AI", beside who told us. The word
+"AI" before "ACE (agent)" said AI twice; the glyph marks it once. Left off
+where the label already says it ("via AI · Sophie").
+{% endcomment %}{% if actor|slice:":6" != "via AI" %}<i data-testid="ai-glyph" class="fa-solid fa-wand-magic-sparkles text-[10px]" role="img" aria-label="AI" title="Entered through AI"></i>{% endif %}
