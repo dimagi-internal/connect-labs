@@ -90,6 +90,8 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "targeting_admin_levels",
         "targeting_research",
         "targeting_compare_criteria",
+        # Modelled deaths averted from public rates and caller-supplied costs.
+        "targeting_cost_effectiveness",
         # Microplans. A plan handed off from WA Revisit carries per-ward
         # figures computed from visits (children per building) -- aggregates,
         # not visits, which is on the allowed side of the line.

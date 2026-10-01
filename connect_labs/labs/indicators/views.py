@@ -26,6 +26,10 @@ DEFAULT_THRESHOLD = 80.0
 DEFAULT_INDICATOR = "u5mr"
 DEFAULT_METHOD = methods.default_for(methods.Resolution.SUBNATIONAL).code
 
+#: Query parameters that describe what the visitor is looking at, passed to the
+#: agent panel as its page filters. Anything else in the URL is not forwarded.
+PANEL_FILTER_KEYS = ("indicator", "threshold", "iso", "method", "resolution", "admin_level", "target_year")
+
 #: Degrees of simplification for map geometry. ADM1 polygons carry tens of
 #: thousands of vertices; at continent zoom the difference is invisible and the
 #: payload is an order of magnitude smaller.
@@ -290,6 +294,21 @@ class TargetingView(OpenLocallyMixin, TemplateView):
                 "default_method": DEFAULT_METHOD,
             }
         )
+        # The agent panel. Everything on this page is public open data and the
+        # agent reads it through the same targeting_* tools, so the page state
+        # carries only what the visitor asked for in the URL. Signed-in visitors
+        # only: the panel mints a token about request.user, and the page is open
+        # to anonymous visitors when running locally.
+        if self.request.user.is_authenticated:
+            from canopy_sdk.django.pages import panel_context
+
+            ctx["canopy_panel"] = panel_context(
+                self.request,
+                resource="labs-targeting://map",
+                backing_tool="targeting_select",
+                filters={k: v for k, v in self.request.GET.items() if k in PANEL_FILTER_KEYS and v},
+                path=self.request.path,
+            )
         return ctx
 
 

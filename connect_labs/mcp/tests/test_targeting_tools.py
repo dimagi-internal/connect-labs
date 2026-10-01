@@ -683,3 +683,71 @@ class TestResearchWriteRefusesWhatTheColumnCannotHold:
             body="the reasoning",
         )
         assert got["saved"] is True
+
+
+class TestCostEffectiveness:
+    """What a round buys in one place, built on the figures the map shows for it."""
+
+    def _borno_and_bauchi(self):
+        make_boundary("NGA", 0, "Nigeria", "NGA-0", x=0)
+        borno = make_boundary("NGA", 1, "Borno", "NGA-1-8", x=2)
+        bauchi = make_boundary("NGA", 1, "Bauchi", "NGA-1-5", x=4)
+        set_value(borno, "u5mr", 92.3, year=2021, source=Source.IGME_SUBNATIONAL)
+        set_value(bauchi, "u5mr", 153.7, year=2021, source=Source.IGME_SUBNATIONAL)
+        set_value(borno, "ors_coverage", 61.1, source=Source.DHS)
+        return borno, bauchi
+
+    def test_it_builds_the_answer_from_the_areas_own_registry_values(self):
+        self._borno_and_bauchi()
+
+        got = targeting.targeting_cost_effectiveness(None, iso_code="nga", area="borno", spend=50_000, unit_cost=2.50)
+
+        coverage = got["inputs"]["baseline_ors_coverage"]
+        mortality = got["inputs"]["diarrhoea_mortality"]
+        assert coverage["share"] == pytest.approx(0.611)
+        assert coverage["overridden"] is False
+        assert mortality["value"] == pytest.approx(3.81, abs=0.01)
+        assert "Bauchi" in mortality["derivation"]
+        assert got["result"]["deaths_averted"] == pytest.approx(15.9, abs=0.1)
+        assert got["result"]["multiple_of_benchmark"] == pytest.approx(13.0, abs=0.1)
+        # The uncounted benefits and the derived-not-measured mortality must travel
+        # with the number, or a summary will quote it as the whole story.
+        assert any("chlorine" in n for n in got["not_counted"])
+        assert any("derived, not measured" in c for c in got["caveats"])
+
+    def test_overrides_replace_the_registry_and_say_so(self):
+        self._borno_and_bauchi()
+
+        got = targeting.targeting_cost_effectiveness(
+            None,
+            iso_code="NGA",
+            area="Borno",
+            spend=50_000,
+            unit_cost=2.50,
+            children_per_household=1.0,
+            baseline_ors_coverage=0.75,
+            diarrhoea_mortality=3.5,
+        )
+
+        assert got["inputs"]["baseline_ors_coverage"]["overridden"] is True
+        assert got["inputs"]["diarrhoea_mortality"]["overridden"] is True
+        assert got["result"]["multiple_of_benchmark"] == pytest.approx(7.4, abs=0.1)
+
+    def test_an_area_with_no_coverage_is_refused_with_a_way_forward(self):
+        self._borno_and_bauchi()
+
+        with pytest.raises(MCPToolError) as err:
+            targeting.targeting_cost_effectiveness(None, iso_code="NGA", area="Atlantis", spend=1000, unit_cost=2)
+
+        assert "baseline_ors_coverage" in str(err.value)
+
+    def test_a_coverage_given_as_a_percent_is_refused_not_misread(self):
+        """61 meaning 61% would otherwise read as 6,100% and fail somewhere less obvious."""
+        self._borno_and_bauchi()
+
+        with pytest.raises(MCPToolError) as err:
+            targeting.targeting_cost_effectiveness(
+                None, iso_code="NGA", area="Borno", spend=1000, unit_cost=2, baseline_ors_coverage=61
+            )
+
+        assert "share" in str(err.value)
