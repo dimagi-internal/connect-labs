@@ -197,6 +197,12 @@ Cells that contain too few cases to report reliably are suppressed and show a mi
 
 The **Indicator Worker Review** (created automatically alongside the programme report) shows one worker's indicators compared to their peers, their full caseload, and each case's visits. Where the programme's indicator definitions include a reading series (for example, weight), a chart of that series is shown for each case at a readable size. Where visits carry photos, those photos are shown alongside the visit record.
 
+#### Failed Verification Analysis tab
+
+The **Failed Verification Analysis** tab includes a **Mother question fail rate** chart that shows which form questions are most frequently failed during verification checks. Question names on the chart are short, readable labels — for example, **"Baby's father's name"** — chosen for readability rather than taken directly from the form.
+
+To see the exact wording of a question as it appears on the field worker's form, hover over the question name on the left-hand axis of the chart. A tooltip appears showing the full question text from the form. This is useful when the short label is ambiguous or when you need to locate the question in the form for follow-up.
+
 #### Indicator Opportunity Report
 
 The **Indicator Opportunity Report** template creates a standalone report for a single opportunity, intended for use by that opportunity's network manager. It includes the same indicator view as the programme report but scoped to one opportunity, and the opportunity's real name appears in the report title and in facilitator rows rather than its ID number or a plain partner label. For example, you will see **"[Synthetic] Spark facilitator - Partner A"** instead of **"Partner A · opportunity 10082"**. This applies to all weeks shown in the report, including weeks that were saved before this change was made.
@@ -216,12 +222,4 @@ Indicator definitions (the semantic registry) can now express a wider range of m
 
 **Data from CommCare HQ forms in a separate app**
 
-Some metrics are recorded in a supervisor or quality-assurance app rather than the main field worker app — for example, Gold Standard assessment scores entered by a supervisor, or Register Mother forms completed centrally. The registry can now join that data onto each visit automatically, matching records by a shared key (such as a mother ID) within the same opportunity, and choosing which value to use when several records share a key (the most recent, the earliest, the highest, the lowest, or a count).
-
-This means metrics like a **GS Score** (drawn from Gold Standard forms in a supervisor app) or a **Follow-up Rate** and **% Still Eligible** (drawn from Register Mother forms) can be defined in the registry and appear in reports alongside visit-level data — without a separate manual extract.
-
-**Comparisons with the previous visit**
-
-Some metrics only make sense when compared to what happened last time — for example, how far a field worker travelled between consecutive visits to the same mother, or whether a reading improved since the previous visit. The registry can now surface:
-
-- The **value from the case's previous visit**
+Some metrics are recorded in a supervisor or quality-assurance app rather than the main field worker app — for example, Gold Standard assessment scores entered by a supervisor, or Register Mother forms completed centrally. The registry can now join that data onto each visit automatically, matching records by a shared key (such as a mother ID) within the same opportunity, and choosing which value to use when several records share a key (the most recent, the
