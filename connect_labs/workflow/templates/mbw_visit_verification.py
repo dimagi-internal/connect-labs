@@ -402,6 +402,29 @@ PROD_ELIGIBLE_FLW_SCHEMA = {
     ],
 }
 
+# ---------------------------------------------------------------------------
+# Mother-registration pipelines (mother cases, detect first visits conducted
+# immediately at registration via conduct_visit_now)
+# ---------------------------------------------------------------------------
+
+MOTHER_REGISTRATION_SCHEMA = {
+    "data_source": {"type": "cchq_cases", "case_type": "mother", "domain": TEST_DOMAIN},
+    "grouping_key": "entity_id",
+    "terminal_stage": "visit_level",
+    "fields": [
+        {"name": "conduct_visit_now", "path": "case.properties.conduct_visit_now", "aggregation": "first"},
+    ],
+}
+
+PROD_MOTHER_REGISTRATION_SCHEMA = {
+    "data_source": {"type": "cchq_cases", "case_type": "mother"},
+    "grouping_key": "entity_id",
+    "terminal_stage": "visit_level",
+    "fields": [
+        {"name": "conduct_visit_now", "path": "case.properties.conduct_visit_now", "aggregation": "first"},
+    ],
+}
+
 # Alias names are read directly by RENDER_CODE (VISIT_PIPELINE_ALIASES and the
 # eligible_flws.../eligible_flws_prod pair) to merge all twelve visit
 # pipelines and both FLW-eligibility gates -- keep them in sync.
@@ -498,6 +521,24 @@ PIPELINE_SCHEMAS = [
         "name": "MBW Visit Verification — Eligible FLWs (production)",
         "description": "commcare-user cases with the visit_verification property (opp 765's real production domain).",
         "schema": PROD_ELIGIBLE_FLW_SCHEMA,
+    },
+    {
+        "alias": "mother_registration",
+        "name": "MBW Visit Verification — Mother Registration (test)",
+        "description": (
+            "Mother cases with the conduct_visit_now registration-time property (test domain) -- "
+            "used to detect first visits that happened immediately at registration."
+        ),
+        "schema": MOTHER_REGISTRATION_SCHEMA,
+    },
+    {
+        "alias": "mother_registration_prod",
+        "name": "MBW Visit Verification — Mother Registration (production)",
+        "description": (
+            "Mother cases with the conduct_visit_now registration-time property (opp 765's real "
+            "production domain) -- used to detect first visits that happened immediately at registration."
+        ),
+        "schema": PROD_MOTHER_REGISTRATION_SCHEMA,
     },
 ]
 
