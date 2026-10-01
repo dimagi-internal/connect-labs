@@ -37,6 +37,7 @@ class UserAdmin(auth_admin.UserAdmin):
                     "is_active",
                     "is_staff",
                     "is_superuser",
+                    "mcp_no_uservisit_data",
                     "groups",
                     "user_permissions",
                 ),
@@ -51,6 +52,7 @@ class UserAdmin(auth_admin.UserAdmin):
         "is_staff",
         "is_superuser",
         "is_active",
+        "mcp_no_uservisit_data",
         WebUserFilter,
     ]
     add_fieldsets = (

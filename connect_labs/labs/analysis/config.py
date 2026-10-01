@@ -264,6 +264,10 @@ class DataSourceConfig:
     case_type: str = ""
     form_lookback_days: int = 0
     domain: str = ""
+    # (ocs_sessions only) A specific person's OCS OAuth access token, read as a
+    # Bearer instead of a team key: set for an MCP caller (ocs_tokens.current_mcp_caller)
+    # so they read only sessions they can see in OCS. Never stored, never hashed.
+    bearer_token: str = field(default="", repr=False)
 
     def __post_init__(self):
         if self.type not in ("connect_csv", "cchq_forms", "ocs_sessions", "connect_export", "cchq_cases"):
