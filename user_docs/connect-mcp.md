@@ -134,6 +134,8 @@ The `mcp/no_user_visit/` address enforces a strict set of rules to prevent real 
 - **Generating from an old mirror-mode profile.** Profiles saved in the old mirror mode (before case timelines were introduced) hold real cases lightly perturbed, so their data never counts as "generated". Profiling with `case_timelines=true` *is* allowed: it models each worker's caseload and each case's timeline and saves only newly sampled cases, which are generated — not copies of real data. Re-profile any old mirror-mode profiles to use this safer approach.
 - **Writing synthetic data onto a real opportunity, wiping a shared demo environment, or reading or writing a profile bundle outside Drive.**
 
+The restricted address offers a simpler set of synthetic tools: `synthetic_clone_opp` (plus status checking, fidelity scoring, demo environments, and visibility) rather than the full set of step-by-step tools available on the full-access address.
+
 !!! note "No change for full-access callers"
     If you use the main `/mcp/` address, none of the above restrictions apply to you. The only change that affects everyone is described in the pipeline export name note below.
 
@@ -149,6 +151,7 @@ The following limits apply when using the profiling and synthetic-data tools. Mo
 | Opportunities profiled per person per day | 40 | Everyone |
 | Opportunities per single call | 10 | Restricted address only |
 | Time limit per job | 2 hours | Everyone |
+| Synthetic jobs running at the same time across the whole system | 2 | Everyone |
 
 If you submit a request that is identical to one already running, Labs returns the existing job rather than starting a duplicate.
 
@@ -201,6 +204,42 @@ Because no real case values are stored or replicated, data generated this way co
 
 ---
 
+## Cloning Opportunities with Synthetic Data
+
+The easiest way to create a synthetic copy of a real opportunity is `synthetic_clone_opp`. It handles the entire process in one background job — no need to run separate profiling, generation, and visibility steps yourself.
+
+### What it does
+
+```
+synthetic_clone_opp(source_opportunity_ids=[...])
+```
+
+For each opportunity you list, it:
+
+1. Profiles the real opportunity (using case timelines, so no real case values are stored).
+2. Generates a fully synthetic clone from that profile.
+3. Files the clone under a new program.
+4. Makes the clone visible in your Labs lists.
+
+The tool returns a `task_id` straight away. Use `synthetic_job_status(task_id)` to follow progress in plain words ("Step 1 of 2: measuring the real opportunities") and to retrieve the new opportunity IDs when the job finishes.
+
+### Background processing
+
+Generating, cloning, and fidelity scoring over MCP now run as **background jobs on the worker**, not inside the web request. This means one person's clone no longer slows Labs down for everyone else.
+
+- Each tool still returns its usual result: it waits for the job, up to **8 minutes**.
+- Pass `wait=false` to get a `task_id` immediately without waiting.
+- At most **2 synthetic jobs** run at the same time across the whole system, so other worker slots stay free for audits and AI reviews. Additional requests wait in the queue.
+
+!!! tip "If your job is taking a while"
+    Use `synthetic_job_status(task_id)` to check progress. If you passed `wait=false` or the 8-minute wait elapsed, the task ID is all you need to pick up the result later.
+
+### Step-by-step tools (advanced)
+
+If you need finer control, the individual profiling and generation tools are still available on the full-access address. They are labelled **ADVANCED** in the tool descriptions — most people should use `synthetic_clone_opp` instead. On the restricted address, only `synthetic_clone_opp` and its companion tools (status, fidelity, demo environments, visibility) are offered.
+
+---
+
 ## Editing Workflows
 
 !!! tip "Working with real program data?"
@@ -231,47 +270,4 @@ The power of this loop is: describe change → Claude pushes → reload browser 
 
 ### Template authoring (regular Claude session only)
 
-Safe Mode is for editing **live workflow instances**. If you are authoring or updating a **seed template** (a `.py` file in the repository that other workflows are cloned from), you need a regular Claude Code session instead — Safe Mode blocks the file writes that template authoring requires.
-
-In a regular session, you can use `workflow_sync_from_template_file` to push a local `.py` file straight to a live preview workflow without a full redeploy. The full loop is in the "Two iteration loops" section of the [`workflow-author` skill](https://github.com/dimagi-internal/connect-labs/blob/main/.claude/skills/workflow-author/SKILL.md). It refuses a workflow that follows the deployed template.
-
----
-
-## KMC Reports — Unified Indicator Set
-
-!!! note "Recent change"
-    KMC reports were updated to use a single set of 24 indicators. If you work with KMC data, read this section before interpreting any figures.
-
-KMC reports previously used two overlapping sets of indicators — a workbook series and a demo scorecard series — which applied different rules for counting babies and judging outcomes. Those two sets have been merged into one.
-
-### What the unified rules are
-
-- **"Started" KMC** means a baby has two or more follow-up visits.
-- **Outcome figures** are only calculated from babies whose first visit was at least 28 days ago.
-- **Growth figures** are only calculated from babies whose first visit was at least 42 days ago.
-- **Growth** is judged against the baby's birthweight band.
-- Any figure with fewer than 20 babies behind it is not shown.
-
-These rules now apply consistently across all KMC indicators.
-
-### Indicators kept from the workbook series
-
-Several workbook indicators were not covered by the old scorecard rules. These are kept and now follow the same unified rules above:
-
-- Loss to follow-up
-- Early growth rate
-- Median days to enrolment
-- Danger signs
-- Referrals and self-referrals
-- KMC hours
-- Birth-copy rate
-- Percentage of babies with computable growth
-
-!!! warning "Working definitions"
-    These indicators are still being refined. Each indicator's definition note says so where it applies. Treat them as working figures, not final metrics.
-
-### What you will notice in the reports
-
-- Indicators now have plain descriptive names instead of codes such as C14 or N13.
-- The **Scorecard (N) / Workbook (C)** toggle on the opportunity report is gone — there is only one view now.
-- Mortality figures are no longer automatically withheld on
+Safe Mode is for editing **live workflow instances**. If you are authoring or updating a **
