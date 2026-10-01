@@ -9,6 +9,10 @@ Which form question holds the figure differs per programme, so
 reading the wrong path yields plausible numbers for the wrong quantity, which
 is worse than reading nothing.
 
+Labs-only programmes and opportunities only, as supply_ingest_visit_consumption:
+a real one is refused before a token is read, again before any fetch, and by
+the operation before any write.
+
 Safe to re-run and safe to schedule. Ingestion is idempotent on the form
 submission id, so a widened date window or a retried job re-reads without
 double-posting.
@@ -28,6 +32,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 
 from connect_labs.labs.access.scopes import SYSTEM
+from connect_labs.supply_chain import scopes
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.stock.services.ingest import extract_rows
@@ -61,6 +66,8 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true", help="Report what would be recorded.")
 
     def handle(self, *args, **options):
+        # Before a token is read or a visit fetched: a real programme stops here.
+        self._require_labs_only(options)
         access = SupplyDataAccess(
             access_token=self._token(options),
             program_id=options["program"],
@@ -127,9 +134,20 @@ class Command(BaseCommand):
             payload = json.loads(Path(options["from_json"]).read_text())
             return payload["results"] if isinstance(payload, dict) else payload
 
+        # Again, right before the fetch: whatever reaches this method, a real
+        # opportunity's visits are never read.
+        self._require_labs_only(options)
         # Through the analysis pipeline, so get_export_client decides between
         # Connect and a synthetic opportunity's fixtures (design 4, "Fix alongside").
         return fetch_visits(options["opportunity"], self._token(options))
+
+    def _require_labs_only(self, options):
+        """Refuse unless the programme and the opportunity are both labs-only (as visit_consumption_ingest)."""
+        try:
+            scopes.require_synthetic(options["program"], "read worker stock reports")
+            scopes.require_programme_opportunity(options["program"], options["opportunity"])
+        except ValueError as error:
+            raise CommandError(str(error)) from None
 
     def _token(self, options):
         """An export-scoped token, or empty when reading from a file.

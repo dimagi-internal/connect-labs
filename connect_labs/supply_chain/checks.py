@@ -945,11 +945,35 @@ def _stocked(row) -> dict:
     }
 
 
+# What a counted point with no count of its own item compares: nothing.
+_NOT_COUNTED = {"variance": None, "ledger_on_count_day": None, "as_of": None}
+
+
+def _points_with_movements(program_id, ids) -> set:
+    """The ids among these that any movement touches, in one query."""
+    touching = Movement.objects.for_program(program_id).filter(
+        Q(to_supply_point_id__in=ids) | Q(from_supply_point_id__in=ids)
+    )
+    return {
+        pk
+        for pair in touching.order_by().values_list("to_supply_point_id", "from_supply_point_id").distinct()
+        for pk in pair
+        if pk in ids
+    }
+
+
 def _stock(access, as_of, opportunity_id=None):
     out = []
     rows = network.network_stock(access.program_id, opportunity_id=opportunity_id)
-    # One fetch for the variance calls below, rather than one query per point.
-    _point_by_id = {point.pk: point for point in access.list_supply_points(opportunity_id=opportunity_id)}
+    # Every figure below is read for all the points at once: a visit makes
+    # every worker a supply point, so a read per point grows with the roster.
+    # A live row's `item` is the point's sole item, the one stock_on_hand
+    # resolves, so the variance is the one it gives (soh.counted_against_ledger).
+    against_ledger = soh.counted_against_ledger(
+        access.program_id, [(row["supply_point_id"], row["item"]) for row in rows if row["reported"] is not None]
+    )
+    never_reported = {row["supply_point_id"] for row in rows if row["kind"] == "user_held" and row["reported"] is None}
+    moved = _points_with_movements(access.program_id, never_reported) if never_reported else set()
     for row in rows:
         subject = dict(
             subject_type="supply_point",
@@ -1012,7 +1036,8 @@ def _stock(access, as_of, opportunity_id=None):
             # Against the ledger ON THE COUNT DAY (soh.stock_on_hand), the figure
             # the Workers page shows: stock that arrived after the count is not
             # a discrepancy in it.
-            found = soh.stock_on_hand(access.program_id, _point_by_id[row["supply_point_id"]])
+            # None when the point has no count of its own item, only of another.
+            found = against_ledger.get(row["supply_point_id"]) or _NOT_COUNTED
             variance, counted_against = found["variance"], found["ledger_on_count_day"]
             if not isinstance(counted_against, Quantity):
                 counted_against = row["on_hand"]
@@ -1060,16 +1085,14 @@ def _stock(access, as_of, opportunity_id=None):
                 )
 
         if row["kind"] == "user_held" and row["reported"] is None:
-            has_movements = (
-                Movement.objects.for_program(access.program_id)
-                .filter(Q(to_supply_point_id=row["supply_point_id"]) | Q(from_supply_point_id=row["supply_point_id"]))
-                .exists()
-            )
             out.append(
                 _check(
                     "stock_never_reported",
                     **subject,
-                    facts={"connect_username": row["connect_username"], "holds_stock": has_movements},
+                    facts={
+                        "connect_username": row["connect_username"],
+                        "holds_stock": row["supply_point_id"] in moved,
+                    },
                     as_of=as_of,
                 )
             )

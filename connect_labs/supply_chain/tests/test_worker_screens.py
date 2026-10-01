@@ -756,8 +756,8 @@ def test_the_stock_page_rates_workers_as_a_plan_per_point_would(client_in_progra
     """The grouped pass is the Stock page's only change: its figures are the per-point plan's."""
     from connect_labs.supply_chain.stock.operations import network_stock_payload
 
-    grouped = network_stock_payload(da, grouped=True)
-    planned = network_stock_payload(da)
+    grouped = network_stock_payload(da, several_items="refuse")
+    planned = network_stock_payload(da, per_point=True)
     for g, p in zip(grouped["points"], planned["points"]):
         for key in g:
             assert g[key] == p[key], (g["name"], key, g[key], p[key])

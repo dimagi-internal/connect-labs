@@ -46,11 +46,9 @@ def average_monthly_consumption(program_id, supply_point, item=None, as_of=None,
     """
     if _is_durable(item):
         return DURABLE
-    if window_days < MINIMUM_WINDOW_DAYS:
-        return unconfirmed(
-            f"a {window_days}-day window is too short to average a month of consumption "
-            f"(at least {MINIMUM_WINDOW_DAYS} days are needed)"
-        )
+    too_short = window_too_short(window_days)
+    if too_short is not None:
+        return too_short
 
     # No as-of date means "as of today", not "with no end": an open end left
     # the window with no start either, so all history was summed and divided
@@ -65,6 +63,16 @@ def average_monthly_consumption(program_id, supply_point, item=None, as_of=None,
     earliest = demand.order_by("occurred_on").values_list("occurred_on", flat=True).first()
     by_unit = {unit[0]: total for unit, total in demand.between(start, end)._totals(["quantity_unit"]).items()}
     return rate_from(ledger.collapse(by_unit, item, None), earliest, end, window_days, basis)
+
+
+def window_too_short(window_days):
+    """Why a window cannot carry a monthly rate, or None when it can. Asked before any movement is read."""
+    if window_days < MINIMUM_WINDOW_DAYS:
+        return unconfirmed(
+            f"a {window_days}-day window is too short to average a month of consumption "
+            f"(at least {MINIMUM_WINDOW_DAYS} days are needed)"
+        )
+    return None
 
 
 def rate_from(total, earliest, end, window_days, basis):

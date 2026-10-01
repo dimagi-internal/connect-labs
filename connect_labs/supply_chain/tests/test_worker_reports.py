@@ -82,7 +82,35 @@ def test_a_row_with_no_xform_id_still_has_a_stable_submission_id():
     )
 
 
-def test_the_stock_report_command_reads_through_the_visit_source():
+@pytest.fixture
+def labs_only():
+    from connect_labs.labs.synthetic import registry
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+    SyntheticOpportunity.objects.create(
+        opportunity_id=OPP, program_id=PROGRAM, labs_only=True, enabled=True, label="worker reports"
+    )
+    registry.invalidate_cache()
+
+
+def _stock_reports(program=PROGRAM, opportunity=OPP, *extra):
+    call_command(
+        "supply_ingest_stock_reports",
+        "--program",
+        str(program),
+        "--opportunity",
+        str(opportunity),
+        "--commodity",
+        "rutf",
+        "--unit",
+        "sachet",
+        "--quantity-path",
+        "form.stock_balance.sachets_remaining",
+        *extra,
+    )
+
+
+def test_the_stock_report_command_reads_through_the_visit_source(labs_only):
     from connect_labs.supply_chain.management.commands import supply_ingest_stock_reports as command
 
     assert not hasattr(command, "ExportAPIClient")
@@ -90,20 +118,100 @@ def test_the_stock_report_command_reads_through_the_visit_source():
         patch.object(command, "fetch_visits", return_value=[]) as fetch,
         patch.dict("os.environ", {"SUPPLY_EXPORT_TOKEN": "t"}),
     ):
-        call_command(
-            "supply_ingest_stock_reports",
-            "--program",
-            str(PROGRAM),
-            "--opportunity",
-            str(OPP),
-            "--commodity",
-            "rutf",
-            "--unit",
-            "sachet",
-            "--quantity-path",
-            "form.stock_balance.sachets_remaining",
-        )
+        _stock_reports()
     fetch.assert_called_once_with(OPP, "t")
+
+
+# ---- stock reports: labs-only, as the visit reader -------------------------
+
+
+@pytest.mark.parametrize(
+    "program, opportunity, reason",
+    [
+        (263, 2230, "programme 263"),  # a real programme
+        (PROGRAM, 2230, "not a registered labs-only opportunity"),  # a real opportunity under a synthetic one
+    ],
+)
+def test_the_stock_report_command_refuses_a_real_programme_before_it_reads_anything(
+    labs_only, program, opportunity, reason
+):
+    from django.core.management.base import CommandError
+
+    from connect_labs.supply_chain.management.commands import supply_ingest_stock_reports as command
+
+    # A token is set, so the refusal is not the missing-token one.
+    with (
+        patch.object(command, "fetch_visits") as fetch,
+        patch.dict("os.environ", {"SUPPLY_EXPORT_TOKEN": "t"}),
+        pytest.raises(CommandError, match=reason),
+    ):
+        _stock_reports(program, opportunity)
+    fetch.assert_not_called()
+    assert not StockCount.objects.exists()
+
+
+def test_the_stock_report_command_refuses_a_saved_export_of_a_real_programme(labs_only, tmp_path):
+    from django.core.management.base import CommandError
+
+    saved = tmp_path / "visits.json"
+    saved.write_text('[{"username": "w", "form_json": {"form": {"stock_balance": {"sachets_remaining": "4"}}}}]')
+    with pytest.raises(CommandError, match="refusing"):
+        _stock_reports(263, 2230, "--from-json", str(saved))
+    assert not StockCount.objects.exists()
+
+
+def test_the_stock_report_command_checks_again_right_before_the_fetch(labs_only):
+    """Whatever reaches the fetch, a real opportunity's visits are not read."""
+    from django.core.management.base import CommandError
+
+    from connect_labs.supply_chain.management.commands import supply_ingest_stock_reports as command
+
+    with (
+        patch.object(command, "fetch_visits") as fetch,
+        patch.dict("os.environ", {"SUPPLY_EXPORT_TOKEN": "t"}),
+        pytest.raises(CommandError, match="not a registered labs-only opportunity"),
+    ):
+        command.Command()._visits({"program": PROGRAM, "opportunity": 2230, "from_json": None})
+    fetch.assert_not_called()
+
+
+def _report_rows():
+    return [{"connect_username": "w", "quantity": "4", "counted_on": "2026-09-20", "form_submission_id": "xf-1"}]
+
+
+@pytest.mark.parametrize(
+    "program, opportunity, reason",
+    [(263, 2230, "programme 263"), (PROGRAM, 2230, "not a registered labs-only opportunity")],
+)
+def test_the_stock_report_operation_refuses_a_real_programme_and_writes_nothing(
+    world, labs_only, program, opportunity, reason
+):
+    da = SupplyDataAccess(program_id=program, caller=SYSTEM)
+    payload = {
+        "rows": _report_rows(),
+        "commodity_slug": "rutf",
+        "quantity_unit": "sachet",
+        "opportunity_id": opportunity,
+        "create_missing_points": True,
+    }
+    with pytest.raises(ValueError, match=reason):
+        call_operation("stock_report_ingest", da, payload)
+    assert not StockCount.objects.exists()
+    assert not SupplyPoint.objects.filter(kind="user_held").exists()
+
+
+def test_the_stock_report_operation_records_a_labs_only_programmes_reports(world, labs_only):
+    da = SupplyDataAccess(program_id=PROGRAM, caller=SYSTEM)
+    payload = {
+        "rows": _report_rows(),
+        "commodity_slug": "rutf",
+        "quantity_unit": "sachet",
+        "opportunity_id": OPP,
+        "item_id": world["item"].pk,
+        "create_missing_points": True,
+    }
+    assert call_operation("stock_report_ingest", da, payload)["created"] == 1
+    assert StockCount.objects.get().kind == "self_reported"
 
 
 # ---- reported receipts are not counts --------------------------------------
