@@ -74,12 +74,16 @@
   </div>
 {% endif %}
 {% if previewing_as_supplier %}
-  {% comment %}Small and muted: the page below is the supplier's, and this is only the way back.{% endcomment %}
-  <p data-testid="supplier-preview-bar" class="mb-4 text-[12.5px] text-gray-600">
-    Previewing as a supplier would see it.
-    <a data-testid="exit-supplier-preview" href="{{ exit_preview_url }}" class="ml-1 text-brand-indigo hover:underline">Back to your view</a>
-    <span data-testid="supplier-preview-hidden" class="block">Suppliers do not see other suppliers' quotes or prices, email excerpts, or this tender's history.</span>
-  </p>
+  {% comment %}A tinted bar across the page, so the preview reads as a mode and not as a
+  caption: what this is, the way back, and -- counted, never shown -- what the program
+  keeps from every supplier on this tender.{% endcomment %}
+  <div data-testid="supplier-preview-bar" class="mb-6 rounded-[10px] border border-indigo-200 bg-indigo-50 px-5 py-3 text-[13.5px] text-indigo-900">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p class="font-semibold">Supplier view — this is exactly what suppliers see</p>
+      <a data-testid="exit-supplier-preview" href="{{ exit_preview_url }}" class="shrink-0 rounded-md border border-indigo-200 bg-white px-3 py-1.5 text-[13px] font-medium text-brand-indigo hover:bg-gray-50">Back to your view</a>
+    </div>
+    <p data-testid="supplier-preview-hidden" class="mt-1 text-[13px]">{% if hidden_from_suppliers %}Hidden from suppliers: {{ hidden_from_suppliers }}{% else %}Suppliers do not see other suppliers' quotes or prices, email excerpts, or this tender's history.{% endif %}</p>
+  </div>
 {% endif %}
 {% if r.notes_to_supplier %}
   <div class="bg-white border border-brand-border-light rounded-[10px] px-5 py-4 mb-8 max-w-3xl">

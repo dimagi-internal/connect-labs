@@ -39,6 +39,11 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
       — newest change first
     </span>
   </h2>
+  {% if supply_as_of %}
+    {% comment %}On a past date there is no flags column: flags are today's checks, and a
+    column of them under a past date was empty or wrong. Said once, here.{% endcomment %}
+    <p data-testid="flags-as-of" class="text-xs text-gray-600 mb-2">Flags are worked out for today only; back to today to see them.</p>
+  {% endif %}
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Where everything stands, scrolls sideways">
     {% comment %}Fixed layout and set widths, so a column is the same width today and
@@ -46,11 +51,18 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
     a few words; flags carry a line per supplier, so they get the room.{% endcomment %}
     <table data-testid="standing-table" class="min-w-[48rem] w-full table-fixed text-sm">
       <colgroup>
+        {% if supply_as_of %}
+        <col data-col="title" style="width: 30%">
+        <col data-col="stage" style="width: 24%">
+        <col data-col="waiting" style="width: 28%">
+        <col data-col="last-change" style="width: 18%">
+        {% else %}
         <col data-col="title" style="width: 22%">
         <col data-col="stage" style="width: 15%">
         <col data-col="waiting" style="width: 20%">
         <col data-col="last-change" style="width: 13%">
         <col data-col="flags" style="width: 30%">
+        {% endif %}
       </colgroup>
       <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
         <tr>
@@ -58,29 +70,25 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
           <th class="text-left px-4 py-2 whitespace-nowrap">Stage</th>
           <th class="text-left px-4 py-2 whitespace-nowrap">Waiting on</th>
           <th class="text-left px-4 py-2 whitespace-nowrap">Last change</th>
-          <th class="text-left px-4 py-2 whitespace-nowrap">Flags{% if supply_as_of %}
-            {% comment %}On a past date the flags are still today's checks: said once, here,
-            rather than on every row.{% endcomment %}
-            <span data-testid="flags-as-of" class="ml-1 normal-case tracking-normal font-normal text-gray-600">— checked for today only</span>{% endif %}</th>
+          {% if not supply_as_of %}<th class="text-left px-4 py-2 whitespace-nowrap">Flags</th>{% endif %}
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for row in standing %}
-          <tr class="align-top" data-testid="overview-row"{% if row.tender_id %} data-tender-id="{{ row.tender_id }}"{% endif %}>
+          <tr class="align-top{% if row.award_why %} border-b-0{% endif %}" data-testid="overview-row"{% if row.tender_id %} data-tender-id="{{ row.tender_id }}"{% endif %}>
             <td class="px-4 py-2.5">
               <span class="block text-xs text-gray-600">{% if row.kind == "tender" %}Tender{% else %}Order{% endif %}</span>
               <a class="font-medium text-brand-indigo hover:underline" href="{{ row.url }}">{{ row.title }}</a>
               {% if row.buyer %}<span class="block text-xs text-gray-600">bought by {{ row.buyer }}</span>{% endif %}
             </td>
             <td class="px-4 py-2.5">
-              {{ row.stage }}
+              {{ row.stage }}{% if row.award_price %} <span data-testid="award-price" class="whitespace-nowrap">· {{ row.award_price }}</span>{% endif %}
               {% if row.provisional_caveat %}<span data-testid="provisional-caveat" class="block text-xs text-amber-800">{{ row.provisional_caveat }}</span>{% endif %}
-              {% comment %}The reason in full, wrapping, on its own line at body size: it is the
-              decision's reason, and in caption size it was the smallest text on the screen.{% endcomment %}
-              {% if row.award_why %}<span data-testid="award-why" class="mt-1 block text-sm text-gray-800 whitespace-normal break-words">why: {{ row.award_why }}</span>{% endif %}
             </td>
             <td class="px-4 py-2.5 text-gray-700">
-              {{ row.waiting_on }}
+              {% comment %}Two kinds of answer owed, a line each: who has not replied, and whose
+              quote is missing a fact.{% endcomment %}
+              {% if row.waiting_lines %}{% for line in row.waiting_lines %}<span data-testid="waiting-line" class="block">{{ line }}</span>{% endfor %}{% else %}{{ row.waiting_on }}{% endif %}
               {% if row.waiting_detail %}<span data-testid="waiting-detail" class="block text-xs text-gray-600">{{ row.waiting_detail }}</span>{% endif %}
             </td>
             <td class="px-4 py-2.5">
@@ -104,19 +112,38 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
                 <span class="text-gray-600">—</span>
               {% endif %}
             </td>
+            {% if not supply_as_of %}
             <td class="px-4 py-2.5">
               {% comment %}A flag is a stated fact, not an alarm: a calm amber marker, with
               the rule that raised it as its title.{% endcomment %}
-              {% comment %}A flag naming several suppliers says its heading, then one line
-              each ("Northwind Foods: freight").{% endcomment %}
+              {% comment %}A flag naming several suppliers is a one-line marker ("Can't compare
+              yet — 3 quotes missing facts"); the line per supplier ("Northwind Foods — missing:
+              freight") folds under it, opened on a click.{% endcomment %}
               {% for flag in row.stale %}
+                {% if flag.lines %}
+                <details data-testid="stale-flag" title="{{ flag.rule }}" class="mb-1 text-xs text-amber-900">
+                  <summary class="flex w-fit cursor-pointer list-none items-start gap-1.5 rounded px-1.5 py-0.5 hover:bg-amber-50 [&::-webkit-details-marker]:hidden"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span data-testid="flag-heading" class="font-medium">{{ flag.heading }}</span></summary>
+                  <span class="block pl-5 pt-0.5">{% for line in flag.lines %}<span data-testid="flag-line" class="block">{{ line }}</span>{% endfor %}</span>
+                </details>
+                {% else %}
                 <span data-testid="stale-flag" title="{{ flag.rule }}"
-                      class="mb-1 flex w-fit items-start gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i>{% if flag.lines %}<span><span class="block font-medium">{{ flag.heading }}</span>{% for line in flag.lines %}<span data-testid="flag-line" class="block">{{ line }}</span>{% endfor %}</span>{% else %}<span>{{ flag }}</span>{% endif %}</span>
+                      class="mb-1 flex w-fit items-start gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span>{{ flag }}</span></span>
+                {% endif %}
               {% endfor %}
             </td>
+            {% endif %}
           </tr>
+          {% if row.award_why %}
+          {% comment %}The award's reason as a row of its own under the tender, across every
+          column at body size: in the narrow stage cell it wrapped to seven lines.{% endcomment %}
+          <tr data-testid="award-why-row" data-why-for="{{ row.tender_id }}">
+            <td colspan="{% if supply_as_of %}4{% else %}5{% endif %}" class="px-4 pt-0 pb-3">
+              <p data-testid="award-why" class="text-sm text-gray-800 whitespace-normal break-words"><span class="font-medium text-gray-900">Why:</span> {{ row.award_why }}</p>
+            </td>
+          </tr>
+          {% endif %}
         {% empty %}
-          <tr><td colspan="5" class="px-4 py-6 text-center text-gray-600">No tenders or orders yet.</td></tr>
+          <tr><td colspan="{% if supply_as_of %}4{% else %}5{% endif %}" class="px-4 py-6 text-center text-gray-600">No tenders or orders yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

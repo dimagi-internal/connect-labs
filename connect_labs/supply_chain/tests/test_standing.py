@@ -312,7 +312,7 @@ class TestTender:
         ]
         # Waiting on the answers that unblock them, by who owes them -- not on
         # an award decision nobody can make yet.
-        assert row.waiting_on == "answers from Baobab Nutrition, Northwind Foods"
+        assert row.waiting_on == "Missing facts: Baobab Nutrition, Northwind Foods"
 
     def test_a_closed_tender_drops_the_no_reply_flag_but_keeps_the_blocked_flag(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
@@ -351,9 +351,9 @@ class TestTender:
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
         # "Provisional" once, on the caveat line; the stage names who.
         assert row.stage == "awarded to Baobab Nutrition"
-        assert row.provisional_caveat == "provisional — 1 of 2 suppliers not yet comparable"
+        assert row.provisional_caveat == "provisional — 1 of 2 quotes not comparable"
         # Stage, waiting-on and flags agree: it waits on the blocked supplier's answers.
-        assert row.waiting_on == "answers from Northwind Foods"
+        assert row.waiting_on == "Missing facts: Northwind Foods"
         assert row.stale == ["Can't compare yet: Northwind Foods — missing: sachets per carton, freight, duties"]
 
     def test_an_award_over_a_complete_comparison_is_not_provisional(self, da, base):

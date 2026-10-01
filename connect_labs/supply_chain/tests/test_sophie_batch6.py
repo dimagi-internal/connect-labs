@@ -96,16 +96,18 @@ class TestAProvisionalAward:
     def test_the_row_carries_the_caveat_and_the_whole_reason(self, da, base):
         self._award(da, base)
         (row,) = (r for r in standing_rows(PROGRAM, datetime.date(2026, 9, 12)) if r.kind == "tender")
-        assert row.provisional_caveat == "provisional — 2 of 3 suppliers not yet comparable"
+        # Counted as quotes since batch 7 (nobody was invited and silent here).
+        assert row.provisional_caveat == "provisional — 2 of 3 quotes not comparable"
         assert row.award_why == self.WHY
 
     def test_the_page_renders_both_under_the_stage(self, da, base, home_client):
         self._award(da, base)
         standing = _standing(_home(home_client))
         assert re.search(
-            r'data-testid="provisional-caveat"[^>]*>provisional — 2 of 3 suppliers not yet comparable<', standing
+            r'data-testid="provisional-caveat"[^>]*>provisional — 2 of 3 quotes not comparable<', standing
         )
-        why = re.search(r'<span data-testid="award-why" class="([^"]*)">why: (.*?)</span>', standing)
+        # A full-width row of its own under the tender's since batch 7.
+        why = re.search(r'<p data-testid="award-why" class="([^"]*)"><span[^>]*>Why:</span> (.*?)</p>', standing)
         assert why.group(2) == self.WHY
         assert "whitespace-normal" in why.group(1).split()
 
@@ -121,17 +123,22 @@ def _colgroup(body):
 class TestTheOverviewColumns:
     def test_fixed_widths_the_same_today_and_as_of(self, da, base, home_client):
         today, past = _colgroup(_home(home_client)), _colgroup(_home(home_client, as_of="2026-08-20"))
-        assert "table-fixed" in today.group(1).split()
+        assert "table-fixed" in today.group(1).split() and "table-fixed" in past.group(1).split()
         widths = re.findall(r'data-col="([^"]+)" style="width: (\d+)%"', today.group(2))
-        assert widths == re.findall(r'data-col="([^"]+)" style="width: (\d+)%"', past.group(2))
+        # A past date has no flags column since batch 7; its widths are fixed too.
+        past_widths = dict(re.findall(r'data-col="([^"]+)" style="width: (\d+)%"', past.group(2)))
+        assert list(past_widths) == ["title", "stage", "waiting", "last-change"]
+        assert sum(int(w) for w in past_widths.values()) == 100
         by_col = {col: int(w) for col, w in widths}
         assert sum(by_col.values()) == 100
         # Stage is a few words; flags carry a line per supplier.
         assert by_col["stage"] < by_col["flags"] and by_col["flags"] == max(by_col.values())
 
     def test_headers_do_not_wrap(self, da, base, home_client):
-        heads = re.findall(r"<th ([^>]*)>", _standing(_home(home_client, as_of="2026-08-20")))
+        heads = re.findall(r"<th ([^>]*)>", _standing(_home(home_client)))
         assert len(heads) == 5 and all("whitespace-nowrap" in h for h in heads)
+        heads = re.findall(r"<th ([^>]*)>", _standing(_home(home_client, as_of="2026-08-20")))
+        assert len(heads) == 4 and all("whitespace-nowrap" in h for h in heads)
 
 
 # ---- 3. can't compare yet: a line per supplier ------------------------------
@@ -148,15 +155,13 @@ class TestTheBlockedFlagReadsALineEach:
         (row,) = (r for r in standing_rows(PROGRAM, datetime.date(2026, 9, 12)) if r.kind == "tender")
         (flag,) = row.stale
         assert (flag.heading, flag.lines) == (
-            "Can't compare yet",
+            "Can't compare yet — 2 quotes missing facts",
             ("Northwind Foods — missing: freight", "Sahel Nutrition — missing: duties amount"),
         )
 
-        rendered = re.search(r'data-testid="stale-flag".*?</span></span>', _standing(_home(home_client)), re.S).group(
-            0
-        )
+        rendered = re.search(r'data-testid="stale-flag".*?</details>', _standing(_home(home_client)), re.S).group(0)
         assert re.findall(r'data-testid="flag-line"[^>]*>(.*?)</span>', rendered) == list(flag.lines)
-        assert "Can&#x27;t compare yet</span>" in rendered
+        assert "Can&#x27;t compare yet — 2 quotes missing facts</span>" in rendered
 
 
 # ---- 4. as of a past day ----------------------------------------------------
@@ -356,7 +361,7 @@ class TestABlockedCard:
     def test_the_blocker_outweighs_the_metadata(self, da, base, client_in_program):
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
         card = _card(_page(client_in_program, base["tender"]["id"]), quote["id"])
-        meta = re.search(r'data-testid="as-quoted" class="([^"]*)"', card).group(1).split()
+        meta = re.search(r'data-testid="received-on" class="([^"]*)"', card).group(1).split()
         blocking = re.search(r'data-testid="blocking" class="([^"]*)"', card).group(1).split()
         assert "font-semibold" in blocking and "font-semibold" not in meta
         assert "text-gray-900" in blocking and "text-gray-600" in meta
@@ -465,11 +470,10 @@ class TestARankedRow:
         )
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _DELIVERED)
         body = _page(client_in_program, base["tender"]["id"])
-        assert re.findall(r'data-testid="unit-equivalence"[^>]*>(.*?)</p>', body) == [
-            "1 carton = 1 course = 1 child treated"
-        ]
-        # The columns stay: the note says why they agree.
-        assert "USD per child treated" in body
+        # Since batch 7 the three equal columns are one, its header saying why.
+        assert 'data-testid="unit-equivalence"' not in body
+        assert "<th>USD per carton (= 1 course = 1 child treated)</th>" in body
+        assert "<th>USD per child treated</th>" not in body and "<th>USD per course</th>" not in body
 
     def test_not_said_when_they_differ(self, da, base, client_in_program):
         Commodity.objects.filter(slug="rutf").update(
