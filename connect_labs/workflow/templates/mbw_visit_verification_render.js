@@ -58,6 +58,43 @@ function WorkflowUI({
     [eligibleRows],
   );
 
+  // --- Exclude-registration-visit set (mother cases, conduct_visit_now) --
+  // Some mothers' very first visit is conducted immediately at registration
+  // -- the registration form's own conduct_visit_now question records this.
+  // entity_id is the built-in row field cchq_cases populates with the
+  // case's own @case_id, which for a mother case is exactly mother_case_id
+  // on visit rows -- the join key. Default-on dashboard-wide toggle (not a
+  // per-tab filter) excludes that first visit from every tab, since it's
+  // effectively a duplicate of the registration event rather than a
+  // separate follow-up visit.
+  var REGISTRATION_PIPELINE_ALIASES = [
+    { alias: 'mother_registration', domain: TEST_DOMAIN_NAME },
+    { alias: 'mother_registration_prod', domain: PROD_DOMAIN_NAME },
+  ];
+  var registrationRows = [];
+  REGISTRATION_PIPELINE_ALIASES.forEach(function (p) {
+    if (wantedDomain && p.domain !== wantedDomain) return;
+    var rows =
+      (pipelines && pipelines[p.alias] && pipelines[p.alias].rows) || [];
+    registrationRows = registrationRows.concat(rows);
+  });
+  var conductedAtRegistration = React.useMemo(
+    function () {
+      var set = {};
+      registrationRows.forEach(function (row) {
+        if (row.conduct_visit_now === 'yes' && row.entity_id) {
+          set[row.entity_id] = true;
+        }
+      });
+      return set;
+    },
+    [registrationRows],
+  );
+
+  var _excludeRegistrationVisits = React.useState(true);
+  var excludeRegistrationVisits = _excludeRegistrationVisits[0];
+  var setExcludeRegistrationVisits = _excludeRegistrationVisits[1];
+
   // --- Per-mother expanding-window computations -------------------------
   // visit_number and prior_verification_pass_rate can't be expressed by the
   // pipeline engine's window_fields today (only lag_haversine is supported),
@@ -145,7 +182,8 @@ function WorkflowUI({
     [allVisitRows],
   );
 
-  // --- Row filter: eligible FLW + verification block present ------------
+  // --- Row filter: eligible FLW + verification block present + optional --
+  // registration-visit exclusion
   var displayRows = React.useMemo(
     function () {
       return enrichedRows.filter(function (row) {
@@ -153,10 +191,24 @@ function WorkflowUI({
           row.visit_location_has_prev_home_gps !== null &&
           row.visit_location_has_prev_home_gps !== undefined &&
           row.visit_location_has_prev_home_gps !== '';
-        return hasVerificationData && eligibleUsernames[row.username];
+        if (!hasVerificationData || !eligibleUsernames[row.username])
+          return false;
+        if (
+          excludeRegistrationVisits &&
+          row.visit_number === 1 &&
+          conductedAtRegistration[row.mother_case_id]
+        ) {
+          return false;
+        }
+        return true;
       });
     },
-    [enrichedRows, eligibleUsernames],
+    [
+      enrichedRows,
+      eligibleUsernames,
+      excludeRegistrationVisits,
+      conductedAtRegistration,
+    ],
   );
 
   // --- Per-row outcome helpers -------------------------------------------
@@ -929,12 +981,12 @@ function WorkflowUI({
   var DEFINITION_SECTIONS = [
     {
       title: 'Which visits appear in this report',
-      body: "A visit only shows up if ALL are true: (1) it's from the CommCare domain(s) selected in the \"CommCare domain\" toggle at the top (Production only by default), (2) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes' in that same domain, and (3) the visit's form has the verification block at all, detected via visit_location_has_prev_home_gps being present/non-blank. Visits from FLWs not flagged for verification, from a domain not selected in the toggle, or submitted before the verification questions existed on that form, are excluded entirely -- not shown as blank rows.",
+      body: "A visit only shows up if ALL are true: (1) it's from the CommCare domain(s) selected in the \"CommCare domain\" toggle at the top (Production only by default), (2) the FLW who conducted it is a commcare-user case with the property visit_verification set to 'yes' in that same domain, (3) the visit's form has the verification block at all, detected via visit_location_has_prev_home_gps being present/non-blank, and (4) if the \"Exclude visits that happened with registration\" checkbox is on (the default), it is not that mother's first visit AND conducted immediately at registration. Visits from FLWs not flagged for verification, from a domain not selected in the toggle, or submitted before the verification questions existed on that form, are excluded entirely -- not shown as blank rows. This gate applies dashboard-wide -- every tab (Verification Summary, Per FLW Verification View, Failed Verification Analysis) reads from the same filtered set, same as the domain and eligibility gates.",
       items: [
         {
           name: 'Domain filter',
           field:
-            "domainFilter state ('production' default / 'test' / 'both') -- gates which pipeline aliases are read at all: production = only the _prod pipelines (visits_prod_*, eligible_flws_prod), test = only the non-_prod pipelines, both = every pipeline, unfiltered.",
+            "domainFilter state ('production' default / 'test' / 'both') -- gates which pipeline aliases are read at all: production = only the _prod pipelines (visits_prod_*, eligible_flws_prod, mother_registration_prod), test = only the non-_prod pipelines, both = every pipeline, unfiltered.",
         },
         {
           name: 'FLW eligibility gate',
@@ -945,6 +997,12 @@ function WorkflowUI({
           name: 'Verification-block-present gate',
           field:
             'visit_location_has_prev_home_gps (form.gps_verification.location_check.visit_location_has_prev_home_gps) must be non-null/undefined/empty-string.',
+        },
+        {
+          name: 'Exclude visits that happened with registration (default ON)',
+          def: "Some mothers' very first visit is conducted immediately at registration rather than as a separate follow-up -- the registration form's own \"Would you like to conduct the first visit now?\" question records this. When this checkbox is on (the default), a mother's visit #1 is dropped from every tab if that question was answered 'yes' at her registration. Unchecking it shows those visits like any other.",
+          field:
+            "excludeRegistrationVisits state (default true) -- drops a row when visit_number === 1 AND conductedAtRegistration[row.mother_case_id] is true. conductedAtRegistration is built from pipelines mother_registration (test domain) and/or mother_registration_prod (production domain), per the domain filter (cchq_cases, case_type='mother'). Fields: conduct_visit_now (case.properties.conduct_visit_now), entity_id (built-in, = the case's own @case_id). Joined to each visit row on mother_case_id === entity_id.",
         },
       ],
     },
@@ -1545,6 +1603,16 @@ function WorkflowUI({
             </button>
           );
         })}
+        <label className="ml-4 flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-700">
+          <input
+            type="checkbox"
+            checked={excludeRegistrationVisits}
+            onChange={function (e) {
+              setExcludeRegistrationVisits(e.target.checked);
+            }}
+          />
+          Exclude visits that happened with registration
+        </label>
       </div>
 
       {domainFilter === 'production' && summary.total === 0 && (
