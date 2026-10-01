@@ -10,7 +10,8 @@ shows up (rather than being silently dropped from the chart).
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
 
 import pytest
 from django.test import override_settings
@@ -438,10 +439,12 @@ def test_monthly_visits_by_country_fills_a_month_with_no_approved_visits(db):
     neighbours silently sit next to each other and read as continuous activity
     across the gap."""
     opp = _make_opp(1, country="NG")
-    two_months_ago = timezone.now() - timedelta(days=62)
-    this_month = timezone.now()
-    PulseRollup.objects.create(bucket_hour=two_months_ago, opportunity_id=1, status="approved", n=10)
-    PulseRollup.objects.create(bucket_hour=this_month, opportunity_id=1, status="approved", n=20)
+    # Fixed mid-month dates: "now minus 62 days" spans four calendar months
+    # when run on the 1st (e.g. 1 Oct -> 31 Jul), which broke this on CI.
+    january = datetime(2026, 1, 15, tzinfo=dt_timezone.utc)
+    march = datetime(2026, 3, 15, tzinfo=dt_timezone.utc)
+    PulseRollup.objects.create(bucket_hour=january, opportunity_id=1, status="approved", n=10)
+    PulseRollup.objects.create(bucket_hour=march, opportunity_id=1, status="approved", n=20)
 
     result = ot.monthly_visits_by_country([opp], top_n=6)
     months = [row["month"] for row in result["series"]]
