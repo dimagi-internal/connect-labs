@@ -15,7 +15,7 @@ next index and bumps TOTAL_FORMS.
 {% block extra_fields %}
 <div class="pt-4 border-t border-gray-100" x-data="{ count: {{ lines.total_form_count }} }">
   <h2 class="text-sm font-semibold text-gray-900">{% block lines_heading %}What was in it{% endblock %}</h2>
-  <p class="text-xs text-gray-500 mt-0.5 mb-3 max-w-2xl">
+  <p class="text-xs text-gray-600 mt-0.5 mb-3 max-w-2xl">
     One row per batch. Two lots of the same product with different expiry dates are two rows,
     because that is the level a first-expiry-first policy reads.
   </p>
@@ -40,7 +40,7 @@ next index and bumps TOTAL_FORMS.
             {% endif %}
           {% endfor %}
         </div>
-        <label class="mt-2 inline-flex items-center gap-1.5 text-xs text-gray-500">
+        <label class="mt-2 inline-flex items-center gap-1.5 text-xs text-gray-600">
           {{ line.DELETE }} Remove this row
         </label>
       </div>

@@ -19,14 +19,14 @@ own arithmetic -- so workers sit in the tree under their store, behind one
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Network</h1>
-    <p class="text-sm text-gray-500 mt-1">
+    <p class="text-sm text-gray-600 mt-1">
       Every place stock can rest in this programme, each under the place it is resupplied from,
       down to each field worker's own holding.
     </p>
   </div>
   {% if has_program_context %}
     <div class="flex items-center gap-4">
-      <p class="text-sm text-gray-500">{{ total }} point{{ total|pluralize }}</p>
+      <p class="text-sm text-gray-600">{{ total }} point{{ total|pluralize }}</p>
       {% if not supply_as_of %}
         <a href="{% url 'supply_chain:supply_point_create' %}"
            class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
@@ -47,7 +47,7 @@ own arithmetic -- so workers sit in the tree under their store, behind one
 {% elif not roots %}
   <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
     <p class="text-sm text-gray-600">Nothing here yet.</p>
-    <p class="text-sm text-gray-500 mt-1 max-w-lg mx-auto">
+    <p class="text-sm text-gray-600 mt-1 max-w-lg mx-auto">
       Stock has to arrive somewhere before there is any to look at, so a receipt needs at least
       one supply point to name.
     </p>
@@ -64,13 +64,13 @@ own arithmetic -- so workers sit in the tree under their store, behind one
       <div>
         {% if stock %}
           <h2 class="text-sm font-semibold text-gray-900">Stock of {{ stock.item_name }} through the network, in {{ stock.unit|unit_plural }}</h2>
-          <p class="text-xs text-gray-500 mt-0.5">
+          <p class="text-xs text-gray-600 mt-0.5">
             On hand is the ledger. Where the dispensing behind it was on visits not yet approved, or
             is a protocol's estimate rather than the form's own number, the figure says how much.
           </p>
         {% else %}
           <h2 class="text-sm font-semibold text-gray-900">The network</h2>
-          <p class="text-xs text-gray-500 mt-0.5">No item is catalogued yet, so there is no stock to show.</p>
+          <p class="text-xs text-gray-600 mt-0.5">No item is catalogued yet, so there is no stock to show.</p>
         {% endif %}
       </div>
       {% if tree_items|length > 1 %}

@@ -149,7 +149,7 @@ class TestTheBlockedFlagReadsALineEach:
         (flag,) = row.stale
         assert (flag.heading, flag.lines) == (
             "Can't compare yet",
-            ("Northwind Foods: freight", "Sahel Nutrition: duties amount"),
+            ("Northwind Foods — missing: freight", "Sahel Nutrition — missing: duties amount"),
         )
 
         rendered = re.search(r'data-testid="stale-flag".*?</span></span>', _standing(_home(home_client)), re.S).group(
@@ -227,8 +227,10 @@ class _NamedProgramMiddleware:
 class TestTheProgramHeading:
     HEADING = '<h2 class="text-lg font-semibold text-gray-900 mb-3">'
 
-    def test_shown_when_the_header_does_not(self, da, base, home_client):
-        assert self.HEADING in _home(home_client)
+    def test_shown_when_neither_the_header_nor_the_banner_names_the_program(self, da, base, home_client):
+        body = _home(home_client)
+        # The program is named once: by the banner line when it can, else this heading.
+        assert (self.HEADING in body) != ('data-testid="supply-program-line"' in body)
 
     def test_dropped_when_the_header_names_the_program(self, da, base, home_client, settings):
         # Before the first request: the test client builds its middleware chain once.
@@ -357,7 +359,7 @@ class TestABlockedCard:
         meta = re.search(r'data-testid="as-quoted" class="([^"]*)"', card).group(1).split()
         blocking = re.search(r'data-testid="blocking" class="([^"]*)"', card).group(1).split()
         assert "font-semibold" in blocking and "font-semibold" not in meta
-        assert "text-gray-900" in blocking and "text-gray-500" in meta
+        assert "text-gray-900" in blocking and "text-gray-600" in meta
 
     def test_the_banner_says_each_is_missing_one_fact(self, da, base, client_in_program):
         tender_id = base["tender"]["id"]
@@ -426,7 +428,8 @@ class TestARankedRow:
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
         corrected = _correct_pack(da, quote, ace)
         detail = _detail(_page(client_in_program, base["tender"]["id"]), corrected["id"])
-        assert "Sachets per carton: from supplier email, 28 Aug" in detail
+        # Not said twice: the correction's source line names the email.
+        assert "from supplier email" not in detail
         assert "(stated on the quote)" not in detail
 
     def test_the_landed_basis(self, da, base, client_in_program):

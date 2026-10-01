@@ -10,6 +10,7 @@ docs/superpowers/specs/2026-09-26-supply-sophie-history-design.md §4.1, §4.2.
 """
 
 import datetime
+import re
 
 import pytest
 from django.urls import reverse
@@ -306,8 +307,12 @@ class TestTender:
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
         # Both are blocked on the comparison, so both are named: duties
         # excluded with no amount cannot be costed any more than unstated ones.
-        assert row.stale == ["Can't compare yet: Baobab Nutrition: duties amount; Northwind Foods: freight, duties"]
-        assert row.waiting_on == "award decision"
+        assert row.stale == [
+            "Can't compare yet: Baobab Nutrition — missing: duties amount; Northwind Foods — missing: freight, duties"
+        ]
+        # Waiting on the answers that unblock them, by who owes them -- not on
+        # an award decision nobody can make yet.
+        assert row.waiting_on == "answers from Baobab Nutrition, Northwind Foods"
 
     def test_a_closed_tender_drops_the_no_reply_flag_but_keeps_the_blocked_flag(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
@@ -316,12 +321,12 @@ class TestTender:
         _quote(da, tender, base["suppliers"][1], **_PACK)  # basis not stated
         assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == [
             "No reply in 40 days: Northwind Foods",
-            "Can't compare yet: Baobab Nutrition: freight, duties",
+            "Can't compare yet: Baobab Nutrition — missing: freight, duties",
         ]
 
         op(da, "tender_update", SEP_1, tender_id=tender["id"], data={"status": "closed"})
         assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == [
-            "Can't compare yet: Baobab Nutrition: freight, duties"
+            "Can't compare yet: Baobab Nutrition — missing: freight, duties"
         ]
         # Once awarded the decision is made: what is left to flag is the
         # awarded quote's own gaps, not the offers it was chosen over.
@@ -343,7 +348,13 @@ class TestTender:
         award = _award(da, tender, chosen)
 
         assert Award.objects.get(pk=award["id"]).provisional is True
-        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stage == "awarded to Baobab Nutrition, provisional"
+        row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
+        # "Provisional" once, on the caveat line; the stage names who.
+        assert row.stage == "awarded to Baobab Nutrition"
+        assert row.provisional_caveat == "provisional — 1 of 2 suppliers not yet comparable"
+        # Stage, waiting-on and flags agree: it waits on the blocked supplier's answers.
+        assert row.waiting_on == "answers from Northwind Foods"
+        assert row.stale == ["Can't compare yet: Northwind Foods — missing: sachets per carton, freight, duties"]
 
     def test_an_award_over_a_complete_comparison_is_not_provisional(self, da, base):
         from connect_labs.supply_chain.models import Award
@@ -565,16 +576,18 @@ def client_in_program(client, monkeypatch, settings, da, sophie):
 
 @pytest.mark.django_db
 class TestHomePage:
-    def test_the_heading_names_the_program_and_the_org_without_a_buyer_claim(
-        self, client_in_program, base, monkeypatch
-    ):
+    def test_the_banner_names_the_program_and_its_buyer_of_record(self, client_in_program, base, monkeypatch):
         from connect_labs.labs.models import LabsOrg
 
         us = LabsOrg.objects.get(pk=base["us"]["id"])
-        monkeypatch.setattr("connect_labs.supply_chain.views.resolve_org", lambda access: us)
+        monkeypatch.setattr("connect_labs.supply_chain.identity.resolve_org", lambda access: us)
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
 
-        assert '<h2 class="text-lg font-semibold text-gray-900 mb-3">Connect-RUTF · The program</h2>' in body
+        # Before any order, the organisation acting in the program, in its role.
+        line = re.search(r'data-testid="supply-program-line"[^>]*>(.*?)</p>', body).group(1)
+        assert line == "Connect-RUTF · The program, buyer of record"
+        # Said once: the overview's own heading gives way to it.
+        assert '<h2 class="text-lg font-semibold text-gray-900 mb-3">' not in body
 
     def test_the_heading_falls_back_to_the_program_id(self, client_in_program, base, monkeypatch):
         monkeypatch.setattr("connect_labs.supply_chain.views.resolve_org", lambda access: None)

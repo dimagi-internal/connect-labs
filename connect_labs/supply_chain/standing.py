@@ -237,7 +237,13 @@ def _tender_rows(program_id, today, until):
     for tender in tenders:
         award = awards.get(tender.pk) if tender.status == "awarded" else None
         waiting_on, waiting_detail, stale = _tender_state(
-            tender, outreach.get(tender.pk, []), quotes.get(tender.pk, []), tender.pk in contracted, today, award
+            tender,
+            outreach.get(tender.pk, []),
+            quotes.get(tender.pk, []),
+            tender.pk in contracted,
+            today,
+            award,
+            provisional=tender.pk in provisional,
         )
         stage = _words(tender.status)
         awardee = award.quote.supplier.name if award is not None and award.quote_id else ""
@@ -246,8 +252,11 @@ def _tender_rows(program_id, today, until):
         # An award made while suppliers were still blocked from the comparison
         # (the frozen snapshot's `provisional`) could still be beaten: say so.
         is_provisional = tender.status == "awarded" and tender.pk in provisional
-        if is_provisional:
-            stage = f"{stage}, provisional" if awardee else PROVISIONAL_STAGE
+        # "Provisional" is said once, by the caveat line under the stage
+        # ("provisional — 2 of 3 suppliers not yet comparable"); the stage
+        # itself names who it went to.
+        if is_provisional and not awardee:
+            stage = PROVISIONAL_STAGE
         rows.append(
             Row(
                 kind="tender",
@@ -267,8 +276,15 @@ def _tender_rows(program_id, today, until):
     return rows
 
 
-def _tender_state(tender, outreach, quotes, contracted, today, award=None):
-    """(waiting on, a second line under it, flags) for one tender."""
+def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, provisional=False):
+    """(waiting on, a second line under it, flags) for one tender.
+
+    While any live quote is kept out of the comparison -- before an award, or
+    after a provisional one -- the tender is waiting on answers, and "waiting
+    on" names who owes them: the blocked suppliers, then any silent one. It
+    used to say "award decision" or "a contract with <awardee>" beside a
+    stage and a flag that both said suppliers were not yet comparable.
+    """
     live = [q for q in quotes if q.is_live]
     invited = {o.supplier_id for o in outreach}
     replied = {o.supplier_id for o in outreach if o.responded} | {q.supplier_id for q in live}
@@ -301,8 +317,12 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None):
     # and this flag here count the same offers for the same reasons. Not once
     # the tender is awarded: the decision has been made, and what the chosen
     # quote still lacks is flagged on its own below.
-    if tender.status not in ("awarded", "cancelled"):
-        blocked = _blocked(tender, live)
+    # A provisional award was made while some of these were still blocked:
+    # the flag stays up until the order is placed, so stage, waiting-on and
+    # flags say one thing.
+    blocked_names = []
+    if tender.status not in ("awarded", "cancelled") or (provisional and not contracted):
+        blocked, blocked_names = _blocked(tender, live)
         if blocked:
             # One line per supplier: a comma list of names and bracketed gaps
             # ran to four lines in a narrow cell and read as one sentence.
@@ -320,7 +340,18 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None):
             stale.append(Flag(f"Awarded quote: {gaps}", AWARDED_GAP_RULE))
 
     detail = ""
-    if tender.status == "awarded":
+    if blocked_names and tender.status in ("open", "closed", "awarded"):
+        # Silent suppliers too: blocked first, then anyone who has not replied
+        # (while open) or has been silent past the no-reply age (after).
+        owed = list(blocked_names)
+        silent = sorted(invited - replied, key=lambda sid: suppliers[sid].name)
+        if tender.status != "open":
+            silent = [sid for sid in silent if sid in overdue]
+        owed += [suppliers[sid].name for sid in silent if suppliers[sid].name not in owed]
+        waiting_on = f"answers from {', '.join(owed)}"
+        if invited and tender.status == "open":
+            detail = f"{len(replied)} of {len(invited)} replied"
+    elif tender.status == "awarded":
         awardee = award.quote.supplier.name if award is not None and award.quote_id else ""
         if contracted:
             waiting_on = "—"
@@ -346,14 +377,15 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None):
     return waiting_on, detail, stale
 
 
-def _blocked(tender, live) -> list[str]:
-    """ "Northwind Foods: freight" for every live quote the comparison blocks, by supplier name."""
+def _blocked(tender, live) -> tuple[list[str], list[str]]:
+    """ "Northwind Foods — missing: freight" for every live quote the comparison blocks,
+    and the blocked suppliers' names in the same order."""
     from connect_labs.supply_chain.procurement.services.comparison import compare_tender
 
     by_commodity = {}
     for quote in live:
         by_commodity.setdefault(quote.commodity_id, []).append(quote)
-    named = []
+    named, names = [], {}
     for quotes in by_commodity.values():
         comparison = compare_tender(
             tender,
@@ -363,10 +395,16 @@ def _blocked(tender, live) -> list[str]:
             items_by_id={q.item_id: q.item for q in quotes if q.item_id},
         )
         for row in comparison.blocked:
-            text = f"{row.supplier_name}: {', '.join(row.gaps)}" if row.gaps else row.supplier_name
+            text = f"{row.supplier_name} — missing: {', '.join(row.gaps)}" if row.gaps else row.supplier_name
             if text not in named:
                 named.append(text)
-    return sorted(named)
+                names[text] = row.supplier_name
+    named.sort()
+    ordered = []
+    for text in named:
+        if names[text] not in ordered:
+            ordered.append(names[text])
+    return named, ordered
 
 
 def _award_gaps(award) -> str:

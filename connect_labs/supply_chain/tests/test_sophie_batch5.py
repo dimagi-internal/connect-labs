@@ -106,13 +106,13 @@ class TestTheOverviewFlagsEveryBlockedQuote:
         (flag,) = (f for f in _tender_row().stale if f.startswith("Can't compare yet"))
         # One line per supplier since batch 6.
         assert flag.lines == (
-            "Lakeside Foods: sachets per carton",
-            "Northwind Foods: freight",
-            "Plateau Mills: quantity",
-            "Sahel Nutrition: duties amount",
+            "Lakeside Foods — missing: sachets per carton",
+            "Northwind Foods — missing: freight",
+            "Plateau Mills — missing: quantity",
+            "Sahel Nutrition — missing: duties amount",
         )
         assert flag.rule == BLOCKED_RULE
-        assert {line.split(": ")[0] for line in flag.lines} == {r["supplier_name"] for r in comparison["blocked"]}
+        assert {line.split(" — ")[0] for line in flag.lines} == {r["supplier_name"] for r in comparison["blocked"]}
 
         row = _standing_row(_home(home_client), tender_id)
         assert re.findall(r'data-testid="flag-line"[^>]*>(.*?)</span>', row) == list(flag.lines)
@@ -155,7 +155,9 @@ class TestWaitingOnNamesWho:
         _quote_with(da, base["tender"]["id"], other["id"], AUG_20, {})  # blocked
         chosen = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _DELIVERED)
         _award(da, base["tender"]["id"], chosen["id"])
-        assert _tender_row().stage == "awarded to Northwind Foods, provisional"
+        # "Provisional" is said once, by the caveat line (batch 6 of the judged walkthrough).
+        assert _tender_row().stage == "awarded to Northwind Foods"
+        assert _tender_row().provisional_caveat.startswith("provisional")
 
     def test_an_awarded_quote_s_open_specification_is_flagged(self, da, base):
         _with_spec(da)
@@ -365,8 +367,11 @@ class TestTheTimeline:
         body = client_in_program.get(
             reverse("supply_chain:order_detail", args=[order["contract"]["id"]])
         ).content.decode()
-        texts = [" ".join(t.split()) for t in re.findall(r'data-testid="revision-text"[^>]*>(.*?)</div>', body, re.S)]
-        assert "Shipment · SH-1 · ETA 5 Sep → 19 Sep" in texts
+        texts = [
+            " ".join(re.sub(r"<[^>]+>", "", t).split())
+            for t in re.findall(r'data-testid="revision-text"[^>]*>(.*?)</div>', body, re.S)
+        ]
+        assert "Shipment · SH-1 · ETA 5 Sep → 19 Sep ETA moved +14 days" in texts
         times = re.findall(r"<time [^>]*>(.*?)</time>", body[body.index('id="history"') :])
         assert times and all(re.fullmatch(r"\d{1,2} [A-Z][a-z]{2} 2026", t) for t in times)
 
@@ -378,7 +383,8 @@ class TestTheTimeline:
                 reverse("supply_chain:order_detail", args=[order["contract"]["id"]])
             ).content.decode()
         )
-        assert heading == "Email, recorded by ACE (agent) on 20 Aug 2026"
+        # No carrier yet: the shipment says its supplier reported it.
+        assert heading == "Email from Northwind Foods, recorded by ACE (agent) on 20 Aug 2026"
 
         Shipment.objects.filter(pk=order["shipment"]["id"]).update(carrier="Harmattan Haulage")
         body = client_in_program.get(
@@ -419,9 +425,9 @@ class TestACorrectedRankedRow:
         body = _page(client_in_program, base["tender"]["id"])
         detail = _detail(body, corrected["id"])
 
-        assert re.search(
-            r'data-spec-origin="correction"[^>]*>Sachets per carton: from supplier email, 28 Aug<', detail
-        )
+        # Where it came from is said once, by the correction's own source line.
+        assert 'data-spec-origin="correction"' not in detail
+        assert "from Northwind Foods email" in detail
         assert "Stated on the quote: sachets per carton" not in body
 
     def test_the_correction_sits_under_the_row_not_in_it(self, da, base, ace, client_in_program):
@@ -468,8 +474,10 @@ class TestABlockedCard:
         assert re.search(r'data-testid="spec-chip"[^>]*>Spec: 150 sachets per carton<', blocking)
         assert 'data-testid="spec-not-stated"' not in card
         not_blocking = re.search(r'data-testid="not-blocking"[^>]*>(.*?)</p>', card, re.S).group(1)
-        assert " ".join(re.sub(r"<[^>]+>", "", not_blocking).split()) == "Also not stated (not blocking): shelf life"
-        assert card.index('data-testid="also-confirm"') < card.index('data-testid="not-blocking"')
+        assert " ".join(re.sub(r"<[^>]+>", "", not_blocking).split()) == "Not stated: shelf life"
+        # Inside the one folded list, not a second line beside it.
+        details = re.search(r'<details data-testid="also-confirm".*?</details>', card, re.S).group(0)
+        assert 'data-testid="not-blocking"' in details
 
     def test_three_cards_fit_below_the_header(self, da, base, client_in_program):
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {})
@@ -490,7 +498,8 @@ def _listing(client, tender):
 class TestThePublicListing:
     def test_no_deadline_is_said_as_none(self, client, listed_tender):
         body = _listing(client, listed_tender)
-        assert re.search(r'data-testid="replies-by"[^>]*>No reply-by date<', body)
+        assert re.search(r'data-testid="replies-by"[^>]*>Open for bids<', body)
+        assert re.search(r'data-testid="replies-by-caption"[^>]*>NO DEADLINE SET<', body)
         assert "Open until closed" not in body and "REPLIES BY" not in body
 
     def test_the_request_is_summarised_beside_the_products(self, client, listed_tender):

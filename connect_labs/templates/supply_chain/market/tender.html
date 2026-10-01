@@ -13,9 +13,9 @@
       <a href="{% url 'supply_chain:market' %}" class="text-[11.5px] font-semibold tracking-[0.14em] text-brand-sky hover:text-white">← OPEN TENDERS</a>
     {% endif %}
     <h1 class="text-[26px] sm:text-3xl font-semibold text-white mt-1 leading-tight">{{ r.label }}</h1>
-    {% if posted_by or r.opened_at %}
+    {% if posted_by or posted_on %}
       {% comment %}One phrase, the day with its year and then who: "Posted 20 Aug 2026 by Lakeside Health Trust".{% endcomment %}
-      <p data-testid="posted-by" class="text-[13px] text-brand-sky mt-1">Posted{% if r.opened_at %} {{ r.opened_at|day }}{% endif %}{% if posted_by %} by {{ posted_by }}{% endif %}</p>
+      <p data-testid="posted-by" class="text-[13px] text-brand-sky mt-1">Posted{% if posted_on %} {{ posted_on|day }}{% endif %}{% if posted_by %} by {{ posted_by }}{% endif %}</p>
     {% endif %}
     {% if r.hue %}<div class="h-1 w-16 rounded-full mt-3" style="background: {{ r.hue }}"></div>{% endif %}
     {% if r.brief %}<p class="text-[14.5px] text-white/90 mt-3 max-w-3xl whitespace-pre-line leading-relaxed">{{ r.brief }}</p>{% endif %}
@@ -25,9 +25,10 @@
           <div data-testid="replies-by" class="text-[20px] sm:text-[24px] font-semibold {% if card.closing_soon %}text-brand-marigold{% else %}text-white{% endif %}">{{ r.response_deadline|day }}</div>
           <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">REPLIES BY{% if card.days_left is not None and card.days_left >= 0 %} · {{ card.deadline_words|upper }}{% endif %}</div>
         {% else %}
-          {% comment %}No date was set: said as it is, not dressed as a deadline.{% endcomment %}
-          <div data-testid="replies-by" class="text-[20px] sm:text-[24px] font-semibold text-white">No reply-by date</div>
-          <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">OPEN FOR BIDS</div>
+          {% comment %}No date was set: the state is the figure and the missing date its
+          caption -- "No reply-by date" in the figure's place read as a deadline missing.{% endcomment %}
+          <div data-testid="replies-by" class="text-[20px] sm:text-[24px] font-semibold text-white">Open for bids</div>
+          <div data-testid="replies-by-caption" class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">NO DEADLINE SET</div>
         {% endif %}
       </div>
       {% if asked_for %}
@@ -74,14 +75,15 @@
 {% endif %}
 {% if previewing_as_supplier %}
   {% comment %}Small and muted: the page below is the supplier's, and this is only the way back.{% endcomment %}
-  <p data-testid="supplier-preview-bar" class="mb-4 text-[12.5px] text-gray-500">
+  <p data-testid="supplier-preview-bar" class="mb-4 text-[12.5px] text-gray-600">
     Previewing as a supplier would see it.
     <a data-testid="exit-supplier-preview" href="{{ exit_preview_url }}" class="ml-1 text-brand-indigo hover:underline">Back to your view</a>
+    <span data-testid="supplier-preview-hidden" class="block">Suppliers do not see other suppliers' quotes or prices, email excerpts, or this tender's history.</span>
   </p>
 {% endif %}
 {% if r.notes_to_supplier %}
   <div class="bg-white border border-brand-border-light rounded-[10px] px-5 py-4 mb-8 max-w-3xl">
-    <div class="text-[11.5px] font-semibold tracking-wider text-gray-500 mb-1">FROM THE BUYER</div>
+    <div class="text-[11.5px] font-semibold tracking-wider text-gray-600 mb-1">FROM THE BUYER</div>
     <p class="text-[14px] text-gray-800 whitespace-pre-line leading-relaxed">{{ r.notes_to_supplier }}</p>
   </div>
 {% endif %}
@@ -95,7 +97,7 @@ carries the bid action.
 {% endcomment %}
 <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-4">
   <h2 class="text-lg font-semibold text-brand-deep-purple">What they are asking for</h2>
-  <span class="text-[13px] text-gray-500">{% if listed.lines|length > 1 %}One bid per product. {% endif %}State it as you would write it; the buyer's comparison converts.</span>
+  <span class="text-[13px] text-gray-600">{% if listed.lines|length > 1 %}One bid per product. {% endif %}Quote in your own units; the buyer converts them for comparison.</span>
 </div>
 {% if listed.lines|length == 1 %}
   {% with line=listed.lines.0 %}
@@ -136,7 +138,7 @@ carries the bid action.
 </div>
 
 <aside data-testid="request-summary" class="bg-white border border-brand-border-light rounded-[10px] px-5 py-4 text-[13.5px]">
-  <h2 class="text-[11.5px] font-semibold tracking-wider text-gray-500 mb-2">THE REQUEST</h2>
+  <h2 class="text-[11.5px] font-semibold tracking-wider text-gray-600 mb-2">THE REQUEST</h2>
   {% include "supply_chain/market/_request.html" %}
 </aside>
 </div>
@@ -150,8 +152,8 @@ carries the bid action.
   <ul class="bg-white border border-brand-border-light rounded-[10px] divide-y divide-gray-100 text-[13px] max-w-3xl">
     {% for q in listed.own_quotes %}
       <li class="px-5 py-3 flex flex-wrap justify-between gap-2">
-        <span><span class="font-semibold text-gray-900">{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}</span> {{ q.per_words }} <span class="text-gray-500">· {{ q.commodity.name }}</span></span>
-        <span class="text-gray-500">{% if q.voided %}Withdrawn{% elif q.superseded_by_id %}Replaced by a revision{% else %}Current{% endif %} · {{ q.received_on|day }}</span>
+        <span><span class="font-semibold text-gray-900">{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}</span> {{ q.per_words }} <span class="text-gray-600">· {{ q.commodity.name }}</span></span>
+        <span class="text-gray-600">{% if q.voided %}Withdrawn{% elif q.superseded_by_id %}Replaced by a revision{% else %}Current{% endif %} · {{ q.received_on|day }}</span>
       </li>
     {% endfor %}
   </ul>

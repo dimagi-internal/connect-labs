@@ -15,16 +15,16 @@
         </a>
       </li>
     {% empty %}
-      <li class="text-sm text-gray-500">This tender has no commodity lines yet — there is nothing to compare.</li>
+      <li class="text-sm text-gray-600">This tender has no commodity lines yet — there is nothing to compare.</li>
     {% endfor %}
   </ul>
 {% else %}
-<h1 class="text-xl font-semibold text-gray-900 mb-1">Comparison — {{ commodity_name }}{% if tender.label %} <span class="font-normal text-gray-500">· {{ tender.label }}</span>{% endif %}</h1>
+<h1 class="text-xl font-semibold text-gray-900 mb-1">Comparison — {{ commodity_name }}{% if tender.label %} <span class="font-normal text-gray-600">· {{ tender.label }}</span>{% endif %}</h1>
 {% if not supply_as_of %}
   <p class="text-sm mb-4">
     <a data-testid="drafts-link" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#drafts"
        class="text-brand-indigo hover:underline">Draft emails for this tender</a>
-    <span class="text-gray-500">— the questions below, and reminders to anyone who has not replied, as emails to copy</span>
+    <span class="text-gray-600">— the questions below, and reminders to anyone who has not replied, as emails to copy</span>
   </p>
 {% else %}
   <div class="mb-4"></div>
@@ -85,7 +85,7 @@
         award {{ award.id }}{% for row in comparison.all_rows %}{% if row.quote_id == award.quote_id %} to {{ row.supplier_name }}{% endif %}{% endfor %}{% if award.decided_on %}, {{ award.decided_on|day }}{% endif %}</a>{% if award.decided_by %} <span class="text-gray-700">by {{ award.decided_by }}</span>{% endif %}{% if award.rationale %}
       <div class="text-gray-700 mt-0.5" data-award-why>Why: {{ award.rationale }}</div>{% endif %}{% if not forloop.last %} ·{% endif %}
     {% endfor %}
-    <span class="text-xs text-gray-500 ml-2">— approvals and the order are on the award.</span>
+    <span class="text-xs text-gray-600 ml-2">— approvals and the order are on the award.</span>
   </div>
 {% endif %}
 
@@ -105,7 +105,7 @@
   {% if cost_basis %}
     {% comment %}What one pack and one course are in base units, as the commodity
     defines them, so the per-unit columns can be read against each other.{% endcomment %}
-    <p data-testid="cost-basis" class="text-xs text-gray-500 mb-2">{{ cost_basis }}</p>
+    <p data-testid="cost-basis" class="text-xs text-gray-600 mb-2">{{ cost_basis }}</p>
   {% endif %}
   {% if unit_equivalence %}
     {% comment %}Three equal columns, said once as why they are equal rather than left
@@ -113,7 +113,7 @@
     <p data-testid="unit-equivalence" class="text-xs text-gray-600 mb-2">{{ unit_equivalence }}</p>
   {% endif %}
   {% if folded_columns %}
-    <p class="text-xs text-gray-500 mb-2">{{ folded_columns|join:" and " }} {{ folded_columns|length|pluralize:"is,are" }} the same as {{ first_column_label }} here, so {{ folded_columns|length|pluralize:"it is,they are" }} not repeated.</p>
+    <p class="text-xs text-gray-600 mb-2">{{ folded_columns|join:" and " }} {{ folded_columns|length|pluralize:"is,are" }} the same as {{ first_column_label }} here, so {{ folded_columns|length|pluralize:"it is,they are" }} not repeated.</p>
   {% endif %}
   {% comment %}
   The award form and the questions sit in a full-width row under each offer,
@@ -168,7 +168,7 @@
                 {% endwith %}
               {% endfor %}
             </tr>
-            {% with correction=corrections|dictkey:row.quote_id %}{% if correction or row.specification or row.landed_basis %}
+            {% with correction=corrections|dictkey:row.quote_id %}{% if correction or row.specification or row.landed_basis or row.quantity_quoted %}
             {% comment %}
             The specification and, for an offer a correction brought in, the
             correction and the reply it rested on: one compact line under the
@@ -179,7 +179,11 @@
               <td colspan="{{ table_columns|length|add:1 }}" class="pt-0 pb-2 whitespace-normal">
                 {% comment %}What the landed figures assume: where it is delivered, and whether
                 freight and duties were counted in, on whose word.{% endcomment %}
-                {% if row.landed_basis %}<p data-testid="landed-basis" class="mb-1 text-xs text-gray-700">{{ row.landed_basis }}</p>{% endif %}
+                {% comment %}The landed total with the quantity it buys -- "USD 82,000.00 for 2,000
+                cartons" -- so the figure in the row is read as a price for an amount.{% endcomment %}
+                {% with total=row.figures.landed_total_as_quoted %}
+                {% if row.landed_basis or row.quantity_quoted and total.amount is not None %}<p class="mb-1 text-xs text-gray-700">{% if row.quantity_quoted and total.amount is not None %}<span data-testid="landed-quantity" class="font-medium text-gray-900">Landed total {{ total|money_text }} for {{ row.quantity_quoted }}</span>{% if row.landed_basis %} · {% endif %}{% endif %}{% if row.landed_basis %}<span data-testid="landed-basis">{{ row.landed_basis }}</span>{% endif %}</p>{% endif %}
+                {% endwith %}
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                   {% include "supply_chain/procurement/_specification.html" with specification=row.specification inline=True %}
                   {% if correction %}
@@ -195,7 +199,7 @@
                         {% if correction.excerpt %}
                           <blockquote data-testid="source-excerpt" class="rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ correction.excerpt }}</blockquote>
                         {% else %}
-                          <p class="text-gray-500">No source was recorded with this correction.</p>
+                          <p class="text-gray-600">No source was recorded with this correction.</p>
                         {% endif %}
                         <p class="mt-1 text-gray-700">{% if correction.changes %}Changed: {{ correction.changes }} · {% endif %}<a data-testid="correction-note" href="{{ history_url }}" class="text-brand-indigo hover:underline">In the tender's history</a></p>
                       </div>
@@ -262,7 +266,7 @@
 {% elif comparison.blocked %}
   {% comment %}Nothing to add: the banner above already says none of them is comparable, and names who has to answer.{% endcomment %}
 {% else %}
-  <p class="text-gray-500 mb-4">Nothing is comparable: no offer holds the contents this tender buys.</p>
+  <p class="text-gray-600 mb-4">Nothing is comparable: no offer holds the contents this tender buys.</p>
 {% endif %}
 
 {% if set_aside %}
@@ -273,7 +277,7 @@
         <div class="px-4 py-3 text-sm">
           <a href="{% url 'supply_chain:procurement_quote_detail' entry.quote.id %}"
              class="font-medium text-brand-indigo hover:underline">{{ entry.item.name|default:entry.quote.supplier_id }}</a>
-          <span class="text-gray-500">· {{ entry.quote.as_quoted_currency }} {{ entry.quote.as_quoted_amount|money }}</span>
+          <span class="text-gray-600">· {{ entry.quote.as_quoted_currency }} {{ entry.quote.as_quoted_amount|money }}</span>
           {% if entry.item.components %}
             {% include "supply_chain/procurement/_composition.html" with composition=entry.item.components unit=entry.item.components_unit %}
           {% endif %}
@@ -307,7 +311,7 @@
           {% if row.item_name %}<span class="text-gray-700">· {{ row.item_name }}</span>{% endif %}
           {% comment %}Its price, so "cheaper, but not what the tender buys" can be read here and not taken on trust.{% endcomment %}
           {% with first=comparison.columns.0 %}{% with cell=row.figures|dictkey:first.key %}{% if cell and cell.amount is not None and not cell.unconfirmed %}
-            <span class="text-gray-500">· {{ first.label }}: {{ cell|money_text }}</span>
+            <span class="text-gray-600">· {{ first.label }}: {{ cell|money_text }}</span>
           {% endif %}{% endwith %}{% endwith %}
           {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
         </div>
@@ -331,36 +335,40 @@
       </h3>
       {% comment %}What was offered and when, as the supplier stated it: blocked from
       the ranking is not the same as having no price.{% endcomment %}
-      <p data-testid="as-quoted" class="text-xs text-gray-500 mb-1">Quoted {{ row.as_quoted }}{% if row.received_on %} · received {{ row.received_on|day }}{% endif %}</p>
+      <p data-testid="as-quoted" class="text-xs text-gray-600 mb-1">Quoted {{ row.as_quoted }}{% if row.received_on %} · received {{ row.received_on|day }}{% endif %}</p>
       {% comment %}
-      The one fact that keeps this offer out of the ranking, and the one
-      question that clears it, first. The rest of the checklist still stands,
-      folded under "Also confirm": led by eight bullets, the card hid the one
-      that mattered.
+      Every fact that keeps this offer out of the ranking, each with the one
+      question that clears it, first -- the same gaps, from the same rows, as
+      the overview's "Can't compare yet" flag, so the two cannot disagree. The
+      rest of the checklist, and the specification's unstated requirements
+      that do not block, fold into one list under them.
       {% endcomment %}
-      {% if row.blocking %}
-        <p data-testid="blocking" class="text-[15px] font-semibold text-gray-900">Blocking: {{ row.blocking.fact }}{% if row.blocking.spec %} <span data-testid="spec-chip" class="ml-1 inline-flex whitespace-nowrap rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-xs font-normal text-gray-700">Spec: {{ row.blocking.spec }}</span>{% endif %}</p>
-        {% if row.blocking.question %}
+      {% for blocker in row.blockers %}
+        <p data-testid="blocking" class="text-[15px] font-semibold text-gray-900{% if not forloop.first %} mt-1{% endif %}">Blocking: {{ blocker.fact }}{% if blocker.spec %} <span data-testid="spec-chip" class="ml-1 inline-flex whitespace-nowrap rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-xs font-normal text-gray-700">Spec: {{ blocker.spec }}</span>{% endif %}</p>
+        {% if blocker.question %}
           <p data-testid="blocking-question" class="text-sm text-gray-800 mt-0.5 mb-1">
-            {% if row.blocking.question.audience == "internal" %}Ours to do:{% else %}Ask the supplier:{% endif %}
-            {{ row.blocking.question.question }}
+            {% if blocker.question.audience == "internal" %}Ours to do:{% else %}Ask the supplier:{% endif %}
+            {{ blocker.question.question }}
             {% comment %}The spec chip beside the blocker already says what we require.{% endcomment %}
-            {% if not row.blocking.spec %}{% with q=row.blocking.question %}{% include "supply_chain/procurement/_requirement.html" %}{% endwith %}{% endif %}
+            {% if not blocker.spec %}{% with q=blocker.question %}{% include "supply_chain/procurement/_requirement.html" %}{% endwith %}{% endif %}
           </p>
         {% endif %}
-      {% endif %}
+      {% endfor %}
       {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
       {% include "supply_chain/procurement/_specification.html" with specification=row.specification hide_not_stated=True %}
-      {% with rest=row|also_confirm %}
-        {% if rest or row.blocking %}
+      {% with rest=row|also_confirm unstated=row|not_blocking %}
+        {% if rest or unstated or row.blockers %}
           <details data-testid="also-confirm" class="mt-1">
-            <summary class="cursor-pointer text-sm text-brand-indigo">{% if rest %}Also confirm ({{ rest|length }}){% else %}What each figure is missing{% endif %}</summary>
+            <summary class="cursor-pointer text-sm text-brand-indigo">Other things to confirm (<span data-testid="not-blocking-rule" title="{{ ranking_rule }}" class="cursor-help underline decoration-dotted underline-offset-2">not blocking</span>)</summary>
             {% if rest %}{% include "supply_chain/procurement/_row_questions.html" with row=row questions=rest %}{% endif %}
+            {% if unstated %}
+              <p data-testid="not-blocking" class="mt-1 text-xs text-gray-600">Not stated: {{ unstated|join:", " }}</p>
+            {% endif %}
             {% for column in comparison.columns %}
               {% with cell=row.figures|dictkey:column.key %}
                 {% if cell.unconfirmed %}
-                  <p class="text-xs text-gray-500 mt-1">
-                    <strong class="text-gray-600">{{ column.label }}:</strong>
+                  <p class="text-xs text-gray-600 mt-1">
+                    <strong class="text-gray-700">{{ column.label }}:</strong>
                     {% for reason in cell.unconfirmed %}{{ reason|plain_reason:row }}{% if not forloop.last %}; {% endif %}{% endfor %}
                   </p>
                 {% endif %}
@@ -369,9 +377,6 @@
           </details>
         {% endif %}
       {% endwith %}
-      {% with unstated=row|not_blocking %}{% if unstated %}
-        <p data-testid="not-blocking" class="mt-0.5 text-xs text-gray-500">Also not stated (<span data-testid="not-blocking-rule" title="{{ ranking_rule }}" class="cursor-help underline decoration-dotted underline-offset-2">not blocking</span>): {{ unstated|join:", " }}</p>
-      {% endif %}{% endwith %}
       {% for c in row.compliance %}
         {% if c.claim_conflict %}
           <p class="text-sm text-red-700 mt-2">

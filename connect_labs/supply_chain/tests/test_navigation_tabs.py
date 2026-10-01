@@ -6,6 +6,9 @@ own page, and the same hole was still open on the approval-request screen the
 test-kit walkthrough films. This closes the set rather than the one instance.
 """
 
+import re
+from pathlib import Path
+
 from django.urls import get_resolver
 
 from connect_labs.supply_chain.navigation import SUPPLY_TABS, TAB_FOR_VIEW, VIEWS_WITHOUT_TABS
@@ -69,16 +72,29 @@ class TestSupplyTextStaysLegible:
             "Use text-gray-600 for secondary text."
         )
 
-    def test_no_supply_template_sets_eleven_pixel_text_in_gray_500(self):
+    def test_no_supply_template_uses_gray_500_for_text(self):
+        """`text-gray-500` at any size: 4.83:1 on white but 4.43:1 on the off-white
+        page and table-header background, so every caption on it ("— newest change
+        first", "Previewing as a supplier would see it.") failed AA there. The whole
+        set was moved a step darker; this keeps any new one from coming back."""
         offenders = [
-            str(f)
-            for f in self._templates()
-            if "text-[11px] text-gray-500" in (t := f.read_text()) or "text-gray-500 text-[11px]" in t
+            str(f) for f in self._templates() if re.search(r"(?<![\w-])text-gray-500(?![\w-])", f.read_text())
         ]
         assert not offenders, (
-            f"11px text-gray-500 measures 4.43:1 on a card, below the 4.5:1 AA floor: {offenders}. "
-            "Use text-gray-600 at that size."
+            f"text-gray-500 measures 4.43:1 on the off-white page background, below the 4.5:1 AA floor: "
+            f"{offenders}. Use text-gray-600 for secondary text."
         )
+
+    def test_a_market_bid_link_is_a_darkened_hue(self):
+        """The product hue as link text measured 4.30:1 (the food orange on white):
+        a Bid link takes `pg-link`, the hue mixed a fifth toward black."""
+        root = Path(__file__).resolve().parents[2] / "templates"
+        styles = (root / "marketplace" / "_hue_styles.html").read_text()
+        assert re.search(r"\.pg-link \{ color: color-mix\(in srgb, var\(--hue\) 80%, black\); \}", styles)
+        for name in ("_bid_action.html", "_tender_card.html"):
+            body = (root / "supply_chain" / "market" / name).read_text()
+            for link in re.findall(r"<(?:a|span)[^>]*>(?:Sign in to |Register to )?[Bb]id →<", body):
+                assert "pg-link" in link and "pg-hue" not in link, (name, link)
 
 
 class TestTheOneDateRuleReachesEveryScreen:

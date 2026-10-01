@@ -35,11 +35,19 @@ def questions_for(questions, audience):
 
 @register.filter
 def also_confirm(row):
-    """A blocked row's questions without the one that clears its block -- the
-    rest of the checklist, once that question has been asked on its own."""
+    """A blocked row's questions without the ones that clear its blocks -- the
+    rest of the checklist, once those questions have been asked on their own."""
     row = row or {}
-    blocking = (row.get("blocking") or {}).get("question") or {}
-    return [q for q in (row.get("questions") or []) if q.get("key") != blocking.get("key")]
+    asked = {((b or {}).get("question") or {}).get("key") for b in _blockers(row)}
+    return [q for q in (row.get("questions") or []) if q.get("key") not in asked]
+
+
+def _blockers(row) -> list:
+    """Every blocker on a row; a row serialised before `blockers` existed has its one `blocking`."""
+    blockers = row.get("blockers")
+    if blockers is None:
+        blockers = [row["blocking"]] if row.get("blocking") else []
+    return blockers
 
 
 @register.filter
@@ -57,8 +65,8 @@ def not_blocking(row):
     beside the blocker read as a second thing keeping the offer out.
     """
     row = row or {}
-    blocker = (row.get("blocking") or {}).get("label") or ""
-    return [label for label in (row.get("specification") or {}).get("not_stated") or [] if label != blocker]
+    blockers = {(b or {}).get("label") or "" for b in _blockers(row)}
+    return [label for label in (row.get("specification") or {}).get("not_stated") or [] if label not in blockers]
 
 
 @register.filter

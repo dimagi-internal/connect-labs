@@ -33,7 +33,9 @@ from connect_labs.supply_chain.models import SupplierOffering, SupplierProfile, 
 
 # The same page options as the implementing partners' marketplace: no labs
 # context selector (the market is above programs), and the Pulse widget.
-MARKET_CHROME = method_decorator(page_chrome(labs_context=False, pulse_widget=True), name="dispatch")
+# No Pulse widget: live service-delivery telemetry is labs' own business, and in
+# a supplier's header it read as part of the tender.
+MARKET_CHROME = method_decorator(page_chrome(labs_context=False), name="dispatch")
 
 
 def _delivery_choices(listed) -> dict:
@@ -154,7 +156,39 @@ def _tender_page(request, listed):
         asked_for=_asked_for(listed.lines),
         delivered_to=_delivered_to_words(tender.delivery_points or []),
         posted_by=_posted_by(request, tender, on_program),
+        posted_on=_posted_on(tender),
     )
+
+
+def _posted_on(tender):
+    """The day the tender opened for quotes, when that is known; None otherwise.
+
+    `opened_at` where it was set; else the day the record of changes shows its
+    status turning to "open" -- the tender-open operation records that change
+    but has never stamped `opened_at`, so the posted day was missing on every
+    tender. Only the day is read: nothing else of the record reaches a supplier.
+    """
+    from django.contrib.contenttypes.models import ContentType
+    from django.utils import timezone
+
+    from connect_labs.supply_chain.history.models import Revision
+
+    when = tender.opened_at
+    if when is None:
+        when = (
+            Revision.objects.filter(
+                content_type=ContentType.objects.get_for_model(type(tender)),
+                object_id=str(tender.pk),
+                program_id=tender.program_id,
+                changes__status__1="open",
+            )
+            .order_by("recorded_at")
+            .values_list("recorded_at", flat=True)
+            .first()
+        )
+    if when is None:
+        return None
+    return timezone.localtime(when).date() if timezone.is_aware(when) else when.date()
 
 
 def _asked_for(lines) -> str:

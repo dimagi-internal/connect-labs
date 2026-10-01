@@ -15,7 +15,7 @@ the worker reports that no store recorded is said on the worker's own row.
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Workers</h1>
-    <p class="text-sm text-gray-500 mt-1">What we believe each field worker holds: what was issued to them, less what their visits say they gave out.</p>
+    <p class="text-sm text-gray-600 mt-1">What we believe each field worker holds: what was issued to them, less what their visits say they gave out.</p>
   </div>
   {% if has_program_context %}
     <a href="{% url 'supply_chain:dispensing_rules' %}" class="text-sm text-brand-indigo hover:underline">Dispensing rules</a>
@@ -47,14 +47,14 @@ the worker reports that no store recorded is said on the worker's own row.
   {% if not rows %}
     <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
       <p class="text-sm text-gray-600">No field worker's holding yet.</p>
-      <p class="text-sm text-gray-500 mt-1">A worker appears here once a visit of theirs is read, or once stock is issued to them.</p>
+      <p class="text-sm text-gray-600 mt-1">A worker appears here once a visit of theirs is read, or once stock is issued to them.</p>
     </div>
   {% else %}
     <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
       <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Workers table, scrolls sideways">
         <table class="min-w-[60rem] w-full text-sm">
           <caption class="sr-only">Each worker's stock of {{ item.name }}. Sorted by {% for key, label, help in columns %}{% if key == sort %}{{ label|lower }}{% endif %}{% endfor %}{% if descending %}, highest first{% endif %}; choose a column heading to sort by it.</caption>
-          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
             <tr>
               {% for key, label, help in columns %}
                 <th scope="col" class="text-left px-4 py-2 align-bottom"
@@ -81,12 +81,12 @@ the worker reports that no store recorded is said on the worker's own row.
                 </td>
                 <td class="px-4 py-2 align-top tabular-nums">
                   {{ row.days_to_stockout|days_text }}
-                  {% for reason in row.days_to_stockout|unconfirmed_reasons %}<div class="text-xs text-gray-500 mt-0.5">{{ reason }}</div>{% endfor %}
+                  {% for reason in row.days_to_stockout|unconfirmed_reasons %}<div class="text-xs text-gray-600 mt-0.5">{{ reason }}</div>{% endfor %}
                 </td>
                 <td class="px-4 py-2 align-top tabular-nums">
                   {% if row.variance_reported_minus_ledger %}
                     {{ row.variance_reported_minus_ledger|signed_figure }}
-                    <div class="text-xs text-gray-500 mt-0.5">counted {{ row.reported_on|day }}</div>
+                    <div class="text-xs text-gray-600 mt-0.5">counted {{ row.reported_on|day }}</div>
                   {% else %}<span class="text-gray-600">no count</span>{% endif %}
                 </td>
                 <td class="px-4 py-2 align-top tabular-nums">{% if row.days_since_checked is None %}<span class="text-gray-600">never</span>{% else %}{{ row.days_since_checked }}{% endif %}</td>

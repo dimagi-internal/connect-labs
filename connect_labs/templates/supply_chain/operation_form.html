@@ -34,7 +34,7 @@ field rather than bolting on a confirmation dialogue nobody reads.
 {% block supply_content %}
 
 {% if breadcrumb %}
-  <nav class="text-sm text-gray-500 mb-3">
+  <nav class="text-sm text-gray-600 mb-3">
     {% for crumb in breadcrumb %}
       {% if crumb.href %}
         <a href="{{ crumb.href }}" class="text-brand-indigo hover:underline">{{ crumb.label }}</a>
@@ -72,7 +72,7 @@ upload -- a message that describes the symptom and not the cause.
                 {% if danger %}border-message-error-border/40 bg-message-error/20{% else %}border-brand-border-light{% endif %}">
       <h1 class="text-base font-semibold {% if danger %}text-message-error-text{% else %}text-gray-900{% endif %}">{{ title }}</h1>
       {% if intro %}
-        <p class="text-sm mt-0.5 max-w-2xl {% if danger %}text-message-error-text/90{% else %}text-gray-500{% endif %}">{{ intro }}</p>
+        <p class="text-sm mt-0.5 max-w-2xl {% if danger %}text-message-error-text/90{% else %}text-gray-600{% endif %}">{{ intro }}</p>
       {% endif %}
     </div>
 
@@ -110,7 +110,7 @@ upload -- a message that describes the symptom and not the cause.
   </div>
 
   {% if footnote %}
-    <p class="text-xs text-gray-500 mt-3 max-w-2xl">{{ footnote }}</p>
+    <p class="text-xs text-gray-600 mt-3 max-w-2xl">{{ footnote }}</p>
   {% endif %}
 </form>
 {% comment %}

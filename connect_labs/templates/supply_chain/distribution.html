@@ -16,7 +16,7 @@
     <i class="fa-solid fa-plus mr-1"></i> Record a run
   </a>
 </div>
-<p class="text-xs text-gray-500 mb-4">
+<p class="text-xs text-gray-600 mb-4">
   Each run posts one movement per line, so a worker's stock on hand is a ledger
   balance rather than a separate figure. A worker is a supply point, which is
   why moving stock to one is the same operation as moving it between stores.
@@ -26,11 +26,11 @@
   <div class="bg-white border border-gray-200 rounded-lg mb-3 overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100 flex flex-wrap items-baseline gap-x-3 gap-y-1">
       <span class="font-medium text-gray-900">{{ run.reference|default:"Run" }}</span>
-      <span class="text-sm text-gray-500">{{ run.distributed_on }}</span>
-      <span class="text-sm text-gray-500">
+      <span class="text-sm text-gray-600">{{ run.distributed_on }}</span>
+      <span class="text-sm text-gray-600">
         from {{ points|dictkey:run.supply_point_id|dictkey:"name"|default:run.supply_point_id }}
       </span>
-      <span class="text-xs text-gray-500 ml-auto">
+      <span class="text-xs text-gray-600 ml-auto">
         {{ run.lines|length }} line{{ run.lines|length|pluralize }} ·
         told by {{ run.source|source_label }}{% if not run.witnessed %} (reported, not witnessed){% endif %}
       </span>
@@ -45,7 +45,7 @@
     <div class="overflow-x-auto" tabindex="0" role="region"
          aria-label="Table, scrolls sideways">
     <table class="min-w-[44rem] w-full text-sm">
-      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
         <tr>
           <th class="text-left px-4 py-2">To</th>
           <th class="text-left px-4 py-2">Batch</th>
@@ -59,7 +59,7 @@
             <td class="px-4 py-2">
               {{ points|dictkey:line.to_supply_point_id|dictkey:"name"|default:line.connect_username }}
               {% if line.connect_username %}
-                <span class="text-xs text-gray-500">({{ line.connect_username }})</span>
+                <span class="text-xs text-gray-600">({{ line.connect_username }})</span>
               {% endif %}
             </td>
             <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
@@ -78,7 +78,7 @@
     </div>
   </div>
 {% empty %}
-  <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-gray-500">
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-gray-600">
     No distribution runs recorded yet.
   </div>
 {% endfor %}

@@ -23,11 +23,6 @@ putting a second amber badge beside the one gap that matters.
       list of requirement names in capitals read as a shouted code.{% endcomment %}
       <span data-testid="spec-not-stated" class="font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">{{ specification.summary }}</span>
     {% endif %}
-    {% comment %}Where each answered figure came from: a figure a supplier's reply
-    supplied says so, with the day; the rest were on the quote.{% endcomment %}
-    {% for source in specification.from_correction %}
-      <div class="text-gray-600 {% if not inline %}mt-1 {% endif %}" data-spec-origin="correction">{{ source }}</div>
-    {% endfor %}
     {% comment %}A figure stated on the quote is shown with its value ("Sachets per
     carton: 150 (stated on the quote)"), so it can be held against the spec.{% endcomment %}
     {% if specification.stated_values %}
@@ -35,10 +30,10 @@ putting a second amber badge beside the one gap that matters.
         <div class="text-gray-600 {% if not inline %}mt-1 max-w-xs{% endif %}" data-spec-origin="quote">{{ value.text }} (stated on the quote)</div>
       {% endfor %}
     {% elif specification.stated_on_quote %}
-      <div class="text-gray-500 {% if not inline %}mt-1 max-w-xs{% endif %}" data-spec-origin="quote">Stated on the quote: {{ specification.stated_on_quote|join:", " }}</div>
+      <div class="text-gray-600 {% if not inline %}mt-1 max-w-xs{% endif %}" data-spec-origin="quote">Stated on the quote: {{ specification.stated_on_quote|join:", " }}</div>
     {% endif %}
     {% if specification.confirmed_by_item %}
-      <div class="text-gray-500 {% if not inline %}mt-1 max-w-xs{% endif %}" data-spec-origin="item">Per the trade item: {{ specification.confirmed_by_item|join:", " }}</div>
+      <div class="text-gray-600 {% if not inline %}mt-1 max-w-xs{% endif %}" data-spec-origin="item">Per the trade item: {{ specification.confirmed_by_item|join:", " }}</div>
     {% endif %}
   </div>
 {% endif %}
