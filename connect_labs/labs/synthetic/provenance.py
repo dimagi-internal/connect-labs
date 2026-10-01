@@ -55,18 +55,20 @@ def all_generated(opportunity_ids: Iterable) -> bool:
 
 
 def replays_real_cases(manifest) -> bool:
-    """True when ``manifest`` carries a mirror-mode transplant pool.
+    """True when ``manifest`` carries a RETIRED mirror-mode transplant pool.
 
-    Mirror mode replays each real case's series with small noise (±3% per case, a
-    1-14 day shift, categorical answers verbatim), so data generated from it is a
-    near-copy of real cases, not invented data. It must never count as generated.
-    Walks the whole dumped manifest so a mirror spec anywhere in it is found.
+    Old mirror profiles replay each real case's series with small noise (±3% per
+    case, a 1-14 day shift, categorical answers verbatim), so data generated from one
+    is a near-copy of real cases, not invented data, and must never count as
+    generated. Current profiles carry mode "modelled": a pool of new cases sampled
+    from models (case_model.py), which is generated data. Walks the whole dumped
+    manifest so a mirror spec anywhere in it is found.
     """
     data = manifest.model_dump() if hasattr(manifest, "model_dump") else manifest
 
     def _walk(node) -> bool:
         if isinstance(node, dict):
-            if node.get("mode") == "mirror" or node.get("transplant_pool"):
+            if node.get("mode") == "mirror":
                 return True
             return any(_walk(v) for v in node.values())
         if isinstance(node, list):

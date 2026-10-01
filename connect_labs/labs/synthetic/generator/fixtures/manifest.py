@@ -256,7 +256,11 @@ class LongitudinalSpec(BaseModel):
     exactly. ``synthetic``: draw per-entity trajectories parametrically from ``fields``.
     """
 
-    mode: Literal["mirror", "synthetic"] = "synthetic"
+    # "modelled": the pool holds NEW cases sampled at profile time from models of the
+    # source's cases (case_model.py), replayed like any pool. "mirror" is the retired
+    # mode whose pool was the real cases lightly perturbed; old manifests still carry
+    # it, and provenance.replays_real_cases keeps their data from counting as generated.
+    mode: Literal["modelled", "mirror", "synthetic"] = "synthetic"
     # Transplant jitter as a fraction of each field's range, applied at replay time.
     jitter_frac: float = Field(ge=0, default=0.03)
     transplant_pool: list[dict[str, Any]] = Field(default_factory=list)
@@ -264,8 +268,8 @@ class LongitudinalSpec(BaseModel):
 
     @model_validator(mode="after")
     def _check_mode(self):
-        if self.mode == "mirror" and not self.transplant_pool:
-            raise ValueError("longitudinal mode 'mirror' requires a non-empty transplant_pool")
+        if self.mode in ("modelled", "mirror") and not self.transplant_pool:
+            raise ValueError(f"longitudinal mode {self.mode!r} requires a non-empty transplant_pool")
         return self
 
 

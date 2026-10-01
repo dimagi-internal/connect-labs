@@ -174,18 +174,17 @@ def test_the_safe_endpoint_holds_arguments_to_the_declared_schema():
 
 
 # ---------------------------------------------------------------------------
-# Synthetic: no mirror, no server paths, no wiping shared demos, no real targets
+# Synthetic: no retired-mirror manifests, no server paths, no wiping shared demos,
+# no real targets. Modelled case timelines ARE allowed: they ship sampled cases.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     ("tool", "arguments"),
     [
-        ("synthetic_profile_opp", {"source_opportunity_id": 1, "out_dir": "gdrive:", "mirror": True}),
         ("synthetic_profile_opp", {"source_opportunity_id": 1, "out_dir": "/tmp/bundles"}),
         ("synthetic_generate_opp", {"bundle_dir": "/app/bundles/opp-1"}),
         ("synthetic_generate_opps_bulk", {"bundle_root": "../../etc"}),
-        ("synthetic_clone_profile", {"spec_yaml": "opportunity_ids: [1]\nmirror: true\n"}),
         ("synthetic_clone_profile", {"spec_yaml": "opportunity_ids: [1]\nbundle_root: /tmp/x\n"}),
         ("synthetic_env_ensure", {"env": "kmc", "fresh": True}),
     ],
@@ -198,8 +197,11 @@ def test_restricted_synthetic_calls_that_are_refused(tool, arguments):
     ("tool", "arguments"),
     [
         ("synthetic_profile_opp", {"source_opportunity_id": 1, "out_dir": "gdrive:"}),
+        ("synthetic_profile_opp", {"source_opportunity_id": 1, "out_dir": "gdrive:", "case_timelines": True}),
+        ("synthetic_profile_opp", {"source_opportunity_id": 1, "out_dir": "gdrive:", "mirror": True}),
         ("synthetic_generate_opp", {"bundle_dir": "gdrive:abc123"}),
         ("synthetic_clone_profile", {"spec_yaml": "opportunity_ids: [1]\n"}),
+        ("synthetic_clone_profile", {"spec_yaml": "opportunity_ids: [1]\ncase_timelines: true\n"}),
         ("synthetic_env_ensure", {"env": "kmc"}),
         ("workflow_get", {"mirror": True}),
     ],
@@ -208,9 +210,40 @@ def test_restricted_synthetic_calls_that_are_allowed(tool, arguments):
     assert visit_access.synthetic_denied_reason(tool, arguments) is None
 
 
-def test_a_mirror_manifest_is_recognised_wherever_the_spec_sits():
+def test_a_retired_mirror_manifest_is_recognised_and_a_modelled_one_is_not():
     assert replays_real_cases({"entities": [{"longitudinal": {"mode": "mirror", "transplant_pool": [{}]}}]})
+    assert not replays_real_cases({"entities": [{"longitudinal": {"mode": "modelled", "transplant_pool": [{}]}}]})
     assert not replays_real_cases({"entities": [{"longitudinal": {"mode": "synthetic", "transplant_pool": []}}]})
+
+
+@pytest.mark.django_db
+def test_a_retired_mirror_manifest_is_refused_and_a_modelled_one_is_not():
+    import yaml
+
+    from connect_labs.labs.synthetic.generator.fixtures.profiler import profile
+    from connect_labs.labs.synthetic.generator.fixtures.tests.test_case_timelines_privacy import _app, _source
+
+    modelled = yaml.safe_load(
+        profile(
+            opportunity_id=10900,
+            user_visits=_source(),
+            user_data=[],
+            opportunity_detail={"name": "KMC"},
+            app_structure=_app(),
+            case_timelines=True,
+            noise_seed=3,
+        )
+    )
+    retired = yaml.safe_load(yaml.safe_dump(modelled))
+    retired["beneficiary_cohorts"][0]["longitudinal"]["mode"] = "mirror"
+
+    def reason(manifest):
+        return visit_access.synthetic_denied_reason(
+            "synthetic_generate_from_manifest", {"opportunity_id": 10900, "manifest_yaml": yaml.safe_dump(manifest)}
+        )
+
+    assert reason(retired)
+    assert reason(modelled) is None
 
 
 @pytest.mark.django_db

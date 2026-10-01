@@ -717,7 +717,10 @@ def test_profile_mirror_emits_transplant_pool_with_persona_owners():
                     "status": "approved",
                     "flagged": False,
                     "entity_id": f"ent_{e}",
-                    "form_json": {"form": {"weight": 1200.0 + 100 * i + e}},
+                    # Cases differ the way real babies do. (Six cases 1 g apart on a
+                    # whole-gram scale leave no new case to draw: every one rounds onto
+                    # a real one, and the privacy gate correctly refuses them all.)
+                    "form_json": {"form": {"weight": 1200.0 + (95 + 4 * e) * i + 37 * e}},
                 }
             )
     app_structure = {
@@ -738,8 +741,8 @@ def test_profile_mirror_emits_transplant_pool_with_persona_owners():
         )
     )
     lng = m.beneficiary_cohorts[0].longitudinal
-    assert lng is not None and lng.mode == "mirror"
-    assert len(lng.transplant_pool) == 6  # one series per source entity
+    assert lng is not None and lng.mode == "modelled"
+    assert len(lng.transplant_pool) == 6  # one sampled case per source case
     persona_ids = {p.id for p in m.flw_personas}
     owners = {s["owner"] for s in lng.transplant_pool}
     assert owners <= persona_ids  # remapped to persona ids, not "asha"/"ben"
@@ -752,8 +755,9 @@ def test_profile_mirror_captures_date_fields_in_transplant_pool():
     from connect_labs.labs.synthetic.generator.fixtures.manifest import Manifest
     from connect_labs.labs.synthetic.generator.fixtures.profiler import profile
 
+    # Five cases: the case model does not model a field seen in fewer (K_MIN).
     visits = []
-    for e in range(3):
+    for e in range(5):
         for i, d in enumerate(["2026-02-01", "2026-02-08", "2026-02-15"]):
             visits.append(
                 {
@@ -794,7 +798,7 @@ def test_profile_mirror_captures_date_fields_in_transplant_pool():
         )
     )
     pool = m.beneficiary_cohorts[0].longitudinal.transplant_pool
-    assert len(pool) == 3
+    assert len(pool) == 5
     for series in pool:
         for v in series["visits"]:
             # 2026-01-20 is 12 days before the 2026-02-01 first visit.
