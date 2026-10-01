@@ -497,9 +497,15 @@ def network_stock(access, opportunity_id=None, item_id=None, kind=None, window_d
 
 
 def network_stock_payload(
-    access, opportunity_id=None, item_id=None, kind=None, window_days=resupply.DEFAULT_WINDOW_DAYS, grouped=False
+    access,
+    opportunity_id=None,
+    item_id=None,
+    kind=None,
+    window_days=resupply.DEFAULT_WINDOW_DAYS,
+    several_items="summed",
+    per_point=False,
 ):
-    """The network_stock operation's answer; `grouped` rates every point in one pass per item (the Stock page)."""
+    """The network_stock operation's answer. `several_items="refuse"` is the Stock page's (network.network_stock)."""
     item = access._resolve_item(item_id)
     rows = network.network_stock(
         access.program_id,
@@ -507,7 +513,8 @@ def network_stock_payload(
         item=item,
         kind=kind,
         window_days=window_days,
-        grouped=grouped,
+        several_items=several_items,
+        per_point=per_point,
     )
     return {
         "summary": network.summarise(rows),
@@ -596,7 +603,8 @@ def _plain(value):
         "Record worker-reported stock figures from a CommCare deliver form. Idempotent on "
         "form_submission_id. A username with no user_held supply point comes back in `unmatched` "
         "rather than creating one — pass create_missing_points only when the usernames are known "
-        "good. Every row lands as a self_reported count beside the ledger; it does not move it."
+        "good. Every row lands as a self_reported count beside the ledger; it does not move it. "
+        "Labs-only programmes and opportunities only until the product owner says otherwise."
     ),
     input_schema=obj(
         {
@@ -633,8 +641,14 @@ def stock_report_ingest(
     item_id=None,
     create_missing_points=False,
 ):
+    from connect_labs.supply_chain import scopes
     from connect_labs.supply_chain.stock.services import ingest
 
+    # Before any write, as visit_consumption_ingest: these rows are read from
+    # an opportunity's visits, and only a labs-only opportunity of a labs-only
+    # programme may be read into the ledger until the product owner says otherwise.
+    scopes.require_synthetic(access.program_id, "record worker stock reports")
+    scopes.require_programme_opportunity(access.program_id, opportunity_id)
     return ingest.ingest_stock_reports(
         access,
         rows=rows,

@@ -15,7 +15,7 @@ goes unnoticed.
 
 from datetime import date, timedelta
 
-from django.db.models import Sum
+from django.db.models import F, Min, Q, Sum
 
 from connect_labs.supply_chain import records
 from connect_labs.supply_chain.models import Contract, Item, Movement, StockCount, SupplyPoint
@@ -214,6 +214,46 @@ def _grouped_rates(program_id, points, resolved, on_date, window_days) -> dict:
     return rates
 
 
+def _rates_across_items(program_id, points, on_date, window_days) -> dict:
+    """{supply point id: (amc, basis)} with no one item: `resupply.plan(item=None)`'s rate, grouped.
+
+    A point holding several items, or stock recorded against the product with
+    no trade item, was rated by a plan over every movement it has. This is
+    that rate for every such point in three grouped queries: which points have
+    ever dispensed (`resupply.demand_basis`), and the window total and earliest
+    day of each basis (`resupply._demand`), through the same `rate_from`.
+    """
+    if not points:
+        return {}
+    end = on_date or date.today()
+    start = end - timedelta(days=window_days)
+    ids = [point.pk for point in points]
+    moves = Movement.objects.for_program(program_id).filter(from_supply_point_id__in=ids, occurred_on__lte=end)
+
+    dispensing = set(moves.filter(kind="consumption").values_list("from_supply_point_id", flat=True).distinct())
+    consumed = moves.filter(kind="consumption", reversal__isnull=True)
+    released = moves.filter(kind__in=resupply.RELEASE_KINDS, to_supply_point__isnull=False).exclude(
+        to_supply_point_id=F("from_supply_point_id")
+    )
+    demand: dict = {}
+    for basis, qs in ((resupply.CONSUMPTION, consumed), (resupply.RELEASES, released)):
+        for row in qs.values("from_supply_point_id", "quantity_unit").annotate(
+            window=Sum("quantity", filter=Q(occurred_on__gte=start)), earliest=Min("occurred_on")
+        ):
+            units, earliest = demand.get((basis, row["from_supply_point_id"]), ({}, None))
+            if row["window"] is not None:
+                units[row["quantity_unit"]] = row["window"]
+            earliest = row["earliest"] if earliest is None else min(earliest, row["earliest"])
+            demand[(basis, row["from_supply_point_id"])] = (units, earliest)
+
+    rates = {}
+    for pk in ids:
+        basis = resupply.CONSUMPTION if pk in dispensing else resupply.RELEASES
+        units, earliest = demand.get((basis, pk), ({}, None))
+        rates[pk] = (resupply.rate_from(ledger.collapse(units, None, None), earliest, end, window_days, basis), basis)
+    return rates
+
+
 def _no_single_item(on_hand, item_ids):
     """The (amc, basis) of a point with no one item: never a rate summed across items."""
     if isinstance(on_hand, Unconfirmed):
@@ -223,31 +263,44 @@ def _no_single_item(on_hand, item_ids):
     return unconfirmed(NOT_ONE_ITEM), resupply.RELEASES
 
 
-def network_stock(
+# What a point holding several items is rated on (see network_stock).
+SEVERAL_ITEMS = ("summed", "refuse")
+
+
+def network_stock(  # noqa: C901
     program_id,
     opportunity_id=None,
     item=None,
     kind=None,
     on_date=None,
     window_days=resupply.DEFAULT_WINDOW_DAYS,
-    grouped=False,
+    several_items="summed",
+    per_point=False,
 ) -> list[dict]:
     """One row per supply point: what it holds, and how long that lasts.
 
     Rows carry the point's own min/max band, so "below minimum" means below
     the band this point is managed to rather than a number chosen here.
 
-    `grouped` takes each point's rate from belief.py's grouped SQL -- one
-    pass per item, whatever the number of points -- instead of a
-    `resupply.plan` per point, which grows with every worker a visit makes a
-    supply point. Cover, status and resupply are then classified by the same
-    `resupply.cover` from the row's own balance. A point holding several
-    items gets no rate: a figure spanning them is not one anybody can act on,
-    and asking for it cost queries per point. A point whose stock was
-    recorded against the product alone (no trade item) is still planned on
-    its own. The Stock page uses this; the other callers still plan per point
-    (a recorded follow-up).
+    Every point's rate comes from grouped SQL -- belief.py, one pass per item
+    held, plus one pass for the points with no one item -- so the query count
+    does not grow with the points. A visit makes every worker a supply point,
+    and a `resupply.plan` per point grew with the roster. Cover, status and
+    resupply are then classified by the same `resupply.cover` from the row's
+    own balance, so every figure is the one a plan per point gave.
+
+    `several_items` is what a point holding several items is rated on:
+    "summed", the rate across all of them that a plan with no item gives (the
+    checks, the map, the summary); or "refuse", no rate, because a figure
+    spanning items is not one anybody can act on (the Stock page, which asks
+    the reader to choose an item).
+
+    `per_point` plans each point on its own, as every caller did before. No
+    caller uses it: it is the reference the grouped figures are tested
+    against (tests/test_belief_callers.py).
     """
+    if several_items not in SEVERAL_ITEMS:
+        raise ValueError(f"several_items must be one of {SEVERAL_ITEMS}")
     # Not the road: goods on it are reported at their destination as in
     # transit (ledger.in_transit), never as a point holding stock.
     points = SupplyPoint.objects.filter(program_id=program_id, status="active").exclude(kind="in_transit")
@@ -285,7 +338,20 @@ def network_stock(
         item_ids = balances.get(point.pk, ({}, set()))[1]
         return items_by_id.get(next(iter(item_ids))) if len(item_ids) == 1 else None
 
-    rates = _grouped_rates(program_id, points, resolved, on_date, window_days) if grouped else None
+    def across_items(point):
+        # No one item to rate on: stock recorded against the product alone
+        # (on every caller), or several items when the caller wants their
+        # summed rate.
+        units, item_ids = balances.get(point.pk, ({}, set()))
+        return resolved(point) is None and ((not item_ids and units) or several_items == "summed")
+
+    rates = summed = None
+    if not per_point:
+        rates = _grouped_rates(program_id, points, resolved, on_date, window_days)
+        summed = _rates_across_items(program_id, [p for p in points if across_items(p)], on_date, window_days)
+    # resupply.average_monthly_consumption refuses a short window before it
+    # reads a movement; rate_from alone would give a different reason.
+    too_short = resupply.window_too_short(window_days)
 
     rows = []
     for point in points:
@@ -313,18 +379,16 @@ def network_stock(
         # by a sachet consumption rate, which needs the pack size. Without it
         # every point reported "unknown" for a reason that was not about the
         # data at all.
-        if rates is None or (for_conversion is None and not item_ids and units):
-            # Per point: every caller but the Stock page, and on it only a point
-            # whose stock was recorded against the product with no trade item,
-            # which belief.py (per item) cannot rate. A point a visit made
-            # always holds a trade item, so this does not grow with the roster.
+        if per_point:
             plan = resupply.plan(program_id, point, item=for_conversion, as_of=on_date, window_days=window_days)
         else:
             # The balance as `plan` reads it (ledger.balance: the unit held, else
             # the pack), so cover and the resupply quantity come out in the same
             # unit and to the same precision as a per-point plan would give.
             held = ledger.collapse(units, for_conversion, None)
-            amc, basis = rates.get(point.pk) or _no_single_item(held, item_ids)
+            amc, basis = rates.get(point.pk) or summed.get(point.pk) or _no_single_item(held, item_ids)
+            if too_short is not None and not resupply._is_durable(for_conversion):
+                amc = too_short
             plan = resupply.cover(held, amc, basis, point, item=for_conversion, window_days=window_days)
         rows.append(
             {

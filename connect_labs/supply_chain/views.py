@@ -815,16 +815,15 @@ class StockView(OperationBase):
         context["items"] = self.op("item_list")
         context["item_id"] = int(item_id) if item_id else None
         context["opportunity_id"] = opportunity_id
-        # The network_stock operation's answer, with every point rated in one
-        # grouped pass per item (belief.py) rather than a plan per point: a
-        # worker is a supply point, so the roster is the row count.
+        # The network_stock operation's answer, except that a point holding
+        # several items gets no rate: the page asks the reader to choose one.
         from connect_labs.supply_chain.stock.operations import network_stock_payload
 
         context["network"] = network_stock_payload(
             _access(self.request),
             opportunity_id=int(opportunity_id) if opportunity_id else None,
             item_id=context["item_id"],
-            grouped=True,
+            several_items="refuse",
         )
         from connect_labs.supply_chain.stock.services.resupply import NO_CONSUMPTION_YET
 
