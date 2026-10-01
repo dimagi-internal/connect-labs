@@ -13,6 +13,7 @@ Becomes:
 """
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -267,6 +268,13 @@ class DataSourceConfig:
     def __post_init__(self):
         if self.type not in ("connect_csv", "cchq_forms", "ocs_sessions", "connect_export", "cchq_cases"):
             raise ValueError(f"Invalid data source type: {self.type}")
+        # One path SEGMENT (audit_reports, assigned_tasks, ...). The fetcher builds
+        # f".../export/opportunity/{opp}/{endpoint}/" and httpx collapses "..", so a
+        # segment carrying "/" or ".." would read another opportunity's export.
+        if self.endpoint and not re.fullmatch(r"[a-z][a-z0-9_]*", self.endpoint):
+            raise ValueError(
+                f"data_source.endpoint must be a single export name like 'audit_reports'; got {self.endpoint!r}"
+            )
         if self.domain and self.type not in ("cchq_forms", "cchq_cases"):
             raise ValueError("data_source.domain is only valid for type='cchq_forms' or 'cchq_cases'")
         if self.domain and self.type == "cchq_forms" and not self.app_id:

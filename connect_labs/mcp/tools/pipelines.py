@@ -478,6 +478,23 @@ def pipeline_preview(
         # provided; otherwise the saved schema).
         error_hint_schema = schema_override if schema_override is not None else (definition.data or {}).get("schema")
 
+        # Without access to user visit data, only the opportunity's own visits may be
+        # read -- generated ones, which visit_access has already checked. Every other
+        # data source (a Connect export endpoint, OCS sessions under the server's key,
+        # CommCare HQ forms/cases) reads a REAL system that the opportunity check
+        # cannot see, whatever opportunity the call names.
+        from ..visit_access import caller_restricted
+
+        if caller_restricted():
+            source_type = ((error_hint_schema or {}).get("data_source") or {}).get("type") or "connect_csv"
+            if source_type != "connect_csv":
+                raise MCPToolError(
+                    "PERMISSION_DENIED",
+                    f"This pipeline reads data_source.type={source_type!r}, which is real data outside the "
+                    "opportunity; without access to user visit data a preview may only read the "
+                    "opportunity's own (generated) visits.",
+                )
+
         merged_rows: list[dict] = []
         per_opp_metadata: dict[str, dict] = {}
         first_error: str | None = None

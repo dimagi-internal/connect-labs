@@ -126,6 +126,75 @@ RESOLVERS: dict[str, Resolver] = {
 }
 
 
+#: Arguments naming where a profile bundle is written or read. Anything but a Drive
+#: folder ("gdrive:...") is a path on the server's own disk.
+_BUNDLE_PATH_ARGS = ("out_dir", "bundle_dir", "bundle_root")
+
+
+def synthetic_denied_reason(tool_name: str, arguments: dict) -> str | None:
+    """Why a restricted caller may not make this synthetic call, or None.
+
+    * Mirror mode replays real cases near-verbatim (``provenance.replays_real_cases``),
+      so neither profiling nor generating with it is open without visit access.
+    * Bundles live in Drive; a local path is the server's own filesystem.
+    * ``synthetic_env_ensure(fresh=true)`` deletes shared demo data for everyone.
+    """
+    if not tool_name.startswith("synthetic_"):
+        return None
+    no_visit = "without access to user visit data"
+    if arguments.get("mirror"):
+        return (
+            f"mirror=true replays real cases near-verbatim, so it is not available {no_visit}. "
+            "Profile without mirror (the default)."
+        )
+    paths = {name: arguments.get(name) for name in _BUNDLE_PATH_ARGS if arguments.get(name) is not None}
+    spec_yaml = arguments.get("spec_yaml")
+    if spec_yaml:
+        from connect_labs.labs.synthetic.cohort import CohortSpec
+
+        try:
+            spec = CohortSpec.from_yaml(spec_yaml)
+        except ValueError:
+            return None  # the tool reports the malformed spec itself
+        if spec.mirror:
+            return f"This cohort spec sets mirror: true, which replays real cases; not available {no_visit}."
+        paths["bundle_root"] = spec.bundle_root
+    for name, value in paths.items():
+        if not str(value).startswith("gdrive:"):
+            return f"{name} must be a Drive folder ('gdrive:' or 'gdrive:<folder_id>') {no_visit}; got {value!r}."
+    if tool_name == "synthetic_env_ensure" and arguments.get("fresh"):
+        return f"fresh=true deletes a shared demo environment for everyone, so it is not available {no_visit}."
+    if tool_name == "synthetic_generate_from_manifest" and arguments.get("manifest_yaml"):
+        from connect_labs.labs.synthetic.generator.fixtures.manifest import Manifest
+        from connect_labs.labs.synthetic.provenance import replays_real_cases
+
+        try:
+            manifest = Manifest.from_yaml(arguments["manifest_yaml"])
+        except Exception:  # noqa: BLE001 -- the tool reports the malformed manifest itself
+            return None
+        if replays_real_cases(manifest):
+            return f"This manifest is a mirror profile, which replays real cases; not available {no_visit}."
+    return None
+
+
+def caller_restricted() -> bool:
+    """True when the current MCP call must keep to "no user visit data".
+
+    For tools that hold STORED visit-derived data (a completed run's snapshot). The gate
+    above checks an opportunity's provenance as it is now; a snapshot stored before the
+    opportunity was (re)generated, or while its workflow also spanned a real one, was
+    built from whatever it read then. So a restricted caller is never served stored run
+    data -- it gets a live build over today's (generated) data, or a refusal.
+    """
+    from fastmcp.server.dependencies import get_access_token
+
+    from .server import restricted_call
+
+    # Outside an MCP request get_access_token() is None and there is no endpoint mark,
+    # so this is False there -- and an unexpected error raises rather than failing open.
+    return restricted_call(get_access_token())
+
+
 def denied_reason(user, tool_name: str, arguments: dict) -> str | None:
     """Why a restricted caller may not run this generated-only call, or None to allow it."""
     resolver = RESOLVERS.get(tool_name)

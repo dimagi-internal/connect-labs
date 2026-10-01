@@ -67,6 +67,13 @@ def get_opportunity_apps(user, opportunity_id: int, app_type: str = "both") -> d
             f"Invalid app_type {app_type!r}. Must be one of: {', '.join(VALID_APP_TYPES)}.",
         )
 
+    # Interpolated into a URL path, so it must be an integer and nothing else: a string
+    # like "999/attachment_signed_url/?blob_id=..." would reach another export endpoint.
+    try:
+        opportunity_id = int(opportunity_id)
+    except (TypeError, ValueError):
+        raise MCPToolError("INVALID_SCHEMA", f"opportunity_id must be an integer; got {opportunity_id!r}.")
+
     token = require_connect_token(user)
     client = LabsRecordAPIClient(access_token=token)
     try:

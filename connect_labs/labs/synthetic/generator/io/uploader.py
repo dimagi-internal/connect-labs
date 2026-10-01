@@ -86,6 +86,7 @@ def upload_and_register(
     opportunity_id: int,
     opportunity_name: str,
     fixtures: dict[str, Any],
+    replays_real_cases: bool = False,
 ) -> UploadResult:
     result = upload_fixtures(drive=drive, opportunity_id=opportunity_id, fixtures=fixtures)
     existing = SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id).first()
@@ -101,8 +102,13 @@ def upload_and_register(
     # We just replaced the fixture bytes, so every cache derived from them is
     # stale — including the analysis rows, which are keyed on config_hash and so
     # survive even a brand-new pipeline (#1034).
-    # The generator wrote this folder, so the opp's data is generated.
-    mark_generated(opportunity_id, result.folder_id)
+    # The generator wrote this folder, so the opp's data is generated -- unless the
+    # manifest replays real cases (mirror mode), which is a near-copy of real data.
+    # Then the mark is cleared, so a regeneration cannot keep an earlier one.
+    if replays_real_cases:
+        SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id).update(generated_folder_id=None)
+    else:
+        mark_generated(opportunity_id, result.folder_id)
     invalidate_synthetic_caches(opportunity_id)
     # And the count on the row describes whatever was there before (#1197).
     resync_visit_count(row, previous_folder_id=previous_folder_id)
