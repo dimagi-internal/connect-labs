@@ -131,6 +131,13 @@ class TenderDetailView(_Base):
             if getattr(self.request, "supply_as_of", None)
             else self.op("tender_drafts_render", tender_id=tender_id)
         )
+        # Each supplier's first draft carries an anchor, so the comparison's
+        # "Draft email to <supplier>" opens the panel at that supplier's.
+        anchored = set()
+        for d in (context["drafts"] or {}).get("drafts") or []:
+            if d.get("supplier_id") is not None and d["supplier_id"] not in anchored:
+                anchored.add(d["supplier_id"])
+                d["anchor"] = f"draft-supplier-{d['supplier_id']}"
         context["quotes"] = self.op("quote_list", tender_id=tender_id)
         # Each quote's trade item, by name and -- for a kit -- contents. Three
         # co-pack quotes from one distributor read as the same offer three
@@ -316,7 +323,32 @@ def table_columns(comparison) -> list:
         for row in rows
     ):
         columns = [column for column in columns if column.get("key") != as_quoted]
-    return [column for column in columns if column.get("key") not in folded_columns(comparison, columns)]
+    columns = [column for column in columns if column.get("key") not in folded_columns(comparison, columns)]
+    return _one_unit_column(comparison, columns)
+
+
+UNIT_KEYS = ("usd_per_pack_normalized", "usd_per_course", "usd_per_child_treated")
+
+
+def _one_unit_column(comparison, columns) -> list:
+    """Per pack, per course and per child treated as ONE column when they are one figure.
+
+    When 1 carton = 1 course = 1 child in every ranked row, three equal columns
+    read as a repeated number; one headed "USD per carton (= 1 course = 1 child
+    treated)" says the figure once and why it stands for all three.
+    """
+    equivalence = unit_equivalence(comparison, columns)
+    if not equivalence:
+        return columns
+    out = []
+    for column in columns:
+        key = column.get("key")
+        if key == UNIT_KEYS[0]:
+            column = {**column, "label": f"{column.get('label')} (= 1 course = 1 child treated)"}
+        elif key in UNIT_KEYS[1:]:
+            continue
+        out.append(column)
+    return out
 
 
 def unit_equivalence(comparison, columns) -> str:

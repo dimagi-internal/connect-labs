@@ -51,6 +51,16 @@ def _blockers(row) -> list:
 
 
 @register.filter
+def asks_supplier(row):
+    """Whether any blocker on a row is cleared by asking the supplier (not by our own work)."""
+    return any(
+        ((b or {}).get("question") or {}).get("audience") not in (None, "internal")
+        for b in _blockers(row or {})
+        if (b or {}).get("question")
+    )
+
+
+@register.filter
 def all_missing_one(rows):
     """Whether every blocked row is kept out of the ranking by exactly one gap."""
     rows = list(rows or [])

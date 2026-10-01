@@ -333,9 +333,11 @@
         {% if row.item_name %}<span class="text-sm font-normal text-gray-700">· {{ row.item_name }}</span>{% endif %}
         {% include 'supply_chain/procurement/_ai_badge.html' with actor=ai_quotes|dictkey:row.quote_id %}
       </h3>
-      {% comment %}What was offered and when, as the supplier stated it: blocked from
-      the ranking is not the same as having no price.{% endcomment %}
-      <p data-testid="as-quoted" class="text-xs text-gray-600 mb-1">Quoted {{ row.as_quoted }}{% if row.received_on %} · received {{ row.received_on|day }}{% endif %}</p>
+      {% comment %}What was offered, as the supplier stated it, on its own line under the
+      name -- blocked from the ranking is not the same as having no price -- and when it
+      arrived, as the metadata it is.{% endcomment %}
+      <p data-testid="as-quoted" class="text-sm text-gray-900">Quoted {{ row.as_quoted }}{% if row.as_quoted_note %} <span data-testid="as-quoted-note" class="text-gray-600">({{ row.as_quoted_note }})</span>{% endif %}</p>
+      {% if row.received_on %}<p data-testid="received-on" class="text-xs text-gray-600 mb-1">Received {{ row.received_on|day }}</p>{% endif %}
       {% comment %}
       Every fact that keeps this offer out of the ranking, each with the one
       question that clears it, first -- the same gaps, from the same rows, as
@@ -354,6 +356,11 @@
           </p>
         {% endif %}
       {% endfor %}
+      {% comment %}The email that asks it, already drafted on the tender's drafts panel,
+      opened at this supplier's.{% endcomment %}
+      {% if not supply_as_of and row|asks_supplier %}
+        <p class="mb-1 text-xs"><a data-testid="draft-email-link" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#draft-supplier-{{ row.supplier_id }}" class="text-brand-indigo hover:underline">Draft email to {{ row.supplier_name }}</a></p>
+      {% endif %}
       {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
       {% include "supply_chain/procurement/_specification.html" with specification=row.specification hide_not_stated=True %}
       {% with rest=row|also_confirm unstated=row|not_blocking %}

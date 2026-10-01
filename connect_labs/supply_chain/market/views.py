@@ -157,7 +157,40 @@ def _tender_page(request, listed):
         delivered_to=_delivered_to_words(tender.delivery_points or []),
         posted_by=_posted_by(request, tender, on_program),
         posted_on=_posted_on(tender),
+        hidden_from_suppliers=_hidden_from_suppliers(tender) if previewing else "",
+        # The hero's "← OPEN TENDERS" already leads back to the market; a tab
+        # row holding nothing but "Open tenders" under it said it twice.
+        hide_lone_tab=not tender.owner_org_id,
     )
+
+
+def _hidden_from_suppliers(tender) -> str:
+    """ "3 quotes and their prices · 2 email excerpts · 9 history entries": what the
+    program keeps from a supplier on this tender, counted -- never shown.
+
+    For the owner's preview only (the caller checks): a supplier is never told
+    how many quotes a tender holds. "" when the tender holds none of the three.
+    """
+    from connect_labs.supply_chain.history.timeline import timeline_for_tender
+    from connect_labs.supply_chain.models import Quote
+
+    def plural(n, word):
+        return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+    quotes = sum(1 for q in Quote.objects.filter(tender=tender, tender__program_id=tender.program_id) if q.is_live)
+    entries = timeline_for_tender(tender.pk, program_id=tender.program_id)
+    emails = sum(1 for e in entries if e.excerpt and e.source_kind == "Email")
+    other = sum(1 for e in entries if e.excerpt and e.source_kind != "Email")
+    parts = []
+    if quotes:
+        parts.append(f"{plural(quotes, 'quote')} and {'its price' if quotes == 1 else 'their prices'}")
+    if emails:
+        parts.append(plural(emails, "email excerpt"))
+    if other:
+        parts.append(plural(other, "source excerpt"))
+    if entries:
+        parts.append(f"{len(entries)} history {'entry' if len(entries) == 1 else 'entries'}")
+    return " · ".join(parts)
 
 
 def _posted_on(tender):

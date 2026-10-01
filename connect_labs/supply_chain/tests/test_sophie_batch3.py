@@ -306,8 +306,8 @@ class TestTheSourceSaysWhereItCameFrom:
         live = client_in_program.get(url).content.decode()
         assert (
             _source_heading(live)
-            == "Email from Northwind Foods, recorded by ACE (agent) on 20 Aug 2026 · received again 28 Aug 2026, "
-            "recorded once"
+            == "Email from Northwind Foods, recorded by ACE (agent) on 20 Aug 2026 · forwarded again 28 Aug 2026 "
+            "— recorded once"
         )
         # Before it arrived again, it had not.
         past = client_in_program.get(url, {"as_of": "2026-08-25"}).content.decode()
@@ -388,8 +388,8 @@ class TestTheOverview:
         standing = body[
             body.index('id="supply-standing"') : body.index("</table>", body.index('id="supply-standing"'))
         ]
-        shown = re.search(r'data-testid="award-why"[^>]*>why: (.*?)</span>', standing).group(1)
-        # In full since batch 6; the cell wraps it.
+        shown = re.search(r'data-testid="award-why"[^>]*><span[^>]*>Why:</span> (.*?)</p>', standing).group(1)
+        # In full since batch 6; a full-width row of its own since batch 7.
         assert shown == why
         tenders = body[body.index(">Tenders</h2>") :]
         tenders = tenders[: tenders.index("</table>")]

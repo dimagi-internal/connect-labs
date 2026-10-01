@@ -230,8 +230,9 @@ class TestTheBasisFlagNamesWhatTheComparisonBlocks:
         assert {r["supplier_name"] for r in blocked} == {"Northwind Foods", "Sahel Nutrition"}
 
         body = _home(home_client)
+        # Since batch 7 a several-supplier flag is a one-line marker that folds open.
         rendered = re.search(
-            r'<span data-testid="stale-flag" title="([^"]*)"\s*class="([^"]*)">(.*?)</span></span>', body, re.S
+            r'<details data-testid="stale-flag" title="([^"]*)" class="([^"]*)">(.*?)</details>', body, re.S
         )
         assert rendered.group(1) == BLOCKED_RULE
         assert "amber" in rendered.group(2) and "red" not in rendered.group(2)
