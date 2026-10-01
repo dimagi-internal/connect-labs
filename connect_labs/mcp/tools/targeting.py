@@ -1078,3 +1078,223 @@ def targeting_compare_criteria(
         "empty_because_unanswerable": bool(unanswerable and not rows),
         "advice": advice,
     }
+
+
+def _area_rate(indicator: str, iso_code: str, area: str, admin_level: int, method: str | None = None):
+    """One area's value for an indicator, read through the same selection the map uses.
+
+    Selecting with a threshold every area clears keeps this on ``select_above`` --
+    the function behind the page, the download and ``targeting_select`` -- so the
+    figure a cost-effectiveness answer is built on is the figure the map shows for
+    that place, method and all. Returns ``(Resolved | None, method_code)``.
+    """
+    from connect_labs.labs.indicators import measures
+
+    everything = 1e12 if indicator in measures.LOWER_IS_WORSE else -1e12
+    selection, _, chosen = _selection(
+        indicator, everything, "subnational", method, [iso_code], rollup=False, admin_level=admin_level
+    )
+    wanted = area.strip().lower()
+    for row in selection.areas:
+        if row.name.strip().lower() == wanted:
+            return row.values.get(indicator), chosen
+    return None, chosen
+
+
+def _provenance(resolved, method_code: str) -> dict:
+    return {
+        "value": round(resolved.value, 3),
+        "source": resolved.source_ref or resolved.source,
+        "year": resolved.measured_year,
+        "method": method_code,
+        "provenance": resolved.provenance,
+        "inherited": resolved.inherited,
+        "sample_unweighted": resolved.sample_unweighted,
+        "small_sample": resolved.small_sample,
+    }
+
+
+@register(
+    name="targeting_cost_effectiveness",
+    description=(
+        "What a round of spend BUYS in one area, not just what it costs: under-5 deaths averted, "
+        "cost per death averted and the multiple of GiveWell's benchmark (bar 6x), for door-to-door "
+        "ORS. The chain is GiveWell's ORS/zinc CEA (Aug 2023, as applied to CHAI Bauchi), reproduced "
+        "-- every fixed parameter is returned with its source. Two inputs make the answer the area's "
+        "own and both come from the registry with provenance: baseline ORS coverage (the "
+        "'ors_coverage' value the map shows) and direct diarrhoea mortality, DERIVED from GiveWell's "
+        "Bauchi figure scaled by the area's under-5 mortality over Bauchi's (an assumption, stated "
+        "as one; override either with a better figure). Returns the result, the inputs with where "
+        "each came from, a price x coverage sensitivity grid, the break-even price for the bar, and "
+        "the benefits NOT counted (zinc, chlorine, hygiene, transmission) -- so every figure is a "
+        "floor on the ORS benefit alone. Read 'caveats' before quoting: a small-sample coverage "
+        "figure or an inherited mortality rate is named there. This is a modelled estimate, not "
+        "measured impact."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "iso_code": {"type": "string", "description": "ISO-3, e.g. 'NGA'."},
+            "area": {"type": "string", "description": "Region name as targeting_select returns it, e.g. 'Borno'."},
+            "spend": {"type": "number", "description": "Total USD for the round, all-in."},
+            "unit_cost": {"type": "number", "description": "USD per verified household visit, all-in."},
+            "children_per_household": {
+                "type": "number",
+                "default": 1.2,
+                "description": (
+                    "Under-5s per household visited. Default 1.2; use 1.0 for a conservative case. "
+                    "A Connect visit can record the real count, which beats any default."
+                ),
+            },
+            "baseline_ors_coverage": {
+                "type": "number",
+                "description": (
+                    "Override the registry's ORS coverage (share of episodes treated, 0-1). Use when "
+                    "a fresher local figure exists -- e.g. outbreak-era humanitarian distribution."
+                ),
+            },
+            "diarrhoea_mortality": {
+                "type": "number",
+                "description": "Override direct diarrhoea deaths per 1,000 under-5s per year.",
+            },
+            "admin_level": {"type": "integer", "default": 1, "description": "1 regions, 2 districts."},
+            "intervention": {"type": "string", "enum": ["ors"], "default": "ors"},
+        },
+        "required": ["iso_code", "area", "spend", "unit_cost"],
+        "additionalProperties": False,
+    },
+)
+def targeting_cost_effectiveness(
+    user,
+    *,
+    iso_code,
+    area,
+    spend,
+    unit_cost,
+    children_per_household=1.2,
+    baseline_ors_coverage=None,
+    diarrhoea_mortality=None,
+    admin_level=1,
+    intervention="ors",
+):
+    from connect_labs.labs.indicators import cost_effectiveness as ce
+
+    if intervention not in ce.INTERVENTIONS:
+        raise MCPToolError(
+            "BAD_REQUEST", f"Unknown intervention {intervention!r}. Supported: {', '.join(ce.INTERVENTIONS)}."
+        )
+    for name, value in (
+        ("spend", spend),
+        ("unit_cost", unit_cost),
+        ("children_per_household", children_per_household),
+    ):
+        if value is None or value <= 0:
+            raise MCPToolError("BAD_REQUEST", f"{name} must be a positive number, got {value!r}")
+    iso = iso_code.upper()
+    caveats: list[str] = []
+
+    # Baseline ORS coverage: the registry's, unless the caller knows better.
+    coverage_in: dict
+    if baseline_ors_coverage is not None:
+        if not 0 <= baseline_ors_coverage < 1:
+            raise MCPToolError("BAD_REQUEST", "baseline_ors_coverage is a share between 0 and 1 (e.g. 0.61).")
+        coverage = float(baseline_ors_coverage)
+        coverage_in = {"value": coverage, "source": "caller override", "overridden": True}
+    else:
+        resolved, method_code = _area_rate("ors_coverage", iso, area, admin_level)
+        if resolved is None:
+            raise MCPToolError(
+                "BAD_REQUEST",
+                f"No ORS coverage for {area!r} in {iso} at admin level {admin_level}. Check the name with "
+                "targeting_select (indicator 'ors_coverage', the same iso_code), or pass "
+                "baseline_ors_coverage explicitly.",
+            )
+        coverage = resolved.value / 100.0
+        coverage_in = {**_provenance(resolved, method_code), "share": round(coverage, 4), "overridden": False}
+        if resolved.small_sample:
+            caveats.append(
+                f"ORS coverage for {area} rests on {resolved.sample_unweighted} unweighted cases, which the "
+                "source flags as too thin to rely on. Quote the sensitivity row, not the point estimate."
+            )
+        if resolved.inherited:
+            caveats.append(f"ORS coverage for {area} was measured at {resolved.measured_at_label}, not in {area}.")
+    if coverage >= 1:
+        raise MCPToolError("BAD_REQUEST", "Baseline ORS coverage of 100% leaves nothing for a campaign to add.")
+
+    # Direct diarrhoea mortality: derived from Bauchi unless overridden.
+    mortality_in: dict
+    if diarrhoea_mortality is not None:
+        if diarrhoea_mortality <= 0:
+            raise MCPToolError("BAD_REQUEST", "diarrhoea_mortality must be positive.")
+        mortality = float(diarrhoea_mortality)
+        mortality_in = {"value": mortality, "source": "caller override", "overridden": True}
+    else:
+        area_u5, u5_method = _area_rate("u5mr", iso, area, admin_level)
+        anchor_u5, _ = _area_rate("u5mr", ce.ANCHOR_ISO, ce.ANCHOR_AREA, 1, method=u5_method)
+        if area_u5 is None or anchor_u5 is None:
+            missing = area if area_u5 is None else f"{ce.ANCHOR_AREA} (the anchor)"
+            raise MCPToolError(
+                "BAD_REQUEST",
+                f"No under-5 mortality for {missing} to derive diarrhoea mortality from. Pass "
+                "diarrhoea_mortality explicitly (direct diarrhoea deaths per 1,000 under-5s per year).",
+            )
+        mortality = ce.derived_diarrhoea_mortality(area_u5.value, anchor_u5.value)
+        mortality_in = {
+            "value": round(mortality, 3),
+            "overridden": False,
+            "derivation": (
+                f"{ce.ANCHOR_DIARRHOEA_MORTALITY.value} (GiveWell, Bauchi) x {area} U5MR "
+                f"{area_u5.value:g} / Bauchi U5MR {anchor_u5.value:g}"
+            ),
+            "assumption": "Diarrhoea's share of under-5 deaths is held at Bauchi's.",
+            "area_u5mr": _provenance(area_u5, u5_method),
+            "anchor_u5mr": _provenance(anchor_u5, u5_method),
+        }
+        if area_u5.inherited:
+            caveats.append(f"Under-5 mortality for {area} was measured at {area_u5.measured_at_label}.")
+        caveats.append(
+            "Diarrhoea mortality is derived, not measured: it assumes diarrhoea's share of under-5 deaths "
+            "matches Bauchi's. Survey diarrhoea prevalence can disagree with that ratio; pass "
+            "diarrhoea_mortality to test another figure."
+        )
+
+    try:
+        result = ce.ors_chain(
+            spend=spend,
+            unit_cost=unit_cost,
+            children_per_household=children_per_household,
+            baseline_coverage=coverage,
+            diarrhoea_mortality=mortality,
+        )
+    except ValueError as exc:
+        raise MCPToolError("BAD_REQUEST", str(exc)) from None
+
+    caveats.append(
+        "One round is credited with a full year of ORS benefit, as in GiveWell's model; the uptake gain is "
+        "Wagner et al.'s trial effect after GiveWell's validity discounts, not a measured Connect effect."
+    )
+    return {
+        "intervention": intervention,
+        "iso_code": iso,
+        "area": area,
+        "admin_level": admin_level,
+        "inputs": {
+            "spend": spend,
+            "unit_cost": unit_cost,
+            "households": round(result.households),
+            "children_per_household": children_per_household,
+            "baseline_ors_coverage": coverage_in,
+            "diarrhoea_mortality": mortality_in,
+        },
+        "result": result.as_dict(),
+        "sensitivity": ce.sensitivity(
+            spend=spend,
+            children_per_household=children_per_household,
+            diarrhoea_mortality=mortality,
+            baseline_coverage=coverage,
+        ),
+        "parameters": ce.parameters(),
+        "not_counted": list(ce.NOT_COUNTED),
+        "caveats": caveats,
+        "basis": "GiveWell ORS/zinc CEA (Aug 2023) chain as applied to CHAI Bauchi; modelled, not measured.",
+    }

@@ -503,4 +503,10 @@
   <script src="{% static 'indicators/targeting/costing.js' %}"></script>
   <script src="{% static 'indicators/targeting/methodology.js' %}"></script>
   <script src="{% static 'indicators/targeting/main.js' %}"></script>
+  {% comment %}
+    The agent panel ("Ask an agent"): it can run every targeting_* tool as the
+    visitor, including targeting_cost_effectiveness. Last in the body, never in
+    the `javascript` block (that renders in <head>, where there is no body yet).
+  {% endcomment %}
+  {% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
 {% endblock %}
