@@ -1,6 +1,7 @@
+{% load supply_chain_extras %}
 {% comment %}
 What changed on this record and its children, newest first (history/timeline.py).
-Each line: when, what, who told us -- an indigo "AI" pill when the write came
+Each line: when, what, who told us -- an indigo pill with the AI glyph when the write came
 through an agent or MCP/the API -- and the quoted source it rested on, in a
 <details> (labs has no Bootstrap collapse) whose summary is the actor badge.
 Correct and Void sit on the right of a quote an AI entered that still stands; the timeline builder leaves
@@ -24,22 +25,24 @@ them out on a past date.
               {% comment %}How far the arrival moved, as a signed count of days, so "5 Sep → 19 Sep"
               need not be worked out: inline, after the sentence it measures, in the neutral pill --
               amber on a line of its own read as a warning about something else.{% endcomment %}
-              <div data-testid="revision-text" class="text-sm text-gray-900">{{ entry.line }}{% if entry.eta_moved %} <span data-testid="eta-moved" class="ml-1 inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ entry.eta_moved }}</span>{% endif %}</div>
+              <div data-testid="revision-text" class="text-sm text-gray-900">{{ entry.line|bold_after_arrow }}{% if entry.eta_moved %} <span data-testid="eta-moved" class="ml-1 inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ entry.eta_moved }}</span>{% endif %}</div>
               <div class="mt-0.5 flex flex-wrap items-center gap-2">
                 {% comment %}
                 The actor badge is how the source opens: with an excerpt it is
                 the <summary> of the <details> holding it, so clicking who told
-                us shows what they said. The indigo is the AI marker, kept apart from the amber of a data gap; the bold
-                "AI" only where the label does not already say "via AI".
+                us shows what they said. The indigo is the AI marker, kept apart from the amber of a data gap; the AI glyph
+                only where the label does not already say "via AI".
                 {% endcomment %}
                 {% if entry.excerpt %}
-                  {% comment %}Who told us is one badge ("AI ACE (agent)"), and the way to the
+                  {% comment %}Who told us is one badge (the AI glyph and "ACE (agent)"), and the way to the
                   source a small button beside it ("View email"): run together in one pill they
                   read as one name. Both sit in the summary, so either opens it; the details
                   spans the line, so the excerpt it opens runs the line's full width.{% endcomment %}
-                  <details class="w-full text-xs">
+                  {% comment %}The button says what a click does: "View email" while the excerpt is
+                  shut, "Hide email" while it is open -- the details' own open state, no script.{% endcomment %}
+                  <details class="group w-full text-xs">
                     <summary data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}title="{% if entry.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
-                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-2 text-xs"><span data-testid="actor-pill" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-700{% endif %}">{% if entry.is_ai and entry.actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ entry.actor }}</span></span><span data-testid="source-link" class="inline-flex items-center rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50">{{ entry.source_link_text }}</span></summary>
+                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-2 text-xs"><span data-testid="actor-pill" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-700{% endif %}">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span>{{ entry.actor }}</span></span><span data-testid="source-link" class="inline-flex items-center rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50"><span class="group-open:hidden">{{ entry.source_link_text }}</span><span data-testid="source-hide" class="hidden group-open:inline">{{ entry.source_hide_text }}</span></span></summary>
                     {% comment %}Where the quote came from, as the call recorded it -- the kind its
                     reference implies, who recorded it and when. A replay of the same evidence
                     was answered from this write, not written again.{% endcomment %}
@@ -49,7 +52,7 @@ them out on a past date.
                     <blockquote data-testid="source-excerpt" class="mt-1 w-full rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ entry.excerpt }}</blockquote>
                   </details>
                 {% elif entry.is_ai %}
-                  <span data-testid="actor-badge" data-ai class="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs">{% if entry.actor|slice:":6" != "via AI" %}<span class="font-semibold">AI</span>{% endif %}<span>{{ entry.actor }}</span></span>
+                  <span data-testid="actor-badge" data-ai class="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs">{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}<span>{{ entry.actor }}</span></span>
                 {% else %}
                   <span data-testid="actor-badge" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ entry.actor }}</span>
                 {% endif %}

@@ -73,15 +73,20 @@ class TestWaitingOnSaysTwoThings:
         judged6._outreach(da, tender_id, silent["id"], datetime.date(2026, 8, 10))
 
         row = _tender_row()
-        assert row.waiting_lines == ("No reply: Plateau Mills", "Missing facts: Northwind Foods")
+        # Since batch 8 each blocked supplier carries what it is missing.
+        missing = "Missing facts: Northwind Foods (sachets per carton, freight, duties)"
+        assert row.waiting_lines == ("No reply: Plateau Mills", missing)
         assert row.waiting_detail == "1 of 2 replied"
         lines = re.findall(r'data-testid="waiting-line"[^>]*>(.*?)</span>', batch6._standing(_home(home_client)))
-        assert lines == ["No reply: Plateau Mills", "Missing facts: Northwind Foods"]
+        assert lines == ["No reply: Plateau Mills", missing]
 
     def test_after_a_provisional_award_the_awardee_is_not_missing_facts(self, da, base):
         _provisional(da, base)
         row = _tender_row()
-        assert row.waiting_lines == ("No reply: Plateau Mills", "Missing facts: Sahel Nutrition")
+        assert row.waiting_lines == (
+            "No reply: Plateau Mills",
+            "Missing facts: Sahel Nutrition (sachets per carton, freight, duties)",
+        )
         assert "Northwind" not in row.waiting_on
         assert all("Northwind" not in line for flag in row.stale for line in flag.lines)
 
@@ -122,17 +127,18 @@ class TestWaitingOnSaysTwoThings:
 class TestTheProvisionalStage:
     def test_the_caveat_counts_quotes_and_who_has_not_replied(self, da, base):
         _provisional(da, base)
-        assert _tender_row().provisional_caveat == (
-            "provisional — 1 of 2 quotes not comparable; 1 invited supplier has not replied"
-        )
+        # Since batch 8 the silent supplier is waiting-on's and the flags' to name, not the caveat's.
+        assert _tender_row().provisional_caveat == "provisional — 1 of 2 quotes not yet comparable"
 
     def test_the_stage_line_carries_the_awarded_price(self, da, base, home_client):
         _provisional(da, base)
         row = _tender_row()
-        assert (row.stage, row.award_price) == ("awarded to Northwind Foods", "USD 42.50 per carton")
+        # Since batch 8 with what the award commits, worded as the comparison's landed total.
+        price = "USD 42.50 per carton · USD 25,500.00 for 600 cartons"
+        assert (row.stage, row.award_price) == ("awarded to Northwind Foods", price)
         standing = batch6._standing(_home(home_client))
         cell = re.search(r'<td class="px-4 py-2.5">\s*awarded to Northwind Foods(.*?)</td>', standing, re.S).group(1)
-        assert re.search(r'data-testid="award-price"[^>]*>· USD 42.50 per carton<', cell)
+        assert re.search(rf'data-testid="award-price"[^>]*>· {price}<', cell)
 
 
 # ---- 3. the award's why is a full-width row ----------------------------------
@@ -201,14 +207,16 @@ class TestTheTimelineBadge:
         body = batch6._order_page(client_in_program, order["contract"]["id"])
         summary = re.search(r'<summary data-testid="actor-badge".*?</summary>', body, re.S).group(0)
         pill = re.search(r'<span data-testid="actor-pill"[^>]*>(.*?)</span></span>', summary, re.S).group(1)
-        assert batch6._text(pill) == "AI ACE (agent)"
+        # Since batch 8 the AI marker is a glyph, not the word: "AI" was said twice.
+        assert batch6._text(re.sub(r"<[^>]+>", "", pill)) == "ACE (agent)"
+        assert 'aria-label="AI"' in pill
         assert "View email" not in pill
-        button = re.search(r'<span data-testid="source-link" class="([^"]*)">View email</span>', summary)
+        button = re.search(r'<span data-testid="source-link" class="([^"]*)"><span[^>]*>View email</span>', summary)
         assert {"border", "rounded"} <= set(button.group(1).split())
 
     def test_the_excerpt_runs_the_line_s_width(self, da, base, order, client_in_program):
         body = batch6._order_page(client_in_program, order["contract"]["id"])
-        assert re.search(r'<details class="w-full text-xs">\s*(?:{%.*?%}\s*)?<summary data-testid="actor-badge"', body)
+        assert re.search(r'<details class="group w-full text-xs">\s*<summary data-testid="actor-badge"', body)
         quote = re.search(r'<blockquote data-testid="source-excerpt" class="([^"]*)"', body).group(1).split()
         assert "w-full" in quote and "max-w-2xl" not in quote
 
@@ -299,7 +307,8 @@ class TestABlockedCard:
         )
         card = batch6._card(_page(client_in_program, base["tender"]["id"]), quote["id"])
         price = batch6._text(re.search(r'<p data-testid="as-quoted"[^>]*>(.*?)</p>', card, re.S).group(1))
-        assert price == "Quoted 0.28 USD per sachet (converted to per carton for the ranking)"
+        # Since batch 8: with the pack unknown, it says when the per-carton figure can be given.
+        assert price == "Quoted 0.28 USD per sachet (per carton once sachets per carton is known)"
 
     def test_a_per_carton_price_says_nothing_more(self, da, base, client_in_program):
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {})

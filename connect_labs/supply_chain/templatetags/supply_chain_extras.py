@@ -3,6 +3,8 @@ from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 
 from django import template
 from django.urls import reverse
+from django.utils.html import escape
+from django.utils.safestring import mark_safe
 
 from connect_labs.supply_chain.values import (
     _as_decimal,
@@ -908,11 +910,41 @@ def words(value):
 
 
 @register.filter
-def money_text(cell):
-    """A money cell as a person writes money: "USD 18,000.00", never "18000.0000"."""
+def money_text(cell, max_places=None):
+    """A money cell as a person writes money: "USD 18,000.00", never "18000.0000".
+
+    `max_places` caps the decimals where a column reads at a glance: the
+    comparison's per-sachet figure is "0.273", not "0.2733".
+    """
     if not isinstance(cell, dict) or cell.get("amount") in (None, ""):
         return figure_text(cell)
-    return f"{cell.get('currency') or ''} {money_digits(cell['amount'])}".strip()
+    amount = cell["amount"]
+    if max_places not in (None, ""):
+        number = _as_decimal(amount)
+        if number is not None and number.is_finite():
+            amount = number.quantize(Decimal(1).scaleb(-int(max_places)), rounding=ROUND_HALF_UP)
+    return f"{cell.get('currency') or ''} {money_digits(amount)}".strip()
+
+
+_ARROW_VALUE = re.compile(r"→ ([^;]+)")
+
+
+@register.filter
+def bold_after_arrow(text):
+    """A change line with each new value in bold: "ETA 5 Sep → <strong>19 Sep</strong>".
+
+    What a field changed TO is the news on the line; the value it left is context.
+    """
+    text = str(text or "")
+    out, at = [], 0
+    # Matched on the raw text and each piece escaped on its own: an escaped
+    # "&amp;" carries the ";" that ends a clause.
+    for match in _ARROW_VALUE.finditer(text):
+        out.append(escape(text[at : match.start()]))
+        out.append(f'→ <strong class="font-semibold">{escape(match.group(1))}</strong>')
+        at = match.end()
+    out.append(escape(text[at:]))
+    return mark_safe("".join(str(part) for part in out))
 
 
 @register.filter

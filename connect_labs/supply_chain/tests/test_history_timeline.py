@@ -693,8 +693,9 @@ class TestPages:
         body = body.decode()
 
         assert "data-timeline" in body
-        assert "ETA 5 Sep → 19 Sep" in body
-        assert ">AI<" in body
+        # Since batch 8 the new value is bold, and the AI marker is a glyph read out as "AI".
+        assert 'ETA 5 Sep → <strong class="font-semibold">19 Sep</strong>' in body
+        assert 'aria-label="AI"' in body
         assert "ACE (agent)" in body
         assert "AI</span><span>via AI" not in body
         assert "<blockquote" in body and "Northwind dispatch" in body

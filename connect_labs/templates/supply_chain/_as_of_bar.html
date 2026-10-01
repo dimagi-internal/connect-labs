@@ -23,18 +23,14 @@ a block inside an include cannot fill the parent's.
       {% endif %}
     {% endfor %}
     <label for="supply-as-of" class="font-medium text-gray-700">View as of</label>
-    {% comment %}The browser draws a date input in its own locale ("08/20/2026"), which
-    is not how any other date on these pages reads; the chosen day is said
-    beside it in the page's own format.{% endcomment %}
-    {% if supply_as_of %}<span id="supply-as-of-day" data-testid="as-of-date" class="font-medium text-gray-900 whitespace-nowrap">{{ supply_as_of|date:'j M Y' }}</span>{% endif %}
-    {% comment %}Once a day is applied the native field's own "08/20/2026" is hidden and
-    only its calendar button shows, muted, beside the day said above: still a
-    working field to pick another day with, not a second way of writing it.{% endcomment %}
-    {% if supply_as_of %}<style>.supply-as-of-applied::-webkit-datetime-edit { display: none; }</style>{% endif %}
+    {% comment %}The chosen day sits inside the field, as its value, so the control looks
+    the same on a past day as it does today. A day said as bare text beside a
+    lone calendar button read as two controls; the banner above already says
+    the day in the page's own format ("20 Aug 2026").{% endcomment %}
     <input id="supply-as-of" type="date" name="as_of" max="{{ today }}"
            value="{% if supply_as_of %}{{ supply_as_of|date:'Y-m-d' }}{% endif %}"
-           {% if supply_as_of %}aria-describedby="supply-as-of-day" title="Choose another day ({{ supply_as_of|date:'j M Y' }} now)"{% endif %}
-           class="{% if supply_as_of %}supply-as-of-applied w-10 opacity-60 hover:opacity-100 focus:opacity-100 {% endif %}rounded-md border border-gray-300 px-2 py-1 text-sm">
+           {% if supply_as_of %}data-testid="as-of-date" title="Viewing as of {{ supply_as_of|date:'j M Y' }}; choose another day"{% endif %}
+           class="rounded-md border border-gray-300 px-2 py-1 text-sm">
     <button type="submit" class="px-3 py-1 rounded-md border border-gray-300 bg-white hover:bg-gray-50">Go</button>
   </form>
 {% endif %}
