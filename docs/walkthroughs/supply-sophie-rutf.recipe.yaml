@@ -150,11 +150,17 @@ scenes:
     seconds: 1.0
     note: let the scene's own page paint before the before-frame
   - kind: wait_for
+    target: testid:market-listing-link
+    note: her own round 2 page, with its quotes and history, the before-frame the preview is compared against
+  - kind: click
+    must_succeed: true
+    target: testid:market-listing-link
+    note: round 2 as it is listed on the market
+  - kind: wait_for
     target: testid:preview-as-supplier
-    note: her own view of the listing, the before-frame the preview is compared against
   - kind: hold
-    seconds: 1.2
-    note: the owner's view, with the note that this is the public listing
+    seconds: 1.0
+    note: the owner's view of the listing, with the note that this is the public listing
   - kind: click
     target: testid:preview-as-supplier
     must_succeed: true
@@ -169,7 +175,7 @@ scenes:
   - kind: hover
     note: park the cursor on the title, off the request's sentence
     seconds: 0.6
-    target: css:h1
+    target: css:h1.text-white
   - kind: hold
     note: no prices, no excerpts, no history
     say: private
@@ -181,10 +187,11 @@ scenes:
     to members of the owning program.
   design_intent: History, excerpts and prices are the program's private working evidence; the listing is what every supplier
     sees, so the boundary is drawn where Sophie can check it.
-  show: 'Sophie opens the market and her round 2 listing. It shows the request: the quantity, where the goods go, and what
+  show: 'From her own round 2 page, with its quotes and history, Sophie opens the round''s market listing and previews it
+    as a supplier would see it. It shows the request: the quantity, where the goods go, and what
     she asks every supplier to state (sachets per carton, freight and import duties). It shows no supplier''s price, no AI
     source excerpt and no history; those open only to members of her program.'
-  url: /supply/market/tenders/${round2_tender_id}/
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: round-two-cannot-be-compared
   actions:
   - kind: wait_for
@@ -312,7 +319,8 @@ scenes:
   - kind: fill
     say: why
     target: css:[data-testid=award-form] input[name=rationale]
-    value: States everything needed to cost it; same manufacturer as round 1; provisional until the other two answer
+    value: States everything needed to cost it; same manufacturer as round 1, whose 14-day delivery slip is on the record;
+      provisional until the other two answer
   - kind: hold
     seconds: 1.5
     note: her reason, typed, before the award
@@ -347,6 +355,7 @@ scenes:
     suppliers were left out; the overview closes the loop on the same who-and-when record the story opened on.
   full_page: false
   show: 'On round 2''s comparison the quote that answered is the only one that can be costed, marked provisional because
-    two quotes are still blocked. Sophie types her reason into its row (it states everything needed to cost it; provisional
-    until the other two answer) and awards it. She returns to the overview: round 2 reads awarded, provisional, last changed today by Sophie.'
-  url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
+    two quotes are still blocked. Sophie types her reason into its row (it states everything needed to cost it; same
+    manufacturer as round 1, whose 14-day delivery slip is on the record; provisional until the other two answer) and
+    awards it. She returns to the overview: round 2 reads awarded, provisional, last changed today by Sophie.'
+  url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}&step=award

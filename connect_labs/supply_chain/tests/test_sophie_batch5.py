@@ -218,11 +218,12 @@ class TestTheAsOfControl:
 
     def test_the_flags_are_said_to_be_for_today_once_in_their_header(self, da, base, home_client):
         past = _home(home_client, as_of="2026-08-20")
-        header = re.search(r"<th[^>]*>Flags.*?</th>", past, re.S).group(0)
-        assert re.search(r'data-testid="flags-as-of"[^>]*>— checked for today only<', header)
-        assert past.count("checked for today only") == 1
-        assert "checked for today only" not in _cells(_standing_row(past, base["tender"]["id"]))[4]
-        assert "checked for today only" not in _home(home_client)
+        # Since batch 7 there is no flags column on a past date: one note says why.
+        assert ">Flags</th>" not in past
+        assert re.search(r'data-testid="flags-as-of"[^>]*>Flags are worked out for today only', past)
+        assert past.count('data-testid="flags-as-of"') == 1
+        assert len(_cells(_standing_row(past, base["tender"]["id"]))) == 4
+        assert 'data-testid="flags-as-of"' not in _home(home_client)
 
     def test_the_chain_says_program(self, da, base, home_client, lineless_order):
         body = _home(home_client)
@@ -467,7 +468,9 @@ class TestABlockedCard:
         body = _page(client_in_program, base["tender"]["id"])
         card = _card(body, quote["id"])
 
-        assert re.search(r'data-testid="as-quoted"[^>]*>Quoted 42.50 USD per carton · received 20 Aug 2026<', card)
+        # Since batch 7 the price is its own line and the day is metadata under it.
+        assert re.search(r'data-testid="as-quoted"[^>]*>Quoted 42.50 USD per carton<', card)
+        assert re.search(r'data-testid="received-on"[^>]*>Received 20 Aug 2026<', card)
         blocking = re.search(r'data-testid="blocking"[^>]*>(.*?)</p>', card, re.S).group(1)
         assert _text(blocking) == "Blocking: Sachets per carton not stated on the quote Spec: 150 sachets per carton"
         assert "units per pack" not in card.lower()

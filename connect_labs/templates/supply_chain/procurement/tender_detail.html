@@ -36,6 +36,12 @@
     </p>
   </div>
   <div class="flex flex-wrap items-center gap-2">
+    {% comment %}The listing every supplier sees, one click from the program's own page
+    (owner-only, so it leaks nothing). Only while it is listed: the market shows open tenders.{% endcomment %}
+    {% if tender.status == "open" and tender.visibility != "private" %}
+    <a data-testid="market-listing-link" href="{% url 'supply_chain:market_tender' tender.id %}"
+       class="px-3 py-1.5 text-sm border border-gray-300 text-brand-indigo hover:bg-gray-50 rounded-md">Public market listing</a>
+    {% endif %}
     {% for line in tender.lines %}
     <a href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}"
        class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
@@ -200,7 +206,7 @@ next action on anyone (design doc section 22).
   <div class="px-4 pb-4">
     <p class="text-xs text-gray-600">{{ drafts.reminder_interval_note }}{% if drafts.note %} {{ drafts.note }}{% endif %}</p>
     {% for d in drafts.drafts %}
-      <div data-testid="draft" class="border-t border-gray-200 pt-3 mt-3">
+      <div data-testid="draft"{% if d.anchor %} id="{{ d.anchor }}"{% endif %} data-supplier-id="{{ d.supplier_id }}" class="border-t border-gray-200 pt-3 mt-3 scroll-mt-20">
         <p class="text-sm">
           <span class="font-medium text-gray-900">{{ d.supplier_name }}</span>
           <span class="text-xs text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% else %}Follow-up{% endif %}</span>
@@ -244,8 +250,16 @@ next action on anyone (design doc section 22).
   </div>
 </details>
 <script>
-  // Arriving by the comparison page's "Draft emails" link opens the panel it points at.
-  if (window.location.hash === "#drafts") { document.getElementById("drafts").open = true; }
+  // Arriving by the comparison page's "Draft emails" link opens the panel it points at;
+  // by a "Draft email to <supplier>" link, the panel and then that supplier's first draft.
+  (function () {
+    var hash = window.location.hash;
+    if (hash === "#drafts" || hash.indexOf("#draft-supplier-") === 0) {
+      document.getElementById("drafts").open = true;
+      var target = hash === "#drafts" ? null : document.getElementById(hash.slice(1));
+      if (target) { target.scrollIntoView(); }
+    }
+  })();
 </script>
 {% endif %}
 
