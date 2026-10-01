@@ -1,7 +1,7 @@
 """What we believe each worker holds -- and every store above them (design 2026-09-28 §5).
 
-`network_stock` calls `resupply.plan` once per point: fine for thirty stores,
-wrong for six hundred workers. This computes the same figures for a whole
+`resupply.plan` reads one point at a time: fine for thirty stores, wrong for
+six hundred workers. This computes the same figures for a whole
 set of points in a fixed number of grouped queries -- one pass per figure,
 grouped by point and unit -- and then does the arithmetic in Python through
 the SAME rules (`resupply.rate_from`, `resupply.cover`, `soh._variance`), so

@@ -175,6 +175,7 @@ def test_the_system_escape_hatch_is_greppable():
     # common is not an allow-list.
     allowed = {
         "supply_chain/management/commands/supply_dev_seed.py",
+        # Operator-run: reads stock reports from visits; it and its operation refuse real programmes.
         "supply_chain/management/commands/supply_ingest_stock_reports.py",
         "supply_chain/management/commands/supply_load_bootstrap.py",
         # Operator-run: reads visits into the ledger; the operation refuses real programmes.

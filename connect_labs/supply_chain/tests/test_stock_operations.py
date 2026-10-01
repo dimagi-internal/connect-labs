@@ -505,6 +505,17 @@ class TestNetworkView:
 
 
 class TestStockReportIngest:
+    @pytest.fixture(autouse=True)
+    def labs_only(self):
+        """Stock reports are read only from a labs-only opportunity of a labs-only programme."""
+        from connect_labs.labs.synthetic import registry
+        from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+        SyntheticOpportunity.objects.create(
+            opportunity_id=OPP, program_id=PROGRAM, labs_only=True, enabled=True, label="stock reports"
+        )
+        registry.invalidate_cache()
+
     def _rows(self, *usernames, quantity="8", submission_prefix="sub"):
         return [
             {

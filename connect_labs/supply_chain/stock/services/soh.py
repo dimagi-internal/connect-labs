@@ -37,9 +37,9 @@ def stock_on_hand(program_id, supply_point, item=None, unit=None, on_date=None) 
     `variance` is reported MINUS the ledger ON THE COUNT DAY (`ledger_on_count_day`,
     every movement dated on or before it), not today's ledger: stock that moved
     after the count is not a discrepancy in it. This is the one per-point
-    definition; belief.py computes the same figure grouped for many points,
-    and the checks feed reads it here, so the Workers page and the checks
-    cannot disagree.
+    definition; belief.py (the Workers page) and `counted_against_ledger`
+    (the checks feed) compute the same figure grouped for many points, and
+    parity tests pin both to it, so the pages and the checks cannot disagree.
 
     `basis` names which figure a planner should use, and it is never a silent
     choice: `ledger` when no count exists, `count` when a count is more
@@ -85,6 +85,73 @@ def stock_on_hand(program_id, supply_point, item=None, unit=None, on_date=None) 
         "reported_kind": count.kind,
         "reported_source": count.source,
     }
+
+
+def counted_against_ledger(program_id, points_and_items) -> dict:
+    """{point id: {reported, reported_kind, ledger_on_count_day, variance, as_of}} for the counted ones, grouped.
+
+    `stock_on_hand`'s count-day figures for many points at once, in three
+    queries per distinct item rather than three per point. Each pair is a
+    point id and the item `stock_on_hand` would resolve for it
+    (`ledger.sole_item`, which a live `network_stock` row carries as its
+    `item`), or None to read across every item as it does then. Live only:
+    the latest count is the latest ever, as `stock_on_hand` with no `on_date`.
+    A point never counted is left out.
+    """
+    from django.db.models import Exists, OuterRef, Sum
+
+    from connect_labs.supply_chain.models import Movement
+
+    groups: dict = {}
+    for point_id, item in points_and_items:
+        groups.setdefault(item.pk if item is not None else None, (item, []))[1].append(point_id)
+
+    found = {}
+    for item, ids in groups.values():
+        counts = StockCount.objects.filter(
+            program_id=program_id, supply_point_id__in=ids, kind__in=records.ON_HAND_COUNT_KINDS
+        )
+        if item is not None:
+            counts = counts.filter(item=item)
+        latest = {
+            c.supply_point_id: c
+            for c in counts.order_by("supply_point_id", "-counted_on", "-id").distinct("supply_point_id")
+        }
+        if not latest:
+            continue
+
+        moves = Movement.objects.for_program(program_id)
+        if item is not None:
+            moves = moves.filter(item=item)
+
+        def on_or_before_the_count(side):
+            # Dated on or before some count at its point: on or before the latest.
+            earlier = counts.filter(supply_point_id=OuterRef(side), counted_on__gte=OuterRef("occurred_on"))
+            return Exists(earlier.order_by().values("pk"))
+
+        by_point: dict = {pk: {} for pk in latest}
+        for side, sign in (("to_supply_point_id", 1), ("from_supply_point_id", -1)):
+            rows = (
+                moves.filter(**{f"{side}__in": list(latest)})
+                .filter(on_or_before_the_count(side))
+                .values(side, "quantity_unit")
+                .annotate(total=Sum("quantity"))
+            )
+            for row in rows:
+                units = by_point[row[side]]
+                units[row["quantity_unit"]] = units.get(row["quantity_unit"], 0) + sign * row["total"]
+
+        for pk, count in latest.items():
+            reported = Quantity(count.quantity, count.quantity_unit)
+            on_count_day = ledger.collapse(by_point[pk], item, None)
+            found[pk] = {
+                "reported": reported,
+                "reported_kind": count.kind,
+                "ledger_on_count_day": on_count_day,
+                "variance": _variance(on_count_day, reported, item),
+                "as_of": count.counted_on,
+            }
+    return found
 
 
 def _variance(balance, reported: Quantity, item):
