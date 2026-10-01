@@ -125,7 +125,7 @@ The `mcp/no_user_visit/` address enforces a strict set of rules to prevent real 
 
 - **Reading stored workflow snapshots.** Workflow runs are rebuilt live from generated data instead of reading a stored snapshot that might contain real visits.
 - **Pointing `pipeline_preview` at another opportunity's export or at Open Chat Studio sessions.** This prevents a restricted caller from pulling in visit-level data through a pipeline preview.
-- **Profiling in mirror mode.** Data generated from a mirror profile does not count as "generated", so the restricted address will not allow it.
+- **Generating from an old mirror-mode profile.** Profiles saved in mirror mode before October 2026 hold real cases lightly perturbed, so their data never counts as "generated". Profiling with `case_timelines=true` *is* allowed: it models each worker's caseload and each case's timeline and saves only newly sampled cases.
 - **Writing synthetic data onto a real opportunity, wiping a shared demo environment, or reading or writing a profile bundle outside Drive.**
 
 !!! note "No change for full-access callers"

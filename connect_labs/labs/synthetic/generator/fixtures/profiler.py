@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import random
 import re
 import statistics
@@ -23,9 +24,12 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from .case_model import synthesize_case_pool
 from .manifest import Manifest, ManifestValidationError
-from .mirror import build_entity_resolver, perturb_transplant_pool, profile_entity_structure
+from .mirror import build_entity_resolver, profile_entity_structure
 from .schema_loader import FormSchema, parse_form_schema_from_app_json
+
+logger = logging.getLogger(__name__)
 
 
 def _mean_std(values: list[float]) -> tuple[float, float]:
@@ -972,6 +976,7 @@ def profile(
     curate: bool = False,
     mirror: bool = False,
     noise_seed: int | None = None,
+    case_timelines: bool = False,
 ) -> str:
     """Analyze real export data and return a Manifest YAML string.
 
@@ -986,10 +991,13 @@ def profile(
             When provided, used to type fields — select/multiselect paths get
             categorical distributions and all profiled paths get null_rate.
             Callers that omit this arg get identical prior behaviour.
-        noise_seed: Seed for the mirror pool's privacy noise (tests pin it). Left
-            None, it is derived from the server secret and the opportunity id, so a
-            re-profile is reproducible on this server but the noise cannot be
-            recomputed, and so subtracted, from the manifest alone.
+        case_timelines: Model each worker's caseload and each case's timeline
+            (case_model.py) and carry a pool of NEW cases sampled from those models.
+            ``mirror`` is the old name for the same switch and still works; it no
+            longer copies real cases.
+        noise_seed: Seed for sampling the modelled cases (tests pin it). Left None,
+            it is derived from the server secret and the opportunity id, so a
+            re-profile is reproducible on this server.
 
     Returns:
         YAML string that validates against Manifest.from_yaml().
@@ -1082,7 +1090,7 @@ def profile(
     # value trajectories (issue #713 #2). Owners are remapped from source usernames
     # to persona ids (the same volume ranking _profile_flw_personas uses), so the
     # pool references the manifest's personas and never leaks a real username.
-    if mirror:
+    if mirror or case_timelines:
         numeric_paths = {p for p, d in field_dists.items() if d.get("distribution") in ("normal", "uniform")}
         # Date leaves (e.g. child_dob) carry the longitudinal axis for analyses that
         # compute age = visit_date - dob. They are never numeric, so the transplant
@@ -1143,10 +1151,11 @@ def profile(
                 continue
             pool.append({**series, "owner": persona})
         if pool:
-            # The pool is each real case exactly, so it is perturbed HERE, at profile
-            # time, rather than when a clone is generated: the manifest is what gets
-            # saved (bundles in Drive, returned over MCP), and a saved profile must not
-            # hold any real case's exact series either. See perturb_transplant_pool.
+            # The pool above is every real case exactly. It is used only to FIT the
+            # case models, here at profile time, and the manifest carries a pool
+            # SAMPLED from them: every case in it is new (case_model.py). The manifest
+            # is what gets saved (bundles in Drive, returned over MCP, served from
+            # generated opps), so it never holds a real case, perturbed or not.
             computed_whole = {
                 p
                 for p in computed_paths
@@ -1157,12 +1166,14 @@ def profile(
                     if p in (v.get("values") or {})
                 )
             }
-            pool = perturb_transplant_pool(
+            pool, model_report = synthesize_case_pool(
                 pool,
                 seed=noise_seed if noise_seed is not None else _mirror_noise_seed(opportunity_id),
                 frozen_paths=computed_whole,
             )
-            cohort["longitudinal"] = {"mode": "mirror", "transplant_pool": pool}
+            logger.info("case timelines for opp %s: %s", opportunity_id, model_report)
+            if pool:
+                cohort["longitudinal"] = {"mode": "modelled", "transplant_pool": pool}
 
     # Seed deliberate QA anomalies (only under curation) so dashboards/evals have
     # something to find. Faithful profiling leaves this empty.
