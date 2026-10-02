@@ -241,7 +241,15 @@
                   {% comment %}data-testid="award-form" is the walkthroughs' hook: the form has
                   moved three times in its row, and an answered quote's id is only minted on
                   camera, so a recipe finds the form by what it is, not by where it sits.{% endcomment %}
-                  <form method="post" action="" data-testid="award-form" class="flex flex-wrap items-end gap-2 min-w-0">
+                  {% comment %}The award's fields -- why, when, who -- stay folded behind the award
+                  button until someone starts one: four inputs under every offer read as a form to
+                  fill rather than a choice to make. The button that opens them says what awarding
+                  now means ("Award anyway — ... has not stated ..."); the form inside still posts
+                  as before, and opens again on a refused award.{% endcomment %}
+                  <details data-testid="award-start" class="min-w-0"{% if award_error %} open{% endif %}>
+                    <summary data-testid="award-open"{% if award_anyway %} data-anyway{% endif %}
+                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-block px-4 py-1.5 text-sm rounded-md {% if award_anyway %}border border-gray-300 bg-white text-gray-900 hover:bg-gray-50{% else %}bg-brand-indigo hover:bg-brand-deep-purple text-white{% endif %}">{% if award_anyway %}Award anyway — {{ award_anyway }}{% else %}Award{% endif %}</summary>
+                  <form method="post" action="" data-testid="award-form" class="mt-2 flex flex-wrap items-end gap-2 min-w-0">
                     {% csrf_token %}
                     <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
                     <label class="flex flex-col gap-0.5 text-xs text-gray-600 min-w-0 flex-1 basis-64" for="rationale-{{ row.quote_id }}">Why this offer
@@ -262,21 +270,12 @@
                     <div class="flex flex-col gap-0.5 text-xs text-gray-600">Decided by
                       <span data-testid="decided-by" class="py-1 text-sm text-gray-900">{{ decider }}</span>
                     </div>
-                    {% comment %}While a quote still waits on a fact that blocks it, awarding now passes
-                    over an offer that might beat this one: the button says so and steps down to a
-                    secondary style. The reason above is still asked for.{% endcomment %}
-                    {% if award_anyway %}
-                    <button data-testid="award-anyway" class="shrink-0 px-4 py-1.5 text-sm border border-gray-300 bg-white text-gray-900 hover:bg-gray-50 rounded-md whitespace-normal text-left"
+                    <button data-testid="award-submit" class="shrink-0 px-4 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
                             type="submit">
-                      Award anyway — {{ award_anyway }}
+                      Confirm award
                     </button>
-                    {% else %}
-                    <button class="shrink-0 px-4 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
-                            type="submit">
-                      Award
-                    </button>
-                    {% endif %}
                   </form>
+                  </details>
                   {% endif %}
                 </div>
               </td>

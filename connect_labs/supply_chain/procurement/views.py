@@ -245,6 +245,12 @@ class TenderDetailView(_Base):
         # Rows showed "Supplier #2". An id is not a supplier to anyone
         # reading the page, and the name is one list call away.
         context["supplier_names"] = {s["id"]: s["name"] for s in self.op("supplier_list")}
+        # "Outreach — 3 of 6 replied": a supplier has replied when it answered or quoted.
+        asked = {o.get("supplier_id") for o in outreach if o.get("supplier_id")}
+        quoted = {q.get("supplier_id") for q in context["quotes"] if not q.get("voided")}
+        answered = {o.get("supplier_id") for o in outreach if o.get("responded")}
+        context["outreach_asked"] = len(asked)
+        context["outreach_replied"] = len(asked & (answered | quoted))
         # Who was asked, from the outreach, for the invited panel when nobody
         # is on the marketplace invitation list.
         context["asked_names"] = list(
@@ -715,6 +721,12 @@ class ComparisonView(_Base):
         # said in the caption, not crammed into the header.
         if comparison and any(c.get("key") == UNIT_KEYS[0] and c.get("one_course") for c in context["table_columns"]):
             context["unit_equivalence"] = unit_equivalence(comparison, comparison.get("columns") or [])
+        # Two lines that said one thing -- "1 carton = 150 sachets; a course is 150 sachets"
+        # and "1 carton = 1 course = 1 child treated" -- as one basis line when a carton is a course.
+        if context["unit_equivalence"] and context["cost_basis"]:
+            pack = context["cost_basis"].split(";")[0].strip()
+            context["cost_basis"] = f"Basis: {pack} = 1 course (one child treated)"
+            context["unit_equivalence"] = ""
         context["compared_on"] = compared_on(comparison, (comparison or {}).get("columns"))
         context["not_stated"] = [
             sentence for sentence in (not_stated(row) for row in (comparison or {}).get("blocked") or []) if sentence

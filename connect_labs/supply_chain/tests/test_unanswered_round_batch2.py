@@ -209,7 +209,7 @@ class TestTheComparison:
         op(da, "quote_record", data=_comparable(world))
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         clear = client_in_program.get(url).content.decode()
-        assert 'data-testid="award-anyway"' not in clear
+        assert "data-anyway" not in clear
         # Northgate quotes without saying what freight it includes: blocked.
         op(
             da,
@@ -222,7 +222,8 @@ class TestTheComparison:
             },
         )
         body = client_in_program.get(url).content.decode()
-        button = re.search(r'<button data-testid="award-anyway"[^>]*>(.*?)</button>', body, re.S)
+        # Since batch 4 the award opens from its button, which carries the words.
+        button = re.search(r'<summary data-testid="award-open" data-anyway[^>]*>(.*?)</summary>', body, re.S)
         assert button is not None
         assert _text(button.group(1)).startswith("Award anyway — Northgate Rehearsal Commodities has not stated ")
 

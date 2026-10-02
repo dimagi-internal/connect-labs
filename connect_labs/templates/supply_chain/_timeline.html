@@ -9,10 +9,33 @@ them out on a past date.
 {% endcomment %}
 {% comment %}scroll-mt-20: a link to #history lands with the heading clear of the fixed 4rem header.{% endcomment %}
 <section id="history" data-timeline data-testid="timeline" class="mt-8 scroll-mt-20">
-  <h2 class="{{ history_heading_class|default:'text-lg font-semibold text-gray-900' }} mb-2 scroll-mt-20">History</h2>
+  <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+    <h2 class="{{ history_heading_class|default:'text-lg font-semibold text-gray-900' }} scroll-mt-20">History</h2>
+    {% if timeline %}
+    {% comment %}Off by default. On, it hides every line no email stands behind -- invitations
+    sent, chases, our own edits -- so what suppliers and forwarders told us leads. Client-side:
+    nothing is refetched, and a day left with nothing in it hides its heading too.{% endcomment %}
+    <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+      <input type="checkbox" data-testid="history-replies-only" class="rounded border-gray-300"
+             onchange="(function (box) {
+               var list = box.closest('[data-timeline]').querySelector('[data-timeline-list]');
+               list.querySelectorAll('[data-no-source]').forEach(function (li) { li.hidden = box.checked; });
+               var day = null, shown = false;
+               Array.prototype.forEach.call(list.children, function (li) {
+                 if (li.getAttribute('data-testid') === 'timeline-day') {
+                   if (day) { day.hidden = !shown; }
+                   day = li; shown = false;
+                 } else if (!li.hidden) { shown = true; }
+               });
+               if (day) { day.hidden = !shown; }
+             })(this)">
+      Replies only
+    </label>
+    {% endif %}
+  </div>
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-2">
     {% if timeline %}
-      <ol>
+      <ol data-timeline-list>
         {% for event in timeline|email_events %}
           {% comment %}One heading per day, the day's changes under it: a delivery, the order
           received and the receipt recorded on one day read as one event, not as three lines
@@ -32,7 +55,9 @@ them out on a past date.
           it produced beneath it, the reply first. Each child is still a revision-line, so a line
           is found by what it says; the source testids sit on the event.
           {% endcomment %}
-          <li data-testid="email-event" data-when="{{ event.when|date:'c' }}" class="py-1.5 pl-4">
+          {% comment %}Set apart from the routine lines around it: a rule down its left and a
+          tinted ground, so an email that arrived reads as an event, not as one more change.{% endcomment %}
+          <li data-testid="email-event" data-when="{{ event.when|date:'c' }}" class="my-1.5 py-2 pl-3 pr-2 border-l-4 border-indigo-300 bg-indigo-50/40 rounded-r">
             <div class="flex flex-wrap items-center gap-2">
               <span data-testid="email-event-head" class="text-sm font-medium text-gray-900">{{ event.head.source_kind|default:"Source" }}{% if event.sender %} from {{ event.sender }}{% endif %}</span>
               <span data-testid="actor-badge" {% if event.head.is_ai %}data-ai {% endif %}class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm {% if event.head.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}"><span data-testid="actor-pill" class="inline-flex items-center gap-1">{% if event.head.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=event.head.actor %}{% endif %}<span>{{ event.head.actor }}</span></span></span>
