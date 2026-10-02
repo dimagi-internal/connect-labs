@@ -254,13 +254,9 @@ def backlog_days() -> list[dict]:
     return days
 
 
-# The map places each worker in the ~11 km cell (0.1 degree) where most of
-# their visits happen, and draws a cell only when it holds at least this many
-# judged workers. Coarser than the delivery map's 1 km grid on purpose: this
-# layer describes PEOPLE, and a 1 km cell with one worker in it is that
-# worker's home village.
+# Each worker is placed in the ~11 km cell (0.1 degree) where most of their
+# visits happen; cells are then gathered into the map's tiles (TILE_DEGREES).
 CELL_DEGREES = 0.1
-MIN_WORKERS_PER_CELL = 3
 
 
 def home_cells(events) -> dict[str, tuple[int, int]]:
@@ -413,35 +409,54 @@ def breakdown(workers: dict[str, dict], key: str, min_workers: int = 1) -> list[
     return rows
 
 
-def cells(workers: dict[str, dict], homes: dict[str, tuple[int, int]]) -> dict:
-    """Workers per home cell, summarised like any other slice.
+# The map is a grid of tiles about 110 km across (1 degree), each coloured by
+# a RATE -- the share of its workers or visits with a connectivity problem.
+# It replaced a heatmap that summed delayed-visit COUNTS through a pixel-radius
+# blur: northern Nigeria glowed brightest because dozens of busy areas
+# overlapped on screen, although it is among the best-connected places on the
+# platform. A tile's colour depends only on what happens inside it.
+#
+# One degree, not half: at the continent-wide zoom the page opens on, a
+# 0.5-degree tile is two or three pixels across and the map reads as empty.
+TILE_DEGREES = 1.0
+MIN_WORKERS_PER_TILE = 3
+
+
+def tiles(workers: dict[str, dict], homes: dict[str, tuple[int, int]]) -> dict:
+    """Workers per tile (by where they mostly work), summarised like any other slice.
 
     A worker is mapped when they have been judged or have at least
-    MIN_VISITS_TO_MAP visits in scope. Cells under MIN_WORKERS_PER_CELL are
+    MIN_VISITS_TO_MAP visits in scope. Tiles under MIN_WORKERS_PER_TILE are
     withheld and only counted, so the display can say how many workers are not
     on the map and why.
     """
-    by_cell: dict[tuple[int, int], list[dict]] = {}
+    per_tile = int(round(TILE_DEGREES / CELL_DEGREES))
+    by_tile: dict[tuple[int, int], list[dict]] = {}
     for h, w in workers.items():
         if h not in homes or not (w.get("class") or w.get("visits", 0) >= MIN_VISITS_TO_MAP):
             continue
-        by_cell.setdefault(homes[h], []).append(w)
+        la, lo = homes[h]
+        by_tile.setdefault((la // per_tile, lo // per_tile), []).append(w)
     shown, withheld = [], 0
-    for (la, lo), ws in by_cell.items():
-        if len(ws) < MIN_WORKERS_PER_CELL:
+    for (ta, to), ws in by_tile.items():
+        if len(ws) < MIN_WORKERS_PER_TILE:
             withheld += len(ws)
             continue
-        judged = [w for w in ws if w.get("class")]
         shown.append(
             {
-                "lat": round((la + 0.5) * CELL_DEGREES, 2),
-                "lon": round((lo + 0.5) * CELL_DEGREES, 2),
+                # South-west corner; the tile spans TILE_DEGREES north and east.
+                "lat": round(ta * TILE_DEGREES, 2),
+                "lon": round(to * TILE_DEGREES, 2),
                 **summarise(ws),
-                "share": (sum(w["share"] for w in judged) / len(judged)) if judged else None,
             }
         )
-    shown.sort(key=lambda c: -c["workers"])
-    return {"cells": shown, "withheld_workers": withheld, "min_workers_per_cell": MIN_WORKERS_PER_CELL}
+    shown.sort(key=lambda t: -t["workers"])
+    return {
+        "tiles": shown,
+        "tile_degrees": TILE_DEGREES,
+        "withheld_workers": withheld,
+        "min_workers_per_tile": MIN_WORKERS_PER_TILE,
+    }
 
 
 def weekly(rows: list[WorkerWeek]) -> dict[dt.datetime, dict]:
