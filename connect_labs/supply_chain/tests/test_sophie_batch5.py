@@ -522,7 +522,8 @@ class TestThePublicListing:
         )
         body = _listing(client, listed_tender)
         aside = re.search(r'<aside data-testid="request-summary".*?</aside>', body, re.S).group(0)
-        assert "500 cartons" in aside
+        # Since batch 9 the quantity is the hero's alone; a named store still adds to its city.
+        assert re.search(r'data-testid="asked-for"[^>]*>500 cartons<', body)
         assert re.search(r'data-testid="delivery-point"[^>]*>.*?Central store.*?Lakeside', aside, re.S)
         assert re.findall(r'data-testid="spec-line"[^>]*>(.*?)<', aside) == [
             "Sachets per carton: 150 (exact)",

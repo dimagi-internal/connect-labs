@@ -494,6 +494,16 @@ class ComparisonView(_Base):
                     items[item_id] = self.op("item_get", item_id=item_id)
                 context["set_aside"].append({"quote": quote, "item": items.get(item_id)})
         context["comparison"] = comparison
+        # The first offer that can still be awarded carries id="award", so a link
+        # ending "#award" lands on its form. One per page: ids are unique.
+        context["award_anchor_quote_id"] = next(
+            (
+                row.get("quote_id")
+                for row in (comparison or {}).get("comparable") or []
+                if row.get("quote_id") not in context["awarded_quote_ids"]
+            ),
+            None,
+        )
         # Which offers an AI entered, so each carries the same indigo AI pill as
         # the timeline and the overview -- the reader checks those first.
         context["ai_quotes"] = (
