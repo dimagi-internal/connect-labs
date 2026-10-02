@@ -169,10 +169,17 @@ def ensure_program(program_id: int = PROGRAM_ID):
     foreign = [o for o in rows if o.label != OPP_LABEL]
     if foreign:
         raise Refused(f"program {program_id} is already used by {[o.label for o in foreign]}; pick another id")
+    # Who may read and write this program: Sophie (a demo-only @example.invalid persona) and the AI that
+    # records her suppliers' email -- the configured agent account, whose domain is not a Dimagi-internal one,
+    # so without it here the agent's MCP writes are refused.
+    domains = ["@example.invalid"] + [
+        "@" + e.split("@", 1)[1].lower() for e in settings.LABS_AGENT_ACCOUNT_EMAILS if "@" in e
+    ]
     if rows:
         opp = rows[0]
-        if "@example.invalid" not in (opp.allowed_domains or []):
-            opp.allowed_domains = list(opp.allowed_domains or []) + ["@example.invalid"]
+        missing = [d for d in domains if d not in (opp.allowed_domains or [])]
+        if missing:
+            opp.allowed_domains = list(opp.allowed_domains or []) + missing
             opp.save(update_fields=["allowed_domains"])
         return opp
     opp = register_labs_only_opp(
@@ -181,7 +188,7 @@ def ensure_program(program_id: int = PROGRAM_ID):
         org_name="Connect-RUTF walkthrough",
         program_name=PROGRAM_NAME,
         program_id=program_id,
-        allowed_domains=["@example.invalid"],
+        allowed_domains=domains,
     )
     mark_generated(opp.opportunity_id, "")
     return opp
