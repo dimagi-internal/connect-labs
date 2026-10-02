@@ -93,8 +93,12 @@ class TestOneMoneyFormat:
 class TestTheRankingBasisIsOnItsColumn:
     def test_the_header_says_it_and_nothing_floats_above_the_table(self, da, base, client_in_program):
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _DELIVERED)
+        # Two offers: with one there is no ranking to mark (unanswered round, batch 2).
+        other = batch6._supplier(da, "Sahel Nutrition")
+        _quote_with(da, base["tender"]["id"], other["id"], AUG_20, {**_DELIVERED, "as_quoted_amount": "44.00"})
         body = _page(client_in_program, base["tender"]["id"])
         head = re.search(r"<thead>.*?</thead>", body, re.S).group(0)
+        assert "<th>#</th>" in head
         marked = re.findall(r"<th>([^<]*)<span data-testid=\"ranked-by-marker\"[^>]*>(.*?)</span></th>", head)
         assert len(marked) == 1
         label, marker = marked[0]

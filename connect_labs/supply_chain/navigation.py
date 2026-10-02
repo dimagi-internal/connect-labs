@@ -80,6 +80,7 @@ TAB_FOR_VIEW = {
     "supply_chain:procurement_tender_uninvite_org": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_outreach_log": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_outreach_reply": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_outreach_chase": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_outreach_delete": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_quote_void": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_quote_correct": "supply_chain:procurement_tender_board",

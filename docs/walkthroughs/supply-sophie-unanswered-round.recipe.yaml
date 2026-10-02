@@ -27,6 +27,11 @@ scenes:
     target: text:deadline passed
     seconds: 2.5
     note: the round is still open, past its deadline
+  - &id001
+    kind: hover
+    target: text:Connect Labs
+    seconds: 0.6
+    note: park the cursor off the content
   - kind: hold
     seconds: 1.5
   concept_claim: Sophie's goal is a record that shows the suppliers who never replied as plainly as the replies,
@@ -56,6 +61,9 @@ scenes:
     say: chased
     seconds: 1.5
     target: text:Last chased
+  - *id001
+  - kind: hold
+    seconds: 1.0
   concept_claim: The round's Outreach table shows, for every supplier asked, how long they have been silent and
     the day they were last chased, beside the reply day and kind for those who answered.
   design_intent: 'Silence must be as visible as a reply: a row with days waiting and a last-chased day, not a blank.'
@@ -80,22 +88,19 @@ scenes:
     seconds: 3.0
     say: reminder
     note: the drafted reminder, which quotes the day she last wrote
-  - kind: click
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] a
-    must_succeed: true
-    timeout_ms: 30000
-    note: record the day she chased Sahel
   - kind: fill
-    target: css:#id_last_reminder_on
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=chase-date]
     value: ${today}
     say: today
   - kind: click
-    target: role:button:Save
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=record-chase]
     must_succeed: true
     timeout_ms: 30000
+    note: record the day she chased Sahel, from the draft itself
   - kind: wait_for
     target: css:tr[data-changed]
     must_succeed: true
+  - *id001
   - kind: hold
     seconds: 2.5
     note: Sahel's row, chased today
@@ -109,38 +114,35 @@ scenes:
   actions:
   - kind: wait_for
     target: css:#history
+  - kind: scroll
+    value: top
   - kind: scroll_to
     target: css:[data-testid=revision-line]:has-text('Quote · Harmattan Therapeutics')
   - kind: click
-    target: css:[data-testid=revision-line]:has-text('Quote · Harmattan Therapeutics') [data-testid=actor-badge]
+    target: css:[data-testid=revision-line]:has-text('Quote · Harmattan Therapeutics') [data-testid=source-toggle]
     must_succeed: true
     say: Harmattan
     note: Harmattan's pro-forma
   - kind: hold
     seconds: 1.5
-  - kind: scroll_to
-    target: css:[data-testid=revision-line]:has-text('Quote · Kanem Foods Ltd')
   - kind: click
-    target: css:[data-testid=revision-line]:has-text('Quote · Kanem Foods Ltd') [data-testid=actor-badge]
+    target: css:[data-testid=revision-line]:has-text('Quote · Kanem Foods Ltd') [data-testid=source-toggle]
     must_succeed: true
     say: Kanem
     note: Kanem's price, missing its pack size
   - kind: hold
     seconds: 1.5
-  - kind: scroll_to
-    target: css:[data-testid=revision-line]:has-text('Northgate Commodities · Replied')
   - kind: click
-    target: css:[data-testid=revision-line]:has-text('Northgate Commodities · Replied') [data-testid=actor-badge]
+    target: css:[data-testid=revision-line]:has-text('Northgate Commodities · Replied') [data-testid=source-toggle]
     must_succeed: true
     say: Northgate
     note: Northgate's questions instead of a price
-  - kind: hold
-    seconds: 1.0
   - kind: scroll_to
-    target: css:[data-testid=revision-line]:has-text('Quote · Kanem Foods Ltd') [data-testid=source-heading]
+    target: css:[data-testid=revision-line]:has-text('Northgate Commodities · Replied') [data-testid=source-heading]
+  - *id001
   - kind: hold
     seconds: 2.5
-    note: all three emails open, Kanem's in the middle
+    note: the three emails open, Northgate's centred
   concept_claim: Every reply the AI recorded appears in the round's history with the email excerpt, the sender's
     name and an AI mark, so Sophie can check the record against what the supplier said.
   design_intent: Trust comes from the supplier's own words beside what was recorded; the AI is the typist, never
@@ -189,6 +191,7 @@ scenes:
   - kind: wait_for
     target: css:[data-changed]
     must_succeed: true
+  - *id001
   - kind: hold
     seconds: 2.5
     note: the importer question, answered
@@ -206,13 +209,13 @@ scenes:
     target: testid:waiting-on-us
     seconds: 2.0
     say: permit
-  - kind: scroll_to
-    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 · Status dispatched')
   - kind: click
-    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 · Status dispatched') [data-testid=actor-badge]
+    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 · Status dispatched') [data-testid=source-toggle]
     must_succeed: true
     say: forwarder
     note: 'the forwarder''s message: held at the border on our import permit'
+  - kind: scroll_to
+    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 · Status dispatched') [data-testid=source-excerpt]
   - kind: hold
     seconds: 2.0
   - kind: scroll_to
@@ -221,9 +224,12 @@ scenes:
     seconds: 1.5
     say: advance
   - kind: hover
-    target: text:above agreed
-    seconds: 2.0
+    target: testid:above-agreed-tag
+    seconds: 1.5
     say: invoice
+  - *id001
+  - kind: hold
+    seconds: 1.5
   concept_claim: The order page says it is waiting on us for the import permit rather than reporting the supplier
     late, flags an invoice above the agreed price with billed against agreed, and lists the advance paid before
     any invoice.

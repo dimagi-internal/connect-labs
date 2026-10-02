@@ -159,6 +159,11 @@ urlpatterns = [
         name="procurement_outreach_reply",
     ),
     path(
+        "procurement/outreach/<int:outreach_id>/chase/",
+        procurement_views.OutreachChaseView.as_view(),
+        name="procurement_outreach_chase",
+    ),
+    path(
         "procurement/outreach/<int:outreach_id>/delete/",
         procurement_views.OutreachDeleteView.as_view(),
         name="procurement_outreach_delete",

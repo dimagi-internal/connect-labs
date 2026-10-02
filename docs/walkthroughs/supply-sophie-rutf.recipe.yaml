@@ -73,7 +73,7 @@ scenes:
     say: 19 Sep
     note: the ETA change, in words, with its actor badge
   - kind: click
-    target: css:[data-testid=revision-line][data-fields~=expected_on]:has-text('→') [data-testid=actor-badge]
+    target: css:[data-testid=revision-line][data-fields~=expected_on]:has-text('→') [data-testid=source-toggle]
     note: open the source behind the AI's entry
   - kind: wait_for
     target: testid:source-excerpt
@@ -268,7 +268,7 @@ scenes:
     target: css:[data-testid=revision-line][data-fields~=base_per_pack_stated]:has-text('corrected')
   - kind: click
     note: open the reply the agent recorded as its source
-    target: css:[data-testid=revision-line][data-fields~=base_per_pack_stated]:has-text('corrected') [data-testid=actor-badge]
+    target: css:[data-testid=revision-line][data-fields~=base_per_pack_stated]:has-text('corrected') [data-testid=source-toggle]
   - kind: wait_for
     target: testid:source-excerpt
   - kind: hold

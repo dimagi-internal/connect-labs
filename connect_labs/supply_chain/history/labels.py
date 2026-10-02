@@ -44,6 +44,8 @@ FIELD_LABELS = {
 MODEL_LABELS = {
     "Contract": "Order",
     "AwardApproval": "Approval request",
+    # Something we owe a counterparty: their question, or our promise.
+    "Commitment": "Owed",
 }
 
 # Vocabulary codes held in a plain CharField (no `choices`), which would
@@ -290,6 +292,11 @@ def _outreach_reply_clause(kind) -> str:
     return _OUTREACH_REPLY_TEXT.get(kind) or f"Replied: {words(kind)}"
 
 
+def _short(text) -> str:
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= _LONG_TEXT else text[: _LONG_TEXT - 1].rstrip() + "…"
+
+
 def _values_of(obj) -> dict:
     return {f.attname: getattr(obj, f.attname) for f in obj._meta.concrete_fields}
 
@@ -368,6 +375,7 @@ def _identity(model, values, lookup) -> str:
         "Invoice": lambda: values.get("reference") or "",
         "Charge": lambda: words(values.get("kind") or "").capitalize() if values.get("kind") else "",
         "Payment": lambda: _cash(values),
+        "Commitment": lambda: name_org(values.get("owed_to_org_id")),
         "Document": lambda: values.get("title")
         or (words(values.get("kind")).capitalize() if values.get("kind") else ""),
         "ShipmentLine": lambda: _qty(values, "quantity", "quantity_unit"),
@@ -420,6 +428,9 @@ def _create_facts(model, values, lookup) -> list[str]:
         facts.append(_cash(values))
     elif named == "Payment" and values.get("paid_on"):
         facts.append(f"paid {_day(values['paid_on'])}")
+    elif named == "Commitment" and values.get("text"):
+        said = "they asked" if values.get("kind") == "question" else "we promised"
+        facts.append(f"{said}: {_short(values['text'])}")
     return [f for f in facts if f]
 
 
@@ -505,6 +516,11 @@ def sentence(model, action, changes, lookup) -> str:
         kind = changes.pop("response_kind")[1]
         changes.pop("responded", None)
         lead.append(_outreach_reply_clause(kind))
+    if model.__name__ == "Commitment" and (changes.get("resolution") or [None, ""])[1]:
+        # "answered: one warehouse in Kano" -- the day it was answered is the
+        # line's own date, so it is not a second clause.
+        lead.append(f"answered: {_short(changes.pop('resolution')[1])}")
+        changes.pop("resolved_on", None)
     clauses = lead + [_clause(model, attname, old, new, lookup) for attname, (old, new) in changes.items()]
     return "; ".join(c for c in clauses if c)
 

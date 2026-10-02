@@ -505,6 +505,21 @@ class CommitmentForm(ScopedForm):
         )
 
 
+class OutreachChaseForm(forms.Form):
+    """The day a reminder went: the one fact the reminder draft's own form records."""
+
+    last_reminder_on = forms.DateField(label=_("Chased on"), initial=date.today, widget=forms.DateInput(attrs=DATE))
+
+    def __init__(self, *args, access=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+
+    def payload(self) -> dict:
+        return to_payload(self.cleaned_data)
+
+
 class CommitmentResolveForm(forms.Form):
     """How a question was answered or a promise kept, and when."""
 
