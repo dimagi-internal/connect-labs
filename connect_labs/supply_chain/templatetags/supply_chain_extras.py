@@ -1340,3 +1340,18 @@ def rests_on_unsettled(parts):
         if (isinstance(part, dict) and "unconfirmed" in part) or _nonzero_amount(part) is not None:
             return True
     return False
+
+
+@register.filter
+def lead_in(line):
+    """A "Kind: detail" line with its kind in bold: "<strong>No reply</strong>: Plateau Mills".
+
+    The overview's waiting-on lines lead with what is blocking ("us", "No
+    reply", "Missing facts"); bold makes the kinds scannable down the column.
+    The text is unchanged, and a line with no colon is returned as it is.
+    """
+    text = str(line or "")
+    head, sep, rest = text.partition(":")
+    if not sep or not head.strip():
+        return escape(text)
+    return mark_safe(f"<strong>{escape(head)}</strong>:{escape(rest)}")

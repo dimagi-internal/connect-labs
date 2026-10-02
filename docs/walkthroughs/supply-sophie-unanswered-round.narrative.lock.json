@@ -9,7 +9,7 @@
     "held-on-us",
     "whose-move"
   ],
-  "fetched_at": "2026-10-02T15:52:49.582973+00:00",
+  "fetched_at": "2026-10-02T16:49:35.378766+00:00",
   "name": "supply-sophie-unanswered-round",
   "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program, and on 15 September she asked six suppliers to quote round 2: half of them have never answered, despite two reminders, and she forwards whatever does arrive to an AI that records it. Sophie opens round 2 and reads who answered and who has said nothing, how many days each has been silent and when she last chased them. She opens the reminder drafted for Sahel to send from her own mailbox, and records today as the day she chased them. She reads what the three who did answer actually said, in their own words, with who sent it. She reads what the two quotes are still missing: Harmattan's states everything, Kanem's lacks its pack size. She finds Northgate's questions waiting on her and answers who will import. On the round 1 order with Harmattan, she reads that the trucks are held at the border on our import permit, finds the advance she paid before any invoice existed, and sees the invoice flagged as above the agreed price. Back on her overview, Sophie reads who is silent and whose move each thing is.",
   "personas": {
@@ -41,12 +41,12 @@
         {
           "description": "Add a Last chased column to the tender page Outreach table showing Outreach.last_reminder_on.",
           "id": "outreach-last-chased-column",
-          "verify": "Playwright: the Outreach row for Sahel Nutrition Industries shows Last chased '29 Sep' and Replied 'No'"
+          "verify": "Playwright: the Outreach row for Sahel Nutrition Industries shows Last chased '23 Sep 2026' with '2nd reminder' and Replied 'No'"
         },
         {
-          "description": "The seeder records six requests on 15 Sep, reminders to the silent three on 22 and 29 Sep, and three replies on their own days.",
+          "description": "The seeder records six requests on 15 Sep, a first reminder on 18 Sep, a second to each silent supplier on 23-25 Sep, and three replies on their own days.",
           "id": "seeded-half-silent-round",
-          "verify": "Django shell: outreach for round 2 has 6 rows, 3 responded=true, 3 with last_reminder_on=2026-09-29 and responded=false"
+          "verify": "Django shell: outreach for round 2 has 6 rows, 3 responded=true, 3 responded=false with last_reminder_on between 2026-09-23 and 2026-09-25"
         }
       ],
       "id": "who-answered-who-is-silent",
@@ -176,5 +176,5 @@
     }
   ],
   "slug": "supply-sophie-unanswered-round",
-  "version": 4
+  "version": 5
 }

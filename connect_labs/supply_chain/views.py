@@ -553,6 +553,46 @@ def _tellers(contract, points, orgs, suppliers):
     return {source: name for source, name in tellers.items() if name}
 
 
+def mark_changed(rows, kind, changed):
+    """Flag the row `?changed=<kind>-<id>` names, the one a form just saved, as `changed`."""
+    for row in rows:
+        row["changed"] = changed == f"{kind}-{row.get('id')}"
+    return rows
+
+
+def _mark_invoices(invoices, invoice_above):
+    """Each invoice's own reading of the bill and its payments, for its row.
+
+    `above_agreed`: what the invoice_above_contract check found on this
+    invoice, worded from the check's facts rather than recomputed -- "USD
+    3,550.00 above agreed". The check's total is across every live invoice, so
+    it is put on an invoice's row only when that invoice is the only one.
+    `advance` on a payment made before the invoice was issued: it was paid in
+    advance and the invoice acknowledged it, which "Paid ... on 28 Jul" under
+    an invoice of 21 Sep did not say.
+    """
+    from connect_labs.supply_chain.values import money_digits
+
+    facts = (invoice_above or {}).get("facts") or {}
+    currency = facts.get("currency") or ""
+    for invoice in invoices:
+        marks = []
+        for line in facts.get("above") or []:
+            if line.get("field") == "total":
+                if len(invoices) == 1:
+                    marks.insert(0, f"{currency} {money_digits(line['difference'])} above agreed")
+            elif line.get("invoice_id") == invoice.get("id"):
+                what = "unit price" if line["field"] == "unit_price" else "freight"
+                marks.append(
+                    f"{what} {currency} {money_digits(line['billed'])} against {money_digits(line['agreed'])} agreed"
+                )
+        invoice["above_agreed"] = marks
+        issued = str(invoice.get("issued_on") or "")[:10]
+        for payment in invoice.get("payments") or []:
+            paid = str(payment.get("paid_on") or "")[:10]
+            payment["advance"] = bool(issued and paid and paid < issued)
+
+
 class OrderDetailView(OperationBase):
     """One order, with the two derivations that decide whether to pay it.
 
@@ -731,7 +771,11 @@ class OrderDetailView(OperationBase):
         context["invoice_above"] = next(
             (c for c in late if c["kind"] == "invoice_above_contract" and c["subject"]["id"] == contract_id), None
         )
-        context["owed"] = self.op("commitment_list", contract_id=contract_id)
+        _mark_invoices(context["invoices"], context["invoice_above"])
+        # The row a form just saved is picked out on arrival ("?changed=commitment-4").
+        context["owed"] = mark_changed(
+            self.op("commitment_list", contract_id=contract_id), "commitment", self.request.GET.get("changed")
+        )
         context["advances"] = [
             p for p in self.op("payment_list", contract_id=contract_id) if p.get("invoice_id") is None
         ]

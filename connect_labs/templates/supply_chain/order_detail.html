@@ -725,7 +725,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
 {% endcomment %}
 {% if contract.consideration == "priced" or invoices %}
 <div class="flex items-baseline justify-between mt-6 mb-2">
-  <h3 class="text-sm font-semibold text-gray-900">What we owe them</h3>
+  <h3 id="owed" class="text-sm font-semibold text-gray-900 scroll-mt-20">What we owe them</h3>
   {% if not supply_as_of %}
   <a href="{% url 'supply_chain:contract_commitment_record' contract.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>
@@ -733,7 +733,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
 </div>
 <div class="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 mb-2" data-testid="owed">
   {% for c in owed %}
-    <div class="px-4 py-2 text-sm flex items-start justify-between gap-4">
+    <div class="px-4 py-2 text-sm flex items-start justify-between gap-4{% if c.changed %} bg-yellow-50{% endif %}" data-commitment-id="{{ c.id }}"{% if c.changed %} data-changed{% endif %}>
       <div>
         <span class="font-medium text-gray-900">{{ c.owed_to }}</span>
         <span class="text-gray-600">· {% if c.kind == "question" %}asked us{% else %}we promised{% endif %} {{ c.raised_on|day }}</span>
@@ -791,6 +791,11 @@ The section stays only if one was somehow recorded, so it is not hidden.
           <td class="px-4 py-2 text-gray-600">{{ invoice.issued_on|day|default:"—" }}</td>
           <td class="px-4 py-2 text-right tabular-nums">
             {% if invoice.amount %}{{ invoice.currency }} {{ invoice.amount|money }}{% else %}—{% endif %}
+            {% comment %}What the invoice_above_contract check found on this invoice, in its
+            own words: calm, beside the figure, not a second alarm.{% endcomment %}
+            {% for mark in invoice.above_agreed %}
+              <div data-testid="invoice-above-agreed" class="text-xs text-message-warning-text">{{ mark }}</div>
+            {% endfor %}
           </td>
           <td class="px-4 py-2 text-right tabular-nums">
             {% if invoice.quantity_billed %}
@@ -825,7 +830,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
           {% endcomment %}
           <tr class="bg-gray-50/60">
             <td class="px-4 py-1.5 pl-8 text-xs text-gray-600" colspan="6">
-              Paid {{ payment.currency }} {{ payment.amount|money }} on {{ payment.paid_on|day }}{% if payment.method %} by {{ payment.method|words }}{% endif %}
+              {% if payment.advance %}Advance paid{% else %}Paid{% endif %} {{ payment.currency }} {{ payment.amount|money }} on {{ payment.paid_on|day }}{% if payment.advance %} (before this invoice){% endif %}{% if payment.method %} by {{ payment.method|words }}{% endif %}
               ·
               {% if payment.confirmed_by_payee_on %}
                 <span class="text-message-success-text">confirmed by the payee {{ payment.confirmed_by_payee_on|day }}</span>
