@@ -169,12 +169,13 @@ class TestTheAgentBadge:
 
 @pytest.mark.django_db
 class TestTheTimeline:
-    def test_view_email_becomes_hide_email_while_open(self, da, base, order, client_in_program):
+    def test_the_source_toggle_keeps_one_label_and_turns_a_caret(self, da, base, order, client_in_program):
         body = batch6._order_page(client_in_program, order["contract"]["id"])
         assert re.search(r'<details class="group text-xs open:w-full">', body)
         button = re.search(r'<span data-testid="source-link"[^>]*>(.*?)</summary>', body, re.S).group(1)
-        assert '<span class="group-open:hidden">Source email</span>' in button
-        assert '<span data-testid="source-hide" class="hidden group-open:inline">Hide email</span>' in button
+        assert "<span>Source email</span>" in button
+        assert "Hide email" not in button
+        assert 'data-testid="source-caret"' in button and "group-open:rotate-90" in button
 
     def test_the_value_after_the_arrow_is_bold(self, da, base, order, client_in_program):
         body = batch6._order_page(client_in_program, order["contract"]["id"])

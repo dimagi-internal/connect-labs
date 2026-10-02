@@ -106,8 +106,8 @@ class TestChaseFromTheDraft:
         form = re.search(r'<form [^>]*data-testid="chase-form".*?</form>', drafts, re.S).group(0)
         url = reverse("supply_chain:procurement_outreach_chase", args=[world["outreach"]["id"]])
         assert f'action="{url}"' in form
-        today = datetime.date.today().isoformat()
-        assert re.search(rf'data-testid="chase-date" type="date" name="last_reminder_on"\s+value="{today}"', form)
+        today = f"{datetime.date.today():%-d %b %Y}"
+        assert re.search(rf'data-testid="chase-date" type="text" name="last_reminder_on"\s+value="{today}"', form)
         assert 'data-testid="record-chase"' in form
 
     def test_recording_a_chase_sets_only_the_day_and_returns_to_the_row(self, da, world, web):
@@ -259,8 +259,15 @@ class TestTheComparison:
         # Since batch 4 the award opens from its button, which carries the words.
         button = re.search(r'<summary data-testid="award-open" data-anyway[^>]*>(.*?)</summary>', body, re.S)
         assert button is not None
-        label = html.unescape(_text(button.group(1)))
-        assert label.startswith("Award Kanem ") and label.endswith(" now — 1 other quote can't be compared yet")
+        label = html.unescape(
+            _text(re.search(r'data-testid="award-label"[^>]*>(.*?)</span>', button.group(1)).group(1))
+        )
+        caveat = html.unescape(
+            _text(re.search(r'data-testid="award-caveat"[^>]*>(.*?)</span>', button.group(1)).group(1))
+        )
+        # Since the 002 run's batch 3 the caveat is helper text under the action, not in it.
+        assert label.startswith("Award Kanem ") and label.endswith(" now")
+        assert caveat == "1 other quote can't be compared yet."
         assert 'title="Northgate Rehearsal Commodities has not stated ' in button.group(0)
 
     def test_an_empty_trailing_column_is_dropped_but_not_one_between_figures(self):

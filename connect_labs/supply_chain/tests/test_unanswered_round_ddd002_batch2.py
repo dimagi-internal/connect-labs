@@ -76,5 +76,5 @@ def test_a_reply_reads_as_one_sentence_with_its_day(da, world, client_in_program
         data={"responded": True, "response_kind": "quote", "responded_on": "2026-07-09"},
     )
     body = _tender_page(client_in_program, world["tender"]["id"])
-    assert re.search(r"Replied with a quote on 9 Jul", body)
+    assert re.search(r"Replied with a quote on 9 Jul 20\d\d", body)
     assert "Responded on" not in body

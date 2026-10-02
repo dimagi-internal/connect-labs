@@ -70,14 +70,14 @@ scenes:
     target: css:#drafts[open]
   - kind: scroll_to
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] textarea
+  - kind: hover
+    note: park the cursor on Sahel's name, the card's heading, off the message and the date field
+    seconds: 0.6
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] p:first-child span:first-child
   - kind: hold
-    note: the drafted reminder, which quotes the day she last wrote
+    note: the drafted reminder, which quotes the day she last wrote; the Chased on field already reads today
     say: reminder
     seconds: 3.0
-  - kind: fill
-    say: today
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=chase-date]
-    value: ${today}
   - kind: snapshot
     note: the canonical frame is Sahel's drafted reminder, quoting the day she last wrote, with today's date ready to record
   - kind: click
@@ -107,10 +107,8 @@ scenes:
   actions:
   - kind: wait_for
     target: css:#history
-  - kind: scroll_to
-    note: the record moved -- Sahel's row now replied with a quote, and 4 of 6 replied
-    target: css:#outreach
   - kind: hover
+    note: the record moved -- Sahel's row now replied with a quote (the page opens at the Outreach table)
     say: answers
     seconds: 2.0
     target: css:tr[data-outreach-id]:has-text('Sahel Nutrition Industries') td:nth-child(4)
@@ -133,12 +131,15 @@ scenes:
     target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-toggle]
   - kind: wait_for
     target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-excerpt]
+  - kind: scroll_to
+    note: lift History up the frame so its heading sits clear under the header, Sahel's email and records below it
+    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=email-event-records]
   - kind: hold
     seconds: 2.5
   - kind: hover
-    note: park the cursor on the Replies only checkbox, off the email and the records
+    note: park the cursor on the History heading, off the email, the records and the checkbox
     seconds: 0.6
-    target: testid:history-replies-only
+    target: css:#history h2
   - kind: hold
     seconds: 1.0
   before: python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --sahel-replies
@@ -202,13 +203,13 @@ scenes:
     seconds: 2.0
     target: text:Harmattan Therapeutics
   - kind: scroll_to
-    note: frame the Needs info heading and both cards under it
+    note: frame the Needs info heading and both cards under it; the Comparable table's unlabelled figures leave the frame
     say: Kanem
     target: css:[data-testid=needs-info]
   - kind: hover
-    note: park the cursor in the empty right of the Needs info heading, off the cards' text
+    note: park the cursor on the Needs info heading's words at the left, off the cards and mid-frame
     seconds: 0.6
-    target: css:#needs-info > h2
+    target: testid:needs-info-title
   - kind: hold
     say: Sahel
     seconds: 2.5
@@ -269,6 +270,9 @@ scenes:
   actions:
   - kind: wait_for
     target: testid:standing-table
+  - kind: scroll_to
+    note: frame the whole standing table, the order row and its "bought by" line included
+    target: testid:standing-table
   - kind: hover
     say: silent
     seconds: 1.8
@@ -278,9 +282,9 @@ scenes:
     seconds: 1.8
     target: text:import permit
   - kind: hover
-    note: park the cursor on a heading in frame
+    note: park the cursor on the View as of label above the table, off the table
     seconds: 0.6
-    target: text:Where everything stands
+    target: text:View as of
   - kind: hold
     seconds: 1.5
   concept_claim: The overview names each supplier who has not replied with the day

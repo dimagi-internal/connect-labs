@@ -60,11 +60,13 @@ them out on a past date.
           <li data-testid="email-event" data-when="{{ event.when|date:'c' }}" class="my-1.5 py-2 pl-3 pr-2 border-l-2 border-indigo-300 bg-indigo-50/40 rounded-r">
             <div class="flex flex-wrap items-center gap-2">
               <span data-testid="email-event-head" class="text-sm font-medium text-gray-900">{{ event.head.source_kind|default:"Source" }}{% if event.sender %} from {{ event.sender }}{% endif %}</span>
+              {% comment %}"recorded by": the pill names who entered the email, not who sent it.{% endcomment %}
+              <span data-testid="recorded-by" class="text-sm text-gray-600">recorded by</span>
               <span data-testid="actor-badge" {% if event.head.is_ai %}data-ai {% endif %}class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm {% if event.head.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}"><span data-testid="actor-pill" class="inline-flex items-center gap-1">{% if event.head.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=event.head.actor %}{% endif %}<span>{{ event.head.actor }}</span></span></span>
             </div>
             <details class="group mt-1 w-full text-xs">
               <summary data-testid="source-toggle" title="{% if event.head.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
-                       class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center"><span data-testid="source-link" class="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50">{% if event.head.source_kind == "Email" %}<i class="fa-regular fa-envelope" aria-hidden="true"></i>{% endif %}<span class="group-open:hidden">{{ event.head.source_link_text }}</span><span data-testid="source-hide" class="hidden group-open:inline">{{ event.head.source_hide_text }}</span></span></summary>
+                       class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center"><span data-testid="source-link" class="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50">{% if event.head.source_kind == "Email" %}<i class="fa-regular fa-envelope" aria-hidden="true"></i>{% endif %}<span>{{ event.head.source_link_text }}</span><i data-testid="source-caret" class="fa-solid fa-chevron-right text-xs transition-transform group-open:rotate-90" aria-hidden="true"></i></span></summary>
               {% comment %}No "Email from X, recorded by Y on <day>" line here: the event's head above
               names the sender and who recorded it, and the day heading carries the date. Only a
               replay is worth a word.{% endcomment %}

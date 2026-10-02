@@ -81,14 +81,17 @@ class TestWaitingOnSaysTwoThings:
         lines = re.findall(r'data-testid="waiting-line"[^>]*>(.*?)</(?:span|div)>', standing)
         # Each line's kind in bold. Since unanswered-round 002 the silent
         # suppliers stack one a line under "No reply", each with the day asked.
-        assert lines[0].startswith("<strong>No reply</strong>:")
+        # (Read on today's page, the round may be past its deadline, which leads the
+        # cell with "Us: extend or close the round"; that line is pinned elsewhere.)
+        assert any(line.startswith("<strong>No reply</strong>:") for line in lines)
         assert re.findall(r'data-testid="silent-supplier">(.*?)</li>', standing) == [
             'Plateau Mills <span class="text-gray-600">(asked 10 Aug)</span>'
         ]
         # One labelled list per owner: "Missing facts" heads its suppliers as "No reply" does.
         assert any(line.startswith("<strong>Missing facts</strong>:") for line in lines)
         items = re.findall(r'data-testid="waiting-item">(.*?)</li>', standing)
-        assert [re.sub(r"<[^>]+>", "", i) for i in items] == [missing[15:]]
+        items = [re.sub(r"<[^>]+>", "", i) for i in items]
+        assert [i for i in items if not i.startswith("extend or close the round")] == [missing[15:]]
 
     def test_after_a_provisional_award_the_awardee_is_not_missing_facts(self, da, base):
         _provisional(da, base)
