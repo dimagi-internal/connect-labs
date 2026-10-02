@@ -412,7 +412,7 @@ class TestTheTimeline:
 
 
 def _ranked(body, quote_id):
-    return re.search(rf'<tr data-testid="ranked-row" data-quote-id="{quote_id}">.*?</tr>', body, re.S).group(0)
+    return re.search(rf'<tr data-testid="ranked-row" data-quote-id="{quote_id}"[^>]*>.*?</tr>', body, re.S).group(0)
 
 
 def _detail(body, quote_id):
@@ -473,7 +473,7 @@ class TestABlockedCard:
         card = _card(body, quote["id"])
 
         # Since batch 7 the price is its own line and the day is metadata under it.
-        assert re.search(r'data-testid="as-quoted"[^>]*>Quoted 42.50 USD per carton<', card)
+        assert re.search(r'data-testid="as-quoted"[^>]*>Quoted USD 42.50 per carton<', card)
         assert re.search(r'data-testid="received-on"[^>]*>Received 20 Aug 2026<', card)
         blocking = re.search(r'data-testid="blocking"[^>]*>(.*?)</p>', card, re.S).group(1)
         assert _text(blocking) == "Blocking: Sachets per carton not stated on the quote"

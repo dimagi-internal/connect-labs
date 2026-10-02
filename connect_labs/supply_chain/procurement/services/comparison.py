@@ -171,7 +171,7 @@ class ComparisonRow:
     # than the pricing module's generic "units per pack".
     base_unit: str = ""
     pack_unit: str = ""
-    # The price as the supplier stated it ("42.50 USD per carton") and the
+    # The price as the supplier stated it ("USD 42.50 per carton") and the
     # day the quote arrived: a blocked card still says what was offered.
     as_quoted: str = ""
     received_on: str = ""
@@ -679,10 +679,15 @@ def per_pack_note(figures, base_unit, pack_unit) -> str:
 
 
 def as_quoted_words(quote, base_unit="", pack_unit="") -> str:
-    """ "42.50 USD per carton": the price as the supplier stated it, before any conversion."""
+    """ "USD 42.50 per carton": the price as the supplier stated it, before any conversion.
+
+    Currency first, the way every other figure on the comparison reads ("USD
+    41.00" in the ranked table, "= USD 43.50 per carton" after it): "42.50 USD
+    per carton" beside them read as a second money format.
+    """
     if quote.as_quoted_amount is None:
         return "no price stated"
-    price = f"{money_digits(quote.as_quoted_amount)} {quote.as_quoted_currency or 'USD'}"
+    price = f"{quote.as_quoted_currency or 'USD'} {money_digits(quote.as_quoted_amount)}"
     unit = {"per_pack": pack_unit, "per_base_unit": base_unit}.get(quote.as_quoted_unit or "")
     if unit:
         return f"{price} per {unit_noun(unit)}"

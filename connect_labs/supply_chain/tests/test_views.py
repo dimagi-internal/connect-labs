@@ -270,7 +270,8 @@ def test_the_comparison_page_shows_outstanding_questions_for_a_comparable_row(cl
     assert response.status_code == 200
     assert "Northwind Nutrition" in body
     assert "What is the shelf life from date of manufacture?" in body
-    assert "Ranked by USD per sachet" in body
+    # Since batch 10 the basis is marked on its own column's header, not floated above it.
+    assert re.search(r'<th>USD per sachet<span data-testid="ranked-by-marker"', body)
     # provisional is False -- the PROVISIONAL badge must not render.
     assert "PROVISIONAL" not in body
 

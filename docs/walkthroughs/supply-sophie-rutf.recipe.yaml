@@ -219,7 +219,7 @@ scenes:
     seconds: 0.8
     target: css:[data-quote-id='${quote_pack_missing_id}']
   - kind: scroll
-    value: '330'
+    value: '348'
     note: all three blocked quotes in frame, the answered one included (a pixel scroll; scroll_to the heading is a no-op
       because the heading is already in view)
   - kind: hover
@@ -290,9 +290,9 @@ scenes:
     target: css:[data-testid=ranked-row-detail] [data-testid=correction-source] summary
     note: the correction that let it in, with the supplier's reply
   - kind: hover
-    target: css:[data-testid=ranked-row] td:first-child
+    target: text:Draft emails for this tender
     seconds: 1.2
-    note: park the cursor on the rank number, off the headings, the ranking basis and the figures
+    note: park the cursor up on the drafts link, off the rank, the headings and the figures
   - kind: snapshot
     note: one quote comparable, two still waiting
   concept_claim: After the supplier's reply is recorded through the AI as a correction to its quote, round 2's timeline shows

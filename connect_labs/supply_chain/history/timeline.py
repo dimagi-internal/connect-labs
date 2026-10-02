@@ -558,7 +558,7 @@ def ai_entered_quotes(quote_ids, *, program_id) -> dict:
 
 
 def corrections_for_quotes(quote_ids, *, program_id, until=None) -> dict:
-    """{quote id: {"when", "changes", "actor", "is_ai"}} for the quotes whose version a correction made.
+    """{quote id: {"when", "changes", "actor", "filled_gap", ...}} for the quotes a correction made.
 
     What the timeline's correction line says ("sachets per carton 150 (was
     not stated)"), so a comparison row can show why an offer that
@@ -615,5 +615,12 @@ def corrections_for_quotes(quote_ids, *, program_id, until=None) -> dict:
                 for attname in fields
                 if attname != "pack_spec_source"
             ],
+            # The correction answered a fact the quote had left blank ("sachets
+            # per carton 150 (was not stated)") -- the answer that moved a blocked
+            # quote into the ranking -- rather than revising a figure it already
+            # had. Only then does the ranked row say the quote joined the ranking.
+            "filled_gap": any(
+                old.get(quote_id, {}).get(attname) in (None, "") for attname in fields if attname != "pack_spec_source"
+            ),
         }
     return out
