@@ -52,7 +52,7 @@ listed_tender = batch3.listed_tender
 
 
 def _ranked(body, quote_id):
-    return re.search(rf'<tr data-testid="ranked-row" data-quote-id="{quote_id}">.*?</tr>', body, re.S).group(0)
+    return re.search(rf'<tr data-testid="ranked-row" data-quote-id="{quote_id}"[^>]*>.*?</tr>', body, re.S).group(0)
 
 
 def _actions(body, quote_id):

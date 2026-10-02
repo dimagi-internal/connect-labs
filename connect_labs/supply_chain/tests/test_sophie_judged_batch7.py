@@ -294,7 +294,7 @@ class TestABlockedCard:
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {})
         card = batch6._card(_page(client_in_program, base["tender"]["id"]), quote["id"])
         price = re.search(r'<p data-testid="as-quoted" class="([^"]*)">(.*?)</p>', card, re.S)
-        assert batch6._text(price.group(2)) == "Quoted 42.50 USD per carton"
+        assert batch6._text(price.group(2)) == "Quoted USD 42.50 per carton"
         assert "text-gray-600" not in price.group(1).split()
         assert re.search(r'data-testid="received-on"[^>]*>Received 20 Aug 2026<', card)
         assert card.index('data-testid="as-quoted"') < card.index('data-testid="received-on"')
@@ -310,7 +310,7 @@ class TestABlockedCard:
         card = batch6._card(_page(client_in_program, base["tender"]["id"]), quote["id"])
         price = batch6._text(re.search(r'<p data-testid="as-quoted"[^>]*>(.*?)</p>', card, re.S).group(1))
         # Since batch 8: with the pack unknown, it says when the per-carton figure can be given.
-        assert price == "Quoted 0.28 USD per sachet (per carton once sachets per carton is known)"
+        assert price == "Quoted USD 0.28 per sachet (per carton once sachets per carton is known)"
 
     def test_a_per_carton_price_says_nothing_more(self, da, base, client_in_program):
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {})
@@ -333,7 +333,7 @@ class TestOneUnitColumn:
         assert "USD per carton (= 1 course = 1 child treated)" in heads
         assert "USD per course" not in heads and "USD per child treated" not in heads
         # One cell per header still.
-        row = re.search(rf'<tr data-testid="ranked-row" data-quote-id="{quote["id"]}">(.*?)</tr>', body, re.S)
+        row = re.search(rf'<tr data-testid="ranked-row" data-quote-id="{quote["id"]}"[^>]*>(.*?)</tr>', body, re.S)
         assert len(re.findall(r"<td", row.group(1))) == len(heads)
 
     def test_kept_apart_when_they_differ(self, da, base, client_in_program):

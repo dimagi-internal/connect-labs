@@ -753,7 +753,7 @@ class TestPages:
         url = reverse("supply_chain:procurement_comparison", args=[base["tender"]["id"]])
         body = client_in_program.get(url, {"commodity": "rutf"}).content.decode()
 
-        ranked = re.search(rf'<tr data-testid="ranked-row" data-quote-id="{typed["id"]}">.*?</tr>', body, re.S)
+        ranked = re.search(rf'<tr data-testid="ranked-row" data-quote-id="{typed["id"]}"[^>]*>.*?</tr>', body, re.S)
         assert ranked and 'data-testid="ai-badge"' not in ranked.group(0)
         card = body[body.index(f'data-quote-id="{by_ai["id"]}"') :]
         assert 'data-testid="ai-badge"' in card[: card.index("</h3>")]

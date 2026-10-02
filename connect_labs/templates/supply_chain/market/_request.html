@@ -4,9 +4,12 @@ Takes `listed`, `r` (the tender) and `asked_for`. `split`: the quantity and the
 place on the left, the specification on the right, so a one-product listing's
 panel spans the hero's width instead of leaving its right third empty.
 {% endcomment %}
-<div {% if split %}data-testid="request-columns" class="grid gap-x-10 gap-y-3 md:grid-cols-2"{% endif %}>
 {% comment %}On a one-product listing (`split`) the hero above already says how much and,
-when `place_is_hero`, where: the panel keeps only what it adds -- the specification.{% endcomment %}
+when `place_is_hero`, where: the panel keeps only what it adds -- the specification, then
+across the card's full width. Two columns only while the left one has the place to hold;
+with it gone the grid left the card's left half empty.{% endcomment %}
+<div {% if split and not place_is_hero %}data-testid="request-columns" class="grid gap-x-10 gap-y-3 md:grid-cols-2"{% elif split %}data-testid="request-full-width"{% endif %}>
+{% if not split or not place_is_hero %}
 <dl class="space-y-3">
   {% if asked_for and not split %}
     <div>
@@ -27,6 +30,7 @@ when `place_is_hero`, where: the panel keeps only what it adds -- the specificat
   </div>
   {% endif %}
 </dl>
+{% endif %}
 <dl class="space-y-3{% if not split %} mt-3{% endif %}">
   {% for line in listed.lines %}{% if line.requirements %}
     <div>
