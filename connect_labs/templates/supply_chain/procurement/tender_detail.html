@@ -42,6 +42,8 @@
     </p>
   </div>
   <div class="flex flex-wrap items-center gap-2">
+    {% comment %}Every secondary action wears one treatment (indigo text, grey outline);
+    only the lead action is filled, so the header reads as one set of controls.{% endcomment %}
     {% comment %}The listing every supplier sees, one click from the program's own page
     (owner-only, so it leaks nothing). Only while it is listed: the market shows open tenders.{% endcomment %}
     {% if tender.status == "open" and tender.visibility != "private" %}
@@ -64,7 +66,7 @@
     {% endfor %}
     {% if not supply_as_of %}
     <a href="{% url 'supply_chain:procurement_tender_edit' tender.id %}"
-       class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit</a>
+       class="px-3 py-1.5 text-sm border border-gray-300 text-brand-indigo hover:bg-gray-50 rounded-md">Edit</a>
     {% comment %}
     Opening and closing change something, so they are POSTs behind a button
     rather than links: a link that mutates is one crawler or one prefetch away
@@ -82,7 +84,7 @@
       <form method="post" action="{% url 'supply_chain:procurement_tender_close' tender.id %}" class="inline">
         {% csrf_token %}
         <button type="submit"
-                class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">
+                class="px-3 py-1.5 text-sm border border-gray-300 text-brand-indigo hover:bg-gray-50 rounded-md">
           Close to further quotes
         </button>
       </form>

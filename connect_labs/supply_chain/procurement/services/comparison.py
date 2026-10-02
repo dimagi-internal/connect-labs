@@ -667,8 +667,8 @@ def per_pack_note(figures, base_unit, pack_unit) -> str:
     """What a price stated per base unit comes to per pack, said after it.
 
     "= USD 43.50 per carton" when the pack is known; "(per carton once sachets
-    per carton is known)" when the pack is the fact missing; otherwise the
-    conversion is only named, since its figure cannot be given.
+    per carton is known)" when the pack is the fact missing, or "(per carton
+    once an exchange rate is recorded)"; otherwise nothing.
     """
     pack = unit_noun(pack_unit)
     per_pack = (figures or {}).get("usd_per_pack_normalized")
@@ -678,7 +678,11 @@ def per_pack_note(figures, base_unit, pack_unit) -> str:
     reasons = getattr(per_pack, "reasons", ()) or ()
     if any(key_for_reason(reason) == "pack_spec" for reason in reasons):
         return f"(per {pack} once {pack_words(base_unit, pack_unit)} is known)"
-    return f"(converted to per {pack} for the ranking)"
+    if any("exchange rate" in (reason or "").lower() for reason in reasons):
+        return f"(per {pack} once an exchange rate is recorded)"
+    # No per-pack figure, so nothing was converted and nothing fed the ranking:
+    # saying it did contradicted the blocker on the same card.
+    return ""
 
 
 def as_quoted_words(quote, base_unit="", pack_unit="") -> str:

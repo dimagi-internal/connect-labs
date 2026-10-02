@@ -90,12 +90,16 @@ class Flag(str):
     rule: str = ""
     heading: str = ""
     lines: tuple = ()
+    # What opens behind the chevron, when it is not `lines`: a flag whose
+    # lines the row's Waiting on cell already says opens on its definition.
+    folded: tuple = ()
 
-    def __new__(cls, text, rule="", *, heading="", lines=()):
+    def __new__(cls, text, rule="", *, heading="", lines=(), folded=()):
         flag = super().__new__(cls, text)
         flag.rule = rule
         flag.heading = heading
         flag.lines = tuple(lines)
+        flag.folded = tuple(folded)
         return flag
 
 
@@ -353,7 +357,13 @@ def _tender_rows(program_id, today, until):
         )
         if owed.get(tender.pk):
             # What we owe comes first: it is the one thing on the row only we can move.
-            ours = f"{WAITING_ON_US}: {owed[tender.pk]}"
+            # A labelled list like "No reply" and "Missing facts" beside it, so the
+            # cell reads as one list of owners, each with its items.
+            ours = Flag(
+                f"{WAITING_ON_US}: " + "; ".join(f"{what} ({detail})" for what, detail in owed[tender.pk]),
+                heading=WAITING_ON_US.capitalize(),
+                lines=owed[tender.pk],
+            )
             others = list(waiting_lines) or ([waiting_on] if waiting_on not in ("", "—") else [])
             waiting_lines = (ours, *others) if others else ()
             waiting_on = "; ".join((ours, *others))
@@ -395,7 +405,7 @@ def _tender_rows(program_id, today, until):
 
 
 def _owed_by_tender(program_id, tender_ids) -> dict:
-    """ "answers to Northgate Commodities (3 questions since 11 Jul)", per tender, from open commitments."""
+    """[("answers to Northgate Commodities", "3 questions since 11 Jul")], per tender, from open commitments."""
     from connect_labs.supply_chain.models import Commitment
 
     grouped = {}
@@ -409,10 +419,10 @@ def _owed_by_tender(program_id, tender_ids) -> dict:
         for (name, kind), items in sorted(by_party.items()):
             since = _day(min(c.raised_on for c in items))
             if kind == "question":
-                parts.append(f"answers to {name} ({_plural(len(items), 'question')} since {since})")
+                parts.append((f"answers to {name}", f"{_plural(len(items), 'question')} since {since}"))
             else:
-                parts.append(f"{_plural(len(items), 'promise')} to {name} (since {since})")
-        out[tender_id] = "; ".join(parts)
+                parts.append((f"{_plural(len(items), 'promise')} to {name}", f"since {since}"))
+        out[tender_id] = parts
     return out
 
 
@@ -489,8 +499,12 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
                 Flag(
                     "Can't compare yet: " + "; ".join(blocked),
                     BLOCKED_RULE,
-                    heading=f"Can't compare yet — {_plural(len(blocked), 'quote')} missing facts",
+                    # The count, not a verdict, and not the names again: who is
+                    # missing what is the Waiting on cell's, beside it. The
+                    # definition opens behind the chevron.
+                    heading=f"{_plural(len(blocked), 'quote')} missing facts",
                     lines=blocked,
+                    folded=(BLOCKED_RULE,),
                 )
             )
     if award is not None:
@@ -528,7 +542,14 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
         if silent:
             lines.append(silent_line(f"No reply: {_names([suppliers[sid].name for sid in silent])}"))
         if blocked_names:
-            lines.append(f"Missing facts: {', '.join(blocked_names)}")
+            lines.append(
+                Flag(
+                    "Missing facts: "
+                    + ", ".join(f"{name} ({gaps})" if gaps else name for name, gaps in blocked_names),
+                    heading="Missing facts",
+                    lines=blocked_names,
+                )
+            )
     if lines:
         waiting_on = lines[0] if len(lines) == 1 else "; ".join(lines)
         if invited and tender.status == "open":
@@ -596,7 +617,7 @@ def _blocked(tender, live, skip_quote=None) -> tuple[list[str], list[str]]:
     for text in named:
         if names[text] not in ordered:
             ordered.append(names[text])
-    return named, [f"{name} ({', '.join(gaps[name])})" if gaps.get(name) else name for name in ordered]
+    return named, [(name, ", ".join(gaps.get(name) or [])) for name in ordered]
 
 
 def _award_gaps(award) -> str:

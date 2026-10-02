@@ -85,7 +85,10 @@ class TestWaitingOnSaysTwoThings:
         assert re.findall(r'data-testid="silent-supplier">(.*?)</li>', standing) == [
             'Plateau Mills <span class="text-gray-600">(asked 10 Aug)</span>'
         ]
-        assert "<strong>Missing facts</strong>: " + missing[15:] in lines
+        # One labelled list per owner: "Missing facts" heads its suppliers as "No reply" does.
+        assert any(line.startswith("<strong>Missing facts</strong>:") for line in lines)
+        items = re.findall(r'data-testid="waiting-item">(.*?)</li>', standing)
+        assert [re.sub(r"<[^>]+>", "", i) for i in items] == [missing[15:]]
 
     def test_after_a_provisional_award_the_awardee_is_not_missing_facts(self, da, base):
         _provisional(da, base)
@@ -183,12 +186,10 @@ class TestTheCantCompareMarker:
         standing = batch6._standing(_home(home_client))
         flag = re.search(r'<details data-testid="stale-flag"[^>]*>(.*?)</details>', standing, re.S).group(1)
         summary = re.search(r"<summary[^>]*>(.*?)</summary>", flag, re.S).group(1)
-        assert batch6._text(summary) == "Can't compare yet — 2 quotes missing facts".replace("'", "&#x27;")
+        assert batch6._text(summary) == "2 quotes missing facts"
         after = flag[flag.index("</summary>") :]
-        assert re.findall(r'data-testid="flag-line"[^>]*>(.*?)</span>', after) == [
-            "Northwind Foods — missing: freight",
-            "Sahel Nutrition — missing: duties amount",
-        ]
+        # Folded open, the definition: who is missing what is the Waiting on cell's (DDD 002 batch 2).
+        assert len(re.findall(r'data-testid="flag-line"[^>]*>(.*?)</span>', after)) == 1
         # Not the filled amber block any more.
         assert "bg-amber-50 px-1.5" not in summary
 

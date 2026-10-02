@@ -371,7 +371,7 @@ def test_a_single_waiting_on_leads_with_its_party_in_bold(da, world, client_in_p
     _held_on_our_form_m(da, world)
     body = client_in_program.get(reverse("supply_chain:home")).content.decode()
     cells = re.findall(r'data-testid="waiting-on"[^>]*>(.*?)</span>', body, re.S)
-    assert any(cell.startswith("<strong>us</strong>: ") for cell in cells), cells
+    assert any(cell.startswith("<strong>Us</strong>: ") for cell in cells), cells
 
 
 # ---- 9. the tender page header

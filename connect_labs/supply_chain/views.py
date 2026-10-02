@@ -609,6 +609,13 @@ def owed_groups(rows) -> list[dict]:
             if part
         )
         verb = "asked" if questions and not promises else "we promised" if promises and not questions else "since"
+        # A row raised on the group's own day does not say that day again: the
+        # head already does. It says how long it has been open instead.
+        today = timezone.localdate()
+        for c in items:
+            raised = str(c.get("raised_on") or "")[:10]
+            c["same_day_as_group"] = bool(days) and raised == days[0]
+            c["open_days"] = (today - date.fromisoformat(raised)).days if raised and c.get("open") else None
         out.append(
             {
                 "owed_to": items[0].get("owed_to") or "",
@@ -699,14 +706,32 @@ def _mark_invoices(invoices, invoice_above):
             if line.get("field") == "total":
                 if len(invoices) == 1:
                     # "USD 3,550.00" beside an "above agreed" tag.
-                    marks.insert(0, {"text": f"{currency} {money_digits(line['difference'])}", "tag": True})
+                    marks.insert(
+                        0,
+                        {
+                            "text": f"{currency} {money_digits(line['difference'])}",
+                            "tag": True,
+                            "label": "Total",
+                            "currency": currency,
+                            "billed": money_digits(line["billed"]) if line.get("billed") is not None else "",
+                            "agreed": money_digits(line["agreed"]) if line.get("agreed") is not None else "",
+                            "difference": money_digits(line["difference"]),
+                        },
+                    )
             elif line.get("invoice_id") == invoice.get("id"):
                 what = "unit price" if line["field"] == "unit_price" else "freight"
+                # The row's cells, so billed and agreed sit under AMOUNT and the
+                # tag under STATUS, as the table's own columns read.
                 marks.append(
                     {
                         "text": f"{what} {currency} {money_digits(line['billed'])} "
                         f"against {money_digits(line['agreed'])} agreed",
                         "tag": False,
+                        "label": what.capitalize(),
+                        "currency": currency,
+                        "billed": money_digits(line["billed"]),
+                        "agreed": money_digits(line["agreed"]),
+                        "difference": money_digits(line["difference"]) if line.get("difference") is not None else "",
                     }
                 )
         invoice["above_agreed"] = marks

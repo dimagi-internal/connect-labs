@@ -105,7 +105,7 @@ class TestTheHistory:
         loose = re.findall(r'<li data-testid="revision-line"[^>]*>', timeline.replace(event_html, ""))
         assert loose and all("data-no-source" in li for li in loose)
         event = re.search(r'<li data-testid="email-event"[^>]*>', timeline).group(0)
-        assert "data-no-source" not in event and "border-l-4" in event
+        assert "data-no-source" not in event and "border-l-2" in event
 
     def test_lines_inside_an_email_event_are_not_hidden_with_the_bookkeeping(self, da, world, client_in_program):
         source = {"ref": "<r-2@kanem.example.invalid>", "excerpt": "USD 54.50 a carton.", "sender": "Grace"}

@@ -267,10 +267,13 @@ class TestOrderInvoices:
         assert row.startswith("Advance paid 28 Jul 2026 USD 53,400.00")
         assert "applied to INV-REH-1" in row
         assert "confirmed by the payee 21 Sep 2026" in text
-        marker = re.search(r'data-testid="invoice-above-agreed"[^>]*>(.*?)</div>', body, re.S).group(1)
-        assert re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", marker)).strip() == "Total +USD 3,550.00 above agreed"
-        # At body size, with its tag (batch 2).
-        assert 'data-testid="invoice-above-agreed" class="text-sm text-gray-900"' in body
+        # Since DDD 002 batch 2, a row of the table in its columns: billed over agreed
+        # under AMOUNT, the tag under STATUS.
+        marker = re.search(r'<tr data-testid="invoice-above-agreed-row".*?</tr>', body, re.S).group(0)
+        assert (
+            re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", marker)).strip()
+            == "Total · +USD 3,550.00 USD 110,350.00 billed 106,800.00 agreed above agreed"
+        )
         assert 'data-testid="above-agreed-tag"' in marker
 
 

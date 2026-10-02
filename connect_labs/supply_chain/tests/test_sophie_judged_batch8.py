@@ -67,7 +67,8 @@ class TestTheCantCompareChip:
         assert {"rounded", "border", "border-amber-200", "bg-amber-50"} <= classes
         # Still folds open on the per-supplier lines.
         details = re.search(r'<details data-testid="stale-flag".*?</details>', standing, re.S).group(0)
-        assert len(re.findall(r'data-testid="flag-line"', details)) == 2
+        # Folds open on the rule; who is missing what is the Waiting on cell's, beside it.
+        assert len(re.findall(r'data-testid="flag-line"', details)) == 1
 
 
 # ---- 2. waiting on names what each blocked supplier is missing -------------
@@ -198,9 +199,9 @@ class TestTheAsOfField:
             0
         )
         live = re.search(r'data-testid="as-of-control".*?</form>', _home(home_client), re.S).group(0)
-        field = re.search(r'<input id="supply-as-of" type="date"[^>]*>', past).group(0)
-        assert 'value="2026-08-20"' in field
-        live_field = re.search(r'<input id="supply-as-of" type="date"[^>]*>', live).group(0)
+        field = re.search(r'<input id="supply-as-of"[^>]*>', past).group(0)
+        assert 'value="20 Aug 2026"' in field
+        live_field = re.search(r'<input id="supply-as-of"[^>]*>', live).group(0)
         cls = re.search(r'class="([^"]*)"', field).group(1)
         assert cls == re.search(r'class="([^"]*)"', live_field).group(1)
         # No bare day beside a lone calendar button.

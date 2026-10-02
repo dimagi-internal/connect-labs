@@ -207,7 +207,7 @@ class TestTheFlagsRunByImportance:
         assert flags[0].startswith("Awarded quote:")
         # And on the page, in that order.
         standing = batch6._standing(_home(home_client))
-        at = [standing.index(text) for text in ("Awarded quote:", "Can&#x27;t compare yet", "No reply in")]
+        at = [standing.index(text) for text in ("Awarded quote:", "missing facts</span>", "No reply in")]
         assert at == sorted(at)
 
 

@@ -132,7 +132,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
                 says it opens.{% endcomment %}
                 <details data-testid="stale-flag" title="{{ flag.rule }}" class="group mb-1 text-xs text-amber-900">
                   <summary class="flex w-fit cursor-pointer list-none items-start gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 hover:bg-amber-100 [&::-webkit-details-marker]:hidden"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span data-testid="flag-heading">{{ flag.heading }}</span><i class="fa-solid fa-chevron-right mt-0.5 text-[9px] text-amber-700 transition-transform group-open:rotate-90" aria-hidden="true"></i></summary>
-                  <span class="block pl-5 pt-0.5">{% for line in flag.lines %}<span data-testid="flag-line" class="block">{{ line }}</span>{% endfor %}</span>
+                  <span class="block pl-5 pt-0.5">{% for line in flag.folded|default:flag.lines %}<span data-testid="flag-line" class="block">{{ line }}</span>{% endfor %}</span>
                 </details>
                 {% else %}
                 <span data-testid="stale-flag" title="{{ flag.rule }}"

@@ -27,10 +27,14 @@ a block inside an include cannot fill the parent's.
     the same on a past day as it does today. A day said as bare text beside a
     lone calendar button read as two controls; the banner above already says
     the day in the page's own format ("20 Aug 2026").{% endcomment %}
-    <input id="supply-as-of" type="date" name="as_of" max="{{ today }}"
-           value="{% if supply_as_of %}{{ supply_as_of|date:'Y-m-d' }}{% endif %}"
+    {% comment %}A text field in the page's own date format ("15 Sep 2026"), not the
+    browser's date picker, whose "mm/dd/yyyy" clashed with every other date on
+    the page. parse_as_of reads "15 Sep 2026" and YYYY-MM-DD alike.{% endcomment %}
+    <input id="supply-as-of" type="text" name="as_of" placeholder="e.g. {{ today_label|default:'15 Sep 2026' }}"
+           autocomplete="off"
+           value="{% if supply_as_of %}{{ supply_as_of|date:'j M Y' }}{% endif %}"
            {% if supply_as_of %}data-testid="as-of-date" title="Viewing as of {{ supply_as_of|date:'j M Y' }}; choose another day"{% endif %}
-           class="rounded-md border border-gray-300 px-2 py-1 text-sm">
+           class="w-36 rounded-md border border-gray-300 px-2 py-1 text-sm">
     <button type="submit" class="px-3 py-1 rounded-md border border-gray-300 bg-white hover:bg-gray-50">Go</button>
   </form>
 {% endif %}

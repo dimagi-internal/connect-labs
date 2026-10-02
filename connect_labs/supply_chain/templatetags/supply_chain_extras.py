@@ -1361,7 +1361,8 @@ def lead_in(line):
     head, sep, rest = text.partition(":")
     if not sep or not head.strip():
         return escape(text)
-    return mark_safe(f"<strong>{escape(head)}</strong>:{escape(rest)}")
+    # "Us: import permit", with the same capitalised label as "No reply".
+    return mark_safe(f"<strong>{escape(head[:1].upper() + head[1:])}</strong>:{escape(rest)}")
 
 
 @register.filter

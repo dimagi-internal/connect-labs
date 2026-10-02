@@ -34,7 +34,7 @@ _TIMEOUT_CODES = {"55P03", "57014"}
 
 
 def parse_as_of(value: str | None) -> datetime.date | None:
-    """`YYYY-MM-DD` to a date; empty or missing means "today, live".
+    """`YYYY-MM-DD` or `15 Sep 2026` to a date; empty or missing means "today, live".
 
     Strict on shape: the date control always sends YYYY-MM-DD, so anything
     else is a hand-edited URL and a 400 says so rather than guessing.
@@ -42,7 +42,15 @@ def parse_as_of(value: str | None) -> datetime.date | None:
     """
     if not value:
         return None
-    return datetime.datetime.strptime(value, "%Y-%m-%d").date()
+    value = " ".join(value.split())
+    # The control speaks the page's own format ("15 Sep 2026"); links and older
+    # bookmarks carry YYYY-MM-DD. Both are exact shapes, so neither is a guess.
+    for fmt in ("%Y-%m-%d", "%d %b %Y", "%d %B %Y"):
+        try:
+            return datetime.datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError(f"not a day: {value!r}")
 
 
 def end_of_day(d: datetime.date) -> datetime.datetime:
@@ -170,4 +178,5 @@ def as_of_context(request):
         "supply_as_of": request.supply_as_of,
         "supply_as_of_available": True,
         "today": timezone.localdate().isoformat(),
+        "today_label": f"{timezone.localdate():%-d %b %Y}",
     }
