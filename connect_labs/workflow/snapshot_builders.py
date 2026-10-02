@@ -179,13 +179,7 @@ def semantic_snapshot(
         # opportunity_ends`), under the rule this run was graded with.
         "settles": settles_meta(spec, props_doc, full_registry),
     }
-    synthetic = _is_synthetic(opportunity_ids)
-    if synthetic is not None:
-        # The render reads `meta.synthetic` to show its "built on synthetic clones"
-        # disclaimer. A live run computes it from scope; a saved run can only know
-        # what was captured, so omitting it published a synthetic cohort with the
-        # disclaimer silently absent.
-        meta["synthetic"] = synthetic
+    meta.update(_data_provenance_meta(opportunity_ids))
 
     deployment = {
         **(deployment or {}),
@@ -353,6 +347,35 @@ def wrap_for_runner(payload: dict, state_key: str | None = None) -> dict:
     framework assuming one.
     """
     return {"state": {state_key or "snapshot": payload}, "pipelines": {}, "workers": []}
+
+
+def _data_provenance_meta(opportunity_ids: list[int]) -> dict:
+    """``meta.synthetic`` and, when any opp in scope holds copied real values, ``meta.real_values``.
+
+    The render reads `meta.synthetic` to show its "built on synthetic clones"
+    disclaimer. A live run computes it from scope; a saved run can only know
+    what was captured, so omitting it published a synthetic cohort with the
+    disclaimer silently absent.
+
+    A clone carrying values copied verbatim from its source (connect-labs#2150) is
+    NOT synthetic data: the report must say it contains real values from that
+    opportunity, and must never also claim to be built on synthetic data.
+    """
+    out: dict = {}
+    synthetic = _is_synthetic(opportunity_ids)
+    try:
+        from connect_labs.labs.synthetic.verbatim import real_value_sources
+
+        real_values = real_value_sources(opportunity_ids)
+    except Exception:  # noqa: BLE001 — fail toward NOT claiming synthetic
+        logger.warning("could not determine real-value sources for %s", opportunity_ids, exc_info=True)
+        real_values, synthetic = [], None
+    if real_values:
+        out["real_values"] = real_values
+        synthetic = False
+    if synthetic is not None:
+        out["synthetic"] = synthetic
+    return out
 
 
 def _is_synthetic(opportunity_ids: list[int]) -> bool | None:
