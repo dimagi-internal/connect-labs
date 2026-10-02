@@ -115,7 +115,7 @@ class TestTheOverviewFlagsEveryBlockedQuote:
         assert {line.split(" — ")[0] for line in flag.lines} == {r["supplier_name"] for r in comparison["blocked"]}
 
         row = _standing_row(_home(home_client), tender_id)
-        assert re.findall(r'data-testid="flag-line"[^>]*>(.*?)</span>', row) == list(flag.lines)
+        assert re.findall(r'data-testid="flag-line"[^>]*>(.*?)</span>', row) == list(flag.folded)
 
     def test_a_comparable_quote_is_not_flagged(self, da, base):
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _DELIVERED)
@@ -218,7 +218,7 @@ class TestTheAsOfControl:
         control = re.search(r'data-testid="as-of-control".*?</form>', body, re.S).group(0)
         assert re.search(r"<label[^>]*>View as of</label>", control)
         # Since batch 8 the day is the field's own value; the banner says it in the page's format.
-        assert re.search(r'<input id="supply-as-of"[^>]*value="2026-08-20"[^>]*data-testid="as-of-date"', control)
+        assert re.search(r'<input id="supply-as-of"[^>]*value="20 Aug 2026"[^>]*data-testid="as-of-date"', control)
         assert "Viewing as of 20 Aug 2026" in body
         assert 'data-testid="as-of-date"' not in _home(home_client)
 

@@ -785,7 +785,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
           <td class="px-4 py-2 text-right tabular-nums">{{ payment.currency }} {{ payment.amount|money }}</td>
           <td class="px-4 py-2 text-right text-gray-600">—</td>
           <td class="px-4 py-2 text-gray-700">applied to {{ invoice.reference|default:invoice.id }}{% if payment.method %} · by {{ payment.method|words }}{% endif %}</td>
-          <td class="px-4 py-2 text-sm">{% if payment.confirmed_by_payee_on %}<span class="text-message-success-text font-normal">confirmed by the payee {{ payment.confirmed_by_payee_on|day }}</span>{% else %}<span class="text-gray-700">not confirmed by the payee</span>{% endif %}</td>
+          <td class="px-4 py-2 text-sm">{% if payment.confirmed_by_payee_on %}<span class="text-gray-700">confirmed by the payee {{ payment.confirmed_by_payee_on|day }}</span>{% else %}<span class="text-gray-700">not confirmed by the payee</span>{% endif %}</td>
           <td class="px-4 py-2 text-right whitespace-nowrap">
             {% if not payment.confirmed_by_payee_on and not supply_as_of %}
               <a href="{% url 'supply_chain:payment_confirm' payment.id %}" class="text-brand-indigo hover:underline">Record confirmation</a>
@@ -825,21 +825,21 @@ The section stays only if one was somehow recorded, so it is not hidden.
             {% endif %}
           </td>
         </tr>
-        {% comment %}The unit price and freight it bills against what was agreed, on a row of
-        their own under the invoice: stacked in the amount cell they pushed the figures apart.{% endcomment %}
-        {% comment %}What the invoice_above_contract check found on this invoice's total, on
-        its own labelled line under the invoice: stacked unlabelled in the Amount cell it read as a
-        second amount. Each column of the row now holds one kind of value.{% endcomment %}
-        {% for mark in invoice.above_agreed %}{% if mark.tag %}
-          <tr data-testid="invoice-above-agreed-row" class="bg-gray-50/60">
-            <td class="px-4 py-1.5 pl-8 text-sm text-gray-900" colspan="7"><div data-testid="invoice-above-agreed" class="text-sm text-gray-900">Total +{{ mark.text }} <span data-testid="above-agreed-tag" class="ml-1 inline-flex items-center rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></div></td>
+        {% comment %}What the invoice_above_contract check found -- the total, then the unit price
+        and freight it bills -- each a row of the table under the invoice, in its columns:
+        the line's name under INVOICE, billed over agreed right-aligned under AMOUNT, the
+        "above agreed" tag under STATUS. As prose spanning the row they ignored the columns
+        the figures belong to.{% endcomment %}
+        {% for mark in invoice.above_agreed %}
+          <tr data-testid="{% if mark.tag %}invoice-above-agreed-row{% else %}invoice-against-agreed{% endif %}" class="bg-gray-50/60 text-sm">
+            <td class="px-4 py-1.5 pl-8 text-gray-900">{{ mark.label }}{% if mark.tag %} <span class="text-gray-600">· +{{ mark.currency }} {{ mark.difference }}</span>{% endif %}</td>
+            <td class="px-4 py-1.5"></td>
+            <td class="px-4 py-1.5 text-right tabular-nums text-gray-900"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}>{% if mark.billed %}<div>{{ mark.currency }} {{ mark.billed }} billed</div><div class="text-gray-600">{{ mark.agreed }} agreed</div>{% else %}+{{ mark.text }}{% endif %}</td>
+            <td class="px-4 py-1.5"></td>
+            <td class="px-4 py-1.5"><span data-testid="above-agreed-tag" class="inline-flex items-center whitespace-nowrap rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></td>
+            <td class="px-4 py-1.5" colspan="2"></td>
           </tr>
-        {% endif %}{% endfor %}
-        {% for mark in invoice.above_agreed %}{% if not mark.tag %}
-          <tr data-testid="invoice-against-agreed" class="bg-gray-50/60">
-            <td class="px-4 py-1.5 pl-8 text-sm text-gray-900" colspan="7">{{ mark.text|capfirst }} <span data-testid="above-agreed-tag" class="ml-1 inline-flex items-center rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></td>
-          </tr>
-        {% endif %}{% endfor %}
+        {% endfor %}
         {% for payment in invoice.payments %}{% if not payment.advance %}
           {% comment %}
           Each settlement under its invoice, with the payee's side of it: "we

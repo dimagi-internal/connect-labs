@@ -67,7 +67,7 @@ class TestTheOrderPage:
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         assert ">Quantity billed</th>" in body
         row = re.search(r'<tr data-testid="invoice-above-agreed-row".*?</tr>', body, re.S).group(0)
-        assert _text(row) == "Total +USD 3,550.00 above agreed"
+        assert _text(row) == "Total · +USD 3,550.00 USD 110,350.00 billed 106,800.00 agreed above agreed"
         assert 'data-testid="above-agreed-tag"' in row
         # The invoice's own row carries the amount alone.
         invoice_row = re.search(r"<tr>\s*<td[^>]*>INV-REH-1</td>.*?</tr>", body, re.S).group(0)

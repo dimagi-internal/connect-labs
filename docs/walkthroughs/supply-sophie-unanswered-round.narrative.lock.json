@@ -93,7 +93,7 @@
         {
           "description": "The What we owe them section lists Northgate's open questions with raised day and text.",
           "id": "owed-list-tender",
-          "verify": "Playwright: #owed shows 3 rows under 'Northgate Commodities', each reading '· asked' and the day Northgate asked"
+          "verify": "Playwright: #owed shows 3 rows under 'Northgate Commodities · asked 18 Sep 2026 · 3 questions', each reading how many days it has been open"
         },
         {
           "description": "Mark answered opens the commitment resolve form; submitting records the answer and resolved day.",
@@ -158,7 +158,7 @@
           "verify": "Playwright: [data-testid=standing-table] round 2 row contains 'No reply', 'Lagoon Nutripharm' and 'Savanna Ready Foods', and 'answers to Northgate Commodities'"
         },
         {
-          "description": "Overview row for the round 1 order reads 'us: import permit'.",
+          "description": "Overview row for the round 1 order reads 'Us: import permit'.",
           "id": "overview-waiting-on-us",
           "verify": "Playwright: [data-testid=standing-table] contains 'import permit'"
         }

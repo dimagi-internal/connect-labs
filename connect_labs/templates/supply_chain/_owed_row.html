@@ -6,7 +6,9 @@ written into a reply drafted on this page (`in_draft`), the row just saved says 
 <div class="px-4 py-2 text-sm flex items-start justify-between gap-4{% if c.changed %} bg-yellow-50 border-l-4 border-brand-indigo{% endif %}" data-commitment-id="{{ c.id }}"{% if c.changed %} data-changed{% endif %}>
   <div>
     <span class="text-gray-900">{{ c.text }}</span>
-    <span class="text-gray-700">· {% if c.kind == "question" %}asked{% else %}promised{% endif %} {{ c.raised_on|day }}</span>
+    {% comment %}The day it was raised only when it differs from the group head's; otherwise
+    how long it has stood open, which the head does not say.{% endcomment %}
+    {% if not c.same_day_as_group %}<span class="text-gray-700">· {% if c.kind == "question" %}asked{% else %}promised{% endif %} {{ c.raised_on|day }}</span>{% elif c.open_days is not None %}<span data-testid="owed-age" class="text-gray-700">· open {{ c.open_days }} day{{ c.open_days|pluralize }}</span>{% endif %}
     {% if c.open and c.changed %}{% include "supply_chain/_changed_chip.html" %}{% endif %}
     {% if not c.open %}<div data-testid="owed-answer" class="text-gray-900"><span data-testid="owed-status" class="font-medium text-message-success-text">{% if c.kind == "question" %}Answered{% else %}Done{% endif %}</span>{% if c.answered_by %} by {{ c.answered_by }}{% endif %} · {{ c.resolved_on|day }}{% if c.changed %} (just now){% endif %}: {{ c.resolution }}</div>
       {% if c.changed and c.in_draft %}<div data-testid="owed-in-draft" class="mt-0.5 text-gray-700">Added to your draft reply to {{ c.in_draft.to }} — <a href="#{{ c.in_draft.anchor }}" class="text-brand-indigo hover:underline" onclick="var d=document.getElementById('drafts'); if (d) { d.open = true; } var t=document.getElementById('{{ c.in_draft.anchor }}'); if (t) { t.scrollIntoView({block: 'start'}); return false; }">open the draft</a></div>{% endif %}

@@ -78,6 +78,8 @@ scenes:
     say: today
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=chase-date]
     value: ${today}
+  - kind: snapshot
+    note: the canonical frame is Sahel's drafted reminder, quoting the day she last wrote, with today's date ready to record
   - kind: click
     must_succeed: true
     note: record the day she chased Sahel, from the draft itself
@@ -106,6 +108,16 @@ scenes:
   - kind: wait_for
     target: css:#history
   - kind: scroll_to
+    note: the record moved -- Sahel's row now replied with a quote, and 4 of 6 replied
+    target: css:#outreach
+  - kind: hover
+    say: answers
+    seconds: 2.0
+    target: css:tr[data-outreach-id]:has-text('Sahel Nutrition Industries') td:nth-child(4)
+  - kind: hover
+    seconds: 1.2
+    target: testid:outreach-replied-count
+  - kind: scroll_to
     target: css:#history
   - kind: click
     must_succeed: true
@@ -124,9 +136,9 @@ scenes:
   - kind: hold
     seconds: 2.5
   - kind: hover
-    note: park the cursor on a heading in frame
+    note: park the cursor on the Replies only checkbox, off the email and the records
     seconds: 0.6
-    target: text:History
+    target: testid:history-replies-only
   - kind: hold
     seconds: 1.0
   before: python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --sahel-replies
@@ -182,10 +194,16 @@ scenes:
   actions:
   - kind: wait_for
     target: text:Kanem Foods
-  - kind: hold
-    seconds: 1.5
+  - kind: scroll_to
+    note: frame the "1 of 3 quotes can be compared on landed total" summary and the Comparable table's headers
+    target: testid:comparison-banner
+  - kind: hover
+    say: Harmattan
+    seconds: 2.0
+    target: text:Harmattan Therapeutics
   - kind: scroll_to
     note: frame the Needs info heading and both cards under it
+    say: Kanem
     target: css:[data-testid=needs-info]
   - kind: hover
     note: park the cursor in the empty right of the Needs info heading, off the cards' text

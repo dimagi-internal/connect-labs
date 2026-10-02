@@ -516,7 +516,11 @@ def sentence(model, action, changes, lookup) -> str:
         # its own.
         kind = changes.pop("response_kind")[1]
         changes.pop("responded", None)
-        lead.append(_outreach_reply_clause(kind))
+        # The day it came in belongs to the same sentence -- "Replied with a
+        # quote on 2 Oct 2026" -- not a field dump after a semicolon.
+        on = (changes.pop("responded_on", None) or [None, None])[1]
+        on_text = value_text(model, "responded_on", on, lookup) if on else ""
+        lead.append(_outreach_reply_clause(kind) + (f" on {on_text}" if on_text else ""))
     if model.__name__ == "Commitment" and (changes.get("resolution") or [None, ""])[1]:
         # "answered: one warehouse in Kano" -- the day it was answered is the
         # line's own date, so it is not a second clause.
