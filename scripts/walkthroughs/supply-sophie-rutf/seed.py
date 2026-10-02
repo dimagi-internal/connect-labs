@@ -33,6 +33,16 @@ private Drive seed document. Set `OES_DEMO_DRIVE_FOLDER` (or put the folder id
 in `.drive-folder` beside this file -- gitignored).
 
     python3 scripts/walkthroughs/supply-sophie-rutf/seed.py --outputs <file>
+
+**Local mode** (canopy's DDD inner loop, `make serve-demo NARRATIVE=supply-sophie-rutf`):
+the same driver, executed in-process against the local build's own database,
+with program 10672's labs-only opportunity registered there first (labs has it
+already), Sophie's and the agent's sessions minted by
+`connect_labs.labs.demo_sessions` for a loopback cookie, and `--answer-now`
+recorded in-process as the agent over channel `mcp` (a local `runserver` does
+not mount the MCP app). The seed document is still the private Drive one; set
+`OES_DEMO_SEED_FILE` to a local copy to seed with no Drive credentials. Chosen
+by `--local` / `--base-url`, or by the recorder's `CANOPY_RENDER_BASE_URL`.
 """
 
 from __future__ import annotations
@@ -52,7 +62,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "oes-demo"))
+sys.path.insert(0, str(HERE.parent))
 import ensure_demo as oes  # noqa: E402
+from _lib import local_seed  # noqa: E402
 
 PROGRAM_ID = 10672
 AS_OF_DATE = "2026-08-20"
@@ -224,13 +236,13 @@ exec(compile(_fetch("scripts/walkthroughs/oes-demo/seed_remote.py"), "seed_remot
 """
 
 
-def _driver(filename: str, *, modules: str, mint: bool, seal: str = "") -> str:
+def _driver(filename: str, *, modules: str, mint: bool, seal: str = "", folder: str | None = None) -> str:
     return (
         DRIVER.replace("__MODULES__", modules)
         .replace("__SEAL__", repr(seal))
         .replace("__LOADER_B64__", base64.b64encode(oes.LOADER.read_bytes()).decode())
         .replace("__SEEDER_B64__", base64.b64encode((oes.HERE / "seed_remote.py").read_bytes()).decode())
-        .replace("__FOLDER__", _folder())
+        .replace("__FOLDER__", folder if folder is not None else _folder())
         .replace("__FILENAME__", filename)
         .replace("__MARK__", MARK)
         .replace("__PID__", str(PROGRAM_ID))
@@ -505,6 +517,123 @@ def record_answer(mcp: Mcp, realized: dict, clarification: dict) -> dict:
     )
 
 
+# ---------------------------------------------------------------------------
+# Local mode (the DDD inner loop): the same driver, in-process, on this machine
+# ---------------------------------------------------------------------------
+
+AGENT_STORAGE_STATE = HERE / ".ace-storage-state.json"
+ANSWER_RESULT = HERE / ".answer.json"
+LOCAL_OPP_LABEL = "Connect-RUTF (local demo build)"
+LOAD_CALL = 'filename="__FILENAME__")'
+
+
+class _SeedFile:
+    """`load_seed_data`'s Drive client, reading one local copy of the seed document."""
+
+    def __init__(self, path: Path, filename: str):
+        self.path, self.filename = path, filename
+
+    def list_folder(self, folder_id):
+        return {self.filename: str(self.path)}
+
+    def download_file(self, file_id):
+        return Path(file_id).read_bytes()
+
+
+def _ensure_local_program() -> None:
+    """Register program 10672's labs-only opportunity in THIS database (labs has its own already)."""
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+    from connect_labs.labs.synthetic.org_tree import synthetic_program_id
+    from connect_labs.labs.synthetic.provenance import mark_generated
+    from connect_labs.labs.synthetic.provisioning import register_labs_only_opp
+
+    rows = SyntheticOpportunity.objects.filter(labs_only=True, enabled=True)
+    if any(synthetic_program_id(o) == PROGRAM_ID for o in rows):
+        return
+    opp = register_labs_only_opp(
+        label=LOCAL_OPP_LABEL,
+        gdrive_folder_id="",
+        org_name="Connect-RUTF (local)",
+        program_name="Connect-RUTF",
+        program_id=PROGRAM_ID,
+        allowed_domains=["@example.invalid"],
+    )
+    mark_generated(opp.opportunity_id, "")
+
+
+def seed_local(*, base_url: str, outputs: str | None = None, filename: str = "oes-demo.json") -> dict:
+    """Inside the local labs app (Django set up): the labs driver, run here, then sign the personas in."""
+    import contextlib
+    import io
+
+    from connect_labs.labs import demo_sessions
+
+    demo_sessions.require_local()
+    _ensure_local_program()
+    seed_file = os.environ.get("OES_DEMO_SEED_FILE", "").strip()
+    driver = _driver(filename, modules=INLINE_MODULES, mint=False, folder="local-file" if seed_file else None)
+    namespace = {"__name__": "supply_sophie_rutf_driver"}
+    if seed_file:
+        if LOAD_CALL.replace("__FILENAME__", filename) not in driver:
+            sys.exit("the driver no longer loads the seed document where local mode expects to swap the client")
+        driver = driver.replace(
+            LOAD_CALL.replace("__FILENAME__", filename), f'filename="{filename}", client=_LOCAL_SEED_FILE)', 1
+        )
+        namespace["_LOCAL_SEED_FILE"] = _SeedFile(Path(seed_file), filename)
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        exec(compile(driver, "supply_sophie_rutf_driver.py", "exec"), namespace)
+    realized = _parse_result(printed.getvalue(), "local")
+    realized.pop("sophie_session", None)
+    people = namespace["_seed"]["demo_persona_users"]()
+    local_seed.write_state(STORAGE_STATE, demo_sessions.storage_state(people["sophie"], base_url))
+    local_seed.write_state(AGENT_STORAGE_STATE, demo_sessions.storage_state(people["ace"], base_url))
+    return _record(realized, outputs or str(HERE / "outputs.json"))
+
+
+def answer_local(*, base_url: str, outputs: str | None = None) -> dict:
+    """`--answer-now` on the local build: the agent's correction, in-process over channel `mcp`."""
+    from django.conf import settings
+    from django.contrib.auth import get_user_model
+
+    from connect_labs.labs import demo_sessions
+    from connect_labs.labs.access.scopes import SYSTEM
+    from connect_labs.supply_chain.data_access import SupplyDataAccess
+    from connect_labs.supply_chain.operations import call_operation
+
+    demo_sessions.require_local()
+    state = json.loads(SIDECAR.read_text())
+    realized, clarification = state["realized"], state["clarification"]
+    ace = get_user_model().objects.get(email__iexact=settings.LABS_AGENT_ACCOUNT_EMAILS[0])
+    access = SupplyDataAccess(access_token="rutf-local-answer", program_id=PROGRAM_ID, caller=SYSTEM)
+    result = call_operation(
+        "quote_correct",
+        access,
+        {
+            "quote_id": int(realized["quote_pack_missing_id"]),
+            "data": clarification["corrections"],
+            "reason": "The supplier answered the question the comparison raised.",
+            "source": {"ref": clarification["ref"], "excerpt": clarification["excerpt"]},
+        },
+        channel="mcp",
+        actor=ace,
+    )
+    Path(outputs or ANSWER_RESULT).write_text(json.dumps(result, default=str))
+    return result
+
+
+def _record(realized: dict, outputs_path: str | None) -> dict:
+    """The outputs the recorder substitutes, and the sidecar `--answer-now` reads."""
+    clarification = realized.pop("clarification")
+    if not realized.get("quote_pack_missing_id") or not clarification:
+        sys.exit("the seed document names no round-2 clarification; scene 5 has nothing to show")
+    outputs = {**realized, "as_of_date": AS_OF_DATE}
+    SIDECAR.write_text(json.dumps({"realized": realized, "clarification": clarification}))
+    if outputs_path:
+        Path(outputs_path).write_text(json.dumps(outputs, indent=2) + "\n")
+    return outputs
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--outputs", required=False)
@@ -514,15 +643,24 @@ def main() -> None:
         action="store_true",
         help="record the supplier's answer now (the answer scene's before: hook)",
     )
+    local_seed.add_arguments(parser)
     args = parser.parse_args()
+    local = local_seed.target(args.local, args.base_url)
 
     if args.answer_now:
+        if local:
+            print(json.dumps(local_seed.run(HERE.name, local, ANSWER_RESULT, call="answer_local"))[:500])
+            return
         state = json.loads(SIDECAR.read_text())
         print(json.dumps(record_answer(Mcp(), state["realized"], state["clarification"]))[:500])
         return
 
+    if local:
+        outputs = Path(args.outputs) if args.outputs else HERE / "outputs.json"
+        print(json.dumps(local_seed.run(HERE.name, local, outputs)))
+        return
+
     realized = reset_and_seed(args.filename)
-    clarification = realized.pop("clarification")
     session = realized.pop("sophie_session")
     if session and "sealed" in session:
         session = _unseal(session["sealed"])
@@ -537,13 +675,7 @@ def main() -> None:
                 "renew AWS SSO (aws sso login --profile labs)"
             )
         print(f"reusing Sophie's session ({left / 3600:.1f} h left)", file=sys.stderr)
-    if not realized.get("quote_pack_missing_id") or not clarification:
-        sys.exit("the seed document names no round-2 clarification; scene 5 has nothing to show")
-    outputs = {**realized, "as_of_date": AS_OF_DATE}
-    SIDECAR.write_text(json.dumps({"realized": realized, "clarification": clarification}))
-    if args.outputs:
-        Path(args.outputs).write_text(json.dumps(outputs, indent=2) + "\n")
-    print(json.dumps(outputs))
+    print(json.dumps(_record(realized, args.outputs)))
 
 
 if __name__ == "__main__":

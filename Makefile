@@ -1,4 +1,4 @@
-.PHONY: commit test manage
+.PHONY: commit test manage serve-demo demo-seed demo-manage stop-demo demo-status
 
 # The main checkout, asked of git rather than guessed. From a worktree,
 # --git-common-dir points at the main repo's .git, so its parent is the checkout
@@ -86,6 +86,25 @@ test:
 #   make manage CMD="load_africa_boundaries --iso NGA"
 CMD ?= help
 
+# The checks every target that runs Django from a worktree needs: a venv python,
+# and a .env (linked from the main checkout, so it cannot go stale).
+define require_venv_and_env
+	@if [ -z "$(VENV_BIN)" ] || [ ! -x "$(VENV_BIN)/python" ]; then \
+		echo "error: no python found at VENV_BIN=$(VENV_BIN)" >&2; \
+		echo "Tried: $(VENV_SEARCH_PATHS)" >&2; \
+		exit 1; \
+	fi
+	@if [ ! -e .env ]; then \
+		if [ -n "$(MAIN_CHECKOUT)" ] && [ -f "$(MAIN_CHECKOUT)/.env" ] && [ "$(MAIN_CHECKOUT)" != "$$(pwd)" ]; then \
+			ln -s "$(MAIN_CHECKOUT)/.env" .env && \
+			echo "note: linked .env -> $(MAIN_CHECKOUT)/.env" >&2; \
+		else \
+			echo "error: no .env here and none found in the main checkout" >&2; \
+			exit 1; \
+		fi; \
+	fi
+endef
+
 manage:
 	@if [ -z "$(VENV_BIN)" ] || [ ! -x "$(VENV_BIN)/python" ]; then \
 		echo "error: no python found at VENV_BIN=$(VENV_BIN)" >&2; \
@@ -102,3 +121,37 @@ manage:
 		fi; \
 	fi
 	PATH="$(VENV_BIN):$$PATH" $(VENV_BIN)/python manage.py $(CMD)
+
+# A seeded local labs build for canopy's DDD inner loop (.canopy/ddd/config.yaml
+# `inner_loop:`). Idempotent: re-running stops the build on that port and serves
+# THIS checkout's code. Its own database per port (labs_ddd_demo_<port>), so it
+# never touches dev data and two builds can co-exist. See tools/ddd_demo.py.
+#
+#   make serve-demo                                   # :8000, the default narrative
+#   make serve-demo DEMO_PORT=8010 NARRATIVE=supply-sophie-rutf
+#   make demo-seed NARRATIVE=... [OUTPUTS=path]       # reseed the running build only
+#   make demo-manage CMD="marketplace_import"       # manage.py against that build's database
+#   make stop-demo / make demo-status
+DEMO_PORT ?= 8000
+NARRATIVE ?= supply-sophie-unanswered-round
+OUTPUTS ?=
+SEED_CALL ?= seed_local
+SERVE_DEMO_ARGS ?=
+
+serve-demo:
+	$(require_venv_and_env)
+	@PATH="$(VENV_BIN):$$PATH" $(VENV_BIN)/python tools/ddd_demo.py serve --port $(DEMO_PORT) --narrative $(NARRATIVE) $(SERVE_DEMO_ARGS)
+
+demo-seed:
+	$(require_venv_and_env)
+	@PATH="$(VENV_BIN):$$PATH" $(VENV_BIN)/python tools/ddd_demo.py seed --port $(DEMO_PORT) --narrative $(NARRATIVE) --call $(SEED_CALL) $(if $(OUTPUTS),--outputs $(OUTPUTS))
+
+demo-manage:
+	$(require_venv_and_env)
+	@PATH="$(VENV_BIN):$$PATH" $(VENV_BIN)/python tools/ddd_demo.py manage --port $(DEMO_PORT) $(CMD)
+
+stop-demo:
+	@$(VENV_BIN)/python tools/ddd_demo.py stop --port $(DEMO_PORT)
+
+demo-status:
+	@$(VENV_BIN)/python tools/ddd_demo.py status --port $(DEMO_PORT)
