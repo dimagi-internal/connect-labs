@@ -425,7 +425,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
         data={
             "status": "at_customs",
             "expected_on": "2026-10-10",
-            "required_documents": [{"kind": "import_permit", "owed_by_org_id": buyer}],
+            "required_documents": [{"kind": "import_permit", "name": "Form M", "owed_by_org_id": buyer}],
         },
     )
     w.email(

@@ -160,8 +160,10 @@ class TestARankedRowDetail:
     def test_the_landed_total_says_what_quantity_it_buys(self, da, base, client_in_program):
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _DELIVERED)
         detail = batch6._detail(_page(client_in_program, base["tender"]["id"]), quote["id"])
-        # 42.50 a carton for 600 cartons, freight and duties included.
-        assert re.search(r'data-testid="landed-quantity"[^>]*>Landed total USD 25,500.00 for 600 cartons<', detail)
+        # 42.50 a carton for 600 cartons, freight and duties included. The total itself is
+        # in the row; the detail line says the quantity it buys (unanswered round, batch 2).
+        assert re.search(r'data-testid="landed-quantity"[^>]*>Quoted for 600 cartons<', detail)
+        assert "25,500.00" not in detail
 
     def test_a_corrected_figure_is_sourced_once(self, da, base, ace, client_in_program):
         batch6._with_spec(da)

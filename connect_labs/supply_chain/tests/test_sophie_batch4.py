@@ -325,7 +325,8 @@ class TestTheTenderPage:
         batch3._outreach(da, base["tender"]["id"], base["supplier"]["id"], "2026-08-01")
         panel = _invited_panel(_tender_page(client_in_program, base["tender"]["id"]))
         assert "No one invited yet" not in panel
-        assert "Asked directly: Northwind Foods" in panel
+        # Not listed again: they are in the Outreach table just above (unanswered round, batch 2).
+        assert "Asked directly" not in panel and "Northwind Foods" not in panel
 
     def test_nobody_asked_still_says_so(self, da, base, client_in_program):
         assert "No one invited yet" in _invited_panel(_tender_page(client_in_program, base["tender"]["id"]))

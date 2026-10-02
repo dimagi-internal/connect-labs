@@ -7,6 +7,8 @@ decimal places, a caption that contradicts the numbers under it, a decision
 already made still offered as a button.
 """
 
+import re
+
 import pytest
 from django.urls import reverse
 
@@ -356,8 +358,9 @@ class TestTheTender:
         body = client_in_programme.get(
             reverse("supply_chain:procurement_tender_detail", args=[chain["tender"]["id"]])
         ).content.decode()
-        assert "Compare ORS/zinc co-pack" in body
-        assert "Compare ors-zinc-copack" not in body
+        # One product: "Compare quotes" (unanswered round, batch 2); with more, which one.
+        assert re.search(r">\s*Compare quotes\s*</a>", body) or "Compare quotes: ORS/zinc co-pack" in body
+        assert "ors-zinc-copack</a>" not in body
 
 
 class TestWhatWasSetAside:

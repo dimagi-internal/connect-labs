@@ -53,7 +53,7 @@ class TestTheAwardStatesWhatWasAwarded:
 
     def test_it_says_the_awarded_kit_meets_the_specification(self, scoped, world):
         body = self._page(scoped, world)
-        assert "Meets all 2" in body
+        assert "Meets spec (2 requirements)" in body
 
 
 class TestDecidedByIsNotTheAccount:

@@ -29,8 +29,10 @@ from connect_labs.supply_chain.operations import call_operation
 
 PROGRAM = 20997
 # Measured, plus a small margin: a query per line would blow straight past these.
-QUERY_BOUND_CONTRACT = 20  # measured 17: payments are found by their order too, an advance having no invoice
-QUERY_BOUND_TENDER = 25  # measured 22
+QUERY_BOUND_CONTRACT = (
+    21  # measured 18: payments are found by their order too, an advance having no invoice; what we owe on it, one more
+)
+QUERY_BOUND_TENDER = 26  # measured 23, what we owe on the round included
 
 
 def _at(month, day, hour=9):
@@ -733,14 +735,19 @@ class TestPages:
 
         assert 'data-testid="timeline"' in body
         assert re.search(r'data-testid="revision-line" data-fields="expected_on"', body)
-        # The agent's shipment line: its badge is the summary that opens the excerpt.
-        details = re.search(r"<details.*?</details>", body, re.S).group(0)
-        assert re.search(r'<summary data-testid="actor-badge"', details)
-        assert "ACE (agent)" in details
+        # The agent's shipment line: its badge is a label, and its own "Source email"
+        # toggle beside it opens the excerpt (unanswered round, batch 2).
+        timeline = body.split('data-testid="timeline"', 1)[1]
+        line = next(
+            li for li in re.findall(r'<li data-testid="revision-line".*?</li>', timeline, re.S) if "<details" in li
+        )
+        assert re.search(r'<span data-testid="actor-badge" data-ai ', line) and "ACE (agent)" in line
+        details = re.search(r"<details.*?</details>", line, re.S).group(0)
+        assert re.search(r'<summary data-testid="source-toggle"', details)
         assert re.search(r'<blockquote data-testid="source-excerpt"[^>]*>' + re.escape(EMAIL), details)
-        assert ">Source</summary>" not in body
-        # Sophie's web edit has no excerpt: a plain badge.
-        assert '<span data-testid="actor-badge" class="inline-flex items-center rounded-full bg-gray-100' in body
+        assert "actor-badge" not in details
+        # Sophie's web edit has no excerpt: a badge, and no toggle.
+        assert timeline.count('data-testid="actor-badge"') > timeline.count('data-testid="source-toggle"')
 
     def test_the_comparison_marks_each_quote_and_the_ai_entered_ones(self, client_in_program, da, base, ace, sophie):
         import re
