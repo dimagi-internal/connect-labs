@@ -54,6 +54,53 @@ class CacheConcurrencyError(Exception):
         self.opportunity_id = opportunity_id
 
 
+class DuplicateSourceVisitsError(CacheConcurrencyError):
+    """The visit source itself repeats visit ids, so no write of it can succeed.
+
+    The unique index that catches a concurrent writer also fires when one fetch
+    hands back the same ``visit_id`` twice, and the two used to share one message:
+    "the export API likely returned the same visit_id twice ... Retry should
+    succeed". A retry re-reads the same source, so for a deterministic source -- a
+    synthetic opportunity's ``user_visits.json`` fixture above all -- it fails
+    identically every time, and the message named no id to go and fix.
+
+    Detected BEFORE the insert, so it never reaches the database. Subclasses
+    ``CacheConcurrencyError`` so every existing handler still treats it as
+    terminal; the pipeline view checks for it first to report what happened.
+    """
+
+    def __init__(self, *, opportunity_id: int | None, duplicate_ids: list[str], total_rows: int):
+        self.duplicate_ids = duplicate_ids
+        self.total_rows = total_rows
+        sample = ", ".join(duplicate_ids[:5]) + (" ..." if len(duplicate_ids) > 5 else "")
+        super().__init__(
+            f"The visit source for opp {opportunity_id} repeats {len(duplicate_ids)} visit id(s) "
+            f"across {total_rows} rows (e.g. {sample}). Each visit id must be unique within an "
+            f"opportunity, so the cache cannot store this set and a retry will fail the same way. "
+            f"For a synthetic opportunity, fix the duplicate ids in its user_visits.json fixture "
+            f"and call synthetic_reload_fixtures.",
+            table="labs_raw_visit_cache",
+            opportunity_id=opportunity_id,
+        )
+
+
+def _raise_if_duplicate_visit_ids(visit_dicts, opportunity_id) -> None:
+    """Fail loudly, naming the ids, when one fetch repeats a visit id (see DuplicateSourceVisitsError)."""
+    seen: set[str] = set()
+    dups: list[str] = []
+    for v in visit_dicts:
+        key = str(v.get("id", 0))
+        if key in seen:
+            if key not in dups:
+                dups.append(key)
+        else:
+            seen.add(key)
+    if dups:
+        raise DuplicateSourceVisitsError(
+            opportunity_id=opportunity_id, duplicate_ids=dups, total_rows=len(visit_dicts)
+        )
+
+
 # Default cache TTL. Read from settings to allow dev override.
 # Production: 1 hour. Local dev: configurable via PIPELINE_CACHE_TTL_HOURS.
 DEFAULT_TTL_HOURS = 1
@@ -301,6 +348,7 @@ class SQLCacheManager:
             images_fetched: True when the fetch asked Connect for images, so an
                 empty `images` on a row means the visit HAS no photo.
         """
+        _raise_if_duplicate_visit_ids(visit_dicts, self.opportunity_id)
         expires_at = self._get_expires_at()
 
         # Build rows first (outside transaction for speed)
@@ -492,6 +540,9 @@ class SQLCacheManager:
         Returns:
             Number of rows inserted
         """
+        # Only duplicates WITHIN this batch are caught here; a repeat split across
+        # two batches still reaches the unique index below.
+        _raise_if_duplicate_visit_ids(visit_dicts, self.opportunity_id)
         rows = []
         for v in visit_dicts:
             rows.append(
