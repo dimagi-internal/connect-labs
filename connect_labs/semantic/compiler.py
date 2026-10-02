@@ -39,6 +39,7 @@ from connect_labs.semantic.model import (
     LOOKUP_PICKS,
     VISIT_COLUMN_KINDS,
     WINDOW_KINDS,
+    WORKER_ATTRIBUTIONS,
     RegistryModel,
     indicator_series,
     resolve_model,
@@ -723,6 +724,9 @@ def _model_problems(props_doc: dict[str, Any], constants: dict[str, Any]) -> lis
         not isinstance(plural, str) or not plural.strip() or len(plural) > 64 or not plural.isprintable()
     ):
         problems.append("entity.plural: must be a short printable noun")
+    worker = entity.get("worker")
+    if worker is not None and worker not in WORKER_ATTRIBUTIONS:
+        problems.append(f"entity.worker: {worker!r} must be one of {', '.join(WORKER_ATTRIBUTIONS)}")
     if problems:
         return problems  # every check below is built from the name and key
 
@@ -1266,6 +1270,39 @@ weight_agg AS (
 ),"""
 
 
+def _worker_sql(model: RegistryModel) -> str:
+    """The entity's worker, per `entity.worker` (see model.WORKER_ATTRIBUTIONS).
+
+    Read from the `visits` CTE, which is already cut at the report date -- so
+    `last_visit` is the worker who had the entity AS OF that date, not today.
+    """
+    if model.worker == "alphabetical":
+        return "MIN(username)"
+    direction = "DESC" if model.worker == "last_visit" else "ASC"
+    return (
+        f"(ARRAY_AGG(username ORDER BY visit_date {direction}, visit_id {direction}) "
+        "FILTER (WHERE username IS NOT NULL))[1]"
+    )
+
+
+def _split_worker_filter(
+    model: RegistryModel, visit_filter: dict[str, Any] | None
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Split a one-worker filter into (the visit filter, the worker the entity must be).
+
+    With the alphabetical rule a worker's filter drops the other workers' visits
+    before Layer 2, as it always has. When the worker follows visit ORDER that would
+    change whose entity it is -- a mother bola visited last would look like ada's
+    to ada's evaluation, because bola's visit was filtered out -- so the visits stay
+    whole and the filter applies to the entity's worker instead. The worker's case
+    table then holds exactly the rows the cohort-wide flw scope gives that worker.
+    """
+    if not (model.worker_follows_visits and visit_filter and visit_filter.get("username") is not None):
+        return visit_filter, None
+    rest = {k: v for k, v in visit_filter.items() if k != "username"}
+    return rest, str(visit_filter["username"])
+
+
 def _build_ctes(
     props_doc: dict[str, Any],
     registry: dict[str, Any],
@@ -1295,6 +1332,10 @@ def _build_ctes(
 
     model = resolve_model(props_doc)
     rid, key = model.row_id, model.key
+    visit_filter, entity_worker = _split_worker_filter(model, visit_filter)
+    worker_where = ""
+    if entity_worker is not None:
+        worker_where = "\n    WHERE v.username = '" + entity_worker.replace("'", "''") + "'"
 
     consts = dict(props_doc.get("constants") or {})
     consts["as_of"] = as_of
@@ -1339,7 +1380,7 @@ visit_agg AS (
     -- One row per entity, keyed (opportunity, key) -- see _build_ctes.
     SELECT opportunity_id || '|' || {key} AS {rid},
            MIN(opportunity_id) AS opportunity_id,
-           MIN(username) AS username,
+           {_worker_sql(model)} AS username,
     {agg_cols}
     FROM visits
     WHERE {key} IS NOT NULL
@@ -1355,7 +1396,7 @@ base_m AS (
                'month',
                {cohort}
            )::date AS cohort_month{llo_col}
-    FROM visit_agg v{series_join}
+    FROM visit_agg v{series_join}{worker_where}
 ),
 {prop_cte_sql},
 props AS (SELECT * FROM {final_props})"""
