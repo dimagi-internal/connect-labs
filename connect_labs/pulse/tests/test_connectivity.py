@@ -251,21 +251,27 @@ def test_hour_of_day_is_local_to_the_country():
 
 
 @pytest.mark.django_db
-def test_map_cells_never_point_at_fewer_than_three_workers():
+def test_map_tiles_never_point_at_fewer_than_three_workers():
+    # Three workers in two ~11 km cells that fall in the same ~110 km tile,
+    # and two workers alone in another tile.
     for i in range(3):
         online_day(f"kano-{i}", n=12)
     for i in range(2):
         online_day(f"lone-{i}", n=12)
-    PulseEvent.objects.filter(worker_hash__startswith="kano").update(lat=12.01, lon=8.52)
+    PulseEvent.objects.filter(worker_hash__in=["kano-0", "kano-1"]).update(lat=12.01, lon=8.52)
+    PulseEvent.objects.filter(worker_hash="kano-2").update(lat=12.31, lon=8.81)
     PulseEvent.objects.filter(worker_hash__startswith="lone").update(lat=9.05, lon=7.49)
     events = PulseEvent.objects.all()
-    out = connectivity.cells(
-        connectivity.per_worker(connectivity.worker_weeks(events)), connectivity.home_cells(events)
+    workers = connectivity.merge(
+        connectivity.per_worker(connectivity.worker_weeks(events)), connectivity.worker_profiles(events)
     )
-    assert len(out["cells"]) == 1
-    cell = out["cells"][0]
-    assert (cell["lat"], cell["lon"], cell["workers"], cell["online"]) == (12.05, 8.55, 3, 3)
-    assert out["withheld_workers"] == 2
+    out = connectivity.tiles(workers, connectivity.home_cells(events))
+    assert len(out["tiles"]) == 1
+    tile = out["tiles"][0]
+    # South-west corner of the 1-degree tile holding 12-13N, 8-9E.
+    assert (tile["lat"], tile["lon"], tile["workers"], tile["online"]) == (12.0, 8.0, 3, 3)
+    assert tile["delayed_3d_rate"] == 0.0
+    assert out["withheld_workers"] == 2 and out["tile_degrees"] == 1.0
 
 
 @pytest.mark.django_db
@@ -279,7 +285,7 @@ class TestConnectivityPage:
         assert data["distribution"]["classes"] == {"online": 1, "sometimes": 0, "offline": 1}
         assert data["weekly"] and data["weekly"][0]["workers"] == 2
         assert len(data["hours"]) == 24
-        assert set(data["map"]) == {"cells", "withheld_workers", "min_workers_per_cell"}
+        assert set(data["map"]) == {"tiles", "tile_degrees", "withheld_workers", "min_workers_per_tile"}
         assert data["backlog_days"] == []
         assert data["method"]["online_share"] == connectivity.ONLINE_SHARE
 
