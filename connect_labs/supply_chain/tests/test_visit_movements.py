@@ -195,31 +195,37 @@ def test_only_a_visits_consumption_can_be_reversed(item, store, worker):
 
 
 def test_movement_record_cannot_forge_a_visit_or_a_reversal(item, store, worker):
+    """Refused outright now, rather than quietly dropped: an undeclared field is
+    a refusal naming it (docs/superpowers/specs/2026-10-02-supply-tracking-reality.md,
+    ruling 1), and nothing is written."""
+    import jsonschema
+
     original = _dispense(item, worker, 14, TODAY, "9001")
     da = SupplyDataAccess(program_id=PROGRAM, caller=SYSTEM)
+    before = Movement.objects.count()
 
-    result = call_operation(
-        "movement_record",
-        da,
-        {
-            "data": {
-                "kind": "loss",
-                "occurred_on": TODAY.isoformat(),
-                "from_supply_point_id": worker.pk,
-                "commodity_slug": "rutf",
-                "item_id": item.pk,
-                "quantity": "1",
-                "quantity_unit": "sachet",
-                "source": "we_recorded",
-                "visit_id": "9001",
-                "reverses_id": original.pk,
-                "estimated": True,
-            }
-        },
-    )
+    with pytest.raises(jsonschema.ValidationError, match="'estimated', 'reverses_id', 'visit_id'"):
+        call_operation(
+            "movement_record",
+            da,
+            {
+                "data": {
+                    "kind": "loss",
+                    "occurred_on": TODAY.isoformat(),
+                    "from_supply_point_id": worker.pk,
+                    "commodity_slug": "rutf",
+                    "item_id": item.pk,
+                    "quantity": "1",
+                    "quantity_unit": "sachet",
+                    "source": "we_recorded",
+                    "visit_id": "9001",
+                    "reverses_id": original.pk,
+                    "estimated": True,
+                }
+            },
+        )
 
-    saved = Movement.objects.get(pk=result["id"])
-    assert (saved.visit_id, saved.reverses_id, saved.estimated) == ("", None, False)
+    assert Movement.objects.count() == before
 
 
 def test_the_wire_says_where_a_movement_came_from(item, store, worker):

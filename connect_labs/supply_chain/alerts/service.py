@@ -117,8 +117,8 @@ def _subject_scope(subject_type, subject_id, facts):
         invoice = Invoice.objects.filter(pk=subject_id).select_related("contract").first()
         return _contract_scope(invoice.contract if invoice else None)
     if subject_type == "payment":
-        payment = Payment.objects.filter(pk=subject_id).select_related("invoice__contract").first()
-        return _contract_scope(payment.invoice.contract if payment else None)
+        payment = Payment.objects.filter(pk=subject_id).select_related("contract").first()
+        return _contract_scope(payment.contract if payment else None)
     if subject_type == "receipt":
         receipt = Receipt.objects.filter(pk=subject_id).select_related("contract").first()
         if receipt is None:
@@ -184,7 +184,7 @@ def record_url(subject_type, subject_id, facts, program_id) -> str:
         if contract_id:
             return _url("order_detail", contract_id, program_id=program_id)
     if subject_type == "payment":
-        contract_id = Payment.objects.filter(pk=subject_id).values_list("invoice__contract_id", flat=True).first()
+        contract_id = Payment.objects.filter(pk=subject_id).values_list("contract_id", flat=True).first()
         if contract_id:
             return _url("order_detail", contract_id, program_id=program_id)
     if subject_type == "quote":

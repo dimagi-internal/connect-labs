@@ -36,6 +36,7 @@ PATHS = {
     # Program-scoped tiers: the field is right there.
     "Tender": _direct,
     "Contract": _direct,
+    "Commitment": _direct,
     "Document": _direct,
     "SupplyPoint": _direct,
     "Movement": _direct,
@@ -62,7 +63,7 @@ PATHS = {
     "ShipmentLine": _via("shipment"),
     "Receipt": _via("contract", "shipment", "supply_point"),
     "ReceiptLine": _via("receipt"),
-    "Payment": _via("invoice"),
+    "Payment": _via("contract", "invoice"),
     "DistributionLine": _via("distribution"),
     "AlertCheckState": _via("subscription"),
     # `contract` is nullable on a submission; `link` never is.

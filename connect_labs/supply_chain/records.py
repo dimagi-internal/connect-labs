@@ -77,6 +77,9 @@ SOURCES = (
     "we_recorded",
     "partner_reported",
     "supplier_reported",
+    # A freight forwarder or clearing agent's word: neither the supplier nor
+    # a partner, and it was being filed as one or the other.
+    "forwarder_reported",
     "commcare_form",
     "connect_visit",
     "document",
@@ -228,6 +231,10 @@ DOCUMENT_LINKS = (
 # Who, other than the person deciding an award, has to agree to it: a
 # technical partner confirming a product, a funder approving a use of funds,
 # a regulator. And where that stands.
+# What we owe a counterparty (models.Commitment): an answer to their
+# question, or something we promised them.
+COMMITMENT_KINDS = ("question", "promise")
+
 APPROVAL_ROLES = ("technical", "funder", "regulatory")
 APPROVAL_STATUSES = ("requested", "approved", "declined")
 

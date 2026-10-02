@@ -959,6 +959,7 @@ def test_the_tender_detail_page_links_each_supplier_it_names(client, sophie):
         "supplier_list": [SUPPLIER],
         "commodity_list": [],
         "item_get": None,
+        "commitment_list": [],
     }
     with patch(
         "connect_labs.supply_chain.procurement.views.call_operation",
@@ -997,6 +998,9 @@ def test_an_order_links_out_to_the_supplier_it_is_with(client, sophie, monkeypat
         "org_list": [{"id": 2, "name": "Dimagi", "slug": "dimagi"}],
         "supplier_list": [SUPPLIER],
         "checks_list": {"checks": []},
+        "commitment_list": [],
+        "payment_list": [],
+        "contract_holds": [],
     }
     with patch(
         "connect_labs.supply_chain.views.call_operation",

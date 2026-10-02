@@ -220,7 +220,7 @@ DEFAULT_REMINDER_INTERVAL_DAYS = 7
 
 # The order drafts are listed in: the order a round runs, then by name.
 # Deliberately not an urgency ranking (design doc section 22).
-_KIND_ORDER = {"request": 0, "reminder": 1, "followup": 2}
+_KIND_ORDER = {"reply": 0, "request": 1, "reminder": 2, "followup": 3}
 
 
 @register_operation(
@@ -232,7 +232,9 @@ _KIND_ORDER = {"request": 0, "reminder": 1, "followup": 2}
         "(7 days when the tender sets none -- the result says which applied); and a `followup` for each "
         "live quote with questions still outstanding for the supplier. Each draft carries supplier, "
         "kind, subject, text, address and `why` it is due. No requests or reminders once the tender is "
-        "closed or awarded; no follow-ups once it is awarded. Writes nothing."
+        "closed or awarded; no follow-ups once it is awarded. And a `reply` to each supplier whose questions "
+        "to us are still open (commitment_record), listing them for the person to answer -- at any stage, "
+        "because an answer owed does not lapse with the award. Writes nothing."
     ),
     input_schema=obj({"tender_id": ID, "today": _TODAY}, required=("tender_id",)),
 )
@@ -255,6 +257,9 @@ def tender_drafts_render(access, tender_id, today=None):
         drafts += _requests_and_reminders(access, tender, commodities, quotes, day, interval, is_default, sender)
     if tender.status != "awarded":
         drafts += _followups(access, tender, commodities, quotes, day, sender)
+    # What we owe comes first and outlives the award: a supplier who asked us
+    # something is owed an answer whether or not it won.
+    drafts += _replies(access, tender, day, sender)
     drafts.sort(key=lambda d: (_KIND_ORDER[d["kind"]], d["supplier_name"].lower(), d["commodity_slug"]))
 
     result = {
@@ -352,6 +357,49 @@ def _followups(access, tender, commodities, quotes, day, sender):
             "before it can be compared or accepted."
         )
         drafts.append(_draft_item(draft, "followup", quote.supplier, commodity, why=why, quote_id=quote.pk))
+    return drafts
+
+
+def _replies(access, tender, day, sender):
+    """A reply to each counterparty on this tender whose questions to us are still open."""
+    by_org = {}
+    for commitment in access.list_commitments(tender_id=tender.pk, open_only=True):
+        if commitment.kind == "question":
+            by_org.setdefault(commitment.owed_to_org_id, []).append(commitment)
+    suppliers = {s.org_id: s for s in access.list_suppliers()}
+    drafts = []
+    for org_id, questions in by_org.items():
+        supplier = suppliers.get(org_id)
+        name = supplier.name if supplier is not None else questions[0].owed_to_org.name
+        address = ""
+        for contact in (supplier.contacts if supplier is not None else None) or []:
+            if isinstance(contact, dict) and contact.get("email"):
+                address = contact["email"]
+                break
+        asked = min(q.raised_on for q in questions)
+        lines = [f"{i}. {q.text}\n   [Your answer]" for i, q in enumerate(questions, start=1)]
+        text = (
+            f"Dear {name},\n\nThank you for your questions of {day_text(asked)} about {tender.label}. "
+            "Our answers:\n\n"
+            + "\n\n".join(lines)
+            + f"\n\nKind regards,\n{sender.name}"
+            + (f"\n{sender.organisation}" if sender.organisation else "")
+        )
+        drafts.append(
+            {
+                "kind": "reply",
+                "supplier_id": supplier.pk if supplier is not None else None,
+                "supplier_name": name,
+                "commodity_slug": "",
+                "subject": f"Re: {tender.label} — answers to your questions",
+                "text": text,
+                "to": address,
+                "why": f"{len(questions)} question{'s' if len(questions) != 1 else ''} from {name} "
+                f"open since {day_text(asked)}: we owe the answer. Once sent, mark each answered with "
+                "commitment_resolve.",
+                "commitment_ids": [q.pk for q in questions],
+            }
+        )
     return drafts
 
 
@@ -521,13 +569,21 @@ def quote_get(access, quote_id):
         "Record a quote as the supplier stated it, with the quantity_basis the price covers. Do NOT "
         "compute anything: leave freight_basis and duties_basis not_specified, and pack_spec_source "
         "not_stated, where the supplier was silent. Name an item_id with "
-        "pack_spec_source=trade_item_confirmed when they identify a known trade item."
+        "pack_spec_source=trade_item_confirmed when they identify a known trade item. Give received_on "
+        "(the day the supplier's email was sent, not the day it was forwarded) and the supplier's own "
+        "supplier_reference when the quote has one. Refused, naming the offer and its evidence, when "
+        "this supplier already has a live quote for the product on this tender by the same delivery "
+        "option: a forwarded copy is not a second offer. A real second offer names the one it stands "
+        "beside in distinct_from_quote_ids; a revised offer is quote_correct."
     ),
-    input_schema=obj({"data": _QUOTE_DATA_CREATE}, required=("data",)),
+    input_schema=obj(
+        {"data": _QUOTE_DATA_CREATE, "distinct_from_quote_ids": {"type": "array", "items": ID}},
+        required=("data",),
+    ),
     is_write=True,
 )
-def quote_record(access, data):
-    return record(access.create_quote(data))
+def quote_record(access, data, distinct_from_quote_ids=None):
+    return record(access.create_quote(data, distinct_from=distinct_from_quote_ids or ()))
 
 
 @register_operation(
@@ -921,6 +977,73 @@ def approval_decide(
 )
 def approval_list(access, award_id=None, status=None):
     return [record(a) for a in access.list_approvals(award_id=award_id, status=status)]
+
+
+# ---- what we owe them -----------------------------------------------------
+#
+# A supplier that answers a request with questions, or a forwarder holding
+# trucks for a document only we can supply, is waiting on us. These record it,
+# so the overview can say "waiting on us" instead of blaming the other side,
+# and the tender's drafts include the reply we owe.
+
+_COMMITMENT_DATA = _data_with(
+    ("kind", "text", "raised_on", "source"),
+    kind={"enum": list(records.COMMITMENT_KINDS)},
+    supplier_id=ID,
+    owed_to_org_id=ID,
+    tender_id=ID,
+    contract_id=ID,
+    text={"type": "string", "minLength": 1},
+    raised_on=_DATE,
+    due_on=_DATE,
+    source={"enum": list(records.SOURCES)},
+    recorded_by_org_id=ID,
+    note={"type": "string"},
+)
+
+
+@register_operation(
+    name="commitment_record",
+    summary=(
+        "Record something we owe a counterparty: kind=question for a question they asked us (one row per "
+        "question, as they put it), kind=promise for something we promised them (a document, a decision, "
+        "an answer by a date). Name who is waiting -- supplier_id for one of this program's suppliers, "
+        "owed_to_org_id for anyone else (a forwarder; org_upsert it first) -- and the tender_id or "
+        "contract_id it is about. raised_on is the day they asked or we promised, from the email. Open ones "
+        "show as waiting on us on the overview, and a supplier's open questions are drafted as a reply."
+    ),
+    input_schema=obj({"data": _COMMITMENT_DATA}, required=("data",)),
+    is_write=True,
+)
+def commitment_record(access, data):
+    return record(access.record_commitment(data))
+
+
+@register_operation(
+    name="commitment_resolve",
+    summary=(
+        "Mark a question answered or a promise kept, with what was said or done and the day (today if "
+        "omitted). The row stays on record."
+    ),
+    input_schema=obj(
+        {"commitment_id": ID, "resolution": {"type": "string", "minLength": 1}, "resolved_on": _DATE},
+        required=("commitment_id", "resolution"),
+    ),
+    is_write=True,
+)
+def commitment_resolve(access, commitment_id, resolution, resolved_on=None):
+    return record(access.resolve_commitment(commitment_id, resolution, resolved_on=resolved_on))
+
+
+@register_operation(
+    name="commitment_list",
+    summary="What we owe counterparties -- their questions and our promises -- optionally for one tender or order.",
+    input_schema=obj({"tender_id": ID, "contract_id": ID, "open_only": {"type": "boolean"}}),
+)
+def commitment_list(access, tender_id=None, contract_id=None, open_only=False):
+    return [
+        record(c) for c in access.list_commitments(tender_id=tender_id, contract_id=contract_id, open_only=open_only)
+    ]
 
 
 # ---- supplier performance ----------------------------------------------
