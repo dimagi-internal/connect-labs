@@ -6165,7 +6165,10 @@ class PipelineDataStreamView(BaseSSEStreamView):
                                     for row in result.rows
                                 )
                         except Exception as e:
-                            from connect_labs.labs.analysis.backends.sql.cache import CacheConcurrencyError
+                            from connect_labs.labs.analysis.backends.sql.cache import (
+                                CacheConcurrencyError,
+                                DuplicateSourceVisitsError,
+                            )
                             from connect_labs.labs.integrations.commcare.api_client import CCHQAuthError
 
                             logger.exception(
@@ -6177,7 +6180,14 @@ class PipelineDataStreamView(BaseSSEStreamView):
                             if isinstance(e, CCHQAuthError):
                                 per_opp_entry["auth_error"] = "commcare_hq"
                                 per_opp_entry["auth_error_domain"] = e.domain
-                            if isinstance(e, CacheConcurrencyError):
+                            if isinstance(e, DuplicateSourceVisitsError):
+                                # The source repeats visit ids: not a race, so it
+                                # must not take the "another run is in flight, retry"
+                                # branch below. The error text names the ids and says
+                                # a retry will not help; the per-opp failure path that
+                                # follows reports it, and the other opps still load.
+                                per_opp_entry["duplicate_visit_ids"] = e.duplicate_ids[:20]
+                            elif isinstance(e, CacheConcurrencyError):
                                 # Loud terminal error: another pipeline run for the
                                 # same (opportunity, config) collided with this one
                                 # in the cache layer. Re-running once the other

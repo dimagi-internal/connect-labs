@@ -18,7 +18,11 @@ duplicate within a single batch raises the typed error.
 
 import pytest
 
-from connect_labs.labs.analysis.backends.sql.cache import CacheConcurrencyError, SQLCacheManager
+from connect_labs.labs.analysis.backends.sql.cache import (
+    CacheConcurrencyError,
+    DuplicateSourceVisitsError,
+    SQLCacheManager,
+)
 from connect_labs.labs.analysis.backends.sql.models import (
     ComputedEntityCache,
     ComputedFLWCache,
@@ -75,6 +79,40 @@ class TestRawVisitCacheConcurrency:
             )
         assert excinfo.value.table == "labs_raw_visit_cache"
         assert excinfo.value.opportunity_id == 42
+
+    def test_source_duplicate_ids_name_the_ids_and_say_retry_will_not_help(self, manager):
+        """A source that repeats ids is not a race: a retry re-reads the same source.
+
+        The old shared message said "Retry should succeed" and named no id, which is
+        false for a deterministic source such as a synthetic opportunity's
+        user_visits.json fixture -- it fails identically on every retry.
+        """
+        visits = [
+            {"id": 7, "username": "alice"},
+            {"id": 8, "username": "bob"},
+            {"id": 7, "username": "alice"},
+            {"id": 9, "username": "carol"},
+            {"id": 9, "username": "carol"},
+        ]
+        with pytest.raises(DuplicateSourceVisitsError) as excinfo:
+            manager.store_raw_visits(visit_dicts=visits, visit_count=5)
+        err = excinfo.value
+        assert isinstance(err, CacheConcurrencyError)  # existing handlers stay terminal
+        assert err.duplicate_ids == ["7", "9"]
+        assert err.opportunity_id == 42
+        assert "7, 9" in str(err)
+        assert "retry will fail" in str(err)
+        assert "Retry should succeed" not in str(err)
+        assert RawVisitCache.objects.filter(opportunity_id=42).count() == 0
+
+    def test_source_duplicate_ids_in_a_streamed_batch_write_nothing(self, manager):
+        """Detected before the insert, so no sentinel rows are left behind."""
+        manager.store_raw_visits_start(visit_count=3)
+        with pytest.raises(DuplicateSourceVisitsError):
+            manager.store_raw_visits_batch(
+                [{"id": 1, "username": "a"}, {"id": 2, "username": "b"}, {"id": 1, "username": "a"}]
+            )
+        assert RawVisitCache.objects.filter(opportunity_id=42).count() == 0
 
     def test_streaming_writers_with_different_sentinels_coexist(self, manager):
         """The streaming protocol uses unique negative sentinels per writer.
