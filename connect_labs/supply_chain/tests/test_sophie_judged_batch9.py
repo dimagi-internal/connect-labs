@@ -55,7 +55,7 @@ class TestTheAwardPriceStacks:
         price = re.search(r'<span data-testid="award-price" class="([^"]*)">', cell)
         assert {"block", "text-xs", "text-gray-600"} <= set(price.group(1).split())
         lines = re.findall(r'data-testid="award-price-line" class="block">(.*?)</span>', cell)
-        assert lines == ["USD 42.50 per carton", "USD 25,500.00 for 600 cartons"]
+        assert lines == ["USD 42.50 per carton", "USD 25,500.00 landed (incl. freight and duties) for 600 cartons"]
         assert not any(line.startswith("·") for line in lines)
 
     def test_nothing_in_the_stage_cell_refuses_to_wrap(self, da, base, home_client):

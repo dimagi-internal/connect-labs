@@ -273,7 +273,7 @@ partner's name (the IPTSc render).
         <tr><td class="px-4 py-2 text-gray-600">Freight</td>
             <td class="px-4 py-2 text-right tabular-nums" data-freight>{% if contract.freight_basis == "included" %}<span class="text-gray-600">included in the price</span>{% else %}{{ landed.freight|figure_text }}{% endif %}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">Import duty</td>
-            <td class="px-4 py-2 text-right tabular-nums">{% if contract.duties_basis == "included" %}<span class="text-gray-600">included in the price</span>{% else %}{{ landed.duty|figure_text }}{% endif %}</td></tr>
+            <td class="px-4 py-2 text-right tabular-nums">{% if contract.duties_basis == "included" %}<span class="text-gray-600">included in the price</span>{% elif duty_relief_unevidenced %}{% comment %}0 by a relief nothing on file shows: said as the condition it is.{% endcomment %}<span data-testid="duty-relief-unevidenced">{{ landed.duty|figure_text }} if duty relief is documented <span class="text-gray-700">(no document on file)</span></span>{% else %}{{ landed.duty|figure_text }}{% endif %}</td></tr>
         <tr><td class="px-4 py-2 text-gray-600">VAT</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ landed.vat|figure_text }}</td></tr>
         {% else %}

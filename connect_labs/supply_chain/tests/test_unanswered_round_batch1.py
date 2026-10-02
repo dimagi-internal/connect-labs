@@ -180,8 +180,10 @@ class TestTheTenderPage:
     def test_outreach_comes_before_the_invited_suppliers_and_delete_is_muted(self, da, world, client_in_program):
         body = _tender_page(client_in_program, world["tender"]["id"])
         assert body.index('id="outreach"') < body.index("Invited suppliers")
-        delete = re.search(r'class="([^"]*)">Delete</a>', body).group(1)
-        assert delete.split()[0] == "text-gray-600"  # red only on hover, not at rest
+        # Since batch 4 inside the row's "⋯" menu, grey at rest, red only on hover.
+        menu = re.search(r'<details data-testid="row-more".*?</details>', body, re.S).group(0)
+        delete = re.search(r'class="([^"]*)">Delete</a>', menu).group(1).split()
+        assert "text-gray-700" in delete and "text-red-700" not in delete
 
 
 # ---- E, F: history in the words of the page

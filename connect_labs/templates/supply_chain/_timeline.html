@@ -9,8 +9,8 @@ them out on a past date.
 {% endcomment %}
 {% comment %}scroll-mt-20: a link to #history lands with the heading clear of the fixed 4rem header.{% endcomment %}
 <section id="history" data-timeline data-testid="timeline" class="mt-8 scroll-mt-20">
-  <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-    <h2 class="{{ history_heading_class|default:'text-lg font-semibold text-gray-900' }} scroll-mt-20">History</h2>
+  <div class="flex flex-wrap items-baseline justify-between gap-2">
+    <h2 class="{{ history_heading_class|default:'text-lg font-semibold text-gray-900' }} mb-2 scroll-mt-20">History</h2>
     {% if timeline %}
     {% comment %}Off by default. On, it hides every line no email stands behind -- invitations
     sent, chases, our own edits -- so what suppliers and forwarders told us leads. Client-side:

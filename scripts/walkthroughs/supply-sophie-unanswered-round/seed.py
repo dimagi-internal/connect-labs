@@ -263,10 +263,143 @@ def write_storage_state(session: dict) -> None:
     os.chmod(STORAGE_STATE, 0o600)
 
 
+# ---------------------------------------------------------------------------
+# Sahel answers the chase: the AI records the reply over the labs MCP, off camera
+# ---------------------------------------------------------------------------
+
+OUTPUTS = HERE / "outputs.json"
+MCP_URL = os.environ.get("LABS_MCP_URL", "https://labs.connect.dimagi.com/mcp/")
+
+SAHEL_REPLY = {
+    "ref": "<a82c4-r2@mail.sahel-nutrition.example.invalid>",
+    "excerpt": (
+        "Apologies for the late reply. We can offer 300,000 sachets (2,000 cartons of 150 x 92 g) at "
+        "EUR 0.31 per sachet, EXW Niamey. Transport to Kano can be arranged at your cost; freight estimate on "
+        "request. Shelf life 24 months, lead time 5 weeks, minimum order 500 cartons. Valid 30 days."
+    ),
+    "sender": "Amadou Issoufou, Sahel Nutrition Industries",
+}
+
+
+def _mcp_token() -> str:
+    """The labs MCP token the AI uses: LABS_MCP_TOKEN, else the connect_labs server in ~/.claude.json."""
+    tok = os.environ.get("LABS_MCP_TOKEN")
+    if tok:
+        return tok
+    cfg = Path.home() / ".claude.json"
+    servers = json.loads(cfg.read_text()).get("mcpServers") or {} if cfg.exists() else {}
+    for name, spec in servers.items():
+        auth = (spec.get("headers") or {}).get("Authorization") or ""
+        if "labs" in name and auth.startswith("Bearer "):
+            return auth[len("Bearer ") :]
+    sys.exit("no labs MCP token (set LABS_MCP_TOKEN, or add the connect_labs MCP server to ~/.claude.json)")
+
+
+class Mcp:
+    """A minimal streamable-HTTP MCP client: initialize once, then tools/call."""
+
+    def __init__(self):
+        import urllib.request
+
+        self._urllib = urllib.request
+        self.headers = {
+            "Authorization": f"Bearer {_mcp_token()}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+        _, headers = self._post(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "supply-sophie-unanswered-round", "version": "1"},
+                },
+            }
+        )
+        if headers.get("mcp-session-id"):
+            self.headers["Mcp-Session-Id"] = headers["mcp-session-id"]
+        self._post({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    def _post(self, payload):
+        request = self._urllib.Request(MCP_URL, data=json.dumps(payload).encode(), headers=self.headers, method="POST")
+        with self._urllib.urlopen(request, timeout=120) as response:
+            return response.read().decode(), {k.lower(): v for k, v in response.headers.items()}
+
+    def call(self, name: str, **arguments):
+        body, _ = self._post(
+            {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": name, "arguments": arguments}}
+        )
+        for line in body.splitlines():
+            if line.startswith("data:"):
+                body = line[5:].strip()
+                break
+        result = json.loads(body).get("result") or {}
+        if result.get("isError"):
+            raise RuntimeError(f"{name} refused: {result.get('content')}")
+        return result
+
+
+def sahel_replies() -> None:
+    """The reply arrives after Sophie's chase; the AI records it as it would any forwarded email."""
+    import datetime as dt
+
+    out = json.loads(OUTPUTS.read_text())
+    today = dt.date.today().isoformat()
+    mcp = Mcp()
+    source = dict(SAHEL_REPLY)
+    mcp.call(
+        "supply_chain_quote_record",
+        program_id=out["program_id"],
+        source=source,
+        data={
+            "tender_id": out["round2_tender_id"],
+            "supplier_id": out["sahel_supplier_id"],
+            "commodity_slug": "rutf",
+            "as_quoted_amount": "0.31",
+            "as_quoted_unit": "per_base_unit",
+            "as_quoted_currency": "EUR",
+            "quantity_basis": 300000,
+            "quantity_basis_unit": "sachet",
+            "pack_spec_source": "stated_on_quote",
+            "base_per_pack_stated": 150,
+            "base_unit_grams_stated": 92,
+            "freight_basis": "excluded",
+            "duties_basis": "excluded",
+            "shelf_life_months_stated": 24,
+            "lead_time_days": 35,
+            "moq": 500,
+            "moq_unit": "carton",
+            "incoterm": "EXW Niamey",
+            "delivery_point_keys": ["kano"],
+            "validity_until": (dt.date.today() + dt.timedelta(days=30)).isoformat(),
+            "received_on": today,
+        },
+    )
+    mcp.call(
+        "supply_chain_outreach_update",
+        program_id=out["program_id"],
+        outreach_id=out["sahel_outreach_id"],
+        source=source,
+        data={"responded": True, "response_kind": "quote", "responded_on": today},
+    )
+    print("recorded Sahel's reply over MCP")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--outputs")
+    parser.add_argument(
+        "--sahel-replies",
+        action="store_true",
+        help="record Sahel's reply to the chase over the labs MCP (scene 3's before: hook)",
+    )
     args = parser.parse_args()
+    if args.sahel_replies:
+        sahel_replies()
+        return
     result = seed_via_ecs() if _aws_live() else seed_via_github()
     write_storage_state(result.pop("sophie_session"))
     if args.outputs:
