@@ -407,6 +407,17 @@ class AnalysisPipeline:
 
         raise RuntimeError("Analysis pipeline completed without returning a result")
 
+    def _check_drive_access(self, config: AnalysisPipelineConfig, opp_id: int) -> None:
+        """Gate EVERY read of a gdrive pipeline, cached or fresh (see gdrive_fetcher).
+
+        Drive never checks who is asking, so a cache hit must be gated exactly like
+        a fetch: a valid stamp for this opportunity and a caller who belongs to it.
+        """
+        if config.data_source.type == "gdrive":
+            from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import check_gdrive_access
+
+            check_gdrive_access(config.data_source, opp_id, request=self.request, access_token=self.access_token)
+
     def get_cached_result_only(
         self,
         config: AnalysisPipelineConfig,
@@ -427,6 +438,7 @@ class AnalysisPipeline:
         opp_id = opportunity_id or self.opportunity_id
         if not opp_id:
             return None
+        self._check_drive_access(config, opp_id)
         terminal_stage = config.terminal_stage
         if terminal_stage == CacheStage.AGGREGATED:
             return self.backend.get_cached_flw_result(opp_id, config, 0)
@@ -452,6 +464,7 @@ class AnalysisPipeline:
             return None
         if config.terminal_stage != CacheStage.AGGREGATED:
             return None
+        self._check_drive_access(config, opp_id)
         return self.backend.get_period_scoped_flw_result(opp_id, config)
 
     def _consume_raw_visits_stream(
@@ -593,6 +606,8 @@ class AnalysisPipeline:
                 return self.backend.get_cached_visit_result(opp_id, config, expected_count, tolerance_pct=tolerance)
 
         try:
+            self._check_drive_access(config, opp_id)
+
             # Check cache first
             stage_name = _stage_name(terminal_stage)
             logger.info(
@@ -700,7 +715,9 @@ class AnalysisPipeline:
                             from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import fetch_gdrive_rows_as_visit_dicts
 
                             yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
-                            visit_dicts = fetch_gdrive_rows_as_visit_dicts(unfiltered_config.data_source, opp_id)
+                            visit_dicts = fetch_gdrive_rows_as_visit_dicts(
+                            unfiltered_config.data_source, opp_id, self.request, self.access_token
+                        )
                             visit_count = None
                             raw_data_already_stored = False
                         elif unfiltered_config.data_source.type == "connect_export":
@@ -847,7 +864,9 @@ class AnalysisPipeline:
                         from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import fetch_gdrive_rows_as_visit_dicts
 
                         yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
-                        visit_dicts = fetch_gdrive_rows_as_visit_dicts(unfiltered_config.data_source, opp_id)
+                        visit_dicts = fetch_gdrive_rows_as_visit_dicts(
+                            unfiltered_config.data_source, opp_id, self.request, self.access_token
+                        )
                         visit_count = None
                         raw_data_already_stored = False
                     elif unfiltered_config.data_source.type == "connect_export":
@@ -1038,7 +1057,7 @@ class AnalysisPipeline:
                 from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import fetch_gdrive_rows_as_visit_dicts
 
                 yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
-                visit_dicts = fetch_gdrive_rows_as_visit_dicts(config.data_source, opp_id)
+                visit_dicts = fetch_gdrive_rows_as_visit_dicts(config.data_source, opp_id, self.request, self.access_token)
                 if not visit_dicts:
                     yield (EVENT_STATUS, {"message": "No rows found"})
                     yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
@@ -1176,6 +1195,13 @@ class AnalysisPipeline:
             yield (EVENT_RESULT, result)
 
         except Exception as e:
-            logger.error(f"[Pipeline/{self.backend_name}] Error: {e}", exc_info=True)
-            sentry_sdk.capture_exception(e)
+            from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import GDriveSourceError
+
+            if isinstance(e, GDriveSourceError):
+                # Unauthorized / unshared / unparseable Drive input: the user's to fix,
+                # reported to them -- not an engine failure for Sentry.
+                logger.warning(f"[Pipeline/{self.backend_name}] {e}")
+            else:
+                logger.error(f"[Pipeline/{self.backend_name}] Error: {e}", exc_info=True)
+                sentry_sdk.capture_exception(e)
             yield (EVENT_ERROR, {"message": str(e), "exception": e})

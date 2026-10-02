@@ -61,10 +61,16 @@ def drive(monkeypatch):
                           "content": b"quote\nhello\n"},
             "sheet": {"name": "Tracker", "mimeType": gf.GOOGLE_SHEET, "content": b"a,b\n1,2\n"},
             "json": {"name": "rows.json", "mimeType": "application/json",
-                     "content": json.dumps({"rows": [{"a": 1}, {"a": None}]}).encode()},
+                     "content": json.dumps({"rows": [{"a": 1, "tags": ["x"]}, {"a": None, "tags": {"k": 1}}]}).encode()},
+            "doc": {"name": "README", "mimeType": "application/vnd.google-apps.document", "parent": "folderA",
+                    "content": b""},
+            "pdf": {"name": "answers_scored_notes.pdf", "mimeType": "application/pdf", "parent": "folderA",
+                    "content": b"%PDF"},
+            "baddate": {"name": "d.csv", "mimeType": "text/csv", "content": b"day\n2025-02-30\n2025-03-01T10:00:00Z\n"},
         }
     )
     monkeypatch.setattr(gf, "_drive", lambda: fake)
+    monkeypatch.setattr(gf, "_caller_opportunity_ids", lambda request, token: {OPP})
     return fake
 
 
@@ -105,7 +111,7 @@ def test_folder_pattern_selects_and_concatenates_in_name_order(drive):
 
 
 def test_folder_with_no_match_is_an_error_not_an_empty_result(drive):
-    with pytest.raises(gf.GDriveSourceError, match="No files matching"):
+    with pytest.raises(gf.GDriveSourceError, match="no CSV / Sheet / JSON files matching"):
         gf.fetch_gdrive_rows_as_visit_dicts(_source(folder_id="folderA", file_pattern="nope_*.csv"), OPP)
 
 
@@ -169,11 +175,11 @@ def test_schema_resave_keeps_a_valid_authorization_for_anyone():
 
 
 def test_schema_resave_with_a_new_target_needs_staff():
-    schema = {"data_source": gf.authorize_gdrive_source({"type": "gdrive", "file_id": "fileCSV"}, OPP, STAFF)}
-    schema["data_source"]["file_id"] = "fileOther"
+    stored = gf.authorize_gdrive_source({"type": "gdrive", "file_id": "fileCSV"}, OPP, STAFF)
+    schema = {"data_source": {**stored, "file_id": "fileOther"}}
     with pytest.raises(gf.GDriveSourceError, match="Only Dimagi staff"):
-        gf.authorize_schema_drive_source(schema, OPP, PARTNER)
-    restamped = gf.authorize_schema_drive_source(schema, OPP, STAFF)
+        gf.authorize_schema_drive_source(schema, OPP, PARTNER, previous_schema={"data_source": stored})
+    restamped = gf.authorize_schema_drive_source(schema, OPP, STAFF, previous_schema={"data_source": stored})
     gf.verify_gdrive_authorization(DataSourceConfig(**restamped["data_source"]), OPP)
 
 
@@ -209,3 +215,114 @@ def test_repointing_a_drive_source_changes_the_cache_hash():
     assert get_config_hash(cfg("fileA")) != get_config_hash(cfg("fileB"))
     plain = AnalysisPipelineConfig(grouping_key="username", fields=[])
     assert get_config_hash(plain) == get_config_hash(AnalysisPipelineConfig(grouping_key="username", fields=[]))
+
+
+# --------------------------------------------------------------------------- review regressions
+
+
+def test_caller_who_is_not_a_member_is_refused_before_touching_drive(drive, monkeypatch):
+    """A stamp names an opportunity; it is not a pass to it (a clone or fan-out can
+    run a pipeline for an opportunity the caller is not in)."""
+    monkeypatch.setattr(gf, "_caller_opportunity_ids", lambda request, token: {42})
+    with pytest.raises(gf.GDriveSourceError, match="not a member of opportunity 1251"):
+        gf.fetch_gdrive_rows_as_visit_dicts(_source(file_id="fileCSV"), OPP)
+    assert drive.calls == []
+
+
+def test_unresolvable_caller_is_refused(drive, monkeypatch):
+    monkeypatch.setattr(gf, "_caller_opportunity_ids", lambda request, token: None)
+    with pytest.raises(gf.GDriveSourceError, match="cannot confirm who is reading"):
+        gf.fetch_gdrive_rows_as_visit_dicts(_source(file_id="fileCSV"), OPP)
+    assert drive.calls == []
+
+
+def test_caller_ids_come_from_the_web_session():
+    request = SimpleNamespace(
+        user=SimpleNamespace(is_authenticated=True, view_synthetic_opps=False),
+        session={"labs_oauth": {"organization_data": {"opportunities": [{"id": 1251}, {"id": "77"}]}}},
+    )
+    assert gf._caller_opportunity_ids(request, None) == {1251, 77}
+    assert gf._caller_opportunity_ids(None, None) is None
+
+
+def test_staff_resave_does_not_authorize_a_target_someone_else_stored():
+    """Confused deputy: a partner stores an unstamped target by a path that never
+    authorizes; a staff member later edits a field. That save must not stamp it."""
+    planted = {"data_source": {"type": "gdrive", "folder_id": "internalFixtures"}, "fields": []}
+    edited = {**planted, "fields": [{"name": "x", "path": "row.x"}]}
+    out = gf.authorize_schema_drive_source(edited, OPP, STAFF, previous_schema=planted)
+    assert "authorization" not in out["data_source"]
+    forced = gf.authorize_schema_drive_source(edited, OPP, STAFF, previous_schema=planted, force=True)
+    gf.verify_gdrive_authorization(DataSourceConfig(**forced["data_source"]), OPP)
+
+
+def test_resave_without_the_authorization_field_carries_the_stored_stamp():
+    stored = {"data_source": gf.authorize_gdrive_source({"type": "gdrive", "file_id": "fileCSV"}, OPP, STAFF)}
+    resent = {"data_source": {"type": "gdrive", "file_id": "fileCSV"}, "fields": [{"name": "x", "path": "row.x"}]}
+    out = gf.authorize_schema_drive_source(resent, OPP, PARTNER, previous_schema=stored)
+    assert out["data_source"]["authorization"] == stored["data_source"]["authorization"]
+
+
+def test_nested_json_cells_are_kept_not_crashed_on(drive):
+    rows = gf.fetch_gdrive_rows_as_visit_dicts(_source(file_id="json"), OPP)
+    assert rows[0]["form_json"]["row"]["tags"] == ["x"]
+    assert rows[1]["form_json"]["row"]["tags"] == {"k": 1}
+
+
+def test_impossible_dates_become_null_not_a_cache_crash(drive):
+    rows = gf.fetch_gdrive_rows_as_visit_dicts(_source(file_id="baddate", date_column="day"), OPP)
+    assert [r["visit_date"] for r in rows] == [None, "2025-03-01"]
+
+
+def test_folder_reads_only_its_tabular_files(drive):
+    rows = gf.fetch_gdrive_rows_as_visit_dicts(_source(folder_id="folderA"), OPP)
+    names = {r["form_json"]["file"]["name"] for r in rows}
+    assert "README" not in names and "answers_scored_notes.pdf" not in names
+    assert ("download", "pdf") not in drive.calls
+
+
+def test_a_google_doc_named_directly_says_unsupported_not_unshared(drive):
+    with pytest.raises(gf.GDriveSourceError, match="unsupported file type"):
+        gf.fetch_gdrive_rows_as_visit_dicts(_source(file_id="doc"), OPP)
+
+
+def test_row_cap_is_enforced_while_reading(drive, monkeypatch):
+    monkeypatch.setattr(gf, "MAX_ROWS", 2)
+    with pytest.raises(gf.GDriveSourceError, match="more than 2 rows"):
+        gf.fetch_gdrive_rows_as_visit_dicts(_source(folder_id="folderA", file_pattern="answers_scored_*.csv"), OPP)
+
+
+def test_malformed_authorization_is_refused_not_a_500(drive):
+    bad = {"opportunity_id": OPP, "authorized_by": "x@dimagi.com", "signature": 12345}
+    with pytest.raises(gf.GDriveSourceError, match="not been authorized"):
+        gf.verify_gdrive_authorization(DataSourceConfig(type="gdrive", file_id="fileCSV", authorization=bad), OPP)
+    with pytest.raises(ValueError, match="stamped by the server"):
+        DataSourceConfig(type="gdrive", file_id="fileCSV", authorization="yes")
+    with pytest.raises(ValueError, match="list of strings"):
+        DataSourceConfig(type="gdrive", file_id="fileCSV", null_values="NA")
+
+
+def test_error_messages_carry_the_drive_prefix():
+    assert str(gf.GDriveSourceError("x")).startswith("Google Drive source: ")
+
+
+@pytest.mark.django_db
+def test_pipeline_gates_cache_only_reads(monkeypatch):
+    """A cache hit must be gated like a fetch: cached rows are the same Drive data."""
+    from connect_labs.labs.analysis.config import CacheStage
+    from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+
+    monkeypatch.setattr(gf, "_caller_opportunity_ids", lambda request, token: {OPP})
+    config = AnalysisPipelineConfig(
+        grouping_key="username",
+        fields=[],
+        terminal_stage=CacheStage.AGGREGATED,
+        data_source=DataSourceConfig(type="gdrive", file_id="fileCSV"),
+    )
+    pipeline = AnalysisPipeline(access_token="tok")
+    with pytest.raises(gf.GDriveSourceError, match="not been authorized"):
+        pipeline.get_cached_result_only(config, OPP)
+    with pytest.raises(gf.GDriveSourceError, match="not been authorized"):
+        pipeline.get_period_scoped_result_only(config, OPP)
+    events = list(pipeline.stream_analysis(config, OPP))
+    assert events[-1][0] == "error" and "not been authorized" in events[-1][1]["message"]

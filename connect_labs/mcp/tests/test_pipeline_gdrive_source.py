@@ -65,7 +65,9 @@ def test_partner_save_of_a_drive_target_is_refused_and_nothing_is_written(mock_p
 
 
 @pytest.mark.django_db
-def test_malformed_drive_source_is_invalid_schema():
+@patch("connect_labs.mcp.tools.pipelines.PipelineDataAccess")
+def test_malformed_drive_source_is_invalid_schema(mock_pda_cls):
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(version=1)
     bad = {**DRIVE_SCHEMA, "data_source": {"type": "gdrive"}}
     data = call_tool(
         _user("analyst@dimagi.com"),
@@ -73,3 +75,25 @@ def test_malformed_drive_source_is_invalid_schema():
         {"pipeline_id": 7, "opportunity_id": 1251, "schema": bad, "expected_version": 1},
     )
     assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_SCHEMA"
+    mock_pda_cls.return_value.update_definition.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.pipelines.PipelineDataAccess")
+def test_staff_field_edit_does_not_stamp_a_planted_target_unless_asked(mock_pda_cls):
+    raw = _user("analyst@dimagi.com")
+    current = MagicMock()
+    current.version = 1
+    current.schema = DRIVE_SCHEMA  # stored unstamped, by a path that never authorizes
+    mock_pda_cls.return_value.get_definition.return_value = current
+    mock_pda_cls.return_value.update_definition.return_value = MagicMock(version=2)
+    args = {"pipeline_id": 7, "opportunity_id": 1251, "schema": DRIVE_SCHEMA, "expected_version": 1}
+
+    assert call_tool(raw, "pipeline_update_schema", args)["result"]["isError"] is False
+    saved = mock_pda_cls.return_value.update_definition.call_args.kwargs["schema"]["data_source"]
+    assert "authorization" not in saved
+
+    forced = call_tool(raw, "pipeline_update_schema", {**args, "authorize_drive_source": True})
+    assert forced["result"]["isError"] is False
+    saved = mock_pda_cls.return_value.update_definition.call_args.kwargs["schema"]["data_source"]
+    verify_gdrive_authorization(DataSourceConfig(**saved), 1251)

@@ -309,6 +309,10 @@ class DataSourceConfig:
                     raise ValueError(f"data_source.{name} must be a Drive id; got {value!r}")
             if self.file_pattern and not self.folder_id:
                 raise ValueError("data_source.file_pattern only applies with folder_id")
+            if not isinstance(self.null_values, list) or not all(isinstance(v, str) for v in self.null_values):
+                raise ValueError('data_source.null_values must be a list of strings, e.g. ["", "NA"]')
+            if not isinstance(self.authorization, dict):
+                raise ValueError("data_source.authorization is stamped by the server; do not set it by hand")
         elif self.file_id or self.folder_id:
             raise ValueError("data_source.file_id / folder_id are only valid for type='gdrive'")
         if self.domain and self.type not in ("cchq_forms", "cchq_cases"):
