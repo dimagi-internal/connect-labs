@@ -481,8 +481,12 @@ class TestARankedRow:
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _DELIVERED)
         body = _page(client_in_program, base["tender"]["id"])
         # Since batch 7 the three equal columns are one, its header saying why.
-        # Since the unanswered round's batch 3 the header is short and the equation is the caption.
-        assert re.search(r'data-testid="unit-equivalence"[^>]*>1 carton = 1 course = 1 child treated<', body)
+        # Since the unanswered round's batch 3 the header is short and the equation is the caption;
+        # since batch 4 that caption and the cost basis are one line.
+        assert re.search(
+            r'data-testid="cost-basis"[^>]*>Basis: 1 carton = 150 sachets = 1 course \(one child treated\)<', body
+        )
+        assert 'data-testid="unit-equivalence"' not in body
         assert "<th>USD per carton (one course)</th>" in body
         assert "<th>USD per child treated</th>" not in body and "<th>USD per course</th>" not in body
 

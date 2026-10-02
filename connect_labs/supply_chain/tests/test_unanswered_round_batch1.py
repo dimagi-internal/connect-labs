@@ -35,6 +35,10 @@ def web(client_in_program, da, monkeypatch):
     return client_in_program
 
 
+def _text_of(html):
+    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
+
+
 def _tender_page(client, tender_id, query=""):
     return client.get(reverse("supply_chain:procurement_tender_detail", args=[tender_id]) + query).content.decode()
 
@@ -176,8 +180,10 @@ class TestTheTenderPage:
     def test_outreach_comes_before_the_invited_suppliers_and_delete_is_muted(self, da, world, client_in_program):
         body = _tender_page(client_in_program, world["tender"]["id"])
         assert body.index('id="outreach"') < body.index("Invited suppliers")
-        delete = re.search(r'class="([^"]*)">Delete</a>', body).group(1)
-        assert delete.split()[0] == "text-gray-600"  # red only on hover, not at rest
+        # Since batch 4 inside the row's "⋯" menu, grey at rest, red only on hover.
+        menu = re.search(r'<details data-testid="row-more".*?</details>', body, re.S).group(0)
+        delete = re.search(r'class="([^"]*)">Delete</a>', menu).group(1).split()
+        assert "text-gray-700" in delete and "text-red-700" not in delete
 
 
 # ---- E, F: history in the words of the page
@@ -256,7 +262,10 @@ class TestOrderInvoices:
         )
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", body))
-        assert "Advance paid USD 53,400.00 on 28 Jul 2026 (before this invoice)" in text
+        # Its own row of the invoices table since batch 4.
+        row = _text_of(re.search(r'<tr data-testid="advance-row">.*?</tr>', body, re.S).group(0))
+        assert row.startswith("Advance paid 28 Jul 2026 USD 53,400.00")
+        assert "applied to INV-REH-1" in row
         assert "confirmed by the payee 21 Sep 2026" in text
         marker = re.search(r'data-testid="invoice-above-agreed"[^>]*>(.*?)</div>', body, re.S).group(1)
         assert re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", marker)).strip() == "USD 3,550.00 above agreed"

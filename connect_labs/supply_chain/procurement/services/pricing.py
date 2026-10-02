@@ -374,6 +374,39 @@ def _base_units_quoted(
     return unconfirmed(f"quantity basis unit {unit!r} is not on this commodity's unit ladder")
 
 
+class _Quantity:
+    """The quote, holding another quantity: the tender's, put through the quote's own conversions."""
+
+    def __init__(self, quote, quantity, unit):
+        self._quote, self.quantity_basis, self.quantity_basis_unit = quote, quantity, unit
+
+    def __getattr__(self, name):
+        return getattr(self._quote, name)
+
+
+def _same_quantity(quote, tender_quantity, commodity, pack_spec, item, units_quoted) -> bool:
+    """Whether the quote's quantity basis is the tender's quantity, through the pack the quote rests on.
+
+    300,000 sachets quoted at 150 to the carton IS 2,000 cartons. Compared unit
+    for unit, a quote counted in sachets never matched a tender counted in
+    cartons, and the rehearsal's quote was asked to "quote for 2,000 cartons
+    specifically" when it had. The conversion is the one the landed total
+    already uses (`_base_units_quoted`, through `_pack_spec`: the pack the
+    quote states, else its trade item's), so the two cannot disagree. When
+    either side cannot be put in base units -- a pack nobody has stated -- the
+    quantities are the same only if they are literally the same.
+    """
+    quantity, unit = tender_quantity
+    if quote.quantity_basis_unit == unit and quote.quantity_basis == quantity:
+        return True
+    if not isinstance(units_quoted, Decimal) and not isinstance(units_quoted, int):
+        return False
+    tender_units = _base_units_quoted(_Quantity(quote, Decimal(quantity), unit), commodity, pack_spec, item)
+    if not isinstance(tender_units, (Decimal, int)):
+        return False
+    return Decimal(units_quoted) == Decimal(tender_units)
+
+
 def compute_figures(
     quote: Quote,
     commodity: Commodity,
@@ -465,7 +498,7 @@ def compute_figures(
         landed_for_tender = unconfirmed(
             f"no quantity basis recorded on the quote; this tender is {quantity_phrase(*tender_quantity)}"
         )
-    elif quote.quantity_basis_unit != tender_quantity[1] or quote.quantity_basis != tender_quantity[0]:
+    elif not _same_quantity(quote, tender_quantity, commodity, pack_spec, item, units_quoted):
         landed_for_tender = unconfirmed(
             f"quote covers {quantity_phrase(quote.quantity_basis, quote.quantity_basis_unit)}; "
             f"tender is {quantity_phrase(*tender_quantity)}"

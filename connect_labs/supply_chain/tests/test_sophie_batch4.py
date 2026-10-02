@@ -283,7 +283,9 @@ class TestTheComparisonHeader:
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _COMPARABLE)
         body = _page(client_in_program, base["tender"]["id"])
         note = re.search(r'data-testid="cost-basis"[^>]*>(.*?)</p>', body).group(1)
-        assert note == "1 carton = 150 sachets; a course is 150 sachets"
+        # A carton is a course here, so since the unanswered round's batch 4 the basis
+        # and the equivalence are one line.
+        assert note == "Basis: 1 carton = 150 sachets = 1 course (one child treated)"
 
     def test_only_what_the_commodity_defines(self):
         rutf = {"base_unit": "sachet", "pack_unit": "carton"}

@@ -139,8 +139,9 @@ class TestTheChangedRow:
         asked = _question(da, world)
         op(da, "commitment_resolve", channel="web", commitment_id=asked["id"], resolution="We are.")
         body = _tender_page(client_in_program, world["tender"]["id"], f"?changed=commitment-{asked['id']}")
-        row = re.search(rf'<div [^>]*data-commitment-id="{asked["id"]}".*?updated just now', body, re.S)
-        assert row is not None and "border-l-4" in row.group(0)
+        # One pill on an answered row since batch 4: its "Answered" chip says "just now".
+        row = re.search(rf'<div [^>]*data-commitment-id="{asked["id"]}".*?Answered just now', body, re.S)
+        assert row is not None and "border-l-4" in row.group(0) and "updated just now" not in row.group(0)
 
 
 # ---- 3. what we owe: open first, the answered apart, in the history
@@ -209,7 +210,7 @@ class TestTheComparison:
         op(da, "quote_record", data=_comparable(world))
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         clear = client_in_program.get(url).content.decode()
-        assert 'data-testid="award-anyway"' not in clear
+        assert "data-anyway" not in clear
         # Northgate quotes without saying what freight it includes: blocked.
         op(
             da,
@@ -222,7 +223,8 @@ class TestTheComparison:
             },
         )
         body = client_in_program.get(url).content.decode()
-        button = re.search(r'<button data-testid="award-anyway"[^>]*>(.*?)</button>', body, re.S)
+        # Since batch 4 the award opens from its button, which carries the words.
+        button = re.search(r'<summary data-testid="award-open" data-anyway[^>]*>(.*?)</summary>', body, re.S)
         assert button is not None
         assert _text(button.group(1)).startswith("Award anyway — Northgate Rehearsal Commodities has not stated ")
 

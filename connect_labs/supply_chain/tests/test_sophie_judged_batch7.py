@@ -135,7 +135,8 @@ class TestTheProvisionalStage:
         _provisional(da, base)
         row = _tender_row()
         # Since batch 8 with what the award commits, worded as the comparison's landed total.
-        price = "USD 42.50 per carton · USD 25,500.00 for 600 cartons"
+        # Since the unanswered round's batch 4 the total says it is landed, and what it includes.
+        price = "USD 42.50 per carton · USD 25,500.00 landed (incl. freight and duties) for 600 cartons"
         assert (row.stage, row.award_price) == ("awarded to Northwind Foods", price)
         standing = batch6._standing(_home(home_client))
         cell = re.search(r'<td class="px-4 py-2.5">\s*awarded to Northwind Foods(.*?)</td>', standing, re.S).group(1)
