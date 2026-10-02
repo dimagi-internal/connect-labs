@@ -24,6 +24,16 @@ question). So before each render this:
    Sophie's Playwright storage state (gitignored: the key is a credential).
 
     python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --outputs <file>
+
+**Local mode** (canopy's DDD inner loop, `make serve-demo`): the same
+`replay.run()`, in-process against the local build's own database, with the
+sessions minted by `connect_labs.labs.demo_sessions` (local DEBUG builds only)
+for a loopback cookie -- Sophie's, and the agent account's beside it. Chosen by
+`--local` / `--base-url http://localhost:<port>`, or automatically when the
+recorder says it is rendering against a loopback origin
+(`CANOPY_RENDER_BASE_URL`). The outputs come out in the same shape.
+
+    python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --local --outputs <file>
 """
 
 from __future__ import annotations
@@ -40,7 +50,11 @@ import time
 import zlib
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from _lib import local_seed  # noqa: E402
+
 HERE = Path(__file__).resolve().parent
+AGENT_STORAGE_STATE = HERE / ".ace-storage-state.json"
 REPO = "dimagi-internal/connect-labs"
 MARK = "UNANSWERED_ROUND_RESULT"
 STORAGE_STATE = HERE / ".sophie-storage-state.json"
@@ -263,10 +277,40 @@ def write_storage_state(session: dict) -> None:
     os.chmod(STORAGE_STATE, 0o600)
 
 
+def seed_local(*, base_url: str, outputs: str | None = None) -> dict:
+    """Inside the local labs app (Django set up): reset, seed, sign Sophie and the agent in.
+
+    Called by `tools/ddd_demo.py` against the local build's own database. Refused
+    on anything but a local DEBUG build (`demo_sessions.require_local`) before
+    anything is written.
+    """
+    import importlib.util
+
+    from connect_labs.labs import demo_sessions
+
+    demo_sessions.require_local()
+    spec = importlib.util.spec_from_file_location("unanswered_round_replay", HERE / "replay.py")
+    replay = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(replay)
+    # A fresh local database has no buyer organisation; labs has one, so only here is it created.
+    result = replay.run(create_buyer=True)
+    people = replay.personas()
+    local_seed.write_state(STORAGE_STATE, demo_sessions.storage_state(people["sophie"], base_url))
+    local_seed.write_state(AGENT_STORAGE_STATE, demo_sessions.storage_state(people["ace"], base_url))
+    Path(outputs or HERE / "outputs.json").write_text(json.dumps(result, indent=2, default=str) + "\n")
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--outputs")
+    local_seed.add_arguments(parser)
     args = parser.parse_args()
+    local = local_seed.target(args.local, args.base_url)
+    if local:
+        outputs = Path(args.outputs) if args.outputs else HERE / "outputs.json"
+        print(json.dumps(local_seed.run(HERE.name, local, outputs)))
+        return
     result = seed_via_ecs() if _aws_live() else seed_via_github()
     write_storage_state(result.pop("sophie_session"))
     if args.outputs:
