@@ -4456,6 +4456,22 @@ def update_pipeline_schema_api(request, definition_id):
         if schema is None:
             return JsonResponse({"error": "schema is required"}, status=400)
 
+        if isinstance(schema, dict) and (schema.get("data_source") or {}).get("type") == "gdrive":
+            from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import (
+                GDriveSourceError,
+                authorize_schema_drive_source,
+            )
+
+            opportunity_id = getattr(request, "labs_context", {}).get("opportunity_id")
+            if not opportunity_id:
+                return JsonResponse({"error": "A Google Drive source needs an opportunity context"}, status=400)
+            try:
+                schema = authorize_schema_drive_source(schema, opportunity_id, request.user)
+            except GDriveSourceError as e:
+                return JsonResponse({"error": str(e)}, status=403)
+            except ValueError as e:
+                return JsonResponse({"error": str(e)}, status=400)
+
         data_access = PipelineDataAccess(request=request)
         updated = data_access.update_definition(
             definition_id,

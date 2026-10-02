@@ -614,7 +614,10 @@ class AnalysisPipeline:
             # existing cache, not re-download. The expires_at TTL handles staleness.
             is_cchq = config.data_source.type in ("cchq_forms", "cchq_cases")
             is_ocs = config.data_source.type == "ocs_sessions"
-            expected_count = 0 if (is_cchq or is_ocs or has_filters) else self.expected_visits_for(opp_id)
+            is_gdrive = config.data_source.type == "gdrive"
+            expected_count = (
+                0 if (is_cchq or is_ocs or is_gdrive or has_filters) else self.expected_visits_for(opp_id)
+            )
             # Read as a particular person (an MCP caller's own OCS token): never from the
             # cache, which the data source is not part of the key of and which a web
             # dashboard may have filled under the server's team key -- every bot's
@@ -691,6 +694,13 @@ class AnalysisPipeline:
                                 request=self.request,
                                 data_source=unfiltered_config.data_source,
                             )
+                            visit_count = None
+                            raw_data_already_stored = False
+                        elif unfiltered_config.data_source.type == "gdrive":
+                            from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import fetch_gdrive_rows_as_visit_dicts
+
+                            yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
+                            visit_dicts = fetch_gdrive_rows_as_visit_dicts(unfiltered_config.data_source, opp_id)
                             visit_count = None
                             raw_data_already_stored = False
                         elif unfiltered_config.data_source.type == "connect_export":
@@ -831,6 +841,13 @@ class AnalysisPipeline:
                             request=self.request,
                             data_source=unfiltered_config.data_source,
                         )
+                        visit_count = None
+                        raw_data_already_stored = False
+                    elif unfiltered_config.data_source.type == "gdrive":
+                        from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import fetch_gdrive_rows_as_visit_dicts
+
+                        yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
+                        visit_dicts = fetch_gdrive_rows_as_visit_dicts(unfiltered_config.data_source, opp_id)
                         visit_count = None
                         raw_data_already_stored = False
                     elif unfiltered_config.data_source.type == "connect_export":
@@ -1005,6 +1022,29 @@ class AnalysisPipeline:
                     return
 
                 yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} sessions..."})
+                result = self.backend.process_and_cache(
+                    self.request,
+                    config,
+                    opp_id,
+                    visit_dicts,
+                    skip_raw_store=False,
+                )
+                yield (EVENT_STATUS, {"message": "Complete!"})
+                yield (EVENT_RESULT, result)
+                return
+
+            # Google Drive data source — read the file(s) and process in one pass.
+            if config.data_source.type == "gdrive":
+                from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import fetch_gdrive_rows_as_visit_dicts
+
+                yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
+                visit_dicts = fetch_gdrive_rows_as_visit_dicts(config.data_source, opp_id)
+                if not visit_dicts:
+                    yield (EVENT_STATUS, {"message": "No rows found"})
+                    yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
+                    return
+
+                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} rows..."})
                 result = self.backend.process_and_cache(
                     self.request,
                     config,

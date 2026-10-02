@@ -3062,6 +3062,13 @@ class PipelineDataAccess(BaseDataAccess):
             case_type=data_source_dict.get("case_type", ""),
             form_lookback_days=data_source_dict.get("form_lookback_days", 0) or 0,
             domain=data_source_dict.get("domain", ""),
+            file_id=data_source_dict.get("file_id", ""),
+            folder_id=data_source_dict.get("folder_id", ""),
+            file_pattern=data_source_dict.get("file_pattern", ""),
+            username_column=data_source_dict.get("username_column", ""),
+            date_column=data_source_dict.get("date_column", ""),
+            null_values=data_source_dict.get("null_values") or [""],
+            authorization=data_source_dict.get("authorization") or {},
         )
 
         # Window fields (e.g., distance_from_prev_case_visit_m via lag_haversine).

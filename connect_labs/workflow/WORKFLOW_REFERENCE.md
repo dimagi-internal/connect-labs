@@ -227,7 +227,7 @@ A pipeline schema defines how raw form submission data is extracted, transformed
 ```python
 {
     "data_source": {
-        "type": "connect_csv",            # or "cchq_forms"
+        "type": "connect_csv",            # or "cchq_forms", "ocs_sessions", "connect_export", "cchq_cases", "gdrive"
         "form_name": "Register Mother",   # cchq_forms only: form name for xmlns lookup
         "app_id_source": "opportunity",   # cchq_forms only: derive app_id from opportunity
         "app_id": "",                     # cchq_forms only: explicit app ID
@@ -254,6 +254,39 @@ A pipeline schema defines how raw form submission data is extracted, transformed
 | `app_id_source` | `"opportunity"` | (cchq_forms only) Derive the CommCare app ID from opportunity metadata.                                                       |
 | `app_id`        | string          | (cchq_forms only) Explicit CommCare application ID.                                                                           |
 | `gs_app_id`     | string          | (cchq_forms only) Explicit Gold Standard supervisor app ID.                                                                   |
+| `type`          | `"gdrive"`      | Read CSV / Google Sheet / JSON files from Google Drive. See [Google Drive sources](#google-drive-sources).                    |
+
+#### Google Drive sources
+
+`"type": "gdrive"` reads tabular files from Drive with the server's service account — the way to
+feed a workflow with outputs produced outside labs (an offline analysis pipeline, a tracker sheet).
+Each row becomes one visit-shaped row; its cells are under `row.*` and the file it came from under
+`file.*` (`file.name`, `file.id`, `file.modified`), so field paths read `"row.quality_score"`.
+
+```python
+"data_source": {
+    "type": "gdrive",
+    "folder_id": "11Xa7HWLWoxHFAhuAfKYNsBObhq1nA7U6",   # OR "file_id": "<one file>"
+    "file_pattern": "answers_scored_*.csv",              # folder only: fnmatch over file names
+    "username_column": "participant_id",                 # optional: becomes `username` (grouping_key)
+    "date_column": "session_date",                       # optional: becomes `visit_date`
+    "null_values": ["", "NA"],                           # optional: cells read as null (default [""])
+}
+```
+
+- **Files:** CSV/TSV, a Google Sheet (first sheet, exported as CSV), or JSON (an array of objects,
+  or an object holding one under `rows`/`data`). A folder's matching files are concatenated in name
+  order; ≤ 100 files, ≤ 50 MB per file, ≤ 500,000 rows. CSV cells arrive as strings — use a
+  `transform` (`int`, `float`) for numbers.
+- **Sharing:** share the file or folder with the labs service account (Viewer is enough). A read
+  failure names the account. Drive is read with a read-only token.
+- **Authorization:** only Dimagi staff can point a pipeline at Drive. Saving the schema with
+  `pipeline_update_schema` (or the pipeline editor) as staff stamps `data_source.authorization`,
+  bound to that opportunity and to the exact `file_id`/`folder_id`/`file_pattern`. The fetcher
+  refuses a source without a valid stamp, so do not write `authorization` by hand, and re-save as
+  staff after changing the target. Anyone may re-save an authorized pipeline to edit its fields.
+  A multi-opp fan-out reads Drive only for the opportunity the source was authorized for.
+- **Freshness:** rows are cached for the pipeline's TTL (1 hour); a forced refresh re-reads Drive.
 
 #### `grouping_key`
 
@@ -1219,7 +1252,7 @@ Before deploying a new template:
 - [ ] All field `path`/`paths` values verified via MCP or manual CommCare inspection
 - [ ] `terminal_stage` matches your data access pattern (visit_level for per-visit, aggregated for per-group)
 - [ ] `linking_field` set if doing visit_level with entity grouping by a computed field
-- [ ] `data_source.type` is correct: `connect_csv` for Connect data, `cchq_forms` for HQ forms
+- [ ] `data_source.type` is correct: `connect_csv` for Connect data, `cchq_forms` for HQ forms, `gdrive` for Drive files (saved by Dimagi staff)
 - [ ] `RENDER_CODE` uses `var` declarations (not `const`/`let`) for maximum compatibility
 - [ ] `RENDER_CODE` function is named `WorkflowUI` (not a variable assignment)
 - [ ] `RENDER_CODE` accesses custom fields at row top-level (e.g., `row.weight`, not `row.computed.weight`)

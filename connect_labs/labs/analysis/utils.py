@@ -86,6 +86,17 @@ def get_config_hash(config) -> str:
         for jf in j.fields:
             parts.append(f"join_field:{jf.get('name')}:{jf.get('from')}")
 
+    # A Drive source names WHICH files a row came from, so repointing it is a data
+    # change the field list cannot see: left out, a pipeline moved to another file
+    # would keep serving the old file's rows for the life of the cache. Scoped to
+    # gdrive so every other source keeps the hash its caches were written under.
+    ds = getattr(config, "data_source", None)
+    if ds is not None and ds.type == "gdrive":
+        parts.append(
+            f"gdrive:{ds.file_id}:{ds.folder_id}:{ds.file_pattern}:{ds.username_column}:"
+            f"{ds.date_column}:{','.join(map(str, ds.null_values))}"
+        )
+
     # Generate hash
     config_str = "|".join(parts)
     return hashlib.md5(config_str.encode()).hexdigest()[:12]

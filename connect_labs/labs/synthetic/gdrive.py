@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 
 DRIVE_API = "https://www.googleapis.com/drive/v3"
 SCOPES = ["https://www.googleapis.com/auth/drive"]
+# Read-only callers (workflow pipeline sources) ask the same key for a token that
+# cannot write: a bug or misuse on a read path then cannot modify or delete a file.
+READONLY_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 # All requests include supportsAllDrives so the SA can operate on parents
 # inside Shared Drives (the common Dimagi case). Safe on My Drive too.
 _SHARED_DRIVES = {"supportsAllDrives": "true"}
@@ -40,8 +43,9 @@ class DriveAPIError(RuntimeError):
     """Raised on Drive HTTP errors."""
 
 
-def _load_credentials():
+def _load_credentials(scopes=None):
     """Return google-auth Credentials, or None if env var is unset/invalid."""
+    scopes = scopes or SCOPES
     raw = os.environ.get("LABS_SYNTHETIC_GDRIVE_SA_KEY")
     if not raw:
         return None
@@ -51,8 +55,8 @@ def _load_credentials():
     # Support either a filesystem path or the JSON blob itself.
     if raw.strip().startswith("{"):
         info = json.loads(raw)
-        return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-    return service_account.Credentials.from_service_account_file(raw, scopes=SCOPES)
+        return service_account.Credentials.from_service_account_info(info, scopes=scopes)
+    return service_account.Credentials.from_service_account_file(raw, scopes=scopes)
 
 
 class DriveClient:
@@ -139,6 +143,63 @@ class DriveClient:
         except httpx.HTTPError as e:
             raise DriveAPIError(f"download_file({file_id}) failed: {e}") from e
 
+        return resp.content
+
+    def list_folder_files(self, folder_id: str) -> list[dict]:
+        """Return metadata dicts (id, name, mimeType, size, modifiedTime) for the
+        immediate, non-folder children of `folder_id`, following pagination."""
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", folder_id or ""):
+            raise DriveAPIError(f"list_folder_files: invalid folder_id {folder_id!r}")
+        params = {
+            "q": f"'{folder_id}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'",
+            "fields": "nextPageToken,files(id,name,mimeType,size,modifiedTime)",
+            "pageSize": 1000,
+            "includeItemsFromAllDrives": "true",
+            "corpora": "allDrives",
+            **_SHARED_DRIVES,
+        }
+        files: list[dict] = []
+        while True:
+            try:
+                resp = self._timed_get(f"{DRIVE_API}/files", headers=self._headers(), params=params, timeout=self._timeout)
+                resp.raise_for_status()
+            except httpx.HTTPError as e:
+                raise DriveAPIError(f"list_folder_files({folder_id}) failed: {e}") from e
+            body = resp.json()
+            files.extend(body.get("files", []))
+            token = body.get("nextPageToken")
+            if not token:
+                return files
+            params = {**params, "pageToken": token}
+
+    def get_metadata(self, file_id: str) -> dict:
+        """Return id, name, mimeType, size and modifiedTime for one file."""
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", file_id or ""):
+            raise DriveAPIError(f"get_metadata: invalid file_id {file_id!r}")
+        try:
+            resp = self._timed_get(
+                f"{DRIVE_API}/files/{file_id}",
+                headers=self._headers(),
+                params={"fields": "id,name,mimeType,size,modifiedTime", **_SHARED_DRIVES},
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            raise DriveAPIError(f"get_metadata({file_id}) failed: {e}") from e
+        return resp.json()
+
+    def export_file(self, file_id: str, mime_type: str) -> bytes:
+        """Export a Google-native file (e.g. a Sheet) as `mime_type`."""
+        try:
+            resp = self._timed_get(
+                f"{DRIVE_API}/files/{file_id}/export",
+                headers=self._headers(),
+                params={"mimeType": mime_type},
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            raise DriveAPIError(f"export_file({file_id}) failed: {e}") from e
         return resp.content
 
     def get_name(self, file_id: str) -> str:
