@@ -58,10 +58,10 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
         <col data-col="last-change" style="width: 18%">
         {% else %}
         <col data-col="title" style="width: 22%">
-        <col data-col="stage" style="width: 15%">
+        <col data-col="stage" style="width: 18%">
         <col data-col="waiting" style="width: 20%">
         <col data-col="last-change" style="width: 13%">
-        <col data-col="flags" style="width: 30%">
+        <col data-col="flags" style="width: 27%">
         {% endif %}
       </colgroup>
       <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
@@ -82,7 +82,11 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
               {% if row.buyer %}<span class="block text-xs text-gray-600">bought by {{ row.buyer }}</span>{% endif %}
             </td>
             <td class="px-4 py-2.5">
-              {{ row.stage }}{% if row.award_price %} <span data-testid="award-price" class="whitespace-nowrap">· {{ row.award_price }}</span>{% endif %}
+              {% comment %}The award's price stacked under "awarded to <supplier>", a clause a line,
+              allowed to wrap: on one unbreakable line beside the stage it ran out of the
+              column and printed over "Waiting on".{% endcomment %}
+              {{ row.stage }}
+              {% if row.award_price %}<span data-testid="award-price" class="block text-xs text-gray-600">{% for line in row.award_price_lines %}<span data-testid="award-price-line" class="block">{{ line }}</span>{% endfor %}</span>{% endif %}
               {% if row.provisional_caveat %}<span data-testid="provisional-caveat" class="block text-xs text-amber-800">{{ row.provisional_caveat }}</span>{% endif %}
             </td>
             <td class="px-4 py-2.5 text-gray-700">
