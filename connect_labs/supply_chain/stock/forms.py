@@ -205,9 +205,12 @@ class ShipmentStatusForm(ProvenancedForm):
             "status",
             [(value, str(value).replace("_", " ").capitalize()) for value in records.SHIPMENT_STATUSES],
         )
+        # Moving a consignment along does not change who first told us about
+        # it (docs/superpowers/specs/2026-10-02-supply-tracking-reality.md,
+        # ruling 8); who told us of this move is the write's own history.
+        del self.fields["source"]
         self.helper.layout = Layout(
             Row(Column("status"), Column("expected_on"), css_class="grid md:grid-cols-2 gap-x-6"),
-            Field("source"),
         )
 
 

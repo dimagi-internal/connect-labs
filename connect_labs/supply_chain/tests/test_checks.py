@@ -158,7 +158,7 @@ class TestFulfilment:
     @pytest.fixture
     def contracted(self, da, rutf_without_course):
         supplier = op(da, "supplier_create", data={"name": "DABS"})
-        partner = op(da, "org_upsert", data={"slug": "llo", "name": "Kano partner", "kind": "partner_org"})
+        partner = op(da, "org_upsert", data={"slug": "llo", "name": "Kano partner"})
         contract = op(
             da,
             "contract_create",

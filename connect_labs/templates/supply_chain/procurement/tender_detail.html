@@ -155,7 +155,7 @@
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Supplier</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Sent</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Days waiting</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Responded</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Replied</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Response kind</th>
           <th class="px-4 py-2 text-right text-xs font-medium text-gray-600 uppercase tracking-wider">Actions</th>
       </tr>
@@ -171,7 +171,7 @@
         <td class="px-4 py-2 text-sm text-gray-600">
           {{ o.days_waiting|default_if_none:"—" }}
         </td>
-        <td class="px-4 py-2 text-sm text-gray-600">{% if o.responded %}Yes{% else %}No{% endif %}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% else %}No{% endif %}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ o.response_kind|humanise|default:"—" }}</td>
           <td class="px-4 py-2 text-sm text-right whitespace-nowrap">
             {% if not supply_as_of %}
@@ -189,6 +189,36 @@
     </tbody>
   </table>
   </div>
+</div>
+
+{% comment %}
+What we owe on this round: a supplier's questions to us, and our promises.
+Open ones read as "waiting on us" on the overview (ruling 7 of the
+2026-10-02 tracking-reality spec).
+{% endcomment %}
+<div class="flex items-center justify-between mb-2">
+  <h2 id="owed" class="text-lg font-semibold text-gray-900 scroll-mt-20">What we owe them</h2>
+  {% if not supply_as_of %}
+  <a href="{% url 'supply_chain:tender_commitment_record' tender.id %}"
+     class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>
+  {% endif %}
+</div>
+<div class="bg-white rounded-lg shadow-sm mb-8 divide-y divide-gray-200" data-testid="owed">
+  {% for c in owed %}
+    <div class="px-4 py-2 text-sm flex items-start justify-between gap-4" data-commitment-id="{{ c.id }}">
+      <div>
+        <span class="font-medium text-gray-900">{{ c.owed_to }}</span>
+        <span class="text-gray-600">· {% if c.kind == "question" %}asked us{% else %}we promised{% endif %} {{ c.raised_on|day }}</span>
+        <div class="text-gray-700">{{ c.text }}</div>
+        {% if not c.open %}<div class="text-xs text-gray-600">Answered {{ c.resolved_on|day }}: {{ c.resolution }}</div>{% endif %}
+      </div>
+      {% if c.open and not supply_as_of %}
+        <a href="{% url 'supply_chain:commitment_resolve' c.id %}" class="text-brand-indigo hover:underline whitespace-nowrap">Mark answered</a>
+      {% elif c.open %}<span class="text-xs text-gray-600">open</span>{% endif %}
+    </div>
+  {% empty %}
+    <p class="px-4 py-3 text-sm text-gray-600">Nothing owed on this tender.</p>
+  {% endfor %}
 </div>
 
 {% if drafts %}
@@ -209,7 +239,7 @@ next action on anyone (design doc section 22).
       <div data-testid="draft"{% if d.anchor %} id="{{ d.anchor }}"{% endif %} data-supplier-id="{{ d.supplier_id }}" class="border-t border-gray-200 pt-3 mt-3 scroll-mt-20">
         <p class="text-sm">
           <span class="font-medium text-gray-900">{{ d.supplier_name }}</span>
-          <span class="text-xs text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% else %}Follow-up{% endif %}</span>
+          <span class="text-xs text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our answers{% else %}Follow-up{% endif %}</span>
         </p>
         <p class="text-xs text-gray-600 mt-0.5">{{ d.why }}</p>
         <p class="text-sm text-gray-700 mt-2">

@@ -68,6 +68,12 @@ class OperationCall(_AppendOnly):
     # The quoted text that justified the write. Capped at the application
     # layer (2,000 chars per the design doc); the column itself is unbounded.
     source_excerpt = models.TextField(blank=True, default="")
+    # Who the evidence came from, as the caller read it off the email: "Crescent
+    # Freight & Clearing", "Grace Okon, Kanem Foods". Provenance belongs to the
+    # call, and a record's own `source` says only who FIRST told us -- so a
+    # forwarder's update to a shipment the supplier reported read as "Email
+    # from" the carrier or the supplier, never the forwarder.
+    source_sender = models.CharField(max_length=255, blank=True, default="", db_default="")
     # sha256 of the canonical JSON of the validated payload, `source` left
     # out. Part of the idempotency key: the same evidence producing the same
     # write is recorded once, but one email quoting two products is two writes.

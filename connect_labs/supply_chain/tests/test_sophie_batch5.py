@@ -380,7 +380,10 @@ class TestTheTimeline:
         times = re.findall(r"<time [^>]*>(.*?)</time>", body[body.index('id="history"') :])
         assert times and all(re.fullmatch(r"\d{1,2} [A-Z][a-z]{2} 2026", t) for t in times)
 
-    def test_a_shipment_s_source_names_its_carrier_when_one_is_recorded(self, da, base, ace, client_in_program, order):
+    def test_a_shipment_s_carrier_is_not_its_sender(self, da, base, ace, client_in_program, order):
+        """The rehearsal's dispatch notice came from the supplier and read "Email
+        from Crescent Freight" because a carrier was on the shipment. A carrier
+        moves the goods; it did not write the email (2026-10-02 spec, ruling 9)."""
         from connect_labs.supply_chain.models import Shipment
 
         heading = _source_heading(
@@ -395,7 +398,7 @@ class TestTheTimeline:
         body = client_in_program.get(
             reverse("supply_chain:order_detail", args=[order["contract"]["id"]])
         ).content.decode()
-        assert _source_heading(body) == "Email from Harmattan Haulage, recorded by ACE (agent) on 20 Aug 2026"
+        assert _source_heading(body) == "Email from Northwind Foods, recorded by ACE (agent) on 20 Aug 2026"
         excerpt = re.search(r'<blockquote data-testid="source-excerpt" class="([^"]*)">(.*?)</blockquote>', body, re.S)
         assert excerpt.group(2) == EMAIL
         classes = excerpt.group(1).split()

@@ -411,8 +411,20 @@ class InvoiceForm(ProvenancedForm):
 
     class Meta:
         model = Invoice
-        fields = ["reference", "issued_on", "status", "currency", "amount", "quantity_billed", "quantity_unit"]
+        fields = [
+            "reference",
+            "issued_on",
+            "status",
+            "currency",
+            "amount",
+            "quantity_billed",
+            "quantity_unit",
+            "unit_price",
+            "freight_amount",
+        ]
         widgets = {
+            "unit_price": forms.NumberInput(attrs=MONEY_INPUT),
+            "freight_amount": forms.NumberInput(attrs=MONEY_INPUT),
             "reference": forms.TextInput(attrs={**INPUT, "placeholder": _("their invoice number")}),
             "issued_on": forms.DateInput(attrs=DATE),
             "status": forms.Select(attrs=SELECT),
@@ -429,16 +441,44 @@ class InvoiceForm(ProvenancedForm):
             "amount": _("Amount"),
             "quantity_billed": _("Quantity billed"),
             "quantity_unit": _("Unit"),
+            "unit_price": _("Price billed per unit"),
+            "freight_amount": _("Freight billed"),
         }
         help_texts = {
+            "unit_price": _("As the invoice states it. Above the order's price, the order page says so."),
             "quantity_billed": _(
                 "Give this and the three-way match can run: what was ordered, what arrived, "
                 "what was billed. Without it the match cannot be done at all."
             ),
         }
 
-    def __init__(self, *args, **kwargs):
+    acknowledges_payment_ids = forms.ModelMultipleChoiceField(
+        label=_("Payments this invoice says it received"),
+        queryset=Payment.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        help_text=_(
+            'A "less advance received" line. Each one ticked is matched to this invoice and counts as '
+            "confirmed by the supplier on the invoice's date."
+        ),
+    )
+
+    def __init__(self, *args, contract_id=None, **kwargs):
         super().__init__(*args, **kwargs)
+        # An update does not change who told us (ruling 8): asked once, when
+        # the invoice is first recorded.
+        if self.instance is not None and self.instance.pk:
+            self.fields.pop("source")
+            contract_id = self.instance.contract_id
+        unmatched = Payment.objects.filter(contract_id=contract_id, invoice__isnull=True) if contract_id else None
+        if unmatched is not None and unmatched.exists():
+            self.fields["acknowledges_payment_ids"].queryset = unmatched
+            self.fields["acknowledges_payment_ids"].label_from_instance = lambda p: (
+                f"{p.currency} {p.amount:,.2f} paid {p.paid_on:%-d %b %Y}"
+                + (f" ({p.reference})" if p.reference else "")
+            )
+        else:
+            self.fields.pop("acknowledges_payment_ids")
         set_choices(
             self,
             "status",
@@ -449,11 +489,21 @@ class InvoiceForm(ProvenancedForm):
             Row(Column("reference"), Column("issued_on"), Column("status"), css_class="grid md:grid-cols-3 gap-x-6"),
             Row(Column("amount"), Column("currency"), css_class="grid md:grid-cols-2 gap-x-6"),
             Row(Column("quantity_billed"), Column("quantity_unit"), css_class="grid md:grid-cols-2 gap-x-6"),
-            Field("source"),
+            Row(Column("unit_price"), Column("freight_amount"), css_class="grid md:grid-cols-2 gap-x-6"),
+            *([Field("acknowledges_payment_ids")] if "acknowledges_payment_ids" in self.fields else []),
+            *([Field("source")] if "source" in self.fields else []),
         )
 
     def clean_currency(self):
         return (self.cleaned_data.get("currency") or "").strip().upper()
+
+    def payload(self) -> dict:
+        chosen = self.cleaned_data.get("acknowledges_payment_ids") or []
+        data = super().payload()
+        data.pop("acknowledges_payment_ids", None)
+        if chosen:
+            data["acknowledges_payment_ids"] = [p.pk for p in chosen]
+        return data
 
 
 class PaymentForm(ProvenancedForm):

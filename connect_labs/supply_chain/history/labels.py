@@ -430,22 +430,22 @@ def identity(model, values, lookup) -> str:
 def sender(model, values, lookup) -> str:
     """Who a quoted source on this record came from, when the record says so; "" otherwise.
 
-    Never invented: a quote's source is its supplier's reply, and a
-    shipment's is its carrier's notice when a carrier is recorded, else the
-    order's supplier when the shipment itself says the supplier reported it
-    (`source == "supplier_reported"`). Anything else reads only as its kind
-    ("Email, recorded by ...").
+    Read off the record only for the write that CREATED it: a quote's source
+    is its supplier's reply, and a fulfilment record the supplier reported
+    (`source == "supplier_reported"`) is the order's supplier's word. A
+    shipment's carrier is not its sender -- the rehearsal's dispatch notice
+    from the supplier read "Email from Crescent Freight" -- and an update's
+    sender is never the record's first teller: the call names it itself
+    (`OperationCall.source_sender`, see entry_for). Never invented; anything
+    else reads only as its kind ("Email, recorded by ...").
     """
     from connect_labs.supply_chain.models import Contract, Supplier
 
     values = values or {}
     if model.__name__ == "Quote":
         return lookup.name(Supplier, values.get("supplier_id")) if values.get("supplier_id") else ""
-    if model.__name__ == "Shipment":
-        carrier = (values.get("carrier") or "").strip()
-        if carrier:
-            return carrier
-        if values.get("source") != "supplier_reported":
+    if model.__name__ in ("Shipment", "Invoice", "Receipt"):
+        if values.get("source") != "supplier_reported" or not values.get("contract_id"):
             return ""
         contract = lookup.row(Contract, values.get("contract_id"))
         return lookup.name(Supplier, contract.supplier_id) if contract is not None else ""

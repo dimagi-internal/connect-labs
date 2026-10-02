@@ -35,6 +35,7 @@ from connect_labs.supply_chain.forms import (
 )
 from connect_labs.supply_chain.models import (
     AwardApproval,
+    Commitment,
     Commodity,
     Contract,
     Item,
@@ -264,16 +265,18 @@ class OutreachReplyForm(ScopedForm):
 
     class Meta:
         model = Outreach
-        fields = ["responded", "response_kind", "last_reminder_on", "notes"]
+        fields = ["responded", "response_kind", "responded_on", "last_reminder_on", "notes"]
         widgets = {
             "responded": forms.CheckboxInput(attrs={"class": "simple-toggle"}),
             "response_kind": forms.Select(attrs=SELECT),
+            "responded_on": forms.DateInput(attrs=DATE),
             "last_reminder_on": forms.DateInput(attrs=DATE),
             "notes": forms.Textarea(attrs=TEXTAREA),
         }
         labels = {
             "responded": _("They replied"),
             "response_kind": _("What the reply was"),
+            "responded_on": _("Replied on"),
             "last_reminder_on": _("Last chased on"),
             "notes": _("Notes"),
         }
@@ -294,7 +297,12 @@ class OutreachReplyForm(ScopedForm):
         )
         self.helper.layout = Layout(
             Field("responded"),
-            Row(Column("response_kind"), Column("last_reminder_on"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(
+                Column("response_kind"),
+                Column("responded_on"),
+                Column("last_reminder_on"),
+                css_class="grid md:grid-cols-3 gap-x-6",
+            ),
             Field("notes"),
         )
 
@@ -444,6 +452,78 @@ class ApprovalRequestForm(ScopedForm):
         return found
 
 
+class CommitmentForm(ScopedForm):
+    """Something we owe a counterparty: an answer to their question, or a promise of ours."""
+
+    source = forms.ChoiceField(
+        label=_("How do you know?"),
+        choices=[
+            ("supplier_reported", _("A supplier asked or was promised it")),
+            ("forwarder_reported", _("A freight forwarder or clearing agent did")),
+            ("partner_reported", _("A partner did")),
+            ("we_recorded", _("We set this up ourselves")),
+        ],
+        initial="supplier_reported",
+        widget=forms.Select(attrs=SELECT),
+    )
+
+    class Meta:
+        model = Commitment
+        fields = ["kind", "owed_to_org", "text", "raised_on", "due_on"]
+        widgets = {
+            "kind": forms.Select(attrs=SELECT),
+            "owed_to_org": forms.Select(attrs=SEARCHABLE),
+            "text": forms.Textarea(attrs=TEXTAREA),
+            "raised_on": forms.DateInput(attrs=DATE),
+            "due_on": forms.DateInput(attrs=DATE),
+        }
+        labels = {
+            "kind": _("What we owe"),
+            "owed_to_org": _("Who is waiting"),
+            "text": _("The question, or the promise"),
+            "raised_on": _("Asked or promised on"),
+            "due_on": _("Due by"),
+        }
+        help_texts = {
+            "text": _("As they asked it, or as we promised it. One question per entry."),
+            "raised_on": _("The day of their email, not the day it was recorded."),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        set_choices(
+            self, "kind", [("question", _("An answer to their question")), ("promise", _("Something we promised"))]
+        )
+        self.fields["owed_to_org"].queryset = LabsOrg.objects.order_by("name")
+        self.fields["owed_to_org"].empty_label = _("Select an organisation\u2026")
+        self.fields["raised_on"].initial = date.today()
+        self.helper.layout = Layout(
+            Row(Column("kind"), Column("owed_to_org"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Field("text"),
+            Row(Column("raised_on"), Column("due_on"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Field("source"),
+        )
+
+
+class CommitmentResolveForm(forms.Form):
+    """How a question was answered or a promise kept, and when."""
+
+    resolution = forms.CharField(
+        label=_("What we said or did"),
+        widget=forms.Textarea(attrs=TEXTAREA),
+    )
+    resolved_on = forms.DateField(label=_("On"), initial=date.today, widget=forms.DateInput(attrs=DATE))
+
+    def __init__(self, *args, access=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+
+    def payload(self) -> dict:
+        return to_payload(self.cleaned_data)
+
+
 class ApprovalDecisionForm(ScopedForm):
     """The approver's answer. Final on its row: a reversal is a new request."""
 
@@ -529,6 +609,9 @@ class QuoteForm(ScopedForm):
             "lead_time_days",
             "incoterm",
             "received_on",
+            "supplier_reference",
+            "validity_until",
+            "payment_terms",
             "delivery_mode",
             "pickup_location",
             "buyer_transport_amount",
@@ -554,6 +637,9 @@ class QuoteForm(ScopedForm):
             "lead_time_days": forms.NumberInput(attrs={**INPUT, "min": 0}),
             "incoterm": forms.TextInput(attrs={**INPUT, "placeholder": "CIF"}),
             "received_on": forms.DateInput(attrs=DATE),
+            "supplier_reference": forms.TextInput(attrs={**INPUT, "placeholder": _("their quotation number")}),
+            "validity_until": forms.DateInput(attrs=DATE),
+            "payment_terms": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. 50% with order")}),
             "delivery_mode": forms.Select(attrs=SELECT),
             "pickup_location": forms.TextInput(
                 attrs={**INPUT, "placeholder": _("e.g. their warehouse, Kano free zone")}
@@ -581,6 +667,9 @@ class QuoteForm(ScopedForm):
             "lead_time_days": _("Lead time (days)"),
             "incoterm": _("Incoterm"),
             "received_on": _("Received on"),
+            "supplier_reference": _("Their reference"),
+            "validity_until": _("Valid until"),
+            "payment_terms": _("Payment terms, as stated"),
             "delivery_mode": _("How the goods reach us"),
             "pickup_location": _("Collected from"),
             "buyer_transport_amount": _("Our own transport cost"),
@@ -698,6 +787,12 @@ class QuoteForm(ScopedForm):
                     Column("incoterm"),
                     Column("received_on"),
                     css_class="grid md:grid-cols-4 gap-x-6",
+                ),
+                Row(
+                    Column("supplier_reference"),
+                    Column("validity_until"),
+                    Column("payment_terms"),
+                    css_class="grid md:grid-cols-3 gap-x-6",
                 ),
                 css_class="pt-2",
             ),

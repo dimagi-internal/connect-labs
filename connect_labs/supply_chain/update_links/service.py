@@ -171,11 +171,11 @@ def scope_for(link) -> Scope:
         received = contracts.filter(pk__in=[c.pk for c in rows if _receives(c, link.org_id)])
         # A payment is confirmed by whoever it was paid to: the supplier. A
         # buyer confirming a payment "received" would speak for the payee.
-        payments = Payment.objects.filter(invoice__contract__in=supplied)
+        payments = Payment.objects.filter(contract__in=supplied)
     else:
         received = contracts
-        payments = Payment.objects.filter(invoice__contract__in=contracts)
-    payments = payments.select_related("invoice__contract")
+        payments = Payment.objects.filter(contract__in=contracts)
+    payments = payments.select_related("contract", "invoice")
     return Scope(link, contracts, points, items, shipments, payments, approvals, supplied, received)
 
 
@@ -609,7 +609,7 @@ def _contract_of(operation, result_id):
     if operation == "receipt_record":
         return Receipt.objects.filter(pk=result_id).values_list("contract_id", flat=True).first()
     if operation == "payment_confirm":
-        return Payment.objects.filter(pk=result_id).values_list("invoice__contract_id", flat=True).first()
+        return Payment.objects.filter(pk=result_id).values_list("contract_id", flat=True).first()
     if operation in ("shipment_record", "shipment_update"):
         return Shipment.objects.filter(pk=result_id).values_list("contract_id", flat=True).first()
     return None

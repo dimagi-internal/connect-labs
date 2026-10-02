@@ -59,6 +59,10 @@ AWARDED_GAP_RULE = (
 )
 ETA_RULE = "A shipment whose expected arrival day has passed and that has not been received."
 
+# How "waiting on" opens when the next move is ours: a question we have not
+# answered, a promise we have not kept, a document only we can supply.
+WAITING_ON_US = "us"
+
 # The order's chain, in order; the stage is the furthest one reached.
 ORDER_STAGES = ("placed", "dispatched", "received", "invoiced", "paid")
 # How a stage reads on the overview where the chain's own word is not what a
@@ -317,6 +321,7 @@ def _tender_rows(program_id, today, until):
     ):
         awards.setdefault(award.tender_id, award)
     provisional = {tid: a for tid, a in awards.items() if a.provisional}
+    owed = _owed_by_tender(program_id, tender_ids)
 
     rows = []
     for tender in tenders:
@@ -330,6 +335,12 @@ def _tender_rows(program_id, today, until):
             award,
             provisional=tender.pk in provisional,
         )
+        if owed.get(tender.pk):
+            # What we owe comes first: it is the one thing on the row only we can move.
+            ours = f"{WAITING_ON_US}: {owed[tender.pk]}"
+            others = list(waiting_lines) or ([waiting_on] if waiting_on not in ("", "—") else [])
+            waiting_lines = (ours, *others) if others else ()
+            waiting_on = "; ".join((ours, *others))
         stage = _words(tender.status)
         awardee = award.quote.supplier.name if award is not None and award.quote_id else ""
         if awardee:
@@ -361,6 +372,28 @@ def _tender_rows(program_id, today, until):
             )
         )
     return rows
+
+
+def _owed_by_tender(program_id, tender_ids) -> dict:
+    """ "answers to Northgate Commodities (3 questions since 11 Jul)", per tender, from open commitments."""
+    from connect_labs.supply_chain.models import Commitment
+
+    grouped = {}
+    for c in Commitment.objects.filter(
+        program_id=program_id, tender_id__in=tender_ids, resolved_on__isnull=True
+    ).select_related("owed_to_org"):
+        grouped.setdefault(c.tender_id, {}).setdefault((c.owed_to_org.name, c.kind), []).append(c)
+    out = {}
+    for tender_id, by_party in grouped.items():
+        parts = []
+        for (name, kind), items in sorted(by_party.items()):
+            since = _day(min(c.raised_on for c in items))
+            if kind == "question":
+                parts.append(f"answers to {name} ({_plural(len(items), 'question')} since {since})")
+            else:
+                parts.append(f"{_plural(len(items), 'promise')} to {name} (since {since})")
+        out[tender_id] = "; ".join(parts)
+    return out
 
 
 def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, provisional=False):
@@ -583,9 +616,9 @@ def _order_rows(program_id, today, until, own_org_id):
     # payment. An invoice with no amount cannot be derived, so a payment
     # against it is taken as settling it.
     with_payment = set(
-        Payment.objects.filter(invoice__contract__program_id=program_id, invoice__contract_id__in=ids).values_list(
-            "invoice_id", flat=True
-        )
+        Payment.objects.filter(
+            contract__program_id=program_id, contract_id__in=ids, invoice__isnull=False
+        ).values_list("invoice_id", flat=True)
     )
     settled, any_paid = {}, set()
     for invoice_id, contract_id, status, amount in (
@@ -600,6 +633,9 @@ def _order_rows(program_id, today, until, own_org_id):
     paid = {c for c, done in settled.items() if done}
     part_paid = any_paid - paid
 
+    from connect_labs.supply_chain.fulfilment.services.holds import holds_for
+
+    holds = holds_for(contracts)
     rows = []
     for contract in contracts:
         stage, waiting_on, stale = _order_state(
@@ -612,6 +648,7 @@ def _order_rows(program_id, today, until, own_org_id):
             contract.pk in part_paid,
             contract.pk in unlinked,
             today,
+            holds=holds.get(contract.pk, []),
         )
         title = contract.reference or f"Order {contract.pk}"
         rows.append(
@@ -640,7 +677,7 @@ def _dispatched(shipment) -> bool:
 
 
 def _order_state(
-    contract, shipments, received_shipments, received, invoiced, paid, part_paid, unlinked_receipt, today
+    contract, shipments, received_shipments, received, invoiced, paid, part_paid, unlinked_receipt, today, holds=()
 ):
     if contract.status in ("cancelled", "draft"):
         return _words(contract.status), "—", []
@@ -662,8 +699,18 @@ def _order_state(
     outstanding = [
         s for s in shipments if s.pk not in received_shipments and s.status != "lost" and not unlinked_receipt
     ]
+    # What the goods are held on that WE owe, per shipment: a late shipment
+    # held on our own document is ours, and its flag says so.
+    held = {}
+    for hold in holds:
+        if hold.shipment_id is not None:
+            held.setdefault(hold.shipment_id, []).append(hold.what)
     stale = [
-        Flag(f"ETA {_day(s.expected_on)} passed, not received", ETA_RULE)
+        Flag(
+            f"ETA {_day(s.expected_on)} passed, not received"
+            + (f" — held on us: {', '.join(held[s.pk])}" if s.pk in held else ""),
+            ETA_RULE,
+        )
         for s in sorted(outstanding, key=lambda s: (s.expected_on or date.max, s.pk))
         if s.expected_on is not None and s.expected_on < today
     ]
@@ -675,7 +722,11 @@ def _order_state(
         stage = IN_TRANSIT if stage == "dispatched" else f"{stage}, {IN_TRANSIT}"
     elif stage == "paid" and received and contract.status != "part_received":
         stage = DELIVERED_AND_PAID
-    if in_transit:
+    if holds:
+        # Our move, not the supplier's: name what we owe before anything else
+        # (docs/superpowers/specs/2026-10-02-supply-tracking-reality.md, ruling 5).
+        waiting_on = f"{WAITING_ON_US}: {'; '.join(h.words for h in holds)}"
+    elif in_transit:
         etas = sorted(s.expected_on for s in in_transit if s.expected_on is not None)
         waiting_on = f"arrival (ETA {_day(etas[0])})" if etas else "arrival"
     elif not received:

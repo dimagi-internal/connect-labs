@@ -47,6 +47,8 @@ from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.forms import (
     ApprovalDecisionForm,
     ApprovalRequestForm,
+    CommitmentForm,
+    CommitmentResolveForm,
     OutreachForm,
     OutreachReplyForm,
     QuoteForm,
@@ -121,6 +123,7 @@ class TenderDetailView(_Base):
         for o in outreach:
             o["days_waiting"] = None if o.get("responded") else _days_waiting(o.get("sent_on"))
         context["outreach"] = outreach
+        context["owed"] = self.op("commitment_list", tender_id=tender_id)
         # The emails due on this round now, for Sophie to copy into her own
         # mailbox. Listed in the order a round runs and then by name -- not
         # ranked, and folded shut (design doc section 22: the product drafts
@@ -135,7 +138,7 @@ class TenderDetailView(_Base):
         # "Draft email to <supplier>" opens the panel at that supplier's.
         anchored = set()
         for d in (context["drafts"] or {}).get("drafts") or []:
-            if d.get("supplier_id") is not None and d["supplier_id"] not in anchored:
+            if d.get("supplier_id") is not None and d["kind"] != "reply" and d["supplier_id"] not in anchored:
                 anchored.add(d["supplier_id"])
                 d["anchor"] = f"draft-supplier-{d['supplier_id']}"
         context["quotes"] = self.op("quote_list", tender_id=tender_id)
@@ -1272,3 +1275,85 @@ class ApprovalDecideView(_AwardScreen):
 
     def fixed(self, **kwargs):
         return {"approval_id": int(kwargs["approval_id"])}
+
+
+# ---- what we owe them --------------------------------------------------------
+
+
+class CommitmentRecordView(OperationFormView):
+    """A question a supplier asked us, or something we promised, on a tender or an order."""
+
+    operation = "commitment_record"
+    form_class = CommitmentForm
+    title = "Record something we owe"
+    intro = (
+        "A question they asked us, or something we promised them. Until it is resolved, the overview "
+        "reads this as waiting on us, and a supplier's questions are drafted as a reply."
+    )
+    submit_label = "Record it"
+
+    def _where(self):
+        if "tender_id" in self.kwargs:
+            return "tender_id", int(self.kwargs["tender_id"])
+        return "contract_id", int(self.kwargs["contract_id"])
+
+    def fixed(self, **kwargs):
+        key, pk = self._where()
+        return {"data": {key: pk}}
+
+    def _back(self):
+        key, pk = self._where()
+        if key == "tender_id":
+            return reverse("supply_chain:procurement_tender_detail", args=[pk])
+        return reverse("supply_chain:order_detail", args=[pk])
+
+    def breadcrumb(self, **kwargs):
+        return [{"label": "Back", "href": self._back()}, {"label": self.title}]
+
+    def cancel_href(self, **kwargs):
+        return self._back()
+
+    def redirect_to(self, result):
+        return self._back()
+
+
+class CommitmentResolveView(OperationFormView):
+    """Answered, or done -- with what was said and when."""
+
+    operation = "commitment_resolve"
+    form_class = CommitmentResolveForm
+    title = "Mark it answered"
+    submit_label = "Save"
+
+    def commitment(self):
+        from connect_labs.supply_chain.models import Commitment
+
+        found = (
+            Commitment.objects.filter(pk=self.kwargs["commitment_id"], program_id=_access(self.request).program_id)
+            .select_related("owed_to_org")
+            .first()
+        )
+        if found is None:
+            raise Http404(f"nothing owed with id {self.kwargs['commitment_id']} in this program")
+        return found
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        commitment = self.commitment()
+        context["intro"] = f"{commitment.owed_to_org.name}: {commitment.text}"
+        return context
+
+    def fixed(self, **kwargs):
+        return {"commitment_id": int(kwargs["commitment_id"])}
+
+    def _back(self):
+        commitment = self.commitment()
+        if commitment.tender_id:
+            return reverse("supply_chain:procurement_tender_detail", args=[commitment.tender_id])
+        return reverse("supply_chain:order_detail", args=[commitment.contract_id])
+
+    def cancel_href(self, **kwargs):
+        return self._back()
+
+    def redirect_to(self, result):
+        return self._back()

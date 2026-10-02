@@ -44,6 +44,7 @@ SOURCE_CHOICES = [
     ("we_recorded", _("We set this up ourselves")),
     ("partner_reported", _("A partner told us")),
     ("supplier_reported", _("A supplier told us")),
+    ("forwarder_reported", _("A freight forwarder or clearing agent told us")),
 ]
 
 
