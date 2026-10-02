@@ -105,7 +105,11 @@ def build_visit_sql(
     # it, so with windows declared the worker filter waits for the compiler (which
     # applies it after Layer 1, as it always has). Slower for one worker; the same
     # number either way.
-    if windows and visit_filter:
+    #
+    # The same holds when the entity's worker follows visit order (`entity.worker`):
+    # whose mother it is depends on the other workers' visits too, so the compiler
+    # keeps them and filters on the entity's worker instead.
+    if (windows or model.worker_follows_visits) and visit_filter:
         visit_filter = {k: v for k, v in visit_filter.items() if k != "username"}
 
     # The ENGINE builds the multi-opportunity extraction -- scope, the pipeline's row
