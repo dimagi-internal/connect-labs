@@ -210,7 +210,7 @@ def _contract_scope(contract, program_id):
     receipts = _child_ids(Receipt, {"contract_id": contract, "shipment_id": shipments}, program_id)
     receipt_lines = _child_ids(ReceiptLine, {"receipt_id": receipts}, program_id)
     invoices = _child_ids(Invoice, {"contract_id": contract}, program_id)
-    payments = _child_ids(Payment, {"invoice_id": invoices}, program_id)
+    payments = _child_ids(Payment, {"contract_id": contract, "invoice_id": invoices}, program_id)
     documents = _child_ids(
         Document,
         {
@@ -396,6 +396,14 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None, u
     else:
         values = dict(revision.changes)
     _set_line(entry, model, revision.action, values, lookup, revision.object_id)
+    # Who sent the evidence, as the caller read it off the email, wins: it is
+    # this write's own provenance. An update without one names nobody rather
+    # than borrowing the record's first teller (ruling 9).
+    stated = (getattr(call, "source_sender", "") or "").strip()
+    if stated:
+        entry.sender = stated
+    elif revision.action == "update":
+        entry.sender = ""
     if model is Quote and ai and offer_fixes and revision.action != "delete":
         quote_id = int(revision.object_id)
         if live_quote_ids is None:
@@ -412,7 +420,15 @@ def _set_line(entry, model, action, values, lookup, object_id=None):
     # recorded after the email arrived still says whose email it was.
     # Only the two records a sender is read from, so no other line costs a query.
     row = None
-    if model.__name__ in ("Quote", "Shipment") and action != "delete" and object_id not in (None, ""):
+    if (
+        model.__name__ in ("Quote", "Shipment", "Invoice", "Receipt")
+        and action != "delete"
+        and object_id
+        not in (
+            None,
+            "",
+        )
+    ):
         row = lookup.row(model, object_id)
     entry.sender = sender(model, _values(row) if row is not None else values, lookup)
     if model._meta.auto_created:

@@ -369,8 +369,6 @@ class Command(BaseCommand):
             data={
                 "slug": "llo-kano",
                 "name": "Connect-RUTF local partner (Kano)",
-                "kind": "partner_org",
-                "roles": ["buyer", "receiver", "distributor", "payer"],
                 "country": "NG",
             },
         )

@@ -725,7 +725,17 @@ class OrderDetailView(OperationBase):
         # Lateness, read from the checks rather than recomputed here, so this
         # page and the checks feed cannot disagree about whether it is late.
         shipment_ids = {s["id"] for s in context["shipments"]}
-        late = self.op("checks_list", kinds=["contract_delivery_overdue", "shipment_overdue"])["checks"]
+        late = self.op(
+            "checks_list", kinds=["contract_delivery_overdue", "shipment_overdue", "invoice_above_contract"]
+        )["checks"]
+        context["invoice_above"] = next(
+            (c for c in late if c["kind"] == "invoice_above_contract" and c["subject"]["id"] == contract_id), None
+        )
+        context["owed"] = self.op("commitment_list", contract_id=contract_id)
+        context["advances"] = [
+            p for p in self.op("payment_list", contract_id=contract_id) if p.get("invoice_id") is None
+        ]
+        context["held_on_us"] = self.op("contract_holds", contract_id=contract_id)
         context["contract_late"] = next(
             (c for c in late if c["kind"] == "contract_delivery_overdue" and c["subject"]["id"] == contract_id), None
         )

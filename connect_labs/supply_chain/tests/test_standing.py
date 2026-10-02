@@ -546,8 +546,10 @@ class TestLastChangeAndOrder:
         for n in range(3):
             _tender(da, f"Round {n}", AUG_3)
             _order(da, base, f"PO-{n}")
-        # Measured 70 for six rows; a query per outreach or per revision would pass it quickly.
-        with django_assert_max_num_queries(80):
+        # Measured 88 for six rows: 4 fixed for what we owe (holds, commitments),
+        # and 2 an order for its payments, now found by the order (an advance has
+        # no invoice). A query per outreach or per revision would pass it quickly.
+        with django_assert_max_num_queries(92):
             standing_rows(PROGRAM, TODAY)
 
 

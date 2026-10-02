@@ -15,6 +15,7 @@ from connect_labs.supply_chain.operations import (
     _CONTRACT_DATA,
     _CONTRACT_DATA_CREATE,
     ID,
+    MONEY,
     MONEY_NONZERO,
     QUANTITY,
     _data_with,
@@ -177,10 +178,12 @@ _SHIPMENT_DATA = _data_with(
     lines={"type": "array", "items": _SHIPMENT_LINE},
     # What it needs to clear, and who owes each. Sent whole on an update: the
     # list IS the requirement, so a partial merge could not remove one.
+    note={"type": "string"},
     required_documents={
         "type": "array",
         "items": _data_with(
             ("kind", "owed_by_org_id"),
+            _open=True,
             kind={"enum": list(records.DOCUMENT_KINDS)},
             owed_by_org_id=ID,
         ),
@@ -188,6 +191,37 @@ _SHIPMENT_DATA = _data_with(
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
 )
+
+# An update moves what changed and nothing else. It need not restate the
+# order it belongs to, and it cannot change who told us: the record's `source`
+# is who FIRST told us; who told us THIS change is the call's own `source`
+# (with its sender), kept in the record's history. Requiring both here made a
+# forwarder's one-line ETA slip re-send the order and overwrite "the supplier
+# told us" with "a partner told us" (docs/superpowers/specs/
+# 2026-10-02-supply-tracking-reality.md, ruling 8). `contract_id` and `source`
+# stay accepted when they repeat what the record holds -- older callers send
+# them -- and a different value is refused by the repository, never applied
+# and never silently dropped. `recorded_by_org_id` is not taken at all, so no
+# provenance stamping reaches an update.
+_UPDATE_OMITS = ("recorded_by_org_id",)
+
+
+def _update_of(schema: dict) -> dict:
+    properties = {k: v for k, v in schema["properties"].items() if k not in _UPDATE_OMITS}
+    for key, words in (
+        ("contract_id", "Optional; if given, must be the order this record is already on."),
+        (
+            "source",
+            "Optional; if given, must be the record's own (who first told us). Who told you THIS "
+            "change is the call's source.sender.",
+        ),
+    ):
+        if key in properties:
+            properties[key] = {**properties[key], "description": words}
+    return {**schema, "properties": properties, "required": []}
+
+
+_SHIPMENT_UPDATE = _update_of(_SHIPMENT_DATA)
 
 _CHARGE_DATA = _data_with(
     ("shipment_id", "kind", "payee_org_id", "amount", "source"),
@@ -229,6 +263,7 @@ _RECEIPT_DATA = _data_with(
     },
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
+    note={"type": "string"},
 )
 
 _INVOICE_DATA = _data_with(
@@ -241,12 +276,27 @@ _INVOICE_DATA = _data_with(
     amount=MONEY_NONZERO,
     quantity_billed=QUANTITY,
     quantity_unit={"type": "string"},
+    # What the invoice charges per quantity_unit, and its freight line. With
+    # them the order page can say the bill is above the contract.
+    unit_price=MONEY_NONZERO,
+    freight_amount=MONEY,
+    # Payments the invoice itself says it received -- a "less advance
+    # received" line. Each is matched to this invoice and counts as confirmed
+    # by the payee on the invoice's date: the supplier's own document says so.
+    acknowledges_payment_ids={"type": "array", "items": ID},
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
+    note={"type": "string"},
 )
 
+_INVOICE_UPDATE = _update_of(_INVOICE_DATA)
+
+# Against the order, or against one of its invoices. An advance is paid on a
+# pro-forma before any invoice exists, so it names the contract; an invoice
+# that later acknowledges it is matched then (`acknowledges_payment_ids`).
 _PAYMENT_DATA = _data_with(
-    ("invoice_id", "paid_on", "amount", "source"),
+    ("paid_on", "amount", "source"),
+    contract_id=ID,
     invoice_id=ID,
     paid_on=_DATE,
     amount=MONEY_NONZERO,
@@ -255,7 +305,9 @@ _PAYMENT_DATA = _data_with(
     reference={"type": "string"},
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
+    note={"type": "string"},
 )
+_PAYMENT_DATA["anyOf"] = [{"required": ["contract_id"]}, {"required": ["invoice_id"]}]
 
 _DOCUMENT_DATA = _data_with(
     ("kind", "source"),
@@ -265,6 +317,7 @@ _DOCUMENT_DATA = _data_with(
     content_type={"type": "string"},
     content_base64={"type": "string"},
     external_url={"type": "string"},
+    note={"type": "string"},
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
     # One `<name>_id` per thing a document can evidence, generated from the
@@ -315,9 +368,10 @@ def shipment_record(access, data):
     summary=(
         "Update a shipment — most often its status as it moves: dispatched, in_transit, "
         "at_customs, cleared, delivered. Everything from dispatched to cleared counts as "
-        "in transit and stays out of stock on hand."
+        "in transit and stays out of stock on hand. Send only what changed: the order and who "
+        "first told us stay as recorded, and who told you THIS is the call's source (with its sender)."
     ),
-    input_schema=obj({"shipment_id": ID, "data": _SHIPMENT_DATA}, required=("shipment_id", "data")),
+    input_schema=obj({"shipment_id": ID, "data": _SHIPMENT_UPDATE}, required=("shipment_id", "data")),
     is_write=True,
 )
 def shipment_update(access, shipment_id, data):
@@ -389,7 +443,9 @@ def invoice_list(access, contract_id=None, status=None):
     summary=(
         "Record a supplier invoice. Give quantity_billed so the three-way match can compare it "
         "with what actually arrived — an invoice for more than was received is the single most "
-        "common discrepancy, and the only thing that catches it is that comparison."
+        "common discrepancy, and the only thing that catches it is that comparison. Give unit_price "
+        "and freight_amount as billed, so a bill above the contract is flagged. When the invoice says "
+        "it received an advance, name that payment in acknowledges_payment_ids."
     ),
     input_schema=obj({"data": _INVOICE_DATA}, required=("data",)),
     is_write=True,
@@ -400,8 +456,11 @@ def invoice_record(access, data):
 
 @register_operation(
     name="invoice_update",
-    summary="Update an invoice — typically to query or reject it, or to attach its document.",
-    input_schema=obj({"invoice_id": ID, "data": _INVOICE_DATA}, required=("invoice_id", "data")),
+    summary=(
+        "Update an invoice — typically to query or reject it, or to record a figure it bills. Send "
+        "only what changed: the order and who told us stay as first recorded."
+    ),
+    input_schema=obj({"invoice_id": ID, "data": _INVOICE_UPDATE}, required=("invoice_id", "data")),
     is_write=True,
 )
 def invoice_update(access, invoice_id, data):
@@ -411,15 +470,43 @@ def invoice_update(access, invoice_id, data):
 @register_operation(
     name="payment_record",
     summary=(
-        "Record a settlement against an invoice. The invoice's status follows from what has "
-        "been paid rather than being asserted, so 'paid' cannot be true of an invoice with "
-        "money outstanding."
+        "Record a payment: against an invoice (invoice_id), or against the order before any invoice "
+        "exists (contract_id) -- an advance paid on a pro-forma. An advance is matched to the invoice "
+        "later, when the invoice acknowledges it (invoice_record's acknowledges_payment_ids). An "
+        "invoice's status follows from what has been paid against it rather than being asserted, so "
+        "'paid' cannot be true of an invoice with money outstanding."
     ),
     input_schema=obj({"data": _PAYMENT_DATA}, required=("data",)),
     is_write=True,
 )
 def payment_record(access, data):
     return record(access.record_payment(data))
+
+
+@register_operation(
+    name="payment_list",
+    summary=(
+        "List this program's payments, optionally for one order. invoice_id is null on an advance no "
+        "invoice has acknowledged yet."
+    ),
+    input_schema=obj({"contract_id": ID}),
+)
+def payment_list(access, contract_id=None):
+    return [record(p) for p in access.list_payments(contract_id=contract_id)]
+
+
+@register_operation(
+    name="contract_holds",
+    summary=(
+        "What an order is waiting on US for: a document a not-yet-received shipment needs that our side "
+        "owes, and our open promises on the order. Empty when the next move is not ours."
+    ),
+    input_schema=obj({"contract_id": ID}, required=("contract_id",)),
+)
+def contract_holds(access, contract_id):
+    from connect_labs.supply_chain.fulfilment.services.holds import holds_on_us
+
+    return [hold.as_dict() for hold in holds_on_us(access._require_contract(contract_id))]
 
 
 @register_operation(

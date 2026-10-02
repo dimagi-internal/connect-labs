@@ -141,7 +141,9 @@ def three_way_match(contract) -> dict:
     unit = in_order_unit
 
     billed = contract.invoices.exclude(status="rejected").aggregate(total=Sum("amount"))["total"] or ZERO
-    paid = Payment.objects.filter(invoice__contract=contract).aggregate(total=Sum("amount"))["total"] or ZERO
+    # Every payment on the order, matched to an invoice or not: an advance
+    # paid on a pro-forma is money paid before any invoice existed.
+    paid = Payment.objects.filter(contract=contract).aggregate(total=Sum("amount"))["total"] or ZERO
 
     shortfall = None
     status = "unknown"

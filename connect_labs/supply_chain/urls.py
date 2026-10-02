@@ -224,6 +224,26 @@ urlpatterns = [
         name="invoice_record",
     ),
     path(
+        "orders/<int:contract_id>/payments/new/",
+        fulfilment_views.AdvancePaymentRecordView.as_view(),
+        name="advance_payment_record",
+    ),
+    path(
+        "orders/<int:contract_id>/owed/new/",
+        procurement_views.CommitmentRecordView.as_view(),
+        name="contract_commitment_record",
+    ),
+    path(
+        "procurement/tenders/<int:tender_id>/owed/new/",
+        procurement_views.CommitmentRecordView.as_view(),
+        name="tender_commitment_record",
+    ),
+    path(
+        "owed/<int:commitment_id>/resolve/",
+        procurement_views.CommitmentResolveView.as_view(),
+        name="commitment_resolve",
+    ),
+    path(
         "orders/<int:contract_id>/documents/new/",
         fulfilment_views.DocumentAttachView.as_view(),
         name="document_attach",

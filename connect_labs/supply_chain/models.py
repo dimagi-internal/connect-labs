@@ -584,6 +584,11 @@ class Outreach(TimestampedModel):
     responded = models.BooleanField(default=False)
     response_kind = models.CharField(max_length=16, blank=True, default="")
     last_reminder_on = models.DateField(null=True, blank=True)
+    # The day the supplier's reply reached us -- the email's own date, not the
+    # day it was forwarded on. A domain fact like `sent_on`: the history log
+    # says when we LEARNED of the reply, this says when it was made
+    # (docs/superpowers/specs/2026-10-02-supply-tracking-reality.md, ruling 3).
+    responded_on = models.DateField(null=True, blank=True)
     notes = models.TextField(blank=True, default="")
 
     class Meta:
@@ -630,7 +635,16 @@ class Quote(TimestampedModel):
     validity_until = models.DateField(null=True, blank=True)
     incoterm = models.CharField(max_length=16, blank=True, default="")
     stated_spec = models.JSONField(default=dict, blank=True)
+    # The day the quote reached us (its email's date), not the day it was
+    # recorded. Screens show this; history keeps the recorded time.
     received_on = models.DateField(null=True, blank=True)
+    # The supplier's own number for this offer ("KF/Q/2611", a pro-forma
+    # number). The surest way to know a forwarded copy is the same offer.
+    supplier_reference = models.CharField(max_length=64, blank=True, default="", db_default="")
+    # As the supplier states them, verbatim: "50% with order, 50% before
+    # loading". A contract's payment_terms is the agreed category; this is
+    # what was offered.
+    payment_terms = models.CharField(max_length=255, blank=True, default="", db_default="")
 
     voided = models.BooleanField(default=False)
     void_reason = models.TextField(blank=True, default="")
@@ -973,13 +987,23 @@ class Invoice(SourcedModel):
     amount = models.DecimalField(null=True, blank=True, **MONEY)
     quantity_billed = models.DecimalField(null=True, blank=True, **QTY)
     quantity_unit = models.CharField(max_length=32, blank=True, default="")
+    # The price the invoice charges, per `quantity_unit`, and the freight line
+    # it bills -- the two figures a supplier can move between the quote and
+    # the bill. With them the order can say the invoice is above the
+    # contract; with only a total it could not (checks.invoice_above_contract).
+    unit_price = models.DecimalField(null=True, blank=True, **MONEY)
+    freight_amount = models.DecimalField(null=True, blank=True, **MONEY)
 
     class Meta:
         ordering = ["-issued_on", "-created_at"]
 
 
 class Payment(SourcedModel):
-    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="payments")
+    # Paid against the order. An advance is paid on a pro-forma, before any
+    # invoice exists, so the invoice is matched later and may be absent; the
+    # contract is always known (ruling 6).
+    contract = models.ForeignKey(Contract, on_delete=models.CASCADE, related_name="payments")
+    invoice = models.ForeignKey(Invoice, null=True, blank=True, on_delete=models.CASCADE, related_name="payments")
     paid_on = models.DateField()
     amount = models.DecimalField(**MONEY)
     currency = models.CharField(max_length=3, default="USD")
@@ -992,6 +1016,41 @@ class Payment(SourcedModel):
 
     class Meta:
         ordering = ["-paid_on"]
+
+
+class Commitment(SourcedModel):
+    """Something we owe a counterparty: an answer to a question they asked us,
+    or a thing we promised them.
+
+    A supplier that replies with questions instead of a price, or a forwarder
+    holding trucks until we send a Form M, is waiting on US. Before this there
+    was nowhere to say so but a note, so the overview read the round as
+    waiting on the supplier and nothing reminded anyone to answer
+    (docs/superpowers/specs/2026-10-02-supply-tracking-reality.md, ruling 7).
+
+    Open until `resolved_on` is set; resolving keeps the row and says how.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    kind = models.CharField(max_length=16, choices=_choices(records.COMMITMENT_KINDS))
+    # Who is waiting: the supplier's company, a forwarder, a partner.
+    owed_to_org = models.ForeignKey("labs.LabsOrg", on_delete=models.PROTECT, related_name="supply_commitments")
+    tender = models.ForeignKey(Tender, null=True, blank=True, on_delete=models.CASCADE, related_name="commitments")
+    contract = models.ForeignKey(Contract, null=True, blank=True, on_delete=models.CASCADE, related_name="commitments")
+    # The question as they asked it, or the promise as we made it.
+    text = models.TextField()
+    # When they asked, or when we promised -- the email's date.
+    raised_on = models.DateField()
+    due_on = models.DateField(null=True, blank=True)
+    resolved_on = models.DateField(null=True, blank=True)
+    resolution = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["raised_on", "pk"]
+
+    @property
+    def is_open(self) -> bool:
+        return self.resolved_on is None
 
 
 class Document(SourcedModel):

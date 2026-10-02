@@ -79,6 +79,33 @@ def _safe_external_url(url: str) -> str:
     )
 
 
+def _unchanged_provenance(found, data, noun) -> dict:
+    """An update's `contract_id` and `source` may only repeat the record's; then they are dropped.
+
+    Who first told us stays who first told us, and a record does not move to
+    another order by an edit. A different value is refused by name rather
+    than applied (it would rewrite provenance) or ignored (the caller would
+    believe it had landed).
+    """
+    data = dict(data)
+    contract_id = data.pop("contract_id", None)
+    if contract_id is not None and int(contract_id) != found.contract_id:
+        raise ValueError(
+            f"this {noun} is on order {found.contract_id}; an update cannot move it to order {contract_id}"
+        )
+    source = data.pop("source", None)
+    if source is not None and source != found.source:
+        raise ValueError(
+            f"this {noun} was first reported as {source_words(found.source)!r}, and an update does not change "
+            f"who told us. Leave `source` out; say who told you this change in the call's source.sender."
+        )
+    return data
+
+
+def source_words(source) -> str:
+    return (source or "").replace("_", " ")
+
+
 class FulfilmentRepositoryMixin:
     # ---- shipments -------------------------------------------------------
 
@@ -135,6 +162,7 @@ class FulfilmentRepositoryMixin:
         found = self.get_shipment(shipment_id)
         if found is None:
             raise ValueError(f"shipment {shipment_id} not found")
+        data = _unchanged_provenance(found, data, "shipment")
         self._check_required_documents(data.get("required_documents"))
         for key, value in _columns(Shipment, data).items():
             setattr(found, key, value)
@@ -306,8 +334,16 @@ class FulfilmentRepositoryMixin:
         return list(qs)
 
     def get_payment(self, payment_id):
-        """Scoped through the invoice's contract, like every other row here."""
-        return Payment.objects.filter(invoice__contract__program_id=self._require_program(), pk=payment_id).first()
+        """Scoped through the payment's contract, like every other row here."""
+        return Payment.objects.filter(contract__program_id=self._require_program(), pk=payment_id).first()
+
+    def list_payments(self, contract_id=None, unmatched=False):
+        qs = Payment.objects.filter(contract__program_id=self._require_program())
+        if contract_id is not None:
+            qs = qs.filter(contract_id=contract_id)
+        if unmatched:
+            qs = qs.filter(invoice__isnull=True)
+        return list(qs)
 
     def get_invoice(self, invoice_id):
         return (
@@ -316,43 +352,106 @@ class FulfilmentRepositoryMixin:
             .first()
         )
 
+    @transaction.atomic
     def record_invoice(self, data):
         from connect_labs.supply_chain.data_access import _columns, _fresh
 
         contract = self._require_contract(data["contract_id"])
-        return _fresh(Invoice.objects.create(contract=contract, **_columns(Invoice, data)))
+        # Re-read before matching: a just-created row still holds the strings it was given.
+        invoice = _fresh(Invoice.objects.create(contract=contract, **_columns(Invoice, data)))
+        self._acknowledge_payments(invoice, data.get("acknowledges_payment_ids"))
+        return _fresh(invoice)
 
+    @transaction.atomic
     def update_invoice(self, invoice_id, data):
         from connect_labs.supply_chain.data_access import _columns, _fresh
 
         found = self.get_invoice(invoice_id)
         if found is None:
             raise ValueError(f"invoice {invoice_id} not found")
+        data = _unchanged_provenance(found, data, "invoice")
         for key, value in _columns(Invoice, data).items():
             setattr(found, key, value)
         found.save()
+        found = _fresh(found)
+        self._acknowledge_payments(found, data.get("acknowledges_payment_ids"))
         return _fresh(found)
+
+    def _acknowledge_payments(self, invoice, payment_ids):
+        """Match the payments an invoice says it received, and take its word that they arrived.
+
+        A supplier's invoice reading "less advance received 28/07" is the
+        payee confirming the advance, in writing, on the invoice's date. So the
+        payment is matched to the invoice and confirmed then -- and the
+        "payment not confirmed by the payee" check stops asking a question
+        the supplier has already answered (ruling 6). A payment on another
+        order, or already matched to a different invoice, is refused: an
+        invoice cannot acknowledge money that was paid against something else.
+        """
+        if not payment_ids:
+            return
+        for payment_id in payment_ids:
+            payment = self.get_payment(payment_id)
+            if payment is None:
+                raise ValueError(f"payment {payment_id} does not exist in this program")
+            if payment.contract_id != invoice.contract_id:
+                raise ValueError(
+                    f"payment {payment_id} was paid against order {payment.contract_id}, not this invoice's "
+                    f"order {invoice.contract_id}"
+                )
+            if payment.invoice_id not in (None, invoice.pk):
+                raise ValueError(f"payment {payment_id} is already matched to invoice {payment.invoice_id}")
+            payment.invoice = invoice
+            fields = ["invoice", "updated_at"]
+            if payment.confirmed_by_payee_on is None:
+                confirmed = invoice.issued_on or payment.paid_on
+                payment.confirmed_by_payee_on = max(confirmed, payment.paid_on)
+                fields.append("confirmed_by_payee_on")
+            payment.save(update_fields=fields)
+        self._settle(invoice)
+
+    @staticmethod
+    def _settle(invoice):
+        """The invoice's status, from what has been paid against it -- never asserted."""
+        from django.db.models import Sum
+
+        if invoice.amount is None:
+            return
+        settled = invoice.payments.aggregate(total=Sum("amount"))["total"] or 0
+        if not settled:
+            return
+        status = "paid" if settled >= invoice.amount else "part_paid"
+        if status != invoice.status:
+            invoice.status = status
+            invoice.save(update_fields=["status", "updated_at"])
 
     @transaction.atomic
     def record_payment(self, data):
-        """A settlement against an invoice, and the invoice status that follows.
+        """A payment against an invoice, or against the order itself.
 
-        The status is derived from what has been paid rather than asserted,
-        so "paid" cannot be true of an invoice with money outstanding.
+        Against the order when no invoice exists yet: an advance paid on a
+        pro-forma. Against an invoice, the invoice's status follows from what
+        has been paid, rather than being asserted, so "paid" cannot be true of
+        an invoice with money outstanding.
         """
-        from django.db.models import Sum
-
         from connect_labs.supply_chain.data_access import _columns, _fresh
 
-        invoice = self.get_invoice(data["invoice_id"])
-        if invoice is None:
-            raise ValueError(f"invoice {data['invoice_id']} does not exist in this programme")
-        payment = Payment.objects.create(invoice=invoice, **_columns(Payment, data))
-
-        settled = invoice.payments.aggregate(total=Sum("amount"))["total"] or 0
-        if invoice.amount is not None:
-            invoice.status = "paid" if settled >= invoice.amount else "part_paid"
-            invoice.save(update_fields=["status", "updated_at"])
+        invoice = None
+        if data.get("invoice_id") is not None:
+            invoice = self.get_invoice(data["invoice_id"])
+            if invoice is None:
+                raise ValueError(f"invoice {data['invoice_id']} does not exist in this programme")
+        contract_id = data.get("contract_id")
+        if invoice is not None and contract_id is not None and int(contract_id) != invoice.contract_id:
+            raise ValueError(f"invoice {invoice.pk} belongs to order {invoice.contract_id}, not order {contract_id}")
+        contract = invoice.contract if invoice is not None else self._require_contract(contract_id)
+        payment = Payment.objects.create(
+            contract=contract,
+            invoice=invoice,
+            **{k: v for k, v in _columns(Payment, data).items() if k not in ("contract_id", "invoice_id")},
+        )
+        if invoice is not None:
+            self._settle(invoice)
         return _fresh(payment)
 
     def confirm_payment(self, payment_id, confirmed_on=None):

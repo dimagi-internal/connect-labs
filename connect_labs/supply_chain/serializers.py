@@ -166,6 +166,7 @@ def outreach(obj) -> dict:
         "responded": obj.responded,
         "response_kind": obj.response_kind,
         "last_reminder_on": _date(obj.last_reminder_on),
+        "responded_on": _date(obj.responded_on),
         "notes": obj.notes,
     }
 
@@ -198,6 +199,8 @@ def quote(obj) -> dict:
         "incoterm": obj.incoterm,
         "stated_spec": obj.stated_spec,
         "received_on": _date(obj.received_on),
+        "supplier_reference": obj.supplier_reference,
+        "payment_terms": obj.payment_terms,
         "voided": obj.voided,
         "void_reason": obj.void_reason,
         "version": obj.version,
@@ -372,6 +375,8 @@ def invoice(obj) -> dict:
         "amount": _num(obj.amount),
         "quantity_billed": _num(obj.quantity_billed),
         "quantity_unit": obj.quantity_unit,
+        "unit_price": _num(obj.unit_price),
+        "freight_amount": _num(obj.freight_amount),
         "payments": [
             {
                 "id": payment.pk,
@@ -393,6 +398,7 @@ def invoice(obj) -> dict:
 def payment(obj) -> dict:
     return {
         "id": obj.pk,
+        "contract_id": obj.contract_id,
         "invoice_id": obj.invoice_id,
         "paid_on": _date(obj.paid_on),
         "amount": _num(obj.amount),
@@ -400,6 +406,24 @@ def payment(obj) -> dict:
         "method": obj.method,
         "reference": obj.reference,
         "confirmed_by_payee_on": _date(obj.confirmed_by_payee_on),
+        **_sourced(obj),
+    }
+
+
+def commitment(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "kind": obj.kind,
+        "owed_to_org_id": obj.owed_to_org_id,
+        "owed_to": obj.owed_to_org.name,
+        "tender_id": obj.tender_id,
+        "contract_id": obj.contract_id,
+        "text": obj.text,
+        "raised_on": _date(obj.raised_on),
+        "due_on": _date(obj.due_on),
+        "resolved_on": _date(obj.resolved_on),
+        "resolution": obj.resolution,
+        "open": obj.is_open,
         **_sourced(obj),
     }
 

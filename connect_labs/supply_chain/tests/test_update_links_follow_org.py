@@ -423,7 +423,7 @@ class TestActionsStayRoleAppropriate:
             "invoice_record",
             data={
                 "contract_id": world["order"]["id"],
-                "number": "SD-INV-44",
+                "reference": "SD-INV-44",
                 "amount": "2000.00",
                 "currency": "USD",
                 "issued_on": "2026-09-01",

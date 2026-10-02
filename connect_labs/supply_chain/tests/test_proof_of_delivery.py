@@ -116,7 +116,7 @@ def _pod(world, shipment):
             "data": {
                 "shipment_id": shipment["id"],
                 "kind": "proof_of_delivery",
-                "reference": "A-PLACEHOLDER-POD",
+                "title": "A-PLACEHOLDER-POD",
                 "external_url": "https://example.invalid/a-placeholder-pod",
                 "source": "document",
             }
