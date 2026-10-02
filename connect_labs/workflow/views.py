@@ -4479,12 +4479,26 @@ def update_pipeline_schema_api(request, definition_id):
                     previous_schema=stored.schema if stored else None,
                     pipeline_id=int(definition_id),
                 )
-            except GDriveSourceError as e:
+            except GDriveSourceError:
+                # Fixed messages: exception text is not echoed to the browser.
+                logger.info("Refused Drive source for pipeline %s", definition_id, exc_info=True)
                 data_access.close()
-                return JsonResponse({"error": str(e)}, status=403)
-            except ValueError as e:
+                return JsonResponse(
+                    {
+                        "error": (
+                            "This Google Drive source cannot be authorized: only Dimagi staff can set one, "
+                            "and it must be inside the shared workflow-data folder."
+                        )
+                    },
+                    status=403,
+                )
+            except ValueError:
+                logger.info("Invalid Drive source for pipeline %s", definition_id, exc_info=True)
                 data_access.close()
-                return JsonResponse({"error": str(e)}, status=400)
+                return JsonResponse(
+                    {"error": "Invalid Google Drive data_source: set exactly one of file_id or folder_id."},
+                    status=400,
+                )
 
         updated = data_access.update_definition(
             definition_id,

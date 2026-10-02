@@ -106,3 +106,30 @@ def test_staff_field_edit_does_not_stamp_a_planted_target_unless_asked(mock_pda_
     assert forced["result"]["isError"] is False
     saved = mock_pda_cls.return_value.update_definition.call_args.kwargs["schema"]["data_source"]
     verify_gdrive_authorization(DataSourceConfig(**saved), 1251, pipeline_id=7)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("email, status", [("analyst@dimagi.com", 200), ("someone@partner.org", 403)])
+def test_pipeline_editor_save_endpoint(rf, email, status):
+    import json
+
+    from connect_labs.workflow.views import update_pipeline_schema_api
+
+    user = User.objects.create(username=email.split("@")[0], email=email)
+    request = rf.post("/x", data=json.dumps({"schema": DRIVE_SCHEMA}), content_type="application/json")
+    request.user, request.labs_context, request.session = user, {"opportunity_id": 1251}, {}
+    with patch("connect_labs.workflow.data_access.PipelineDataAccess") as pda:
+        pda.return_value.get_definition.return_value = MagicMock(schema={})
+        pda.return_value.update_definition.return_value = MagicMock(
+            id=7, schema={}, version=2, is_shared=False, shared_scope=None
+        )
+        pda.return_value.update_definition.return_value.name = "p"
+        pda.return_value.update_definition.return_value.description = ""
+        response = update_pipeline_schema_api(request, 7)
+    assert response.status_code == status
+    if status == 200:
+        saved = pda.return_value.update_definition.call_args.kwargs["schema"]["data_source"]
+        verify_gdrive_authorization(DataSourceConfig(**saved), 1251, pipeline_id=7)
+    else:
+        assert "Traceback" not in response.content.decode()
+        pda.return_value.update_definition.assert_not_called()
