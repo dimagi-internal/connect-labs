@@ -357,229 +357,271 @@
   }
 
   /* ── what the map shows ─────────────────────────────────────────────
-     One rule for every measure: HOTTER MEANS MORE OF A CONCERN. Few workers
-     with signal and long delays both glow; "fine" fades into the dark
-     basemap. The ramp is inferno-like (dark purple, magenta, coral, pale
-     yellow): sequential, readable on a dark map, and its lightness climbs
-     steadily, so it still reads in greyscale and to colour-blind eyes.
+     A grid of tiles about 110 km across, each in one of three bands for the
+     chosen measure: no problem, watch, or problem. Every tile with workers is
+     drawn, so the map answers both halves of the question -- where
+     connectivity is a problem AND where it is not -- and the bar above it
+     counts the proportion of areas (and of workers) in each band.
 
-     Each measure says how to turn a cell into a concern between 0 and 1
-     (`concern`, saturating at `sat`) and how much of the concern a cell holds
-     (`weight`), which drives the heat layer. Rates must not be summed, so the
-     heat is built from COUNTS -- workers without signal, visits delayed --
-     and the rates colour the circles. */
-  // The cool end is a visible slate, not inferno's near-black: an area with
-  // no concern is still an area with workers in it, and a ramp that starts at
-  // the basemap's own darkness made most of Connect disappear.
-  var HEAT = ['#5d68a8', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf'];
-  var NO_DATA = '#4a4470';
-  function heatColour(t) {
-    if (t == null || isNaN(t)) return NO_DATA;
-    t = Math.max(0, Math.min(1, t));
-    var i = Math.min(Math.floor(t * (HEAT.length - 1)), HEAT.length - 2);
-    var f = t * (HEAT.length - 1) - i;
-    var a = HEAT[i].match(/\w\w/g).map(function (x) {
-      return parseInt(x, 16);
-    });
-    var b = HEAT[i + 1].match(/\w\w/g).map(function (x) {
-      return parseInt(x, 16);
-    });
-    return (
-      '#' +
-      a
-        .map(function (v, k) {
-          return Math.round(v + (b[k] - v) * f)
-            .toString(16)
-            .padStart(2, '0');
-        })
-        .join('')
-    );
-  }
+     A tile's band depends only on the RATE inside it. It replaced a heatmap
+     that summed counts through a blur, which lit up wherever busy areas sat
+     close together (northern Nigeria) rather than where connectivity was bad.
+
+     Each measure is oriented so that higher is worse (`rate`), and names the
+     two cut-offs between bands (`watch`, `problem`). Tiles holding few workers
+     are drawn faint: one worker's bad month should not read like a region. */
+  var BAND = {
+    ok: { label: 'No problem', colour: '#35b39d' },
+    watch: { label: 'Watch', colour: '#feaf31' },
+    problem: { label: 'Problem', colour: '#e44434' },
+    none: { label: 'Not enough data', colour: '#4a4470' },
+  };
+  var BANDS = ['ok', 'watch', 'problem'];
+  var NO_DATA = BAND.none.colour;
+  var FAINT_BELOW_WORKERS = 10;
   function inv(v) {
     return v == null ? null : 1 - v;
   }
   var MEASURES = {
     connected: {
       label: 'Rarely or never online',
-      hot: 'more workers rarely or never online',
+      of: 'of judged workers rarely or never online',
       rate: function (c) {
         return inv(c.connected_rate);
       },
-      weight: function (c) {
-        return c.offline || 0;
-      },
-      sat: 0.5,
+      watch: 0.2,
+      problem: 0.5,
       fmt: pct,
     },
     online: {
       label: 'Not online most of the time',
-      hot: 'more workers without steady signal',
+      of: 'of judged workers without steady signal',
       rate: function (c) {
         return inv(c.online_rate);
       },
-      weight: function (c) {
-        return (c.sometimes || 0) + (c.offline || 0);
-      },
-      sat: 1,
+      watch: 0.5,
+      problem: 0.8,
       fmt: pct,
     },
     seen: {
       label: 'Never seen online',
-      hot: 'more workers never seen online',
+      of: 'of workers never seen online',
       rate: function (c) {
         return inv(c.seen_online_rate);
       },
-      weight: function (c) {
-        return (c.workers || 0) - (c.seen_online || 0);
-      },
-      sat: 0.3,
+      watch: 0.05,
+      problem: 0.2,
       fmt: pct,
     },
     delayed_1d: {
       label: 'Visits delayed over a day',
-      hot: 'more visits waiting over a day',
+      of: 'of visits delayed over a day',
       rate: function (c) {
         return c.delayed_1d_rate;
       },
-      weight: function (c) {
-        return c.delayed_1d || 0;
-      },
-      sat: 0.3,
+      watch: 0.05,
+      problem: 0.2,
       fmt: pct,
     },
     delayed_3d: {
       label: 'Visits delayed over 3 days',
-      hot: 'more visits waiting over 3 days',
+      of: 'of visits delayed over 3 days',
       rate: function (c) {
         return c.delayed_3d_rate;
       },
-      weight: function (c) {
-        return c.delayed_3d || 0;
-      },
-      sat: 0.15,
+      watch: 0.02,
+      problem: 0.1,
       fmt: pct,
     },
     delayed_7d: {
       label: 'Visits delayed over a week',
-      hot: 'more visits waiting over a week',
+      of: 'of visits delayed over a week',
       rate: function (c) {
         return c.delayed_7d_rate;
       },
-      weight: function (c) {
-        return c.delayed_7d || 0;
-      },
-      sat: 0.08,
+      watch: 0.01,
+      problem: 0.05,
       fmt: pct,
     },
     median: {
       label: 'Typical delay',
-      hot: 'longer typical delay',
+      of: 'typical delay',
       rate: function (c) {
         return c.median_delay_minutes;
       },
-      weight: function (c) {
-        return c.median_delay_minutes == null
-          ? 0
-          : (c.workers || 0) * Math.min(c.median_delay_minutes / 1440, 1);
-      },
-      sat: 1440,
+      watch: 60,
+      problem: 720,
       fmt: delay,
     },
   };
-  function concern(m, c) {
-    var v = m.rate(c);
-    return v == null ? null : Math.min(v / m.sat, 1);
+  function band(m, v) {
+    if (v == null) return 'none';
+    return v >= m.problem ? 'problem' : v >= m.watch ? 'watch' : 'ok';
   }
-  // For a table cell or headline figure: the same heat, on the same scale.
+  // For a table cell or headline figure: the band colour for that value.
   function colourFor(m, v) {
-    return v == null ? NO_DATA : heatColour(Math.min(v / m.sat, 1));
+    return BAND[band(m, v)].colour;
   }
   function measureLegend(m) {
     return (
-      '<span><i style="background:#a9b3e8;opacity:.6"></i>workers</span>' +
-      '<span class="conn-ramp-lab">' +
-      m.fmt(0) +
-      '</span><span class="conn-ramp" style="background:linear-gradient(90deg,' +
-      HEAT.join(',') +
-      ')"></span><span class="conn-ramp-lab">≥ ' +
-      m.fmt(m.sat) +
-      '</span><span class="conn-ramp-hot">hotter = ' +
-      m.hot +
+      '<span><i style="background:' +
+      BAND.ok.colour +
+      '"></i>No problem &lt; ' +
+      m.fmt(m.watch) +
+      '</span><span><i style="background:' +
+      BAND.watch.colour +
+      '"></i>Watch ' +
+      m.fmt(m.watch) +
+      '–' +
+      m.fmt(m.problem) +
+      '</span><span><i style="background:' +
+      BAND.problem.colour +
+      '"></i>Problem ≥ ' +
+      m.fmt(m.problem) +
       '</span>'
     );
   }
 
-  /* ── where: one point per ~11 km cell of workers ─────────────────── */
-  function cellFeatures(cells) {
-    var maxW = {};
-    Object.keys(MEASURES).forEach(function (k) {
-      maxW[k] = Math.max.apply(
-        null,
-        cells
-          .map(function (c) {
-            return MEASURES[k].weight(c);
-          })
-          .concat([1]),
-      );
+  /* ── how much of Connect is in each band ────────────────────────── */
+  function bandCounts(tiles, m) {
+    var out = {};
+    BANDS.concat(['none']).forEach(function (b) {
+      out[b] = { tiles: 0, workers: 0 };
     });
-    return cells.map(function (c) {
+    tiles.forEach(function (t) {
+      var b = band(m, m.rate(t));
+      out[b].tiles += 1;
+      out[b].workers += t.workers || 0;
+    });
+    return out;
+  }
+  function proportionBar(node, tiles, m) {
+    var counts = bandCounts(tiles, m);
+    var rows = [
+      ['tiles', 'Areas'],
+      ['workers', 'Workers in those areas'],
+    ];
+    node.innerHTML = '';
+    rows.forEach(function (r) {
+      var key = r[0];
+      var total = BANDS.concat(['none']).reduce(function (a, b) {
+        return a + counts[b][key];
+      }, 0);
+      var row = h('div', 'conn-prop');
+      row.appendChild(h('div', 'conn-prop-lab', r[1]));
+      var bar = h('div', 'conn-prop-bar');
+      var parts = h('div', 'conn-prop-parts');
+      BANDS.concat(['none']).forEach(function (b) {
+        var n = counts[b][key];
+        if (!n) return;
+        var seg = h('i');
+        seg.style.width = ((100 * n) / (total || 1)).toFixed(2) + '%';
+        seg.style.background = BAND[b].colour;
+        seg.title =
+          BAND[b].label + ': ' + nf.format(n) + ' ' + r[1].toLowerCase();
+        bar.appendChild(seg);
+        var p = h('span', 'conn-prop-part');
+        p.innerHTML =
+          '<i style="background:' +
+          BAND[b].colour +
+          '"></i>' +
+          BAND[b].label +
+          ' <b>' +
+          pct(n / (total || 1)) +
+          '</b> · ' +
+          nf.format(n);
+        parts.appendChild(p);
+      });
+      row.appendChild(bar);
+      row.appendChild(parts);
+      node.appendChild(row);
+    });
+  }
+
+  /* ── where: one tile per ~110 km square ──────────────────────────── */
+  function tileFeatures(tiles, size) {
+    return tiles.map(function (t) {
       var props = {};
-      Object.keys(c).forEach(function (k) {
-        if (c[k] != null) props[k] = c[k];
+      Object.keys(t).forEach(function (k) {
+        if (t[k] != null) props[k] = t[k];
       });
-      // Precomputed per measure, so switching is a paint change: k_* is the
-      // cell's concern (0..1, absent when unknown), w_* its share of the
-      // largest cell's weight for the heat layer.
+      // Precomputed per measure, so switching is a paint change.
       Object.keys(MEASURES).forEach(function (k) {
-        var t = concern(MEASURES[k], c);
-        if (t != null) props['k_' + k] = t;
-        // Square root, so the single worst area does not wash every other
-        // concern out to nothing: one Tanzanian cell held 10x the delayed
-        // visits of the next, and on a linear scale it was the only glow.
-        props['w_' + k] = Math.sqrt(MEASURES[k].weight(c) / maxW[k]);
+        props['b_' + k] = band(MEASURES[k], MEASURES[k].rate(t));
       });
+      var s = t.lat,
+        w = t.lon,
+        n = t.lat + size,
+        e = t.lon + size;
       return {
         type: 'Feature',
-        geometry: { type: 'Point', coordinates: [c.lon, c.lat] },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [w, s],
+              [e, s],
+              [e, n],
+              [w, n],
+              [w, s],
+            ],
+          ],
+        },
         properties: props,
       };
     });
   }
-  function popupHtml(c) {
+  function popupHtml(t, m) {
+    var b = band(m, m.rate(t));
     return (
       '<b>' +
-      nf.format(c.workers) +
-      ' workers</b>' +
-      '<br>' +
+      nf.format(t.workers) +
+      ' workers</b> · <span style="color:' +
+      BAND[b].colour +
+      '">' +
+      BAND[b].label +
+      '</span><br>' +
+      m.label +
+      ': ' +
+      m.fmt(m.rate(t)) +
+      '<br><span class="net-pop-tier">' +
       CLASSES.map(function (k) {
-        return LABELS[k] + ': ' + nf.format(c[k] || 0);
-      }).join('<br>') +
-      '<br>Seen online at least once: ' +
-      pct(c.seen_online_rate) +
-      '<br>Typical delay: ' +
-      delay(c.median_delay_minutes) +
+        return LABELS[k] + ' ' + nf.format(t[k] || 0);
+      }).join(' · ') +
+      '<br>Seen online at least once ' +
+      pct(t.seen_online_rate) +
+      ' · typical delay ' +
+      delay(t.median_delay_minutes) +
       '<br>Delayed over a day / 3 days / a week: ' +
-      pct(c.delayed_1d_rate) +
+      pct(t.delayed_1d_rate) +
       ' / ' +
-      pct(c.delayed_3d_rate) +
+      pct(t.delayed_3d_rate) +
       ' / ' +
-      pct(c.delayed_7d_rate)
+      pct(t.delayed_7d_rate) +
+      '</span>'
     );
   }
-  function circleColour(k) {
-    var ramp = ['interpolate', ['linear'], ['get', 'k_' + k]];
-    HEAT.forEach(function (col, i) {
-      ramp.push(i / (HEAT.length - 1), col);
-    });
-    return ['case', ['has', 'k_' + k], ramp, NO_DATA];
+  function bandColourExpr(k) {
+    return [
+      'match',
+      ['get', 'b_' + k],
+      'ok',
+      BAND.ok.colour,
+      'watch',
+      BAND.watch.colour,
+      'problem',
+      BAND.problem.colour,
+      NO_DATA,
+    ];
   }
-  function sortKey(k) {
-    return ['coalesce', ['get', 'k_' + k], -1];
-  }
-  // Heat, zoomed out: where the concern is concentrated. It hands over to
-  // circles as you zoom in, where each area's own rate is what you want.
-  var HEAT_UNTIL_ZOOM = 6.5;
-  function liveMap(container, cells, key, mode) {
+  var TILE_OPACITY = [
+    'step',
+    ['get', 'workers'],
+    0.35,
+    FAINT_BELOW_WORKERS,
+    0.8,
+  ];
+  function liveMap(container, tiles, size, key) {
     var map = window.ConnectMap.createMap(container, {
       center: [20, 5],
       zoom: 2.4,
@@ -596,214 +638,63 @@
         (e && e.error && e.error.message) || e,
       );
     });
-    var data = { type: 'FeatureCollection', features: cellFeatures(cells) };
+    var data = {
+      type: 'FeatureCollection',
+      features: tileFeatures(tiles, size),
+    };
     var ready = false;
-    var state = { key: key, mode: mode };
-    function circleOpacity() {
-      return state.mode === 'heat'
-        ? [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            HEAT_UNTIL_ZOOM - 1,
-            0,
-            HEAT_UNTIL_ZOOM,
-            0.85,
-          ]
-        : 0.85;
-    }
-    function apply() {
-      if (!ready) return;
-      var k = state.key;
-      map.setPaintProperty('cells-heat', 'heatmap-weight', ['get', 'w_' + k]);
-      ['cells-heat', 'cells-base'].forEach(function (id) {
-        map.setLayoutProperty(
-          id,
-          'visibility',
-          state.mode === 'heat' ? 'visible' : 'none',
-        );
-      });
-      map.setPaintProperty('cells', 'circle-color', circleColour(k));
-      map.setLayoutProperty('cells', 'circle-sort-key', sortKey(k));
-      map.setPaintProperty('cells', 'circle-opacity', circleOpacity());
-      map.setPaintProperty('cells', 'circle-stroke-opacity', circleOpacity());
-    }
+    var current = key;
     map.on('load', function () {
       window.ConnectMap.calmBasemap(map, { text: 0.45 });
-      map.addSource('cells', { type: 'geojson', data: data });
-      var density = [
-        'interpolate',
-        ['linear'],
-        ['heatmap-density'],
-        0,
-        'rgba(59,15,112,0)',
-      ];
-      [0.12, 0.35, 0.6, 0.82, 1].forEach(function (d, i) {
-        density.push(d, HEAT[i]);
-      });
+      map.addSource('tiles', { type: 'geojson', data: data });
       map.addLayer({
-        id: 'cells-heat',
-        type: 'heatmap',
-        source: 'cells',
-        maxzoom: HEAT_UNTIL_ZOOM + 0.5,
+        id: 'tiles',
+        type: 'fill',
+        source: 'tiles',
         paint: {
-          'heatmap-weight': ['get', 'w_' + state.key],
-          'heatmap-intensity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            1,
-            0.9,
-            6,
-            2.2,
-          ],
-          'heatmap-radius': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            1,
-            14,
-            4,
-            30,
-            6,
-            48,
-          ],
-          'heatmap-color': density,
-          'heatmap-opacity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            HEAT_UNTIL_ZOOM - 1,
-            0.9,
-            HEAT_UNTIL_ZOOM + 0.5,
-            0,
-          ],
-        },
-      });
-      // The footprint: every area with workers, drawn OVER the heat so it is
-      // never hidden by it. Heat only draws where there is a concern, so
-      // without this a view like "delayed over 3 days" showed a handful of
-      // glows on an empty map and read as though Connect had a handful of
-      // workers.
-      map.addLayer({
-        id: 'cells-base',
-        type: 'circle',
-        source: 'cells',
-        maxzoom: HEAT_UNTIL_ZOOM + 0.5,
-        paint: {
-          'circle-radius': [
-            'interpolate',
-            ['linear'],
-            ['sqrt', ['get', 'workers']],
-            1,
-            3,
-            5,
-            6,
-            10,
-            9,
-            20,
-            13,
-          ],
-          'circle-color': '#c3caf0',
-          'circle-opacity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            HEAT_UNTIL_ZOOM - 1,
-            0.7,
-            HEAT_UNTIL_ZOOM,
-            0,
-          ],
-          'circle-stroke-color': '#08042a',
-          'circle-stroke-width': 0.6,
-          'circle-stroke-opacity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            HEAT_UNTIL_ZOOM - 1,
-            0.7,
-            HEAT_UNTIL_ZOOM,
-            0,
-          ],
+          'fill-color': bandColourExpr(current),
+          'fill-opacity': TILE_OPACITY,
         },
       });
       map.addLayer({
-        id: 'cells',
-        type: 'circle',
-        source: 'cells',
+        id: 'tiles-edge',
+        type: 'line',
+        source: 'tiles',
         paint: {
-          'circle-radius': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            2,
-            [
-              'interpolate',
-              ['linear'],
-              ['sqrt', ['get', 'workers']],
-              1,
-              4,
-              5,
-              9,
-              10,
-              14,
-              20,
-              22,
-            ],
-            8,
-            [
-              'interpolate',
-              ['linear'],
-              ['sqrt', ['get', 'workers']],
-              1,
-              7,
-              5,
-              16,
-              10,
-              26,
-              20,
-              40,
-            ],
-          ],
-          'circle-color': circleColour(state.key),
-          'circle-opacity': circleOpacity(),
-          'circle-stroke-color': '#08042a',
-          'circle-stroke-width': 1,
-          'circle-stroke-opacity': circleOpacity(),
+          'line-color': '#08042a',
+          'line-width': 0.6,
+          'line-opacity': 0.8,
         },
-        // The hottest areas are drawn last, so a concern is never buried
-        // under a crowd of healthy neighbours.
-        layout: { 'circle-sort-key': sortKey(state.key) },
       });
       ready = true;
-      apply();
-      if (cells.length) window.ConnectMap.fit(map, data, 60);
+      if (tiles.length) window.ConnectMap.fit(map, data, 60);
       var popup = new window.mapboxgl.Popup({
         closeButton: false,
-        offset: 10,
+        offset: 6,
         className: 'net-pop',
       });
-      map.on('mouseenter', 'cells', function (e) {
+      map.on('mousemove', 'tiles', function (e) {
         map.getCanvas().style.cursor = 'pointer';
         popup
-          .setLngLat(e.features[0].geometry.coordinates.slice())
-          .setHTML(popupHtml(e.features[0].properties))
+          .setLngLat(e.lngLat)
+          .setHTML(popupHtml(e.features[0].properties, MEASURES[current]))
           .addTo(map);
       });
-      map.on('mouseleave', 'cells', function () {
+      map.on('mouseleave', 'tiles', function () {
         map.getCanvas().style.cursor = '';
         popup.remove();
       });
     });
     return {
-      set: function (key2, mode2) {
-        state = { key: key2, mode: mode2 };
-        apply();
+      set: function (k) {
+        current = k;
+        if (ready)
+          map.setPaintProperty('tiles', 'fill-color', bandColourExpr(k));
       },
     };
   }
-  // No Mapbox token: a flat plot with the same colours, circles only.
-  function flatMap(box, cells, key) {
+  // No Mapbox token: a flat plot with the same bands.
+  function flatMap(box, tiles, size, key) {
     function draw(k) {
       var m = MEASURES[k];
       var W = 1000,
@@ -811,53 +702,56 @@
       var svg = el('svg', {
         viewBox: '0 0 ' + W + ' ' + H,
         role: 'img',
-        'aria-label': 'Where workers are, coloured by ' + m.label,
+        'aria-label': 'Areas with workers, by ' + m.label,
       });
-      if (cells.length) {
-        var lats = cells.map(function (c) {
-          return c.lat;
+      if (tiles.length) {
+        var la0 =
+            Math.min.apply(
+              null,
+              tiles.map((t) => t.lat),
+            ) - 1,
+          la1 =
+            Math.max.apply(
+              null,
+              tiles.map((t) => t.lat + size),
+            ) + 1,
+          lo0 =
+            Math.min.apply(
+              null,
+              tiles.map((t) => t.lon),
+            ) - 1,
+          lo1 =
+            Math.max.apply(
+              null,
+              tiles.map((t) => t.lon + size),
+            ) + 1;
+        var sx = W / (lo1 - lo0),
+          sy = H / (la1 - la0);
+        tiles.forEach(function (t) {
+          svg.appendChild(
+            titled(
+              el('rect', {
+                x: (t.lon - lo0) * sx,
+                y: H - (t.lat + size - la0) * sy,
+                width: Math.max(size * sx, 2),
+                height: Math.max(size * sy, 2),
+                fill: colourFor(m, m.rate(t)),
+                opacity: t.workers < FAINT_BELOW_WORKERS ? 0.35 : 0.8,
+              }),
+              nf.format(t.workers) +
+                ' workers · ' +
+                m.label +
+                ': ' +
+                m.fmt(m.rate(t)),
+            ),
+          );
         });
-        var lons = cells.map(function (c) {
-          return c.lon;
-        });
-        var la0 = Math.min.apply(null, lats) - 1,
-          la1 = Math.max.apply(null, lats) + 1,
-          lo0 = Math.min.apply(null, lons) - 1,
-          lo1 = Math.max.apply(null, lons) + 1;
-        // Coolest first, so the hot spots are drawn on top.
-        cells
-          .slice()
-          .sort(function (a, b) {
-            return (concern(m, a) || 0) - (concern(m, b) || 0);
-          })
-          .forEach(function (c) {
-            svg.appendChild(
-              titled(
-                el('circle', {
-                  cx: ((c.lon - lo0) / (lo1 - lo0)) * W,
-                  cy: H - ((c.lat - la0) / (la1 - la0)) * H,
-                  r: 3 + Math.sqrt(c.workers) * 1.6,
-                  fill: heatColour(concern(m, c)),
-                  opacity: 0.9,
-                }),
-                nf.format(c.workers) +
-                  ' workers · ' +
-                  m.label +
-                  ': ' +
-                  m.fmt(m.rate(c)),
-              ),
-            );
-          });
       }
       box.innerHTML = '';
       box.appendChild(svg);
     }
     draw(key);
-    return {
-      set: function (k) {
-        draw(k);
-      },
-    };
+    return { set: draw };
   }
 
   /* ── the URL is the state ───────────────────────────────────────── */
@@ -1141,11 +1035,12 @@
     root.appendChild(dk);
 
     // The map comes first: it is where a targeted concern shows.
-    var mp = data.map || { cells: [] };
+    var mp = data.map || { tiles: [] };
+    var tiles = mp.tiles || [];
+    var size = mp.tile_degrees || 1;
     var chosen = MEASURES[params.get('colour')]
       ? params.get('colour')
       : 'delayed_3d';
-    var mode = params.get('view') === 'circles' ? 'circles' : 'heat';
     var p3 = panel('Where', measureLegend(MEASURES[chosen]));
     var bar3 = p3.querySelector('.net-panel-bar');
     var legendNode = p3.querySelector('.net-legend');
@@ -1159,63 +1054,38 @@
     sel.value = chosen;
     pick.appendChild(sel);
     bar3.insertBefore(pick, legendNode);
-    var modes = h('div', 'conn-modes');
-    modes.setAttribute('role', 'group');
-    modes.setAttribute('aria-label', 'Show as');
-    [
-      ['heat', 'Heat'],
-      ['circles', 'Circles'],
-    ].forEach(function (mdef) {
-      var b = h('button', 'conn-mode', mdef[1]);
-      b.type = 'button';
-      b.dataset.mode = mdef[0];
-      b.setAttribute('aria-pressed', String(mdef[0] === mode));
-      modes.appendChild(b);
-    });
-    bar3.insertBefore(modes, legendNode);
+    var props = h('div', 'conn-props');
+    p3.appendChild(props);
+    proportionBar(props, tiles, MEASURES[chosen]);
     var canMap = window.ConnectMap && window.mapboxgl && window.MAPBOX_TOKEN;
     var box = h('div', canMap ? 'net-globe' : 'net-chartbox');
     p3.appendChild(box);
     note(
       p3,
-      'Grey dots are every area with workers in view, so you can see where Connect is working. ' +
-        'Hotter means more of a concern, for every choice. Heat shows where the concern is concentrated: ' +
-        'it is built from counts (workers without signal, visits delayed), so a big programme with a ' +
-        'small problem and a small programme with a big one can both glow. Zoom in, or choose Circles, ' +
-        'to see each area’s own rate: one circle per area about 11 km across, placed where its workers ' +
-        'do most of their visits and sized by how many workers it holds. Hover a circle for every ' +
-        'measure. Areas with fewer than ' +
-        mp.min_workers_per_cell +
+      'Each tile is an area about 110 km across, holding the workers who do most of their visits there. ' +
+        'Its colour depends only on what happens inside it — the share of its workers or visits with the ' +
+        'problem you chose — so a busy area and a quiet one are judged the same way, and every area with ' +
+        'workers is shown, problem or not. Tiles with fewer than ' +
+        FAINT_BELOW_WORKERS +
+        ' workers are drawn faint. Areas with fewer than ' +
+        mp.min_workers_per_tile +
         ' workers are left off (' +
         nf.format(mp.withheld_workers || 0) +
-        ' workers), so no circle points at one person.',
+        ' workers), so no tile points at one person. Hover a tile for every measure.',
     );
     root.appendChild(p3);
     var painter = canMap
-      ? liveMap(box, mp.cells || [], chosen, mode)
-      : flatMap(box, mp.cells || [], chosen);
-    function repaint() {
-      painter.set(chosen, mode);
-      legendNode.innerHTML = measureLegend(MEASURES[chosen]);
-      modes.querySelectorAll('button').forEach(function (b) {
-        b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
-      });
-      params.set('colour', chosen);
-      if (mode === 'circles') params.set('view', 'circles');
-      else params.delete('view');
-      history.replaceState(null, '', '?' + params.toString());
-    }
+      ? liveMap(box, tiles, size, chosen)
+      : flatMap(box, tiles, size, chosen);
     sel.addEventListener('change', function () {
       chosen = sel.value;
-      repaint();
+      painter.set(chosen);
+      legendNode.innerHTML = measureLegend(MEASURES[chosen]);
+      proportionBar(props, tiles, MEASURES[chosen]);
+      params.set('colour', chosen);
+      params.delete('view');
+      history.replaceState(null, '', '?' + params.toString());
     });
-    modes.addEventListener('click', function (e) {
-      var b = e.target.closest('button');
-      if (!b) return;
-      mode = b.dataset.mode;
-      repaint();
-    });
-    if (!canMap) modes.hidden = true;
 
     var pOrg = panel('Partners');
     note(

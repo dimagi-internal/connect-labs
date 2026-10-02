@@ -1923,7 +1923,7 @@ class ConnectivityView(View):
         if not _partner_names_allowed(request):
             return JsonResponse({"error": "not_authorised"}, status=403)
 
-        key = "pulse:connectivity:v2:" + hashlib.md5(urlencode(sorted(request.GET.items())).encode()).hexdigest()
+        key = "pulse:connectivity:v3:" + hashlib.md5(urlencode(sorted(request.GET.items())).encode()).hexdigest()
         hit = cache.get(key)
         if hit is not None:
             return HttpResponse(hit, content_type="application/json")
@@ -2012,7 +2012,7 @@ class ConnectivityView(View):
                 "distribution": connectivity.distribution(workers),
                 "weekly": weekly,
                 "hours": connectivity.by_hour(events, exclude_days=skip),
-                "map": connectivity.cells(workers, connectivity.home_cells(events)),
+                "map": connectivity.tiles(workers, connectivity.home_cells(events)),
                 "by_org": by_org,
                 "by_opportunity": by_opp,
                 "by_country": by_country,
