@@ -65,6 +65,8 @@ INVOICE_ABOVE_RULE = (
     "or the total against goods plus freight (the invoice_above_contract check)."
 )
 INVOICE_ABOVE_FLAG = "Invoice above agreed price"
+# What that flag asks of us, on the row's Waiting on.
+INVOICE_DISPUTE = "dispute the invoice above the agreed price"
 
 # How "waiting on" opens when the next move is ours: a question we have not
 # answered, a promise we have not kept, a document only we can supply.
@@ -355,14 +357,20 @@ def _tender_rows(program_id, today, until):
             award,
             provisional=tender.pk in provisional,
         )
-        if owed.get(tender.pk):
+        ours_items = list(owed.get(tender.pk, []))
+        deadline_passed = tender.status == "open" and tender.response_deadline and tender.response_deadline < today
+        if deadline_passed:
+            # A round still open past its deadline is a decision only we can make:
+            # the stage says the deadline passed, so the owner list says whose it is.
+            ours_items.append(("extend or close the round", f"deadline passed {_day(tender.response_deadline)}"))
+        if ours_items:
             # What we owe comes first: it is the one thing on the row only we can move.
             # A labelled list like "No reply" and "Missing facts" beside it, so the
             # cell reads as one list of owners, each with its items.
             ours = Flag(
-                f"{WAITING_ON_US}: " + "; ".join(f"{what} ({detail})" for what, detail in owed[tender.pk]),
+                f"{WAITING_ON_US}: " + "; ".join(f"{what} ({detail})" for what, detail in ours_items),
                 heading=WAITING_ON_US.capitalize(),
-                lines=owed[tender.pk],
+                lines=ours_items,
             )
             others = list(waiting_lines) or ([waiting_on] if waiting_on not in ("", "—") else [])
             waiting_lines = (ours, *others) if others else ()
@@ -370,7 +378,7 @@ def _tender_rows(program_id, today, until):
         stage = _words(tender.status)
         # An open round whose deadline is behind it says so: "open" alone read
         # as a round still inside its window.
-        if tender.status == "open" and tender.response_deadline and tender.response_deadline < today:
+        if deadline_passed:
             stage = f"open, deadline passed {_day(tender.response_deadline)}"
         awardee = award.quote.supplier.name if award is not None and award.quote_id else ""
         if awardee:
@@ -712,8 +720,14 @@ def _order_rows(program_id, today, until, own_org_id):
             today,
             holds=holds.get(contract.pk, []),
         )
+        waiting_lines = ()
         if contract.pk in invoiced and _invoice_above(contract, today):
             stale = [*stale, Flag(INVOICE_ABOVE_FLAG, INVOICE_ABOVE_RULE)]
+            # A flag the row raises has an owner on the row: disputing an
+            # overbilled invoice is ours, beside whatever else we owe.
+            waiting_on, waiting_lines = _with_ours(
+                waiting_on, [h.words for h in holds.get(contract.pk, [])], INVOICE_DISPUTE
+            )
         title = contract.reference or f"Order {contract.pk}"
         rows.append(
             Row(
@@ -722,6 +736,7 @@ def _order_rows(program_id, today, until, own_org_id):
                 url=reverse("supply_chain:order_detail", args=[contract.pk]),
                 stage=stage,
                 waiting_on=waiting_on,
+                waiting_lines=waiting_lines,
                 stale=stale,
                 tender_id=contract.tender_id,
                 contract_id=contract.pk,
@@ -734,6 +749,24 @@ def _order_rows(program_id, today, until, own_org_id):
             )
         )
     return rows
+
+
+def _with_ours(waiting_on, held_words, item):
+    """An order's waiting-on with `item` added to what we owe: (waiting_on, waiting_lines).
+
+    Held documents and the new item read as one "Us" list; anything the order
+    waits on from someone else (an arrival, a dispatch) stays its own line, so
+    our list never seems to own it.
+    """
+    ours_items = [(w, "") for w in held_words] + [(item, "")]
+    ours = Flag(
+        f"{WAITING_ON_US}: " + "; ".join(w for w, _ in ours_items),
+        heading=WAITING_ON_US.capitalize(),
+        lines=ours_items,
+    )
+    if held_words or waiting_on in ("", "—"):
+        return ours, ()
+    return "; ".join((ours, waiting_on)), (ours, waiting_on)
 
 
 def _invoice_above(contract, today) -> bool:

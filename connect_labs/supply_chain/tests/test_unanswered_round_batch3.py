@@ -200,7 +200,7 @@ class TestTheComparison:
         button = _text(
             re.search(r'<summary data-testid="award-open" data-anyway[^>]*>(.*?)</summary>', body, re.S).group(1)
         )
-        assert button.startswith("Award Kanem ") and button.endswith(" now — 1 other quote can&#x27;t be compared yet")
+        assert button.startswith("Award Kanem ") and button.endswith(" now 1 other quote can&#x27;t be compared yet.")
 
     def test_decided_on_is_empty_until_an_award_is_started(self, da, world, client_in_program):
         op(da, "quote_record", data=_comparable(world))

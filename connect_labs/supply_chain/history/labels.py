@@ -223,6 +223,15 @@ def _day(value) -> str:
     return date_format(value, _DAY)
 
 
+def _day_with_year(value) -> str:
+    if isinstance(value, str):
+        try:
+            value = datetime.date.fromisoformat(value[:10])
+        except ValueError:
+            return value
+    return date_format(value, "j M Y")
+
+
 def value_text(model, attname, value, lookup) -> str:
     """One stored value as it reads on the page: "5 Sep", "Northwind Foods", "42.50"."""
     if value is None or value == "":
@@ -518,8 +527,11 @@ def sentence(model, action, changes, lookup) -> str:
         changes.pop("responded", None)
         # The day it came in belongs to the same sentence -- "Replied with a
         # quote on 2 Oct 2026" -- not a field dump after a semicolon.
+        # With its year, as the day heading above it reads ("2 Oct 2026"): a
+        # reply is the event of its day, and "2 Oct" under "2 Oct 2026" read as
+        # two formats for one date.
         on = (changes.pop("responded_on", None) or [None, None])[1]
-        on_text = value_text(model, "responded_on", on, lookup) if on else ""
+        on_text = _day_with_year(on) if on else ""
         lead.append(_outreach_reply_clause(kind) + (f" on {on_text}" if on_text else ""))
     if model.__name__ == "Commitment" and (changes.get("resolution") or [None, ""])[1]:
         # "answered: one warehouse in Kano" -- the day it was answered is the

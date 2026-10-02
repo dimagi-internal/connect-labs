@@ -149,6 +149,18 @@ def _drafts_breakdown(drafts) -> str:
     return " · ".join(parts)
 
 
+def _message_rows(text: str, width: int = 110, most: int = 14) -> int:
+    """Rows for a drafted message's box: its lines, each wrapped at about `width`, up to `most`.
+
+    The message is what a draft is for; a fixed two-line box showed the
+    greeting and hid the record it quotes (when we asked, when we last wrote,
+    the deadline) behind a scrollbar. Capped so a long draft's opening and its
+    Record chase still sit on one screen; the rest scrolls in the box.
+    """
+    lines = text.splitlines() or [""]
+    return min(most, sum(max(1, -(-len(line) // width)) for line in lines))
+
+
 def _changed(url, key, anchor, cell=None):
     """`url` arriving back at the row a form just saved: "?changed=outreach-12#outreach".
 
@@ -251,6 +263,7 @@ class TenderDetailView(_Base):
         anchored = set()
         in_reply = {}
         for i, d in enumerate((context["drafts"] or {}).get("drafts") or []):
+            d["rows"] = _message_rows(d.get("text") or "")
             if d.get("supplier_id") is not None and d["kind"] != "reply" and d["supplier_id"] not in anchored:
                 anchored.add(d["supplier_id"])
                 d["anchor"] = f"draft-supplier-{d['supplier_id']}"
