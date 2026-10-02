@@ -12,13 +12,19 @@ them out on a past date.
   <h2 class="text-lg font-semibold text-gray-900 mb-2 scroll-mt-20">History</h2>
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-2">
     {% if timeline %}
-      <ol class="divide-y divide-gray-100">
+      <ol>
         {% for entry in timeline %}
-          <li data-testid="revision-line" data-fields="{{ entry.fields|join:' ' }}" class="py-2 flex items-start gap-3">
-            {% comment %}Every date on the tender page carries its year ("6 Jul 2026"), so the
-            history reads the same way as the panels above it.{% endcomment %}
-            <time class="w-24 shrink-0 whitespace-nowrap text-sm text-gray-900 tabular-nums"
-                  datetime="{{ entry.when|date:'c' }}">{{ entry.when|date:"j M Y" }}</time>
+          {% comment %}One heading per day, the day's changes under it: a delivery, the order
+          received and the receipt recorded on one day read as one event, not as three lines
+          each repeating "19 Sep 2026". Every date carries its year ("6 Jul 2026"), so the
+          history reads the same way as the panels above it.{% endcomment %}
+          {% ifchanged entry.when|date:"Y-m-d" %}
+          <li data-testid="timeline-day" class="pt-3 pb-0.5 border-t border-gray-200 first:border-t-0 first:pt-1">
+            <time class="whitespace-nowrap text-sm font-semibold text-gray-900 tabular-nums"
+                  datetime="{{ entry.when|date:'Y-m-d' }}">{{ entry.when|date:"j M Y" }}</time>
+          </li>
+          {% endifchanged %}
+          <li data-testid="revision-line" data-fields="{{ entry.fields|join:' ' }}" data-when="{{ entry.when|date:'c' }}" class="py-1.5 pl-4 flex items-start gap-3">
             <div class="min-w-0 flex-1">
               {% comment %}One grammar for a new record and a change to one: "Shipment · SH-1 ·
               recorded: ETA 5 Sep" and "Shipment · SH-1 · ETA 5 Sep → 19 Sep".{% endcomment %}
@@ -42,7 +48,7 @@ them out on a past date.
                   shut, "Hide email" while it is open -- the details' own open state, no script.{% endcomment %}
                   <details class="group w-full text-xs">
                     <summary data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}title="{% if entry.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
-                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-2 text-xs"><span data-testid="actor-pill" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-700{% endif %}">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span>{{ entry.actor }}</span></span><span data-testid="source-link" class="inline-flex items-center rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50"><span class="group-open:hidden">{{ entry.source_link_text }}</span><span data-testid="source-hide" class="hidden group-open:inline">{{ entry.source_hide_text }}</span></span></summary>
+                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-2 text-xs"><span data-testid="actor-pill" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span>{{ entry.actor }}</span></span><span data-testid="source-link" class="inline-flex items-center rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50"><span class="group-open:hidden">{{ entry.source_link_text }}</span><span data-testid="source-hide" class="hidden group-open:inline">{{ entry.source_hide_text }}</span></span></summary>
                     {% comment %}Where the quote came from, as the call recorded it -- the kind its
                     reference implies, who recorded it and when. A replay of the same evidence
                     was answered from this write, not written again.{% endcomment %}
@@ -54,7 +60,7 @@ them out on a past date.
                 {% elif entry.is_ai %}
                   <span data-testid="actor-badge" data-ai class="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs">{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}<span>{{ entry.actor }}</span></span>
                 {% else %}
-                  <span data-testid="actor-badge" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ entry.actor }}</span>
+                  <span data-testid="actor-badge" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-900 ring-1 ring-inset ring-gray-300">{{ entry.actor }}</span>
                 {% endif %}
               </div>
             </div>

@@ -123,7 +123,7 @@
   {% endcomment %}
   <div class="table-container flex flex-col gap-2 mb-1">
     <div class="w-full overflow-x-auto">
-      <table class="base-table">
+      <table data-testid="ranked-table" class="base-table w-auto min-w-[40rem]">
         <thead>
           <tr>
             <th>#</th><th>Supplier</th>
@@ -177,6 +177,7 @@
             <tr data-testid="ranked-row-detail" data-detail-for="{{ row.quote_id }}">
               <td></td>
               <td colspan="{{ table_columns|length|add:1 }}" class="pt-0 pb-2 whitespace-normal">
+                <div data-testid="detail-fill" class="w-0 min-w-full">
                 {% comment %}What the landed figures assume: where it is delivered, and whether
                 freight and duties were counted in, on whose word.{% endcomment %}
                 {% comment %}The landed total with the quantity it buys -- "USD 82,000.00 for 2,000
@@ -206,6 +207,7 @@
                     </details>
                   {% endif %}
                 </div>
+                </div>
               </td>
             </tr>
             {% endif %}{% endwith %}
@@ -221,7 +223,7 @@
             <tr data-testid="ranked-row-actions" data-actions-for="{{ row.quote_id }}" class="border-b border-gray-200">
               <td></td>
               <td colspan="{{ table_columns|length|add:1 }}" class="pt-0 pb-3 whitespace-normal">
-                <div class="flex flex-col gap-3 max-w-4xl">
+                <div class="flex w-0 min-w-full flex-col gap-3">
                   {% if row.questions %}
                     <div data-testid="row-questions" class="min-w-0">
                       {% include "supply_chain/procurement/_row_questions.html" with row=row %}
@@ -231,7 +233,7 @@
                   {% comment %}data-testid="award-form" is the walkthroughs' hook: the form has
                   moved three times in its row, and an answered quote's id is only minted on
                   camera, so a recipe finds the form by what it is, not by where it sits.{% endcomment %}
-                  <form method="post" action="" data-testid="award-form" class="flex flex-wrap items-end gap-2 min-w-0">
+                  <form method="post" action=""{% if row.quote_id == award_anchor_quote_id %} id="award"{% endif %} data-testid="award-form" class="flex flex-wrap items-end gap-2 min-w-0">
                     {% csrf_token %}
                     <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
                     <label class="flex flex-col gap-0.5 text-xs text-gray-600 min-w-0 flex-1 basis-64" for="rationale-{{ row.quote_id }}">Why this offer
@@ -339,34 +341,44 @@
       <p data-testid="as-quoted" class="text-sm text-gray-900">Quoted {{ row.as_quoted }}{% if row.as_quoted_note %} <span data-testid="as-quoted-note" class="text-gray-600">{{ row.as_quoted_note }}</span>{% endif %}</p>
       {% if row.received_on %}<p data-testid="received-on" class="text-xs text-gray-600 mb-1">Received {{ row.received_on|day }}</p>{% endif %}
       {% comment %}
-      Every fact that keeps this offer out of the ranking, each with the one
-      question that clears it, first -- the same gaps, from the same rows, as
-      the overview's "Can't compare yet" flag, so the two cannot disagree. The
-      rest of the checklist, and the specification's unstated requirements
-      that do not block, fold into one list under them.
+      One fixed order on every card, whatever it is blocked on: what blocks it
+      ("Blocking: ..."), then the facts it is read against (what the tender
+      requires of the missing figure, the kit's contents, the figures the quote
+      states), then the question that clears it, then the email that asks it,
+      then everything else to confirm. The requirement line used to sit between
+      "Blocking:" and the question on one card and the stated figures after the
+      email link on another. The blockers are the same gaps, from the same rows,
+      as the overview's "Can't compare yet" flag, so the two cannot disagree.
       {% endcomment %}
       {% for blocker in row.blockers %}
         <p data-testid="blocking" class="text-[15px] font-semibold text-gray-900{% if not forloop.first %} mt-1{% endif %}">Blocking: {{ blocker.fact }}</p>
+      {% endfor %}
+      <div data-testid="card-facts">
         {% comment %}What the tender requires of the missing figure, as the grey line the
         specification's other figures read in on these cards -- a chip beside the
         blocker read as a second badge.{% endcomment %}
-        {% if blocker.spec_line %}<p data-testid="blocker-spec-line" class="text-xs text-gray-600">{{ blocker.spec_line }}</p>{% elif blocker.spec %}<p data-testid="blocker-spec-line" class="text-xs text-gray-600">Tender requires {{ blocker.spec }}</p>{% endif %}
+        {% for blocker in row.blockers %}
+          {% if blocker.spec_line %}<p data-testid="blocker-spec-line" class="text-xs text-gray-600">{{ blocker.spec_line }}</p>{% elif blocker.spec %}<p data-testid="blocker-spec-line" class="text-xs text-gray-600">Tender requires {{ blocker.spec }}</p>{% endif %}
+        {% endfor %}
+        {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
+        {% include "supply_chain/procurement/_specification.html" with specification=row.specification hide_not_stated=True %}
+      </div>
+      {% for blocker in row.blockers %}
         {% if blocker.question %}
-          <p data-testid="blocking-question" class="text-sm text-gray-800 mt-0.5 mb-1">
+          <p data-testid="blocking-question" class="text-sm text-gray-800 mt-1">
             {% if blocker.question.audience == "internal" %}Ours to do:{% else %}Ask the supplier:{% endif %}
             {{ blocker.question.question }}
-            {% comment %}The spec line under the blocker already says what we require.{% endcomment %}
+            {% comment %}The spec line above already says what we require.{% endcomment %}
             {% if not blocker.spec %}{% with q=blocker.question %}{% include "supply_chain/procurement/_requirement.html" %}{% endwith %}{% endif %}
           </p>
         {% endif %}
       {% endfor %}
       {% comment %}The email that asks it, already drafted on the tender's drafts panel,
-      opened at this supplier's.{% endcomment %}
+      opened at this supplier's. It is the card's action, so it reads as one -- body
+      size, in a bordered box -- not as the smallest text on the card.{% endcomment %}
       {% if not supply_as_of and row|asks_supplier %}
-        <p class="mb-1 text-xs"><a data-testid="draft-email-link" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#draft-supplier-{{ row.supplier_id }}" class="text-brand-indigo hover:underline">Draft email to {{ row.supplier_name }}</a></p>
+        <p data-testid="draft-email-line" class="mt-1.5 mb-1 text-sm"><a data-testid="draft-email-link" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#draft-supplier-{{ row.supplier_id }}" class="inline-block rounded-md border border-gray-300 bg-white px-2.5 py-1 font-medium text-brand-indigo hover:bg-gray-50">Draft email to {{ row.supplier_name }}</a></p>
       {% endif %}
-      {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
-      {% include "supply_chain/procurement/_specification.html" with specification=row.specification hide_not_stated=True %}
       {% with rest=row|also_confirm unstated=row|not_blocking %}
         {% if rest or unstated or row.blockers %}
           <details data-testid="also-confirm" class="mt-1">

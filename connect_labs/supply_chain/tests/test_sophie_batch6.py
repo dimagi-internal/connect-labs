@@ -512,7 +512,7 @@ class TestPreviewAsASupplier:
         assert reverse("supply_chain:procurement_tender_detail", args=[listed_tender.pk]) not in body
         assert "Register as a supplier" not in body
         # The Bid action is drawn disabled (since batch 8 saying where suppliers act), and goes nowhere.
-        assert re.search(r'<span data-testid="preview-bid" aria-disabled="true"[^>]*>Suppliers bid here</span>', body)
+        assert re.search(r'<p data-testid="preview-bid"[^>]*>Suppliers place their bid from this page.</p>', body)
         assert reverse("supply_chain:market_bid", args=[listed_tender.pk, "rutf"]) not in body
         assert re.search(r'data-testid="exit-supplier-preview" href="([^"]*)"', body).group(1) == reverse(
             "supply_chain:market_tender", args=[listed_tender.pk]
@@ -538,7 +538,9 @@ class TestTheListingLayout:
         body = _listing(client, listed_tender)
         panel = re.search(r'<aside data-testid="request-summary".*?</aside>', body, re.S).group(0)
         assert re.search(r'data-testid="request-product"[^>]*>RUTF<', panel)
-        assert "500 cartons" in panel and "Sign in to bid" in panel
+        # Since batch 9 the quantity is the hero's alone ("ASKED FOR"), not repeated here.
+        assert "500 cartons" not in panel and "Sign in to bid" in panel
+        assert re.search(r'data-testid="asked-for"[^>]*>500 cartons<', body)
         assert "<article" not in body and "THE REQUEST" not in body
         # The heading sits above the panel, not beside it in a column.
         assert body.index("What they are asking for") < body.index('data-testid="request-summary"')

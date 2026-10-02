@@ -107,8 +107,9 @@ class TestTheProvisionalStage:
     def test_the_award_line_carries_the_committed_total(self, da, base, home_client):
         judged7._provisional(da, base)
         standing = batch6._standing(_home(home_client))
-        price = re.search(r'data-testid="award-price"[^>]*>(.*?)</span>', standing).group(1)
-        assert price == "· USD 42.50 per carton · USD 25,500.00 for 600 cartons"
+        # Since batch 9 a clause a line under the stage, with no leading "·".
+        lines = re.findall(r'data-testid="award-price-line"[^>]*>(.*?)</span>', standing)
+        assert lines == ["USD 42.50 per carton", "USD 25,500.00 for 600 cartons"]
 
 
 # ---- 4. the AI marker is a glyph, so "AI" is not said twice ----------------
@@ -226,9 +227,10 @@ class TestTheListing:
 
     def test_the_preview_bid_is_disabled_and_says_where_suppliers_bid(self, owner, listed_tender):
         body = batch6._listing(owner, listed_tender, as_supplier="1")
-        bid = re.search(r'<span data-testid="preview-bid" aria-disabled="true"[^>]*class="([^"]*)">(.*?)</span>', body)
-        assert bid.group(2) == "Suppliers bid here"
-        assert "cursor-not-allowed" in bid.group(1).split() and "pg-link" not in bid.group(1).split()
+        # Since batch 9 plain words, not a greyed button.
+        bid = re.search(r'<p data-testid="preview-bid" class="([^"]*)">(.*?)</p>', body)
+        assert bid.group(2) == "Suppliers place their bid from this page."
+        assert "pg-link" not in bid.group(1).split() and "border" not in bid.group(1).split()
         assert "Bid →" not in body
 
 
