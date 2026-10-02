@@ -230,6 +230,21 @@ class TestRealDates:
         ).content.decode()
         assert "9 Jul 2026" in body
 
+    def test_the_tender_page_shows_when_a_silent_supplier_was_last_chased(self, da, world, client_in_program):
+        op(
+            da,
+            "outreach_update",
+            channel="web",
+            outreach_id=world["outreach"]["id"],
+            data={"last_reminder_on": "2026-07-13"},
+        )
+        body = client_in_program.get(
+            reverse("supply_chain:procurement_tender_detail", args=[world["tender"]["id"]])
+        ).content.decode()
+        assert "Last chased" in body
+        cell = body.split('data-testid="last-chased"', 1)[1].split("</td>", 1)[0]
+        assert "13 Jul 2026" in cell
+
 
 # ---- ruling 4: an invoice above the contract is a check, on the order page
 
