@@ -280,12 +280,19 @@ Each row becomes one visit-shaped row; its cells are under `row.*` and the file 
   `transform` (`int`, `float`) for numbers.
 - **Sharing:** share the file or folder with the labs service account (Viewer is enough). A read
   failure names the account. Drive is read with a read-only token.
-- **Authorization:** only Dimagi staff can point a pipeline at Drive. Saving the schema with
-  `pipeline_update_schema` (or the pipeline editor) as staff stamps `data_source.authorization`,
-  bound to that opportunity and to the exact `file_id`/`folder_id`/`file_pattern`. The fetcher
-  refuses a source without a valid stamp, so do not write `authorization` by hand, and re-save as
-  staff after changing the target. Anyone may re-save an authorized pipeline to edit its fields.
-  A multi-opp fan-out reads Drive only for the opportunity the source was authorized for.
+- **Authorization:** only Dimagi staff can point a pipeline at Drive. Setting or changing the
+  target (`file_id`/`folder_id`/`file_pattern`) through `pipeline_update_schema` or the pipeline
+  editor needs staff and stamps `data_source.authorization`, bound to that opportunity and that
+  exact target. Re-saving an unchanged target keeps its stamp, so anyone may edit the fields of an
+  authorized pipeline. A target stored some other way (e.g. a template sync) stays unstamped until
+  a staff member passes `authorize_drive_source: true` to `pipeline_update_schema`. Never write
+  `authorization` by hand.
+- **Who can read it:** every read, fresh or cached, needs a valid stamp for the opportunity AND a
+  caller (the Connect token the pipeline runs with) who is a member of that opportunity. Members
+  can read every column of every matching file, including files added to the folder later, so
+  point the source at a folder that holds only what that opportunity may see.
+- **Scope limits:** a source is authorized per opportunity, so a multi-opp fan-out reads Drive only
+  for the opportunity it was authorized for, and a program-scoped pipeline cannot use Drive.
 - **Freshness:** rows are cached for the pipeline's TTL (1 hour); a forced refresh re-reads Drive.
 
 #### `grouping_key`

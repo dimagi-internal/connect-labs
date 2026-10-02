@@ -4456,6 +4456,8 @@ def update_pipeline_schema_api(request, definition_id):
         if schema is None:
             return JsonResponse({"error": "schema is required"}, status=400)
 
+        data_access = PipelineDataAccess(request=request)
+
         if isinstance(schema, dict) and (schema.get("data_source") or {}).get("type") == "gdrive":
             from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import (
                 GDriveSourceError,
@@ -4464,15 +4466,22 @@ def update_pipeline_schema_api(request, definition_id):
 
             opportunity_id = getattr(request, "labs_context", {}).get("opportunity_id")
             if not opportunity_id:
+                data_access.close()
                 return JsonResponse({"error": "A Google Drive source needs an opportunity context"}, status=400)
+            stored = data_access.get_definition(definition_id)
             try:
-                schema = authorize_schema_drive_source(schema, opportunity_id, request.user)
+                # Against the stored schema, so a re-save keeps an unchanged target's
+                # stamp and only a new/changed target needs (and gets) a staff stamp.
+                schema = authorize_schema_drive_source(
+                    schema, opportunity_id, request.user, previous_schema=stored.schema if stored else None
+                )
             except GDriveSourceError as e:
+                data_access.close()
                 return JsonResponse({"error": str(e)}, status=403)
             except ValueError as e:
+                data_access.close()
                 return JsonResponse({"error": str(e)}, status=400)
 
-        data_access = PipelineDataAccess(request=request)
         updated = data_access.update_definition(
             definition_id,
             name=name,
