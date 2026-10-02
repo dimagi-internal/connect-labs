@@ -1,0 +1,180 @@
+{
+  "build_order": [
+    "half-the-round-is-silent",
+    "who-answered-who-is-silent",
+    "sophie-chases-sahel",
+    "what-the-three-said",
+    "whats-still-missing",
+    "what-we-owe-northgate",
+    "held-on-us",
+    "whose-move"
+  ],
+  "fetched_at": "2026-10-02T15:52:49.582973+00:00",
+  "name": "supply-sophie-unanswered-round",
+  "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program, and on 15 September she asked six suppliers to quote round 2: half of them have never answered, despite two reminders, and she forwards whatever does arrive to an AI that records it. Sophie opens round 2 and reads who answered and who has said nothing, how many days each has been silent and when she last chased them. She opens the reminder drafted for Sahel to send from her own mailbox, and records today as the day she chased them. She reads what the three who did answer actually said, in their own words, with who sent it. She reads what the two quotes are still missing: Harmattan's states everything, Kanem's lacks its pack size. She finds Northgate's questions waiting on her and answers who will import. On the round 1 order with Harmattan, she reads that the trucks are held at the border on our import permit, finds the advance she paid before any invoice existed, and sees the invoice flagged as above the agreed price. Back on her overview, Sophie reads who is silent and whose move each thing is.",
+  "personas": {
+    "sophie": {
+      "color": "#0F766E",
+      "intro": "Sophie buys RUTF for the Connect-RUTF program; suppliers and the freight forwarder email her, and she forwards what they send to an AI that records it.",
+      "name": "Sophie",
+      "org": "",
+      "role": "Program manager, Connect-RUTF (buyer of record)"
+    }
+  },
+  "scenes": [
+    {
+      "features": [
+        {
+          "description": "Tender page header shows the round's label and its open state.",
+          "id": "tender-page-header",
+          "verify": "Playwright: /supply/procurement/tenders/<round2>/ shows 'RUTF round 2' and a tender-state-pill reading open"
+        }
+      ],
+      "id": "half-the-round-is-silent",
+      "narrative": "Sophie asked six suppliers to quote round 2 and half of them have said nothing, despite two reminders. She forwards whatever does arrive to an AI to record, and she wants the round to tell her the truth: who answered, who is silent and for how long, what is missing, and whose move it is.",
+      "persona": "sophie",
+      "provenance": "S1",
+      "title": "Half the round never answered"
+    },
+    {
+      "features": [
+        {
+          "description": "Add a Last chased column to the tender page Outreach table showing Outreach.last_reminder_on.",
+          "id": "outreach-last-chased-column",
+          "verify": "Playwright: the Outreach row for Sahel Nutrition Industries shows Last chased '29 Sep' and Replied 'No'"
+        },
+        {
+          "description": "The seeder records six requests on 15 Sep, reminders to the silent three on 22 and 29 Sep, and three replies on their own days.",
+          "id": "seeded-half-silent-round",
+          "verify": "Django shell: outreach for round 2 has 6 rows, 3 responded=true, 3 with last_reminder_on=2026-09-29 and responded=false"
+        }
+      ],
+      "id": "who-answered-who-is-silent",
+      "narrative": "Sophie reads down the six suppliers she asked: Harmattan, Kanem and Northgate replied, and Sahel, Lagoon and Savanna have said nothing for over two weeks, though she chased them twice.",
+      "persona": "sophie",
+      "provenance": "S2",
+      "title": "Three answered, three have said nothing"
+    },
+    {
+      "features": [
+        {
+          "description": "The drafts panel lists a Reminder draft for each of the three silent suppliers.",
+          "id": "reminder-drafts",
+          "verify": "Playwright: #drafts contains 3 drafts labelled 'Reminder', one for Sahel Nutrition Industries"
+        },
+        {
+          "description": "The outreach reply form's Last chased on field saves last_reminder_on and returns to the tender.",
+          "id": "record-chased-day",
+          "verify": "Playwright: after saving today's date, the Sahel row's Last chased cell shows today"
+        }
+      ],
+      "id": "sophie-chases-sahel",
+      "narrative": "Sophie opens the reminder drafted for Sahel to send from her own mailbox, and enters today as the day she last chased them, so the round keeps the day.",
+      "persona": "sophie",
+      "provenance": "S3",
+      "title": "She chases Sahel again, and the record keeps the day"
+    },
+    {
+      "features": [
+        {
+          "description": "Tender timeline entries show source excerpt, source sender, recorded day and an AI badge for agent writes.",
+          "id": "timeline-excerpt-sender",
+          "verify": "Playwright: round 2 #history contains 'Grace Okon, Kanem Foods' with an excerpt containing 'per carton'"
+        },
+        {
+          "description": "The seeder records every supplier email as the ACE agent account on the mcp channel with source ref, excerpt and sender, dated to the email day.",
+          "id": "seeded-as-ai-over-mcp",
+          "verify": "Django shell: OperationCall rows for the program with channel='mcp' and actor_is_agent=True all have source_excerpt and source_sender"
+        }
+      ],
+      "id": "what-the-three-said",
+      "narrative": "Sophie reads the three replies the AI recorded, each beside the line of the email it came from and the name of the person who sent it: Harmattan's pro-forma, Kanem's price, Northgate's questions.",
+      "persona": "sophie",
+      "provenance": "S4",
+      "title": "What the three who answered actually said"
+    },
+    {
+      "features": [
+        {
+          "description": "The comparison page shows the pack-size blocking fact on Kanem's quote and none on Harmattan's.",
+          "id": "comparison-missing-per-supplier",
+          "verify": "Playwright: /compare/ shows a pack-size blocking line on the Kanem card and no blocking line on the Harmattan card"
+        }
+      ],
+      "id": "whats-still-missing",
+      "narrative": "Sophie opens the comparison and reads what is still missing: Harmattan's quote states everything, Kanem's lacks its pack size, and nothing on the page guesses it.",
+      "persona": "sophie",
+      "provenance": "S5",
+      "title": "What is still missing, and from whom"
+    },
+    {
+      "features": [
+        {
+          "description": "The What we owe them section lists Northgate's open questions with raised day and text.",
+          "id": "owed-list-tender",
+          "verify": "Playwright: #owed shows 3 rows for Northgate Commodities, each 'asked us 18 Sep'"
+        },
+        {
+          "description": "Mark answered opens the commitment resolve form; submitting records the answer and resolved day.",
+          "id": "commitment-resolve-web",
+          "verify": "Playwright: after submit, the importer question reads 'Answered <today>: We import; please quote excluding duty.'"
+        }
+      ],
+      "id": "what-we-owe-northgate",
+      "narrative": "Sophie reads Northgate's three questions, recorded as answers she owes, and answers the one about who will import on the spot.",
+      "persona": "sophie",
+      "provenance": "S6",
+      "title": "Northgate is waiting on her, and she answers"
+    },
+    {
+      "features": [
+        {
+          "description": "Order page shows a Waiting on us banner naming the owed import permit when a shipment requires it and it is not on file.",
+          "id": "waiting-on-us-banner",
+          "verify": "Playwright: [data-testid=waiting-on-us] contains 'import permit' and the page has no 'past the promised lead time' banner"
+        },
+        {
+          "description": "The order timeline names Crescent Freight & Clearing as the sender of the status change, from source.sender.",
+          "id": "forwarder-sender",
+          "verify": "Playwright: order #history shows 'from Crescent Freight & Clearing'"
+        },
+        {
+          "description": "Order page advances block lists payments recorded against the contract without an invoice, with the paid day.",
+          "id": "advance-on-order",
+          "verify": "Playwright: [data-testid=advances] contains '53,400' and '28 Jul'"
+        },
+        {
+          "description": "Order page banner lists each invoice line above the contract with billed vs agreed.",
+          "id": "invoice-above-banner",
+          "verify": "Playwright: [data-testid=invoice-above-contract] contains '51.20' and '49.80'"
+        }
+      ],
+      "id": "held-on-us",
+      "narrative": "On the round 1 order with Harmattan, Sophie reads the forwarder's message that the trucks are held at the border on our import permit, so the next move is hers; she finds the advance she paid on 28 July, before any invoice existed, and Harmattan's invoice flagged as above the agreed price.",
+      "persona": "sophie",
+      "provenance": "S7",
+      "title": "Round 1's order: waiting on us, paid early, billed high"
+    },
+    {
+      "features": [
+        {
+          "description": "Overview row for round 2 reads 'No reply: Lagoon Nutripharm, Sahel Nutrition Industries, Savanna Ready Foods' with a stale flag.",
+          "id": "overview-no-reply",
+          "verify": "Playwright: [data-testid=standing-table] round 2 row contains 'No reply', 'Savanna Ready Foods', 'no reply since 15 Sep' and 'answers to Northgate Commodities'"
+        },
+        {
+          "description": "Overview row for the round 1 order reads 'us: import permit'.",
+          "id": "overview-waiting-on-us",
+          "verify": "Playwright: [data-testid=standing-table] contains 'import permit'"
+        }
+      ],
+      "id": "whose-move",
+      "narrative": "Back on her overview, Sophie reads who is silent and whose move each thing is: round 2 still waiting on three suppliers who have not replied and on her answers to Northgate, the order waiting on her permit.",
+      "persona": "sophie",
+      "provenance": "S8",
+      "title": "Who is silent, and whose move each thing is"
+    }
+  ],
+  "slug": "supply-sophie-unanswered-round",
+  "version": 4
+}
