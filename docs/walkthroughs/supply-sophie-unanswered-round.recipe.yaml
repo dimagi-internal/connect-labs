@@ -27,8 +27,7 @@ scenes:
     target: text:deadline passed
     seconds: 2.5
     note: the round is still open, past its deadline
-  - &id001
-    kind: hover
+  - kind: hover
     target: text:What this tender buys
     seconds: 0.6
     note: park the cursor on a neutral heading
@@ -47,8 +46,9 @@ scenes:
   actions:
   - kind: wait_for
     target: text:Outreach
-  - kind: scroll_to
-    target: css:#outreach
+  - kind: scroll
+    value: '200'
+    note: bring the whole Outreach table up under the header
   - kind: hold
     seconds: 1.0
   - kind: hover
@@ -61,7 +61,10 @@ scenes:
     say: chased
     seconds: 1.5
     target: text:Last chased
-  - *id001
+  - kind: hover
+    target: text:What this tender buys
+    seconds: 0.6
+    note: park the cursor on a neutral heading
   - kind: hold
     seconds: 1.0
   concept_claim: The round's Outreach table shows, for every supplier asked, how long they have been silent and
@@ -100,7 +103,10 @@ scenes:
   - kind: wait_for
     target: css:tr[data-changed]
     must_succeed: true
-  - *id001
+  - kind: hover
+    target: text:What this tender buys
+    seconds: 0.6
+    note: park the cursor on a neutral heading
   - kind: hold
     seconds: 2.5
     note: Sahel's row, chased today
@@ -202,7 +208,10 @@ scenes:
   - kind: wait_for
     target: css:[data-changed]
     must_succeed: true
-  - *id001
+  - kind: hover
+    target: text:What this tender buys
+    seconds: 0.6
+    note: park the cursor on a neutral heading
   - kind: hold
     seconds: 2.5
     note: the importer question, answered
@@ -238,7 +247,10 @@ scenes:
     target: testid:above-agreed-tag
     seconds: 1.5
     say: invoice
-  - *id001
+  - kind: hover
+    target: text:Evidence
+    seconds: 0.6
+    note: park the cursor on a neutral heading
   - kind: hold
     seconds: 1.5
   concept_claim: The order page says it is waiting on us for the import permit rather than reporting the supplier
