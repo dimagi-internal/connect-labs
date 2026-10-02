@@ -74,7 +74,7 @@ from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.fulfilment.services.landed import landed_total
 from connect_labs.supply_chain.history.context import seed_overrides
 from connect_labs.supply_chain.identity import WITNESSED_SOURCES
-from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.operations import call_operation, declared_only
 from connect_labs.supply_chain.scopes import is_synthetic
 from connect_labs.supply_chain.values import Money, decimal_string
 
@@ -108,6 +108,12 @@ SCOPES = {
 
 
 def op(access, name, **payload):
+    # The document's rows can carry more than an operation takes; the strict
+    # schemas refuse that, so the cut is made here, where the source is known,
+    # and said out loud.
+    payload, dropped = declared_only(name, payload)
+    if dropped:
+        print(f"  {name}: not recorded, the operation does not take: {', '.join(dropped)}")
     return call_operation(name, access, payload)
 
 

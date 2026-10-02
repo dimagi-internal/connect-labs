@@ -24,7 +24,73 @@ from datetime import date
 
 from django.db import transaction
 
-from connect_labs.supply_chain.models import Award, AwardApproval, Outreach, Quote, SupplierProfile, Tender
+from connect_labs.supply_chain.models import (
+    Award,
+    AwardApproval,
+    Commitment,
+    Outreach,
+    Quote,
+    SupplierProfile,
+    Tender,
+)
+
+
+def _same_offer(quote, data) -> bool:
+    """Whether `data` states the offer `quote` already holds, by any one mark."""
+    from decimal import Decimal, InvalidOperation
+
+    reference = (data.get("supplier_reference") or "").strip()
+    if reference and quote.supplier_reference and reference.lower() == quote.supplier_reference.strip().lower():
+        return True
+    received = data.get("received_on")
+    if received and quote.received_on and str(received) == quote.received_on.isoformat():
+        return True
+    try:
+        amount = Decimal(str(data.get("as_quoted_amount")))
+    except (InvalidOperation, ValueError):
+        return False
+    return (
+        quote.as_quoted_amount is not None
+        and amount == quote.as_quoted_amount
+        and (data.get("as_quoted_unit") or "") == quote.as_quoted_unit
+        and (data.get("as_quoted_currency") or "USD").upper() == (quote.as_quoted_currency or "USD").upper()
+    )
+
+
+class SuspectedDuplicate(ValueError):
+    """A quote_record that looks like an offer already on file."""
+
+
+def _quote_evidence(quote) -> str:
+    """ "quote 2 (USD 54.50 per pack, received 9 Jul 2026, ref KF/Q/2611, from <ref>: \"...\")" """
+    from django.contrib.contenttypes.models import ContentType
+
+    from connect_labs.supply_chain.history.models import Revision
+    from connect_labs.supply_chain.values import day_text, money_digits
+
+    parts = []
+    if quote.as_quoted_amount is not None:
+        per = quote.as_quoted_unit.replace("_", " ")
+        parts.append(f"{quote.as_quoted_currency} {money_digits(quote.as_quoted_amount)} {per}")
+    if quote.received_on:
+        parts.append(f"received {day_text(quote.received_on)}")
+    if quote.supplier_reference:
+        parts.append(f"supplier's reference {quote.supplier_reference}")
+    created = (
+        Revision.objects.filter(
+            content_type=ContentType.objects.get_for_model(Quote), object_id=str(quote.pk), action="create"
+        )
+        .select_related("call")
+        .first()
+    )
+    call = created.call if created is not None else None
+    if call is not None and call.source_ref:
+        evidence = f"recorded from {call.source_ref}"
+        if call.source_excerpt:
+            excerpt = " ".join(call.source_excerpt.split())
+            evidence += f': "{excerpt[:240]}{"…" if len(excerpt) > 240 else ""}"'
+        parts.append(evidence)
+    return f"quote {quote.pk} ({', '.join(parts)})" if parts else f"quote {quote.pk}"
 
 
 class ProcurementRepositoryMixin:
@@ -203,19 +269,66 @@ class ProcurementRepositoryMixin:
     def get_quote(self, quote_id):
         return self._quotes().filter(pk=quote_id).first()
 
-    def create_quote(self, data):
+    def create_quote(self, data, distinct_from=()):
         from connect_labs.supply_chain.data_access import _check_delivery, _columns, _fresh
 
         tender = self._require_tender(data["tender_id"])
         _check_delivery(tender, data.get("delivery_mode") or "delivered", data.get("delivery_point_keys") or [])
+        commodity = self._require_commodity(data["commodity_slug"])
+        supplier = self._resolve_supplier(data.get("supplier_id"))
+        item = self._resolve_item(data.get("item_id"))
+        self._refuse_suspected_duplicate(tender, supplier, commodity, item, data, distinct_from)
         return _fresh(
             Quote.objects.create(
                 tender=tender,
-                commodity=self._require_commodity(data["commodity_slug"]),
-                supplier=self._resolve_supplier(data.get("supplier_id")),
-                item=self._resolve_item(data.get("item_id")),
+                commodity=commodity,
+                supplier=supplier,
+                item=item,
                 **_columns(Quote, data),
             )
+        )
+
+    def _refuse_suspected_duplicate(self, tender, supplier, commodity, item, data, distinct_from):
+        """Refuse a second live quote from one supplier on one line, unless the caller says it is a second offer.
+
+        Forwarding the same email twice used to make two live quotes: the
+        replay key is the email's Message-ID plus the exact payload, and an
+        inline forward carries no original Message-ID, while a second reading
+        of the same email rarely produces the same payload twice. So the test
+        here depends on neither. A live quote from this supplier, for this
+        product and trade item, by the same delivery option, on this tender, is
+        a suspected copy when it states the same offer by any one of three
+        marks: the supplier's own reference, the price as quoted (amount, unit
+        and currency), or the day it was received. The refusal shows that
+        offer and its evidence, so the caller can see whether the email in hand
+        is the same one. A genuinely separate offer is recorded by naming the
+        quote it stands beside (`distinct_from_quote_ids`); a revised one
+        replaces the old with quote_correct. Two quotes that differ on every
+        mark -- two products' prices from one distributor -- are not refused:
+        that is an ordinary second offer, and a guard that refused it would be
+        overridden by reflex. (docs/superpowers/specs/
+        2026-10-02-supply-tracking-reality.md, ruling 2.)
+        """
+        mode = data.get("delivery_mode") or "delivered"
+        item_id = item.pk if item is not None else None
+        rivals = [
+            q
+            for q in Quote.objects.filter(
+                tender=tender, supplier=supplier, commodity=commodity, voided=False, superseded_by__isnull=True
+            ).order_by("pk")
+            if q.delivery_mode == mode and q.item_id == item_id and _same_offer(q, data)
+        ]
+        unacknowledged = [q for q in rivals if q.pk not in set(distinct_from or ())]
+        if not unacknowledged:
+            return
+        raise SuspectedDuplicate(
+            f"{supplier.name} already has a live quote for {commodity.name} on this tender: "
+            + "; ".join(_quote_evidence(q) for q in unacknowledged)
+            + ". Nothing was recorded. If the email in hand is that offer again (a re-forward, or the same "
+            "quote read a second time), there is nothing to record -- to add a fact it now states, use "
+            "quote_correct on that quote. If it is a revised offer that replaces it, use quote_correct. If it "
+            "is a second offer that should stand beside it, call quote_record again with "
+            f"distinct_from_quote_ids={[q.pk for q in unacknowledged]}."
         )
 
     @transaction.atomic
@@ -277,6 +390,83 @@ class ProcurementRepositoryMixin:
         existing.void_reason = reason
         existing.save(update_fields=["voided", "void_reason", "updated_at"])
         return existing
+
+    # ---- commitments: what we owe them -------------------------------------
+
+    def list_commitments(self, tender_id=None, contract_id=None, open_only=False):
+        qs = Commitment.objects.filter(program_id=self._require_program()).select_related("owed_to_org")
+        if tender_id is not None:
+            qs = qs.filter(tender_id=tender_id)
+        if contract_id is not None:
+            qs = qs.filter(contract_id=contract_id)
+        if open_only:
+            qs = qs.filter(resolved_on__isnull=True)
+        return list(qs)
+
+    def get_commitment(self, commitment_id):
+        return (
+            Commitment.objects.filter(program_id=self._require_program(), pk=commitment_id)
+            .select_related("owed_to_org")
+            .first()
+        )
+
+    def record_commitment(self, data):
+        """A question a counterparty asked us, or something we promised them.
+
+        Owed to an organisation: named directly, or as one of this program's
+        suppliers. Hung on the tender or the order it is about, when there is
+        one, so the round's or the order's "waiting on us" can say so.
+        """
+        from connect_labs.supply_chain.data_access import _columns, _fresh
+
+        tender = self._require_tender(data.get("tender_id")) if data.get("tender_id") else None
+        contract = self._require_contract(data["contract_id"]) if data.get("contract_id") else None
+        owed_to = None
+        if data.get("supplier_id") is not None:
+            supplier = self._resolve_supplier(data["supplier_id"])
+            owed_to = supplier.org
+        if data.get("owed_to_org_id") is not None:
+            org = self.get_org(data["owed_to_org_id"])
+            if org is None:
+                raise ValueError(
+                    f"organisation {data['owed_to_org_id']} does not exist; record it with org_upsert first"
+                )
+            if owed_to is not None and owed_to.pk != org.pk:
+                raise ValueError("supplier_id and owed_to_org_id name two different organisations")
+            owed_to = org
+        if owed_to is None:
+            raise ValueError("say who is waiting: supplier_id, or owed_to_org_id for anyone else")
+        columns = {
+            k: v
+            for k, v in _columns(Commitment, data).items()
+            if k not in ("tender_id", "contract_id", "owed_to_org_id", "program_id")
+        }
+        return _fresh(
+            Commitment.objects.create(
+                program_id=self._require_program(),
+                tender=tender,
+                contract=contract,
+                owed_to_org=owed_to,
+                **columns,
+            )
+        )
+
+    def resolve_commitment(self, commitment_id, resolution, resolved_on=None):
+        """Answered, or done. The row stays, with what was said and when."""
+        from connect_labs.supply_chain.data_access import _fresh
+
+        found = self.get_commitment(commitment_id)
+        if found is None:
+            raise ValueError(f"commitment {commitment_id} not found")
+        if not found.is_open:
+            raise ValueError(f"commitment {commitment_id} was already resolved on {found.resolved_on}")
+        on = date.fromisoformat(resolved_on) if isinstance(resolved_on, str) else (resolved_on or date.today())
+        if on < found.raised_on:
+            raise ValueError(f"it cannot be resolved on {on}, before it was raised on {found.raised_on}")
+        found.resolved_on = on
+        found.resolution = resolution
+        found.save(update_fields=["resolved_on", "resolution", "updated_at"])
+        return _fresh(found)
 
     # ---- awards ---------------------------------------------------------
 

@@ -98,12 +98,16 @@ class TestTheStockReadsAsWords:
 
 class TestTheComparisonAndTheAward:
     def test_the_award_form_is_labelled_and_never_prefills_a_login(self, scoped, da, world):
-        from connect_labs.supply_chain.models import Award
+        from connect_labs.supply_chain.models import Award, Quote
 
         Award.objects.all().delete()
+        # A second offer beside the one already on the tender, said so: the
+        # duplicate guard refuses a quote that states a live one's offer again.
+        on_file = list(Quote.objects.filter(tender_id=world["award"]["tender_id"]).values_list("pk", flat=True))
         op(
             da,
             "quote_record",
+            distinct_from_quote_ids=on_file,
             data={
                 "tender_id": world["award"]["tender_id"],
                 "commodity_slug": "test-kit",

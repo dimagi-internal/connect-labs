@@ -207,6 +207,34 @@ class InvoiceRecordView(_UnderAContract):
     )
     submit_label = "Record invoice"
 
+    def get_form_kwargs(self):
+        # So the form can offer the order's unmatched payments (an advance) for
+        # the invoice to acknowledge.
+        kwargs = super().get_form_kwargs()
+        kwargs["contract_id"] = int(self.kwargs["contract_id"])
+        return kwargs
+
+    def fixed(self, **kwargs):
+        return {"data": {"contract_id": int(kwargs["contract_id"])}}
+
+
+class AdvancePaymentRecordView(_UnderAContract):
+    """Money paid against the order before any invoice: an advance on a pro-forma."""
+
+    operation = "payment_record"
+    form_class = PaymentForm
+    title = "Record an advance payment"
+    intro = (
+        "Paid against the order before any invoice exists -- an advance on a pro-forma. When the invoice "
+        "arrives and says it received this, tick it there and the two are matched."
+    )
+    submit_label = "Record payment"
+
+    def get_initial(self):
+        initial = super().get_initial()
+        initial.setdefault("currency", self.contract().currency)
+        return initial
+
     def fixed(self, **kwargs):
         return {"data": {"contract_id": int(kwargs["contract_id"])}}
 
@@ -227,15 +255,10 @@ class InvoiceUpdateView(OperationFormView):
         return kwargs
 
     def fixed(self, **kwargs):
-        # `contract_id` as well as the invoice's own id. `_INVOICE_DATA`
-        # requires it on an update as well as a create -- data_access indexes
-        # it with `[]` -- and the form does not show it, because moving an
-        # invoice to a different contract is not an edit, it is a different
-        # invoice. So it is re-sent from the row rather than asked for.
-        return {
-            "invoice_id": int(kwargs["invoice_id"]),
-            "data": {"contract_id": self.invoice().contract_id},
-        }
+        # Only the invoice's id: an update neither moves the invoice to another
+        # order nor changes who told us (docs/superpowers/specs/
+        # 2026-10-02-supply-tracking-reality.md, ruling 8).
+        return {"invoice_id": int(kwargs["invoice_id"])}
 
     def breadcrumb(self, **kwargs):
         invoice = self.invoice()
@@ -328,10 +351,8 @@ class PaymentConfirmView(OperationFormView):
         from connect_labs.supply_chain.models import Payment
 
         found = (
-            Payment.objects.filter(
-                pk=self.kwargs["payment_id"], invoice__contract__program_id=_access(self.request).program_id
-            )
-            .select_related("invoice__contract")
+            Payment.objects.filter(pk=self.kwargs["payment_id"], contract__program_id=_access(self.request).program_id)
+            .select_related("contract", "invoice")
             .first()
         )
         if found is None:

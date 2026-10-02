@@ -72,7 +72,9 @@ def _payment(world):
         amount=Decimal("18000"),
         currency="USD",
     )
-    return Payment.objects.create(invoice=invoice, amount=Decimal("18000"), currency="USD", paid_on=date(2026, 9, 18))
+    return Payment.objects.create(
+        contract=invoice.contract, invoice=invoice, amount=Decimal("18000"), currency="USD", paid_on=date(2026, 9, 18)
+    )
 
 
 class TestALinkUpdateSaysWhenItHappened:

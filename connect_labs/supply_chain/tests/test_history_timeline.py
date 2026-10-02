@@ -29,7 +29,7 @@ from connect_labs.supply_chain.operations import call_operation
 
 PROGRAM = 20997
 # Measured, plus a small margin: a query per line would blow straight past these.
-QUERY_BOUND_CONTRACT = 18  # measured 15
+QUERY_BOUND_CONTRACT = 20  # measured 17: payments are found by their order too, an advance having no invoice
 QUERY_BOUND_TENDER = 25  # measured 22
 
 

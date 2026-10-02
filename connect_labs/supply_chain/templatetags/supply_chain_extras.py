@@ -117,6 +117,8 @@ CHECK_LABELS = {
     "shipment_quantity_unaccounted": "More was despatched than has arrived",
     "award_awaiting_approval": "Awarded, awaiting approval",
     "payment_unconfirmed": "Payment not confirmed by the payee",
+    "invoice_above_contract": "Invoice above the contract",
+    "commitment_open": "We owe an answer",
     "contract_delivery_overdue": "Delivery past the promised lead time",
     "consignment_overdue": "Consignment past its expected arrival",
 }
@@ -172,6 +174,7 @@ SOURCE_LABELS = {
     "we_recorded": "we recorded it",
     "partner_reported": "a partner told us",
     "supplier_reported": "the supplier told us",
+    "forwarder_reported": "the forwarder told us",
     "commcare_form": "a CommCare form",
     "connect_visit": "a Connect visit",
     "document": "a document",

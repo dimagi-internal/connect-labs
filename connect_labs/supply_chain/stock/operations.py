@@ -47,6 +47,7 @@ _SUPPLY_POINT_DATA = _data_with(
     status={"enum": ["active", "inactive"]},
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
+    note={"type": "string"},
 )
 
 _MOVEMENT_DATA = _data_with(
@@ -67,6 +68,7 @@ _MOVEMENT_DATA = _data_with(
     reference={"type": "string"},
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
+    note={"type": "string"},
 )
 
 _STOCK_COUNT_DATA = _data_with(
@@ -88,6 +90,7 @@ _STOCK_COUNT_DATA = _data_with(
     connect_username={"type": "string"},
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
+    note={"type": "string"},
 )
 
 _DISTRIBUTION_DATA = _data_with(
@@ -112,6 +115,7 @@ _DISTRIBUTION_DATA = _data_with(
     },
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
+    note={"type": "string"},
 )
 
 
@@ -232,6 +236,7 @@ _CONSIGNMENT_DATA = _data_with(
     opportunity_id=ID,
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
+    note={"type": "string"},
 )
 
 

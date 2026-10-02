@@ -169,7 +169,7 @@ def programme_currencies(program_id) -> list[str]:
     for queryset in (
         Contract.objects.filter(program_id=program_id).values_list("currency", flat=True),
         Invoice.objects.filter(contract__program_id=program_id).values_list("currency", flat=True),
-        Payment.objects.filter(invoice__contract__program_id=program_id).values_list("currency", flat=True),
+        Payment.objects.filter(contract__program_id=program_id).values_list("currency", flat=True),
         Charge.objects.filter(shipment__contract__program_id=program_id).values_list("currency", flat=True),
         Quote.objects.filter(tender__program_id=program_id).values_list("as_quoted_currency", flat=True),
     ):

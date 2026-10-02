@@ -50,6 +50,7 @@ from decimal import Decimal
 from django.db.models import Count, Q
 
 from connect_labs.supply_chain import records
+from connect_labs.supply_chain.fulfilment.services.holds import holds_on_us
 from connect_labs.supply_chain.fulfilment.services.landed import landed_total
 from connect_labs.supply_chain.fulfilment.services.match import three_way_match
 from connect_labs.supply_chain.models import (
@@ -65,7 +66,7 @@ from connect_labs.supply_chain.models import (
 from connect_labs.supply_chain.procurement.services.comparison import compare_tender
 from connect_labs.supply_chain.procurement.services.compliance import failing_requirements, kit_spec_verdict
 from connect_labs.supply_chain.stock.services import network, soh
-from connect_labs.supply_chain.values import Quantity, Unconfirmed, decimal_string
+from connect_labs.supply_chain.values import Money, Quantity, Unconfirmed, decimal_string
 
 # Every check this module can run, and its category. Declared so a client can
 # enumerate what it may receive without waiting to encounter one, and so a new
@@ -87,9 +88,14 @@ KIND_CATEGORIES = {
     "charge_paid_unevidenced": "missing",
     "award_awaiting_approval": "missing",
     "payment_unconfirmed": "missing",
+    # An answer or a promise we owe a counterparty (models.Commitment).
+    "commitment_open": "missing",
     # conflict -- two records disagree
     "award_not_contracted": "conflict",
     "invoice_over_billed": "conflict",
+    # An invoice charging more than the contract agreed: a unit price, a
+    # freight line, or a total above it.
+    "invoice_above_contract": "conflict",
     "stock_variance": "conflict",
     "stock_negative": "conflict",
     "shipment_quantity_unaccounted": "conflict",
@@ -407,6 +413,9 @@ def _fulfilment(access, as_of):
         late = _contract_lateness(contract, match, as_of)
         if late is not None:
             out.append(late)
+        above = _invoice_above_contract(contract, costed, as_of)
+        if above is not None:
+            out.append(above)
         if match["status"] == "over_invoiced":
             out.append(
                 _check(
@@ -447,6 +456,7 @@ def _fulfilment(access, as_of):
         .select_related("contract__supplier__org__supplier_profile", "contract__commodity", "contract__item")
     )
     out += _late_shipments(access, as_of)
+    out += _open_commitments(access, as_of)
     out += _late_consignments(access, as_of)
     out += _unconfirmed_payments(access, as_of)
     out += _outstanding_documents(access, as_of)
@@ -714,18 +724,139 @@ def _contract_lateness(contract, match, as_of):
     if outstanding is not None and not isinstance(outstanding, Unconfirmed):
         facts["outstanding"] = decimal_string(outstanding.amount)
         facts["unit"] = outstanding.unit
+    # Whose move it is. The supplier is who knows where the goods are -- unless
+    # the goods are held on something WE owe (a Form M at the border, a promise
+    # on the order), when the delay is ours and the check says so rather than
+    # sending the supplier a question about our own paperwork.
+    holds = holds_on_us(contract)
+    facts["waiting_on"] = "us" if holds else "supplier"
+    if holds:
+        facts["held_on_us"] = [hold.as_dict() for hold in holds]
     return _check(
         "contract_delivery_overdue",
         subject_type="contract",
         subject_id=contract.pk,
         label=f"{contract.supplier.name} — {contract.commodity.name}",
-        # The supplier is who knows where the goods are. Whether to chase,
-        # wait or buy elsewhere is not a fact and is not said here.
-        audience="supplier",
+        audience="internal" if holds else "supplier",
         facts=facts,
         since=expected_on,
         as_of=as_of,
     )
+
+
+def _invoice_above_contract(contract, costed, as_of):
+    """An invoice that charges more than the contract agreed, and by how much.
+
+    Three comparisons, each made only where both sides state the figure in
+    the same currency and unit -- a price per carton is never compared with a
+    price per sachet, and a total is compared only with a confirmed agreed
+    goods-plus-freight:
+
+      - the invoice's unit price against the contract's, per the order's unit;
+      - the invoice's freight line against the contract's freight amount;
+      - every live invoice's total against the agreed goods plus freight.
+
+    Quantity is invoice_over_billed's; this is price. The supplier is who
+    can explain a bill, so it is theirs to answer.
+    """
+    invoices = [i for i in contract.invoices.all() if i.status != "rejected"]
+    if not invoices or contract.consideration != "priced":
+        return None
+    findings = []
+    same_currency = [i for i in invoices if i.currency == contract.currency]
+    per_order_unit = contract.unit_price_unit in ("per_pack", "per_base_unit")
+    for invoice in same_currency:
+        if (
+            per_order_unit
+            and invoice.unit_price is not None
+            and contract.unit_price is not None
+            and (invoice.quantity_unit or contract.quantity_unit) == contract.quantity_unit
+            and invoice.unit_price > contract.unit_price
+        ):
+            findings.append(
+                {
+                    "field": "unit_price",
+                    "invoice_id": invoice.pk,
+                    "invoice": invoice.reference or str(invoice.pk),
+                    "billed": decimal_string(invoice.unit_price),
+                    "agreed": decimal_string(contract.unit_price),
+                    "per": contract.quantity_unit,
+                }
+            )
+        if (
+            invoice.freight_amount is not None
+            and contract.freight_amount is not None
+            and invoice.freight_amount > contract.freight_amount
+        ):
+            findings.append(
+                {
+                    "field": "freight_amount",
+                    "invoice_id": invoice.pk,
+                    "invoice": invoice.reference or str(invoice.pk),
+                    "billed": decimal_string(invoice.freight_amount),
+                    "agreed": decimal_string(contract.freight_amount),
+                }
+            )
+    goods, freight = costed.get("goods"), costed.get("freight")
+    billed = sum((i.amount for i in same_currency if i.amount is not None), Decimal("0"))
+    if (
+        len(same_currency) == len(invoices)
+        and isinstance(goods, Money)
+        and isinstance(freight, Money)
+        and billed > goods.amount + freight.amount
+    ):
+        agreed = goods.amount + freight.amount
+        findings.append(
+            {
+                "field": "total",
+                "billed": decimal_string(billed),
+                "agreed": decimal_string(agreed),
+                "difference": decimal_string(billed - agreed),
+            }
+        )
+    if not findings:
+        return None
+    latest = max((i.issued_on for i in invoices if i.issued_on), default=None)
+    return _check(
+        "invoice_above_contract",
+        subject_type="contract",
+        subject_id=contract.pk,
+        label=f"{contract.supplier.name} — {contract.commodity.name}",
+        audience="supplier",
+        facts={"currency": contract.currency, "above": findings, "supplier": _supplier_fact(contract.supplier)},
+        since=latest,
+        as_of=as_of,
+    )
+
+
+def _open_commitments(access, as_of):
+    """Each question we have not answered and promise we have not kept. Ours to answer."""
+    from connect_labs.supply_chain.models import Commitment
+
+    out = []
+    for commitment in Commitment.objects.filter(program_id=access.program_id, resolved_on__isnull=True).select_related(
+        "owed_to_org"
+    ):
+        out.append(
+            _check(
+                "commitment_open",
+                subject_type="commitment",
+                subject_id=commitment.pk,
+                label=f"{commitment.owed_to_org.name} — {commitment.text[:80]}",
+                audience="internal",
+                facts={
+                    "kind": commitment.kind,
+                    "owed_to": {"id": commitment.owed_to_org_id, "name": commitment.owed_to_org.name},
+                    "text": commitment.text,
+                    "tender_id": commitment.tender_id,
+                    "contract_id": commitment.contract_id,
+                    "due_on": commitment.due_on.isoformat() if commitment.due_on else None,
+                },
+                since=commitment.raised_on,
+                as_of=as_of,
+            )
+        )
+    return out
 
 
 def _late_consignments(access, as_of):
@@ -785,6 +916,17 @@ def _late_shipments(access, as_of):
     out = []
     for shipment in late:
         supplier = shipment.contract.supplier
+        held = [h.as_dict() for h in holds_on_us(shipment.contract) if h.shipment_id == shipment.pk]
+        facts = {
+            "days_late": (today - shipment.expected_on).days,
+            "expected_on": shipment.expected_on.isoformat(),
+            "supplier": _supplier_fact(supplier),
+            "status": shipment.status,
+            "contract_id": shipment.contract_id,
+            "waiting_on": "us" if held else "supplier",
+        }
+        if held:
+            facts["held_on_us"] = held
         out.append(
             _check(
                 "shipment_overdue",
@@ -792,15 +934,10 @@ def _late_shipments(access, as_of):
                 subject_id=shipment.pk,
                 label=_shipment_label(shipment),
                 # On the road it is the supplier's to answer. Held at customs
-                # it is the clearing that is late, which the programme chases.
-                audience="internal" if shipment.status == "at_customs" else "supplier",
-                facts={
-                    "days_late": (today - shipment.expected_on).days,
-                    "expected_on": shipment.expected_on.isoformat(),
-                    "supplier": _supplier_fact(supplier),
-                    "status": shipment.status,
-                    "contract_id": shipment.contract_id,
-                },
+                # it is the clearing that is late, which the programme chases;
+                # held on a document we owe, it is ours outright.
+                audience="internal" if shipment.status == "at_customs" or held else "supplier",
+                facts=facts,
                 since=shipment.expected_on,
                 as_of=as_of,
             )
@@ -819,19 +956,20 @@ def _unconfirmed_payments(access, as_of):
     today = as_of or date.today()
     cutoff = today - timedelta(days=PAYMENT_CONFIRMATION_GRACE_DAYS)
     unconfirmed = Payment.objects.filter(
-        invoice__contract__program_id=access.program_id,
+        contract__program_id=access.program_id,
         confirmed_by_payee_on__isnull=True,
         paid_on__lt=cutoff,
-    ).select_related("invoice__contract__supplier__org__supplier_profile")
+    ).select_related("contract__supplier__org__supplier_profile", "invoice")
     out = []
     for payment in unconfirmed:
-        contract = payment.invoice.contract
+        contract = payment.contract
         out.append(
             _check(
                 "payment_unconfirmed",
                 subject_type="payment",
                 subject_id=payment.pk,
-                label=f"{contract.supplier.name} — {payment.reference or payment.invoice.reference or payment.pk}",
+                label=f"{contract.supplier.name} — "
+                f"{payment.reference or (payment.invoice.reference if payment.invoice_id else '') or payment.pk}",
                 audience="supplier",
                 facts={
                     "amount": decimal_string(payment.amount),

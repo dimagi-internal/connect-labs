@@ -450,9 +450,9 @@ class ItemForm(KeyedUpsertForm):
         # is addressed by its natural keys everywhere else in this domain, so
         # `item_upsert` is the same shape whether it arrives from a screen, a
         # tracker import or an agent. `to_payload` also leaves the `commodity_id`
-        # it derived from the ModelChoiceField in place, which is harmless --
-        # `upsert_item` resolves the slug and overwrites the FK with what it
-        # resolved, so the slug is what decides either way.
+        # it derived from the ModelChoiceField, which the operation does not
+        # take (its schema refuses an undeclared key), so it is dropped here.
+        data.pop("commodity_id", None)
         commodity = self.cleaned_data.get("commodity")
         if commodity is not None:
             data["commodity_slug"] = commodity.slug

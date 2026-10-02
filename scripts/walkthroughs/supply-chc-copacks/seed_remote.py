@@ -40,7 +40,7 @@ from datetime import date, timedelta
 from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.supply_chain.alerts.models import AlertSubscription
 from connect_labs.supply_chain.data_access import SupplyDataAccess
-from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.operations import call_operation, declared_only
 from connect_labs.supply_chain.update_links.models import UpdateLink
 
 PROGRAMME_ID = 10601
@@ -59,6 +59,9 @@ def ago(days):
 
 
 def op(name, **payload):
+    payload, dropped = declared_only(name, payload)
+    if dropped:
+        print(f"  {name}: not recorded, the operation does not take: {', '.join(dropped)}")
     return call_operation(name, access, payload)
 
 

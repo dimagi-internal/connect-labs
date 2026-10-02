@@ -97,7 +97,7 @@ class TestWaitingOnSaysTwoThings:
         assert any(line.startswith("No reply: Plateau Mills") for line in row.waiting_lines)
 
     def test_both_go_once_the_order_is_placed(self, da, base):
-        chosen = _provisional(da, base)
+        _provisional(da, base)
         op(
             da,
             "contract_create",
@@ -105,7 +105,6 @@ class TestWaitingOnSaysTwoThings:
             data={
                 "supplier_id": base["supplier"]["id"],
                 "tender_id": base["tender"]["id"],
-                "quote_id": chosen["id"],
                 "commodity_slug": "rutf",
                 "buyer_of_record": "programme_org",
                 "buyer_org_id": base["us"]["id"],

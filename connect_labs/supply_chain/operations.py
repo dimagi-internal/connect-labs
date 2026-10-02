@@ -39,6 +39,7 @@ _SERIALIZERS = {
     models.Receipt: serializers.receipt,
     models.Invoice: serializers.invoice,
     models.Payment: serializers.payment,
+    models.Commitment: serializers.commitment,
     models.Document: serializers.document,
     models.SupplyPoint: serializers.supply_point,
     models.Movement: serializers.movement,
@@ -86,6 +87,14 @@ SOURCE_SCHEMA = {
     "properties": {
         "ref": {"type": "string", "minLength": 1, "maxLength": 512},
         "excerpt": {"type": "string", "maxLength": 2000},
+        "sender": {
+            "type": "string",
+            "maxLength": 255,
+            "description": (
+                "Who the evidence came from, as the email or message says: a person, their company or "
+                "both, e.g. 'Grace Okon, Kanem Foods'. The timeline names this as the sender."
+            ),
+        },
     },
     "required": ["ref"],
     "additionalProperties": False,
@@ -187,7 +196,12 @@ def call_operation(
     """
     operation = get_operation(name)
     payload = {key: value for key, value in (payload or {}).items() if value is not None}
-    jsonschema.validate(payload, operation.input_schema)
+    try:
+        jsonschema.validate(payload, operation.input_schema)
+    except jsonschema.ValidationError as exc:
+        if exc.validator == "additionalProperties":
+            exc.message = unknown_fields_message(exc)
+        raise
     source = payload.pop("source", None)
     # After validation, so a malformed payload fails on its shape rather than
     # on who sent it; before dispatch, because this is the one choke point both
@@ -208,6 +222,55 @@ def call_operation(
         acting_org_id=acting_org_id,
         then=then,
     )
+
+
+def unknown_fields_message(exc) -> str:
+    """A refusal that names what was not taken, says nothing was written, and lists what is.
+
+    The caller is usually an AI reading an email, which guessed a field name.
+    The list of real names is what lets it retry right the first time.
+    """
+    declared = sorted((exc.schema or {}).get("properties") or {})
+    instance = exc.instance if isinstance(exc.instance, dict) else {}
+    extra = sorted(key for key in instance if key not in declared)
+    where = ".".join(str(p) for p in exc.absolute_path) or "the call"
+    return (
+        f"{where} has {'a field' if len(extra) == 1 else 'fields'} this operation does not take: "
+        f"{', '.join(repr(k) for k in extra)}. Nothing was recorded. The fields it takes: {', '.join(declared)}."
+    )
+
+
+def declared_only(name: str, payload: dict) -> tuple[dict, list[str]]:
+    """`payload` cut to what operation `name` declares, and the paths of what was cut.
+
+    For a seeder replaying a document whose rows carry more than an operation
+    takes (a product row with a kit's parts): it strips them HERE, in the
+    caller that knows the source, and is told what it dropped -- rather than
+    the operation dropping them for every caller, silently. Never used on a
+    surface a person or an agent writes through.
+    """
+    dropped: list[str] = []
+
+    def cut(value, schema, path):
+        if not isinstance(schema, dict):
+            return value
+        if isinstance(value, dict) and isinstance(schema.get("properties"), dict):
+            properties = schema["properties"]
+            closed = schema.get("additionalProperties") is False
+            out = {}
+            for key, inner in value.items():
+                if key in properties:
+                    out[key] = cut(inner, properties[key], f"{path}.{key}" if path else key)
+                elif closed:
+                    dropped.append(f"{path}.{key}" if path else key)
+                else:
+                    out[key] = inner
+            return out
+        if isinstance(value, list) and isinstance(schema.get("items"), dict):
+            return [cut(v, schema["items"], f"{path}[{i}]") for i, v in enumerate(value)]
+        return value
+
+    return cut(payload, get_operation(name).input_schema, ""), dropped
 
 
 # ---- serialisation helpers ---------------------------------------------
@@ -260,16 +323,26 @@ NULLABLE_ID = {"type": ["integer", "null"]}
 # the only place that claim can bind all three surfaces at once (web form, HTTP API, MCP
 # tool) while doubling as the documentation an agent reads before calling. So: constrain
 # the fields whose wrong values are silent, leave the rest open.
-def _data_with(_required: tuple[str, ...] = (), **properties) -> dict:
-    """An object schema that pins the named properties and permits the rest.
+def _data_with(_required: tuple[str, ...] = (), _open: bool = False, **properties) -> dict:
+    """An object schema that pins the named properties and refuses the rest.
 
     `_required` names the properties data_access indexes with `[]` rather
     than `.get()` -- the ones whose absence is a KeyError deep inside a data
     access method (a 500 that names no field) rather than a 400 naming
     exactly what is missing, right where an agent reading this schema as
     documentation would look for it.
+
+    Closed by default (docs/superpowers/specs/2026-10-02-supply-tracking-reality.md,
+    ruling 1). These schemas used to permit any key, and data_access._columns
+    then kept the ones that happened to be a column and dropped the rest -- so
+    an AI that wrote `quoted_on` or an invoice's `unit_price` got an OK and its
+    fact went nowhere. A key the schema does not declare is now refused, by
+    name, before anything is written; call_operation words the refusal.
+    `_open=True` is for the few objects stored whole as JSON (a delivery
+    place, a specification requirement), where an extra key is kept rather
+    than dropped.
     """
-    schema: dict = {"type": "object", "properties": properties, "additionalProperties": True}
+    schema: dict = {"type": "object", "properties": properties, "additionalProperties": _open}
     if _required:
         schema["required"] = list(_required)
     return schema
@@ -353,6 +426,23 @@ _QUOTE_DATA = _data_with(
     delivery_point_keys={"type": "array", "items": {"type": "string"}},
     pickup_location={"type": "string"},
     buyer_transport_amount=MONEY,
+    # The unit quantity_basis counts ("sachet", "carton"). Without it a
+    # quantity of 300000 could be sachets or cartons.
+    quantity_basis_unit={"type": "string"},
+    # Dates the supplier's own message gives. received_on is the day the
+    # quote reached us -- the email's date, never the day it was forwarded.
+    received_on={"type": "string", "format": "date"},
+    validity_until={"type": "string", "format": "date"},
+    # The supplier's own reference for the offer: a quotation or pro-forma
+    # number. The surest sign that a forwarded copy is the same offer.
+    supplier_reference={"type": "string", "maxLength": 64},
+    incoterm={"type": "string", "maxLength": 16},
+    # As stated, verbatim: "50% with order, 50% before loading".
+    payment_terms={"type": "string", "maxLength": 255},
+    moq=QUANTITY,
+    moq_unit={"type": "string"},
+    stated_spec={"type": "object"},
+    notes={"type": "string"},
 )
 
 # quote_record creates a new quote from nothing, so tender_id/commodity_slug
@@ -386,6 +476,8 @@ _CLEARABLE_ON_CORRECTION = (
     "base_unit_grams_stated",
     "shelf_life_months_stated",
     "lead_time_days",
+    "moq",
+    "validity_until",
 )
 _QUOTE_DATA_CORRECTION = {
     **_QUOTE_DATA,
@@ -401,6 +493,7 @@ _TENDER_DATA = _data_with(
     lines={
         "type": "array",
         "items": _data_with(
+            _open=True,
             commodity_slug={"type": "string", "minLength": 1},
             quantity=QUANTITY,
             quantity_unit={"type": "string", "minLength": 1},
@@ -413,6 +506,7 @@ _TENDER_DATA = _data_with(
     delivery_points={
         "type": "array",
         "items": _data_with(
+            _open=True,
             key={"type": "string"},
             name={"type": "string"},
             city={"type": "string"},
@@ -421,6 +515,7 @@ _TENDER_DATA = _data_with(
         ),
     },
     delivery_point=_data_with(
+        _open=True,
         name={"type": "string"},
         city={"type": "string"},
         country={"type": "string"},
@@ -437,6 +532,9 @@ _TENDER_DATA = _data_with(
     hue={"enum": ["", *[code for code, _label in records.LISTING_HUES]]},
     reminder_interval_days=_NON_NEGATIVE_INT,
     visibility={"enum": list(records.TENDER_VISIBILITIES)},
+    response_deadline={"type": ["string", "null"], "format": "date"},
+    notes_to_supplier={"type": "string"},
+    shelf_life_months_minimum=_NON_NEGATIVE_INT,
 )
 
 _ITEM_DATA = _data_with(
@@ -456,6 +554,7 @@ _ITEM_DATA = _data_with(
         "type": "array",
         "items": _data_with(
             ("commodity_slug", "quantity", "base_unit"),
+            _open=True,
             commodity_slug={"type": "string", "minLength": 1},
             quantity=QUANTITY,
             base_unit={"type": "string", "minLength": 1},
@@ -467,6 +566,15 @@ _ITEM_DATA = _data_with(
     # Whether `components` are what one base unit holds (a co-pack) or one
     # pack (a test kit). Defaults to base.
     components_per={"enum": list(records.COMPONENTS_PER)},
+    name={"type": "string"},
+    manufacturer={"type": "string"},
+    base_unit={"type": "string"},
+    pack_unit={"type": "string"},
+    gtin_base={"type": "string"},
+    gtin_pack={"type": "string"},
+    gtin_case={"type": "string"},
+    gpc_brick={"type": "string"},
+    spec_attributes={"type": "object"},
 )
 
 # A contract is the commitment. buyer_of_record is required and has no
@@ -507,6 +615,8 @@ _CONTRACT_DATA = _data_with(
     covers_shortfall_of_id=NULLABLE_ID,
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
+    signed_on={"type": ["string", "null"], "format": "date"},
+    note={"type": "string"},
 )
 
 # contract_create builds a row from nothing, so it must name the buyer of
@@ -524,6 +634,8 @@ _COMMODITY_DATA = _data_with(
     ("slug",),
     slug={"type": "string", "minLength": 1},
     name={"type": "string", "minLength": 1},
+    base_unit={"type": "string"},
+    pack_unit={"type": "string"},
     # `supplementary_food` and `oral_rehydration` are separate from
     # `therapeutic_food` because a CMAM programme buys all three and they are
     # not interchangeable: RUSF treats moderate malnutrition and RUTF severe,
@@ -550,6 +662,7 @@ _COMMODITY_DATA = _data_with(
     base_unit_grams=_NON_NEGATIVE_INT,
     shelf_life_months_minimum=_NON_NEGATIVE_INT,
     course_definition=_data_with(
+        _open=True,
         base_units_per_day=QUANTITY,
         days_per_course=_NON_NEGATIVE_INT,
         base_units_per_course=_NON_NEGATIVE_INT,
@@ -565,6 +678,7 @@ _COMMODITY_DATA = _data_with(
     spec_requirements={
         "type": "array",
         "items": _data_with(
+            _open=True,
             field={"type": "string"},
             operator={"enum": ["<=", ">=", "<", ">", "=="]},
             value={"type": ["number", "string"]},
@@ -586,6 +700,10 @@ _OUTREACH_DATA = _data_with(
     # The day the latest reminder went out. Setting it is how a reminder
     # drafted by reminder_render is marked sent, and restarts the interval.
     last_reminder_on={"type": ["string", "null"], "format": "date"},
+    # The day the supplier's reply reached us: the reply email's own date, not
+    # the day it was forwarded on.
+    responded_on={"type": ["string", "null"], "format": "date"},
+    notes={"type": "string"},
 )
 
 # Same split as _QUOTE_DATA_CREATE above, for the same reason:
@@ -618,6 +736,7 @@ _SUPPLIER_DATA = _data_with(
             "unusable",
         ]
     },
+    notes={"type": "string"},
 )
 
 
