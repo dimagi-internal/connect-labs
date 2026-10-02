@@ -92,10 +92,11 @@ def get_config_hash(config) -> str:
     # gdrive so every other source keeps the hash its caches were written under.
     ds = getattr(config, "data_source", None)
     if ds is not None and ds.type == "gdrive":
-        parts.append(
-            f"gdrive:{ds.file_id}:{ds.folder_id}:{ds.file_pattern}:{ds.username_column}:"
+        identity = (
+            f"{ds.file_id}:{ds.folder_id}:{ds.file_pattern}:{ds.username_column}:"
             f"{ds.date_column}:{','.join(map(str, ds.null_values))}"
         )
+        parts.append(f"gdrive:{hashlib.sha256(identity.encode()).hexdigest()}")
 
     # Generate hash
     config_str = "|".join(parts)
