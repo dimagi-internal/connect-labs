@@ -280,13 +280,13 @@ class TestTender:
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
         assert row.stale == ["No reply in 20 days: Baobab Nutrition, Northwind Foods"]
 
-    def test_past_two_silent_suppliers_the_rest_are_counted(self, da, base):
+    def test_past_three_silent_suppliers_the_rest_are_counted(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
         for supplier in base["suppliers"]:
             _outreach(da, tender, supplier, datetime.date(2026, 8, 21))
 
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
-        assert row.stale == ["No reply in 20 days: Baobab Nutrition, Kaduna Mills +2"]
+        assert row.stale == ["No reply in 20 days: Baobab Nutrition, Kaduna Mills, Northwind Foods +1"]
 
     def test_a_quote_counts_as_a_reply_even_when_the_outreach_was_not_marked(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)

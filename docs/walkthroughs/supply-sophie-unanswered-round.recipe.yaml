@@ -1,0 +1,207 @@
+auth:
+  personas:
+    sophie: scripts/walkthroughs/supply-sophie-unanswered-round/.sophie-storage-state.json
+  type: storage_state
+base_url: https://labs.connect.dimagi.com
+narrative_locked: true
+narrative_locked_at: '2026-10-02T15:47:09.576226+00:00'
+review_mode: autonomous
+setup:
+  command: python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --outputs
+    scripts/walkthroughs/supply-sophie-unanswered-round/outputs.json
+  outputs: scripts/walkthroughs/supply-sophie-unanswered-round/outputs.json
+  rerun: per_render
+  timeout_seconds: 1200
+tagline: Half the suppliers never answered, and the record says so
+video_pace: medium
+video_viewport_height: 900
+video_viewport_width: 1440
+why_brief: supply-sophie-unanswered-round.why_brief.yaml
+scenes:
+- id: half-the-round-is-silent
+  actions:
+  - kind: wait_for
+    target: testid:tender-state-pill
+  - kind: hold
+    seconds: 6
+  concept_claim: Sophie's goal is a record that shows the suppliers who never replied
+    as plainly as the replies, not a ranking of quotes she does not have.
+  design_intent: 'Bet: framing the demo around silence, the normal case, makes every
+    later scene answer a question Sophie actually has instead of showcasing replies.'
+  pace: teach
+  role: overview
+  show: 'Open on round 2''s tender page and state Sophie''s goal: a record that is
+    as truthful about the suppliers who never answered as about the ones who did.'
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
+- id: who-answered-who-is-silent
+  actions:
+  - kind: wait_for
+    target: text:Outreach
+  - kind: scroll_to
+    target: css:#outreach
+  - kind: hold
+    seconds: 1.0
+  - kind: hover
+    note: a supplier who never replied
+    say: silent
+    seconds: 1.5
+    target: text:Sahel Nutrition Industries
+  - kind: hover
+    note: the day she last chased each silent supplier
+    say: chased
+    seconds: 1.5
+    target: text:Last chased
+  concept_claim: The round's Outreach table shows, for every supplier asked, how long
+    they have been silent and the day they were last chased, beside the reply day
+    and kind for those who answered.
+  design_intent: 'Silence must be as visible as a reply: a row with days waiting and
+    a last-chased day, not a blank.'
+  show: 'Sophie reads the round''s Outreach table: each supplier, the day asked, days
+    silent, the day she last chased them, and for those who replied the day and kind
+    of reply.'
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#outreach
+- id: sophie-chases-sahel
+  actions:
+  - kind: wait_for
+    target: css:#drafts[open]
+  - kind: scroll_to
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}']
+  - kind: hold
+    say: reminder
+    seconds: 2.0
+  - kind: click
+    must_succeed: true
+    note: record the day she chased Sahel
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] a
+    timeout_ms: 30000
+  - kind: fill
+    say: today
+    target: css:#id_last_reminder_on
+    value: ${today}
+  - kind: click
+    must_succeed: true
+    target: role:button:Save
+    timeout_ms: 30000
+  - kind: wait_for
+    target: text:Outreach
+  concept_claim: The round drafts a reminder for each silent supplier, and recording
+    the day Sophie chased one updates that supplier's last-chased day on the round.
+  design_intent: Chasing is most of the work in a half-silent round; the record drafts
+    it and keeps when it happened.
+  show: Sophie opens the round's draft emails, reads the reminder drafted for Sahel,
+    then enters today in the Last chased on date field and sees the row update.
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#drafts
+- id: what-the-three-said
+  actions:
+  - kind: wait_for
+    target: css:#history
+  - kind: scroll_to
+    target: css:#history
+  - kind: hold
+    seconds: 1.0
+  - kind: hover
+    say: Kanem
+    seconds: 1.8
+    target: text:Grace Okon, Kanem Foods
+  concept_claim: Every reply the AI recorded appears in the round's history with the
+    email excerpt, the sender's name and an AI mark, so Sophie can check the record
+    against what the supplier said.
+  design_intent: Trust comes from the supplier's own words beside what was recorded;
+    the AI is the typist, never a character.
+  show: Sophie scrolls to the round's history and reads each recorded reply with its
+    email excerpt, sender, day and AI mark.
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#history
+- id: whats-still-missing
+  actions:
+  - kind: wait_for
+    target: text:Kanem Foods
+  - kind: hold
+    seconds: 1.0
+  - kind: scroll
+    note: down through the quote that is missing a fact
+    value: '500'
+  - kind: hold
+    seconds: 1.5
+  concept_claim: The comparison names the missing fact on each quote that cannot be
+    relied on, without ranking across them or guessing a figure.
+  design_intent: The comparison earns its place by saying what is missing, not by
+    ranking quotes that cannot be ranked.
+  show: Sophie opens the round's comparison and reads, quote by quote, the fact each
+    one is missing.
+  url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
+- id: what-we-owe-northgate
+  actions:
+  - kind: wait_for
+    target: text:What we owe them
+  - kind: scroll_to
+    target: css:#owed
+  - kind: hold
+    seconds: 1.0
+  - kind: click
+    must_succeed: true
+    note: Mark answered on the importer question
+    target: css:[data-commitment-id='${importer_question_id}'] a
+    timeout_ms: 30000
+  - kind: fill
+    say: import
+    target: css:#id_resolution
+    value: We import; please quote excluding duty.
+  - kind: click
+    must_succeed: true
+    target: role:button:Save
+    timeout_ms: 30000
+  - kind: wait_for
+    target: text:Answered
+  concept_claim: A supplier's questions are listed as answers we owe with who asked
+    and when, and marking one answered records Sophie's answer and closes it.
+  design_intent: A question in an email stalls the round with nobody on the hook;
+    as a record it is Sophie's to-do.
+  show: Sophie opens What we owe them on the round, reads Northgate's open questions
+    with the day they asked, marks the importer question answered with her answer,
+    and sees it move to answered.
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#owed
+- id: held-on-us
+  actions:
+  - kind: wait_for
+    target: testid:waiting-on-us
+  - kind: hold
+    say: permit
+    seconds: 1.5
+  - kind: hover
+    say: invoice
+    seconds: 1.8
+    target: testid:invoice-above-contract
+  - kind: scroll_to
+    target: testid:advances
+  - kind: hold
+    say: advance
+    seconds: 2.0
+  concept_claim: The order page says it is waiting on us for the import permit rather
+    than reporting the supplier late, flags an invoice above the agreed price with
+    billed against agreed, and lists the advance paid before any invoice.
+  design_intent: The screens must blame the right party; a shipment held on our paperwork
+    is our move.
+  show: Sophie opens the round 1 order, reads the Waiting on us and Invoice above
+    the contract banners, then scrolls to the advance recorded against the order on
+    28 July.
+  url: /supply/orders/${contract_id}/?program_id=${program_id}
+- id: whose-move
+  actions:
+  - kind: wait_for
+    target: testid:standing-table
+  - kind: hover
+    say: silent
+    seconds: 1.8
+    target: text:No reply
+  - kind: hover
+    say: permit
+    seconds: 1.8
+    target: text:import permit
+  concept_claim: The overview names each supplier who has not replied with the day
+    we asked them, and says when the next move is ours, for both the round and the
+    order.
+  design_intent: The overview is where Sophie starts her day; it must already say
+    who is silent and whose move it is.
+  show: Sophie returns to the overview and reads the Waiting on column for round 2
+    and the round 1 order.
+  url: /supply/?program_id=${program_id}

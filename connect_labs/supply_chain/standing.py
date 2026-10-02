@@ -41,7 +41,9 @@ from connect_labs.supply_chain.history.timeline import contract_scope_revisions,
 # An invitation unanswered this many days after it was sent is stale (§4.2).
 NO_REPLY_DAYS = 14
 # How many silent suppliers the flag names before it counts the rest ("+2").
-NAMED_SILENT = 2
+# Three, because half of a usual six-supplier round goes silent: "+1" for the
+# third hid exactly the name the reader needed to chase.
+NAMED_SILENT = 3
 PROVISIONAL_STAGE = "awarded, provisional"
 
 # The rule behind each flag, for its title: what raised it, said once.
