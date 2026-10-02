@@ -48,7 +48,7 @@ PROTECTED = {10610, 10671, 10672, 10673}
 SOPHIE_USERNAME = "demo-sophie"
 BUYER_SLUG = "dimagi"
 
-KANO = {"key": "kano", "name": "Partner warehouse, Kano", "city": "Kano", "country": "NG"}
+KANO = {"key": "kano", "name": "Partner warehouse", "city": "Kano", "country": "NG"}
 
 SUPPLIERS = [
     # key, name, country, city, type, contact, email
@@ -297,7 +297,8 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
     r1_out = _ask_everyone(w, r1, suppliers, "2026-07-06")
     src = dict(
         ref="<PFI0457.k.mensah@harmattan-tx.example.invalid>",
-        excerpt="PFI-2026-0457: USD 49.80/CTN x 2,000, FCA Tema. Estimated freight USD 7,200. "
+        excerpt="PFI-2026-0457: USD 49.80/CTN x 2,000 (150 x 92 g), FCA Tema. Estimated freight USD 7,200. "
+        "MOQ 500 CTN. "
         "Validity 30 days. Payment: 50% with order, 50% before loading.",
         sender="Kwame Mensah, Harmattan Therapeutics",
     )
@@ -319,9 +320,13 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
             base_unit_grams_stated=92,
             freight_basis="excluded",
             freight_amount="7200.00",
+            # Duty is ours as importer, and RUTF enters under the program's duty waiver: nothing to add.
             duties_basis="excluded",
+            duties_amount="0.00",
             shelf_life_months_stated=24,
             lead_time_days=35,
+            moq=500,
+            moq_unit="carton",
             incoterm="FCA Tema",
             validity_until="2026-08-09",
             received_on="2026-07-10",
@@ -368,6 +373,8 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
             "freight_basis": "excluded",
             "freight_amount": "7200.00",
             "duties_basis": "excluded",
+            "duties_amount": "0.00",
+            "vat_basis": "included",
             "incoterm": "FCA Tema",
             "promised_lead_time_days": 35,
             "payment_terms": "advance",

@@ -13,9 +13,11 @@ slot into it.
 {% endcomment %}
 
 {% block content %}
-{% comment %}Headings clear the sticky top bar when a link or a recorder scrolls to them;
-without it the bar covered a page's title and the banner under it.{% endcomment %}
-<style>.supply-page h1, .supply-page h2, .supply-page h3 { scroll-margin-top: 5rem; }</style>
+{% comment %}Headings, and anything a link can point at (#outreach, #owed, #history, an
+order's #fulfilment / #cost / #match / #where-now, a draft's anchor), clear the
+fixed 4rem top bar when a link or a recorder scrolls to them; without it the bar
+covered a page's title and the banner under it, and a section's first line.{% endcomment %}
+<style>.supply-page h1, .supply-page h2, .supply-page h3, .supply-page [id] { scroll-margin-top: 5rem; }</style>
 <div class="supply-page max-w-7xl mx-auto px-4 py-6">
   <div class="flex gap-4 items-center p-4 profile-bg bg-brand-indigo rounded-2xl mb-6">
     <div class="flex flex-col justify-center text-white">
