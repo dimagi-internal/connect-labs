@@ -349,7 +349,8 @@ class TestTheOverview:
         _outreach(da, base["tender"]["id"], base["supplier"]["id"], "2026-08-01")
 
         row = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 8, 18)) if r.kind == "tender")
-        assert row.stale == ["No reply in 17 days: Northwind Foods"]
+        assert row.stale == ["No reply in 17 days: 1 supplier"]
+        assert row.stale[0].lines[0].startswith("Northwind Foods — asked")
 
     def test_the_last_change_gives_the_day_beside_the_count_from_the_as_of_date(self, da, base, home_client):
         past = _home(home_client, as_of="2026-08-10")

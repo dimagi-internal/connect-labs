@@ -31,27 +31,14 @@
 {% endif %}
 
 {% if comparison.provisional %}
-  <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-sm text-amber-900">
-    <strong>{{ comparison.comparable_count }} of {{ comparison.total_count }} comparable{% if comparison.comparable %}.{% endif %}</strong>
-    {% if comparison.comparable %}
-      The ranking below is
-      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-        PROVISIONAL
-      </span>
-      —
-      {% for row in comparison.blocked %}{{ row.supplier_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
-      {% if comparison.blocked|length == 1 %}has{% else %}have{% endif %}
-      not given us enough to compare, and could still beat it.
-    {% else %}
-      {% comment %}
-      Nothing is ranked, so there is no ranking to call provisional and no
-      leader to beat. PROVISIONAL qualifies a ranking; with none, the badge
-      asserts something that does not exist. What stands between each quote
-      and the ranking is the half that still holds -- each card below says
-      which fact.
-      {% endcomment %}
-      <span data-testid="blocked-summary">— {% if comparison.blocked|all_missing_one %}each quote below is missing one fact{% else %}each quote below is missing at least one fact{% endif %}</span>
-    {% endif %}
+  {% comment %}
+  What is missing, and nothing else: how many quotes can be compared and on what, then
+  who has not stated what. No ranking words -- "provisional", "could still beat it" --
+  a statement of the gap reads the same whether one quote is ranked or none is.
+  {% endcomment %}
+  <div data-testid="comparison-banner" class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-sm text-amber-900">
+    <strong>{{ comparison.comparable_count }} of {{ comparison.total_count }} quote{{ comparison.total_count|pluralize }} can be compared{% if compared_on and comparison.comparable %} on {{ compared_on }}{% endif %}.</strong>
+    {% for sentence in not_stated %}<span data-testid="not-stated">{{ sentence }}.</span>{% if not forloop.last %} {% endif %}{% endfor %}
   </div>
 {% endif %}
 
@@ -258,11 +245,15 @@
                     {% csrf_token %}
                     <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
                     <label class="flex flex-col gap-0.5 text-xs text-gray-600 min-w-0 flex-1 basis-64" for="rationale-{{ row.quote_id }}">Why this offer
+                      {% comment %}"Decided on" stays empty until the buyer starts an award -- a date
+                      already in it read as a decision already made; typing the reason fills
+                      it with today, and an empty one is recorded as today anyway.{% endcomment %}
                       <input type="text" id="rationale-{{ row.quote_id }}" name="rationale" placeholder="the reason, in a sentence" required
+                             oninput="var d=document.getElementById('decided-on-{{ row.quote_id }}'); if (d &amp;&amp; !d.value) { d.value = '{{ today }}'; }"
                              class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-900">
                     </label>
                     <label class="flex flex-col gap-0.5 text-xs text-gray-600" for="decided-on-{{ row.quote_id }}">Decided on
-                      <input type="date" id="decided-on-{{ row.quote_id }}" name="decided_on" value="{{ today }}" max="{{ today }}"
+                      <input type="date" id="decided-on-{{ row.quote_id }}" name="decided_on" value="" max="{{ today }}"
                              title="The day the decision was made"
                              class="border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-900">
                     </label>

@@ -149,9 +149,11 @@ class this build has not seen ships purged.
   Whose move it is, before how late it is: goods held on something WE owe
   are not the supplier's delay (ruling 5 of the 2026-10-02 tracking-reality spec).
   {% endcomment %}
-  <div data-testid="waiting-on-us" class="rounded-lg border border-message-warning-border/50 bg-message-warning px-4 py-3 mb-3 text-sm text-message-warning-text">
+  {% comment %}Body text in the page's own dark grey on the warning fill: the warning text
+  colour on it fell short of 4.5:1.{% endcomment %}
+  <div data-testid="waiting-on-us" class="rounded-lg border border-message-warning-border/50 bg-message-warning px-4 py-3 mb-3 text-sm text-gray-900">
     <strong>Waiting on us:</strong>
-    {% for hold in held_on_us %}{{ hold.what }}{% if hold.owed_to %} for {{ hold.owed_to }}{% endif %}{% if hold.since %} (since {{ hold.since|day }}){% endif %}{% if not forloop.last %}; {% endif %}{% endfor %}.
+    {% for hold in held_on_us %}{{ hold.what }}{% if hold.name %} ({{ hold.name }}){% endif %}{% if hold.owed_to %} for {{ hold.owed_to }}{% endif %}{% if hold.since %} (since {{ hold.since|day }}){% endif %}{% if not forloop.last %}; {% endif %}{% endfor %}.
     {% if contract_late %}The order is {{ contract_late.facts.days_late }} day{{ contract_late.facts.days_late|pluralize }} past its promised lead time, but the next move is ours, not the supplier's.{% endif %}
   </div>
 {% endif %}
@@ -727,7 +729,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
 {% endcomment %}
 {% if contract.consideration == "priced" or invoices %}
 <div class="flex items-baseline justify-between mt-6 mb-2">
-  <h3 id="owed" class="text-base font-semibold text-gray-900 scroll-mt-20">What we owe them{% if owed %} <span data-testid="owed-open-count" class="font-normal text-gray-600">— {{ owed_open|length }} open</span>{% endif %}</h3>
+  <h3 id="owed" class="text-base font-semibold text-gray-900 scroll-mt-20">What we owe them{% if owed or owed_holds %} <span data-testid="owed-open-count" class="font-normal text-gray-600">— {{ owed_open_count }} open</span>{% endif %}</h3>
   {% if not supply_as_of %}
   <a href="{% url 'supply_chain:contract_commitment_record' contract.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>
@@ -779,9 +781,9 @@ The section stays only if one was somehow recorded, so it is not hidden.
             {% if invoice.amount %}{{ invoice.currency }} {{ invoice.amount|money }}{% else %}—{% endif %}
             {% comment %}What the invoice_above_contract check found on this invoice, in its
             own words: calm, beside the figure, not a second alarm.{% endcomment %}
-            {% for mark in invoice.above_agreed %}
-              <div data-testid="invoice-above-agreed" class="text-sm text-gray-900">{{ mark.text }}{% if mark.tag %} <span data-testid="above-agreed-tag" class="ml-1 inline-flex items-center rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span>{% endif %}</div>
-            {% endfor %}
+            {% for mark in invoice.above_agreed %}{% if mark.tag %}
+              <div data-testid="invoice-above-agreed" class="text-sm text-gray-900">{{ mark.text }} <span data-testid="above-agreed-tag" class="ml-1 inline-flex items-center rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></div>
+            {% endif %}{% endfor %}
           </td>
           <td class="px-4 py-2 text-right tabular-nums">
             {% if invoice.quantity_billed %}
@@ -809,6 +811,13 @@ The section stays only if one was somehow recorded, so it is not hidden.
             {% endif %}
           </td>
         </tr>
+        {% comment %}The unit price and freight it bills against what was agreed, on a row of
+        their own under the invoice: stacked in the amount cell they pushed the figures apart.{% endcomment %}
+        {% for mark in invoice.above_agreed %}{% if not mark.tag %}
+          <tr data-testid="invoice-against-agreed" class="bg-gray-50/60">
+            <td class="px-4 py-1.5 pl-8 text-sm text-gray-900" colspan="7">{{ mark.text|capfirst }} <span data-testid="above-agreed-tag" class="ml-1 inline-flex items-center rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></td>
+          </tr>
+        {% endif %}{% endfor %}
         {% for payment in invoice.payments %}
           {% comment %}
           Each settlement under its invoice, with the payee's side of it: "we

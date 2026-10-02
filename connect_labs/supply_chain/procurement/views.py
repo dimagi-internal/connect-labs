@@ -21,7 +21,7 @@ design — the web client is a Django view calling an operation, not an HTTP
 client of its own API.
 """
 
-from datetime import date, datetime
+from datetime import date
 from types import SimpleNamespace
 
 import jsonschema
@@ -64,22 +64,6 @@ from connect_labs.supply_chain.values import quantity_phrase, unit_noun
 from connect_labs.supply_chain.views import mark_changed, owed_context
 
 
-def _days_waiting(sent_on):
-    """Days since outreach went out, or None when there is nothing to count from.
-
-    `sent_on` is a plain ISO date string on the record (LabsRecord JSON has no
-    datetime type), so Django's `timesince` filter — which requires a real
-    datetime — is the wrong tool here and raises on a string.
-    """
-    if not sent_on:
-        return None
-    try:
-        sent = datetime.fromisoformat(sent_on).date()
-    except (TypeError, ValueError):
-        return None
-    return (date.today() - sent).days
-
-
 def _ordinal(n: int) -> str:
     """1st, 2nd, 3rd, 4th ... 11th, 12th, 13th ... 21st."""
     suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
@@ -101,6 +85,47 @@ def _deadline_passed(tender, as_of=None):
         return None
     days = ((as_of or date.today()) - deadline).days
     return {"day": deadline, "days": days} if days > 0 else None
+
+
+def _days_since_ask(outreach, as_of=None):
+    """Days since we asked: the invitation's send day; None without one.
+
+    A reminder chases the same request, it does not restart it -- the overview's
+    "no reply since" counts from the ask too, and the two must agree. How recently
+    we chased is the Last chased column's job.
+    """
+    if not outreach.get("sent_on"):
+        return None
+    try:
+        latest = date.fromisoformat(str(outreach["sent_on"])[:10])
+    except ValueError:
+        return None
+    return max(((as_of or date.today()) - latest).days, 0)
+
+
+def _mark_waiting_on_us(outreach, owed_open, org_of_supplier):
+    """Put "waiting on us — 3 questions since 18 Sep" on a supplier's row while its questions are open.
+
+    A reply that was questions is not the supplier's silence: the move is ours,
+    and the round should say so where the supplier is listed. Counts the open
+    questions owed to the supplier's organisation on this tender, from the
+    earliest day one was asked.
+    """
+    for o in outreach:
+        org_id = org_of_supplier.get(o.get("supplier_id"))
+        mine = [c for c in owed_open if org_id is not None and c.get("owed_to_org_id") == org_id]
+        o["waiting_on_us"] = ""
+        if not mine:
+            continue
+        questions = [c for c in mine if c.get("kind") == "question"]
+        counted = questions or mine
+        noun = "question" if questions else "promise"
+        earliest = min((c.get("raised_on") for c in counted if c.get("raised_on")), default=None)
+        since = ""
+        if earliest:
+            day = date.fromisoformat(str(earliest)[:10])
+            since = f" since {day.day} {day.strftime('%b')}"
+        o["waiting_on_us"] = f"waiting on us — {len(counted)} {noun}{'' if len(counted) == 1 else 's'}{since}"
 
 
 def _changed(url, key, anchor):
@@ -158,16 +183,23 @@ class TenderDetailView(_Base):
             [o.get("id") for o in outreach], program_id=_access(self.request).program_id, until=as_of
         )
         for o in outreach:
-            o["days_waiting"] = None if o.get("responded") else _days_waiting(o.get("sent_on"))
             count = reminders.get(o.get("id"), 0)
             if o.get("last_reminder_on"):
                 count = max(count, 1)
             o["reminder_count"] = count
             o["reminder_text"] = f"{_ordinal(count)} reminder" if count else ""
+            # Silent since the latest ask -- the invitation or the last chase --
+            # not since the invitation: a chase restarts the wait.
+            o["silent_days"] = None if o.get("responded") else _days_since_ask(o, as_of)
         # The row a form just saved is picked out on arrival ("?changed=outreach-12").
         changed = self.request.GET.get("changed")
         context["outreach"] = mark_changed(outreach, "outreach", changed)
         context["deadline_passed"] = _deadline_passed(tender, as_of)
+        # Someone asked has not answered, on a round still taking quotes: the
+        # page's first action is chasing them, ahead of comparing what came in.
+        context["any_silent"] = tender.get("status") == "open" and any(not o.get("responded") for o in outreach)
+        # The tender's own title and its outreach lead; the supply banner steps back.
+        context["compact_banner"] = True
         context.update(
             owed_context(self.op("commitment_list", tender_id=tender_id), changed, _access(self.request).program_id)
         )
@@ -250,15 +282,17 @@ class TenderDetailView(_Base):
         # above): offering them again reads as if they had not been.
         access = _access(self.request)
         asked_supplier_ids = [o.get("supplier_id") for o in outreach if o.get("supplier_id")]
-        asked_org_ids = (
-            list(
+        org_of_supplier = (
+            dict(
                 Supplier.objects.filter(scope_key=access.scope_key, pk__in=asked_supplier_ids).values_list(
-                    "org_id", flat=True
+                    "pk", "org_id"
                 )
             )
             if asked_supplier_ids and access.program_id
-            else []
+            else {}
         )
+        asked_org_ids = list(org_of_supplier.values())
+        _mark_waiting_on_us(outreach, context.get("owed_open") or [], org_of_supplier)
         context["invitable_orgs"] = (
             LabsOrg.objects.filter(supplier_profile__isnull=False)
             .exclude(pk__in=invited_ids)
@@ -416,23 +450,56 @@ def _without_empty_tail(rows, columns) -> list:
     return columns
 
 
-def award_anyway(comparison) -> str:
-    """ "Kanem Foods still missing sachets per carton", while any quote is blocked on a fact; else "".
+def _and_list(words) -> str:
+    words = [w for w in words if w]
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1] if words else ""
 
-    Names the first blocked quote's first blocker, and how many more are waiting.
+
+def not_stated(row) -> str:
+    """ "Kanem Foods Ltd has not stated sachets per carton": what keeps one quote out, as a sentence.
+
+    From the card's own blockers -- the gap words the overview's flag uses --
+    so the banner, the button and the card name the same facts.
+    """
+    labels = list(dict.fromkeys(b.get("label") or b.get("fact") or "" for b in row.get("blockers") or []))
+    if not labels:
+        return ""
+    return f"{row.get('supplier_name') or 'A supplier'} has not stated {_and_list(labels)}"
+
+
+def award_anyway(comparison) -> str:
+    """ "Kanem Foods Ltd has not stated sachets per carton", while any quote is blocked on a fact; else "".
+
+    The first blocked quote's sentence, and how many more are waiting.
     """
     blocked = [row for row in (comparison or {}).get("blocked") or [] if row.get("blockers")]
     if not blocked:
         return ""
-    first = blocked[0]
-    fact = str(first["blockers"][0].get("fact") or "a fact")
-    # The card heads it "Sachets per carton"; mid-sentence it is "sachets per carton", but "ETA" stays.
-    if not fact[:2].isupper():
-        fact = fact[:1].lower() + fact[1:]
-    text = f"{first.get('supplier_name') or 'a supplier'} still missing {fact}"
+    text = not_stated(blocked[0])
     if len(blocked) > 1:
         text += f" (and {len(blocked) - 1} more)"
     return text
+
+
+# What the ranking compares, in words, for the banner: "can be compared on cost per course".
+_COMPARED_ON = {
+    "usd_per_course": "cost per course",
+    "usd_per_child_treated": "cost per child treated",
+    "landed_total_for_tender_quantity": "landed total",
+    "landed_total_as_quoted": "landed total",
+}
+
+
+def compared_on(comparison, columns) -> str:
+    """What the comparison compares quotes on, in words; "" when nothing ranks them."""
+    key = (comparison or {}).get("ranked_by")
+    if not key:
+        return ""
+    if key in _COMPARED_ON:
+        return _COMPARED_ON[key]
+    column = next((c for c in columns or [] if c.get("key") == key), None)
+    label = (column or {}).get("label") or ""
+    return label if label[:3].isupper() else label[:1].lower() + label[1:]
 
 
 UNIT_KEYS = ("usd_per_pack_normalized", "usd_per_course", "usd_per_child_treated")
@@ -452,7 +519,7 @@ def _one_unit_column(comparison, columns) -> list:
     for column in columns:
         key = column.get("key")
         if key == UNIT_KEYS[0]:
-            column = {**column, "label": f"{column.get('label')} (= 1 course = 1 child treated)"}
+            column = {**column, "label": f"{column.get('label')} (one course)", "one_course": True}
         elif key in UNIT_KEYS[1:]:
             continue
         out.append(column)
@@ -644,6 +711,14 @@ class ComparisonView(_Base):
         )
         context["table_columns"] = table_columns(comparison) if comparison else []
         context["unit_equivalence"] = unit_equivalence(comparison, context["table_columns"]) if comparison else ""
+        # One column standing for three ("USD per carton (one course)"): the equation is
+        # said in the caption, not crammed into the header.
+        if comparison and any(c.get("key") == UNIT_KEYS[0] and c.get("one_course") for c in context["table_columns"]):
+            context["unit_equivalence"] = unit_equivalence(comparison, comparison.get("columns") or [])
+        context["compared_on"] = compared_on(comparison, (comparison or {}).get("columns"))
+        context["not_stated"] = [
+            sentence for sentence in (not_stated(row) for row in (comparison or {}).get("blocked") or []) if sentence
+        ]
         context["ranking_rule"] = RANKING_RULE
         if comparison and context["table_columns"]:
             context["folded_columns"] = list(folded_columns(comparison).values())

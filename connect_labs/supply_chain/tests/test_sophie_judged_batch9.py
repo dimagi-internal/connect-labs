@@ -135,7 +135,7 @@ class TestTheNoReplyFlagOpens:
         judged7._provisional(da, base)
         # Since batch 10 the no-reply reminder comes after can't-compare.
         flag = next(f for f in judged7._tender_row().stale if f.startswith("No reply"))
-        assert flag == "No reply in 33 days: Plateau Mills"
+        assert flag == "No reply in 33 days: 1 supplier"
         assert flag.heading == flag
         assert flag.lines == ("Plateau Mills — asked 10 Aug, 33 days ago", "Flagged after 14 days without a reply")
 

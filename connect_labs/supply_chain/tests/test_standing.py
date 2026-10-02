@@ -258,7 +258,7 @@ class TestTender:
         # Who, and since when; the count is the line under it (batch 5).
         assert row.waiting_on == "Kaduna Mills — no reply since 21 Aug"
         assert row.waiting_detail == "3 of 4 replied"
-        assert row.stale == ["No reply in 20 days: Kaduna Mills"]
+        assert row.stale == ["No reply in 20 days: 1 supplier"]
         assert row.url == reverse("supply_chain:procurement_tender_detail", args=[tender["id"]])
 
     def test_13_days_without_a_reply_is_not_yet_stale_and_14_is(self, da, base):
@@ -267,8 +267,11 @@ class TestTender:
         assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == []
 
         _outreach(da, tender, base["suppliers"][1], TODAY - datetime.timedelta(days=14))
-        # Both are silent; only the one past 14 days is flagged, by name.
-        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == ["No reply in 14 days: Baobab Nutrition"]
+        # Both are silent; only the one past 14 days is flagged (counted since the
+        # unanswered round's batch 3; the names are in Waiting on and the flag's lines).
+        flag = _row(standing_rows(PROGRAM, TODAY), "Round 1").stale
+        assert flag == ["No reply in 14 days: 1 supplier"]
+        assert flag[0].lines[0].startswith("Baobab Nutrition — asked")
 
     def test_several_silent_suppliers_are_named_longest_silent_first_and_the_age_is_the_one_all_have_passed(
         self, da, base
@@ -278,7 +281,9 @@ class TestTender:
         _outreach(da, tender, base["suppliers"][1], datetime.date(2026, 8, 16))
 
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
-        assert row.stale == ["No reply in 20 days: Baobab Nutrition, Northwind Foods"]
+        assert row.stale == ["No reply in 20 days: 2 suppliers"]
+        # Named under it, longest silent first.
+        assert [line.split(" — ")[0] for line in row.stale[0].lines[:2]] == ["Baobab Nutrition", "Northwind Foods"]
 
     def test_past_three_silent_suppliers_the_rest_are_counted(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
@@ -286,7 +291,7 @@ class TestTender:
             _outreach(da, tender, supplier, datetime.date(2026, 8, 21))
 
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
-        assert row.stale == ["No reply in 20 days: Baobab Nutrition, Kaduna Mills, Northwind Foods +1"]
+        assert row.stale == ["No reply in 20 days: 4 suppliers"]
 
     def test_a_quote_counts_as_a_reply_even_when_the_outreach_was_not_marked(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
@@ -322,7 +327,7 @@ class TestTender:
         _quote(da, tender, base["suppliers"][1], **_PACK)  # basis not stated
         assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == [
             "Can't compare yet: Baobab Nutrition — missing: freight, duties",
-            "No reply in 40 days: Northwind Foods",
+            "No reply in 40 days: 1 supplier",
         ]
 
         op(da, "tender_update", SEP_1, tender_id=tender["id"], data={"status": "closed"})
