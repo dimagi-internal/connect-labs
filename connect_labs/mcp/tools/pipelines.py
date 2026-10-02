@@ -283,6 +283,21 @@ def _validate_pipeline_schema(schema: dict) -> None:
             )
 
 
+def _authorize_drive_source(schema: dict, opportunity_id: int, user) -> dict:
+    """Stamp a gdrive data_source with its authorization (Dimagi staff only); see gdrive_fetcher."""
+    from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import (
+        GDriveSourceError,
+        authorize_schema_drive_source,
+    )
+
+    try:
+        return authorize_schema_drive_source(schema, opportunity_id, user)
+    except GDriveSourceError as e:
+        raise MCPToolError("PERMISSION_DENIED", str(e))
+    except ValueError as e:
+        raise MCPToolError("INVALID_SCHEMA", str(e))
+
+
 @register(
     name="pipeline_update_schema",
     description=(
@@ -322,6 +337,7 @@ def pipeline_update_schema(
     description: str = None,
 ):
     _validate_pipeline_schema(schema)
+    schema = _authorize_drive_source(schema, opportunity_id, user)
 
     token = require_connect_token(user)
     pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
@@ -416,6 +432,7 @@ def pipeline_preview(
         )
     if schema_override is not None:
         _validate_pipeline_schema(schema_override)
+        schema_override = _authorize_drive_source(schema_override, opportunity_id, user)
 
     token = require_connect_token(user)
     pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
