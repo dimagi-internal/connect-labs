@@ -51,7 +51,8 @@
     {% for line in tender.lines %}
     <a href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}"
        class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-      Compare {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}
+      {% comment %}"Compare quotes"; with more than one product, which one.{% endcomment %}
+      Compare quotes{% if tender.lines|length > 1 %}: {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}{% endif %}
     </a>
     {% endfor %}
     {% if not supply_as_of %}
@@ -119,9 +120,12 @@ sits above who is invited and what the tender buys.
     <tbody class="divide-y divide-gray-200">
       {% for o in outreach %}
       <tr data-outreach-id="{{ o.id }}"{% if o.changed %} data-changed class="bg-yellow-50"{% endif %}>
-        <td class="px-4 py-2 text-sm">
+        {% comment %}The row just saved: an accent bar down its left edge and the words
+        "updated just now" -- a pale fill alone vanished on a projector.{% endcomment %}
+        <td class="px-4 py-2 text-sm{% if o.changed %} border-l-4 border-brand-indigo{% endif %}">
           <a href="{% url 'supply_chain:supplier_detail' o.supplier_id %}"
              class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:o.supplier_id|default:"Supplier" }}</a>
+          {% if o.changed %}{% include "supply_chain/_changed_chip.html" %}{% endif %}
         </td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ o.sent_on|day|default:"—" }}</td>
         <td class="px-4 py-2 text-sm text-gray-600">
@@ -166,11 +170,10 @@ sits above who is invited and what the tender buys.
         {% endif %}
       </li>
     {% empty %}
-      {% comment %}Suppliers asked directly are invited too: "No one invited yet" above
-      an outreach table listing them contradicted it.{% endcomment %}
-      {% if asked_names %}
-        <li data-testid="asked-directly" class="text-gray-700">Asked directly: {{ asked_names|join:", " }} <span class="text-gray-600">— see Outreach above.</span></li>
-      {% else %}
+      {% comment %}Suppliers asked directly are invited too, so "No one invited yet" above
+      an outreach table listing them contradicted it -- and listing them again here
+      repeated the table just above. They are in Outreach; nothing more is said.{% endcomment %}
+      {% if not asked_names %}
         <li class="text-gray-600">No one invited yet.</li>
       {% endif %}
     {% endfor %}
@@ -212,29 +215,13 @@ Open ones read as "waiting on us" on the overview (ruling 7 of the
 2026-10-02 tracking-reality spec).
 {% endcomment %}
 <div class="flex items-center justify-between mb-2">
-  <h2 id="owed" class="text-lg font-semibold text-gray-900 scroll-mt-20">What we owe them</h2>
+  <h2 id="owed" class="text-lg font-semibold text-gray-900 scroll-mt-20">What we owe them{% if owed %} <span data-testid="owed-open-count" class="font-normal text-gray-600">— {{ owed_open|length }} open</span>{% endif %}</h2>
   {% if not supply_as_of %}
   <a href="{% url 'supply_chain:tender_commitment_record' tender.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>
   {% endif %}
 </div>
-<div class="bg-white rounded-lg shadow-sm mb-8 divide-y divide-gray-200" data-testid="owed">
-  {% for c in owed %}
-    <div class="px-4 py-2 text-sm flex items-start justify-between gap-4{% if c.changed %} bg-yellow-50{% endif %}" data-commitment-id="{{ c.id }}"{% if c.changed %} data-changed{% endif %}>
-      <div>
-        <span class="font-medium text-gray-900">{{ c.owed_to }}</span>
-        <span class="text-gray-600">· {% if c.kind == "question" %}asked us{% else %}we promised{% endif %} {{ c.raised_on|day }}</span>
-        <div class="text-gray-700">{{ c.text }}</div>
-        {% if not c.open %}<div class="text-xs text-gray-600">Answered {{ c.resolved_on|day }}: {{ c.resolution }}</div>{% endif %}
-      </div>
-      {% if c.open and not supply_as_of %}
-        <a href="{% url 'supply_chain:commitment_resolve' c.id %}" class="text-brand-indigo hover:underline whitespace-nowrap">Mark answered</a>
-      {% elif c.open %}<span class="text-xs text-gray-600">open</span>{% endif %}
-    </div>
-  {% empty %}
-    <p class="px-4 py-3 text-sm text-gray-600">Nothing owed on this tender.</p>
-  {% endfor %}
-</div>
+{% include "supply_chain/_owed.html" with resolve_label="Mark answered" empty_text="Nothing owed on this tender." %}
 
 {% if drafts %}
 {% comment %}
@@ -287,6 +274,17 @@ next action on anyone (design doc section 22).
             <a href="{% url 'supply_chain:procurement_outreach_reply' d.outreach_id %}" class="text-brand-indigo hover:underline">record the day you chased them</a>
             so the next reminder is counted from it.
           </p>
+          {% comment %}The same record, here: the date and one button, so sending the
+          reminder and saying so are one stop rather than a trip to a form.{% endcomment %}
+          <form method="post" action="{% url 'supply_chain:procurement_outreach_chase' d.outreach_id %}"
+                class="mt-2 flex flex-wrap items-center gap-2" data-testid="chase-form">
+            {% csrf_token %}
+            <label for="chase-date-{{ forloop.counter }}" class="text-sm text-gray-700">Chased on</label>
+            <input id="chase-date-{{ forloop.counter }}" data-testid="chase-date" type="date" name="last_reminder_on"
+                   value="{% now 'Y-m-d' %}" required class="base-input text-sm w-auto">
+            <button type="submit" data-testid="record-chase"
+                    class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record chase</button>
+          </form>
         {% endif %}
       </div>
     {% empty %}

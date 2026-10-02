@@ -208,18 +208,21 @@ class TestAsOfHasNoFlagsColumn:
 class TestTheTimelineBadge:
     def test_the_badge_and_view_email_are_separate(self, da, base, order, client_in_program):
         body = batch6._order_page(client_in_program, order["contract"]["id"])
-        summary = re.search(r'<summary data-testid="actor-badge".*?</summary>', body, re.S).group(0)
-        pill = re.search(r'<span data-testid="actor-pill"[^>]*>(.*?)</span></span>', summary, re.S).group(1)
+        # Since the unanswered round's batch 2 the badge is only a label; the source opens
+        # from its own toggle beside it.
+        badge = re.search(r'<span data-testid="actor-badge" data-ai .*?</span></span></span>', body, re.S).group(0)
+        pill = re.search(r'<span data-testid="actor-pill"[^>]*>(.*?)</span></span>', badge, re.S).group(1)
         # Since batch 8 the AI marker is a glyph, not the word: "AI" was said twice.
         assert batch6._text(re.sub(r"<[^>]+>", "", pill)) == "ACE (agent)"
         assert 'aria-label="AI"' in pill
-        assert "View email" not in pill
-        button = re.search(r'<span data-testid="source-link" class="([^"]*)"><span[^>]*>View email</span>', summary)
+        assert "Source email" not in badge and "<summary" not in badge
+        toggle = re.search(r'<summary data-testid="source-toggle".*?</summary>', body, re.S).group(0)
+        button = re.search(r'<span data-testid="source-link" class="([^"]*)">.*?Source email</span>', toggle, re.S)
         assert {"border", "rounded"} <= set(button.group(1).split())
 
     def test_the_excerpt_runs_the_line_s_width(self, da, base, order, client_in_program):
         body = batch6._order_page(client_in_program, order["contract"]["id"])
-        assert re.search(r'<details class="group w-full text-xs">\s*<summary data-testid="actor-badge"', body)
+        assert re.search(r'<details class="group text-xs open:w-full">\s*<summary data-testid="source-toggle"', body)
         quote = re.search(r'<blockquote data-testid="source-excerpt" class="([^"]*)"', body).group(1).split()
         assert "w-full" in quote and "max-w-2xl" not in quote
 

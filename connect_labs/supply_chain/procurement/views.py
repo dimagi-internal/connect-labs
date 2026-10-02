@@ -50,6 +50,7 @@ from connect_labs.supply_chain.procurement.forms import (
     ApprovalRequestForm,
     CommitmentForm,
     CommitmentResolveForm,
+    OutreachChaseForm,
     OutreachForm,
     OutreachReplyForm,
     QuoteForm,
@@ -60,7 +61,7 @@ from connect_labs.supply_chain.procurement.forms import (
 )
 from connect_labs.supply_chain.procurement.services.comparison import RANKING_RULE
 from connect_labs.supply_chain.values import quantity_phrase, unit_noun
-from connect_labs.supply_chain.views import mark_changed
+from connect_labs.supply_chain.views import mark_changed, owed_context
 
 
 def _days_waiting(sent_on):
@@ -167,7 +168,9 @@ class TenderDetailView(_Base):
         changed = self.request.GET.get("changed")
         context["outreach"] = mark_changed(outreach, "outreach", changed)
         context["deadline_passed"] = _deadline_passed(tender, as_of)
-        context["owed"] = mark_changed(self.op("commitment_list", tender_id=tender_id), "commitment", changed)
+        context.update(
+            owed_context(self.op("commitment_list", tender_id=tender_id), changed, _access(self.request).program_id)
+        )
         # The emails due on this round now, for Sophie to copy into her own
         # mailbox. Listed in the order a round runs and then by name -- not
         # ranked, and folded shut (design doc section 22: the product drafts
@@ -389,7 +392,47 @@ def table_columns(comparison) -> list:
     ):
         columns = [column for column in columns if column.get("key") != as_quoted]
     columns = [column for column in columns if column.get("key") not in folded_columns(comparison, columns)]
-    return _one_unit_column(comparison, columns)
+    return _without_empty_tail(rows, _one_unit_column(comparison, columns))
+
+
+def _without_empty_tail(rows, columns) -> list:
+    """The columns less any at the right that no ranked row has a figure in.
+
+    An all-blank column at the end of the table is width spent on nothing. A
+    blank column between figures stays: dropping it would move the columns
+    after it out from under their headers in the reader's memory of the page.
+    """
+    columns = list(columns)
+
+    def has_figure(column):
+        for row in rows:
+            cell = (row.get("figures") or {}).get(column.get("key"))
+            if isinstance(cell, dict) and (cell.get("unconfirmed") or cell.get("amount") is not None):
+                return True
+        return False
+
+    while columns and rows and not has_figure(columns[-1]):
+        columns.pop()
+    return columns
+
+
+def award_anyway(comparison) -> str:
+    """ "Kanem Foods still missing sachets per carton", while any quote is blocked on a fact; else "".
+
+    Names the first blocked quote's first blocker, and how many more are waiting.
+    """
+    blocked = [row for row in (comparison or {}).get("blocked") or [] if row.get("blockers")]
+    if not blocked:
+        return ""
+    first = blocked[0]
+    fact = str(first["blockers"][0].get("fact") or "a fact")
+    # The card heads it "Sachets per carton"; mid-sentence it is "sachets per carton", but "ETA" stays.
+    if not fact[:2].isupper():
+        fact = fact[:1].lower() + fact[1:]
+    text = f"{first.get('supplier_name') or 'a supplier'} still missing {fact}"
+    if len(blocked) > 1:
+        text += f" (and {len(blocked) - 1} more)"
+    return text
 
 
 UNIT_KEYS = ("usd_per_pack_normalized", "usd_per_course", "usd_per_child_treated")
@@ -620,6 +663,9 @@ class ComparisonView(_Base):
         # The floating label stays only for the case the column is not shown.
         context["ranked_by_key"] = (comparison or {}).get("ranked_by")
         context["ranked_in_table"] = any(c.get("key") == context["ranked_by_key"] for c in context["table_columns"])
+        # One comparable offer is not a ranking: no "#", no "ranked by".
+        context["single_offer"] = len((comparison or {}).get("comparable") or []) == 1
+        context["award_anyway"] = award_anyway(comparison)
         return context
 
     def post(self, request, tender_id, *args, **kwargs):
@@ -1025,6 +1071,25 @@ class OutreachReplyView(OperationFormView):
             f"outreach-{result['id']}",
             "outreach",
         )
+
+
+class OutreachChaseView(OutreachReplyView):
+    """The day a reminder went, from the reminder draft itself.
+
+    The reply form would do, but it posts every field on the row, and a form
+    that carries only the chase date would clear the reply the row holds. This
+    sends `last_reminder_on` alone through the same operation.
+    """
+
+    form_class = OutreachChaseForm
+    title = "Record a chase"
+    intro = "The day the reminder went, so the next one is counted from it."
+    submit_label = "Record chase"
+
+    def get_form_kwargs(self):
+        kwargs = super(OutreachReplyView, self).get_form_kwargs()
+        self._outreach()  # 404 outside this program
+        return kwargs
 
 
 class OutreachDeleteView(OperationFormView):

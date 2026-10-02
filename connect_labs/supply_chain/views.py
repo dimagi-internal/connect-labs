@@ -18,7 +18,7 @@ from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.banner import program_line
 from connect_labs.supply_chain.checks import course_applies_to_category, courses_carried_by_kits
 from connect_labs.supply_chain.history.as_of import end_of_day
-from connect_labs.supply_chain.history.timeline import timeline_for_contract
+from connect_labs.supply_chain.history.timeline import answered_by, timeline_for_contract
 from connect_labs.supply_chain.identity import IdentityUnresolved, resolve_org
 from connect_labs.supply_chain.models import SupplierOffering
 from connect_labs.supply_chain.navigation import supply_tabs
@@ -553,6 +553,27 @@ def _tellers(contract, points, orgs, suppliers):
     return {source: name for source, name in tellers.items() if name}
 
 
+def owed_context(rows, changed, program_id) -> dict:
+    """What we owe, as the tender and the order show it: open first, the answered ones apart.
+
+    `owed` is every row, the one `?changed` names flagged; `owed_open` and
+    `owed_answered` split it, each answered row carrying who answered it
+    (`answered_by`, from its history). The answered group opens on arrival
+    when it holds the row just resolved, so the save is visible where it went.
+    """
+    rows = mark_changed(rows, "commitment", changed)
+    answered = [c for c in rows if not c.get("open")]
+    who = answered_by([c.get("id") for c in answered], program_id=program_id) if answered else {}
+    for c in answered:
+        c["answered_by"] = who.get(c.get("id"), "")
+    return {
+        "owed": rows,
+        "owed_open": [c for c in rows if c.get("open")],
+        "owed_answered": answered,
+        "owed_answered_expanded": any(c.get("changed") for c in answered),
+    }
+
+
 def mark_changed(rows, kind, changed):
     """Flag the row `?changed=<kind>-<id>` names, the one a form just saved, as `changed`."""
     for row in rows:
@@ -580,11 +601,16 @@ def _mark_invoices(invoices, invoice_above):
         for line in facts.get("above") or []:
             if line.get("field") == "total":
                 if len(invoices) == 1:
-                    marks.insert(0, f"{currency} {money_digits(line['difference'])} above agreed")
+                    # "USD 3,550.00" beside an "above agreed" tag.
+                    marks.insert(0, {"text": f"{currency} {money_digits(line['difference'])}", "tag": True})
             elif line.get("invoice_id") == invoice.get("id"):
                 what = "unit price" if line["field"] == "unit_price" else "freight"
                 marks.append(
-                    f"{what} {currency} {money_digits(line['billed'])} against {money_digits(line['agreed'])} agreed"
+                    {
+                        "text": f"{what} {currency} {money_digits(line['billed'])} "
+                        f"against {money_digits(line['agreed'])} agreed",
+                        "tag": False,
+                    }
                 )
         invoice["above_agreed"] = marks
         issued = str(invoice.get("issued_on") or "")[:10]
@@ -773,8 +799,12 @@ class OrderDetailView(OperationBase):
         )
         _mark_invoices(context["invoices"], context["invoice_above"])
         # The row a form just saved is picked out on arrival ("?changed=commitment-4").
-        context["owed"] = mark_changed(
-            self.op("commitment_list", contract_id=contract_id), "commitment", self.request.GET.get("changed")
+        context.update(
+            owed_context(
+                self.op("commitment_list", contract_id=contract_id),
+                self.request.GET.get("changed"),
+                _access(self.request).program_id,
+            )
         )
         context["advances"] = [
             p for p in self.op("payment_list", contract_id=contract_id) if p.get("invoice_id") is None

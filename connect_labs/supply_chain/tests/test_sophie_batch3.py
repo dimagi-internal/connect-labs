@@ -120,7 +120,7 @@ class TestTheSpecificationReadsWhatTheQuoteStates:
         detail = re.search(
             rf'<tr data-testid="ranked-row-detail" data-detail-for="{quote["id"]}">.*?</tr>', body, re.S
         )
-        assert "Meets all 2 spec requirements" in detail.group(0)
+        assert "Meets spec (2 requirements)" in detail.group(0)
         # With their figures since batch 6.
         assert "Sachets per carton: 150 (stated on the quote)" in detail.group(0)
         assert "Shelf life: 24 months (stated on the quote)" in detail.group(0)

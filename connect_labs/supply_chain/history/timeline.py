@@ -82,11 +82,21 @@ class Entry:
     # A change to a shipment's expected arrival, as a tag beside its line:
     # "ETA moved +14 days". Blank for every other line.
     eta_moved: str = ""
+    # A line that keeps the books rather than tells the story -- an invitation
+    # sent, a chase recorded -- set smaller and muted so replies and quotes
+    # stand out among them.
+    bookkeeping: bool = False
+    # On the line that made a shipment wait on a document we owe, while it
+    # still does: "Waiting on us: import permit" (fulfilment/services/holds.py).
+    hold: str = ""
+    # Why an AI-entered quote's line offers no Correct or Void: "voided" or
+    # "corrected", so every such line says something in that place.
+    fix_status: str = ""
 
     @property
     def source_link_text(self) -> str:
-        """What the source affordance says: "View email" for an email, else "source"."""
-        return "View email" if self.source_kind == "Email" else "source"
+        """What the source toggle says: "Source email" for an email, else "Source"."""
+        return "Source email" if self.source_kind == "Email" else "Source"
 
     @property
     def source_hide_text(self) -> str:
@@ -130,6 +140,24 @@ def _child_ids(model, links, program_id) -> set[int]:
     return ids
 
 
+def _commitment_ids(attname, parent_ids, program_id) -> set[int]:
+    """What we owe on these tenders or orders, in one query.
+
+    Not `_child_ids`: a commitment is never deleted (resolving keeps the row)
+    and never moves to another tender or order, so the rows there now are all
+    there ever were and the history need not be searched for more.
+    """
+    from connect_labs.supply_chain.models import Commitment
+
+    if not parent_ids:
+        return set()
+    return set(
+        Commitment.objects.filter(program_id=program_id, **{f"{attname}__in": sorted(parent_ids)}).values_list(
+            "pk", flat=True
+        )
+    )
+
+
 def _revisions(scope, program_id, until):
     q = Q()
     for model, ids in scope:
@@ -160,10 +188,22 @@ def contract_scope_revisions(contract_id, *, program_id, until=None):
 
 
 def _tender_scope(tender_id, program_id):
-    from connect_labs.supply_chain.models import Award, AwardApproval, Contract, Document, Outreach, Quote, Tender
+    from connect_labs.supply_chain.models import (
+        Award,
+        AwardApproval,
+        Commitment,
+        Contract,
+        Document,
+        Outreach,
+        Quote,
+        Tender,
+    )
 
     tender = {int(tender_id)}
     outreach = _child_ids(Outreach, {"tender_id": tender}, program_id)
+    # What we owe on the round -- a supplier's questions, our promises -- and
+    # their answers, which are as much the round's story as the quotes.
+    commitments = _commitment_ids("tender_id", tender, program_id)
     quotes = _child_ids(Quote, {"tender_id": tender}, program_id)
     awards = _child_ids(Award, {"tender_id": tender}, program_id)
     invited = _child_ids(Tender.invited_orgs.through, {"tender_id": tender}, program_id)
@@ -179,6 +219,7 @@ def _tender_scope(tender_id, program_id):
     return [
         (Tender, tender),
         (Outreach, outreach),
+        (Commitment, commitments),
         (Quote, quotes),
         (Award, awards),
         (Tender.invited_orgs.through, invited),
@@ -192,6 +233,7 @@ def _contract_scope(contract, program_id):
     """(model, ids) for the given orders and everything under them; nothing when there are none."""
     from connect_labs.supply_chain.models import (
         Charge,
+        Commitment,
         Contract,
         Document,
         Invoice,
@@ -211,6 +253,7 @@ def _contract_scope(contract, program_id):
     receipt_lines = _child_ids(ReceiptLine, {"receipt_id": receipts}, program_id)
     invoices = _child_ids(Invoice, {"contract_id": contract}, program_id)
     payments = _child_ids(Payment, {"contract_id": contract, "invoice_id": invoices}, program_id)
+    commitments = _commitment_ids("contract_id", contract, program_id)
     documents = _child_ids(
         Document,
         {
@@ -232,6 +275,7 @@ def _contract_scope(contract, program_id):
         (ReceiptLine, receipt_lines),
         (Invoice, invoices),
         (Payment, payments),
+        (Commitment, commitments),
         (Document, documents),
     ]
 
@@ -404,6 +448,7 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None, u
         entry.sender = stated
     elif revision.action == "update":
         entry.sender = ""
+    entry.bookkeeping = _is_bookkeeping(model, revision)
     if model is Quote and ai and offer_fixes and revision.action != "delete":
         quote_id = int(revision.object_id)
         if live_quote_ids is None:
@@ -411,7 +456,23 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None, u
         if quote_id in live_quote_ids:
             entry.correct_url = reverse("supply_chain:procurement_quote_correct", args=[quote_id])
             entry.void_url = reverse("supply_chain:procurement_quote_void", args=[quote_id])
+        else:
+            row = lookup.row(Quote, quote_id)
+            entry.fix_status = "voided" if row is not None and row.voided else "corrected"
     return entry
+
+
+# What an outreach change touches when it only keeps the books.
+_CHASE_FIELDS = {"last_reminder_on", "updated_at"}
+
+
+def _is_bookkeeping(model, revision) -> bool:
+    """An invitation sent, or a chase recorded: lines the round needs kept but nobody reads for."""
+    if model is None or model.__name__ != "Outreach":
+        return False
+    if revision.action == "create":
+        return True
+    return revision.action == "update" and set(revision.changes) <= _CHASE_FIELDS
 
 
 def _set_line(entry, model, action, values, lookup, object_id=None):
@@ -531,6 +592,7 @@ def _timeline(revisions, until) -> list[Entry]:
     quote_ids = {int(r.object_id) for r in revisions if r.content_type_id == quote_type.pk}
     live = set(_live_quotes(quote_ids)) if quote_ids and until is None else set()
     entries = []
+    built = []
     for revision in revisions:
         entry = entry_for(revision, lookup=lookup, offer_fixes=until is None, live_quote_ids=live, until=until)
         if id(revision) in corrections:
@@ -542,7 +604,53 @@ def _timeline(revisions, until) -> list[Entry]:
             if entry.what:
                 entry.what += " — " + "; ".join(lines)
         entries.append(entry)
+        built.append((entry, revision))
+    if until is None:
+        _mark_holds(built)
     return [e for e in entries if e.sentence]
+
+
+def _mark_holds(built):
+    """Put "Waiting on us: import permit" on the line that asked for a document we still owe.
+
+    The hold is read from holds.py, so the history and the order's banner name
+    the same thing. Only the line that added the document to the shipment's
+    requirements carries it, and only while the hold stands: today's fact,
+    which is why a rewound history leaves it off.
+    """
+    from connect_labs.supply_chain.fulfilment.services.holds import holds_for
+    from connect_labs.supply_chain.models import Contract, Shipment
+
+    asked = [
+        (entry, revision)
+        for entry, revision in built
+        if revision.action in ("create", "update")
+        and "required_documents" in revision.changes
+        and (revision.changes["required_documents"] or [None, None])[1]
+        and revision.content_type.model_class() is Shipment
+    ]
+    if not asked:
+        return
+    contract_of = dict(
+        Shipment._base_manager.filter(pk__in={int(r.object_id) for _, r in asked}).values_list("pk", "contract_id")
+    )
+    holds = holds_for(list(Contract._base_manager.filter(pk__in=set(contract_of.values()))))
+    for entry, revision in asked:
+        shipment_id = int(revision.object_id)
+        waiting = {h.what for h in holds.get(contract_of.get(shipment_id), []) if h.shipment_id == shipment_id}
+        if not waiting:
+            continue
+        old, new = revision.changes["required_documents"]
+        before = {d.get("kind") for d in (old or []) if isinstance(d, dict)}
+        for document in new or []:
+            if not isinstance(document, dict) or document.get("kind") in before:
+                continue
+            what = (document.get("kind") or "").replace("_", " ")
+            if what in waiting:
+                # The record's own name for it, when it carries one ("Form M").
+                local = str(document.get("name") or "").strip()
+                entry.hold = f"Waiting on us: {what}" + (f" ({local})" if local else "")
+                break
 
 
 def timeline_for_tender(tender_id, *, program_id, until=None) -> list[Entry]:
@@ -672,3 +780,29 @@ def reminders_for_outreach(outreach_ids, *, program_id, until=None) -> dict:
         if new:
             days.setdefault(int(object_id), set()).add(str(new)[:10])
     return {pk: len(found) for pk, found in days.items()}
+
+
+def answered_by(commitment_ids, *, program_id) -> dict:
+    """{commitment id: who answered it}, as the timeline names them ("Sophie Bello", "via AI · Sophie").
+
+    Read from the revision that wrote its resolution; the latest one, should
+    it have been answered twice. One query.
+    """
+    from connect_labs.supply_chain.models import Commitment
+
+    ids = sorted({int(pk) for pk in commitment_ids if pk is not None})
+    if not ids:
+        return {}
+    revisions = (
+        Revision.objects.filter(
+            _type_q(Commitment),
+            action="update",
+            object_id__in=[str(pk) for pk in ids],
+            program_id=program_id,
+            changes__has_key="resolution",
+        )
+        .select_related("call__actor")
+        .order_by("recorded_at", "id")
+    )
+    lookup = Lookup()
+    return {int(r.object_id): actor_label(r.call, lookup) for r in revisions}
