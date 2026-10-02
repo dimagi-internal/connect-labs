@@ -133,13 +133,13 @@ scenes:
     seconds: 1.0
   before: python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --sahel-replies
   concept_claim: When a silent supplier answers and the AI records the reply from
-    the forwarded email, the round's history shows the email with its sender and what
-    was recorded from it, and the supplier stops reading as silent.
+    the forwarded email, the round's history shows Sahel's email, who sent it and
+    what the AI recorded from it, with the email's excerpt behind a Source email toggle.
   design_intent: 'A real event between scenes: the record changes because the world
     did, and the change carries its own evidence.'
-  show: Sophie turns the round's history to replies only, opens Sahel's email, and
-    reads the quote recorded from it beside the excerpt and sender, with Sahel's reply
-    day now on the round.
+  show: Sophie turns the round's history to replies only, opens the Source email toggle
+    on Sahel's email, and reads the excerpt and sender beside what the AI recorded
+    from it.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#history
 - id: what-we-owe-northgate
   actions:
@@ -157,7 +157,7 @@ scenes:
   - kind: fill
     say: import
     target: css:#id_resolution
-    value: We import; please quote excluding duty.
+    value: We import, under the program's duty waiver; please state freight to Kano.
   - kind: click
     must_succeed: true
     target: role:button:Save
@@ -239,8 +239,8 @@ scenes:
   design_intent: The screens must blame the right party; a shipment held on our paperwork
     is our move.
   show: Sophie opens the round 1 order, reads the Waiting on us and Invoice above
-    the contract banners, then scrolls to the advance recorded against the order on
-    28 July.
+    the contract banners, then scrolls to the Advance paid row in the order's invoices,
+    paid before any invoice existed.
   url: /supply/orders/${contract_id}/?program_id=${program_id}
 - id: whose-move
   actions:

@@ -6,7 +6,7 @@ is invented -- companies, people, prices, `.example.invalid` addresses. This
 repository is public.
 
 The story is a half-silent round. Sophie asked six suppliers to quote round 2
-on 15 Sep; three never answered, though she chased them on 18 and 25 Sep. The
+17 days ago; three never answered, though she chased them twice. The
 three who did answer sent one complete quote (Harmattan), one quote missing its
 pack size (Kanem), and three questions instead of a price (Northgate). Round 1,
 in July, is history: Harmattan won it, and its order now waits on our import
@@ -20,6 +20,14 @@ Two hands write, each on its own day:
 - **The ACE agent** she forwards supplier email to (channel `mcp`): every
   supplier or forwarder email, recorded with `source = {ref, excerpt, sender}`
   exactly as the agent would send it through the MCP tools.
+
+Every date is anchored to the render day, not the calendar. The story was
+written as of 2 Oct 2026 (`STORY_TODAY`): the ask on 15 Sep, the deadline on
+29 Sep, the reminders on 18 and 23-25 Sep. The pages count ages from
+`date.today()`, so a fixed calendar would make the round look older on every
+later render ("No reply · 17 days" becoming "· 40 days"). `story_day` moves
+every dated step by the same amount, keeping each offset from the render day
+exactly as the story has it on 2 Oct 2026.
 
 Only a registered labs-only program accepts dated writes (`seed_overrides`),
 so this refuses any other. The program is this walkthrough's own: it never
@@ -116,8 +124,37 @@ NORTHGATE_QUESTIONS = (
 IMPORTER_QUESTION = NORTHGATE_QUESTIONS[2]
 
 
+# The day the story is written as of: every date in `seed_world` is a story date, moved by
+# (render day - STORY_TODAY) so its distance from the render day never changes.
+STORY_TODAY = dt.date(2026, 10, 2)
+
+
 class Refused(RuntimeError):
     pass
+
+
+def story_day(story_iso: str, today: dt.date | None = None) -> str:
+    """A story date (as of STORY_TODAY) moved to the same offset from `today`, as ISO."""
+    shift = (today or dt.date.today()) - STORY_TODAY
+    return (dt.date.fromisoformat(story_iso) + shift).isoformat()
+
+
+def _short(iso: str) -> str:
+    """How an email writes a day without its year: "12 Sep"."""
+    day = dt.date.fromisoformat(iso)
+    return f"{day.day} {day:%b}"
+
+
+def _slashed(iso: str) -> str:
+    """How a forwarder's or supplier's paperwork writes a day: "10/10/2026"."""
+    return dt.date.fromisoformat(iso).strftime("%d/%m/%Y")
+
+
+def display_day(iso: str) -> str:
+    """The day as the pages print it (the one date rule, values.day_text): "15 Sep 2026"."""
+    from connect_labs.supply_chain.values import day_text
+
+    return day_text(dt.date.fromisoformat(iso))
 
 
 def _ten_am(day: str) -> dt.datetime:
@@ -269,7 +306,12 @@ def _ask_everyone(w: World, tender_id: int, suppliers: dict, day: str) -> dict:
     }
 
 
-def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> dict:
+def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, today: dt.date | None = None) -> dict:
+    today = today or dt.date.today()
+
+    def d(story_iso: str) -> str:
+        return story_day(story_iso, today)
+
     w = World(program_id, personas())
     access = w.access
 
@@ -280,14 +322,14 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
         **rutf,
         "course_definition": {"base_units_per_course": 150, "source": "program protocol (walkthrough, illustrative)"},
     }
-    w.op("sophie", "2026-07-01", "commodity_upsert", data=dict(rutf))
+    w.op("sophie", d("2026-07-01"), "commodity_upsert", data=dict(rutf))
     buyer = buyer_org_id(access, create_if_missing=create_buyer)
 
     suppliers = {}
     for key, name, country, city, kind, contact, address in SUPPLIERS:
         suppliers[key] = w.op(
             "sophie",
-            "2026-07-01",
+            d("2026-07-01"),
             "supplier_create",
             data={
                 "name": name,
@@ -299,9 +341,9 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
             },
         )["id"]
 
-    # ---- Round 1 (July): history. Harmattan answered fully and won. -----
-    r1 = _round(w, label="RUTF round 1: 2,000 cartons to Kano", opened="2026-07-06", deadline="2026-07-20")
-    r1_out = _ask_everyone(w, r1, suppliers, "2026-07-06")
+    # ---- Round 1 (ten weeks back): history. Harmattan answered fully and won. ---
+    r1 = _round(w, label="RUTF round 1: 2,000 cartons to Kano", opened=d("2026-07-06"), deadline=d("2026-07-20"))
+    r1_out = _ask_everyone(w, r1, suppliers, d("2026-07-06"))
     src = dict(
         ref="<PFI0457.k.mensah@harmattan-tx.example.invalid>",
         excerpt="PFI-2026-0457: USD 49.80/CTN x 2,000 (150 x 92 g), FCA Tema. Estimated freight USD 7,200. "
@@ -310,7 +352,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
         sender="Kwame Mensah, Harmattan Therapeutics",
     )
     r1_quote = w.email(
-        "2026-07-10",
+        d("2026-07-10"),
         "quote_record",
         **src,
         data=dict(
@@ -335,33 +377,33 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
             moq=500,
             moq_unit="carton",
             incoterm="FCA Tema",
-            validity_until="2026-08-09",
-            received_on="2026-07-10",
+            validity_until=d("2026-08-09"),
+            received_on=d("2026-07-10"),
             supplier_reference="PFI-2026-0457",
             payment_terms="50% with order, 50% before loading",
         ),
     )
     w.email(
-        "2026-07-10",
+        d("2026-07-10"),
         "outreach_update",
         **src,
         outreach_id=r1_out["harmattan"],
-        data={"responded": True, "response_kind": "quote", "responded_on": "2026-07-10"},
+        data={"responded": True, "response_kind": "quote", "responded_on": d("2026-07-10")},
     )
 
     award = w.op(
         "sophie",
-        "2026-07-28",
+        d("2026-07-28"),
         "award_create",
         tender_id=r1,
         quote_id=r1_quote["id"],
         rationale="The only quote with pack, quantity and freight stated.",
         decided_by="Sophie",
-        decided_on="2026-07-28",
+        decided_on=d("2026-07-28"),
     )
     contract = w.op(
         "sophie",
-        "2026-07-28",
+        d("2026-07-28"),
         "contract_create",
         data={
             "tender_id": r1,
@@ -386,17 +428,17 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
             "promised_lead_time_days": 35,
             "payment_terms": "advance",
             "source": "we_recorded",
-            "signed_on": "2026-07-28",
+            "signed_on": d("2026-07-28"),
         },
     )
     contract_id = contract["id"]
     advance = w.op(
         "sophie",
-        "2026-07-28",
+        d("2026-07-28"),
         "payment_record",
         data={
             "contract_id": contract_id,
-            "paid_on": "2026-07-28",
+            "paid_on": d("2026-07-28"),
             "amount": "53400.00",
             "currency": "USD",
             "reference": "advance on PFI-2026-0457",
@@ -404,49 +446,49 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
         },
     )
     shipment = w.email(
-        "2026-08-26",
+        d("2026-08-26"),
         "shipment_record",
         ref="<disp-031@harmattan-tx.example.invalid>",
         excerpt="The 2,000 cartons left our Tema warehouse today by truck with Crescent Freight. "
-        "Batch HT2608A. Expected in Kano around 12 Sept.",
+        f"Batch HT2608A. Expected in Kano around {_short(d('2026-09-12'))}.",
         sender="Kwame Mensah, Harmattan Therapeutics",
         data={
             "contract_id": contract_id,
             "reference": "DMG-PO-2026-031",
             "status": "dispatched",
-            "dispatched_on": "2026-08-26",
-            "expected_on": "2026-09-12",
+            "dispatched_on": d("2026-08-26"),
+            "expected_on": d("2026-09-12"),
             "carrier": "Crescent Freight",
             "source": "supplier_reported",
             "lines": [{"batch": "HT2608A", "quantity": 2000, "quantity_unit": "carton"}],
         },
     )
     w.email(
-        "2026-09-26",
+        d("2026-09-26"),
         "shipment_update",
         ref="<cfc-trk-4471-0926@crescent-freight.example.invalid>",
         excerpt="CARGO: 2000 CTNS RUTF / TRUCKS: 2 / HELD AT SEME BORDER - DOCUMENTATION (FORM M) / "
-        "REVISED ETA KANO: 10/10/2026 ONCE FORM M IS "
+        f"REVISED ETA KANO: {_slashed(d('2026-10-10'))} ONCE FORM M IS "
         "LODGED / CONSIGNEE TO PROVIDE FORM M / PAAR.",
         sender="Crescent Freight & Clearing",
         shipment_id=shipment["id"],
         data={
             "status": "at_customs",
-            "expected_on": "2026-10-10",
+            "expected_on": d("2026-10-10"),
             "required_documents": [{"kind": "import_permit", "name": "Form M", "owed_by_org_id": buyer}],
         },
     )
     w.email(
-        "2026-09-21",
+        d("2026-09-21"),
         "invoice_record",
         ref="<inv-0912@harmattan-tx.example.invalid>",
         excerpt="2,000 CTN @ USD 51.20 = 102,400.00; Freight 7,950.00; Total 110,350.00; "
-        "Less advance received 28/07/2026 (USD 53,400.00)",
+        f"Less advance received {_slashed(d('2026-07-28'))} (USD 53,400.00)",
         sender="Kwame Mensah, Harmattan Therapeutics",
         data={
             "contract_id": contract_id,
             "reference": "INV-HT-26-0912",
-            "issued_on": "2026-09-21",
+            "issued_on": d("2026-09-21"),
             "status": "received",
             "currency": "USD",
             "amount": "110350.00",
@@ -459,9 +501,9 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
         },
     )
 
-    # ---- Round 2 (September): open, and half of it is silent. ----------
-    r2 = _round(w, label="RUTF round 2: 2,000 cartons to Kano", opened="2026-09-15", deadline="2026-09-29")
-    r2_out = _ask_everyone(w, r2, suppliers, "2026-09-15")
+    # ---- Round 2 (asked 17 days back): open, and half of it is silent. ---
+    r2 = _round(w, label="RUTF round 2: 2,000 cartons to Kano", opened=d("2026-09-15"), deadline=d("2026-09-29"))
+    r2_out = _ask_everyone(w, r2, suppliers, d("2026-09-15"))
 
     src = dict(
         ref="<PFI0611.k.mensah@harmattan-tx.example.invalid>",
@@ -470,7 +512,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
         sender="Kwame Mensah, Harmattan Therapeutics",
     )
     w.email(
-        "2026-09-17",
+        d("2026-09-17"),
         "quote_record",
         **src,
         data=dict(
@@ -493,18 +535,18 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
             moq_unit="carton",
             incoterm="DDP Kano",
             delivery_point_keys=["kano"],
-            validity_until="2026-10-17",
-            received_on="2026-09-17",
+            validity_until=d("2026-10-17"),
+            received_on=d("2026-09-17"),
             supplier_reference="PFI-2026-0611",
             payment_terms="50% with order, 50% before loading",
         ),
     )
     w.email(
-        "2026-09-17",
+        d("2026-09-17"),
         "outreach_update",
         **src,
         outreach_id=r2_out["harmattan"],
-        data={"responded": True, "response_kind": "quote", "responded_on": "2026-09-17"},
+        data={"responded": True, "response_kind": "quote", "responded_on": d("2026-09-17")},
     )
 
     src = dict(
@@ -514,16 +556,16 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
         sender="Tunde Bakare, Northgate Commodities",
     )
     w.email(
-        "2026-09-18",
+        d("2026-09-18"),
         "outreach_update",
         **src,
         outreach_id=r2_out["northgate"],
-        data={"responded": True, "response_kind": "needs_info", "responded_on": "2026-09-18"},
+        data={"responded": True, "response_kind": "needs_info", "responded_on": d("2026-09-18")},
     )
     questions = {}
     for text in NORTHGATE_QUESTIONS:
         questions[text] = w.email(
-            "2026-09-18",
+            d("2026-09-18"),
             "commitment_record",
             **src,
             data={
@@ -531,15 +573,19 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
                 "supplier_id": suppliers["northgate"],
                 "tender_id": r2,
                 "text": text,
-                "raised_on": "2026-09-18",
+                "raised_on": d("2026-09-18"),
                 "source": "supplier_reported",
             },
         )["id"]
 
-    # Sophie's first reminder: everyone still silent on 18 Sep (Kanem included).
+    # Sophie's first reminder, three days after the ask: everyone still silent (Kanem included).
     for key in ("kanem", *SILENT):
         w.op(
-            "sophie", "2026-09-18", "outreach_update", outreach_id=r2_out[key], data={"last_reminder_on": "2026-09-18"}
+            "sophie",
+            d("2026-09-18"),
+            "outreach_update",
+            outreach_id=r2_out[key],
+            data={"last_reminder_on": d("2026-09-18")},
         )
 
     src = dict(
@@ -549,7 +595,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
         sender="Grace Okon, Kanem Foods",
     )
     w.email(
-        "2026-09-19",
+        d("2026-09-19"),
         "quote_record",
         **src,
         data=dict(
@@ -570,24 +616,25 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
             lead_time_days=42,
             incoterm="DDP Kano",
             delivery_point_keys=["kano"],
-            validity_until="2026-11-03",
-            received_on="2026-09-19",
+            validity_until=d("2026-11-03"),
+            received_on=d("2026-09-19"),
             supplier_reference="KF/Q/2719",
         ),
     )
     w.email(
-        "2026-09-19",
+        d("2026-09-19"),
         "outreach_update",
         **src,
         outreach_id=r2_out["kanem"],
-        data={"responded": True, "response_kind": "quote", "responded_on": "2026-09-19"},
+        data={"responded": True, "response_kind": "quote", "responded_on": d("2026-09-19")},
     )
 
     # Her second reminder, to the three who have still said nothing, as she got to each.
-    for key, day in zip(SILENT, ("2026-09-23", "2026-09-24", "2026-09-25")):
+    for key, day in zip(SILENT, (d("2026-09-23"), d("2026-09-24"), d("2026-09-25"))):
         w.op("sophie", day, "outreach_update", outreach_id=r2_out[key], data={"last_reminder_on": day})
 
     return {
+        **story_dates(today),
         "program_id": program_id,
         "round1_tender_id": r1,
         "round2_tender_id": r2,
@@ -596,6 +643,26 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
         "sahel_outreach_id": r2_out["sahel"],
         "importer_question_id": questions[IMPORTER_QUESTION],
     }
+
+
+# The dates the screens print, by the name a recipe or lock can use as ${var}: each is the
+# story date moved to the render day, in the pages' own format.
+STORY_DATES = {
+    "ask_date": "2026-09-15",  # round 2 asked of all six: 17 days before the render day
+    "first_reminder_date": "2026-09-18",  # the ask + 3; also the day Northgate's questions came
+    "northgate_asked_date": "2026-09-18",
+    "second_reminder_date": "2026-09-23",  # Sahel's second reminder (Lagoon +1 day, Savanna +2)
+    "deadline_date": "2026-09-29",  # round 2's response deadline: 3 days before the render day
+    "advance_paid_date": "2026-07-28",  # round 1's award, contract and advance
+    "invoice_date": "2026-09-21",
+}
+
+
+def story_dates(today: dt.date | None = None) -> dict:
+    today = today or dt.date.today()
+    dates = {name: display_day(story_day(iso, today)) for name, iso in STORY_DATES.items()}
+    dates["today_date"] = display_day(today.isoformat())
+    return dates
 
 
 def mint_sophie_session(hours: int = 12) -> dict:
