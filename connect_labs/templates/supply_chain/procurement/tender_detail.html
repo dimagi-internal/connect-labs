@@ -96,7 +96,7 @@ Who replied and who is silent, first: it is what a round is chased on, so it
 sits above who is invited and what the tender buys.
 {% endcomment %}
 <div class="flex items-center justify-between mb-2">
-  <h2 id="outreach" class="text-lg font-semibold text-gray-900 scroll-mt-20">Outreach</h2>
+  <h2 id="outreach" class="text-lg font-semibold text-gray-900 scroll-mt-20">Outreach{% if outreach_asked %} <span data-testid="outreach-replied-count" class="font-normal text-gray-600">— {{ outreach_replied }} of {{ outreach_asked }} replied</span>{% endif %}</h2>
   {% if not supply_as_of %}
   <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Record an invitation</a>
@@ -140,15 +140,21 @@ sits above who is invited and what the tender buys.
         <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>
         {% comment %}Silence in words, counted from the latest ask -- the invitation or the last
         chase -- muted rather than alarmed; a bare "No" said nothing about how long.{% endcomment %}
-        <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="replied">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% elif o.silent_days is not None %}<span data-testid="no-reply" class="text-gray-600">No reply · {{ o.silent_days }} day{{ o.silent_days|pluralize }}</span>{% else %}<span data-testid="no-reply" class="text-gray-600">No reply</span>{% endif %}</td>
-        <td class="px-4 py-2 text-sm text-gray-600">{{ o.response_kind|humanise|default:"—" }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="replied">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% else %}<span data-testid="no-reply" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-200">No reply{% if o.silent_days is not None %} · {{ o.silent_days }} day{{ o.silent_days|pluralize }}{% endif %}</span>{% endif %}</td>
+        <td class="px-4 py-2 text-sm text-gray-600" data-testid="response-kind">{{ o.response_kind|humanise|capfirst|default:"—" }}</td>
           <td class="px-4 py-2 text-sm text-right whitespace-nowrap">
             {% if not supply_as_of %}
             <a href="{% url 'supply_chain:procurement_outreach_reply' o.id %}"
                class="text-brand-indigo hover:underline">{% if o.responded %}Record another reply{% else %}Record a reply{% endif %}</a>
-            <span class="text-gray-300 mx-1.5">·</span>
-            <a href="{% url 'supply_chain:procurement_outreach_delete' o.id %}"
-               class="text-gray-600 hover:text-red-700 hover:underline">Delete</a>
+            {% comment %}Delete is for an invitation recorded in error -- rare, and not the row's
+            business: tucked in a small menu so the reply is the one visible action.{% endcomment %}
+            <details data-testid="row-more" class="inline-flex items-center ml-2 text-left">
+              <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden px-1.5 rounded text-gray-700 hover:bg-gray-100" title="More" aria-label="More actions">⋯</summary>
+              <div class="inline-block ml-1 rounded-md border border-gray-200 bg-white shadow-sm">
+                <a href="{% url 'supply_chain:procurement_outreach_delete' o.id %}"
+                   class="inline-block px-2 py-0.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-red-700">Delete</a>
+              </div>
+            </details>
             {% endif %}
           </td>
       </tr>

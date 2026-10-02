@@ -1,68 +1,54 @@
 gaps:
 - id: G1
   type: CAPABILITY
-  detail: The tender's Outreach table shows days waiting but not the day each supplier
-    was last chased (Outreach.last_reminder_on); only the supplier page shows it,
-    so the reminders sent are not visible on the round.
-  claim_ref: S2
-  proposed_action: Add a "Last chased" column to the Outreach table on the tender
-    page, reading last_reminder_on, with a test that a chased silent supplier's row
-    shows the day.
+  detail: The tender's Outreach table did not show the day each supplier was last
+    chased.
+  resolved: 'Shipped: the tender Outreach table shows Last chased with the reminder
+    count (PRs 2152 and 2154).'
+  claim_ref: S1
+  proposed_action: Add a Last chased column with the reminder count.
 - id: G2
   type: CAPABILITY
-  detail: No walkthrough seeder replays a half-silent round 2 and the round 1 order
-    as dated history on a labs-only program of its own (10672 must stay intact).
-  claim_ref: S1
-  proposed_action: 'Build scripts/walkthroughs/supply-sophie-unanswered-round/seed.py:
-    register a new labs-only program, guarded purge, Sophie''s setup and reminders
-    over the web channel, each supplier email as the ACE agent over the mcp channel
-    with source ref, excerpt and sender, each on its own day.'
+  detail: The walkthrough has no off-camera step in which a silent supplier answers
+    between the chase and the next scene; the AI must record that reply over the labs
+    MCP with its source, so the record moves on camera without a seeded fake.
+  claim_ref: S3
+  proposed_action: 'seed.py --sahel-replies: the AI records Sahel''s emailed quote
+    (quote_record + outreach_update with source ref, excerpt and sender) over the
+    labs MCP as the scene''s before: hook.'
 - id: G3
   type: RESEARCH
   detail: The emails are invented reconstructions (real supplier mail cannot enter
-    this public repo); that a real round splits about half silent rests on Jonathan's
-    account.
+    this public repo). Round 2 reuses the rehearsal's round 1 replies (Northgate's
+    questions, Kanem's partial quote, Harmattan's pro-forma) moved to September dates,
+    and that a real round splits about half silent rests on Jonathan's account.
   claim_ref: S1
   proposed_action: Validate in the working session with Sophie (rehearsal Part 3)
     against her real rounds' emails.
 spine:
 - id: S1
-  claim: 'Silence is the normal case. This demo reconstructs a round 2 on Jonathan''s
-    account of Sophie''s rounds: of six suppliers asked on 15 Sep, three never replied
-    despite two reminders (18 Sep, then 23 to 25 Sep), and the three who did sent
-    one complete quote, one quote missing a fact, and a page of questions instead
+  claim: 'In Sophie''s rounds about half the suppliers asked never answer (Jonathan''s
+    account); this demo''s round 2 reconstructs that: of six asked on 15 Sep, three
+    stayed silent through two reminders (18 Sep, then 23 to 25 Sep), and the three
+    who answered sent one complete quote, one missing a fact, and questions instead
     of a price.'
   status: grounded
   evidence:
   - ref: EV-024
     kind: documented
-  - ref: EV-001
-    kind: documented
-  - ref: EV-002
-    kind: documented
-  rationale: Jonathan's account of Sophie's rounds is that about half the suppliers
-    simply ignore the request. A tool that only records what arrives would show three
-    tidy replies and hide the half of the round that matters most; the record has
-    to hold the silence too.
-- id: S2
-  claim: The round's page shows every supplier Sophie asked, how many days each has
-    been silent, the day she last chased them, and for the three who answered the
-    day and kind of reply.
-  status: gap
-  evidence:
   - ref: EV-007
     kind: implemented
   - ref: EV-026
     kind: implemented
-  - ref: EV-027
-    kind: implemented
-  rationale: '"Who has not answered, and have I chased them?" is the first question
-    of any round. Days silent and the reply day are facts in the record; the day she
-    last chased is recorded but today shows only on each supplier''s own page (G1).'
-- id: S3
-  claim: 'Sophie chases from the record: it drafts a reminder for each supplier who
-    has not replied, and when she sends one she records the day, which the round keeps
-    and the next reminder quotes.'
+  rationale: Jonathan's account of Sophie's rounds is that about half the suppliers
+    simply ignore the request. A tool that only records what arrives would show three
+    tidy replies and hide the half of the round that matters most; the record has
+    to hold the silence too, and the round's own page has to say who is silent, for
+    how long, and when she last chased them.
+- id: S2
+  claim: 'Sophie chases from the record: the round drafts a reminder for each silent
+    supplier, quoting when we last wrote, and she records the chase from the draft
+    itself, so the round keeps the day.'
   status: grounded
   evidence:
   - ref: EV-026
@@ -70,14 +56,14 @@ spine:
   - ref: EV-007
     kind: implemented
   rationale: Chasing is most of the work in a half-silent round; drafting it from
-    the record and keeping the day she chased turns 'did I already chase Sahel?' into
-    a fact on the page. The drafts panel tells her to record the day, and the reminder
-    text says when we last wrote.
-- id: S4
-  claim: What the three who answered said is on the record with the email excerpt,
-    the sender's name and an AI mark, because Sophie forwards each email and an AI
-    records it through the supply_chain operations.
-  status: grounded
+    the record and keeping the day she chased turns "did I already chase Sahel?" into
+    a fact on the round's page.
+- id: S3
+  claim: 'A chase gets an answer: Sahel replies to Sophie''s reminder, she forwards
+    the email, and the AI records Sahel''s quote from it with the excerpt and the
+    sender, so the record moves Sahel from silent to replied; the earlier replies
+    stay on record the same way.'
+  status: gap
   evidence:
   - ref: EV-008
     kind: implemented
@@ -85,24 +71,14 @@ spine:
     kind: implemented
   - ref: EV-014
     kind: implemented
-  rationale: Sophie checks what the AI recorded against what the supplier said; the
-    excerpt and sender make that a glance.
-- id: S5
-  claim: 'With one complete quote, the comparison says what is still missing rather
-    than ranking: Harmattan''s quote states everything, Kanem''s is missing its pack
-    size, and nothing guesses it.'
-  status: grounded
-  evidence:
-  - ref: EV-021
-    kind: implemented
-  - ref: EV-004
-    kind: documented
-  rationale: Once replies are on the record, what is missing is what the record does
-    not hold. Saying it per supplier turns the round into the next emails to send,
-    not a spreadsheet to rebuild.
-- id: S6
+  rationale: 'The record earns trust when it changes as the world does: a supplier
+    who was silent and then answers must stop reading as silent, and the answer must
+    carry its own evidence. Recording through the supply_chain operations with a source
+    means the excerpt and sender are on the record, not a claim about it.'
+- id: S4
   claim: 'Northgate''s questions are answers we owe: each is recorded as owed by us
-    with who asked and when, and the round reads as waiting on us for them.'
+    with who asked and when, the supplier''s row says the round is waiting on us,
+    and answering one records the answer.'
   status: grounded
   evidence:
   - ref: EV-009
@@ -112,12 +88,27 @@ spine:
   rationale: A supplier that asks questions instead of quoting cannot quote until
     we answer; as a record the question is Sophie's to-do, not an email that stalls
     the round with nobody on the hook.
-- id: S7
-  claim: 'The one round 1 supplier who did answer, Harmattan, shows the record keeps
-    tracking after the award: its order is waiting on us for an import permit the
-    forwarder says holds the trucks at the border, Sophie''s advance of 28 Jul is
-    recorded before any invoice existed, and the invoice above the agreed price is
-    flagged.'
+- id: S5
+  claim: 'An answer is not yet a usable quote: the comparison ranks only the quotes
+    whose cost it can confirm and names, for each of the rest, the facts still missing
+    and from whom -- Harmattan''s states everything, Kanem''s lacks its pack size,
+    and Sahel''s new quote leaves out freight, duty and the exchange rate.'
+  status: grounded
+  evidence:
+  - ref: EV-021
+    kind: implemented
+  - ref: EV-004
+    kind: documented
+  - ref: EV-028
+    kind: implemented
+  rationale: Once replies are on the record, what is missing is what the record does
+    not hold. Saying it per supplier turns the round into the next emails to send,
+    not a spreadsheet to rebuild.
+- id: S6
+  claim: 'The round 1 order with Harmattan shows the record keeps tracking after the
+    award: it is waiting on us for an import permit the forwarder says holds the trucks
+    at the border, Sophie''s advance of 28 Jul is recorded before any invoice existed,
+    and the invoice above the agreed price is flagged.'
   status: grounded
   evidence:
   - ref: EV-011
@@ -130,12 +121,16 @@ spine:
     kind: implemented
   - ref: EV-023
     kind: implemented
-  rationale: Who answers is also who gets paid, waited on and reconciled; a late ETA
-    must not read as the supplier's fault when the hold is a document we owe, and
-    an invoice above the price must not need a spreadsheet.
-- id: S8
-  claim: 'Sophie''s overview names who is silent and whose move each thing is: round
-    2 waiting on three suppliers who have not replied and on our answers to Northgate,
+  - ref: EV-002
+    kind: documented
+  rationale: 'The supplier who answers fully is the one who is then paid, waited on
+    and reconciled, so the record has to keep telling the truth after the award: a
+    late ETA must not read as the supplier''s fault when the hold is a document we
+    owe, and an invoice above the price must not need a spreadsheet. The order''s
+    dates are the seeded history of round 1 (Appendix A of the rehearsal).'
+- id: S7
+  claim: 'Sophie''s overview names who is still silent and whose move each thing is:
+    round 2 waiting on the suppliers who have not replied and on our answers to Northgate,
     the order waiting on our permit.'
   status: grounded
   evidence:

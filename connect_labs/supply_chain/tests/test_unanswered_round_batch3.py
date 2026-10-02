@@ -195,7 +195,9 @@ class TestTheComparison:
         assert "Northgate Rehearsal Commodities has not stated " in banner
         for word in ("PROVISIONAL", "provisional", "beat"):
             assert word not in banner
-        button = _text(re.search(r'<button data-testid="award-anyway"[^>]*>(.*?)</button>', body, re.S).group(1))
+        button = _text(
+            re.search(r'<summary data-testid="award-open" data-anyway[^>]*>(.*?)</summary>', body, re.S).group(1)
+        )
         assert button.startswith("Award anyway — Northgate Rehearsal Commodities has not stated ")
 
     def test_decided_on_is_empty_until_an_award_is_started(self, da, world, client_in_program):

@@ -586,6 +586,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
         "round2_tender_id": r2,
         "contract_id": contract_id,
         "sahel_supplier_id": suppliers["sahel"],
+        "sahel_outreach_id": r2_out["sahel"],
         "importer_question_id": questions[IMPORTER_QUESTION],
     }
 

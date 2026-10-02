@@ -109,7 +109,7 @@ class TestTheProvisionalStage:
         standing = batch6._standing(_home(home_client))
         # Since batch 9 a clause a line under the stage, with no leading "·".
         lines = re.findall(r'data-testid="award-price-line"[^>]*>(.*?)</span>', standing)
-        assert lines == ["USD 42.50 per carton", "USD 25,500.00 for 600 cartons"]
+        assert lines == ["USD 42.50 per carton", "USD 25,500.00 landed (incl. freight and duties) for 600 cartons"]
 
 
 # ---- 4. the AI marker is a glyph, so "AI" is not said twice ----------------

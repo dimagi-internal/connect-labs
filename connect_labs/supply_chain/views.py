@@ -570,10 +570,77 @@ def owed_context(rows, changed, program_id) -> dict:
     return {
         "owed": rows,
         "owed_open": owed_open,
+        "owed_open_groups": owed_groups(owed_open),
         "owed_open_count": len(owed_open),
         "owed_answered": answered,
+        "owed_answered_groups": owed_groups(answered),
         "owed_answered_expanded": any(c.get("changed") for c in answered),
     }
+
+
+def owed_groups(rows) -> list[dict]:
+    """What we owe, one group per counterparty: "Northgate Commodities · asked 18 Sep · 3 questions".
+
+    The organisation once, above its items, rather than on every row: three of
+    Northgate's questions read as three Northgates. In the order each was first
+    raised; the header's day is the earliest of its items.
+    """
+    from datetime import date
+
+    groups = {}
+    for c in rows:
+        groups.setdefault(c.get("owed_to_org_id") or c.get("owed_to"), []).append(c)
+    out = []
+    for items in groups.values():
+        questions = sum(1 for c in items if c.get("kind") == "question")
+        promises = len(items) - questions
+        days = sorted(str(c.get("raised_on"))[:10] for c in items if c.get("raised_on"))
+        earliest = ""
+        if days:
+            day = date.fromisoformat(days[0])
+            earliest = f"{day.day} {day.strftime('%b')}"
+        counts = ", ".join(
+            part
+            for part in (
+                f"{questions} question{'' if questions == 1 else 's'}" if questions else "",
+                f"{promises} promise{'' if promises == 1 else 's'}" if promises else "",
+            )
+            if part
+        )
+        verb = "asked" if questions and not promises else "we promised" if promises and not questions else "since"
+        out.append(
+            {
+                "owed_to": items[0].get("owed_to") or "",
+                "summary": " · ".join(part for part in (f"{verb} {earliest}" if earliest else "", counts) if part),
+                "items": items,
+            }
+        )
+    return sorted(out, key=lambda g: min(str(c.get("raised_on") or "") for c in g["items"]))
+
+
+def duty_relief_unevidenced(contract, landed, documents) -> bool:
+    """Whether the order's import duty reads 0 on a relief no document on file shows.
+
+    The duty line is 0 when it is relieved -- claimed on the order, or entered
+    as excluded at 0 under a waiver -- and a flat "USD 0.00" said the relief was
+    settled when nothing on file says so. Not for duty inside the price, or an
+    agency's catalogue price, where 0 is not a relief.
+    """
+    duty = (landed or {}).get("duty") or {}
+    if not isinstance(duty, dict) or duty.get("amount") in (None, ""):
+        return False
+    try:
+        if float(duty["amount"]) != 0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    if contract.get("duties_basis") == "included" or contract.get("buyer_of_record") == "agency":
+        return False
+    relieved = contract.get("duty_relief_claimed") or contract.get("duties_basis") == "excluded"
+    on_file = contract.get("duty_relief_document_id") or any(
+        d.get("kind") == "duty_exemption" for d in documents or []
+    )
+    return bool(relieved and not on_file)
 
 
 def mark_changed(rows, kind, changed):
@@ -786,6 +853,7 @@ class OrderDetailView(OperationBase):
                     seen.add(document["id"])
                     documents.append({**document, "shipment_reference": shipment.get("reference")})
         context["documents"] = documents
+        context["duty_relief_unevidenced"] = duty_relief_unevidenced(contract, context["landed"], documents)
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
         context["tellers"] = _tellers(contract, points, context["orgs"], context["suppliers"])

@@ -128,7 +128,11 @@ def _order(access, commodity=None):
         "received": {"receipts": receipts.count()},
         "invoiced": {
             "count": invoices.count(),
-            "unpaid": invoices.exclude(status__in=("paid", "rejected")).count(),
+            # Part paid is not unpaid: money has gone against it (an advance it
+            # acknowledged, an instalment). Counted apart so "1 unpaid" does not
+            # say nothing was paid.
+            "unpaid": invoices.exclude(status__in=("paid", "rejected", "part_paid")).count(),
+            "part_paid": invoices.filter(status="part_paid").count(),
         },
     }
 

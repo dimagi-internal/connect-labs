@@ -4,10 +4,11 @@ auth:
   type: storage_state
 base_url: https://labs.connect.dimagi.com
 narrative_locked: true
-narrative_locked_at: '2026-10-02T15:47:09.576226+00:00'
+narrative_locked_at: '2026-10-02T19:55:17.670760+00:00'
 review_mode: autonomous
 setup:
-  command: python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --outputs scripts/walkthroughs/supply-sophie-unanswered-round/outputs.json
+  command: python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --outputs
+    scripts/walkthroughs/supply-sophie-unanswered-round/outputs.json
   outputs: scripts/walkthroughs/supply-sophie-unanswered-round/outputs.json
   rerun: per_render
   timeout_seconds: 1200
@@ -22,54 +23,41 @@ scenes:
   - kind: wait_for
     target: text:Where the goods go
   - kind: hold
-    seconds: 3.0
+    seconds: 2.0
   - kind: hover
+    note: open, past its deadline
+    seconds: 2.0
     target: text:deadline passed
-    seconds: 2.5
-    note: the round is still open, past its deadline
-  - &id001
-    kind: hover
-    target: text:What this tender buys
-    seconds: 0.6
-    note: park the cursor on a neutral heading
-  - kind: hold
-    seconds: 1.5
-  concept_claim: Sophie's goal is a record that shows the suppliers who never replied as plainly as the replies,
-    not a ranking of quotes she does not have.
-  design_intent: 'Bet: framing the demo around silence, the normal case, makes every later scene answer a question
-    Sophie actually has instead of showcasing replies.'
-  pace: teach
-  role: overview
-  show: 'Open on round 2''s tender page and state Sophie''s goal: a record that is as truthful about the suppliers
-    who never answered as about the ones who did.'
-  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
-- id: who-answered-who-is-silent
-  actions:
-  - kind: wait_for
-    target: text:Outreach
-  - kind: scroll_to
-    target: css:#outreach
-  - kind: hold
-    seconds: 1.0
   - kind: hover
-    note: a supplier who never replied
+    say: half
+    seconds: 1.8
+    target: testid:outreach-replied-count
+  - kind: hover
     say: silent
-    seconds: 1.5
+    seconds: 1.8
     target: text:Sahel Nutrition Industries
   - kind: hover
-    note: the day she last chased each silent supplier
     say: chased
     seconds: 1.5
     target: text:Last chased
-  - *id001
+  - kind: hover
+    note: park the cursor on a heading in frame
+    seconds: 0.6
+    target: text:Outreach
   - kind: hold
-    seconds: 1.0
-  concept_claim: The round's Outreach table shows, for every supplier asked, how long they have been silent and
-    the day they were last chased, beside the reply day and kind for those who answered.
-  design_intent: 'Silence must be as visible as a reply: a row with days waiting and a last-chased day, not a blank.'
-  show: 'Sophie reads the round''s Outreach table: each supplier, the day asked, days silent, the day she last chased
-    them, and for those who replied the day and kind of reply.'
-  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#outreach
+    seconds: 1.5
+  concept_claim: The round's page says it is past its deadline and shows, for every
+    supplier asked, whether they replied or how long they have been silent and when
+    they were last chased.
+  design_intent: 'Bet: framing the demo around silence, the normal case, makes every
+    later scene answer a question Sophie actually has; one opening scene carries both
+    the goal and the table.'
+  pace: teach
+  role: overview
+  show: 'Sophie opens round 2''s tender page past its deadline and reads the Outreach
+    table: three replied, three silent with the days since she asked and the day she
+    last chased each.'
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: sophie-chases-sahel
   actions:
   - kind: wait_for
@@ -77,107 +65,82 @@ scenes:
   - kind: scroll_to
     target: css:#drafts
   - kind: click
-    target: css:#drafts > summary
     note: open the round's draft emails
     say: drafts
+    target: css:#drafts > summary
   - kind: wait_for
     target: css:#drafts[open]
   - kind: scroll_to
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] textarea
   - kind: hold
-    seconds: 3.0
-    say: reminder
     note: the drafted reminder, which quotes the day she last wrote
+    say: reminder
+    seconds: 3.0
   - kind: fill
+    say: today
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=chase-date]
     value: ${today}
-    say: today
   - kind: click
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=record-chase]
     must_succeed: true
-    timeout_ms: 30000
     note: record the day she chased Sahel, from the draft itself
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=record-chase]
+    timeout_ms: 30000
   - kind: wait_for
-    target: css:tr[data-changed]
     must_succeed: true
-  - *id001
+    target: css:tr[data-changed]
+  - kind: hover
+    note: park the cursor on a heading in frame
+    seconds: 0.6
+    target: text:Outreach
+  - kind: hold
+    note: Sahel's row, chased today
+    seconds: 2.5
+  concept_claim: The round drafts a reminder for each silent supplier, and recording
+    the chase from the draft updates that supplier's last-chased day and reminder
+    count on the round.
+  design_intent: Chasing is most of the work in a half-silent round; the record drafts
+    it and keeps when it happened.
+  show: Sophie opens the round's draft emails, reads the reminder drafted for Sahel,
+    records today's chase from the draft, and lands on Sahel's row marked as updated.
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
+- id: sahel-finally-answers
+  actions:
+  - kind: wait_for
+    target: css:#history
+  - kind: scroll_to
+    target: css:#history
+  - kind: click
+    must_succeed: true
+    note: 'replies only: the emails lead'
+    say: replies
+    target: testid:history-replies-only
+  - kind: hold
+    seconds: 1.0
+  - kind: click
+    must_succeed: true
+    note: Sahel's email, recorded by the AI
+    say: Sahel
+    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-toggle]
+  - kind: wait_for
+    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-excerpt]
   - kind: hold
     seconds: 2.5
-    note: Sahel's row, chased today
-  concept_claim: The round drafts a reminder for each silent supplier, and recording the day Sophie chased one updates
-    that supplier's last-chased day on the round.
-  design_intent: Chasing is most of the work in a half-silent round; the record drafts it and keeps when it happened.
-  show: Sophie opens the round's draft emails, reads the reminder drafted for Sahel, then enters today in the Last
-    chased on date field and sees the row update.
-  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
-- id: what-the-three-said
-  actions:
-  - kind: wait_for
-    target: css:#history
-  - kind: scroll_to
-    target: css:#history
-  - kind: hold
-    seconds: 1.0
-  - kind: scroll_to
-    target: css:[data-testid=email-event]:has-text('Quote · Harmattan Therapeutics')
-  - kind: click
-    target: css:[data-testid=email-event]:has-text('Quote · Harmattan Therapeutics') [data-testid=source-toggle]
-    must_succeed: true
-    say: Harmattan
-    note: Harmattan's pro-forma
-  - kind: hold
-    seconds: 1.8
-  - kind: scroll_to
-    target: css:[data-testid=email-event]:has-text('Quote · Kanem Foods Ltd')
-  - kind: click
-    target: css:[data-testid=email-event]:has-text('Quote · Kanem Foods Ltd') [data-testid=source-toggle]
-    must_succeed: true
-    say: Kanem
-    note: Kanem's price, missing its pack size
-  - kind: hold
-    seconds: 1.8
-  - kind: scroll_to
-    target: css:[data-testid=email-event]:has-text('Northgate Commodities · Replied')
-  - kind: click
-    target: css:[data-testid=email-event]:has-text('Northgate Commodities · Replied') [data-testid=source-toggle]
-    must_succeed: true
-    say: Northgate
-    note: Northgate's questions instead of a price
-  - kind: hold
-    seconds: 1.8
-  - kind: scroll_to
-    target: css:[data-testid=email-event]:has-text('Quote · Kanem Foods Ltd') [data-testid=source-excerpt]
   - kind: hover
-    target: text:History
+    note: park the cursor on a heading in frame
     seconds: 0.6
-    note: park the cursor on a neutral heading
-  - kind: hold
-    seconds: 2.0
-    note: the three emails open, each with what it carried
-  concept_claim: Every reply the AI recorded appears in the round's history with the email excerpt, the sender's
-    name and an AI mark, so Sophie can check the record against what the supplier said.
-  design_intent: Trust comes from the supplier's own words beside what was recorded; the AI is the typist, never
-    a character.
-  show: Sophie scrolls to the round's history and reads each recorded reply with its email excerpt, sender, day
-    and AI mark.
-  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#history
-- id: whats-still-missing
-  actions:
-  - kind: wait_for
-    target: text:Kanem Foods
+    target: text:History
   - kind: hold
     seconds: 1.0
-  - kind: scroll
-    note: down through the quote that is missing a fact
-    value: '500'
-  - kind: hold
-    seconds: 1.5
-  concept_claim: The comparison names the missing fact on each quote that cannot be relied on, without ranking across
-    them or guessing a figure.
-  design_intent: The comparison earns its place by saying what is missing, not by ranking quotes that cannot be
-    ranked.
-  show: Sophie opens the round's comparison and reads, quote by quote, the fact each one is missing.
-  url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
+  before: python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --sahel-replies
+  concept_claim: When a silent supplier answers and the AI records the reply from
+    the forwarded email, the round's history shows the email with its sender and what
+    was recorded from it, and the supplier stops reading as silent.
+  design_intent: 'A real event between scenes: the record changes because the world
+    did, and the change carries its own evidence.'
+  show: Sophie turns the round's history to replies only, opens Sahel's email, and
+    reads the quote recorded from it beside the excerpt and sender, with Sahel's reply
+    day now on the round.
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#history
 - id: what-we-owe-northgate
   actions:
   - kind: wait_for
@@ -200,53 +163,84 @@ scenes:
     target: role:button:Save
     timeout_ms: 30000
   - kind: wait_for
-    target: css:[data-changed]
     must_succeed: true
-  - *id001
+    target: css:[data-changed]
+  - kind: hover
+    note: park the cursor on a heading in frame
+    seconds: 0.6
+    target: text:What we owe them
   - kind: hold
-    seconds: 2.5
     note: the importer question, answered
-  concept_claim: A supplier's questions are listed as answers we owe with who asked and when, and marking one answered
-    records Sophie's answer and closes it.
-  design_intent: A question in an email stalls the round with nobody on the hook; as a record it is Sophie's to-do.
-  show: Sophie opens What we owe them on the round, reads Northgate's open questions with the day they asked, marks
-    the importer question answered with her answer, and sees it move to answered.
+    seconds: 2.5
+  concept_claim: A supplier's questions are listed as answers we owe with who asked
+    and when, and marking one answered records Sophie's answer and closes it.
+  design_intent: A question in an email stalls the round with nobody on the hook;
+    as a record it is Sophie's to-do.
+  show: Sophie opens What we owe them on the round, reads Northgate's open questions
+    with the day they asked, marks the importer question answered with her answer,
+    and sees it move to answered.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#owed
+- id: whats-still-missing
+  actions:
+  - kind: wait_for
+    target: text:Kanem Foods
+  - kind: hold
+    seconds: 1.5
+  - kind: scroll_to
+    target: text:Sahel Nutrition Industries
+  - kind: hold
+    say: Sahel
+    seconds: 2.5
+  concept_claim: The comparison names the missing facts on each quote that cannot
+    be relied on, including a reply that has only just arrived, without ranking across
+    them or guessing a figure.
+  design_intent: The comparison earns its place by saying what is missing, not by
+    ranking quotes that cannot be ranked.
+  show: Sophie opens the round's comparison and reads, quote by quote, the fact each
+    one is missing and from whom.
+  url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
 - id: held-on-us
   actions:
   - kind: wait_for
     target: testid:waiting-on-us
   - kind: hover
-    target: testid:waiting-on-us
-    seconds: 2.0
     say: permit
+    seconds: 2.0
+    target: testid:waiting-on-us
   - kind: click
-    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 · Status dispatched') [data-testid=source-toggle]
     must_succeed: true
-    say: forwarder
     note: 'the forwarder''s message: held at the border on our import permit'
+    say: forwarder
+    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
+      Status dispatched') [data-testid=source-toggle]
   - kind: scroll_to
-    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 · Status dispatched') [data-testid=source-excerpt]
+    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
+      Status dispatched') [data-testid=source-excerpt]
   - kind: hold
     seconds: 2.0
   - kind: scroll_to
     target: text:Advance paid
   - kind: hold
-    seconds: 1.5
     say: advance
-  - kind: hover
-    target: testid:above-agreed-tag
     seconds: 1.5
+  - kind: hover
     say: invoice
-  - *id001
+    seconds: 1.5
+    target: testid:above-agreed-tag
+  - kind: hover
+    note: park the cursor on a neutral heading
+    seconds: 0.6
+    target: text:Evidence
   - kind: hold
     seconds: 1.5
-  concept_claim: The order page says it is waiting on us for the import permit rather than reporting the supplier
-    late, flags an invoice above the agreed price with billed against agreed, and lists the advance paid before
-    any invoice.
-  design_intent: The screens must blame the right party; a shipment held on our paperwork is our move.
-  show: Sophie opens the round 1 order, reads the Waiting on us and Invoice above the contract banners, then scrolls
-    to the advance recorded against the order on 28 July.
+  concept_claim: The order page says it is waiting on us for the import permit rather
+    than reporting the supplier late, flags an invoice above the agreed price with
+    billed against agreed, and lists the advance paid before any invoice.
+  design_intent: The screens must blame the right party; a shipment held on our paperwork
+    is our move.
+  show: Sophie opens the round 1 order, reads the Waiting on us and Invoice above
+    the contract banners, then scrolls to the advance recorded against the order on
+    28 July.
   url: /supply/orders/${contract_id}/?program_id=${program_id}
 - id: whose-move
   actions:
@@ -260,9 +254,17 @@ scenes:
     say: permit
     seconds: 1.8
     target: text:import permit
-  concept_claim: The overview names each supplier who has not replied with the day we asked them, and says when
-    the next move is ours, for both the round and the order.
-  design_intent: The overview is where Sophie starts her day; it must already say who is silent and whose move it
-    is.
-  show: Sophie returns to the overview and reads the Waiting on column for round 2 and the round 1 order.
+  - kind: hover
+    note: park the cursor on a heading in frame
+    seconds: 0.6
+    target: text:Where everything stands
+  - kind: hold
+    seconds: 1.5
+  concept_claim: The overview names each supplier who has not replied with the day
+    we asked them, and says when the next move is ours, for both the round and the
+    order.
+  design_intent: The overview is where Sophie starts her day; it must already say
+    who is silent and whose move it is.
+  show: Sophie returns to the overview and reads the Waiting on column for round 2
+    and the round 1 order.
   url: /supply/?program_id=${program_id}
