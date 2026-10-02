@@ -24,6 +24,13 @@ on every read -- fresh or cached -- so a source smuggled in through any other sa
 path, copied to another opportunity, or edited after authorization is refused
 rather than read.
 
+Containment comes first: a source's file or folder must sit under one of the
+folders in ``settings.LABS_WORKFLOW_GDRIVE_ROOT_IDS`` (checked by walking its
+Drive parents on every fetch, and when it is stamped). Everything else the
+service account can see -- synthetic fixtures, trackers, exports -- is out of
+reach whoever saves the pipeline; data a workflow should read is copied under a
+root. No root configured = Drive sources are off.
+
 A stamp names an opportunity; it is not a pass to it. Every read also requires
 the caller (the Connect token the pipeline runs with) to be a member of that
 opportunity, because Drive -- unlike Connect, HQ or OCS -- never checks who is
@@ -78,12 +85,15 @@ class GDriveSourceError(ValueError):
 # --------------------------------------------------------------------------- authorization
 
 
-def _signature(source: dict, opportunity_id: int, authorized_by: str) -> str:
+def _signature(source: dict, opportunity_id: int, authorized_by: str, pipeline_id: int | None) -> str:
     payload = json.dumps(
         {
             **{k: source.get(k) or "" for k in _SIGNED_FIELDS},
             "opportunity_id": int(opportunity_id),
             "authorized_by": authorized_by,
+            # Bound to ONE pipeline: a stamp copied into another pipeline (any member can
+            # read one) does not verify there, and re-pointing a pipeline retires it.
+            "pipeline_id": int(pipeline_id) if pipeline_id is not None else None,
         },
         sort_keys=True,
     )
@@ -91,8 +101,8 @@ def _signature(source: dict, opportunity_id: int, authorized_by: str) -> str:
     return hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()
 
 
-def authorize_gdrive_source(source: dict, opportunity_id: int, user) -> dict:
-    """Return `source` stamped with an authorization for `opportunity_id`.
+def authorize_gdrive_source(source: dict, opportunity_id: int, user, pipeline_id: int | None = None) -> dict:
+    """Return `source` stamped with an authorization for `opportunity_id` and `pipeline_id`.
 
     Raises GDriveSourceError unless `user` is Dimagi staff. Callers that save a
     pipeline schema run every gdrive data_source through this.
@@ -104,12 +114,21 @@ def authorize_gdrive_source(source: dict, opportunity_id: int, user) -> dict:
             "Only Dimagi staff can point a pipeline at Google Drive: the server's service account "
             "can read files the person editing the pipeline may not be allowed to see."
         )
+    # Containment at save time too, so a target outside the workflow-data tree is
+    # refused when it is set rather than on the first read.
+    from connect_labs.labs.synthetic.gdrive import DriveAPIError, DriveAuthError
+
+    try:
+        assert_under_allowed_root(_drive(), source.get("file_id") or source.get("folder_id"))
+    except (DriveAPIError, DriveAuthError) as e:
+        raise GDriveSourceError(f"could not check where it lives in Drive: {e}") from e
     by = getattr(user, "email", "") or getattr(user, "username", "")
     clean = {k: v for k, v in source.items() if k != "authorization"}
     clean["authorization"] = {
         "opportunity_id": int(opportunity_id),
         "authorized_by": by,
-        "signature": _signature(clean, opportunity_id, by),
+        "pipeline_id": pipeline_id,
+        "signature": _signature(clean, opportunity_id, by, pipeline_id),
     }
     return clean
 
@@ -120,7 +139,7 @@ def _target(source: dict | None) -> tuple | None:
     return tuple(source.get(k) or "" for k in _SIGNED_FIELDS)
 
 
-def _stamp_is_valid(source: dict, opportunity_id: int) -> bool:
+def _stamp_is_valid(source: dict, opportunity_id: int, pipeline_id: int | None) -> bool:
     try:
         verify_gdrive_authorization(
             DataSourceConfig(
@@ -129,6 +148,7 @@ def _stamp_is_valid(source: dict, opportunity_id: int) -> bool:
                 authorization=source.get("authorization") or {},
             ),
             opportunity_id,
+            pipeline_id,
         )
         return True
     except (GDriveSourceError, ValueError):
@@ -136,7 +156,13 @@ def _stamp_is_valid(source: dict, opportunity_id: int) -> bool:
 
 
 def authorize_schema_drive_source(
-    schema: dict, opportunity_id: int, user, previous_schema: dict | None = None, force: bool = False
+    schema: dict,
+    opportunity_id: int,
+    user,
+    previous_schema: dict | None = None,
+    force: bool = False,
+    *,
+    pipeline_id: int | None = None,
 ) -> dict:
     """Settle a pipeline schema's gdrive authorization before it is saved.
 
@@ -154,14 +180,14 @@ def authorize_schema_drive_source(
         return schema
     # Shape first (raises ValueError): a malformed source is rejected, never stamped.
     DataSourceConfig(**{k: v for k, v in source.items() if k in DataSourceConfig.__dataclass_fields__})
-    if _stamp_is_valid(source, opportunity_id):
+    if _stamp_is_valid(source, opportunity_id, pipeline_id):
         return schema
     previous = (previous_schema or {}).get("data_source") if isinstance(previous_schema, dict) else None
     if not force and previous and _target(previous) == _target(source):
-        if _stamp_is_valid(previous, opportunity_id):
+        if _stamp_is_valid(previous, opportunity_id, pipeline_id):
             return {**schema, "data_source": {**source, "authorization": previous["authorization"]}}
         return schema
-    return {**schema, "data_source": authorize_gdrive_source(source, opportunity_id, user)}
+    return {**schema, "data_source": authorize_gdrive_source(source, opportunity_id, user, pipeline_id)}
 
 
 def _caller_opportunity_ids(request, access_token: str | None) -> set[int] | None:
@@ -169,7 +195,12 @@ def _caller_opportunity_ids(request, access_token: str | None) -> set[int] | Non
     ids: set = set()
     user = getattr(request, "user", None) if request is not None else None
     session = getattr(request, "session", None) if request is not None else None
-    if session is not None and session.get("labs_oauth"):
+    labs_oauth = (session.get("labs_oauth") or {}) if session is not None else {}
+    # A web session carries the org tree from login. A Celery job's mock request
+    # carries only a token (workflow/tasks.py _create_mock_request): read the tree
+    # from Connect with that token instead of reading an empty one as "no access".
+    access_token = access_token or labs_oauth.get("access_token")
+    if labs_oauth.get("organization_data"):
         from connect_labs.labs.context import get_org_data
 
         ids = {o.get("id") for o in get_org_data(request).get("opportunities") or []}
@@ -199,10 +230,12 @@ def _caller_opportunity_ids(request, access_token: str | None) -> set[int] | Non
     return out
 
 
-def check_gdrive_access(data_source: DataSourceConfig, opportunity_id: int, request=None, access_token=None) -> None:
+def check_gdrive_access(
+    data_source: DataSourceConfig, opportunity_id: int, request=None, access_token=None, pipeline_id=None
+) -> None:
     """The gate every read of a gdrive pipeline passes: a valid stamp for this
-    opportunity AND a caller who is a member of it. Raises GDriveSourceError."""
-    verify_gdrive_authorization(data_source, opportunity_id)
+    opportunity and pipeline AND a caller who is a member of the opportunity."""
+    verify_gdrive_authorization(data_source, opportunity_id, pipeline_id)
     ids = _caller_opportunity_ids(request, access_token)
     if ids is None:
         raise GDriveSourceError("cannot confirm who is reading it, so it is not read. Sign in and retry.")
@@ -210,8 +243,11 @@ def check_gdrive_access(data_source: DataSourceConfig, opportunity_id: int, requ
         raise GDriveSourceError(f"you are not a member of opportunity {opportunity_id}, which this source belongs to.")
 
 
-def verify_gdrive_authorization(data_source: DataSourceConfig, opportunity_id: int) -> None:
-    """Raise GDriveSourceError unless the source carries a valid authorization for this opportunity."""
+def verify_gdrive_authorization(
+    data_source: DataSourceConfig, opportunity_id: int, pipeline_id: int | None = None
+) -> None:
+    """Raise GDriveSourceError unless the source carries a valid authorization for this
+    opportunity and pipeline."""
     auth = data_source.authorization if isinstance(data_source.authorization, dict) else {}
     sig, by, auth_opp = auth.get("signature"), auth.get("authorized_by", ""), auth.get("opportunity_id")
     if not isinstance(sig, str) or not sig or not isinstance(by, str):
@@ -220,12 +256,52 @@ def verify_gdrive_authorization(data_source: DataSourceConfig, opportunity_id: i
             "pipeline schema (e.g. with the pipeline_update_schema MCP tool) to authorize it."
         )
     source = {k: getattr(data_source, k) for k in _SIGNED_FIELDS}
-    expected = _signature(source, opportunity_id, by)
+    expected = _signature(source, opportunity_id, by, pipeline_id)
     if auth_opp != int(opportunity_id) or not hmac.compare_digest(sig.encode(), expected.encode()):
         raise GDriveSourceError(
-            f"This Google Drive source is not authorized for opportunity {opportunity_id}, or it was "
-            "changed after it was authorized. Re-save the schema as Dimagi staff to authorize it."
+            f"This Google Drive source is not authorized for this pipeline in opportunity {opportunity_id}, "
+            "or it was changed after it was authorized. Re-save the schema as Dimagi staff to authorize it."
         )
+
+
+# --------------------------------------------------------------------------- containment
+
+MAX_ANCESTRY_DEPTH = 40
+
+
+def _allowed_roots() -> set[str]:
+    return {r.strip() for r in getattr(settings, "LABS_WORKFLOW_GDRIVE_ROOT_IDS", []) or [] if r and r.strip()}
+
+
+def assert_under_allowed_root(drive, target_id: str) -> None:
+    """Raise GDriveSourceError unless ``target_id`` is, or sits under, an allowed root.
+
+    Walks every parent chain (a legacy My Drive item can have several) breadth-first
+    up to MAX_ANCESTRY_DEPTH levels; one chain reaching a root suffices -- the item
+    is in the allowed tree, whoever else it is filed under.
+    """
+    roots = _allowed_roots()
+    if not roots:
+        raise GDriveSourceError(
+            "Drive pipeline sources are not enabled here (no LABS_WORKFLOW_GDRIVE_ROOT_IDS configured)."
+        )
+    frontier, seen = [target_id], set()
+    for _ in range(MAX_ANCESTRY_DEPTH):
+        if any(node in roots for node in frontier):
+            return
+        nxt = []
+        for node in frontier:
+            if node in seen:
+                continue
+            seen.add(node)
+            nxt.extend(drive.get_parents(node))
+        if not nxt:
+            break
+        frontier = nxt
+    raise GDriveSourceError(
+        f"{target_id} is not inside an allowed workflow-data folder. Copy the data under "
+        "the shared workflow-data folder and point the source there."
+    )
 
 
 # --------------------------------------------------------------------------- reading
@@ -271,7 +347,18 @@ def _cell(v, null_values: set):
 
 
 def _parse(name: str, kind: str, raw: bytes, null_values: set, budget: int) -> list[dict]:
-    """Rows of one file, refusing more than ``budget`` rows as they are read."""
+    """Rows of one file, refusing more than ``budget`` rows as they are read. Any
+    decode/parse failure (bad JSON, non-UTF-8 CSV, oversized cell) is reported as a
+    GDriveSourceError naming the file."""
+    try:
+        return _parse_rows(name, kind, raw, null_values, budget)
+    except GDriveSourceError:
+        raise
+    except (ValueError, csv.Error) as e:  # JSONDecodeError and UnicodeDecodeError are ValueErrors
+        raise GDriveSourceError(f"{name} could not be read as {kind.upper()}: {e}") from e
+
+
+def _parse_rows(name: str, kind: str, raw: bytes, null_values: set, budget: int) -> list[dict]:
 
     def capped(rows):
         out = []
@@ -355,7 +442,11 @@ def normalize_row_to_visit_dict(row: dict, meta: dict, index: int, data_source: 
 
 
 def fetch_gdrive_rows_as_visit_dicts(
-    data_source: DataSourceConfig, opportunity_id: int, request=None, access_token: str | None = None
+    data_source: DataSourceConfig,
+    opportunity_id: int,
+    request=None,
+    access_token: str | None = None,
+    pipeline_id: int | None = None,
 ) -> list[dict]:
     """Read the source's file(s) from Drive and return visit-shaped dicts.
 
@@ -365,10 +456,13 @@ def fetch_gdrive_rows_as_visit_dicts(
     """
     from connect_labs.labs.synthetic.gdrive import DriveAPIError
 
-    check_gdrive_access(data_source, opportunity_id, request=request, access_token=access_token)
+    check_gdrive_access(
+        data_source, opportunity_id, request=request, access_token=access_token, pipeline_id=pipeline_id
+    )
     drive = _drive()
     null_values = set(data_source.null_values or [""])
     try:
+        assert_under_allowed_root(drive, data_source.file_id or data_source.folder_id)
         if data_source.file_id:
             metas = [drive.get_metadata(data_source.file_id)]
             if metas[0].get("mimeType") == GOOGLE_FOLDER:

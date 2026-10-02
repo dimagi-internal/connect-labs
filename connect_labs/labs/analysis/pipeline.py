@@ -416,7 +416,13 @@ class AnalysisPipeline:
         if config.data_source.type == "gdrive":
             from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import check_gdrive_access
 
-            check_gdrive_access(config.data_source, opp_id, request=self.request, access_token=self.access_token)
+            check_gdrive_access(
+                config.data_source,
+                opp_id,
+                request=self.request,
+                access_token=self.access_token,
+                pipeline_id=config.pipeline_id,
+            )
 
     def get_cached_result_only(
         self,
@@ -716,7 +722,11 @@ class AnalysisPipeline:
 
                             yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
                             visit_dicts = fetch_gdrive_rows_as_visit_dicts(
-                            unfiltered_config.data_source, opp_id, self.request, self.access_token
+                            unfiltered_config.data_source,
+                            opp_id,
+                            self.request,
+                            self.access_token,
+                            unfiltered_config.pipeline_id,
                         )
                             visit_count = None
                             raw_data_already_stored = False
@@ -865,7 +875,11 @@ class AnalysisPipeline:
 
                         yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
                         visit_dicts = fetch_gdrive_rows_as_visit_dicts(
-                            unfiltered_config.data_source, opp_id, self.request, self.access_token
+                            unfiltered_config.data_source,
+                            opp_id,
+                            self.request,
+                            self.access_token,
+                            unfiltered_config.pipeline_id,
                         )
                         visit_count = None
                         raw_data_already_stored = False
@@ -1057,7 +1071,9 @@ class AnalysisPipeline:
                 from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import fetch_gdrive_rows_as_visit_dicts
 
                 yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
-                visit_dicts = fetch_gdrive_rows_as_visit_dicts(config.data_source, opp_id, self.request, self.access_token)
+                visit_dicts = fetch_gdrive_rows_as_visit_dicts(
+                    config.data_source, opp_id, self.request, self.access_token, config.pipeline_id
+                )
                 if not visit_dicts:
                     yield (EVENT_STATUS, {"message": "No rows found"})
                     yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))

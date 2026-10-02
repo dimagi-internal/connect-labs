@@ -188,6 +188,23 @@ class DriveClient:
             raise DriveAPIError(f"get_metadata({file_id}) failed: {e}") from e
         return resp.json()
 
+    def get_parents(self, file_id: str) -> list[str]:
+        """Return the ids of a file or folder's parents (a Shared Drive's top level
+        reports the drive id; a file in no folder the caller can see reports [])."""
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", file_id or ""):
+            raise DriveAPIError(f"get_parents: invalid file_id {file_id!r}")
+        try:
+            resp = self._timed_get(
+                f"{DRIVE_API}/files/{file_id}",
+                headers=self._headers(),
+                params={"fields": "parents", **_SHARED_DRIVES},
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            raise DriveAPIError(f"get_parents({file_id}) failed: {e}") from e
+        return resp.json().get("parents") or []
+
     def export_file(self, file_id: str, mime_type: str) -> bytes:
         """Export a Google-native file (e.g. a Sheet) as `mime_type`."""
         try:

@@ -27,6 +27,16 @@ class FakeDrive:
         self.files = files
         self.calls = []
 
+    # Folder tree: ROOT (allowed) > folderA, looseFolder; synthRoot (NOT allowed) > internalFixtures.
+    FOLDER_PARENTS = {"folderA": ["ROOT"], "looseFolder": ["ROOT"], "ROOT": [], "internalFixtures": ["synthRoot"],
+                      "synthRoot": []}
+
+    def get_parents(self, file_id):
+        self.calls.append(("parents", file_id))
+        if file_id in self.FOLDER_PARENTS:
+            return self.FOLDER_PARENTS[file_id]
+        return [self.files.get(file_id, {}).get("parent", "looseFolder")]
+
     def get_metadata(self, file_id):
         self.calls.append(("meta", file_id))
         f = self.files[file_id]
@@ -50,7 +60,7 @@ class FakeDrive:
 
 
 @pytest.fixture
-def drive(monkeypatch):
+def drive(monkeypatch, allowed_root):
     fake = FakeDrive(
         {
             "fileCSV": {"name": "answers_scored_bednets.csv", "mimeType": "text/csv", "parent": "folderA",
@@ -72,6 +82,14 @@ def drive(monkeypatch):
     monkeypatch.setattr(gf, "_drive", lambda: fake)
     monkeypatch.setattr(gf, "_caller_opportunity_ids", lambda request, token: {OPP})
     return fake
+
+
+@pytest.fixture(autouse=True)
+def allowed_root(settings, monkeypatch):
+    """ROOT is the allowed tree. Stamping checks containment too, so tests that stamp
+    without the `drive` fixture get an empty fake whose unknown ids sit under ROOT."""
+    settings.LABS_WORKFLOW_GDRIVE_ROOT_IDS = ["ROOT"]
+    monkeypatch.setattr(gf, "_drive", lambda: FakeDrive({}))
 
 
 def _source(**kw):
@@ -148,8 +166,10 @@ def test_only_dimagi_staff_can_authorize():
 
 
 def test_authorization_is_bound_to_the_opportunity(drive):
-    with pytest.raises(gf.GDriveSourceError, match="not authorized for opportunity 999"):
-        gf.fetch_gdrive_rows_as_visit_dicts(_source(file_id="fileCSV"), 999)
+    src = _source(file_id="fileCSV")
+    drive.calls.clear()  # stamping walks the tree; the READ must touch nothing
+    with pytest.raises(gf.GDriveSourceError, match="not authorized for this pipeline in opportunity 999"):
+        gf.fetch_gdrive_rows_as_visit_dicts(src, 999)
     assert drive.calls == []
 
 
@@ -224,15 +244,19 @@ def test_caller_who_is_not_a_member_is_refused_before_touching_drive(drive, monk
     """A stamp names an opportunity; it is not a pass to it (a clone or fan-out can
     run a pipeline for an opportunity the caller is not in)."""
     monkeypatch.setattr(gf, "_caller_opportunity_ids", lambda request, token: {42})
+    src = _source(file_id="fileCSV")
+    drive.calls.clear()  # stamping walks the tree; the READ must touch nothing
     with pytest.raises(gf.GDriveSourceError, match="not a member of opportunity 1251"):
-        gf.fetch_gdrive_rows_as_visit_dicts(_source(file_id="fileCSV"), OPP)
+        gf.fetch_gdrive_rows_as_visit_dicts(src, OPP)
     assert drive.calls == []
 
 
 def test_unresolvable_caller_is_refused(drive, monkeypatch):
     monkeypatch.setattr(gf, "_caller_opportunity_ids", lambda request, token: None)
+    src = _source(file_id="fileCSV")
+    drive.calls.clear()  # stamping walks the tree; the READ must touch nothing
     with pytest.raises(gf.GDriveSourceError, match="cannot confirm who is reading"):
-        gf.fetch_gdrive_rows_as_visit_dicts(_source(file_id="fileCSV"), OPP)
+        gf.fetch_gdrive_rows_as_visit_dicts(src, OPP)
     assert drive.calls == []
 
 
@@ -252,8 +276,9 @@ def test_staff_resave_does_not_authorize_a_target_someone_else_stored():
     edited = {**planted, "fields": [{"name": "x", "path": "row.x"}]}
     out = gf.authorize_schema_drive_source(edited, OPP, STAFF, previous_schema=planted)
     assert "authorization" not in out["data_source"]
-    forced = gf.authorize_schema_drive_source(edited, OPP, STAFF, previous_schema=planted, force=True)
-    gf.verify_gdrive_authorization(DataSourceConfig(**forced["data_source"]), OPP)
+    # ...and even a deliberate staff authorization cannot reach outside the allowed tree.
+    with pytest.raises(gf.GDriveSourceError, match="not inside an allowed workflow-data folder"):
+        gf.authorize_schema_drive_source(edited, OPP, STAFF, previous_schema=planted, force=True)
 
 
 def test_resave_without_the_authorization_field_carries_the_stored_stamp():
@@ -326,3 +351,79 @@ def test_pipeline_gates_cache_only_reads(monkeypatch):
         pipeline.get_period_scoped_result_only(config, OPP)
     events = list(pipeline.stream_analysis(config, OPP))
     assert events[-1][0] == "error" and "not been authorized" in events[-1][1]["message"]
+
+
+# --------------------------------------------------------------------------- containment
+
+
+def test_a_target_outside_the_allowed_tree_cannot_be_stamped():
+    with pytest.raises(gf.GDriveSourceError, match="not inside an allowed workflow-data folder"):
+        gf.authorize_gdrive_source({"type": "gdrive", "folder_id": "internalFixtures"}, OPP, STAFF)
+
+
+def test_a_stamped_target_moved_out_of_the_tree_is_refused_at_read(drive):
+    src = _source(file_id="fileCSV")
+    drive.files["fileCSV"]["parent"] = "internalFixtures"  # moved after authorization
+    with pytest.raises(gf.GDriveSourceError, match="not inside an allowed workflow-data folder"):
+        gf.fetch_gdrive_rows_as_visit_dicts(src, OPP)
+    assert ("download", "fileCSV") not in drive.calls
+
+
+def test_the_root_itself_is_readable(drive):
+    drive.files["fileCSV"]["parent"] = "ROOT"
+    assert gf.fetch_gdrive_rows_as_visit_dicts(_source(folder_id="ROOT"), OPP)
+
+
+def test_no_root_configured_turns_drive_sources_off(settings):
+    settings.LABS_WORKFLOW_GDRIVE_ROOT_IDS = []
+    with pytest.raises(gf.GDriveSourceError, match="not enabled"):
+        gf.authorize_gdrive_source({"type": "gdrive", "file_id": "fileCSV"}, OPP, STAFF)
+
+
+def test_parent_cycles_terminate():
+    class Loop(FakeDrive):
+        def get_parents(self, file_id):
+            return ["b"] if file_id == "a" else ["a"]
+
+    with pytest.raises(gf.GDriveSourceError, match="not inside"):
+        gf.assert_under_allowed_root(Loop({}), "a")
+
+
+# --------------------------------------------------------------------------- second review
+
+
+def test_a_stamp_is_bound_to_its_pipeline(drive):
+    """Any member can read a stamp; pasted into another pipeline it must not verify."""
+    stamped = gf.authorize_gdrive_source({"type": "gdrive", "file_id": "fileCSV"}, OPP, STAFF, pipeline_id=7)
+    src = DataSourceConfig(**stamped)
+    assert gf.fetch_gdrive_rows_as_visit_dicts(src, OPP, pipeline_id=7)
+    with pytest.raises(gf.GDriveSourceError, match="not authorized for this pipeline"):
+        gf.fetch_gdrive_rows_as_visit_dicts(src, OPP, pipeline_id=8)
+
+
+def test_celery_mock_request_resolves_membership_from_its_token(monkeypatch):
+    """workflow/tasks.py builds a request whose labs_oauth holds only a token; that
+    must read the org tree from Connect, not count as 'member of nothing'."""
+    from connect_labs.labs.integrations.connect import oauth
+
+    seen = {}
+
+    def fake_fetch(token, **kw):
+        seen["token"] = token
+        return {"opportunities": [{"id": OPP}]}
+
+    monkeypatch.setattr(oauth, "fetch_user_organization_data", fake_fetch)
+    request = SimpleNamespace(user=None, session={"labs_oauth": {"access_token": "job-tok", "expires_at": 0}})
+    monkeypatch.setattr("connect_labs.labs.integrations.ocs.ocs_tokens.current_mcp_caller", lambda: None)
+    assert gf._caller_opportunity_ids(request, None) == {OPP}
+    assert seen["token"] == "job-tok"
+
+
+@pytest.mark.parametrize(
+    "content, name",
+    [(b"{not json", "x.json"), ("caf\xe9".encode("cp1252") + b"\n1\n", "x.csv")],
+)
+def test_unreadable_files_are_named_not_raw_errors(drive, content, name):
+    drive.files["bad"] = {"name": name, "mimeType": "", "content": content}
+    with pytest.raises(gf.GDriveSourceError, match=f"{name} could not be read"):
+        gf.fetch_gdrive_rows_as_visit_dicts(_source(file_id="bad"), OPP)

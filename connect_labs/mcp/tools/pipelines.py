@@ -283,7 +283,9 @@ def _validate_pipeline_schema(schema: dict) -> None:
             )
 
 
-def _authorize_drive_source(schema: dict, opportunity_id: int, user, previous_schema=None, force=False) -> dict:
+def _authorize_drive_source(
+    schema: dict, opportunity_id: int, user, previous_schema=None, force=False, *, pipeline_id=None
+) -> dict:
     """Settle a gdrive data_source's authorization before save/preview; see gdrive_fetcher."""
     from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import (
         GDriveSourceError,
@@ -291,7 +293,9 @@ def _authorize_drive_source(schema: dict, opportunity_id: int, user, previous_sc
     )
 
     try:
-        return authorize_schema_drive_source(schema, opportunity_id, user, previous_schema, force)
+        return authorize_schema_drive_source(
+            schema, opportunity_id, user, previous_schema, force, pipeline_id=pipeline_id
+        )
     except GDriveSourceError as e:
         raise MCPToolError("PERMISSION_DENIED", str(e))
     except ValueError as e:
@@ -362,7 +366,12 @@ def pipeline_update_schema(
             )
 
         schema = _authorize_drive_source(
-            schema, opportunity_id, user, previous_schema=current.schema, force=authorize_drive_source
+            schema,
+            opportunity_id,
+            user,
+            previous_schema=current.schema,
+            force=authorize_drive_source,
+            pipeline_id=pipeline_id,
         )
         updated = pda.update_definition(
             definition_id=pipeline_id,
@@ -503,7 +512,11 @@ def pipeline_preview(
             # Against the SAVED schema: an unchanged Drive target previews under its
             # stored stamp; a new one needs Dimagi staff (stamped for this preview only).
             schema_override = _authorize_drive_source(
-                schema_override, opportunity_id, user, previous_schema=(definition.data or {}).get("schema")
+                schema_override,
+                opportunity_id,
+                user,
+                previous_schema=(definition.data or {}).get("schema"),
+                pipeline_id=pipeline_id,
             )
 
         # Execution schema used for error-hint generation (override wins when
