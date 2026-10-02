@@ -494,8 +494,9 @@ class ComparisonView(_Base):
                     items[item_id] = self.op("item_get", item_id=item_id)
                 context["set_aside"].append({"quote": quote, "item": items.get(item_id)})
         context["comparison"] = comparison
-        # The first offer that can still be awarded carries id="award", so a link
-        # ending "#award" lands on its form. One per page: ids are unique.
+        # The first offer that can still be awarded carries id="award" on its
+        # ranked ROW, so a link ending "#award" frames the supplier, its figures
+        # and the award form under them together. One per page: ids are unique.
         context["award_anchor_quote_id"] = next(
             (
                 row.get("quote_id")
@@ -549,6 +550,11 @@ class ComparisonView(_Base):
         if comparison and comparison.get("ranked_by"):
             column = next((c for c in comparison["columns"] if c["key"] == comparison["ranked_by"]), None)
             context["ranked_by_label"] = column["label"] if column else comparison["ranked_by"]
+        # The ranking basis is marked on its own column's header ("ranked by,
+        # lowest first"), not in a label floating at the right above the table.
+        # The floating label stays only for the case the column is not shown.
+        context["ranked_by_key"] = (comparison or {}).get("ranked_by")
+        context["ranked_in_table"] = any(c.get("key") == context["ranked_by_key"] for c in context["table_columns"])
         return context
 
     def post(self, request, tender_id, *args, **kwargs):

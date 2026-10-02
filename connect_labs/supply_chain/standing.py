@@ -204,10 +204,8 @@ def _award_price(award) -> str:
     from connect_labs.supply_chain.procurement.services.comparison import as_quoted_words
 
     holder = quote.item or quote.commodity
-    words = as_quoted_words(quote, getattr(holder, "base_unit", ""), getattr(holder, "pack_unit", ""))
-    amount, _, rest = words.partition(" ")
-    currency, _, per = rest.partition(" ")
-    return f"{currency} {amount}" + (f" {per}" if per else "")
+    # Already currency first: "USD 42.50 per carton".
+    return as_quoted_words(quote, getattr(holder, "base_unit", ""), getattr(holder, "pack_unit", ""))
 
 
 def _committed_total(row) -> str:
@@ -445,6 +443,10 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
         gaps = _award_gaps(award)
         if gaps:
             stale.append(Flag(f"Awarded quote: {gaps}", AWARDED_GAP_RULE))
+    # By importance, not by the order they were worked out in: what the chosen
+    # offer still leaves open first, then the quotes that cannot be compared,
+    # then the suppliers to chase for a reply.
+    stale.sort(key=_flag_rank)
 
     detail = ""
     lines = []
@@ -480,6 +482,11 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
     else:
         waiting_on = "invitations"
     return waiting_on, detail, stale, tuple(lines) if len(lines) > 1 else (), len(silent)
+
+
+def _flag_rank(flag) -> int:
+    """0 for the awarded-quote flag, 1 for "can't compare yet", 2 for a no-reply reminder."""
+    return {AWARDED_GAP_RULE: 0, BLOCKED_RULE: 1, NO_REPLY_RULE: 2}.get(getattr(flag, "rule", None), 3)
 
 
 def _blocked(tender, live, skip_quote=None) -> tuple[list[str], list[str]]:

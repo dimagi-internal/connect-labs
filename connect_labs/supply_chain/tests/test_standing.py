@@ -321,8 +321,8 @@ class TestTender:
         _outreach(da, tender, base["suppliers"][1], datetime.date(2026, 8, 1), responded=True)
         _quote(da, tender, base["suppliers"][1], **_PACK)  # basis not stated
         assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == [
-            "No reply in 40 days: Northwind Foods",
             "Can't compare yet: Baobab Nutrition — missing: freight, duties",
+            "No reply in 40 days: Northwind Foods",
         ]
 
         op(da, "tender_update", SEP_1, tender_id=tender["id"], data={"status": "closed"})
