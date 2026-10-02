@@ -309,6 +309,9 @@ class ComparisonRow:
         return {
             "outcome": outcome,
             "summary": summary,
+            # How many requirements the offer was held against, for the chip a
+            # passing offer wears: "Meets the 1 spec requirement".
+            "requirement_count": len(outcomes),
             # The requirements nobody has stated a figure for, by name: a
             # blocked card lists the ones its blocker is not, as not blocking.
             "not_stated": [

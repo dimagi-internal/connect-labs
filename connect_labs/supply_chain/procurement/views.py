@@ -39,6 +39,7 @@ from connect_labs.supply_chain.fulfilment.forms import DocumentForm
 from connect_labs.supply_chain.history.timeline import (
     ai_entered_quotes,
     corrections_for_quotes,
+    reminders_for_outreach,
     timeline_for_tender,
 )
 from connect_labs.supply_chain.identity import person_name as _person_name
@@ -59,6 +60,7 @@ from connect_labs.supply_chain.procurement.forms import (
 )
 from connect_labs.supply_chain.procurement.services.comparison import RANKING_RULE
 from connect_labs.supply_chain.values import quantity_phrase, unit_noun
+from connect_labs.supply_chain.views import mark_changed
 
 
 def _days_waiting(sent_on):
@@ -75,6 +77,34 @@ def _days_waiting(sent_on):
     except (TypeError, ValueError):
         return None
     return (date.today() - sent).days
+
+
+def _ordinal(n: int) -> str:
+    """1st, 2nd, 3rd, 4th ... 11th, 12th, 13th ... 21st."""
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _deadline_passed(tender, as_of=None):
+    """For an open tender whose response deadline is behind it: the deadline and how long ago.
+
+    `{"day": date, "days": 3}`, or None. An open tender read "response deadline
+    29 Sep 2026" on 2 Oct as if that were still to come. Counted from the as-of
+    day on a rewound page, so it says what the page said then.
+    """
+    if (tender or {}).get("status") != "open" or not tender.get("response_deadline"):
+        return None
+    try:
+        deadline = date.fromisoformat(str(tender["response_deadline"])[:10])
+    except ValueError:
+        return None
+    days = ((as_of or date.today()) - deadline).days
+    return {"day": deadline, "days": days} if days > 0 else None
+
+
+def _changed(url, key, anchor):
+    """`url` arriving back at the row a form just saved: "?changed=outreach-12#outreach"."""
+    return f"{url}?changed={key}#{anchor}"
 
 
 # The quote-entry form submits every field as a plain string, but the
@@ -119,11 +149,25 @@ class TenderDetailView(_Base):
         if tender is None:
             raise Http404(f"no tender {tender_id} in this programme")
         context["tender"] = tender
+        as_of = getattr(self.request, "supply_as_of", None)
         outreach = self.op("outreach_list", tender_id=tender_id)
+        # How many times each supplier has been chased, from the history: the
+        # record holds only the last day ("25 Sep 2026 · 2nd reminder").
+        reminders = reminders_for_outreach(
+            [o.get("id") for o in outreach], program_id=_access(self.request).program_id, until=as_of
+        )
         for o in outreach:
             o["days_waiting"] = None if o.get("responded") else _days_waiting(o.get("sent_on"))
-        context["outreach"] = outreach
-        context["owed"] = self.op("commitment_list", tender_id=tender_id)
+            count = reminders.get(o.get("id"), 0)
+            if o.get("last_reminder_on"):
+                count = max(count, 1)
+            o["reminder_count"] = count
+            o["reminder_text"] = f"{_ordinal(count)} reminder" if count else ""
+        # The row a form just saved is picked out on arrival ("?changed=outreach-12").
+        changed = self.request.GET.get("changed")
+        context["outreach"] = mark_changed(outreach, "outreach", changed)
+        context["deadline_passed"] = _deadline_passed(tender, as_of)
+        context["owed"] = mark_changed(self.op("commitment_list", tender_id=tender_id), "commitment", changed)
         # The emails due on this round now, for Sophie to copy into her own
         # mailbox. Listed in the order a round runs and then by name -- not
         # ranked, and folded shut (design doc section 22: the product drafts
@@ -195,10 +239,28 @@ class TenderDetailView(_Base):
         owner_id = tender.get("owner_org_id")
         if owner_id:
             context["owner_name"] = LabsOrg.objects.filter(pk=owner_id).values_list("name", flat=True).first() or ""
+        from connect_labs.supply_chain.models import Supplier
+
         invited_ids = tender.get("invited_org_ids") or []
         context["invited_orgs"] = LabsOrg.objects.filter(pk__in=invited_ids).order_by("name")
+        # Not anyone already invited, or already asked directly (on the outreach
+        # above): offering them again reads as if they had not been.
+        access = _access(self.request)
+        asked_supplier_ids = [o.get("supplier_id") for o in outreach if o.get("supplier_id")]
+        asked_org_ids = (
+            list(
+                Supplier.objects.filter(scope_key=access.scope_key, pk__in=asked_supplier_ids).values_list(
+                    "org_id", flat=True
+                )
+            )
+            if asked_supplier_ids and access.program_id
+            else []
+        )
         context["invitable_orgs"] = (
-            LabsOrg.objects.filter(supplier_profile__isnull=False).exclude(pk__in=invited_ids).order_by("name")[:200]
+            LabsOrg.objects.filter(supplier_profile__isnull=False)
+            .exclude(pk__in=invited_ids)
+            .exclude(pk__in=asked_org_ids)
+            .order_by("name")[:200]
         )
         # What changed on this tender and its children, and who told us. Scoped
         # by this program as well as the tender, and cut at the as-of date.
@@ -956,7 +1018,13 @@ class OutreachReplyView(OperationFormView):
         return reverse("supply_chain:procurement_tender_detail", args=[self._outreach().tender_id])
 
     def redirect_to(self, result):
-        return reverse("supply_chain:procurement_tender_detail", args=[result["tender_id"]])
+        # Back to the row just saved, picked out, rather than the top of the
+        # tender: the edit is otherwise invisible on arrival.
+        return _changed(
+            reverse("supply_chain:procurement_tender_detail", args=[result["tender_id"]]),
+            f"outreach-{result['id']}",
+            "outreach",
+        )
 
 
 class OutreachDeleteView(OperationFormView):
@@ -1356,4 +1424,5 @@ class CommitmentResolveView(OperationFormView):
         return self._back()
 
     def redirect_to(self, result):
-        return self._back()
+        # To what we owe, with the row just resolved picked out.
+        return _changed(self._back(), f"commitment-{self.commitment().pk}", "owed")

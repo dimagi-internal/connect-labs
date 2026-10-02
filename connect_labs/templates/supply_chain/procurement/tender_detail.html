@@ -7,7 +7,13 @@
   <div>
     <h1 class="text-xl font-semibold text-gray-900">{{ tender.label }}</h1>
     <p class="text-sm text-gray-600">
-      Status: {{ tender.status|title }} — response deadline {{ tender.response_deadline|day|default:"not set" }}
+      {% if deadline_passed %}
+        {% comment %}An open tender whose deadline is behind it says so: "response deadline
+        29 Sep 2026" on 2 Oct read as a date still to come.{% endcomment %}
+        Status: <span data-testid="deadline-passed">Open — deadline passed {{ deadline_passed.day|day }} ({{ deadline_passed.days }} day{{ deadline_passed.days|pluralize }} ago)</span>
+      {% else %}
+        Status: {{ tender.status|title }} — response deadline {{ tender.response_deadline|day|default:"not set" }}
+      {% endif %}
     </p>
     {% if tender.slug %}
       <p class="text-sm text-gray-600 mt-1">
@@ -77,61 +83,10 @@
   </div>
 </div>
 
-<div class="bg-white border border-brand-border-light rounded-lg p-4 mb-6">
-  <h2 class="text-sm font-semibold text-gray-900">Invited suppliers</h2>
-  <p class="text-sm text-gray-600 mt-1">
-    {% if tender_is_over %}Closed to further quotes, so no one else is invited.{% elif tender.visibility == "private" %}This tender is restricted: only the suppliers below can see it and bid.{% else %}This tender is public, so any registered supplier can bid. The list matters once it is made private.{% endif %}
-  </p>
-  <ul class="mt-2 text-sm">
-    {% for org in invited_orgs %}
-      <li class="flex items-center gap-3 py-1">
-        <span>{{ org.name }}</span>
-        {% if not supply_as_of %}
-        <form method="post" action="{% url 'supply_chain:procurement_tender_uninvite_org' tender.id %}" class="inline">
-          {% csrf_token %}
-          <input type="hidden" name="org" value="{{ org.pk }}">
-          <button type="submit" class="text-xs text-gray-600 hover:text-red-700 underline">Remove</button>
-        </form>
-        {% endif %}
-      </li>
-    {% empty %}
-      {% comment %}Suppliers asked directly are invited too: "No one invited yet" above
-      an outreach table listing them contradicted it.{% endcomment %}
-      {% if asked_names %}
-        <li data-testid="asked-directly" class="text-gray-700">Asked directly: {{ asked_names|join:", " }} <span class="text-gray-600">— see Outreach below.</span></li>
-      {% else %}
-        <li class="text-gray-600">No one invited yet.</li>
-      {% endif %}
-    {% endfor %}
-  </ul>
-  {% if invitable_orgs and not supply_as_of and not tender_is_over %}
-    <form method="post" action="{% url 'supply_chain:procurement_tender_invite_org' tender.id %}" class="mt-3 flex items-center gap-2">
-      {% csrf_token %}
-      <label for="invite-org" class="text-sm text-gray-700">Invite a registered supplier</label>
-      <select id="invite-org" name="org" class="text-sm border border-gray-300 rounded-md px-2 py-1">
-        {% for org in invitable_orgs %}<option value="{{ org.pk }}">{{ org.name }}</option>{% endfor %}
-      </select>
-      <button type="submit" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Invite</button>
-    </form>
-  {% endif %}
-</div>
-
-{% if buys %}
-<div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-6">
-  <div class="px-4 py-2.5 border-b border-brand-border-light">
-    <h2 class="text-sm font-semibold text-gray-900">What this tender buys</h2>
-  </div>
-  <ul class="divide-y divide-gray-100">
-    {% for line in buys %}
-      <li class="px-4 py-2 text-sm text-gray-800 flex flex-wrap justify-between gap-2">
-        <span>{{ line.name }}{% if line.contents %} <span class="text-gray-600">— one unit holds {{ line.contents }}</span>{% endif %}</span>
-        <span class="tabular-nums text-gray-600">{{ line.quantity|qty:line.unit }}</span>
-      </li>
-    {% endfor %}
-  </ul>
-</div>
-{% endif %}
-
+{% comment %}
+Who replied and who is silent, first: it is what a round is chased on, so it
+sits above who is invited and what the tender buys.
+{% endcomment %}
 <div class="flex items-center justify-between mb-2">
   <h2 id="outreach" class="text-lg font-semibold text-gray-900 scroll-mt-20">Outreach</h2>
   {% if not supply_as_of %}
@@ -163,7 +118,7 @@
     </thead>
     <tbody class="divide-y divide-gray-200">
       {% for o in outreach %}
-      <tr>
+      <tr data-outreach-id="{{ o.id }}"{% if o.changed %} data-changed class="bg-yellow-50"{% endif %}>
         <td class="px-4 py-2 text-sm">
           <a href="{% url 'supply_chain:supplier_detail' o.supplier_id %}"
              class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:o.supplier_id|default:"Supplier" }}</a>
@@ -172,7 +127,7 @@
         <td class="px-4 py-2 text-sm text-gray-600">
           {{ o.days_waiting|default_if_none:"—" }}
         </td>
-        <td class="px-4 py-2 text-sm text-gray-600" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% else %}No{% endif %}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ o.response_kind|humanise|default:"—" }}</td>
           <td class="px-4 py-2 text-sm text-right whitespace-nowrap">
@@ -181,7 +136,7 @@
                class="text-brand-indigo hover:underline">Record a reply</a>
             <span class="text-gray-300 mx-1.5">·</span>
             <a href="{% url 'supply_chain:procurement_outreach_delete' o.id %}"
-               class="text-red-700 hover:underline">Delete</a>
+               class="text-gray-600 hover:text-red-700 hover:underline">Delete</a>
             {% endif %}
           </td>
       </tr>
@@ -192,6 +147,64 @@
   </table>
   </div>
 </div>
+
+<div class="bg-white border border-brand-border-light rounded-lg p-4 mb-6">
+  <h2 class="text-sm font-semibold text-gray-900">Invited suppliers</h2>
+  <p class="text-sm text-gray-600 mt-1">
+    {% if tender_is_over %}Closed to further quotes, so no one else is invited.{% elif tender.visibility == "private" %}This tender is restricted: only the suppliers below can see it and bid.{% else %}This tender is public, so any registered supplier can bid. The list matters once it is made private.{% endif %}
+  </p>
+  <ul class="mt-2 text-sm">
+    {% for org in invited_orgs %}
+      <li class="flex items-center gap-3 py-1">
+        <span>{{ org.name }}</span>
+        {% if not supply_as_of %}
+        <form method="post" action="{% url 'supply_chain:procurement_tender_uninvite_org' tender.id %}" class="inline">
+          {% csrf_token %}
+          <input type="hidden" name="org" value="{{ org.pk }}">
+          <button type="submit" class="text-xs text-gray-600 hover:text-red-700 underline">Remove</button>
+        </form>
+        {% endif %}
+      </li>
+    {% empty %}
+      {% comment %}Suppliers asked directly are invited too: "No one invited yet" above
+      an outreach table listing them contradicted it.{% endcomment %}
+      {% if asked_names %}
+        <li data-testid="asked-directly" class="text-gray-700">Asked directly: {{ asked_names|join:", " }} <span class="text-gray-600">— see Outreach above.</span></li>
+      {% else %}
+        <li class="text-gray-600">No one invited yet.</li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+  {% if invitable_orgs and not supply_as_of and not tender_is_over %}
+    <form method="post" action="{% url 'supply_chain:procurement_tender_invite_org' tender.id %}" class="mt-3 flex items-center gap-2">
+      {% csrf_token %}
+      <label for="invite-org" class="text-sm text-gray-700">Invite a registered supplier</label>
+      <select id="invite-org" name="org" required class="text-sm border border-gray-300 rounded-md px-2 py-1">
+        {% comment %}Nothing chosen until somebody chooses: a preselected first name was one
+        click from inviting a supplier nobody picked.{% endcomment %}
+        <option value="" selected>Choose a supplier…</option>
+        {% for org in invitable_orgs %}<option value="{{ org.pk }}">{{ org.name }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Invite</button>
+    </form>
+  {% endif %}
+</div>
+
+{% if buys %}
+<div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-6">
+  <div class="px-4 py-2.5 border-b border-brand-border-light">
+    <h2 class="text-sm font-semibold text-gray-900">What this tender buys</h2>
+  </div>
+  <ul class="divide-y divide-gray-100">
+    {% for line in buys %}
+      <li class="px-4 py-2 text-sm text-gray-800 flex flex-wrap justify-between gap-2">
+        <span>{{ line.name }}{% if line.contents %} <span class="text-gray-600">— one unit holds {{ line.contents }}</span>{% endif %}</span>
+        <span class="tabular-nums text-gray-600">{{ line.quantity|qty:line.unit }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 {% comment %}
 What we owe on this round: a supplier's questions to us, and our promises.
@@ -207,7 +220,7 @@ Open ones read as "waiting on us" on the overview (ruling 7 of the
 </div>
 <div class="bg-white rounded-lg shadow-sm mb-8 divide-y divide-gray-200" data-testid="owed">
   {% for c in owed %}
-    <div class="px-4 py-2 text-sm flex items-start justify-between gap-4" data-commitment-id="{{ c.id }}">
+    <div class="px-4 py-2 text-sm flex items-start justify-between gap-4{% if c.changed %} bg-yellow-50{% endif %}" data-commitment-id="{{ c.id }}"{% if c.changed %} data-changed{% endif %}>
       <div>
         <span class="font-medium text-gray-900">{{ c.owed_to }}</span>
         <span class="text-gray-600">· {% if c.kind == "question" %}asked us{% else %}we promised{% endif %} {{ c.raised_on|day }}</span>

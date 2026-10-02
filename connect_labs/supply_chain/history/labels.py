@@ -35,6 +35,8 @@ FIELD_LABELS = {
     ("Quote", "as_quoted_unit"): "Priced",
     ("Quote", "as_quoted_currency"): "Currency",
     ("Tender", "status"): "Status",
+    # What the outreach table heads the column: the day a reminder last went.
+    ("Outreach", "last_reminder_on"): "Last chased",
 }
 
 # What the pages call a model, where that differs from its verbose name: the
@@ -324,9 +326,27 @@ def _quote_price(values, lookup) -> str:
             row = lookup.row(model, values.get(key))
             unit = unit or (getattr(row, field, "") if row is not None else "")
     per = f"per {unit_noun(unit)}" if unit else (words(basis) if basis else "")
+    return " ".join(part for part in (price, per, _quote_terms(values)) if part)
+
+
+def _quote_terms(values) -> str:
+    """The terms a price was stated on: "(freight included)", "(DDP Kano: freight and duty included)".
+
+    The Incoterm leads when the supplier stated one, because it is what they
+    wrote; the freight and duty bases are what it was read as.
+    """
     freight = values.get("freight_basis") or "not_specified"
-    stated = "(basis not specified)" if freight == "not_specified" else f"(freight {freight})"
-    return " ".join(part for part in (price, per, stated) if part)
+    incoterm = (values.get("incoterm") or "").strip()
+    if not incoterm:
+        return "(basis not specified)" if freight == "not_specified" else f"(freight {freight})"
+    duties = values.get("duties_basis") or "not_specified"
+    if freight != "not_specified" and freight == duties:
+        basis = f"freight and duty {freight}"
+    else:
+        basis = ", ".join(
+            f"{what} {how}" for what, how in (("freight", freight), ("duty", duties)) if how != "not_specified"
+        )
+    return f"({incoterm}: {basis})" if basis else f"({incoterm})"
 
 
 def _identity(model, values, lookup) -> str:
