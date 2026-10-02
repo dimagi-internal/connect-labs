@@ -87,6 +87,7 @@ entity:
   plural: babies             # used in explanations
   key: baby_case_id          # the visit column that identifies a baby within an opportunity
   cohort_date: 'COALESCE(reg_date, first_visit::timestamp)'   # which month a baby belongs to
+  worker: last_visit         # which worker a baby counts for (see below); default alphabetical
 visit_columns:               # extra columns added to every visit row
   - name: child_alive_no
     word_match: { column: death_visits, word: 'no' }   # the answer contains the word "no"
@@ -98,6 +99,18 @@ pipelines:
   entity: children           # the report's pipeline the visit rows are built from
   extra_fields: { weight_g: visits }   # a column taken from another of the report's pipelines
 ```
+
+**Which worker an entity counts for.** One entity is often visited by more than one worker, say a mother handed from one FLW to another. It is still one row, so at the worker scopes (`flw`, `flw_month`, `case`) it counts for exactly one of them. `entity.worker` chooses which:
+
+| `entity.worker` | The entity counts for | Use it when |
+| --- | --- | --- |
+| `alphabetical` (default) | the visitor whose username sorts first | never by choice. It keeps older registries' numbers unchanged, but nothing about a name says the case is theirs |
+| `first_visit` | the worker of its first visit | the worker who found or registered it owns it |
+| `last_visit` | the worker of its latest visit, as of the report date | the worker who has it now owns it (MBW's audit) |
+
+Ties on the visit date break on the visit id. With `first_visit` or `last_visit`, a one-worker read (`flw=`) returns exactly the entities that worker owns, each with all of its visits, including other workers' visits. Those are the same rows the `flw` scope gives that worker across the whole cohort.
+
+This decides whose entity it is, not whose visits they are. A measure that should credit each VISIT to the worker who made it, such as minutes per visit, is not an entity measure.
 
 and the indicators document can set defaults:
 
@@ -450,6 +463,7 @@ Every registry starts by saying what it counts. Answer these questions in the re
 | --- | --- |
 | What is one row, and which visit column identifies it? | `entity: {name, plural, key}` |
 | Which month does a row belong to? | `entity.cohort_date` (defaults to a `first_visit` aggregate) |
+| Which worker does a row count for, when several visited it? | `entity.worker`: `first_visit`, `last_visit`, or the default `alphabetical` |
 | Which extra per-visit columns do the rules need? | `visit_columns` (`word_match`, `sql`, `column`, or a window: `previous`, `distance_from_previous`) |
 | Which of the report's pipelines feed it? | `pipelines: {entity, extra_fields}`, plus `lookups` for a pipeline on another source (CommCare HQ forms) |
 | Is there a per-entity reading series (weights, MUAC…)? | `weight_series` with its `value_column`, or leave it out |

@@ -11,6 +11,8 @@ engine with a registry attached. A registry now declares it, in `properties_doc`
       key: baby_case_id           # Layer-1 column identifying it within an opportunity
       cohort_date: 'COALESCE(reg_date, first_visit::timestamp)'
                                   # over visit_agg columns; optional, default first_visit
+      worker: last_visit          # which worker an entity counts for at the flw scope:
+                                  #   alphabetical (default) | first_visit | last_visit
     visit_columns:                # derived columns added to every Layer-1 visit row
       - {name: child_alive_no, word_match: {column: death_visits, word: 'no'}}
       - {name: ebf_recorded, sql: 'ebf_visits IS NOT NULL'}
@@ -57,6 +59,23 @@ from typing import Any
 from connect_labs.semantic import legacy
 
 DEFAULT_COHORT_DATE = "first_visit"
+
+# Which worker an entity belongs to, at every scope that groups by worker (flw,
+# flw_month, case). An entity is visited by whoever visited it, often more than one
+# worker -- a mother handed from one FLW to another -- but it is ONE row, so it
+# counts for one of them.
+#
+#   alphabetical -- the lowest username among its visitors. The original rule, kept
+#                   as the default so no existing registry's per-worker numbers move.
+#                   It is arbitrary: nothing about a worker's name says the case is
+#                   theirs.
+#   first_visit  -- the worker of its first visit (who found it).
+#   last_visit   -- the worker of its latest visit as of the report date (who has
+#                   it now). MBW's audit credits a mother this way.
+#
+# Ties on the visit date break on visit_id, as the window columns do.
+WORKER_ATTRIBUTIONS = ("alphabetical", "first_visit", "last_visit")
+DEFAULT_WORKER_ATTRIBUTION = "alphabetical"
 
 
 # Visit-column kinds that read NEIGHBOURING visits (a window), not the visit alone.
@@ -122,8 +141,15 @@ class RegistryModel:
     value_column: str | None
     min_denominator: int | None
     lookups: tuple[Lookup, ...] = ()
+    worker: str = DEFAULT_WORKER_ATTRIBUTION
     # Which sections came from `legacy.py`. Empty for a registry that declares its model.
     shimmed: tuple[str, ...] = field(default=())
+
+    @property
+    def worker_follows_visits(self) -> bool:
+        """True when the entity's worker is chosen by visit ORDER, so a one-worker
+        evaluation must still see the other workers' visits to know whose it is."""
+        return self.worker != DEFAULT_WORKER_ATTRIBUTION
 
     @property
     def row_id(self) -> str:
@@ -240,6 +266,7 @@ def resolve_model(props_doc: dict[str, Any] | None, indicators_doc: dict[str, An
         value_column=value_column,
         min_denominator=int(min_den) if isinstance(min_den, (int, float)) and not isinstance(min_den, bool) else None,
         lookups=lookups,
+        worker=str(entity.get("worker") or DEFAULT_WORKER_ATTRIBUTION),
         shimmed=tuple(shimmed),
     )
 
