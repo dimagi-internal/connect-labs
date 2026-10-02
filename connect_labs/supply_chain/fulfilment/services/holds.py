@@ -27,10 +27,14 @@ class Hold:
     owed_to: str = ""  # who is waiting, when the record says
     shipment_id: int | None = None
     commitment_id: int | None = None
+    # The document's own name where the record gives one ("Form M" for a
+    # Nigerian import permit): carried on the shipment's requirement, never guessed.
+    name: str = ""
 
     def as_dict(self) -> dict:
         return {
             "what": self.what,
+            "name": self.name,
             "since": self.since.isoformat() if self.since else None,
             "owed_to": self.owed_to,
             "shipment_id": self.shipment_id,
@@ -92,6 +96,7 @@ def holds_for(contracts) -> dict[int, list[Hold]]:
                         # recorded is not that day: left unknown, not guessed.
                         since=None,
                         shipment_id=shipment.pk,
+                        name=str(entry.get("name") or "").strip(),
                     )
                 )
     for promise in Commitment.objects.filter(contract_id__in=by_id, resolved_on__isnull=True).select_related(

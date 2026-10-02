@@ -660,13 +660,10 @@ def test_with_nothing_comparable_the_page_does_not_claim_a_provisional_ranking(c
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
     body = response.content.decode()
 
-    assert "0 of 2 comparable" in body
-    # The replacement sentence itself, not just the absence of the wrong one:
-    # the count renders either way and the supplier names also appear in the
-    # "Needs info" cards below, so without this the whole no-ranking branch
-    # could be deleted and every other assertion here would still hold.
-    assert "0 of 2 comparable</strong>" in body
-    assert "each quote below is missing" in body
+    # Since the unanswered round's batch 3 the banner states only what is missing:
+    # the count, then who has not stated what (these rows carry no blockers).
+    assert "0 of 2 quotes can be compared.</strong>" in body
+    assert "could still beat it" not in body and "PROVISIONAL" not in body
     # Who has to answer is still reported.
     assert "EHA Clinics" in body
     assert "DABS" in body

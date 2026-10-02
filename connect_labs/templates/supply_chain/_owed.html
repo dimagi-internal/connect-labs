@@ -8,10 +8,20 @@ Takes: owed_open, owed_answered, owed_answered_expanded, resolve_label ("Mark
 answered" / "Mark done"), empty_text.
 {% endcomment %}
 <div class="bg-white border border-gray-200 rounded-lg shadow-sm divide-y divide-gray-200 mb-2" data-testid="owed">
+  {% comment %}A document a shipment is held on that only we can supply (holds.py), first:
+  it is what stops the goods.{% endcomment %}
+  {% for hold in owed_holds %}
+    <div data-testid="owed-hold" class="px-4 py-2 text-sm">
+      <span class="font-medium text-gray-900">{{ hold.what|capfirst }}{% if hold.name %} ({{ hold.name }}){% endif %}</span>
+      <span class="text-gray-700">— the shipment is held until we provide it</span>
+    </div>
+  {% endfor %}
   {% for c in owed_open %}
     {% include "supply_chain/_owed_row.html" %}
   {% empty %}
+    {% if not owed_holds %}
     <p class="px-4 py-3 text-sm text-gray-600">{% if owed_answered %}Nothing open: every one is answered.{% else %}{{ empty_text }}{% endif %}</p>
+    {% endif %}
   {% endfor %}
 </div>
 {% if owed_answered %}

@@ -29,9 +29,9 @@ scenes:
     note: the round is still open, past its deadline
   - &id001
     kind: hover
-    target: text:Connect Labs
+    target: text:What this tender buys
     seconds: 0.6
-    note: park the cursor off the content
+    note: park the cursor on a neutral heading
   - kind: hold
     seconds: 1.5
   concept_claim: Sophie's goal is a record that shows the suppliers who never replied as plainly as the replies,
@@ -114,35 +114,46 @@ scenes:
   actions:
   - kind: wait_for
     target: css:#history
-  - kind: scroll
-    value: top
   - kind: scroll_to
-    target: css:[data-testid=revision-line]:has-text('Quote · Harmattan Therapeutics')
+    target: css:#history
+  - kind: hold
+    seconds: 1.0
+  - kind: scroll_to
+    target: css:[data-testid=email-event]:has-text('Quote · Harmattan Therapeutics')
   - kind: click
-    target: css:[data-testid=revision-line]:has-text('Quote · Harmattan Therapeutics') [data-testid=source-toggle]
+    target: css:[data-testid=email-event]:has-text('Quote · Harmattan Therapeutics') [data-testid=source-toggle]
     must_succeed: true
     say: Harmattan
     note: Harmattan's pro-forma
   - kind: hold
-    seconds: 1.5
+    seconds: 1.8
+  - kind: scroll_to
+    target: css:[data-testid=email-event]:has-text('Quote · Kanem Foods Ltd')
   - kind: click
-    target: css:[data-testid=revision-line]:has-text('Quote · Kanem Foods Ltd') [data-testid=source-toggle]
+    target: css:[data-testid=email-event]:has-text('Quote · Kanem Foods Ltd') [data-testid=source-toggle]
     must_succeed: true
     say: Kanem
     note: Kanem's price, missing its pack size
   - kind: hold
-    seconds: 1.5
+    seconds: 1.8
+  - kind: scroll_to
+    target: css:[data-testid=email-event]:has-text('Northgate Commodities · Replied')
   - kind: click
-    target: css:[data-testid=revision-line]:has-text('Northgate Commodities · Replied') [data-testid=source-toggle]
+    target: css:[data-testid=email-event]:has-text('Northgate Commodities · Replied') [data-testid=source-toggle]
     must_succeed: true
     say: Northgate
     note: Northgate's questions instead of a price
-  - kind: scroll_to
-    target: css:[data-testid=revision-line]:has-text('Northgate Commodities · Replied') [data-testid=source-heading]
-  - *id001
   - kind: hold
-    seconds: 2.5
-    note: the three emails open, Northgate's centred
+    seconds: 1.8
+  - kind: scroll_to
+    target: css:[data-testid=email-event]:has-text('Quote · Kanem Foods Ltd') [data-testid=source-excerpt]
+  - kind: hover
+    target: text:History
+    seconds: 0.6
+    note: park the cursor on a neutral heading
+  - kind: hold
+    seconds: 2.0
+    note: the three emails open, each with what it carried
   concept_claim: Every reply the AI recorded appears in the round's history with the email excerpt, the sender's
     name and an AI mark, so Sophie can check the record against what the supplier said.
   design_intent: Trust comes from the supplier's own words beside what was recorded; the AI is the typist, never

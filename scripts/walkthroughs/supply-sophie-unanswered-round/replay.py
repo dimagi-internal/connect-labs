@@ -418,7 +418,8 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False) -> d
         "2026-09-26",
         "shipment_update",
         ref="<cfc-trk-4471-0926@crescent-freight.example.invalid>",
-        excerpt="HELD AT SEME BORDER - DOCUMENTATION (FORM M) / REVISED ETA KANO: 10/10/2026 ONCE FORM M IS "
+        excerpt="CARGO: 2000 CTNS RUTF / TRUCKS: 2 / HELD AT SEME BORDER - DOCUMENTATION (FORM M) / "
+        "REVISED ETA KANO: 10/10/2026 ONCE FORM M IS "
         "LODGED / CONSIGNEE TO PROVIDE FORM M / PAAR.",
         sender="Crescent Freight & Clearing",
         shipment_id=shipment["id"],

@@ -1355,3 +1355,11 @@ def lead_in(line):
     if not sep or not head.strip():
         return escape(text)
     return mark_safe(f"<strong>{escape(head)}</strong>:{escape(rest)}")
+
+
+@register.filter
+def email_events(timeline):
+    """A history's lines with those recorded from one email folded into one event (history.timeline)."""
+    from connect_labs.supply_chain.history.timeline import email_events as fold
+
+    return fold(list(timeline or []))
