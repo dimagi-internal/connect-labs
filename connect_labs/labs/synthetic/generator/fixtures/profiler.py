@@ -87,6 +87,17 @@ def profile_over_limit_rate(all_visits: list[dict]) -> float:
     return min(0.5, round(n / len(all_visits), 3))
 
 
+def persona_ids_by_username(visits_by_flw: dict[str, list[dict]]) -> dict[str, str]:
+    """Source username -> the persona id its clone worker gets (``flw_001`` = most visits).
+
+    The same volume ranking ``_profile_flw_personas`` numbers personas by. Ties keep
+    the order usernames first appear in the visits, so it is deterministic for one
+    export. The verbatim copy (``verbatim.py``) pairs source rows to clone visits by it.
+    """
+    ranked = sorted(visits_by_flw.items(), key=lambda kv: -len(kv[1]))
+    return {username: f"flw_{i + 1:03d}" for i, (username, _) in enumerate(ranked)}
+
+
 def _profile_flw_personas(
     visits_by_flw: dict[str, list[dict]],
     *,
@@ -1142,8 +1153,7 @@ def profile(
             date_paths=date_paths,
             categorical_paths=categorical_paths,
         )
-        ranked = sorted(visits_by_flw.items(), key=lambda kv: -len(kv[1]))
-        username_to_persona = {username: f"flw_{i + 1:03d}" for i, (username, _) in enumerate(ranked)}
+        username_to_persona = persona_ids_by_username(visits_by_flw)
         pool = []
         for series in structure.transplant_pool:
             persona = username_to_persona.get(series["owner"])

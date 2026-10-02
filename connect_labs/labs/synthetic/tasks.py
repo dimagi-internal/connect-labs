@@ -264,6 +264,7 @@ def run_synthetic_clone_opp(
     oauth_token: str,
     user_id: int,
     restricted: bool,
+    verbatim_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     """synthetic_clone_opp: profile every source, then generate a clone of each.
 
@@ -271,11 +272,17 @@ def run_synthetic_clone_opp(
     source was checked when the job was queued; the clones are written only onto
     labs-only ids the person may write (the same authorizer synthetic_clone_generate
     uses), and they are made visible to their creator.
+
+    ``verbatim_paths`` copies those fields' real values into each clone, for each
+    source whose raw visits the caller can read with their own token right now
+    (``verbatim.read_source_rows``; connect-labs#2150). A refused source still gets
+    its statistical clone, and the result says why its values were not copied.
     """
     from connect_labs.labs.synthetic.access import labs_only_target_denied_reason
     from connect_labs.labs.synthetic.clone_from_prod import generate_cohort, profile_cohort
     from connect_labs.labs.synthetic.cohort import CohortSpec
     from connect_labs.labs.synthetic.gdrive import DriveClient
+    from connect_labs.labs.synthetic.verbatim import read_source_rows
     from connect_labs.mcp.visit_access import restricted_job
     from connect_labs.users.models import User
 
@@ -301,7 +308,25 @@ def run_synthetic_clone_opp(
             spec, base_url=settings.CONNECT_PRODUCTION_URL, oauth_token=oauth_token, drive=drive, progress=progress
         )
         progress(1, 2, "Step 2 of 2: generating the clones")
-        spec, results = generate_cohort(spec, drive=drive, authorize=authorize, created_by=user, progress=progress)
+        # Read only now, after the profile is written: the rows go straight into the
+        # fixtures and never near a bundle.
+        verbatim, verbatim_refused = {}, {}
+        for source_id in spec.opportunity_ids if verbatim_paths else []:
+            source, reason = read_source_rows(
+                source_id,
+                paths=verbatim_paths,
+                base_url=settings.CONNECT_PRODUCTION_URL,
+                oauth_token=oauth_token,
+                caller=user,
+                restricted=restricted,
+            )
+            if source is not None:
+                verbatim[source_id] = source
+            else:
+                verbatim_refused[source_id] = reason
+        spec, results = generate_cohort(
+            spec, drive=drive, authorize=authorize, created_by=user, progress=progress, verbatim=verbatim
+        )
     if not user.view_synthetic_opps:
         user.view_synthetic_opps = True
         user.save(update_fields=["view_synthetic_opps"])
@@ -310,7 +335,15 @@ def run_synthetic_clone_opp(
         "program_id": spec.program_id,
         "program_name": spec.program_name,
         "clones": [
-            {"source_opportunity_id": r.source_opportunity_id, "opportunity_id": r.opportunity_id}
+            {
+                "source_opportunity_id": r.source_opportunity_id,
+                "opportunity_id": r.opportunity_id,
+                **(
+                    {"verbatim": r.verbatim or {"refused": verbatim_refused.get(r.source_opportunity_id)}}
+                    if verbatim_paths
+                    else {}
+                ),
+            }
             for r in results
             if not r.skipped
         ],

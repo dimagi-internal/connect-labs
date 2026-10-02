@@ -478,13 +478,15 @@ def synthetic_register(
     label: str | None = None,
 ) -> dict[str, Any]:
     _require_opportunity_access(user, opportunity_id)
+    existing = SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id).first()
+    if existing is None or existing.gdrive_folder_id != gdrive_folder_id:
+        _refuse_verbatim_folder(gdrive_folder_id)
     defaults: dict[str, Any] = {
         "gdrive_folder_id": gdrive_folder_id,
         "enabled": enabled,
     }
     if label is not None:
         defaults["label"] = label
-    existing = SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id).first()
     previous_folder_id = existing.gdrive_folder_id if existing else None
     if existing is None:
         # The creator is an access grant (is_accessible_to), so it is recorded on
@@ -645,6 +647,8 @@ def synthetic_repoint_by_source(
             "repoint by opportunity_id with synthetic_register instead",
         )
     _require_opportunity_access(user, row.opportunity_id)
+    if gdrive_folder_id != row.gdrive_folder_id:
+        _refuse_verbatim_folder(gdrive_folder_id)
     previous = row.gdrive_folder_id
     row.gdrive_folder_id = gdrive_folder_id
     row.enabled = enabled
@@ -933,6 +937,7 @@ def synthetic_create_labs_only(
 ) -> dict[str, Any]:
     if program_id is not None:
         _require_labs_only_program(user, program_id)
+    _refuse_verbatim_folder(gdrive_folder_id)
     # Not marked generated: the folder is the caller's, so its contents are unknown.
     row = register_labs_only_opp(
         label=label,
@@ -985,7 +990,10 @@ def _normalise_allowed_domains(raw: list[str]) -> list[str]:
         "clone-to-new-workspace), instead of regenerating the cascade. Only the "
         "opp's creator or a Dimagi-internal caller may change it: a partner who can "
         "read an opp cannot widen its audience. Refuses an empty list (that would "
-        "mean anyone). Labs-only opps only."
+        "mean anyone). Labs-only opps only. An opp holding real values copied from its "
+        "source (synthetic_clone_opp verbatim_paths) is different: only its creator may "
+        "widen it, only by individual email address (domains are refused), and each "
+        "person must be able to read the source's raw visits with their own account."
     ),
     input_schema={
         "type": "object",
@@ -995,7 +1003,10 @@ def _normalise_allowed_domains(raw: list[str]) -> list[str]:
                 "type": "array",
                 "items": {"type": "string"},
                 "minItems": 1,
-                "description": "The new allowlist, e.g. ['@sparkmicrogrants.org', '@dimagi.com'].",
+                "description": (
+                    "The new allowlist, e.g. ['@sparkmicrogrants.org', '@dimagi.com']. For an opp holding "
+                    "real values: individual addresses only, e.g. ['jane@example.org']."
+                ),
             },
         },
         "required": ["opportunity_id", "allowed_domains"],
@@ -1015,6 +1026,8 @@ def synthetic_set_allowed_domains(user, *, opportunity_id: int, allowed_domains:
             "INVALID_ARGUMENT",
             "Only labs-only opps have an allowlist; a real-backed opp is gated by Connect membership.",
         )
+    if row.verbatim_paths:
+        return _set_verbatim_viewers(user, row, allowed_domains)
     email = (getattr(user, "email", "") or "").lower()
     is_creator = bool(row.created_by_id) and row.created_by_id == getattr(user, "id", None)
     if not (is_creator or any(email.endswith(d) for d in DIMAGI_INTERNAL_DOMAINS)):
@@ -1041,6 +1054,41 @@ def synthetic_set_allowed_domains(user, *, opportunity_id: int, allowed_domains:
         "allowed_domains": list(row.allowed_domains),
         "previous_allowed_domains": before,
     }
+
+
+def _set_verbatim_viewers(user, row, entries: list[str]) -> dict[str, Any]:
+    """Widen an opp holding real values: named people who can read the source, only."""
+    from connect_labs.labs.synthetic.verbatim import add_viewers_denied_reason
+
+    emails, reason = add_viewers_denied_reason(row, user, entries, base_url=settings.CONNECT_PRODUCTION_URL)
+    if reason:
+        raise MCPToolError("PERMISSION_DENIED", reason)
+    before = list(row.allowed_emails or [])
+    row.allowed_emails = emails
+    row.save(update_fields=["allowed_emails", "updated_at"])
+    invalidate_cache()
+    logger.info(
+        "synthetic_set_allowed_domains (verbatim) opp=%s by=%s before=%s after=%s",
+        row.opportunity_id,
+        getattr(user, "email", "") or "<no email>",
+        before,
+        emails,
+    )
+    return {
+        "opportunity_id": row.opportunity_id,
+        "allowed_emails": emails,
+        "previous_allowed_emails": before,
+        "note": f"Holds real values copied from opportunity {row.cloned_from_opportunity_id}: "
+        "visible to its creator and these people only.",
+    }
+
+
+def _refuse_verbatim_folder(gdrive_folder_id) -> None:
+    from connect_labs.labs.synthetic.verbatim import folder_denied_reason
+
+    reason = folder_denied_reason(gdrive_folder_id)
+    if reason:
+        raise MCPToolError("PERMISSION_DENIED", reason)
 
 
 @register(
@@ -1105,6 +1153,8 @@ def synthetic_clone_to_labs_only(
     # real-backed one. Without this a caller could re-expose any registered folder
     # under an allowlist of their choosing.
     _require_opportunity_access(user, source_opportunity_id)
+    # A copy of real values is never re-exposed under a second allowlist.
+    _refuse_verbatim_folder(source.gdrive_folder_id)
     row = register_labs_only_opp(
         label=label or f"Clone of {source.label or source.opportunity_id}",
         gdrive_folder_id=source.gdrive_folder_id,
@@ -2267,6 +2317,18 @@ _STATE_WORDS = {
                     "field's overall spread but does not follow individual cases over time."
                 ),
             },
+            "verbatim_paths": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional. form_json paths (e.g. 'form.village') whose REAL values are copied into the "
+                    "clone verbatim. Treated as a copy of real data whatever the fields are: it happens only "
+                    "for a source whose raw visits your own Connect account can read (else the clone is "
+                    "statistical only and the result says why), it is recorded as an export, the clone is "
+                    "visible to you alone and can be widened only to named people who can read the source "
+                    "too, and reports say it holds real values from the source."
+                ),
+            },
         },
         "required": ["source_opportunity_ids"],
         "additionalProperties": False,
@@ -2274,13 +2336,23 @@ _STATE_WORDS = {
     is_write=True,
 )
 def synthetic_clone_opp(
-    user, *, source_opportunity_ids: list[int], program_name: str | None = None, case_timelines: bool = True
+    user,
+    *,
+    source_opportunity_ids: list[int],
+    program_name: str | None = None,
+    case_timelines: bool = True,
+    verbatim_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     from connect_labs.labs.synthetic.tasks import run_synthetic_clone_opp
+    from connect_labs.labs.synthetic.verbatim import normalise_paths
 
     from ..visit_access import caller_restricted
 
     opp_ids = [int(x) for x in source_opportunity_ids]
+    try:
+        paths = normalise_paths(verbatim_paths)
+    except ValueError as exc:
+        raise MCPToolError("INVALID_ARGUMENT", str(exc))
     for opp_id in opp_ids:
         _require_opportunity_access(user, opp_id)
     try:
@@ -2288,6 +2360,8 @@ def synthetic_clone_opp(
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token -- cannot read the real opportunities.")
     limit_args = {"opportunity_ids": sorted(opp_ids), "case_timelines": bool(case_timelines)}
+    if paths:
+        limit_args["verbatim_paths"] = paths
     running = _admit_profile(user, kind="clone_opp", opportunity_ids=opp_ids, args=limit_args)
     if running:
         return {**running, "poll_with": "synthetic_job_status"}
@@ -2300,6 +2374,9 @@ def synthetic_clone_opp(
             "oauth_token": token,
             "user_id": user.pk,
             "restricted": caller_restricted(),
+            # The gate (raw-visit access with this caller's token) runs in the job,
+            # at copy time, not here: access can change between queueing and copying.
+            "verbatim_paths": paths,
         },
         task_id=task_id,
     )

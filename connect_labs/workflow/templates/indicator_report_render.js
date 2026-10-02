@@ -1630,7 +1630,20 @@ function WorkflowUI({
                 From the programme report
               </R.Pill>
             ) : null}
-            {meta.synthetic ? (
+            {meta.real_values && meta.real_values.length ? (
+              meta.real_values.map(function (rv) {
+                // Real values copied verbatim from a source: never "synthetic".
+                return (
+                  <R.Pill tone="current" key={'rv-' + rv.opportunity_id}>
+                    {'Contains real values copied from opportunity ' +
+                      rv.source_opportunity_id +
+                      ' (fields: ' +
+                      (rv.fields || []).join(', ') +
+                      ')'}
+                  </R.Pill>
+                );
+              })
+            ) : meta.synthetic ? (
               <R.Pill tone="muted">Built on synthetic data</R.Pill>
             ) : null}
           </span>

@@ -58,12 +58,25 @@ def generated_folder_name(opportunity_id: int) -> str:
     return f"opp-{opportunity_id}-{timezone.now():%Y%m%d-%H%M%S}-generated"
 
 
-def upload_fixtures(*, drive: _Drive, opportunity_id: int, fixtures: dict[str, Any]) -> UploadResult:
+def verbatim_folder_name(opportunity_id: int) -> str:
+    """A folder holding real values copied from a source (``verbatim.py``).
+
+    Never ``-generated``: the ``synthetic_mark_generated`` backfill marks folders by
+    that suffix, and these must never be marked as generated data.
+    """
+    return f"opp-{opportunity_id}-{timezone.now():%Y%m%d-%H%M%S}-verbatim"
+
+
+def upload_fixtures(
+    *, drive: _Drive, opportunity_id: int, fixtures: dict[str, Any], contains_real_values: bool = False
+) -> UploadResult:
     parent_id = getattr(settings, "LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID", "")
     if not parent_id:
         raise RuntimeError("LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID is not set.")
 
-    folder_name = generated_folder_name(opportunity_id)
+    folder_name = (
+        verbatim_folder_name(opportunity_id) if contains_real_values else generated_folder_name(opportunity_id)
+    )
     folder_id = drive.create_folder(folder_name, parent_id=parent_id)
 
     counts: dict[str, int] = {}

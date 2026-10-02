@@ -31,6 +31,9 @@ def _record_export_audit(
     row_count: int,
     error: str | None,
     terminated_early: bool = False,
+    *,
+    user=None,
+    extra_metadata: dict | None = None,
 ) -> None:
     """Audit one bulk PHI fetch (visit/user exports). Best-effort, lazy import
     so this module stays importable outside a configured Django context.
@@ -55,6 +58,10 @@ def _record_export_audit(
       - any export cut short (``terminated_early``) — the caller saw some of a
         larger dataset, and the record has to say the read was partial,
       - any export that returned rows.
+
+    ``user`` attributes the event when no audit context carries the caller (a worker
+    job), and ``extra_metadata`` names what a re-export copied (identifiers only --
+    e.g. the verbatim clone copy's field paths, connect-labs#2150).
     """
     if not error and not terminated_early and not row_count:
         return
@@ -70,6 +77,8 @@ def _record_export_audit(
             metadata["error"] = error
         if terminated_early:
             metadata["terminated"] = "early"
+        if extra_metadata:
+            metadata.update(extra_metadata)
         service.record(
             Action.EXPORT,
             resource_type=resource_type,
@@ -77,6 +86,7 @@ def _record_export_audit(
             opportunity_id=int(opp_match.group(1)) if opp_match else None,
             outcome=Outcome.FAILURE if error else Outcome.SUCCESS,
             metadata=metadata,
+            user=user,
         )
     except Exception:  # pragma: no cover - audit must never break exports
         logger.exception("Export audit recording failed (non-fatal)")

@@ -52,9 +52,15 @@ def user_can_access_labs_only_program(user, program_id) -> bool:
     pid = _safe_int(program_id)
     if pid is None:
         return False
-    opps = SyntheticOpportunity.objects.filter(labs_only=True).filter(
-        Q(program_id=pid) | Q(program_id__isnull=True, opportunity_id=pid)
+    opps = list(
+        SyntheticOpportunity.objects.filter(labs_only=True).filter(
+            Q(program_id=pid) | Q(program_id__isnull=True, opportunity_id=pid)
+        )
     )
+    # A program-scoped read spans every opp in the program, so one carrying real
+    # values the user may not see closes the whole program to them (connect-labs#2150).
+    if any(o.verbatim_paths and not o.is_accessible_to(user) for o in opps):
+        return False
     return any(o.is_accessible_to(user) for o in opps)
 
 

@@ -930,6 +930,8 @@ function WorkflowUI({
   // Is this cohort synthetic? Decided server-side against the synthetic
   // registry and carried in the payload, so a saved run keeps its disclaimer.
   var runIsSynthetic = !!(P.meta && P.meta.synthetic);
+  // Values copied verbatim from a real source (connect-labs#2150): said, never hidden.
+  var realValues = (P.meta && P.meta.real_values) || [];
 
   // ── Case drill ────────────────────────────────────────────────────────────
   // The payload's case index, filtered to the opportunity (and worker) in hand.
@@ -3559,6 +3561,21 @@ function WorkflowUI({
       <ChartsRow />
 
       <AllIndicators />
+
+      {realValues.map(function (rv) {
+        return (
+          <p
+            key={'rv-' + rv.opportunity_id}
+            className="text-xs text-amber-800 max-w-3xl"
+          >
+            {'Contains real values copied from opportunity ' +
+              rv.source_opportunity_id +
+              ' (fields: ' +
+              (rv.fields || []).join(', ') +
+              ').'}
+          </p>
+        );
+      })}
 
       {runIsSynthetic ? (
         <p className="text-xs text-gray-400 max-w-3xl">
