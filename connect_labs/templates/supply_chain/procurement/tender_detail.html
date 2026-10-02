@@ -48,9 +48,16 @@
     <a data-testid="market-listing-link" href="{% url 'supply_chain:market_tender' tender.id %}"
        class="px-3 py-1.5 text-sm border border-gray-300 text-brand-indigo hover:bg-gray-50 rounded-md">Public market listing</a>
     {% endif %}
+    {% comment %}While someone asked has not replied on an open round, chasing them is the
+    first move: "Draft reminders" leads and comparing what came in steps back.{% endcomment %}
+    {% if any_silent and drafts %}
+    <a data-testid="draft-reminders" href="#drafts"
+       onclick="var d=document.getElementById('drafts'); if (d) { d.open = true; }"
+       class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Draft reminders</a>
+    {% endif %}
     {% for line in tender.lines %}
-    <a href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}"
-       class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+    <a data-testid="compare-quotes" href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}"
+       class="px-3 py-1.5 text-sm {% if any_silent and drafts %}border border-gray-300 text-brand-indigo hover:bg-gray-50{% else %}bg-brand-indigo hover:bg-brand-deep-purple text-white{% endif %} rounded-md">
       {% comment %}"Compare quotes"; with more than one product, which one.{% endcomment %}
       Compare quotes{% if tender.lines|length > 1 %}: {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}{% endif %}
     </a>
@@ -110,7 +117,6 @@ sits above who is invited and what the tender buys.
       <tr>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Supplier</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Sent</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Days waiting</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Last chased</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Replied</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Response kind</th>
@@ -126,18 +132,20 @@ sits above who is invited and what the tender buys.
           <a href="{% url 'supply_chain:supplier_detail' o.supplier_id %}"
              class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:o.supplier_id|default:"Supplier" }}</a>
           {% if o.changed %}{% include "supply_chain/_changed_chip.html" %}{% endif %}
+          {% comment %}A reply that was questions leaves the move with us: said on the
+          supplier's own row, so the round reads whose turn it is.{% endcomment %}
+          {% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="text-sm text-message-warning-text">{{ o.waiting_on_us }}</div>{% endif %}
         </td>
-        <td class="px-4 py-2 text-sm text-gray-600">{{ o.sent_on|day|default:"—" }}</td>
-        <td class="px-4 py-2 text-sm text-gray-600">
-          {{ o.days_waiting|default_if_none:"—" }}
-        </td>
-        <td class="px-4 py-2 text-sm text-gray-600" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>
-        <td class="px-4 py-2 text-sm text-gray-600">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% else %}No{% endif %}</td>
+        <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">{{ o.sent_on|day|default:"—" }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>
+        {% comment %}Silence in words, counted from the latest ask -- the invitation or the last
+        chase -- muted rather than alarmed; a bare "No" said nothing about how long.{% endcomment %}
+        <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="replied">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% elif o.silent_days is not None %}<span data-testid="no-reply" class="text-gray-600">No reply · {{ o.silent_days }} day{{ o.silent_days|pluralize }}</span>{% else %}<span data-testid="no-reply" class="text-gray-600">No reply</span>{% endif %}</td>
         <td class="px-4 py-2 text-sm text-gray-600">{{ o.response_kind|humanise|default:"—" }}</td>
           <td class="px-4 py-2 text-sm text-right whitespace-nowrap">
             {% if not supply_as_of %}
             <a href="{% url 'supply_chain:procurement_outreach_reply' o.id %}"
-               class="text-brand-indigo hover:underline">Record a reply</a>
+               class="text-brand-indigo hover:underline">{% if o.responded %}Record another reply{% else %}Record a reply{% endif %}</a>
             <span class="text-gray-300 mx-1.5">·</span>
             <a href="{% url 'supply_chain:procurement_outreach_delete' o.id %}"
                class="text-gray-600 hover:text-red-700 hover:underline">Delete</a>
@@ -145,7 +153,7 @@ sits above who is invited and what the tender buys.
           </td>
       </tr>
       {% empty %}
-      <tr><td colspan="7" class="px-4 py-6 text-center text-gray-600">No outreach recorded yet.</td></tr>
+      <tr><td colspan="6" class="px-4 py-6 text-center text-gray-600">No outreach recorded yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -215,7 +223,7 @@ Open ones read as "waiting on us" on the overview (ruling 7 of the
 2026-10-02 tracking-reality spec).
 {% endcomment %}
 <div class="flex items-center justify-between mb-2">
-  <h2 id="owed" class="text-lg font-semibold text-gray-900 scroll-mt-20">What we owe them{% if owed %} <span data-testid="owed-open-count" class="font-normal text-gray-600">— {{ owed_open|length }} open</span>{% endif %}</h2>
+  <h2 id="owed" class="text-lg font-semibold text-gray-900 scroll-mt-20">What we owe them{% if owed %} <span data-testid="owed-open-count" class="font-normal text-gray-600">— {{ owed_open_count }} open</span>{% endif %}</h2>
   {% if not supply_as_of %}
   <a href="{% url 'supply_chain:tender_commitment_record' tender.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>

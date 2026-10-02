@@ -1,0 +1,59 @@
+{% load supply_chain_extras %}
+{% comment %}One change, as one line of the history. `in_event`: a line inside an email event
+(_timeline.html), whose who-told-us and source the event says once above it.{% endcomment %}
+<li data-testid="revision-line" data-fields="{{ entry.fields|join:' ' }}" data-when="{{ entry.when|date:'c' }}" class="py-1.5 pl-4 flex items-start gap-3">
+  <div class="min-w-0 flex-1">
+    {% comment %}One grammar for a new record and a change to one: "Shipment · SH-1 ·
+    recorded: ETA 5 Sep" and "Shipment · SH-1 · ETA 5 Sep → 19 Sep".{% endcomment %}
+    {% comment %}How far the arrival moved, as a signed count of days, so "5 Sep → 19 Sep"
+    need not be worked out: inline, after the sentence it measures, in the neutral pill --
+    amber on a line of its own read as a warning about something else. It and the actor
+    pills are at the change line's size (text-sm): at text-xs they were the smallest text
+    on the page. gray-700 on gray-100 and indigo-800 on indigo-50 both clear 4.5:1.{% endcomment %}
+    {% comment %}Bookkeeping -- an invitation sent, a chase recorded -- is set smaller and
+    muted, so the replies and quotes among it are what the eye lands on.{% endcomment %}
+    <div data-testid="revision-text"{% if entry.bookkeeping %} data-bookkeeping{% endif %} class="{% if entry.bookkeeping %}text-xs text-gray-600{% else %}text-sm text-gray-900{% endif %}">{{ entry.line|bold_after_arrow }}{% if entry.eta_moved %} <span data-testid="eta-moved" class="ml-1 inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-sm text-gray-700">{{ entry.eta_moved }}</span>{% endif %}</div>
+    {% if entry.hold %}
+      {% comment %}The line that made the shipment wait on a document we owe, while it
+      still does: in the order banner's own words (holds.py). Calm, not an alarm.{% endcomment %}
+      <div data-testid="revision-hold" class="mt-0.5 text-sm text-message-warning-text">{{ entry.hold }}</div>
+    {% endif %}
+    {% if not in_event %}<div class="mt-0.5 flex flex-wrap items-center gap-2">{% endif %}
+      {% comment %}
+      Who told us is a label and only a label -- the indigo pill with the AI glyph when
+      the write came through an agent or MCP/the API. The source it rested on opens from
+      its own toggle beside it ("Source email"): run together in one control, clicking a
+      name to read an email was found by nobody.
+      {% endcomment %}
+      {% if not in_event %}
+      <span data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}"><span data-testid="actor-pill" class="inline-flex items-center gap-1">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span>{{ entry.actor }}</span></span></span>
+      {% if entry.excerpt %}
+        {% comment %}The toggle says what a click does: "Source email" while shut, "Hide email"
+        while open -- the details' own open state, no script. Open, it spans the line, so the
+        excerpt runs the line's full width.{% endcomment %}
+        <details class="group text-xs open:w-full">
+          <summary data-testid="source-toggle" title="{% if entry.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
+                   class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center"><span data-testid="source-link" class="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50">{% if entry.source_kind == "Email" %}<i class="fa-regular fa-envelope" aria-hidden="true"></i>{% endif %}<span class="group-open:hidden">{{ entry.source_link_text }}</span><span data-testid="source-hide" class="hidden group-open:inline">{{ entry.source_hide_text }}</span></span></summary>
+          {% comment %}Where the quote came from, as the call recorded it -- the kind its
+          reference implies, who recorded it and when. A replay of the same evidence
+          was answered from this write, not written again.{% endcomment %}
+          <p data-testid="source-heading" class="mt-1.5 text-sm text-gray-900">{{ entry.source_kind|default:"Source" }}{% if entry.sender %} from {{ entry.sender }}{% endif %}, recorded by {{ entry.actor }} on {{ entry.recorded_on|date:"j M Y" }}{% if entry.replayed_at %} · forwarded again {{ entry.replayed_at|date:"j M Y" }} — recorded once{% endif %}</p>
+          {% comment %}The words the change rested on, at reading size and full contrast:
+          this is the evidence, not a footnote.{% endcomment %}
+          <blockquote data-testid="source-excerpt" class="mt-1 w-full rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ entry.excerpt }}</blockquote>
+        </details>
+      {% endif %}
+      {% endif %}
+    {% if not in_event %}</div>{% endif %}
+  </div>
+  {% comment %}Every quote an AI entered says something here: Correct and Void while it
+  stands, and why not once it was voided or corrected.{% endcomment %}
+  {% if entry.correct_url or entry.void_url %}
+    <div data-testid="quote-fixes" class="shrink-0 text-xs whitespace-nowrap space-x-3">
+      {% if entry.correct_url %}<a href="{{ entry.correct_url }}" class="text-brand-indigo hover:underline">Correct</a>{% endif %}
+      {% if entry.void_url %}<a href="{{ entry.void_url }}" class="text-brand-indigo hover:underline">Void</a>{% endif %}
+    </div>
+  {% elif entry.fix_status %}
+    <div data-testid="quote-fixes" class="shrink-0 text-xs whitespace-nowrap text-gray-600">{% if entry.fix_status == "voided" %}voided{% else %}since corrected{% endif %}</div>
+  {% endif %}
+</li>

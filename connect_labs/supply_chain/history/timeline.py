@@ -93,6 +93,9 @@ class Entry:
     # "corrected", so every such line says something in that place.
     fix_status: str = ""
 
+    # A single change, not an email's worth of them (see EmailEvent).
+    is_group = False
+
     @property
     def source_link_text(self) -> str:
         """What the source toggle says: "Source email" for an email, else "Source"."""
@@ -440,6 +443,8 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None, u
     else:
         values = dict(revision.changes)
     _set_line(entry, model, revision.action, values, lookup, revision.object_id)
+    if model.__name__ == "Payment" and revision.action == "update":
+        _as_linked_payment(entry, revision.changes, values, lookup)
     # Who sent the evidence, as the caller read it off the email, wins: it is
     # this write's own provenance. An update without one names nobody rather
     # than borrowing the record's first teller (ruling 9).
@@ -505,6 +510,36 @@ def _set_line(entry, model, action, values, lookup, object_id=None):
         entry.what = "removed"
     else:
         entry.what = entry.sentence
+
+
+def _as_linked_payment(entry, changes, values, lookup):
+    """A payment an invoice later acknowledged: "Payment of 28 Jul linked to INV-HT-26-0912".
+
+    The update that links a payment made in advance to the invoice that
+    acknowledged it read "Payment · 53,400.00 USD · Invoice: INV-...", which
+    sat beside the payment's own line as if it were a second payment.
+    """
+    from connect_labs.supply_chain.models import Invoice
+
+    old, new = changes.get("invoice_id") or [None, None]
+    if old is not None or new is None:
+        return
+    paid_on = (values or {}).get("paid_on")
+    text = "Payment" + (f" of {_day_text(paid_on)}" if paid_on else "") + f" linked to {lookup.name(Invoice, new)}"
+    confirmed = (changes.get("confirmed_by_payee_on") or [None, None])[1]
+    if confirmed:
+        text += f", confirmed by the payee {_day_text(confirmed)}"
+    entry.sentence = entry.what = text
+    entry.entity = entry.identity = ""
+
+
+def _day_text(value) -> str:
+    if isinstance(value, str):
+        try:
+            value = datetime.date.fromisoformat(value[:10])
+        except ValueError:
+            return value
+    return f"{value.day} {value.strftime('%b')}"
 
 
 def _values(row):
@@ -651,6 +686,54 @@ def _mark_holds(built):
                 local = str(document.get("name") or "").strip()
                 entry.hold = f"Waiting on us: {what}" + (f" ({local})" if local else "")
                 break
+
+
+@dataclass
+class EmailEvent:
+    """Everything recorded from one inbound email, as one event in the history.
+
+    A reply and the quote in it, or a reply and the questions it asked us, are
+    one thing that happened -- an email arrived -- and read as two or three
+    unrelated lines when listed apart, each opening the same excerpt. `head`
+    is the line whose source the event shows; `members` are the records it
+    produced, the reply first and then in the order they were entered.
+    """
+
+    when: object
+    head: Entry
+    members: list
+    sender: str = ""
+    is_group = True
+
+
+def _is_reply(entry) -> bool:
+    return "response_kind" in entry.fields or "responded" in entry.fields
+
+
+def email_events(entries) -> list:
+    """`entries` with every set of two or more recorded from the same email folded into an EmailEvent.
+
+    The same email is the same source reference with an excerpt -- an email's
+    Message-ID -- on whatever call recorded each line. The event stands where
+    its newest line stood; a line with a source of its own stays a line.
+    """
+    by_ref = {}
+    for entry in entries:
+        if entry.source_ref and entry.excerpt:
+            by_ref.setdefault(entry.source_ref, []).append(entry)
+    out, placed = [], set()
+    for entry in entries:
+        group = by_ref.get(entry.source_ref) if entry.source_ref and entry.excerpt else None
+        if not group or len(group) < 2:
+            out.append(entry)
+            continue
+        if entry.source_ref in placed:
+            continue
+        placed.add(entry.source_ref)
+        members = sorted(group, key=lambda e: (not _is_reply(e), e.when))
+        sender = next((e.sender for e in members if e.sender), "")
+        out.append(EmailEvent(when=group[0].when, head=members[0], members=members, sender=sender))
+    return out
 
 
 def timeline_for_tender(tender_id, *, program_id, until=None) -> list[Entry]:

@@ -19,15 +19,19 @@ fixed 4rem top bar when a link or a recorder scrolls to them; without it the bar
 covered a page's title and the banner under it, and a section's first line.{% endcomment %}
 <style>.supply-page h1, .supply-page h2, .supply-page h3, .supply-page [id] { scroll-margin-top: 5rem; }</style>
 <div class="supply-page max-w-7xl mx-auto px-4 py-6">
-  <div class="flex gap-4 items-center p-4 profile-bg bg-brand-indigo rounded-2xl mb-6">
-    <div class="flex flex-col justify-center text-white">
-      <h1 class="text-2xl font-bold mb-1">Supply</h1>
+  {% comment %}`compact_banner`: a record's own page (a tender) lets its title and first
+  section lead -- the banner shrinks to a strip and drops its tagline.{% endcomment %}
+  <div data-testid="supply-banner" class="flex gap-4 items-center {% if compact_banner %}px-4 py-2 mb-4{% else %}p-4 mb-6{% endif %} profile-bg bg-brand-indigo rounded-2xl">
+    <div class="flex {% if compact_banner %}flex-wrap items-baseline gap-x-3{% else %}flex-col justify-center{% endif %} text-white">
+      <h1 class="{% if compact_banner %}text-base{% else %}text-2xl mb-1{% endif %} font-bold">Supply</h1>
       {% comment %}Which program, and who buys for it in that role (banner.py): said on
       every supply page, so no screen leaves whose purchasing it is to be guessed.{% endcomment %}
-      {% if supply_program_line %}<p data-testid="supply-program-line" class="text-sm font-medium mb-1">{{ supply_program_line }}</p>{% endif %}
+      {% if supply_program_line %}<p data-testid="supply-program-line" class="text-sm font-medium{% if not compact_banner %} mb-1{% endif %}">{{ supply_program_line }}</p>{% endif %}
+      {% if not compact_banner %}
       <p class="text-sm opacity-90">
         Source commodities, compare quotes on one basis, and track what reaches whom.
       </p>
+      {% endif %}
     </div>
     {% comment %}Above the program tabs, because it is above programs: what suppliers see of every open tender.{% endcomment %}
     <a href="{% url 'supply_chain:market' %}" class="ml-auto text-sm text-white/90 hover:text-white underline underline-offset-2">Supplier marketplace</a>

@@ -566,9 +566,11 @@ def owed_context(rows, changed, program_id) -> dict:
     who = answered_by([c.get("id") for c in answered], program_id=program_id) if answered else {}
     for c in answered:
         c["answered_by"] = who.get(c.get("id"), "")
+    owed_open = [c for c in rows if c.get("open")]
     return {
         "owed": rows,
-        "owed_open": [c for c in rows if c.get("open")],
+        "owed_open": owed_open,
+        "owed_open_count": len(owed_open),
         "owed_answered": answered,
         "owed_answered_expanded": any(c.get("changed") for c in answered),
     }
@@ -810,6 +812,11 @@ class OrderDetailView(OperationBase):
             p for p in self.op("payment_list", contract_id=contract_id) if p.get("invoice_id") is None
         ]
         context["held_on_us"] = self.op("contract_holds", contract_id=contract_id)
+        # A document only we can supply is something we owe, as much as a
+        # promise is: listed open in "What we owe them", so that section never
+        # says "Nothing owed" beside a banner saying we are waited on.
+        context["owed_holds"] = [h for h in context["held_on_us"] if h.get("commitment_id") is None]
+        context["owed_open_count"] = context.get("owed_open_count", 0) + len(context["owed_holds"])
         context["contract_late"] = next(
             (c for c in late if c["kind"] == "contract_delivery_overdue" and c["subject"]["id"] == contract_id), None
         )

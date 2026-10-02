@@ -95,7 +95,7 @@ class TestWaitingOnSaysTwoThings:
     def test_the_silent_supplier_s_flag_stays_while_waiting_on_names_them(self, da, base):
         _provisional(da, base)
         row = _tender_row()
-        assert "No reply in 33 days: Plateau Mills" in row.stale
+        assert "No reply in 33 days: 1 supplier" in row.stale
         assert any(line.startswith("No reply: Plateau Mills") for line in row.waiting_lines)
 
     def test_both_go_once_the_order_is_placed(self, da, base):
@@ -334,7 +334,7 @@ class TestOneUnitColumn:
         quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _DELIVERED)
         body = _page(client_in_program, base["tender"]["id"])
         heads = re.findall(r"<th>(.*?)</th>", body)
-        assert "USD per carton (= 1 course = 1 child treated)" in heads
+        assert "USD per carton (one course)" in heads
         assert "USD per course" not in heads and "USD per child treated" not in heads
         # One cell per header still.
         row = re.search(rf'<tr data-testid="ranked-row" data-quote-id="{quote["id"]}"[^>]*>(.*?)</tr>', body, re.S)

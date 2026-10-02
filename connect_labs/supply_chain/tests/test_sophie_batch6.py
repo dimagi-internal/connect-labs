@@ -377,14 +377,21 @@ class TestABlockedCard:
         )
         _quote_with(da, tender_id, _supplier(da, "Lakeside Foods")["id"], AUG_20, _ALL_BUT_PACK)
         banner = _text(
-            re.search(r'<div class="bg-amber-50[^"]*">(.*?)</div>', _page(client_in_program, tender_id), re.S).group(1)
+            re.search(
+                r'<div data-testid="comparison-banner"[^>]*>(.*?)</div>', _page(client_in_program, tender_id), re.S
+            ).group(1)
         )
-        assert banner == "0 of 3 comparable — each quote below is missing one fact"
+        # Since the unanswered round's batch 3: what is missing, by whom, and nothing else.
+        assert banner == (
+            "0 of 3 quotes can be compared. Lakeside Foods has not stated sachets per carton. "
+            "Sahel Nutrition has not stated duties amount. Northwind Foods has not stated freight."
+        )
 
     def test_a_quote_missing_two_facts_is_not_said_to_miss_one(self, da, base, client_in_program):
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {})
         body = _page(client_in_program, base["tender"]["id"])
-        assert "each quote below is missing at least one fact" in body
+        sentence = re.search(r'data-testid="not-stated">([^<]*)<', body).group(1)
+        assert sentence.startswith("Northwind Foods has not stated ") and " and " in sentence
 
 
 @pytest.mark.django_db
@@ -474,8 +481,9 @@ class TestARankedRow:
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _DELIVERED)
         body = _page(client_in_program, base["tender"]["id"])
         # Since batch 7 the three equal columns are one, its header saying why.
-        assert 'data-testid="unit-equivalence"' not in body
-        assert "<th>USD per carton (= 1 course = 1 child treated)</th>" in body
+        # Since the unanswered round's batch 3 the header is short and the equation is the caption.
+        assert re.search(r'data-testid="unit-equivalence"[^>]*>1 carton = 1 course = 1 child treated<', body)
+        assert "<th>USD per carton (one course)</th>" in body
         assert "<th>USD per child treated</th>" not in body and "<th>USD per course</th>" not in body
 
     def test_not_said_when_they_differ(self, da, base, client_in_program):

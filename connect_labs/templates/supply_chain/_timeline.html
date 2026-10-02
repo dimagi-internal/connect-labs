@@ -13,71 +13,45 @@ them out on a past date.
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-2">
     {% if timeline %}
       <ol>
-        {% for entry in timeline %}
+        {% for event in timeline|email_events %}
           {% comment %}One heading per day, the day's changes under it: a delivery, the order
           received and the receipt recorded on one day read as one event, not as three lines
           each repeating "19 Sep 2026". Every date carries its year ("6 Jul 2026"), so the
           history reads the same way as the panels above it.{% endcomment %}
-          {% ifchanged entry.when|date:"Y-m-d" %}
+          {% ifchanged event.when|date:"Y-m-d" %}
           <li data-testid="timeline-day" class="pt-3 pb-0.5 border-t border-gray-200 first:border-t-0 first:pt-1">
             <time class="whitespace-nowrap text-sm font-semibold text-gray-900 tabular-nums"
-                  datetime="{{ entry.when|date:'Y-m-d' }}">{{ entry.when|date:"j M Y" }}</time>
+                  datetime="{{ event.when|date:'Y-m-d' }}">{{ event.when|date:"j M Y" }}</time>
           </li>
           {% endifchanged %}
-          <li data-testid="revision-line" data-fields="{{ entry.fields|join:' ' }}" data-when="{{ entry.when|date:'c' }}" class="py-1.5 pl-4 flex items-start gap-3">
-            <div class="min-w-0 flex-1">
-              {% comment %}One grammar for a new record and a change to one: "Shipment · SH-1 ·
-              recorded: ETA 5 Sep" and "Shipment · SH-1 · ETA 5 Sep → 19 Sep".{% endcomment %}
-              {% comment %}How far the arrival moved, as a signed count of days, so "5 Sep → 19 Sep"
-              need not be worked out: inline, after the sentence it measures, in the neutral pill --
-              amber on a line of its own read as a warning about something else. It and the actor
-              pills are at the change line's size (text-sm): at text-xs they were the smallest text
-              on the page. gray-700 on gray-100 and indigo-800 on indigo-50 both clear 4.5:1.{% endcomment %}
-              {% comment %}Bookkeeping -- an invitation sent, a chase recorded -- is set smaller and
-              muted, so the replies and quotes among it are what the eye lands on.{% endcomment %}
-              <div data-testid="revision-text"{% if entry.bookkeeping %} data-bookkeeping{% endif %} class="{% if entry.bookkeeping %}text-xs text-gray-600{% else %}text-sm text-gray-900{% endif %}">{{ entry.line|bold_after_arrow }}{% if entry.eta_moved %} <span data-testid="eta-moved" class="ml-1 inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-sm text-gray-700">{{ entry.eta_moved }}</span>{% endif %}</div>
-              {% if entry.hold %}
-                {% comment %}The line that made the shipment wait on a document we owe, while it
-                still does: in the order banner's own words (holds.py). Calm, not an alarm.{% endcomment %}
-                <div data-testid="revision-hold" class="mt-0.5 text-sm text-message-warning-text">{{ entry.hold }}</div>
-              {% endif %}
-              <div class="mt-0.5 flex flex-wrap items-center gap-2">
-                {% comment %}
-                Who told us is a label and only a label -- the indigo pill with the AI glyph when
-                the write came through an agent or MCP/the API. The source it rested on opens from
-                its own toggle beside it ("Source email"): run together in one control, clicking a
-                name to read an email was found by nobody.
-                {% endcomment %}
-                <span data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}"><span data-testid="actor-pill" class="inline-flex items-center gap-1">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span>{{ entry.actor }}</span></span></span>
-                {% if entry.excerpt %}
-                  {% comment %}The toggle says what a click does: "Source email" while shut, "Hide email"
-                  while open -- the details' own open state, no script. Open, it spans the line, so the
-                  excerpt runs the line's full width.{% endcomment %}
-                  <details class="group text-xs open:w-full">
-                    <summary data-testid="source-toggle" title="{% if entry.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
-                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center"><span data-testid="source-link" class="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50">{% if entry.source_kind == "Email" %}<i class="fa-regular fa-envelope" aria-hidden="true"></i>{% endif %}<span class="group-open:hidden">{{ entry.source_link_text }}</span><span data-testid="source-hide" class="hidden group-open:inline">{{ entry.source_hide_text }}</span></span></summary>
-                    {% comment %}Where the quote came from, as the call recorded it -- the kind its
-                    reference implies, who recorded it and when. A replay of the same evidence
-                    was answered from this write, not written again.{% endcomment %}
-                    <p data-testid="source-heading" class="mt-1.5 text-sm text-gray-900">{{ entry.source_kind|default:"Source" }}{% if entry.sender %} from {{ entry.sender }}{% endif %}, recorded by {{ entry.actor }} on {{ entry.recorded_on|date:"j M Y" }}{% if entry.replayed_at %} · forwarded again {{ entry.replayed_at|date:"j M Y" }} — recorded once{% endif %}</p>
-                    {% comment %}The words the change rested on, at reading size and full contrast:
-                    this is the evidence, not a footnote.{% endcomment %}
-                    <blockquote data-testid="source-excerpt" class="mt-1 w-full rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ entry.excerpt }}</blockquote>
-                  </details>
-                {% endif %}
-              </div>
+          {% if event.is_group %}
+          {% comment %}
+          One email, and what was recorded from it: a reply and its quote, or a reply and the
+          questions it asked us, read as one event -- the email (who sent it, who recorded it, one
+          "Source email" toggle opening the words, the full width of the row) with each record
+          it produced beneath it, the reply first. Each child is still a revision-line, so a line
+          is found by what it says; the source testids sit on the event.
+          {% endcomment %}
+          <li data-testid="email-event" data-when="{{ event.when|date:'c' }}" class="py-1.5 pl-4">
+            <div class="flex flex-wrap items-center gap-2">
+              <span data-testid="email-event-head" class="text-sm font-medium text-gray-900">{{ event.head.source_kind|default:"Source" }}{% if event.sender %} from {{ event.sender }}{% endif %}</span>
+              <span data-testid="actor-badge" {% if event.head.is_ai %}data-ai {% endif %}class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm {% if event.head.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}"><span data-testid="actor-pill" class="inline-flex items-center gap-1">{% if event.head.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=event.head.actor %}{% endif %}<span>{{ event.head.actor }}</span></span></span>
             </div>
-            {% comment %}Every quote an AI entered says something here: Correct and Void while it
-            stands, and why not once it was voided or corrected.{% endcomment %}
-            {% if entry.correct_url or entry.void_url %}
-              <div data-testid="quote-fixes" class="shrink-0 text-xs whitespace-nowrap space-x-3">
-                {% if entry.correct_url %}<a href="{{ entry.correct_url }}" class="text-brand-indigo hover:underline">Correct</a>{% endif %}
-                {% if entry.void_url %}<a href="{{ entry.void_url }}" class="text-brand-indigo hover:underline">Void</a>{% endif %}
-              </div>
-            {% elif entry.fix_status %}
-              <div data-testid="quote-fixes" class="shrink-0 text-xs whitespace-nowrap text-gray-600">{% if entry.fix_status == "voided" %}voided{% else %}since corrected{% endif %}</div>
-            {% endif %}
+            <details class="group mt-1 w-full text-xs">
+              <summary data-testid="source-toggle" title="{% if event.head.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
+                       class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center"><span data-testid="source-link" class="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50">{% if event.head.source_kind == "Email" %}<i class="fa-regular fa-envelope" aria-hidden="true"></i>{% endif %}<span class="group-open:hidden">{{ event.head.source_link_text }}</span><span data-testid="source-hide" class="hidden group-open:inline">{{ event.head.source_hide_text }}</span></span></summary>
+              <p data-testid="source-heading" class="mt-1.5 text-sm text-gray-900">{{ event.head.source_kind|default:"Source" }}{% if event.sender %} from {{ event.sender }}{% endif %}, recorded by {{ event.head.actor }} on {{ event.head.recorded_on|date:"j M Y" }}{% if event.head.replayed_at %} · forwarded again {{ event.head.replayed_at|date:"j M Y" }} — recorded once{% endif %}</p>
+              <blockquote data-testid="source-excerpt" class="mt-1 w-full rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ event.head.excerpt }}</blockquote>
+            </details>
+            <ol data-testid="email-event-records" class="mt-1 ml-1 border-l-2 border-gray-200">
+              {% for entry in event.members %}
+                {% include "supply_chain/_timeline_line.html" with entry=entry in_event=True %}
+              {% endfor %}
+            </ol>
           </li>
+          {% else %}
+            {% include "supply_chain/_timeline_line.html" with entry=event in_event=False %}
+          {% endif %}
         {% endfor %}
       </ol>
     {% else %}

@@ -88,7 +88,7 @@ class TestAProvisionalAwardWaitsOnAnswers:
         # Since batch 10 by importance: can't-compare before the no-reply reminder.
         assert row.stale == [
             "Can't compare yet: Sahel Nutrition — missing: sachets per carton, freight, duties",
-            "No reply in 33 days: Plateau Mills",
+            "No reply in 33 days: 1 supplier",
         ]
 
     def test_provisional_is_said_once_and_the_why_reads_at_body_size(self, da, base, home_client):

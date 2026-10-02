@@ -60,6 +60,11 @@ AWARDED_GAP_RULE = (
     "or one its figure does not meet."
 )
 ETA_RULE = "A shipment whose expected arrival day has passed and that has not been received."
+INVOICE_ABOVE_RULE = (
+    "An invoice on the order that bills more than the contract agreed -- its unit price, its freight, "
+    "or the total against goods plus freight (the invoice_above_contract check)."
+)
+INVOICE_ABOVE_FLAG = "Invoice above agreed price"
 
 # How "waiting on" opens when the next move is ours: a question we have not
 # answered, a promise we have not kept, a document only we can supply.
@@ -344,6 +349,10 @@ def _tender_rows(program_id, today, until):
             waiting_lines = (ours, *others) if others else ()
             waiting_on = "; ".join((ours, *others))
         stage = _words(tender.status)
+        # An open round whose deadline is behind it says so: "open" alone read
+        # as a round still inside its window.
+        if tender.status == "open" and tender.response_deadline and tender.response_deadline < today:
+            stage = f"open, deadline passed {_day(tender.response_deadline)}"
         awardee = award.quote.supplier.name if award is not None and award.quote_id else ""
         if awardee:
             stage = f"awarded to {awardee}"
@@ -432,12 +441,13 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
     # Only while replies are still being chased: once a tender is closed, or
     # awarded for good, a silent supplier is history, not something waiting.
     if overdue and chasing:
-        # Named, longest silent first: "No reply in 17 days: Northwind Foods"
-        # is something to act on; "from 1 supplier" sends the reader to find
-        # out who. The age is the one every one of them has passed, so the
-        # sentence is true of each.
+        # Counted, not named: "No reply in 17 days: 3 suppliers". Who they are
+        # is the row's "Waiting on" ("No reply: ..."), beside it; naming them
+        # twice made the row read as a list of names. The lines folded under
+        # the flag still name each, with when it was asked. The age is the one
+        # every one of them has passed, so the sentence is true of each.
         by_age = sorted(overdue, key=lambda sid: (-overdue[sid], suppliers[sid].name))
-        text = f"No reply in {min(overdue.values())} days: {_names([suppliers[sid].name for sid in by_age])}"
+        text = f"No reply in {min(overdue.values())} days: {_plural(len(by_age), 'supplier')}"
         # It opens, like "Can't compare yet", on what it rests on: when each
         # request went out and to whom, then the rule that raised the flag.
         channels = {o.supplier_id: o.channel for o in outreach if o.sent_on == latest_ask.get(o.supplier_id)}
@@ -652,6 +662,8 @@ def _order_rows(program_id, today, until, own_org_id):
             today,
             holds=holds.get(contract.pk, []),
         )
+        if contract.pk in invoiced and _invoice_above(contract, today):
+            stale = [*stale, Flag(INVOICE_ABOVE_FLAG, INVOICE_ABOVE_RULE)]
         title = contract.reference or f"Order {contract.pk}"
         rows.append(
             Row(
@@ -672,6 +684,20 @@ def _order_rows(program_id, today, until, own_org_id):
             )
         )
     return rows
+
+
+def _invoice_above(contract, today) -> bool:
+    """Whether the invoice_above_contract check fires on this order -- the check itself, not a copy.
+
+    Only asked of an invoiced, priced order, so the landed cost it needs is
+    worked out for those alone.
+    """
+    if contract.consideration != "priced":
+        return False
+    from connect_labs.supply_chain.checks import _invoice_above_contract
+    from connect_labs.supply_chain.fulfilment.services.landed import landed_total
+
+    return _invoice_above_contract(contract, landed_total(contract), today) is not None
 
 
 def _dispatched(shipment) -> bool:
