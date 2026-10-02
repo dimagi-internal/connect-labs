@@ -205,12 +205,12 @@ class TestHistoryWording:
             data=_kanem_quote(world, as_quoted_amount="55.00", incoterm="DDP Kano", duties_basis="included"),
         )
         text = re.sub(r"<[^>]+>", "", _tender_page(client_in_program, world["tender"]["id"]))
-        assert "55.00 USD per carton (DDP Kano: freight and duty included)" in text
+        assert "USD 55.00 per carton (DDP Kano: freight and duty included)" in text
 
     def test_a_quote_with_no_incoterm_reads_as_before(self, da, world, client_in_program):
         op(da, "quote_record", data=_kanem_quote(world))
         text = re.sub(r"<[^>]+>", "", _tender_page(client_in_program, world["tender"]["id"]))
-        assert "54.50 USD per carton (freight included)" in text
+        assert "USD 54.50 per carton (freight included)" in text
 
 
 # ---- G: the specification chip
@@ -268,7 +268,7 @@ class TestOrderInvoices:
         assert "applied to INV-REH-1" in row
         assert "confirmed by the payee 21 Sep 2026" in text
         marker = re.search(r'data-testid="invoice-above-agreed"[^>]*>(.*?)</div>', body, re.S).group(1)
-        assert re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", marker)).strip() == "USD 3,550.00 above agreed"
+        assert re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", marker)).strip() == "Total +USD 3,550.00 above agreed"
         # At body size, with its tag (batch 2).
         assert 'data-testid="invoice-above-agreed" class="text-sm text-gray-900"' in body
         assert 'data-testid="above-agreed-tag"' in marker

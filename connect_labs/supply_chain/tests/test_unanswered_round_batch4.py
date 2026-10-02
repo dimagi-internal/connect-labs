@@ -181,7 +181,7 @@ class TestWhatWeOweBySupplier:
             self._ask(da, world, text, raised)
         body = _tender_page(client_in_program, world["tender"]["id"])
         heads = re.findall(r'data-testid="owed-group-head"[^>]*>(.*?)</div>', body, re.S)
-        assert [_text(h) for h in heads] == ["Northgate Rehearsal Commodities · asked 18 Sep · 3 questions"]
+        assert [_text(h) for h in heads] == ["Northgate Rehearsal Commodities · asked 18 Sep 2026 · 3 questions"]
         owed = body.split('data-testid="owed"', 1)[1].split('id="drafts"', 1)[0]
         assert owed.count("Northgate Rehearsal Commodities") == 1
 
@@ -192,7 +192,12 @@ class TestWhatWeOweBySupplier:
         row = re.search(
             rf'<div [^>]*data-commitment-id="{asked["id"]}".*?data-testid="owed-answer"', body, re.S
         ).group(0)
-        assert re.search(r'data-testid="owed-status"[^>]*>Answered just now<', row)
+        # One line since DDD 002 batch 1: "Answered by Sophie · 2 Oct 2026 (just now): We are."
+        answer = re.search(
+            r'data-testid="owed-answer".*?</div>', body[body.index(f'data-commitment-id="{asked["id"]}"') :], re.S
+        ).group(0)
+        assert re.search(r'data-testid="owed-status"[^>]*>Answered<', answer)
+        assert "(just now): We are." in re.sub(r"<[^>]+>", "", answer)
         assert 'data-testid="changed-chip"' not in row
 
 

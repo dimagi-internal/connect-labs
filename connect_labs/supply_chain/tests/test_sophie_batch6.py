@@ -131,8 +131,10 @@ class TestTheOverviewColumns:
         assert sum(int(w) for w in past_widths.values()) == 100
         by_col = {col: int(w) for col, w in widths}
         assert sum(by_col.values()) == 100
-        # Stage is a few words; flags carry a line per supplier.
-        assert by_col["stage"] < by_col["flags"] and by_col["flags"] == max(by_col.values())
+        # Stage is a few words; flags and "waiting on" carry a line per supplier,
+        # so they are the two widest (unanswered round 002: waiting on the widest).
+        assert by_col["stage"] < by_col["flags"]
+        assert sorted(by_col, key=by_col.get)[-2:] == ["flags", "waiting"]
 
     def test_headers_do_not_wrap(self, da, base, home_client):
         heads = re.findall(r"<th ([^>]*)>", _standing(_home(home_client)))

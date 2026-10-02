@@ -244,11 +244,12 @@
                   {% comment %}The award's fields -- why, when, who -- stay folded behind the award
                   button until someone starts one: four inputs under every offer read as a form to
                   fill rather than a choice to make. The button that opens them says what awarding
-                  now means ("Award anyway — ... has not stated ..."); the form inside still posts
+                  now means ("Award Harmattan now — 2 other quotes can't be compared yet", the gaps in
+                  its tooltip; the banner is where they are said); the form inside still posts
                   as before, and opens again on a refused award.{% endcomment %}
                   <details data-testid="award-start" class="min-w-0"{% if award_error or award_step %} open{% endif %}>
-                    <summary data-testid="award-open"{% if award_anyway %} data-anyway{% endif %}
-                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-block px-4 py-1.5 text-sm rounded-md {% if award_anyway %}border border-gray-300 bg-white text-gray-900 hover:bg-gray-50{% else %}bg-brand-indigo hover:bg-brand-deep-purple text-white{% endif %}">{% if award_anyway %}Award anyway — {{ award_anyway }}{% else %}Award{% endif %}</summary>
+                    <summary data-testid="award-open"{% if award_anyway %} data-anyway title="{{ award_anyway_detail }}"{% endif %}
+                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-block px-4 py-1.5 text-sm rounded-md {% if award_anyway %}border border-gray-300 bg-white text-gray-900 hover:bg-gray-50{% else %}bg-brand-indigo hover:bg-brand-deep-purple text-white{% endif %}">{% if award_anyway %}Award {{ row.supplier_name }} now — {{ award_anyway }}{% else %}Award{% endif %}</summary>
                   <form method="post" action="" data-testid="award-form" class="mt-2 flex flex-wrap items-end gap-2 min-w-0">
                     {% csrf_token %}
                     <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
@@ -344,6 +345,8 @@
 {% endif %}
 
 {% if comparison.blocked %}
+  {% comment %}One section, so a link or a reader can frame the heading and every card under it at once.{% endcomment %}
+  <section id="needs-info" data-testid="needs-info" class="scroll-mt-20">
   <h2 class="text-lg font-semibold text-gray-900 mt-6 mb-2">
     Needs info — {{ comparison.blocked|length }} supplier{{ comparison.blocked|pluralize }}
   </h2>
@@ -431,6 +434,7 @@
       {% endfor %}
     </div>
   {% endfor %}
+  </section>
 {% endif %}
 {% endif %}
 {% endblock %}

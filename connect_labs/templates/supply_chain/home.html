@@ -49,19 +49,19 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
     {% comment %}Fixed layout and set widths, so a column is the same width today and
     on a past date whatever its rows hold, and a header never wraps. Stage is
     a few words; flags carry a line per supplier, so they get the room.{% endcomment %}
-    <table data-testid="standing-table" class="min-w-[48rem] w-full table-fixed text-sm">
+    <table data-testid="standing-table" class="min-w-[56rem] w-full table-fixed text-sm">
       <colgroup>
         {% if supply_as_of %}
-        <col data-col="title" style="width: 30%">
-        <col data-col="stage" style="width: 24%">
-        <col data-col="waiting" style="width: 28%">
-        <col data-col="last-change" style="width: 18%">
+        <col data-col="title" style="width: 24%">
+        <col data-col="stage" style="width: 22%">
+        <col data-col="waiting" style="width: 38%">
+        <col data-col="last-change" style="width: 16%">
         {% else %}
-        <col data-col="title" style="width: 22%">
-        <col data-col="stage" style="width: 18%">
-        <col data-col="waiting" style="width: 20%">
-        <col data-col="last-change" style="width: 13%">
-        <col data-col="flags" style="width: 27%">
+        <col data-col="title" style="width: 16%">
+        <col data-col="stage" style="width: 17%">
+        <col data-col="waiting" style="width: 31%">
+        <col data-col="last-change" style="width: 11%">
+        <col data-col="flags" style="width: 25%">
         {% endif %}
       </colgroup>
       <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
@@ -92,7 +92,9 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
             <td class="px-4 py-2.5 text-gray-700">
               {% comment %}Two kinds of answer owed, a line each: who has not replied, and whose
               quote is missing a fact.{% endcomment %}
-              {% if row.waiting_lines %}{% for line in row.waiting_lines %}<span data-testid="waiting-line" class="block">{{ line|lead_in }}</span>{% endfor %}{% else %}<span data-testid="waiting-on" class="block">{{ row.waiting_on|lead_in }}</span>{% endif %}
+              {% comment %}One owner a line. A "No reply" line stacks its suppliers, one a line, each
+              with the day we asked it and the day we last chased it.{% endcomment %}
+              {% if row.waiting_lines %}{% for line in row.waiting_lines %}{% include "supply_chain/_waiting_line.html" with line=line testid="waiting-line" %}{% endfor %}{% else %}{% include "supply_chain/_waiting_line.html" with line=row.waiting_on testid="waiting-on" %}{% endif %}
               {% if row.waiting_detail %}<span data-testid="waiting-detail" class="block text-xs text-gray-600">{{ row.waiting_detail }}</span>{% endif %}
             </td>
             <td class="px-4 py-2.5">

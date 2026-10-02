@@ -41,9 +41,9 @@ scenes:
     seconds: 1.5
     target: text:Last chased
   - kind: hover
-    note: park the cursor on a heading in frame
+    note: park the cursor on the Draft reminders button the next scene uses, clear of "3 of 6 replied"
     seconds: 0.6
-    target: text:Outreach
+    target: testid:draft-reminders
   - kind: hold
     seconds: 1.5
   concept_claim: The round's page says it is past its deadline and shows, for every
@@ -62,12 +62,10 @@ scenes:
   actions:
   - kind: wait_for
     target: css:#drafts
-  - kind: scroll_to
-    target: css:#drafts
   - kind: click
-    note: open the round's draft emails
+    note: open the round's draft emails from the header's Draft reminders, which opens the panel and scrolls to it
     say: drafts
-    target: css:#drafts > summary
+    target: testid:draft-reminders
   - kind: wait_for
     target: css:#drafts[open]
   - kind: scroll_to
@@ -89,9 +87,9 @@ scenes:
     must_succeed: true
     target: css:tr[data-changed]
   - kind: hover
-    note: park the cursor on a heading in frame
+    note: park the cursor on the Draft reminders button above the table, clear of "3 of 6 replied" and Sahel's row
     seconds: 0.6
-    target: text:Outreach
+    target: testid:draft-reminders
   - kind: hold
     note: Sahel's row, chased today
     seconds: 2.5
@@ -187,7 +185,12 @@ scenes:
   - kind: hold
     seconds: 1.5
   - kind: scroll_to
-    target: text:Sahel Nutrition Industries
+    note: frame the Needs info heading and both cards under it
+    target: css:[data-testid=needs-info]
+  - kind: hover
+    note: park the cursor in the empty right of the Needs info heading, off the cards' text
+    seconds: 0.6
+    target: css:#needs-info > h2
   - kind: hold
     say: Sahel
     seconds: 2.5
@@ -217,9 +220,11 @@ scenes:
     target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
       Status dispatched') [data-testid=source-excerpt]
   - kind: hold
+    note: the forwarder's email, centred and read
     seconds: 2.0
   - kind: scroll_to
-    target: text:Advance paid
+    note: frame the Invoices table through the forwarder's email below it in one shot
+    target: text:Nothing attached
   - kind: hold
     say: advance
     seconds: 1.5
@@ -228,9 +233,9 @@ scenes:
     seconds: 1.5
     target: testid:above-agreed-tag
   - kind: hover
-    note: park the cursor on a neutral heading
+    note: park the cursor on the Quantity billed column header, off the figures and the email
     seconds: 0.6
-    target: text:Evidence
+    target: text:Quantity billed
   - kind: hold
     seconds: 1.5
   concept_claim: The order page says it is waiting on us for the import permit rather

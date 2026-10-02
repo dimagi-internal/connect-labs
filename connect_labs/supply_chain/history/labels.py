@@ -313,18 +313,19 @@ def _cash(values, key="amount") -> str:
     amount = values.get(key)
     if amount in (None, ""):
         return ""
-    return f"{money_digits(amount)} {values.get('currency') or ''}".strip()
+    # Currency first, as every table on the page writes it: "EUR 0.31", not "0.31 EUR".
+    return f"{values.get('currency') or ''} {money_digits(amount)}".strip()
 
 
 def _quote_price(values, lookup) -> str:
-    """ "42.50 USD per carton (basis not specified)": the price as the supplier stated it."""
+    """ "USD 42.50 per carton (basis not specified)": the price as the supplier stated it."""
     from connect_labs.supply_chain.models import Commodity, Item
 
     amount = values.get("as_quoted_amount")
     if amount in (None, ""):
         price = "no price"
     else:
-        price = f"{money_digits(amount)} {values.get('as_quoted_currency') or 'USD'}"
+        price = f"{values.get('as_quoted_currency') or 'USD'} {money_digits(amount)}"
     basis = values.get("as_quoted_unit") or ""
     field = {"per_base_unit": "base_unit", "per_pack": "pack_unit"}.get(basis)
     unit = ""

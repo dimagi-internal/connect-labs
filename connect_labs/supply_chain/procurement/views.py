@@ -21,6 +21,7 @@ design — the web client is a Django view calling an operation, not an HTTP
 client of its own API.
 """
 
+import re
 from datetime import date
 from types import SimpleNamespace
 
@@ -128,9 +129,37 @@ def _mark_waiting_on_us(outreach, owed_open, org_of_supplier):
         o["waiting_on_us"] = f"waiting on us — {len(counted)} {noun}{'' if len(counted) == 1 else 's'}{since}"
 
 
-def _changed(url, key, anchor):
-    """`url` arriving back at the row a form just saved: "?changed=outreach-12#outreach"."""
-    return f"{url}?changed={key}#{anchor}"
+def _drafts_breakdown(drafts) -> str:
+    """The folded drafts panel's count, by kind: "3 reminders · 1 reply to Northgate Commodities".
+
+    A bare "Draft emails — 4" above three silent suppliers did not add up until
+    the panel was opened. Replies name who they go to; the rest are counted.
+    """
+    nouns = {"request": "quote request", "reminder": "reminder", "followup": "follow-up"}
+    counts = {}
+    for d in drafts:
+        if d.get("kind") in nouns:
+            counts[d["kind"]] = counts.get(d["kind"], 0) + 1
+    parts = [
+        f"{n} {nouns[kind]}{'' if n == 1 else 's'}"
+        for kind in ("request", "reminder", "followup")
+        if (n := counts.get(kind))
+    ]
+    parts += [f"1 reply to {d.get('supplier_name')}" for d in drafts if d.get("kind") == "reply"]
+    return " · ".join(parts)
+
+
+def _changed(url, key, anchor, cell=None):
+    """`url` arriving back at the row a form just saved: "?changed=outreach-12#outreach".
+
+    `cell` names the cell of that row the save changed ("last_chased"), so the
+    page can mark the value that moved rather than the row's name.
+    """
+    return f"{url}?changed={key}{f'&cell={cell}' if cell else ''}#{anchor}"
+
+
+# The outreach cells a save can change, and the one a reply form changes.
+_OUTREACH_CELLS = ("last_chased", "replied")
 
 
 # The quote-entry form submits every field as a plain string, but the
@@ -194,6 +223,10 @@ class TenderDetailView(_Base):
         # The row a form just saved is picked out on arrival ("?changed=outreach-12").
         changed = self.request.GET.get("changed")
         context["outreach"] = mark_changed(outreach, "outreach", changed)
+        # Which of that row's cells the save changed: the chase from a draft moves
+        # "Last chased", a recorded reply moves "Replied".
+        cell = self.request.GET.get("cell")
+        context["changed_cell"] = cell if cell in _OUTREACH_CELLS else "replied"
         context["deadline_passed"] = _deadline_passed(tender, as_of)
         # Someone asked has not answered, on a round still taking quotes: the
         # page's first action is chasing them, ahead of comparing what came in.
@@ -216,10 +249,20 @@ class TenderDetailView(_Base):
         # Each supplier's first draft carries an anchor, so the comparison's
         # "Draft email to <supplier>" opens the panel at that supplier's.
         anchored = set()
-        for d in (context["drafts"] or {}).get("drafts") or []:
+        in_reply = {}
+        for i, d in enumerate((context["drafts"] or {}).get("drafts") or []):
             if d.get("supplier_id") is not None and d["kind"] != "reply" and d["supplier_id"] not in anchored:
                 anchored.add(d["supplier_id"])
                 d["anchor"] = f"draft-supplier-{d['supplier_id']}"
+            elif d["kind"] == "reply":
+                # A reply carries its own anchor, so an answer just marked can link to
+                # the email it was written into.
+                d["anchor"] = f"draft-reply-{d.get('supplier_id') or i}"
+                for commitment_id in d.get("commitment_ids") or []:
+                    in_reply[commitment_id] = {"anchor": d["anchor"], "to": d["supplier_name"]}
+        for c in context.get("owed") or []:
+            c["in_draft"] = in_reply.get(c.get("id"))
+        context["drafts_breakdown"] = _drafts_breakdown((context["drafts"] or {}).get("drafts") or [])
         context["quotes"] = self.op("quote_list", tender_id=tender_id)
         # Each quote's trade item, by name and -- for a kit -- contents. Three
         # co-pack quotes from one distributor read as the same offer three
@@ -461,30 +504,61 @@ def _and_list(words) -> str:
     return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1] if words else ""
 
 
+# Gaps the BUYER closes, not the supplier: the exchange rate a foreign-currency
+# quote is converted at is ours to record, so "Sahel has not stated exchange
+# rate" blamed the supplier for our own blank (unanswered round, batch 1).
+_BUYER_RECORDED = {"exchange rate"}
+_CURRENCY = re.compile(r"\bin ([A-Z]{3})\b")
+
+
+def _buyer_gap(label, blockers) -> str:
+    """ "no exchange rate recorded for the EUR quote": a gap that is ours to fill, as words."""
+    fact = next((b.get("fact") or "" for b in blockers if b.get("label") == label), "")
+    currency = _CURRENCY.search(fact)
+    return f"no {label} recorded for the {currency.group(1)} quote" if currency else f"no {label} recorded"
+
+
 def not_stated(row) -> str:
     """ "Kanem Foods Ltd has not stated sachets per carton": what keeps one quote out, as a sentence.
 
     From the card's own blockers -- the gap words the overview's flag uses --
-    so the banner, the button and the card name the same facts.
+    so the banner and the card name the same facts. A gap the buyer records
+    (the exchange rate) is said as ours: "Sahel Nutrition Industries has not
+    stated freight amount; no exchange rate recorded for the EUR quote".
     """
-    labels = list(dict.fromkeys(b.get("label") or b.get("fact") or "" for b in row.get("blockers") or []))
+    blockers = row.get("blockers") or []
+    labels = list(dict.fromkeys(b.get("label") or b.get("fact") or "" for b in blockers))
+    labels = [label for label in labels if label]
     if not labels:
         return ""
-    return f"{row.get('supplier_name') or 'A supplier'} has not stated {_and_list(labels)}"
+    name = row.get("supplier_name") or "A supplier"
+    theirs = [label for label in labels if label not in _BUYER_RECORDED]
+    ours = [_buyer_gap(label, blockers) for label in labels if label in _BUYER_RECORDED]
+    if not theirs:
+        return f"{name}: {_and_list(ours)}"
+    text = f"{name} has not stated {_and_list(theirs)}"
+    return f"{text}; {_and_list(ours)}" if ours else text
 
 
 def award_anyway(comparison) -> str:
-    """ "Kanem Foods Ltd has not stated sachets per carton", while any quote is blocked on a fact; else "".
+    """ "2 other quotes can't be compared yet", while any quote is blocked on a fact; else "".
 
-    The first blocked quote's sentence, and how many more are waiting.
+    The award button sits on a comparable quote's row, so it names that
+    quote's own award and why it is early -- not another supplier's gaps,
+    which read as if THEY blocked this award. The gaps themselves stay in
+    the banner (and the button's tooltip, `award_anyway_detail`).
     """
     blocked = [row for row in (comparison or {}).get("blocked") or [] if row.get("blockers")]
     if not blocked:
         return ""
-    text = not_stated(blocked[0])
-    if len(blocked) > 1:
-        text += f" (and {len(blocked) - 1} more)"
-    return text
+    n = len(blocked)
+    return f"{n} other quote{'s' if n != 1 else ''} can't be compared yet"
+
+
+def award_anyway_detail(comparison) -> str:
+    """The blocked quotes' gaps, one sentence each: the award button's tooltip."""
+    blocked = [row for row in (comparison or {}).get("blocked") or [] if row.get("blockers")]
+    return ". ".join(sentence for sentence in (not_stated(row) for row in blocked) if sentence)
 
 
 # What the ranking compares, in words, for the banner: "can be compared on cost per course".
@@ -753,6 +827,7 @@ class ComparisonView(_Base):
         # One comparable offer is not a ranking: no "#", no "ranked by".
         context["single_offer"] = len((comparison or {}).get("comparable") or []) == 1
         context["award_anyway"] = award_anyway(comparison)
+        context["award_anyway_detail"] = award_anyway_detail(comparison)
         # Arriving by a link to the award step (?step=award) opens the folded award fields:
         # the link already said "award", so a second click to reveal them is friction.
         context["award_step"] = self.request.GET.get("step") == "award"
@@ -1180,6 +1255,15 @@ class OutreachChaseView(OutreachReplyView):
         kwargs = super(OutreachReplyView, self).get_form_kwargs()
         self._outreach()  # 404 outside this program
         return kwargs
+
+    def redirect_to(self, result):
+        # The chase moved the row's "Last chased" day: that cell is the one marked.
+        return _changed(
+            reverse("supply_chain:procurement_tender_detail", args=[result["tender_id"]]),
+            f"outreach-{result['id']}",
+            "outreach",
+            cell="last_chased",
+        )
 
 
 class OutreachDeleteView(OperationFormView):

@@ -597,8 +597,9 @@ def owed_groups(rows) -> list[dict]:
         days = sorted(str(c.get("raised_on"))[:10] for c in items if c.get("raised_on"))
         earliest = ""
         if days:
+            # The same "18 Sep 2026" as the rows under it.
             day = date.fromisoformat(days[0])
-            earliest = f"{day.day} {day.strftime('%b')}"
+            earliest = f"{day.day} {day.strftime('%b')} {day.year}"
         counts = ", ".join(
             part
             for part in (
@@ -648,6 +649,33 @@ def mark_changed(rows, kind, changed):
     for row in rows:
         row["changed"] = changed == f"{kind}-{row.get('id')}"
     return rows
+
+
+def _order_status(contract, shipments, held_on_us):
+    """The order's header status, read from where the goods are when they are moving.
+
+    "Placed" on an order whose goods sit at customs said nothing about the
+    order a buyer can act on. While the order is placed or confirmed and a
+    shipment is under way, the newest such shipment's status leads ("At
+    customs"), and a hold on us is said beside it ("held, waiting on us").
+    Otherwise the order's own status stands. Returns {"label", "tone"}, or None.
+    """
+    from connect_labs.supply_chain.records import IN_TRANSIT_STATUSES
+
+    status = contract.get("status")
+    moving = [s for s in shipments or [] if s.get("status") in IN_TRANSIT_STATUSES or s.get("status") == "lost"]
+    if status in ("placed", "confirmed") and moving:
+        latest = max(moving, key=lambda s: (str(s.get("dispatched_on") or ""), s.get("id") or 0))
+        label = str(latest["status"]).replace("_", " ").capitalize()
+        if held_on_us:
+            return {"label": f"{label} — held, waiting on us", "tone": "warning"}
+        return {"label": label, "tone": "warning" if latest["status"] == "lost" else "info"}
+    if not status:
+        return None
+    return {
+        "label": status.replace("_", " ").capitalize(),
+        "tone": "done" if status == "received" else "info",
+    }
 
 
 def _mark_invoices(invoices, invoice_above):
@@ -880,6 +908,7 @@ class OrderDetailView(OperationBase):
             p for p in self.op("payment_list", contract_id=contract_id) if p.get("invoice_id") is None
         ]
         context["held_on_us"] = self.op("contract_holds", contract_id=contract_id)
+        context["order_status"] = _order_status(contract, context["shipments"], context["held_on_us"])
         # A document only we can supply is something we owe, as much as a
         # promise is: listed open in "What we owe them", so that section never
         # says "Nothing owed" beside a banner saying we are waited on.

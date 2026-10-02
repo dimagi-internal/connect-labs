@@ -504,13 +504,33 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
 
     detail = ""
     lines = []
+    # Each silent supplier on a line of its own under "No reply", with the day
+    # we asked it and the day we last chased it: who to chase today is read off
+    # the overview, not a click into the round. The line's text still names
+    # them on one line, for anything reading it as text.
+    last_chased = {}
+    for o in outreach:
+        if o.last_reminder_on is not None:
+            last_chased[o.supplier_id] = max(last_chased.get(o.supplier_id, o.last_reminder_on), o.last_reminder_on)
+
+    def silent_line(text):
+        per_supplier = []
+        for sid in silent:
+            days = []
+            if sid in latest_ask:
+                days.append(f"asked {_day(latest_ask[sid])}")
+            if sid in last_chased:
+                days.append(f"chased {_day(last_chased[sid])}")
+            per_supplier.append((suppliers[sid].name, " · ".join(days)))
+        return Flag(text, heading="No reply", lines=per_supplier)
+
     if blocked_names or (still_open and silent):
         if silent:
-            lines.append(f"No reply: {_names([suppliers[sid].name for sid in silent])}")
+            lines.append(silent_line(f"No reply: {_names([suppliers[sid].name for sid in silent])}"))
         if blocked_names:
             lines.append(f"Missing facts: {', '.join(blocked_names)}")
     if lines:
-        waiting_on = "; ".join(lines)
+        waiting_on = lines[0] if len(lines) == 1 else "; ".join(lines)
         if invited and tender.status == "open":
             detail = f"{len(replied)} of {len(invited)} replied"
     elif tender.status == "awarded":
@@ -531,7 +551,7 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
         # of each; the count moves to the line under it.
         asked = [latest_ask[sid] for sid in silent if sid in latest_ask]
         since = f"no reply since {_day(max(asked))}" if asked else "no reply yet"
-        waiting_on = f"{_names([suppliers[sid].name for sid in silent])} — {since}"
+        waiting_on = silent_line(f"{_names([suppliers[sid].name for sid in silent])} — {since}")
         detail = f"{len(replied)} of {len(invited)} replied"
     else:
         waiting_on = "invitations"

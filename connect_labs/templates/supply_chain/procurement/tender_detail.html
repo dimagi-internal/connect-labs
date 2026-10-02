@@ -52,7 +52,7 @@
     first move: "Draft reminders" leads and comparing what came in steps back.{% endcomment %}
     {% if any_silent and drafts %}
     <a data-testid="draft-reminders" href="#drafts"
-       onclick="var d=document.getElementById('drafts'); if (d) { d.open = true; }"
+       onclick="var d=document.getElementById('drafts'); if (d) { d.open = true; d.scrollIntoView({block: 'start'}); return false; }"
        class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Draft reminders</a>
     {% endif %}
     {% for line in tender.lines %}
@@ -126,21 +126,21 @@ sits above who is invited and what the tender buys.
     <tbody class="divide-y divide-gray-200">
       {% for o in outreach %}
       <tr data-outreach-id="{{ o.id }}"{% if o.changed %} data-changed class="bg-yellow-50"{% endif %}>
-        {% comment %}The row just saved: an accent bar down its left edge and the words
-        "updated just now" -- a pale fill alone vanished on a projector.{% endcomment %}
+        {% comment %}The row just saved: an accent bar down its left edge, and the value that
+        moved set bold with a "new" tag in its own cell (`changed_cell`) -- a pale fill alone
+        vanished on a projector, and a pill by the name did not say what changed.{% endcomment %}
         <td class="px-4 py-2 text-sm{% if o.changed %} border-l-4 border-brand-indigo{% endif %}">
           <a href="{% url 'supply_chain:supplier_detail' o.supplier_id %}"
              class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:o.supplier_id|default:"Supplier" }}</a>
-          {% if o.changed %}{% include "supply_chain/_changed_chip.html" %}{% endif %}
           {% comment %}A reply that was questions leaves the move with us: said on the
           supplier's own row, so the round reads whose turn it is.{% endcomment %}
           {% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="text-sm text-message-warning-text">{{ o.waiting_on_us }}</div>{% endif %}
         </td>
         <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">{{ o.sent_on|day|default:"—" }}</td>
-        <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>
+        {% if o.changed and changed_cell == "last_chased" %}<td class="px-4 py-2 text-sm text-gray-900 font-semibold whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count">· {{ o.reminder_text }}</span>{% endif %}{% include "supply_chain/procurement/_new_tag.html" %}</td>{% else %}<td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>{% endif %}
         {% comment %}Silence in words, counted from the latest ask -- the invitation or the last
         chase -- muted rather than alarmed; a bare "No" said nothing about how long.{% endcomment %}
-        <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="replied">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% else %}<span data-testid="no-reply" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-200">No reply{% if o.silent_days is not None %} · {{ o.silent_days }} day{{ o.silent_days|pluralize }}{% endif %}</span>{% endif %}</td>
+        <td class="px-4 py-2 text-sm whitespace-nowrap {% if o.changed and changed_cell == "replied" %}text-gray-900 font-semibold{% else %}text-gray-600{% endif %}" data-testid="replied">{% if o.responded %}{% if o.responded_on %}{{ o.responded_on|day }}{% else %}Yes{% endif %}{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% else %}<span data-testid="no-reply" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-sm font-medium text-gray-900 ring-1 ring-inset ring-gray-300">No reply{% if o.silent_days is not None %} · {{ o.silent_days }} day{{ o.silent_days|pluralize }}{% endif %}</span>{% if o.changed and changed_cell == "replied" %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% endif %}</td>
         <td class="px-4 py-2 text-sm text-gray-600" data-testid="response-kind">{{ o.response_kind|humanise|capfirst|default:"—" }}</td>
           <td class="px-4 py-2 text-sm text-right whitespace-nowrap">
             {% if not supply_as_of %}
@@ -185,10 +185,13 @@ sits above who is invited and what the tender buys.
       </li>
     {% empty %}
       {% comment %}Suppliers asked directly are invited too, so "No one invited yet" above
-      an outreach table listing them contradicted it -- and listing them again here
-      repeated the table just above. They are in Outreach; nothing more is said.{% endcomment %}
+      an outreach table listing them contradicted it. On a restricted tender the sentence
+      above says "only the suppliers below", so they are named here, on one line; on a
+      public one they are in Outreach and nothing more is said.{% endcomment %}
       {% if not asked_names %}
         <li class="text-gray-600">No one invited yet.</li>
+      {% elif tender.visibility == "private" and not tender_is_over %}
+        <li data-testid="invited-asked" class="py-1 text-gray-900">{{ asked_names|join:", " }} <span class="text-gray-600">· asked directly, in Outreach above</span></li>
       {% endif %}
     {% endfor %}
   </ul>
@@ -246,7 +249,7 @@ next action on anyone (design doc section 22).
 {% endcomment %}
 <details id="drafts" class="bg-white rounded-lg shadow-sm mb-8 scroll-mt-20">
   <summary class="px-4 py-3 cursor-pointer text-sm font-semibold text-gray-900">
-    Draft emails — {{ drafts.drafts|length }}
+    Draft emails — {{ drafts.drafts|length }}{% if drafts_breakdown %} <span data-testid="drafts-breakdown" class="font-normal text-gray-900">({{ drafts_breakdown }})</span>{% endif %}
     <span class="font-normal text-gray-600">· to copy into your own mailbox; nothing is sent from here</span>
   </summary>
   <div class="px-4 pb-4">
@@ -311,7 +314,7 @@ next action on anyone (design doc section 22).
   // by a "Draft email to <supplier>" link, the panel and then that supplier's first draft.
   (function () {
     var hash = window.location.hash;
-    if (hash === "#drafts" || hash.indexOf("#draft-supplier-") === 0) {
+    if (hash === "#drafts" || hash.indexOf("#draft-supplier-") === 0 || hash.indexOf("#draft-reply-") === 0) {
       document.getElementById("drafts").open = true;
       var target = hash === "#drafts" ? null : document.getElementById(hash.slice(1));
       if (target) { target.scrollIntoView(); }

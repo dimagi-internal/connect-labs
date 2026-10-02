@@ -77,10 +77,15 @@ class TestWaitingOnSaysTwoThings:
         missing = "Missing facts: Northwind Foods (sachets per carton, freight, duties)"
         assert row.waiting_lines == ("No reply: Plateau Mills", missing)
         assert row.waiting_detail == "1 of 2 replied"
-        lines = re.findall(r'data-testid="waiting-line"[^>]*>(.*?)</span>', batch6._standing(_home(home_client)))
-        # Each line's kind in bold, the text otherwise as it was.
-        assert lines == ["<strong>No reply</strong>: Plateau Mills", "<strong>Missing facts</strong>: " + missing[15:]]
-        assert [re.sub(r"</?strong>", "", line) for line in lines] == ["No reply: Plateau Mills", missing]
+        standing = batch6._standing(_home(home_client))
+        lines = re.findall(r'data-testid="waiting-line"[^>]*>(.*?)</(?:span|div)>', standing)
+        # Each line's kind in bold. Since unanswered-round 002 the silent
+        # suppliers stack one a line under "No reply", each with the day asked.
+        assert lines[0].startswith("<strong>No reply</strong>:")
+        assert re.findall(r'data-testid="silent-supplier">(.*?)</li>', standing) == [
+            'Plateau Mills <span class="text-gray-600">(asked 10 Aug)</span>'
+        ]
+        assert "<strong>Missing facts</strong>: " + missing[15:] in lines
 
     def test_after_a_provisional_award_the_awardee_is_not_missing_facts(self, da, base):
         _provisional(da, base)

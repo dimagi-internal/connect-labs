@@ -65,7 +65,10 @@ them out on a past date.
             <details class="group mt-1 w-full text-xs">
               <summary data-testid="source-toggle" title="{% if event.head.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
                        class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center"><span data-testid="source-link" class="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50">{% if event.head.source_kind == "Email" %}<i class="fa-regular fa-envelope" aria-hidden="true"></i>{% endif %}<span class="group-open:hidden">{{ event.head.source_link_text }}</span><span data-testid="source-hide" class="hidden group-open:inline">{{ event.head.source_hide_text }}</span></span></summary>
-              <p data-testid="source-heading" class="mt-1.5 text-sm text-gray-900">{{ event.head.source_kind|default:"Source" }}{% if event.sender %} from {{ event.sender }}{% endif %}, recorded by {{ event.head.actor }} on {{ event.head.recorded_on|date:"j M Y" }}{% if event.head.replayed_at %} · forwarded again {{ event.head.replayed_at|date:"j M Y" }} — recorded once{% endif %}</p>
+              {% comment %}No "Email from X, recorded by Y on <day>" line here: the event's head above
+              names the sender and who recorded it, and the day heading carries the date. Only a
+              replay is worth a word.{% endcomment %}
+              {% if event.head.replayed_at %}<p data-testid="source-replayed" class="mt-1.5 text-sm text-gray-900">Forwarded again {{ event.head.replayed_at|date:"j M Y" }} — recorded once</p>{% endif %}
               <blockquote data-testid="source-excerpt" class="mt-1 w-full rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ event.head.excerpt }}</blockquote>
             </details>
             <ol data-testid="email-event-records" class="mt-1 ml-1 border-l-2 border-gray-200">
