@@ -101,7 +101,7 @@
   when there is no such column to mark.{% endcomment %}
   <div class="flex items-baseline justify-between mb-2">
     <h2 class="text-lg font-semibold text-gray-900">Comparable</h2>
-    {% if not ranked_in_table %}
+    {% if not ranked_in_table and not single_offer %}
     <p data-testid="ranked-by-fallback" class="text-sm text-gray-600">
       {% if ranked_by_label %}Ranked by {{ ranked_by_label }}{% else %}Not yet ranked{% endif %}
     </p>
@@ -128,11 +128,14 @@
   {% endcomment %}
   <div class="table-container flex flex-col gap-2 mb-1">
     <div class="w-full overflow-x-auto">
-      <table data-testid="ranked-table" class="base-table w-auto min-w-[40rem]">
+      {% comment %}Full width, as the Needs-info cards below it are. With one offer there is
+      no ranking to number or to say what it is by, so neither the "#" column nor the
+      "Ranked by" marker is shown.{% endcomment %}
+      <table data-testid="ranked-table" class="base-table w-full">
         <thead>
           <tr>
-            <th>#</th><th>Supplier</th>
-            {% for column in table_columns %}{% if column.key == ranked_by_key %}<th>{{ column.label }}<span data-testid="ranked-by-marker" class="mt-0.5 flex items-center gap-1 text-xs font-medium normal-case tracking-normal text-brand-indigo"><i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i>Ranked by this, lowest first</span></th>{% else %}<th>{{ column.label }}</th>{% endif %}{% endfor %}
+            {% if not single_offer %}<th>#</th>{% endif %}<th>Supplier</th>
+            {% for column in table_columns %}{% if column.key == ranked_by_key and not single_offer %}<th>{{ column.label }}<span data-testid="ranked-by-marker" class="mt-0.5 flex items-center gap-1 text-xs font-medium normal-case tracking-normal text-brand-indigo"><i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i>Ranked by this, lowest first</span></th>{% else %}<th>{{ column.label }}</th>{% endif %}{% endfor %}
           </tr>
         </thead>
         <tbody>
@@ -142,7 +145,7 @@
             together; the form keeps data-testid="award-form". scroll-mt-20 clears the fixed
             header.{% endcomment %}
             <tr data-testid="ranked-row" data-quote-id="{{ row.quote_id }}"{% if row.quote_id == award_anchor_quote_id %} id="award" class="scroll-mt-20"{% endif %}>
-              <td>{{ forloop.counter }}</td>
+              {% if not single_offer %}<td>{{ forloop.counter }}</td>{% endif %}
               <td class="font-medium">
                 {% comment %}The offer is the kit; the supplier is who offers it. Two offers
                 from one distributor would otherwise read as the same line twice.{% endcomment %}
@@ -192,15 +195,16 @@
             row's figures, so the row itself stays one line to scan across.
             {% endcomment %}
             <tr data-testid="ranked-row-detail" data-detail-for="{{ row.quote_id }}">
-              <td></td>
+              {% if not single_offer %}<td></td>{% endif %}
               <td colspan="{{ table_columns|length|add:1 }}" class="pt-0 pb-2 whitespace-normal">
                 <div data-testid="detail-fill" class="w-0 min-w-full">
                 {% comment %}What the landed figures assume: where it is delivered, and whether
                 freight and duties were counted in, on whose word.{% endcomment %}
-                {% comment %}The landed total with the quantity it buys -- "USD 82,000.00 for 2,000
-                cartons" -- so the figure in the row is read as a price for an amount.{% endcomment %}
+                {% comment %}The quantity the row's landed total buys -- "Quoted for 2,000 cartons" --
+                so the figure in the row is read as a price for an amount. The total itself is in
+                the row: said again here it read as a second figure.{% endcomment %}
                 {% with total=row.figures.landed_total_as_quoted %}
-                {% if row.landed_basis or row.quantity_quoted and total.amount is not None %}<p class="mb-1 text-xs text-gray-700">{% if row.quantity_quoted and total.amount is not None %}<span data-testid="landed-quantity" class="font-medium text-gray-900">Landed total {{ total|money_text }} for {{ row.quantity_quoted }}</span>{% if row.landed_basis %} · {% endif %}{% endif %}{% if row.landed_basis %}<span data-testid="landed-basis">{{ row.landed_basis }}</span>{% endif %}</p>{% endif %}
+                {% if row.landed_basis or row.quantity_quoted and total.amount is not None %}<p class="mb-1 text-xs text-gray-700">{% if row.quantity_quoted and total.amount is not None %}<span data-testid="landed-quantity" class="font-medium text-gray-900">Quoted for {{ row.quantity_quoted }}</span>{% if row.landed_basis %} · {% endif %}{% endif %}{% if row.landed_basis %}<span data-testid="landed-basis">{{ row.landed_basis }}</span>{% endif %}</p>{% endif %}
                 {% endwith %}
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                   {% include "supply_chain/procurement/_specification.html" with specification=row.specification inline=True %}
@@ -238,7 +242,7 @@
             is positioned.
             {% endcomment %}
             <tr data-testid="ranked-row-actions" data-actions-for="{{ row.quote_id }}" class="border-b border-gray-200">
-              <td></td>
+              {% if not single_offer %}<td></td>{% endif %}
               <td colspan="{{ table_columns|length|add:1 }}" class="pt-0 pb-3 whitespace-normal">
                 <div class="flex w-0 min-w-full flex-col gap-3">
                   {% if row.questions %}
@@ -267,10 +271,20 @@
                     <div class="flex flex-col gap-0.5 text-xs text-gray-600">Decided by
                       <span data-testid="decided-by" class="py-1 text-sm text-gray-900">{{ decider }}</span>
                     </div>
+                    {% comment %}While a quote still waits on a fact that blocks it, awarding now passes
+                    over an offer that might beat this one: the button says so and steps down to a
+                    secondary style. The reason above is still asked for.{% endcomment %}
+                    {% if award_anyway %}
+                    <button data-testid="award-anyway" class="shrink-0 px-4 py-1.5 text-sm border border-gray-300 bg-white text-gray-900 hover:bg-gray-50 rounded-md whitespace-normal text-left"
+                            type="submit">
+                      Award anyway — {{ award_anyway }}
+                    </button>
+                    {% else %}
                     <button class="shrink-0 px-4 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
                             type="submit">
                       Award
                     </button>
+                    {% endif %}
                   </form>
                   {% endif %}
                 </div>

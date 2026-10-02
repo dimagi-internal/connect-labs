@@ -3,13 +3,13 @@
 What changed on this record and its children, newest first (history/timeline.py).
 Each line: when, what, who told us -- an indigo pill with the AI glyph when the write came
 through an agent or MCP/the API -- and the quoted source it rested on, in a
-<details> (labs has no Bootstrap collapse) whose summary is the actor badge.
+<details> (labs has no Bootstrap collapse) opened by its own "Source email" toggle.
 Correct and Void sit on the right of a quote an AI entered that still stands; the timeline builder leaves
 them out on a past date.
 {% endcomment %}
 {% comment %}scroll-mt-20: a link to #history lands with the heading clear of the fixed 4rem header.{% endcomment %}
 <section id="history" data-timeline data-testid="timeline" class="mt-8 scroll-mt-20">
-  <h2 class="text-lg font-semibold text-gray-900 mb-2 scroll-mt-20">History</h2>
+  <h2 class="{{ history_heading_class|default:'text-lg font-semibold text-gray-900' }} mb-2 scroll-mt-20">History</h2>
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-2">
     {% if timeline %}
       <ol>
@@ -33,24 +33,29 @@ them out on a past date.
               amber on a line of its own read as a warning about something else. It and the actor
               pills are at the change line's size (text-sm): at text-xs they were the smallest text
               on the page. gray-700 on gray-100 and indigo-800 on indigo-50 both clear 4.5:1.{% endcomment %}
-              <div data-testid="revision-text" class="text-sm text-gray-900">{{ entry.line|bold_after_arrow }}{% if entry.eta_moved %} <span data-testid="eta-moved" class="ml-1 inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-sm text-gray-700">{{ entry.eta_moved }}</span>{% endif %}</div>
+              {% comment %}Bookkeeping -- an invitation sent, a chase recorded -- is set smaller and
+              muted, so the replies and quotes among it are what the eye lands on.{% endcomment %}
+              <div data-testid="revision-text"{% if entry.bookkeeping %} data-bookkeeping{% endif %} class="{% if entry.bookkeeping %}text-xs text-gray-600{% else %}text-sm text-gray-900{% endif %}">{{ entry.line|bold_after_arrow }}{% if entry.eta_moved %} <span data-testid="eta-moved" class="ml-1 inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-sm text-gray-700">{{ entry.eta_moved }}</span>{% endif %}</div>
+              {% if entry.hold %}
+                {% comment %}The line that made the shipment wait on a document we owe, while it
+                still does: in the order banner's own words (holds.py). Calm, not an alarm.{% endcomment %}
+                <div data-testid="revision-hold" class="mt-0.5 text-sm text-message-warning-text">{{ entry.hold }}</div>
+              {% endif %}
               <div class="mt-0.5 flex flex-wrap items-center gap-2">
                 {% comment %}
-                The actor badge is how the source opens: with an excerpt it is
-                the <summary> of the <details> holding it, so clicking who told
-                us shows what they said. The indigo is the AI marker, kept apart from the amber of a data gap; the AI glyph
-                only where the label does not already say "via AI".
+                Who told us is a label and only a label -- the indigo pill with the AI glyph when
+                the write came through an agent or MCP/the API. The source it rested on opens from
+                its own toggle beside it ("Source email"): run together in one control, clicking a
+                name to read an email was found by nobody.
                 {% endcomment %}
+                <span data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}"><span data-testid="actor-pill" class="inline-flex items-center gap-1">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span>{{ entry.actor }}</span></span></span>
                 {% if entry.excerpt %}
-                  {% comment %}Who told us is one badge (the AI glyph and "ACE (agent)"), and the way to the
-                  source a small button beside it ("View email"): run together in one pill they
-                  read as one name. Both sit in the summary, so either opens it; the details
-                  spans the line, so the excerpt it opens runs the line's full width.{% endcomment %}
-                  {% comment %}The button says what a click does: "View email" while the excerpt is
-                  shut, "Hide email" while it is open -- the details' own open state, no script.{% endcomment %}
-                  <details class="group w-full text-xs">
-                    <summary data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}title="{% if entry.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
-                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-2 text-xs"><span data-testid="actor-pill" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span>{{ entry.actor }}</span></span><span data-testid="source-link" class="inline-flex items-center rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50"><span class="group-open:hidden">{{ entry.source_link_text }}</span><span data-testid="source-hide" class="hidden group-open:inline">{{ entry.source_hide_text }}</span></span></summary>
+                  {% comment %}The toggle says what a click does: "Source email" while shut, "Hide email"
+                  while open -- the details' own open state, no script. Open, it spans the line, so the
+                  excerpt runs the line's full width.{% endcomment %}
+                  <details class="group text-xs open:w-full">
+                    <summary data-testid="source-toggle" title="{% if entry.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
+                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center"><span data-testid="source-link" class="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50">{% if entry.source_kind == "Email" %}<i class="fa-regular fa-envelope" aria-hidden="true"></i>{% endif %}<span class="group-open:hidden">{{ entry.source_link_text }}</span><span data-testid="source-hide" class="hidden group-open:inline">{{ entry.source_hide_text }}</span></span></summary>
                     {% comment %}Where the quote came from, as the call recorded it -- the kind its
                     reference implies, who recorded it and when. A replay of the same evidence
                     was answered from this write, not written again.{% endcomment %}
@@ -59,18 +64,18 @@ them out on a past date.
                     this is the evidence, not a footnote.{% endcomment %}
                     <blockquote data-testid="source-excerpt" class="mt-1 w-full rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ entry.excerpt }}</blockquote>
                   </details>
-                {% elif entry.is_ai %}
-                  <span data-testid="actor-badge" data-ai class="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-sm">{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}<span>{{ entry.actor }}</span></span>
-                {% else %}
-                  <span data-testid="actor-badge" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300">{{ entry.actor }}</span>
                 {% endif %}
               </div>
             </div>
+            {% comment %}Every quote an AI entered says something here: Correct and Void while it
+            stands, and why not once it was voided or corrected.{% endcomment %}
             {% if entry.correct_url or entry.void_url %}
-              <div class="shrink-0 text-xs whitespace-nowrap space-x-3">
+              <div data-testid="quote-fixes" class="shrink-0 text-xs whitespace-nowrap space-x-3">
                 {% if entry.correct_url %}<a href="{{ entry.correct_url }}" class="text-brand-indigo hover:underline">Correct</a>{% endif %}
                 {% if entry.void_url %}<a href="{{ entry.void_url }}" class="text-brand-indigo hover:underline">Void</a>{% endif %}
               </div>
+            {% elif entry.fix_status %}
+              <div data-testid="quote-fixes" class="shrink-0 text-xs whitespace-nowrap text-gray-600">{% if entry.fix_status == "voided" %}voided{% else %}since corrected{% endif %}</div>
             {% endif %}
           </li>
         {% endfor %}

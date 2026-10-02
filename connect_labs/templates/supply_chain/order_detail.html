@@ -552,7 +552,9 @@ partner's name (the IPTSc render).
 </div>
 {% endif %}
 
-<h3 class="text-sm font-semibold text-gray-900 mt-6 mb-2">Shipments</h3>
+{% comment %}One heading style for every section of the order, History included
+(`history_heading_class` below): they were a mix of small and large.{% endcomment %}
+<h3 class="text-base font-semibold text-gray-900 mt-6 mb-2">Shipments</h3>
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   {% comment %}
   A scroll container is not focusable by default, so a keyboard-only user
@@ -667,7 +669,7 @@ partner's name (the IPTSc render).
   </div>
 </div>
 
-<h3 class="text-sm font-semibold text-gray-900 mt-6 mb-2">Received</h3>
+<h3 class="text-base font-semibold text-gray-900 mt-6 mb-2">Received</h3>
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   {% comment %}
   A scroll container is not focusable by default, so a keyboard-only user
@@ -725,31 +727,15 @@ The section stays only if one was somehow recorded, so it is not hidden.
 {% endcomment %}
 {% if contract.consideration == "priced" or invoices %}
 <div class="flex items-baseline justify-between mt-6 mb-2">
-  <h3 id="owed" class="text-sm font-semibold text-gray-900 scroll-mt-20">What we owe them</h3>
+  <h3 id="owed" class="text-base font-semibold text-gray-900 scroll-mt-20">What we owe them{% if owed %} <span data-testid="owed-open-count" class="font-normal text-gray-600">— {{ owed_open|length }} open</span>{% endif %}</h3>
   {% if not supply_as_of %}
   <a href="{% url 'supply_chain:contract_commitment_record' contract.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>
   {% endif %}
 </div>
-<div class="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 mb-2" data-testid="owed">
-  {% for c in owed %}
-    <div class="px-4 py-2 text-sm flex items-start justify-between gap-4{% if c.changed %} bg-yellow-50{% endif %}" data-commitment-id="{{ c.id }}"{% if c.changed %} data-changed{% endif %}>
-      <div>
-        <span class="font-medium text-gray-900">{{ c.owed_to }}</span>
-        <span class="text-gray-600">· {% if c.kind == "question" %}asked us{% else %}we promised{% endif %} {{ c.raised_on|day }}</span>
-        <div class="text-gray-700">{{ c.text }}</div>
-        {% if not c.open %}<div class="text-xs text-gray-600">Done {{ c.resolved_on|day }}: {{ c.resolution }}</div>{% endif %}
-      </div>
-      {% if c.open and not supply_as_of %}
-        <a href="{% url 'supply_chain:commitment_resolve' c.id %}" class="text-brand-indigo hover:underline whitespace-nowrap">Mark done</a>
-      {% endif %}
-    </div>
-  {% empty %}
-    <p class="px-4 py-3 text-sm text-gray-600">Nothing owed on this order.</p>
-  {% endfor %}
-</div>
+{% include "supply_chain/_owed.html" with resolve_label="Mark done" empty_text="Nothing owed on this order." %}
 <div class="flex items-baseline justify-between mt-6 mb-2">
-  <h3 class="text-sm font-semibold text-gray-900">Invoices</h3>
+  <h3 class="text-base font-semibold text-gray-900">Invoices</h3>
   {% if contract.consideration == "priced" and not supply_as_of %}
   <span class="text-sm">
     <a href="{% url 'supply_chain:advance_payment_record' contract.id %}"
@@ -794,7 +780,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
             {% comment %}What the invoice_above_contract check found on this invoice, in its
             own words: calm, beside the figure, not a second alarm.{% endcomment %}
             {% for mark in invoice.above_agreed %}
-              <div data-testid="invoice-above-agreed" class="text-xs text-message-warning-text">{{ mark }}</div>
+              <div data-testid="invoice-above-agreed" class="text-sm text-gray-900">{{ mark.text }}{% if mark.tag %} <span data-testid="above-agreed-tag" class="ml-1 inline-flex items-center rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span>{% endif %}</div>
             {% endfor %}
           </td>
           <td class="px-4 py-2 text-right tabular-nums">
@@ -855,7 +841,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
 {% endif %}
 
 <div class="flex items-baseline justify-between mt-6 mb-2">
-  <h3 class="text-sm font-semibold text-gray-900">Evidence</h3>
+  <h3 class="text-base font-semibold text-gray-900">Evidence</h3>
   {% if not supply_as_of %}
   <a href="{% url 'supply_chain:document_attach' contract.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Attach a document</a>
@@ -890,7 +876,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
     </p>
   {% endif %}
 </div>
-{% include "supply_chain/_timeline.html" %}
+{% include "supply_chain/_timeline.html" with history_heading_class="text-base font-semibold text-gray-900" %}
 </div>
 {% endif %}
 {% endblock %}

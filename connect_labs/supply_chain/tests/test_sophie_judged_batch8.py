@@ -132,8 +132,8 @@ def _ace_quote(da, base, ace, ref="<msg-b8@northwind.example>"):
 class TestTheAgentBadge:
     def test_the_timeline_badge(self, da, base, order, client_in_program):
         body = batch6._order_page(client_in_program, order["contract"]["id"])
-        summary = re.search(r'<summary data-testid="actor-badge".*?</summary>', body, re.S).group(0)
-        pill = re.search(r'<span data-testid="actor-pill"[^>]*>(.*?)</span></span>', summary, re.S).group(1)
+        badge = re.search(r'<span data-testid="actor-badge" data-ai .*?</span></span></span>', body, re.S).group(0)
+        pill = re.search(r'<span data-testid="actor-pill"[^>]*>(.*?)</span></span>', badge, re.S).group(1)
         assert _bare(pill) == "ACE (agent)"
         assert re.search(r'<i data-testid="ai-glyph" [^>]*role="img" aria-label="AI"', pill)
 
@@ -170,9 +170,9 @@ class TestTheAgentBadge:
 class TestTheTimeline:
     def test_view_email_becomes_hide_email_while_open(self, da, base, order, client_in_program):
         body = batch6._order_page(client_in_program, order["contract"]["id"])
-        assert re.search(r'<details class="group w-full text-xs">', body)
+        assert re.search(r'<details class="group text-xs open:w-full">', body)
         button = re.search(r'<span data-testid="source-link"[^>]*>(.*?)</summary>', body, re.S).group(1)
-        assert '<span class="group-open:hidden">View email</span>' in button
+        assert '<span class="group-open:hidden">Source email</span>' in button
         assert '<span data-testid="source-hide" class="hidden group-open:inline">Hide email</span>' in button
 
     def test_the_value_after_the_arrow_is_bold(self, da, base, order, client_in_program):

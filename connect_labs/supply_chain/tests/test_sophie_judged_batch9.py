@@ -222,13 +222,13 @@ class TestTheRankedTable:
         second = _quote_with(da, tender_id, other["id"], AUG_20, {**_DELIVERED, "as_quoted_amount": "44.00"})
         return _page(client_in_program, tender_id), first, second
 
-    def test_the_table_is_as_wide_as_its_figures(self, da, base, client_in_program):
-        # base-table is w-full: the spare width went into the columns before "Landed total".
-        # The full-width rows under each offer contribute no width (w-0 min-w-full), so the
-        # table sizes to its figures and those rows wrap inside it.
+    def test_the_table_spans_the_page_like_the_cards_below_it(self, da, base, client_in_program):
+        # Full width since the unanswered round's batch 2, matching the Needs-info cards
+        # (empty trailing columns are dropped instead). The full-width rows under each
+        # offer still contribute no width (w-0 min-w-full) and wrap inside it.
         body, _, _ = self._body(da, base, client_in_program)
         table = set(re.search(r'<table data-testid="ranked-table" class="([^"]*)"', body).group(1).split())
-        assert {"base-table", "w-auto"} <= table and "w-full" not in table
+        assert {"base-table", "w-full"} <= table and "w-auto" not in table
         fill = re.findall(r'data-testid="detail-fill" class="([^"]*)"', body)
         assert fill and all({"w-0", "min-w-full"} <= set(f.split()) for f in fill)
         actions = re.findall(r'<div class="([^"]*)">\s*(?:<div data-testid="row-questions"|<form)', body)

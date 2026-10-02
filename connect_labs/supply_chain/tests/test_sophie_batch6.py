@@ -282,8 +282,9 @@ class TestTheTimelineReads:
 
     def test_an_email_source_reads_view_email(self, da, base, order, client_in_program):
         body = _order_page(client_in_program, order["contract"]["id"])
-        badge = re.search(r'<summary data-testid="actor-badge".*?</summary>', body, re.S).group(0)
-        assert re.search(r'data-testid="source-link"[^>]*><span[^>]*>View email<', badge)
+        # Since the unanswered round's batch 2: "Source email", on its own toggle.
+        badge = re.search(r'<summary data-testid="source-toggle".*?</summary>', body, re.S).group(0)
+        assert re.search(r'data-testid="source-link"[^>]*>.*?<span[^>]*>Source email<', badge, re.S)
         # The same excerpt still opens under it.
         details = body[body.index(badge) :]
         assert re.search(r'<blockquote data-testid="source-excerpt"', details[: details.index("</details>")])
@@ -301,8 +302,8 @@ class TestTheTimelineReads:
         )
         assert quote
         body = _tender_page(client_in_program, base["tender"]["id"])
-        assert re.search(r'data-testid="source-link"[^>]*><span[^>]*>source<', body)
-        assert "View email" not in body
+        assert re.search(r'data-testid="source-link"[^>]*><span[^>]*>Source<', body)
+        assert "Source email" not in body
 
 
 # ---- 10. a question from what is already known ------------------------------

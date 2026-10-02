@@ -213,7 +213,7 @@ class TestHistoryWording:
 class TestSpecificationChip:
     @pytest.mark.parametrize(
         "count, expected",
-        [(1, "Meets the 1 spec requirement"), (3, "Meets all 3 spec requirements")],
+        [(1, "Meets spec (1 requirement)"), (3, "Meets spec (3 requirements)")],
     )
     def test_a_passing_offer_says_how_many_requirements_it_meets(self, count, expected):
         rendered = Template(
@@ -258,8 +258,11 @@ class TestOrderInvoices:
         text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", body))
         assert "Advance paid USD 53,400.00 on 28 Jul 2026 (before this invoice)" in text
         assert "confirmed by the payee 21 Sep 2026" in text
-        marker = re.search(r'data-testid="invoice-above-agreed"[^>]*>([^<]*)<', body).group(1)
-        assert marker == "USD 3,550.00 above agreed"
+        marker = re.search(r'data-testid="invoice-above-agreed"[^>]*>(.*?)</div>', body, re.S).group(1)
+        assert re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", marker)).strip() == "USD 3,550.00 above agreed"
+        # At body size, with its tag (batch 2).
+        assert 'data-testid="invoice-above-agreed" class="text-sm text-gray-900"' in body
+        assert 'data-testid="above-agreed-tag"' in marker
 
 
 # ---- J: the overview's waiting-on kinds in bold
