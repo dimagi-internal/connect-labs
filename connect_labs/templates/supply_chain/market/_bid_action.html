@@ -5,9 +5,10 @@ in, register, bid -- or, to the buyer's own team, nothing to do. In a
 nothing: the team cannot bid on its own tender.
 {% endcomment %}
 {% if previewing_as_supplier %}
-  {% comment %}Drawn disabled, and saying where a supplier acts rather than inviting a
-  click: a live-looking "Bid →" on the owner's preview read as a link that did nothing.{% endcomment %}
-  <span data-testid="preview-bid" aria-disabled="true" title="A supplier bids here. This is a preview, so it does nothing." class="inline-flex cursor-not-allowed items-center rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-normal text-gray-600">Suppliers bid here</span>
+  {% comment %}Plain words saying where a supplier acts, not a control: drawn as a greyed
+  button ("Suppliers bid here") it read as a broken one, and a live-looking "Bid →"
+  as a link that did nothing.{% endcomment %}
+  <p data-testid="preview-bid" class="font-normal text-gray-700">Suppliers place their bid from this page.</p>
 {% elif not signed_in %}
   <a href="{% url 'labs:login' %}?next={% url 'supply_chain:market_bid' r.pk line.commodity_slug %}" class="pg-link hover:underline">Sign in to bid →</a>
 {% elif program_view_url %}

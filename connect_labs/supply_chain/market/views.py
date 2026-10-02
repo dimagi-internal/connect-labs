@@ -155,6 +155,7 @@ def _tender_page(request, listed):
         exit_preview_url=request.path if previewing else "",
         asked_for=_asked_for(listed.lines),
         delivered_to=_delivered_to_words(tender.delivery_points or []),
+        place_is_hero=_place_is_hero(tender),
         posted_by=_posted_by(request, tender, on_program),
         posted_on=_posted_on(tender),
         hidden_from_suppliers=_hidden_from_suppliers(tender) if previewing else "",
@@ -249,6 +250,17 @@ def _delivered_to_words(places) -> str:
         place = places[0] or {}
         return place.get("city") or place.get("name") or ""
     return ""
+
+
+def _place_is_hero(tender) -> bool:
+    """Whether the hero's "DELIVERED TO" already says all the request panel would: one
+    place, named by its city alone (or by nothing but its city), and no collection."""
+    places = tender.delivery_points or []
+    if len(places) != 1 or tender.pickup_accepted:
+        return False
+    place = places[0] or {}
+    name, city = (place.get("name") or "").strip(), (place.get("city") or "").strip()
+    return bool(city) and name in ("", city)
 
 
 def _posted_by(request, tender, on_program) -> str:

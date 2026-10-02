@@ -138,7 +138,9 @@ class TestTheProvisionalStage:
         assert (row.stage, row.award_price) == ("awarded to Northwind Foods", price)
         standing = batch6._standing(_home(home_client))
         cell = re.search(r'<td class="px-4 py-2.5">\s*awarded to Northwind Foods(.*?)</td>', standing, re.S).group(1)
-        assert re.search(rf'data-testid="award-price"[^>]*>· {price}<', cell)
+        # Since batch 9 a clause a line under the stage.
+        lines = re.findall(r'data-testid="award-price-line"[^>]*>(.*?)</span>', cell)
+        assert lines == price.split(" · ")
 
 
 # ---- 3. the award's why is a full-width row ----------------------------------

@@ -128,6 +128,12 @@ class Row:
     # and what it commits: "USD 41.00 per carton · USD 82,000.00 for 2,000 cartons".
     award_price: str = ""
 
+    @property
+    def award_price_lines(self) -> tuple:
+        """The award's price a clause a line, under "awarded to <supplier>":
+        ("USD 41.00 per carton", "USD 82,000.00 for 2,000 cartons")."""
+        return tuple(part for part in self.award_price.split(" · ") if part)
+
 
 def standing_rows(program_id: int, today: date, *, until: date | None = None, own_org_id=None) -> list[Row]:
     """Every tender and order in the program, newest change first.
@@ -398,12 +404,18 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
         # out who. The age is the one every one of them has passed, so the
         # sentence is true of each.
         by_age = sorted(overdue, key=lambda sid: (-overdue[sid], suppliers[sid].name))
-        stale.append(
-            Flag(
-                f"No reply in {min(overdue.values())} days: {_names([suppliers[sid].name for sid in by_age])}",
-                NO_REPLY_RULE,
-            )
-        )
+        text = f"No reply in {min(overdue.values())} days: {_names([suppliers[sid].name for sid in by_age])}"
+        # It opens, like "Can't compare yet", on what it rests on: when each
+        # request went out and to whom, then the rule that raised the flag.
+        channels = {o.supplier_id: o.channel for o in outreach if o.sent_on == latest_ask.get(o.supplier_id)}
+        lines = [
+            f"{suppliers[sid].name} — asked {_day(latest_ask[sid])}"
+            + (" by email" if channels.get(sid) == "email" else "")
+            + f", {_plural(overdue[sid], 'day')} ago"
+            for sid in by_age
+        ]
+        lines.append(f"Flagged after {NO_REPLY_DAYS} days without a reply")
+        stale.append(Flag(text, NO_REPLY_RULE, heading=text, lines=lines))
     # Every live quote the comparison cannot rank, named with what it is
     # missing -- read off the comparison itself, so "0 of 3 comparable" there
     # and this flag here count the same offers for the same reasons. Not once
