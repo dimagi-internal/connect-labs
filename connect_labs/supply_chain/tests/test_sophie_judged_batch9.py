@@ -133,7 +133,8 @@ class TestOneOrderOnEveryCard:
 class TestTheNoReplyFlagOpens:
     def test_when_it_was_asked_and_the_rule(self, da, base):
         judged7._provisional(da, base)
-        flag = judged7._tender_row().stale[0]
+        # Since batch 10 the no-reply reminder comes after can't-compare.
+        flag = next(f for f in judged7._tender_row().stale if f.startswith("No reply"))
         assert flag == "No reply in 33 days: Plateau Mills"
         assert flag.heading == flag
         assert flag.lines == ("Plateau Mills — asked 10 Aug, 33 days ago", "Flagged after 14 days without a reply")
@@ -235,11 +236,10 @@ class TestTheRankedTable:
 
     def test_the_first_award_form_is_the_award_anchor(self, da, base, client_in_program):
         body, first, second = self._body(da, base, client_in_program)
+        # Since batch 10 the anchor is the first awardable offer's ranked ROW (batch10 tests).
         assert body.count('id="award"') == 1
-        form = re.search(r'<form [^>]*id="award"[^>]*>.*?</form>', body, re.S).group(0)
-        assert 'data-testid="award-form"' in form
         ranked = re.findall(r'<tr data-testid="ranked-row" data-quote-id="(\d+)"', body)
-        assert f'name="quote_id" value="{ranked[0]}"' in form
+        assert re.search(rf'<tr data-testid="ranked-row" data-quote-id="{ranked[0]}" id="award"', body)
 
 
 # The walkthrough's hooks stay where they were.

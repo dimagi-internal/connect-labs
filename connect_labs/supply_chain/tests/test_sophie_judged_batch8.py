@@ -254,7 +254,7 @@ class TestABlockedCard:
         )
         card = batch6._card(_page(client_in_program, base["tender"]["id"]), quote["id"])
         price = _text(re.search(r'<p data-testid="as-quoted"[^>]*>(.*?)</p>', card, re.S).group(1))
-        assert price == "Quoted 0.29 USD per sachet = USD 43.50 per carton"
+        assert price == "Quoted USD 0.29 per sachet = USD 43.50 per carton"
 
     def test_the_pack_requirement_is_a_grey_line_not_a_chip(self, da, base, client_in_program):
         _with_spec(da)
@@ -276,7 +276,9 @@ class TestTheRankedTable:
             da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {**_DELIVERED, "as_quoted_amount": "41.00"}
         )
         body = _page(client_in_program, base["tender"]["id"])
-        row = re.search(rf'<tr data-testid="ranked-row" data-quote-id="{quote["id"]}">(.*?)</tr>', body, re.S).group(1)
+        row = re.search(
+            rf'<tr data-testid="ranked-row" data-quote-id="{quote["id"]}"[^>]*>(.*?)</tr>', body, re.S
+        ).group(1)
         assert "USD 0.273" in row and "0.2733" not in row
         assert "USD 41.00" in row
 

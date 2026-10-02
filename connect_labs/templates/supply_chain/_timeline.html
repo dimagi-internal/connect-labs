@@ -30,8 +30,10 @@ them out on a past date.
               recorded: ETA 5 Sep" and "Shipment · SH-1 · ETA 5 Sep → 19 Sep".{% endcomment %}
               {% comment %}How far the arrival moved, as a signed count of days, so "5 Sep → 19 Sep"
               need not be worked out: inline, after the sentence it measures, in the neutral pill --
-              amber on a line of its own read as a warning about something else.{% endcomment %}
-              <div data-testid="revision-text" class="text-sm text-gray-900">{{ entry.line|bold_after_arrow }}{% if entry.eta_moved %} <span data-testid="eta-moved" class="ml-1 inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ entry.eta_moved }}</span>{% endif %}</div>
+              amber on a line of its own read as a warning about something else. It and the actor
+              pills are at the change line's size (text-sm): at text-xs they were the smallest text
+              on the page. gray-700 on gray-100 and indigo-800 on indigo-50 both clear 4.5:1.{% endcomment %}
+              <div data-testid="revision-text" class="text-sm text-gray-900">{{ entry.line|bold_after_arrow }}{% if entry.eta_moved %} <span data-testid="eta-moved" class="ml-1 inline-flex items-center whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-sm text-gray-700">{{ entry.eta_moved }}</span>{% endif %}</div>
               <div class="mt-0.5 flex flex-wrap items-center gap-2">
                 {% comment %}
                 The actor badge is how the source opens: with an excerpt it is
@@ -48,7 +50,7 @@ them out on a past date.
                   shut, "Hide email" while it is open -- the details' own open state, no script.{% endcomment %}
                   <details class="group w-full text-xs">
                     <summary data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}title="{% if entry.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
-                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-2 text-xs"><span data-testid="actor-pill" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span>{{ entry.actor }}</span></span><span data-testid="source-link" class="inline-flex items-center rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50"><span class="group-open:hidden">{{ entry.source_link_text }}</span><span data-testid="source-hide" class="hidden group-open:inline">{{ entry.source_hide_text }}</span></span></summary>
+                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center gap-2 text-xs"><span data-testid="actor-pill" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span>{{ entry.actor }}</span></span><span data-testid="source-link" class="inline-flex items-center rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50"><span class="group-open:hidden">{{ entry.source_link_text }}</span><span data-testid="source-hide" class="hidden group-open:inline">{{ entry.source_hide_text }}</span></span></summary>
                     {% comment %}Where the quote came from, as the call recorded it -- the kind its
                     reference implies, who recorded it and when. A replay of the same evidence
                     was answered from this write, not written again.{% endcomment %}
@@ -58,9 +60,9 @@ them out on a past date.
                     <blockquote data-testid="source-excerpt" class="mt-1 w-full rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ entry.excerpt }}</blockquote>
                   </details>
                 {% elif entry.is_ai %}
-                  <span data-testid="actor-badge" data-ai class="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs">{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}<span>{{ entry.actor }}</span></span>
+                  <span data-testid="actor-badge" data-ai class="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-sm">{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}<span>{{ entry.actor }}</span></span>
                 {% else %}
-                  <span data-testid="actor-badge" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-900 ring-1 ring-inset ring-gray-300">{{ entry.actor }}</span>
+                  <span data-testid="actor-badge" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300">{{ entry.actor }}</span>
                 {% endif %}
               </div>
             </div>

@@ -96,11 +96,16 @@
 {% endif %}
 
 {% if comparison.comparable %}
+  {% comment %}What the ranking is by is marked on that column's own header, below. A
+  label floating at the right above the table read as detached from it; it stays only
+  when there is no such column to mark.{% endcomment %}
   <div class="flex items-baseline justify-between mb-2">
     <h2 class="text-lg font-semibold text-gray-900">Comparable</h2>
-    <p class="text-sm text-gray-600">
+    {% if not ranked_in_table %}
+    <p data-testid="ranked-by-fallback" class="text-sm text-gray-600">
       {% if ranked_by_label %}Ranked by {{ ranked_by_label }}{% else %}Not yet ranked{% endif %}
     </p>
+    {% endif %}
   </div>
   {% if cost_basis %}
     {% comment %}What one pack and one course are in base units, as the commodity
@@ -127,12 +132,16 @@
         <thead>
           <tr>
             <th>#</th><th>Supplier</th>
-            {% for column in table_columns %}<th>{{ column.label }}</th>{% endfor %}
+            {% for column in table_columns %}{% if column.key == ranked_by_key %}<th>{{ column.label }}<span data-testid="ranked-by-marker" class="mt-0.5 flex items-center gap-1 text-xs font-medium normal-case tracking-normal text-brand-indigo"><i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i>Ranked by this, lowest first</span></th>{% else %}<th>{{ column.label }}</th>{% endif %}{% endfor %}
           </tr>
         </thead>
         <tbody>
           {% for row in comparison.comparable %}
-            <tr data-testid="ranked-row" data-quote-id="{{ row.quote_id }}">
+            {% comment %}id="award" is on the ROW of the first offer that can still be awarded,
+            so "#award" lands on the supplier, its figures and the award form under them
+            together; the form keeps data-testid="award-form". scroll-mt-20 clears the fixed
+            header.{% endcomment %}
+            <tr data-testid="ranked-row" data-quote-id="{{ row.quote_id }}"{% if row.quote_id == award_anchor_quote_id %} id="award" class="scroll-mt-20"{% endif %}>
               <td>{{ forloop.counter }}</td>
               <td class="font-medium">
                 {% comment %}The offer is the kit; the supplier is who offers it. Two offers
@@ -146,6 +155,14 @@
                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Awarded</span>
                 {% endif %}
                 {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
+                {% comment %}Why a quote that was blocked is ranked: the correction that answered
+                the fact it lacked, said on its row under the supplier. Only when the correction
+                filled a blank -- a correction to a figure the quote already had did not move it in.
+                The line wraps (base-table cells do not), so a long name cannot push the figures
+                off the screen.{% endcomment %}
+                {% with joined=corrections|dictkey:row.quote_id %}{% if joined and joined.filled_gap %}
+                  <p data-testid="joined-ranking" class="mt-0.5 w-56 whitespace-normal text-xs font-normal text-gray-700">Joined the ranking {{ joined.when|date:"j M" }} after {{ joined.actor }} recorded the supplier's answer</p>
+                {% endif %}{% endwith %}
               </td>
               {% for column in table_columns %}
                 {% with cell=row.figures|dictkey:column.key %}
@@ -233,7 +250,7 @@
                   {% comment %}data-testid="award-form" is the walkthroughs' hook: the form has
                   moved three times in its row, and an answered quote's id is only minted on
                   camera, so a recipe finds the form by what it is, not by where it sits.{% endcomment %}
-                  <form method="post" action=""{% if row.quote_id == award_anchor_quote_id %} id="award"{% endif %} data-testid="award-form" class="flex flex-wrap items-end gap-2 min-w-0">
+                  <form method="post" action="" data-testid="award-form" class="flex flex-wrap items-end gap-2 min-w-0">
                     {% csrf_token %}
                     <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
                     <label class="flex flex-col gap-0.5 text-xs text-gray-600 min-w-0 flex-1 basis-64" for="rationale-{{ row.quote_id }}">Why this offer
