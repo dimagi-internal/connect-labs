@@ -1776,12 +1776,12 @@ Use this section when a report's figures are **indicators**: a numerator over a 
 A registry is three documents. `properties_doc` holds the MODEL, the constants, the per-entity aggregates and the properties. `indicators_doc` holds the measures, suppression rules, `defaults` and `series`. `deployment` holds optional facts: `llo_map`, credibility `settings`, `app_asks`, `asks_as`. The model says what the engine counts:
 
 ```yaml
-entity:
-  {
+entity: {
     name: beneficiary,
     plural: beneficiaries,
     key: entity_id,
     cohort_date: first_visit,
+    worker: last_visit, # optional: alphabetical (default) | first_visit | last_visit
   }
 visit_columns: # derived per-visit columns added to Layer 1
   - { name: is_approved, word_match: { column: status, word: approved } }
