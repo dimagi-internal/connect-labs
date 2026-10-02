@@ -278,15 +278,22 @@ Each row becomes one visit-shaped row; its cells are under `row.*` and the file 
   or an object holding one under `rows`/`data`). A folder's matching files are concatenated in name
   order; ≤ 100 files, ≤ 50 MB per file, ≤ 500,000 rows. CSV cells arrive as strings — use a
   `transform` (`int`, `float`) for numbers.
-- **Sharing:** share the file or folder with the labs service account (Viewer is enough). A read
-  failure names the account. Drive is read with a read-only token.
+- **Where the data must live:** only files and folders under a workflow-data root
+  (`LABS_WORKFLOW_GDRIVE_ROOT_IDS`) can be read. Copy data a workflow should see into that tree;
+  a source pointing anywhere else is refused when it is saved and again on every read (it is
+  checked by walking the item's Drive parents, so moving a file out of the tree cuts it off). With
+  no root configured, Drive sources are off.
+- **Sharing:** the root is shared with the labs service account
+  (`connect-labs-sa@connect-labs.iam.gserviceaccount.com`); anything copied under it is readable.
+  Drive is read with a read-only token.
 - **Authorization:** only Dimagi staff can point a pipeline at Drive. Setting or changing the
   target (`file_id`/`folder_id`/`file_pattern`) through `pipeline_update_schema` or the pipeline
-  editor needs staff and stamps `data_source.authorization`, bound to that opportunity and that
-  exact target. Re-saving an unchanged target keeps its stamp, so anyone may edit the fields of an
-  authorized pipeline. A target stored some other way (e.g. a template sync) stays unstamped until
-  a staff member passes `authorize_drive_source: true` to `pipeline_update_schema`. Never write
-  `authorization` by hand.
+  editor needs staff and stamps `data_source.authorization`, bound to that opportunity, that
+  pipeline and that exact target (a stamp copied into another pipeline does not verify). Creating
+  a pipeline does not stamp it: save it once more as staff. Re-saving an unchanged target keeps
+  its stamp, so anyone may edit the fields of an authorized pipeline. A target stored some other
+  way (e.g. a template sync) stays unstamped until a staff member passes
+  `authorize_drive_source: true` to `pipeline_update_schema`. Never write `authorization` by hand.
 - **Who can read it:** every read, fresh or cached, needs a valid stamp for the opportunity AND a
   caller (the Connect token the pipeline runs with) who is a member of that opportunity. Members
   can read every column of every matching file, including files added to the folder later, so

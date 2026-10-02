@@ -26,6 +26,15 @@ DRIVE_SCHEMA = {
 }
 
 
+@pytest.fixture(autouse=True)
+def drive_tree(settings, monkeypatch):
+    """Everything sits under the allowed root (containment is tested in test_gdrive_fetcher)."""
+    from connect_labs.labs.analysis.backends.sql import gdrive_fetcher
+
+    settings.LABS_WORKFLOW_GDRIVE_ROOT_IDS = ["folderA"]
+    monkeypatch.setattr(gdrive_fetcher, "_drive", lambda: MagicMock(get_parents=lambda _id: []))
+
+
 def _user(email):
     user = User.objects.create(username=email.split("@")[0], email=email)
     _, raw = MCPAccessToken.create_token(user, name="t")
@@ -52,7 +61,7 @@ def test_staff_save_is_stamped_for_the_opportunity(mock_pda_cls):
     assert data["result"]["isError"] is False, data
     saved = mock_pda_cls.return_value.update_definition.call_args.kwargs["schema"]["data_source"]
     assert saved["authorization"]["authorized_by"] == "analyst@dimagi.com"
-    verify_gdrive_authorization(DataSourceConfig(**saved), 1251)
+    verify_gdrive_authorization(DataSourceConfig(**saved), 1251, pipeline_id=7)
 
 
 @pytest.mark.django_db
@@ -96,4 +105,4 @@ def test_staff_field_edit_does_not_stamp_a_planted_target_unless_asked(mock_pda_
     forced = call_tool(raw, "pipeline_update_schema", {**args, "authorize_drive_source": True})
     assert forced["result"]["isError"] is False
     saved = mock_pda_cls.return_value.update_definition.call_args.kwargs["schema"]["data_source"]
-    verify_gdrive_authorization(DataSourceConfig(**saved), 1251)
+    verify_gdrive_authorization(DataSourceConfig(**saved), 1251, pipeline_id=7)

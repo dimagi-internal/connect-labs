@@ -4473,7 +4473,11 @@ def update_pipeline_schema_api(request, definition_id):
                 # Against the stored schema, so a re-save keeps an unchanged target's
                 # stamp and only a new/changed target needs (and gets) a staff stamp.
                 schema = authorize_schema_drive_source(
-                    schema, opportunity_id, request.user, previous_schema=stored.schema if stored else None
+                    schema,
+                    opportunity_id,
+                    request.user,
+                    previous_schema=stored.schema if stored else None,
+                    pipeline_id=int(definition_id),
                 )
             except GDriveSourceError as e:
                 data_access.close()

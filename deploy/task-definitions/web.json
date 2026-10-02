@@ -47,6 +47,10 @@
           "value": "sql"
         },
         {
+          "name": "LABS_WORKFLOW_GDRIVE_ROOT_IDS",
+          "value": "1WWbg-b6csSOc6YjtSUnew2nwx5r51nDR"
+        },
+        {
           "name": "LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID",
           "value": "1wDP7784aBx47BM9VEq72W1X0d-UHBh2_"
         },
