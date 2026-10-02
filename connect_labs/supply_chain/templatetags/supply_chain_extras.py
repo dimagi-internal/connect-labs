@@ -804,10 +804,17 @@ def order_stages(order):
         _cell(
             "Invoiced",
             order["invoiced"]["count"],
-            f"{order['invoiced']['unpaid']} unpaid" if order["invoiced"]["count"] else None,
+            _invoiced_note(order["invoiced"]) if order["invoiced"]["count"] else None,
             orders,
         ),
     ]
+
+
+def _invoiced_note(invoiced) -> str:
+    """ "1 part paid", "2 unpaid · 1 part paid": what is still owed on the invoices, part payments apart."""
+    unpaid, part = invoiced.get("unpaid") or 0, invoiced.get("part_paid") or 0
+    parts = [f"{unpaid} unpaid" if unpaid else "", f"{part} part paid" if part else ""]
+    return " · ".join(p for p in parts if p) or "0 unpaid"
 
 
 @register.filter

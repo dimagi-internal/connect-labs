@@ -483,7 +483,9 @@ class TestARankedRow:
         # Since batch 7 the three equal columns are one, its header saying why.
         # Since the unanswered round's batch 3 the header is short and the equation is the caption;
         # since batch 4 that caption and the cost basis are one line.
-        assert re.search(r'data-testid="cost-basis"[^>]*>Basis: 1 carton = 150 sachets = 1 course \(one child treated\)<', body)
+        assert re.search(
+            r'data-testid="cost-basis"[^>]*>Basis: 1 carton = 150 sachets = 1 course \(one child treated\)<', body
+        )
         assert 'data-testid="unit-equivalence"' not in body
         assert "<th>USD per carton (one course)</th>" in body
         assert "<th>USD per child treated</th>" not in body and "<th>USD per course</th>" not in body

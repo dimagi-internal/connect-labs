@@ -753,6 +753,9 @@ class ComparisonView(_Base):
         # One comparable offer is not a ranking: no "#", no "ranked by".
         context["single_offer"] = len((comparison or {}).get("comparable") or []) == 1
         context["award_anyway"] = award_anyway(comparison)
+        # Arriving by a link to the award step (?step=award) opens the folded award fields:
+        # the link already said "award", so a second click to reveal them is friction.
+        context["award_step"] = self.request.GET.get("step") == "award"
         return context
 
     def post(self, request, tender_id, *args, **kwargs):
