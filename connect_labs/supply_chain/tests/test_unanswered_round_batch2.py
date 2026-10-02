@@ -193,12 +193,16 @@ class TestTheComparison:
     def test_award_anyway_names_who_is_still_missing_what(self):
         comparison = {
             "blocked": [
-                {"supplier_name": "Northgate", "blockers": [{"fact": "Sachets per carton"}]},
-                {"supplier_name": "Sahel", "blockers": [{"fact": "ETA"}]},
+                {
+                    "supplier_name": "Northgate",
+                    "blockers": [{"fact": "Pack not stated", "label": "sachets per carton"}],
+                },
+                {"supplier_name": "Sahel", "blockers": [{"fact": "ETA", "label": "ETA"}]},
                 {"supplier_name": "Lakeside", "blockers": []},
             ]
         }
-        assert award_anyway(comparison) == "Northgate still missing sachets per carton (and 1 more)"
+        # Since batch 3: the missing fact as a sentence.
+        assert award_anyway(comparison) == "Northgate has not stated sachets per carton (and 1 more)"
         assert award_anyway({"blocked": []}) == ""
 
     def test_the_award_button_steps_down_while_a_quote_is_blocked(self, da, world, client_in_program):
@@ -220,7 +224,7 @@ class TestTheComparison:
         body = client_in_program.get(url).content.decode()
         button = re.search(r'<button data-testid="award-anyway"[^>]*>(.*?)</button>', body, re.S)
         assert button is not None
-        assert _text(button.group(1)).startswith("Award anyway — Northgate Rehearsal Commodities still missing ")
+        assert _text(button.group(1)).startswith("Award anyway — Northgate Rehearsal Commodities has not stated ")
 
     def test_an_empty_trailing_column_is_dropped_but_not_one_between_figures(self):
         rows = [{"figures": {"a": {"amount": "1"}, "b": {"amount": None}, "c": {"amount": "2"}, "d": {}}}]

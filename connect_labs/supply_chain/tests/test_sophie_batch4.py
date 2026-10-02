@@ -273,7 +273,7 @@ class TestTheComparisonHeader:
     def test_nothing_comparable_is_said_once(self, da, base, client_in_program):
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {})
         body = _page(client_in_program, base["tender"]["id"])
-        assert "0 of 1 comparable" in body
+        assert "0 of 1 quote can be compared." in body
         assert "Nothing is comparable yet" not in body
 
     def test_the_cost_basis_is_said_under_the_table_header(self, da, base, client_in_program):
