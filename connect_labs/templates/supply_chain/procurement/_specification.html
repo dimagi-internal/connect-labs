@@ -17,7 +17,9 @@ putting a second amber badge beside the one gap that matters.
         <div class="text-red-700 {% if not inline %}mt-1 {% endif %}max-w-xs">{{ failure }}</div>
       {% endfor %}
     {% elif specification.outcome == "pass" %}
-      <span class="font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">Spec: {{ specification.summary }}</span>
+      {% comment %}In words, sentence case: "SPEC: MEETS ALL 1" read as a code. An award
+      frozen before the count was kept falls back to its summary.{% endcomment %}
+      <span data-testid="spec-meets" class="font-medium text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">{% if specification.requirement_count == 1 %}Meets the 1 spec requirement{% elif specification.requirement_count %}Meets all {{ specification.requirement_count }} spec requirements{% else %}Spec: {{ specification.summary }}{% endif %}</span>
     {% elif not hide_not_stated %}
       {% comment %}Names what is missing ("Not stated: shelf life"), in sentence case: a
       list of requirement names in capitals read as a shouted code.{% endcomment %}

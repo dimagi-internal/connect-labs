@@ -29,8 +29,9 @@ spine:
 - id: S1
   claim: 'Silence is the normal case. This demo reconstructs a round 2 on Jonathan''s
     account of Sophie''s rounds: of six suppliers asked on 15 Sep, three never replied
-    despite reminders on 22 and 29 Sep, and the three who did sent one complete quote,
-    one quote missing a fact, and a page of questions instead of a price.'
+    despite two reminders (18 Sep, then 23 to 25 Sep), and the three who did sent
+    one complete quote, one quote missing a fact, and a page of questions instead
+    of a price.'
   status: grounded
   evidence:
   - ref: EV-024
@@ -85,8 +86,7 @@ spine:
   - ref: EV-014
     kind: implemented
   rationale: Sophie checks what the AI recorded against what the supplier said; the
-    excerpt and sender make that a glance. Closed schemas mean an undeclared field
-    is refused rather than silently dropped.
+    excerpt and sender make that a glance.
 - id: S5
   claim: 'With one complete quote, the comparison says what is still missing rather
     than ranking: Harmattan''s quote states everything, Kanem''s is missing its pack

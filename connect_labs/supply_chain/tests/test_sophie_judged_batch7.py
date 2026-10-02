@@ -78,7 +78,9 @@ class TestWaitingOnSaysTwoThings:
         assert row.waiting_lines == ("No reply: Plateau Mills", missing)
         assert row.waiting_detail == "1 of 2 replied"
         lines = re.findall(r'data-testid="waiting-line"[^>]*>(.*?)</span>', batch6._standing(_home(home_client)))
-        assert lines == ["No reply: Plateau Mills", missing]
+        # Each line's kind in bold, the text otherwise as it was.
+        assert lines == ["<strong>No reply</strong>: Plateau Mills", "<strong>Missing facts</strong>: " + missing[15:]]
+        assert [re.sub(r"</?strong>", "", line) for line in lines] == ["No reply: Plateau Mills", missing]
 
     def test_after_a_provisional_award_the_awardee_is_not_missing_facts(self, da, base):
         _provisional(da, base)

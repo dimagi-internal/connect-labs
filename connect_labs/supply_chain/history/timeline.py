@@ -640,3 +640,35 @@ def corrections_for_quotes(quote_ids, *, program_id, until=None) -> dict:
             ),
         }
     return out
+
+
+def reminders_for_outreach(outreach_ids, *, program_id, until=None) -> dict:
+    """{outreach id: how many reminders went} for the outreach table's "2nd reminder".
+
+    There is no counter on the record: a reminder is a day `last_reminder_on`
+    was set to, so the count is the distinct days the history shows it set to
+    (a repeated write of the same day is one reminder). One query for every
+    row. A reminder that predates the history is not here -- the caller floors
+    the count at 1 when the row carries a `last_reminder_on`.
+    """
+    from connect_labs.supply_chain.models import Outreach
+
+    ids = sorted({int(pk) for pk in outreach_ids if pk is not None})
+    if not ids:
+        return {}
+    revisions = Revision.objects.filter(
+        _type_q(Outreach),
+        action__in=("create", "update"),
+        object_id__in=[str(pk) for pk in ids],
+        program_id=program_id,
+        changes__has_key="last_reminder_on",
+    )
+    if until is not None:
+        revisions = revisions.filter(recorded_at__lte=end_of_day(until))
+    days = {}
+    for object_id, changes in revisions.values_list("object_id", "changes"):
+        change = changes.get("last_reminder_on")
+        new = change[1] if isinstance(change, (list, tuple)) and len(change) == 2 else None
+        if new:
+            days.setdefault(int(object_id), set()).add(str(new)[:10])
+    return {pk: len(found) for pk, found in days.items()}
