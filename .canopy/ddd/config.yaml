@@ -20,6 +20,18 @@ deploy_gate:
   interval_seconds: 5
   attempts: 12
   retry_seconds: 30
+# Inner loop (canopy >= 0.2.554): between checkpoints a fix batch renders against
+# THIS checkout served locally (tools/ddd_demo.py): no PR, CI or deploy. The
+# recipe's own seed.py still runs before every render; the recorder exports the
+# origin it films (CANOPY_RENDER_BASE_URL), so on a localhost render the seeder
+# reseeds the local build instead of labs. Checkpoints still go through
+# deploy_gate above. Change NARRATIVE when the active narrative changes; a
+# narrative's seeder needs a `seed_local` (see scripts/walkthroughs/_lib/local_seed.py).
+inner_loop:
+  base_url: http://localhost:8000
+  setup: make serve-demo DEMO_PORT=8000 NARRATIVE=supply-sophie-unanswered-round
+  health_url: http://localhost:8000/health/
+  ready_timeout_seconds: 300
 # Sub-step watchdog (canopy >= 0.2.533): a render, seed or fixer that runs past
 # its budget, or a fixer that stops touching its heartbeat file, ends as
 # timed_out instead of stalling the loop (run 1's batch 3 sat 4 h on a shared

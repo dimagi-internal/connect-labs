@@ -24,6 +24,16 @@ question). So before each render this:
    Sophie's Playwright storage state (gitignored: the key is a credential).
 
     python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --outputs <file>
+
+**Local mode** (canopy's DDD inner loop, `make serve-demo`): the same
+`replay.run()`, in-process against the local build's own database, with the
+sessions minted by `connect_labs.labs.demo_sessions` (local DEBUG builds only)
+for a loopback cookie -- Sophie's, and the agent account's beside it. Chosen by
+`--local` / `--base-url http://localhost:<port>`, or automatically when the
+recorder says it is rendering against a loopback origin
+(`CANOPY_RENDER_BASE_URL`). The outputs come out in the same shape.
+
+    python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --local --outputs <file>
 """
 
 from __future__ import annotations
@@ -40,7 +50,11 @@ import time
 import zlib
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from _lib import local_seed  # noqa: E402
+
 HERE = Path(__file__).resolve().parent
+AGENT_STORAGE_STATE = HERE / ".ace-storage-state.json"
 REPO = "dimagi-internal/connect-labs"
 MARK = "UNANSWERED_ROUND_RESULT"
 STORAGE_STATE = HERE / ".sophie-storage-state.json"
@@ -355,25 +369,9 @@ def sahel_replies() -> None:
         program_id=out["program_id"],
         source=source,
         data={
+            **SAHEL_QUOTE,
             "tender_id": out["round2_tender_id"],
             "supplier_id": out["sahel_supplier_id"],
-            "commodity_slug": "rutf",
-            "as_quoted_amount": "0.31",
-            "as_quoted_unit": "per_base_unit",
-            "as_quoted_currency": "EUR",
-            "quantity_basis": 300000,
-            "quantity_basis_unit": "sachet",
-            "pack_spec_source": "stated_on_quote",
-            "base_per_pack_stated": 150,
-            "base_unit_grams_stated": 92,
-            "freight_basis": "excluded",
-            "duties_basis": "excluded",
-            "shelf_life_months_stated": 24,
-            "lead_time_days": 35,
-            "moq": 500,
-            "moq_unit": "carton",
-            "incoterm": "EXW Niamey",
-            "delivery_point_keys": ["kano"],
             "validity_until": (dt.date.today() + dt.timedelta(days=30)).isoformat(),
             "received_on": today,
         },
@@ -388,17 +386,115 @@ def sahel_replies() -> None:
     print("recorded Sahel's reply over MCP")
 
 
+SAHEL_QUOTE = {
+    "commodity_slug": "rutf",
+    "as_quoted_amount": "0.31",
+    "as_quoted_unit": "per_base_unit",
+    "as_quoted_currency": "EUR",
+    "quantity_basis": 300000,
+    "quantity_basis_unit": "sachet",
+    "pack_spec_source": "stated_on_quote",
+    "base_per_pack_stated": 150,
+    "base_unit_grams_stated": 92,
+    "freight_basis": "excluded",
+    "duties_basis": "excluded",
+    "shelf_life_months_stated": 24,
+    "lead_time_days": 35,
+    "moq": 500,
+    "moq_unit": "carton",
+    "incoterm": "EXW Niamey",
+    "delivery_point_keys": ["kano"],
+}
+
+
+def sahel_local(*, base_url: str, outputs: str | None = None) -> dict:
+    """The same reply, recorded inside the local build: the agent account over the mcp channel.
+
+    The local build has no labs MCP token, so the reply goes through the same
+    operations in-process, attributed exactly as the MCP adapter attributes it.
+    """
+    import datetime as dt
+    import importlib.util
+
+    from connect_labs.labs import demo_sessions
+
+    demo_sessions.require_local()
+    spec = importlib.util.spec_from_file_location("unanswered_round_replay", HERE / "replay.py")
+    replay = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(replay)
+    path = Path(outputs or OUTPUTS)
+    out = json.loads(path.read_text())
+    today = dt.date.today()
+    world = replay.World(out["program_id"], replay.personas())
+    source = dict(SAHEL_REPLY)
+    world.email(
+        today.isoformat(),
+        "quote_record",
+        **source,
+        data={
+            **SAHEL_QUOTE,
+            "tender_id": out["round2_tender_id"],
+            "supplier_id": out["sahel_supplier_id"],
+            "validity_until": (today + dt.timedelta(days=30)).isoformat(),
+            "received_on": today.isoformat(),
+        },
+    )
+    world.email(
+        today.isoformat(),
+        "outreach_update",
+        **source,
+        outreach_id=out["sahel_outreach_id"],
+        data={"responded": True, "response_kind": "quote", "responded_on": today.isoformat()},
+    )
+    # The local runner re-reads the outputs file it handed us; leave it as it was.
+    path.write_text(json.dumps(out, indent=2) + "\n")
+    return out
+
+
+def seed_local(*, base_url: str, outputs: str | None = None) -> dict:
+    """Inside the local labs app (Django set up): reset, seed, sign Sophie and the agent in.
+
+    Called by `tools/ddd_demo.py` against the local build's own database. Refused
+    on anything but a local DEBUG build (`demo_sessions.require_local`) before
+    anything is written.
+    """
+    import importlib.util
+
+    from connect_labs.labs import demo_sessions
+
+    demo_sessions.require_local()
+    spec = importlib.util.spec_from_file_location("unanswered_round_replay", HERE / "replay.py")
+    replay = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(replay)
+    # A fresh local database has no buyer organisation; labs has one, so only here is it created.
+    result = replay.run(create_buyer=True)
+    people = replay.personas()
+    local_seed.write_state(STORAGE_STATE, demo_sessions.storage_state(people["sophie"], base_url))
+    local_seed.write_state(AGENT_STORAGE_STATE, demo_sessions.storage_state(people["ace"], base_url))
+    Path(outputs or HERE / "outputs.json").write_text(json.dumps(result, indent=2, default=str) + "\n")
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--outputs")
     parser.add_argument(
         "--sahel-replies",
         action="store_true",
-        help="record Sahel's reply to the chase over the labs MCP (scene 3's before: hook)",
+        help="record Sahel's reply to the chase (scene 3's before: hook): over the labs MCP, or in-process locally",
     )
+    local_seed.add_arguments(parser)
     args = parser.parse_args()
+    local = local_seed.target(args.local, args.base_url)
     if args.sahel_replies:
-        sahel_replies()
+        if local:
+            local_seed.run(HERE.name, local, Path(args.outputs) if args.outputs else OUTPUTS, call="sahel_local")
+        else:
+            sahel_replies()
+        return
+    if local:
+        outputs = Path(args.outputs) if args.outputs else HERE / "outputs.json"
+        print(json.dumps(local_seed.run(HERE.name, local, outputs)))
         return
     result = seed_via_ecs() if _aws_live() else seed_via_github()
     write_storage_state(result.pop("sophie_session"))
