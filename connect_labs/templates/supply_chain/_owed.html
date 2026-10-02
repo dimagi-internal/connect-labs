@@ -16,8 +16,8 @@ answered" / "Mark done"), empty_text.
       <span class="text-gray-700">— the shipment is held until we provide it</span>
     </div>
   {% endfor %}
-  {% for c in owed_open %}
-    {% include "supply_chain/_owed_row.html" %}
+  {% for group in owed_open_groups %}
+    {% include "supply_chain/_owed_group.html" %}
   {% empty %}
     {% if not owed_holds %}
     <p class="px-4 py-3 text-sm text-gray-600">{% if owed_answered %}Nothing open: every one is answered.{% else %}{{ empty_text }}{% endif %}</p>
@@ -28,8 +28,8 @@ answered" / "Mark done"), empty_text.
 <details data-testid="owed-answered" class="bg-white border border-gray-200 rounded-lg shadow-sm mb-8"{% if owed_answered_expanded %} open{% endif %}>
   <summary class="px-4 py-2.5 cursor-pointer text-sm font-semibold text-gray-900">Answered — {{ owed_answered|length }}</summary>
   <div class="divide-y divide-gray-200 border-t border-gray-200">
-    {% for c in owed_answered %}
-      {% include "supply_chain/_owed_row.html" %}
+    {% for group in owed_answered_groups %}
+      {% include "supply_chain/_owed_group.html" %}
     {% endfor %}
   </div>
 </details>

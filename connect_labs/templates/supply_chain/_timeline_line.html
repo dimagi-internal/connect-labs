@@ -1,7 +1,7 @@
 {% load supply_chain_extras %}
 {% comment %}One change, as one line of the history. `in_event`: a line inside an email event
 (_timeline.html), whose who-told-us and source the event says once above it.{% endcomment %}
-<li data-testid="revision-line" data-fields="{{ entry.fields|join:' ' }}" data-when="{{ entry.when|date:'c' }}" class="py-1.5 pl-4 flex items-start gap-3">
+<li data-testid="revision-line"{% if not in_event and not entry.excerpt %} data-no-source{% endif %} data-fields="{{ entry.fields|join:' ' }}" data-when="{{ entry.when|date:'c' }}" class="py-1.5 pl-4 flex items-start gap-3">
   <div class="min-w-0 flex-1">
     {% comment %}One grammar for a new record and a change to one: "Shipment · SH-1 ·
     recorded: ETA 5 Sep" and "Shipment · SH-1 · ETA 5 Sep → 19 Sep".{% endcomment %}

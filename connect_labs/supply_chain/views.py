@@ -570,10 +570,52 @@ def owed_context(rows, changed, program_id) -> dict:
     return {
         "owed": rows,
         "owed_open": owed_open,
+        "owed_open_groups": owed_groups(owed_open),
         "owed_open_count": len(owed_open),
         "owed_answered": answered,
+        "owed_answered_groups": owed_groups(answered),
         "owed_answered_expanded": any(c.get("changed") for c in answered),
     }
+
+
+def owed_groups(rows) -> list[dict]:
+    """What we owe, one group per counterparty: "Northgate Commodities · asked 18 Sep · 3 questions".
+
+    The organisation once, above its items, rather than on every row: three of
+    Northgate's questions read as three Northgates. In the order each was first
+    raised; the header's day is the earliest of its items.
+    """
+    from datetime import date
+
+    groups = {}
+    for c in rows:
+        groups.setdefault(c.get("owed_to_org_id") or c.get("owed_to"), []).append(c)
+    out = []
+    for items in groups.values():
+        questions = sum(1 for c in items if c.get("kind") == "question")
+        promises = len(items) - questions
+        days = sorted(str(c.get("raised_on"))[:10] for c in items if c.get("raised_on"))
+        earliest = ""
+        if days:
+            day = date.fromisoformat(days[0])
+            earliest = f"{day.day} {day.strftime('%b')}"
+        counts = ", ".join(
+            part
+            for part in (
+                f"{questions} question{'' if questions == 1 else 's'}" if questions else "",
+                f"{promises} promise{'' if promises == 1 else 's'}" if promises else "",
+            )
+            if part
+        )
+        verb = "asked" if questions and not promises else "we promised" if promises and not questions else "since"
+        out.append(
+            {
+                "owed_to": items[0].get("owed_to") or "",
+                "summary": " · ".join(part for part in (f"{verb} {earliest}" if earliest else "", counts) if part),
+                "items": items,
+            }
+        )
+    return sorted(out, key=lambda g: min(str(c.get("raised_on") or "") for c in g["items"]))
 
 
 def mark_changed(rows, kind, changed):

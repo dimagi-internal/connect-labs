@@ -1,12 +1,12 @@
 {% load supply_chain_extras %}
-{% comment %}One thing we owe. An answered one says when, by whom and what was said, at body size.{% endcomment %}
+{% comment %}One thing we owe, under its counterparty's name (_owed_group.html). An answered one
+says when, by whom and what was said, at body size. The row just saved carries one pill: on an
+answered row its "Answered" chip says "just now", rather than a second "updated just now" beside it.{% endcomment %}
 <div class="px-4 py-2 text-sm flex items-start justify-between gap-4{% if c.changed %} bg-yellow-50 border-l-4 border-brand-indigo{% endif %}" data-commitment-id="{{ c.id }}"{% if c.changed %} data-changed{% endif %}>
   <div>
-    <span class="font-medium text-gray-900">{{ c.owed_to }}</span>
-    <span class="text-gray-600">· {% if c.kind == "question" %}asked us{% else %}we promised{% endif %} {{ c.raised_on|day }}</span>
-    {% if not c.open %}<span data-testid="owed-status" class="ml-1 inline-flex items-center rounded-full bg-message-success px-2 py-0.5 text-xs font-medium text-message-success-text">{% if c.kind == "question" %}Answered{% else %}Done{% endif %}</span>{% endif %}
-    {% if c.changed %}{% include "supply_chain/_changed_chip.html" %}{% endif %}
-    <div class="text-gray-700">{{ c.text }}</div>
+    <span class="text-gray-900">{{ c.text }}</span>
+    <span class="text-gray-700">· {% if c.kind == "question" %}asked{% else %}promised{% endif %} {{ c.raised_on|day }}</span>
+    {% if not c.open %}<span data-testid="owed-status" class="ml-1 inline-flex items-center rounded-full bg-message-success px-2 py-0.5 text-xs font-medium text-message-success-text">{% if c.kind == "question" %}Answered{% else %}Done{% endif %}{% if c.changed %} just now{% endif %}</span>{% elif c.changed %}{% include "supply_chain/_changed_chip.html" %}{% endif %}
     {% if not c.open %}<div data-testid="owed-answer" class="text-gray-900">{% if c.kind == "question" %}Answered{% else %}Done{% endif %} {{ c.resolved_on|day }}{% if c.answered_by %} by {{ c.answered_by }}{% endif %}: {{ c.resolution }}</div>{% endif %}
   </div>
   {% if c.open and not supply_as_of %}

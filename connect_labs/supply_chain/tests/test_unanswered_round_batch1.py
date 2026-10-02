@@ -35,6 +35,10 @@ def web(client_in_program, da, monkeypatch):
     return client_in_program
 
 
+def _text_of(html):
+    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
+
+
 def _tender_page(client, tender_id, query=""):
     return client.get(reverse("supply_chain:procurement_tender_detail", args=[tender_id]) + query).content.decode()
 
@@ -256,7 +260,10 @@ class TestOrderInvoices:
         )
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", body))
-        assert "Advance paid USD 53,400.00 on 28 Jul 2026 (before this invoice)" in text
+        # Its own row of the invoices table since batch 4.
+        row = _text_of(re.search(r'<tr data-testid="advance-row">.*?</tr>', body, re.S).group(0))
+        assert row.startswith("Advance paid 28 Jul 2026 USD 53,400.00")
+        assert "applied to INV-REH-1" in row
         assert "confirmed by the payee 21 Sep 2026" in text
         marker = re.search(r'data-testid="invoice-above-agreed"[^>]*>(.*?)</div>', body, re.S).group(1)
         assert re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", marker)).strip() == "USD 3,550.00 above agreed"

@@ -774,6 +774,24 @@ The section stays only if one was somehow recorded, so it is not hidden.
     </thead>
     <tbody class="divide-y divide-gray-100">
       {% for invoice in invoices %}
+        {% comment %}A payment made before the invoice that acknowledged it is a row of the
+        table in its own right, at body size: as a muted footnote under the invoice it read
+        as a detail of the bill rather than money that had already gone.{% endcomment %}
+        {% for payment in invoice.payments %}{% if payment.advance %}
+        <tr data-testid="advance-row">
+          <td class="px-4 py-2 font-medium text-gray-900">Advance paid</td>
+          <td class="px-4 py-2 text-gray-700">{{ payment.paid_on|day }}</td>
+          <td class="px-4 py-2 text-right tabular-nums">{{ payment.currency }} {{ payment.amount|money }}</td>
+          <td class="px-4 py-2 text-right text-gray-600">—</td>
+          <td class="px-4 py-2 text-gray-700">applied to {{ invoice.reference|default:invoice.id }}{% if payment.method %} · by {{ payment.method|words }}{% endif %}</td>
+          <td class="px-4 py-2 text-sm">{% if payment.confirmed_by_payee_on %}<span class="text-message-success-text">confirmed by the payee {{ payment.confirmed_by_payee_on|day }}</span>{% else %}<span class="text-gray-700">not confirmed by the payee</span>{% endif %}</td>
+          <td class="px-4 py-2 text-right whitespace-nowrap">
+            {% if not payment.confirmed_by_payee_on and not supply_as_of %}
+              <a href="{% url 'supply_chain:payment_confirm' payment.id %}" class="text-brand-indigo hover:underline">Record confirmation</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endif %}{% endfor %}
         <tr>
           <td class="px-4 py-2 font-medium text-gray-900">{{ invoice.reference|default:invoice.id }}</td>
           <td class="px-4 py-2 text-gray-600">{{ invoice.issued_on|day|default:"—" }}</td>
@@ -818,14 +836,14 @@ The section stays only if one was somehow recorded, so it is not hidden.
             <td class="px-4 py-1.5 pl-8 text-sm text-gray-900" colspan="7">{{ mark.text|capfirst }} <span data-testid="above-agreed-tag" class="ml-1 inline-flex items-center rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></td>
           </tr>
         {% endif %}{% endfor %}
-        {% for payment in invoice.payments %}
+        {% for payment in invoice.payments %}{% if not payment.advance %}
           {% comment %}
           Each settlement under its invoice, with the payee's side of it: "we
           sent it" and "they got it" are two facts from two people.
           {% endcomment %}
           <tr class="bg-gray-50/60">
             <td class="px-4 py-1.5 pl-8 text-xs text-gray-600" colspan="6">
-              {% if payment.advance %}Advance paid{% else %}Paid{% endif %} {{ payment.currency }} {{ payment.amount|money }} on {{ payment.paid_on|day }}{% if payment.advance %} (before this invoice){% endif %}{% if payment.method %} by {{ payment.method|words }}{% endif %}
+              Paid {{ payment.currency }} {{ payment.amount|money }} on {{ payment.paid_on|day }}{% if payment.method %} by {{ payment.method|words }}{% endif %}
               ·
               {% if payment.confirmed_by_payee_on %}
                 <span class="text-message-success-text">confirmed by the payee {{ payment.confirmed_by_payee_on|day }}</span>
@@ -839,7 +857,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
               {% endif %}
             </td>
           </tr>
-        {% endfor %}
+        {% endif %}{% endfor %}
       {% empty %}
         <tr><td colspan="7" class="px-4 py-6 text-center text-gray-600">Nothing billed yet.</td></tr>
       {% endfor %}

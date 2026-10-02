@@ -1,0 +1,7 @@
+{% comment %}One counterparty's items, under its name once: "Northgate Commodities · asked 18 Sep · 3 questions".{% endcomment %}
+<div data-testid="owed-group">
+  <div data-testid="owed-group-head" class="px-4 pt-2 text-sm"><span class="font-medium text-gray-900">{{ group.owed_to }}</span>{% if group.summary %} <span class="text-gray-700">· {{ group.summary }}</span>{% endif %}</div>
+  {% for c in group.items %}
+    {% include "supply_chain/_owed_row.html" %}
+  {% endfor %}
+</div>

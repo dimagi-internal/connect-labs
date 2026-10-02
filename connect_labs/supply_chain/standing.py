@@ -220,15 +220,24 @@ def _award_price(award) -> str:
 
 
 def _committed_total(row) -> str:
-    """ " · USD 82,000.00 for 2,000 cartons": what the award commits, worded as the comparison's
-    "Landed total ... for ..." line words it. "" when the frozen row does not hold both."""
+    """ " · USD 106,800.00 landed (incl. freight) for 2,000 cartons": what the award commits.
+
+    The figure is the comparison's landed total as quoted -- goods plus whatever
+    freight and duties the quote's basis counted -- so it is labelled as landed,
+    with the legs it includes, read off the same row's `landed_basis`. Unlabelled,
+    it did not reconcile with the goods price above it. "" when the frozen row
+    does not hold both the total and its quantity.
+    """
     from connect_labs.supply_chain.values import money_digits
 
     total = (row.get("figures") or {}).get("landed_total_as_quoted") or {}
     quantity = row.get("quantity_quoted") or ""
     if not isinstance(total, dict) or total.get("amount") in (None, "") or not quantity:
         return ""
-    return f" · {total.get('currency') or 'USD'} {money_digits(total['amount'])} for {quantity}"
+    basis = (row.get("landed_basis") or "").lower()
+    legs = [leg for leg in ("freight", "duties") if leg in basis]
+    included = f" (incl. {' and '.join(legs)})" if legs else ""
+    return f" · {total.get('currency') or 'USD'} {money_digits(total['amount'])} landed{included} for {quantity}"
 
 
 def _names(names, limit=NAMED_SILENT) -> str:
