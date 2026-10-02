@@ -1,13 +1,16 @@
 {% load supply_chain_extras %}
 {% comment %}One thing we owe, under its counterparty's name (_owed_group.html). An answered one
-says when, by whom and what was said, at body size. The row just saved carries one pill: on an
-answered row its "Answered" chip says "just now", rather than a second "updated just now" beside it.{% endcomment %}
+is one line at body size -- "Answered by Sophie · 2 Oct 2026 (just now): <answer>" -- every date
+in the one "2 Oct 2026" form, and no separate chip repeating the day. When the answer was
+written into a reply drafted on this page (`in_draft`), the row just saved says so and links to it.{% endcomment %}
 <div class="px-4 py-2 text-sm flex items-start justify-between gap-4{% if c.changed %} bg-yellow-50 border-l-4 border-brand-indigo{% endif %}" data-commitment-id="{{ c.id }}"{% if c.changed %} data-changed{% endif %}>
   <div>
     <span class="text-gray-900">{{ c.text }}</span>
     <span class="text-gray-700">· {% if c.kind == "question" %}asked{% else %}promised{% endif %} {{ c.raised_on|day }}</span>
-    {% if not c.open %}<span data-testid="owed-status" class="ml-1 inline-flex items-center rounded-full bg-message-success px-2 py-0.5 text-xs font-medium text-message-success-text">{% if c.kind == "question" %}Answered{% else %}Done{% endif %}{% if c.changed %} just now{% endif %}</span>{% elif c.changed %}{% include "supply_chain/_changed_chip.html" %}{% endif %}
-    {% if not c.open %}<div data-testid="owed-answer" class="text-gray-900">{% if c.kind == "question" %}Answered{% else %}Done{% endif %} {{ c.resolved_on|day }}{% if c.answered_by %} by {{ c.answered_by }}{% endif %}: {{ c.resolution }}</div>{% endif %}
+    {% if c.open and c.changed %}{% include "supply_chain/_changed_chip.html" %}{% endif %}
+    {% if not c.open %}<div data-testid="owed-answer" class="text-gray-900"><span data-testid="owed-status" class="font-medium text-message-success-text">{% if c.kind == "question" %}Answered{% else %}Done{% endif %}</span>{% if c.answered_by %} by {{ c.answered_by }}{% endif %} · {{ c.resolved_on|day }}{% if c.changed %} (just now){% endif %}: {{ c.resolution }}</div>
+      {% if c.changed and c.in_draft %}<div data-testid="owed-in-draft" class="mt-0.5 text-gray-700">Added to your draft reply to {{ c.in_draft.to }} — <a href="#{{ c.in_draft.anchor }}" class="text-brand-indigo hover:underline" onclick="var d=document.getElementById('drafts'); if (d) { d.open = true; } var t=document.getElementById('{{ c.in_draft.anchor }}'); if (t) { t.scrollIntoView({block: 'start'}); return false; }">open the draft</a></div>{% endif %}
+    {% endif %}
   </div>
   {% if c.open and not supply_as_of %}
     <a href="{% url 'supply_chain:commitment_resolve' c.id %}" class="text-brand-indigo hover:underline whitespace-nowrap">{{ resolve_label }}</a>

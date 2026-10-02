@@ -140,7 +140,9 @@ class TestWaitingOnNamesWho:
         assert row.waiting_detail == "1 of 2 replied"
 
         cell = _cells(_standing_row(_home(home_client), tender_id))[2]
-        assert "Northwind Foods — no reply since 9 Sep" in cell
+        # The silent supplier stacked under "No reply", with the day we asked it.
+        assert "<strong>No reply</strong>:" in cell
+        assert 'Northwind Foods <span class="text-gray-600">(asked 9 Sep)</span>' in cell
         assert re.search(r'data-testid="waiting-detail"[^>]*>1 of 2 replied<', cell)
 
     def test_after_an_award_a_contract_with_the_awardee(self, da, base):
@@ -366,7 +368,7 @@ class TestTheTimeline:
         _correct_pack(da, quote, ace)
         lines = [e.line for e in timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)]
         assert "Quote · Northwind Foods · corrected: sachets per carton 150 (was not stated)" in lines
-        assert any(line.startswith("Quote · Northwind Foods · recorded: 42.50 USD per carton") for line in lines)
+        assert any(line.startswith("Quote · Northwind Foods · recorded: USD 42.50 per carton") for line in lines)
 
     def test_the_page_renders_the_line_and_dates_with_their_year(self, da, base, order, client_in_program):
         body = client_in_program.get(

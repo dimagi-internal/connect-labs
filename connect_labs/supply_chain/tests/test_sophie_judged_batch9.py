@@ -73,7 +73,9 @@ class TestTheAwardPriceStacks:
         standing = batch6._standing(_home(home_client))
         assert "table-fixed" in re.search(r'data-testid="standing-table" class="([^"]*)"', standing).group(1)
         widths = {k: int(v) for k, v in re.findall(r'data-col="([a-z-]+)" style="width: (\d+)%"', standing)}
-        assert widths["stage"] == 18 and sum(widths.values()) == 100
+        # Unanswered-round 002: "Waiting on" stacks a line per owner, so it takes
+        # room from the title column; stage keeps enough for the award line.
+        assert widths["stage"] == 17 and widths["waiting"] > widths["title"] and sum(widths.values()) == 100
 
 
 # ---- 2. one order on every Needs-info card ----------------------------------
