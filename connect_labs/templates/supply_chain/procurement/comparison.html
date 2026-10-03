@@ -78,7 +78,7 @@
           <tr data-fact="{{ r.key }}"{% if r.total %} class="bg-stone-50 text-base"{% endif %}>
             <th scope="row" class="px-5 py-3 text-left align-top text-sm {% if r.total %}font-semibold text-gray-900{% else %}font-normal text-gray-600{% endif %}">{{ r.label }}<div class="text-xs font-normal text-gray-600">{{ r.src_label }}</div></th>
             {% for c in r.cells %}
-            <td class="border-l border-gray-100 px-4 py-3 align-top{% if r.key == "price" or r.key == "landed" or r.key == "fx" %} tabular-nums{% endif %}{% if r.total %} font-semibold text-gray-900{% endif %}" data-testid="grid-cell"{% if c.gap %} data-gap{% endif %}>{% if c.gap %}<span class="text-message-warning-text font-medium"{% if c.why %} title="{{ c.why }}"{% endif %}>{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}</span>{% elif c.mute %}<span class="text-gray-600">{{ c.v }}</span>{% else %}{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}{% endif %}</td>
+            <td class="border-l border-gray-100 px-4 py-3 align-top{% if r.key == "price" or r.key == "landed" or r.key == "fx" %} tabular-nums{% endif %}{% if r.total %} font-semibold text-gray-900{% endif %}" data-testid="grid-cell" data-quote-id="{{ c.quote_id }}"{% if c.gap %} data-gap{% endif %}>{% if c.gap %}<span class="text-message-warning-text font-medium"{% if c.why %} title="{{ c.why }}"{% endif %}>{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}</span>{% elif c.mute %}<span class="text-gray-600">{{ c.v }}</span>{% else %}{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}{% endif %}</td>
             {% endfor %}
           </tr>
           {% endfor %}
