@@ -66,7 +66,7 @@ class TestTheComparisonUnderTheWaiver:
             pytest.skip("the quote is comparable in this world; nothing to card")
         # Since batch 8 the round's terms are stated once, in the comparison's header, with
         # the way to change them; the cards carry the answer that set them.
-        terms = _text(re.search(r'data-testid="comparison-duty-terms".*?</p>', body, re.S).group(0))
+        terms = _text(re.search(r'data-testid="comparison-duty-terms".*?</p>\s*</div>', body, re.S).group(0))
         assert "under the program's duty waiver" in terms and "Change" in terms
         # The waiver document's status is said once, in the round's terms, not as a chip on every card.
         assert 'data-testid="card-waiver-missing"' not in body

@@ -182,7 +182,7 @@ sits above who is invited and what the tender buys.
     </thead>
     <tbody class="divide-y divide-gray-200">
       {% for o in outreach %}
-      <tr data-outreach-id="{{ o.id }}"{% if o.changed %} data-changed class="bg-yellow-50"{% endif %}>
+      <tr data-outreach-id="{{ o.id }}" class="align-top{% if o.changed %} bg-yellow-50{% endif %}"{% if o.changed %} data-changed{% endif %}>
         {% comment %}The row just saved: an accent bar down its left edge, and the value that
         moved set bold with a "new" tag in its own cell (`changed_cell`) -- a pale fill alone
         vanished on a projector, and a pill by the name did not say what changed.{% endcomment %}
@@ -191,7 +191,7 @@ sits above who is invited and what the tender buys.
              class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:o.supplier_id|default:"Supplier" }}</a>
           {% comment %}A reply that was questions leaves the move with us: said on the
           supplier's own row, so the round reads whose turn it is.{% endcomment %}
-          {% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="text-xs whitespace-nowrap text-message-warning-text">{{ o.waiting_on_us }}</div>{% endif %}
+          {% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="text-sm font-medium whitespace-nowrap text-amber-800">{{ o.waiting_on_us }}</div>{% endif %}
         </td>
         <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">{{ o.sent_on|day|default:"—" }}</td>
         {% if o.changed and changed_cell == "last_chased" %}<td class="px-4 py-2 text-sm text-gray-900 font-semibold whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count">· {{ o.reminder_text }}</span>{% endif %}{% if o.next_due %}<span data-testid="next-due" class="block font-normal text-gray-600">next due {{ o.next_due|day }}</span>{% endif %}<span class="block">{% include "supply_chain/procurement/_new_tag.html" with stacked=1 %}</span></td>{% else %}<td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>{% endif %}
@@ -205,7 +205,7 @@ sits above who is invited and what the tender buys.
             {% if not supply_as_of %}
             {% comment %}Two fixed slots -- the drafted reminder, then the reply -- so the column
             aligns whether or not a row has a reminder due.{% endcomment %}
-            <div class="inline-grid grid-cols-[7rem_9rem_1.5rem] gap-x-2 items-center text-left">
+            <div class="inline-grid grid-cols-[6.75rem_6.5rem_1.5rem] gap-x-2 items-center text-left">
             <span>
             {% comment %}A silent supplier whose reminder is due: its drafted reminder, from its own
             row, opened at its card so no other supplier's draft is in view.{% endcomment %}
@@ -299,7 +299,7 @@ next action on anyone (design doc section 22).
       <div data-testid="draft"{% if d.anchor %} id="{{ d.anchor }}"{% endif %} data-supplier-id="{{ d.supplier_id }}" class="border border-gray-200 rounded-lg p-4 mt-3 scroll-mt-20">
         <p class="text-lg">
           <span class="font-semibold text-gray-900">{{ d.supplier_name }}</span>
-          <span class="text-base text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our answers{% else %}Follow-up{% endif %}</span>
+          <span class="text-base text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our answers{% elif d.kind == "clarification" %}Clarification to every invited supplier{% else %}Follow-up{% endif %}</span>
         </p>
         {% if d.facts %}
           {% comment %}A reminder's facts as a labelled row, set apart from the card's body

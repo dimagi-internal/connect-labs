@@ -18,12 +18,10 @@
       the answer that set the terms, so the card carries its own cause.{% endcomment %}
       {% if row.landed_basis %}<div data-testid="card-landed-basis" class="mb-1">
         {% if row.delivery_basis %}<p data-testid="card-delivery-basis" class="text-xs text-gray-700">{{ row.delivery_basis|capfirst }}</p>{% endif %}
-        {% comment %}Where the round's terms came from is said once per card, on its duty line, in
-        one link style; the Round terms line above the cards says only what the terms are. A
-        waiver not yet on file is a muted chip, not a second link style.{% endcomment %}
+        {% comment %}Where the round's terms came from is said once, in the terms panel at the top;
+        the card's Duty line carries only a short "(round terms)" link back to the answer that set them.{% endcomment %}
         {% comment %}Unsettled round terms are the card's Blocking row already: no Duty line saying it again.{% endcomment %}
-        {% if row.duty_line and tender.duty_terms %}<p data-testid="card-duty" class="flex flex-wrap items-center gap-x-2 text-sm text-gray-900"><span><span class="text-gray-600">Duty:</span> <span class="font-medium">{{ row.duty_line }}</span></span></p>
-        {% if duty_terms_answer %}<p data-testid="card-duty-provenance" class="text-sm text-gray-700"><a data-testid="card-duty-source" class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}?changed=commitment-{{ duty_terms_answer.commitment_id }}#owed">Round terms, from your answer to {{ duty_terms_answer.owed_to }}</a> · {{ duty_terms_answer.on|date:"j M" }}</p>{% endif %}{% endif %}
+        {% if row.duty_line and tender.duty_terms %}<p data-testid="card-duty" class="flex flex-wrap items-center gap-x-2 text-sm text-gray-900"><span><span class="text-gray-600">Duty:</span> <span class="font-medium">{{ row.duty_line }}</span>{% if duty_terms_answer %} <a data-testid="card-duty-provenance" class="text-brand-indigo hover:underline" title="Set {{ duty_terms_answer.on|date:'j M' }} from your answer to {{ duty_terms_answer.owed_to }}" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}?changed=commitment-{{ duty_terms_answer.commitment_id }}#owed">(round terms)</a>{% endif %}</span></p>{% endif %}
         {% comment %}No sentence repeating the duty blocker: the Blocking row below says it, with its question.{% endcomment %}
       </div>{% endif %}
       {% comment %}
