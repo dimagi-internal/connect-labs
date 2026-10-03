@@ -145,7 +145,7 @@ class TestTheComparison:
         _quote(da, world)
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         body = client_in_program.get(url).content.decode()
-        note = _text(re.search(r'data-testid="comparison-duty-terms".*?</p>', body, re.S).group(0))
+        note = _text(re.search(r'data-testid="comparison-duty-terms".*?</p>\s*</div>', body, re.S).group(0))
         assert "Set 3 Oct from your answer to a question from" in note
         assert "waiver document: none on file yet" in note
         assert Commitment.objects.filter(resolved_on__isnull=False).exists()

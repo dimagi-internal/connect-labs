@@ -70,6 +70,10 @@ class Entry:
     # first write rather than written twice; None when it never did (or, on a
     # past date, had not yet).
     replayed_at: object = None  # datetime
+    # The person who forwarded the evidence to the AI, when the AI wrote it on
+    # their behalf (an MCP call under their own token): "Sophie Okafor". Blank
+    # for an agent's own account or a person's own write -- never guessed.
+    forwarded_by: str = ""
     # The line as the page reads it, one grammar for every kind of change:
     # "<entity> · <which one> · <what happened>" -- "Shipment · SH-1 ·
     # recorded: ETA 5 Sep", "Shipment · SH-1 · ETA 5 Sep → 19 Sep".
@@ -99,6 +103,13 @@ class Entry:
 
     # A single change, not an email's worth of them (see EmailEvent).
     is_group = False
+
+    @property
+    def source_domain(self) -> str:
+        """The mail domain an email's Message-ID was issued by -- "mail.example.org" -- else blank."""
+        if self.source_kind != "Email" or "@" not in self.source_ref:
+            return ""
+        return self.source_ref.rsplit("@", 1)[1].strip().rstrip(">").strip()
 
     @property
     def source_link_text(self) -> str:
@@ -399,6 +410,19 @@ def eta_moved(changes) -> str:
     return f"ETA moved {'+' if days > 0 else '-'}{abs(days)} day{'' if abs(days) == 1 else 's'}"
 
 
+def _forwarded_by(call) -> str:
+    """Who handed this email to the AI: the person whose token an MCP write ran under.
+
+    An agent's own account forwarded nothing, and a web write is the person's
+    own, so both read blank rather than naming someone who did not forward it.
+    """
+    if call is None or call.actor is None or call.actor_is_agent or call.channel not in ("mcp", "api"):
+        return ""
+    if not getattr(call, "source_ref", ""):
+        return ""
+    return (getattr(call.actor, "name", "") or "").strip() or call.actor.username
+
+
 def _replayed_at(call, until):
     if call is None or not getattr(call, "replay_count", 0) or call.last_replayed_at is None:
         return None
@@ -432,6 +456,7 @@ def entry_for(revision, *, lookup=None, offer_fixes=True, live_quote_ids=None, u
         source_kind=source_kind(getattr(call, "source_ref", "")),
         recorded_on=getattr(call, "recorded_at", None) or revision.recorded_at,
         replayed_at=_replayed_at(call, until),
+        forwarded_by=_forwarded_by(call),
         eta_moved=eta_moved(revision.changes) if revision.action == "update" else "",
     )
     if model is None:

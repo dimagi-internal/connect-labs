@@ -37,5 +37,5 @@ def test_the_quote_line_carries_its_commercial_terms():
 def test_a_line_under_an_email_does_not_repeat_its_sender():
     line = "Quote · Sahel Nutrition Industries · recorded: EUR 0.31 per sachet"
     html = str(record_kind_lead(line, "Amadou Issoufou, Sahel Nutrition Industries"))
-    assert "Sahel Nutrition Industries" not in html and "recorded: EUR 0.31" in html
+    assert "Sahel Nutrition Industries" not in html and "EUR 0.31 per sachet" in html
     assert "Sahel Nutrition Industries" in str(record_kind_lead(line, "Someone, Other Co"))

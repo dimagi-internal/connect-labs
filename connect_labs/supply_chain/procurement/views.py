@@ -174,6 +174,11 @@ def _drafts_breakdown(drafts) -> str:
         if (n := counts.get(kind))
     ]
     parts += [f"1 reply to {d.get('supplier_name')}" for d in drafts if d.get("kind") == "reply"]
+    # The round's terms, told to every invited supplier: one email each, so the
+    # parts still add up to the panel's count.
+    told = sum(1 for d in drafts if d.get("kind") == "clarification")
+    if told:
+        parts.append(f"{told} clarification{'' if told == 1 else 's'} of the duty terms, one to each invited supplier")
     return " · ".join(parts)
 
 
@@ -952,6 +957,17 @@ class ComparisonView(_Base):
             for row in (comparison or {}).get("blocked") or []
             if any(
                 "round's duty terms are not settled" in (b.get("fact") or b.get("label") or "").lower()
+                for b in row.get("blockers") or []
+            )
+        ]
+        # Of those, the ones that also owe a supplier fact: listed under Needs info, not under the
+        # round's decision, so the banner's count and the two headings reconcile.
+        context["duty_terms_also_owe"] = [
+            row.get("supplier_name") or "A supplier"
+            for row in (comparison or {}).get("blocked") or []
+            if (row.get("supplier_name") or "A supplier") in context["waiting_on_duty_terms"]
+            and any(
+                "round's duty terms are not settled" not in (b.get("fact") or b.get("label") or "").lower()
                 for b in row.get("blockers") or []
             )
         ]

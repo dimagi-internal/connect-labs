@@ -20,6 +20,9 @@ why_brief: supply-sophie-unanswered-round.why_brief.yaml
 scenes:
 - id: half-the-round-is-silent
   actions:
+  - kind: hold
+    note: a settle before the first wait_for, so the opening scene's before-frame is the painted round page, not a blank one still loading
+    seconds: 0.5
   - kind: wait_for
     target: text:Where the goods go
   - kind: hold
@@ -49,11 +52,26 @@ scenes:
     note: back to the top, so the held frame opens on the round's title, its status and duty-terms lines, and the whole Outreach table with its column headings
     value: top
   - kind: hover
-    note: park the cursor in the blank middle of the Outreach heading row, inside the header block, so hovering cannot scroll the page
+    note: park the cursor in the top bar's blank middle, off the page content; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
-    target: css:div:has(> h2#outreach)
+    target: css:header.fixed
   - kind: hold
     seconds: 1.5
+  - kind: snapshot
+    note: the canonical frame is the round's title, status and duty-terms lines and the whole Outreach table, taken before the drafts open
+  - kind: click
+    note: Sahel's row's own "Draft reminder" link opens the round's draft emails at Sahel's drafted reminder, so scene 2 starts (and its before-frame is taken) on the open draft
+    target: css:a[href*="#draft-supplier-${sahel_supplier_id}"]
+  - kind: wait_for
+    target: css:#drafts[open]
+  - kind: wait_for
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=record-chase]
+  - kind: scroll_to
+    note: centre Sahel's drafted reminder, its asked/last-reminded line and its Chased on field with Record chase all in view
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}']
+  - kind: hold
+    seconds: 0.8
+  full_page: false
   concept_claim: The round's page says it is past its deadline and that its import
     duty terms are not settled, and shows, for every supplier asked, whether they
     replied or how long they have been silent and when they were last chased.
@@ -67,17 +85,16 @@ scenes:
     last chased each, and the header line saying import duties are not settled.'
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: sophie-chases-sahel
+  full_page: false
   actions:
   - kind: wait_for
-    target: css:#drafts
-  - kind: click
-    note: open Sahel's drafted reminder from Sahel's own row, which opens the draft emails at Sahel's card, its heading just under the top bar
-    say: drafts
-    target: css:tr:has-text('Sahel Nutrition Industries') [data-testid=row-draft-reminder]
-  - kind: wait_for
+    note: scene 1 ended by opening Sahel's drafted reminder, and this scene's url differs only by its hash, so the recorder stays put and the before-frame is the open draft
     target: css:#drafts[open]
+  - kind: wait_for
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=record-chase]
   - kind: hold
-    seconds: 0.8
+    say: drafts
+    seconds: 1.2
   - kind: hover
     note: the line that says when she asked Sahel and when she last reminded them
     say: reminder
@@ -89,9 +106,9 @@ scenes:
     seconds: 1.8
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=chase-date]
   - kind: hover
-    note: park the cursor on the To line's blank right, off the message, the facts row and the date field
+    note: park the cursor in the top bar's blank middle, off the message, the facts row and the date field
     seconds: 0.6
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=draft-to-line]
+    target: css:header.fixed
   - kind: hold
     note: the drafted reminder, open, with today's date ready to record
     seconds: 2.5
@@ -112,9 +129,9 @@ scenes:
     seconds: 2.0
     target: css:tr[data-changed] td:has-text('3rd reminder')
   - kind: hover
-    note: park the cursor on the Draft reminders button above the table, clear of Sahel's row
+    note: park the cursor in the top bar's blank middle, clear of every button and of Sahel's row
     seconds: 0.6
-    target: testid:draft-reminders
+    target: css:header.fixed
   - kind: hold
     seconds: 1.5
   - kind: snapshot
@@ -128,8 +145,9 @@ scenes:
     Sahel, its line on when Sahel was asked and last reminded, and the Chased on field
     beside Record chase; recording the chase returns her to the Outreach table, Sahel's
     row highlighted with its 3rd reminder.
-  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#draft-supplier-${sahel_supplier_id}
 - id: sahel-finally-answers
+  full_page: false
   actions:
   - kind: wait_for
     target: css:#history
@@ -162,11 +180,11 @@ scenes:
     note: the history line that says Sahel replied with a quote, and on what day
     say: answers
     seconds: 1.8
-    target: text:Replied with a quote on 3 Oct 2026
+    target: text:Replied with a quote on ${today_date}
   - kind: hover
-    note: park the cursor on the day row's blank middle, off the heading, the filter and Sahel's email
+    note: park the cursor in the top bar's blank middle, off the heading, the filter and Sahel's email
     seconds: 0.6
-    target: css:[data-testid=timeline-day]:visible
+    target: css:header.fixed
   - kind: hold
     seconds: 1.2
   - kind: snapshot
@@ -181,9 +199,10 @@ scenes:
     its own evidence.'
   show: Sophie lands on the round's history turned to replies only, with Sahel's
     email first, opens the Source email toggle on Sahel's email, and reads the excerpt
-    and sender beside what the AI recorded from it, the reply dated 3 Oct 2026.
+    and sender beside what the AI recorded from it, the reply dated the day it came in.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#history
 - id: whats-still-missing
+  full_page: false
   actions:
   - kind: wait_for
     target: text:Kanem Foods
@@ -199,18 +218,25 @@ scenes:
     note: Sahel's round-owned duty blocker -- the import is ours under ex works, so it waits on the round's terms, not on Sahel; the row scene 5's answer removes
     say: Sahel
     seconds: 2.5
-    target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=blocking]:has-text('Import duty')"
-  - kind: scroll
-    note: settle the page with the round's duty-terms line just under the top bar, so the duty terms, the banner with its missing-facts summary and the Needs info cards share one frame -- the frame scene 5 returns to
-    value: '302'
+    target: "css:[data-testid=round-decision] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=blocking]:has-text('Import duty'), [data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=blocking]:has-text('Import duty')"
+  - kind: scroll_to
+    note: Kanem's whole card in view while the narration says what Kanem has not stated
+    target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Kanem Foods Ltd')"
   - kind: hover
-    note: park the cursor on the Needs info heading's blank right, off the table and the cards; it is in view, so hovering cannot scroll the page
+    say: Kanem
+    seconds: 2.0
+    target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Kanem Foods Ltd') [data-testid=blockers]"
+  - kind: scroll
+    note: settle the page with the round's duty-terms line just under the top bar, so the duty terms, the banner with its missing-facts summary and the cards share one frame -- the frame scene 5 returns to
+    value: '310'
+  - kind: hover
+    note: park the cursor in the top bar's blank middle, off the table and the cards; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
-    target: css:#needs-info h2
+    target: css:header.fixed
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the round's duty terms (not settled), the banner saying none of the three quotes can be compared and that the round's own duty terms come first, and the Needs info cards -- Harmattan's and Sahel's Duty lines both reading ours to cost (round terms not settled), Kanem's pack size and Sahel's exchange rate and freight still owed
+    note: the canonical frame is the round's duty terms (not settled), the banner saying none of the three quotes can be compared and that the round's own duty terms come first, and the Needs info cards -- Harmattan's and Sahel's Duty lines both reading ours to cost (round terms not settled), Kanem's pack size and Sahel's freight still owed, and Sahel's price in euros with no exchange rate recorded yet
   concept_claim: The comparison states the round's import duty terms, holds every quote
     whose Incoterm leaves the import to us until those terms are settled, whatever duty
     figure its supplier wrote, and names the missing facts on each quote, without ranking
@@ -221,9 +247,11 @@ scenes:
   show: Sophie opens the round's comparison and reads that none of the three quotes
     can be compared yet; the round's own import duty terms come first, because Harmattan's
     carriage-paid and Sahel's ex-works quotes both leave the import to us, and each card
-    names what its supplier still owes -- Kanem's pack size, Sahel's freight and exchange rate.
+    names what its supplier still owes -- Kanem's pack size, Sahel's freight -- and Sahel's
+    price is in euros, with no exchange rate recorded yet.
   url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
 - id: what-we-owe-northgate
+  full_page: false
   actions:
   - kind: hold
     note: a settle before the first wait_for, so the scene's before-frame is the tender page itself, not the comparison left from scene 4
@@ -279,13 +307,20 @@ scenes:
     say: waived
     seconds: 2.0
     target: css:[data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=card-duty]
+  - kind: scroll_to
+    note: Kanem's whole card, its delivered-duty-paid line keeping its own duty, while the narration says so
+    target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Kanem Foods Ltd')"
+  - kind: hover
+    say: keeps its own duty
+    seconds: 2.0
+    target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Kanem Foods Ltd') [data-testid=card-delivery-basis]"
   - kind: scroll
     note: the same frame as scene 4 -- the round's duty terms (now the waiver) just under the top bar, Harmattan's quote, the Needs info heading and Sahel's whole card, its round-terms blocker gone and its Duty line citing her answer to Northgate
-    value: '302'
+    value: '310'
   - kind: hover
-    note: park the cursor on the Needs info heading's blank right, off the table and every card; it is in view, so hovering cannot scroll the page
+    note: park the cursor in the top bar's blank middle, off the table and every card; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
-    target: css:#needs-info h2
+    target: css:header.fixed
   - kind: hold
     seconds: 2.0
   - kind: snapshot
@@ -302,6 +337,7 @@ scenes:
     comparison, which now costs a quote that leaves duty out under the waiver.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#owed
 - id: held-on-us
+  full_page: false
   actions:
   - kind: wait_for
     target: testid:waiting-on-us
@@ -317,20 +353,15 @@ scenes:
     say: permit
     seconds: 2.0
     target: testid:waiting-on-us
-  - kind: click
-    must_succeed: true
-    note: 'the forwarder''s message: held at the border on our import permit'
-    say: forwarder
-    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
-      Status dispatched') [data-testid=source-toggle]
   - kind: scroll_to
-    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
-      Status dispatched') [data-testid=source-excerpt]
-  - kind: hold
-    note: the forwarder's email, centred and read
+    note: down the page in the narration's order -- first what we owe to clear the shipment, via the forwarder, the import permit and the customs declaration, each with Mark provided
+    target: testid:owed-heading
+  - kind: hover
+    say: owe
     seconds: 2.0
+    target: testid:owed-heading
   - kind: scroll_to
-    note: centre the invoice's Freight line, so the Invoices heading and its column headers sit whole under the top bar, with the history's Waiting on us line and why it is ours (we are the consignee) below
+    note: then the invoice's Freight line, the Invoices heading and its column headers whole above it
     target: "css:[data-testid=invoice-variance-table] tr:has([data-testid=above-agreed-tag]):has-text('Freight')"
   - kind: hover
     say: invoice
@@ -340,13 +371,25 @@ scenes:
     note: the Dispute action beside Pay on the invoice billed above agreed
     seconds: 1.2
     target: testid:invoice-dispute
+  - kind: click
+    must_succeed: true
+    note: 'last, further down in the history, the forwarder''s message: held at the border on our import permit'
+    say: forwarder
+    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
+      Status dispatched') [data-testid=source-toggle]
+  - kind: scroll_to
+    target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
+      Status dispatched') [data-testid=source-excerpt]
+  - kind: hold
+    note: the forwarder's email, centred and read
+    seconds: 2.0
   - kind: scroll
-    note: settle the page with What we owe them just under the top bar -- the Form M and PAAR the forwarder asked for, each with Mark provided, the invoice billed against agreed, and the forwarder's email below
-    value: '1377'
+    note: settle the page with What we owe just under the top bar -- the Form M and PAAR the forwarder asked for, each with Mark provided, the invoice billed against agreed, and the forwarder's email below
+    value: '1330'
   - kind: hover
-    note: park the cursor on the Invoices section's blank middle, off the figures, the actions and the email; it is in view, so hovering cannot scroll the page
+    note: park the cursor in the top bar's blank middle, off every heading, figure, action and the email; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
-    target: css:h3:has-text('Invoices')
+    target: css:header.fixed
   - kind: hold
     seconds: 1.5
   concept_claim: The order says it is waiting on us for the import permit, with the
@@ -360,6 +403,7 @@ scenes:
     the agreed price.
   url: /supply/orders/${contract_id}/?program_id=${program_id}
 - id: whose-move
+  full_page: false
   actions:
   - kind: wait_for
     target: testid:standing-table
@@ -383,17 +427,23 @@ scenes:
   - kind: hold
     say: invoice
     seconds: 1.5
-  - kind: scroll_to
-    note: the close takes in the chain's count strip below the standing table, so the final frame has its own numeric shape
-    target: css:h2:has-text('The chain')
-  - kind: hover
-    note: park the cursor on the chain heading, off the table and the count cards
-    seconds: 0.6
-    target: css:h2:has-text('The chain')
+  - kind: scroll
+    note: the chain's count strip as its own beat, its heading just under the top bar so all three bands are whole, with the open-check counts below them
+    say: chain
+    value: '906'
   - kind: hold
-    seconds: 1.5
+    seconds: 2.0
+  - kind: scroll
+    note: the close returns to the top of Where everything stands, its heading just under the top bar, so both rows' Waiting on cells -- round 2's Us, No reply and Missing facts, and the order's Us -- share the final frame
+    value: '271'
+  - kind: hover
+    note: park the cursor in the top bar's blank middle, off the table
+    seconds: 0.6
+    target: css:header.fixed
+  - kind: hold
+    seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the standing table's rows and the chain's count strip below it
+    note: the canonical frame is the top of Where everything stands -- round 2's Waiting on cell (Us, No reply, Missing facts) and the round 1 order's (Us) together
   concept_claim: The overview names each supplier who has not replied with the day
     we asked them, lists the facts each quote still lacks, which under the round's
     waiver no longer include a duty figure, and says when the next move is ours, for
@@ -403,5 +453,6 @@ scenes:
   show: Sophie returns to the overview and reads the Waiting on column for round 2,
     Sahel's quote short only its exchange rate and freight, the waiver document ours
     to attach, and the round 1 order waiting on us for the import permit and the invoice
-    dispute, with the chain's counts below.
+    dispute; after a look at the chain's counts she closes on the table's top, where
+    six moves are hers and two suppliers are silent.
   url: /supply/?program_id=${program_id}

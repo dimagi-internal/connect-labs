@@ -45,8 +45,8 @@ class TestTheOverviewAgreesWithTheOrderPage:
     def test_the_chain_s_dispatched_tile_says_so_too(self, da, world, client_in_program):
         _held_on_our_form_m(da, world)
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-        assert "1 at customs — held, waiting on us · not stock" in _text(body)
-        assert "in transit — not stock" not in _text(body)
+        assert "1 at customs — held, waiting on us · not yet stock on hand" in _text(body)
+        assert "in transit — not yet stock on hand" not in _text(body)
 
 
 class TestTheUnitPriceSaysPerWhat:

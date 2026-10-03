@@ -277,7 +277,28 @@ def _clause(model, attname, old, new, lookup) -> str:
     return f"{label} {before} → {after}"
 
 
+def _required_documents_clause(old, new) -> str:
+    """The shipment's required documents, named: "Required documents now: import permit (Form M)".
+
+    "Required documents changed" made the reader open the email to learn which;
+    the record already carries each document's kind and its local name.
+    """
+    named = []
+    for document in new or []:
+        if not isinstance(document, dict):
+            continue
+        what = str(document.get("kind") or "").replace("_", " ").strip()
+        if not what:
+            continue
+        local = str(document.get("name") or "").strip()
+        named.append(what + (f" ({local})" if local else ""))
+    if not named:
+        return "Required documents cleared" if old else ""
+    return "Required documents now: " + ", ".join(named)
+
+
 _SPECIAL_CLAUSES = {
+    ("Shipment", "required_documents"): _required_documents_clause,
     # A correction supersedes the old version rather than editing it.
     ("Quote", "superseded_by_id"): lambda old, new: "Replaced by a corrected version" if new else "",
     ("Quote", "version"): lambda old, new: "",
@@ -344,6 +365,32 @@ def _quote_price(values, lookup) -> str:
             unit = unit or (getattr(row, field, "") if row is not None else "")
     per = f"per {unit_noun(unit)}" if unit else (words(basis) if basis else "")
     return " ".join(part for part in (price, per, _quote_terms(values), _asked_terms(values, lookup)) if part)
+
+
+def quote_pack_words(values, lookup) -> str:
+    """The pack the quote states, as the supplier wrote it: "150 x 92 g sachets per carton".
+
+    Only what the quote itself stated (`base_per_pack_stated`,
+    `base_unit_grams_stated`); the catalogue's default pack is never said here,
+    since the line is read against the supplier's email. "" when the quote states
+    no pack.
+    """
+    from connect_labs.supply_chain.models import Commodity, Item
+
+    count = values.get("base_per_pack_stated")
+    if count in (None, ""):
+        return ""
+    count = int(count)
+    base = pack = ""
+    for model, key in ((Item, "item_id"), (Commodity, "commodity_id")):
+        row = lookup.row(model, values.get(key))
+        if row is not None:
+            base = base or (getattr(row, "base_unit", "") or "")
+            pack = pack or (getattr(row, "pack_unit", "") or "")
+    grams = values.get("base_unit_grams_stated")
+    figure = f"{count:,} x {int(grams)} g" if grams not in (None, "") else f"{count:,}"
+    noun = unit_noun(base, count) if base else "units"
+    return f"{figure} {noun} per {unit_noun(pack) if pack else 'pack'}"
 
 
 def _asked_terms(values, lookup) -> str:
@@ -501,7 +548,17 @@ def create_what(model, values, lookup) -> str:
     """
     identity = _identity(model, values, lookup)
     if model.__name__ == "Quote":
-        facts = [" · ".join(part for part in (_quote_price(values, lookup), quote_commercial_terms(values)) if part)]
+        facts = [
+            " · ".join(
+                part
+                for part in (
+                    _quote_price(values, lookup),
+                    quote_pack_words(values, lookup),
+                    quote_commercial_terms(values),
+                )
+                if part
+            )
+        ]
     else:
         facts = _create_facts(model, values, lookup)
         if identity and facts and facts[0] == identity:

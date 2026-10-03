@@ -275,6 +275,37 @@ def day_beside_count(value, now):
 
 
 @register.filter
+def count_back(value, now):
+    """ "today", "6 days ago", "2 months ago": always a count back from `now`, never a date.
+
+    The overview's Last change column pairs it with `short_day` on every row, so
+    the column reads one way -- a count, then the day -- however old the change.
+    """
+    relative = days_ago(value, now)
+    if not relative:
+        return ""
+    from django.utils import timezone
+
+    days = (timezone.localdate(now) - timezone.localdate(value)).days
+    if days < 31:
+        return relative
+    months = max(1, round(days / 30.4))
+    return f"{months} month{'s' if months != 1 else ''} ago"
+
+
+@register.filter
+def short_day(value, now):
+    """ "29 Jul": the day under a count back, with its year only when it is not `now`'s year."""
+    if value is None or now is None:
+        return ""
+    from django.utils import timezone
+
+    day = timezone.localdate(value)
+    text = f"{day.day} {day.strftime('%b')}"
+    return text if day.year == timezone.localdate(now).year else f"{text} {day.year}"
+
+
+@register.filter
 def qty(value, unit=None):
     """A quantity and its unit as a person writes them: "3 jerry cans", "1 carton".
 
@@ -753,24 +784,53 @@ def _awaiting_words(rfq) -> str:
     return f"{n} awaiting a reply on {_plural(rounds, 'open round')}"
 
 
-def evaluation_words(evaluation) -> str:
-    """The Evaluation cell's caption: "comparable", or the count tender by tender.
-
-    Across several tenders the program's total ("1 of 4") is broken down by
-    tender -- "RUTF round 2: 1 of 3 · RUTF round 1: awarded" -- so it reads back
-    to the "1 of 3" one round's comparison page says.
-    """
-    tail = " · provisional" if evaluation.get("provisional") else ""
+def _open_and_awarded(evaluation):
     parts = evaluation.get("by_tender") or []
+    return [p for p in parts if not p["awarded"]], [p for p in parts if p["awarded"]]
+
+
+def evaluation_value(evaluation):
+    """The Evaluation headline: quotes comparable of quotes received, on rounds still being evaluated.
+
+    An awarded round is not added in: "1 of 4" mixed one open round's
+    comparable count with another round's awarded quote, and matched neither
+    round's own comparison page. With one open round this is that page's "1 of 3".
+    """
+    open_rounds, awarded = _open_and_awarded(evaluation)
+    if not open_rounds and not awarded:
+        return f"{evaluation.get('comparable', 0)} of {evaluation.get('of', 0)}"
+    if not open_rounds:
+        return 0
+    return f"{sum(p['comparable'] for p in open_rounds)} of {sum(p['of'] for p in open_rounds)}"
+
+
+def evaluation_words(evaluation) -> str:
+    """The Evaluation cell's caption: what the headline counts, round by round, and awarded rounds apart.
+
+    "quotes comparable on RUTF round 2 · awarded: RUTF round 1". Several open
+    rounds are broken down one by one ("RUTF round 3: 0 of 2 · RUTF round 2:
+    1 of 3 quotes comparable"), each reading back to its own comparison page.
+    """
+    open_rounds, awarded = _open_and_awarded(evaluation)
+    if not open_rounds and not awarded:
+        return "quotes comparable"
+    if len(open_rounds) == 1:
+        head = f"quotes comparable on {open_rounds[0]['label']}"
+    elif open_rounds:
+        head = " · ".join(f"{p['label']}: {p['comparable']} of {p['of']}" for p in open_rounds) + " quotes comparable"
+    else:
+        head = "no round open for evaluation"
+    if awarded:
+        head += " · awarded: " + ", ".join(p["label"] for p in awarded)
+    return head
+
+
+def quotation_words(quotations) -> str:
+    """The Quotations caption: live quotes per tender, newest first, so each reads back to its round."""
+    parts = quotations.get("by_tender") or []
     if len(parts) < 2:
-        return "comparable" + tail
-    return (
-        " · ".join(
-            f"{p['label']}: awarded" if p["awarded"] else f"{p['label']}: {p['comparable']} of {p['of']} comparable"
-            for p in parts
-        )
-        + tail
-    )
+        return "live" + (f" on {parts[0]['label']}" if parts else "")
+    return "live: " + " · ".join(f"{p['live']} on {p['label']}" for p in parts)
 
 
 @register.filter
@@ -783,13 +843,6 @@ def source_stages(source):
     """
     evaluation = source["evaluation"]
     sourcing = reverse("supply_chain:procurement_tender_board")
-
-    # Each count says what it is counted across: "2 of 4 comparable" is the
-    # program's total, and without its scope read as contradicting one
-    # round's "1 of 3" on the comparison page.
-    def across(part):
-        n = part.get("tenders")
-        return f" across {_plural(n, 'tender')}" if n else ""
 
     return [
         _cell(
@@ -804,17 +857,16 @@ def source_stages(source):
             _awaiting_words(source["rfq_issued"]),
             sourcing,
         ),
-        _cell("Quotations", source["quotations"]["live"], "live" + across(source["quotations"]), sourcing),
-        _cell(
-            "Evaluation",
-            f"{evaluation['comparable']} of {evaluation['of']}",
-            evaluation_words(evaluation),
-            sourcing,
-        ),
+        _cell("Quotations", source["quotations"]["live"], quotation_words(source["quotations"]), sourcing),
+        _cell("Evaluation", evaluation_value(evaluation), evaluation_words(evaluation), sourcing),
         _cell(
             "Award",
             source["award"]["count"],
-            f"{source['award']['provisional']} provisional" if source["award"]["provisional"] else None,
+            (
+                f"{source['award']['provisional']} provisional — chosen before every quote could be compared"
+                if source["award"]["provisional"]
+                else None
+            ),
             sourcing,
         ),
     ]
@@ -832,9 +884,9 @@ def order_stages(order):
             orders,
         ),
         _cell(
-            "No PO reference",
+            "Orders without a PO number",
             order["contract"]["without_reference"],
-            "we do not hold it" if order["contract"]["without_reference"] else None,
+            "we do not hold the PO number" if order["contract"]["without_reference"] else None,
             orders,
         ),
         _cell(
@@ -857,8 +909,8 @@ def _dispatched_note(dispatched) -> str:
     """ "1 at customs — held, waiting on us · not stock": where the goods on the road are, as the order says."""
     where = dispatched.get("whereabouts") or {}
     if not where:
-        return f"{dispatched['in_transit']} in transit — not stock"
-    return ", ".join(f"{n} {words}" for words, n in where.items()) + " · not stock"
+        return f"{dispatched['in_transit']} in transit — not yet stock on hand"
+    return ", ".join(f"{n} {words}" for words, n in where.items()) + " · not yet stock on hand"
 
 
 def _invoiced_note(invoiced) -> str:
@@ -878,20 +930,20 @@ def deliver_stages(deliver):
         _cell(
             "Network",
             deliver["network"]["supply_points"],
-            f"{deliver['network']['user_held']} field workers",
+            f"supply points · {deliver['network']['user_held']} field workers",
             stock,
         ),
         # A quantity needs a unit, and a unit needs a commodity -- so a cell
         # with neither says what would make it computable rather than showing
         # a bare dash, which reads as "zero" or "broken".
         _quantity_cell("On hand", deliver["on_hand"], "excludes goods in transit", stock),
-        _quantity_cell("In transit", deliver["in_transit"], "real, but not cover", stock),
+        _quantity_cell("In transit", deliver["in_transit"], "not counted as stock on hand", stock),
         _cell("Distributed", deliver["distributions"]["runs"], "resupply runs", distribution),
         _quantity_cell("Dispensed", deliver["consumed"], "derived from visits", distribution),
         _cell(
-            "Under its band",
+            "Below reorder level",
             needs,
-            f"{deliver['network']['never_reported']} never reported",
+            f"supply points · {deliver['network']['never_reported']} never reported",
             stock,
         ),
     ]
@@ -1026,9 +1078,61 @@ def record_kind_lead(text, sender=""):
     name, named, after = rest.partition(" · ")
     if named and name.strip() and sender and str(sender).rstrip().endswith(name.strip()):
         rest = after
-    return mark_safe(
-        f'<span data-testid="record-kind" class="font-semibold">{escape(kind)}</span> · {_terms_kept_whole(rest)}'
-    )
+    lead = f'<span data-testid="record-kind" class="font-semibold">{escape(kind)}</span> · '
+    if kind == "Quote" and rest.startswith("recorded: "):
+        return mark_safe(lead + _quote_term_chips(rest[len("recorded: ") :]))
+    # "Owed · recorded: they asked: ..." stacked two colons; under the email it came
+    # from, the record's kind already says it was recorded.
+    for said in ("recorded: they asked: ", "recorded: we promised: "):
+        if rest.startswith(said):
+            rest = said[len("recorded: ") :] + rest[len(said) :]
+            break
+    return mark_safe(lead + str(_terms_kept_whole(rest)))
+
+
+# What each recorded quote term is called on its chip, by how the line words it.
+_QUOTE_TERM_LABELS = (
+    ("valid to ", "Valid to"),
+    ("lead time ", "Lead time"),
+    ("minimum order ", "Minimum order"),
+    ("shelf life ", "Shelf life"),
+)
+
+
+def _quote_term_chips(text):
+    """A recorded quote's terms as labelled chips: Price · Incoterm · Pack · Valid to · ...
+
+    The line ran every term together ("EUR 0.31 per sachet (EXW Niamey: freight
+    and duty excluded) — you asked CPT Kano · valid to 2 Nov 2026 · ...") and
+    wrapped mid-phrase; each term now reads as its own labelled chip, in the
+    order the supplier's email gives them.
+    """
+    chips = []
+    pieces = str(text).split(" · ")
+    price, _, basis = pieces[0].partition(" (")
+    chips.append(("Price", price))
+    if basis:
+        terms, _, asked = basis.partition(")")
+        asked = asked.strip().lstrip("—").strip()
+        chips.append(("Incoterm", terms + (f" — {asked}" if asked else "")))
+    for piece in pieces[1:]:
+        for prefix, label in _QUOTE_TERM_LABELS:
+            if piece.startswith(prefix):
+                chips.append((label, piece[len(prefix) :]))
+                break
+        else:
+            chips.append(("Pack" if " per " in piece else "", piece))
+    # The price first, at a weight of its own, then the other terms as a two-column
+    # list of label and value: a run of equal-weight chips gave the price no lead.
+    (_, price), rest = chips[0], chips[1:]
+    head = f'<span data-testid="quote-price" class="text-base font-semibold text-gray-900">{escape(price)}</span>'
+    rendered = []
+    for label, value in rest:
+        name = f'<span class="text-gray-600">{escape(label)}</span> ' if label else ""
+        rendered.append(f'<span data-testid="quote-term" class="block">{name}<span>{escape(value)}</span></span>')
+    if not rendered:
+        return head
+    return head + '<span class="mt-0.5 grid grid-cols-2 gap-x-6 gap-y-0.5">' + "".join(rendered) + "</span>"
 
 
 def _terms_kept_whole(text):
@@ -1450,7 +1554,21 @@ def lead_in(line):
     if not sep or not head.strip():
         return escape(text)
     # "Us: import permit", with the same capitalised label as "No reply".
-    return mark_safe(f"<strong>{escape(head[:1].upper() + head[1:])}</strong>:{escape(rest)}")
+    return mark_safe(f"<strong>{escape(head[:1].upper() + head[1:])}</strong>:{nowrap_money(rest)}")
+
+
+_MONEY = re.compile(r"\b([A-Z]{3}) (\d[\d,]*(?:\.\d+)?)")
+
+
+@register.filter
+def nowrap_money(text):
+    """Escape `text`, keeping each "USD 3,550.00" on one line.
+
+    A narrow column broke an amount between its currency and its figure
+    ("(USD / 3,550.00 above)"). The words are unchanged; only the amount is
+    wrapped so it cannot split.
+    """
+    return mark_safe(_MONEY.sub(r'<span class="whitespace-nowrap">\1 \2</span>', str(escape(str(text or "")))))
 
 
 @register.filter
@@ -1494,3 +1612,21 @@ def in_sentence(name) -> str:
     from connect_labs.supply_chain.procurement.services.render import in_sentence as _in_sentence
 
     return _in_sentence(name)
+
+
+def _round_only(row) -> bool:
+    """Whether every blocker on a row is ours to clear (the round's own decision), none the supplier's."""
+    blockers = _blockers(row or {})
+    return bool(blockers) and all(((b or {}).get("question") or {}).get("audience") == "internal" for b in blockers)
+
+
+@register.filter
+def waits_only_on_round(rows):
+    """The blocked rows held only by our own decision (e.g. the round's duty terms): nothing the supplier owes."""
+    return [row for row in rows or [] if _round_only(row)]
+
+
+@register.filter
+def owes_supplier_facts(rows):
+    """The blocked rows with at least one fact still owed by the supplier -- what "Needs info" counts."""
+    return [row for row in rows or [] if not _round_only(row)]

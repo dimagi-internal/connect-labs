@@ -24,7 +24,7 @@ from connect_labs.supply_chain.models import SupplierOffering
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
-from connect_labs.supply_chain.standing import standing_rows
+from connect_labs.supply_chain.standing import our_moves, standing_rows
 
 
 @method_decorator(login_required, name="dispatch")
@@ -306,6 +306,9 @@ class DomainHomeView(OperationBase):
             own_org_id=org.pk if org is not None else None,
         )
         context["standing_now"] = end_of_day(as_of) if as_of else timezone.now()
+        # The moves the table lists as ours, counted from those very lines, so
+        # the heading and "Needs an answer" (open checks) say what each counts.
+        context["standing_our_moves"] = our_moves(context["standing"])
         # The tenders table below says "awarded, provisional" where the row
         # above does, rather than a bare "awarded" beside it.
         context["provisional_tender_ids"] = {r.tender_id for r in context["standing"] if r.provisional}
@@ -701,14 +704,16 @@ def _mark_invoices(invoices, invoice_above):
 
     facts = (invoice_above or {}).get("facts") or {}
     currency = facts.get("currency") or ""
+    # Reading order: the unit price, then freight, then the Total they add up to.
+    order = {"unit_price": 0, "freight": 1, "total": 2}
+    lines = sorted(facts.get("above") or [], key=lambda line: order.get(line.get("field"), 1))
     for invoice in invoices:
         marks = []
-        for line in facts.get("above") or []:
+        for line in lines:
             if line.get("field") == "total":
                 if len(invoices) == 1:
-                    # "USD 3,550.00" beside an "above agreed" tag.
-                    marks.insert(
-                        0,
+                    # "USD 3,550.00" beside an "above agreed" tag, as the last row.
+                    marks.append(
                         {
                             "text": f"{currency} {money_digits(line['difference'])}",
                             "tag": True,
@@ -947,6 +952,11 @@ class OrderDetailView(OperationBase):
         # says "Nothing owed" beside a banner saying we are waited on.
         context["owed_holds"] = [h for h in context["held_on_us"] if h.get("commitment_id") is None]
         context["owed_open_count"] = context.get("owed_open_count", 0) + len(context["owed_holds"])
+        # Who the held documents go through, so the section names its
+        # counterparty ("to clear the shipment (via Crescent Freight & Clearing)")
+        # instead of an ambiguous "them". One name only when every hold agrees.
+        asked = {h.get("asked_by") or "" for h in context["owed_holds"]}
+        context["owed_holds_via"] = asked.pop() if len(asked) == 1 else ""
         context["contract_late"] = next(
             (c for c in late if c["kind"] == "contract_delivery_overdue" and c["subject"]["id"] == contract_id), None
         )
