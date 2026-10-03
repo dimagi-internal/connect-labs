@@ -27,14 +27,14 @@ gaps:
     against her real rounds' emails.
 - id: G4
   type: CAPABILITY
-  detail: A tender had no structured record of how import duties are handled for
-    the round, so a duty-excluded quote was blocked on a duty amount even when the
-    program imports under a duty waiver.
+  detail: A tender had no structured record of how import duties are handled for the
+    round, so a duty-excluded quote was blocked on a duty amount even when the program
+    imports under a duty waiver.
   claim_ref: S5
-  proposed_action: 'Tender duty terms (not settled / buyer_waiver / buyer_pays / supplier_ddp),
-    set from the owed-answer form ([data-testid=answer-duty-terms]) or the tender''s
+  proposed_action: Tender duty terms (not settled / buyer_waiver / buyer_pays / supplier_ddp),
+    set from the owed-answer form ([data-testid=answer-duty-terms]) or the tender's
     Edit page, shown on the tender header ([data-testid=tender-duty-terms]) and honoured
-    by the comparison and the overview.'
+    by the comparison and the overview.
 spine:
 - id: S1
   claim: 'In Sophie''s rounds about half the suppliers asked never answer (Jonathan''s
@@ -89,8 +89,8 @@ spine:
   claim: 'An answer is not yet a usable quote: the comparison ranks only the quotes
     whose cost it can confirm and names, for each of the rest, the facts still missing
     and from whom -- Harmattan''s states everything, Kanem''s lacks its pack size,
-    and Sahel''s new quote leaves out freight, duty and the exchange rate, while
-    the round has not yet settled how import duties are handled.'
+    and Sahel''s new quote leaves out freight, duty and the exchange rate, while the
+    round has not yet settled how import duties are handled.'
   status: grounded
   evidence:
   - ref: EV-021
@@ -123,8 +123,8 @@ spine:
 - id: S6
   claim: 'The round 1 order with Harmattan shows the record keeps tracking after the
     award: it is waiting on us for an import permit the forwarder says holds the trucks
-    at the border -- being the importer makes the permit ours -- and the invoice
-    above the agreed price is flagged.'
+    at the border -- being the importer makes the permit ours -- and the invoice above
+    the agreed price is flagged.'
   status: grounded
   evidence:
   - ref: EV-011
