@@ -25,8 +25,9 @@ duty out is missing a figure depends on who imports.{% endcomment %}
 {% comment %}A labelled status line, the setting in the page's own weight and the costing rule after it
 in muted body text: as one run of grey body copy it read like the "Draft emails" line under it.{% endcomment %}
 <p data-testid="comparison-duty-terms" class="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-600">
-  <span data-testid="duty-terms-chip" class="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2.5 py-0.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300"{% if not tender.duty_terms %} title="Each quote is costed by the duty amount it states; a quote that states no duty amount cannot be ranked."{% endif %}><span class="font-medium">Import duties for this round:</span> <span data-testid="duty-terms-value" class="font-semibold">{{ tender.duty_terms|duty_terms_words }}</span>{% if not tender.duty_terms %} <i class="fa-solid fa-circle-info text-gray-600" aria-hidden="true"></i>{% endif %}</span>
-  <span data-testid="duty-terms-rule">{% if tender.duty_terms == "buyer_waiver" %}Duty counts as zero on every quote, and no supplier is asked for it <span data-testid="waiver-evidence">(waiver document: {% if waiver_on_file %}on file{% else %}none on file yet{% endif %})</span>.{% elif tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %}Our estimate of {{ tender.duty_estimate_percent|floatformat:"-2" }}% of the goods is added to each landed total.{% else %}No landed total until our duty estimate is recorded on the tender.{% endif %}{% elif tender.duty_terms == "supplier_ddp" %}Each quote's own duty figure is used.{% else %}Each quote is costed by the duty amount it states; a quote that states no duty amount cannot be ranked.{% endif %}</span>
+  <span data-testid="duty-terms-chip" class="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2.5 py-0.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300"{% if not tender.duty_terms %} title="Nobody has yet said who imports and who pays the duty: a quote that leaves the import to us cannot be landed until they do."{% endif %}><span class="font-medium">Import duties for this round:</span> <span data-testid="duty-terms-value" class="font-semibold">{{ tender.duty_terms|duty_terms_words }}</span>{% if not tender.duty_terms %} <i class="fa-solid fa-circle-info text-gray-600" aria-hidden="true"></i>{% endif %}</span>
+  <span data-testid="duty-terms-rule">{% if tender.duty_terms == "buyer_waiver" %}Duty counts as zero on every quote, and no supplier is asked for it <span data-testid="waiver-evidence">(waiver document: {% if waiver_on_file %}on file{% else %}none on file yet{% endif %})</span>.{% elif tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %}Our estimate of {{ tender.duty_estimate_percent|floatformat:"-2" }}% of the goods is added to each landed total.{% else %}No landed total until our duty estimate is recorded on the tender.{% endif %}{% elif tender.duty_terms == "supplier_ddp" %}Each quote's own duty figure is used.{% else %}A quote that states a duty amount is costed on it; one that leaves the import to us waits on these terms.{% endif %}</span>
+  {% if not supply_as_of %}<a data-testid="duty-terms-change" class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_edit' tender_id %}">{% if tender.duty_terms %}Change{% else %}Settle them{% endif %}</a>{% endif %}
   {% if duty_terms_answer %}<a data-testid="duty-terms-source" class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}?changed=commitment-{{ duty_terms_answer.commitment_id }}#owed">Set from your answer to {{ duty_terms_answer.owed_to }}'s question, {{ duty_terms_answer.on|date:"j M" }}.</a>{% endif %}
 </p>
 {% if not supply_as_of %}
@@ -134,7 +135,7 @@ in muted body text: as one run of grey body copy it read like the "Draft emails"
   <div class="table-container flex flex-col gap-2 mb-1">
     {% comment %}One comparable offer is a result, not a ranking: a compact card as wide as
     its figures, not a full-width table that is mostly empty space.{% endcomment %}
-    <div data-testid="{% if single_offer %}single-result{% else %}ranked-wrap{% endif %}" class="{% if single_offer %}w-fit max-w-full bg-white border border-gray-200 rounded-lg shadow-sm{% else %}w-full{% endif %} overflow-x-auto">
+    <div data-testid="{% if single_offer %}single-result{% else %}ranked-wrap{% endif %}" class="{% if single_offer %}w-full bg-white border border-gray-200 rounded-lg shadow-sm{% else %}w-full{% endif %} overflow-x-auto">
       {% comment %}Full width, as the Needs-info cards below it are. With one offer there is
       no ranking to number or to say what it is by, so neither the "#" column nor the
       "Ranked by" marker is shown.{% endcomment %}
@@ -375,11 +376,6 @@ in muted body text: as one run of grey body copy it read like the "Draft emails"
   <h2 class="text-lg font-semibold text-gray-900 mt-6 mb-2">
     <span data-testid="needs-info-title">Needs info — {{ comparison.blocked|length }} supplier{{ comparison.blocked|pluralize }}</span>
   </h2>
-  {% comment %}The round's duty terms again, compact, right above the cards they cost: the
-  cause (the answer that set them) and its effect on each card share one screen.{% endcomment %}
-  {% if comparison.blocked %}
-  <p data-testid="needs-info-duty-terms" class="-mt-1 mb-2 text-sm text-gray-700"><span class="font-medium text-gray-900">Round terms:</span> {{ tender.duty_terms|duty_terms_words }}{% if duty_terms_answer %} <span class="text-gray-600">(set {{ duty_terms_answer.on|date:"j M" }})</span>{% endif %}</p>
-  {% endif %}
   {% for row in comparison.blocked %}
     {% comment %}Tight: three of these fit below the page header at 900px.{% endcomment %}
     <div data-quote-id="{{ row.quote_id }}" id="quote-{{ row.quote_id }}" class="scroll-mt-20 bg-white rounded-lg shadow-sm border border-gray-200 px-4 py-2.5 mb-2">
@@ -392,8 +388,8 @@ in muted body text: as one run of grey body copy it read like the "Draft emails"
       {% comment %}What was offered, as the supplier stated it, on its own line under the
       name -- blocked from the ranking is not the same as having no price -- and when it
       arrived, as the metadata it is.{% endcomment %}
-      <p data-testid="as-quoted" class="text-sm text-gray-900">Quoted {{ row.as_quoted }}{% if row.as_quoted_note %} <span data-testid="as-quoted-note" class="text-gray-600">{{ row.as_quoted_note }}</span>{% endif %}</p>
-      {% if row.received_on %}<p data-testid="received-on" class="text-xs text-gray-600 mb-1">Received {{ row.received_on|day }}</p>{% endif %}
+      <div class="flex flex-wrap items-baseline gap-x-3 mb-0.5"><p data-testid="as-quoted" class="text-sm text-gray-900">Quoted {{ row.as_quoted }}{% if row.as_quoted_note %} <span data-testid="as-quoted-note" class="text-gray-600">{{ row.as_quoted_note }}</span>{% endif %}</p>
+      {% if row.received_on %}<p data-testid="received-on" class="text-xs text-gray-600">Received {{ row.received_on|day }}</p>{% endif %}</div>
       {% comment %}What its landed figures already rest on -- "duty waived (our import)" under the
       round's waiver -- so a fact the round's terms settled reads as settled, not as forgotten.{% endcomment %}
       {% comment %}The duty the round's terms settled has a line of its own at body size, citing
@@ -416,32 +412,33 @@ in muted body text: as one run of grey body copy it read like the "Draft emails"
       "Can't compare yet" flag, so the two cannot disagree. Then the facts they
       are read against, then the email that asks them, then the rest to confirm.
       {% endcomment %}
-      <div data-testid="blockers" class="mt-1 w-full grid grid-cols-1 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-x-8 gap-y-0.5 text-sm">
+      <div data-testid="blockers" class="mt-1 w-full grid grid-cols-1 sm:grid-cols-[fit-content(55%)_minmax(0,1fr)] gap-x-6 gap-y-0.5 text-sm">
         <p class="text-xs font-medium uppercase tracking-wide text-gray-600">Blocking</p>
         <p class="hidden sm:block text-xs font-medium uppercase tracking-wide text-gray-600">Question that clears it</p>
         {% for blocker in row.blockers %}
           <p data-testid="blocking" class="text-gray-900"><span class="sr-only">Blocking: </span>{{ blocker.fact }}</p>
-          <p data-testid="blocking-question" class="text-gray-700">{% if blocker.question %}{% if blocker.question.audience == "internal" %}Ours to do: {% else %}<span class="sr-only">Ask the supplier: </span>{% endif %}{{ blocker.question.question }}{% if not blocker.spec %}{% with q=blocker.question %}{% include "supply_chain/procurement/_requirement.html" %}{% endwith %}{% endif %}{% endif %}</p>
+          <p data-testid="blocking-question" class="text-gray-700">{% if blocker.question %}{% if blocker.question.key == "duty_terms" %}{% comment %}Ours, not the supplier's: the round's terms, with the action that settles them, and never in their email.{% endcomment %}Ours to do: {% if not supply_as_of %}<a data-testid="settle-duty-terms" class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_edit' tender_id %}">settle the round's duty terms</a>{% else %}settle the round's duty terms{% endif %} (not asked of the supplier){% else %}{% if blocker.question.audience == "internal" %}Ours to do: {% else %}<span class="sr-only">Ask the supplier: </span>{% endif %}{{ blocker.question.question }}{% endif %}{% if not blocker.spec %}{% with q=blocker.question %}{% include "supply_chain/procurement/_requirement.html" %}{% endwith %}{% endif %}{% endif %}</p>
         {% endfor %}
       </div>
-      <div data-testid="card-facts">
+      <div data-testid="card-facts" class="mt-1.5">
         {% comment %}What the tender requires of the missing figure, as the grey line the
         specification's other figures read in on these cards.{% endcomment %}
         {% for blocker in row.blockers %}
           {% if blocker.spec_line %}<p data-testid="blocker-spec-line" class="text-xs text-gray-600">{{ blocker.spec_line }}</p>{% elif blocker.spec %}<p data-testid="blocker-spec-line" class="text-xs text-gray-600">Tender requires {{ blocker.spec }}</p>{% endif %}
         {% endfor %}
         {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
-        {% include "supply_chain/procurement/_specification.html" with specification=row.specification hide_not_stated=True %}
+        {% include "supply_chain/procurement/_specification.html" with specification=row.specification hide_not_stated=True inline=True %}
       </div>
+      <div data-testid="card-actions" class="mt-1.5 flex flex-wrap items-start gap-x-4 gap-y-1">
       {% comment %}The email that asks it, already drafted on the tender's drafts panel,
       opened at this supplier's. It is the card's action, so it reads as one -- body
       size, in a bordered box -- not as the smallest text on the card.{% endcomment %}
       {% if not supply_as_of and row|asks_supplier %}
-        <p data-testid="draft-email-line" class="mt-1.5 mb-1 text-sm"><a data-testid="draft-email-link" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#draft-supplier-{{ row.supplier_id }}" class="inline-block rounded-md border border-gray-300 bg-white px-2.5 py-1 font-medium text-brand-indigo hover:bg-gray-50">Draft email to {{ row.supplier_name }}</a></p>
+        <p data-testid="draft-email-line" class="text-sm"><a data-testid="draft-email-link" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#draft-supplier-{{ row.supplier_id }}" class="inline-block rounded-md border border-gray-300 bg-white px-2.5 py-1 font-medium text-brand-indigo hover:bg-gray-50">Draft email to {{ row.supplier_name }}</a></p>
       {% endif %}
       {% with rest=row|also_confirm unstated=row|not_blocking %}
         {% if rest or unstated or row.blockers %}
-          <details data-testid="also-confirm" class="mt-1">
+          <details data-testid="also-confirm" class="pt-1 min-w-0 flex-1">
             <summary class="cursor-pointer text-sm text-brand-indigo">Other things to confirm (<span data-testid="not-blocking-rule" title="{{ ranking_rule }}">not blocking</span>)</summary>
             {% if rest %}{% include "supply_chain/procurement/_row_questions.html" with row=row questions=rest %}{% endif %}
             {% if tender.duty_terms == "buyer_waiver" and not waiver_on_file %}<p data-testid="confirm-waiver" class="mt-1 text-sm text-gray-700">Ours to do: <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:tender_document_attach' tender_id %}?kind=duty_exemption">attach the duty waiver document</a> — the zero duty on every quote rests on it.</p>{% endif %}
@@ -461,6 +458,7 @@ in muted body text: as one run of grey body copy it read like the "Draft emails"
           </details>
         {% endif %}
       {% endwith %}
+      </div>
       {% for c in row.compliance %}
         {% if c.claim_conflict %}
           <p class="text-sm text-red-700 mt-2">

@@ -68,7 +68,8 @@ def test_a_quote_s_void_is_set_apart_from_correct():
     )
     fixes = re.search(r'data-testid="quote-fixes"[^>]*>(.*?)</div>', html, re.S).group(1)
     assert 'href="/c/" class="text-brand-indigo' in fixes
-    assert 'data-testid="quote-void" class="font-normal text-red-700' in fixes
+    # Since DDD 003 batch 8: neutral at rest, red only on hover, still set apart from Correct.
+    assert 'data-testid="quote-void" class="font-normal text-gray-600 hover:text-red-700' in fixes
 
 
 @pytest.mark.django_db

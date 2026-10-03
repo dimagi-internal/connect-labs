@@ -680,17 +680,22 @@ def _mark_holds(built):
             continue
         old, new = revision.changes["required_documents"]
         before = {d.get("kind") for d in (old or []) if isinstance(d, dict)}
+        owed, imported = [], False
         for document in new or []:
             if not isinstance(document, dict) or document.get("kind") in before:
                 continue
             what = (document.get("kind") or "").replace("_", " ")
             if what in waiting:
-                # The record's own name for it, when it carries one ("Form M").
+                # The record's own name for it, when it carries one ("Form M"). Every
+                # document the line asked of us is named: an email that asks the
+                # consignee for two owes two.
                 local = str(document.get("name") or "").strip()
-                entry.hold = f"Waiting on us: {what}" + (f" ({local})" if local else "")
-                if "import" in what:
-                    entry.hold_reason = "we are the consignee: the program imports these goods"
-                break
+                owed.append(what + (f" ({local})" if local else ""))
+                imported = imported or "import" in what or "customs" in what
+        if owed:
+            entry.hold = "Waiting on us: " + " and ".join(owed)
+            if imported:
+                entry.hold_reason = "we are the consignee: the program imports these goods"
 
 
 @dataclass

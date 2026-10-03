@@ -75,7 +75,7 @@ class TestTheAwardPriceStacks:
         widths = {k: int(v) for k, v in re.findall(r'data-col="([a-z-]+)" style="width: (\d+)%"', standing)}
         # Unanswered-round 002: "Waiting on" stacks a line per owner, so it takes
         # room from the title column; stage keeps enough for the award line.
-        assert widths["stage"] == 15 and widths["waiting"] > widths["title"] and sum(widths.values()) == 100
+        assert widths["stage"] == 13 and widths["waiting"] > widths["title"] and sum(widths.values()) == 100
 
 
 # ---- 2. one order on every Needs-info card ----------------------------------
@@ -113,9 +113,9 @@ class TestOneOrderOnEveryCard:
             assert present == [hook for hook in ORDER if hook in present]
             assert {"blocking", "card-facts", "blocking-question"} <= set(present)
         # The pack card's requirement line and the freight card's stated figures are both facts.
-        facts = re.search(r'data-testid="card-facts">(.*?)data-testid="draft-email-line"', pack, re.S)
+        facts = re.search(r'data-testid="card-facts"[^>]*>(.*?)data-testid="draft-email-line"', pack, re.S)
         assert "Sachets per carton: not stated (tender requires 150)" in facts.group(1)
-        facts = re.search(r'data-testid="card-facts">(.*?)data-testid="draft-email-line"', freight, re.S)
+        facts = re.search(r'data-testid="card-facts"[^>]*>(.*?)data-testid="draft-email-line"', freight, re.S)
         assert 'data-testid="specification"' in facts.group(1)
         # Nothing of the specification after the email any more.
         assert 'data-testid="specification"' not in freight[freight.index('data-testid="draft-email-line"') :]

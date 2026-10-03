@@ -293,7 +293,7 @@ class TestTheSourceSaysWhereItCameFrom:
         contract, _shipment, _source = _order_with_emailed_shipment(da, base, ace)
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         # The shipment says its supplier reported it, so the email is the supplier's.
-        assert _source_heading(body) == "Email from Northwind Foods, recorded by ACE (agent) on 20 Aug 2026"
+        assert _source_heading(body) == "Email from Northwind Foods, recorded by the AI assistant on 20 Aug 2026"
 
     def test_the_same_email_again_is_answered_once_and_says_so(self, da, base, ace, client_in_program):
         contract, shipment, source = _order_with_emailed_shipment(da, base, ace)
@@ -306,12 +306,12 @@ class TestTheSourceSaysWhereItCameFrom:
         live = client_in_program.get(url).content.decode()
         assert (
             _source_heading(live)
-            == "Email from Northwind Foods, recorded by ACE (agent) on 20 Aug 2026 · forwarded again 28 Aug 2026 "
+            == "Email from Northwind Foods, recorded by the AI assistant on 20 Aug 2026 · forwarded again 28 Aug 2026 "
             "— recorded once"
         )
         # Before it arrived again, it had not.
         past = client_in_program.get(url, {"as_of": "2026-08-25"}).content.decode()
-        assert _source_heading(past) == "Email from Northwind Foods, recorded by ACE (agent) on 20 Aug 2026"
+        assert _source_heading(past) == "Email from Northwind Foods, recorded by the AI assistant on 20 Aug 2026"
 
 
 # ---- 5 and 6. the overview ------------------------------------------------

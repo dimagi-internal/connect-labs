@@ -93,6 +93,15 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
         "on the tender -- a landed total cannot be computed until then.",
         INTERNAL,
     ),
+    # Before "duties": under an Incoterm that makes the import ours, duty is the
+    # round's cost to settle, never a supplier's question.
+    (
+        "round's duty terms are not settled",
+        "duty_terms",
+        "Settle the round's import duty terms -- who imports, and whether duty is waived or ours to pay. "
+        "Import is ours under this quote's Incoterm, so the supplier is not asked.",
+        INTERNAL,
+    ),
     (
         "pack spec",
         "pack_spec",

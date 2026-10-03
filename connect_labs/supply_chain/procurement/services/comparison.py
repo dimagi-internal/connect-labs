@@ -106,6 +106,7 @@ _GAP_WORDS = {
     "tender_configuration": "tender line",
     "as_quoted_unit": "price unit",
     "duty_estimate": "our duty estimate",
+    "duty_terms": "round duty terms",
 }
 
 
@@ -786,6 +787,10 @@ def round_duty_words(quote, tender) -> str:
     terms leave duty to each quote.
     """
     terms = getattr(tender, "duty_terms", "") or ""
+    if not terms and _import_is_ours_unstated(quote):
+        # The Incoterm makes the import ours and the round has not said how:
+        # the duty is our cost to settle, not a figure the supplier owes.
+        return "ours to cost (round terms not settled)"
     if terms == "buyer_waiver":
         line = "waived (our import)"
     elif terms == "buyer_pays" and getattr(tender, "duty_estimate_percent", None) is not None:
@@ -798,6 +803,15 @@ def round_duty_words(quote, tender) -> str:
     elif basis == "included":
         line += " · the quote states duty included"
     return line
+
+
+def _import_is_ours_unstated(quote) -> bool:
+    """Whether the quote's Incoterm puts the import on us and the quote states no duty amount."""
+    implied = freight_and_duties_for_incoterm(getattr(quote, "incoterm", ""))[1]
+    basis = getattr(quote, "duties_basis", "")
+    if basis not in ("included", "excluded"):
+        basis = implied
+    return implied == "excluded" and basis == "excluded" and getattr(quote, "duties_amount", None) is None
 
 
 def round_duty_consequence(quote, tender) -> str:
