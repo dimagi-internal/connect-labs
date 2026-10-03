@@ -220,7 +220,9 @@ class TestTheOrderPage:
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         owed = re.search(r'data-testid="owed">(.*?)</div>\s*(?:<details|<div class="mb)', body, re.S).group(1)
         hold = _text(re.search(r'data-testid="owed-hold"[^>]*>(.*?)</div>', owed, re.S).group(1))
-        assert hold == "Import permit — the shipment is held until we provide it"
+        # Since DDD 003 batch 8 the hold carries the action that clears it.
+        assert hold == "Import permit — the shipment is held until we provide it Mark provided"
+        assert "?kind=import_permit" in owed
         assert "Nothing owed" not in owed
         assert _text(re.search(r'<h3 id="owed".*?</h3>', body, re.S).group(0)) == "What we owe them — 1 open"
         banner = re.search(r'<div data-testid="waiting-on-us" class="([^"]*)"', body).group(1)

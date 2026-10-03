@@ -62,9 +62,10 @@ class TestTheDutyLine:
             # Since DDD 003 batch 7 the answer is cited on a provenance line of its own.
             source = _text(re.search(r'data-testid="card-duty-provenance".*?</p>', body, re.S).group(0))
             assert "from your answer to" in source
-            # Since DDD 003 batch 5 the day is said once, on the Round terms line above the cards.
-            terms = _text(re.search(r'data-testid="needs-info-duty-terms".*?</p>', body, re.S).group(0))
-            assert "set 3 Oct" in terms
+            # Since DDD 003 batch 8 the terms are stated once, at the top of the comparison
+            # (the Round terms line above the cards repeated them), and the day is on the card.
+            assert 'data-testid="needs-info-duty-terms"' not in body
+            assert "3 Oct" in source
 
 
 def test_an_origin_incoterm_is_a_handover_not_a_delivery():

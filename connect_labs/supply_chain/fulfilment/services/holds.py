@@ -30,6 +30,9 @@ class Hold:
     # The document's own name where the record gives one ("Form M" for a
     # Nigerian import permit): carried on the shipment's requirement, never guessed.
     name: str = ""
+    # The document kind a held shipment requires ("import_permit"), so the
+    # screen can offer to attach exactly that document and clear the hold.
+    kind: str = ""
 
     def as_dict(self) -> dict:
         return {
@@ -39,6 +42,7 @@ class Hold:
             "owed_to": self.owed_to,
             "shipment_id": self.shipment_id,
             "commitment_id": self.commitment_id,
+            "kind": self.kind,
         }
 
     @property
@@ -97,6 +101,7 @@ def holds_for(contracts) -> dict[int, list[Hold]]:
                         since=None,
                         shipment_id=shipment.pk,
                         name=str(entry.get("name") or "").strip(),
+                        kind=str(entry.get("kind") or ""),
                     )
                 )
     for promise in Commitment.objects.filter(contract_id__in=by_id, resolved_on__isnull=True).select_related(
