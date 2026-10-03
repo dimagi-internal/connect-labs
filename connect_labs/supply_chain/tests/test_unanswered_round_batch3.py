@@ -247,7 +247,7 @@ class TestTheOrderPage:
         )
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         sub = re.search(r'<tr data-testid="invoice-against-agreed".*?</tr>', body, re.S).group(0)
-        assert "Unit price USD 51.20 billed USD 49.80 agreed" in _text(sub)
+        assert "Unit price per carton USD 51.20 USD 49.80 +USD 1.40" in _text(sub)
         assert 'data-testid="above-agreed-tag"' in sub
         amount_cell = re.search(r'data-testid="invoice-above-agreed"[^>]*>(.*?)</div>', body, re.S).group(1)
         assert "unit price" not in amount_cell

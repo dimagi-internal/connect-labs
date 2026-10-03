@@ -628,7 +628,7 @@ class TestATenderStatesTheContentsItBuys:
         body = client_in_programme.get(
             reverse("supply_chain:procurement_tender_detail", args=[tender.pk])
         ).content.decode()
-        assert "What this tender buys" in body
+        assert 'data-testid="tender-buys"' in body
         assert "2 sachet ORS + 10 tablet Zinc" in body
 
 

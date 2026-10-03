@@ -94,8 +94,8 @@ class TestDisputingAnInvoice:
         contract, _ = _overbilled(da, world)
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         rows = [_text(r) for r in re.findall(r'data-testid="invoice-against-agreed".*?</tr>', body, re.S)]
-        assert any("USD 49.80 agreed" in r and "+USD 1.40" in r for r in rows)
-        assert any("USD 7,200.00 agreed" in r and "+USD 750.00" in r for r in rows)
+        assert any("USD 51.20 USD 49.80 +USD 1.40" in r for r in rows)
+        assert any("USD 7,950.00 USD 7,200.00 +USD 750.00" in r for r in rows)
 
 
 @pytest.mark.django_db
@@ -125,7 +125,8 @@ class TestTheComparison:
         quote = _quote(da, world, duties_basis="excluded", duties_amount="0.00")
         words = landed_basis_words(quote, quote.tender)
         assert "0.00 USD added" not in words
-        assert "duty stated as zero on the quote" in words
+        assert "duty stated as zero" in words
+        assert "on the quote" not in words
 
     def test_terms_set_by_an_answer_say_so_and_the_award_says_the_round_is_incomplete(
         self, da, world, client_in_program

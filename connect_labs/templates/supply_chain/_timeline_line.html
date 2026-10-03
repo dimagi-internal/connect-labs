@@ -16,7 +16,7 @@
     {% if entry.hold %}
       {% comment %}The line that made the shipment wait on a document we owe, while it
       still does: in the order banner's own words (holds.py). Calm, not an alarm.{% endcomment %}
-      <div data-testid="revision-hold" class="mt-0.5 text-sm text-message-warning-text">{{ entry.hold }}{% if entry.hold_reason %}<span data-testid="hold-reason" class="ml-1 text-gray-700">— {{ entry.hold_reason }}</span>{% endif %}</div>
+      <div data-testid="revision-hold" class="mt-0.5 text-sm font-medium text-gray-900">{{ entry.hold }}{% if entry.hold_reason %}<span data-testid="hold-reason" class="ml-1 text-gray-700">— {{ entry.hold_reason }}</span>{% endif %}</div>
     {% endif %}
     {% if not in_event %}<div class="mt-0.5 flex flex-wrap items-center gap-2">{% endif %}
       {% comment %}

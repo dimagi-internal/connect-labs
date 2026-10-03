@@ -667,15 +667,14 @@ def _order_status(contract, shipments, held_on_us):
     customs"), and a hold on us is said beside it ("held, waiting on us").
     Otherwise the order's own status stands. Returns {"label", "tone"}, or None.
     """
-    from connect_labs.supply_chain.records import IN_TRANSIT_STATUSES
+    from connect_labs.supply_chain.records import latest_moving_shipment, shipment_whereabouts
 
     status = contract.get("status")
-    moving = [s for s in shipments or [] if s.get("status") in IN_TRANSIT_STATUSES or s.get("status") == "lost"]
-    if status in ("placed", "confirmed") and moving:
-        latest = max(moving, key=lambda s: (str(s.get("dispatched_on") or ""), s.get("id") or 0))
-        label = str(latest["status"]).replace("_", " ").capitalize()
+    latest = latest_moving_shipment(shipments)
+    if status in ("placed", "confirmed") and latest is not None:
+        label = shipment_whereabouts(latest["status"], bool(held_on_us)).capitalize()
         if held_on_us:
-            return {"label": f"{label} — held, waiting on us", "tone": "warning"}
+            return {"label": label, "tone": "warning"}
         return {"label": label, "tone": "warning" if latest["status"] == "lost" else "info"}
     if not status:
         return None
@@ -729,7 +728,9 @@ def _mark_invoices(invoices, invoice_above):
                         "text": f"{what} {currency} {money_digits(line['billed'])} "
                         f"against {money_digits(line['agreed'])} agreed",
                         "tag": False,
-                        "label": what.capitalize(),
+                        # "Unit price per carton": a unit price read without its unit
+                        # left the reader to guess what one of them is.
+                        "label": what.capitalize() + (f" per {line['per']}" if line.get("per") else ""),
                         "currency": currency,
                         "billed": money_digits(line["billed"]),
                         "agreed": money_digits(line["agreed"]),

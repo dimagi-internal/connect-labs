@@ -810,7 +810,7 @@ def order_stages(order):
         _cell(
             "Dispatched",
             order["dispatched"]["shipments"],
-            f"{order['dispatched']['in_transit']} in transit — not stock",
+            _dispatched_note(order["dispatched"]),
             orders,
         ),
         _cell("Received", order["received"]["receipts"], "goods received notes", orders),
@@ -821,6 +821,14 @@ def order_stages(order):
             orders,
         ),
     ]
+
+
+def _dispatched_note(dispatched) -> str:
+    """ "1 at customs — held, waiting on us · not stock": where the goods on the road are, as the order says."""
+    where = dispatched.get("whereabouts") or {}
+    if not where:
+        return f"{dispatched['in_transit']} in transit — not stock"
+    return ", ".join(f"{n} {words}" for words, n in where.items()) + " · not stock"
 
 
 def _invoiced_note(invoiced) -> str:

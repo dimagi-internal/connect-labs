@@ -66,7 +66,7 @@ def _last_lines(text, count):
 class TestTheRequest:
     def test_it_has_a_subject_naming_quantity_product_place_and_tender(self, rutf):
         draft = render_initial_request(rutf, tender(), northwind(), sender=SOPHIE)
-        assert draft.subject == ("Quotation request: 2,000 cartons of Ready-to-use therapeutic food, delivered Kano")
+        assert draft.subject == ("Quotation request: 2,000 cartons of ready-to-use therapeutic food, delivered Kano")
 
     def test_a_tender_that_only_collects_says_so_in_the_subject(self, rutf):
         draft = render_initial_request(
@@ -137,7 +137,7 @@ class TestTheFollowUp:
         assert "your quotation of 10 Sep 2026, USD 50.00 per carton" in draft.text
         assert (
             draft.subject
-            == "Follow-up on your quotation of 10 Sep 2026 — 2,000 cartons of Ready-to-use therapeutic food, "
+            == "Follow-up on your quotation of 10 Sep 2026 — 2,000 cartons of ready-to-use therapeutic food, "
             "delivered Kano"
         )
 
@@ -146,7 +146,7 @@ class TestTheFollowUp:
         assert "your quotation, USD 50.00 per carton" in draft.text
         assert (
             draft.subject
-            == "Follow-up on your quotation — 2,000 cartons of Ready-to-use therapeutic food, delivered Kano"
+            == "Follow-up on your quotation — 2,000 cartons of ready-to-use therapeutic food, delivered Kano"
         )
 
     def test_it_is_signed(self, rutf):
@@ -176,11 +176,11 @@ class TestTheReminder:
         )
         assert (
             draft.subject
-            == "Reminder: quotation request of 9 Sep 2026 — 2,000 cartons of Ready-to-use therapeutic food, "
+            == "Reminder: quotation request of 9 Sep 2026 — 2,000 cartons of ready-to-use therapeutic food, "
             "delivered Kano"
         )
         assert draft.text.startswith("Dear Ada Bello,")
-        assert "On 9 Sep 2026 we asked for a quotation for 2,000 cartons of Ready-to-use therapeutic food" in (
+        assert "On 9 Sep 2026 we asked for a quotation for 2,000 cartons of ready-to-use therapeutic food" in (
             draft.text
         )
         assert "Central store, Kano, Nigeria" in draft.text
@@ -198,6 +198,10 @@ class TestTheReminder:
             today=date(2026, 9, 28),
         )
         assert "We last wrote about this on 16 Sep 2026." in draft.text
+        # A later reminder refers to the questions rather than listing them a third time,
+        # so the chase stays shorter than the request it chases.
+        assert "in our request of 9 Sep 2026, and again in that reminder" in draft.text
+        assert "What is your minimum order quantity?" not in draft.text
 
     def test_a_deadline_still_ahead_is_the_reply_by_date(self, rutf):
         draft = render_reminder(

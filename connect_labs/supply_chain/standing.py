@@ -432,7 +432,10 @@ def _tender_rows(program_id, today, until):
             stage = f"awarded to {awardee}"
         # An award made while suppliers were still blocked from the comparison
         # (the frozen snapshot's `provisional`) could still be beaten: say so.
-        is_provisional = tender.status == "awarded" and tender.pk in provisional
+        # Once the award is ordered (a contract was signed on it) it is no longer
+        # provisional: "provisional — 1 of 1 quote not yet comparable" over a round
+        # whose order was signed, paid and shipped read as a decision still open.
+        is_provisional = tender.status == "awarded" and tender.pk in provisional and tender.pk not in contracted
         # "Provisional" is said once, by the caveat line under the stage
         # ("provisional — 2 of 3 suppliers not yet comparable"); the stage
         # itself names who it went to.
@@ -932,8 +935,16 @@ def _order_state(
     in_transit = [s for s in outstanding if _dispatched(s)]
     if in_transit and not received:
         # Goods on the road are the order's news even when the money moved first
-        # (paid in advance): "paid" alone would read as finished.
-        stage = IN_TRANSIT if stage == "dispatched" else f"{stage}, {IN_TRANSIT}"
+        # (paid in advance): "paid" alone would read as finished. Where they are
+        # is read as the order page reads it (records.latest_moving_shipment):
+        # "at customs — held, waiting on us", not a generic "in transit", when the
+        # newest shipment says more than that it is moving.
+        where = IN_TRANSIT
+        latest = records.latest_moving_shipment(in_transit)
+        if latest is not None and latest.status not in ("dispatched", "in_transit"):
+            # Held on us exactly when the order page says so: any hold we owe on the order.
+            where = records.shipment_whereabouts(latest.status, bool(holds))
+        stage = where if stage == "dispatched" else f"{stage}, {where}"
     elif stage == "paid" and received and contract.status != "part_received":
         stage = DELIVERED_AND_PAID
     if holds:

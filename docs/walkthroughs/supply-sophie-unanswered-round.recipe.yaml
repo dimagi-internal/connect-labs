@@ -45,10 +45,13 @@ scenes:
     say: duties
     seconds: 1.5
     target: testid:tender-duty-terms
+  - kind: scroll
+    note: back to the top, so the held frame opens on the round's title, its status and duty-terms lines, and the whole Outreach table with its column headings
+    value: top
   - kind: hover
-    note: park the cursor on the What this tender buys heading, off the buttons and the Outreach table
+    note: park the cursor in the blank middle of the Outreach heading row, inside the header block, so hovering cannot scroll the page
     seconds: 0.6
-    target: css:h2:has-text('What this tender buys')
+    target: css:div:has(> h2#outreach)
   - kind: hold
     seconds: 1.5
   concept_claim: The round's page says it is past its deadline and that its import
@@ -81,14 +84,14 @@ scenes:
     seconds: 2.0
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=draft-why]
   - kind: hover
-    note: today's date, ready in Chased on beside Record chase
+    note: today's date, ready in Chased on beside Record chase, at the foot of the card after the email
     say: today
     seconds: 1.8
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=chase-date]
   - kind: hover
     note: park the cursor on the To line's blank right, off the message, the facts row and the date field
     seconds: 0.6
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] div:has(> [data-testid=copy-to])
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=draft-to-line]
   - kind: hold
     note: the drafted reminder, open, with today's date ready to record
     seconds: 2.5
@@ -260,22 +263,22 @@ scenes:
     say: comparison
     seconds: 2.0
     target: testid:comparison-duty-terms
-  - kind: scroll
-    note: down to Sahel's card, where duty is no longer among what blocks it (the page's foot)
-    value: bottom
+  - kind: scroll_to
+    note: the Needs info heading to the top, its Round terms line (set from her answer to Northgate) right under it and Sahel's card below -- cause and effect in one frame
+    target: css:#needs-info
   - kind: hover
     note: the card's own Duty line -- waived because we import, the round's terms set from her answer to Northgate
     say: waived
     seconds: 2.0
     target: css:[data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=card-duty]
   - kind: hover
-    note: park the cursor in the Needs info heading's blank right, off its words and Sahel's card
+    note: park the cursor in the Needs info heading's blank right (empty page space), off its words, the Round terms line and Sahel's card
     seconds: 0.6
     target: css:h2:has([data-testid=needs-info-title])
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is Sahel's Needs info card under the waiver -- its Duty line reading duty waived (our import), set from her answer to Northgate, with only the exchange rate and freight left blocking it
+    note: the canonical frame is the Needs info heading with the Round terms line under it (the waiver, set from her answer to Northgate), and Sahel's Needs info card under the waiver -- its Duty line reading duty waived (our import), set from her answer to Northgate, with only the exchange rate and freight left blocking it
   concept_claim: Answering a supplier's question about who imports can set the round's
     import duty terms, and the round's comparison then states those terms and costs
     a quote that leaves duty out under them, so duty is no longer among what blocks
