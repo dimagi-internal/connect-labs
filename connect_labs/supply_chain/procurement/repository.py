@@ -34,6 +34,7 @@ from connect_labs.supply_chain.models import (
     SupplierProfile,
     Tender,
 )
+from connect_labs.supply_chain.values import possessive
 
 
 def _same_offer(quote, data) -> bool:
@@ -728,7 +729,7 @@ class ProcurementRepositoryMixin:
         for approval in self.blocking_approvals(award):
             if approval.status == "requested":
                 raise ValueError(
-                    f"the award to {award.supplier.name} is awaiting {approval.approver_org.name}'s "
+                    f"the award to {award.supplier.name} is awaiting {possessive(approval.approver_org.name)} "
                     f"{approval.role} approval (asked {approval.requested_on}); an order cannot be placed "
                     "against it until they have answered"
                 )

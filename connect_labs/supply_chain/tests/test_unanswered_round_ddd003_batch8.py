@@ -44,10 +44,14 @@ def test_a_buyer_import_term_with_no_duty_amount_waits_on_the_round(incoterm):
     assert round_duty_words(_quote(incoterm), UNSETTLED) == "ours to cost (round terms not settled)"
 
 
-def test_a_stated_duty_amount_is_still_costed_while_the_terms_are_open():
+def test_a_stated_duty_amount_waits_on_the_round_too():
+    # DDD 004: one rule. A supplier's stated duty figure never settles a buyer-import quote.
     extras = _extras(_quote("CPT Kano", duties_basis="excluded", duties_amount=Decimal("0")), UNSETTLED)
-    assert isinstance(extras, Money)
-    assert round_duty_words(_quote("CPT Kano", duties_basis="excluded", duties_amount=Decimal("0")), UNSETTLED) == ""
+    assert isinstance(extras, Unconfirmed) and list(extras.reasons) == [ROUND_DUTY_TERMS_REASON]
+    assert (
+        round_duty_words(_quote("CPT Kano", duties_basis="excluded", duties_amount=Decimal("0")), UNSETTLED)
+        == "ours to cost (round terms not settled)"
+    )
 
 
 def test_delivered_duty_paid_and_unknown_terms_still_ask_the_supplier():

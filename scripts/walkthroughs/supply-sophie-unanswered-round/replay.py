@@ -565,9 +565,10 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
             base_per_pack_stated=150,
             base_unit_grams_stated=92,
             freight_basis="included",
-            # As round 1 settled it: we import under the program's duty waiver, so duty is
-            # stated nil -- an explicit 0.00 the comparison costs whether or not the round's
-            # own duty terms are settled yet.
+            # Harmattan writes duty nil, as round 1 settled it. Under CPT the import is ours,
+            # so that figure is the supplier's word, never the round's basis: until round 2's
+            # own duty terms are settled, this quote waits on them exactly as Sahel's EXW
+            # quote does, and the comparison opens with none of the three comparable.
             duties_basis="excluded",
             duties_amount="0.00",
             shelf_life_months_stated=24,

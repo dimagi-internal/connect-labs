@@ -782,14 +782,14 @@ def _origin_handover_words(quote, where: str) -> str:
 def round_duty_words(quote, tender) -> str:
     """The duty the round's terms make ours, read after the card's "Duty:" label: "waived (our import)".
 
-    What the quote itself said of duty follows, so the round's term never hides
-    the supplier's word: "· the quote also stated zero". "" when the round's
-    terms leave duty to each quote.
+    A quote that says duty is included says so after it, because that can change
+    the price. "" when the round's terms leave duty to each quote.
     """
     terms = getattr(tender, "duty_terms", "") or ""
-    if not terms and _import_is_ours_unstated(quote):
+    if not terms and import_is_ours(quote):
         # The Incoterm makes the import ours and the round has not said how:
-        # the duty is our cost to settle, not a figure the supplier owes.
+        # the duty is our cost to settle, not a figure the supplier owes --
+        # and not one a figure the supplier wrote can settle either.
         return "ours to cost (round terms not settled)"
     if terms == "buyer_waiver":
         line = "waived (our import)"
@@ -797,21 +797,27 @@ def round_duty_words(quote, tender) -> str:
         line = f"our estimate of {tender.duty_estimate_percent.normalize():f}% added (our import)"
     else:
         return ""
-    basis, amount = getattr(quote, "duties_basis", ""), getattr(quote, "duties_amount", None)
-    if basis == "excluded" and amount is not None and not amount:
-        line += f" · the quote stated {money_digits(amount)} (excluded from the price)"
-    elif basis == "included":
+    basis = getattr(quote, "duties_basis", "")
+    # A figure the supplier wrote for duty is not repeated here: under a
+    # buyer-import term it is information at most, and the round's terms are
+    # the basis. Only "included" is said, because it can change the price.
+    if basis == "included":
         line += " · the quote states duty included"
     return line
 
 
-def _import_is_ours_unstated(quote) -> bool:
-    """Whether the quote's Incoterm puts the import on us and the quote states no duty amount."""
+def import_is_ours(quote) -> bool:
+    """Whether the quote's Incoterm puts the import on us (EXW, FCA, CPT, DAP ...), duty not said included.
+
+    Whatever duty figure the supplier wrote: under these terms the duty is the
+    buyer's cost, set by the round's duty terms (`pricing._extras` reads it the
+    same way), so a stated figure is information, never the basis.
+    """
     implied = freight_and_duties_for_incoterm(getattr(quote, "incoterm", ""))[1]
     basis = getattr(quote, "duties_basis", "")
     if basis not in ("included", "excluded"):
         basis = implied
-    return implied == "excluded" and basis == "excluded" and getattr(quote, "duties_amount", None) is None
+    return implied == "excluded" and basis == "excluded"
 
 
 def round_duty_consequence(quote, tender) -> str:
@@ -863,11 +869,15 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
             basis, source = from_term[label], f"Incoterm {quote.incoterm}"
         if basis == "included":
             parts.append(f"{label} included")
+        elif label == "duties" and basis == "excluded" and import_is_ours(quote):
+            # A buyer-import term: the duty is ours, set by the round's terms and
+            # said on the card's own "Duty:" line -- never costed from, or
+            # restated as, the supplier's figure.
+            continue
         elif basis == "excluded" and amount is not None and not amount and label == "duties":
             # A zero said on the quote, said as the quote's word -- not "0.00 added",
             # which read as a figure we had guessed.
-            # "on the quote" is not said here: the line closes "per quote" already.
-            parts.append(f"duty excluded from the price, stated as {money_digits(amount)}")
+            parts.append(f"duty not in the price; supplier states {money_digits(amount)}")
         elif basis == "excluded" and amount is not None:
             parts.append(f"{label} {money_digits(amount)} {currency} added")
         else:

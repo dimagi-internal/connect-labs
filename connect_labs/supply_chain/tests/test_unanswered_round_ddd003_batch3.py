@@ -32,10 +32,8 @@ class TestTheDutyLine:
         quote = _quote(da, world, duties_basis="excluded", duties_amount="0.00")
         _set(da, world, "buyer_waiver")
         quote.tender.refresh_from_db()
-        assert (
-            round_duty_words(quote, quote.tender)
-            == "waived (our import) · the quote stated 0.00 (excluded from the price)"
-        )
+        # Since DDD 004 the supplier's figure is not repeated: the round's terms are the basis.
+        assert round_duty_words(quote, quote.tender) == "waived (our import)"
         assert "duty waived" not in landed_basis_words(quote, quote.tender, round_duty=False)
         assert "duty waived (our import)" in landed_basis_words(quote, quote.tender)
 
