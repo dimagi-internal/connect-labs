@@ -41,22 +41,27 @@ scenes:
     seconds: 1.5
     target: text:Last chased
   - kind: hover
+    note: the round has not yet settled who handles import duties -- the line scene 5 changes
+    say: duties
+    seconds: 1.5
+    target: testid:tender-duty-terms
+  - kind: hover
     note: park the cursor on the Draft reminders button the next scene uses, clear of "3 of 6 replied"
     seconds: 0.6
     target: testid:draft-reminders
   - kind: hold
     seconds: 1.5
-  concept_claim: The round's page says it is past its deadline and shows, for every
-    supplier asked, whether they replied or how long they have been silent and when
-    they were last chased.
+  concept_claim: The round's page says it is past its deadline and that its import
+    duty terms are not settled, and shows, for every supplier asked, whether they
+    replied or how long they have been silent and when they were last chased.
   design_intent: 'Bet: framing the demo around silence, the normal case, makes every
-    later scene answer a question Sophie actually has; one opening scene carries both
-    the goal and the table.'
+    later scene answer a question Sophie actually has; one opening scene carries the
+    goal, the table, and the unsettled duty terms that scene 5 settles.'
   pace: teach
   role: overview
   show: 'Sophie opens round 2''s tender page past its deadline and reads the Outreach
     table: three replied, three silent with the days since she asked and the day she
-    last chased each.'
+    last chased each, and the header line saying import duties are not settled.'
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: sophie-chases-sahel
   actions:
@@ -71,18 +76,27 @@ scenes:
   - kind: scroll_to
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] textarea
   - kind: hover
-    note: park the cursor on Sahel's name, the card's heading, off the message and the date field
+    note: the line that says when she asked Sahel and when she last reminded them
+    say: reminder
+    seconds: 2.0
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=draft-why]
+  - kind: hover
+    note: today's date, ready in Chased on beside Record chase
+    say: today
+    seconds: 1.8
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=chase-date]
+  - kind: hover
+    note: park the cursor on Sahel's name, the card's heading, off the message, the why line and the date field
     seconds: 0.6
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] p:first-child span:first-child
   - kind: hold
-    note: the drafted reminder, which quotes the day she last wrote; the Chased on field already reads today
-    say: reminder
-    seconds: 3.0
+    note: the drafted reminder, open, with today's date ready to record
+    seconds: 2.5
   - kind: snapshot
-    note: the canonical frame is Sahel's drafted reminder, quoting the day she last wrote, with today's date ready to record
+    note: the canonical frame is Sahel's open drafted reminder card, with Chased on reading today beside Record chase
   - kind: click
     must_succeed: true
-    note: record the day she chased Sahel, from the draft itself
+    note: record the day she chased Sahel, from the draft itself; the round lands on Sahel's row, which scene 3 opens on
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=record-chase]
     timeout_ms: 30000
   - kind: wait_for
@@ -93,15 +107,15 @@ scenes:
     seconds: 0.6
     target: testid:draft-reminders
   - kind: hold
-    note: Sahel's row, chased today
-    seconds: 2.5
-  concept_claim: The round drafts a reminder for each silent supplier, and recording
-    the chase from the draft updates that supplier's last-chased day and reminder
-    count on the round.
+    seconds: 1.2
+  concept_claim: The round drafts a reminder for each silent supplier that says when
+    they were asked and last reminded, with a Chased on field holding today's date
+    and a Record chase button on the draft itself.
   design_intent: Chasing is most of the work in a half-silent round; the record drafts
-    it and keeps when it happened.
-  show: Sophie opens the round's draft emails, reads the reminder drafted for Sahel,
-    records today's chase from the draft, and lands on Sahel's row marked as updated.
+    the reminder and records the chase from the same card, so the day is kept.
+  show: Sophie opens the round's draft emails and reads the reminder drafted for
+    Sahel, its line on when Sahel was asked and last reminded, and the Chased on field
+    beside Record chase.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: sahel-finally-answers
   actions:
@@ -120,77 +134,41 @@ scenes:
   - kind: click
     must_succeed: true
     note: 'replies only: the emails lead'
-    say: replies
     target: testid:history-replies-only
   - kind: hold
-    seconds: 1.0
+    seconds: 0.8
   - kind: click
     must_succeed: true
-    note: Sahel's email, recorded by the AI
-    say: Sahel
+    note: open Sahel's own email, recorded by the AI
+    say: email
     target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-toggle]
   - kind: wait_for
     target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-excerpt]
   - kind: scroll_to
-    note: lift History up the frame so its heading sits clear under the header, Sahel's email and records below it
-    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=email-event-records]
+    note: centre Sahel's opened email -- sender line above, the excerpt, and the records below -- so the Quotes table leaves the frame
+    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-excerpt]
   - kind: hold
+    say: wrote
     seconds: 2.5
   - kind: hover
-    note: park the cursor on the History heading, off the email, the records and the checkbox
+    note: park the cursor on the History heading's words, off the email, the records and the checkbox
     seconds: 0.6
     target: css:#history h2
   - kind: hold
-    seconds: 1.0
+    seconds: 1.2
+  - kind: snapshot
+    note: the canonical frame is Sahel's email opened -- sender, excerpt and what the AI recorded from it
   before: python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --sahel-replies
-  concept_claim: When a silent supplier answers and the AI records the reply from
-    the forwarded email, the round's history shows Sahel's email, who sent it and
-    what the AI recorded from it, with the email's excerpt behind a Source email toggle.
+  concept_claim: When a silent supplier's forwarded email is recorded, the round's
+    history shows that email with its sender, the excerpt of what they wrote behind
+    an opened Source email toggle, and the quote and reply the AI recorded from it.
   design_intent: 'A real event between scenes: the record changes because the world
-    did, and the change carries its own evidence.'
-  show: Sophie turns the round's history to replies only, opens the Source email toggle
-    on Sahel's email, and reads the excerpt and sender beside what the AI recorded
-    from it.
+    did, and Sophie drills into the email itself to check it, so the change carries
+    its own evidence.'
+  show: Sophie sees Sahel's row move to replied, turns the round's history to replies
+    only, opens the Source email toggle on Sahel's email, and reads the excerpt and
+    sender beside what the AI recorded from it.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#history
-- id: what-we-owe-northgate
-  actions:
-  - kind: wait_for
-    target: text:What we owe them
-  - kind: scroll_to
-    target: css:#owed
-  - kind: hold
-    seconds: 1.0
-  - kind: click
-    must_succeed: true
-    note: Mark answered on the importer question
-    target: css:[data-commitment-id='${importer_question_id}'] a
-    timeout_ms: 30000
-  - kind: fill
-    say: import
-    target: css:#id_resolution
-    value: We import, under the program's duty waiver; please state freight to Kano.
-  - kind: click
-    must_succeed: true
-    target: role:button:Save
-    timeout_ms: 30000
-  - kind: wait_for
-    must_succeed: true
-    target: css:[data-changed]
-  - kind: hover
-    note: park the cursor on a heading in frame
-    seconds: 0.6
-    target: text:What we owe them
-  - kind: hold
-    note: the importer question, answered
-    seconds: 2.5
-  concept_claim: A supplier's questions are listed as answers we owe with who asked
-    and when, and marking one answered records Sophie's answer and closes it.
-  design_intent: A question in an email stalls the round with nobody on the hook;
-    as a record it is Sophie's to-do.
-  show: Sophie opens What we owe them on the round, reads Northgate's open questions
-    with the day they asked, marks the importer question answered with her answer,
-    and sees it move to answered.
-  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#owed
 - id: whats-still-missing
   actions:
   - kind: wait_for
@@ -217,10 +195,67 @@ scenes:
     be relied on, including a reply that has only just arrived, without ranking across
     them or guessing a figure.
   design_intent: The comparison earns its place by saying what is missing, not by
-    ranking quotes that cannot be ranked.
+    ranking quotes that cannot be ranked; seen before the duty answer, it shows what
+    an unsettled duty question costs.
   show: Sophie opens the round's comparison and reads, quote by quote, the fact each
     one is missing and from whom.
   url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
+- id: what-we-owe-northgate
+  actions:
+  - kind: wait_for
+    target: text:What we owe them
+  - kind: scroll_to
+    target: css:#owed
+  - kind: hold
+    seconds: 1.0
+  - kind: click
+    must_succeed: true
+    note: Mark answered on the importer question
+    target: css:[data-commitment-id='${importer_question_id}'] a
+    timeout_ms: 30000
+  - kind: fill
+    say: import
+    target: css:#id_resolution
+    value: We import, under the program's duty waiver; please state freight to Kano.
+  - kind: select
+    note: this answer sets the round's import duty terms
+    say: waiver
+    target: css:[data-testid=answer-duty-terms]
+    value: buyer_waiver
+  - kind: click
+    must_succeed: true
+    target: role:button:Save
+    timeout_ms: 30000
+  - kind: wait_for
+    must_succeed: true
+    target: css:[data-changed]
+  - kind: hover
+    note: the importer question, answered into her reply to Northgate
+    seconds: 2.0
+    target: css:[data-commitment-id='${importer_question_id}']
+  - kind: scroll_to
+    note: up to the round's header, where the duty terms line now reads the waiver, marked new
+    target: testid:tender-duty-terms
+  - kind: hover
+    say: every quote
+    seconds: 2.0
+    target: testid:tender-duty-terms
+  - kind: hover
+    note: park the cursor on the round's title, off the duty terms line
+    seconds: 0.6
+    target: css:h1
+  - kind: hold
+    seconds: 2.0
+  concept_claim: Answering a supplier's question about who imports can set the round's
+    import duty terms, and the round's header then reads those terms with who set
+    them.
+  design_intent: A question in an email stalls the round with nobody on the hook;
+    as a record it is Sophie's to-do, and one answer to it settles a fact every quote
+    on the round depends on.
+  show: Sophie marks Northgate's importer question answered with her answer, picks
+    the program's duty waiver as the round's import duty terms, and lands on the round's
+    header reading those terms.
+  url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#owed
 - id: held-on-us
   actions:
   - kind: wait_for
@@ -244,12 +279,9 @@ scenes:
   - kind: scroll_to
     note: frame the Invoices table through the forwarder's email below it in one shot
     target: text:Nothing attached
-  - kind: hold
-    say: advance
-    seconds: 1.5
   - kind: hover
     say: invoice
-    seconds: 1.5
+    seconds: 1.8
     target: testid:above-agreed-tag
   - kind: hover
     note: park the cursor on the Quantity billed column header, off the figures and the email
@@ -257,14 +289,14 @@ scenes:
     target: text:Quantity billed
   - kind: hold
     seconds: 1.5
-  concept_claim: The order page says it is waiting on us for the import permit rather
-    than reporting the supplier late, flags an invoice above the agreed price with
-    billed against agreed, and lists the advance paid before any invoice.
+  concept_claim: The order says it is waiting on us for the import permit, with the
+    forwarder's email saying the trucks are held at the border until it is provided,
+    and flags an invoice above the agreed price with billed against agreed.
   design_intent: The screens must blame the right party; a shipment held on our paperwork
-    is our move.
-  show: Sophie opens the round 1 order, reads the Waiting on us and Invoice above
-    the contract banners, then scrolls to the Advance paid row in the order's invoices,
-    paid before any invoice existed.
+    is our move, and being the importer is what makes it ours.
+  show: Sophie opens the round 1 order, reads the Waiting on us banner, opens the
+    forwarder's email in the order's history, and reads the invoice flagged above
+    the agreed price.
   url: /supply/orders/${contract_id}/?program_id=${program_id}
 - id: whose-move
   actions:
@@ -278,6 +310,11 @@ scenes:
     seconds: 1.8
     target: text:No reply
   - kind: hover
+    note: Sahel's missing facts, now without a duty figure
+    say: Sahel
+    seconds: 1.8
+    target: text:Missing facts
+  - kind: hover
     say: permit
     seconds: 1.8
     target: text:import permit
@@ -288,10 +325,10 @@ scenes:
   - kind: hold
     seconds: 1.5
   concept_claim: The overview names each supplier who has not replied with the day
-    we asked them, and says when the next move is ours, for both the round and the
-    order.
+    we asked them, lists the facts each quote still lacks, and says when the next
+    move is ours, for both the round and the order.
   design_intent: The overview is where Sophie starts her day; it must already say
-    who is silent and whose move it is.
+    who is silent, what is missing and whose move it is.
   show: Sophie returns to the overview and reads the Waiting on column for round 2
     and the round 1 order.
   url: /supply/?program_id=${program_id}

@@ -25,6 +25,16 @@ gaps:
   claim_ref: S1
   proposed_action: Validate in the working session with Sophie (rehearsal Part 3)
     against her real rounds' emails.
+- id: G4
+  type: CAPABILITY
+  detail: A tender had no structured record of how import duties are handled for
+    the round, so a duty-excluded quote was blocked on a duty amount even when the
+    program imports under a duty waiver.
+  claim_ref: S5
+  proposed_action: 'Tender duty terms (not settled / buyer_waiver / buyer_pays / supplier_ddp),
+    set from the owed-answer form ([data-testid=answer-duty-terms]) or the tender''s
+    Edit page, shown on the tender header ([data-testid=tender-duty-terms]) and honoured
+    by the comparison and the overview.'
 spine:
 - id: S1
   claim: 'In Sophie''s rounds about half the suppliers asked never answer (Jonathan''s
@@ -76,23 +86,11 @@ spine:
     carry its own evidence. Recording through the supply_chain operations with a source
     means the excerpt and sender are on the record, not a claim about it.'
 - id: S4
-  claim: 'Northgate''s questions are answers we owe: each is recorded as owed by us
-    with who asked and when, the supplier''s row says the round is waiting on us,
-    and answering one records the answer.'
-  status: grounded
-  evidence:
-  - ref: EV-009
-    kind: implemented
-  - ref: EV-010
-    kind: implemented
-  rationale: A supplier that asks questions instead of quoting cannot quote until
-    we answer; as a record the question is Sophie's to-do, not an email that stalls
-    the round with nobody on the hook.
-- id: S5
   claim: 'An answer is not yet a usable quote: the comparison ranks only the quotes
     whose cost it can confirm and names, for each of the rest, the facts still missing
     and from whom -- Harmattan''s states everything, Kanem''s lacks its pack size,
-    and Sahel''s new quote leaves out freight, duty and the exchange rate.'
+    and Sahel''s new quote leaves out freight, duty and the exchange rate, while
+    the round has not yet settled how import duties are handled.'
   status: grounded
   evidence:
   - ref: EV-021
@@ -104,11 +102,29 @@ spine:
   rationale: Once replies are on the record, what is missing is what the record does
     not hold. Saying it per supplier turns the round into the next emails to send,
     not a spreadsheet to rebuild.
+- id: S5
+  claim: 'Northgate''s questions are answers we owe: each is recorded as owed by us
+    with who asked and when, the supplier''s row says the round is waiting on us,
+    and answering one records the answer. The answer to who imports is a fact about
+    the whole round: Sophie marks it as the round''s import duty terms (we import,
+    under the program''s duty waiver), so no quote is held up waiting on a duty figure
+    from its supplier.'
+  status: gap
+  evidence:
+  - ref: EV-009
+    kind: implemented
+  - ref: EV-010
+    kind: implemented
+  rationale: A supplier that asks questions instead of quoting cannot quote until
+    we answer; as a record the question is Sophie's to-do, not an email that stalls
+    the round with nobody on the hook. Who imports decides who owes the duty, for
+    every supplier at once, so the record holds it on the round rather than in one
+    reply.
 - id: S6
   claim: 'The round 1 order with Harmattan shows the record keeps tracking after the
     award: it is waiting on us for an import permit the forwarder says holds the trucks
-    at the border, Sophie''s advance of 28 Jul is recorded before any invoice existed,
-    and the invoice above the agreed price is flagged.'
+    at the border -- being the importer makes the permit ours -- and the invoice
+    above the agreed price is flagged.'
   status: grounded
   evidence:
   - ref: EV-011
@@ -131,7 +147,8 @@ spine:
 - id: S7
   claim: 'Sophie''s overview names who is still silent and whose move each thing is:
     round 2 waiting on the suppliers who have not replied and on our answers to Northgate,
-    the order waiting on our permit.'
+    the facts each quote still lacks (no duty figure, once the round imports under
+    the waiver), the order waiting on our permit.'
   status: grounded
   evidence:
   - ref: EV-025
