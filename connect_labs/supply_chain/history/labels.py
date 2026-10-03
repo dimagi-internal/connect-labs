@@ -223,6 +223,15 @@ def _day(value) -> str:
     return date_format(value, _DAY)
 
 
+def _day_with_year(value) -> str:
+    if isinstance(value, str):
+        try:
+            value = datetime.date.fromisoformat(value[:10])
+        except ValueError:
+            return value
+    return date_format(value, "j M Y")
+
+
 def value_text(model, attname, value, lookup) -> str:
     """One stored value as it reads on the page: "5 Sep", "Northwind Foods", "42.50"."""
     if value is None or value == "":
@@ -313,18 +322,19 @@ def _cash(values, key="amount") -> str:
     amount = values.get(key)
     if amount in (None, ""):
         return ""
-    return f"{money_digits(amount)} {values.get('currency') or ''}".strip()
+    # Currency first, as every table on the page writes it: "EUR 0.31", not "0.31 EUR".
+    return f"{values.get('currency') or ''} {money_digits(amount)}".strip()
 
 
 def _quote_price(values, lookup) -> str:
-    """ "42.50 USD per carton (basis not specified)": the price as the supplier stated it."""
+    """ "USD 42.50 per carton (basis not specified)": the price as the supplier stated it."""
     from connect_labs.supply_chain.models import Commodity, Item
 
     amount = values.get("as_quoted_amount")
     if amount in (None, ""):
         price = "no price"
     else:
-        price = f"{money_digits(amount)} {values.get('as_quoted_currency') or 'USD'}"
+        price = f"{values.get('as_quoted_currency') or 'USD'} {money_digits(amount)}"
     basis = values.get("as_quoted_unit") or ""
     field = {"per_base_unit": "base_unit", "per_pack": "pack_unit"}.get(basis)
     unit = ""
@@ -515,7 +525,14 @@ def sentence(model, action, changes, lookup) -> str:
         # its own.
         kind = changes.pop("response_kind")[1]
         changes.pop("responded", None)
-        lead.append(_outreach_reply_clause(kind))
+        # The day it came in belongs to the same sentence -- "Replied with a
+        # quote on 2 Oct 2026" -- not a field dump after a semicolon.
+        # With its year, as the day heading above it reads ("2 Oct 2026"): a
+        # reply is the event of its day, and "2 Oct" under "2 Oct 2026" read as
+        # two formats for one date.
+        on = (changes.pop("responded_on", None) or [None, None])[1]
+        on_text = _day_with_year(on) if on else ""
+        lead.append(_outreach_reply_clause(kind) + (f" on {on_text}" if on_text else ""))
     if model.__name__ == "Commitment" and (changes.get("resolution") or [None, ""])[1]:
         # "answered: one warehouse in Kano" -- the day it was answered is the
         # line's own date, so it is not a second clause.

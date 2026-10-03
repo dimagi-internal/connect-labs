@@ -77,10 +77,21 @@ class TestWaitingOnSaysTwoThings:
         missing = "Missing facts: Northwind Foods (sachets per carton, freight, duties)"
         assert row.waiting_lines == ("No reply: Plateau Mills", missing)
         assert row.waiting_detail == "1 of 2 replied"
-        lines = re.findall(r'data-testid="waiting-line"[^>]*>(.*?)</span>', batch6._standing(_home(home_client)))
-        # Each line's kind in bold, the text otherwise as it was.
-        assert lines == ["<strong>No reply</strong>: Plateau Mills", "<strong>Missing facts</strong>: " + missing[15:]]
-        assert [re.sub(r"</?strong>", "", line) for line in lines] == ["No reply: Plateau Mills", missing]
+        standing = batch6._standing(_home(home_client))
+        lines = re.findall(r'data-testid="waiting-line"[^>]*>(.*?)</(?:span|div)>', standing)
+        # Each line's kind in bold. Since unanswered-round 002 the silent
+        # suppliers stack one a line under "No reply", each with the day asked.
+        # (Read on today's page, the round may be past its deadline, which leads the
+        # cell with "Us: extend or close the round"; that line is pinned elsewhere.)
+        assert any(line.startswith("<strong>No reply</strong>:") for line in lines)
+        assert re.findall(r'data-testid="silent-supplier">(.*?)</li>', standing) == [
+            'Plateau Mills <span class="text-gray-600">(asked 10 Aug)</span>'
+        ]
+        # One labelled list per owner: "Missing facts" heads its suppliers as "No reply" does.
+        assert any(line.startswith("<strong>Missing facts</strong>:") for line in lines)
+        items = re.findall(r'data-testid="waiting-item">(.*?)</li>', standing)
+        items = [re.sub(r"<[^>]+>", "", i) for i in items]
+        assert [i for i in items if not i.startswith("extend or close the round")] == [missing[15:]]
 
     def test_after_a_provisional_award_the_awardee_is_not_missing_facts(self, da, base):
         _provisional(da, base)
@@ -178,12 +189,10 @@ class TestTheCantCompareMarker:
         standing = batch6._standing(_home(home_client))
         flag = re.search(r'<details data-testid="stale-flag"[^>]*>(.*?)</details>', standing, re.S).group(1)
         summary = re.search(r"<summary[^>]*>(.*?)</summary>", flag, re.S).group(1)
-        assert batch6._text(summary) == "Can't compare yet — 2 quotes missing facts".replace("'", "&#x27;")
+        assert batch6._text(summary) == "2 quotes missing facts"
         after = flag[flag.index("</summary>") :]
-        assert re.findall(r'data-testid="flag-line"[^>]*>(.*?)</span>', after) == [
-            "Northwind Foods — missing: freight",
-            "Sahel Nutrition — missing: duties amount",
-        ]
+        # Folded open, the definition: who is missing what is the Waiting on cell's (DDD 002 batch 2).
+        assert len(re.findall(r'data-testid="flag-line"[^>]*>(.*?)</span>', after)) == 1
         # Not the filled amber block any more.
         assert "bg-amber-50 px-1.5" not in summary
 

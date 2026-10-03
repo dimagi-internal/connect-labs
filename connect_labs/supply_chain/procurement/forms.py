@@ -508,7 +508,14 @@ class CommitmentForm(ScopedForm):
 class OutreachChaseForm(forms.Form):
     """The day a reminder went: the one fact the reminder draft's own form records."""
 
-    last_reminder_on = forms.DateField(label=_("Chased on"), initial=date.today, widget=forms.DateInput(attrs=DATE))
+    # The draft's field shows the day as the page does ("2 Oct 2026"); the form
+    # and older links send YYYY-MM-DD. Both are exact shapes, neither a guess.
+    last_reminder_on = forms.DateField(
+        label=_("Chased on"),
+        initial=date.today,
+        widget=forms.DateInput(attrs=DATE),
+        input_formats=["%Y-%m-%d", "%d %b %Y", "%d %B %Y"],
+    )
 
     def __init__(self, *args, access=None, **kwargs):
         super().__init__(*args, **kwargs)

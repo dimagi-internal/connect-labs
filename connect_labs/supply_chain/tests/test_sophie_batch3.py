@@ -160,7 +160,7 @@ class TestABlockedCardLeadsWithWhatBlocksIt:
 
         card = _card(_page(client_in_program, base["tender"]["id"]), quote["id"])
         assert card.count('data-testid="blocking"') == 1
-        assert "Blocking: Sachets per carton not stated on the quote" in card
+        assert "Blocking: Sachets per carton not stated on the quote" in re.sub(r"<[^>]+>", "", card)
         blocking_question = re.search(r'data-testid="blocking-question"[^>]*>(.*?)</p>', card, re.S).group(1)
         assert "How many sachets are in one carton" in blocking_question
         # The rest is folded into one list, and does not repeat the blocking question.
@@ -216,7 +216,7 @@ class TestABlockedCardLeadsWithWhatBlocksIt:
         body = _page(client_in_program, base["tender"]["id"])
         card = body[body.index(f'<div data-quote-id="{quote["id"]}"') :]
 
-        assert "Blocking: Quote covers 1,200 cartons; tender is 2,400 cartons" in card
+        assert "Blocking: Quote covers 1,200 cartons; tender is 2,400 cartons" in re.sub(r"<[^>]+>", "", card)
         assert "Can you quote for 2,400 cartons specifically?" in card
         assert "2400.0000" not in body and "1200.0000" not in body
 

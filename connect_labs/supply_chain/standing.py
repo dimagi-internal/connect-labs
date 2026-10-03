@@ -65,6 +65,8 @@ INVOICE_ABOVE_RULE = (
     "or the total against goods plus freight (the invoice_above_contract check)."
 )
 INVOICE_ABOVE_FLAG = "Invoice above agreed price"
+# What that flag asks of us, on the row's Waiting on.
+INVOICE_DISPUTE = "dispute the invoice above the agreed price"
 
 # How "waiting on" opens when the next move is ours: a question we have not
 # answered, a promise we have not kept, a document only we can supply.
@@ -90,12 +92,16 @@ class Flag(str):
     rule: str = ""
     heading: str = ""
     lines: tuple = ()
+    # What opens behind the chevron, when it is not `lines`: a flag whose
+    # lines the row's Waiting on cell already says opens on its definition.
+    folded: tuple = ()
 
-    def __new__(cls, text, rule="", *, heading="", lines=()):
+    def __new__(cls, text, rule="", *, heading="", lines=(), folded=()):
         flag = super().__new__(cls, text)
         flag.rule = rule
         flag.heading = heading
         flag.lines = tuple(lines)
+        flag.folded = tuple(folded)
         return flag
 
 
@@ -351,16 +357,28 @@ def _tender_rows(program_id, today, until):
             award,
             provisional=tender.pk in provisional,
         )
-        if owed.get(tender.pk):
+        ours_items = list(owed.get(tender.pk, []))
+        deadline_passed = tender.status == "open" and tender.response_deadline and tender.response_deadline < today
+        if deadline_passed:
+            # A round still open past its deadline is a decision only we can make:
+            # the stage says the deadline passed, so the owner list says whose it is.
+            ours_items.append(("extend or close the round", f"deadline passed {_day(tender.response_deadline)}"))
+        if ours_items:
             # What we owe comes first: it is the one thing on the row only we can move.
-            ours = f"{WAITING_ON_US}: {owed[tender.pk]}"
+            # A labelled list like "No reply" and "Missing facts" beside it, so the
+            # cell reads as one list of owners, each with its items.
+            ours = Flag(
+                f"{WAITING_ON_US}: " + "; ".join(f"{what} ({detail})" for what, detail in ours_items),
+                heading=WAITING_ON_US.capitalize(),
+                lines=ours_items,
+            )
             others = list(waiting_lines) or ([waiting_on] if waiting_on not in ("", "—") else [])
             waiting_lines = (ours, *others) if others else ()
             waiting_on = "; ".join((ours, *others))
         stage = _words(tender.status)
         # An open round whose deadline is behind it says so: "open" alone read
         # as a round still inside its window.
-        if tender.status == "open" and tender.response_deadline and tender.response_deadline < today:
+        if deadline_passed:
             stage = f"open, deadline passed {_day(tender.response_deadline)}"
         awardee = award.quote.supplier.name if award is not None and award.quote_id else ""
         if awardee:
@@ -395,7 +413,7 @@ def _tender_rows(program_id, today, until):
 
 
 def _owed_by_tender(program_id, tender_ids) -> dict:
-    """ "answers to Northgate Commodities (3 questions since 11 Jul)", per tender, from open commitments."""
+    """[("answers to Northgate Commodities", "3 questions since 11 Jul")], per tender, from open commitments."""
     from connect_labs.supply_chain.models import Commitment
 
     grouped = {}
@@ -409,10 +427,10 @@ def _owed_by_tender(program_id, tender_ids) -> dict:
         for (name, kind), items in sorted(by_party.items()):
             since = _day(min(c.raised_on for c in items))
             if kind == "question":
-                parts.append(f"answers to {name} ({_plural(len(items), 'question')} since {since})")
+                parts.append((f"answers to {name}", f"{_plural(len(items), 'question')} since {since}"))
             else:
-                parts.append(f"{_plural(len(items), 'promise')} to {name} (since {since})")
-        out[tender_id] = "; ".join(parts)
+                parts.append((f"{_plural(len(items), 'promise')} to {name}", f"since {since}"))
+        out[tender_id] = parts
     return out
 
 
@@ -489,8 +507,12 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
                 Flag(
                     "Can't compare yet: " + "; ".join(blocked),
                     BLOCKED_RULE,
-                    heading=f"Can't compare yet — {_plural(len(blocked), 'quote')} missing facts",
+                    # The count, not a verdict, and not the names again: who is
+                    # missing what is the Waiting on cell's, beside it. The
+                    # definition opens behind the chevron.
+                    heading=f"{_plural(len(blocked), 'quote')} missing facts",
                     lines=blocked,
+                    folded=(BLOCKED_RULE,),
                 )
             )
     if award is not None:
@@ -504,13 +526,40 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
 
     detail = ""
     lines = []
+    # Each silent supplier on a line of its own under "No reply", with the day
+    # we asked it and the day we last chased it: who to chase today is read off
+    # the overview, not a click into the round. The line's text still names
+    # them on one line, for anything reading it as text.
+    last_chased = {}
+    for o in outreach:
+        if o.last_reminder_on is not None:
+            last_chased[o.supplier_id] = max(last_chased.get(o.supplier_id, o.last_reminder_on), o.last_reminder_on)
+
+    def silent_line(text):
+        per_supplier = []
+        for sid in silent:
+            days = []
+            if sid in latest_ask:
+                days.append(f"asked {_day(latest_ask[sid])}")
+            if sid in last_chased:
+                days.append(f"chased {_day(last_chased[sid])}")
+            per_supplier.append((suppliers[sid].name, " · ".join(days)))
+        return Flag(text, heading="No reply", lines=per_supplier)
+
     if blocked_names or (still_open and silent):
         if silent:
-            lines.append(f"No reply: {_names([suppliers[sid].name for sid in silent])}")
+            lines.append(silent_line(f"No reply: {_names([suppliers[sid].name for sid in silent])}"))
         if blocked_names:
-            lines.append(f"Missing facts: {', '.join(blocked_names)}")
+            lines.append(
+                Flag(
+                    "Missing facts: "
+                    + ", ".join(f"{name} ({gaps})" if gaps else name for name, gaps in blocked_names),
+                    heading="Missing facts",
+                    lines=blocked_names,
+                )
+            )
     if lines:
-        waiting_on = "; ".join(lines)
+        waiting_on = lines[0] if len(lines) == 1 else "; ".join(lines)
         if invited and tender.status == "open":
             detail = f"{len(replied)} of {len(invited)} replied"
     elif tender.status == "awarded":
@@ -531,7 +580,7 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
         # of each; the count moves to the line under it.
         asked = [latest_ask[sid] for sid in silent if sid in latest_ask]
         since = f"no reply since {_day(max(asked))}" if asked else "no reply yet"
-        waiting_on = f"{_names([suppliers[sid].name for sid in silent])} — {since}"
+        waiting_on = silent_line(f"{_names([suppliers[sid].name for sid in silent])} — {since}")
         detail = f"{len(replied)} of {len(invited)} replied"
     else:
         waiting_on = "invitations"
@@ -576,7 +625,7 @@ def _blocked(tender, live, skip_quote=None) -> tuple[list[str], list[str]]:
     for text in named:
         if names[text] not in ordered:
             ordered.append(names[text])
-    return named, [f"{name} ({', '.join(gaps[name])})" if gaps.get(name) else name for name in ordered]
+    return named, [(name, ", ".join(gaps.get(name) or [])) for name in ordered]
 
 
 def _award_gaps(award) -> str:
@@ -671,8 +720,14 @@ def _order_rows(program_id, today, until, own_org_id):
             today,
             holds=holds.get(contract.pk, []),
         )
+        waiting_lines = ()
         if contract.pk in invoiced and _invoice_above(contract, today):
             stale = [*stale, Flag(INVOICE_ABOVE_FLAG, INVOICE_ABOVE_RULE)]
+            # A flag the row raises has an owner on the row: disputing an
+            # overbilled invoice is ours, beside whatever else we owe.
+            waiting_on, waiting_lines = _with_ours(
+                waiting_on, [h.words for h in holds.get(contract.pk, [])], INVOICE_DISPUTE
+            )
         title = contract.reference or f"Order {contract.pk}"
         rows.append(
             Row(
@@ -681,6 +736,7 @@ def _order_rows(program_id, today, until, own_org_id):
                 url=reverse("supply_chain:order_detail", args=[contract.pk]),
                 stage=stage,
                 waiting_on=waiting_on,
+                waiting_lines=waiting_lines,
                 stale=stale,
                 tender_id=contract.tender_id,
                 contract_id=contract.pk,
@@ -693,6 +749,24 @@ def _order_rows(program_id, today, until, own_org_id):
             )
         )
     return rows
+
+
+def _with_ours(waiting_on, held_words, item):
+    """An order's waiting-on with `item` added to what we owe: (waiting_on, waiting_lines).
+
+    Held documents and the new item read as one "Us" list; anything the order
+    waits on from someone else (an arrival, a dispatch) stays its own line, so
+    our list never seems to own it.
+    """
+    ours_items = [(w, "") for w in held_words] + [(item, "")]
+    ours = Flag(
+        f"{WAITING_ON_US}: " + "; ".join(w for w, _ in ours_items),
+        heading=WAITING_ON_US.capitalize(),
+        lines=ours_items,
+    )
+    if held_words or waiting_on in ("", "—"):
+        return ours, ()
+    return "; ".join((ours, waiting_on)), (ours, waiting_on)
 
 
 def _invoice_above(contract, today) -> bool:

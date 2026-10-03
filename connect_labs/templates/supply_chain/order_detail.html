@@ -63,8 +63,9 @@ class this build has not seen ships purged.
           {% comment %}"Part received" was true and misleading: nobody is waiting on this order any more.{% endcomment %}
           <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-900 border border-amber-200">short — covered by
           {% for cover in match.covered_by %}<a class="underline" href="{% url 'supply_chain:order_detail' cover.contract_id %}">{{ cover.reference|default:"another order" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</span>
-        {% elif contract.status %}
-          <span class="px-2 py-0.5 rounded-full text-xs font-medium {% if contract.status == "received" %}bg-teal-50 text-teal-800{% else %}bg-blue-50 text-blue-900{% endif %}">{{ contract.status|humanise|capfirst }}</span>
+        {% elif order_status %}
+          {% comment %}Where the goods are, while they are moving: "Placed" on an order held at customs said nothing a buyer could act on.{% endcomment %}
+          <span data-testid="order-status" class="px-2 py-0.5 rounded-full text-xs font-medium {% if order_status.tone == "done" %}bg-teal-50 text-teal-800{% elif order_status.tone == "warning" %}bg-message-warning text-message-warning-text border border-message-warning-border/50{% else %}bg-blue-50 text-blue-900{% endif %}">{{ order_status.label }}</span>
         {% endif %}
       </dd>
     </div>
@@ -618,7 +619,7 @@ partner's name (the IPTSc render).
                 <span class="text-xs text-gray-600">none</span>
               {% endif %}
             </td>
-            <td class="px-4 py-2 text-xs text-gray-600">{% told_by_for shipment orgs tellers %}</td>
+            <td class="px-4 py-2 text-sm text-gray-700">{% told_by_for shipment orgs tellers %}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
               {% if forloop.first %}
                 {% comment %}
@@ -655,7 +656,7 @@ partner's name (the IPTSc render).
             <td class="px-4 py-2">
               {% if shipment.required_documents %}<span class="text-xs {% if shipment.required_on_file == shipment.required_documents|length %}text-teal-700{% else %}text-amber-800{% endif %}">{{ shipment.required_on_file }} of {{ shipment.required_documents|length }} documents on file</span>{% elif shipment.has_certificate %}<span class="text-xs text-teal-700">on file</span>{% else %}<span class="text-xs text-gray-600">none</span>{% endif %}
             </td>
-            <td class="px-4 py-2 text-xs text-gray-600">{% told_by_for shipment orgs tellers %}</td>
+            <td class="px-4 py-2 text-sm text-gray-700">{% told_by_for shipment orgs tellers %}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
               {% if not supply_as_of %}<a href="{% url 'supply_chain:shipment_status' shipment.id %}" class="text-brand-indigo hover:underline">Update</a>{% endif %}
             </td>
@@ -711,7 +712,7 @@ partner's name (the IPTSc render).
                 <div class="text-xs text-gray-600">{{ line.rejection_reason }}</div>
               {% endif %}
             </td>
-            <td class="px-4 py-2 text-xs text-gray-600">{% told_by_for receipt orgs tellers %}</td>
+            <td class="px-4 py-2 text-sm text-gray-700">{% told_by_for receipt orgs tellers %}</td>
           </tr>
         {% endfor %}
       {% empty %}
@@ -766,7 +767,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
         <th class="text-left px-4 py-2">Invoice</th>
         <th class="text-left px-4 py-2">Issued</th>
         <th class="text-right px-4 py-2">Amount</th>
-        <th class="text-right px-4 py-2">Billed</th>
+        <th class="text-right px-4 py-2">Quantity billed</th>
         <th class="text-left px-4 py-2">Status</th>
         <th class="text-left px-4 py-2">Told by</th>
         <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
@@ -784,7 +785,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
           <td class="px-4 py-2 text-right tabular-nums">{{ payment.currency }} {{ payment.amount|money }}</td>
           <td class="px-4 py-2 text-right text-gray-600">—</td>
           <td class="px-4 py-2 text-gray-700">applied to {{ invoice.reference|default:invoice.id }}{% if payment.method %} · by {{ payment.method|words }}{% endif %}</td>
-          <td class="px-4 py-2 text-sm">{% if payment.confirmed_by_payee_on %}<span class="text-message-success-text">confirmed by the payee {{ payment.confirmed_by_payee_on|day }}</span>{% else %}<span class="text-gray-700">not confirmed by the payee</span>{% endif %}</td>
+          <td class="px-4 py-2 text-sm">{% if payment.confirmed_by_payee_on %}<span class="text-gray-700">confirmed by the payee {{ payment.confirmed_by_payee_on|day }}</span>{% else %}<span class="text-gray-700">not confirmed by the payee</span>{% endif %}</td>
           <td class="px-4 py-2 text-right whitespace-nowrap">
             {% if not payment.confirmed_by_payee_on and not supply_as_of %}
               <a href="{% url 'supply_chain:payment_confirm' payment.id %}" class="text-brand-indigo hover:underline">Record confirmation</a>
@@ -797,11 +798,6 @@ The section stays only if one was somehow recorded, so it is not hidden.
           <td class="px-4 py-2 text-gray-600">{{ invoice.issued_on|day|default:"—" }}</td>
           <td class="px-4 py-2 text-right tabular-nums">
             {% if invoice.amount %}{{ invoice.currency }} {{ invoice.amount|money }}{% else %}—{% endif %}
-            {% comment %}What the invoice_above_contract check found on this invoice, in its
-            own words: calm, beside the figure, not a second alarm.{% endcomment %}
-            {% for mark in invoice.above_agreed %}{% if mark.tag %}
-              <div data-testid="invoice-above-agreed" class="text-sm text-gray-900">{{ mark.text }} <span data-testid="above-agreed-tag" class="ml-1 inline-flex items-center rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></div>
-            {% endif %}{% endfor %}
           </td>
           <td class="px-4 py-2 text-right tabular-nums">
             {% if invoice.quantity_billed %}
@@ -816,7 +812,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
             {% endif %}
           </td>
           <td class="px-4 py-2 text-gray-700">{{ invoice.status|humanise }}</td>
-          <td class="px-4 py-2 text-xs text-gray-600">{% told_by_for invoice orgs tellers %}</td>
+          <td class="px-4 py-2 text-sm text-gray-700">{% told_by_for invoice orgs tellers %}</td>
           <td class="px-4 py-2 text-right whitespace-nowrap">
             {% if not supply_as_of %}
             {% if invoice.status != "paid" %}
@@ -829,13 +825,21 @@ The section stays only if one was somehow recorded, so it is not hidden.
             {% endif %}
           </td>
         </tr>
-        {% comment %}The unit price and freight it bills against what was agreed, on a row of
-        their own under the invoice: stacked in the amount cell they pushed the figures apart.{% endcomment %}
-        {% for mark in invoice.above_agreed %}{% if not mark.tag %}
-          <tr data-testid="invoice-against-agreed" class="bg-gray-50/60">
-            <td class="px-4 py-1.5 pl-8 text-sm text-gray-900" colspan="7">{{ mark.text|capfirst }} <span data-testid="above-agreed-tag" class="ml-1 inline-flex items-center rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></td>
+        {% comment %}What the invoice_above_contract check found -- the total, then the unit price
+        and freight it bills -- each a row of the table under the invoice, in its columns:
+        the line's name under INVOICE, billed over agreed right-aligned under AMOUNT, the
+        "above agreed" tag under STATUS. As prose spanning the row they ignored the columns
+        the figures belong to.{% endcomment %}
+        {% for mark in invoice.above_agreed %}
+          <tr data-testid="{% if mark.tag %}invoice-above-agreed-row{% else %}invoice-against-agreed{% endif %}" class="bg-gray-50/60 text-sm">
+            <td class="px-4 py-1.5 pl-8 text-gray-900">{{ mark.label }}{% if mark.tag %} <span class="text-gray-600">· +{{ mark.currency }} {{ mark.difference }}</span>{% endif %}</td>
+            <td class="px-4 py-1.5"></td>
+            <td class="px-4 py-1.5 text-right tabular-nums text-gray-900"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}>{% if mark.billed %}<div>{{ mark.currency }} {{ mark.billed }} billed</div><div class="text-gray-600">{{ mark.agreed }} agreed</div>{% else %}+{{ mark.text }}{% endif %}</td>
+            <td class="px-4 py-1.5"></td>
+            <td class="px-4 py-1.5"><span data-testid="above-agreed-tag" class="inline-flex items-center whitespace-nowrap rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></td>
+            <td class="px-4 py-1.5" colspan="2"></td>
           </tr>
-        {% endif %}{% endfor %}
+        {% endfor %}
         {% for payment in invoice.payments %}{% if not payment.advance %}
           {% comment %}
           Each settlement under its invoice, with the payee's side of it: "we

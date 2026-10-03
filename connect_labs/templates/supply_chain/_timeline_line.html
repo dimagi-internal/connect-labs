@@ -1,7 +1,7 @@
 {% load supply_chain_extras %}
 {% comment %}One change, as one line of the history. `in_event`: a line inside an email event
 (_timeline.html), whose who-told-us and source the event says once above it.{% endcomment %}
-<li data-testid="revision-line" data-fields="{{ entry.fields|join:' ' }}" data-when="{{ entry.when|date:'c' }}"{% if not in_event and not entry.excerpt %} data-no-source{% endif %} class="py-1.5 pl-4 flex items-start gap-3">
+<li data-testid="revision-line" data-fields="{{ entry.fields|join:' ' }}" data-when="{{ entry.when|date:'c' }}"{% if not in_event and not entry.excerpt %} data-no-source{% endif %} class="py-1.5 {% if in_event %}pl-0{% else %}pl-4{% endif %} flex items-start gap-3">
   <div class="min-w-0 flex-1">
     {% comment %}One grammar for a new record and a change to one: "Shipment · SH-1 ·
     recorded: ETA 5 Sep" and "Shipment · SH-1 · ETA 5 Sep → 19 Sep".{% endcomment %}
@@ -28,12 +28,12 @@
       {% if not in_event %}
       <span data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}"><span data-testid="actor-pill" class="inline-flex items-center gap-1">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span>{{ entry.actor }}</span></span></span>
       {% if entry.excerpt %}
-        {% comment %}The toggle says what a click does: "Source email" while shut, "Hide email"
-        while open -- the details' own open state, no script. Open, it spans the line, so the
-        excerpt runs the line's full width.{% endcomment %}
+        {% comment %}One label, open or shut ("Source email"); the caret turns to say which --
+        the details' own open state, no script. Two labels for one control read as two
+        controls. Open, it spans the line, so the excerpt runs the line's full width.{% endcomment %}
         <details class="group text-xs open:w-full">
           <summary data-testid="source-toggle" title="{% if entry.source_kind == 'Email' %}Show the email{% else %}Show the source{% endif %}"
-                   class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center"><span data-testid="source-link" class="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50">{% if entry.source_kind == "Email" %}<i class="fa-regular fa-envelope" aria-hidden="true"></i>{% endif %}<span class="group-open:hidden">{{ entry.source_link_text }}</span><span data-testid="source-hide" class="hidden group-open:inline">{{ entry.source_hide_text }}</span></span></summary>
+                   class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-flex items-center"><span data-testid="source-link" class="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-indigo hover:bg-gray-50">{% if entry.source_kind == "Email" %}<i class="fa-regular fa-envelope" aria-hidden="true"></i>{% endif %}<span>{{ entry.source_link_text }}</span><i data-testid="source-caret" class="fa-solid fa-chevron-right text-xs transition-transform group-open:rotate-90" aria-hidden="true"></i></span></summary>
           {% comment %}Where the quote came from, as the call recorded it -- the kind its
           reference implies, who recorded it and when. A replay of the same evidence
           was answered from this write, not written again.{% endcomment %}
@@ -49,9 +49,11 @@
   {% comment %}Every quote an AI entered says something here: Correct and Void while it
   stands, and why not once it was voided or corrected.{% endcomment %}
   {% if entry.correct_url or entry.void_url %}
-    <div data-testid="quote-fixes" class="shrink-0 text-xs whitespace-nowrap space-x-3">
+    <div data-testid="quote-fixes" class="shrink-0 text-sm font-medium whitespace-nowrap space-x-3">
       {% if entry.correct_url %}<a href="{{ entry.correct_url }}" class="text-brand-indigo hover:underline">Correct</a>{% endif %}
-      {% if entry.void_url %}<a href="{{ entry.void_url }}" class="text-brand-indigo hover:underline">Void</a>{% endif %}
+      {% comment %}Void stops a quote counting: set apart from Correct in the destructive red,
+      at regular weight, so it is not read as one more navigation link.{% endcomment %}
+      {% if entry.void_url %}<a href="{{ entry.void_url }}" data-testid="quote-void" class="font-normal text-red-700 hover:underline">Void</a>{% endif %}
     </div>
   {% elif entry.fix_status %}
     <div data-testid="quote-fixes" class="shrink-0 text-xs whitespace-nowrap text-gray-600">{% if entry.fix_status == "voided" %}voided{% else %}since corrected{% endif %}</div>

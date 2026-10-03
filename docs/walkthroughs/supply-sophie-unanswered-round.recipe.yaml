@@ -41,9 +41,9 @@ scenes:
     seconds: 1.5
     target: text:Last chased
   - kind: hover
-    note: park the cursor on a heading in frame
+    note: park the cursor on the Draft reminders button the next scene uses, clear of "3 of 6 replied"
     seconds: 0.6
-    target: text:Outreach
+    target: testid:draft-reminders
   - kind: hold
     seconds: 1.5
   concept_claim: The round's page says it is past its deadline and shows, for every
@@ -62,24 +62,24 @@ scenes:
   actions:
   - kind: wait_for
     target: css:#drafts
-  - kind: scroll_to
-    target: css:#drafts
   - kind: click
-    note: open the round's draft emails
+    note: open the round's draft emails from the header's Draft reminders, which opens the panel and scrolls to it
     say: drafts
-    target: css:#drafts > summary
+    target: testid:draft-reminders
   - kind: wait_for
     target: css:#drafts[open]
   - kind: scroll_to
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] textarea
+  - kind: hover
+    note: park the cursor on Sahel's name, the card's heading, off the message and the date field
+    seconds: 0.6
+    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] p:first-child span:first-child
   - kind: hold
-    note: the drafted reminder, which quotes the day she last wrote
+    note: the drafted reminder, which quotes the day she last wrote; the Chased on field already reads today
     say: reminder
     seconds: 3.0
-  - kind: fill
-    say: today
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=chase-date]
-    value: ${today}
+  - kind: snapshot
+    note: the canonical frame is Sahel's drafted reminder, quoting the day she last wrote, with today's date ready to record
   - kind: click
     must_succeed: true
     note: record the day she chased Sahel, from the draft itself
@@ -89,9 +89,9 @@ scenes:
     must_succeed: true
     target: css:tr[data-changed]
   - kind: hover
-    note: park the cursor on a heading in frame
+    note: park the cursor on the Draft reminders button above the table, clear of "3 of 6 replied" and Sahel's row
     seconds: 0.6
-    target: text:Outreach
+    target: testid:draft-reminders
   - kind: hold
     note: Sahel's row, chased today
     seconds: 2.5
@@ -107,6 +107,14 @@ scenes:
   actions:
   - kind: wait_for
     target: css:#history
+  - kind: hover
+    note: the record moved -- Sahel's row now replied with a quote (the page opens at the Outreach table)
+    say: answers
+    seconds: 2.0
+    target: css:tr[data-outreach-id]:has-text('Sahel Nutrition Industries') td:nth-child(4)
+  - kind: hover
+    seconds: 1.2
+    target: testid:outreach-replied-count
   - kind: scroll_to
     target: css:#history
   - kind: click
@@ -123,12 +131,15 @@ scenes:
     target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-toggle]
   - kind: wait_for
     target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-excerpt]
+  - kind: scroll_to
+    note: lift History up the frame so its heading sits clear under the header, Sahel's email and records below it
+    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=email-event-records]
   - kind: hold
     seconds: 2.5
   - kind: hover
-    note: park the cursor on a heading in frame
+    note: park the cursor on the History heading, off the email, the records and the checkbox
     seconds: 0.6
-    target: text:History
+    target: css:#history h2
   - kind: hold
     seconds: 1.0
   before: python3 scripts/walkthroughs/supply-sophie-unanswered-round/seed.py --sahel-replies
@@ -184,10 +195,21 @@ scenes:
   actions:
   - kind: wait_for
     target: text:Kanem Foods
-  - kind: hold
-    seconds: 1.5
   - kind: scroll_to
-    target: text:Sahel Nutrition Industries
+    note: frame the "1 of 3 quotes can be compared on landed total" summary and the Comparable table's headers
+    target: testid:comparison-banner
+  - kind: hover
+    say: Harmattan
+    seconds: 2.0
+    target: text:Harmattan Therapeutics
+  - kind: scroll_to
+    note: frame the Needs info heading and both cards under it; the Comparable table's unlabelled figures leave the frame
+    say: Kanem
+    target: css:[data-testid=needs-info]
+  - kind: hover
+    note: park the cursor on the Needs info heading's words at the left, off the cards and mid-frame
+    seconds: 0.6
+    target: testid:needs-info-title
   - kind: hold
     say: Sahel
     seconds: 2.5
@@ -217,9 +239,11 @@ scenes:
     target: css:[data-testid=revision-line]:has-text('Shipment · DMG-PO-2026-031 ·
       Status dispatched') [data-testid=source-excerpt]
   - kind: hold
+    note: the forwarder's email, centred and read
     seconds: 2.0
   - kind: scroll_to
-    target: text:Advance paid
+    note: frame the Invoices table through the forwarder's email below it in one shot
+    target: text:Nothing attached
   - kind: hold
     say: advance
     seconds: 1.5
@@ -228,9 +252,9 @@ scenes:
     seconds: 1.5
     target: testid:above-agreed-tag
   - kind: hover
-    note: park the cursor on a neutral heading
+    note: park the cursor on the Quantity billed column header, off the figures and the email
     seconds: 0.6
-    target: text:Evidence
+    target: text:Quantity billed
   - kind: hold
     seconds: 1.5
   concept_claim: The order page says it is waiting on us for the import permit rather
@@ -246,6 +270,9 @@ scenes:
   actions:
   - kind: wait_for
     target: testid:standing-table
+  - kind: scroll_to
+    note: frame the whole standing table, the order row and its "bought by" line included
+    target: testid:standing-table
   - kind: hover
     say: silent
     seconds: 1.8
@@ -255,9 +282,9 @@ scenes:
     seconds: 1.8
     target: text:import permit
   - kind: hover
-    note: park the cursor on a heading in frame
+    note: park the cursor on the View as of label above the table, off the table
     seconds: 0.6
-    target: text:Where everything stands
+    target: text:View as of
   - kind: hold
     seconds: 1.5
   concept_claim: The overview names each supplier who has not replied with the day
