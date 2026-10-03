@@ -213,7 +213,7 @@ sits above who is invited and what the tender buys.
                onclick="return window.openDraft && window.openDraft('{{ o.draft_anchor }}');"
                class="text-brand-indigo hover:underline">Draft reminder</a>{% endif %}</span>
             <a href="{% url 'supply_chain:procurement_outreach_reply' o.id %}"
-               class="text-brand-indigo hover:underline">{% if o.responded %}Record another reply{% else %}Record a reply{% endif %}</a>
+               class="text-brand-indigo hover:underline">Record a reply</a>
             {% comment %}Delete is for an invitation recorded in error -- rare, and not the row's
             business: tucked in a small menu so the reply is the one visible action.{% endcomment %}
             <details data-testid="row-more" class="inline-flex items-center text-left">
@@ -413,13 +413,19 @@ next action on anyone (design doc section 22).
       if (panel.open) { fit(); land(anchor); } else { pending = anchor; panel.open = true; }
       return false;
     };
-    var hash = window.location.hash;
-    if (hash === "#drafts" || hash.indexOf("#draft-supplier-") === 0 || hash.indexOf("#draft-reply-") === 0) {
-      document.getElementById("drafts").open = true;
-      fit();
-      var target = hash === "#drafts" ? null : document.getElementById(hash.slice(1));
-      if (target) { target.scrollIntoView(); }
+    // A link to a draft opens the panel at it -- on load, and when only the
+    // hash changes (a link from this same page does not reload it).
+    function openFromHash() {
+      var hash = window.location.hash;
+      if (hash === "#drafts" || hash.indexOf("#draft-supplier-") === 0 || hash.indexOf("#draft-reply-") === 0) {
+        document.getElementById("drafts").open = true;
+        fit();
+        var target = hash === "#drafts" ? null : document.getElementById(hash.slice(1));
+        if (target) { target.scrollIntoView(); }
+      }
     }
+    openFromHash();
+    window.addEventListener("hashchange", openFromHash);
   })();
 </script>
 {% endif %}

@@ -8,7 +8,10 @@ domain's map: a count with nowhere to go is a dead end, and these fifteen
 counts are the fastest way into the records behind them. A cell without one
 renders as plain text rather than a link that goes nowhere.
 {% endcomment %}
-<div class="bg-white border border-brand-border-light border-l-4 {{ accent }} rounded-lg mb-2 overflow-hidden">
+{% comment %}The accent colours the left edge only, so every band carries the same one-pixel
+frame: a class like border-brand-indigo recoloured all four sides and made one band
+look heavier than the others.{% endcomment %}
+<div data-testid="chain-phase" class="bg-white border border-brand-border-light border-l-4 rounded-lg mb-2 overflow-hidden" style="border-left-color: {{ accent }}">
   <div class="px-4 py-2 border-b border-brand-border-light/60">
     <span class="text-xs font-semibold tracking-wide text-gray-600">{{ phase }}</span>
   </div>
@@ -20,13 +23,13 @@ renders as plain text rather than a link that goes nowhere.
                   hover:bg-message-info focus-visible:outline-2 focus-visible:outline-offset-[-2px]
                   focus-visible:outline-brand-indigo transition-colors">
           <div class="text-[11px] font-medium tracking-wide text-gray-600">{{ stage.label }}</div>
-          <div class="{% if stage.value == "per commodity" or stage.value == "Unconfirmed" %}text-sm text-gray-600 mt-1.5{% else %}text-2xl font-semibold text-brand-indigo tabular-nums leading-tight mt-0.5 group-hover:text-brand-deep-purple{% endif %}">{{ stage.value }}</div>
+          <div data-testid="chain-value" class="{% if stage.value == "per commodity" or stage.value == "Unconfirmed" %}text-sm text-gray-600 mt-1.5{% else %}text-2xl font-semibold {% if stage.value == 0 or stage.value == "0" %}text-gray-600{% else %}text-brand-indigo group-hover:text-brand-deep-purple{% endif %} tabular-nums leading-tight mt-0.5{% endif %}">{{ stage.value }}</div>
           {% if stage.sub %}<div class="text-xs text-gray-600 mt-0.5">{{ stage.sub }}</div>{% endif %}
         </a>
       {% else %}
         <div class="flex-1 min-w-[9rem] px-4 py-3 border-r border-brand-border-light/60 last:border-r-0">
           <div class="text-[11px] font-medium tracking-wide text-gray-600">{{ stage.label }}</div>
-          <div class="{% if stage.value == "per commodity" or stage.value == "Unconfirmed" %}text-sm text-gray-600 mt-1.5{% else %}text-2xl font-semibold text-brand-indigo tabular-nums leading-tight mt-0.5{% endif %}">{{ stage.value }}</div>
+          <div data-testid="chain-value" class="{% if stage.value == "per commodity" or stage.value == "Unconfirmed" %}text-sm text-gray-600 mt-1.5{% else %}text-2xl font-semibold {% if stage.value == 0 or stage.value == "0" %}text-gray-600{% else %}text-brand-indigo{% endif %} tabular-nums leading-tight mt-0.5{% endif %}">{{ stage.value }}</div>
           {% if stage.sub %}<div class="text-xs text-gray-600 mt-0.5">{{ stage.sub }}</div>{% endif %}
         </div>
       {% endif %}

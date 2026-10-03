@@ -17,6 +17,8 @@ that is a problem depends on when they were sent and what the programme
 expects, which is a client's call.
 """
 
+from django.db.models import Count
+
 from connect_labs.supply_chain import standing
 from connect_labs.supply_chain.models import (
     Award,
@@ -101,7 +103,16 @@ def _source(access, commodity=None):
             "awaiting_tenders": awaiting["tenders"],
             "tenders": invitations.values("tender_id").distinct().count(),
         },
-        "quotations": {"live": quotes.count(), "tenders": quotes.values("tender_id").distinct().count()},
+        "quotations": {
+            "live": quotes.count(),
+            "tenders": quotes.values("tender_id").distinct().count(),
+            # Each tender's own live quotes, newest tender first, so the total
+            # reads back to each round's own reply count.
+            "by_tender": [
+                {"label": row["tender__label"] or f"tender {row['tender_id']}", "live": row["n"]}
+                for row in quotes.values("tender_id", "tender__label").annotate(n=Count("id")).order_by("-tender_id")
+            ],
+        },
         "evaluation": {
             "comparable": comparable,
             "of": total,

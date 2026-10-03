@@ -42,6 +42,7 @@ from connect_labs.supply_chain.procurement.services.compliance import (
     requirement_label,
 )
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
+from connect_labs.supply_chain.records import freight_and_duties_for_incoterm
 from connect_labs.supply_chain.values import Unconfirmed, destination_phrase, quantity_phrase
 
 logger = logging.getLogger(__name__)
@@ -401,9 +402,16 @@ DUTY_RESTATE_QUESTION = (
 
 
 def needs_duty_restated(quote, tender) -> bool:
-    """Whether the round's terms make duty ours while the quote says its price includes it."""
+    """Whether the round's terms make duty ours while the quote says its price includes it.
+
+    Never for a quote whose Incoterm makes the supplier import (DDP): its duty is
+    the supplier's to pay, so "included" is simply true, and the round's waiver
+    does not reach it.
+    """
     terms = getattr(tender, "duty_terms", "") or ""
-    return terms in ("buyer_waiver", "buyer_pays") and getattr(quote, "duties_basis", "") == "included"
+    if terms not in ("buyer_waiver", "buyer_pays") or getattr(quote, "duties_basis", "") != "included":
+        return False
+    return freight_and_duties_for_incoterm(getattr(quote, "incoterm", ""))[1] != "included"
 
 
 def missing_facts(

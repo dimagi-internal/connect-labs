@@ -178,6 +178,26 @@ def _duty_terms(quote: Quote, tender=None) -> str:
     return getattr(tender, "duty_terms", "") or ""
 
 
+def buyer_imports(quote) -> bool:
+    """Whether the quote leaves the import to us, so the round's duty terms decide its duty.
+
+    Read from the Incoterm: EXW, FCA, CPT, DAP ... put the import on the buyer;
+    DDP puts it on the seller, whose own duty figure then stands under any round
+    terms -- a waiver we hold cannot waive a duty the supplier pays. With no
+    recognised Incoterm, the quote's own duties basis speaks: "excluded" leaves
+    the import to us.
+    """
+    implied = records.freight_and_duties_for_incoterm(getattr(quote, "incoterm", ""))[1]
+    if implied:
+        return implied == "excluded"
+    return getattr(quote, "duties_basis", "") == "excluded"
+
+
+def round_duty_applies(quote, tender) -> bool:
+    """Whether the round's buyer-import duty terms (waiver, or our own estimate) cost this quote's duty."""
+    return _duty_terms(quote, tender) in ("buyer_waiver", "buyer_pays") and buyer_imports(quote)
+
+
 def _extras(quote: Quote, tender=None) -> Derived:
     """Freight plus duties to add to a lot total, or why that is unknowable.
 
@@ -233,7 +253,9 @@ def _extras(quote: Quote, tender=None) -> Derived:
     # from the tender's estimate -- never a supplier's question. Unsettled or
     # delivered-duty-paid rounds read the quote as before.
     terms = _duty_terms(quote, tender)
-    duty_is_ours = terms in ("buyer_waiver", "buyer_pays")
+    # Only a quote that leaves the import to us: a DDP quote keeps its own duty
+    # figure under any round terms, because the supplier imports and pays it.
+    duty_is_ours = round_duty_applies(quote, tender)
 
     # A collected bid has no supplier freight: the buyer moves the goods, so
     # the freight is the buyer's own transport cost, entered on the quote.
@@ -293,7 +315,8 @@ def _extras(quote: Quote, tender=None) -> Derived:
         reasons.append(f"{label} basis not specified on the quote")
 
     if (
-        terms == "buyer_pays"
+        duty_is_ours
+        and terms == "buyer_pays"
         and getattr(tender or getattr(quote, "tender", None), "duty_estimate_percent", None) is None
     ):
         reasons.append("import duty is ours to pay and no duty estimate is recorded on the tender")
