@@ -409,54 +409,82 @@ def breakdown(workers: dict[str, dict], key: str, min_workers: int = 1) -> list[
     return rows
 
 
-# The map is a grid of tiles about 110 km across (1 degree), each coloured by
-# a RATE -- the share of its workers or visits with a connectivity problem.
-# It replaced a heatmap that summed delayed-visit COUNTS through a pixel-radius
-# blur: northern Nigeria glowed brightest because dozens of busy areas
-# overlapped on screen, although it is among the best-connected places on the
-# platform. A tile's colour depends only on what happens inside it.
+# The map is a grid of square tiles, each coloured by a RATE -- the share of
+# its workers or visits with a connectivity problem. It replaced a heatmap that
+# summed delayed-visit COUNTS through a pixel-radius blur: northern Nigeria
+# glowed brightest because dozens of busy areas overlapped on screen, although
+# it is among the best-connected places on the platform. A tile's colour
+# depends only on what happens inside it.
 #
-# One degree, not half: at the continent-wide zoom the page opens on, a
-# 0.5-degree tile is two or three pixels across and the map reads as empty.
-TILE_DEGREES = 1.0
-MIN_WORKERS_PER_TILE = 3
+# Tiles come at several sizes so the page can keep them a readable size on
+# screen at any zoom: zoomed out they are large, and each splits into four as
+# you zoom in. Every size is a power-of-two multiple of the 0.1-degree cell a
+# worker is placed in, so each tile nests exactly inside the one above it.
+# Roughly 180, 90, 45, 22 and 11 km.
+TILE_LEVELS = (1.6, 0.8, 0.4, 0.2, 0.1)
+
+# Every worker is mapped. A minimum of three workers per tile was tried, to
+# keep any tile from pointing at one person; it was dropped because this page
+# is signed-in only, workers are opaque hashes, and the worker record Pulse
+# already shows names each worker's own towns more precisely than any tile.
+# Few workers is a reliability question instead, and the page answers it by
+# drawing such tiles faint rather than hiding them.
+
+# What the page needs from each tile -- the full summary is several times
+# larger and is sent once per tile per level.
+_TILE_FIELDS = (
+    "workers",
+    "judged",
+    "online",
+    "sometimes",
+    "offline",
+    "online_rate",
+    "connected_rate",
+    "seen_online",
+    "seen_online_rate",
+    "visits",
+    "delayed_1d",
+    "delayed_3d",
+    "delayed_7d",
+    "delayed_1d_rate",
+    "delayed_3d_rate",
+    "delayed_7d_rate",
+    "median_delay_minutes",
+)
 
 
-def tiles(workers: dict[str, dict], homes: dict[str, tuple[int, int]]) -> dict:
-    """Workers per tile (by where they mostly work), summarised like any other slice.
+def tiles(workers: dict[str, dict], homes: dict[str, tuple[int, int]], degrees: float) -> list[dict]:
+    """Workers per tile of ``degrees`` (by where they mostly work), summarised.
 
     A worker is mapped when they have been judged or have at least
-    MIN_VISITS_TO_MAP visits in scope. Tiles under MIN_WORKERS_PER_TILE are
-    withheld and only counted, so the display can say how many workers are not
-    on the map and why.
+    MIN_VISITS_TO_MAP visits in scope -- fewer says nothing about anywhere.
     """
-    per_tile = int(round(TILE_DEGREES / CELL_DEGREES))
+    per_tile = int(round(degrees / CELL_DEGREES))
     by_tile: dict[tuple[int, int], list[dict]] = {}
     for h, w in workers.items():
         if h not in homes or not (w.get("class") or w.get("visits", 0) >= MIN_VISITS_TO_MAP):
             continue
         la, lo = homes[h]
         by_tile.setdefault((la // per_tile, lo // per_tile), []).append(w)
-    shown, withheld = [], 0
+    out = []
     for (ta, to), ws in by_tile.items():
-        if len(ws) < MIN_WORKERS_PER_TILE:
-            withheld += len(ws)
-            continue
-        shown.append(
-            {
-                # South-west corner; the tile spans TILE_DEGREES north and east.
-                "lat": round(ta * TILE_DEGREES, 2),
-                "lon": round(to * TILE_DEGREES, 2),
-                **summarise(ws),
-            }
-        )
-    shown.sort(key=lambda t: -t["workers"])
-    return {
-        "tiles": shown,
-        "tile_degrees": TILE_DEGREES,
-        "withheld_workers": withheld,
-        "min_workers_per_tile": MIN_WORKERS_PER_TILE,
-    }
+        s = summarise(ws)
+        row = {
+            # South-west corner; the tile spans `degrees` north and east.
+            "lat": round(ta * degrees, 2),
+            "lon": round(to * degrees, 2),
+        }
+        for k in _TILE_FIELDS:
+            v = s.get(k)
+            row[k] = round(v, 4) if isinstance(v, float) else v
+        out.append(row)
+    out.sort(key=lambda t: -t["workers"])
+    return out
+
+
+def tile_levels(workers: dict[str, dict], homes: dict[str, tuple[int, int]]) -> dict:
+    """``tiles`` at every size in TILE_LEVELS, largest first."""
+    return {"levels": [{"degrees": d, "tiles": tiles(workers, homes, d)} for d in TILE_LEVELS]}
 
 
 def weekly(rows: list[WorkerWeek]) -> dict[dt.datetime, dict]:

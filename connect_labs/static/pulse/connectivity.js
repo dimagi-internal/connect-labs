@@ -538,45 +538,109 @@
     });
   }
 
-  /* ── where: one tile per ~110 km square ──────────────────────────── */
-  function tileFeatures(tiles, size) {
-    return tiles.map(function (t) {
+  /* ── where: squares that stay a readable size at any zoom ─────────
+     The server sends tiles at several sizes (largest first), each nesting
+     exactly inside the one above. The page shows whichever size is closest to
+     the on-screen size chosen with Small / Medium / Large, and swaps as you
+     zoom: zoomed out the squares are large, and each splits into four as you
+     zoom in.
+
+     When a square splits, the parts with no workers are still drawn, as a
+     faint outline, so a gap reads as "no workers here" rather than vanishing.
+     Squares with workers fade in with how many they hold: one worker is one
+     person's habit, ten or more is the area's network. */
+  var SQUARE_PX = { small: 8, medium: 16, large: 28 };
+  var EMPTY = 'empty';
+  function km(deg) {
+    return Math.round(deg * 111);
+  }
+  function squarePixels(deg, zoom) {
+    return (deg * 512 * Math.pow(2, zoom)) / 360;
+  }
+  // The level whose squares are closest (on a log scale) to the target size.
+  function levelFor(levels, zoom, px) {
+    var best = 0,
+      bestErr = Infinity;
+    levels.forEach(function (lv, i) {
+      var err = Math.abs(Math.log(squarePixels(lv.degrees, zoom) / px));
+      if (err < bestErr) {
+        best = i;
+        bestErr = err;
+      }
+    });
+    return best;
+  }
+  function square(lat, lon, size, props) {
+    return {
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [lon, lat],
+            [lon + size, lat],
+            [lon + size, lat + size],
+            [lon, lat + size],
+            [lon, lat],
+          ],
+        ],
+      },
+      properties: props,
+    };
+  }
+  function key2(lat, lon) {
+    return lat.toFixed(2) + ',' + lon.toFixed(2);
+  }
+  // Squares with workers at level i, plus the empty parts of the squares one
+  // level up, so splitting a square never makes part of it disappear.
+  function levelFeatures(levels, i) {
+    var lv = levels[i];
+    var size = lv.degrees;
+    var feats = lv.tiles.map(function (t) {
       var props = {};
       Object.keys(t).forEach(function (k) {
         if (t[k] != null) props[k] = t[k];
       });
-      // Precomputed per measure, so switching is a paint change.
       Object.keys(MEASURES).forEach(function (k) {
         props['b_' + k] = band(MEASURES[k], MEASURES[k].rate(t));
       });
-      var s = t.lat,
-        w = t.lon,
-        n = t.lat + size,
-        e = t.lon + size;
-      return {
-        type: 'Feature',
-        geometry: {
-          type: 'Polygon',
-          coordinates: [
-            [
-              [w, s],
-              [e, s],
-              [e, n],
-              [w, n],
-              [w, s],
-            ],
-          ],
-        },
-        properties: props,
-      };
+      return square(t.lat, t.lon, size, props);
     });
+    if (i > 0) {
+      var have = {};
+      lv.tiles.forEach(function (t) {
+        have[key2(t.lat, t.lon)] = true;
+      });
+      var parent = levels[i - 1];
+      var n = Math.round(parent.degrees / size);
+      parent.tiles.forEach(function (p) {
+        for (var a = 0; a < n; a++) {
+          for (var b = 0; b < n; b++) {
+            var lat = p.lat + a * size,
+              lon = p.lon + b * size;
+            if (have[key2(lat, lon)]) continue;
+            var props = { workers: 0 };
+            Object.keys(MEASURES).forEach(function (k) {
+              props['b_' + k] = EMPTY;
+            });
+            feats.push(square(lat, lon, size, props));
+          }
+        }
+      });
+    }
+    return { type: 'FeatureCollection', features: feats };
   }
   function popupHtml(t, m) {
+    if (!t.workers) {
+      return '<span class="net-pop-tier">No workers do most of their visits here.</span>';
+    }
     var b = band(m, m.rate(t));
     return (
       '<b>' +
       nf.format(t.workers) +
-      ' workers</b> · <span style="color:' +
+      ' worker' +
+      (t.workers === 1 ? '' : 's') +
+      '</b> · <span style="color:' +
       BAND[b].colour +
       '">' +
       BAND[b].label +
@@ -598,6 +662,9 @@
       pct(t.delayed_3d_rate) +
       ' / ' +
       pct(t.delayed_7d_rate) +
+      (t.workers < FAINT_BELOW_WORKERS
+        ? '<br>Few workers: faint, so read it as an individual habit, not the area.'
+        : '') +
       '</span>'
     );
   }
@@ -611,17 +678,27 @@
       BAND.watch.colour,
       'problem',
       BAND.problem.colour,
+      EMPTY,
+      '#a9b3e8',
       NO_DATA,
     ];
   }
+  // Empty squares are a ghost; one worker is faint; ten or more is full.
   var TILE_OPACITY = [
-    'step',
-    ['get', 'workers'],
-    0.35,
-    FAINT_BELOW_WORKERS,
-    0.8,
+    'case',
+    ['==', ['get', 'workers'], 0],
+    0.06,
+    [
+      'interpolate',
+      ['linear'],
+      ['get', 'workers'],
+      1,
+      0.3,
+      FAINT_BELOW_WORKERS,
+      0.85,
+    ],
   ];
-  function liveMap(container, tiles, size, key) {
+  function liveMap(container, levels, key, scale, onLevel) {
     var map = window.ConnectMap.createMap(container, {
       center: [20, 5],
       zoom: 2.4,
@@ -638,21 +715,28 @@
         (e && e.error && e.error.message) || e,
       );
     });
-    var data = {
-      type: 'FeatureCollection',
-      features: tileFeatures(tiles, size),
-    };
     var ready = false;
-    var current = key;
+    var state = { key: key, scale: scale, level: -1 };
+    function refresh() {
+      if (!ready || !levels.length) return;
+      var i = levelFor(levels, map.getZoom(), SQUARE_PX[state.scale]);
+      if (i === state.level) return;
+      state.level = i;
+      map.getSource('tiles').setData(levelFeatures(levels, i));
+      onLevel(i);
+    }
     map.on('load', function () {
       window.ConnectMap.calmBasemap(map, { text: 0.45 });
-      map.addSource('tiles', { type: 'geojson', data: data });
+      map.addSource('tiles', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
       map.addLayer({
         id: 'tiles',
         type: 'fill',
         source: 'tiles',
         paint: {
-          'fill-color': bandColourExpr(current),
+          'fill-color': bandColourExpr(state.key),
           'fill-opacity': TILE_OPACITY,
         },
       });
@@ -661,13 +745,22 @@
         type: 'line',
         source: 'tiles',
         paint: {
-          'line-color': '#08042a',
+          'line-color': [
+            'case',
+            ['==', ['get', 'workers'], 0],
+            '#a9b3e8',
+            '#08042a',
+          ],
           'line-width': 0.6,
-          'line-opacity': 0.8,
+          'line-opacity': ['case', ['==', ['get', 'workers'], 0], 0.25, 0.8],
         },
       });
       ready = true;
-      if (tiles.length) window.ConnectMap.fit(map, data, 60);
+      if (levels.length && levels[0].tiles.length) {
+        window.ConnectMap.fit(map, levelFeatures(levels, 0), 60);
+      }
+      refresh();
+      map.on('zoomend', refresh);
       var popup = new window.mapboxgl.Popup({
         closeButton: false,
         offset: 6,
@@ -677,7 +770,7 @@
         map.getCanvas().style.cursor = 'pointer';
         popup
           .setLngLat(e.lngLat)
-          .setHTML(popupHtml(e.features[0].properties, MEASURES[current]))
+          .setHTML(popupHtml(e.features[0].properties, MEASURES[state.key]))
           .addTo(map);
       });
       map.on('mouseleave', 'tiles', function () {
@@ -687,16 +780,25 @@
     });
     return {
       set: function (k) {
-        current = k;
-        if (ready)
+        state.key = k;
+        if (ready) {
           map.setPaintProperty('tiles', 'fill-color', bandColourExpr(k));
+        }
+      },
+      scale: function (s) {
+        state.scale = s;
+        state.level = -1;
+        refresh();
       },
     };
   }
-  // No Mapbox token: a flat plot with the same bands.
-  function flatMap(box, tiles, size, key) {
+  // No Mapbox token: a flat plot of one middle size, with the same bands.
+  function flatMap(box, levels, key, scale, onLevel) {
+    var i = Math.min(2, levels.length - 1);
     function draw(k) {
       var m = MEASURES[k];
+      var tiles = i >= 0 ? levels[i].tiles : [];
+      var size = i >= 0 ? levels[i].degrees : 1;
       var W = 1000,
         H = 520;
       var svg = el('svg', {
@@ -736,7 +838,10 @@
                 width: Math.max(size * sx, 2),
                 height: Math.max(size * sy, 2),
                 fill: colourFor(m, m.rate(t)),
-                opacity: t.workers < FAINT_BELOW_WORKERS ? 0.35 : 0.8,
+                opacity: Math.min(
+                  0.85,
+                  0.3 + (0.55 * (t.workers - 1)) / (FAINT_BELOW_WORKERS - 1),
+                ),
               }),
               nf.format(t.workers) +
                 ' workers · ' +
@@ -751,7 +856,8 @@
       box.appendChild(svg);
     }
     draw(key);
-    return { set: draw };
+    if (i >= 0) onLevel(i);
+    return { set: draw, scale: function () {} };
   }
 
   /* ── the URL is the state ───────────────────────────────────────── */
@@ -769,6 +875,7 @@
     var q = new URLSearchParams(params);
     q.delete('colour');
     q.delete('view');
+    q.delete('squares');
     var s = q.toString();
     return s ? '?' + s : '';
   }
@@ -1035,12 +1142,14 @@
     root.appendChild(dk);
 
     // The map comes first: it is where a targeted concern shows.
-    var mp = data.map || { tiles: [] };
-    var tiles = mp.tiles || [];
-    var size = mp.tile_degrees || 1;
+    var levels = (data.map && data.map.levels) || [];
+    var shown = 0;
     var chosen = MEASURES[params.get('colour')]
       ? params.get('colour')
       : 'delayed_3d';
+    var scale = SQUARE_PX[params.get('squares')]
+      ? params.get('squares')
+      : 'medium';
     var p3 = panel('Where', measureLegend(MEASURES[chosen]));
     var bar3 = p3.querySelector('.net-panel-bar');
     var legendNode = p3.querySelector('.net-legend');
@@ -1054,38 +1163,77 @@
     sel.value = chosen;
     pick.appendChild(sel);
     bar3.insertBefore(pick, legendNode);
+    var sizes = h('div', 'conn-modes');
+    sizes.setAttribute('role', 'group');
+    sizes.setAttribute('aria-label', 'Square size');
+    [
+      ['small', 'Small'],
+      ['medium', 'Medium'],
+      ['large', 'Large'],
+    ].forEach(function (d) {
+      var b = h('button', 'conn-mode', d[1]);
+      b.type = 'button';
+      b.dataset.scale = d[0];
+      b.setAttribute('aria-pressed', String(d[0] === scale));
+      sizes.appendChild(b);
+    });
+    bar3.insertBefore(sizes, legendNode);
+    var sizeNote = h('span', 'conn-size-note', '');
+    bar3.insertBefore(sizeNote, legendNode);
     var props = h('div', 'conn-props');
     p3.appendChild(props);
-    proportionBar(props, tiles, MEASURES[chosen]);
     var canMap = window.ConnectMap && window.mapboxgl && window.MAPBOX_TOKEN;
     var box = h('div', canMap ? 'net-globe' : 'net-chartbox');
     p3.appendChild(box);
     note(
       p3,
-      'Each tile is an area about 110 km across, holding the workers who do most of their visits there. ' +
-        'Its colour depends only on what happens inside it — the share of its workers or visits with the ' +
-        'problem you chose — so a busy area and a quiet one are judged the same way, and every area with ' +
-        'workers is shown, problem or not. Tiles with fewer than ' +
+      'Each square holds the workers who do most of their visits there, and its colour depends only on ' +
+        'what happens inside it — the share of its workers or visits with the problem you chose — so a ' +
+        'busy area and a quiet one are judged the same way, and every area with workers is shown, problem ' +
+        'or not. Squares keep roughly the size you pick on screen: zoom in and each splits into four ' +
+        'smaller ones (down to about 11 km). Squares with one worker are faint and reach full colour at ' +
         FAINT_BELOW_WORKERS +
-        ' workers are drawn faint. Areas with fewer than ' +
-        mp.min_workers_per_tile +
-        ' workers are left off (' +
-        nf.format(mp.withheld_workers || 0) +
-        ' workers), so no tile points at one person. Hover a tile for every measure.',
+        ' or more; parts of a split square with no workers are a faint outline. The "Areas" bar counts ' +
+        'squares at the size on screen, so it changes as you zoom; the "Workers" bar does not. Hover a ' +
+        'square for every measure.',
     );
     root.appendChild(p3);
+    function onLevel(i) {
+      shown = i;
+      sizeNote.textContent =
+        '≈ ' + km(levels[i].degrees) + ' km squares at this zoom';
+      proportionBar(props, levels[i].tiles, MEASURES[chosen]);
+    }
     var painter = canMap
-      ? liveMap(box, tiles, size, chosen)
-      : flatMap(box, tiles, size, chosen);
+      ? liveMap(box, levels, chosen, scale, onLevel)
+      : flatMap(box, levels, chosen, scale, onLevel);
+    function remember() {
+      params.set('colour', chosen);
+      if (scale === 'medium') params.delete('squares');
+      else params.set('squares', scale);
+      params.delete('view');
+      history.replaceState(null, '', '?' + params.toString());
+    }
     sel.addEventListener('change', function () {
       chosen = sel.value;
       painter.set(chosen);
       legendNode.innerHTML = measureLegend(MEASURES[chosen]);
-      proportionBar(props, tiles, MEASURES[chosen]);
-      params.set('colour', chosen);
-      params.delete('view');
-      history.replaceState(null, '', '?' + params.toString());
+      if (levels[shown]) {
+        proportionBar(props, levels[shown].tiles, MEASURES[chosen]);
+      }
+      remember();
     });
+    sizes.addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      scale = b.dataset.scale;
+      sizes.querySelectorAll('button').forEach(function (x) {
+        x.setAttribute('aria-pressed', String(x.dataset.scale === scale));
+      });
+      painter.scale(scale);
+      remember();
+    });
+    if (!canMap) sizes.hidden = true;
 
     var pOrg = panel('Partners');
     note(

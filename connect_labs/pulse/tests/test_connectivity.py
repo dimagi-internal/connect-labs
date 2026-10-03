@@ -251,27 +251,32 @@ def test_hour_of_day_is_local_to_the_country():
 
 
 @pytest.mark.django_db
-def test_map_tiles_never_point_at_fewer_than_three_workers():
-    # Three workers in two ~11 km cells that fall in the same ~110 km tile,
-    # and two workers alone in another tile.
+def test_map_tiles_nest_and_map_every_worker():
+    # Three workers in two ~11 km cells that share the ~90 km tile, and one
+    # worker alone far away -- who is mapped too, not withheld.
     for i in range(3):
         online_day(f"kano-{i}", n=12)
-    for i in range(2):
-        online_day(f"lone-{i}", n=12)
+    online_day("lone-0", n=12)
     PulseEvent.objects.filter(worker_hash__in=["kano-0", "kano-1"]).update(lat=12.01, lon=8.52)
-    PulseEvent.objects.filter(worker_hash="kano-2").update(lat=12.31, lon=8.81)
-    PulseEvent.objects.filter(worker_hash__startswith="lone").update(lat=9.05, lon=7.49)
+    PulseEvent.objects.filter(worker_hash="kano-2").update(lat=12.31, lon=8.71)
+    PulseEvent.objects.filter(worker_hash="lone-0").update(lat=9.05, lon=7.49)
     events = PulseEvent.objects.all()
     workers = connectivity.merge(
         connectivity.per_worker(connectivity.worker_weeks(events)), connectivity.worker_profiles(events)
     )
-    out = connectivity.tiles(workers, connectivity.home_cells(events))
-    assert len(out["tiles"]) == 1
-    tile = out["tiles"][0]
-    # South-west corner of the 1-degree tile holding 12-13N, 8-9E.
-    assert (tile["lat"], tile["lon"], tile["workers"], tile["online"]) == (12.0, 8.0, 3, 3)
-    assert tile["delayed_3d_rate"] == 0.0
-    assert out["withheld_workers"] == 2 and out["tile_degrees"] == 1.0
+    levels = {
+        lv["degrees"]: lv["tiles"]
+        for lv in connectivity.tile_levels(workers, connectivity.home_cells(events))["levels"]
+    }
+    assert list(levels) == list(connectivity.TILE_LEVELS)
+    for d, ts in levels.items():
+        assert sum(t["workers"] for t in ts) == 4, f"every worker is on the map at {d} degrees"
+    # 0.8-degree tiles: 12.0-12.8N, 8.0-8.8E holds the three Kano workers.
+    kano = next(t for t in levels[0.8] if t["workers"] == 3)
+    assert (kano["lat"], kano["lon"], kano["online"]) == (12.0, 8.0, 3)
+    assert kano["delayed_3d_rate"] == 0.0
+    # At 0.1 degrees they split into the two cells they were placed in.
+    assert sorted(t["workers"] for t in levels[0.1]) == [1, 1, 2]
 
 
 @pytest.mark.django_db
@@ -285,7 +290,7 @@ class TestConnectivityPage:
         assert data["distribution"]["classes"] == {"online": 1, "sometimes": 0, "offline": 1}
         assert data["weekly"] and data["weekly"][0]["workers"] == 2
         assert len(data["hours"]) == 24
-        assert set(data["map"]) == {"tiles", "tile_degrees", "withheld_workers", "min_workers_per_tile"}
+        assert [lv["degrees"] for lv in data["map"]["levels"]] == list(connectivity.TILE_LEVELS)
         assert data["backlog_days"] == []
         assert data["method"]["online_share"] == connectivity.ONLINE_SHARE
 
