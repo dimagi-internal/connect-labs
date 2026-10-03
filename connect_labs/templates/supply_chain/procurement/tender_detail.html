@@ -24,7 +24,7 @@
       {% comment %}What the round buys, beside its status: a one-line card of its own
       interrupted the page between the Outreach table and what we owe.{% endcomment %}
       <dt class="text-gray-600">Buys</dt>
-      <dd data-testid="tender-buys" class="text-gray-900">{% for line in buys %}<span class="tabular-nums">{{ line.quantity|qty:line.unit }}</span> of {{ line.name }}{% if line.contents %} <span class="text-gray-600">— one unit holds {{ line.contents }}</span>{% endif %}{% if not forloop.last %}; {% endif %}{% endfor %}</dd>
+      <dd data-testid="tender-buys" class="text-gray-900">{% for line in buys %}<span class="tabular-nums">{{ line.quantity|qty:line.unit }}</span> of {{ line.name|in_sentence }}{% if line.contents %} <span class="text-gray-600">— one unit holds {{ line.contents }}</span>{% endif %}{% if not forloop.last %}; {% endif %}{% endfor %}</dd>
       {% endif %}
       {% comment %}How the round's import duties are handled: settled once (often in answer to a
       supplier's "who imports?"), and every quote is costed by it.{% endcomment %}

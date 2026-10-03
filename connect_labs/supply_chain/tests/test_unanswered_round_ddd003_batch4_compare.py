@@ -70,7 +70,7 @@ class TestTheComparisonUnderTheWaiver:
         assert 'data-testid="card-waiver-missing"' in body
         attach = reverse("supply_chain:tender_document_attach", args=[world["tender"]["id"]])
         assert attach in body
-        assert "restate the price without duty" in body
+        assert "restate the price without import duty" in body
 
 
 @pytest.mark.django_db

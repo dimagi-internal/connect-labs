@@ -85,7 +85,7 @@ class TestWaitingOnSaysTwoThings:
         # cell with "Us: extend or close the round"; that line is pinned elsewhere.)
         assert any(line.startswith("<strong>No reply</strong>:") for line in lines)
         assert re.findall(r'data-testid="silent-supplier">(.*?)</li>', standing) == [
-            'Plateau Mills <span class="text-gray-600 whitespace-nowrap">(asked 10 Aug)</span>'
+            'Plateau Mills <span class="text-gray-700 whitespace-nowrap">(asked 10 Aug)</span>'
         ]
         # One labelled list per owner: "Missing facts" heads its suppliers as "No reply" does.
         assert any(line.startswith("<strong>Missing facts</strong>:") for line in lines)
@@ -223,7 +223,8 @@ class TestTheTimelineBadge:
         badge = re.search(r'<span data-testid="actor-badge" data-ai .*?</span></span></span>', body, re.S).group(0)
         pill = re.search(r'<span data-testid="actor-pill"[^>]*>(.*?)</span></span>', badge, re.S).group(1)
         # Since batch 8 the AI marker is a glyph, not the word: "AI" was said twice.
-        assert batch6._text(re.sub(r"<[^>]+>", "", pill)) == "ACE (agent)"
+        # Since DDD 003 batch 7 the pill says "AI assistant"; the agent is named in its tooltip.
+        assert batch6._text(re.sub(r"<[^>]+>", "", pill)) == "AI assistant"
         assert 'aria-label="AI"' in pill
         assert "Source email" not in badge and "<summary" not in badge
         toggle = re.search(r'<summary data-testid="source-toggle".*?</summary>', body, re.S).group(0)

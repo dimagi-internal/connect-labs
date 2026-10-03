@@ -205,8 +205,8 @@ class TestTheComparison:
         body = client_in_program.get(url).content.decode()
         table = re.search(r'<table data-testid="ranked-table" class="([^"]*)">(.*?)</table>', body, re.S)
         # One offer is a result, not a ranking (DDD 003 batch 4); since batch 5 its card spans
-        # the content width, as the banner above it and the Needs info cards below it do.
-        assert "w-full" in table.group(1).split()
+        # the content width; since DDD 003 batch 7 it is only as wide as its figures.
+        assert "w-full" not in table.group(1).split()
         assert 'data-testid="single-result"' in body
         assert "<th>#</th>" not in table.group(2) and 'data-testid="ranked-by-marker"' not in table.group(2)
         assert 'data-testid="ranked-by-fallback"' not in body
