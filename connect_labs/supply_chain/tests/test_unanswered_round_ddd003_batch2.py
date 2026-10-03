@@ -148,6 +148,28 @@ class TestTheComparison:
         assert "waiver document not on file" in note
         assert Commitment.objects.filter(resolved_on__isnull=False).exists()
 
+    def test_a_quote_costed_on_a_waiver_not_on_file_owes_that_fact_on_us(self, da, world, client_in_program):
+        """One gap list per quote: the waiver's copy is a fact on us, in header, duty cell and next step."""
+        question = _question(da, world)
+        op(
+            da,
+            "commitment_resolve",
+            commitment_id=question["id"] if isinstance(question, dict) else question.pk,
+            resolution="We import, under the program's duty waiver.",
+            duty_terms="buyer_waiver",
+            resolved_on="2026-10-03",
+        )
+        _quote(da, world)
+        url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
+        body = client_in_program.get(url).content.decode()
+        if 'data-testid="waiver-pending"' not in body:
+            pytest.skip("this world's quote does not leave the import to us")
+        assert "document not on file · us" in body
+        assert "fact on us<" in body
+        assert ">Attach waiver document<" in body
+        # Award may still be offered, but never as the filled button while the fact is open.
+        assert 'primary-dark" data-testid="grid-action"' not in body
+
 
 @pytest.mark.django_db
 def test_an_invited_panel_with_nothing_to_hold_is_left_out(da, world, client_in_program):

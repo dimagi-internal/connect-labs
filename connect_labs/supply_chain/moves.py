@@ -70,6 +70,11 @@ class Move:
         return RULE_TITLES.get(self.rule, "")
 
     @property
+    def detail_parts(self) -> list[str]:
+        """The detail split at its " · " joints, so each fact wraps whole."""
+        return [p for p in (self.detail or "").split(" · ") if p]
+
+    @property
     def is_ours(self) -> bool:
         return self.whose == US
 

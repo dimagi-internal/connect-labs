@@ -159,7 +159,7 @@ class TestTheTimelineReads:
         # Anchors the page links to, each on a fold that a link opens (base.html's scroll-margin clears the bar).
         assert re.search(r'<section id="history"[^>]*class="[^"]*scroll-mt-20', body)
         assert '<summary id="quotes">Quotes' in body
-        assert '<summary id="outreach">Invitations' in body
+        assert '<summary id="outreach" class="scroll-mt-20">Invitations' in body
 
     def test_an_eta_change_says_how_far_it_moved(self, da, base, order, client_in_program):
         (moved,) = (e for e in timeline_for_contract(order["contract"]["id"], program_id=PROGRAM) if e.eta_moved)

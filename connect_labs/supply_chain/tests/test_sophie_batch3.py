@@ -162,7 +162,7 @@ class TestABlockedCardLeadsWithWhatBlocksIt:
         pack = _fact(body, "pack")
         assert pack.count("data-gap") == 1
         assert 'title="Sachets per carton not stated on the quote">' in pack
-        assert 'data-testid="grid-status">Missing 1 fact<' in body
+        assert 'data-testid="grid-status">1 fact on supplier<' in body
 
     def test_questions_about_one_figure_are_asked_once_as_a_sentence(self, da, base):
         _with_spec(da)

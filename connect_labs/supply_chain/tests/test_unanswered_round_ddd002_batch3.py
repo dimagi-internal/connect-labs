@@ -70,7 +70,10 @@ def test_a_quote_s_void_is_a_link_like_correct():
     assert 'href="/c/" class="text-brand-indigo' in fixes
     # Since the unanswered-round batch 1 judge: sibling controls styled alike (grey Void
     # beside a blue Correct read as disabled).
-    assert 'data-testid="quote-void" class="text-brand-indigo hover:underline"' in fixes
+    assert (
+        'data-testid="quote-void" class="text-message-error-text border-l border-gray-200 pl-3 hover:underline"'
+        in fixes
+    )
 
 
 @pytest.mark.django_db

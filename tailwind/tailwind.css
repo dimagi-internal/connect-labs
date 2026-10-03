@@ -499,7 +499,7 @@
 
   /* One item in an "On us" / "On someone else" list. */
   .move-item {
-    @apply flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm;
+    @apply grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 rounded-lg px-3 py-2.5 text-sm;
   }
 
   .move-item--ours {
@@ -528,11 +528,11 @@
   }
 
   .src-mark--ai {
-    @apply bg-brand-cornflower-blue;
+    @apply bg-brand-cornflower-blue rounded-full;
   }
 
   .src-mark--calc {
-    @apply border-brand-blue-light border-[1.5px];
+    @apply border-brand-blue-light rounded-full border-[1.5px];
   }
 
   .src-ai-tag {

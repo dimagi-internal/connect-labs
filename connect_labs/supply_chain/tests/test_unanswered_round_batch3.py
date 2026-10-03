@@ -196,9 +196,9 @@ class TestTheComparison:
             },
         )
         body = self._page(client_in_program, world)
-        assert 'data-testid="comparable-count">1 of 2 comparable<' in body
+        assert re.search(r'data-testid="comparable-count"[^>]*>1 of 2 comparable<', body)
         grid = re.search(r'<table [^>]*data-testid="comparison-grid".*?</table>', body, re.S).group(0)
-        assert "Missing 1 fact" in grid
+        assert "1 fact on supplier" in grid
         pack = re.search(r'<tr data-fact="pack".*?</tr>', grid, re.S).group(0)
         assert "not stated" in pack
         for word in ("PROVISIONAL", "provisional", "beat"):
@@ -295,11 +295,16 @@ class TestTheOrderPage:
 
 
 class TestTheOverview:
-    def test_an_open_tender_past_its_deadline_says_so_in_its_stage(self, da, world):
+    def test_an_open_tender_past_its_deadline_says_so_once_in_its_decide_move(self, da, world):
+        # Since the unanswered-tender batch 3 judge: the deadline is said once on the
+        # overview, in the decide move's tag line -- not again in the stage.
         op(da, "tender_update", tender_id=world["tender"]["id"], data={"response_deadline": "2026-09-29"})
         row = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 10, 2)) if r.kind == "tender")
-        assert row.stage.endswith("deadline passed 3 days")
-        assert [m.rule for m in row.ours if m.rule == "deadline"] == ["deadline"]
+        assert "deadline passed" not in row.stage
+        deadline = [m for m in row.ours if m.rule == "deadline"]
+        assert [m.text for m in deadline] == ["Decide: extend, close or award"]
+        assert deadline[0].detail == "deadline passed 29 Sep"
+        assert row.stage_name == "Collecting quotes"
         before = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 9, 28)) if r.kind == "tender")
         assert "deadline passed" not in before.stage
         assert not [m for m in before.ours if m.rule == "deadline"]

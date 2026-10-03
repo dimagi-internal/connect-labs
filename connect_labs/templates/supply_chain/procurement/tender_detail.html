@@ -27,11 +27,11 @@ is folded away, each fold with its count.
       </div>
       <div class="flex flex-wrap items-center gap-2.5">
         {% for line in tender.lines %}
-        <a data-testid="compare-quotes" class="button button-md primary-dark" href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}">Compare quotes{% if tender.lines|length > 1 %}: {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}{% endif %}</a>
+        <a data-testid="compare-quotes" class="button button-md {% if status.primary == 'compare' %}primary-dark{% else %}outline-style{% endif %}" href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}">Compare quotes{% if tender.lines|length > 1 %}: {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}{% endif %}</a>
         {% endfor %}
         {% if not supply_as_of %}
-        <details class="relative" id="decide" data-testid="decide-menu">
-          <summary class="button button-md outline-style list-none [&::-webkit-details-marker]:hidden" role="button">{% if tender.status == "draft" %}Open or edit{% else %}Extend or close{% endif %}</summary>
+        <details class="relative{% if status.primary != 'compare' %} order-first{% endif %}" id="decide" data-testid="decide-menu">
+          <summary class="button button-md {% if status.primary == 'compare' %}outline-style{% else %}primary-dark{% endif %} list-none [&::-webkit-details-marker]:hidden" role="button" data-testid="decide-open">{% if tender.status == "draft" %}Open or edit{% elif status.primary == "decide" %}Decide: extend, close or award{% else %}Extend or close{% endif %}</summary>
           <div class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 text-sm shadow-sm">
             {% if tender.status == "draft" %}
               <form method="post" action="{% url 'supply_chain:procurement_tender_open' tender.id %}">{% csrf_token %}<button type="submit" class="button button-sm primary-dark">Open for quotes</button></form>
@@ -53,16 +53,16 @@ is folded away, each fold with its count.
       <li class="stage--{{ s.state }}" data-stage-state="{{ s.state }}"{% if s.state == "now" %} aria-current="step"{% endif %}>
         <div class="stage-seg stage-seg--{{ s.state }}"></div>
         <div class="stage-name">{{ s.name }}</div>
-        <div class="stage-note">{% if s.note != "—" %}{% include "supply_chain/_src.html" with src="calc" %}{% endif %}{{ s.note }}</div>
+        <div class="stage-note text-balance">{% if s.note != "—" %}{% include "supply_chain/_src.html" with src="calc" %}{% endif %}{{ s.note }}</div>
       </li>
       {% endfor %}
     </ol>
 
     <div class="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="status-tiles">
       {% for t in status.tiles %}
-      <div class="stat-tile{% if t.tone == 'ours' %} stat-tile--ours{% endif %}" data-testid="tile">
+      <div class="stat-tile" data-testid="tile"{% if t.tone == 'ours' %} data-tone="ours"{% endif %}>
         <div class="stat-tile-label">{{ t.label }}</div>
-        <div class="stat-tile-value">{{ t.value }}</div>
+        <div class="stat-tile-value{% if t.tone == 'ours' %} text-message-warning-text{% endif %}">{{ t.value }}</div>
         <div class="text-xs text-gray-600">{{ t.sub|default:"&nbsp;" }}</div>
       </div>
       {% endfor %}
@@ -70,58 +70,63 @@ is folded away, each fold with its count.
   </section>
 
   <div class="flex flex-wrap items-start gap-5">
-    <section class="card_bg border-brand-border-light flex min-w-0 flex-[999_1_560px] flex-col gap-3 border" aria-labelledby="suppliers-h">
+    <div class="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
+    <section class="card_bg border-brand-border-light flex min-w-0 flex-col gap-3 border" aria-labelledby="suppliers-h">
       <div class="flex flex-wrap items-baseline justify-between gap-3">
         <h2 id="suppliers-h" class="card_title">Suppliers</h2>
         <span class="text-sm text-gray-600" data-testid="outreach-replied-count">{{ outreach_replied }} of {{ outreach_asked }} replied</span>
       </div>
       <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="Suppliers, scrolls sideways">
         <table class="w-full min-w-[620px] text-sm" data-testid="supplier-table">
-          <thead class="border-b border-gray-200 text-left text-xs text-gray-600"><tr><th scope="col" class="py-2 pr-3 font-medium">Supplier</th><th scope="col" class="px-3 py-2 font-medium">State</th><th scope="col" class="px-3 py-2 font-medium">Quote</th><th scope="col" class="px-3 py-2 font-medium">Still missing</th><th scope="col" class="py-2 pl-3"><span class="sr-only">Action</span></th></tr></thead>
+          <thead class="border-b border-gray-200 text-left text-xs text-gray-600"><tr><th scope="col" class="py-2 pr-3 font-medium">Supplier</th><th scope="col" class="px-3 py-2 font-medium">State</th><th scope="col" class="px-3 py-2 font-medium">Quote</th><th scope="col" class="px-3 py-2 font-medium">Missing from quote</th><th scope="col" class="px-3 py-2 font-medium">Last chased</th><th scope="col" class="py-2 pl-3"><span class="sr-only">Action</span></th></tr></thead>
           <tbody class="divide-y divide-gray-100">
             {% for r in status.suppliers %}
             <tr data-testid="supplier-row" data-supplier-id="{{ r.supplier_id }}" class="align-top">
-              <td class="py-3 pr-3 font-medium"><a class="text-gray-900 hover:underline" href="{{ r.href }}">{{ r.name }}</a></td>
+              <td class="whitespace-nowrap py-3 pr-3 font-medium"><a class="text-gray-900 hover:underline" href="{{ r.href }}">{{ r.name }}</a></td>
               <td class="px-3 py-3"><span class="status-chip status-chip--{{ r.chip.tone }}" data-testid="supplier-state">{{ r.chip.label }}</span></td>
-              <td class="whitespace-nowrap px-3 py-3">{% if r.quote %}{% include "supply_chain/_src.html" with src=r.quote_src %}{{ r.quote }}{% if r.quote_src == "ai" %}<span class="src-ai-tag">AI</span>{% endif %}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
-              <td class="whitespace-nowrap px-3 py-3 text-gray-600" data-testid="supplier-missing">{% for m in r.missing %}{% if r.chip.label == "Quote" or r.chip.label == "Quote, late" %}<span class="text-message-warning-text font-medium">{{ m }}</span>{% else %}{{ m }}{% endif %}{% if not forloop.last %} · {% endif %}{% empty %}<span class="text-gray-600">—</span>{% endfor %}</td>
+              <td class="px-3 py-3">{% if r.quote %}{% include "supply_chain/_src.html" with src=r.quote_src %}{{ r.quote }}{% if r.quote_src == "ai" %}<span class="src-ai-tag">AI</span>{% endif %}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+              <td class="whitespace-nowrap px-3 py-3 text-gray-600" data-testid="supplier-missing">{% for m in r.missing %}<span class="text-message-warning-text font-medium">{{ m }}</span>{% if not forloop.last %} · {% endif %}{% empty %}<span class="text-gray-600">—</span>{% endfor %}</td>
+              <td class="whitespace-nowrap px-3 py-3 text-gray-600 tabular-nums" data-testid="supplier-chased">{{ r.chased|default:"—" }}</td>
               <td class="whitespace-nowrap py-3 pl-3 text-right">{% if r.action and not supply_as_of %}<a class="text-brand-indigo font-medium hover:underline" data-testid="supplier-action" href="{{ r.action.href }}"{% if r.action.href|slice:":7" == "#draft-" %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ r.action.href|slice:"1:" }}');"{% endif %}>{{ r.action.label }}</a>{% endif %}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="5" class="py-3 text-gray-600">Nobody asked yet.</td></tr>
+            <tr><td colspan="6" class="py-3 text-gray-600">Nobody asked yet.</td></tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
     </section>
-
-    <aside class="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
-      {% include "supply_chain/_moves.html" with moves=status.ours whose="ours" heading="On us" testid="on-us" count_testid="on-us-count" %}
-      {% include "supply_chain/_moves.html" with moves=status.theirs whose="theirs" heading="On suppliers" testid="on-suppliers" %}
       <section class="card_bg border-brand-border-light flex flex-col gap-2.5 border" id="duty-terms" data-testid="tender-terms" aria-labelledby="terms-h">
+        <div class="flex flex-wrap items-center justify-between gap-3">
         <h2 id="terms-h" class="card_title">Terms</h2>
-        <div class="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3.5 gap-y-2 text-sm">
-          <span class="text-gray-600">Import duty</span>
-          <span data-testid="tender-duty-terms"{% if duty_terms_changed %} data-changed{% endif %}>
-            {% if not tender.duty_terms %}<span class="status-chip status-chip--ours">Not settled</span>{% else %}{% include "supply_chain/_src.html" with src=status.terms.duty_src %}{{ tender.duty_terms|duty_terms_words|capfirst }}{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} · estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}%{% else %} · <span class="text-message-warning-text font-medium">estimate not recorded</span>{% endif %}{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% if tender.duty_terms_set_on %}<span class="block text-xs text-gray-600">set {{ tender.duty_terms_set_on|day }}{% if status.terms.duty_set_by %} · {{ status.terms.duty_set_by }}{% endif %}</span>{% endif %}{% endif %}
-            {% if tender.duty_terms == "buyer_waiver" %}<span data-testid="waiver-evidence" class="block text-xs text-gray-600">waiver document: {% if waiver_on_file %}on file{% else %}none on file{% endif %}</span>{% endif %}
-          </span>
-          <span class="text-gray-600">Deadline</span>
-          <span>{% if tender.response_deadline %}{{ tender.response_deadline|day }}{% if deadline_passed %} · <span data-testid="deadline-passed" class="text-message-warning-text font-medium">{{ deadline_passed.days }} day{{ deadline_passed.days|pluralize }} past</span>{% endif %}{% else %}<span class="text-gray-600">not set</span>{% endif %}</span>
-          <span class="text-gray-600">Asked</span>
-          <span>{% if status.terms.asked %}{{ status.terms.asked|day }}{% else %}<span class="text-gray-600">—</span>{% endif %}</span>
-        </div>
         {% if not supply_as_of %}
         <details class="relative" data-testid="duty-terms-settle">
           <summary class="button button-sm outline-style list-none [&::-webkit-details-marker]:hidden" role="button" data-testid="duty-terms-open">{% if tender.duty_terms %}Change{% else %}Settle{% endif %} import duty</summary>
-          <form method="post" action="{% url 'supply_chain:procurement_tender_duty_terms' tender.id %}" class="border-brand-border-light absolute left-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 shadow-sm">
+          <form method="post" action="{% url 'supply_chain:procurement_tender_duty_terms' tender.id %}" class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 shadow-sm">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.path }}#duty-terms">
             {% include "supply_chain/procurement/_duty_terms_fields.html" %}
           </form>
         </details>
         {% endif %}
-      </section>
+              </div>
+        <div class="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3.5 gap-y-2 text-sm sm:grid-cols-[max-content_minmax(0,1.6fr)_max-content_minmax(0,1fr)_max-content_minmax(0,1fr)]">
+          <span class="text-gray-600">Import duty</span>
+          <span data-testid="tender-duty-terms"{% if duty_terms_changed %} data-changed{% endif %}>
+            {% if not tender.duty_terms %}<span class="status-chip status-chip--ours">Not settled</span>{% else %}{% include "supply_chain/_src.html" with src=status.terms.duty_src %}{{ tender.duty_terms|duty_terms_words|capfirst }}{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} · estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}%{% else %} · <span class="text-message-warning-text font-medium">estimate not recorded</span>{% endif %}{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% if tender.duty_terms_set_on %}<span class="block text-xs text-gray-600">set {{ tender.duty_terms_set_on|day }}{% if status.terms.duty_set_by %} · {{ status.terms.duty_set_by }}{% endif %}</span>{% endif %}{% endif %}
+            {% if tender.duty_terms == "buyer_waiver" %}<span data-testid="waiver-evidence" class="block text-xs text-gray-600">waiver document: {% if waiver_on_file %}on file{% else %}none on file{% endif %}</span>{% endif %}
+          </span>
+          <span class="text-gray-600">Deadline</span>
+          <span>{% if tender.response_deadline %}<span class="whitespace-nowrap">{{ tender.response_deadline|day }}</span>{% if deadline_passed %} · <span data-testid="deadline-passed" class="text-message-warning-text whitespace-nowrap font-medium">{{ deadline_passed.days }} day{{ deadline_passed.days|pluralize }} past</span>{% endif %}{% else %}<span class="text-gray-600">not set</span>{% endif %}</span>
+          <span class="text-gray-600">Asked</span>
+          <span>{% if status.terms.asked %}{{ status.terms.asked|day }}{% else %}<span class="text-gray-600">—</span>{% endif %}</span>
+        </div>
+</section>
+    </div>
+
+    <aside class="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
+      {% include "supply_chain/_moves.html" with moves=status.ours whose="ours" heading="On us" testid="on-us" count_testid="on-us-count" %}
+      {% include "supply_chain/_moves.html" with moves=status.theirs whose="theirs" heading="On suppliers" testid="on-suppliers" %}
     </aside>
   </div>
 
@@ -130,7 +135,7 @@ is folded away, each fold with its count.
   <section class="border-brand-border-light flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white px-6 py-4" data-testid="related-order">
     <div class="flex min-w-0 flex-col gap-1">
       <div class="text-sm text-gray-600">Earlier: <a class="text-brand-indigo hover:underline" href="{{ o.tender_url }}">{{ o.tender_label }}</a> → order {{ o.reference }} · {{ o.supplier }}</div>
-      <div class="font-medium text-gray-900">{{ o.stage }}{% if o.ours %} · on us: {% for m in o.ours %}{{ m.text }}{% if not forloop.last %}; {% endif %}{% endfor %}{% endif %}</div>
+      <div class="flex flex-wrap items-center gap-1.5 text-sm" data-testid="related-order-chips">{% for part in o.stage_parts %}<span class="status-chip status-chip--neutral">{{ part }}</span>{% endfor %}{% if o.ours %}<span class="status-chip status-chip--ours" title="{% for m in o.ours %}{{ m.text }}{% if not forloop.last %}; {% endif %}{% endfor %}">on us · {{ o.ours|length }}</span>{% endif %}</div>
     </div>
     <a href="{{ o.url }}" class="button button-sm outline-style" data-testid="related-order-open">Open order</a>
   </section>
@@ -139,8 +144,8 @@ is folded away, each fold with its count.
 
   {% comment %}The detail, folded: each section opens on its own, and a link to one of its anchors opens it.{% endcomment %}
 
-  <details class="fold" id="outreach-fold" data-testid="fold-invitations">
-    <summary id="outreach">Invitations <span class="text-sm font-normal tabular-nums text-gray-600">{{ outreach_asked }}</span> <span class="text-sm font-normal text-gray-600">{{ outreach_replied }} replied</span></summary>
+  <details class="fold scroll-mt-20" id="outreach-fold" data-testid="fold-invitations">
+    <summary id="outreach" class="scroll-mt-20">Invitations <span class="text-sm font-normal tabular-nums text-gray-600" data-testid="invited-count">{{ outreach_asked }} invited{% if status.terms.asked %} {{ status.terms.asked|day }}{% endif %}</span> <span class="text-sm font-normal text-gray-600">· {{ outreach_replied }} replied</span></summary>
     <div class="fold-body">
       <div class="flex items-center justify-end">
   {% if not supply_as_of %}
@@ -186,8 +191,7 @@ is folded away, each fold with its count.
     <thead class="border-b border-gray-200">
       <tr>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Supplier</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Sent</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Last chased</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600" aria-sort="ascending" data-testid="sorted-by">Last chased <span aria-hidden="true">↑</span></th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Replied</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Response kind</th>
           <th class="px-4 py-2 text-left text-xs font-medium text-gray-600">Actions</th>
@@ -206,7 +210,6 @@ is folded away, each fold with its count.
           supplier's own row, so the tender reads whose turn it is.{% endcomment %}
           {% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="text-sm font-medium whitespace-nowrap text-amber-800">{{ o.waiting_on_us }}</div>{% endif %}
         </td>
-        <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">{{ o.sent_on|day|default:"—" }}</td>
         {% if o.changed and changed_cell == "last_chased" %}<td class="px-4 py-2 text-sm text-gray-900 font-semibold whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count">· {{ o.reminder_text }}</span>{% endif %}{% if o.next_due %}<span data-testid="next-due" class="block font-normal text-gray-600">next due {{ o.next_due|day }}</span>{% endif %}<span class="block">{% include "supply_chain/procurement/_new_tag.html" with stacked=1 %}</span></td>{% else %}<td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="last-chased">{{ o.last_reminder_on|day|default:"—" }}{% if o.last_reminder_on and o.reminder_text %} <span data-testid="reminder-count" class="text-gray-600">· {{ o.reminder_text }}</span>{% endif %}</td>{% endif %}
         {% comment %}Silence in words, counted from the latest ask -- the invitation or the last
         chase -- muted rather than alarmed; a bare "No" said nothing about how long.{% endcomment %}
@@ -214,11 +217,11 @@ is folded away, each fold with its count.
         <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="response-kind">{% if o.responded %}{% if o.response_kind == "needs_info" %}Questions for us{% else %}{{ o.response_kind|humanise|capfirst|default:"—" }}{% endif %}{% else %}—{% endif %}</td>
           {% comment %}The actions sit at the start of their cell, under the Actions heading: right-aligned,
           the heading stood over the menu alone and the links floated under no heading.{% endcomment %}
-          <td class="px-4 py-2 text-sm whitespace-nowrap text-left">
+          <td class="py-2 pl-4 pr-4 align-top text-sm whitespace-nowrap text-left">
             {% if not supply_as_of %}
             {% comment %}Two fixed slots -- the drafted reminder, then the reply -- so the column
             aligns whether or not a row has a reminder due.{% endcomment %}
-            <div class="inline-grid grid-cols-[6.75rem_6.5rem_1.5rem] gap-x-2 items-center text-left">
+            <div class="inline-grid grid-cols-[6.75rem_6.5rem_1.5rem] gap-x-2 items-start text-left">
             <span>
             {% comment %}A silent supplier whose reminder is due: its drafted reminder, from its own
             row, opened at its card so no other supplier's draft is in view.{% endcomment %}
@@ -241,7 +244,7 @@ is folded away, each fold with its count.
           </td>
       </tr>
       {% empty %}
-      <tr><td colspan="6" class="px-4 py-6 text-center text-gray-600">No outreach recorded yet.</td></tr>
+      <tr><td colspan="5" class="px-4 py-6 text-center text-gray-600">No outreach recorded yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -279,7 +282,7 @@ is folded away, each fold with its count.
     </div>
   </details>
 
-  <details class="fold" id="owed-fold" data-testid="fold-owed"{% if owed_answered_expanded or request.GET.changed|slice:":11" == "commitment-" %} open{% endif %}>
+  <details class="fold scroll-mt-20" id="owed-fold" data-testid="fold-owed"{% if owed_answered_expanded or request.GET.changed|slice:":11" == "commitment-" %} open{% endif %}>
     <summary id="owed">What we owe <span class="text-sm font-normal tabular-nums text-gray-600" data-testid="owed-open-count">{{ owed_open_count|default:0 }}</span> <span class="text-sm font-normal text-gray-600">open</span></summary>
     <div class="fold-body">
       {% if not supply_as_of %}<a href="{% url 'supply_chain:tender_commitment_record' tender.id %}" class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>{% endif %}
@@ -294,7 +297,7 @@ mailbox: nothing is sent from here. Folded shut, and in the order a tender runs
 rather than by urgency -- the product drafts when asked; it does not press a
 next action on anyone (design doc section 22).
 {% endcomment %}
-<details id="drafts" class="fold">
+<details id="drafts" class="fold scroll-mt-20">
   <summary>Draft emails <span class="text-sm font-normal tabular-nums text-gray-600">{{ drafts.drafts|length }}</span>{% if drafts_breakdown %} <span data-testid="drafts-breakdown" class="text-sm font-normal text-gray-600">{{ drafts_breakdown }}</span>{% endif %}</summary>
   <div class="fold-body">
     {% for d in drafts.drafts %}
@@ -434,7 +437,7 @@ next action on anyone (design doc section 22).
 {% endif %}
 
 
-  <details class="fold" id="quotes-fold" data-testid="fold-quotes">
+  <details class="fold scroll-mt-20" id="quotes-fold" data-testid="fold-quotes">
     <summary id="quotes">Quotes <span class="text-sm font-normal tabular-nums text-gray-600">{{ counts.quotes }}</span></summary>
     <div class="fold-body">
 <div class="bg-white rounded-lg shadow-sm overflow-hidden">
@@ -508,14 +511,14 @@ next action on anyone (design doc section 22).
     </div>
   </details>
 
-  <details class="fold" id="history-fold" data-testid="fold-history">
+  <details class="fold scroll-mt-20" id="history-fold" data-testid="fold-history">
     <summary>History <span class="text-sm font-normal text-gray-600">newest first</span></summary>
     <div class="fold-body">
       {% include "supply_chain/_timeline.html" with history_heading_class="sr-only" %}
     </div>
   </details>
 
-  <details class="fold" id="tender-details-fold" data-testid="fold-details">
+  <details class="fold scroll-mt-20" id="tender-details-fold" data-testid="fold-details">
     <summary>Tender details</summary>
     <div class="fold-body">
     <dl data-testid="tender-facts" class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
