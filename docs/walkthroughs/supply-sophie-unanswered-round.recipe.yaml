@@ -357,7 +357,7 @@ scenes:
     target: css:tr[data-fact=duty] th
   - kind: scroll
     note: frame the change -- the count chip (1 of 3 comparable), the duty terms line with the waiver, each quote's header chips, Harmattan's landed figure with its open fact and its next steps, and the rows down to Import duty
-    value: '200'
+    value: '320'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the grid
     seconds: 0.6
