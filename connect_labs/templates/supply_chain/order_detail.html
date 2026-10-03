@@ -77,7 +77,8 @@ out on every render and never stored.
       <div class="stat-tile{% if t.tone == 'ours' %} stat-tile--ours{% endif %}" data-testid="tile">
         <div class="stat-tile-label">{{ t.label }}</div>
         <div class="stat-tile-value">{{ t.value }}</div>
-        <div class="text-xs text-gray-600">{{ t.sub|default:"&nbsp;" }}</div>
+        {% if t.sub or not t.lines %}<div class="text-xs text-gray-600">{{ t.sub|default:"&nbsp;" }}</div>{% endif %}
+        {% if t.lines %}<dl class="mt-1 grid grid-cols-[max-content_minmax(0,1fr)_max-content] items-baseline gap-x-2 gap-y-1 text-xs" data-testid="tile-lines">{% for l in t.lines %}<dt><span class="status-chip status-chip--{{ l.tone }}">{{ l.label }}</span></dt><dd class="text-gray-600">{{ l.words }}</dd><dd class="font-semibold tabular-nums text-gray-900" data-testid="tile-line-days">{{ l.days }} d</dd>{% endfor %}</dl>{% endif %}
         {% if t.chips %}<div class="mt-1 flex flex-wrap gap-1" data-testid="tile-chips">{% for c in t.chips %}<span class="status-chip status-chip--{{ c.tone }}">{{ c.label }}</span>{% endfor %}</div>{% endif %}
       </div>
       {% endfor %}
@@ -127,7 +128,7 @@ out on every render and never stored.
 
   {% comment %}The records, folded: each opens on its own, and a link to one of its anchors opens it.{% endcomment %}
 
-  <details class="fold" id="money-fold" data-testid="fold-money"{% if invoice_above %} open{% endif %}>
+  <details class="fold scroll-mt-20" id="money-fold" data-testid="fold-money"{% if invoice_above %} open{% endif %}>
     <summary id="money"><h2 class="text-base font-semibold text-brand-deep-purple">{% if contract.consideration == "priced" %}Cost, billing and payment{% else %}Cost{% endif %}</h2> {% if invoice_above %}<span class="status-chip status-chip--ours">invoice above agreed</span>{% endif %}</summary>
     <div class="fold-body">
 {% if fulfilment %}
@@ -136,7 +137,7 @@ The whole answer to "did what we ordered arrive", for an order another order
 covers: this order's own deliveries plus each covering order, adding up to what
 was ordered. Before, the page showed this order's half and a link to the other.
 {% endcomment %}
-<section id="fulfilment" class="overflow-hidden rounded-lg border border-gray-100">
+<section id="fulfilment" class="scroll-mt-20 overflow-hidden rounded-lg border border-gray-100">
   <div class="px-4 py-2.5 border-b border-gray-100">
     <span class="text-xs font-semibold text-gray-600">How the order was filled</span>
     <span class="text-xs text-gray-600 ml-2">{{ fulfilment.ordered|figure_text }} ordered</span>
@@ -616,7 +617,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
   </details>
 
   {% if contract.consideration == "priced" or invoices or owed_open_count %}
-  <details class="fold" id="owed-fold" data-testid="fold-owed"{% if owed_holds or owed_answered_expanded or request.GET.changed|slice:":11" == "commitment-" %} open{% endif %}>
+  <details class="fold scroll-mt-20" id="owed-fold" data-testid="fold-owed"{% if owed_holds or owed_answered_expanded or request.GET.changed|slice:":11" == "commitment-" %} open{% endif %}>
     <summary><h2 id="owed" data-testid="owed-heading" class="text-base font-semibold text-brand-deep-purple">{% if owed_holds %}What we owe — to clear the shipment{% if owed_holds_via %} <span data-testid="owed-via" class="font-normal text-gray-600">(via {{ owed_holds_via }})</span>{% endif %}{% else %}What we owe them{% endif %} <span data-testid="owed-open-count" class="text-sm font-normal tabular-nums text-gray-600">— {{ owed_open_count|default:0 }} open</span></h2></summary>
     <div class="fold-body">
       {% if not supply_as_of %}<a href="{% url 'supply_chain:contract_commitment_record' contract.id %}" class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>{% endif %}
@@ -625,7 +626,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
   </details>
   {% endif %}
 
-  <details class="fold" id="shipments-fold" data-testid="fold-shipments">
+  <details class="fold scroll-mt-20" id="shipments-fold" data-testid="fold-shipments">
     <summary id="shipments"><h2 class="text-base font-semibold text-brand-deep-purple">Shipments</h2> <span class="text-sm font-normal tabular-nums text-gray-600">{{ shipments|length }}</span>{% for shipment in shipments %}{% if shipment.is_in_transit %} <span class="text-sm font-normal text-gray-600">· {{ shipment.reference|default:shipment.id }} {{ shipment.status|words }}</span>{% endif %}{% endfor %}</summary>
     <div class="fold-body">
 <div class="overflow-hidden rounded-lg border border-gray-100">
@@ -737,7 +738,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
     </div>
   </details>
 
-  <details class="fold" id="receipts-fold" data-testid="fold-receipts">
+  <details class="fold scroll-mt-20" id="receipts-fold" data-testid="fold-receipts">
     <summary id="receipts"><h2 class="text-base font-semibold text-brand-deep-purple">Received</h2> <span class="text-sm font-normal tabular-nums text-gray-600">{{ receipts|length }}</span></summary>
     <div class="fold-body">
 <div class="overflow-hidden rounded-lg border border-gray-100">
@@ -785,7 +786,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
     </div>
   </details>
 
-  <details class="fold" id="documents-fold" data-testid="fold-documents">
+  <details class="fold scroll-mt-20" id="documents-fold" data-testid="fold-documents">
     <summary id="documents"><h2 class="text-base font-semibold text-brand-deep-purple">Evidence</h2> <span class="text-sm font-normal tabular-nums text-gray-600">{{ documents|length }}</span></summary>
     <div class="fold-body">
       {% if not supply_as_of %}<a href="{% url 'supply_chain:document_attach' contract.id %}" class="text-sm text-brand-indigo hover:underline">+ Attach a document</a>{% endif %}
@@ -813,7 +814,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
     </div>
   </details>
 
-  <details class="fold" id="history-fold" data-testid="fold-history">
+  <details class="fold scroll-mt-20" id="history-fold" data-testid="fold-history">
     <summary><h2 class="text-base font-semibold text-brand-deep-purple">History</h2> <span class="text-sm font-normal text-gray-600">newest first</span></summary>
     <div class="fold-body">
       {% include "supply_chain/_timeline.html" with history_heading_class="sr-only" %}

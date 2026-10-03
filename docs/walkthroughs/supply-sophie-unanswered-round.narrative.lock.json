@@ -108,11 +108,11 @@
         {
           "description": "A line at the top of the comparison states the tender's import duty terms; while they are not settled, every quote whose Incoterm leaves the import to us waits on them.",
           "id": "comparison-duty-terms-note",
-          "verify": "Playwright: [data-testid=comparison-duty-terms] reads 'Import duty: not settled'; Harmattan Therapeutics' [data-testid=grid-status] reads 'Waiting on our duty terms'"
+          "verify": "Playwright: [data-testid=comparison-duty-terms] reads 'Import duty: not settled'; Harmattan Therapeutics' [data-testid=grid-status] reads '1 fact on us' and its Next step offers 'Settle duty terms'"
         }
       ],
       "id": "whats-still-missing",
-      "narrative": "Sophie opens the comparison, every quote side by side, and none can be compared yet, for more than one reason. The tender's import duty terms are not settled, and Harmattan quotes carriage paid to Kano, which leaves the import to us, so its duty is ours to cost and its column waits on our terms. Each quote's other gaps are marked where they fall: Kanem has not stated its pack, and Sahel's new quote is in euros, with no exchange rate recorded yet. Settling the terms would free only the quotes that leave the import to us; Kanem's pack and Sahel's rate are still owed. A quote that cannot be compared shows no landed figure, only a dash and its open gaps, each marked as ours or the supplier's.",
+      "narrative": "Sophie opens the comparison, every quote side by side, and none can be compared yet, for more than one reason. The tender's import duty terms are not settled, and Harmattan quotes carriage paid to Kano, which leaves the import to us, so its duty is ours to cost and its column waits on our terms. Each quote's other gaps are marked where they fall: Kanem has not stated its pack, and Sahel's new quote is in euros, with no exchange rate recorded yet. Settling the terms would free only the quotes that leave the import to us; Kanem's pack and Sahel's rate are still owed. A quote that cannot be compared shows no landed figure: its header counts the facts owed by us and by the supplier, and the same gaps appear in its landed cell and as its next steps.",
       "persona": "sophie",
       "provenance": "S4",
       "title": "No quote can be compared yet: duty terms unsettled, facts missing"
@@ -132,11 +132,11 @@
         {
           "description": "After the tender's duty terms are set, the comparison's duty line reads the waiver, the Import duty row is settled for every quote whose Incoterm leaves the import to us, and only the quotes missing no other fact become comparable.",
           "id": "comparison-costs-under-waiver",
-          "verify": "Playwright: [data-testid=comparison-duty-terms] contains 'under the program's duty waiver'; no [data-testid=grid-status] reads 'Waiting on our duty terms'; [data-testid=comparable-count] reads '1 of 3 comparable'"
+          "verify": "Playwright: [data-testid=comparison-duty-terms] contains 'under the program's duty waiver'; no [data-testid=grid-action] reads 'Settle duty terms'; [data-testid=comparable-count] reads '1 of 3 comparable'"
         }
       ],
       "id": "what-we-owe-northgate",
-      "narrative": "Back on the tender, Sophie settles import duty in its Terms box: we import, under the program's duty waiver, and the box reads the waiver, just recorded. Northgate's three questions are still on her under On us, and Reply opens an email drafted with the three questions, an answer to write under each. She opens the comparison again: the duty line reads the waiver, the Import duty row is settled for the quotes we import, and Harmattan's quote is now comparable, one of three: its landed figure counts the duty as waived and holds no clearing charges, and the duty line says the waiver document is not yet on file; Kanem's and Sahel's still wait on their missing facts.",
+      "narrative": "Back on the tender, Sophie settles import duty in its Terms box: we import, under the program's duty waiver, and the box reads the waiver, just recorded. Northgate's three questions are still on her under On us, and Reply opens an email drafted with the three questions, an answer to write under each. She opens the comparison again: the duty line reads the waiver, the Import duty row is settled for the quotes we import, and Harmattan's quote is now comparable, one of three: its landed figure counts the duty as waived and holds no clearing charges, and its column marks the waiver document not on file as a fact on us, so Award is offered but not yet the filled button; Kanem's and Sahel's still wait on their missing facts.",
       "persona": "sophie",
       "provenance": "S5",
       "title": "She settles the tender's duty terms and replies to Northgate"

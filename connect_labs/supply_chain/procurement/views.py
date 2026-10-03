@@ -287,6 +287,9 @@ class TenderDetailView(_Base):
             o["silent_days"] = None if o.get("responded") else _days_since_ask(o, as_of)
         # The row a form just saved is picked out on arrival ("?changed=outreach-12").
         changed = self.request.GET.get("changed")
+        # One explicit order (the table's header marks it): no reply first, then the
+        # longest since its last chase; never chased before chased.
+        outreach = sorted(outreach, key=lambda o: (bool(o.get("responded")), str(o.get("last_reminder_on") or "")))
         context["outreach"] = mark_changed(outreach, "outreach", changed)
         # Which of that row's cells the save changed: the chase from a draft moves
         # "Last chased", a recorded reply moves "Replied".

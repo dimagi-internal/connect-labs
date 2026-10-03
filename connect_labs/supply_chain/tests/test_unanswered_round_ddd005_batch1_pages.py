@@ -66,7 +66,10 @@ def test_void_is_styled_as_a_link_like_correct():
             "event_sender": "",
         },
     )
-    assert 'data-testid="quote-void" class="text-brand-indigo hover:underline"' in html
+    assert (
+        'data-testid="quote-void" class="text-message-error-text border-l border-gray-200 pl-3 hover:underline"'
+        in html
+    )
 
 
 def test_the_changed_tag_says_just_recorded():

@@ -232,7 +232,8 @@ def test_the_overview_counts_the_same_moves_as_the_tender(da, world):
     rows = standing_rows(PROGRAM, TODAY)
     row = next(r for r in rows if r.tender_id == world["tender"]["id"])
     ours, theirs = moves.tender_moves(_tender(world), TODAY)
-    assert [m.text for m in row.ours] == [m.text for m in ours]
+    # Same moves by rule; inside its own row the decide move drops the tender's name.
+    assert [m.rule for m in row.ours] == [m.rule for m in ours]
     assert [m.text for m in row.theirs] == [m.text for m in theirs]
     assert row.whose == moves.US
     assert row.next_move.rule == moves.RULE_DEADLINE
