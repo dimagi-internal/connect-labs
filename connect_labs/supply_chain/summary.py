@@ -49,6 +49,7 @@ def _source(access, commodity=None):
     # Which tenders the evaluation counts across, so "2 of 4 comparable" can
     # say it is the program's total and not one round's.
     evaluated = set()
+    contracted = set(tenders.filter(contracts__isnull=False).values_list("pk", flat=True))
     # An awarded tender was still evaluated: leaving it out read "Evaluation 0
     # of 0 comparable" beside "Award 3" on the tender those awards came from.
     for tender in tenders.filter(status__in=("open", "closed", "awarded")):
@@ -72,7 +73,9 @@ def _source(access, commodity=None):
             comparable += comparison.comparable_count
             total += comparison.total_count
             evaluated.add(tender.pk)
-            provisional = provisional or comparison.provisional
+            # An award that was ordered (a contract signed on it) is no longer
+            # provisional, as the overview's own tender row says.
+            provisional = provisional or (comparison.provisional and tender.pk not in contracted)
 
     awards = Award.objects.filter(tender__program_id=program_id)
     awaiting = standing.awaiting_reply(program_id)
@@ -99,7 +102,7 @@ def _source(access, commodity=None):
         },
         "award": {
             "count": awards.count(),
-            "provisional": awards.filter(provisional=True).count(),
+            "provisional": awards.filter(provisional=True).exclude(tender_id__in=contracted).count(),
         },
     }
 
@@ -129,6 +132,7 @@ def _order(access, commodity=None):
         "dispatched": {
             "shipments": shipments.count(),
             "in_transit": shipments.filter(Shipment.in_transit_q()).count(),
+            "whereabouts": _whereabouts(contracts, shipments),
         },
         "received": {"receipts": receipts.count()},
         "invoiced": {
@@ -140,6 +144,30 @@ def _order(access, commodity=None):
             "part_paid": invoices.filter(status="part_paid").count(),
         },
     }
+
+
+def _whereabouts(contracts, shipments) -> dict[str, int]:
+    """Shipments on the road counted by where they are, worded as the order page words it.
+
+    "1 at customs — held, waiting on us", not "1 in transit", when the order's
+    own page says the goods are held at customs on us
+    (records.shipment_whereabouts). Plainly moving ones stay "in transit".
+    """
+    from connect_labs.supply_chain.fulfilment.services.holds import holds_for
+    from connect_labs.supply_chain.records import shipment_whereabouts
+
+    moving = list(shipments.filter(Shipment.in_transit_q()).only("pk", "status", "contract_id"))
+    if not moving:
+        return {}
+    holds = holds_for(list(contracts.filter(pk__in={s.contract_id for s in moving})))
+    counts: dict[str, int] = {}
+    for shipment in moving:
+        if shipment.status in ("at_customs", "cleared"):
+            words = shipment_whereabouts(shipment.status, bool(holds.get(shipment.contract_id)))
+        else:
+            words = "in transit"
+        counts[words] = counts.get(words, 0) + 1
+    return counts
 
 
 def _network_total(movements, points, item, disagreement):

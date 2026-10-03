@@ -362,6 +362,19 @@ class TestTender:
         assert row.waiting_on == "Missing facts: Northwind Foods (sachets per carton, freight, duties)"
         assert row.stale == ["Can't compare yet: Northwind Foods — missing: sachets per carton, freight, duties"]
 
+    def test_once_the_award_is_ordered_it_is_no_longer_provisional(self, da, base):
+        # DDD 003 batch 4: "provisional — 1 of 1 quote not yet comparable" over a round
+        # whose order was signed read as a decision still open.
+        tender = _tender(da, "Round 1", AUG_3)
+        _quote(da, tender, base["suppliers"][0])  # blocked
+        _award(da, tender, _quote(da, tender, base["suppliers"][1], **_COMPARABLE))
+        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").provisional_caveat
+
+        _order(da, base, "PO-1", tender=tender)
+        row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
+        assert row.stage == "awarded to Baobab Nutrition"
+        assert (row.provisional, row.provisional_caveat, row.award_why) == (False, "", "")
+
     def test_an_award_over_a_complete_comparison_is_not_provisional(self, da, base):
         from connect_labs.supply_chain.models import Award
 

@@ -383,6 +383,20 @@ def _fold_spec_question(facts, seen, field_name, requirement, commodity) -> bool
     return True
 
 
+DUTY_RESTATE_KEY = "duty_restated"
+DUTY_RESTATE_LABEL = "price without duty"
+DUTY_RESTATE_QUESTION = (
+    "Can you restate the price without import duty? We import under the program's duty waiver, "
+    "so duty is not part of your price."
+)
+
+
+def needs_duty_restated(quote, tender) -> bool:
+    """Whether the round's terms make duty ours while the quote says its price includes it."""
+    terms = getattr(tender, "duty_terms", "") or ""
+    return terms in ("buyer_waiver", "buyer_pays") and getattr(quote, "duties_basis", "") == "included"
+
+
 def missing_facts(
     quote: Quote,
     commodity: Commodity,
@@ -472,6 +486,11 @@ def missing_facts(
                 context,
             )
         )
+
+    # Under terms that make duty ours, a price said to include duty may carry a
+    # duty we will not pay: the supplier is asked to restate it.
+    if needs_duty_restated(quote, tender):
+        facts.append(MissingFact(key=DUTY_RESTATE_KEY, question=DUTY_RESTATE_QUESTION))
 
     return facts
 

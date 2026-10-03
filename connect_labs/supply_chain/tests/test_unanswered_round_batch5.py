@@ -67,10 +67,13 @@ class TestTheOrderPage:
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         assert ">Quantity billed</th>" in body
         row = re.search(r'<tr data-testid="invoice-above-agreed-row".*?</tr>', body, re.S).group(0)
-        assert _text(row) == "Total USD 110,350.00 billed USD 106,800.00 agreed +USD 3,550.00 above agreed"
+        # Billed, agreed and the difference each in a column of their own, under a header row.
+        assert _text(row) == "Total USD 110,350.00 USD 106,800.00 +USD 3,550.00 above agreed"
+        head = re.search(r'<tr data-testid="invoice-variance-head".*?</tr>', body, re.S).group(0)
+        assert _text(head) == "Against agreed Billed Agreed Difference"
         assert 'data-testid="above-agreed-tag"' in row
         # The invoice's own row carries the amount alone.
         invoice_row = re.search(r"<tr>\s*<td[^>]*>INV-REH-1</td>.*?</tr>", body, re.S).group(0)
         assert "above agreed" not in invoice_row
         # One size and weight down the Told by column.
-        assert '<td class="px-4 py-2 text-sm text-gray-700">the supplier told us</td>' in invoice_row
+        assert '<td class="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">the supplier told us</td>' in invoice_row
