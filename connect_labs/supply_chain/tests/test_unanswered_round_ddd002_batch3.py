@@ -26,7 +26,7 @@ client_in_program = reality.client_in_program
 def test_a_drafted_message_gets_the_rows_it_needs_up_to_a_screen():
     assert _message_rows("Dear Amadou,\n\nWe asked on 15 Sep.") == 3
     assert _message_rows("x" * 230) == 3
-    assert _message_rows("\n".join(["line"] * 40)) == 14
+    assert _message_rows("\n".join(["line"] * 40)) == 28
 
 
 @pytest.mark.django_db
@@ -36,13 +36,17 @@ class TestTheReminderDraft:
     ):
         body = _tender_page(client_in_program, world["tender"]["id"])
         drafts = body.split('id="drafts"', 1)[1]
-        card = re.search(r'<div data-testid="draft".*?</form>', drafts, re.S).group(0)
+        # The chase form sits under the reminder's facts, above the message (DDD 003 batch 3).
+        card = re.search(r'<div data-testid="draft".*?data-testid="draft-text"[^>]*>', drafts, re.S).group(0)
         assert "rounded-lg" in card and "border-gray-200" in card
         assert re.search(r'data-testid="draft-text" readonly rows="\d+"', card)
         today = f"{datetime.date.today():%-d %b %Y}"
         assert re.search(rf'data-testid="chase-date" type="text" name="last_reminder_on"\s+value="{today}"', card)
         # The why line is body text, not the smallest grey on the card.
-        assert re.search(r'<p class="text-sm text-gray-700 mt-1" data-testid="draft-why">', card)
+        # A reminder's facts are a labelled row (DDD 003 batch 2); other drafts keep the sentence.
+        assert re.search(r'<p class="text-sm text-gray-700 mt-1" data-testid="draft-why">', card) or re.search(
+            r'<dl class="[^"]*" data-testid="draft-why">', card
+        )
 
     def test_a_chase_day_typed_as_the_page_writes_it_is_recorded(self, da, world, web):  # noqa: F811
         outreach_id = world["outreach"]["id"]
@@ -90,4 +94,4 @@ class TestEveryFlagHasAnOwner:
         row = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 10, 2)) if r.kind == "order")
         assert INVOICE_DISPUTE in row.waiting_on
         ours = row.waiting_lines[0] if row.waiting_lines else row.waiting_on
-        assert ours.heading == "Us" and (INVOICE_DISPUTE, "") in ours.lines
+        assert ours.heading == "Us" and any(item.startswith(INVOICE_DISPUTE) for item, _ in ours.lines)

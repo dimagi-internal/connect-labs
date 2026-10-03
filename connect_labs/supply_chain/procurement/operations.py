@@ -411,8 +411,8 @@ def _replies(access, tender, day, sender):
                 "to": address,
                 "why": (
                     f"{len(still_open)} question{'s' if len(still_open) != 1 else ''} from {name} "
-                    f"open since {day_text(asked)}: we owe the answer. Once sent, mark each answered with "
-                    "commitment_resolve."
+                    f"open since {day_text(asked)}: we owe the answer. Once sent, mark each question answered "
+                    "under What we owe them."
                     + (
                         f" {len(questions) - len(still_open)} answered today, already written in."
                         if len(still_open) != len(questions)
@@ -433,7 +433,14 @@ def _sender(access) -> Sender:
     """Who signs a draft: the signed-in person (over MCP, the token's user) and their organisation."""
     from connect_labs.supply_chain.identity import acting_org_name, person_name
 
-    return Sender(name=person_name(getattr(access, "user", None)), organisation=acting_org_name(access))
+    organisation = acting_org_name(access)
+    if not organisation and getattr(access, "program_id", None):
+        # Not resolvable from the caller alone, but the program's buyer of record
+        # is known from its orders: the same name the Supply banner says.
+        from connect_labs.supply_chain.banner import _buyer_of_record
+
+        organisation = _buyer_of_record(access, access.program_id)
+    return Sender(name=person_name(getattr(access, "user", None)), organisation=organisation)
 
 
 def _day(value) -> date:

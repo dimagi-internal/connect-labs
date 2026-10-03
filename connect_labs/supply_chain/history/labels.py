@@ -538,6 +538,15 @@ def sentence(model, action, changes, lookup) -> str:
         # line's own date, so it is not a second clause.
         lead.append(f"answered: {_short(changes.pop('resolution')[1])}")
         changes.pop("resolved_on", None)
+    if model.__name__ == "Tender" and "duty_terms" in changes:
+        # "Set the round's import duties: we import, under the program's duty
+        # waiver" -- not "Duty terms: buyer waiver; Duty terms set on: 3 Oct",
+        # which read as raw fields. The day is the line's own date.
+        from connect_labs.supply_chain.records import DUTY_TERMS_LABELS
+
+        new = changes.pop("duty_terms")[1] or ""
+        changes.pop("duty_terms_set_on", None)
+        lead.append(f"Set the round's import duties: {DUTY_TERMS_LABELS.get(new, DUTY_TERMS_LABELS[''])}")
     clauses = lead + [_clause(model, attname, old, new, lookup) for attname, (old, new) in changes.items()]
     return "; ".join(c for c in clauses if c)
 

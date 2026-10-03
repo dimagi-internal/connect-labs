@@ -169,7 +169,7 @@ class TestAnIncotermFillsAGapNobodyRecorded:
         """
         extras = _extras_for(world, incoterm="EXW Lagos")
         assert isinstance(extras, Unconfirmed)
-        assert any("read from Incoterm" in reason for reason in extras.reasons), extras.reasons
+        assert any("per Incoterm" in reason for reason in extras.reasons), extras.reasons
 
     def test_DAP_carries_freight_and_leaves_duty_to_the_buyer(self, world):
         extras = _extras_for(world, incoterm="DAP Kano")

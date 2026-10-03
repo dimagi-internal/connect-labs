@@ -48,6 +48,9 @@ class TestEachSilentSupplierSaysWhenAskedAndChased:
 
         cell = _cells(_standing_row(_home(home_client), tender_id))[2]
         assert "<strong>No reply</strong>:" in cell
-        assert 'Northwind Foods <span class="text-gray-600">(asked 9 Sep)</span>' in cell
-        assert 'Sahel Nutrition <span class="text-gray-600">(asked 1 Sep · chased 20 Sep)</span>' in cell
+        assert 'Northwind Foods <span class="text-gray-600 whitespace-nowrap">(asked 9 Sep)</span>' in cell
+        assert (
+            'Sahel Nutrition <span class="text-gray-600 whitespace-nowrap">(asked 1 Sep · chased 20 Sep)</span>'
+            in cell
+        )
         assert cell.count('data-testid="silent-supplier"') == 2

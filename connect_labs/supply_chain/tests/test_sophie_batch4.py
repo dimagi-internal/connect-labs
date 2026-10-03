@@ -325,7 +325,10 @@ def invitable(db):
 class TestTheTenderPage:
     def test_who_was_asked_is_listed_not_no_one(self, da, base, client_in_program):
         batch3._outreach(da, base["tender"]["id"], base["supplier"]["id"], "2026-08-01")
-        panel = _invited_panel(_tender_page(client_in_program, base["tender"]["id"]))
+        body = _tender_page(client_in_program, base["tender"]["id"])
+        # With everyone asked in Outreach and no marketplace invitation, the panel has
+        # nothing to hold and is left out (DDD 003 batch 2); when shown, it repeats no one.
+        panel = _invited_panel(body) if 'data-testid="invited-suppliers"' in body else ""
         assert "No one invited yet" not in panel
         # Not listed again: they are in the Outreach table just above (unanswered round, batch 2).
         assert "Asked directly" not in panel and "Northwind Foods" not in panel

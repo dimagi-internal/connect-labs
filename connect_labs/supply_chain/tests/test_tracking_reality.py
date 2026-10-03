@@ -351,7 +351,7 @@ class TestWhoseMoveItIs:
     def test_the_overview_says_waiting_on_us_not_arrival(self, da, world):
         contract, _ = _held_on_our_form_m(da, world)
         row = next(r for r in standing_rows(PROGRAM, TODAY) if r.contract_id == contract["id"])
-        assert row.waiting_on == "us: import permit"
+        assert row.waiting_on == "us: provide the import permit"
         assert any("held on us: import permit" in flag for flag in row.stale)
 
     def test_the_lateness_check_is_ours_to_answer_and_says_why(self, da, world):
@@ -388,7 +388,8 @@ class TestWhoseMoveItIs:
         contract, _ = _held_on_our_form_m(da, world)
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         assert 'data-testid="waiting-on-us"' in body and "import permit" in body
-        assert "the next move is ours" in body
+        # Objective state, with whose move defined on hover, not a verdict sentence (DDD 003 batch 1).
+        assert 'data-testid="waiting-on-us-help"' in body and "the next move is ours" not in body
 
 
 # ---- ruling 6: an advance is paid against the order, and its invoice acknowledges it

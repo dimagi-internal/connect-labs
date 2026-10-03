@@ -9,7 +9,8 @@ them out on a past date.
 {% endcomment %}
 {% comment %}scroll-mt-20: a link to #history lands with the heading clear of the fixed 4rem header.{% endcomment %}
 <section id="history" data-timeline data-testid="timeline" class="mt-8 scroll-mt-20">
-  <div class="flex flex-wrap items-baseline justify-between gap-2">
+  {% comment %}The filter sits beside the heading it filters, not at the far edge of the page.{% endcomment %}
+  <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
     <h2 class="{{ history_heading_class|default:'text-lg font-semibold text-gray-900' }} mb-2 scroll-mt-20">History</h2>
     {% if timeline %}
     {% comment %}Off by default. On, it hides every line no email stands behind -- invitations
@@ -43,7 +44,7 @@ them out on a past date.
           history reads the same way as the panels above it.{% endcomment %}
           {% ifchanged event.when|date:"Y-m-d" %}
           <li data-testid="timeline-day" class="pt-3 pb-0.5 border-t border-gray-200 first:border-t-0 first:pt-1">
-            <time class="whitespace-nowrap text-sm font-semibold text-gray-900 tabular-nums"
+            <time class="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-gray-900 tabular-nums"
                   datetime="{{ event.when|date:'Y-m-d' }}">{{ event.when|date:"j M Y" }}</time>
           </li>
           {% endifchanged %}
@@ -71,7 +72,7 @@ them out on a past date.
               names the sender and who recorded it, and the day heading carries the date. Only a
               replay is worth a word.{% endcomment %}
               {% if event.head.replayed_at %}<p data-testid="source-replayed" class="mt-1.5 text-sm text-gray-900">Forwarded again {{ event.head.replayed_at|date:"j M Y" }} — recorded once</p>{% endif %}
-              <blockquote data-testid="source-excerpt" class="mt-1 w-full rounded bg-white py-2 px-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ event.head.excerpt }}</blockquote>
+              <blockquote data-testid="source-excerpt" class="mt-1 w-full rounded-r border-l-4 border-gray-300 bg-white py-2 px-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ event.head.excerpt }}</blockquote>
             </details>
             {% comment %}One rail only -- the event's own, on its left. The records under it
             and the excerpt sit on the event's ground with no rail of their own: three

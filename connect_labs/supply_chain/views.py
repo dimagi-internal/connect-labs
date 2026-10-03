@@ -696,6 +696,8 @@ def _mark_invoices(invoices, invoice_above):
     advance and the invoice acknowledged it, which "Paid ... on 28 Jul" under
     an invoice of 21 Sep did not say.
     """
+    from decimal import Decimal
+
     from connect_labs.supply_chain.values import money_digits
 
     facts = (invoice_above or {}).get("facts") or {}
@@ -731,7 +733,12 @@ def _mark_invoices(invoices, invoice_above):
                         "currency": currency,
                         "billed": money_digits(line["billed"]),
                         "agreed": money_digits(line["agreed"]),
-                        "difference": money_digits(line["difference"]) if line.get("difference") is not None else "",
+                        # Each line's own difference, as the Total row has one: "+1.40", "+750.00".
+                        "difference": money_digits(
+                            line["difference"]
+                            if line.get("difference") is not None
+                            else Decimal(str(line["billed"])) - Decimal(str(line["agreed"]))
+                        ),
                     }
                 )
         invoice["above_agreed"] = marks
