@@ -8,7 +8,7 @@
     "held-on-us",
     "whose-move"
   ],
-  "fetched_at": "2026-10-03T12:27:25.593291+00:00",
+  "fetched_at": "2026-10-03T17:43:40.752056+00:00",
   "name": "supply-sophie-unanswered-round",
   "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program. 17 days ago she asked six suppliers to quote tender 2: half have never answered, despite two reminders, and she forwards whatever does arrive to an AI that records it. Sophie opens tender 2 and reads where it stands: collecting quotes past its deadline, three of six answered and three silent, each supplier's state, the suppliers it waits on with when she last chased each, and that the tender has not settled how import duties are handled. She opens the reminder drafted for Sahel, which says when Sahel was asked and last reminded, and records today's chase from the draft itself. Sahel answers with a quote; Sophie forwards it, and in the tender's history, turned to replies only, Sahel's email comes first: she opens it beside what the AI recorded from it, the reply dated the day it came in. On the comparison, side by side, no quote can be compared yet: the tender's import duty terms are not settled, so Harmattan's carriage-paid quote, which leaves the import to us, waits on them; Kanem has not stated its pack, and Sahel's quote is in euros with no exchange rate recorded. Back on the tender she settles import duty in its Terms box: we import, under the program's duty waiver. Northgate's three questions are still on her, and Reply opens an email drafted with the three questions, an answer to write under each. The comparison then costs the quotes we import under the waiver: Harmattan's becomes comparable, while Kanem's pack and Sahel's freight and exchange rate are still missing. Importing makes the paperwork hers, and tender 1 shows what that means: its order with Harmattan is at customs, held, waiting on us. Its status view shows nothing received yet, the invoice billed above the agreed price and the days it is late, and On us lists the documents owed to the forwarder and the invoice to review; the forwarder's email in the order's history says the trucks are held at the border on our import permit. Back on her overview, every tender and order reads its stage, its next move and whose move it is: tender 2 and the order are hers, and a RUSF tender she asked two days ago waits on its suppliers, with the moves on her counted against those waiting on suppliers.",
   "personas": {
@@ -191,5 +191,5 @@
     }
   ],
   "slug": "supply-sophie-unanswered-round",
-  "version": 25
+  "version": 27
 }
