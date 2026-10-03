@@ -60,6 +60,8 @@ def invited(da, rutf):
             "lines": [{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}],
         },
     )
+    # Open: "awaiting a reply" counts the silent suppliers on rounds still being chased.
+    op(da, "tender_open", tender_id=tender["id"])
     outreach = op(
         da,
         "outreach_log",

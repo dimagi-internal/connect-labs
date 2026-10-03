@@ -275,6 +275,15 @@ class TenderDetailView(_Base):
                     in_reply[commitment_id] = {"anchor": d["anchor"], "to": d["supplier_name"]}
         for c in context.get("owed") or []:
             c["in_draft"] = in_reply.get(c.get("id"))
+            # Written into a reply that has not gone yet: drafted, not answered.
+            c["answer_drafted"] = bool(c["in_draft"]) and not c.get("open") and not c.get("reply_sent_on")
+        # How the round's import duties are handled, and who settled them. The
+        # line an answer just set is marked new, like the cell a form changed.
+        if tender.get("duty_terms"):
+            from connect_labs.supply_chain.history.timeline import duty_terms_set_by
+
+            context["duty_terms_set_by"] = duty_terms_set_by(tender_id, program_id=_access(self.request).program_id)
+        context["duty_terms_changed"] = self.request.GET.get("duty_terms") == "changed"
         context["drafts_breakdown"] = _drafts_breakdown((context["drafts"] or {}).get("drafts") or [])
         context["quotes"] = self.op("quote_list", tender_id=tender_id)
         # Each quote's trade item, by name and -- for a kit -- contents. Three
@@ -1186,6 +1195,20 @@ class TenderCloseView(OperationActionView):
         return reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]])
 
 
+class ReplySentView(OperationActionView):
+    """The reply carrying these answers went out: drafted answers become Answered."""
+
+    operation = "commitment_reply_sent"
+    success_message = "Reply marked sent: its answers now read as answered."
+
+    def fixed(self, **kwargs):
+        ids = [int(pk) for pk in self.request.POST.getlist("commitment_id") if str(pk).isdigit()]
+        return {"commitment_ids": ids}
+
+    def redirect_to(self, **kwargs):
+        return reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]]) + "#owed"
+
+
 class OutreachLogView(OperationFormView):
     operation = "outreach_log"
     form_class = OutreachForm
@@ -1657,6 +1680,13 @@ class CommitmentResolveView(OperationFormView):
             raise Http404(f"nothing owed with id {self.kwargs['commitment_id']} in this program")
         return found
 
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        # Duty terms are a round's: a promise on an order has none to set.
+        if not self.commitment().tender_id or self.commitment().kind != "question":
+            form.fields.pop("duty_terms", None)
+        return form
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         commitment = self.commitment()
@@ -1676,5 +1706,9 @@ class CommitmentResolveView(OperationFormView):
         return self._back()
 
     def redirect_to(self, result):
-        # To what we owe, with the row just resolved picked out.
-        return _changed(self._back(), f"commitment-{self.commitment().pk}", "owed")
+        # To what we owe, with the row just resolved picked out -- and, when the
+        # answer settled the round's duty terms, that line marked new as well.
+        url = _changed(self._back(), f"commitment-{self.commitment().pk}", "owed")
+        if (result or {}).get("tender_duty_terms"):
+            url = url.replace("#owed", "&duty_terms=changed#owed")
+        return url

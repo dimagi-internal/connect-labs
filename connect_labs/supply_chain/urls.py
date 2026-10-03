@@ -149,6 +149,11 @@ urlpatterns = [
         name="procurement_tender_close",
     ),
     path(
+        "procurement/tenders/<int:tender_id>/reply-sent/",
+        procurement_views.ReplySentView.as_view(),
+        name="procurement_reply_sent",
+    ),
+    path(
         "procurement/tenders/<int:tender_id>/invite/",
         procurement_views.OutreachLogView.as_view(),
         name="procurement_outreach_log",

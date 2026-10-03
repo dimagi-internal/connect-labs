@@ -23,6 +23,7 @@ history, not a veto.
 from datetime import date
 
 from django.db import transaction
+from django.utils import timezone
 
 from connect_labs.supply_chain.models import (
     Award,
@@ -132,9 +133,53 @@ class ProcurementRepositoryMixin:
         if found is None:
             raise ValueError(f"tender {tender_id} not found")
         data = _listing(data, tender=found)
+        # Duty terms go through their own setter, which stamps the day they
+        # were settled -- the edit page and an answer set them the same way.
+        data = dict(data)
+        duty = {key: data.pop(key) for key in ("duty_terms", "duty_estimate_percent") if key in data}
         for key, value in _columns(Tender, _delivery(data)).items():
             setattr(found, key, value)
         found.save()
+        if duty:
+            return self.set_tender_duty_terms(
+                tender_id, duty.get("duty_terms", found.duty_terms), duty.get("duty_estimate_percent")
+            )
+        return _fresh(found)
+
+    def set_tender_duty_terms(self, tender_id, duty_terms, duty_estimate_percent=None, on=None):
+        """How import duties are handled for the round. Idempotent: the same terms again change nothing.
+
+        The day they were set is kept, so the page can say "set 2 Oct by
+        Sophie" (who, from the revision). Clearing them to "" un-settles the
+        round. An estimate only means something when we pay the duty; it is
+        kept as given otherwise, and ignored.
+        """
+        from decimal import Decimal, InvalidOperation
+
+        from connect_labs.supply_chain import records
+        from connect_labs.supply_chain.data_access import _fresh
+
+        found = self.get_tender(tender_id)
+        if found is None:
+            raise ValueError(f"tender {tender_id} not found")
+        duty_terms = duty_terms or ""
+        if duty_terms not in records.DUTY_TERMS:
+            raise ValueError(f"duty_terms must be one of {', '.join(repr(t) for t in records.DUTY_TERMS)}")
+        estimate = found.duty_estimate_percent
+        if duty_estimate_percent not in (None, ""):
+            try:
+                estimate = Decimal(str(duty_estimate_percent))
+            except InvalidOperation as exc:
+                raise ValueError(f"duty_estimate_percent {duty_estimate_percent!r} is not a number") from exc
+            if estimate < 0:
+                raise ValueError("duty_estimate_percent cannot be negative")
+        if found.duty_terms == duty_terms and found.duty_estimate_percent == estimate:
+            return _fresh(found)
+        day = date.fromisoformat(on) if isinstance(on, str) else (on or timezone.localdate())
+        found.duty_terms = duty_terms
+        found.duty_estimate_percent = estimate
+        found.duty_terms_set_on = day if duty_terms else None
+        found.save(update_fields=["duty_terms", "duty_estimate_percent", "duty_terms_set_on", "updated_at"])
         return _fresh(found)
 
     def open_tender(self, tender_id):
@@ -467,6 +512,28 @@ class ProcurementRepositoryMixin:
         found.resolution = resolution
         found.save(update_fields=["resolved_on", "resolution", "updated_at"])
         return _fresh(found)
+
+    def mark_reply_sent(self, commitment_ids, sent_on=None):
+        """The reply carrying these answers went out: each answered question becomes Answered.
+
+        Idempotent: one already marked keeps its first day. An open question
+        is refused -- a reply cannot have carried an answer nobody wrote.
+        """
+        from connect_labs.supply_chain.data_access import _fresh
+
+        day = date.fromisoformat(sent_on) if isinstance(sent_on, str) else (sent_on or timezone.localdate())
+        out = []
+        for commitment_id in commitment_ids:
+            found = self.get_commitment(commitment_id)
+            if found is None:
+                raise ValueError(f"commitment {commitment_id} not found")
+            if found.is_open:
+                raise ValueError(f"commitment {commitment_id} has no answer yet; mark it answered first")
+            if found.reply_sent_on is None:
+                found.reply_sent_on = day
+                found.save(update_fields=["reply_sent_on", "updated_at"])
+            out.append(_fresh(found))
+        return out
 
     # ---- awards ---------------------------------------------------------
 
