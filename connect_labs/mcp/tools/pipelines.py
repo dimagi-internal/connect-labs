@@ -283,6 +283,25 @@ def _validate_pipeline_schema(schema: dict) -> None:
             )
 
 
+def _authorize_drive_source(
+    schema: dict, opportunity_id: int, user, previous_schema=None, force=False, *, pipeline_id=None
+) -> dict:
+    """Settle a gdrive data_source's authorization before save/preview; see gdrive_fetcher."""
+    from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import (
+        GDriveSourceError,
+        authorize_schema_drive_source,
+    )
+
+    try:
+        return authorize_schema_drive_source(
+            schema, opportunity_id, user, previous_schema, force, pipeline_id=pipeline_id
+        )
+    except GDriveSourceError as e:
+        raise MCPToolError("PERMISSION_DENIED", str(e))
+    except ValueError as e:
+        raise MCPToolError("INVALID_SCHEMA", str(e))
+
+
 @register(
     name="pipeline_update_schema",
     description=(
@@ -295,7 +314,12 @@ def _validate_pipeline_schema(schema: dict) -> None:
         "MCP (connect_labs) intentionally has no CommCare HQ API key, so "
         "it cannot resolve paths itself. Wrong paths silently extract "
         "null; callers then see all-null columns in pipeline_preview, "
-        "which also reports them in `fields_all_null`."
+        "which also reports them in `fields_all_null`.\n\n"
+        "A `gdrive` data_source (see WORKFLOW_REFERENCE.md, Google Drive sources) is "
+        "authorized here: setting or changing its file_id/folder_id/file_pattern needs "
+        "Dimagi staff and stamps it for this opportunity. Re-saving an unchanged target "
+        "keeps its stamp; pass authorize_drive_source=true to authorize an unchanged, "
+        "unstamped target deliberately."
     ),
     input_schema={
         "type": "object",
@@ -306,6 +330,7 @@ def _validate_pipeline_schema(schema: dict) -> None:
             "expected_version": {"type": "integer"},
             "name": {"type": "string"},
             "description": {"type": "string"},
+            "authorize_drive_source": {"type": "boolean", "default": False},
         },
         "required": ["pipeline_id", "opportunity_id", "schema", "expected_version"],
         "additionalProperties": False,
@@ -320,6 +345,7 @@ def pipeline_update_schema(
     expected_version: int,
     name: str = None,
     description: str = None,
+    authorize_drive_source: bool = False,
 ):
     _validate_pipeline_schema(schema)
 
@@ -339,6 +365,14 @@ def pipeline_update_schema(
                 details={"server_version": current_version, "expected": expected_version},
             )
 
+        schema = _authorize_drive_source(
+            schema,
+            opportunity_id,
+            user,
+            previous_schema=current.schema,
+            force=authorize_drive_source,
+            pipeline_id=pipeline_id,
+        )
         updated = pda.update_definition(
             definition_id=pipeline_id,
             name=name,
@@ -352,6 +386,51 @@ def pipeline_update_schema(
             "_version_before": expected_version,
             "_version_after": new_version,
         }
+    finally:
+        if hasattr(pda, "close"):
+            pda.close()
+
+
+@register(
+    name="pipeline_create",
+    description=(
+        "Create a pipeline definition in an opportunity from a schema, returning its id. Attach it "
+        "to a workflow with workflow_add_pipeline_source. A `gdrive` data_source (see "
+        "WORKFLOW_REFERENCE.md, Google Drive sources) needs Dimagi staff and a target inside the "
+        "workflow-data folder; it is authorized for the new pipeline as part of the create."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "opportunity_id": {"type": "integer"},
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+            "schema": {"type": "object"},
+        },
+        "required": ["opportunity_id", "name", "schema"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def pipeline_create(user, opportunity_id: int, name: str, schema: dict, description: str = ""):
+    _validate_pipeline_schema(schema)
+    is_drive = (schema.get("data_source") or {}).get("type") == "gdrive"
+    if is_drive:
+        # Refuse BEFORE writing anything: staff, shape and containment are all checked
+        # by authorizing once against a placeholder id; the real stamp needs the new id.
+        _authorize_drive_source(schema, opportunity_id, user, pipeline_id=0)
+        source = {k: v for k, v in schema["data_source"].items() if k != "authorization"}
+        schema = {**schema, "data_source": source}
+
+    token = require_connect_token(user)
+    pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        created = pda.create_definition(name=name, description=description, schema=schema)
+        version = created.version
+        if is_drive:
+            stamped = _authorize_drive_source(schema, opportunity_id, user, pipeline_id=created.id)
+            version = pda.update_definition(definition_id=created.id, schema=stamped).version
+        return {"pipeline_id": created.id, "version": version}
     finally:
         if hasattr(pda, "close"):
             pda.close()
@@ -474,6 +553,17 @@ def pipeline_preview(
         if definition is None:
             raise MCPToolError("NOT_FOUND", f"No pipeline with id {pipeline_id}")
 
+        if schema_override is not None:
+            # Against the SAVED schema: an unchanged Drive target previews under its
+            # stored stamp; a new one needs Dimagi staff (stamped for this preview only).
+            schema_override = _authorize_drive_source(
+                schema_override,
+                opportunity_id,
+                user,
+                previous_schema=(definition.data or {}).get("schema"),
+                pipeline_id=pipeline_id,
+            )
+
         # Execution schema used for error-hint generation (override wins when
         # provided; otherwise the saved schema).
         error_hint_schema = schema_override if schema_override is not None else (definition.data or {}).get("schema")
@@ -525,6 +615,11 @@ def pipeline_preview(
             # UPSTREAM_ERROR and can't tell that the problem is structural
             # (the pipeline simply cannot run via MCP today) rather than a
             # transient failure worth retrying.
+            if "Google Drive source: " in first_error:
+                # The user's to fix (authorize, share, membership, file shape) -- not an
+                # upstream failure, and no SQL hint applies.
+                denied = any(m in first_error for m in ("authorized", "not a member", "who is reading"))
+                raise MCPToolError("PERMISSION_DENIED" if denied else "BAD_REQUEST", first_error)
             if "headless context" in first_error or "cchq_forms" in first_error.lower():
                 raise MCPToolError(
                     "UPSTREAM_ERROR",

@@ -4457,6 +4457,49 @@ def update_pipeline_schema_api(request, definition_id):
             return JsonResponse({"error": "schema is required"}, status=400)
 
         data_access = PipelineDataAccess(request=request)
+
+        if isinstance(schema, dict) and (schema.get("data_source") or {}).get("type") == "gdrive":
+            from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import (
+                GDriveSourceError,
+                authorize_schema_drive_source,
+            )
+
+            opportunity_id = getattr(request, "labs_context", {}).get("opportunity_id")
+            if not opportunity_id:
+                data_access.close()
+                return JsonResponse({"error": "A Google Drive source needs an opportunity context"}, status=400)
+            stored = data_access.get_definition(definition_id)
+            try:
+                # Against the stored schema, so a re-save keeps an unchanged target's
+                # stamp and only a new/changed target needs (and gets) a staff stamp.
+                schema = authorize_schema_drive_source(
+                    schema,
+                    opportunity_id,
+                    request.user,
+                    previous_schema=stored.schema if stored else None,
+                    pipeline_id=int(definition_id),
+                )
+            except GDriveSourceError:
+                # Fixed messages: exception text is not echoed to the browser.
+                logger.info("Refused Drive source for pipeline %s", definition_id, exc_info=True)
+                data_access.close()
+                return JsonResponse(
+                    {
+                        "error": (
+                            "This Google Drive source cannot be authorized: only Dimagi staff can set one, "
+                            "and it must be inside the shared workflow-data folder."
+                        )
+                    },
+                    status=403,
+                )
+            except ValueError:
+                logger.info("Invalid Drive source for pipeline %s", definition_id, exc_info=True)
+                data_access.close()
+                return JsonResponse(
+                    {"error": "Invalid Google Drive data_source: set exactly one of file_id or folder_id."},
+                    status=400,
+                )
+
         updated = data_access.update_definition(
             definition_id,
             name=name,

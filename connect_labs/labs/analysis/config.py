@@ -219,6 +219,8 @@ class DataSourceConfig:
               "connect_export" fetches from a Connect production export endpoint
               (e.g. audit_reports, audit_report_entries, assigned_tasks).
               "cchq_cases" fetches from CommCare HQ Case API v2 (e.g. work-area cases).
+              "gdrive" reads tabular files (CSV, Google Sheet, JSON array) from Google
+              Drive with the server's service account. See backends/sql/gdrive_fetcher.py.
         form_name: (cchq_forms only) Form name for xmlns discovery,
                    e.g., "Register Mother", "Gold Standard Visit Checklist"
         app_id: (cchq_forms only) Explicit CommCare app ID.
@@ -251,6 +253,18 @@ class DataSourceConfig:
             cchq_forms, app_id must also be set explicitly when domain is set
             (app_id_source="opportunity" has no opportunity-linked app to
             resolve against a domain the opportunity doesn't own).
+        file_id: (gdrive only) One Drive file to read. Give this OR folder_id.
+        folder_id: (gdrive only) A Drive folder; every file in it whose name matches
+            file_pattern is read and the rows are concatenated.
+        file_pattern: (gdrive only) fnmatch pattern over file names in folder_id,
+            e.g. "answers_scored_*.csv". Defaults to every readable file.
+        username_column: (gdrive only) Column whose value becomes the row's
+            username, so grouping_key "username" works. Optional.
+        date_column: (gdrive only) Column whose value becomes visit_date. Optional.
+        null_values: (gdrive only) Cell values read as null. Defaults to [""].
+        authorization: (gdrive only) Stamped by the server when a Dimagi staff
+            member saves the source; the fetcher refuses a source without a
+            valid one. Never written by hand.
     """
 
     type: str = "connect_csv"
@@ -264,13 +278,20 @@ class DataSourceConfig:
     case_type: str = ""
     form_lookback_days: int = 0
     domain: str = ""
+    file_id: str = ""
+    folder_id: str = ""
+    file_pattern: str = ""
+    username_column: str = ""
+    date_column: str = ""
+    null_values: list = field(default_factory=lambda: [""])
+    authorization: dict = field(default_factory=dict)
     # (ocs_sessions only) A specific person's OCS OAuth access token, read as a
     # Bearer instead of a team key: set for an MCP caller (ocs_tokens.current_mcp_caller)
     # so they read only sessions they can see in OCS. Never stored, never hashed.
     bearer_token: str = field(default="", repr=False)
 
     def __post_init__(self):
-        if self.type not in ("connect_csv", "cchq_forms", "ocs_sessions", "connect_export", "cchq_cases"):
+        if self.type not in ("connect_csv", "cchq_forms", "ocs_sessions", "connect_export", "cchq_cases", "gdrive"):
             raise ValueError(f"Invalid data source type: {self.type}")
         # One path SEGMENT (audit_reports, assigned_tasks, ...). The fetcher builds
         # f".../export/opportunity/{opp}/{endpoint}/" and httpx collapses "..", so a
@@ -279,6 +300,21 @@ class DataSourceConfig:
             raise ValueError(
                 f"data_source.endpoint must be a single export name like 'audit_reports'; got {self.endpoint!r}"
             )
+        if self.type == "gdrive":
+            if bool(self.file_id) == bool(self.folder_id):
+                raise ValueError("a gdrive data_source needs exactly one of file_id or folder_id")
+            for name in ("file_id", "folder_id"):
+                value = getattr(self, name)
+                if value and not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+                    raise ValueError(f"data_source.{name} must be a Drive id; got {value!r}")
+            if self.file_pattern and not self.folder_id:
+                raise ValueError("data_source.file_pattern only applies with folder_id")
+            if not isinstance(self.null_values, list) or not all(isinstance(v, str) for v in self.null_values):
+                raise ValueError('data_source.null_values must be a list of strings, e.g. ["", "NA"]')
+            if not isinstance(self.authorization, dict):
+                raise ValueError("data_source.authorization is stamped by the server; do not set it by hand")
+        elif self.file_id or self.folder_id:
+            raise ValueError("data_source.file_id / folder_id are only valid for type='gdrive'")
         if self.domain and self.type not in ("cchq_forms", "cchq_cases"):
             raise ValueError("data_source.domain is only valid for type='cchq_forms' or 'cchq_cases'")
         if self.domain and self.type == "cchq_forms" and not self.app_id:

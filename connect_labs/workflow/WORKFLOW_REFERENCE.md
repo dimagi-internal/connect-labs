@@ -227,7 +227,7 @@ A pipeline schema defines how raw form submission data is extracted, transformed
 ```python
 {
     "data_source": {
-        "type": "connect_csv",            # or "cchq_forms"
+        "type": "connect_csv",            # or "cchq_forms", "ocs_sessions", "connect_export", "cchq_cases", "gdrive"
         "form_name": "Register Mother",   # cchq_forms only: form name for xmlns lookup
         "app_id_source": "opportunity",   # cchq_forms only: derive app_id from opportunity
         "app_id": "",                     # cchq_forms only: explicit app ID
@@ -254,6 +254,53 @@ A pipeline schema defines how raw form submission data is extracted, transformed
 | `app_id_source` | `"opportunity"` | (cchq_forms only) Derive the CommCare app ID from opportunity metadata.                                                       |
 | `app_id`        | string          | (cchq_forms only) Explicit CommCare application ID.                                                                           |
 | `gs_app_id`     | string          | (cchq_forms only) Explicit Gold Standard supervisor app ID.                                                                   |
+| `type`          | `"gdrive"`      | Read CSV / Google Sheet / JSON files from Google Drive. See [Google Drive sources](#google-drive-sources).                    |
+
+#### Google Drive sources
+
+`"type": "gdrive"` reads tabular files from Drive with the server's service account — the way to
+feed a workflow with outputs produced outside labs (an offline analysis pipeline, a tracker sheet).
+Each row becomes one visit-shaped row; its cells are under `row.*` and the file it came from under
+`file.*` (`file.name`, `file.id`, `file.modified`), so field paths read `"row.quality_score"`.
+
+```python
+"data_source": {
+    "type": "gdrive",
+    "folder_id": "11Xa7HWLWoxHFAhuAfKYNsBObhq1nA7U6",   # OR "file_id": "<one file>"
+    "file_pattern": "answers_scored_*.csv",              # folder only: fnmatch over file names
+    "username_column": "participant_id",                 # optional: becomes `username` (grouping_key)
+    "date_column": "session_date",                       # optional: becomes `visit_date`
+    "null_values": ["", "NA"],                           # optional: cells read as null (default [""])
+}
+```
+
+- **Files:** CSV/TSV, a Google Sheet (first sheet, exported as CSV), or JSON (an array of objects,
+  or an object holding one under `rows`/`data`). A folder's matching files are concatenated in name
+  order; ≤ 100 files, ≤ 50 MB per file, ≤ 500,000 rows. CSV cells arrive as strings — use a
+  `transform` (`int`, `float`) for numbers.
+- **Where the data must live:** only files and folders under a workflow-data root
+  (`LABS_WORKFLOW_GDRIVE_ROOT_IDS`) can be read. Copy data a workflow should see into that tree;
+  a source pointing anywhere else is refused when it is saved and again on every read (it is
+  checked by walking the item's Drive parents, so moving a file out of the tree cuts it off). With
+  no root configured, Drive sources are off.
+- **Sharing:** the root is shared with the labs service account
+  (`connect-labs-sa@connect-labs.iam.gserviceaccount.com`); anything copied under it is readable.
+  Drive is read with a read-only token.
+- **Authorization:** only Dimagi staff can point a pipeline at Drive. Setting or changing the
+  target (`file_id`/`folder_id`/`file_pattern`) through `pipeline_update_schema` or the pipeline
+  editor needs staff and stamps `data_source.authorization`, bound to that opportunity, that
+  pipeline and that exact target (a stamp copied into another pipeline does not verify).
+  `pipeline_create` stamps a new pipeline's source as it creates it. Re-saving an unchanged target
+  keeps its stamp, so anyone may edit the fields of an authorized pipeline. A target stored some
+  other way (e.g. a template sync) stays unstamped until a staff member passes
+  `authorize_drive_source: true` to `pipeline_update_schema`. Never write `authorization` by hand.
+- **Who can read it:** every read, fresh or cached, needs a valid stamp for the opportunity AND a
+  caller (the Connect token the pipeline runs with) who is a member of that opportunity. Members
+  can read every column of every matching file, including files added to the folder later, so
+  point the source at a folder that holds only what that opportunity may see.
+- **Scope limits:** a source is authorized per opportunity, so a multi-opp fan-out reads Drive only
+  for the opportunity it was authorized for, and a program-scoped pipeline cannot use Drive.
+- **Freshness:** rows are cached for the pipeline's TTL (1 hour); a forced refresh re-reads Drive.
 
 #### `grouping_key`
 
@@ -1219,7 +1266,7 @@ Before deploying a new template:
 - [ ] All field `path`/`paths` values verified via MCP or manual CommCare inspection
 - [ ] `terminal_stage` matches your data access pattern (visit_level for per-visit, aggregated for per-group)
 - [ ] `linking_field` set if doing visit_level with entity grouping by a computed field
-- [ ] `data_source.type` is correct: `connect_csv` for Connect data, `cchq_forms` for HQ forms
+- [ ] `data_source.type` is correct: `connect_csv` for Connect data, `cchq_forms` for HQ forms, `gdrive` for Drive files (saved by Dimagi staff)
 - [ ] `RENDER_CODE` uses `var` declarations (not `const`/`let`) for maximum compatibility
 - [ ] `RENDER_CODE` function is named `WorkflowUI` (not a variable assignment)
 - [ ] `RENDER_CODE` accesses custom fields at row top-level (e.g., `row.weight`, not `row.computed.weight`)
