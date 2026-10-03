@@ -36,7 +36,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
   <h2 class="text-base font-semibold text-gray-900 mb-2">
     Where everything stands
     <span class="normal-case tracking-normal font-normal text-gray-600">
-      — newest change first
+      — newest change first{% if standing_our_moves and not supply_as_of %} · <span data-testid="standing-our-moves">{{ standing_our_moves }} move{{ standing_our_moves|pluralize }} ours, listed under Us</span>{% endif %}
     </span>
   </h2>
   {% if supply_as_of %}
@@ -210,6 +210,7 @@ figures, and the catalogue is where our own gaps get closed.
   <h2 class="text-sm font-semibold text-gray-900 mt-8 mb-1">Needs an answer</h2>
   <p class="text-xs text-gray-600 mb-3">
     Worked out from the records each time this page opens, so it is the state now.
+    <span data-testid="checks-count-note">Counted per open check on a record, not per move: the moves that are ours are the Us lines under Where everything stands.</span>
     <a class="text-brand-indigo hover:underline ml-1" href="{% url 'supply_chain:checks' %}">Read every check, with its facts</a>
   </p>
   <div class="grid gap-3 sm:grid-cols-3 mb-2">
@@ -223,7 +224,7 @@ figures, and the catalogue is where our own gaps get closed.
                        group-hover:text-brand-deep-purple">{{ group.items|length }}</span>
           <span>
             <span class="block text-sm text-gray-900">{{ group.headline }}</span>
-            <span class="block text-xs text-gray-600">{{ group.audience|audience_label }}</span>
+            <span class="block text-xs text-gray-600">{{ group.audience|audience_label }} · open check{{ group.items|length|pluralize }}</span>
           </span>
         </a>
       {% endif %}

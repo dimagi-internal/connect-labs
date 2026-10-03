@@ -57,9 +57,11 @@ class TestTheDutyLine:
         if 'data-testid="card-duty"' in body:
             line = _text(re.search(r'data-testid="card-duty".*?</p>', body, re.S).group(0))
             assert "Duty: waived (our import)" in line
-            # Since DDD 003 batch 7 the answer is cited on a provenance line of its own.
-            source = _text(re.search(r'data-testid="card-duty-provenance".*?</p>', body, re.S).group(0))
+            # Since DDD 005 batch 3 the card cites the answer as a short "(round terms)" link on
+            # its Duty line; the terms panel at the top says where they came from.
+            source = re.search(r'<a data-testid="card-duty-provenance"[^>]*>', body).group(0)
             assert "from your answer to" in source
+            assert "(round terms)" in line
             # Since DDD 003 batch 8 the terms are stated once, at the top of the comparison
             # (the Round terms line above the cards repeated them), and the day is on the card.
             assert 'data-testid="needs-info-duty-terms"' not in body

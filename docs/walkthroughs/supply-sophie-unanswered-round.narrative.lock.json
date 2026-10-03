@@ -93,7 +93,7 @@
         }
       ],
       "id": "sahel-finally-answers",
-      "narrative": "Sahel answers the reminder with a quote and Sophie forwards it to the AI. She lands on the round's history, turned to replies only, where Sahel's email comes first. She opens Sahel's own email and reads who wrote it, the excerpt of what Sahel wrote, and below it what the AI recorded from it, the reply dated the day it came in, so she can check the record against Sahel's words.",
+      "narrative": "Sahel answers the reminder with a quote and Sophie forwards it to the AI. She lands on the round's history, turned to replies only, where Sahel's email comes first. She opens Sahel's own email and reads who wrote it and that it was forwarded in, with the time it was recorded, the excerpt of what Sahel wrote, and below it what the AI recorded from it, the reply dated the day it came in, so she can check the record against Sahel's words.",
       "persona": "sophie",
       "provenance": "S3",
       "title": "Sahel finally answers, and she opens the email"
@@ -112,7 +112,7 @@
         }
       ],
       "id": "whats-still-missing",
-      "narrative": "Sophie opens the comparison: none of the three quotes can be compared yet, and the first thing in the way is the round's own decision. Harmattan quotes carriage paid to Kano and Sahel quotes ex works, so on both the import is ours: their duty is ours to cost and waits on the round's unsettled duty terms, whatever duty figure a supplier wrote, never on a question to them, so Harmattan's, held by nothing else, sits under the round's decision apart from the suppliers who still owe a fact. What the suppliers still owe is named on each card: Kanem has not stated how many sachets are in a carton, and Sahel's new quote gives no freight figure; its price is in euros, per carton as well as per sachet, with no exchange rate recorded yet to put it in dollars.",
+      "narrative": "Sophie opens the comparison: none of the three quotes can be compared yet, and the first thing in the way is the round's own decision. Harmattan quotes carriage paid to Kano and Sahel quotes ex works, so on both the import is ours: their duty is ours to cost and waits on the round's unsettled duty terms, whatever duty figure a supplier wrote, never on a question to them, so Harmattan's, held by nothing else, sits under the round's decision apart from the suppliers who still owe a fact. What the suppliers still owe is named at the top, against each supplier: Kanem has not stated how many sachets are in a carton, and Sahel's new quote gives no freight figure; its price is in euros, per carton as well as per sachet, with no exchange rate recorded yet to put it in dollars.",
       "persona": "sophie",
       "provenance": "S4",
       "title": "No quote can be compared until the round decides"
@@ -132,11 +132,11 @@
         {
           "description": "After the answer sets the round's duty terms, the comparison's duty terms note reads the waiver, and every quote whose Incoterm leaves the import to us has its duty settled: Harmattan's quote has the round's first landed total, with its duty waived, and Sahel's Duty line reads waived (our import), citing the answer that set the round's terms, with duty no longer among its blockers.",
           "id": "comparison-costs-under-waiver",
-          "verify": "Playwright: [data-testid=comparison-duty-terms] contains 'we import, under the program's duty waiver'; the banner reads '1 of 3 quotes can be compared'; Harmattan Therapeutics is under Comparable and its [data-testid=landed-duty] reads 'duty waived (our import)'; Sahel Nutrition Industries' Needs info card [data-testid=card-duty] contains 'Duty: waived (our import)' and its [data-testid=card-duty-provenance] contains 'from your answer to Northgate Commodities', and no card's blockers include 'Import duty is ours to cost'"
+          "verify": "Playwright: [data-testid=comparison-duty-terms] contains 'we import, under the program's duty waiver'; the banner reads '1 of 3 quotes can be compared'; Harmattan Therapeutics is under Comparable and its [data-testid=landed-duty] reads 'duty waived (our import)'; Sahel Nutrition Industries' Needs info card [data-testid=card-duty] contains 'Duty: waived (our import)' and its [data-testid=card-duty-provenance] reads '(round terms)' and links to her answer to Northgate Commodities, while [data-testid=duty-terms-source] reads 'from your answer to a question from Northgate Commodities', and no card's blockers include 'Import duty is ours to cost'"
         }
       ],
       "id": "what-we-owe-northgate",
-      "narrative": "Back on the round, Sophie answers Northgate's question about who imports, for her reply to Northgate: we import, under the program's duty waiver. She marks that answer as setting the round's import duty terms, then opens the round's comparison again: duty now reads waived (our import) on every quote that leaves the import to us, so Harmattan's quote has the round's first landed total, its price and freight with duty waived, and Sahel's reads duty waived, the round's terms set from her answer to Northgate, with only its exchange rate and freight left; Kanem's delivered-duty-paid quote, where the supplier imports, keeps its own duty.",
+      "narrative": "Back on the round, Sophie answers Northgate's question about who imports, for her reply to Northgate: we import, under the program's duty waiver. She marks that answer as setting the round's import duty terms, then opens the round's comparison again: duty now reads waived (our import) on every quote that leaves the import to us, so Harmattan's quote has the round's first landed total, its quoted price and freight with duty waived, and Sahel's reads duty waived under the round's terms, which the top of the page says were set from her answer to Northgate, with only its exchange rate and freight left; Kanem's delivered-duty-paid quote, where the supplier imports, keeps its own duty.",
       "persona": "sophie",
       "provenance": "S5",
       "title": "One answer to Northgate settles how duty is costed"
@@ -160,7 +160,7 @@
         }
       ],
       "id": "held-on-us",
-      "narrative": "Importing makes the paperwork hers, and round 1 shows what that means: its 2,000 cartons are still not in Kano. The order with Harmattan says it is waiting on us for the import permit; further down, what we owe the forwarder lists the import permit and the customs declaration, each to mark provided, Harmattan's invoice is flagged above the agreed price, billed against agreed, and below it the forwarder's message in the order's history says the trucks are held at the border until the permit is lodged.",
+      "narrative": "Importing makes the paperwork hers, and round 1 shows what that means: its 2,000 cartons are still not in Kano. The order with Harmattan is waiting on us for the import permit: what we owe to clear the shipment, through the forwarder, lists the import permit and the customs declaration, each to mark provided, Harmattan's invoice is flagged above the agreed price, billed against agreed, and below it the forwarder's message in the order's history says the trucks are held at the border until the permit is lodged.",
       "persona": "sophie",
       "provenance": "S6",
       "title": "Round 1's order: held on our permit, billed high"

@@ -20,6 +20,9 @@ why_brief: supply-sophie-unanswered-round.why_brief.yaml
 scenes:
 - id: half-the-round-is-silent
   actions:
+  - kind: hold
+    note: a settle before the first wait_for, so the opening scene's before-frame is the painted round page, not a blank one still loading
+    seconds: 0.5
   - kind: wait_for
     target: text:Where the goods go
   - kind: hold
@@ -49,9 +52,9 @@ scenes:
     note: back to the top, so the held frame opens on the round's title, its status and duty-terms lines, and the whole Outreach table with its column headings
     value: top
   - kind: hover
-    note: park the cursor in the blank middle of the Outreach heading row, inside the header block, so hovering cannot scroll the page
+    note: park the cursor in the top bar's blank middle, off the page content; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
-    target: css:div:has(> h2#outreach)
+    target: css:header.fixed
   - kind: hold
     seconds: 1.5
   - kind: snapshot
@@ -103,9 +106,9 @@ scenes:
     seconds: 1.8
     target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=chase-date]
   - kind: hover
-    note: park the cursor on the To line's blank right, off the message, the facts row and the date field
+    note: park the cursor in the top bar's blank middle, off the message, the facts row and the date field
     seconds: 0.6
-    target: css:[data-testid=draft][data-supplier-id='${sahel_supplier_id}'] [data-testid=draft-to-line]
+    target: css:header.fixed
   - kind: hold
     note: the drafted reminder, open, with today's date ready to record
     seconds: 2.5
@@ -126,9 +129,9 @@ scenes:
     seconds: 2.0
     target: css:tr[data-changed] td:has-text('3rd reminder')
   - kind: hover
-    note: park the cursor in the blank middle of the Outreach heading row, clear of every button and of Sahel's row
+    note: park the cursor in the top bar's blank middle, clear of every button and of Sahel's row
     seconds: 0.6
-    target: css:div:has(> h2#outreach)
+    target: css:header.fixed
   - kind: hold
     seconds: 1.5
   - kind: snapshot
@@ -179,9 +182,9 @@ scenes:
     seconds: 1.8
     target: text:Replied with a quote on ${today_date}
   - kind: hover
-    note: park the cursor on the day row's blank middle, off the heading, the filter and Sahel's email
+    note: park the cursor in the top bar's blank middle, off the heading, the filter and Sahel's email
     seconds: 0.6
-    target: css:[data-testid=timeline-day]:visible
+    target: css:header.fixed
   - kind: hold
     seconds: 1.2
   - kind: snapshot
@@ -225,11 +228,11 @@ scenes:
     target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Kanem Foods Ltd') [data-testid=blockers]"
   - kind: scroll
     note: settle the page with the round's duty-terms line just under the top bar, so the duty terms, the banner with its missing-facts summary and the cards share one frame -- the frame scene 5 returns to
-    value: '302'
+    value: '310'
   - kind: hover
-    note: park the cursor on the Needs info heading's blank right, off the table and the cards; it is in view, so hovering cannot scroll the page
+    note: park the cursor in the top bar's blank middle, off the table and the cards; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
-    target: css:#needs-info h2
+    target: css:header.fixed
   - kind: hold
     seconds: 2.0
   - kind: snapshot
@@ -313,11 +316,11 @@ scenes:
     target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Kanem Foods Ltd') [data-testid=card-delivery-basis]"
   - kind: scroll
     note: the same frame as scene 4 -- the round's duty terms (now the waiver) just under the top bar, Harmattan's quote, the Needs info heading and Sahel's whole card, its round-terms blocker gone and its Duty line citing her answer to Northgate
-    value: '302'
+    value: '310'
   - kind: hover
-    note: park the cursor on the Needs info heading's blank right, off the table and every card; it is in view, so hovering cannot scroll the page
+    note: park the cursor in the top bar's blank middle, off the table and every card; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
-    target: css:#needs-info h2
+    target: css:header.fixed
   - kind: hold
     seconds: 2.0
   - kind: snapshot
@@ -351,12 +354,12 @@ scenes:
     seconds: 2.0
     target: testid:waiting-on-us
   - kind: scroll_to
-    note: down the page in the narration's order -- first what we owe the forwarder, the import permit and the customs declaration, each with Mark provided
-    target: text:What we owe them
+    note: down the page in the narration's order -- first what we owe to clear the shipment, via the forwarder, the import permit and the customs declaration, each with Mark provided
+    target: testid:owed-heading
   - kind: hover
     say: owe
     seconds: 2.0
-    target: text:What we owe them
+    target: testid:owed-heading
   - kind: scroll_to
     note: then the invoice's Freight line, the Invoices heading and its column headers whole above it
     target: "css:[data-testid=invoice-variance-table] tr:has([data-testid=above-agreed-tag]):has-text('Freight')"
@@ -381,12 +384,12 @@ scenes:
     note: the forwarder's email, centred and read
     seconds: 2.0
   - kind: scroll
-    note: settle the page with What we owe them just under the top bar -- the Form M and PAAR the forwarder asked for, each with Mark provided, the invoice billed against agreed, and the forwarder's email below
+    note: settle the page with What we owe just under the top bar -- the Form M and PAAR the forwarder asked for, each with Mark provided, the invoice billed against agreed, and the forwarder's email below
     value: '1330'
   - kind: hover
-    note: park the cursor in the blank middle of the Evidence heading row, off every heading, figure, action and the email; it is in view, so hovering cannot scroll the page
+    note: park the cursor in the top bar's blank middle, off every heading, figure, action and the email; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
-    target: css:div:has(> h3:has-text('Evidence'))
+    target: css:header.fixed
   - kind: hold
     seconds: 1.5
   concept_claim: The order says it is waiting on us for the import permit, with the
@@ -434,9 +437,9 @@ scenes:
     note: the close returns to the top of Where everything stands, its heading just under the top bar, so both rows' Waiting on cells -- round 2's Us, No reply and Missing facts, and the order's Us -- share the final frame
     value: '271'
   - kind: hover
-    note: park the cursor on the section heading's blank right, off the table
+    note: park the cursor in the top bar's blank middle, off the table
     seconds: 0.6
-    target: css:h2:has-text('Where everything stands')
+    target: css:header.fixed
   - kind: hold
     seconds: 2.0
   - kind: snapshot

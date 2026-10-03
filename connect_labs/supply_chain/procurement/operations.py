@@ -221,7 +221,9 @@ DEFAULT_REMINDER_INTERVAL_DAYS = 7
 
 # The order drafts are listed in: the order a round runs, then by name.
 # Deliberately not an urgency ranking (design doc section 22).
-_KIND_ORDER = {"reply": 0, "request": 1, "reminder": 2, "followup": 3}
+# A clarification of the round's terms comes last: it goes to every invited
+# supplier, so it never takes the place of a supplier's own reminder or follow-up.
+_KIND_ORDER = {"reply": 0, "request": 1, "reminder": 2, "followup": 3, "clarification": 4}
 
 
 @register_operation(
@@ -235,7 +237,10 @@ _KIND_ORDER = {"reply": 0, "request": 1, "reminder": 2, "followup": 3}
         "kind, subject, text, address and `why` it is due. No requests or reminders once the tender is "
         "closed or awarded; no follow-ups once it is awarded. And a `reply` to each supplier whose questions "
         "to us are still open (commitment_record), listing them for the person to answer -- at any stage, "
-        "because an answer owed does not lapse with the award. Writes nothing."
+        "because an answer owed does not lapse with the award. Once the round's import duty terms are set "
+        "(tender_set_duty_terms, or an answer that sets them), and while the round still takes quotes, a "
+        "`clarification` to every invited supplier stating those terms, so all quote on the same basis. "
+        "Writes nothing."
     ),
     input_schema=obj({"tender_id": ID, "today": _TODAY}, required=("tender_id",)),
 )
@@ -261,6 +266,8 @@ def tender_drafts_render(access, tender_id, today=None):
     # What we owe comes first and outlives the award: a supplier who asked us
     # something is owed an answer whether or not it won.
     drafts += _replies(access, tender, day, sender)
+    if accepting:
+        drafts += _clarifications(access, tender, sender)
     drafts.sort(key=lambda d: (_KIND_ORDER[d["kind"]], d["supplier_name"].lower(), d["commodity_slug"]))
 
     result = {
@@ -438,6 +445,79 @@ def _replies(access, tender, day, sender):
                 "commitment_ids": [q.pk for q in questions],
                 # The answers written in, which the reply carries once sent (commitment_reply_sent).
                 "answered_ids": [q.pk for q in questions if q.resolved_on is not None],
+            }
+        )
+    return drafts
+
+
+# What every invited supplier is told once the round's import duty terms are
+# set, per terms: how to quote, and the freight still wanted where we import.
+_CLARIFICATION_ASK = {
+    "buyer_waiver": (
+        "For this round we import, under the program's duty waiver; please quote excluding import duty "
+        "and state freight to {where}."
+    ),
+    "buyer_pays": (
+        "For this round we import and pay the import duty ourselves; please quote excluding import duty "
+        "and state freight to {where}."
+    ),
+    "supplier_ddp": (
+        "For this round the supplier delivers duty paid; please quote delivered duty paid to {where}, "
+        "with the import duty included."
+    ),
+}
+
+
+def _clarifications(access, tender, sender):
+    """A clarification of the round's import duty terms to every supplier invited to it.
+
+    An answer to one supplier ("we import, under the waiver") changes how every
+    quote on the round is costed, so every invited supplier is told -- not only
+    the one who asked.
+    """
+    template = _CLARIFICATION_ASK.get(tender.duty_terms or "")
+    if template is None:
+        return []
+    from connect_labs.supply_chain.history.timeline import duty_terms_answer
+    from connect_labs.supply_chain.values import destination_phrase
+
+    ask = template.format(where=destination_phrase(tender.delivery_points or []))
+    answer = duty_terms_answer(tender.pk, program_id=getattr(access, "program_id", None))
+    set_on = (answer or {}).get("on") or tender.duty_terms_set_on
+    why = "The round's import duty terms are set"
+    if set_on:
+        why += f" ({day_text(set_on)})"
+    if answer and answer.get("owed_to"):
+        why += f", from your answer to {answer['owed_to']}"
+    why += "; every invited supplier is told, so all quote on the same basis."
+    suppliers = {}
+    for row in access.list_outreach(tender_id=tender.pk):
+        suppliers.setdefault(row.supplier_id, row.supplier)
+    drafts = []
+    for supplier in suppliers.values():
+        if supplier is None:
+            continue
+        address = ""
+        for contact in getattr(supplier, "contacts", None) or []:
+            if isinstance(contact, dict) and contact.get("email"):
+                address = contact["email"]
+                break
+        text = (
+            f"Dear {supplier.name},\n\nA clarification on {tender.label}, sent to every supplier invited to "
+            f"quote: {ask}\n\nKind regards,\n{sender.name}"
+            + (f"\n{sender.organisation}" if sender.organisation else "")
+        )
+        drafts.append(
+            {
+                "kind": "clarification",
+                "supplier_id": supplier.pk,
+                "supplier_name": supplier.name,
+                "commodity_slug": "",
+                "subject": f"{tender.label} — clarification: import duty terms",
+                "text": text,
+                "to": address,
+                "why": why,
+                "duty_terms": tender.duty_terms,
             }
         )
     return drafts

@@ -728,7 +728,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
 {% endcomment %}
 {% if contract.consideration == "priced" or invoices %}
 <div class="flex items-baseline justify-between mt-6 mb-2">
-  <h3 id="owed" class="text-base font-semibold text-gray-900 scroll-mt-20">What we owe them{% if owed or owed_holds %} <span data-testid="owed-open-count" class="font-normal text-gray-600">— {{ owed_open_count }} open</span>{% endif %}</h3>
+  <h3 id="owed" data-testid="owed-heading" class="text-base font-semibold text-gray-900 scroll-mt-20">{% if owed_holds %}What we owe — to clear the shipment{% if owed_holds_via %} <span data-testid="owed-via" class="font-normal text-gray-700">(via {{ owed_holds_via }})</span>{% endif %}{% else %}What we owe them{% endif %}{% if owed or owed_holds %} <span data-testid="owed-open-count" class="font-normal text-gray-600">— {{ owed_open_count }} open</span>{% endif %}</h3>
   {% if not supply_as_of %}
   <a href="{% url 'supply_chain:contract_commitment_record' contract.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>

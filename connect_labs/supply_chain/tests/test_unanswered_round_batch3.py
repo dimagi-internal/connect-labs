@@ -228,7 +228,10 @@ class TestTheOrderPage:
         assert hold == "Import permit — the shipment is held until we provide it Mark provided"
         assert "?kind=import_permit" in owed
         assert "Nothing owed" not in owed
-        assert _text(re.search(r'<h3 id="owed".*?</h3>', body, re.S).group(0)) == "What we owe them — 1 open"
+        assert _text(re.search(r'<h3 id="owed".*?</h3>', body, re.S).group(0)) == (
+            # Since DDD 005 batch 3 the section names who the document goes through.
+            "What we owe — to clear the shipment (via Crescent Rehearsal Freight) — 1 open"
+        )
         banner = re.search(r'<div data-testid="waiting-on-us" class="([^"]*)"', body).group(1)
         assert "text-gray-900" in banner.split() and "text-message-warning-text" not in banner.split()
 

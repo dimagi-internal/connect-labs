@@ -967,3 +967,23 @@ def _order_state(
     else:
         waiting_on = "—"
     return stage, waiting_on, stale
+
+
+def our_moves(rows) -> int:
+    """How many moves are ours across the rows: every item under an "Us" line.
+
+    The overview's own count of what it lists as ours, so the heading above
+    the table and the lines in it cannot disagree. An order whose only owner
+    is us says it on one line ("us: provide the import permit; ..."), counted
+    item by item the same way.
+    """
+    heading = WAITING_ON_US.capitalize()
+    prefix = f"{WAITING_ON_US}: "
+    total = 0
+    for row in rows:
+        for line in row.waiting_lines or (row.waiting_on,):
+            if getattr(line, "heading", "") == heading and getattr(line, "lines", ()):
+                total += len(line.lines)
+            elif isinstance(line, str) and line.startswith(prefix):
+                total += len([part for part in line[len(prefix) :].split("; ") if part.strip()])
+    return total

@@ -1554,7 +1554,21 @@ def lead_in(line):
     if not sep or not head.strip():
         return escape(text)
     # "Us: import permit", with the same capitalised label as "No reply".
-    return mark_safe(f"<strong>{escape(head[:1].upper() + head[1:])}</strong>:{escape(rest)}")
+    return mark_safe(f"<strong>{escape(head[:1].upper() + head[1:])}</strong>:{nowrap_money(rest)}")
+
+
+_MONEY = re.compile(r"\b([A-Z]{3}) (\d[\d,]*(?:\.\d+)?)")
+
+
+@register.filter
+def nowrap_money(text):
+    """Escape `text`, keeping each "USD 3,550.00" on one line.
+
+    A narrow column broke an amount between its currency and its figure
+    ("(USD / 3,550.00 above)"). The words are unchanged; only the amount is
+    wrapped so it cannot split.
+    """
+    return mark_safe(_MONEY.sub(r'<span class="whitespace-nowrap">\1 \2</span>', str(escape(str(text or "")))))
 
 
 @register.filter
