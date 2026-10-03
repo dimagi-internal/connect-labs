@@ -541,6 +541,10 @@ def comparison_grid(tender, comparison: dict, quotes_by_id: dict, *, ai_quotes=(
         ("spec", "Specification", "checked"),
         ("landed", f"Landed per {pack_label}", "calculated"),
     ]
+    # Each cell names its quote, so a page (or a recorder) can find one quote's fact.
+    for key, *_ in facts:
+        for column, cell in zip(columns, cells[key]):
+            cell["quote_id"] = column["quote_id"]
     return {
         "quotes": columns,
         "rows": [
