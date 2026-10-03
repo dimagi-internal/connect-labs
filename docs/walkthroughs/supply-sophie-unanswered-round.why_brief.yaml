@@ -12,13 +12,12 @@ gaps:
   detail: The walkthrough has no off-camera step in which a silent supplier answers
     between the chase and the next scene; the AI must record that reply over the labs
     MCP with its source, so the record moves on camera without a seeded fake.
+  resolved: 'Shipped: seed.py --sahel-replies records Sahel''s emailed quote with
+    its source (quote_record + outreach_update carrying ref, excerpt and sender),
+    and the round''s history shows it with a Source email toggle and a Replies only
+    filter (connect_labs/templates/supply_chain/_timeline.html; tests in connect_labs/supply_chain/tests/test_unanswered_round_batch2.py
+    and test_unanswered_round_ddd002_batch3.py).'
   claim_ref: S3
-  resolved: 'Shipped: seed.py --sahel-replies records Sahel''s emailed quote with its
-    source (quote_record + outreach_update carrying ref, excerpt and sender), and the
-    round''s history shows it with a Source email toggle and a Replies only filter
-    (connect_labs/templates/supply_chain/_timeline.html; tests in
-    connect_labs/supply_chain/tests/test_unanswered_round_batch2.py and
-    test_unanswered_round_ddd002_batch3.py).'
   proposed_action: 'seed.py --sahel-replies: the AI records Sahel''s emailed quote
     (quote_record + outreach_update with source ref, excerpt and sender) over the
     labs MCP as the scene''s before: hook.'
@@ -36,13 +35,12 @@ gaps:
   detail: A tender had no structured record of how import duties are handled for the
     round, so a duty-excluded quote was blocked on a duty amount even when the program
     imports under a duty waiver.
-  claim_ref: S5
   resolved: 'Shipped (PR 2165): Tender.duty_terms, set by commitment_resolve(duty_terms=...)
-    from the owed-answer form or by tender_set_duty_terms
-    (connect_labs/supply_chain/procurement/operations.py), honoured by the comparison
-    (services/comparison.py landed_basis_words) and the overview; tests in
-    connect_labs/supply_chain/tests/test_unanswered_round_v11_duty_terms.py. The
-    comparison names the answer that set the terms (test_unanswered_round_ddd003_batch2.py).'
+    from the owed-answer form or by tender_set_duty_terms (connect_labs/supply_chain/procurement/operations.py),
+    honoured by the comparison (services/comparison.py landed_basis_words) and the
+    overview; tests in connect_labs/supply_chain/tests/test_unanswered_round_v11_duty_terms.py.
+    The comparison names the answer that set the terms (test_unanswered_round_ddd003_batch2.py).'
+  claim_ref: S5
   proposed_action: Tender duty terms (not settled / buyer_waiver / buyer_pays / supplier_ddp),
     set from the owed-answer form ([data-testid=answer-duty-terms]) or the tender's
     Edit page, shown on the tender header ([data-testid=tender-duty-terms]) and honoured
