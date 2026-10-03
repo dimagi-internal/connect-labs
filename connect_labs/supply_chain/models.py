@@ -7,7 +7,7 @@ client of it. Supply is different on both counts.
 
   1. It is *primary* data that originates here -- a stock ledger, a contract,
      a receipt, a worker's reported count. Nothing in Connect is its source.
-  2. It carries no PII. The reason labs tender-trips data through Connect is so
+  2. It carries no PII. The reason labs round-trips data through Connect is so
      that person-level data lives where its access controls live. A carton
      count does not need that.
   3. It needs real relational work. A balance is an aggregate over a ledger
@@ -528,15 +528,15 @@ class Tender(TimestampedModel):
     # owning organisation manages -- in addition to anyone the program already
     # invited through its outreach log.
     invited_orgs = models.ManyToManyField("labs.LabsOrg", blank=True, related_name="tenders_invited_to")
-    # How import duties are handled for the round (records.DUTY_TERMS): not
+    # How import duties are handled for the tender (records.DUTY_TERMS): not
     # settled until somebody decides -- usually while answering a supplier's
-    # "who imports?" question. A round's terms decide whether a quote that
+    # "who imports?" question. A tender's terms decide whether a quote that
     # leaves duty out is blocked on it, and who is asked.
     duty_terms = models.CharField(
         max_length=16, blank=True, default="", db_default="", choices=_choices(records.DUTY_TERMS)
     )
     # When we import and pay: our own estimate of the duty, as a percentage
-    # of the goods' value. Without it a buyer-pays round cannot land a total.
+    # of the goods' value. Without it a buyer-pays tender cannot land a total.
     duty_estimate_percent = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     duty_terms_set_on = models.DateField(null=True, blank=True)
 
@@ -1035,7 +1035,7 @@ class Commitment(SourcedModel):
 
     A supplier that replies with questions instead of a price, or a forwarder
     holding trucks until we send a Form M, is waiting on US. Before this there
-    was nowhere to say so but a note, so the overview read the round as
+    was nowhere to say so but a note, so the overview read the tender as
     waiting on the supplier and nothing reminded anyone to answer
     (docs/superpowers/specs/2026-10-02-supply-tracking-reality.md, ruling 7).
 

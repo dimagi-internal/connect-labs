@@ -49,10 +49,10 @@ def _source(access, commodity=None):
     comparable = total = 0
     provisional = False
     # Which tenders the evaluation counts across, so "2 of 4 comparable" can
-    # say it is the program's total and not one round's.
+    # say it is the program's total and not one tender's.
     evaluated = set()
     # Each tender's own count, so the program's total can be read back to the
-    # "1 of 3" one round's comparison page says: {tender_pk: [label, comparable, of, awarded]}.
+    # "1 of 3" one tender's comparison page says: {tender_pk: [label, comparable, of, awarded]}.
     by_tender = {}
     contracted = set(tenders.filter(contracts__isnull=False).values_list("pk", flat=True))
     # An awarded tender was still evaluated: leaving it out read "Evaluation 0
@@ -107,7 +107,7 @@ def _source(access, commodity=None):
             "live": quotes.count(),
             "tenders": quotes.values("tender_id").distinct().count(),
             # Each tender's own live quotes, newest tender first, so the total
-            # reads back to each round's own reply count.
+            # reads back to each tender's own reply count.
             "by_tender": [
                 {"label": row["tender__label"] or f"tender {row['tender_id']}", "live": row["n"]}
                 for row in quotes.values("tender_id", "tender__label").annotate(n=Count("id")).order_by("-tender_id")

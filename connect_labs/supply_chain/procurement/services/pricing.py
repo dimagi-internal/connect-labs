@@ -166,20 +166,20 @@ def _base_unit_grams(quote: Quote, item: Item | None) -> int | Derived:
 
 
 # Why a quote whose Incoterm makes the import ours has no landed total yet: the
-# round has not said how it imports. questions.py maps it to a round-owned
+# round has not said how it imports. questions.py maps it to a tender-owned
 # ("internal") action, so it is never asked of the supplier.
-ROUND_DUTY_TERMS_REASON = "import duty is ours to cost and the round's duty terms are not settled"
+ROUND_DUTY_TERMS_REASON = "import duty is ours to cost and the tender's duty terms are not settled"
 
 
 def _duty_terms(quote: Quote, tender=None) -> str:
-    """The round's import-duty terms (records.DUTY_TERMS), "" when not settled or unknown."""
+    """The tender's import-duty terms (records.DUTY_TERMS), "" when not settled or unknown."""
     if tender is None:
         tender = getattr(quote, "tender", None) if getattr(quote, "tender_id", None) else None
     return getattr(tender, "duty_terms", "") or ""
 
 
 def buyer_imports(quote) -> bool:
-    """Whether the quote leaves the import to us, so the round's duty terms decide its duty.
+    """Whether the quote leaves the import to us, so the tender's duty terms decide its duty.
 
     Read from the Incoterm: EXW, FCA, CPT, DAP ... put the import on the buyer;
     DDP puts it on the seller, whose own duty figure then stands under any round
@@ -194,7 +194,7 @@ def buyer_imports(quote) -> bool:
 
 
 def round_duty_applies(quote, tender) -> bool:
-    """Whether the round's buyer-import duty terms (waiver, or our own estimate) cost this quote's duty."""
+    """Whether the tender's buyer-import duty terms (waiver, or our own estimate) cost this quote's duty."""
     return _duty_terms(quote, tender) in ("buyer_waiver", "buyer_pays") and buyer_imports(quote)
 
 
@@ -246,7 +246,7 @@ def _extras(quote: Quote, tender=None) -> Derived:
 
     from_term = dict(zip(("freight", "duties"), records.freight_and_duties_for_incoterm(quote.incoterm), strict=True))
 
-    # The round's duty terms speak before the quote does when they make duty
+    # The tender's duty terms speak before the quote does when they make duty
     # ours: under the program's waiver we import duty-free, so a quote that
     # leaves duty out is not missing anything, and duty counts as zero. When
     # we import and pay, the duty is our own cost, added in compute_figures
@@ -254,7 +254,7 @@ def _extras(quote: Quote, tender=None) -> Derived:
     # delivered-duty-paid rounds read the quote as before.
     terms = _duty_terms(quote, tender)
     # Only a quote that leaves the import to us: a DDP quote keeps its own duty
-    # figure under any round terms, because the supplier imports and pays it.
+    # figure under any tender terms, because the supplier imports and pays it.
     duty_is_ours = round_duty_applies(quote, tender)
 
     # A collected bid has no supplier freight: the buyer moves the goods, so
@@ -295,10 +295,10 @@ def _extras(quote: Quote, tender=None) -> Derived:
                 # The quote's own Incoterm puts the import on us (EXW, FCA, CPT, DAP ...):
                 # import duty is never the supplier's to state, so neither its absence
                 # nor a figure the supplier wrote decides it. It is ours to cost, by
-                # the round's duty terms -- and while those are not settled, no landed
+                # the tender's duty terms -- and while those are not settled, no landed
                 # total can be given, whatever the quote said. One rule for every
                 # buyer-import quote: a CPT quote stating 0.00 waits exactly as an EXW
-                # quote stating nothing does. A round-owned blocker, never a question
+                # quote stating nothing does. A tender-owned blocker, never a question
                 # in their email.
                 reasons.append(ROUND_DUTY_TERMS_REASON)
                 continue
@@ -327,7 +327,7 @@ def _extras(quote: Quote, tender=None) -> Derived:
 
 
 def _our_duty(quote: Quote, tender, subtotal: Decimal) -> Decimal:
-    """Duty we pay ourselves on a buyer-pays round: the tender's estimate on the goods. Zero otherwise.
+    """Duty we pay ourselves on a buyer-pays tender: the tender's estimate on the goods. Zero otherwise.
 
     A quote that already includes duty (its basis, or a DDP term) is not
     charged again: the seller has covered it.

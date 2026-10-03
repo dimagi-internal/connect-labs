@@ -394,9 +394,9 @@ def quote_pack_words(values, lookup) -> str:
 
 
 def _asked_terms(values, lookup) -> str:
-    """ "— you asked CPT Kano", when the quote's Incoterm departs from the one the round asked on.
+    """ "— you asked CPT Kano", when the quote's Incoterm departs from the one the tender asked on.
 
-    A price on EXW Niamey read beside the round's CPT Kano without saying so,
+    A price on EXW Niamey read beside the tender's CPT Kano without saying so,
     and the difference is what leaves the freight to be found.
     """
     from connect_labs.supply_chain.models import Tender
@@ -451,7 +451,7 @@ def _quote_terms(values) -> str:
     amount = values.get("duties_amount")
     if duties == "excluded" and amount not in (None, "") and not Decimal(str(amount)):
         # A zero the supplier wrote, said as the comparison says it: the
-        # supplier's word on duty, never the basis the round costs it on.
+        # supplier's word on duty, never the basis the tender costs it on.
         duties = f"not in the price; supplier states {money_digits(amount)}"
     if freight != "not_specified" and freight == duties:
         basis = f"freight and duty {freight}"
@@ -645,14 +645,14 @@ def sentence(model, action, changes, lookup) -> str:
         lead.append(f"answered: {_short(changes.pop('resolution')[1])}")
         changes.pop("resolved_on", None)
     if model.__name__ == "Tender" and "duty_terms" in changes:
-        # "Set the round's import duties: we import, under the program's duty
+        # "Set the tender's import duties: we import, under the program's duty
         # waiver" -- not "Duty terms: buyer waiver; Duty terms set on: 3 Oct",
         # which read as raw fields. The day is the line's own date.
         from connect_labs.supply_chain.records import DUTY_TERMS_LABELS
 
         new = changes.pop("duty_terms")[1] or ""
         changes.pop("duty_terms_set_on", None)
-        lead.append(f"Set the round's import duties: {DUTY_TERMS_LABELS.get(new, DUTY_TERMS_LABELS[''])}")
+        lead.append(f"Set the tender's import duties: {DUTY_TERMS_LABELS.get(new, DUTY_TERMS_LABELS[''])}")
     clauses = lead + [_clause(model, attname, old, new, lookup) for attname, (old, new) in changes.items()]
     return "; ".join(c for c in clauses if c)
 

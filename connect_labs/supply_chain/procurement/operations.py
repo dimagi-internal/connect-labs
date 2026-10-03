@@ -219,9 +219,9 @@ def reminder_render(access, outreach_id, commodity_slug=None, today=None):
 
 DEFAULT_REMINDER_INTERVAL_DAYS = 7
 
-# The order drafts are listed in: the order a round runs, then by name.
+# The order drafts are listed in: the order a tender runs, then by name.
 # Deliberately not an urgency ranking (design doc section 22).
-# A clarification of the round's terms comes last: it goes to every invited
+# A clarification of the tender's terms comes last: it goes to every invited
 # supplier, so it never takes the place of a supplier's own reminder or follow-up.
 _KIND_ORDER = {"reply": 0, "request": 1, "reminder": 2, "followup": 3, "clarification": 4}
 
@@ -237,8 +237,8 @@ _KIND_ORDER = {"reply": 0, "request": 1, "reminder": 2, "followup": 3, "clarific
         "kind, subject, text, address and `why` it is due. No requests or reminders once the tender is "
         "closed or awarded; no follow-ups once it is awarded. And a `reply` to each supplier whose questions "
         "to us are still open (commitment_record), listing them for the person to answer -- at any stage, "
-        "because an answer owed does not lapse with the award. Once the round's import duty terms are set "
-        "(tender_set_duty_terms, or an answer that sets them), and while the round still takes quotes, a "
+        "because an answer owed does not lapse with the award. Once the tender's import duty terms are set "
+        "(tender_set_duty_terms, or an answer that sets them), and while the tender still takes quotes, a "
         "`clarification` to every invited supplier stating those terms, so all quote on the same basis. "
         "Writes nothing."
     ),
@@ -450,29 +450,29 @@ def _replies(access, tender, day, sender):
     return drafts
 
 
-# What every invited supplier is told once the round's import duty terms are
+# What every invited supplier is told once the tender's import duty terms are
 # set, per terms: how to quote, and the freight still wanted where we import.
 _CLARIFICATION_ASK = {
     "buyer_waiver": (
-        "For this round we import, under the program's duty waiver; please quote excluding import duty "
+        "For this tender we import, under the program's duty waiver; please quote excluding import duty "
         "and state freight to {where}."
     ),
     "buyer_pays": (
-        "For this round we import and pay the import duty ourselves; please quote excluding import duty "
+        "For this tender we import and pay the import duty ourselves; please quote excluding import duty "
         "and state freight to {where}."
     ),
     "supplier_ddp": (
-        "For this round the supplier delivers duty paid; please quote delivered duty paid to {where}, "
+        "For this tender the supplier delivers duty paid; please quote delivered duty paid to {where}, "
         "with the import duty included."
     ),
 }
 
 
 def _clarifications(access, tender, sender):
-    """A clarification of the round's import duty terms to every supplier invited to it.
+    """A clarification of the tender's import duty terms to every supplier invited to it.
 
     An answer to one supplier ("we import, under the waiver") changes how every
-    quote on the round is costed, so every invited supplier is told -- not only
+    quote on the tender is costed, so every invited supplier is told -- not only
     the one who asked.
     """
     template = _CLARIFICATION_ASK.get(tender.duty_terms or "")
@@ -484,7 +484,7 @@ def _clarifications(access, tender, sender):
     ask = template.format(where=destination_phrase(tender.delivery_points or []))
     answer = duty_terms_answer(tender.pk, program_id=getattr(access, "program_id", None))
     set_on = (answer or {}).get("on") or tender.duty_terms_set_on
-    why = "The round's import duty terms are set"
+    why = "The tender's import duty terms are set"
     if set_on:
         why += f" ({day_text(set_on)})"
     if answer and answer.get("owed_to"):
@@ -814,7 +814,7 @@ def award_create(access, tender_id, quote_id, rationale, decided_by=None, decide
     (_require_tender, _require_commodity); award_create is the one that
     freezes a comparison_snapshot into a permanent record, so a bad
     reference here is a permanent record of the wrong thing. Three checks
-    a tender-trip through tender_compare would not itself catch:
+    a round-trip through tender_compare would not itself catch:
       - the quote exists at all (a bad id would otherwise crash inside
         tender_compare on `quote.commodity_slug`, a confusing AttributeError
         instead of a 400 naming the missing quote);
@@ -1150,7 +1150,7 @@ def commitment_record(access, data):
     name="commitment_resolve",
     summary=(
         "Mark a question answered or a promise kept, with what was said or done and the day (today if "
-        "omitted). The row stays on record. When the answer settles how the round's import duties are "
+        "omitted). The row stays on record. When the answer settles how the tender's import duties are "
         "handled, pass duty_terms (see tender_set_duty_terms) and the tender's terms are set too."
     ),
     input_schema=obj(
@@ -1167,7 +1167,7 @@ def commitment_record(access, data):
 def commitment_resolve(access, commitment_id, resolution, resolved_on=None, duty_terms=None):
     resolved = access.resolve_commitment(commitment_id, resolution, resolved_on=resolved_on)
     out = record(resolved)
-    # An answer that settles how the round's import duties are handled ("We
+    # An answer that settles how the tender's import duties are handled ("We
     # import, under the program's duty waiver") sets them on the tender in the
     # same call, so the comparison reads what was just told the supplier.
     if duty_terms:
@@ -1181,7 +1181,7 @@ def commitment_resolve(access, commitment_id, resolution, resolved_on=None, duty
 @register_operation(
     name="tender_set_duty_terms",
     summary=(
-        "Set how import duties are handled for a tender's round: buyer_waiver (we import under the "
+        "Set how import duties are handled for a tender: buyer_waiver (we import under the "
         "program's duty waiver -- duty counts as zero and no supplier is asked for it), buyer_pays (we "
         "import and pay; a landed total needs duty_estimate_percent, our estimate as a percentage of the "
         "goods), supplier_ddp (the supplier delivers duty paid, as each quote states), or '' (not "
