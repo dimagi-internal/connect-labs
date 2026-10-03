@@ -461,7 +461,7 @@ def freight_and_duties_for_incoterm(incoterm) -> tuple[str | None, str | None]:
 
 
 # How import duties are handled for a procurement round: who imports, and who
-# pays the duty. "" is "not settled", the default -- a round that has not
+# pays the duty. "" is "not settled", the default -- a tender that has not
 # decided cannot have duty costed for it either way. Under the program's duty
 # waiver (we import, duty-free) the duty is zero and nobody is asked for it;
 # when we import and pay, the duty is our cost to estimate, never a supplier's

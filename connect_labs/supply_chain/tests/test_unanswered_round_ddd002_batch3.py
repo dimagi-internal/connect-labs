@@ -12,7 +12,7 @@ from django.urls import reverse
 
 from connect_labs.supply_chain.models import Outreach
 from connect_labs.supply_chain.procurement.views import _message_rows
-from connect_labs.supply_chain.standing import INVOICE_DISPUTE, standing_rows
+from connect_labs.supply_chain.standing import standing_rows
 from connect_labs.supply_chain.tests import test_tracking_reality as reality
 from connect_labs.supply_chain.tests.test_tracking_reality import PROGRAM, _contract, op
 from connect_labs.supply_chain.tests.test_unanswered_round_batch1 import _tender_page
@@ -74,15 +74,18 @@ def test_a_quote_s_void_is_a_link_like_correct():
 
 
 @pytest.mark.django_db
-class TestEveryFlagHasAnOwner:
-    def test_a_round_past_its_deadline_is_ours_to_extend_or_close(self, da, world):
+class TestEveryMoveHasAnOwner:
+    def test_a_tender_past_its_deadline_is_ours_to_decide(self, da, world):
         op(da, "tender_update", tender_id=world["tender"]["id"], data={"response_deadline": "2026-09-29"})
         row = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 10, 2)) if r.kind == "tender")
-        assert "us: extend or close the round (deadline passed 29 Sep)" in row.waiting_on
+        deadline = [m for m in row.ours if m.rule == "deadline"]
+        assert len(deadline) == 1
+        assert deadline[0].text.endswith(": extend, close or award")
+        assert deadline[0].detail == "deadline passed 29 Sep"
         before = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 9, 28)) if r.kind == "tender")
-        assert "extend or close" not in before.waiting_on
+        assert not [m for m in before.ours if m.rule == "deadline"]
 
-    def test_an_invoice_above_agreed_is_ours_to_dispute(self, da, world):
+    def test_an_invoice_above_agreed_is_ours_to_review(self, da, world):
         contract = _contract(da, world)
         op(
             da,
@@ -99,6 +102,6 @@ class TestEveryFlagHasAnOwner:
             },
         )
         row = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 10, 2)) if r.kind == "order")
-        assert INVOICE_DISPUTE in row.waiting_on
-        ours = row.waiting_lines[0] if row.waiting_lines else row.waiting_on
-        assert ours.heading == "Us" and any(item.startswith(INVOICE_DISPUTE) for item, _ in ours.lines)
+        review = [m for m in row.ours if m.rule == "invoice check"]
+        assert [m.text for m in review] == ["Review invoice INV-REH-1"]
+        assert row.whose == "us"

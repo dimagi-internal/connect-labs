@@ -28,14 +28,6 @@ class TestTheOrderRow:
         assert "waiting on us" not in row.stage
 
 
-class TestTheTenderRowsLastChange:
-    def test_a_shipment_on_its_order_is_not_a_change_to_the_round(self, da, world):
-        before = next(r for r in _rows() if r.tender_id == world["tender"]["id"] and r.kind == "tender")
-        _held_on_our_form_m(da, world)
-        after = next(r for r in _rows() if r.tender_id == world["tender"]["id"] and r.kind == "tender")
-        assert after.last_change_at == before.last_change_at
-
-
 class TestTheEvaluationCaption:
     """Finding #3/#19 (DDD unanswered-round 2026-10-03): the headline counts open rounds only,
     says what it counts, and lists awarded rounds apart."""

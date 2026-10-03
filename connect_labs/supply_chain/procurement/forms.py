@@ -111,7 +111,7 @@ class TenderForm(ScopedForm):
             "slug": _("Gives the tender a shareable address, /supply/market/t/<this>/. Letters, numbers and hyphens."),
             "brief": _("A few paragraphs suppliers read above the products."),
             "duty_terms": _(
-                "Who imports and who pays the duty, for every quote on this round. Under the program's waiver "
+                "Who imports and who pays the duty, for every quote on this tender. Under the program's waiver "
                 "duty counts as zero; when we pay, our estimate below is added to each landed total."
             ),
             "pickup_accepted": _(
@@ -552,24 +552,6 @@ class CommitmentResolveForm(forms.Form):
         widget=forms.Textarea(attrs=TEXTAREA),
     )
     resolved_on = forms.DateField(label=_("On"), initial=date.today, widget=forms.DateInput(attrs=DATE))
-    # A supplier's "who imports?" is answered once for the whole round: the
-    # answer sets the tender's duty terms, which every quote is costed by.
-    # Removed by the view for a commitment about an order, which has no round.
-    duty_terms = forms.ChoiceField(
-        label=_("This answer sets the round's import duty terms"),
-        required=False,
-        choices=[
-            ("", _("No -- leave them as they are")),
-            ("buyer_waiver", _("We import, under the program's duty waiver")),
-            ("buyer_pays", _("We import and pay the duty")),
-            ("supplier_ddp", _("The supplier delivers duty paid")),
-        ],
-        widget=forms.Select(attrs={**SELECT, "data-testid": "answer-duty-terms"}),
-        help_text=_(
-            "Set only when this answer settles who imports and who pays the duty. Every quote on the round "
-            "is then costed that way: under the waiver duty counts as zero and no supplier is asked for it."
-        ),
-    )
 
     def __init__(self, *args, access=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -578,10 +560,23 @@ class CommitmentResolveForm(forms.Form):
         self.helper.disable_csrf = True
 
     def payload(self) -> dict:
-        data = to_payload(self.cleaned_data)
-        if not data.get("duty_terms"):
-            data.pop("duty_terms", None)
-        return data
+        return to_payload(self.cleaned_data)
+
+
+class TenderDutyTermsForm(forms.Form):
+    """How the tender's import duties are handled, set from its Terms box."""
+
+    duty_terms = forms.ChoiceField(
+        label=_("Import duty"),
+        required=False,
+        choices=[
+            ("", _("Not settled")),
+            ("buyer_waiver", _("We import, under the program's duty waiver")),
+            ("buyer_pays", _("We import and pay the duty")),
+            ("supplier_ddp", _("The supplier delivers duty paid")),
+        ],
+    )
+    duty_estimate_percent = forms.DecimalField(label=_("Our duty estimate, % of goods"), required=False, min_value=0)
 
 
 class ApprovalDecisionForm(ScopedForm):

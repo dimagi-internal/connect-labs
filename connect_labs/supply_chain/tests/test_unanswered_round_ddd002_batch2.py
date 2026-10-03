@@ -10,7 +10,6 @@ from types import SimpleNamespace
 import pytest
 
 from connect_labs.supply_chain.procurement.services.comparison import per_pack_note
-from connect_labs.supply_chain.standing import Flag
 from connect_labs.supply_chain.templatetags.supply_chain_extras import lead_in
 from connect_labs.supply_chain.tests import test_tracking_reality as reality
 from connect_labs.supply_chain.tests.test_tracking_reality import op
@@ -46,16 +45,15 @@ def test_an_owed_row_on_the_groups_day_says_how_long_it_has_been_open():
 
 def test_waiting_on_labels_read_alike():
     assert str(lead_in("us: import permit")) == "<strong>Us</strong>: import permit"
-    flag = Flag("Missing facts: A (freight)", heading="Missing facts", lines=[("A", "freight")])
-    assert flag.lines == (("A", "freight"),) and str(flag).startswith("Missing facts")
 
 
 @pytest.mark.django_db
 class TestTheTenderPage:
-    def test_secondary_header_buttons_share_one_treatment(self, da, world, client_in_program):
+    def test_secondary_header_actions_sit_in_one_outlined_menu(self, da, world, client_in_program):
         body = _tender_page(client_in_program, world["tender"]["id"])
-        edit = re.search(r'<a href="[^"]*/edit/[^"]*"\s+class="([^"]*)">Edit</a>', body).group(1)
-        assert "text-brand-indigo" in edit and "text-gray-700" not in edit
+        menu = re.search(r'data-testid="decide-menu".*?</details>', body, re.S).group(0)
+        assert "button-md outline-style" in menu
+        assert "/edit/" in menu
 
     def test_an_owed_row_does_not_repeat_the_groups_day(self, da, world, client_in_program):
         _question(da, world, "One warehouse, or several?")

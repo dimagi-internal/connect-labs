@@ -189,7 +189,9 @@ class TestThePerBuyerPanelSaysWhatIsKnown:
         panel = body.split("The same order, per buyer", 1)[1][:4000]
         assert "none are payable" not in panel
         assert "costing different amounts" not in panel
-        assert "cannot be said yet" in panel
+        # The status view states each buyer's total and leaves the reading to it: an
+        # unconfirmed one says so, rather than a sentence drawing a conclusion.
+        assert "Unconfirmed" in panel
 
 
 def _registration(da, world):
@@ -1007,14 +1009,10 @@ class TestTheAwardControlsFitTheColumn:
                 assert f'name="{field}"' in inner
             assert 'data-testid="decided-by"' in inner
             assert 'type="submit"' in inner and "Award" in inner
-        # No column for it: the ranked rows hold figures, the row under each holds the form.
-        assert "<th>Award</th>" not in body
-        for ranked in re.findall(r'<tr data-testid="ranked-row" .*?</tr>', body, re.S):
-            assert "<form" not in ranked
-        subrows = re.findall(r'<tr data-testid="ranked-row-actions".*?</tr>', body, re.S)
-        assert len(subrows) == 2 and all('name="rationale"' in row for row in subrows)
-        columns = len(re.search(r"<thead>.*?</thead>", body, re.S).group(0).split("<th>")) - 1
-        assert all(f'colspan="{columns - 1}"' in row for row in subrows)
+        # Not in the grid: each award is folded under its quote, below the side-by-side facts.
+        grid = re.search(r'<table [^>]*data-testid="comparison-grid".*?</table>', body, re.S).group(0)
+        assert "<form" not in grid
+        assert body.count('data-testid="award-start"') == 2
 
     def test_the_stacked_form_still_awards(self, client_in_programme, da, world):
         from connect_labs.supply_chain.models import Award, Quote
@@ -1035,8 +1033,9 @@ class TestAFigureHeaderNamesItsUnitInWords:
     def test_the_comparison_header_reads_jerry_can(self, client_in_programme, da, world):
         _comparable_pair(da, world)
         body = client_in_programme.get(_compare_url(world)).content.decode()
-        assert "<th>USD per jerry can</th>" in body
-        assert "jerry_can" not in "".join(re.findall(r"<th>(.*?)</th>", body))
+        grid = re.search(r'<table [^>]*data-testid="comparison-grid".*?</table>', body, re.S).group(0)
+        assert re.search(r">Landed per jerry can<", grid)
+        assert "jerry_can" not in grid
 
     def test_the_operation_labels_its_columns_the_same_way(self, da, world):
         _comparable_pair(da, world)

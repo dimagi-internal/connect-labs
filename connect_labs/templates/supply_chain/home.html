@@ -2,10 +2,11 @@
 {% load supply_chain_extras %}
 
 {% comment %}
-Two panels, two kinds of thing (see DomainHomeView's docstring): the funnel
-carries STATES, the checks panel carries GAPS and CONTRADICTIONS. Neither
-ranks. The checks are grouped by who can answer them, which is routing and
-therefore a fact, rather than by urgency, which would be an opinion.
+All procurements (standing.py): one row per tender in progress and per active
+order, with its stage on the six steps, its next move and whose it is -- the
+moves from moves.py, the same lists the tender page shows. Ordered by last
+change, not ranked. The chain's counts, the checks and the full lists of
+tenders and orders sit folded below.
 {% endcomment %}
 
 {% block supply_content %}
@@ -13,158 +14,79 @@ therefore a fact, rather than by urgency, which would be an opinion.
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
     <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
-    <p class="text-sm text-amber-900">
-      Tenders, contracts and stock are program-scoped, so there is nothing to
-      show until one is chosen.
-    </p>
+    <p class="text-sm text-amber-900">Choose a program to see its procurements.</p>
   </div>
 {% else %}
-
-{% comment %}The header's context selector already names the program when one is
-chosen there; the heading is for when it does not, so it is not said twice.{% endcomment %}
-{% if not request.labs_context.program.name and not supply_program_line %}
-<h2 class="text-lg font-semibold text-gray-900 mb-3">{{ program_heading }}</h2>
-{% endif %}
-
-{% comment %}
-Where everything stands (standing.py): one line per tender and order,
-ordered by last change -- not ranked. A flag is a stated fact with its count
-or day; which one matters most today is the reader's call. Title links are
-plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
-{% endcomment %}
-<section id="supply-standing" class="mb-8">
-  <h2 class="text-base font-semibold text-gray-900 mb-2">
-    Where everything stands
-    <span class="normal-case tracking-normal font-normal text-gray-600">
-      — newest change first{% if standing_our_moves and not supply_as_of %} · <span data-testid="standing-our-moves">{{ standing_our_moves }} move{{ standing_our_moves|pluralize }} ours, listed under Us</span>{% endif %}
-    </span>
-  </h2>
-  {% if supply_as_of %}
-    {% comment %}On a past date there is no flags column: flags are today's checks, and a
-    column of them under a past date was empty or wrong. Said once, here.{% endcomment %}
-    <p data-testid="flags-as-of" class="text-xs text-gray-600 mb-2">Flags are worked out for today only; back to today to see them.</p>
-  {% endif %}
-  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Where everything stands, scrolls sideways">
-    {% comment %}Fixed layout and set widths, so a column is the same width today and
-    on a past date whatever its rows hold, and a header never wraps. Stage is
-    a few words; flags carry a line per supplier, so they get the room.{% endcomment %}
-    <table data-testid="standing-table" class="min-w-[56rem] w-full table-fixed text-sm">
-      <colgroup>
-        {% if supply_as_of %}
-        <col data-col="title" style="width: 24%">
-        <col data-col="stage" style="width: 22%">
-        <col data-col="waiting" style="width: 38%">
-        <col data-col="last-change" style="width: 16%">
-        {% else %}
-        <col data-col="title" style="width: 19%">
-        <col data-col="stage" style="width: 13%">
-        <col data-col="waiting" style="width: 35%">
-        <col data-col="last-change" style="width: 11%">
-        <col data-col="flags" style="width: 22%">
-        {% endif %}
-      </colgroup>
-      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
-        <tr>
-          <th class="text-left px-4 py-2 whitespace-nowrap">Tender or order</th>
-          <th class="text-left px-4 py-2 whitespace-nowrap">Stage</th>
-          <th class="text-left px-4 py-2 whitespace-nowrap">Waiting on</th>
-          <th class="text-left px-4 py-2 whitespace-nowrap">Last change</th>
-          {% if not supply_as_of %}<th class="text-left px-4 py-2 whitespace-nowrap">Flags</th>{% endif %}
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-100">
-        {% for row in standing %}
-          <tr class="align-top{% if row.award_why %} border-b-0{% endif %}" data-testid="overview-row"{% if row.tender_id %} data-tender-id="{{ row.tender_id }}"{% endif %}>
-            <td class="px-4 py-2.5">
-              <span class="block text-xs text-gray-600">{% if row.kind == "tender" %}Tender{% else %}Order{% endif %}</span>
-              <a class="font-medium text-brand-indigo hover:underline" href="{{ row.url }}">{{ row.title }}</a>
-              {% if row.kind == "order" and row.origin %}<span data-testid="order-origin" class="block text-xs text-gray-600">from {{ row.origin }}</span>{% endif %}
-              {% if row.buyer %}<span class="block text-xs text-gray-600">bought by {{ row.buyer }}</span>{% endif %}
-            </td>
-            <td class="px-4 py-2.5">
-              {% comment %}The award's price stacked under "awarded to <supplier>", a clause a line,
-              allowed to wrap: on one unbreakable line beside the stage it ran out of the
-              column and printed over "Waiting on".{% endcomment %}
-              {{ row.stage }}
-              {% if row.award_price %}<span data-testid="award-price" class="block text-xs text-gray-600">{% for line in row.award_price_lines %}<span data-testid="award-price-line" class="block">{{ line }}</span>{% endfor %}</span>{% endif %}
-              {% if row.provisional_caveat %}<span data-testid="provisional-caveat" class="block text-xs text-amber-800">{{ row.provisional_caveat }}</span>{% endif %}
-            </td>
-            <td class="px-4 py-2.5 text-gray-700">
-              {% comment %}Two kinds of answer owed, a line each: who has not replied, and whose
-              quote is missing a fact.{% endcomment %}
-              {% comment %}One owner a line. A "No reply" line stacks its suppliers, one a line, each
-              with the day we asked it and the day we last chased it.{% endcomment %}
-              {% comment %}The round's own count ("4 of 6 replied") leads the cell, at body size:
-              as a grey caption under the lists it was the cell's smallest text.{% endcomment %}
-              {% if row.waiting_detail %}<span data-testid="waiting-detail" class="block font-medium text-gray-900 mb-1">{{ row.waiting_detail }}</span>{% endif %}
-              {% if row.waiting_lines %}{% for line in row.waiting_lines %}{% include "supply_chain/_waiting_line.html" with line=line testid="waiting-line" %}{% endfor %}{% else %}{% include "supply_chain/_waiting_line.html" with line=row.waiting_on testid="waiting-on" %}{% endif %}
-            </td>
-            <td class="px-4 py-2.5">
-              {% if row.last_change_at %}
-                {% comment %}The count and the day on a line each, neither wrapping: "7 days
-                ago" broke inside "3 Aug" in a narrow column.{% endcomment %}
-                {% if supply_as_of %}
-                  {% comment %}On a past date only the day itself: "7 days ago" counted from the
-                  chosen day read as counted from today.{% endcomment %}
-                  <span data-testid="last-change" class="block whitespace-nowrap text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|date:'j M Y' }}</span>
-                {% else %}
-                <span data-testid="last-change" class="block whitespace-nowrap text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|count_back:standing_now }}</span>
-                {% with day=row.last_change_at|short_day:standing_now %}{% if day %}<span data-testid="last-change-day" class="block whitespace-nowrap text-xs text-gray-600">{{ day }}</span>{% endif %}{% endwith %}
-                {% endif %}
-                {% if row.last_change_is_ai %}
-                  {% comment %}Who told us, beside the AI glyph; on hover, what was recorded and from what.{% endcomment %}
-                  <span data-ai data-testid="ai-badge" title="{{ row.last_change_title }}" class="mt-0.5 inline-flex cursor-help items-center gap-1 whitespace-nowrap rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs font-medium">{% include "supply_chain/_ai_glyph.html" with actor=row.last_change_badge %}<span>{{ row.last_change_badge|ai_words }}</span></span>
-                {% else %}
-                  <span class="mt-0.5 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ row.last_change_by }}</span>
-                {% endif %}
-              {% else %}
-                <span class="text-gray-600">—</span>
-              {% endif %}
-            </td>
-            {% if not supply_as_of %}
-            <td class="px-4 py-2.5">
-              {% comment %}A flag is a stated fact, not an alarm: a calm amber marker, with
-              the rule that raised it as its title.{% endcomment %}
-              {% comment %}A flag naming several suppliers is a one-line marker ("Can't compare
-              yet — 3 quotes missing facts"); the line per supplier ("Northwind Foods — missing:
-              freight") folds under it, opened on a click.{% endcomment %}
-              {% for flag in row.stale %}
-                {% if flag.lines %}
-                {% comment %}The same boxed amber chip as every other flag, with a chevron that
-                says it opens.{% endcomment %}
-                <details data-testid="stale-flag" title="{{ flag.rule }}" class="group mb-1 text-xs text-amber-900">
-                  <summary class="flex w-fit cursor-pointer list-none items-start gap-1.5 whitespace-nowrap rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 hover:bg-amber-100 [&::-webkit-details-marker]:hidden"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span data-testid="flag-heading">{{ flag.heading }}</span><i class="fa-solid fa-chevron-right mt-0.5 text-[9px] text-amber-700 transition-transform group-open:rotate-90" aria-hidden="true"></i></summary>
-                  <span class="block pl-5 pt-0.5">{% for line in flag.folded|default:flag.lines %}<span data-testid="flag-line" class="block">{{ line }}</span>{% endfor %}</span>
-                </details>
-                {% else %}
-                {% comment %}A flag with nothing folded under it opens the record itself: the same chip and
-                chevron as a folding flag, so every flag reads as one you can open.{% endcomment %}
-                <a data-testid="stale-flag" title="{{ flag.rule }}" href="{{ row.url }}"
-                      class="mb-1 flex w-fit items-start gap-1.5 whitespace-nowrap rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900 hover:bg-amber-100"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span>{{ flag }}</span><i class="fa-solid fa-chevron-right mt-0.5 text-[9px] text-amber-700" aria-hidden="true"></i></a>
-                {% endif %}
-              {% endfor %}
-            </td>
-            {% endif %}
-          </tr>
-          {% if row.award_why %}
-          {% comment %}The award's reason as a row of its own under the tender, across every
-          column at body size: in the narrow stage cell it wrapped to seven lines.{% endcomment %}
-          <tr data-testid="award-why-row" data-why-for="{{ row.tender_id }}">
-            <td colspan="{% if supply_as_of %}4{% else %}5{% endif %}" class="px-4 pt-0 pb-3">
-              <p data-testid="award-why" class="text-sm text-gray-800 whitespace-normal break-words"><span class="font-medium text-gray-900">Why:</span> {{ row.award_why }}</p>
-            </td>
-          </tr>
-          {% endif %}
-        {% empty %}
-          <tr><td colspan="{% if supply_as_of %}4{% else %}5{% endif %}" class="px-4 py-6 text-center text-gray-600">No tenders or orders yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<div class="flex flex-col gap-5" data-testid="overview">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div class="flex flex-col gap-1">
+      <div class="text-xs uppercase tracking-wide text-gray-600" data-testid="program-heading">{{ program_heading }}</div>
+      <h1 class="text-brand-deep-purple text-2xl font-semibold">Procurements</h1>
+    </div>
+    <div class="flex flex-wrap gap-3">
+      {% if not supply_as_of %}
+      <div class="stat-tile stat-tile--ours flex-row items-baseline gap-2" data-testid="standing-our-moves"><span class="stat-tile-value">{{ move_counts.ours }}</span><span class="text-message-warning-text text-sm font-medium">move{{ move_counts.ours|pluralize }} on you</span></div>
+      <div class="stat-tile flex-row items-baseline gap-2" data-testid="standing-their-moves"><span class="stat-tile-value">{{ move_counts.theirs }}</span><span class="text-sm text-gray-600">waiting on suppliers</span></div>
+      {% endif %}
     </div>
   </div>
-</section>
+  {% include "supply_chain/_src_legend.html" %}
 
+  <section id="supply-standing" class="border-brand-border-light overflow-hidden rounded-lg border bg-white" aria-label="All procurements">
+    <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="All procurements, scrolls sideways">
+      <table data-testid="standing-table" class="w-full min-w-[900px] text-sm">
+        <thead class="border-b border-gray-200 text-left text-xs text-gray-600">
+          <tr>
+            <th scope="col" class="px-5 pb-2 pt-3.5 font-medium">Procurement</th>
+            <th scope="col" class="w-72 px-3 pb-2 pt-3.5 font-medium">Stage</th>
+            <th scope="col" class="px-3 pb-2 pt-3.5 font-medium">Next move</th>
+            <th scope="col" class="px-3 pb-2 pt-3.5 font-medium">Whose</th>
+            <th scope="col" class="px-5 pb-2 pt-3.5 font-medium">Last change</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for row in standing %}
+          <tr data-testid="overview-row" data-kind="{{ row.kind }}"{% if row.tender_id %} data-tender-id="{{ row.tender_id }}"{% endif %} class="align-top">
+            <td class="px-5 py-4">
+              <div class="flex flex-col gap-0.5">
+                <span class="text-xs text-gray-600">{% if row.kind == "tender" %}Tender{% else %}Order{% endif %}</span>
+                <a href="{{ row.url }}" class="text-brand-indigo text-[15px] font-semibold hover:underline">{{ row.title }}</a>
+                {% if row.sub %}<span class="text-xs text-gray-600" data-testid="row-sub">{{ row.sub }}</span>{% endif %}
+              </div>
+            </td>
+            <td class="px-3 py-4">
+              <div class="flex flex-col gap-1.5">
+                <div class="stage-minibar" aria-hidden="true">{% for b in row.bars %}<div class="stage-seg stage-seg--{{ b }}"></div>{% endfor %}</div>
+                <span class="text-xs text-gray-900" data-testid="row-stage">{% include "supply_chain/_src.html" with src="calc" %}{{ row.stage }}</span>
+              </div>
+            </td>
+            <td class="px-3 py-4" data-testid="next-move">
+              {% with m=row.next_move %}{% if m %}
+                <a href="{{ m.href }}" class="font-medium text-gray-900 hover:underline">{{ m.text }}</a>
+                <div class="text-xs text-gray-600"><span class="move-rule{% if m.is_ours %} text-message-warning-text{% endif %}" title="{{ m.rule_title }}">{{ m.rule }}</span>{{ m.detail }}{% with more=row.ours|length|add:row.theirs|length %}{% if more > 1 %} · <span data-testid="more-moves">+{{ more|add:"-1" }} more</span>{% endif %}{% endwith %}</div>
+              {% else %}<span class="text-gray-600">—</span>{% endif %}{% endwith %}
+            </td>
+            <td class="px-3 py-4">{% if row.whose == "us" %}<span class="status-chip status-chip--ours" data-testid="whose">Us</span>{% elif row.whose == "suppliers" %}<span class="status-chip status-chip--theirs" data-testid="whose">Suppliers</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            <td class="px-5 py-4 text-gray-600">
+              {% if row.last_change_at %}
+                {% if supply_as_of %}<span data-testid="last-change" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|date:'j M Y' }}</span>
+                {% else %}<span data-testid="last-change" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|count_back:standing_now }}</span>{% with day=row.last_change_at|short_day:standing_now %}{% if day %}<span data-testid="last-change-day" class="block text-xs">{{ day }}</span>{% endif %}{% endwith %}{% endif %}
+                <span class="block text-xs" {% if row.last_change_is_ai %}data-ai data-testid="ai-badge" title="{{ row.last_change_title }}"{% endif %}>{% if row.last_change_is_ai %}{% include "supply_chain/_src.html" with src="ai" %}{{ row.last_change_badge|ai_words }}{% else %}{% include "supply_chain/_src.html" with src="person" %}{{ row.last_change_by }}{% endif %}</span>
+              {% else %}<span class="text-gray-600">—</span>{% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="px-5 py-5 text-gray-600">No tenders or orders in progress.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <div class="text-xs text-gray-600">Stages: Requested · Collecting quotes · Comparing · Awarding · Ordered · Delivered</div>
+
+  <details class="fold" data-testid="fold-chain">
+    <summary>The chain <span class="text-sm font-normal text-gray-600">records at each stage</span></summary>
+    <div class="fold-body">
 {% if commodities|length > 1 %}
   <div class="flex items-center gap-2 mb-4 text-sm">
     <span class="text-gray-600">Commodity</span>
@@ -176,43 +98,25 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
   </div>
 {% endif %}
 
-<h2 class="text-sm font-semibold text-gray-900 mb-2">
-  The chain
-  <span class="normal-case tracking-normal font-normal text-gray-600">
-    — where records sit. Counts, not judgements.
-  </span>
-</h2>
-
 {% include "supply_chain/_phase.html" with phase="Source" accent="#3843d0" stages=summary.source|source_stages %}
 {% include "supply_chain/_phase.html" with phase="Order" accent="#818cf8" stages=summary.order|order_stages %}
 {% include "supply_chain/_phase.html" with phase="Deliver" accent="#14b8a6" stages=summary.deliver|deliver_stages %}
 
-{% comment %}
-The raw checks feed used to be rendered here in full: three columns of
-question bullets, forty of them on the imported tracker. It is a flat,
-unranked, unworded list BY DESIGN -- `checks_list` exists as agent and API
-surface, where a caller can sort and phrase it for itself. Pasted onto a
-landing page it was a wall nobody would work through, and it put the
-questions three clicks from the quote they are about.
+    </div>
+  </details>
 
-So the page says how many and who, and links to where the answering
-happens: the comparison screen lists a supplier's questions beside its
-figures, and the catalogue is where our own gaps get closed.
-{% endcomment %}
+  <details class="fold" data-testid="fold-checks">
+    <summary>Checks <span class="text-sm font-normal tabular-nums text-gray-600">{% if checks.count %}{{ checks.count }}{% else %}0{% endif %}</span> <span class="text-sm font-normal text-gray-600">open</span></summary>
+    <div class="fold-body">
 {% if supply_as_of %}
   {% comment %}
   The checks are worked out from the records against today's date and from
   reference rows a rewind does not touch, so on a past date they would be
   today's answers under a past date's banner. Said once, not shown.
   {% endcomment %}
-  <p data-testid="checks-as-of-note" class="text-xs text-gray-600 mt-8">Checks are worked out for today; back to today to see them.</p>
+  <p data-testid="checks-as-of-note" class="text-xs text-gray-600 mt-2">Checks are worked out for today; back to today to see them.</p>
 {% elif checks.count %}
-  <h2 class="text-sm font-semibold text-gray-900 mt-8 mb-1">Needs an answer</h2>
-  <p class="text-xs text-gray-600 mb-3">
-    Worked out from the records each time this page opens, so it is the state now.
-    <span data-testid="checks-count-note">Counted per open check on a record, not per move: the moves that are ours are the Us lines under Where everything stands.</span>
-    <a class="text-brand-indigo hover:underline ml-1" href="{% url 'supply_chain:checks' %}">Read every check, with its facts</a>
-  </p>
+  <p class="text-sm mb-3"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:checks' %}">Every check, with its facts</a></p>
   <div class="grid gap-3 sm:grid-cols-3 mb-2">
     {% for group in checks_by_audience %}
       {% if group.items %}
@@ -232,7 +136,12 @@ figures, and the catalogue is where our own gaps get closed.
   </div>
 {% endif %}
 
-<h2 class="text-sm font-semibold text-gray-900 mt-8 mb-2">Tenders</h2>
+    </div>
+  </details>
+
+  <details class="fold" data-testid="fold-tenders">
+    <summary>All tenders <span class="text-sm font-normal tabular-nums text-gray-600">{{ tenders|length }}</span></summary>
+    <div class="fold-body">
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   {% comment %}
   A scroll container is not focusable by default, so a keyboard-only user
@@ -275,13 +184,12 @@ figures, and the catalogue is where our own gaps get closed.
   </div>
 </div>
 
+    </div>
+  </details>
 {% if contracts %}
-  <h2 class="text-sm font-semibold text-gray-900 mt-8 mb-2">
-    Contracts
-    <span class="normal-case tracking-normal font-normal text-gray-600">
-      — who is actually buying
-    </span>
-  </h2>
+  <details class="fold" data-testid="fold-contracts">
+  <summary>All orders <span class="text-sm font-normal tabular-nums text-gray-600">{{ contracts|length }}</span></summary>
+  <div class="fold-body">
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     {% comment %}
     A scroll container is not focusable by default, so a keyboard-only user
@@ -335,7 +243,9 @@ figures, and the catalogue is where our own gaps get closed.
     </table>
     </div>
   </div>
-{% endif %}
-
+  </div>
+  </details>
+  {% endif %}
+</div>
 {% endif %}
 {% endblock %}

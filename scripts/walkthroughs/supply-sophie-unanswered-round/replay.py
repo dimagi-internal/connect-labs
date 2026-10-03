@@ -49,7 +49,7 @@ from connect_labs.supply_chain.operations import call_operation, declared_only
 from connect_labs.supply_chain.reference import catalogue as reference_catalogue
 
 PROGRAM_ID = 10690
-PROGRAM_NAME = "Connect-RUTF (unanswered round walkthrough)"
+PROGRAM_NAME = "Connect-RUTF (unanswered tender walkthrough)"
 OPP_LABEL = "Connect-RUTF unanswered-round walkthrough"
 # Programs this seeder must never write to, whatever PROGRAM_ID says.
 PROTECTED = {10610, 10671, 10672, 10673}
@@ -238,6 +238,10 @@ def ensure_program(program_id: int = PROGRAM_ID):
         if missing:
             opp.allowed_domains = list(opp.allowed_domains or []) + missing
             opp.save(update_fields=["allowed_domains"])
+        # The program's display name follows PROGRAM_NAME (it said "round" until it was a tender).
+        if getattr(opp, "program_name", PROGRAM_NAME) != PROGRAM_NAME:
+            opp.program_name = PROGRAM_NAME
+            opp.save(update_fields=["program_name"])
         return opp
     opp = register_labs_only_opp(
         label=OPP_LABEL,
@@ -367,7 +371,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
         )["id"]
 
     # ---- Round 1 (ten weeks back): history. Harmattan answered fully and won. ---
-    r1 = _round(w, label="RUTF round 1: 2,000 cartons to Kano", opened=d("2026-07-06"), deadline=d("2026-07-20"))
+    r1 = _round(w, label="RUTF tender 1: 2,000 cartons to Kano", opened=d("2026-07-06"), deadline=d("2026-07-20"))
     r1_out = _ask_everyone(w, r1, suppliers, d("2026-07-06"))
     # Round 1 settled its import duty terms: we import, under the program's duty waiver (its
     # quote carries duties 0 for exactly that reason). Round 2 leaves them unsettled -- the
@@ -538,7 +542,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
     )
 
     # ---- Round 2 (asked 17 days back): open, and half of it is silent. ---
-    r2 = _round(w, label="RUTF round 2: 2,000 cartons to Kano", opened=d("2026-09-15"), deadline=d("2026-09-29"))
+    r2 = _round(w, label="RUTF tender 2: 2,000 cartons to Kano", opened=d("2026-09-15"), deadline=d("2026-09-29"))
     r2_out = _ask_everyone(w, r2, suppliers, d("2026-09-15"))
 
     src = dict(

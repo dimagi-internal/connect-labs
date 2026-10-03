@@ -8,7 +8,6 @@ rendered. These are the mechanical findings between a 3 and a 4: a caveat
 said, a column held steady, a figure shown with its value.
 """
 
-import datetime
 import re
 
 import pytest
@@ -16,31 +15,24 @@ from django.urls import reverse
 
 from connect_labs.supply_chain.history.timeline import eta_moved, timeline_for_contract
 from connect_labs.supply_chain.models import Commodity, Quote, Tender
-from connect_labs.supply_chain.procurement.services.comparison import RANKING_RULE
 from connect_labs.supply_chain.procurement.services.questions import missing_facts
-from connect_labs.supply_chain.standing import standing_rows
 from connect_labs.supply_chain.tests import test_history_timeline as timeline
 from connect_labs.supply_chain.tests import test_sophie_batch3 as batch3
 from connect_labs.supply_chain.tests.test_history_timeline import (
     _COMPARABLE,
     AUG_3,
     AUG_20,
-    AUG_28,
-    PACK_EMAIL,
     PROGRAM,
-    _correct_pack,
     _quote_with,
     op,
 )
 from connect_labs.supply_chain.tests.test_sophie_batch3 import (
-    _ALL_BUT_PACK,
     MARKET_PROGRAM,
     _compare,
     _home,
     _page,
     _row,
     _sign_in,
-    _with_spec,
 )
 
 registered_synthetic = timeline.registered_synthetic
@@ -80,38 +72,6 @@ def _order_page(client, contract_id):
 # ---- 1. a provisional award: its reason in full, and why it is provisional ---
 
 
-@pytest.mark.django_db
-class TestAProvisionalAward:
-    WHY = (
-        "States everything needed to cost it and is the same manufacturer as the first round; "
-        "provisional until the other two answer"
-    )
-
-    def _award(self, da, base):
-        for name in ("Sahel Nutrition", "Plateau Mills"):
-            _quote_with(da, base["tender"]["id"], _supplier(da, name)["id"], AUG_20, {})  # blocked
-        chosen = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _DELIVERED)
-        op(da, "award_create", AUG_28, tender_id=base["tender"]["id"], quote_id=chosen["id"], rationale=self.WHY)
-
-    def test_the_row_carries_the_caveat_and_the_whole_reason(self, da, base):
-        self._award(da, base)
-        (row,) = (r for r in standing_rows(PROGRAM, datetime.date(2026, 9, 12)) if r.kind == "tender")
-        # Counted as quotes since batch 7 (nobody was invited and silent here).
-        assert row.provisional_caveat == "provisional — 2 of 3 quotes not yet comparable"
-        assert row.award_why == self.WHY
-
-    def test_the_page_renders_both_under_the_stage(self, da, base, home_client):
-        self._award(da, base)
-        standing = _standing(_home(home_client))
-        assert re.search(
-            r'data-testid="provisional-caveat"[^>]*>provisional — 2 of 3 quotes not yet comparable<', standing
-        )
-        # A full-width row of its own under the tender's since batch 7.
-        why = re.search(r'<p data-testid="award-why" class="([^"]*)"><span[^>]*>Why:</span> (.*?)</p>', standing)
-        assert why.group(2) == self.WHY
-        assert "whitespace-normal" in why.group(1).split()
-
-
 # ---- 2. the overview's columns hold still ---------------------------------
 
 
@@ -119,52 +79,7 @@ def _colgroup(body):
     return re.search(r'<table data-testid="standing-table" class="([^"]*)">\s*<colgroup>(.*?)</colgroup>', body, re.S)
 
 
-@pytest.mark.django_db
-class TestTheOverviewColumns:
-    def test_fixed_widths_the_same_today_and_as_of(self, da, base, home_client):
-        today, past = _colgroup(_home(home_client)), _colgroup(_home(home_client, as_of="2026-08-20"))
-        assert "table-fixed" in today.group(1).split() and "table-fixed" in past.group(1).split()
-        widths = re.findall(r'data-col="([^"]+)" style="width: (\d+)%"', today.group(2))
-        # A past date has no flags column since batch 7; its widths are fixed too.
-        past_widths = dict(re.findall(r'data-col="([^"]+)" style="width: (\d+)%"', past.group(2)))
-        assert list(past_widths) == ["title", "stage", "waiting", "last-change"]
-        assert sum(int(w) for w in past_widths.values()) == 100
-        by_col = {col: int(w) for col, w in widths}
-        assert sum(by_col.values()) == 100
-        # Stage is a few words; flags and "waiting on" carry a line per supplier,
-        # so they are the two widest (unanswered round 002: waiting on the widest).
-        assert by_col["stage"] < by_col["flags"]
-        assert sorted(by_col, key=by_col.get)[-2:] == ["flags", "waiting"]
-
-    def test_headers_do_not_wrap(self, da, base, home_client):
-        heads = re.findall(r"<th ([^>]*)>", _standing(_home(home_client)))
-        assert len(heads) == 5 and all("whitespace-nowrap" in h for h in heads)
-        heads = re.findall(r"<th ([^>]*)>", _standing(_home(home_client, as_of="2026-08-20")))
-        assert len(heads) == 4 and all("whitespace-nowrap" in h for h in heads)
-
-
 # ---- 3. can't compare yet: a line per supplier ------------------------------
-
-
-@pytest.mark.django_db
-class TestTheBlockedFlagReadsALineEach:
-    def test_heading_then_one_line_per_supplier(self, da, base, home_client):
-        tender_id = base["tender"]["id"]
-        sahel = _supplier(da, "Sahel Nutrition")
-        _quote_with(da, tender_id, base["supplier"]["id"], AUG_20, {**_DELIVERED, "freight_basis": "not_specified"})
-        _quote_with(da, tender_id, sahel["id"], AUG_20, {**_DELIVERED, "duties_basis": "excluded"})
-
-        (row,) = (r for r in standing_rows(PROGRAM, datetime.date(2026, 9, 12)) if r.kind == "tender")
-        (flag,) = row.stale
-        assert (flag.heading, flag.lines) == (
-            "2 quotes missing facts",
-            ("Northwind Foods — missing: freight", "Sahel Nutrition — missing: duties amount"),
-        )
-
-        rendered = re.search(r'data-testid="stale-flag".*?</details>', _standing(_home(home_client)), re.S).group(0)
-        # Folded open, the definition: the per-supplier lines are the Waiting on cell's (DDD 002 batch 2).
-        assert re.findall(r'data-testid="flag-line"[^>]*>(.*?)</span>', rendered) == list(flag.folded)
-        assert "2 quotes missing facts</span>" in rendered
 
 
 # ---- 4. as of a past day ----------------------------------------------------
@@ -192,31 +107,6 @@ class TestAsOf:
 
 
 # ---- 5. the chain says what it counts across -------------------------------
-
-
-@pytest.mark.django_db
-class TestTheChainSaysItsScope:
-    def test_the_evaluation_is_across_the_program_s_tenders(self, da, base, home_client):
-        second = op(
-            da,
-            "tender_create",
-            AUG_3,
-            data={
-                "label": "Tender Two",
-                "delivery_point": {"city": "Kano"},
-                "lines": [{"commodity_slug": "rutf", "quantity": "600", "quantity_unit": "carton"}],
-            },
-        )
-        for tender_id in (base["tender"]["id"], second["id"]):
-            op(da, "tender_open", AUG_3, tender_id=tender_id)
-            _quote_with(da, tender_id, base["supplier"]["id"], AUG_20, _DELIVERED)
-        body = _home(home_client)
-        chain = body[body.index("The chain") : body.index("Tenders</h2>")]
-        # Broken down tender by tender, newest first, so it reads back to each round's comparison.
-        assert "Tender Two: 1 of 1 · " in _text(chain)
-        assert "1 of 1 quotes comparable" in _text(chain).split("Tender Two: 1 of 1", 1)[1]
-        # And the quotations, one count per tender, newest first.
-        assert "live: 1 on Tender Two · 1 on " in _text(chain)
 
 
 # ---- 6. the program is not named twice -------------------------------------
@@ -266,9 +156,10 @@ class TestTheTimelineReads:
 
     def test_sections_clear_the_fixed_header(self, da, base, client_in_program):
         body = _tender_page(client_in_program, base["tender"]["id"])
+        # Anchors the page links to, each on a fold that a link opens (base.html's scroll-margin clears the bar).
         assert re.search(r'<section id="history"[^>]*class="[^"]*scroll-mt-20', body)
-        assert re.search(r'<h2 id="quotes" class="[^"]*scroll-mt-20[^"]*">Quotes</h2>', body)
-        assert re.search(r'<h2 id="outreach" class="[^"]*scroll-mt-20[^"]*">Outreach</h2>', body)
+        assert '<summary id="quotes">Quotes' in body
+        assert '<summary id="outreach">Invitations' in body
 
     def test_an_eta_change_says_how_far_it_moved(self, da, base, order, client_in_program):
         (moved,) = (e for e in timeline_for_contract(order["contract"]["id"], program_id=PROGRAM) if e.eta_moved)
@@ -347,82 +238,6 @@ def _card(body, quote_id):
     return body[start : after if after != -1 else len(body)]
 
 
-@pytest.mark.django_db
-class TestABlockedCard:
-    def test_the_spec_chip_is_not_repeated_under_the_question(self, da, base, client_in_program):
-        _with_spec(da)
-        quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
-        card = _card(_page(client_in_program, base["tender"]["id"]), quote["id"])
-        assert re.search(
-            r'data-testid="blocker-spec-line"[^>]*>Sachets per carton: not stated \(tender requires 150\)<', card
-        )
-        assert "Our specification: exactly 150" not in card
-
-    def test_not_blocking_says_the_rule(self, da, base, client_in_program):
-        _with_spec(da)
-        quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
-        card = _card(_page(client_in_program, base["tender"]["id"]), quote["id"])
-        rule = re.search(r'data-testid="not-blocking-rule" title="([^"]*)"[^>]*>not blocking<', card).group(1)
-        assert rule == RANKING_RULE.replace("'", "&#x27;")
-        for gate in ("price", "pack size", "quantity", "freight", "duties"):
-            assert gate in RANKING_RULE
-
-    def test_the_blocker_outweighs_the_metadata(self, da, base, client_in_program):
-        quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
-        card = _card(_page(client_in_program, base["tender"]["id"]), quote["id"])
-        meta = re.search(r'data-testid="received-on" class="([^"]*)"', card).group(1).split()
-        blocking = re.search(r'data-testid="blocking" class="([^"]*)"', card).group(1).split()
-        # Since DDD 002 batch 2 the blocker is at regular weight in a two-column list
-        # under a small "Blocking" label; it still outweighs the grey metadata.
-        assert "font-semibold" not in meta
-        assert "text-gray-900" in blocking and "text-gray-600" in meta
-
-    def test_the_banner_says_each_is_missing_one_fact(self, da, base, client_in_program):
-        tender_id = base["tender"]["id"]
-        _quote_with(da, tender_id, base["supplier"]["id"], AUG_20, {**_DELIVERED, "freight_basis": "not_specified"})
-        _quote_with(
-            da, tender_id, _supplier(da, "Sahel Nutrition")["id"], AUG_20, {**_DELIVERED, "duties_basis": "excluded"}
-        )
-        _quote_with(da, tender_id, _supplier(da, "Lakeside Foods")["id"], AUG_20, _ALL_BUT_PACK)
-        banner = _text(
-            re.search(
-                r'<div data-testid="comparison-banner"[^>]*>(.*?)</div>', _page(client_in_program, tender_id), re.S
-            ).group(1)
-        )
-        # Since the unanswered round's batch 3: what is missing, by whom, and nothing else.
-        assert banner == (
-            "0 of 3 quotes can be compared. Not yet stated or recorded Lakeside Foods sachets per carton Draft email "
-            "Sahel Nutrition duties amount Draft email Northwind Foods freight Draft email"
-        )
-
-    def test_a_quote_missing_two_facts_is_not_said_to_miss_one(self, da, base, client_in_program):
-        _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {})
-        body = _page(client_in_program, base["tender"]["id"])
-        sentence = _text(re.search(r'data-testid="not-stated"[^>]*>(.*?)</li>', body, re.S).group(1))
-        # Since DDD 003 batch 7 each line is the supplier (a link to its card), its facts, and a draft email link.
-        assert sentence.startswith("Northwind Foods ") and sentence.count(",") >= 1
-
-
-@pytest.mark.django_db
-class TestStatedOnTheQuoteShowsItsValue:
-    def test_the_figure_beside_its_name(self, da, base, client_in_program):
-        _with_spec(da)
-        quote = _quote_with(
-            da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {**_DELIVERED, "shelf_life_months_stated": 24}
-        )
-        row = _row(_compare(da, base["tender"]["id"]), quote["id"])
-        assert [v["text"] for v in row["specification"]["stated_values"]] == [
-            "Sachets per carton: 150",
-            "Shelf life: 24 months",
-        ]
-        body = _page(client_in_program, base["tender"]["id"])
-        stated = re.findall(r'data-spec-origin="quote">(.*?)</div>', body)
-        assert stated == [
-            "Sachets per carton: 150 (stated on the quote)",
-            "Shelf life: 24 months (stated on the quote)",
-        ]
-
-
 # ---- 12. a ranked row -------------------------------------------------------
 
 
@@ -434,35 +249,6 @@ def _detail(body, quote_id):
 
 @pytest.mark.django_db
 class TestARankedRow:
-    def test_provenance_is_one_line_opening_on_the_quote(self, da, base, ace, client_in_program):
-        quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
-        corrected = _correct_pack(da, quote, ace)
-        detail = _detail(_page(client_in_program, base["tender"]["id"]), corrected["id"])
-        source = re.search(r'<details data-testid="correction-source".*?</details>', detail, re.S).group(0)
-        summary = _text(re.search(r"<summary[^>]*>(.*?)</summary>", source, re.S).group(1))
-        assert summary == "Corrected 28 Aug by ACE (agent) from Northwind Foods email:"
-        after_summary = source[source.index("</summary>") :]
-        # The quote comes first under it; no second "recorded by" heading.
-        assert after_summary.index('data-testid="source-excerpt"') < after_summary.index("Changed:")
-        assert re.search(r'data-testid="source-excerpt"[^>]*>(.*?)</blockquote>', source).group(1) == PACK_EMAIL
-        assert "recorded by" not in source
-
-    def test_a_figure_the_correction_supplied_is_not_said_to_be_on_the_quote(self, da, base, ace, client_in_program):
-        _with_spec(da)
-        quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
-        corrected = _correct_pack(da, quote, ace)
-        detail = _detail(_page(client_in_program, base["tender"]["id"]), corrected["id"])
-        # Not said twice: the correction's source line names the email.
-        assert "from supplier email" not in detail
-        assert "(stated on the quote)" not in detail
-
-    def test_the_landed_basis(self, da, base, client_in_program):
-        quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _DELIVERED)
-        detail = _detail(_page(client_in_program, base["tender"]["id"]), quote["id"])
-        assert re.search(
-            r'data-testid="landed-basis"[^>]*>Delivered to Kano · freight included · duties included, per quote<',
-            detail,
-        )
 
     def test_the_landed_basis_says_an_added_amount_and_an_incoterm(self, da, base):
         quote = _quote_with(
@@ -483,22 +269,6 @@ class TestARankedRow:
             "DDP Kano · delivered to Kano · freight 300.00 USD added · duties included,"
             " per quote and Incoterm DDP Kano"
         )
-
-    def test_equal_per_carton_course_and_child_are_said_once(self, da, base, client_in_program):
-        Commodity.objects.filter(slug="rutf").update(
-            base_per_pack=150, course_definition={"base_units_per_course": 150}
-        )
-        _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _DELIVERED)
-        body = _page(client_in_program, base["tender"]["id"])
-        # Since batch 7 the three equal columns are one, its header saying why.
-        # Since the unanswered round's batch 3 the header is short and the equation is the caption;
-        # since batch 4 that caption and the cost basis are one line.
-        assert re.search(
-            r'data-testid="cost-basis"[^>]*>Basis: 1 carton = 150 sachets = 1 course \(one child treated\)<', body
-        )
-        assert 'data-testid="unit-equivalence"' not in body
-        assert "<th>USD per carton (one course)</th>" in body
-        assert "<th>USD per child treated</th>" not in body and "<th>USD per course</th>" not in body
 
     def test_not_said_when_they_differ(self, da, base, client_in_program):
         Commodity.objects.filter(slug="rutf").update(

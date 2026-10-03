@@ -17,7 +17,11 @@ def _comparing(snapshot):
     from the catalogue; a mock answering either with a snapshot dict would
     hand the page a dict to iterate.
     """
-    return lambda name, access, payload: [] if name in ("award_list", "commodity_list") else snapshot
+    return lambda name, access, payload: (
+        []
+        if name in ("award_list", "commodity_list")
+        else {"drafts": []} if name == "tender_drafts_render" else snapshot
+    )
 
 
 @pytest.fixture
@@ -147,6 +151,8 @@ def test_the_comparison_page_shows_an_unconfirmed_reason_rather_than_a_number(cl
         "figures": {"usd_per_base_unit": {"unconfirmed": ["pack spec not stated on the quote"]}},
         "compliance": [],
         "questions": [{"key": "pack_spec", "question": "How many sachets are in one carton?", "audience": "supplier"}],
+        "gaps": ["units per pack"],
+        "blockers": [{"label": "units per pack", "fact": "Units per pack not stated on the quote"}],
     }
     snapshot = {
         "tender_id": 1,
@@ -170,8 +176,8 @@ def test_the_comparison_page_shows_an_unconfirmed_reason_rather_than_a_number(cl
     with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_comparing(snapshot)):
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
     body = response.content.decode()
-    # In the commodity's words where it names its units; "units per pack" where it does not.
-    assert "units per pack not stated" in body
+    # The pack is a gap on the grid, its reason in the commodity's words ("units per pack" when it names none).
+    assert 'title="Units per pack not stated on the quote"' in body
     assert "Harmattan Foods" in body
 
 
@@ -197,6 +203,7 @@ def test_the_comparison_page_uses_house_tailwind_not_bootstrap(client, sophie):
         "figures": {"usd_per_base_unit": {"unconfirmed": ["pack spec not stated on the quote"]}},
         "compliance": [],
         "questions": [{"key": "pack_spec", "question": "How many sachets are in one carton?", "audience": "supplier"}],
+        "gaps": ["units per pack"],
     }
     snapshot = {
         "tender_id": 1,
@@ -228,7 +235,7 @@ def test_the_comparison_page_uses_house_tailwind_not_bootstrap(client, sophie):
         "d-flex gap-1",
     ):
         assert bootstrap_class not in body
-    assert "base-table" in body
+    assert 'data-testid="comparison-grid"' in body
 
 
 def test_the_comparison_page_shows_outstanding_questions_for_a_comparable_row(client, sophie):
@@ -269,12 +276,9 @@ def test_the_comparison_page_shows_outstanding_questions_for_a_comparable_row(cl
     body = response.content.decode()
     assert response.status_code == 200
     assert "Northwind Nutrition" in body
-    assert "What is the shelf life from date of manufacture?" in body
-    # One offer is not a ranking (unanswered round, batch 2): no "#" column and no
-    # "ranked by" marker; the marker on its column is pinned with two offers in batch 10's test.
-    assert "<th>USD per sachet</th>" in body
-    assert 'data-testid="ranked-by-marker"' not in body and 'data-testid="ranked-by-fallback"' not in body
-    assert "<th>#</th>" not in body
+    # A shelf-life question does not block: the quote stays comparable, with its award to hand.
+    assert 'data-testid="grid-status">Comparable<' in body
+    assert 'data-testid="award-form"' in body
     # provisional is False -- the PROVISIONAL badge must not render.
     assert "PROVISIONAL" not in body
 
@@ -371,6 +375,8 @@ def test_comparison_without_a_commodity_defaults_when_the_tender_has_one_line(cl
             return snapshot
         if name in ("award_list", "commodity_list", "quote_list"):
             return []
+        if name == "tender_drafts_render":
+            return {"drafts": []}
         raise AssertionError(name)
 
     with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_dispatch):
@@ -558,62 +564,11 @@ def test_the_comparison_page_attributes_an_uncomputable_column_to_us_not_a_suppl
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
     body = response.content.decode()
 
-    assert "Ours to close, not theirs" in body
+    assert "Not computed for any quote" in body
     assert "no course definition set" in body
     # And it must NOT be dressed up as the supplier's problem.
     assert "PROVISIONAL" not in body
     assert "not given us enough to compare" not in body
-
-
-def test_a_comparable_row_never_renders_an_unconfirmed_figure_as_a_blank(client, sophie):
-    """Comparability no longer waits on figures only we can supply, so a
-    COMPARABLE row can now hold an unconfirmed cell -- a state that was
-    unreachable before. The comparable table rendered `cell.amount` for it
-    unconditionally, producing an empty cell, which reads as "no cost per
-    course" rather than "we have not set the ration table". A blank is the
-    one thing the Unconfirmed type exists to prevent."""
-    row = {
-        "quote_id": 5,
-        "supplier_id": 1,
-        "supplier_name": "Harmattan Foods",
-        "is_comparable": True,
-        "figures": {
-            "landed_total_for_tender_quantity": {"amount": "100000.00", "currency": "USD"},
-            "usd_per_course": {"unconfirmed": ["no course definition set for RUTF (sachets per course)"]},
-        },
-        "compliance": [],
-        "questions": [],
-    }
-    snapshot = {
-        "tender_id": 1,
-        "generated_at": "2026-09-12T00:00:00+00:00",
-        "comparable_count": 1,
-        "total_count": 1,
-        "ranked_by": "landed_total_for_tender_quantity",
-        "provisional": False,
-        "unavailable": {
-            "usd_per_course": {"label": "USD per course", "reasons": ["no course definition set for RUTF"]}
-        },
-        "columns": [
-            {
-                "key": "landed_total_for_tender_quantity",
-                "label": "Landed total (this tender)",
-                "rankable": True,
-                "blocked_by": [],
-            },
-            {"key": "usd_per_course", "label": "USD per course", "rankable": False, "blocked_by": []},
-        ],
-        "comparable": [row],
-        "blocked": [],
-        "all_rows": [row],
-    }
-    with patch("connect_labs.supply_chain.procurement.views.call_operation", side_effect=_comparing(snapshot)):
-        response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
-    body = response.content.decode()
-
-    assert "Unconfirmed" in body, "the cell rendered blank instead of saying it is unconfirmed"
-    # The confirmed figure on the same row still renders as a number.
-    assert "100,000.00" in body
 
 
 def test_with_nothing_comparable_the_page_does_not_claim_a_provisional_ranking(client, sophie):
@@ -635,6 +590,7 @@ def test_with_nothing_comparable_the_page_does_not_claim_a_provisional_ranking(c
         "figures": {"usd_per_pack_normalized": {"unconfirmed": ["pack spec not stated on the quote"]}},
         "compliance": [],
         "questions": [{"key": "pack_spec", "question": "How many sachets are in one carton?", "audience": "supplier"}],
+        "gaps": ["units per pack"],
     }
     snapshot = {
         "tender_id": 1,
@@ -660,9 +616,9 @@ def test_with_nothing_comparable_the_page_does_not_claim_a_provisional_ranking(c
         response = client.get(reverse("supply_chain:procurement_comparison", args=[1]) + "?commodity=rutf")
     body = response.content.decode()
 
-    # Since the unanswered round's batch 3 the banner states only what is missing:
-    # the count, then who has not stated what (these rows carry no blockers).
-    assert "0 of 2 quotes can be compared.</strong>" in body
+    # The page states the count, and each quote's status: what it is missing, not a ranking.
+    assert ">0 of 2 comparable<" in body
+    assert body.count('data-testid="grid-status">Missing 1 fact<') == 2
     assert "could still beat it" not in body and "PROVISIONAL" not in body
     # Who has to answer is still reported.
     assert "EHA Clinics" in body

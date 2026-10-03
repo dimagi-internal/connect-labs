@@ -192,8 +192,9 @@ class TestTheComparison:
 
     def test_money_reads_as_money(self, client_in_programme, chain):
         body = self._page(client_in_programme, chain)
-        assert "USD 18,000.00" in body
-        assert "18000.0000" not in body
+        # Every figure currency first, to two places; no storage decimals.
+        assert "USD 0.60 / co-pack" in body
+        assert "0000" not in re.sub(r"<[^>]+>", " ", body[body.index('data-testid="comparison-grid"') :])
 
     def test_the_chosen_offer_is_marked_and_not_offered_again(self, client_in_programme, chain):
         body = self._page(client_in_programme, chain)
@@ -212,12 +213,6 @@ class TestTheComparison:
 
     def test_headings_clear_the_sticky_bar_when_scrolled_to(self, client_in_programme, chain):
         assert "scroll-margin-top" in self._page(client_in_programme, chain)
-
-    def test_identical_landed_totals_are_one_column(self, client_in_programme, chain):
-        body = self._page(client_in_programme, chain)
-        head = body[body.index("<thead") : body.index("</thead>")]
-        assert "Landed total (as quoted)" not in head
-        assert head.count("Landed total") == 1
 
     def test_differing_landed_totals_stay_two_columns(self):
         from connect_labs.supply_chain.procurement.views import table_columns
@@ -252,7 +247,7 @@ class TestTheTendersQuotes:
         response = client.get(reverse("supply_chain:procurement_tender_detail", args=[chain["tender"]["id"]]))
         assert response.status_code == 200
         body = response.content.decode()
-        start = body.index(">Quotes<")
+        start = body.index('<summary id="quotes">Quotes')
         return body[start : body.index("</table>", start)]
 
     def test_each_quote_names_its_trade_item_and_contents(self, client_in_programme, chain):
@@ -293,7 +288,7 @@ class TestTheOrder:
     def test_the_header_names_the_buyer_with_the_role_beside_it(self, client_in_programme, chain):
         body = self._page(client_in_programme, chain)
         header = body[body.index("Bought by") :]
-        header = header[: header.index("</p>")]
+        header = header[: header.index("</dd>")]
         assert "Child Health Programme" in header
         # DDD 004: one form everywhere, as the banner says it -- "<org>, buyer of record".
         assert ", buyer of record" in header

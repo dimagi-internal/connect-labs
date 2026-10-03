@@ -188,4 +188,4 @@ class TestTheAwardedStripSaysWhoAndWhy:
     def test_the_comparison_names_the_decider_and_the_reason(self, client_in_programme, world):
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]])
         text = _text(client_in_programme.get(url + "?commodity=chlorine").content.decode())
-        assert "Why: registered locally" in text
+        assert "registered locally" in text[text.index("Awarded") :]

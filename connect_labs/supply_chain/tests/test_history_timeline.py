@@ -760,11 +760,11 @@ class TestPages:
         url = reverse("supply_chain:procurement_comparison", args=[base["tender"]["id"]])
         body = client_in_program.get(url, {"commodity": "rutf"}).content.decode()
 
-        ranked = re.search(rf'<tr data-testid="ranked-row" data-quote-id="{typed["id"]}"[^>]*>.*?</tr>', body, re.S)
-        assert ranked and 'data-testid="ai-badge"' not in ranked.group(0)
-        card = body[body.index(f'data-quote-id="{by_ai["id"]}"') :]
-        assert 'data-testid="ai-badge"' in card[: card.index("</h3>")]
-        assert body.count('data-testid="ai-badge"') == 1
+        # Each quote's price carries its source: one typed by a person, one recorded through the AI.
+        heads = re.findall(r'data-quote-id="(\d+)" data-testid="grid-quote"', body)
+        price = re.search(r'<tr data-fact="price".*?</tr>', body, re.S).group(0)
+        sources = re.findall(r'data-src="(\w+)"', price)
+        assert dict(zip(map(int, heads), sources)) == {typed["id"]: "person", by_ai["id"]: "ai"}
 
     def test_a_quote_corrected_over_mcp_is_marked_ai_on_the_comparison(self, client_in_program, da, base, ace, sophie):
         typed = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {}, channel="web", actor=sophie)
@@ -772,8 +772,11 @@ class TestPages:
         url = reverse("supply_chain:procurement_comparison", args=[base["tender"]["id"]])
         body = client_in_program.get(url, {"commodity": "rutf"}).content.decode()
 
+        import re
+
         assert f'data-quote-id="{corrected["id"]}"' in body
-        assert body.count('data-testid="ai-badge"') == 1
+        price = re.search(r'<tr data-fact="price".*?</tr>', body, re.S).group(0)
+        assert re.findall(r'data-src="(\w+)"', price) == ["ai"]
 
     def test_the_order_page_as_of_leaves_out_the_later_change(self, client_in_program, order):
         url = reverse("supply_chain:order_detail", args=[order["contract"]["id"]])

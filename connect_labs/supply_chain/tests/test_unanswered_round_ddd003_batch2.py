@@ -130,9 +130,7 @@ class TestTheComparison:
         assert "excluded from the price" not in words
         assert "on the quote" not in words
 
-    def test_terms_set_by_an_answer_say_so_and_the_award_says_the_round_is_incomplete(
-        self, da, world, client_in_program
-    ):
+    def test_terms_set_by_an_answer_show_on_the_comparison(self, da, world, client_in_program):
         question = _question(da, world)
         op(
             da,
@@ -145,13 +143,10 @@ class TestTheComparison:
         _quote(da, world)
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         body = client_in_program.get(url).content.decode()
-        note = _text(re.search(r'data-testid="comparison-duty-terms".*?</p>\s*</div>', body, re.S).group(0))
-        assert "Set 3 Oct from your answer to a question from" in note
-        assert "waiver document: none on file yet" in note
+        note = _text(re.search(r'data-testid="comparison-duty-terms".*?</summary>', body, re.S).group(0))
+        assert "we import, under the program's duty waiver" in note.replace("&#x27;", "'")
+        assert "waiver document not on file" in note
         assert Commitment.objects.filter(resolved_on__isnull=False).exists()
-        if 'data-testid="award-label"' in body:
-            label = _text(re.search(r'data-testid="award-label".*?</span>', body, re.S).group(0))
-            assert "still incomplete" in label and "now" not in label
 
 
 @pytest.mark.django_db

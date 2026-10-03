@@ -126,7 +126,7 @@ class TestTheComparisonAndTheAward:
         body = scoped.get(
             reverse("supply_chain:procurement_comparison", args=[world["award"]["tender_id"]]) + "?commodity=test-kit"
         ).content.decode()
-        assert "Why this offer" in body and "Decided by" in body and 'data-testid="ranked-row-actions"' in body
+        assert "Why this offer" in body and "Decided by" in body and 'data-testid="award-form"' in body
         assert 'name="decided_by" value="kits2"' not in body
 
     def test_the_award_is_headed_by_what_was_chosen(self, scoped, world):

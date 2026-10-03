@@ -1,0 +1,21 @@
+{% comment %}
+One "On us" / "On suppliers" list (moves.py, nothing else): a card headed by its
+count, one .move-item per move with its rule label and the link that makes it.
+Takes `moves`, `whose` ("ours" | "theirs"), `heading`, `testid`, and optionally
+`count_testid` and `empty_text`. A move to a drafted email on this page opens
+the draft panel at it (window.openDraft, the tender page's).
+{% endcomment %}
+<section class="card_bg border-brand-border-light flex flex-col gap-3 border" data-testid="{{ testid }}" aria-label="{{ heading }}">
+  <div class="flex items-baseline justify-between gap-3">
+    <h2 class="card_title">{{ heading }}</h2>
+    <span class="text-lg font-semibold tabular-nums {% if whose == 'ours' and moves %}text-message-warning-text{% else %}text-gray-600{% endif %}"{% if count_testid %} data-testid="{{ count_testid }}"{% endif %}>{{ moves|length }}</span>
+  </div>
+  {% for m in moves %}
+  <div class="move-item move-item--{{ whose }}" data-testid="move" data-rule="{{ m.rule }}">
+    <div class="flex min-w-0 flex-col gap-0.5"><span class="font-medium text-gray-900">{{ m.text }}</span><span class="text-xs text-gray-600"><span class="move-rule" title="{{ m.rule_title }}">{{ m.rule }}</span>{{ m.detail }}</span></div>
+    {% if not supply_as_of %}<a class="text-brand-indigo whitespace-nowrap font-semibold hover:underline" data-testid="move-cta" href="{{ m.href }}"{% if "#draft-" in m.href %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ m.href|cut:request.path|slice:"1:" }}');"{% endif %}>{{ m.cta }}</a>{% endif %}
+  </div>
+  {% empty %}
+  <p class="m-0 text-sm text-gray-600">{{ empty_text|default:"Nothing." }}</p>
+  {% endfor %}
+</section>
