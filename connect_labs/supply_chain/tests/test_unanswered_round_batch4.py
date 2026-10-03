@@ -196,7 +196,8 @@ class TestWhatWeOweBySupplier:
         answer = re.search(
             r'data-testid="owed-answer".*?</div>', body[body.index(f'data-commitment-id="{asked["id"]}"') :], re.S
         ).group(0)
-        assert re.search(r'data-testid="owed-status"[^>]*>Answered<', answer)
+        # Since DDD v11 an answer written into a reply not yet sent reads as drafted.
+        assert re.search(r'data-testid="owed-status"[^>]*>Answer drafted<', answer)
         assert "(just now): We are." in re.sub(r"<[^>]+>", "", answer)
         assert 'data-testid="changed-chip"' not in row
 

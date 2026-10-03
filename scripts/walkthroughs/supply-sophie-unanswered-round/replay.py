@@ -133,9 +133,23 @@ class Refused(RuntimeError):
     pass
 
 
+def story_today() -> dt.date:
+    """THE render day every story date is anchored to: today in the app's TIME_ZONE.
+
+    One day for the replay and the `--sahel-replies` hook alike (seed.py's
+    `story_today` computes it the same way). `date.today()` is the machine's
+    local calendar, which differs from the app's (UTC) for hours either side
+    of midnight -- so a replay seeded just before midnight in one and a reply
+    recorded just after in the other dated the reply BEFORE the chase.
+    """
+    from django.utils import timezone
+
+    return timezone.localdate()
+
+
 def story_day(story_iso: str, today: dt.date | None = None) -> str:
     """A story date (as of STORY_TODAY) moved to the same offset from `today`, as ISO."""
-    shift = (today or dt.date.today()) - STORY_TODAY
+    shift = (today or story_today()) - STORY_TODAY
     return (dt.date.fromisoformat(story_iso) + shift).isoformat()
 
 
@@ -162,7 +176,7 @@ def _ten_am(day: str) -> dt.datetime:
 
     when = timezone.make_aware(dt.datetime.combine(dt.date.fromisoformat(day), dt.time(10)))
     now = timezone.now()
-    if when.date() > now.date():
+    if when.date() > timezone.localdate(now):
         raise Refused(f"a step dated {day} is in the future")
     return min(when, now)
 
@@ -294,6 +308,11 @@ def _round(w: World, *, label: str, opened: str, deadline: str) -> int:
     return tender["id"]
 
 
+def _settle_duty_terms(w: World, tender_id: int, terms: str, day: str) -> None:
+    """Set a round's import duty terms through the operation that owns them, as Sophie, on `day`."""
+    w.op("sophie", day, "tender_set_duty_terms", tender_id=tender_id, duty_terms=terms, set_on=day)
+
+
 def _ask_everyone(w: World, tender_id: int, suppliers: dict, day: str) -> dict:
     return {
         key: w.op(
@@ -307,7 +326,7 @@ def _ask_everyone(w: World, tender_id: int, suppliers: dict, day: str) -> dict:
 
 
 def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, today: dt.date | None = None) -> dict:
-    today = today or dt.date.today()
+    today = today or story_today()
 
     def d(story_iso: str) -> str:
         return story_day(story_iso, today)
@@ -344,6 +363,10 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
     # ---- Round 1 (ten weeks back): history. Harmattan answered fully and won. ---
     r1 = _round(w, label="RUTF round 1: 2,000 cartons to Kano", opened=d("2026-07-06"), deadline=d("2026-07-20"))
     r1_out = _ask_everyone(w, r1, suppliers, d("2026-07-06"))
+    # Round 1 settled its import duty terms: we import, under the program's duty waiver (its
+    # quote carries duties 0 for exactly that reason). Round 2 leaves them unsettled -- the
+    # story settles them on camera when Sophie answers Northgate.
+    _settle_duty_terms(w, r1, "buyer_waiver", d("2026-07-06"))
     src = dict(
         ref="<PFI0457.k.mensah@harmattan-tx.example.invalid>",
         excerpt="PFI-2026-0457: USD 49.80/CTN x 2,000 (150 x 92 g), FCA Tema. Estimated freight USD 7,200. "
@@ -507,7 +530,8 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
 
     src = dict(
         ref="<PFI0611.k.mensah@harmattan-tx.example.invalid>",
-        excerpt="PFI-2026-0611: USD 50.10/CTN x 2,000 (150 x 92 g), DDP Kano, freight, duty and clearance included. "
+        excerpt="PFI-2026-0611: USD 50.10/CTN x 2,000 (150 x 92 g), CPT Kano, freight to Kano included. "
+        "Duty nil under your waiver, as on PFI-0457. "
         "Shelf life 24 months. Lead time 5 weeks. MOQ 500 cartons. Validity 30 days.",
         sender="Kwame Mensah, Harmattan Therapeutics",
     )
@@ -528,12 +552,16 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
             base_per_pack_stated=150,
             base_unit_grams_stated=92,
             freight_basis="included",
-            duties_basis="included",
+            # As round 1 settled it: we import under the program's duty waiver, so duty is
+            # stated nil -- an explicit 0.00 the comparison costs whether or not the round's
+            # own duty terms are settled yet.
+            duties_basis="excluded",
+            duties_amount="0.00",
             shelf_life_months_stated=24,
             lead_time_days=35,
             moq=500,
             moq_unit="carton",
-            incoterm="DDP Kano",
+            incoterm="CPT Kano",
             delivery_point_keys=["kano"],
             validity_until=d("2026-10-17"),
             received_on=d("2026-09-17"),
@@ -659,7 +687,7 @@ STORY_DATES = {
 
 
 def story_dates(today: dt.date | None = None) -> dict:
-    today = today or dt.date.today()
+    today = today or story_today()
     dates = {name: display_day(story_day(iso, today)) for name, iso in STORY_DATES.items()}
     dates["today_date"] = display_day(today.isoformat())
     return dates
@@ -691,7 +719,7 @@ def run(program_id: int = PROGRAM_ID, *, mint: bool = False, create_buyer: bool 
     ensure_program(program_id)
     print("purged", reset(program_id))
     outputs = seed_world(program_id, create_buyer=create_buyer)
-    outputs["today"] = dt.date.today().isoformat()
+    outputs["today"] = story_today().isoformat()
     if mint:
         outputs["sophie_session"] = mint_sophie_session()
     return outputs

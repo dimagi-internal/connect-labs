@@ -80,3 +80,30 @@ def test_seeded_round_reads_the_same_age_whatever_the_day(replay):
     assert (today - advance.paid_on).days == 66
     assert out["ask_date"] == replay.display_day(sahel.sent_on.isoformat())
     assert out["deadline_date"] == replay.display_day(tender.response_deadline.isoformat())
+
+
+@pytest.mark.django_db
+def test_harmattan_round_2_quotes_as_round_1_settled_it_and_stays_comparable(replay):
+    """Round 2's leading quote must not contradict "we import": CPT Kano, duty stated nil under
+    the waiver (as on PFI-0457), so it is costed while the round's own duty terms are unsettled."""
+    from decimal import Decimal
+
+    from connect_labs.supply_chain.history.models import OperationCall
+    from connect_labs.supply_chain.models import Quote, Tender
+    from connect_labs.supply_chain.procurement.services.pricing import Money, _extras, basis_gaps
+
+    replay.ensure_program()
+    out = replay.seed_world(create_buyer=True, today=dt.date.today())
+    tender = Tender.objects.get(id=out["round2_tender_id"])
+    assert tender.duty_terms == ""  # unsettled until scene 5
+    quote = Quote.objects.select_related("tender", "commodity").get(
+        tender_id=tender.id, supplier_reference="PFI-2026-0611"
+    )
+    assert quote.incoterm == "CPT Kano"
+    assert (quote.freight_basis, quote.duties_basis, quote.duties_amount) == ("included", "excluded", Decimal("0"))
+    excerpt = (
+        OperationCall.objects.filter(operation="quote_record", source_ref__contains="PFI0611").get().source_excerpt
+    )
+    assert "DDP" not in excerpt and "nil under your waiver" in excerpt
+    assert _extras(quote, tender) == Money(Decimal("0"))
+    assert basis_gaps(quote) == []

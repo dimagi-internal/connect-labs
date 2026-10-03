@@ -730,6 +730,19 @@ def _plural(n, noun):
     return f"{n} {noun}{'' if n == 1 else 's'}"
 
 
+def _awaiting_words(rfq) -> str:
+    """ "3 awaiting a reply on 1 open round": the silent suppliers the overview's table names, and where.
+
+    Counted by the table's own rule (standing.awaiting_reply), and it says so:
+    silent on rounds still being chased, not every unanswered invitation.
+    """
+    n = rfq.get("awaiting_reply") or 0
+    rounds = rfq.get("awaiting_tenders") or 0
+    if not n:
+        return "none awaiting a reply on open rounds"
+    return f"{n} awaiting a reply on {_plural(rounds, 'open round')}"
+
+
 @register.filter
 def source_stages(source):
     """chain_summary's source counts, as stage cells.
@@ -758,7 +771,7 @@ def source_stages(source):
         _cell(
             "RFQ issued",
             source["rfq_issued"]["invitations"],
-            f"{source['rfq_issued']['awaiting_reply']} awaiting a reply" + across(source["rfq_issued"]),
+            _awaiting_words(source["rfq_issued"]),
             sourcing,
         ),
         _cell("Quotations", source["quotations"]["live"], "live" + across(source["quotations"]), sourcing),
@@ -1371,3 +1384,11 @@ def email_events(timeline):
     from connect_labs.supply_chain.history.timeline import email_events as fold
 
     return fold(list(timeline or []))
+
+
+@register.filter
+def duty_terms_words(value) -> str:
+    """ "we import, under the program's duty waiver", or "not settled": a round's import-duty terms."""
+    from connect_labs.supply_chain.records import DUTY_TERMS_LABELS
+
+    return DUTY_TERMS_LABELS.get(value or "", DUTY_TERMS_LABELS[""])

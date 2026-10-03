@@ -84,6 +84,15 @@ class MissingFact:
 # three of the rows below are `audience="internal"` rather than omitted:
 # the fact they name is real, it just is not the supplier's to give.
 _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
+    # First, so no supplier row's fragment claims it: on a round where we
+    # import and pay, duty is our own estimate to record, not their question.
+    (
+        "no duty estimate",
+        "duty_estimate",
+        "This round's import duty is ours to pay: record our duty estimate (a percentage of the goods) "
+        "on the tender -- a landed total cannot be computed until then.",
+        INTERNAL,
+    ),
     (
         "pack spec",
         "pack_spec",
@@ -496,6 +505,10 @@ def initial_request_facts(
         ("freight_basis", _QUESTION_BY_KEY["freight_basis"]),
         ("duties_basis", _QUESTION_BY_KEY["duties_basis"]),
     ):
+        # A round whose duty is ours (under the waiver, or paid by us) does
+        # not ask a supplier about it.
+        if key == "duties_basis" and getattr(tender, "duty_terms", "") in ("buyer_waiver", "buyer_pays"):
+            continue
         seen.add(key)
         facts.append(_fact(key, template, context))
 

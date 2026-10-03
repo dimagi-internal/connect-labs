@@ -535,6 +535,8 @@ _TENDER_DATA = _data_with(
     response_deadline={"type": ["string", "null"], "format": "date"},
     notes_to_supplier={"type": "string"},
     shelf_life_months_minimum=_NON_NEGATIVE_INT,
+    duty_terms={"enum": list(records.DUTY_TERMS)},
+    duty_estimate_percent={"type": ["number", "string", "null"]},
 )
 
 _ITEM_DATA = _data_with(

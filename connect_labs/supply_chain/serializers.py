@@ -153,6 +153,9 @@ def tender(obj) -> dict:
         "shelf_life_months_minimum": obj.shelf_life_months_minimum,
         "notes_to_supplier": obj.notes_to_supplier,
         "visibility": obj.visibility,
+        "duty_terms": obj.duty_terms,
+        "duty_estimate_percent": str(obj.duty_estimate_percent) if obj.duty_estimate_percent is not None else None,
+        "duty_terms_set_on": _date(obj.duty_terms_set_on),
     }
 
 
@@ -423,6 +426,7 @@ def commitment(obj) -> dict:
         "due_on": _date(obj.due_on),
         "resolved_on": _date(obj.resolved_on),
         "resolution": obj.resolution,
+        "reply_sent_on": _date(obj.reply_sent_on),
         "open": obj.is_open,
         **_sourced(obj),
     }
