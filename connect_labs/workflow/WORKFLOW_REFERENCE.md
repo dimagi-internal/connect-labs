@@ -301,6 +301,14 @@ Each row becomes one visit-shaped row; its cells are under `row.*` and the file 
 - **Scope limits:** a source is authorized per opportunity, so a multi-opp fan-out reads Drive only
   for the opportunity it was authorized for, and a program-scoped pipeline cannot use Drive.
 - **Freshness:** rows are cached for the pipeline's TTL (1 hour); a forced refresh re-reads Drive.
+- **Several pipelines, one read:** pipelines on the same opportunity whose sources agree on
+  `file_id`/`folder_id`, `file_pattern`, `null_values`, `username_column` and `date_column`
+  share ONE raw copy of the rows. The first to build reads Drive; the others build from that copy
+  without touching Drive. So split a big folder into several small summary pipelines (an entity
+  pipeline per question, per state, ...) rather than one pipeline that ships every row. Sharing the
+  rows does not share the right to read them: each pipeline's own stamp and the caller's
+  membership are checked on every read, before the shared copy is touched. A forced refresh on
+  any of them re-reads Drive into the shared copy (once per page load, not once per pipeline).
 
 #### `grouping_key`
 
@@ -477,7 +485,19 @@ Only count or aggregate rows where a specific field matches a value. Useful for 
     "filter_path": "form.child_alive",
     "filter_value": "no",
 }
+
+# The first T2 typology name per question (first / last / list honour the filter too)
+{"name": "t2_name", "path": "row.typology_name", "aggregation": "first",
+ "filter_path": "row.typology_id", "filter_value": "T2"}
 ```
+
+`filter_path` / `filter_value` restrict ONE field's aggregate. To restrict every row a pipeline
+aggregates, use the schema's `filters` (below) — at `terminal_stage: "entity"` they are applied
+before the GROUP BY, e.g. `"filters": {"state": ["Kebbi"], "basis": ["answered_clean"]}` where
+`state` and `basis` are declared fields.
+
+Field names must be lower case (`[a-z_][a-z0-9_]*`): they become SQL column aliases, and Postgres
+folds upper case away, so a field named `T0` used to read back null. Saving one is refused.
 
 ### Histogram Computations
 
@@ -754,6 +774,64 @@ var caseId = row.beneficiary_case_id;
 var weight = row.computed.weight; // NO
 var count = row.custom_fields.count; // NO
 ```
+
+### On-demand pipeline sources and `actions.queryPipelineRows`
+
+By default every pipeline source is streamed to the page on load: all its rows, for every
+opportunity, into `pipelines[alias].rows`. For a pipeline too big for that — workflow 23765's
+answers pipeline was 173k rows of free text, a 27 s load and ~435 MB of browser heap, to read one
+question's answers at a time — mark the source **on demand**:
+
+```text
+workflow_add_pipeline_source(workflow_id=..., opportunity_id=..., pipeline_id=..., alias="answers",
+                             load="on_demand")          # load="eager" switches it back
+```
+
+The source entry then carries `"load": "on_demand"` (re-pointing an alias without `load` keeps
+it; `workflow_get` reports each source's `load`). The page no longer runs or ships it:
+`pipelines.answers` is `{rows: [], metadata: {on_demand: true, ...}}`. (If an eager pipeline JOINs
+it, it still runs to fill that join's cache, but its rows are still withheld.)
+
+Render code asks for the rows it needs, filtered and paged **in SQL** on the server:
+
+```javascript
+var res = await actions.queryPipelineRows('answers', {
+  filters: { qid: '4.12', state: ['Kebbi', 'Kano'] }, // value or any-of list; null = missing
+  search: { text: 'drugs', fields: ['answer'] }, // case-insensitive substring; a bare
+  // string searches every declared field
+  order_by: ['-visit_date', 'state'], // '-' = descending
+  limit: 50, // 1-500, default 100
+  offset: 0,
+  opportunity_id: 1251, // which opportunity, for a multi-opp workflow (else optional)
+  onStatus: function (msg) {
+    setStatus(msg);
+  }, // progress while a cold cache warms
+});
+// res = { rows: [...same row shape as pipelines[alias].rows...], total: 133, limit: 50, offset: 0 }
+```
+
+- **Fields:** filters, search and order_by may name the pipeline's declared fields and the stage's
+  base columns (visit: `id`, `username`, `visit_date`, `status`, `flagged`, `entity_id`,
+  `entity_name`, ...; entity: `entity_id`, `username`, `total_visits`, `first_visit_date`, ...;
+  aggregated: `username`, `total_visits`, `approved_visits`, ...). Anything else is refused with a
+  400 naming the valid fields. JSON-field values compare as text (`3` matches a stored `3`,
+  `true` a stored boolean); ordering a JSON field orders by its JSON value (numbers numerically).
+- **Works on any terminal stage** (visit, entity, aggregated) — it reads that stage's cache.
+- **Access:** the same gates as the page stream: signed in, the workflow readable in your scope and
+  spanning the opportunity, the alias one of its sources, and for a Drive pipeline its own stamp
+  plus your membership.
+- **A cold cache** is filled the normal way (the pipeline runs as it would on page load), but in
+  a background task so it cannot hit the 60 s request timeout. The endpoint answers 202
+  `warming`, and the action polls until the rows are ready (up to `timeoutMs`, default 10 min),
+  then resolves. It rejects with an `Error` on any failure (bad field, no access, the build
+  failed).
+- **Endpoint:** `POST /labs/workflow/api/<workflow_id>/pipeline-query/?opportunity_id=<scope>`
+  with body `{alias, filters?, search?, order_by?, limit?, offset?, opportunity_id?}` →
+  `{status: "ready", rows, total, limit, offset}` | 202 `{status: "warming"}` |
+  `{status: "error", error}`.
+
+Typical shape: a few small entity-stage summary pipelines (streamed — the overview) plus the big
+visit-level pipeline on demand, read a question at a time when the user opens one.
 
 ### Built-in Row Fields
 

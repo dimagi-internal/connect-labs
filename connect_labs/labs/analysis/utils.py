@@ -6,6 +6,7 @@ and shared cache utilities.
 """
 
 import hashlib
+import json
 import logging
 from typing import Any
 
@@ -66,6 +67,14 @@ def get_config_hash(config) -> str:
 
     # OPTIMIZATION: Filters are NOT included in hash - they're applied at query time
     # This allows timeline views to share the same cache and just filter by entity_id
+    #
+    # EXCEPT at entity stage: its cached rows are aggregates, which no read-time
+    # filter can narrow, so the aggregation runs WITH the filters and a differently
+    # filtered config must not share its rows.
+    from connect_labs.labs.analysis.config import CacheStage
+
+    if getattr(config, "terminal_stage", None) == CacheStage.ENTITY and getattr(config, "filters", None):
+        parts.append(f"entity_filters:{json.dumps(config.filters, sort_keys=True, default=str)}")
 
     # Add grouping key
     parts.append(f"grouping:{config.grouping_key}")

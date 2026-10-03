@@ -31,7 +31,14 @@ from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 from connect_labs.labs.presentation import is_present_mode
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.utils.feature_access import can_create_from_template, get_allowed_templates
-from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess, serialize_pipeline_row
+from connect_labs.workflow.data_access import (
+    PIPELINE_LOAD_VALUES,
+    PipelineDataAccess,
+    WorkflowDataAccess,
+    on_demand_placeholder,
+    serialize_pipeline_row,
+    streamed_and_skipped_aliases,
+)
 from connect_labs.workflow.templates import (
     MULTI_OPTION_COERCERS,
     TEMPLATES,
@@ -1282,6 +1289,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     ),
                     "getWorkers": "/labs/workflow/api/workers/",
                     "getPipelineData": f"/labs/workflow/api/{definition_id}/pipeline-data/",
+                    # actions.queryPipelineRows -- server-side rows of one alias.
+                    "queryPipelineRows": f"/labs/workflow/api/{definition_id}/pipeline-query/",
                     # SSE stream for async pipeline data loading
                     "streamPipelineData": f"/labs/workflow/api/{definition_id}/pipeline-data/stream/",
                     # Framework: auth-status for declared auth_requires
@@ -2584,6 +2593,142 @@ class PipelineRowsStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
 
 
 @login_required
+@require_POST
+def pipeline_query_api(request, definition_id):
+    """Filtered, searched, ordered and paged rows of ONE pipeline alias, answered in SQL.
+
+    Backs `actions.queryPipelineRows(alias, {filters, search, order_by, limit, offset})`
+    in render code -- the read path for a `load: "on_demand"` pipeline source, which the
+    run page does not stream (WORKFLOW_REFERENCE.md, "On-demand pipeline sources").
+
+    POST body: ``{alias, opportunity_id?, filters?, search?, order_by?, limit?, offset?}``
+    (see ``pipeline_query.parse_query``); the workflow's scope rides the query string
+    like every runner call. ``opportunity_id`` picks which of a multi-opp workflow's
+    opportunities to read; a single-opportunity workflow may omit it.
+
+    Gates, the same as the page stream's: a signed-in user; a workflow readable in the
+    caller's scope that spans the opportunity; the alias one of its sources; the
+    pipeline record readable; for a Google Drive pipeline, ``check_gdrive_access`` with
+    that pipeline's own stamp and the caller's membership -- before any cache is read.
+
+    Answers:
+      200 ``{status: "ready", rows, total, limit, offset}``
+      202 ``{status: "warming", retry_after_ms}`` -- the cache was cold; a background
+          task is filling it the normal way (it can take minutes on a big source,
+          past the 60 s load-balancer timeout). Ask again.
+      4xx/5xx ``{status: "error", error}``
+    """
+    from django.core.cache import cache
+
+    from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import GDriveSourceError
+    from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+    from connect_labs.workflow.pipeline_query import (
+        WARM_LOCK_SECONDS,
+        PipelineQueryError,
+        cached_queryset,
+        parse_query,
+        run_query,
+        warm_cache_key,
+    )
+
+    def error(message, status):
+        return JsonResponse({"status": "error", "error": message}, status=status)
+
+    wf_access = None
+    pipeline_access_box: list = []
+    try:
+        try:
+            body = json.loads(request.body or b"{}")
+        except json.JSONDecodeError:
+            return error("the body must be JSON", 400)
+        query = parse_query(body)
+        alias = body.get("alias")
+        if not isinstance(alias, str) or not alias.strip():
+            return error("alias is required", 400)
+
+        labs_context = getattr(request, "labs_context", {}) or {}
+        scope_opp = _coerce_int(labs_context.get("opportunity_id") or request.GET.get("opportunity_id"))
+        scope_program = _coerce_int(labs_context.get("program_id") or request.GET.get("program_id"))
+        rows_opp = _coerce_int(body.get("opportunity_id")) or scope_opp
+
+        wf_access = WorkflowDataAccess(request=request)
+        if not rows_opp:
+            definition = wf_access.get_definition(definition_id)
+            if not definition:
+                return error("Workflow not found", 404)
+            spanned = [int(o) for o in (definition.opportunity_ids or [])]
+            if len(spanned) != 1:
+                return error("opportunity_id is required: this workflow spans several opportunities", 400)
+            rows_opp = spanned[0]
+
+        params = {"alias": alias.strip(), "opportunity_id": rows_opp, "scope_opportunity_id": scope_opp or rows_opp}
+        try:
+            pipeline_id, config = _resolve_pipeline_rows_pipeline(
+                request, definition_id, params, wf_access, pipeline_access_box
+            )
+        except PipelineRowsError as exc:
+            return error(exc.message, exc.status)
+
+        try:
+            AnalysisPipeline(request)._check_drive_access(config, rows_opp)
+        except GDriveSourceError as exc:
+            return error(str(exc), 403)
+
+        qs = cached_queryset(config, rows_opp)
+        if qs is None:
+            from connect_labs.workflow.tasks import warm_pipeline_query_cache
+
+            lock_key = warm_cache_key(rows_opp, config)
+            failure = cache.get(lock_key + ":error")
+            if failure:
+                cache.delete(lock_key + ":error")  # report once; the next call tries again
+                return error(f"Filling the {params['alias']} pipeline failed: {failure}", 502)
+            if cache.add(lock_key, "warming", WARM_LOCK_SECONDS):
+                scope = {"program_id": scope_program} if (scope_program and not scope_opp) else {}
+                scope = scope or {"opportunity_id": scope_opp or rows_opp}
+                warm_pipeline_query_cache.delay(
+                    (request.session.get("labs_oauth", {}) or {}).get("access_token"),
+                    definition_id=int(definition_id),
+                    alias=params["alias"],
+                    opportunity_id=rows_opp,
+                    scope=scope,
+                    lock_key=lock_key,
+                )
+            return JsonResponse(
+                {
+                    "status": "warming",
+                    "message": f"Loading the {params['alias']} pipeline; this can take a few minutes the first time.",
+                    "retry_after_ms": 3000,
+                },
+                status=202,
+            )
+
+        result = run_query(config, rows_opp, query, qs)
+        return JsonResponse(
+            {
+                "status": "ready",
+                "alias": params["alias"],
+                "pipeline_id": pipeline_id,
+                "opportunity_id": rows_opp,
+                "rows": result["rows"],
+                "total": result["total"],
+                "limit": query["limit"],
+                "offset": query["offset"],
+            }
+        )
+    except PipelineQueryError as exc:
+        return error(exc.message, exc.status)
+    except Exception:
+        logger.exception("Failed to query pipeline rows for definition %s", definition_id)
+        return error("An internal error occurred", 500)
+    finally:
+        for access in pipeline_access_box:
+            access.close()
+        if wf_access:
+            wf_access.close()
+
+
+@login_required
 @require_GET
 def run_history_api(request, definition_id):
     """Every COMPLETED run of a definition, with a projection of each saved snapshot.
@@ -3366,7 +3511,9 @@ def get_pipeline_data_api(request, definition_id):
                     return JsonResponse({"error": "opportunity_id required"}, status=400)
                 opportunity_id = fallback_ids[0]
 
-            pipeline_data = data_access.get_pipeline_data(definition_id, int(opportunity_id))
+            # The page-load payload (the stream's JSON fallback): on-demand sources
+            # are withheld exactly as the stream withholds them.
+            pipeline_data = data_access.get_pipeline_data(definition_id, int(opportunity_id), skip_on_demand=True)
         finally:
             data_access.close()
 
@@ -3899,12 +4046,15 @@ def add_pipeline_source_api(request, definition_id):
         data = json.loads(request.body)
         pipeline_id = data.get("pipeline_id")
         alias = data.get("alias")
+        load = data.get("load")
 
         if not pipeline_id or not alias:
             return JsonResponse({"error": "pipeline_id and alias are required"}, status=400)
+        if load is not None and load not in PIPELINE_LOAD_VALUES:
+            return JsonResponse({"error": f"load must be one of {list(PIPELINE_LOAD_VALUES)}"}, status=400)
 
         data_access = WorkflowDataAccess(request=request)
-        updated = data_access.add_pipeline_source(definition_id, int(pipeline_id), alias)
+        updated = data_access.add_pipeline_source(definition_id, int(pipeline_id), alias, load=load)
         data_access.close()
 
         if updated:
@@ -4455,6 +4605,13 @@ def update_pipeline_schema_api(request, definition_id):
 
         if schema is None:
             return JsonResponse({"error": "schema is required"}, status=400)
+        if isinstance(schema, dict):
+            from connect_labs.labs.analysis.config import field_name_problem
+
+            for f in schema.get("fields") or []:
+                problem = field_name_problem(f.get("name") if isinstance(f, dict) else None)
+                if problem:
+                    return JsonResponse({"error": problem}, status=400)
 
         data_access = PipelineDataAccess(request=request)
 
@@ -6120,6 +6277,10 @@ class PipelineDataStreamView(BaseSSEStreamView):
             )
             if configs_by_alias:
                 resolve_join_hashes(configs_by_alias)
+            # `load: "on_demand"` sources are not shipped: render code queries them
+            # with actions.queryPipelineRows. One is still executed when an eager
+            # pipeline JOINs it, since that join reads its computed cache.
+            execute_aliases, on_demand_aliases = streamed_and_skipped_aliases(ordered_sources, configs_by_alias)
 
             try:
                 for source in ordered_sources:
@@ -6127,6 +6288,9 @@ class PipelineDataStreamView(BaseSSEStreamView):
                     alias = source.get("alias", f"pipeline_{pipeline_id}")
 
                     if not pipeline_id:
+                        continue
+                    if alias in on_demand_aliases and alias not in execute_aliases:
+                        pipeline_data[alias] = on_demand_placeholder(source, opp_ids)
                         continue
 
                     pipeline_def = _resolve_pipeline_definition(
@@ -6313,6 +6477,12 @@ class PipelineDataStreamView(BaseSSEStreamView):
                         alias_metadata["raw_fetch_anomalies"] = [
                             {"opportunity_id": oid, **per_opp_meta[oid]["raw_fetch_anomaly"]} for oid in anomalous_opps
                         ]
+                    if alias in on_demand_aliases:
+                        # Executed only to fill the cache an eager pipeline JOINs.
+                        placeholder = on_demand_placeholder(source, opp_ids)
+                        placeholder["metadata"]["per_opp"] = per_opp_meta
+                        pipeline_data[alias] = placeholder
+                        continue
                     pipeline_data[alias] = {
                         "rows": merged_rows,
                         "metadata": alias_metadata,

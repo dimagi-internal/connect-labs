@@ -424,6 +424,60 @@ class AnalysisPipeline:
                 pipeline_id=config.pipeline_id,
             )
 
+    def _fill_gdrive_raw(self, config: AnalysisPipelineConfig, opp_id: int, force_refresh: bool):
+        """Make the gdrive source's SHARED raw slot hold its rows; yield progress events.
+
+        Pipelines with the same Drive read target share one raw slot
+        (``analysis.config.raw_cache_slot``), so a pipeline whose processed cache is cold
+        first looks for rows a sibling already read, and only reads Drive when there
+        are none. Afterwards ``self._gdrive_raw_count`` holds the number of rows in
+        the slot, and the caller processes with ``skip_raw_store=True``.
+
+        - Not forced: any live copy in the slot is reused.
+        - Forced (?refresh=1): Drive is read again, unless the slot was already
+          refilled since this request first forced a read -- the same floor the
+          visits export uses (#1926), so one forced page load over N summary
+          pipelines reads the folder once, not N times. The refill replaces the
+          shared slot, so every sibling's next cold build reads the new rows.
+        - Only one reader per slot at a time reads Drive (``claim_raw_rebuild``); a
+          reader that loses the race reuses the winner's copy when there is one.
+
+        Callers MUST have run ``_check_drive_access`` for THIS pipeline first: a
+        slot another pipeline filled is no permission to read it.
+        """
+        from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
+        from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import fetch_gdrive_rows_as_visit_dicts
+        from connect_labs.labs.analysis.backends.sql.single_flight import claim_raw_rebuild
+
+        cache_manager = SQLCacheManager(opp_id, config)
+
+        def _reusable() -> int:
+            if force_refresh:
+                if not cache_manager.slot_fetched_since(self.force_refresh_since()):
+                    return 0
+            return cache_manager.get_raw_visit_count()
+
+        count = _reusable()
+        if count:
+            yield (EVENT_STATUS, {"message": f"Reusing {count:,} rows already read from Google Drive..."})
+            self._gdrive_raw_count = count
+            return
+
+        with claim_raw_rebuild(opp_id, cache_manager.raw_slot_id) as is_leader:
+            if not is_leader:
+                count = cache_manager.get_raw_visit_count()
+                if count:
+                    yield (EVENT_STATUS, {"message": f"Reusing {count:,} rows another reader just loaded..."})
+                    self._gdrive_raw_count = count
+                    return
+            yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
+            visit_dicts = fetch_gdrive_rows_as_visit_dicts(
+                config.data_source, opp_id, self.request, self.access_token, config.pipeline_id
+            )
+            cache_manager.store_raw_visits(visit_dicts, len(visit_dicts))
+            self._gdrive_raw_count = len(visit_dicts)
+            del visit_dicts
+
     def get_cached_result_only(
         self,
         config: AnalysisPipelineConfig,
@@ -623,6 +677,15 @@ class AnalysisPipeline:
 
             # CRITICAL FIX: Detect if we have filters - we'll need to handle specially
             has_filters = bool(config.filters)
+            # Caching the UNFILTERED rows and filtering on read only works where the
+            # cached rows ARE the visits. An entity row is already an aggregate over
+            # every visit of its group, so nothing can filter it afterwards: the
+            # entity reader ignored `filters`, and a pipeline filtered to one state
+            # served every state's totals (qid 4.12: 557 rows where Kebbi +
+            # answered_clean is 133). Entity stage therefore aggregates WITH its
+            # filters (build_entity_aggregation_query applies them) and caches
+            # under a hash that includes them (get_config_hash).
+            filters_apply_at_read = has_filters and terminal_stage != CacheStage.ENTITY
             if has_filters:
                 logger.info(f"[Pipeline/{self.backend_name}] Config has filters: {list(config.filters.keys())}")
 
@@ -660,7 +723,7 @@ class AnalysisPipeline:
                     # CRITICAL FIX: If config has filters on cache miss, we must cache UNFILTERED data first
                     # Filters should only be applied when reading from cache, never when writing to cache
                     # This ensures the cache contains the full dataset and can serve all filtered queries
-                    if config.filters:
+                    if filters_apply_at_read:
                         from copy import deepcopy
 
                         logger.info(
@@ -716,20 +779,10 @@ class AnalysisPipeline:
                             visit_count = None
                             raw_data_already_stored = False
                         elif unfiltered_config.data_source.type == "gdrive":
-                            from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import (
-                                fetch_gdrive_rows_as_visit_dicts,
-                            )
-
-                            yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
-                            visit_dicts = fetch_gdrive_rows_as_visit_dicts(
-                                unfiltered_config.data_source,
-                                opp_id,
-                                self.request,
-                                self.access_token,
-                                unfiltered_config.pipeline_id,
-                            )
-                            visit_count = None
-                            raw_data_already_stored = False
+                            yield from self._fill_gdrive_raw(unfiltered_config, opp_id, force_refresh)
+                            visit_dicts = None
+                            visit_count = self._gdrive_raw_count
+                            raw_data_already_stored = True
                         elif unfiltered_config.data_source.type == "connect_export":
                             from connect_labs.labs.analysis.backends.sql.connect_export_fetcher import (
                                 fetch_connect_export_as_visit_dicts,
@@ -819,7 +872,7 @@ class AnalysisPipeline:
                 logger.info(f"[Pipeline/{self.backend_name}] Force refresh requested, skipping cache")
 
                 # CRITICAL FIX: If force refresh with filters, must cache unfiltered first
-                if config.filters:
+                if filters_apply_at_read:
                     from copy import deepcopy
 
                     logger.info(
@@ -871,20 +924,10 @@ class AnalysisPipeline:
                         visit_count = None
                         raw_data_already_stored = False
                     elif unfiltered_config.data_source.type == "gdrive":
-                        from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import (
-                            fetch_gdrive_rows_as_visit_dicts,
-                        )
-
-                        yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
-                        visit_dicts = fetch_gdrive_rows_as_visit_dicts(
-                            unfiltered_config.data_source,
-                            opp_id,
-                            self.request,
-                            self.access_token,
-                            unfiltered_config.pipeline_id,
-                        )
-                        visit_count = None
-                        raw_data_already_stored = False
+                        yield from self._fill_gdrive_raw(unfiltered_config, opp_id, True)
+                        visit_dicts = None
+                        visit_count = self._gdrive_raw_count
+                        raw_data_already_stored = True
                     elif unfiltered_config.data_source.type == "connect_export":
                         from connect_labs.labs.analysis.backends.sql.connect_export_fetcher import (
                             fetch_connect_export_as_visit_dicts,
@@ -1068,26 +1111,24 @@ class AnalysisPipeline:
                 yield (EVENT_RESULT, result)
                 return
 
-            # Google Drive data source — read the file(s) and process in one pass.
+            # Google Drive data source — fill (or reuse) the shared raw slot for this
+            # read target, then process from it in one pass.
             if config.data_source.type == "gdrive":
-                from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import fetch_gdrive_rows_as_visit_dicts
-
-                yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
-                visit_dicts = fetch_gdrive_rows_as_visit_dicts(
-                    config.data_source, opp_id, self.request, self.access_token, config.pipeline_id
-                )
-                if not visit_dicts:
+                yield from self._fill_gdrive_raw(config, opp_id, force_refresh)
+                n_rows = self._gdrive_raw_count
+                if not n_rows:
                     yield (EVENT_STATUS, {"message": "No rows found"})
                     yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
                     return
 
-                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} rows..."})
+                yield (EVENT_STATUS, {"message": f"Processing {n_rows:,} rows..."})
                 result = self.backend.process_and_cache(
                     self.request,
                     config,
                     opp_id,
-                    visit_dicts,
-                    skip_raw_store=False,
+                    visit_dicts=None,
+                    visit_count=n_rows,
+                    skip_raw_store=True,
                 )
                 yield (EVENT_STATUS, {"message": "Complete!"})
                 yield (EVENT_RESULT, result)

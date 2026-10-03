@@ -1317,3 +1317,31 @@ def execute_workflow_action(self, execution_id: int):
     from connect_labs.workflow.actions import execute
 
     execute(execution_id)
+
+
+@celery_app.task(acks_late=False, max_retries=0)
+def warm_pipeline_query_cache(
+    access_token: str,
+    *,
+    definition_id: int,
+    alias: str,
+    opportunity_id: int,
+    scope: dict,
+    lock_key: str,
+) -> dict:
+    """Fill one pipeline's cache so `actions.queryPipelineRows` can answer from it.
+
+    Queued by `views.pipeline_query_api` on a cold cache; the work and its gates
+    are `pipeline_query.warm_pipeline_cache`'s. Off the request thread because a
+    cold build of a large source outlives the load balancer's idle timeout.
+    """
+    from connect_labs.workflow.pipeline_query import warm_pipeline_cache
+
+    return warm_pipeline_cache(
+        access_token,
+        definition_id=definition_id,
+        alias=alias,
+        opportunity_id=opportunity_id,
+        scope=scope,
+        lock_key=lock_key,
+    )
