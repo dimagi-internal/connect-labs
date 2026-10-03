@@ -56,6 +56,16 @@ import {
   targetValue,
 } from './Indicators';
 import {
+  Field,
+  NumberField,
+  RangeField,
+  RangeStrip,
+  Segmented,
+  StatTiles,
+  rangeText,
+  stripPos,
+} from './Scenario';
+import {
   Button,
   Card,
   Loading,
@@ -65,7 +75,7 @@ import {
   SectionTitle,
 } from './Layout';
 
-export const VERSION = 3;
+export const VERSION = 4;
 
 export const LabsReport = {
   VERSION,
@@ -132,6 +142,15 @@ export const LabsReport = {
   ReadingChart,
   DefinitionBody,
   DefinitionModal,
+  // scenario reports: inputs the reader changes, read-outs of modelled ranges (VERSION 4)
+  StatTiles,
+  NumberField,
+  RangeField,
+  Field,
+  Segmented,
+  RangeStrip,
+  rangeText,
+  stripPos,
 };
 
 export type LabsReportLibrary = typeof LabsReport;
