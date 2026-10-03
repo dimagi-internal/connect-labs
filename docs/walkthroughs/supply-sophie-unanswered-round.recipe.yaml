@@ -122,9 +122,17 @@ scenes:
   actions:
   - kind: wait_for
     target: css:#history
+  - kind: goto
+    must_succeed: true
+    note: 'land on the round''s History, its heading just under the top bar, before the first hold'
+    target: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}#history
+  - kind: wait_for
+    target: testid:history-replies-only
+  - kind: hold
+    seconds: 0.8
   - kind: click
     must_succeed: true
-    note: 'the page opens on #history; replies only goes on at once, so the emails lead with Sahel''s first'
+    note: replies only goes on at once, so the emails lead with Sahel's first
     target: testid:history-replies-only
   - kind: hold
     seconds: 0.8
@@ -135,10 +143,8 @@ scenes:
     target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-toggle]
   - kind: wait_for
     target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-excerpt]
-  - kind: scroll_to
-    note: centre Sahel's opened email, so the History heading and its Replies only toggle sit whole above it, clear of the top bar
-    target: css:[data-testid=email-event]:has-text('Sahel Nutrition Industries') [data-testid=source-excerpt]
   - kind: hold
+    note: the camera stays on History, its heading under the top bar and Sahel's opened email whole below it
     say: wrote
     seconds: 2.0
   - kind: hover
@@ -147,9 +153,9 @@ scenes:
     seconds: 1.8
     target: text:Replied with a quote on 3 Oct 2026
   - kind: hover
-    note: park the cursor in the History heading's blank middle, off every control and Sahel's email
+    note: park the cursor on the day row's blank middle, off the heading, the filter and Sahel's email
     seconds: 0.6
-    target: css:h2:has-text('History')
+    target: css:[data-testid=timeline-day]:visible
   - kind: hold
     seconds: 1.2
   - kind: snapshot
@@ -258,10 +264,10 @@ scenes:
     note: down to Sahel's card, where duty is no longer among what blocks it (the page's foot)
     value: bottom
   - kind: hover
-    note: the card's line that says duty is waived because we import
+    note: the card's own Duty line -- waived because we import, the round's terms set from her answer to Northgate
     say: waived
     seconds: 2.0
-    target: css:[data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=card-landed-basis]
+    target: css:[data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=card-duty]
   - kind: hover
     note: park the cursor in the Needs info heading's blank right, off its words and Sahel's card
     seconds: 0.6
@@ -269,7 +275,7 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is Sahel's Needs info card under the waiver -- duty waived (our import), with only the exchange rate and freight left blocking it
+    note: the canonical frame is Sahel's Needs info card under the waiver -- its Duty line reading duty waived (our import), set from her answer to Northgate, with only the exchange rate and freight left blocking it
   concept_claim: Answering a supplier's question about who imports can set the round's
     import duty terms, and the round's comparison then states those terms and costs
     a quote that leaves duty out under them, so duty is no longer among what blocks
@@ -302,8 +308,8 @@ scenes:
     note: the forwarder's email, centred and read
     seconds: 2.0
   - kind: scroll_to
-    note: frame the Invoices table, its heading clear of the top bar, through the forwarder's email below it in one shot
-    target: css:h3:has-text('Evidence')
+    note: centre the invoice's Freight line, so the Invoices heading and its column headers sit whole under the top bar, with the history's Waiting on us line and why it is ours (we are the consignee) below
+    target: css:tr:has([data-testid=above-agreed-tag]):has-text('Freight')
   - kind: hover
     say: invoice
     seconds: 1.8

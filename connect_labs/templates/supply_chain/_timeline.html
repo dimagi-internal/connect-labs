@@ -9,7 +9,8 @@ them out on a past date.
 {% endcomment %}
 {% comment %}scroll-mt-20: a link to #history lands with the heading clear of the fixed 4rem header.{% endcomment %}
 <section id="history" data-timeline data-testid="timeline" class="mt-8 scroll-mt-20">
-  <div class="flex flex-wrap items-baseline justify-between gap-2">
+  {% comment %}The filter sits beside the heading it filters, not at the far edge of the page.{% endcomment %}
+  <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
     <h2 class="{{ history_heading_class|default:'text-lg font-semibold text-gray-900' }} mb-2 scroll-mt-20">History</h2>
     {% if timeline %}
     {% comment %}Off by default. On, it hides every line no email stands behind -- invitations
