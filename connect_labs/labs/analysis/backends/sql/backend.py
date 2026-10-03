@@ -209,8 +209,15 @@ def _model_to_visit_dict(row, skip_form_json=False) -> dict:
     the link silently vanished, and only on the reads that were fast. Deriving it
     makes the two paths agree, which matters more now that a miss also answers
     from the cache rather than from the API response it happened to be holding.
+
+    In slim mode ``form_json`` is DEFERRED by ``_load_from_cache``, so touching
+    ``row.form_json`` here is not a read -- it is ``refresh_from_db``, one SELECT
+    per row that fetches the very blob the defer was there to skip. On a 138,748-
+    visit opportunity that turned a cache HIT into 5-8 minutes per pipeline, and a
+    row deleted mid-iteration by a concurrent rebuild raised ``DoesNotExist``
+    (2026-10-03, opp 765). Slim mode must never touch the field.
     """
-    form_json = row.form_json if isinstance(row.form_json, dict) else {}
+    form_json = {} if skip_form_json else (row.form_json if isinstance(row.form_json, dict) else {})
     return {
         "id": row.visit_id,
         "xform_id": None if skip_form_json else (form_json.get("id") or None),
