@@ -391,6 +391,51 @@ def pipeline_update_schema(
             pda.close()
 
 
+@register(
+    name="pipeline_create",
+    description=(
+        "Create a pipeline definition in an opportunity from a schema, returning its id. Attach it "
+        "to a workflow with workflow_add_pipeline_source. A `gdrive` data_source (see "
+        "WORKFLOW_REFERENCE.md, Google Drive sources) needs Dimagi staff and a target inside the "
+        "workflow-data folder; it is authorized for the new pipeline as part of the create."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "opportunity_id": {"type": "integer"},
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+            "schema": {"type": "object"},
+        },
+        "required": ["opportunity_id", "name", "schema"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def pipeline_create(user, opportunity_id: int, name: str, schema: dict, description: str = ""):
+    _validate_pipeline_schema(schema)
+    is_drive = (schema.get("data_source") or {}).get("type") == "gdrive"
+    if is_drive:
+        # Refuse BEFORE writing anything: staff, shape and containment are all checked
+        # by authorizing once against a placeholder id; the real stamp needs the new id.
+        _authorize_drive_source(schema, opportunity_id, user, pipeline_id=0)
+        source = {k: v for k, v in schema["data_source"].items() if k != "authorization"}
+        schema = {**schema, "data_source": source}
+
+    token = require_connect_token(user)
+    pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        created = pda.create_definition(name=name, description=description, schema=schema)
+        version = created.version
+        if is_drive:
+            stamped = _authorize_drive_source(schema, opportunity_id, user, pipeline_id=created.id)
+            version = pda.update_definition(definition_id=created.id, schema=stamped).version
+        return {"pipeline_id": created.id, "version": version}
+    finally:
+        if hasattr(pda, "close"):
+            pda.close()
+
+
 _PIPELINE_PREVIEW_MAX_ROWS = 200
 
 

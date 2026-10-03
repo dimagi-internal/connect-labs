@@ -289,10 +289,10 @@ Each row becomes one visit-shaped row; its cells are under `row.*` and the file 
 - **Authorization:** only Dimagi staff can point a pipeline at Drive. Setting or changing the
   target (`file_id`/`folder_id`/`file_pattern`) through `pipeline_update_schema` or the pipeline
   editor needs staff and stamps `data_source.authorization`, bound to that opportunity, that
-  pipeline and that exact target (a stamp copied into another pipeline does not verify). Creating
-  a pipeline does not stamp it: save it once more as staff. Re-saving an unchanged target keeps
-  its stamp, so anyone may edit the fields of an authorized pipeline. A target stored some other
-  way (e.g. a template sync) stays unstamped until a staff member passes
+  pipeline and that exact target (a stamp copied into another pipeline does not verify).
+  `pipeline_create` stamps a new pipeline's source as it creates it. Re-saving an unchanged target
+  keeps its stamp, so anyone may edit the fields of an authorized pipeline. A target stored some
+  other way (e.g. a template sync) stays unstamped until a staff member passes
   `authorize_drive_source: true` to `pipeline_update_schema`. Never write `authorization` by hand.
 - **Who can read it:** every read, fresh or cached, needs a valid stamp for the opportunity AND a
   caller (the Connect token the pipeline runs with) who is a member of that opportunity. Members
