@@ -14,16 +14,18 @@ def _text(html):
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", str(html))).strip()
 
 
-def test_a_recorded_quote_reads_as_labelled_term_chips():
+def test_a_recorded_quote_leads_with_its_price_then_lists_its_terms():
     line = (
         "Quote · Sahel Co · recorded: EUR 0.31 per sachet (EXW Niamey: freight and duty excluded)"
         " — you asked CPT Kano · 150 x 92 g sachets per carton · valid to 2 Nov 2026"
         " · lead time 5 weeks · minimum order 500 cartons · shelf life 24 months"
     )
     html = str(record_kind_lead(line, "A Person, Sahel Co"))
-    chips = [_text(c) for c in re.findall(r'<span data-testid="quote-term".*?</span></span>', html, re.S)]
-    assert chips == [
-        "Price EUR 0.31 per sachet",
+    assert "recorded:" not in html
+    price = re.search(r'<span data-testid="quote-price"[^>]*>(.*?)</span>', html, re.S).group(1)
+    assert price == "EUR 0.31 per sachet"
+    terms = [_text(c) for c in re.findall(r'<span data-testid="quote-term".*?</span></span>', html, re.S)]
+    assert terms == [
         "Incoterm EXW Niamey: freight and duty excluded — you asked CPT Kano",
         "Pack 150 x 92 g sachets per carton",
         "Valid to 2 Nov 2026",
@@ -31,6 +33,11 @@ def test_a_recorded_quote_reads_as_labelled_term_chips():
         "Minimum order 500 cartons",
         "Shelf life 24 months",
     ]
+
+
+def test_an_owed_line_does_not_stack_colons():
+    html = str(record_kind_lead("Owed · recorded: they asked: Who imports?", "X, Sahel Co"))
+    assert _text(html) == "Owed · they asked: Who imports?"
 
 
 def test_other_record_lines_are_not_chipped():

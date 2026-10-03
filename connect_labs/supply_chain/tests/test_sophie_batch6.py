@@ -480,7 +480,8 @@ class TestARankedRow:
         )
         row = _row(_compare(da, base["tender"]["id"]), quote["id"])
         assert row["landed_basis"] == (
-            "Delivered to Kano · freight 300.00 USD added · duties included, per quote and Incoterm DDP Kano"
+            "DDP Kano · delivered to Kano · freight 300.00 USD added · duties included,"
+            " per quote and Incoterm DDP Kano"
         )
 
     def test_equal_per_carton_course_and_child_are_said_once(self, da, base, client_in_program):

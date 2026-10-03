@@ -955,6 +955,17 @@ class ComparisonView(_Base):
                 for b in row.get("blockers") or []
             )
         ]
+        # Of those, the ones that also owe a supplier fact: listed under Needs info, not under the
+        # round's decision, so the banner's count and the two headings reconcile.
+        context["duty_terms_also_owe"] = [
+            row.get("supplier_name") or "A supplier"
+            for row in (comparison or {}).get("blocked") or []
+            if (row.get("supplier_name") or "A supplier") in context["waiting_on_duty_terms"]
+            and any(
+                "round's duty terms are not settled" not in (b.get("fact") or b.get("label") or "").lower()
+                for b in row.get("blockers") or []
+            )
+        ]
         context["ranking_rule"] = RANKING_RULE
         if comparison and context["table_columns"]:
             context["folded_columns"] = list(folded_columns(comparison).values())

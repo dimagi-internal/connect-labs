@@ -136,7 +136,7 @@
         }
       ],
       "id": "what-we-owe-northgate",
-      "narrative": "Back on the round, Sophie answers Northgate's question about who imports, for her reply to Northgate: we import, under the program's duty waiver. She marks that answer as setting the round's import duty terms, then opens the round's comparison again: duty now reads waived (our import) on every quote that leaves the import to us, so Harmattan's quote has the round's first landed total, and Sahel's reads duty waived, the round's terms set from her answer to Northgate, with only its exchange rate and freight left; Kanem's delivered-duty-paid quote, where the supplier imports, keeps its own duty.",
+      "narrative": "Back on the round, Sophie answers Northgate's question about who imports, for her reply to Northgate: we import, under the program's duty waiver. She marks that answer as setting the round's import duty terms, then opens the round's comparison again: duty now reads waived (our import) on every quote that leaves the import to us, so Harmattan's quote has the round's first landed total, its price and freight with duty waived, and Sahel's reads duty waived, the round's terms set from her answer to Northgate, with only its exchange rate and freight left; Kanem's delivered-duty-paid quote, where the supplier imports, keeps its own duty.",
       "persona": "sophie",
       "provenance": "S5",
       "title": "One answer to Northgate settles how duty is costed"
@@ -160,7 +160,7 @@
         }
       ],
       "id": "held-on-us",
-      "narrative": "Importing makes the paperwork hers, and round 1 shows what that means: its 2,000 cartons are still not in Kano. The order with Harmattan says it is waiting on us for the import permit; further down, what we owe the forwarder lists the import permit and the customs declaration, each to mark provided, the forwarder's message in its history says the trucks are held at the border until the permit is lodged, and Harmattan's invoice is flagged above the agreed price, billed against agreed.",
+      "narrative": "Importing makes the paperwork hers, and round 1 shows what that means: its 2,000 cartons are still not in Kano. The order with Harmattan says it is waiting on us for the import permit; further down, what we owe the forwarder lists the import permit and the customs declaration, each to mark provided, Harmattan's invoice is flagged above the agreed price, billed against agreed, and below it the forwarder's message in the order's history says the trucks are held at the border until the permit is lodged.",
       "persona": "sophie",
       "provenance": "S6",
       "title": "Round 1's order: held on our permit, billed high"

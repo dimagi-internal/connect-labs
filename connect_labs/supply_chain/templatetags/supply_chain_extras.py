@@ -275,6 +275,37 @@ def day_beside_count(value, now):
 
 
 @register.filter
+def count_back(value, now):
+    """ "today", "6 days ago", "2 months ago": always a count back from `now`, never a date.
+
+    The overview's Last change column pairs it with `short_day` on every row, so
+    the column reads one way -- a count, then the day -- however old the change.
+    """
+    relative = days_ago(value, now)
+    if not relative:
+        return ""
+    from django.utils import timezone
+
+    days = (timezone.localdate(now) - timezone.localdate(value)).days
+    if days < 31:
+        return relative
+    months = max(1, round(days / 30.4))
+    return f"{months} month{'s' if months != 1 else ''} ago"
+
+
+@register.filter
+def short_day(value, now):
+    """ "29 Jul": the day under a count back, with its year only when it is not `now`'s year."""
+    if value is None or now is None:
+        return ""
+    from django.utils import timezone
+
+    day = timezone.localdate(value)
+    text = f"{day.day} {day.strftime('%b')}"
+    return text if day.year == timezone.localdate(now).year else f"{text} {day.year}"
+
+
+@register.filter
 def qty(value, unit=None):
     """A quantity and its unit as a person writes them: "3 jerry cans", "1 carton".
 
@@ -1050,6 +1081,12 @@ def record_kind_lead(text, sender=""):
     lead = f'<span data-testid="record-kind" class="font-semibold">{escape(kind)}</span> · '
     if kind == "Quote" and rest.startswith("recorded: "):
         return mark_safe(lead + _quote_term_chips(rest[len("recorded: ") :]))
+    # "Owed · recorded: they asked: ..." stacked two colons; under the email it came
+    # from, the record's kind already says it was recorded.
+    for said in ("recorded: they asked: ", "recorded: we promised: "):
+        if rest.startswith(said):
+            rest = said[len("recorded: ") :] + rest[len(said) :]
+            break
     return mark_safe(lead + str(_terms_kept_whole(rest)))
 
 
@@ -1085,14 +1122,17 @@ def _quote_term_chips(text):
                 break
         else:
             chips.append(("Pack" if " per " in piece else "", piece))
+    # The price first, at a weight of its own, then the other terms as a two-column
+    # list of label and value: a run of equal-weight chips gave the price no lead.
+    (_, price), rest = chips[0], chips[1:]
+    head = f'<span data-testid="quote-price" class="text-base font-semibold text-gray-900">{escape(price)}</span>'
     rendered = []
-    for label, value in chips:
+    for label, value in rest:
         name = f'<span class="text-gray-600">{escape(label)}</span> ' if label else ""
-        rendered.append(
-            '<span data-testid="quote-term" class="inline-flex items-baseline gap-1 rounded bg-white px-1.5 '
-            f'py-0.5 ring-1 ring-inset ring-gray-200">{name}<span>{escape(value)}</span></span>'
-        )
-    return 'recorded: <span class="inline-flex flex-wrap gap-1.5 align-baseline">' + "".join(rendered) + "</span>"
+        rendered.append(f'<span data-testid="quote-term" class="block">{name}<span>{escape(value)}</span></span>')
+    if not rendered:
+        return head
+    return head + '<span class="mt-0.5 grid grid-cols-2 gap-x-6 gap-y-0.5">' + "".join(rendered) + "</span>"
 
 
 def _terms_kept_whole(text):
