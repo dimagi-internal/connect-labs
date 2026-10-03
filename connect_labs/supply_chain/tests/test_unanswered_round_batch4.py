@@ -60,11 +60,12 @@ class TestTheOutreachTable:
         )
         assert count.group(1) == "— 1 of 2 replied"
 
-    def test_silence_is_a_chip_and_reply_kinds_read_as_words(self, da, world, client_in_program):
+    def test_silence_reads_as_muted_words_and_reply_kinds_read_as_words(self, da, world, client_in_program):
         outreach_id = world["outreach"]["id"]
         silent = _row(_tender_page(client_in_program, world["tender"]["id"]), outreach_id)
         chip = re.search(r'<span data-testid="no-reply" class="([^"]*)">No reply · \d+ days</span>', silent)
-        assert chip is not None and "rounded-full" in chip.group(1)
+        # Since DDD 004: muted words like the replied dates beside it, not a pill.
+        assert chip is not None and "rounded-full" not in chip.group(1)
         op(
             da,
             "outreach_update",

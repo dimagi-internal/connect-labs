@@ -295,8 +295,9 @@ class TestTheOrder:
         header = body[body.index("Bought by") :]
         header = header[: header.index("</p>")]
         assert "Child Health Programme" in header
-        assert "the program" in header
-        assert header.index("Child Health Programme") < header.index("the program<")
+        # DDD 004: one form everywhere, as the banner says it -- "<org>, buyer of record".
+        assert ", buyer of record" in header
+        assert "buyer of record: the program" not in header
 
     def test_the_overview_names_the_buyer_of_record(self, client_in_programme, chain):
         body = client_in_programme.get(reverse("supply_chain:home")).content.decode()

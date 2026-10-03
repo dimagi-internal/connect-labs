@@ -42,7 +42,7 @@ from connect_labs.supply_chain.models import (
 )
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission
-from connect_labs.supply_chain.values import day_text, money_digits, quantity_digits, quantity_phrase
+from connect_labs.supply_chain.values import day_text, money_digits, possessive, quantity_digits, quantity_phrase
 
 SOURCE = "supplier_reported"
 
@@ -430,7 +430,7 @@ def _attach_answer_document(link, data, result):
         {
             "data": {
                 "kind": "other",
-                "title": f"{link.org.name}'s signed confirmation",
+                "title": f"{possessive(link.org.name)} signed confirmation",
                 **where,
                 "approval_id": result["id"],
                 "source": "partner_reported",

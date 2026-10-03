@@ -33,7 +33,7 @@ or day; which one matters most today is the reader's call. Title links are
 plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
 {% endcomment %}
 <section id="supply-standing" class="mb-8">
-  <h2 class="text-sm font-semibold text-gray-900 mb-2">
+  <h2 class="text-base font-semibold text-gray-900 mb-2">
     Where everything stands
     <span class="normal-case tracking-normal font-normal text-gray-600">
       — newest change first
@@ -258,7 +258,7 @@ figures, and the catalogue is where our own gaps get closed.
           <td class="px-4 py-2.5 text-gray-600">
             {{ tender.delivery_point|place_text }}
           </td>
-          <td class="px-4 py-2.5 text-gray-600">{{ tender.response_deadline|default:"—" }}</td>
+          <td class="px-4 py-2.5 text-gray-600">{{ tender.response_deadline|day|default:"—" }}</td>
           <td class="px-4 py-2.5 text-right">
             <a class="text-brand-indigo hover:underline"
                href="{% url 'supply_chain:procurement_tender_detail' tender.id %}">Open</a>

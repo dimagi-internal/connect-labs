@@ -403,10 +403,9 @@ def _quote_terms(values) -> str:
     duties = values.get("duties_basis") or "not_specified"
     amount = values.get("duties_amount")
     if duties == "excluded" and amount not in (None, "") and not Decimal(str(amount)):
-        # A zero the supplier wrote, said as the comparison says it: "duty
-        # excluded" alone read as a duty left out, beside a comparison that
-        # costs the same quote at zero.
-        duties = f"excluded from the price, stated as {money_digits(amount)}"
+        # A zero the supplier wrote, said as the comparison says it: the
+        # supplier's word on duty, never the basis the round costs it on.
+        duties = f"not in the price; supplier states {money_digits(amount)}"
     if freight != "not_specified" and freight == duties:
         basis = f"freight and duty {freight}"
     else:
