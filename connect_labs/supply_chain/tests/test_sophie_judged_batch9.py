@@ -73,7 +73,9 @@ class TestTheAwardPriceStacks:
         standing = batch6._standing(_home(home_client))
         assert "table-fixed" in re.search(r'data-testid="standing-table" class="([^"]*)"', standing).group(1)
         widths = {k: int(v) for k, v in re.findall(r'data-col="([a-z-]+)" style="width: (\d+)%"', standing)}
-        assert widths["stage"] == 18 and sum(widths.values()) == 100
+        # Unanswered-round 002: "Waiting on" stacks a line per owner, so it takes
+        # room from the title column; stage keeps enough for the award line.
+        assert widths["stage"] == 17 and widths["waiting"] > widths["title"] and sum(widths.values()) == 100
 
 
 # ---- 2. one order on every Needs-info card ----------------------------------
@@ -84,7 +86,9 @@ def _order_of(card, hooks):
     return [hook for _, hook in sorted(found)]
 
 
-ORDER = ["blocking", "card-facts", "blocking-question", "draft-email-link", "also-confirm"]
+# Since DDD 002 batch 2 each gap and the question that clears it share a row, so the
+# question comes before the facts the gaps are read against.
+ORDER = ["blocking", "blocking-question", "card-facts", "draft-email-link", "also-confirm"]
 
 
 @pytest.mark.django_db
@@ -109,12 +113,12 @@ class TestOneOrderOnEveryCard:
             assert present == [hook for hook in ORDER if hook in present]
             assert {"blocking", "card-facts", "blocking-question"} <= set(present)
         # The pack card's requirement line and the freight card's stated figures are both facts.
-        facts = re.search(r'data-testid="card-facts">(.*?)</div>\s*<p data-testid="blocking-question"', pack, re.S)
+        facts = re.search(r'data-testid="card-facts">(.*?)data-testid="draft-email-line"', pack, re.S)
         assert "Sachets per carton: not stated (tender requires 150)" in facts.group(1)
-        facts = re.search(r'data-testid="card-facts">(.*?)<p data-testid="blocking-question"', freight, re.S)
+        facts = re.search(r'data-testid="card-facts">(.*?)data-testid="draft-email-line"', freight, re.S)
         assert 'data-testid="specification"' in facts.group(1)
-        # Nothing of the specification after the question any more.
-        assert 'data-testid="specification"' not in freight[freight.index('data-testid="blocking-question"') :]
+        # Nothing of the specification after the email any more.
+        assert 'data-testid="specification"' not in freight[freight.index('data-testid="draft-email-line"') :]
 
     def test_the_draft_email_is_the_card_s_action_at_body_size(self, da, base, client_in_program):
         pack, _ = self._cards(da, base, client_in_program)

@@ -361,10 +361,16 @@ def _followups(access, tender, commodities, quotes, day, sender):
 
 
 def _replies(access, tender, day, sender):
-    """A reply to each counterparty on this tender whose questions to us are still open."""
+    """A reply to each counterparty on this tender whose questions to us are open or answered today.
+
+    An answer marked today goes into the reply with what was said, so marking a
+    question answered fills in the email that tells the supplier; an open one
+    keeps its "[Your answer]" blank. A counterparty whose questions were all
+    answered on an earlier day is owed no reply from here.
+    """
     by_org = {}
-    for commitment in access.list_commitments(tender_id=tender.pk, open_only=True):
-        if commitment.kind == "question":
+    for commitment in access.list_commitments(tender_id=tender.pk, open_only=False):
+        if commitment.kind == "question" and (commitment.resolved_on is None or commitment.resolved_on == day):
             by_org.setdefault(commitment.owed_to_org_id, []).append(commitment)
     suppliers = {s.org_id: s for s in access.list_suppliers()}
     drafts = []
@@ -377,7 +383,11 @@ def _replies(access, tender, day, sender):
                 address = contact["email"]
                 break
         asked = min(q.raised_on for q in questions)
-        lines = [f"{i}. {q.text}\n   [Your answer]" for i, q in enumerate(questions, start=1)]
+        lines = [
+            f"{i}. {q.text}\n   {q.resolution if q.resolved_on is not None and q.resolution else '[Your answer]'}"
+            for i, q in enumerate(questions, start=1)
+        ]
+        still_open = [q for q in questions if q.resolved_on is None]
         text = (
             f"Dear {name},\n\nThank you for your questions of {day_text(asked)} about {tender.label}. "
             "Our answers:\n\n"
@@ -394,9 +404,18 @@ def _replies(access, tender, day, sender):
                 "subject": f"Re: {tender.label} — answers to your questions",
                 "text": text,
                 "to": address,
-                "why": f"{len(questions)} question{'s' if len(questions) != 1 else ''} from {name} "
-                f"open since {day_text(asked)}: we owe the answer. Once sent, mark each answered with "
-                "commitment_resolve.",
+                "why": (
+                    f"{len(still_open)} question{'s' if len(still_open) != 1 else ''} from {name} "
+                    f"open since {day_text(asked)}: we owe the answer. Once sent, mark each answered with "
+                    "commitment_resolve."
+                    + (
+                        f" {len(questions) - len(still_open)} answered today, already written in."
+                        if len(still_open) != len(questions)
+                        else ""
+                    )
+                    if still_open
+                    else f"Every question from {name} answered today: the answers are written in, ready to send."
+                ),
                 "commitment_ids": [q.pk for q in questions],
             }
         )

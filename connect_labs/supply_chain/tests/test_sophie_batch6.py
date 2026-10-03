@@ -131,8 +131,10 @@ class TestTheOverviewColumns:
         assert sum(int(w) for w in past_widths.values()) == 100
         by_col = {col: int(w) for col, w in widths}
         assert sum(by_col.values()) == 100
-        # Stage is a few words; flags carry a line per supplier.
-        assert by_col["stage"] < by_col["flags"] and by_col["flags"] == max(by_col.values())
+        # Stage is a few words; flags and "waiting on" carry a line per supplier,
+        # so they are the two widest (unanswered round 002: waiting on the widest).
+        assert by_col["stage"] < by_col["flags"]
+        assert sorted(by_col, key=by_col.get)[-2:] == ["flags", "waiting"]
 
     def test_headers_do_not_wrap(self, da, base, home_client):
         heads = re.findall(r"<th ([^>]*)>", _standing(_home(home_client)))
@@ -155,13 +157,14 @@ class TestTheBlockedFlagReadsALineEach:
         (row,) = (r for r in standing_rows(PROGRAM, datetime.date(2026, 9, 12)) if r.kind == "tender")
         (flag,) = row.stale
         assert (flag.heading, flag.lines) == (
-            "Can't compare yet — 2 quotes missing facts",
+            "2 quotes missing facts",
             ("Northwind Foods — missing: freight", "Sahel Nutrition — missing: duties amount"),
         )
 
         rendered = re.search(r'data-testid="stale-flag".*?</details>', _standing(_home(home_client)), re.S).group(0)
-        assert re.findall(r'data-testid="flag-line"[^>]*>(.*?)</span>', rendered) == list(flag.lines)
-        assert "Can&#x27;t compare yet — 2 quotes missing facts</span>" in rendered
+        # Folded open, the definition: the per-supplier lines are the Waiting on cell's (DDD 002 batch 2).
+        assert re.findall(r'data-testid="flag-line"[^>]*>(.*?)</span>', rendered) == list(flag.folded)
+        assert "2 quotes missing facts</span>" in rendered
 
 
 # ---- 4. as of a past day ----------------------------------------------------
@@ -178,8 +181,8 @@ class TestAsOf:
         past = _home(home_client, as_of="2026-08-20")
         control = re.search(r'data-testid="as-of-control".*?</form>', past, re.S).group(0)
         # Since batch 8 the day stays inside the boxed field, which looks as it does today.
-        field = re.search(r'<input id="supply-as-of" type="date"[^>]*>', control).group(0)
-        assert 'value="2026-08-20"' in field and 'data-testid="as-of-date"' in field
+        field = re.search(r'<input id="supply-as-of"[^>]*>', control).group(0)
+        assert 'value="20 Aug 2026"' in field and 'data-testid="as-of-date"' in field
         assert "supply-as-of-applied" not in past and "::-webkit-datetime-edit" not in past
         # Still a working control: the walkthrough fills the date and presses the button.
         assert re.search(r'<button type="submit"[^>]*>Go</button>', control)
@@ -366,7 +369,9 @@ class TestABlockedCard:
         card = _card(_page(client_in_program, base["tender"]["id"]), quote["id"])
         meta = re.search(r'data-testid="received-on" class="([^"]*)"', card).group(1).split()
         blocking = re.search(r'data-testid="blocking" class="([^"]*)"', card).group(1).split()
-        assert "font-semibold" in blocking and "font-semibold" not in meta
+        # Since DDD 002 batch 2 the blocker is at regular weight in a two-column list
+        # under a small "Blocking" label; it still outweighs the grey metadata.
+        assert "font-semibold" not in meta
         assert "text-gray-900" in blocking and "text-gray-600" in meta
 
     def test_the_banner_says_each_is_missing_one_fact(self, da, base, client_in_program):

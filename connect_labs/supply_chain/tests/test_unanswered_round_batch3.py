@@ -146,7 +146,9 @@ class TestOneEmailOneEvent:
         assert len(events) == 1
         event = events[0]
         assert event.count('data-testid="source-toggle"') == 1
-        assert 'data-testid="source-excerpt"' in event and 'data-testid="source-heading"' in event
+        assert 'data-testid="source-excerpt"' in event
+        # The head names sender and recorder once; no second line repeats it (DDD 002 batch 1).
+        assert 'data-testid="source-heading"' not in event
         lines = re.findall(r'<li data-testid="revision-line".*?</li>', event, re.S)
         assert len(lines) == 2
         # The reply first, then what it carried.
@@ -198,7 +200,7 @@ class TestTheComparison:
         button = _text(
             re.search(r'<summary data-testid="award-open" data-anyway[^>]*>(.*?)</summary>', body, re.S).group(1)
         )
-        assert button.startswith("Award anyway — Northgate Rehearsal Commodities has not stated ")
+        assert button.startswith("Award Kanem ") and button.endswith(" now 1 other quote can&#x27;t be compared yet.")
 
     def test_decided_on_is_empty_until_an_award_is_started(self, da, world, client_in_program):
         op(da, "quote_record", data=_comparable(world))
@@ -243,7 +245,7 @@ class TestTheOrderPage:
         )
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
         sub = re.search(r'<tr data-testid="invoice-against-agreed".*?</tr>', body, re.S).group(0)
-        assert "Unit price USD 51.20 against 49.80 agreed" in _text(sub)
+        assert "Unit price USD 51.20 billed 49.80 agreed" in _text(sub)
         assert 'data-testid="above-agreed-tag"' in sub
         amount_cell = re.search(r'data-testid="invoice-above-agreed"[^>]*>(.*?)</div>', body, re.S).group(1)
         assert "unit price" not in amount_cell

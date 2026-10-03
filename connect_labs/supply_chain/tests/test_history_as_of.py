@@ -207,7 +207,17 @@ class TestAsOfPages:
 
     def test_the_date_control_is_on_every_wrapped_page(self, client_in_program, world):
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-        assert re.search(r'<input[^>]*type="date"[^>]*name="as_of"', body)
+        assert re.search(r'<input[^>]*name="as_of"', body)
+
+    def test_the_date_control_speaks_the_pages_date_format(self, client_in_program, world):
+        """A day typed as "15 Jan 2026" works like 2026-01-15, and the field shows it that way."""
+        from connect_labs.supply_chain.history.as_of import parse_as_of
+
+        assert parse_as_of("15 Jan 2026") == parse_as_of("2026-01-15")
+        body = client_in_program.get(reverse("supply_chain:home") + "?as_of=15 Jan 2026").content.decode()
+        assert "Viewing as of 15 Jan 2026" in body
+        assert 'value="15 Jan 2026"' in body
+        assert "mm/dd/yyyy" not in body
 
     def test_a_write_under_as_of_is_refused_and_changes_nothing(self, client_in_program, world):
         tender_id = world["tender"]["id"]

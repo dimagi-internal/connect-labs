@@ -339,7 +339,7 @@ class TestTenderTimeline:
         entries = timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)
 
         quote = next(e for e in entries if e.sentence.startswith("Quote recorded"))
-        assert quote.sentence.startswith("Quote recorded: 42.50 USD per carton (basis not specified)")
+        assert quote.sentence.startswith("Quote recorded: USD 42.50 per carton (basis not specified)")
         assert "Northwind Foods" in quote.sentence
 
     def test_an_ai_entered_quote_offers_correct_and_void(self, da, base, sophie):
@@ -710,13 +710,13 @@ class TestPages:
         live = client_in_program.get(url).content.decode()
         assert "data-timeline" in live
         assert "ACE (agent)" in live
-        assert "Quote · Northwind Foods · recorded: 42.50 USD per carton" in live
+        assert "Quote · Northwind Foods · recorded: USD 42.50 per carton" in live
         assert correct in live
 
         past = client_in_program.get(url, {"as_of": "2026-08-25"})
         assert past.status_code == 200
         body = past.content.decode()
-        assert "Quote · Northwind Foods · recorded: 42.50 USD per carton" in body
+        assert "Quote · Northwind Foods · recorded: USD 42.50 per carton" in body
         assert correct not in body
 
     def test_a_via_ai_pill_does_not_say_ai_twice(self, client_in_program, da, base, sophie):

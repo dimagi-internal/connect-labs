@@ -8,6 +8,7 @@ Northgate a second supplier.
 """
 
 import datetime
+import html
 import re
 
 import pytest
@@ -16,7 +17,12 @@ from django.urls import reverse
 from connect_labs.supply_chain.history.context import seed_overrides
 from connect_labs.supply_chain.models import Outreach
 from connect_labs.supply_chain.operations import call_operation
-from connect_labs.supply_chain.procurement.views import _without_empty_tail, award_anyway
+from connect_labs.supply_chain.procurement.views import (
+    _without_empty_tail,
+    award_anyway,
+    award_anyway_detail,
+    not_stated,
+)
 from connect_labs.supply_chain.tests import test_tracking_reality as reality
 from connect_labs.supply_chain.tests.test_tracking_reality import (
     PROGRAM,
@@ -100,8 +106,8 @@ class TestChaseFromTheDraft:
         form = re.search(r'<form [^>]*data-testid="chase-form".*?</form>', drafts, re.S).group(0)
         url = reverse("supply_chain:procurement_outreach_chase", args=[world["outreach"]["id"]])
         assert f'action="{url}"' in form
-        today = datetime.date.today().isoformat()
-        assert re.search(rf'data-testid="chase-date" type="date" name="last_reminder_on"\s+value="{today}"', form)
+        today = f"{datetime.date.today():%-d %b %Y}"
+        assert re.search(rf'data-testid="chase-date" type="text" name="last_reminder_on"\s+value="{today}"', form)
         assert 'data-testid="record-chase"' in form
 
     def test_recording_a_chase_sets_only_the_day_and_returns_to_the_row(self, da, world, web):
@@ -116,7 +122,7 @@ class TestChaseFromTheDraft:
             reverse("supply_chain:procurement_outreach_chase", args=[outreach_id]), {"last_reminder_on": "2026-07-14"}
         )
         tender_url = reverse("supply_chain:procurement_tender_detail", args=[world["tender"]["id"]])
-        assert response.url == f"{tender_url}?changed=outreach-{outreach_id}#outreach"
+        assert response.url == f"{tender_url}?changed=outreach-{outreach_id}&cell=last_chased#outreach"
         row = Outreach.objects.get(pk=outreach_id)
         assert row.last_reminder_on == datetime.date(2026, 7, 14)
         # The reply it held is untouched: the chase form posts the date alone.
@@ -131,7 +137,18 @@ class TestTheChangedRow:
         outreach_id = world["outreach"]["id"]
         body = _tender_page(client_in_program, world["tender"]["id"], f"?changed=outreach-{outreach_id}")
         row = re.search(rf'<tr data-outreach-id="{outreach_id}".*?</tr>', body, re.S).group(0)
-        assert "border-l-4" in row and 'data-testid="changed-chip"' in row and "updated just now" in row
+        assert "border-l-4" in row and 'data-testid="changed-chip"' in row
+        # The marker sits in the cell that changed (DDD 002 batch 1): a reply moves "Replied",
+        # not beside the supplier's name.
+        replied = re.search(r'<td [^>]*data-testid="replied">.*?</td>', row, re.S).group(0)
+        assert 'data-testid="changed-chip"' in replied and "font-semibold" in replied
+        chased = _tender_page(
+            client_in_program, world["tender"]["id"], f"?changed=outreach-{outreach_id}&cell=last_chased"
+        )
+        row = re.search(rf'<tr data-outreach-id="{outreach_id}".*?</tr>', chased, re.S).group(0)
+        cell = re.search(r'<td [^>]*data-testid="last-chased">.*?</td>', row, re.S).group(0)
+        assert 'data-testid="changed-chip"' in cell and "font-semibold" in cell
+        assert row.count('data-testid="changed-chip"') == 1
         plain = _tender_page(client_in_program, world["tender"]["id"])
         assert 'data-testid="changed-chip"' not in plain
 
@@ -140,7 +157,7 @@ class TestTheChangedRow:
         op(da, "commitment_resolve", channel="web", commitment_id=asked["id"], resolution="We are.")
         body = _tender_page(client_in_program, world["tender"]["id"], f"?changed=commitment-{asked['id']}")
         # One pill on an answered row since batch 4: its "Answered" chip says "just now".
-        row = re.search(rf'<div [^>]*data-commitment-id="{asked["id"]}".*?Answered just now', body, re.S)
+        row = re.search(rf'<div [^>]*data-commitment-id="{asked["id"]}".*?\(just now\)', body, re.S)
         assert row is not None and "border-l-4" in row.group(0) and "updated just now" not in row.group(0)
 
 
@@ -161,7 +178,7 @@ class TestWhatWeOweReads:
         assert "One warehouse, or several?" not in open_list.group(0)
         group = re.search(r'<details data-testid="owed-answered"[^>]*>.*?</details>', body, re.S).group(0)
         assert " open>" not in group.split(">", 1)[0] + ">"  # shut unless it holds the row just saved
-        assert "Answered 2 Oct 2026 by Sophie: One warehouse in Kano." in _text(group)
+        assert "Answered by Sophie · 2 Oct 2026: One warehouse in Kano." in _text(group)
         assert 'data-testid="owed-status"' in group
 
         arrived = _tender_page(web, world["tender"]["id"], f"?changed=commitment-{answered['id']}")
@@ -202,9 +219,25 @@ class TestTheComparison:
                 {"supplier_name": "Lakeside", "blockers": []},
             ]
         }
-        # Since batch 3: the missing fact as a sentence.
-        assert award_anyway(comparison) == "Northgate has not stated sachets per carton (and 1 more)"
+        # Since the 002 run's batch 1: the button names its own award and why it is
+        # early; the other suppliers' gaps are its tooltip, never its label.
+        assert award_anyway(comparison) == "2 other quotes can't be compared yet"
+        assert award_anyway_detail(comparison) == (
+            "Northgate has not stated sachets per carton. Sahel has not stated ETA"
+        )
         assert award_anyway({"blocked": []}) == ""
+
+    def test_a_gap_the_buyer_records_is_not_blamed_on_the_supplier(self):
+        row = {
+            "supplier_name": "Sahel",
+            "blockers": [
+                {"fact": "Quote is in EUR and no exchange rate was recorded", "label": "exchange rate"},
+                {"fact": "Freight excluded", "label": "freight amount"},
+            ],
+        }
+        assert not_stated(row) == "Sahel has not stated freight amount; no exchange rate recorded for the EUR quote"
+        only_ours = {"supplier_name": "Sahel", "blockers": [row["blockers"][0]]}
+        assert not_stated(only_ours) == "Sahel: no exchange rate recorded for the EUR quote"
 
     def test_the_award_button_steps_down_while_a_quote_is_blocked(self, da, world, client_in_program):
         op(da, "quote_record", data=_comparable(world))
@@ -226,7 +259,16 @@ class TestTheComparison:
         # Since batch 4 the award opens from its button, which carries the words.
         button = re.search(r'<summary data-testid="award-open" data-anyway[^>]*>(.*?)</summary>', body, re.S)
         assert button is not None
-        assert _text(button.group(1)).startswith("Award anyway — Northgate Rehearsal Commodities has not stated ")
+        label = html.unescape(
+            _text(re.search(r'data-testid="award-label"[^>]*>(.*?)</span>', button.group(1)).group(1))
+        )
+        caveat = html.unescape(
+            _text(re.search(r'data-testid="award-caveat"[^>]*>(.*?)</span>', button.group(1)).group(1))
+        )
+        # Since the 002 run's batch 3 the caveat is helper text under the action, not in it.
+        assert label.startswith("Award Kanem ") and label.endswith(" now")
+        assert caveat == "1 other quote can't be compared yet."
+        assert 'title="Northgate Rehearsal Commodities has not stated ' in button.group(0)
 
     def test_an_empty_trailing_column_is_dropped_but_not_one_between_figures(self):
         rows = [{"figures": {"a": {"amount": "1"}, "b": {"amount": None}, "c": {"amount": "2"}, "d": {}}}]
@@ -336,7 +378,7 @@ def test_a_single_waiting_on_leads_with_its_party_in_bold(da, world, client_in_p
     _held_on_our_form_m(da, world)
     body = client_in_program.get(reverse("supply_chain:home")).content.decode()
     cells = re.findall(r'data-testid="waiting-on"[^>]*>(.*?)</span>', body, re.S)
-    assert any(cell.startswith("<strong>us</strong>: ") for cell in cells), cells
+    assert any(cell.startswith("<strong>Us</strong>: ") for cell in cells), cells
 
 
 # ---- 9. the tender page header

@@ -244,11 +244,13 @@
                   {% comment %}The award's fields -- why, when, who -- stay folded behind the award
                   button until someone starts one: four inputs under every offer read as a form to
                   fill rather than a choice to make. The button that opens them says what awarding
-                  now means ("Award anyway — ... has not stated ..."); the form inside still posts
+                  now means ("Award Harmattan now", in the same outlined style as the card's "Draft email",
+                  with "2 other quotes can't be compared yet" as helper text beneath rather than
+                  inside the action; the gaps in its tooltip; the banner is where they are said); the form inside still posts
                   as before, and opens again on a refused award.{% endcomment %}
                   <details data-testid="award-start" class="min-w-0"{% if award_error or award_step %} open{% endif %}>
-                    <summary data-testid="award-open"{% if award_anyway %} data-anyway{% endif %}
-                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden inline-block px-4 py-1.5 text-sm rounded-md {% if award_anyway %}border border-gray-300 bg-white text-gray-900 hover:bg-gray-50{% else %}bg-brand-indigo hover:bg-brand-deep-purple text-white{% endif %}">{% if award_anyway %}Award anyway — {{ award_anyway }}{% else %}Award{% endif %}</summary>
+                    <summary data-testid="award-open"{% if award_anyway %} data-anyway title="{{ award_anyway_detail }}"{% endif %}
+                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden {% if award_anyway %}block{% else %}inline-block px-4 py-1.5 text-sm rounded-md bg-brand-indigo hover:bg-brand-deep-purple text-white{% endif %}">{% if award_anyway %}<span data-testid="award-label" class="inline-block rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm font-medium text-brand-indigo hover:bg-gray-50">Award {{ row.supplier_name }} now</span><span data-testid="award-caveat" class="block mt-1 text-sm text-gray-600">{{ award_anyway|capfirst }}.</span>{% else %}Award{% endif %}</summary>
                   <form method="post" action="" data-testid="award-form" class="mt-2 flex flex-wrap items-end gap-2 min-w-0">
                     {% csrf_token %}
                     <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
@@ -344,8 +346,10 @@
 {% endif %}
 
 {% if comparison.blocked %}
+  {% comment %}One section, so a link or a reader can frame the heading and every card under it at once.{% endcomment %}
+  <section id="needs-info" data-testid="needs-info" class="scroll-mt-20">
   <h2 class="text-lg font-semibold text-gray-900 mt-6 mb-2">
-    Needs info — {{ comparison.blocked|length }} supplier{{ comparison.blocked|pluralize }}
+    <span data-testid="needs-info-title">Needs info — {{ comparison.blocked|length }} supplier{{ comparison.blocked|pluralize }}</span>
   </h2>
   {% for row in comparison.blocked %}
     {% comment %}Tight: three of these fit below the page header at 900px.{% endcomment %}
@@ -362,38 +366,31 @@
       <p data-testid="as-quoted" class="text-sm text-gray-900">Quoted {{ row.as_quoted }}{% if row.as_quoted_note %} <span data-testid="as-quoted-note" class="text-gray-600">{{ row.as_quoted_note }}</span>{% endif %}</p>
       {% if row.received_on %}<p data-testid="received-on" class="text-xs text-gray-600 mb-1">Received {{ row.received_on|day }}</p>{% endif %}
       {% comment %}
-      One fixed order on every card, whatever it is blocked on: what blocks it
-      ("Blocking: ..."), then the facts it is read against (what the tender
-      requires of the missing figure, the kit's contents, the figures the quote
-      states), then the question that clears it, then the email that asks it,
-      then everything else to confirm. The requirement line used to sit between
-      "Blocking:" and the question on one card and the stated figures after the
-      email link on another. The blockers are the same gaps, from the same rows,
-      as the overview's "Can't compare yet" flag, so the two cannot disagree.
+      Each gap and the question that clears it on one row of a compact two-column
+      list -- missing fact | question -- at regular weight under a small "Blocking"
+      label, so the supplier's name stays the card's top-level element. A gap
+      and its question used to be two bold-and-plain lines apiece, saying it twice.
+      The blockers are the same gaps, from the same rows, as the overview's
+      "Can't compare yet" flag, so the two cannot disagree. Then the facts they
+      are read against, then the email that asks them, then the rest to confirm.
       {% endcomment %}
-      {% for blocker in row.blockers %}
-        <p data-testid="blocking" class="text-[15px] font-semibold text-gray-900{% if not forloop.first %} mt-1{% endif %}">Blocking: {{ blocker.fact }}</p>
-      {% endfor %}
+      <div data-testid="blockers" class="mt-1 w-full grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-0.5 text-sm">
+        <p class="text-xs font-medium uppercase tracking-wide text-gray-600">Blocking</p>
+        <p class="hidden sm:block text-xs font-medium uppercase tracking-wide text-gray-600">Question that clears it</p>
+        {% for blocker in row.blockers %}
+          <p data-testid="blocking" class="text-gray-900"><span class="sr-only">Blocking: </span>{{ blocker.fact }}</p>
+          <p data-testid="blocking-question" class="text-gray-700">{% if blocker.question %}{% if blocker.question.audience == "internal" %}Ours to do: {% else %}<span class="sr-only">Ask the supplier: </span>{% endif %}{{ blocker.question.question }}{% if not blocker.spec %}{% with q=blocker.question %}{% include "supply_chain/procurement/_requirement.html" %}{% endwith %}{% endif %}{% endif %}</p>
+        {% endfor %}
+      </div>
       <div data-testid="card-facts">
         {% comment %}What the tender requires of the missing figure, as the grey line the
-        specification's other figures read in on these cards -- a chip beside the
-        blocker read as a second badge.{% endcomment %}
+        specification's other figures read in on these cards.{% endcomment %}
         {% for blocker in row.blockers %}
           {% if blocker.spec_line %}<p data-testid="blocker-spec-line" class="text-xs text-gray-600">{{ blocker.spec_line }}</p>{% elif blocker.spec %}<p data-testid="blocker-spec-line" class="text-xs text-gray-600">Tender requires {{ blocker.spec }}</p>{% endif %}
         {% endfor %}
         {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
         {% include "supply_chain/procurement/_specification.html" with specification=row.specification hide_not_stated=True %}
       </div>
-      {% for blocker in row.blockers %}
-        {% if blocker.question %}
-          <p data-testid="blocking-question" class="text-sm text-gray-800 mt-1">
-            {% if blocker.question.audience == "internal" %}Ours to do:{% else %}Ask the supplier:{% endif %}
-            {{ blocker.question.question }}
-            {% comment %}The spec line above already says what we require.{% endcomment %}
-            {% if not blocker.spec %}{% with q=blocker.question %}{% include "supply_chain/procurement/_requirement.html" %}{% endwith %}{% endif %}
-          </p>
-        {% endif %}
-      {% endfor %}
       {% comment %}The email that asks it, already drafted on the tender's drafts panel,
       opened at this supplier's. It is the card's action, so it reads as one -- body
       size, in a bordered box -- not as the smallest text on the card.{% endcomment %}
@@ -431,6 +428,7 @@
       {% endfor %}
     </div>
   {% endfor %}
+  </section>
 {% endif %}
 {% endif %}
 {% endblock %}
