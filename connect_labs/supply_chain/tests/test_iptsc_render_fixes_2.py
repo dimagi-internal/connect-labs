@@ -90,8 +90,8 @@ class TestTheOrdersList:
         _receive(world, _dispatch(world))
         row = _row(_page(scoped, "orders"), "IPTSC-PO-0715")
         assert f"{_days_past()} days past due" in row
-        page = _visible(_page(scoped, "order_detail", world["order"]["id"]))
-        assert f"{_days_past()} days past the promised lead time" in page
+        page = _visible(_page(scoped, "order_detail", world["order"]["id"]).split('data-testid="status-tiles"', 1)[1])
+        assert f"Days late {_days_past()}" in page
 
     def test_a_covered_order_is_not_late(self, scoped, played):
         row = _row(_page(scoped, "orders"), "IPTSC-PO-0715")
@@ -176,19 +176,19 @@ class TestTheOrderPage:
 
     def test_the_header_is_labelled_fields_under_a_plain_heading(self, scoped, played):
         body = _page(scoped, "order_detail", played["order"]["id"])
-        header = body.split("Orders</a> ›", 1)[1].split("Edit order", 1)[0]
-        heading = header.split("<h2", 1)[1].split("</h2>", 1)[0]
+        header = body.split('data-testid="order-header"', 1)[1].split('data-testid="on-us"', 1)[0]
+        heading = header.split("<h1", 1)[1].split("</h1>", 1)[0]
         assert "text-brand-indigo" not in heading
         labels = [_visible(t) for t in re.findall(r"<dt[^>]*>(.*?)</dt>", header, re.S)]
-        for label in ("Buyer", "Status", "Recorded by"):
+        for label in ("Buyer", "Recorded by"):
             assert label in labels
         assert "· Dimagi" not in _visible(header)
-        # The fulfilment status is a pill; how it was paid for is a plain tag, so the
-        # two no longer read as two statuses (iteration 4).
-        assert re.search(r'<span class="[^"]*rounded-full[^"]*"[^>]*>\s*short', header)
-        cover_header = _page(scoped, "order_detail", played["cover"]["id"]).split("Edit order", 1)[0]
-        tag = re.search(r'<span class="([^"]*)"[^>]*>\s*Bundled in setup fee', cover_header).group(1)
-        assert "rounded-full" not in tag and "bg-gray-100" in tag
+        # The fulfilment status is a chip; how it was paid for is a labelled fact, so the
+        # two do not read as two statuses (iteration 4).
+        assert re.search(r'<span class="status-chip[^"]*"[^>]*>\s*short', header)
+        cover = _page(scoped, "order_detail", played["cover"]["id"])
+        cover_header = cover.split('data-testid="order-header"', 1)[1].split('data-testid="on-us"', 1)[0]
+        assert re.search(r"<dt[^>]*>Payment</dt><dd[^>]*>Bundled in setup fee", cover_header)
 
     def test_a_receipt_the_programme_took_down_names_who_told_it(self, scoped, da, world):
         cover = _cover(da, world, received=False)
@@ -206,7 +206,7 @@ class TestTheOrderPage:
             },
         )
         body = _page(scoped, "order_detail", cover["id"])
-        received = _visible(body.split(">Received</h3>", 1)[1].split("</table>", 1)[0])
+        received = _visible(body.split(">Received</h2>", 1)[1].split("</table>", 1)[0])
         assert "The programme, for Sahel Community Health Initiative (they told us)" in received
 
     def test_a_missing_certificate_is_not_alarm_coloured(self, scoped, played):

@@ -192,8 +192,8 @@ def tender_scope_revisions(tender_id, *, program_id, until=None, orders=True):
     over the union, so a revision in both scopes is listed once.
 
     `orders=False` leaves out the order(s) placed from it: the overview's tender
-    row reads its last change from the round alone, since the order has a row
-    of its own and a shipment email is not a change to the round.
+    row reads its last change from the tender alone, since the order has a row
+    of its own and a shipment email is not a change to the tender.
     """
     return _revisions(_tender_scope(tender_id, program_id, orders=orders), program_id, until)
 
@@ -218,8 +218,8 @@ def _tender_scope(tender_id, program_id, orders=True):
 
     tender = {int(tender_id)}
     outreach = _child_ids(Outreach, {"tender_id": tender}, program_id)
-    # What we owe on the round -- a supplier's questions, our promises -- and
-    # their answers, which are as much the round's story as the quotes.
+    # What we owe on the tender -- a supplier's questions, our promises -- and
+    # their answers, which are as much the tender's story as the quotes.
     commitments = _commitment_ids("tender_id", tender, program_id)
     quotes = _child_ids(Quote, {"tender_id": tender}, program_id)
     awards = _child_ids(Award, {"tender_id": tender}, program_id)
@@ -500,7 +500,7 @@ _CHASE_FIELDS = {"last_reminder_on", "updated_at"}
 
 
 def _is_bookkeeping(model, revision) -> bool:
-    """An invitation sent, or a chase recorded: lines the round needs kept but nobody reads for."""
+    """An invitation sent, or a chase recorded: lines the tender needs kept but nobody reads for."""
     if model is None or model.__name__ != "Outreach":
         return False
     if revision.action == "create":

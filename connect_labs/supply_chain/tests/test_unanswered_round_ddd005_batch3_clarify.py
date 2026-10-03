@@ -82,12 +82,12 @@ def test_not_settled_drafts_no_clarification(da, round_):
     [
         (
             "buyer_waiver",
-            "For this round we import, under the program's duty waiver; please quote excluding import duty "
+            "For this tender we import, under the program's duty waiver; please quote excluding import duty "
             "and state freight to Central store, Kano, Nigeria.",
         ),
         (
             "buyer_pays",
-            "For this round we import and pay the import duty ourselves; please quote excluding import duty "
+            "For this tender we import and pay the import duty ourselves; please quote excluding import duty "
             "and state freight to Central store, Kano, Nigeria.",
         ),
         (

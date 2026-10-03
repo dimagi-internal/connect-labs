@@ -9,6 +9,7 @@ which date, from which supplier -- and nothing else. They do not say what to
 do about it (design doc section 22).
 """
 
+import re
 from datetime import date, timedelta
 
 import pytest
@@ -263,4 +264,5 @@ class TestTheScreens:
 
         _shipment(da, contract, TODAY - timedelta(days=90))
         body = scoped.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
-        assert "90 days past the promised lead time" in body
+        tiles = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body.split('data-testid="status-tiles"', 1)[1]))
+        assert "Days late 90" in tiles

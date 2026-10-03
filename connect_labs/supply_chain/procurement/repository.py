@@ -148,7 +148,7 @@ class ProcurementRepositoryMixin:
         return _fresh(found)
 
     def set_tender_duty_terms(self, tender_id, duty_terms, duty_estimate_percent=None, on=None):
-        """How import duties are handled for the round. Idempotent: the same terms again change nothing.
+        """How import duties are handled for the tender. Idempotent: the same terms again change nothing.
 
         The day they were set is kept, so the page can say "set 2 Oct by
         Sophie" (who, from the revision). Clearing them to "" un-settles the
@@ -461,7 +461,7 @@ class ProcurementRepositoryMixin:
 
         Owed to an organisation: named directly, or as one of this program's
         suppliers. Hung on the tender or the order it is about, when there is
-        one, so the round's or the order's "waiting on us" can say so.
+        one, so the tender's or the order's "waiting on us" can say so.
         """
         from connect_labs.supply_chain.data_access import _columns, _fresh
 

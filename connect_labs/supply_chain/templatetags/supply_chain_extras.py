@@ -772,7 +772,7 @@ def _plural(n, noun):
 
 
 def _awaiting_words(rfq) -> str:
-    """ "3 awaiting a reply on 1 open round": the silent suppliers the overview's table names, and where.
+    """ "3 awaiting a reply on 1 open tender": the silent suppliers the overview's table names, and where.
 
     Counted by the table's own rule (standing.awaiting_reply), and it says so:
     silent on rounds still being chased, not every unanswered invitation.
@@ -780,8 +780,8 @@ def _awaiting_words(rfq) -> str:
     n = rfq.get("awaiting_reply") or 0
     rounds = rfq.get("awaiting_tenders") or 0
     if not n:
-        return "none awaiting a reply on open rounds"
-    return f"{n} awaiting a reply on {_plural(rounds, 'open round')}"
+        return "none awaiting a reply on open tenders"
+    return f"{n} awaiting a reply on {_plural(rounds, 'open tender')}"
 
 
 def _open_and_awarded(evaluation):
@@ -792,9 +792,9 @@ def _open_and_awarded(evaluation):
 def evaluation_value(evaluation):
     """The Evaluation headline: quotes comparable of quotes received, on rounds still being evaluated.
 
-    An awarded round is not added in: "1 of 4" mixed one open round's
-    comparable count with another round's awarded quote, and matched neither
-    round's own comparison page. With one open round this is that page's "1 of 3".
+    An awarded tender is not added in: "1 of 4" mixed one open tender's
+    comparable count with another tender's awarded quote, and matched neither
+    tender's own comparison page. With one open tender this is that page's "1 of 3".
     """
     open_rounds, awarded = _open_and_awarded(evaluation)
     if not open_rounds and not awarded:
@@ -805,7 +805,7 @@ def evaluation_value(evaluation):
 
 
 def evaluation_words(evaluation) -> str:
-    """The Evaluation cell's caption: what the headline counts, round by round, and awarded rounds apart.
+    """The Evaluation cell's caption: what the headline counts, round by round, and awarded tenders apart.
 
     "quotes comparable on RUTF round 2 · awarded: RUTF round 1". Several open
     rounds are broken down one by one ("RUTF round 3: 0 of 2 · RUTF round 2:
@@ -819,14 +819,14 @@ def evaluation_words(evaluation) -> str:
     elif open_rounds:
         head = " · ".join(f"{p['label']}: {p['comparable']} of {p['of']}" for p in open_rounds) + " quotes comparable"
     else:
-        head = "no round open for evaluation"
+        head = "no tender open for evaluation"
     if awarded:
         head += " · awarded: " + ", ".join(p["label"] for p in awarded)
     return head
 
 
 def quotation_words(quotations) -> str:
-    """The Quotations caption: live quotes per tender, newest first, so each reads back to its round."""
+    """The Quotations caption: live quotes per tender, newest first, so each reads back to its tender."""
     parts = quotations.get("by_tender") or []
     if len(parts) < 2:
         return "live" + (f" on {parts[0]['label']}" if parts else "")
@@ -1581,7 +1581,7 @@ def email_events(timeline):
 
 @register.filter
 def duty_terms_words(value) -> str:
-    """ "we import, under the program's duty waiver", or "not settled": a round's import-duty terms."""
+    """ "we import, under the program's duty waiver", or "not settled": a tender's import-duty terms."""
     from connect_labs.supply_chain.records import DUTY_TERMS_LABELS
 
     return DUTY_TERMS_LABELS.get(value or "", DUTY_TERMS_LABELS[""])
@@ -1615,14 +1615,14 @@ def in_sentence(name) -> str:
 
 
 def _round_only(row) -> bool:
-    """Whether every blocker on a row is ours to clear (the round's own decision), none the supplier's."""
+    """Whether every blocker on a row is ours to clear (the tender's own decision), none the supplier's."""
     blockers = _blockers(row or {})
     return bool(blockers) and all(((b or {}).get("question") or {}).get("audience") == "internal" for b in blockers)
 
 
 @register.filter
 def waits_only_on_round(rows):
-    """The blocked rows held only by our own decision (e.g. the round's duty terms): nothing the supplier owes."""
+    """The blocked rows held only by our own decision (e.g. the tender's duty terms): nothing the supplier owes."""
     return [row for row in rows or [] if _round_only(row)]
 
 

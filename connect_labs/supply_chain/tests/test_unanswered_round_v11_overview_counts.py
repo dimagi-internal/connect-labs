@@ -29,16 +29,10 @@ home_client = batch5.home_client
 
 
 def _listed_silent(today=datetime.date(2026, 9, 12)) -> int:
-    """How many suppliers the overview's table names under "No reply", across its tender rows."""
-    count = 0
-    for row in standing_rows(PROGRAM, today):
-        if row.kind != "tender":
-            continue
-        lines = row.waiting_lines or (row.waiting_on,)
-        for line in lines:
-            if getattr(line, "heading", "") == "No reply":
-                count += len(line.lines)
-    return count
+    """How many "no reply" moves (rule e) the overview's tender rows carry."""
+    return sum(
+        1 for row in standing_rows(PROGRAM, today) if row.kind == "tender" for m in row.theirs if m.rule == "no reply"
+    )
 
 
 @pytest.mark.django_db
@@ -76,10 +70,10 @@ class TestTheAwaitingCountIsTheTablesCount:
         assert summary["rfq_issued"]["awaiting_reply"] == _listed_silent()
 
         rfq = next(cell for cell in source_stages(summary) if cell.get("label") == "RFQ issued")
-        assert "2 awaiting a reply on 1 open round" in str(rfq)
+        assert "2 awaiting a reply on 1 open tender" in str(rfq)
 
     def test_the_page_says_what_it_counted(self, da, base, home_client):
         _open(da, base["tender"]["id"])
         _outreach(da, base["tender"]["id"], base["supplier"]["id"], "2026-09-01")
         body = _home(home_client)
-        assert "1 awaiting a reply on 1 open round" in body
+        assert "1 awaiting a reply on 1 open tender" in body

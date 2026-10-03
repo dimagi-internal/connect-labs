@@ -133,16 +133,16 @@ class TestTheTenderPage:
             data={"response_deadline": three_days_ago.isoformat()},
         )
         body = _tender_page(client_in_program, world["tender"]["id"])
-        passed = re.search(r'data-testid="deadline-passed">(.*?)</dd>', body, re.S).group(1)
-        passed = " ".join(re.sub(r"<[^>]+>", "", passed).split())
-        assert passed.startswith("Open — deadline passed ") and passed.endswith("(3 days ago)")
+        passed = re.search(r'data-testid="deadline-passed"[^>]*>(.*?)</span>', body, re.S).group(1)
+        assert " ".join(passed.split()) == "3 days past"
 
     def test_a_deadline_still_ahead_reads_as_before(self, da, world, client_in_program):
         ahead = datetime.date.today() + datetime.timedelta(days=3)
         op(da, "tender_update", tender_id=world["tender"]["id"], data={"response_deadline": ahead.isoformat()})
         body = _tender_page(client_in_program, world["tender"]["id"])
         assert 'data-testid="deadline-passed"' not in body
-        assert "response deadline" in body
+        terms = body.split('data-testid="tender-terms"', 1)[1]
+        assert "Deadline" in terms and f"{ahead.day} {ahead.strftime('%b')}" in terms
 
     def test_the_invite_select_starts_empty_and_leaves_out_who_was_already_asked(self, da, world, client_in_program):
         from connect_labs.labs.models import LabsOrg

@@ -24,7 +24,7 @@ from connect_labs.supply_chain.models import SupplierOffering
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
-from connect_labs.supply_chain.standing import our_moves, standing_rows
+from connect_labs.supply_chain.standing import move_counts, standing_rows
 
 
 @method_decorator(login_required, name="dispatch")
@@ -306,12 +306,10 @@ class DomainHomeView(OperationBase):
             own_org_id=org.pk if org is not None else None,
         )
         context["standing_now"] = end_of_day(as_of) if as_of else timezone.now()
-        # The moves the table lists as ours, counted from those very lines, so
-        # the heading and "Needs an answer" (open checks) say what each counts.
-        context["standing_our_moves"] = our_moves(context["standing"])
-        # The tenders table below says "awarded, provisional" where the row
-        # above does, rather than a bare "awarded" beside it.
-        context["provisional_tender_ids"] = {r.tender_id for r in context["standing"] if r.provisional}
+        # The two counts above the table, from the rows' own moves (moves.py).
+        context["move_counts"] = move_counts(context["standing"])
+        context["standing_our_moves"] = context["move_counts"]["ours"]
+        context["provisional_tender_ids"] = set()
         # The contracts table's status is the stage the order's row gives.
         context["order_stages"] = {r.contract_id: r.stage for r in context["standing"] if r.kind == "order"}
 
@@ -969,6 +967,31 @@ class OrderDetailView(OperationBase):
             for c in late
             if c["kind"] == "shipment_overdue" and c["subject"]["id"] in shipment_ids
         }
+        # The status view at the top: stage bar, tiles, chip, and the moves --
+        # from moves.py and nothing else, the lists the overview reads.
+        from datetime import date
+
+        from connect_labs.supply_chain import moves as rules
+        from connect_labs.supply_chain.fulfilment.status import order_status
+
+        context["status"] = order_status(
+            contract,
+            award=context["award"],
+            shipments=context["shipments"],
+            receipts=context["receipts"],
+            invoices=context["invoices"],
+            match=context["match"],
+            invoice_above=context["invoice_above"],
+            contract_late=context["contract_late"],
+            held_on_us=context["held_on_us"],
+            header_status=context["order_status"],
+        )
+        today = getattr(self.request, "supply_as_of", None) or date.today()
+        access = _access(self.request)
+        record = access.get_contract(contract_id) if access.program_id else None
+        context["moves_ours"], context["moves_theirs"] = rules.contract_moves(record, today) if record else ([], [])
+        if contract.get("tender_id"):
+            context["tender_label"] = (self.op("tender_get", tender_id=contract["tender_id"]) or {}).get("label", "")
         # What changed on this order and its children, and who told us. Scoped
         # by this program as well as the order, and cut at the as-of date.
         context["timeline"] = timeline_for_contract(

@@ -1,282 +1,109 @@
 {% extends "supply_chain/base.html" %}
 {% load supply_chain_extras %}
 {% block supply_content %}
+<div class="flex flex-col gap-5" data-testid="comparison-page">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-600" aria-label="Breadcrumb"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:home' %}">Procurements</a><span aria-hidden="true">›</span><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}">{{ tender.label|default:"Tender" }}</a><span aria-hidden="true">›</span><span>Comparison</span></nav>
+    {% include "supply_chain/_src_legend.html" %}
+  </div>
 {% if not commodity_slug %}
-  <h1 class="text-xl font-semibold text-gray-900 mb-1">
-    Comparison — tender {{ tender_id }}{% if tender.label %}, {{ tender.label }}{% endif %}
-  </h1>
-  <p class="text-sm text-gray-600 mb-4">Which commodity do you want to compare?</p>
-  <ul class="flex flex-col gap-2">
-    {% for line in tender.lines %}
-      <li>
-        <a href="?commodity={{ line.commodity_slug }}"
-           class="inline-block px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md text-brand-indigo hover:bg-gray-50">
-          {{ line.commodity_slug }}{% if line.quantity %} — {{ line.quantity|qty:line.quantity_unit }}{% endif %}
-        </a>
-      </li>
-    {% empty %}
-      <li class="text-sm text-gray-600">This tender has no commodity lines yet — there is nothing to compare.</li>
-    {% endfor %}
-  </ul>
-{% else %}
-<h1 class="text-xl font-semibold text-gray-900 mb-1">Comparison — {{ commodity_name }}{% if tender.label %} <span class="font-normal text-gray-600">· {{ tender.label }}</span>{% endif %}</h1>
-{% comment %}The round's duty terms, once, above every quote they cost: whether a quote that leaves
-duty out is missing a figure depends on who imports.{% endcomment %}
-{% comment %}A labelled status line, the setting in the page's own weight and the costing rule after it
-in muted body text: as one run of grey body copy it read like the "Draft emails" line under it.{% endcomment %}
-<div data-testid="comparison-duty-terms" class="mb-2 rounded-md border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700">
-  <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-    <span data-testid="duty-terms-chip" class="inline-flex items-center gap-1 text-base text-gray-900"{% if not tender.duty_terms %} title="Nobody has yet said who imports and who pays the duty: a quote that leaves the import to us cannot be landed until they do."{% endif %}><span class="font-medium">Import duties for this round:</span> <span data-testid="duty-terms-value" class="font-semibold">{{ tender.duty_terms|duty_terms_words }}</span>{% if not tender.duty_terms %} <i class="fa-solid fa-circle-info text-gray-600" aria-hidden="true"></i>{% endif %}</span>
-    {% if not supply_as_of %}<a data-testid="duty-terms-change" class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_edit' tender_id %}">{% if tender.duty_terms %}Change{% else %}Settle them{% endif %}</a>{% endif %}
-  </div>
-  <p class="mt-1 text-gray-600"><span data-testid="duty-terms-rule">{% if tender.duty_terms == "buyer_waiver" %}Duty counts as zero on every quote we import, and no supplier is asked for it; a quote delivered duty paid keeps its own duty figure <span data-testid="waiver-evidence">(waiver document: {% if waiver_on_file %}on file{% else %}none on file yet{% endif %})</span>.{% elif tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %}Our estimate of {{ tender.duty_estimate_percent|floatformat:"-2" }}% of the goods is added to each landed total.{% else %}No landed total until our duty estimate is recorded on the tender.{% endif %}{% elif tender.duty_terms == "supplier_ddp" %}Each quote's own duty figure is used.{% else %}Any quote that leaves the import to us waits on these terms, whatever duty it states.{% endif %}</span>
-  {% if duty_terms_answer %}<a data-testid="duty-terms-source" class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}?changed=commitment-{{ duty_terms_answer.commitment_id }}#owed">Set {{ duty_terms_answer.on|date:"j M" }} from your answer to a question from {{ duty_terms_answer.owed_to }}.</a>{% endif %}</p>
-</div>
-{% if not supply_as_of %}
-  <p class="text-sm mb-4">
-    <a data-testid="drafts-link" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#drafts"
-       class="text-brand-indigo hover:underline">Draft emails for this tender</a>
-    <span class="text-gray-600">— the questions below, and reminders to anyone who has not replied, as emails to copy</span>
-  </p>
-{% else %}
-  <div class="mb-4"></div>
-{% endif %}
-
-{% if comparison.provisional %}
-  {% comment %}
-  What is missing, and nothing else: how many quotes can be compared and on what, then
-  who has not stated what. No ranking words -- "provisional", "could still beat it" --
-  a statement of the gap reads the same whether one quote is ranked or none is.
-  {% endcomment %}
-  {% comment %}A count, not an alarm: a calm neutral panel. The amber fill read as a warning.{% endcomment %}
-  <div data-testid="comparison-banner" class="bg-white border border-gray-200 rounded-lg p-4 mb-4 text-sm text-gray-900">
-    <strong>{{ comparison.comparable_count }} of {{ comparison.total_count }} quote{{ comparison.total_count|pluralize }} can be compared{% if compared_on and comparison.comparable %} on {{ compared_on }}{% endif %}.</strong>
-    {% if waiting_on_duty_terms %}<p data-testid="duty-terms-first" class="mt-1 text-gray-900">First, the round's own decision: {{ waiting_on_duty_terms|length }} quote{{ waiting_on_duty_terms|length|pluralize }} leave{{ waiting_on_duty_terms|length|pluralize:"s," }} the import to us <span data-testid="duty-terms-first-names">({{ waiting_on_duty_terms|join:", " }})</span>, so no landed total for {% if waiting_on_duty_terms|length == 1 %}it{% else %}them{% endif %} until the round settles its import duty terms.{% if duty_terms_also_owe %} <span data-testid="duty-terms-also-owe">{{ duty_terms_also_owe|join:" and " }} also {{ duty_terms_also_owe|length|pluralize:"owes,owe" }} a fact, so {{ duty_terms_also_owe|length|pluralize:"it is,they are" }} under Needs info.</span>{% endif %}</p>{% endif %}
-    {% if missing_items %}
-      <span class="block mt-1 text-xs font-medium uppercase tracking-wide text-gray-600">Not yet stated or recorded</span>
-      {% comment %}One line per supplier -- name, missing facts, and where to act: the name opens its
-      Needs info card, and the email that asks it is one click away, so the summary is the next set
-      of emails to send.{% endcomment %}
-      <ul class="mt-0.5 flex flex-col gap-0.5">
-        {% for item in missing_items %}<li data-testid="not-stated" class="grid grid-cols-[minmax(0,16rem)_minmax(0,1fr)_auto] gap-x-4"><a data-testid="not-stated-card" href="#quote-{{ item.quote_id }}" class="font-medium text-brand-indigo hover:underline">{{ item.supplier_name }}</a><span data-testid="not-stated-facts">{{ item.facts }}</span>{% if not supply_as_of %}<a data-testid="not-stated-draft" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#draft-supplier-{{ item.supplier_id }}" class="inline-block rounded-md border border-gray-300 bg-white px-2.5 py-1 font-medium text-brand-indigo hover:bg-gray-50 text-xs">Draft email</a>{% else %}<span></span>{% endif %}</li>{% endfor %}
-      </ul>
-    {% endif %}
-  </div>
-{% endif %}
-
-{% if comparison.unavailable %}
-  {% comment %}
-  Figures no supplier could supply, because the gap is in our own
-  configuration. Reported here, once, rather than by marking every supplier
-  blocked -- which is what this used to do, and it made a supplier who had
-  answered every question look like the problem.
-  {% endcomment %}
-  <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-sm text-blue-900">
-    <strong>Ours to close, not theirs.</strong>
-    These columns cannot be computed for anyone, so they are not part of the
-    comparison:
-    <ul class="list-disc list-inside mt-1">
-      {% for key, figure in comparison.unavailable.items %}
-        <li>
-          <b>{{ figure.label }}</b> —
-          {% for reason in figure.reasons %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}
-        </li>
+  <h1 class="text-brand-deep-purple text-2xl font-semibold">Compare quotes</h1>
+  <div class="card_bg border-brand-border-light flex flex-col gap-3 border">
+    <span class="text-gray-600">Which product?</span>
+    <ul class="m-0 flex list-none flex-col gap-2 p-0">
+      {% for line in tender.lines %}
+        <li><a class="button button-sm outline-style" href="?commodity={{ line.commodity_slug }}">{{ line.commodity_slug }}{% if line.quantity %} — {{ line.quantity|qty:line.quantity_unit }}{% endif %}</a></li>
+      {% empty %}
+        <li class="text-gray-600">No products on this tender yet.</li>
       {% endfor %}
     </ul>
   </div>
-{% endif %}
+{% else %}
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div class="flex flex-col gap-1">
+      <h1 class="text-brand-deep-purple text-2xl font-semibold">Compare quotes</h1>
+      <div class="text-gray-600">{{ commodity_name }}{% if tender.label %} · {{ tender.label }}{% endif %}{% if comparison %} · <span data-testid="comparable-count">{{ comparison.comparable_count }} of {{ comparison.total_count }} comparable</span>{% endif %}</div>
+    </div>
+    {% comment %}The tender's import duty terms, one line, with the control that settles them.{% endcomment %}
+    <div id="duty-terms" data-testid="comparison-duty-terms" class="flex flex-wrap items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm {% if tender.duty_terms %}border-brand-border-light bg-white{% else %}border-message-warning-border/50 bg-message-warning{% endif %}">
+      <span data-testid="duty-terms-chip"><span class="text-gray-600">Import duty:</span> <strong data-testid="duty-terms-value" class="{% if tender.duty_terms %}text-gray-900{% else %}text-message-warning-text{% endif %}">{% if tender.duty_terms %}{{ tender.duty_terms|duty_terms_words }}{% else %}not settled{% endif %}</strong></span>
+      {% if grid_blocked_by_terms %}<span class="text-gray-700" data-testid="duty-terms-blocks">· blocks {{ grid_blocked_by_terms|join:", " }}</span>{% endif %}
+      {% if tender.duty_terms == "buyer_waiver" %}<span class="text-xs text-gray-600" data-testid="waiver-evidence">· waiver document {% if waiver_on_file %}on file{% else %}not on file{% endif %}</span>{% endif %}
+      {% if not supply_as_of %}
+      <details class="relative">
+        <summary data-testid="duty-terms-change" role="button" class="text-brand-indigo cursor-pointer list-none font-semibold hover:underline [&::-webkit-details-marker]:hidden">{% if tender.duty_terms %}Change{% else %}Settle{% endif %}</summary>
+        <form method="post" action="{% url 'supply_chain:procurement_tender_duty_terms' tender_id %}" class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 shadow-sm">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          {% include "supply_chain/procurement/_duty_terms_fields.html" %}
+        </form>
+      </details>
+      {% endif %}
+    </div>
+  </div>
 
-{% if awards %}
-  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 mb-4 text-sm">
-    <span class="font-semibold text-gray-900">Awarded</span>
+  {% if award_error %}
+  <div class="border-message-error-border/50 bg-message-error text-message-error-text rounded-lg border px-3.5 py-2.5 text-sm" role="alert" data-testid="award-error">Could not award: {{ award_error }}</div>
+  {% endif %}
+
+  {% if awards %}
+  <div class="border-brand-border-light flex flex-wrap items-baseline gap-x-3.5 gap-y-2 rounded-lg border bg-white px-5 py-3 text-sm" data-testid="awards">
+    <span class="status-chip status-chip--primary">Awarded</span>
     {% for award in awards %}
-      <a class="ml-2 text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award.id %}">
-        award {{ award.id }}{% for row in comparison.all_rows %}{% if row.quote_id == award.quote_id %} to {{ row.supplier_name }}{% endif %}{% endfor %}{% if award.decided_on %}, {{ award.decided_on|day }}{% endif %}</a>{% if award.decided_by %} <span class="text-gray-700">by {{ award.decided_by }}</span>{% endif %}{% if award.rationale %}
-      <div class="text-gray-700 mt-0.5" data-award-why>Why: {{ award.rationale }}</div>{% endif %}{% if not forloop.last %} ·{% endif %}
+      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award.id %}">award {{ award.id }}{% for row in comparison.all_rows %}{% if row.quote_id == award.quote_id %} to {{ row.supplier_name }}{% endif %}{% endfor %}{% if award.decided_on %}, {{ award.decided_on|day }}{% endif %}</a>{% if award.decided_by %} <span class="text-gray-600">by {{ award.decided_by }}</span>{% endif %}{% if award.rationale %} <span class="text-gray-600" data-award-why>· {{ award.rationale }}</span>{% endif %}
     {% endfor %}
-    <span class="text-xs text-gray-600 ml-2">— approvals and the order are on the award.</span>
   </div>
-{% endif %}
+  {% endif %}
 
-{% if award_error %}
-  <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 text-sm text-red-800">
-    Could not award: {{ award_error }}
-  </div>
-{% endif %}
-
-{% if comparison.comparable %}
-  {% comment %}What the ranking is by is marked on that column's own header, below. A
-  label floating at the right above the table read as detached from it; it stays only
-  when there is no such column to mark.{% endcomment %}
-  <div id="comparable" class="scroll-mt-20 flex items-baseline justify-between mb-2">
-    <h2 class="text-lg font-semibold text-gray-900">Comparable</h2>
-    {% if not ranked_in_table and not single_offer %}
-    <p data-testid="ranked-by-fallback" class="text-sm text-gray-600">
-      {% if ranked_by_label %}Ranked by {{ ranked_by_label }}{% else %}Not yet ranked{% endif %}
-    </p>
-    {% endif %}
-  </div>
-  {% if cost_basis %}
-    {% comment %}What one pack and one course are in base units, as the commodity
-    defines them, so the per-unit columns can be read against each other.{% endcomment %}
-    <p data-testid="cost-basis" class="text-sm text-gray-800 mb-2">{{ cost_basis }}</p>
-  {% endif %}
-  {% if unit_equivalence %}
-    {% comment %}Three equal columns, said once as why they are equal rather than left
-    to read as a repeated figure.{% endcomment %}
-    <p data-testid="unit-equivalence" class="text-xs text-gray-600 mb-2">{{ unit_equivalence }}</p>
-  {% endif %}
-  {% if folded_columns %}
-    <p class="text-xs text-gray-600 mb-2">{{ folded_columns|join:" and " }} {{ folded_columns|length|pluralize:"is,are" }} the same as {{ first_column_label }} here, so {{ folded_columns|length|pluralize:"it is,they are" }} not repeated.</p>
-  {% endif %}
-  {% comment %}
-  The award form and the questions sit in a full-width row under each offer,
-  not in a last column: in a cell, at 1440px, the Award button was clipped to
-  "A" and the questions were cut off at the edge of the sideways-scrolling
-  region. With them underneath, the table is only as wide as its figures.
-  {% endcomment %}
-  <div class="table-container flex flex-col gap-2 mb-1">
-    {% comment %}One comparable offer is a result, not a ranking: a compact card as wide as
-    its figures, not a full-width table that is mostly empty space.{% endcomment %}
-    <div data-testid="{% if single_offer %}single-result{% else %}ranked-wrap{% endif %}" class="{% if single_offer %}w-full bg-white border border-gray-200 rounded-lg shadow-sm{% else %}w-full{% endif %} overflow-x-auto">
-      {% comment %}Full width, as the Needs-info cards below it are. With one offer there is
-      no ranking to number or to say what it is by, so neither the "#" column nor the
-      "Ranked by" marker is shown.{% endcomment %}
-      <table data-testid="ranked-table" class="base-table {% if not single_offer %}w-full{% endif %}">
-        <thead>
+  {% if grid and grid.quotes %}
+  <section class="border-brand-border-light overflow-hidden rounded-lg border bg-white" aria-label="Quotes side by side">
+    <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="Comparison, scrolls sideways">
+      <table class="w-full text-sm {% if grid.quotes|length > 3 %}min-w-[1080px]{% elif grid.quotes|length == 3 %}min-w-[860px]{% else %}min-w-[640px]{% endif %}" data-testid="comparison-grid">
+        <thead class="border-b border-gray-200">
           <tr>
-            {% if not single_offer %}<th>#</th>{% endif %}<th>Supplier</th>
-            {% for column in table_columns %}{% if column.key == ranked_by_key and not single_offer %}<th>{{ column.label }}<span data-testid="ranked-by-marker" class="mt-0.5 flex items-center gap-1 text-xs font-medium normal-case tracking-normal text-brand-indigo"><i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i>Ranked by this, lowest first</span></th>{% else %}<th>{{ column.label }}</th>{% endif %}{% endfor %}
+            <th scope="col" class="w-52 px-5 py-4"><span class="sr-only">Fact</span></th>
+            {% for q in grid.quotes %}
+            <th scope="col" data-quote-id="{{ q.quote_id }}" data-testid="grid-quote" class="border-l border-gray-100 px-4 py-4 text-left align-top font-normal">
+              <div class="flex flex-col gap-1">
+                <a href="{{ q.href }}" class="text-brand-deep-purple text-base font-semibold hover:underline">{{ q.name }}</a>
+                {% if q.item %}<span class="text-xs text-gray-600">{{ q.item }}</span>{% endif %}
+                <span><span class="status-chip status-chip--{{ q.chip.tone }}" data-testid="grid-status">{{ q.chip.label }}</span></span>
+              </div>
+            </th>
+            {% endfor %}
           </tr>
         </thead>
-        <tbody>
-          {% for row in comparison.comparable %}
-            {% comment %}id="award" is on the ROW of the first offer that can still be awarded,
-            so "#award" lands on the supplier, its figures and the award form under them
-            together; the form keeps data-testid="award-form". scroll-mt-20 clears the fixed
-            header.{% endcomment %}
-            <tr data-testid="ranked-row" data-quote-id="{{ row.quote_id }}"{% if row.quote_id == award_anchor_quote_id %} id="award" class="scroll-mt-20"{% endif %}>
-              {% if not single_offer %}<td>{{ forloop.counter }}</td>{% endif %}
-              <td class="font-medium">
-                {% comment %}The offer is the kit; the supplier is who offers it. Two offers
-                from one distributor would otherwise read as the same line twice.{% endcomment %}
-                {% if row.item_name %}<div class="text-gray-900">{{ row.item_name }}</div>{% endif %}
-                <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
-                   class="{% if row.item_name %}text-sm font-normal {% endif %}text-brand-indigo hover:underline">{% if row.item_name %}from {% endif %}{{ row.supplier_name }}</a>
-                {% comment %}The delivery place is left to the basis line under the row, which says it
-                again with how freight and duty were counted.{% endcomment %}
-                {% include 'supply_chain/procurement/_supplier_flags.html' with hide_delivery=row.landed_basis %}
-                {% include 'supply_chain/procurement/_ai_badge.html' with actor=ai_quotes|dictkey:row.quote_id %}
-                {% if row.quote_id in awarded_quote_ids %}
-                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Awarded</span>
-                {% endif %}
-                {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
-                {% comment %}Why a quote that was blocked is ranked: the correction that answered
-                the fact it lacked, said on its row under the supplier. Only when the correction
-                filled a blank -- a correction to a figure the quote already had did not move it in.
-                The line wraps (base-table cells do not), so a long name cannot push the figures
-                off the screen.{% endcomment %}
-                {% with joined=corrections|dictkey:row.quote_id %}{% if joined and joined.filled_gap %}
-                  <p data-testid="joined-ranking" class="mt-0.5 w-56 whitespace-normal text-xs font-normal text-gray-700">Joined the ranking {{ joined.when|date:"j M" }} after {{ joined.actor }} recorded the supplier's answer</p>
-                {% endif %}{% endwith %}
-              </td>
-              {% for column in table_columns %}
-                {% with cell=row.figures|dictkey:column.key %}
-                  {% if cell.unconfirmed %}
-                    {% comment %}
-                    A comparable row CAN hold an unconfirmed cell now that
-                    comparability no longer waits on figures only we can
-                    supply (see COMPARABILITY_FIELDS). Rendering
-                    {{ cell.amount }} for one produced an empty cell --
-                    which reads as "no cost per course" rather than "we have
-                    not set the ration table", and a blank is the one thing
-                    the whole Unconfirmed type exists to prevent.
-                    {% endcomment %}
-                    <td class="text-gray-600" title="{% for reason in cell.unconfirmed %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}">
-                      Unconfirmed
-                    </td>
-                  {% else %}
-                    <td class="tabular-nums">{{ cell|money_text:3 }}{% if not tender.duty_terms and column.key|slice:":13" == "landed_total_" %}<span data-testid="landed-duty-basis" class="block text-xs font-normal text-gray-600">duty basis: stated by supplier (round terms not settled)</span>{% endif %}</td>
-                  {% endif %}
-                {% endwith %}
-              {% endfor %}
-            </tr>
-            {% with correction=corrections|dictkey:row.quote_id %}{% if correction or row.specification or row.landed_basis or row.quantity_quoted %}
-            {% comment %}
-            The specification and, for an offer a correction brought in, the
-            correction and the reply it rested on: one compact line under the
-            row's figures, so the row itself stays one line to scan across.
-            {% endcomment %}
-            <tr data-testid="ranked-row-detail" data-detail-for="{{ row.quote_id }}">
-              {% if not single_offer %}<td></td>{% endif %}
-              <td colspan="{{ table_columns|length|add:1 }}" class="pt-0 pb-2 whitespace-normal">
-                <div data-testid="detail-fill" class="w-0 min-w-full">
-                {% comment %}What the landed figures assume: where it is delivered, and whether
-                freight and duties were counted in, on whose word.{% endcomment %}
-                {% comment %}The quantity the row's landed total buys -- "Quoted for 2,000 cartons" --
-                so the figure in the row is read as a price for an amount. The total itself is in
-                the row: said again here it read as a second figure.{% endcomment %}
-                {% with total=row.figures.landed_total_as_quoted %}
-                {% if row.landed_basis or row.quantity_quoted and total.amount is not None %}<p class="mb-1 text-xs text-gray-700">{% if row.quantity_quoted and total.amount is not None %}<span data-testid="landed-quantity" class="font-medium text-gray-900">Quoted for {{ row.quantity_quoted }}</span>{% if row.landed_basis %} · {% endif %}{% endif %}{% if row.landed_basis %}<span data-testid="landed-basis">{{ row.delivery_basis }}</span>{% if row.duty_line %}{% if row.delivery_basis %} · {% endif %}<span data-testid="landed-duty" class="font-medium text-gray-900">duty {{ row.duty_line }}</span>{% endif %}{% endif %}</p>{% endif %}
-                {% endwith %}
-                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                  {% include "supply_chain/procurement/_specification.html" with specification=row.specification inline=True %}
-                  {% if correction %}
-                    {% comment %}Why a once-blocked offer is in the ranking: the correction that
-                    answered it, worded as the timeline words it. It opens on the reply it rested
-                    on, so the evidence is read here rather than on another page. Who recorded it
-                    is said once, in the source's heading.{% endcomment %}
-                    {% comment %}One line of provenance -- when, who, from whose email -- that opens on
-                    the words themselves. What it changed follows the excerpt.{% endcomment %}
-                    <details data-testid="correction-source" class="text-xs font-normal">
-                      <summary class="cursor-pointer text-gray-700 hover:underline">Corrected {{ correction.when|date:"j M" }} by {{ correction.actor }}{% if correction.excerpt %} from {% if correction.sender %}{{ correction.sender }} {% else %}an {% endif %}{{ correction.source_kind|default:"source"|lower }}:{% endif %}</summary>
-                      <div class="mt-1 max-w-2xl">
-                        {% if correction.excerpt %}
-                          <blockquote data-testid="source-excerpt" class="rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ correction.excerpt }}</blockquote>
-                        {% else %}
-                          <p class="text-gray-600">No source was recorded with this correction.</p>
-                        {% endif %}
-                        <p class="mt-1 text-gray-700">{% if correction.changes %}Changed: {{ correction.changes }} · {% endif %}<a data-testid="correction-note" href="{{ history_url }}" class="text-brand-indigo hover:underline">In the tender's history</a></p>
-                      </div>
-                    </details>
-                  {% endif %}
-                </div>
-                </div>
-              </td>
-            </tr>
-            {% endif %}{% endwith %}
-            {% if row.questions or row.quote_id not in awarded_quote_ids and not supply_as_of %}
-            {% comment %}
-            Two blocks in normal flow, one above the other: the questions, then
-            the award form. Side by side in a wrapping flex row the question
-            text ran under the inputs -- the table's cells do not wrap
-            (base-table's whitespace-nowrap), so a long question overflowed its
-            column into the form's. The cell is set to wrap, and nothing here
-            is positioned.
-            {% endcomment %}
-            <tr data-testid="ranked-row-actions" data-actions-for="{{ row.quote_id }}" class="border-b border-gray-200">
-              {% if not single_offer %}<td></td>{% endif %}
-              <td colspan="{{ table_columns|length|add:1 }}" class="pt-0 pb-3 whitespace-normal">
-                <div class="flex w-0 min-w-full flex-col gap-3">
-                  {% if row.questions %}
-                    <div data-testid="row-questions" class="min-w-0">
-                      {% include "supply_chain/procurement/_row_questions.html" with row=row %}
-                    </div>
-                  {% endif %}
-                  {% if row.quote_id not in awarded_quote_ids and not supply_as_of %}
-                  {% comment %}data-testid="award-form" is the walkthroughs' hook: the form has
-                  moved three times in its row, and an answered quote's id is only minted on
-                  camera, so a recipe finds the form by what it is, not by where it sits.{% endcomment %}
-                  {% comment %}The award's fields -- why, when, who -- stay folded behind the award
-                  button until someone starts one: four inputs under every offer read as a form to
-                  fill rather than a choice to make. The button that opens them says what awarding
-                  now means ("Award Harmattan now", in the same outlined style as the card's "Draft email",
-                  with "2 other quotes can't be compared yet" as helper text beneath rather than
-                  inside the action; the gaps in its tooltip; the banner is where they are said); the form inside still posts
-                  as before, and opens again on a refused award.{% endcomment %}
-                  <details data-testid="award-start" class="min-w-0"{% if award_error or award_step %} open{% endif %}>
-                    <summary data-testid="award-open"{% if award_anyway %} data-anyway title="{{ award_anyway_detail }}"{% endif %}
-                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden {% if award_anyway %}block{% else %}inline-block px-4 py-1.5 text-sm rounded-md bg-brand-indigo hover:bg-brand-deep-purple text-white{% endif %}">{% if award_anyway %}<span data-testid="award-label" class="inline-block rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-50">Award {{ row.supplier_name }} anyway ({{ award_incomplete_count }} quote{{ award_incomplete_count|pluralize }} still incomplete)</span>{% else %}Award{% endif %}</summary>
+        <tbody class="divide-y divide-gray-100">
+          {% for r in grid.rows %}
+          <tr data-fact="{{ r.key }}"{% if r.total %} class="bg-stone-50 text-base"{% endif %}>
+            <th scope="row" class="px-5 py-3 text-left align-top text-sm {% if r.total %}font-semibold text-gray-900{% else %}font-normal text-gray-600{% endif %}">{{ r.label }}<div class="text-xs font-normal text-gray-600">{{ r.src_label }}</div></th>
+            {% for c in r.cells %}
+            <td class="border-l border-gray-100 px-4 py-3 align-top{% if r.key == "price" or r.key == "landed" or r.key == "fx" %} tabular-nums{% endif %}{% if r.total %} font-semibold text-gray-900{% endif %}" data-testid="grid-cell" data-quote-id="{{ c.quote_id }}"{% if c.gap %} data-gap{% endif %}>{% if c.gap %}<span class="text-message-warning-text font-medium"{% if c.why %} title="{{ c.why }}"{% endif %}>{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}</span>{% elif c.mute %}<span class="text-gray-600">{{ c.v }}</span>{% else %}{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}{% endif %}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+          {% if not supply_as_of %}
+          <tr>
+            <td class="px-5 py-3"></td>
+            {% for q in grid.quotes %}
+            <td class="border-l border-gray-100 px-4 py-3">{% if q.action %}<a class="button button-sm outline-style" data-testid="grid-action" href="{{ q.action.href }}"{% if q.action.award %} onclick="var d=document.getElementById('award-{{ q.quote_id }}'); if (d) { d.open = true; d.scrollIntoView({block: 'center'}); return false; }"{% endif %}>{{ q.action.label }}</a>{% endif %}</td>
+            {% endfor %}
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% elif comparison %}
+  <div class="card_bg border-brand-border-light border text-gray-600">No live quote on this product yet.</div>
+  {% endif %}
+
+  {% if comparison.comparable and not supply_as_of %}
+  {% comment %}The award itself, folded under each comparable quote: why, when, who.{% endcomment %}
+  {% for row in comparison.comparable %}{% if row.quote_id not in awarded_quote_ids %}
+  <details class="fold" id="award-{{ row.quote_id }}" data-testid="award-start"{% if row.quote_id == award_anchor_quote_id and award_error or row.quote_id == award_anchor_quote_id and award_step %} open{% endif %}>
+    <summary data-testid="award-open"{% if row.quote_id == award_anchor_quote_id %} id="award"{% endif %}>Award {{ row.supplier_name }}{% if award_anyway %} <span class="text-sm font-normal text-gray-600" data-anyway title="{{ award_anyway_detail }}">· {{ award_incomplete_count }} other quote{{ award_incomplete_count|pluralize }} not comparable yet</span>{% endif %}</summary>
+    <div class="fold-body">
                   <form method="post" action="" data-testid="award-form" class="mt-2 flex flex-wrap items-end gap-2 min-w-0">
                     {% csrf_token %}
                     <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
@@ -298,26 +125,23 @@ in muted body text: as one run of grey body copy it read like the "Draft emails"
                     <div class="flex flex-col gap-0.5 text-xs text-gray-600">Decided by
                       <span data-testid="decided-by" class="py-1 text-sm text-gray-900">{{ decider }}</span>
                     </div>
-                    <button data-testid="award-submit" class="shrink-0 px-4 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
+                    <button data-testid="award-submit" class="button button-sm primary-dark shrink-0"
                             type="submit">
                       Award
                     </button>
                   </form>
-                  </details>
-                  {% endif %}
-                </div>
-              </td>
-            </tr>
-            {% endif %}
-          {% endfor %}
-        </tbody>
-      </table>
     </div>
+  </details>
+  {% endif %}{% endfor %}
+  {% endif %}
+
+{% if comparison.unavailable %}
+  <div class="card_bg border-brand-border-light flex flex-col gap-1.5 border" data-testid="unavailable">
+    <strong class="text-gray-900">Not computed for any quote</strong>
+    <ul class="m-0 list-disc pl-5 text-sm">
+      {% for key, figure in comparison.unavailable.items %}<li><b>{{ figure.label }}</b> — {% for reason in figure.reasons %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}</li>{% endfor %}
+    </ul>
   </div>
-{% elif comparison.blocked %}
-  {% comment %}Nothing to add: the banner above already says none of them is comparable, and names who has to answer.{% endcomment %}
-{% else %}
-  <p class="text-gray-600 mb-4">Nothing is comparable: no offer holds the contents this tender buys.</p>
 {% endif %}
 
 {% if set_aside %}
@@ -371,34 +195,6 @@ in muted body text: as one run of grey body copy it read like the "Draft emails"
   </section>
 {% endif %}
 
-{% if comparison.blocked %}
-  {% comment %}A quote held only by the round's own decision (its duty terms) is not short of
-  anything its supplier owes: it is grouped under that decision, so "Needs info" counts only
-  the suppliers who still owe a fact.{% endcomment %}
-  {% with round_rows=comparison.blocked|waits_only_on_round supplier_rows=comparison.blocked|owes_supplier_facts %}
-  {% if round_rows %}
-  <section id="round-decision" data-testid="round-decision" class="scroll-mt-20">
-  <h2 class="text-lg font-semibold text-gray-900 mt-6 mb-2">
-    <span data-testid="round-decision-title">Held only by the round's decision — {{ round_rows|length }} quote{{ round_rows|pluralize }}</span>
-  </h2>
-  {% for row in round_rows %}
-{% include "supply_chain/procurement/_needs_info_card.html" %}
-  {% endfor %}
-  </section>
-  {% endif %}
-  {% if supplier_rows %}
-  {% comment %}At least a screen tall below the top bar, so a link to #needs-info ("see Needs info")
-  lands with the heading at the top rather than clamped at the page's foot.{% endcomment %}
-  <section id="needs-info" data-testid="needs-info" class="scroll-mt-20" style="min-height: calc(100vh - 5rem)">
-  <h2 class="text-lg font-semibold text-gray-900 mt-6 mb-2">
-    <span data-testid="needs-info-title">Needs info — {{ supplier_rows|length }} supplier{{ supplier_rows|pluralize }}</span>
-  </h2>
-  {% for row in supplier_rows %}
-{% include "supply_chain/procurement/_needs_info_card.html" %}
-  {% endfor %}
-  </section>
-  {% endif %}
-  {% endwith %}
 {% endif %}
-{% endif %}
+</div>
 {% endblock %}

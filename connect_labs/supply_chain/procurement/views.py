@@ -31,11 +31,12 @@ from django.http import Http404
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
+from django.views import View
 from django.views.generic import TemplateView
 
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.banner import program_line
-from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
+from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView, SupplyWriteMixin
 from connect_labs.supply_chain.fulfilment.forms import DocumentForm
 from connect_labs.supply_chain.history.timeline import (
     ai_entered_quotes,
@@ -56,6 +57,7 @@ from connect_labs.supply_chain.procurement.forms import (
     OutreachReplyForm,
     QuoteForm,
     ReasonForm,
+    TenderDutyTermsForm,
     TenderForm,
     TenderLineFormSet,
     TenderPlaceFormSet,
@@ -80,7 +82,7 @@ def _reminder_facts(row, interval_days, as_of=None) -> list:
     """A reminder draft's facts as a labelled row: asked, last reminded, which reminder this is, how often.
 
     The same facts as the draft's why sentence, set out so they read as facts
-    about the round rather than as more of the card's body copy.
+    about the tender rather than as more of the card's body copy.
     """
     if not row:
         return []
@@ -136,7 +138,7 @@ def _mark_waiting_on_us(outreach, owed_open, org_of_supplier):
     """Put "waiting on us — 3 questions since 18 Sep" on a supplier's row while its questions are open.
 
     A reply that was questions is not the supplier's silence: the move is ours,
-    and the round should say so where the supplier is listed. Counts the open
+    and the tender should say so where the supplier is listed. Counts the open
     questions owed to the supplier's organisation on this tender, from the
     earliest day one was asked.
     """
@@ -174,12 +176,24 @@ def _drafts_breakdown(drafts) -> str:
         if (n := counts.get(kind))
     ]
     parts += [f"1 reply to {d.get('supplier_name')}" for d in drafts if d.get("kind") == "reply"]
-    # The round's terms, told to every invited supplier: one email each, so the
+    # The tender's terms, told to every invited supplier: one email each, so the
     # parts still add up to the panel's count.
     told = sum(1 for d in drafts if d.get("kind") == "clarification")
     if told:
         parts.append(f"{told} clarification{'' if told == 1 else 's'} of the duty terms, one to each invited supplier")
     return " · ".join(parts)
+
+
+def draft_anchors(drafts) -> set:
+    """The anchors the drafts panel gives its cards: a supplier's first draft, and each reply."""
+    out, seen = set(), set()
+    for i, d in enumerate(drafts):
+        if d.get("kind") == "reply":
+            out.add(f"draft-reply-{d.get('supplier_id') or i}")
+        elif d.get("supplier_id") is not None and d["supplier_id"] not in seen:
+            seen.add(d["supplier_id"])
+            out.add(f"draft-supplier-{d['supplier_id']}")
+    return out
 
 
 def _message_rows(text: str, width: int = 110, most: int = 28) -> int:
@@ -279,7 +293,7 @@ class TenderDetailView(_Base):
         cell = self.request.GET.get("cell")
         context["changed_cell"] = cell if cell in _OUTREACH_CELLS else "replied"
         context["deadline_passed"] = _deadline_passed(tender, as_of)
-        # Someone asked has not answered, on a round still taking quotes: the
+        # Someone asked has not answered, on a tender still taking quotes: the
         # page's first action is chasing them, ahead of comparing what came in.
         context["any_silent"] = tender.get("status") == "open" and any(not o.get("responded") for o in outreach)
         # The tender's own title and its outreach lead; the supply banner steps back.
@@ -287,8 +301,8 @@ class TenderDetailView(_Base):
         context.update(
             owed_context(self.op("commitment_list", tender_id=tender_id), changed, _access(self.request).program_id)
         )
-        # The emails due on this round now, for Sophie to copy into her own
-        # mailbox. Listed in the order a round runs and then by name -- not
+        # The emails due on this tender now, for Sophie to copy into her own
+        # mailbox. Listed in the order a tender runs and then by name -- not
         # ranked, and folded shut (design doc section 22: the product drafts
         # when asked; it does not press a next action). Not on a page rewound
         # with ?as_of=: what is due is a fact about today.
@@ -332,7 +346,7 @@ class TenderDetailView(_Base):
         answered = [c for c in context.get("owed") or [] if not c.get("open")]
         context["owed_drafted_count"] = sum(1 for c in answered if c.get("answer_drafted"))
         context["owed_sent_count"] = len(answered) - context["owed_drafted_count"]
-        # How the round's import duties are handled, and who settled them. The
+        # How the tender's import duties are handled, and who settled them. The
         # line an answer just set is marked new, like the cell a form changed.
         if tender.get("duty_terms"):
             from connect_labs.supply_chain.history.timeline import duty_terms_set_by
@@ -457,6 +471,26 @@ class TenderDetailView(_Base):
             program_id=_access(self.request).program_id,
             until=getattr(self.request, "supply_as_of", None),
         )
+        # The status view at the top of the page (procurement/status.py): stage
+        # bar, tiles, one row per supplier, On us / On suppliers, the terms.
+        from connect_labs.supply_chain.models import Tender as _Tender
+        from connect_labs.supply_chain.procurement.status import tender_status
+
+        found = _Tender.objects.filter(pk=tender_id, program_id=access.program_id).first()
+        if found is not None:
+            context["status"] = tender_status(
+                found,
+                as_of or date.today(),
+                program_id=access.program_id,
+                draft_anchors=draft_anchors((context["drafts"] or {}).get("drafts") or []),
+                reminder_counts=reminders,
+            )
+        context["counts"] = {
+            "quotes": len([q for q in context["quotes"] if not q.get("voided")]),
+            "history": len(context["timeline"] or []) if isinstance(context["timeline"], list) else None,
+            "drafts": len((context["drafts"] or {}).get("drafts") or []),
+            "invited": len(outreach),
+        }
         return context
 
 
@@ -610,7 +644,7 @@ def _and_list(words) -> str:
 # quote is converted at is ours to record, so "Sahel has not stated exchange
 # rate" blamed the supplier for our own blank (unanswered round, batch 1).
 _BUYER_RECORDED = {"exchange rate"}
-_ROUND_DUTY_TERMS_LABEL = "round duty terms"
+_ROUND_DUTY_TERMS_LABEL = "tender duty terms"
 _CURRENCY = re.compile(r"\bin ([A-Z]{3})\b")
 
 
@@ -651,7 +685,7 @@ def missing_item(row) -> str:
     stilted. A gap that is ours (the exchange rate) keeps its currency.
     """
     blockers = row.get("blockers") or []
-    # The round's own duty terms are said once, above the list (`waiting_on_duty_terms`):
+    # The tender's own duty terms are said once, above the list (`waiting_on_duty_terms`):
     # they are not a fact any supplier has left out.
     labels = [
         label
@@ -852,6 +886,7 @@ class ComparisonView(_Base):
 
         context["tender"] = tender
         context["tender_id"] = tender_id
+        context["compact_banner"] = True
         context["commodity_slug"] = commodity
         # The product's name, not its slug: "ors-zinc-copack" is an identifier.
         commodities = self.op("commodity_list") if commodity else []
@@ -949,25 +984,25 @@ class ComparisonView(_Base):
             for row in (comparison or {}).get("blocked") or []
             if (item := missing_item(row))
         ]
-        # The round's own decision, said once above the per-supplier gaps: every quote whose
-        # Incoterm makes the import ours waits on the round's duty terms, whatever duty
-        # figure its supplier wrote, so "settle the terms" is the round's first move.
+        # The tender's own decision, said once above the per-supplier gaps: every quote whose
+        # Incoterm makes the import ours waits on the tender's duty terms, whatever duty
+        # figure its supplier wrote, so "settle the terms" is the tender's first move.
         context["waiting_on_duty_terms"] = [
             row.get("supplier_name") or "A supplier"
             for row in (comparison or {}).get("blocked") or []
             if any(
-                "round's duty terms are not settled" in (b.get("fact") or b.get("label") or "").lower()
+                "tender's duty terms are not settled" in (b.get("fact") or b.get("label") or "").lower()
                 for b in row.get("blockers") or []
             )
         ]
         # Of those, the ones that also owe a supplier fact: listed under Needs info, not under the
-        # round's decision, so the banner's count and the two headings reconcile.
+        # tender's decision, so the banner's count and the two headings reconcile.
         context["duty_terms_also_owe"] = [
             row.get("supplier_name") or "A supplier"
             for row in (comparison or {}).get("blocked") or []
             if (row.get("supplier_name") or "A supplier") in context["waiting_on_duty_terms"]
             and any(
-                "round's duty terms are not settled" not in (b.get("fact") or b.get("label") or "").lower()
+                "tender's duty terms are not settled" not in (b.get("fact") or b.get("label") or "").lower()
                 for b in row.get("blockers") or []
             )
         ]
@@ -997,7 +1032,7 @@ class ComparisonView(_Base):
         context["award_incomplete_count"] = len(
             [row for row in (comparison or {}).get("blocked") or [] if row.get("blockers")]
         )
-        # Where the round's duty terms came from, when an answer to a supplier set them:
+        # Where the tender's duty terms came from, when an answer to a supplier set them:
         # the comparison then carries the answer-to-terms link itself.
         if tender.get("duty_terms"):
             from connect_labs.supply_chain.history.timeline import duty_terms_answer
@@ -1013,11 +1048,48 @@ class ComparisonView(_Base):
         # Arriving by a link to the award step (?step=award) opens the folded award fields:
         # the link already said "award", so a second click to reveal them is friction.
         context["award_step"] = self.request.GET.get("step") == "award"
+        # The side-by-side grid (procurement/status.py): a column per quote, a row per fact.
+        if comparison:
+            from connect_labs.supply_chain.models import Quote as _Quote
+            from connect_labs.supply_chain.models import Tender as _Tender
+            from connect_labs.supply_chain.procurement.status import comparison_grid
+
+            program_id = _access(self.request).program_id
+            found = _Tender.objects.filter(pk=tender_id, program_id=program_id).first()
+            quotes_by_id = {q.pk: q for q in _Quote.objects.filter(tender_id=tender_id, tender__program_id=program_id)}
+            drafts = (
+                []
+                if getattr(self.request, "supply_as_of", None)
+                else (self.op("tender_drafts_render", tender_id=tender_id) or {}).get("drafts") or []
+            )
+            if found is None:
+                # No record to hand (a read through the operations alone): the tender's own terms.
+                found = SimpleNamespace(
+                    pk=tender_id,
+                    duty_terms=tender.get("duty_terms") or "",
+                    duty_estimate_percent=tender.get("duty_estimate_percent"),
+                )
+            context["grid"] = comparison_grid(
+                found,
+                comparison,
+                quotes_by_id,
+                ai_quotes=set(context["ai_quotes"]),
+                awarded=context["awarded_quote_ids"],
+                draft_anchors=draft_anchors(drafts),
+            )
+            context["grid_blocked_by_terms"] = [
+                q["name"] for q in context["grid"]["quotes"] if q["chip"]["label"] == "Waiting on our duty terms"
+            ] + [
+                row.get("supplier_name")
+                for row in comparison.get("blocked") or []
+                if "tender duty terms" in (row.get("gaps") or [])
+                and any(g != "tender duty terms" for g in row.get("gaps") or [])
+            ]
         return context
 
     def post(self, request, tender_id, *args, **kwargs):
         """Award a quote. The Award button's form posts here (action="" —
-        same URL, so the ?commodity= query string tender-trips for free).
+        same URL, so the ?commodity= query string round-trips for free).
 
         A missing or empty rationale is refused by award_create's schema, not
         guessed around here — that refusal must not become a 500: catch it
@@ -1356,17 +1428,69 @@ class TenderCloseView(OperationActionView):
 
 
 class ReplySentView(OperationActionView):
-    """The reply carrying these answers went out: drafted answers become Answered."""
+    """The reply went out: every question it carries is answered, and the reply is marked sent.
+
+    A question still open when the reply is marked sent was answered in the
+    email itself, so it is resolved as answered in that reply first
+    (commitment_resolve), then the reply is recorded (commitment_reply_sent):
+    "Reply to <supplier>" leaves On us.
+    """
 
     operation = "commitment_reply_sent"
-    success_message = "Reply marked sent: its answers now read as answered."
+    success_message = "Reply marked sent: its questions are answered."
+
+    def _ids(self):
+        return [int(pk) for pk in self.request.POST.getlist("commitment_id") if str(pk).isdigit()]
 
     def fixed(self, **kwargs):
-        ids = [int(pk) for pk in self.request.POST.getlist("commitment_id") if str(pk).isdigit()]
+        from connect_labs.supply_chain.models import Commitment
+
+        ids = self._ids()
+        today = date.today()
+        still_open = Commitment.objects.filter(
+            pk__in=ids, program_id=_access(self.request).program_id, resolved_on__isnull=True
+        ).values_list("pk", flat=True)
+        for pk in still_open:
+            self.op(
+                "commitment_resolve",
+                commitment_id=pk,
+                resolution=f"Answered in our reply of {day_text(today)}.",
+                resolved_on=today.isoformat(),
+            )
         return {"commitment_ids": ids}
 
     def redirect_to(self, **kwargs):
         return reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]]) + "#owed"
+
+
+@method_decorator(login_required, name="dispatch")
+class TenderDutyTermsView(SupplyWriteMixin, View):
+    """Settle or change how the tender's import duties are handled, from its Terms box (tender_set_duty_terms)."""
+
+    def post(self, request, tender_id, *args, **kwargs):
+        from django.contrib import messages
+
+        form = TenderDutyTermsForm(request.POST)
+        back = request.POST.get("next") or ""
+        if not back.startswith("/supply/"):
+            back = reverse("supply_chain:procurement_tender_detail", args=[tender_id])
+        if not form.is_valid():
+            messages.error(request, "Choose how import duties are handled.")
+            return redirect(back)
+        estimate = form.cleaned_data.get("duty_estimate_percent")
+        try:
+            self.op(
+                "tender_set_duty_terms",
+                tender_id=int(tender_id),
+                duty_terms=form.cleaned_data.get("duty_terms") or "",
+                duty_estimate_percent=str(estimate) if estimate is not None else None,
+            )
+        except (jsonschema.ValidationError, ValueError, TypeError) as exc:
+            messages.error(request, getattr(exc, "message", str(exc)))
+            return redirect(back)
+        path, _, anchor = back.partition("#")
+        joiner = "&" if "?" in path else "?"
+        return redirect(f"{path}{joiner}duty_terms=changed" + (f"#{anchor}" if anchor else ""))
 
 
 class OutreachLogView(OperationFormView):
@@ -1744,13 +1868,13 @@ class QuoteDocumentAttachView(OperationFormView):
 
 
 class TenderDocumentAttachView(OperationFormView):
-    """A document filed with the round itself -- above all the duty waiver its quotes are costed on."""
+    """A document filed with the tender itself -- above all the duty waiver its quotes are costed on."""
 
     operation = "document_attach"
     form_class = DocumentForm
     title = "Attach a document to this tender"
     intro = (
-        "A document that belongs to the round rather than to one quote -- the duty waiver every "
+        "A document that belongs to the tender rather than to one quote -- the duty waiver every "
         "quote is costed on, for one. Upload the file or link to where it lives."
     )
     submit_label = "Attach"
@@ -1884,13 +2008,6 @@ class CommitmentResolveView(OperationFormView):
             raise Http404(f"nothing owed with id {self.kwargs['commitment_id']} in this program")
         return found
 
-    def get_form(self, form_class=None):
-        form = super().get_form(form_class)
-        # Duty terms are a round's: a promise on an order has none to set.
-        if not self.commitment().tender_id or self.commitment().kind != "question":
-            form.fields.pop("duty_terms", None)
-        return form
-
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         commitment = self.commitment()
@@ -1911,7 +2028,7 @@ class CommitmentResolveView(OperationFormView):
 
     def redirect_to(self, result):
         # To what we owe, with the row just resolved picked out -- and, when the
-        # answer settled the round's duty terms, that line marked new as well.
+        # answer settled the tender's duty terms, that line marked new as well.
         url = _changed(self._back(), f"commitment-{self.commitment().pk}", "owed")
         if (result or {}).get("tender_duty_terms"):
             url = url.replace("#owed", "&duty_terms=changed#owed")

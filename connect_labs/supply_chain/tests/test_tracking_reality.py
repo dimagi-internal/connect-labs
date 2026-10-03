@@ -311,8 +311,10 @@ class TestInvoiceAboveContract:
         contract = _contract(da, world)
         self._bill(da, contract, amount="110350.00", unit_price="51.20")
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
-        assert 'data-testid="invoice-above-contract"' in body
-        assert "51.20 per carton against 49.80 agreed" in body
+        ours = body.split('data-testid="on-us"', 1)[1].split("</section>", 1)[0]
+        assert 'data-rule="invoice check"' in ours and "Review invoice" in ours
+        variance = body.split('data-testid="invoice-variance-table"', 1)[1].split("</table>", 1)[0]
+        assert "Unit price per carton" in variance and "51.20" in variance and "49.80" in variance
 
 
 # ---- ruling 5: a delay of ours does not read as the supplier's
@@ -351,8 +353,11 @@ class TestWhoseMoveItIs:
     def test_the_overview_says_waiting_on_us_not_arrival(self, da, world):
         contract, _ = _held_on_our_form_m(da, world)
         row = next(r for r in standing_rows(PROGRAM, TODAY) if r.contract_id == contract["id"])
-        assert row.waiting_on == "us: provide the import permit"
-        assert any("held on us: import permit" in flag for flag in row.stale)
+        # Rule (a): the held document is ours to provide, and the row's next move says so.
+        assert row.whose == "us"
+        assert row.next_move.rule == "owed"
+        assert row.next_move.text.startswith("Provide 1 document to ")
+        assert "import permit" in row.next_move.detail
 
     def test_the_lateness_check_is_ours_to_answer_and_says_why(self, da, world):
         contract, _ = _held_on_our_form_m(da, world)
@@ -387,9 +392,10 @@ class TestWhoseMoveItIs:
     def test_the_order_page_names_our_move(self, da, world, client_in_program):
         contract, _ = _held_on_our_form_m(da, world)
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
-        assert 'data-testid="waiting-on-us"' in body and "import permit" in body
-        # Objective state, with whose move defined on hover, not a verdict sentence (DDD 003 batch 1).
-        assert 'data-testid="waiting-on-us-help"' in body and "the next move is ours" not in body
+        ours = body.split('data-testid="on-us"', 1)[1].split("</section>", 1)[0]
+        assert 'data-rule="owed"' in ours and "import permit" in ours
+        # Objective state: the move and the rule that lists it, not a verdict sentence (DDD 003 batch 1).
+        assert "the next move is ours" not in body
 
 
 # ---- ruling 6: an advance is paid against the order, and its invoice acknowledges it
@@ -488,7 +494,9 @@ class TestWhatWeOwe:
     def test_the_overview_says_we_owe_answers_first(self, da, world):
         self._questions(da, world)
         row = next(r for r in standing_rows(PROGRAM, TODAY) if r.tender_id == world["tender"]["id"])
-        assert row.waiting_on.startswith("us: answers to Northgate Rehearsal Commodities (2 questions since 11 Jul)")
+        assert row.whose == "us"
+        assert row.next_move.text == "Reply to Northgate Rehearsal Commodities (2 questions)"
+        assert row.next_move.detail == "open since 11 Jul"
 
     def test_the_drafts_include_our_reply_listing_the_questions(self, da, world):
         self._questions(da, world)
@@ -504,7 +512,7 @@ class TestWhatWeOwe:
             op(da, "commitment_resolve", channel="web", commitment_id=commitment["id"], resolution="One warehouse.")
         assert op(da, "commitment_list", tender_id=world["tender"]["id"], open_only=True) == []
         row = next(r for r in standing_rows(PROGRAM, TODAY) if r.tender_id == world["tender"]["id"])
-        assert "Northgate" not in row.waiting_on
+        assert not any("Northgate" in m.text for m in row.ours)
         assert not run_checks(da, kinds=["commitment_open"])
 
 

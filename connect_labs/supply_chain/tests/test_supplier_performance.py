@@ -260,6 +260,7 @@ def screen(client, django_user_model, monkeypatch):
 
 def _page(screen, world):
     body = screen.get(reverse("supply_chain:supplier_detail", args=[world["supplier"]["id"]])).content.decode()
+    body = re.sub(r"<style.*?</style>", " ", body, flags=re.S)
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
 
 

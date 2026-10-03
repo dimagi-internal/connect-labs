@@ -418,7 +418,7 @@ def test_the_order_page_leaves_room_under_the_top_bar(scoped, played):
 class TestTheOrderHeader:
     def test_it_names_the_trade_item_the_delivery_point_and_who_told_us(self, scoped, played):
         body = _page(scoped, "order_detail", played["cover"]["id"])
-        header = _visible(body.split("Orders</a> ›", 1)[1].split("Edit order", 1)[0])
+        header = _visible(body.split('data-testid="order-header"', 1)[1].split('data-testid="on-us"', 1)[0])
         assert "IPTSc three-day packet (standard)" in header
         assert "SCHI district store" in header
         assert "a partner told us" in header
