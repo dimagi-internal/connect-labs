@@ -39,11 +39,14 @@ from connect_labs.supply_chain.procurement.services.pricing import (
     figure_nouns,
 )
 from connect_labs.supply_chain.procurement.services.questions import (
+    DUTY_RESTATE_KEY,
+    DUTY_RESTATE_LABEL,
     INTERNAL,
     MissingFact,
     audience_for_reason,
     key_for_reason,
     missing_facts,
+    needs_duty_restated,
 )
 from connect_labs.supply_chain.records import course_applies_to_category, freight_and_duties_for_incoterm
 from connect_labs.supply_chain.values import (
@@ -196,8 +199,15 @@ class ComparisonRow:
     # The duty the round's terms make ours, as its own line, with what the quote
     # itself said beside it: "Duty waived (our import) · the quote also stated zero".
     duty_line: str = ""
+    # What a quote's own duty word means under the round's terms, when it means
+    # something to act on: "the price may carry duty we will not pay ...".
+    duty_consequence: str = ""
     # The quantity the quote's landed total is for: "2,000 cartons".
     quantity_quoted: str = ""
+    # Under terms that make duty ours, the quote says its price includes duty:
+    # its price may carry a duty we will not pay, so it is held out of the
+    # ranking until the supplier restates it -- a blocker like any other.
+    duty_restate: bool = False
 
     @property
     def gaps(self) -> list[str]:
@@ -217,6 +227,8 @@ class ComparisonRow:
                 word = gap_word(reason, self.base_unit, self.pack_unit)
                 if word not in out:
                     out.append(word)
+        if self.duty_restate and DUTY_RESTATE_LABEL not in out:
+            out.append(DUTY_RESTATE_LABEL)
         return out
 
     @property
@@ -266,6 +278,17 @@ class ComparisonRow:
                         ),
                     }
                 )
+        if self.duty_restate and DUTY_RESTATE_LABEL not in seen:
+            question = next((q for q in self.questions if q.key == DUTY_RESTATE_KEY), None)
+            out.append(
+                {
+                    "fact": "Price states duty included, which we do not pay under the round's terms",
+                    "question": question.as_dict() if question is not None else None,
+                    "label": DUTY_RESTATE_LABEL,
+                    "spec": "",
+                    "spec_line": "",
+                }
+            )
         return out
 
     @property
@@ -417,6 +440,7 @@ class Comparison:
                 "landed_basis": row.landed_basis,
                 "delivery_basis": row.delivery_basis,
                 "duty_line": row.duty_line,
+                "duty_consequence": row.duty_consequence,
                 "gaps": row.gaps,
                 "base_unit": row.base_unit,
                 "pack_unit": row.pack_unit,
@@ -776,6 +800,23 @@ def round_duty_words(quote, tender) -> str:
     return line
 
 
+def round_duty_consequence(quote, tender) -> str:
+    """What the quote's own duty word means under the round's terms, and the move it leaves.
+
+    Under the waiver a quote that says duty is included may price in a duty we
+    will not pay: said with the question that settles it, rather than leaving the
+    buyer to work it out. "" when there is nothing to act on.
+    """
+    if needs_duty_restated(quote, tender):
+        # The move itself is the card's blocker ("Price states duty included"),
+        # with its question beside it: this line says only why it blocks.
+        return (
+            "Its price may include duty we will not pay ourselves, so it is not compared until "
+            "the supplier can restate the price without duty."
+        )
+    return ""
+
+
 def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
     """What a quote's landed figures rest on: where it is delivered, and how freight and duties were counted.
 
@@ -811,7 +852,8 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
         elif basis == "excluded" and amount is not None and not amount and label == "duties":
             # A zero said on the quote, said as the quote's word -- not "0.00 added",
             # which read as a figure we had guessed.
-            parts.append("duty stated as zero on the quote")
+            # "on the quote" is not said here: the line closes "per quote" already.
+            parts.append("duty stated as zero")
         elif basis == "excluded" and amount is not None:
             parts.append(f"{label} {money_digits(amount)} {currency} added")
         else:
@@ -898,6 +940,10 @@ def compare_tender(
         row.landed_basis = landed_basis_words(quote, tender)
         row.delivery_basis = landed_basis_words(quote, tender, round_duty=False)
         row.duty_line = round_duty_words(quote, tender)
+        row.duty_consequence = round_duty_consequence(quote, tender)
+        if needs_duty_restated(quote, tender):
+            row.duty_restate = True
+            row.is_comparable = False
         if quote.quantity_basis is not None and quote.quantity_basis_unit:
             row.quantity_quoted = quantity_phrase(quote.quantity_basis, quote.quantity_basis_unit)
         if not course_applies:

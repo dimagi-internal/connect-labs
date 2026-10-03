@@ -86,6 +86,7 @@ TAB_FOR_VIEW = {
     "supply_chain:procurement_quote_void": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_quote_correct": "supply_chain:procurement_tender_board",
     "supply_chain:quote_document_attach": "supply_chain:procurement_tender_board",
+    "supply_chain:tender_document_attach": "supply_chain:procurement_tender_board",
     # Asking for an approval, attaching its letter and answering it are all
     # read from the award, which sits under Sourcing.
     "supply_chain:approval_request": "supply_chain:procurement_tender_board",

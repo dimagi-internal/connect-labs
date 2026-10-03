@@ -204,7 +204,10 @@ class TestTheComparison:
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         body = client_in_program.get(url).content.decode()
         table = re.search(r'<table data-testid="ranked-table" class="([^"]*)">(.*?)</table>', body, re.S)
+        # One offer is a result, not a ranking (DDD 003 batch 4); since batch 5 its card spans
+        # the content width, as the banner above it and the Needs info cards below it do.
         assert "w-full" in table.group(1).split()
+        assert 'data-testid="single-result"' in body
         assert "<th>#</th>" not in table.group(2) and 'data-testid="ranked-by-marker"' not in table.group(2)
         assert 'data-testid="ranked-by-fallback"' not in body
 
@@ -262,12 +265,10 @@ class TestTheComparison:
         label = html.unescape(
             _text(re.search(r'data-testid="award-label"[^>]*>(.*?)</span>', button.group(1)).group(1))
         )
-        caveat = html.unescape(
-            _text(re.search(r'data-testid="award-caveat"[^>]*>(.*?)</a>', button.group(1)).group(1))
-        )
-        # Since the 002 run's batch 3 the caveat is helper text under the action, not in it.
+        # Since the 003 run's batch 6 the label alone says it: the "see Needs info" link
+        # under it repeated the panel above the table.
+        assert 'data-testid="award-caveat"' not in button.group(1)
         assert label.startswith("Award Kanem ") and label.endswith(" anyway (1 quote still incomplete)")
-        assert caveat == "1 other quote can't be compared yet: see Needs info"
         assert 'title="Northgate Rehearsal Commodities has not stated ' in button.group(0)
 
     def test_an_empty_trailing_column_is_dropped_but_not_one_between_figures(self):

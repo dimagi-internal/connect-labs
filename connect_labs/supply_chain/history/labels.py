@@ -346,6 +346,32 @@ def _quote_price(values, lookup) -> str:
     return " ".join(part for part in (price, per, _quote_terms(values)) if part)
 
 
+def quote_commercial_terms(values) -> str:
+    """What else an award turns on, as recorded: "valid to 2 Nov 2026 · lead time 5 weeks · ...".
+
+    A quote line that kept only the price read thinner than the email it was
+    recorded from, so the reader checking one against the other could not tell
+    whether the validity, lead time, minimum order and shelf life were taken.
+    Only the terms recorded; "" when none were.
+    """
+    parts = []
+    if values.get("validity_until"):
+        parts.append(f"valid to {_day_with_year(values['validity_until'])}")
+    days = values.get("lead_time_days")
+    if days not in (None, ""):
+        days = int(days)
+        parts.append(f"lead time {days // 7} weeks" if days and days % 7 == 0 else f"lead time {days} days")
+    if values.get("moq") not in (None, ""):
+        unit = values.get("moq_unit") or ""
+        amount = Decimal(str(values["moq"]))
+        figure = f"{amount.normalize():,f}"
+        noun = (unit_noun(unit) + ("s" if amount != 1 and not unit_noun(unit).endswith("s") else "")) if unit else ""
+        parts.append(f"minimum order {figure} {noun}".strip())
+    if values.get("shelf_life_months_stated") not in (None, ""):
+        parts.append(f"shelf life {values['shelf_life_months_stated']} months")
+    return " · ".join(parts)
+
+
 def _quote_terms(values) -> str:
     """The terms a price was stated on: "(freight included)", "(DDP Kano: freight and duty included)".
 
@@ -452,7 +478,7 @@ def create_what(model, values, lookup) -> str:
     """
     identity = _identity(model, values, lookup)
     if model.__name__ == "Quote":
-        facts = [_quote_price(values, lookup)]
+        facts = [" · ".join(part for part in (_quote_price(values, lookup), quote_commercial_terms(values)) if part)]
     else:
         facts = _create_facts(model, values, lookup)
         if identity and facts and facts[0] == identity:

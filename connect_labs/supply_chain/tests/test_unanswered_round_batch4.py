@@ -72,7 +72,9 @@ class TestTheOutreachTable:
             data={"responded": True, "response_kind": "needs_info", "responded_on": "2026-07-09"},
         )
         replied = _row(_tender_page(client_in_program, world["tender"]["id"]), outreach_id)
-        assert re.search(r'data-testid="response-kind">Needs info<', replied)
+        # One whose-move vocabulary on the row: a reply that was questions reads as questions
+        # for us, not "Needs info" -- the comparison's word for a quote missing facts (DDD 003 b4).
+        assert re.search(r'data-testid="response-kind">Questions for us<', replied)
 
     def test_delete_is_in_the_row_menu_and_the_reply_is_the_visible_action(self, da, world, client_in_program):
         row = _row(_tender_page(client_in_program, world["tender"]["id"]), world["outreach"]["id"])

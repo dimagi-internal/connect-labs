@@ -37,7 +37,8 @@ class TestTheReminderDraft:
         body = _tender_page(client_in_program, world["tender"]["id"])
         drafts = body.split('id="drafts"', 1)[1]
         # The chase form sits under the reminder's facts, above the message (DDD 003 batch 3).
-        card = re.search(r'<div data-testid="draft".*?data-testid="draft-text"[^>]*>', drafts, re.S).group(0)
+        # Through the end of the card's chase form, which since DDD 003 batch 4 follows the message.
+        card = re.search(r'<div data-testid="draft".*?data-testid="chase-form".*?</form>', drafts, re.S).group(0)
         assert "rounded-lg" in card and "border-gray-200" in card
         assert re.search(r'data-testid="draft-text" readonly rows="\d+"', card)
         today = f"{datetime.date.today():%-d %b %Y}"
@@ -59,7 +60,11 @@ class TestTheReminderDraft:
 def test_a_quote_s_void_is_set_apart_from_correct():
     html = render_to_string(
         "supply_chain/_timeline_line.html",
-        {"entry": {"line": "Quote recorded", "correct_url": "/c/", "void_url": "/v/"}, "in_event": True},
+        {
+            "entry": {"line": "Quote recorded", "correct_url": "/c/", "void_url": "/v/"},
+            "in_event": True,
+            "event_sender": "",
+        },
     )
     fixes = re.search(r'data-testid="quote-fixes"[^>]*>(.*?)</div>', html, re.S).group(1)
     assert 'href="/c/" class="text-brand-indigo' in fixes

@@ -1699,6 +1699,50 @@ class QuoteDocumentAttachView(OperationFormView):
         return {"data": {"quote_id": int(kwargs["quote_id"])}}
 
 
+class TenderDocumentAttachView(OperationFormView):
+    """A document filed with the round itself -- above all the duty waiver its quotes are costed on."""
+
+    operation = "document_attach"
+    form_class = DocumentForm
+    title = "Attach a document to this tender"
+    intro = (
+        "A document that belongs to the round rather than to one quote -- the duty waiver every "
+        "quote is costed on, for one. Upload the file or link to where it lives."
+    )
+    submit_label = "Attach"
+    footnote = "Over 12 MB, store it elsewhere and give a link."
+
+    def tender(self):
+        from connect_labs.supply_chain.models import Tender
+
+        found = Tender.objects.filter(pk=self.kwargs["tender_id"], program_id=_access(self.request).program_id).first()
+        if found is None:
+            raise Http404(f"no tender {self.kwargs['tender_id']} in this programme")
+        return found
+
+    def breadcrumb(self, **kwargs):
+        tender = self.tender()
+        return [
+            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
+            {"label": tender.label, "href": reverse("supply_chain:procurement_tender_detail", args=[tender.pk])},
+            {"label": self.title},
+        ]
+
+    def cancel_href(self, **kwargs):
+        return reverse("supply_chain:procurement_tender_detail", args=[self.kwargs["tender_id"]])
+
+    def redirect_to(self, result):
+        return reverse("supply_chain:procurement_tender_detail", args=[self.kwargs["tender_id"]])
+
+    def get_initial(self):
+        initial = super().get_initial()
+        initial["kind"] = self.request.GET.get("kind") or "duty_exemption"
+        return initial
+
+    def fixed(self, **kwargs):
+        return {"data": {"tender_id": int(kwargs["tender_id"])}}
+
+
 class ApprovalDecideView(_AwardScreen):
     operation = "approval_decide"
     form_class = ApprovalDecisionForm

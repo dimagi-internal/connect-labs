@@ -73,7 +73,11 @@ def test_a_restricted_tender_does_not_repeat_who_was_asked(da, world, client_in_
 
     Tender.objects.filter(pk=world["tender"]["id"]).update(visibility="private")
     body = _tender_page(client_in_program, world["tender"]["id"])
-    start = body.index(">Invited suppliers</h2>")
+    # The marketplace panel shows only when it holds something (DDD 003 batch 4).
+    if 'data-testid="invited-suppliers"' not in body:
+        assert "Only the suppliers you invite see it" in body
+        return
+    start = body.index('data-testid="invited-suppliers"')
     panel = body[start : body.index("</ul>", start)]
     # Said once each: who can see it in the header's Visibility line, who was asked in Outreach
     # (unanswered round, run 003 batch 1).

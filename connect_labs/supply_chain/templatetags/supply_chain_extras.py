@@ -810,7 +810,7 @@ def order_stages(order):
         _cell(
             "Dispatched",
             order["dispatched"]["shipments"],
-            f"{order['dispatched']['in_transit']} in transit — not stock",
+            _dispatched_note(order["dispatched"]),
             orders,
         ),
         _cell("Received", order["received"]["receipts"], "goods received notes", orders),
@@ -821,6 +821,14 @@ def order_stages(order):
             orders,
         ),
     ]
+
+
+def _dispatched_note(dispatched) -> str:
+    """ "1 at customs — held, waiting on us · not stock": where the goods on the road are, as the order says."""
+    where = dispatched.get("whereabouts") or {}
+    if not where:
+        return f"{dispatched['in_transit']} in transit — not stock"
+    return ", ".join(f"{n} {words}" for words, n in where.items()) + " · not stock"
 
 
 def _invoiced_note(invoiced) -> str:
@@ -971,20 +979,40 @@ def bold_after_arrow(text):
 
 
 @register.filter
-def record_kind_lead(text):
-    """A record line under an email with its kind set apart: "<b>Outreach</b> · Sahel · Replied ...".
+def record_kind_lead(text, sender=""):
+    """A record line under an email with its kind set apart: "<b>Outreach</b> · Replied ...".
 
     Under an email's excerpt, what was recorded from it read at the same weight
     as the evidence; the record's kind in semibold marks the line as the record.
-    The rest reads as `bold_after_arrow` reads it.
+    The rest reads as `bold_after_arrow` reads it. The record's name is left out
+    when it is the sender the event is already headed by ("Email from Amadou
+    Issoufou, Sahel Nutrition Industries"): said on every line under it, it
+    repeated three times per email.
     """
     text = str(text or "")
     kind, sep, rest = text.partition(" · ")
     if not sep or len(kind) > 24:
         return bold_after_arrow(text)
+    name, named, after = rest.partition(" · ")
+    if named and name.strip() and sender and str(sender).rstrip().endswith(name.strip()):
+        rest = after
     return mark_safe(
-        f'<span data-testid="record-kind" class="font-semibold">{escape(kind)}</span> · {bold_after_arrow(rest)}'
+        f'<span data-testid="record-kind" class="font-semibold">{escape(kind)}</span> · {_terms_kept_whole(rest)}'
     )
+
+
+def _terms_kept_whole(text):
+    """A record's " · "-separated terms, each short one kept on one line.
+
+    "valid to 2 Nov 2026 · lead time 5 weeks · shelf life 24 months" broke
+    inside "shelf / life" at the line's end; a short term now moves down whole.
+    A long one (the price with its basis) may still wrap, or it would overflow.
+    """
+    pieces = []
+    for piece in str(text).split(" · "):
+        rendered = bold_after_arrow(piece)
+        pieces.append(f'<span class="whitespace-nowrap">{rendered}</span>' if len(piece) <= 32 else str(rendered))
+    return mark_safe(" · ".join(pieces))
 
 
 @register.filter

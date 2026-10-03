@@ -56,7 +56,13 @@ PROTECTED = {10610, 10671, 10672, 10673}
 SOPHIE_USERNAME = "demo-sophie"
 BUYER_SLUG = "dimagi"
 
-KANO = {"key": "kano", "name": "Partner warehouse", "city": "Kano", "country": "NG"}
+KANO = {
+    "key": "kano",
+    "name": "Northern Nutrition Depot, 14 Zoo Road",
+    "city": "Kano",
+    "country": "NG",
+    "country_name": "Nigeria",
+}
 
 SUPPLIERS = [
     # key, name, country, city, type, contact, email
@@ -623,7 +629,7 @@ def seed_world(program_id: int = PROGRAM_ID, *, create_buyer: bool = False, toda
         ref="<CAK9q2719@mail.kanemfoods.example.invalid>",
         excerpt="Our price for 2,000 cartons of RUTF is USD 55.00 per carton, DDP Kano, duty paid. Delivery 6 "
         "weeks from PO. Shelf life 24 months. Minimum order 500 cartons. Quote valid 45 days.",
-        sender="Grace Okon, Kanem Foods",
+        sender="Grace Okon, Kanem Foods Ltd",
     )
     w.email(
         d("2026-09-19"),

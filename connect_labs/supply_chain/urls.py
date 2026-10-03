@@ -212,6 +212,11 @@ urlpatterns = [
         name="approval_document_attach",
     ),
     path(
+        "procurement/tenders/<int:tender_id>/documents/new/",
+        procurement_views.TenderDocumentAttachView.as_view(),
+        name="tender_document_attach",
+    ),
+    path(
         "procurement/quotes/<int:quote_id>/documents/new/",
         procurement_views.QuoteDocumentAttachView.as_view(),
         name="quote_document_attach",

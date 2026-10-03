@@ -136,6 +136,35 @@ SHIPMENT_STATUSES = (
 # in_transit and REFUSES to count as on hand (design doc section 19.1).
 IN_TRANSIT_STATUSES = ("dispatched", "in_transit", "at_customs", "cleared")
 
+
+def _field(shipment, name):
+    return shipment.get(name) if isinstance(shipment, dict) else getattr(shipment, name, None)
+
+
+def latest_moving_shipment(shipments):
+    """The newest shipment under way (by dispatch day, then id), dict or model; None if none is.
+
+    The one place the order page's header status and the overview's order row
+    read where an order's goods are, so the two cannot disagree ("at customs"
+    on one, "in transit" on the other).
+    """
+    moving = [
+        s for s in shipments or [] if _field(s, "status") in IN_TRANSIT_STATUSES or _field(s, "status") == "lost"
+    ]
+    if not moving:
+        return None
+    return max(moving, key=lambda s: (str(_field(s, "dispatched_on") or ""), _field(s, "pk") or _field(s, "id") or 0))
+
+
+HELD_ON_US_WORDS = "held, waiting on us"
+
+
+def shipment_whereabouts(status, held_on_us=False) -> str:
+    """ "at customs — held, waiting on us": a moving shipment's status in words, and a hold on us beside it."""
+    words = str(status or "").replace("_", " ")
+    return f"{words} — {HELD_ON_US_WORDS}" if held_on_us else words
+
+
 # Stock sent from one of our places to another and not yet arrived. A
 # consignment is `dispatched` from the moment it leaves until it is received;
 # there is no third state, because goods lost on the way are received short
