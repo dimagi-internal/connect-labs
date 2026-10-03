@@ -28,8 +28,13 @@ class FakeDrive:
         self.calls = []
 
     # Folder tree: ROOT (allowed) > folderA, looseFolder; synthRoot (NOT allowed) > internalFixtures.
-    FOLDER_PARENTS = {"folderA": ["ROOT"], "looseFolder": ["ROOT"], "ROOT": [], "internalFixtures": ["synthRoot"],
-                      "synthRoot": []}
+    FOLDER_PARENTS = {
+        "folderA": ["ROOT"],
+        "looseFolder": ["ROOT"],
+        "ROOT": [],
+        "internalFixtures": ["synthRoot"],
+        "synthRoot": [],
+    }
 
     def get_parents(self, file_id):
         self.calls.append(("parents", file_id))
@@ -45,7 +50,13 @@ class FakeDrive:
     def list_folder_files(self, folder_id):
         self.calls.append(("list", folder_id))
         return [
-            {"id": i, "name": f["name"], "mimeType": f["mimeType"], "size": str(len(f["content"])), "modifiedTime": "t"}
+            {
+                "id": i,
+                "name": f["name"],
+                "mimeType": f["mimeType"],
+                "size": str(len(f["content"])),
+                "modifiedTime": "t",
+            }
             for i, f in self.files.items()
             if f.get("parent") == folder_id
         ]
@@ -63,20 +74,47 @@ class FakeDrive:
 def drive(monkeypatch, allowed_root):
     fake = FakeDrive(
         {
-            "fileCSV": {"name": "answers_scored_bednets.csv", "mimeType": "text/csv", "parent": "folderA",
-                        "content": "session_id,state,quality,day\ns1,Kebbi,4,2026-08-03\ns2,NA,,2026-08-04\n".encode()},
-            "fileCSV2": {"name": "answers_scored_malaria.csv", "mimeType": "text/csv", "parent": "folderA",
-                         "content": b"session_id,state,quality,day\ns9,Borno,5,2026-07-01\n"},
-            "fileOther": {"name": "gems_bednets.csv", "mimeType": "text/csv", "parent": "folderA",
-                          "content": b"quote\nhello\n"},
+            "fileCSV": {
+                "name": "answers_scored_bednets.csv",
+                "mimeType": "text/csv",
+                "parent": "folderA",
+                "content": b"session_id,state,quality,day\ns1,Kebbi,4,2026-08-03\ns2,NA,,2026-08-04\n",
+            },
+            "fileCSV2": {
+                "name": "answers_scored_malaria.csv",
+                "mimeType": "text/csv",
+                "parent": "folderA",
+                "content": b"session_id,state,quality,day\ns9,Borno,5,2026-07-01\n",
+            },
+            "fileOther": {
+                "name": "gems_bednets.csv",
+                "mimeType": "text/csv",
+                "parent": "folderA",
+                "content": b"quote\nhello\n",
+            },
             "sheet": {"name": "Tracker", "mimeType": gf.GOOGLE_SHEET, "content": b"a,b\n1,2\n"},
-            "json": {"name": "rows.json", "mimeType": "application/json",
-                     "content": json.dumps({"rows": [{"a": 1, "tags": ["x"]}, {"a": None, "tags": {"k": 1}}]}).encode()},
-            "doc": {"name": "README", "mimeType": "application/vnd.google-apps.document", "parent": "folderA",
-                    "content": b""},
-            "pdf": {"name": "answers_scored_notes.pdf", "mimeType": "application/pdf", "parent": "folderA",
-                    "content": b"%PDF"},
-            "baddate": {"name": "d.csv", "mimeType": "text/csv", "content": b"day\n2025-02-30\n2025-03-01T10:00:00Z\n"},
+            "json": {
+                "name": "rows.json",
+                "mimeType": "application/json",
+                "content": json.dumps({"rows": [{"a": 1, "tags": ["x"]}, {"a": None, "tags": {"k": 1}}]}).encode(),
+            },
+            "doc": {
+                "name": "README",
+                "mimeType": "application/vnd.google-apps.document",
+                "parent": "folderA",
+                "content": b"",
+            },
+            "pdf": {
+                "name": "answers_scored_notes.pdf",
+                "mimeType": "application/pdf",
+                "parent": "folderA",
+                "content": b"%PDF",
+            },
+            "baddate": {
+                "name": "d.csv",
+                "mimeType": "text/csv",
+                "content": b"day\n2025-02-30\n2025-03-01T10:00:00Z\n",
+            },
         }
     )
     monkeypatch.setattr(gf, "_drive", lambda: fake)

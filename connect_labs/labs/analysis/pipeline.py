@@ -636,9 +636,7 @@ class AnalysisPipeline:
             is_cchq = config.data_source.type in ("cchq_forms", "cchq_cases")
             is_ocs = config.data_source.type == "ocs_sessions"
             is_gdrive = config.data_source.type == "gdrive"
-            expected_count = (
-                0 if (is_cchq or is_ocs or is_gdrive or has_filters) else self.expected_visits_for(opp_id)
-            )
+            expected_count = 0 if (is_cchq or is_ocs or is_gdrive or has_filters) else self.expected_visits_for(opp_id)
             # Read as a particular person (an MCP caller's own OCS token): never from the
             # cache, which the data source is not part of the key of and which a web
             # dashboard may have filled under the server's team key -- every bot's
@@ -718,16 +716,18 @@ class AnalysisPipeline:
                             visit_count = None
                             raw_data_already_stored = False
                         elif unfiltered_config.data_source.type == "gdrive":
-                            from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import fetch_gdrive_rows_as_visit_dicts
+                            from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import (
+                                fetch_gdrive_rows_as_visit_dicts,
+                            )
 
                             yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
                             visit_dicts = fetch_gdrive_rows_as_visit_dicts(
-                            unfiltered_config.data_source,
-                            opp_id,
-                            self.request,
-                            self.access_token,
-                            unfiltered_config.pipeline_id,
-                        )
+                                unfiltered_config.data_source,
+                                opp_id,
+                                self.request,
+                                self.access_token,
+                                unfiltered_config.pipeline_id,
+                            )
                             visit_count = None
                             raw_data_already_stored = False
                         elif unfiltered_config.data_source.type == "connect_export":
@@ -871,7 +871,9 @@ class AnalysisPipeline:
                         visit_count = None
                         raw_data_already_stored = False
                     elif unfiltered_config.data_source.type == "gdrive":
-                        from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import fetch_gdrive_rows_as_visit_dicts
+                        from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import (
+                            fetch_gdrive_rows_as_visit_dicts,
+                        )
 
                         yield (EVENT_STATUS, {"message": "Reading files from Google Drive..."})
                         visit_dicts = fetch_gdrive_rows_as_visit_dicts(

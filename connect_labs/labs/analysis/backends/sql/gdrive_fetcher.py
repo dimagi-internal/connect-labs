@@ -478,7 +478,9 @@ def fetch_gdrive_rows_as_visit_dicts(
                 key=lambda m: m["name"],
             )
             if not metas:
-                raise GDriveSourceError(f"no CSV / Sheet / JSON files matching {pattern!r} in Drive folder {data_source.folder_id}")
+                raise GDriveSourceError(
+                    f"no CSV / Sheet / JSON files matching {pattern!r} in Drive folder {data_source.folder_id}"
+                )
             if len(metas) > MAX_FILES:
                 raise GDriveSourceError(f"{len(metas)} files match {pattern!r}; the limit is {MAX_FILES}")
         visits: list[dict] = []
