@@ -288,7 +288,7 @@ class TestTheOrder:
     def test_the_header_names_the_buyer_with_the_role_beside_it(self, client_in_programme, chain):
         body = self._page(client_in_programme, chain)
         header = body[body.index("Bought by") :]
-        header = header[: header.index("</p>")]
+        header = header[: header.index("</dd>")]
         assert "Child Health Programme" in header
         # DDD 004: one form everywhere, as the banner says it -- "<org>, buyer of record".
         assert ", buyer of record" in header

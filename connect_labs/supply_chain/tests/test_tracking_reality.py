@@ -311,8 +311,10 @@ class TestInvoiceAboveContract:
         contract = _contract(da, world)
         self._bill(da, contract, amount="110350.00", unit_price="51.20")
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
-        assert 'data-testid="invoice-above-contract"' in body
-        assert "51.20 per carton against 49.80 agreed" in body
+        ours = body.split('data-testid="on-us"', 1)[1].split("</section>", 1)[0]
+        assert 'data-rule="invoice check"' in ours and "Review invoice" in ours
+        variance = body.split('data-testid="invoice-variance-table"', 1)[1].split("</table>", 1)[0]
+        assert "Unit price per carton" in variance and "51.20" in variance and "49.80" in variance
 
 
 # ---- ruling 5: a delay of ours does not read as the supplier's
@@ -390,9 +392,10 @@ class TestWhoseMoveItIs:
     def test_the_order_page_names_our_move(self, da, world, client_in_program):
         contract, _ = _held_on_our_form_m(da, world)
         body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
-        assert 'data-testid="waiting-on-us"' in body and "import permit" in body
-        # Objective state, with whose move defined on hover, not a verdict sentence (DDD 003 batch 1).
-        assert 'data-testid="waiting-on-us-help"' in body and "the next move is ours" not in body
+        ours = body.split('data-testid="on-us"', 1)[1].split("</section>", 1)[0]
+        assert 'data-rule="owed"' in ours and "import permit" in ours
+        # Objective state: the move and the rule that lists it, not a verdict sentence (DDD 003 batch 1).
+        assert "the next move is ours" not in body
 
 
 # ---- ruling 6: an advance is paid against the order, and its invoice acknowledges it

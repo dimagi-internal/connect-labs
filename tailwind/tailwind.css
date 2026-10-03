@@ -402,6 +402,170 @@
   @apply px-4 py-1;
 }
 
+/*-- status views ---------------------------------
+   A record's stage, its counts and whose move it is: a status chip, a
+   six-step stage bar, a stat tile, a move row, a mark for where a fact came
+   from, and a folded section. First used by the supply procurement screens
+   (tender, comparison, overview, order); any labs page can use them.
+   Colour by meaning: primary/done is brand indigo, a move on us is the
+   warning family, a move on someone else is secondary grey, AI-sourced is
+   cornflower blue, an error is the error family. */
+@layer components {
+  .status-chip {
+    @apply inline-block text-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium leading-5;
+  }
+
+  .status-chip--primary {
+    @apply bg-brand-indigo/10 text-brand-indigo;
+  }
+
+  .status-chip--ours {
+    @apply bg-message-warning text-message-warning-text ring-1 ring-inset ring-message-warning-border/50;
+  }
+
+  .status-chip--theirs {
+    @apply bg-secondary text-secondary-foreground ring-1 ring-inset ring-border;
+  }
+
+  .status-chip--neutral {
+    @apply bg-muted text-gray-600;
+  }
+
+  .status-chip--error {
+    @apply bg-message-error text-message-error-text;
+  }
+
+  /* An ordered list of steps; each li holds a .stage-seg, a .stage-name and a .stage-note. */
+  .stage-bar {
+    @apply m-0 grid list-none grid-cols-3 gap-y-4 p-0 sm:grid-cols-6;
+  }
+
+  .stage-bar > li {
+    @apply flex min-w-0 flex-col gap-1.5 pr-2;
+  }
+
+  .stage-seg {
+    @apply bg-brand-border-light h-1.5 rounded-full;
+  }
+
+  .stage-seg--done {
+    @apply bg-brand-indigo;
+  }
+
+  .stage-seg--now {
+    @apply bg-brand-marigold;
+  }
+
+  .stage-name {
+    @apply text-sm text-gray-500;
+  }
+
+  .stage--done .stage-name {
+    @apply font-medium text-gray-900;
+  }
+
+  .stage--now .stage-name {
+    @apply text-brand-deep-purple font-semibold;
+  }
+
+  .stage-note {
+    @apply text-xs text-gray-600;
+  }
+
+  /* The same six steps as a strip, for a table row. */
+  .stage-minibar {
+    @apply grid min-w-28 grid-cols-6 gap-0.5;
+  }
+
+  .stat-tile {
+    @apply border-brand-border-light flex min-w-0 flex-col gap-0.5 rounded-lg border bg-white px-4 py-3;
+  }
+
+  .stat-tile--ours {
+    @apply border-message-warning-border/50 bg-message-warning;
+  }
+
+  .stat-tile-label {
+    @apply text-xs text-gray-600;
+  }
+
+  .stat-tile-value {
+    @apply text-brand-deep-purple text-2xl font-semibold tabular-nums leading-tight;
+  }
+
+  .stat-tile--ours .stat-tile-value {
+    @apply text-message-warning-text;
+  }
+
+  /* One item in an "On us" / "On someone else" list. */
+  .move-item {
+    @apply flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm;
+  }
+
+  .move-item--ours {
+    @apply bg-message-warning;
+  }
+
+  .move-item--theirs {
+    @apply bg-secondary;
+  }
+
+  .move-rule {
+    @apply mr-1.5 inline-block rounded border border-current px-1.5 text-xs font-medium leading-normal text-gray-600;
+  }
+
+  .move-item--ours .move-rule {
+    @apply text-message-warning-text;
+  }
+
+  /* Where a fact came from: recorded by a person, from an email by AI, or worked out here. */
+  .src-mark {
+    @apply mr-1.5 inline-block size-2 shrink-0 rounded-xs align-[1px];
+  }
+
+  .src-mark--person {
+    @apply bg-brand-deep-purple;
+  }
+
+  .src-mark--ai {
+    @apply bg-brand-cornflower-blue;
+  }
+
+  .src-mark--calc {
+    @apply border-brand-blue-light border-[1.5px];
+  }
+
+  .src-ai-tag {
+    @apply border-brand-cornflower-blue text-brand-cornflower-blue ml-1.5 inline-block rounded border px-1 align-[1px] text-[11px] font-semibold leading-snug;
+  }
+
+  /* A folded section: a white card whose summary is its heading, with a count beside it. */
+  .fold {
+    @apply border-brand-border-light min-w-0 max-w-full rounded-lg border bg-white;
+  }
+
+  .fold > summary {
+    @apply text-brand-deep-purple flex cursor-pointer list-none flex-wrap items-baseline gap-2.5 px-5 py-3.5 font-medium;
+  }
+
+  .fold > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .fold > summary::before {
+    content: '';
+    @apply size-2 -rotate-45 self-center border-b-2 border-r-2 border-gray-400 transition-transform;
+  }
+
+  .fold[open] > summary::before {
+    @apply rotate-45;
+  }
+
+  .fold-body {
+    @apply flex min-w-0 flex-col gap-3 px-5 pb-4;
+  }
+}
+
 /*-- tooltips ---------------------------------------*/
 @layer components {
   .tooltip {

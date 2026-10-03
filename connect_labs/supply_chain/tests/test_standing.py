@@ -489,7 +489,7 @@ class TestHomePage:
         session["labs_oauth"] = {}
         session.save()
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-        assert f'<div class="sc-kicker">Program {PROGRAM}</div>' in body
+        assert re.search(rf'data-testid="program-heading">Program {PROGRAM}</div>', body)
 
     def test_the_table_lists_each_tender_and_order_above_the_chain(self, client_in_program, da, base, ace):
         tender = _tender(da, "Round 1", AUG_3)

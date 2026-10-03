@@ -491,7 +491,7 @@ class TestTheScreens:
         )
         body = scoped.get(reverse("supply_chain:order_detail", args=[bundled["id"]])).content.decode()
         assert "were not bought" not in body
-        assert "paid for inside another cost" in body
+        assert "bought out of" in body and "setup fee" in body
 
     def test_billing_that_matches_what_arrived_is_not_called_billed_beyond_it(self, scoped, da, world):
         order = _contract(da, world, world["main"], "700")

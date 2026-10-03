@@ -2,127 +2,103 @@
 {% load supply_chain_extras %}
 
 {% comment %}
-The two derivations that decide whether to pay: landed cost under each buyer
-of record, and ordered-against-received-against-invoiced. Both are computed on
-every render; neither is stored, so recording a receipt changes them and no
-figure here can go stale.
+The order's status view (fulfilment/status.py): who, how many and the PO number,
+where the goods and money are on six steps, four tiles, and the moves -- On us and
+On the supplier or forwarder come from moves.py and nothing else, the lists the
+overview reads. The records behind them (shipments, receipts, invoices, what we
+owe, documents, history) are folded below, each fold with its count; a link to
+anything inside a fold opens it. Landed cost and the three-way match are worked
+out on every render and never stored.
 {% endcomment %}
 
 {% block supply_content %}
 {% if not has_program_context %}
-  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4">
+    <h3 class="text-lg font-semibold text-message-warning-text mb-1">No programme selected</h3>
   </div>
 {% else %}
-
-{% comment %}
-The labs header is fixed, 4rem tall (layouts/header.html, h-16). Without a
-scroll margin an anchored scroll lands a section's heading -- once the order's
-own title -- underneath it. Plain CSS rather than a utility class: a Tailwind
-class this build has not seen ships purged.
-{% endcomment %}
-<style>
-  #order-page h2, #order-page h3, #order-page section, #order-page [id] { scroll-margin-top: 5rem; }
-</style>
-<div id="order-page">
-<div class="mb-4">
-  <div class="text-xs text-gray-600">
-    <a class="hover:underline" href="{% url 'supply_chain:orders' %}">Orders</a> ›
-    {{ contract.reference|default:"no reference" }}
+{% with supplier_name=suppliers|dictkey:contract.supplier_id|dictkey:"name" %}
+<div id="order-page" class="flex flex-col gap-5" data-testid="order-view">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-600" aria-label="Breadcrumb">
+      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:home' %}">Procurements</a><span aria-hidden="true">›</span>
+      {% if contract.tender_id %}<a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' contract.tender_id %}">{{ tender_label|default:"Tender" }}</a><span aria-hidden="true">›</span>{% endif %}
+      <span>{{ contract.reference|default:"Order" }}</span>
+    </nav>
+    {% include "supply_chain/_src_legend.html" %}
   </div>
-  {% comment %}The heading in the heading colour, not link blue: the whole title read
-  as one link (the IPTSc render). The supplier's name still links.{% endcomment %}
-  <h2 class="text-lg font-semibold text-gray-900">
-    <a href="{% url 'supply_chain:supplier_detail' contract.supplier_id %}"
-       class="hover:underline">{{ suppliers|dictkey:contract.supplier_id|dictkey:"name" }}</a>{% if contract.quantity %} ·
-    {{ contract.quantity|qty:contract.quantity_unit }}{% endif %}
-  </h2>
-  {% if item or contract.delivery_supply_point_id %}
-    <p class="text-sm text-gray-700">
-      {% if item %}<a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:item_detail' item.id %}">{{ item.name }}</a>{% endif %}{% if item and contract.delivery_supply_point_id %} · {% endif %}{% if contract.delivery_supply_point_id %}to {{ supply_points|dictkey:contract.delivery_supply_point_id|default:"a supply point" }}{% endif %}
-    </p>
-  {% endif %}
-  {% comment %}
-  Labelled fields, not one run-on grey sentence ending in an unexplained
-  "· Dimagi". The fulfilment status and how the goods were paid for are the
-  same pill, so they read as two facts of one kind.
-  {% endcomment %}
-  <dl class="flex flex-wrap gap-x-6 gap-y-2 mt-2 text-sm">
-    <div>
-      <dt class="text-[11px] text-gray-600">Buyer</dt>
-      <dd class="text-gray-900">
-        {% if contract.consideration == "in_kind" %}Donated to{% else %}Bought by{% endif %}
-        <b>{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record|buyer_label }}</b><span class="text-gray-600">, buyer of record{% if contract.buyer_of_record != "programme_org" %} ({{ contract.buyer_of_record|buyer_label }}){% endif %}</span>
-      </dd>
+
+  <section class="card_bg border-brand-border-light flex flex-col gap-6 border" aria-labelledby="order-title" data-testid="order-header">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="flex min-w-0 flex-col gap-1">
+        <div class="text-xs uppercase tracking-wide text-gray-600" data-testid="order-po">Order · {% if contract.reference %}PO {{ contract.reference }}{% else %}no PO number{% endif %}</div>
+        {% comment %}The heading in the heading colour, not link blue: the whole title read as one link. The supplier's name still links.{% endcomment %}
+        <h1 id="order-title" class="text-brand-deep-purple text-2xl font-semibold" data-testid="order-title"><a href="{% url 'supply_chain:supplier_detail' contract.supplier_id %}" class="hover:underline">{{ supplier_name }}</a>{% if contract.quantity %} · {{ contract.quantity|qty:contract.quantity_unit }}{% endif %}</h1>
+        <div class="text-gray-600">
+          {% if item %}<a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:item_detail' item.id %}">{{ item.name }}</a> · {% endif %}{% if contract.delivery_supply_point_id %}to {{ supply_points|dictkey:contract.delivery_supply_point_id|default:"a supply point" }} · {% endif %}{% if contract.incoterm %}<span data-incoterm title="{{ contract.incoterm|incoterm_words }}">{{ contract.incoterm }}</span> · {% endif %}
+          {% if match.status == "shortfall_covered" %}
+            {% comment %}"Part received" was true and misleading: nobody is waiting on this order any more.{% endcomment %}
+            <span class="status-chip status-chip--neutral">short — covered by {% for cover in match.covered_by %}<a class="underline" href="{% url 'supply_chain:order_detail' cover.contract_id %}">{{ cover.reference|default:"another order" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</span>
+          {% elif status.chip %}
+            <span data-testid="order-status" class="status-chip status-chip--{{ status.chip.tone }}">{{ status.chip.label }}</span>
+          {% endif %}
+        </div>
+      </div>
+      {% if not supply_as_of %}
+      <div class="flex flex-wrap items-center gap-2.5">
+        <details class="relative" data-testid="record-menu">
+          <summary class="button button-md primary-dark list-none [&::-webkit-details-marker]:hidden" role="button">Record…</summary>
+          <div class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-64 flex-col gap-2.5 rounded-lg border bg-white p-3.5 text-sm shadow-sm">
+            <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:shipment_record' contract.id %}">Record a dispatch</a>
+            <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:receipt_record' contract.id %}">Record a receipt</a>
+            {% if contract.consideration == "priced" %}<a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:invoice_record' contract.id %}">Record an invoice</a>
+            <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:advance_payment_record' contract.id %}">Record an advance payment</a>{% endif %}
+            <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:document_attach' contract.id %}">Attach a document</a>
+            <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:contract_commitment_record' contract.id %}">Record a question or a promise</a>
+          </div>
+        </details>
+        <a href="{% url 'supply_chain:contract_edit' contract.id %}" class="button button-md outline-style">Edit order</a>
+      </div>
+      {% endif %}
     </div>
-    <div>
-      <dt class="text-[11px] text-gray-600">Status</dt>
-      <dd>
-        {% if match.status == "shortfall_covered" %}
-          {% comment %}"Part received" was true and misleading: nobody is waiting on this order any more.{% endcomment %}
-          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-900 border border-amber-200">short — covered by
-          {% for cover in match.covered_by %}<a class="underline" href="{% url 'supply_chain:order_detail' cover.contract_id %}">{{ cover.reference|default:"another order" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</span>
-        {% elif order_status %}
-          {% comment %}Where the goods are, while they are moving: "Placed" on an order held at customs said nothing a buyer could act on.{% endcomment %}
-          <span data-testid="order-status" class="px-2 py-0.5 rounded-full text-xs font-medium {% if order_status.tone == "done" %}bg-teal-50 text-teal-800{% elif order_status.tone == "warning" %}bg-message-warning text-message-warning-text border border-message-warning-border/50{% else %}bg-blue-50 text-blue-900{% endif %}">{{ order_status.label }}</span>
-        {% endif %}
-      </dd>
+
+    <ol class="stage-bar" data-testid="stage-bar" aria-label="Stage">
+      {% for s in status.stages %}
+      <li class="stage--{{ s.state }}" data-stage-state="{{ s.state }}"{% if s.state == "now" %} aria-current="step"{% endif %}>
+        <div class="stage-seg stage-seg--{{ s.state }}"></div>
+        <div class="stage-name">{{ s.name }}</div>
+        <div class="stage-note">{% if s.note != "—" %}{% include "supply_chain/_src.html" with src="calc" %}{% endif %}{{ s.note }}</div>
+      </li>
+      {% endfor %}
+    </ol>
+
+    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="status-tiles">
+      {% for t in status.tiles %}
+      <div class="stat-tile{% if t.tone == 'ours' %} stat-tile--ours{% endif %}" data-testid="tile">
+        <div class="stat-tile-label">{{ t.label }}</div>
+        <div class="stat-tile-value">{{ t.value }}</div>
+        <div class="text-xs text-gray-600">{{ t.sub|default:"&nbsp;" }}</div>
+      </div>
+      {% endfor %}
     </div>
-    {% if contract.signed_on %}
-    <div>
-      <dt class="text-[11px] text-gray-600">Signed</dt>
-      <dd class="text-gray-900">{{ contract.signed_on|day }}</dd>
-    </div>
-    {% endif %}
-    {% if contract.covers_shortfall_of_id %}
-    <div>
-      <dt class="text-[11px] text-gray-600">Why this order</dt>
-      <dd class="text-gray-900">
-        Covers the shortfall on
-        <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.covers_shortfall_of_id %}">{% if covers.reference %}{{ covers.reference }}{% else %}order {{ contract.covers_shortfall_of_id }}{% endif %}</a>
-      </dd>
-    </div>
-    {% endif %}
-    {% if contract.consideration == "in_kind" or contract.consideration == "bundled" %}
-    <div>
-      <dt class="text-[11px] text-gray-600">Payment</dt>
-      <dd>
-        {% if contract.consideration == "in_kind" %}
-          <span class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">In kind — donated</span>
-        {% else %}
-          <span class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">Bundled in setup fee</span>
-        {% endif %}
-      </dd>
-    </div>
-    {% endif %}
-    {% if contract.incoterm %}
-    {% comment %}The delivery term in words: who pays to move the goods, and to where.{% endcomment %}
-    <div>
-      <dt class="text-[11px] text-gray-600">Delivery term</dt>
-      <dd class="text-gray-900" data-incoterm>{{ contract.incoterm|incoterm_words }}</dd>
-    </div>
-    {% endif %}
-    {% if contract.source %}
-    <div>
-      <dt class="text-[11px] text-gray-600">Recorded by</dt>
-      <dd class="text-gray-900">{% told_by_for contract orgs tellers %}</dd>
-    </div>
-    {% endif %}
-  </dl>
-  {% if award %}
-    {% comment %}Where the order came from: the award it was placed against, who
-    decided it, and each approval that award needed, read as the award page reads them.{% endcomment %}
-    <p class="text-sm text-gray-600 mt-1">
-      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award.id %}">Against the award to {{ award.supplier_name|default:"the supplier" }}</a>,
-      decided {{ award.decided_on|day|default:"undated" }}{% if award.decided_by %} by {{ award.decided_by }}{% endif %}
-    </p>
+
+    {% comment %}Who buys, when it was signed, and where the order came from, as labelled facts.{% endcomment %}
+    <dl class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm sm:grid-cols-[max-content_minmax(0,1fr)_max-content_minmax(0,1fr)]" data-testid="order-facts">
+      <dt class="text-gray-600">Buyer</dt>
+      <dd class="text-gray-900">{% if contract.consideration == "in_kind" %}Donated to{% else %}Bought by{% endif %} {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record|buyer_label }}<span class="text-gray-600">, buyer of record{% if contract.buyer_of_record != "programme_org" %} ({{ contract.buyer_of_record|buyer_label }}){% endif %}</span></dd>
+      {% if contract.signed_on %}<dt class="text-gray-600">Signed</dt><dd class="text-gray-900">{{ contract.signed_on|day }}</dd>{% endif %}
+      {% if contract.incoterm %}<dt class="text-gray-600">Delivery term</dt><dd class="text-gray-900">{{ contract.incoterm|incoterm_words }}</dd>{% endif %}
+      {% if award %}<dt class="text-gray-600">Award</dt><dd class="text-gray-900"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award.id %}">Against the award to {{ award.supplier_name|default:"the supplier" }}</a>, decided {{ award.decided_on|day|default:"undated" }}{% if award.decided_by %} by {{ award.decided_by }}{% endif %}</dd>{% endif %}
+      {% if contract.covers_shortfall_of_id %}<dt class="text-gray-600">Why this order</dt><dd class="text-gray-900">Covers the shortfall on <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.covers_shortfall_of_id %}">{% if covers.reference %}{{ covers.reference }}{% else %}order {{ contract.covers_shortfall_of_id }}{% endif %}</a></dd>{% endif %}
+      {% if contract.consideration == "in_kind" or contract.consideration == "bundled" %}<dt class="text-gray-600">Payment</dt><dd class="text-gray-900">{% if contract.consideration == "in_kind" %}In kind — donated{% else %}Bundled in setup fee <span class="text-gray-600">· bought out of {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"the buyer"|possessive }} setup fee</span>{% endif %}</dd>{% endif %}
+      {% if contract.source %}<dt class="text-gray-600">Recorded by</dt><dd class="text-gray-900">{% told_by_for contract orgs tellers %}</dd>{% endif %}
+    </dl>
     {% if award_approvals %}
-      <ul class="text-sm text-gray-600 mt-0.5">
+      <ul class="text-sm text-gray-600" data-testid="award-approvals">
         {% for approval in award_approvals %}
           <li>
             {{ approval.approver.name|default:"—" }} ({{ approval.role|words|capfirst }})
             {% if approval.status == "approved" %}approved {{ approval.decided_on|day|default:"undated" }}{% elif approval.status == "declined" %}declined {{ approval.decided_on|day|default:"undated" }}{% else %}asked {{ approval.requested_on|day }}, not yet answered{% endif %}{% if approval.status != "requested" and approval.answered_by_approver %}, through {{ approval.approver.name|possessive }} own link{% endif %}
-            {% comment %}The letter the answer rests on, openable from the order it released.{% endcomment %}
             {% for document in approval.documents %}
               — <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:document_open' document.id %}" target="_blank" rel="noopener noreferrer">{{ document.title|default:document.filename|default:"signed confirmation" }}</a>
             {% endfor %}
@@ -130,71 +106,37 @@ class this build has not seen ships purged.
         {% endfor %}
       </ul>
     {% endif %}
-  {% endif %}
-  {% if not supply_as_of %}
-  <div class="flex flex-wrap gap-2 mt-3">
-    <a href="{% url 'supply_chain:contract_edit' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit order</a>
-    {% if contract.consideration == "priced" %}
-    <a href="{% url 'supply_chain:invoice_record' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record an invoice</a>
-    {% endif %}
-    <a href="{% url 'supply_chain:shipment_record' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record a dispatch</a>
-    <a href="{% url 'supply_chain:receipt_record' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record a receipt</a>
-    <a href="{% url 'supply_chain:document_attach' contract.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Attach a document</a>
-  </div>
-  {% endif %}
-</div>
+  </section>
 
-{% if held_on_us %}
-  {% comment %}
-  Whose move it is, before how late it is: goods held on something WE owe
-  are not the supplier's delay (ruling 5 of the 2026-10-02 tracking-reality spec).
-  {% endcomment %}
-  {% comment %}Body text in the page's own dark grey on the warning fill: the warning text
-  colour on it fell short of 4.5:1.{% endcomment %}
-  <div data-testid="waiting-on-us" class="rounded-lg border border-message-warning-border/50 bg-message-warning px-4 py-3 mb-3 text-sm text-gray-900">
-    <strong>Waiting on us</strong><span data-testid="waiting-on-us-help" tabindex="0" role="img" aria-label="Whose move: the next step is a document or action we owe, not something the supplier has to do" title="Whose move: the next step is a document or action we owe, not something the supplier has to do" class="ml-0.5 cursor-help text-gray-600"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span><strong>:</strong>
-    {% for hold in held_on_us %}{{ hold.what }}{% if hold.name %} ({{ hold.name }}){% endif %}{% if hold.owed_to %} for {{ hold.owed_to }}{% endif %}{% if hold.since %} (since {{ hold.since|day }}){% endif %}{% if not forloop.last %}; {% endif %}{% endfor %}.
-    {% if contract_late %}The order is {{ contract_late.facts.days_late }} day{{ contract_late.facts.days_late|pluralize }} past its promised lead time.{% endif %}
+  <div class="grid gap-4 md:grid-cols-2">
+    {% include "supply_chain/_moves.html" with moves=moves_ours whose="ours" heading="On us" testid="on-us" count_testid="on-us-count" %}
+    {% include "supply_chain/_moves.html" with moves=moves_theirs whose="theirs" heading="On the supplier or forwarder" testid="on-supplier" %}
   </div>
-{% endif %}
-{% if contract_late and not held_on_us %}
-  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning px-4 py-3 mb-3 text-sm text-message-warning-text">
-    <strong>{{ contract_late.facts.days_late }} day{{ contract_late.facts.days_late|pluralize }} past the promised lead time.</strong>
-    Signed {{ contract_late.facts.signed_on|day }} with {{ contract_late.facts.promised_lead_time_days }} days promised,
-    so due {{ contract_late.facts.expected_on|day }}{% if contract_late.facts.outstanding %};
-    {{ contract_late.facts.outstanding|qty:contract_late.facts.unit }} still to arrive{% endif %}.
-  </div>
-{% endif %}
-{% if invoice_above %}
-  <div data-testid="invoice-above-contract" class="rounded-lg border border-message-warning-border/50 bg-message-warning px-4 py-3 mb-3 text-sm text-message-warning-text">
-    <strong>Invoice above the contract.</strong>
-    {% for line in invoice_above.facts.above %}
-      {% if line.field == "unit_price" %}{{ line.invoice }} bills {{ invoice_above.facts.currency }} {{ line.billed|money }} per {{ line.per }} against {{ line.agreed|money }} agreed.
-      {% elif line.field == "freight_amount" %}{{ line.invoice }} bills freight of {{ invoice_above.facts.currency }} {{ line.billed|money }} against {{ line.agreed|money }} agreed.
-      {% else %}Billed {{ invoice_above.facts.currency }} {{ line.billed|money }} in all against {{ line.agreed|money }} agreed for goods and freight: {{ line.difference|money }} more.{% endif %}
-    {% endfor %}
-  </div>
-{% endif %}
 
+  {% comment %}The records, folded: each opens on its own, and a link to one of its anchors opens it.{% endcomment %}
+
+  <details class="fold" id="money-fold" data-testid="fold-money"{% if invoice_above %} open{% endif %}>
+    <summary id="money"><h2 class="text-base font-semibold text-brand-deep-purple">{% if contract.consideration == "priced" %}Cost, billing and payment{% else %}Cost{% endif %}</h2> {% if invoice_above %}<span class="status-chip status-chip--ours">invoice above agreed</span>{% endif %}</summary>
+    <div class="fold-body">
 {% if fulfilment %}
 {% comment %}
 The whole answer to "did what we ordered arrive", for an order another order
 covers: this order's own deliveries plus each covering order, adding up to what
 was ordered. Before, the page showed this order's half and a link to the other.
 {% endcomment %}
-<section id="fulfilment" class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-3">
+<section id="fulfilment" class="overflow-hidden rounded-lg border border-gray-100">
   <div class="px-4 py-2.5 border-b border-gray-100">
     <span class="text-xs font-semibold text-gray-600">How the order was filled</span>
     <span class="text-xs text-gray-600 ml-2">{{ fulfilment.ordered|figure_text }} ordered</span>
   </div>
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
   <table class="min-w-[36rem] w-full text-sm">
-    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+    <thead class="border-b border-gray-200 text-xs text-gray-600">
       <tr>
-        <th class="text-left px-4 py-2">Order</th>
-        <th class="text-left px-4 py-2">From</th>
-        {% if fulfilment.shows_contribution %}<th class="text-right px-4 py-2">Counts toward it</th>{% endif %}
-        <th class="text-right px-4 py-2">Received</th>
+        <th class="text-left font-medium px-4 py-2">Order</th>
+        <th class="text-left font-medium px-4 py-2">From</th>
+        {% if fulfilment.shows_contribution %}<th class="text-right font-medium px-4 py-2">Counts toward it</th>{% endif %}
+        <th class="text-right font-medium px-4 py-2">Received</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-100">
@@ -222,14 +164,8 @@ was ordered. Before, the page showed this order's half and a link to the other.
   </div>
 </section>
 {% endif %}
-
-{% comment %}
-One panel per organisation's link, each listing only what came through it. One
-panel headed by whoever wrote last put the distributor's dispatch under the
-partner's name (the IPTSc render).
-{% endcomment %}
 {% for panel in link_updates %}
-<section data-link-updates="{{ panel.org }}" class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-3">
+<section data-link-updates="{{ panel.org }}" class="overflow-hidden rounded-lg border border-gray-100">
   <div class="px-4 py-2.5 border-b border-gray-100">
     <span class="text-xs font-semibold text-gray-600">Recorded through the update link held by {{ panel.org }}</span>
     <span class="text-xs text-gray-600 ml-2">entered by them, without signing in</span>
@@ -246,9 +182,8 @@ partner's name (the IPTSc render).
   </ul>
 </section>
 {% endfor %}
-
 <div class="grid gap-3 md:grid-cols-2">
-  <div id="cost" class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+  <div id="cost" class="overflow-hidden rounded-lg border border-gray-100">
     <div class="px-4 py-2.5 border-b border-gray-100">
       {% comment %}"Landed cost, assuming a local partner imports" read oddly over a
       local purchase paid out of a setup fee: nothing was priced or imported.{% endcomment %}
@@ -326,23 +261,14 @@ partner's name (the IPTSc render).
     </table>
     </div>
     {% for reason in landed.landed_total|unconfirmed_reasons %}
-      <div class="px-4 py-2 text-xs text-orange-800 bg-orange-50 border-t border-orange-100">{{ reason }}</div>
+      <div class="px-4 py-2 text-xs text-message-warning-text bg-message-warning border-t border-message-warning-border/50">{{ reason }}</div>
     {% endfor %}
     {% if contract.consideration != "priced" %}
       {% for reason in landed.charges_total|unconfirmed_reasons %}
-        <div class="px-4 py-2 text-xs text-orange-800 bg-orange-50 border-t border-orange-100">{{ reason }}</div>
+        <div class="px-4 py-2 text-xs text-message-warning-text bg-message-warning border-t border-message-warning-border/50">{{ reason }}</div>
       {% endfor %}
     {% endif %}
-    {% if contract.consideration != "priced" %}
-    <p class="px-4 py-2.5 text-xs text-gray-600 border-t border-gray-100">
-      {% if contract.consideration == "bundled" %}
-        Bundled: paid for inside another cost, such as a setup fee, so no unit price is recorded.
-      {% else %}
-        Donated: no purchase price is recorded.
-      {% endif %}
-      The shipments and receipts below are the record of them.
-    </p>
-    {% else %}
+    {% if contract.consideration == "priced" %}
     <div class="px-4 py-2.5 border-t border-gray-100">
       {% with total=landed.by_buyer|same_total %}
       {% if total %}
@@ -367,34 +293,10 @@ partner's name (the IPTSc render).
       </div>
       {% endif %}
       {% endwith %}
-      <p class="text-xs text-gray-600 mt-2">
-        {% comment %}Only what the figures establish: never "they differ" when they
-        are equal, and never "none are payable" from totals that are unconfirmed
-        (CodeRabbit on #1975).{% endcomment %}
-        {% with compared=landed.by_buyer|buyer_comparison %}
-          Duty and VAT fall on whoever imports.
-          {% if compared.state == "differ" %}
-            Under the buyers whose totals are known, the same goods at the same price cost different amounts.
-          {% elif compared.state == "same" %}
-            Every buyer's total is known and they are the same.
-          {% endif %}
-          {% if compared.unconfirmed %}
-            {% if compared.state == "differ" %}The rest cannot be compared yet:{% else %}Whether it costs more or less under another buyer cannot be said yet:{% endif %}
-            the total is unconfirmed when
-            {% for buyer in compared.unconfirmed %}{{ buyer|buyer_label }}{% if not forloop.last %}{% if forloop.revcounter == 2 %} or {% else %}, {% endif %}{% endif %}{% endfor %}
-            imports.
-          {% endif %}
-        {% endwith %}
-        {% if contract.duty_relief_claimed and not contract.duty_relief_evidenced %}
-          A relief is claimed here with no exemption document attached, which is
-          why the figure above is unconfirmed rather than a bargain.
-        {% endif %}
-      </p>
     </div>
     {% endif %}
   </div>
-
-  <div id="match" class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+  <div id="match" class="overflow-hidden rounded-lg border border-gray-100">
     <div class="px-4 py-2.5 border-b border-gray-100">
       <span class="text-xs font-semibold text-gray-600">Ordered · received{% if contract.consideration == "priced" %} · invoiced{% endif %}</span>
       <span class="text-xs text-gray-600 ml-2">{% if match.still_to_arrive and match.still_to_arrive.amount == "0" %}all arrived, some refused{% else %}{{ match.status|humanise }}{% endif %}{% if match.payment_terms == "advance" and match.status != "paid_in_advance" %} · {% if match.advance_state == "unpaid" %}payable{% else %}paid{% endif %} in advance{% endif %}</span>
@@ -421,7 +323,7 @@ partner's name (the IPTSc render).
         leave. Received stays this order's own figure.
         {% endcomment %}
         {% for cover in match.covered_by %}
-          <tr class="bg-blue-50">
+          <tr class="bg-brand-indigo/5">
             <td class="px-4 py-2 text-gray-700">
               Covered by
               <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' cover.contract_id %}">{{ cover.reference|default:"another order" }}</a>
@@ -458,9 +360,9 @@ partner's name (the IPTSc render).
         row used to show in red on every order -- "0" when billing matched and a
         negative number when less had been billed than arrived.{% endcomment %}
         {% if match.status == "over_invoiced" %}
-          <tr class="bg-red-50">
-            <td class="px-4 py-2 text-red-800">Billed beyond what arrived</td>
-            <td class="px-4 py-2 text-right tabular-nums text-red-800">{{ match.over_invoiced|figure_text }}</td>
+          <tr class="bg-message-error">
+            <td class="px-4 py-2 text-message-error-text">Billed beyond what arrived</td>
+            <td class="px-4 py-2 text-right tabular-nums text-message-error-text">{{ match.over_invoiced|figure_text }}</td>
           </tr>
         {% endif %}
         <tr><td class="px-4 py-2 text-gray-600">Billed</td>
@@ -486,7 +388,7 @@ partner's name (the IPTSc render).
               {% endif %}
             </td>
           </tr>
-          <tr class="{% if match.recoverable.amount and match.recoverable.amount != '0' %}bg-amber-50{% endif %}">
+          <tr class="{% if match.recoverable.amount and match.recoverable.amount != '0' %}bg-message-warning{% endif %}">
             <td class="px-4 py-2 text-gray-700">Recoverable from the supplier</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ match.recoverable|money_text }}</td>
           </tr>
@@ -502,26 +404,10 @@ partner's name (the IPTSc render).
       </tbody>
     </table>
     </div>
-    <p class="px-4 py-2.5 text-xs text-gray-600 border-t border-gray-100">
-      {% comment %}"Not purchased" beside "Bought by …" and "Bundled in setup fee" was the
-      same order read two ways: a bundled order WAS bought, just not billed on its own.{% endcomment %}
-      {% if contract.consideration == "bundled" %}
-        Bought out of {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"the buyer"|possessive }} setup fee — nothing is billed or paid against this order on its own.
-      {% elif contract.consideration != "priced" %}
-        Donated: nothing is billed or paid against this order.
-      {% elif match.payment_terms == "advance" %}
-        Paid before delivery, as agreed. What was paid for and refused on arrival — or never
-        delivered, once the order is closed — is owed back.
-      {% else %}
-        The value of what actually arrived, less what has been paid — never the
-        value of what was billed.
-      {% endif %}
-    </p>
   </div>
 </div>
-
 {% if where_now %}
-<div id="where-now" class="bg-white border border-gray-200 rounded-lg overflow-hidden mt-3">
+<div id="where-now" class="overflow-hidden rounded-lg border border-gray-100">
   <div class="px-4 py-2.5 border-b border-gray-100">
     <span class="text-xs font-semibold text-gray-600">Where they are now</span>
     <span class="text-xs text-gray-600 ml-2">equipment is kept and moved, not used up</span>
@@ -546,204 +432,17 @@ partner's name (the IPTSc render).
   {% else %}
   <p class="px-4 py-2.5 text-sm text-gray-600">None of it is held anywhere yet.</p>
   {% endif %}
-  <p class="px-4 py-2.5 text-xs text-gray-600 border-t border-gray-100">
-    The ledger balance for {{ item.name }} at each place that holds it.
-    {% if where_now.other_orders %}Other orders of the same item are in these figures too.{% else %}This is the only order of it, so these are its units.{% endif %}
-  </p>
+  <p class="border-t border-gray-100 px-4 py-2 text-xs text-gray-600">{% if where_now.other_orders %}Other orders of the same item are in these figures too.{% else %}This is the only order of it, so these are its units.{% endif %}</p>
 </div>
 {% endif %}
-
-{% comment %}One heading style for every section of the order, History included
-(`history_heading_class` below): they were a mix of small and large.{% endcomment %}
-<h3 class="text-base font-semibold text-gray-900 mt-6 mb-2">Shipments</h3>
-<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-  {% comment %}
-  A scroll container is not focusable by default, so a keyboard-only user
-  cannot reach the columns it hides -- which re-creates the
-  unreachable-column bug for the people least able to work around it.
-  tabindex makes it a tab stop; the labelled region tells a screen reader
-  what it is once focused.
-  {% endcomment %}
-  <div class="overflow-x-auto" tabindex="0" role="region"
-       aria-label="Table, scrolls sideways">
-  <table class="min-w-[44rem] w-full text-sm">
-    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
-      <tr>
-        <th class="text-left px-4 py-2">Reference</th>
-        <th class="text-left px-4 py-2">Status</th>
-        <th class="text-left px-4 py-2">Batch</th>
-        <th class="text-left px-4 py-2">Best before</th>
-        <th class="text-left px-4 py-2">Quantity</th>
-        <th class="text-left px-4 py-2">Certificate</th>
-        <th class="text-left px-4 py-2">Told by</th>
-        <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-gray-100">
-      {% for shipment in shipments %}
-        {% for line in shipment.lines %}
-          <tr>
-            <td class="px-4 py-2 font-medium text-gray-900">
-              {% if forloop.first %}
-                <a class="text-brand-indigo hover:underline"
-                   href="{% url 'supply_chain:shipment_detail' shipment.id %}">{{ shipment.reference|default:shipment.id }}</a>
-              {% else %}
-                {{ shipment.reference|default:shipment.id }}
-              {% endif %}
-            </td>
-            <td class="px-4 py-2">
-              {{ shipment.status|words|capfirst }}
-              {% if shipment.is_in_transit %}
-                <div class="text-xs text-amber-800">not received yet, so not counted as stock</div>
-              {% endif %}
-              {% with late=late_shipments|dictkey:shipment.id %}
-                {% if late %}
-                  <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on|day }}</div>
-                {% endif %}
-              {% endwith %}
-            </td>
-            <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
-            <td class="px-4 py-2 text-gray-600">{{ line.expiry|day|default:"—" }}</td>
-            <td class="px-4 py-2 tabular-nums">{{ line.quantity|qty:line.quantity_unit }}</td>
-            <td class="px-4 py-2">
-              {% comment %}A consignment with its own list of documents is judged by that
-              list, the way the checks read it; "none" in amber beside four import
-              documents on file read as a gap that was not there.{% endcomment %}
-              {% if shipment.required_documents %}
-                <span class="text-xs {% if shipment.required_on_file == shipment.required_documents|length %}text-teal-700{% else %}text-amber-800{% endif %}">{{ shipment.required_on_file }} of {{ shipment.required_documents|length }} documents on file</span>
-              {% elif shipment.has_certificate %}
-                <span class="text-xs text-teal-700">on file</span>
-              {% else %}
-                <span class="text-xs text-gray-600">none</span>
-              {% endif %}
-            </td>
-            <td class="px-4 py-2 text-sm text-gray-700">{% told_by_for shipment orgs tellers %}</td>
-            <td class="px-4 py-2 text-right whitespace-nowrap">
-              {% if forloop.first %}
-                {% comment %}
-                Once per shipment, not once per line: the status belongs to the
-                consignment, and a link on every batch row would offer to set
-                it several times over.
-                {% endcomment %}
-                {% if not supply_as_of %}
-                <a href="{% url 'supply_chain:shipment_status' shipment.id %}"
-                   class="text-brand-indigo hover:underline">Update</a>
-                {% endif %}
-              {% endif %}
-            </td>
-          </tr>
-        {% empty %}
-          {% comment %}
-          A shipment with no lines still gets a row: a consignment held at
-          customs before anyone listed its batches is exactly the one worth
-          seeing.
-          {% endcomment %}
-          <tr>
-            <td class="px-4 py-2 font-medium text-gray-900">
-              <a class="text-brand-indigo hover:underline"
-                 href="{% url 'supply_chain:shipment_detail' shipment.id %}">{{ shipment.reference|default:shipment.id }}</a>
-            </td>
-            <td class="px-4 py-2">{{ shipment.status|words|capfirst }}
-              {% with late=late_shipments|dictkey:shipment.id %}
-                {% if late %}
-                  <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on|day }}</div>
-                {% endif %}
-              {% endwith %}
-            </td>
-            <td colspan="3" class="px-4 py-2 text-xs text-gray-600">no lines recorded</td>
-            <td class="px-4 py-2">
-              {% if shipment.required_documents %}<span class="text-xs {% if shipment.required_on_file == shipment.required_documents|length %}text-teal-700{% else %}text-amber-800{% endif %}">{{ shipment.required_on_file }} of {{ shipment.required_documents|length }} documents on file</span>{% elif shipment.has_certificate %}<span class="text-xs text-teal-700">on file</span>{% else %}<span class="text-xs text-gray-600">none</span>{% endif %}
-            </td>
-            <td class="px-4 py-2 text-sm text-gray-700">{% told_by_for shipment orgs tellers %}</td>
-            <td class="px-4 py-2 text-right whitespace-nowrap">
-              {% if not supply_as_of %}<a href="{% url 'supply_chain:shipment_status' shipment.id %}" class="text-brand-indigo hover:underline">Update</a>{% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      {% empty %}
-        <tr><td colspan="8" class="px-4 py-6 text-center text-gray-600">
-          {% if receipts %}No dispatch was recorded — the goods below were received directly.{% else %}Nothing dispatched yet.{% endif %}
-        </td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</div>
-
-<h3 class="text-base font-semibold text-gray-900 mt-6 mb-2">Received</h3>
-<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-  {% comment %}
-  A scroll container is not focusable by default, so a keyboard-only user
-  cannot reach the columns it hides -- which re-creates the
-  unreachable-column bug for the people least able to work around it.
-  tabindex makes it a tab stop; the labelled region tells a screen reader
-  what it is once focused.
-  {% endcomment %}
-  <div class="overflow-x-auto" tabindex="0" role="region"
-       aria-label="Table, scrolls sideways">
-  <table class="min-w-[44rem] w-full text-sm">
-    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
-      <tr>
-        <th class="text-left px-4 py-2">Note</th>
-        <th class="text-left px-4 py-2">Date</th>
-        <th class="text-left px-4 py-2">Received at</th>
-        <th class="text-left px-4 py-2">Batch</th>
-        <th class="text-left px-4 py-2">Expiry</th>
-        <th class="text-left px-4 py-2">Accepted</th>
-        <th class="text-left px-4 py-2">Refused</th>
-        <th class="text-left px-4 py-2">Told by</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-gray-100">
-      {% for receipt in receipts %}
-        {% for line in receipt.lines %}
-          <tr>
-            <td class="px-4 py-2 font-medium text-gray-900">{{ receipt.reference|default:receipt.id }}</td>
-            <td class="px-4 py-2 text-gray-600">{{ receipt.received_on|day }}</td>
-            <td class="px-4 py-2 text-gray-600">{{ supply_points|dictkey:receipt.supply_point_id|default:"—" }}</td>
-            <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
-            <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{{ line.expiry|day|default:"—" }}</td>
-            <td class="px-4 py-2 tabular-nums">{{ line.quantity_accepted|qty:line.quantity_unit }}</td>
-            <td class="px-4 py-2 tabular-nums">
-              {% if line.quantity_rejected and line.quantity_rejected != "0" %}{{ line.quantity_rejected|qty:line.quantity_unit }}{% else %}0{% endif %}
-              {% if line.rejection_reason %}
-                <div class="text-xs text-gray-600">{{ line.rejection_reason }}</div>
-              {% endif %}
-            </td>
-            <td class="px-4 py-2 text-sm text-gray-700">{% told_by_for receipt orgs tellers %}</td>
-          </tr>
-        {% endfor %}
-      {% empty %}
-        <tr><td colspan="8" class="px-4 py-6 text-center text-gray-600">Nothing received yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</div>
-
-{% comment %}
-Billing is a bought order's business: a donation or a purchase paid out of a
-setup fee said "nothing to bill or pay" and still offered to record an invoice.
-The section stays only if one was somehow recorded, so it is not hidden.
-{% endcomment %}
 {% if contract.consideration == "priced" or invoices %}
-<div class="flex items-baseline justify-between mt-6 mb-2">
-  <h3 id="owed" data-testid="owed-heading" class="text-base font-semibold text-gray-900 scroll-mt-20">{% if owed_holds %}What we owe — to clear the shipment{% if owed_holds_via %} <span data-testid="owed-via" class="font-normal text-gray-700">(via {{ owed_holds_via }})</span>{% endif %}{% else %}What we owe them{% endif %}{% if owed or owed_holds %} <span data-testid="owed-open-count" class="font-normal text-gray-600">— {{ owed_open_count }} open</span>{% endif %}</h3>
-  {% if not supply_as_of %}
-  <a href="{% url 'supply_chain:contract_commitment_record' contract.id %}"
-     class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>
-  {% endif %}
-</div>
-{% include "supply_chain/_owed.html" with resolve_label="Mark done" empty_text="Nothing owed on this order." %}
-<div class="flex items-baseline justify-between mt-6 mb-2">
-  <h3 class="text-base font-semibold text-gray-900">Invoices</h3>
+<div class="flex flex-wrap items-baseline justify-between gap-2 pt-2">
+  <h3 class="text-base font-semibold text-brand-deep-purple">Invoices <span class="text-sm font-normal tabular-nums text-gray-600">{{ invoices|length }}</span></h3>
   {% if contract.consideration == "priced" and not supply_as_of %}
   <span class="text-sm">
-    <a href="{% url 'supply_chain:advance_payment_record' contract.id %}"
-       class="text-brand-indigo hover:underline">+ Record an advance payment</a>
+    <a href="{% url 'supply_chain:advance_payment_record' contract.id %}" class="text-brand-indigo hover:underline">+ Record an advance payment</a>
     <span class="mx-1 text-gray-300">·</span>
-    <a href="{% url 'supply_chain:invoice_record' contract.id %}"
-       class="text-brand-indigo hover:underline">+ Record an invoice</a>
+    <a href="{% url 'supply_chain:invoice_record' contract.id %}" class="text-brand-indigo hover:underline">+ Record an invoice</a>
   </span>
   {% endif %}
 </div>
@@ -757,17 +456,17 @@ The section stays only if one was somehow recorded, so it is not hidden.
   {% endfor %}
 </div>
 {% endif %}
-<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+<div class="overflow-hidden rounded-lg border border-gray-100">
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
   <table class="min-w-[44rem] w-full text-sm">
-    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+    <thead class="border-b border-gray-200 text-xs text-gray-600">
       <tr>
-        <th class="text-left px-4 py-2">Invoice</th>
-        <th class="text-left px-4 py-2">Issued</th>
-        <th class="text-right px-4 py-2">Amount</th>
-        <th class="text-right px-4 py-2">Quantity billed</th>
-        <th class="text-left px-4 py-2">Status</th>
-        <th class="text-left px-4 py-2">Told by</th>
+        <th class="text-left font-medium px-4 py-2">Invoice</th>
+        <th class="text-left font-medium px-4 py-2">Issued</th>
+        <th class="text-right font-medium px-4 py-2">Amount</th>
+        <th class="text-right font-medium px-4 py-2">Quantity billed</th>
+        <th class="text-left font-medium px-4 py-2">Status</th>
+        <th class="text-left font-medium px-4 py-2">Told by</th>
         <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
       </tr>
     </thead>
@@ -901,15 +600,184 @@ The section stays only if one was somehow recorded, so it is not hidden.
   </div>
 </div>
 {% endif %}
+    </div>
+  </details>
 
-<div class="flex items-baseline justify-between mt-6 mb-2">
-  <h3 class="text-base font-semibold text-gray-900">Evidence</h3>
-  {% if not supply_as_of %}
-  <a href="{% url 'supply_chain:document_attach' contract.id %}"
-     class="text-sm text-brand-indigo hover:underline">+ Attach a document</a>
+  {% if contract.consideration == "priced" or invoices or owed_open_count %}
+  <details class="fold" id="owed-fold" data-testid="fold-owed"{% if owed_holds or owed_answered_expanded or request.GET.changed|slice:":11" == "commitment-" %} open{% endif %}>
+    <summary><h2 id="owed" data-testid="owed-heading" class="text-base font-semibold text-brand-deep-purple">{% if owed_holds %}What we owe — to clear the shipment{% if owed_holds_via %} <span data-testid="owed-via" class="font-normal text-gray-600">(via {{ owed_holds_via }})</span>{% endif %}{% else %}What we owe them{% endif %} <span data-testid="owed-open-count" class="text-sm font-normal tabular-nums text-gray-600">— {{ owed_open_count|default:0 }} open</span></h2></summary>
+    <div class="fold-body">
+      {% if not supply_as_of %}<a href="{% url 'supply_chain:contract_commitment_record' contract.id %}" class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>{% endif %}
+      {% include "supply_chain/_owed.html" with resolve_label="Mark done" empty_text="Nothing owed on this order." %}
+    </div>
+  </details>
   {% endif %}
+
+  <details class="fold" id="shipments-fold" data-testid="fold-shipments">
+    <summary id="shipments"><h2 class="text-base font-semibold text-brand-deep-purple">Shipments</h2> <span class="text-sm font-normal tabular-nums text-gray-600">{{ shipments|length }}</span>{% for shipment in shipments %}{% if shipment.is_in_transit %} <span class="text-sm font-normal text-gray-600">· {{ shipment.reference|default:shipment.id }} {{ shipment.status|words }}</span>{% endif %}{% endfor %}</summary>
+    <div class="fold-body">
+<div class="overflow-hidden rounded-lg border border-gray-100">
+  <div class="overflow-x-auto" tabindex="0" role="region"
+       aria-label="Table, scrolls sideways">
+  <table class="min-w-[44rem] w-full text-sm">
+    <thead class="border-b border-gray-200 text-xs text-gray-600">
+      <tr>
+        <th class="text-left font-medium px-4 py-2">Reference</th>
+        <th class="text-left font-medium px-4 py-2">Status</th>
+        <th class="text-left font-medium px-4 py-2">Batch</th>
+        <th class="text-left font-medium px-4 py-2">Best before</th>
+        <th class="text-left font-medium px-4 py-2">Quantity</th>
+        <th class="text-left font-medium px-4 py-2">Certificate</th>
+        <th class="text-left font-medium px-4 py-2">Told by</th>
+        <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for shipment in shipments %}
+        {% for line in shipment.lines %}
+          <tr>
+            <td class="px-4 py-2 font-medium text-gray-900">
+              {% if forloop.first %}
+                <a class="text-brand-indigo hover:underline"
+                   href="{% url 'supply_chain:shipment_detail' shipment.id %}">{{ shipment.reference|default:shipment.id }}</a>
+              {% else %}
+                {{ shipment.reference|default:shipment.id }}
+              {% endif %}
+            </td>
+            <td class="px-4 py-2">
+              {{ shipment.status|words|capfirst }}
+              {% if shipment.is_in_transit %}
+                <div class="text-xs text-message-warning-text">not received yet, so not counted as stock</div>
+              {% endif %}
+              {% with late=late_shipments|dictkey:shipment.id %}
+                {% if late %}
+                  <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on|day }}</div>
+                {% endif %}
+              {% endwith %}
+            </td>
+            <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ line.expiry|day|default:"—" }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ line.quantity|qty:line.quantity_unit }}</td>
+            <td class="px-4 py-2">
+              {% comment %}A consignment with its own list of documents is judged by that
+              list, the way the checks read it; "none" in amber beside four import
+              documents on file read as a gap that was not there.{% endcomment %}
+              {% if shipment.required_documents %}
+                <span class="text-xs {% if shipment.required_on_file == shipment.required_documents|length %}text-message-success-text{% else %}text-message-warning-text{% endif %}">{{ shipment.required_on_file }} of {{ shipment.required_documents|length }} documents on file</span>
+              {% elif shipment.has_certificate %}
+                <span class="text-xs text-message-success-text">on file</span>
+              {% else %}
+                <span class="text-xs text-gray-600">none</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2 text-sm text-gray-700">{% told_by_for shipment orgs tellers %}</td>
+            <td class="px-4 py-2 text-right whitespace-nowrap">
+              {% if forloop.first %}
+                {% comment %}
+                Once per shipment, not once per line: the status belongs to the
+                consignment, and a link on every batch row would offer to set
+                it several times over.
+                {% endcomment %}
+                {% if not supply_as_of %}
+                <a href="{% url 'supply_chain:shipment_status' shipment.id %}"
+                   class="text-brand-indigo hover:underline">Update</a>
+                {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          {% comment %}
+          A shipment with no lines still gets a row: a consignment held at
+          customs before anyone listed its batches is exactly the one worth
+          seeing.
+          {% endcomment %}
+          <tr>
+            <td class="px-4 py-2 font-medium text-gray-900">
+              <a class="text-brand-indigo hover:underline"
+                 href="{% url 'supply_chain:shipment_detail' shipment.id %}">{{ shipment.reference|default:shipment.id }}</a>
+            </td>
+            <td class="px-4 py-2">{{ shipment.status|words|capfirst }}
+              {% with late=late_shipments|dictkey:shipment.id %}
+                {% if late %}
+                  <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on|day }}</div>
+                {% endif %}
+              {% endwith %}
+            </td>
+            <td colspan="3" class="px-4 py-2 text-xs text-gray-600">no lines recorded</td>
+            <td class="px-4 py-2">
+              {% if shipment.required_documents %}<span class="text-xs {% if shipment.required_on_file == shipment.required_documents|length %}text-message-success-text{% else %}text-message-warning-text{% endif %}">{{ shipment.required_on_file }} of {{ shipment.required_documents|length }} documents on file</span>{% elif shipment.has_certificate %}<span class="text-xs text-message-success-text">on file</span>{% else %}<span class="text-xs text-gray-600">none</span>{% endif %}
+            </td>
+            <td class="px-4 py-2 text-sm text-gray-700">{% told_by_for shipment orgs tellers %}</td>
+            <td class="px-4 py-2 text-right whitespace-nowrap">
+              {% if not supply_as_of %}<a href="{% url 'supply_chain:shipment_status' shipment.id %}" class="text-brand-indigo hover:underline">Update</a>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      {% empty %}
+        <tr><td colspan="8" class="px-4 py-6 text-center text-gray-600">
+          {% if receipts %}No dispatch was recorded — the goods below were received directly.{% else %}Nothing dispatched yet.{% endif %}
+        </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
 </div>
-<div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    </div>
+  </details>
+
+  <details class="fold" id="receipts-fold" data-testid="fold-receipts">
+    <summary id="receipts"><h2 class="text-base font-semibold text-brand-deep-purple">Received</h2> <span class="text-sm font-normal tabular-nums text-gray-600">{{ receipts|length }}</span></summary>
+    <div class="fold-body">
+<div class="overflow-hidden rounded-lg border border-gray-100">
+  <div class="overflow-x-auto" tabindex="0" role="region"
+       aria-label="Table, scrolls sideways">
+  <table class="min-w-[44rem] w-full text-sm">
+    <thead class="border-b border-gray-200 text-xs text-gray-600">
+      <tr>
+        <th class="text-left font-medium px-4 py-2">Note</th>
+        <th class="text-left font-medium px-4 py-2">Date</th>
+        <th class="text-left font-medium px-4 py-2">Received at</th>
+        <th class="text-left font-medium px-4 py-2">Batch</th>
+        <th class="text-left font-medium px-4 py-2">Expiry</th>
+        <th class="text-left font-medium px-4 py-2">Accepted</th>
+        <th class="text-left font-medium px-4 py-2">Refused</th>
+        <th class="text-left font-medium px-4 py-2">Told by</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for receipt in receipts %}
+        {% for line in receipt.lines %}
+          <tr>
+            <td class="px-4 py-2 font-medium text-gray-900">{{ receipt.reference|default:receipt.id }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ receipt.received_on|day }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ supply_points|dictkey:receipt.supply_point_id|default:"—" }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
+            <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{{ line.expiry|day|default:"—" }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ line.quantity_accepted|qty:line.quantity_unit }}</td>
+            <td class="px-4 py-2 tabular-nums">
+              {% if line.quantity_rejected and line.quantity_rejected != "0" %}{{ line.quantity_rejected|qty:line.quantity_unit }}{% else %}0{% endif %}
+              {% if line.rejection_reason %}
+                <div class="text-xs text-gray-600">{{ line.rejection_reason }}</div>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2 text-sm text-gray-700">{% told_by_for receipt orgs tellers %}</td>
+          </tr>
+        {% endfor %}
+      {% empty %}
+        <tr><td colspan="8" class="px-4 py-6 text-center text-gray-600">Nothing received yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+    </div>
+  </details>
+
+  <details class="fold" id="documents-fold" data-testid="fold-documents">
+    <summary id="documents"><h2 class="text-base font-semibold text-brand-deep-purple">Evidence</h2> <span class="text-sm font-normal tabular-nums text-gray-600">{{ documents|length }}</span></summary>
+    <div class="fold-body">
+      {% if not supply_as_of %}<a href="{% url 'supply_chain:document_attach' contract.id %}" class="text-sm text-brand-indigo hover:underline">+ Attach a document</a>{% endif %}
+<div class="rounded-lg border border-gray-100 px-4 py-3">
   {% if documents %}
     <ul class="text-sm divide-y divide-gray-100">
       {% for document in documents %}
@@ -927,18 +795,36 @@ The section stays only if one was somehow recorded, so it is not hidden.
   {% else %}
     <p class="text-sm text-gray-600">
       Nothing attached.
-      {% comment %}Only the figures this page actually shows: a bundled or donated
-      order has no duty figure for a document to evidence.{% endcomment %}
-      {% if contract.consideration == "priced" %}
-        Two figures on this page depend on a document existing: the duty relief,
-        and each batch's conformity.
-      {% elif shipments %}
-        Each batch's conformity on this page depends on a certificate being attached.
-      {% endif %}
     </p>
   {% endif %}
 </div>
-{% include "supply_chain/_timeline.html" with history_heading_class="text-base font-semibold text-gray-900" %}
+    </div>
+  </details>
+
+  <details class="fold" id="history-fold" data-testid="fold-history">
+    <summary><h2 class="text-base font-semibold text-brand-deep-purple">History</h2> <span class="text-sm font-normal text-gray-600">newest first</span></summary>
+    <div class="fold-body">
+      {% include "supply_chain/_timeline.html" with history_heading_class="sr-only" %}
+    </div>
+  </details>
 </div>
+{% endwith %}
+<script>
+  // A link to anything inside a fold (#history, #owed, #match, #cost ...) opens the fold first.
+  (function () {
+    function openTo() {
+      var hash = window.location.hash;
+      if (!hash || hash.length < 2) return;
+      var target = document.getElementById(hash.slice(1));
+      if (!target) return;
+      var fold = target.closest("details.fold");
+      if (fold && !fold.open) { fold.open = true; }
+      if (target.tagName === "SUMMARY" && target.parentNode.tagName === "DETAILS") { target.parentNode.open = true; }
+      target.scrollIntoView({block: "start"});
+    }
+    openTo();
+    window.addEventListener("hashchange", openTo);
+  })();
+</script>
 {% endif %}
 {% endblock %}

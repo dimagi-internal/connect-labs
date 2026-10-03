@@ -1,50 +1,41 @@
 {% extends "supply_chain/base.html" %}
 {% load supply_chain_extras %}
 {% block supply_content %}
-<div class="sc" data-testid="comparison-page">
-  <div class="sc-row sc-between">
-    <nav class="sc-crumbs" aria-label="Breadcrumb"><a href="{% url 'supply_chain:home' %}">Procurements</a><span aria-hidden="true">›</span><a href="{% url 'supply_chain:procurement_tender_detail' tender_id %}">{{ tender.label|default:"Tender" }}</a><span aria-hidden="true">›</span><span>Comparison</span></nav>
+<div class="flex flex-col gap-5" data-testid="comparison-page">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-600" aria-label="Breadcrumb"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:home' %}">Procurements</a><span aria-hidden="true">›</span><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}">{{ tender.label|default:"Tender" }}</a><span aria-hidden="true">›</span><span>Comparison</span></nav>
     {% include "supply_chain/_src_legend.html" %}
   </div>
 {% if not commodity_slug %}
-  <h1 class="sc-h1">Compare quotes</h1>
-  <div class="sc-card">
-    <span class="sc-muted">Which product?</span>
-    <ul class="sc-stack" style="list-style:none;margin:0;padding:0">
+  <h1 class="text-brand-deep-purple text-2xl font-semibold">Compare quotes</h1>
+  <div class="card_bg border-brand-border-light flex flex-col gap-3 border">
+    <span class="text-gray-600">Which product?</span>
+    <ul class="m-0 flex list-none flex-col gap-2 p-0">
       {% for line in tender.lines %}
-        <li><a class="sc-btn-2 sc-btn-sm" href="?commodity={{ line.commodity_slug }}">{{ line.commodity_slug }}{% if line.quantity %} — {{ line.quantity|qty:line.quantity_unit }}{% endif %}</a></li>
+        <li><a class="button button-sm outline-style" href="?commodity={{ line.commodity_slug }}">{{ line.commodity_slug }}{% if line.quantity %} — {{ line.quantity|qty:line.quantity_unit }}{% endif %}</a></li>
       {% empty %}
-        <li class="sc-muted">No products on this tender yet.</li>
+        <li class="text-gray-600">No products on this tender yet.</li>
       {% endfor %}
     </ul>
   </div>
 {% else %}
-  <div class="sc-row sc-between" style="align-items:flex-end;gap:16px">
-    <div class="sc-stack">
-      <h1 class="sc-h1">Compare quotes</h1>
-      <div class="sc-muted" style="font-size:15px">{{ commodity_name }}{% if tender.label %} · {{ tender.label }}{% endif %}{% if comparison %} · <span data-testid="comparable-count">{{ comparison.comparable_count }} of {{ comparison.total_count }} comparable</span>{% endif %}</div>
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div class="flex flex-col gap-1">
+      <h1 class="text-brand-deep-purple text-2xl font-semibold">Compare quotes</h1>
+      <div class="text-gray-600">{{ commodity_name }}{% if tender.label %} · {{ tender.label }}{% endif %}{% if comparison %} · <span data-testid="comparable-count">{{ comparison.comparable_count }} of {{ comparison.total_count }} comparable</span>{% endif %}</div>
     </div>
     {% comment %}The tender's import duty terms, one line, with the control that settles them.{% endcomment %}
-    <div id="duty-terms" data-testid="comparison-duty-terms" class="sc-banner{% if tender.duty_terms %} sc-banner--ok{% endif %}">
-      <span data-testid="duty-terms-chip"><span class="sc-muted">Import duty:</span> <strong data-testid="duty-terms-value" style="{% if not tender.duty_terms %}color:var(--amber){% endif %}">{% if tender.duty_terms %}{{ tender.duty_terms|duty_terms_words }}{% else %}not settled{% endif %}</strong></span>
-      {% if grid_blocked_by_terms %}<span class="sc-muted" data-testid="duty-terms-blocks">· blocks {{ grid_blocked_by_terms|join:", " }}</span>{% endif %}
-      {% if tender.duty_terms == "buyer_waiver" %}<span class="sc-small sc-muted" data-testid="waiver-evidence">· waiver document {% if waiver_on_file %}on file{% else %}not on file{% endif %}</span>{% endif %}
+    <div id="duty-terms" data-testid="comparison-duty-terms" class="flex flex-wrap items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm {% if tender.duty_terms %}border-brand-border-light bg-white{% else %}border-message-warning-border/50 bg-message-warning{% endif %}">
+      <span data-testid="duty-terms-chip"><span class="text-gray-600">Import duty:</span> <strong data-testid="duty-terms-value" class="{% if tender.duty_terms %}text-gray-900{% else %}text-message-warning-text{% endif %}">{% if tender.duty_terms %}{{ tender.duty_terms|duty_terms_words }}{% else %}not settled{% endif %}</strong></span>
+      {% if grid_blocked_by_terms %}<span class="text-gray-700" data-testid="duty-terms-blocks">· blocks {{ grid_blocked_by_terms|join:", " }}</span>{% endif %}
+      {% if tender.duty_terms == "buyer_waiver" %}<span class="text-xs text-gray-600" data-testid="waiver-evidence">· waiver document {% if waiver_on_file %}on file{% else %}not on file{% endif %}</span>{% endif %}
       {% if not supply_as_of %}
-      <details class="sc-menu">
-        <summary data-testid="duty-terms-change" role="button" style="font-weight:600;color:var(--blue);cursor:pointer">{% if tender.duty_terms %}Change{% else %}Settle{% endif %}</summary>
-        <form method="post" action="{% url 'supply_chain:procurement_tender_duty_terms' tender_id %}" class="sc-menu-panel">
+      <details class="relative">
+        <summary data-testid="duty-terms-change" role="button" class="text-brand-indigo cursor-pointer list-none font-semibold hover:underline [&::-webkit-details-marker]:hidden">{% if tender.duty_terms %}Change{% else %}Settle{% endif %}</summary>
+        <form method="post" action="{% url 'supply_chain:procurement_tender_duty_terms' tender_id %}" class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 shadow-sm">
           {% csrf_token %}
           <input type="hidden" name="next" value="{{ request.get_full_path }}">
-          <label class="sc-stack" style="gap:4px"><span class="sc-small sc-muted">Import duty</span>
-            <select name="duty_terms" data-testid="duty-terms-select">
-              <option value=""{% if not tender.duty_terms %} selected{% endif %}>Not settled</option>
-              <option value="buyer_waiver"{% if tender.duty_terms == "buyer_waiver" %} selected{% endif %}>We import, under the program's duty waiver</option>
-              <option value="buyer_pays"{% if tender.duty_terms == "buyer_pays" %} selected{% endif %}>We import and pay the duty</option>
-              <option value="supplier_ddp"{% if tender.duty_terms == "supplier_ddp" %} selected{% endif %}>The supplier delivers duty paid</option>
-            </select>
-          </label>
-          <label class="sc-stack" style="gap:4px"><span class="sc-small sc-muted">Our duty estimate, % of goods (if we pay)</span><input type="number" step="0.01" min="0" name="duty_estimate_percent" value="{{ tender.duty_estimate_percent|default_if_none:'' }}"></label>
-          <button type="submit" class="sc-btn sc-btn-sm">Save</button>
+          {% include "supply_chain/procurement/_duty_terms_fields.html" %}
         </form>
       </details>
       {% endif %}
@@ -52,50 +43,50 @@
   </div>
 
   {% if award_error %}
-  <div class="sc-banner" role="alert" data-testid="award-error">Could not award: {{ award_error }}</div>
+  <div class="border-message-error-border/50 bg-message-error text-message-error-text rounded-lg border px-3.5 py-2.5 text-sm" role="alert" data-testid="award-error">Could not award: {{ award_error }}</div>
   {% endif %}
 
   {% if awards %}
-  <div class="sc-card" style="padding:12px 20px;flex-direction:row;flex-wrap:wrap;gap:8px 14px;align-items:baseline" data-testid="awards">
-    <span class="sc-chip sc-chip--blue">Awarded</span>
+  <div class="border-brand-border-light flex flex-wrap items-baseline gap-x-3.5 gap-y-2 rounded-lg border bg-white px-5 py-3 text-sm" data-testid="awards">
+    <span class="status-chip status-chip--primary">Awarded</span>
     {% for award in awards %}
-      <a href="{% url 'supply_chain:award_detail' award.id %}">award {{ award.id }}{% for row in comparison.all_rows %}{% if row.quote_id == award.quote_id %} to {{ row.supplier_name }}{% endif %}{% endfor %}{% if award.decided_on %}, {{ award.decided_on|day }}{% endif %}</a>{% if award.decided_by %} <span class="sc-muted">by {{ award.decided_by }}</span>{% endif %}{% if award.rationale %} <span class="sc-muted" data-award-why>· {{ award.rationale }}</span>{% endif %}
+      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award.id %}">award {{ award.id }}{% for row in comparison.all_rows %}{% if row.quote_id == award.quote_id %} to {{ row.supplier_name }}{% endif %}{% endfor %}{% if award.decided_on %}, {{ award.decided_on|day }}{% endif %}</a>{% if award.decided_by %} <span class="text-gray-600">by {{ award.decided_by }}</span>{% endif %}{% if award.rationale %} <span class="text-gray-600" data-award-why>· {{ award.rationale }}</span>{% endif %}
     {% endfor %}
   </div>
   {% endif %}
 
   {% if grid and grid.quotes %}
-  <section class="sc-card sc-flush" style="padding:0" aria-label="Quotes side by side">
-    <div class="sc-scroll" tabindex="0" role="region" aria-label="Comparison, scrolls sideways">
-      <table class="sc-table sc-grid" data-testid="comparison-grid" style="min-width:{% widthratio grid.quotes|length 1 220 %}px">
-        <thead>
+  <section class="border-brand-border-light overflow-hidden rounded-lg border bg-white" aria-label="Quotes side by side">
+    <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="Comparison, scrolls sideways">
+      <table class="w-full text-sm {% if grid.quotes|length > 3 %}min-w-[1080px]{% elif grid.quotes|length == 3 %}min-w-[860px]{% else %}min-w-[640px]{% endif %}" data-testid="comparison-grid">
+        <thead class="border-b border-gray-200">
           <tr>
-            <th scope="col" style="width:200px;padding-top:18px;padding-bottom:18px"><span class="sr-only">Fact</span></th>
+            <th scope="col" class="w-52 px-5 py-4"><span class="sr-only">Fact</span></th>
             {% for q in grid.quotes %}
-            <th scope="col" data-quote-id="{{ q.quote_id }}" data-testid="grid-quote" style="padding-top:18px;padding-bottom:18px">
-              <div class="sc-stack">
-                <a href="{{ q.href }}" style="font-size:16px;font-weight:600;color:var(--ink);white-space:normal">{{ q.name }}</a>
-                {% if q.item %}<span class="sc-small sc-muted" style="white-space:normal">{{ q.item }}</span>{% endif %}
-                <span><span class="sc-chip sc-chip--{{ q.chip.tone }}" data-testid="grid-status">{{ q.chip.label }}</span></span>
+            <th scope="col" data-quote-id="{{ q.quote_id }}" data-testid="grid-quote" class="border-l border-gray-100 px-4 py-4 text-left align-top font-normal">
+              <div class="flex flex-col gap-1">
+                <a href="{{ q.href }}" class="text-brand-deep-purple text-base font-semibold hover:underline">{{ q.name }}</a>
+                {% if q.item %}<span class="text-xs text-gray-600">{{ q.item }}</span>{% endif %}
+                <span><span class="status-chip status-chip--{{ q.chip.tone }}" data-testid="grid-status">{{ q.chip.label }}</span></span>
               </div>
             </th>
             {% endfor %}
           </tr>
         </thead>
-        <tbody>
+        <tbody class="divide-y divide-gray-100">
           {% for r in grid.rows %}
-          <tr data-fact="{{ r.key }}"{% if r.total %} class="sc-total"{% endif %}>
-            <th scope="row" style="font-weight:{% if r.total %}600{% else %}400{% endif %};color:var(--muted);font-size:14px;white-space:normal">{{ r.label }}<div class="sc-small" style="font-weight:400;color:#6B7480">{{ r.src_label }}</div></th>
+          <tr data-fact="{{ r.key }}"{% if r.total %} class="bg-stone-50 text-base"{% endif %}>
+            <th scope="row" class="px-5 py-3 text-left align-top text-sm {% if r.total %}font-semibold text-gray-900{% else %}font-normal text-gray-600{% endif %}">{{ r.label }}<div class="text-xs font-normal text-gray-600">{{ r.src_label }}</div></th>
             {% for c in r.cells %}
-            <td{% if r.key == "price" or r.key == "landed" or r.key == "fx" %} class="num"{% endif %} data-testid="grid-cell"{% if c.gap %} data-gap{% endif %}>{% if c.gap %}<span class="sc-gap"{% if c.why %} title="{{ c.why }}"{% endif %}>{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}</span>{% elif c.mute %}<span class="sc-blank">{{ c.v }}</span>{% else %}{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}{% endif %}</td>
+            <td class="border-l border-gray-100 px-4 py-3 align-top{% if r.key == "price" or r.key == "landed" or r.key == "fx" %} tabular-nums{% endif %}{% if r.total %} font-semibold text-gray-900{% endif %}" data-testid="grid-cell"{% if c.gap %} data-gap{% endif %}>{% if c.gap %}<span class="text-message-warning-text font-medium"{% if c.why %} title="{{ c.why }}"{% endif %}>{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}</span>{% elif c.mute %}<span class="text-gray-600">{{ c.v }}</span>{% else %}{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}{% endif %}</td>
             {% endfor %}
           </tr>
           {% endfor %}
           {% if not supply_as_of %}
           <tr>
-            <td></td>
+            <td class="px-5 py-3"></td>
             {% for q in grid.quotes %}
-            <td>{% if q.action %}<a class="sc-btn-2 sc-btn-sm" data-testid="grid-action" href="{{ q.action.href }}"{% if q.action.award %} onclick="var d=document.getElementById('award-{{ q.quote_id }}'); if (d) { d.open = true; d.scrollIntoView({block: 'center'}); return false; }"{% endif %}>{{ q.action.label }}</a>{% endif %}</td>
+            <td class="border-l border-gray-100 px-4 py-3">{% if q.action %}<a class="button button-sm outline-style" data-testid="grid-action" href="{{ q.action.href }}"{% if q.action.award %} onclick="var d=document.getElementById('award-{{ q.quote_id }}'); if (d) { d.open = true; d.scrollIntoView({block: 'center'}); return false; }"{% endif %}>{{ q.action.label }}</a>{% endif %}</td>
             {% endfor %}
           </tr>
           {% endif %}
@@ -104,15 +95,15 @@
     </div>
   </section>
   {% elif comparison %}
-  <div class="sc-card sc-muted">No live quote on this product yet.</div>
+  <div class="card_bg border-brand-border-light border text-gray-600">No live quote on this product yet.</div>
   {% endif %}
 
   {% if comparison.comparable and not supply_as_of %}
   {% comment %}The award itself, folded under each comparable quote: why, when, who.{% endcomment %}
   {% for row in comparison.comparable %}{% if row.quote_id not in awarded_quote_ids %}
-  <details class="sc-fold" id="award-{{ row.quote_id }}" data-testid="award-start"{% if row.quote_id == award_anchor_quote_id and award_error or row.quote_id == award_anchor_quote_id and award_step %} open{% endif %}>
-    <summary data-testid="award-open"{% if row.quote_id == award_anchor_quote_id %} id="award"{% endif %}>Award {{ row.supplier_name }}{% if award_anyway %} <span class="sc-muted" data-anyway title="{{ award_anyway_detail }}">· {{ award_incomplete_count }} other quote{{ award_incomplete_count|pluralize }} not comparable yet</span>{% endif %}</summary>
-    <div class="sc-fold-body">
+  <details class="fold" id="award-{{ row.quote_id }}" data-testid="award-start"{% if row.quote_id == award_anchor_quote_id and award_error or row.quote_id == award_anchor_quote_id and award_step %} open{% endif %}>
+    <summary data-testid="award-open"{% if row.quote_id == award_anchor_quote_id %} id="award"{% endif %}>Award {{ row.supplier_name }}{% if award_anyway %} <span class="text-sm font-normal text-gray-600" data-anyway title="{{ award_anyway_detail }}">· {{ award_incomplete_count }} other quote{{ award_incomplete_count|pluralize }} not comparable yet</span>{% endif %}</summary>
+    <div class="fold-body">
                   <form method="post" action="" data-testid="award-form" class="mt-2 flex flex-wrap items-end gap-2 min-w-0">
                     {% csrf_token %}
                     <input type="hidden" name="quote_id" value="{{ row.quote_id }}">
@@ -134,7 +125,7 @@
                     <div class="flex flex-col gap-0.5 text-xs text-gray-600">Decided by
                       <span data-testid="decided-by" class="py-1 text-sm text-gray-900">{{ decider }}</span>
                     </div>
-                    <button data-testid="award-submit" class="shrink-0 px-4 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md"
+                    <button data-testid="award-submit" class="button button-sm primary-dark shrink-0"
                             type="submit">
                       Award
                     </button>
@@ -145,9 +136,9 @@
   {% endif %}
 
 {% if comparison.unavailable %}
-  <div class="sc-card" data-testid="unavailable" style="gap:6px">
-    <strong>Not computed for any quote</strong>
-    <ul class="sc-small" style="margin:0;padding-left:18px">
+  <div class="card_bg border-brand-border-light flex flex-col gap-1.5 border" data-testid="unavailable">
+    <strong class="text-gray-900">Not computed for any quote</strong>
+    <ul class="m-0 list-disc pl-5 text-sm">
       {% for key, figure in comparison.unavailable.items %}<li><b>{{ figure.label }}</b> — {% for reason in figure.reasons %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}</li>{% endfor %}
     </ul>
   </div>

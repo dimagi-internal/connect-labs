@@ -967,6 +967,31 @@ class OrderDetailView(OperationBase):
             for c in late
             if c["kind"] == "shipment_overdue" and c["subject"]["id"] in shipment_ids
         }
+        # The status view at the top: stage bar, tiles, chip, and the moves --
+        # from moves.py and nothing else, the lists the overview reads.
+        from datetime import date
+
+        from connect_labs.supply_chain import moves as rules
+        from connect_labs.supply_chain.fulfilment.status import order_status
+
+        context["status"] = order_status(
+            contract,
+            award=context["award"],
+            shipments=context["shipments"],
+            receipts=context["receipts"],
+            invoices=context["invoices"],
+            match=context["match"],
+            invoice_above=context["invoice_above"],
+            contract_late=context["contract_late"],
+            held_on_us=context["held_on_us"],
+            header_status=context["order_status"],
+        )
+        today = getattr(self.request, "supply_as_of", None) or date.today()
+        access = _access(self.request)
+        record = access.get_contract(contract_id) if access.program_id else None
+        context["moves_ours"], context["moves_theirs"] = rules.contract_moves(record, today) if record else ([], [])
+        if contract.get("tender_id"):
+            context["tender_label"] = (self.op("tender_get", tender_id=contract["tender_id"]) or {}).get("label", "")
         # What changed on this order and its children, and who told us. Scoped
         # by this program as well as the order, and cut at the as-of date.
         context["timeline"] = timeline_for_contract(

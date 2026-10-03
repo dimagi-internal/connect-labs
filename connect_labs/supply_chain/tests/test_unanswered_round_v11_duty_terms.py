@@ -108,7 +108,7 @@ class TestSettingTheTerms:
 class TestTheTenderPageLine:
     def test_not_settled_then_the_waiver_marked_new(self, da, world, client_in_program):
         body = _tender_page(client_in_program, world["tender"]["id"])
-        pattern = r'data-testid="tender-duty-terms"[^>]*>(.*?)<span class="sc-muted">Deadline'
+        pattern = r'data-testid="tender-duty-terms"[^>]*>(.*?)<span class="text-gray-600">Deadline'
         line = re.search(pattern, body, re.S).group(1)
         assert " ".join(re.sub(r"<[^>]+>", "", line).split()).startswith("Not settled")
         _set(da, world, "buyer_waiver")
