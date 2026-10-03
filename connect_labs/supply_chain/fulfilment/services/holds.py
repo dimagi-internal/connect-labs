@@ -33,6 +33,10 @@ class Hold:
     # The document kind a held shipment requires ("import_permit"), so the
     # screen can offer to attach exactly that document and clear the hold.
     kind: str = ""
+    # For a held document: who asked us for it -- the sender of the email that
+    # set the requirement (a forwarder clearing the goods), else the carrier.
+    # Kept apart from `owed_to`: the document goes to customs, through them.
+    asked_by: str = ""
 
     def as_dict(self) -> dict:
         return {
@@ -43,6 +47,7 @@ class Hold:
             "shipment_id": self.shipment_id,
             "commitment_id": self.commitment_id,
             "kind": self.kind,
+            "asked_by": self.asked_by,
         }
 
     @property
@@ -86,6 +91,7 @@ def holds_for(contracts) -> dict[int, list[Hold]]:
         .exclude(required_documents=[])
         .prefetch_related("documents")
     )
+    asked_by = _documents_asked_by(shipments)
     for shipment in shipments:
         ours = our_org_ids(by_id[shipment.contract_id])
         if not ours or shipment.pk in received:
@@ -99,6 +105,9 @@ def holds_for(contracts) -> dict[int, list[Hold]]:
                         # No record says when the hold began, and the day it was
                         # recorded is not that day: left unknown, not guessed.
                         since=None,
+                        # Who asked for it: the sender of the email that set
+                        # the requirement (a forwarder), else the carrier.
+                        asked_by=asked_by.get(shipment.pk) or (shipment.carrier or "").strip(),
                         shipment_id=shipment.pk,
                         name=str(entry.get("name") or "").strip(),
                         kind=str(entry.get("kind") or ""),
@@ -116,3 +125,35 @@ def holds_for(contracts) -> dict[int, list[Hold]]:
             )
         )
     return {cid: sorted(found, key=lambda h: (h.since or date.max, h.what)) for cid, found in holds.items()}
+
+
+def _documents_asked_by(shipments) -> dict[int, str]:
+    """Shipment id -> who asked for its required documents, from the history.
+
+    The sender named on the newest recorded change to a shipment's required
+    documents (`OperationCall.source_sender`, e.g. the forwarder whose email
+    said the trucks are held). Absent when no change carried a sender.
+    """
+    from django.contrib.contenttypes.models import ContentType
+
+    from connect_labs.supply_chain.history.models import Revision
+    from connect_labs.supply_chain.models import Shipment
+
+    ids = [str(s.pk) for s in shipments]
+    if not ids:
+        return {}
+    found: dict[int, str] = {}
+    revisions = (
+        Revision.objects.filter(
+            content_type=ContentType.objects.get_for_model(Shipment),
+            object_id__in=ids,
+            changes__has_key="required_documents",
+        )
+        .select_related("call")
+        .order_by("recorded_at")
+    )
+    for revision in revisions:
+        sender = (getattr(revision.call, "source_sender", "") or "").strip()
+        if sender:
+            found[int(revision.object_id)] = sender
+    return found

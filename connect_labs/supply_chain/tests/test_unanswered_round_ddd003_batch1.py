@@ -67,7 +67,7 @@ class TestTheComparisonUnderTheWaiver:
         _set(da, world, "buyer_waiver")
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         body = client_in_program.get(url).content.decode()
-        note = _text(re.search(r'data-testid="comparison-duty-terms".*?</p>', body, re.S).group(0))
+        note = _text(re.search(r'data-testid="comparison-duty-terms".*?</p>\s*</div>', body, re.S).group(0))
         assert "Duty counts as zero" in note and "--" not in note
         if 'data-testid="needs-info"' in body:
             assert "duty: waived (our import)" in _text(body.split('data-testid="needs-info"')[1]).lower()

@@ -60,15 +60,17 @@ class TestTheComparisonUnderTheWaiver:
 
     def test_the_needs_info_section_carries_the_round_terms_and_the_missing_waiver(self, da, world, client_in_program):
         _answer_with_waiver(da, world)
-        _quote(da, world, pack_spec_source="not_stated", duties_basis="included")
+        _quote(da, world, pack_spec_source="not_stated", duties_basis="included", incoterm="CPT Kano")
         body = _comparison(client_in_program, world)
         if 'data-testid="needs-info"' not in body:
             pytest.skip("the quote is comparable in this world; nothing to card")
         # Since batch 8 the round's terms are stated once, in the comparison's header, with
         # the way to change them; the cards carry the answer that set them.
-        terms = _text(re.search(r'data-testid="comparison-duty-terms".*?</p>', body, re.S).group(0))
+        terms = _text(re.search(r'data-testid="comparison-duty-terms".*?</p>\s*</div>', body, re.S).group(0))
         assert "under the program's duty waiver" in terms and "Change" in terms
-        assert 'data-testid="card-waiver-missing"' in body
+        # The waiver document's status is said once, in the round's terms, not as a chip on every card.
+        assert 'data-testid="card-waiver-missing"' not in body
+        assert "waiver document: none on file yet" in terms
         attach = reverse("supply_chain:tender_document_attach", args=[world["tender"]["id"]])
         assert attach in body
         assert "restate the price without import duty" in body

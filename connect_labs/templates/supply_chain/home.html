@@ -36,7 +36,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
   <h2 class="text-base font-semibold text-gray-900 mb-2">
     Where everything stands
     <span class="normal-case tracking-normal font-normal text-gray-600">
-      — newest change first
+      — newest change first{% if standing_our_moves and not supply_as_of %} · <span data-testid="standing-our-moves">{{ standing_our_moves }} move{{ standing_our_moves|pluralize }} ours, listed under Us</span>{% endif %}
     </span>
   </h2>
   {% if supply_as_of %}
@@ -109,8 +109,8 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
                   chosen day read as counted from today.{% endcomment %}
                   <span data-testid="last-change" class="block whitespace-nowrap text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|date:'j M Y' }}</span>
                 {% else %}
-                <span data-testid="last-change" class="block whitespace-nowrap text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|days_ago:standing_now }}</span>
-                {% with day=row.last_change_at|day_beside_count:standing_now %}{% if day %}<span data-testid="last-change-day" class="block whitespace-nowrap text-xs text-gray-600">{{ day }}</span>{% endif %}{% endwith %}
+                <span data-testid="last-change" class="block whitespace-nowrap text-gray-700" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|count_back:standing_now }}</span>
+                {% with day=row.last_change_at|short_day:standing_now %}{% if day %}<span data-testid="last-change-day" class="block whitespace-nowrap text-xs text-gray-600">{{ day }}</span>{% endif %}{% endwith %}
                 {% endif %}
                 {% if row.last_change_is_ai %}
                   {% comment %}Who told us, beside the AI glyph; on hover, what was recorded and from what.{% endcomment %}
@@ -138,8 +138,10 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
                   <span class="block pl-5 pt-0.5">{% for line in flag.folded|default:flag.lines %}<span data-testid="flag-line" class="block">{{ line }}</span>{% endfor %}</span>
                 </details>
                 {% else %}
-                <span data-testid="stale-flag" title="{{ flag.rule }}"
-                      class="mb-1 flex w-fit items-start gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span>{{ flag }}</span></span>
+                {% comment %}A flag with nothing folded under it opens the record itself: the same chip and
+                chevron as a folding flag, so every flag reads as one you can open.{% endcomment %}
+                <a data-testid="stale-flag" title="{{ flag.rule }}" href="{{ row.url }}"
+                      class="mb-1 flex w-fit items-start gap-1.5 whitespace-nowrap rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900 hover:bg-amber-100"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span>{{ flag }}</span><i class="fa-solid fa-chevron-right mt-0.5 text-[9px] text-amber-700" aria-hidden="true"></i></a>
                 {% endif %}
               {% endfor %}
             </td>
@@ -181,9 +183,9 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
   </span>
 </h2>
 
-{% include "supply_chain/_phase.html" with phase="Source" accent="border-brand-indigo" stages=summary.source|source_stages %}
-{% include "supply_chain/_phase.html" with phase="Order" accent="border-indigo-400" stages=summary.order|order_stages %}
-{% include "supply_chain/_phase.html" with phase="Deliver" accent="border-teal-500" stages=summary.deliver|deliver_stages %}
+{% include "supply_chain/_phase.html" with phase="Source" accent="#3843d0" stages=summary.source|source_stages %}
+{% include "supply_chain/_phase.html" with phase="Order" accent="#818cf8" stages=summary.order|order_stages %}
+{% include "supply_chain/_phase.html" with phase="Deliver" accent="#14b8a6" stages=summary.deliver|deliver_stages %}
 
 {% comment %}
 The raw checks feed used to be rendered here in full: three columns of
@@ -208,6 +210,7 @@ figures, and the catalogue is where our own gaps get closed.
   <h2 class="text-sm font-semibold text-gray-900 mt-8 mb-1">Needs an answer</h2>
   <p class="text-xs text-gray-600 mb-3">
     Worked out from the records each time this page opens, so it is the state now.
+    <span data-testid="checks-count-note">Counted per open check on a record, not per move: the moves that are ours are the Us lines under Where everything stands.</span>
     <a class="text-brand-indigo hover:underline ml-1" href="{% url 'supply_chain:checks' %}">Read every check, with its facts</a>
   </p>
   <div class="grid gap-3 sm:grid-cols-3 mb-2">
@@ -221,7 +224,7 @@ figures, and the catalogue is where our own gaps get closed.
                        group-hover:text-brand-deep-purple">{{ group.items|length }}</span>
           <span>
             <span class="block text-sm text-gray-900">{{ group.headline }}</span>
-            <span class="block text-xs text-gray-600">{{ group.audience|audience_label }}</span>
+            <span class="block text-xs text-gray-600">{{ group.audience|audience_label }} · open check{{ group.items|length|pluralize }}</span>
           </span>
         </a>
       {% endif %}

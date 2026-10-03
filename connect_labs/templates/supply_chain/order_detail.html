@@ -728,7 +728,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
 {% endcomment %}
 {% if contract.consideration == "priced" or invoices %}
 <div class="flex items-baseline justify-between mt-6 mb-2">
-  <h3 id="owed" class="text-base font-semibold text-gray-900 scroll-mt-20">What we owe them{% if owed or owed_holds %} <span data-testid="owed-open-count" class="font-normal text-gray-600">— {{ owed_open_count }} open</span>{% endif %}</h3>
+  <h3 id="owed" data-testid="owed-heading" class="text-base font-semibold text-gray-900 scroll-mt-20">{% if owed_holds %}What we owe — to clear the shipment{% if owed_holds_via %} <span data-testid="owed-via" class="font-normal text-gray-700">(via {{ owed_holds_via }})</span>{% endif %}{% else %}What we owe them{% endif %}{% if owed or owed_holds %} <span data-testid="owed-open-count" class="font-normal text-gray-600">— {{ owed_open_count }} open</span>{% endif %}</h3>
   {% if not supply_as_of %}
   <a href="{% url 'supply_chain:contract_commitment_record' contract.id %}"
      class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>
@@ -830,8 +830,8 @@ The section stays only if one was somehow recorded, so it is not hidden.
             {% endif %}
           </td>
         </tr>
-        {% comment %}What the invoice_above_contract check found -- the total, then the unit price
-        and freight it bills -- as a small table of its own, indented under the invoice, with its
+        {% comment %}What the invoice_above_contract check found -- the unit price and freight, then the total
+        they add up to -- as a small table of its own, indented under the invoice, with its
         own columns (Line · Billed · Agreed · Difference · flag). Borrowing the invoice's grid put
         AGREED under QUANTITY BILLED and the flag under TOLD BY. The first cell of each row is the
         indent, so the line's name reads as the second.{% endcomment %}
@@ -861,9 +861,9 @@ The section stays only if one was somehow recorded, so it is not hidden.
                     {% else %}
                     <td class="px-4 py-1 tabular-nums text-gray-900 whitespace-nowrap text-right" colspan="3"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}>+{{ mark.text }}</td>
                     {% endif %}
-                    {% comment %}The Total row is flagged only when it stands alone: under rows that each
-                    carry the tag, a third tag on their sum repeats them.{% endcomment %}
-                    <td class="px-4 py-1">{% if not mark.tag or invoice.above_agreed|length == 1 %}<span data-testid="above-agreed-tag" class="inline-flex items-center whitespace-nowrap rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span>{% endif %}</td>
+                    {% comment %}Every row above agreed carries the tag, the Total included: a Total with no
+                    tag under parts that each have one read as if the sum were not above.{% endcomment %}
+                    <td class="px-4 py-1"><span data-testid="above-agreed-tag" class="inline-flex items-center whitespace-nowrap rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></td>
                   </tr>
                 {% endfor %}
                 </tbody>
