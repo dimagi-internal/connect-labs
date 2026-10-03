@@ -263,6 +263,74 @@ def _build_visit_dict(row: dict) -> dict:
     }
 
 
+# One cached row -> one result row object. Shared by the whole-result cache reads
+# below and the paged server-side query (workflow/pipeline_query.py), so a row read
+# a page at a time is the same row the stream ships.
+
+
+def visit_row_from_cache(cached_row) -> VisitRow:
+    """A VisitRow from one ComputedVisitCache row."""
+    # Parse GPS from location string (format: "lat lon alt accuracy")
+    latitude, longitude, accuracy = None, None, None
+    if cached_row.location:
+        parts = cached_row.location.split()
+        if len(parts) >= 2:
+            try:
+                latitude = float(parts[0])
+                longitude = float(parts[1])
+                if len(parts) >= 4:
+                    accuracy = float(parts[3])
+            except (ValueError, IndexError):
+                pass
+
+    return VisitRow(
+        id=str(cached_row.visit_id),
+        user_id=None,
+        username=cached_row.username,
+        visit_date=(datetime.combine(cached_row.visit_date, datetime.min.time()) if cached_row.visit_date else None),
+        status=cached_row.status,
+        flagged=cached_row.flagged,
+        latitude=latitude,
+        longitude=longitude,
+        accuracy_in_m=accuracy,
+        deliver_unit_id=cached_row.deliver_unit_id,
+        deliver_unit_name=cached_row.deliver_unit,
+        entity_id=cached_row.entity_id,
+        entity_name=cached_row.entity_name,
+        computed=cached_row.computed_fields,
+    )
+
+
+def entity_row_from_cache(row) -> EntityRow:
+    """An EntityRow from one ComputedEntityCache row."""
+    entity_row = EntityRow(
+        entity_id=row.entity_id,
+        entity_name=row.entity_name,
+        username=row.username,
+        total_visits=row.total_visits,
+        first_visit_date=row.first_visit_date,
+        last_visit_date=row.last_visit_date,
+    )
+    entity_row.custom_fields = row.aggregated_fields
+    return entity_row
+
+
+def flw_row_from_cache(row) -> FLWRow:
+    """An FLWRow from one ComputedFLWCache row."""
+    flw_row = FLWRow(
+        username=row.username,
+        total_visits=row.total_visits,
+        approved_visits=row.approved_visits,
+        pending_visits=row.pending_visits,
+        rejected_visits=row.rejected_visits,
+        flagged_visits=row.flagged_visits,
+        first_visit_date=row.first_visit_date,
+        last_visit_date=row.last_visit_date,
+    )
+    flw_row.custom_fields = row.aggregated_fields
+    return flw_row
+
+
 class SQLBackend:
     """
     SQL backend for analysis.
@@ -1093,20 +1161,7 @@ class SQLBackend:
 
         # Load FLW results from SQL cache
         flw_qs = cache_manager.get_flw_results_queryset()
-        flw_rows = []
-        for row in flw_qs:
-            flw_row = FLWRow(
-                username=row.username,
-                total_visits=row.total_visits,
-                approved_visits=row.approved_visits,
-                pending_visits=row.pending_visits,
-                rejected_visits=row.rejected_visits,
-                flagged_visits=row.flagged_visits,
-                first_visit_date=row.first_visit_date,
-                last_visit_date=row.last_visit_date,
-            )
-            flw_row.custom_fields = row.aggregated_fields
-            flw_rows.append(flw_row)
+        flw_rows = [flw_row_from_cache(row) for row in flw_qs]
 
         return FLWAnalysisResult(
             opportunity_id=opportunity_id,
@@ -1200,40 +1255,7 @@ class SQLBackend:
                     logger.info(f"[SQL] Applying computed field filter: {key}={value}")
 
         # Build VisitRow objects directly from ComputedVisitCache
-        visit_rows = []
-        for cached_row in computed_qs:
-            # Parse GPS from location string (format: "lat lon alt accuracy")
-            latitude, longitude, accuracy = None, None, None
-            if cached_row.location:
-                parts = cached_row.location.split()
-                if len(parts) >= 2:
-                    try:
-                        latitude = float(parts[0])
-                        longitude = float(parts[1])
-                        if len(parts) >= 4:
-                            accuracy = float(parts[3])
-                    except (ValueError, IndexError):
-                        pass
-
-            visit_row = VisitRow(
-                id=str(cached_row.visit_id),
-                user_id=None,
-                username=cached_row.username,
-                visit_date=(
-                    datetime.combine(cached_row.visit_date, datetime.min.time()) if cached_row.visit_date else None
-                ),
-                status=cached_row.status,
-                flagged=cached_row.flagged,
-                latitude=latitude,
-                longitude=longitude,
-                accuracy_in_m=accuracy,
-                deliver_unit_id=cached_row.deliver_unit_id,
-                deliver_unit_name=cached_row.deliver_unit,
-                entity_id=cached_row.entity_id,
-                entity_name=cached_row.entity_name,
-                computed=cached_row.computed_fields,
-            )
-            visit_rows.append(visit_row)
+        visit_rows = [visit_row_from_cache(cached_row) for cached_row in computed_qs]
 
         # Build field metadata from config
         field_metadata = [{"name": f.name, "description": f.description} for f in config.fields]
@@ -1261,18 +1283,7 @@ class SQLBackend:
         logger.info(f"[SQL] Entity cache HIT for opp {opportunity_id}")
 
         entity_qs = cache_manager.get_entity_results_queryset()
-        entity_rows = []
-        for row in entity_qs:
-            entity_row = EntityRow(
-                entity_id=row.entity_id,
-                entity_name=row.entity_name,
-                username=row.username,
-                total_visits=row.total_visits,
-                first_visit_date=row.first_visit_date,
-                last_visit_date=row.last_visit_date,
-            )
-            entity_row.custom_fields = row.aggregated_fields
-            entity_rows.append(entity_row)
+        entity_rows = [entity_row_from_cache(row) for row in entity_qs]
 
         return EntityAnalysisResult(
             opportunity_id=opportunity_id,

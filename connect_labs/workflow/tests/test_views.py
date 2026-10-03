@@ -1106,7 +1106,7 @@ class TestPipelineDataProgramOwnedFallback:
         assert response.status_code == 200
         assert json.loads(response.content) == {"audit_reports": {"rows": [], "metadata": {}}}
         # Fell back to the first id in the definition's opportunity_ids, not a 400.
-        mock_wda.get_pipeline_data.assert_called_once_with(5181, 1973)
+        mock_wda.get_pipeline_data.assert_called_once_with(5181, 1973, skip_on_demand=True)
 
     def test_get_pipeline_data_api_still_400s_with_no_context_at_all(self, dimagi_user, rf: RequestFactory):
         """Single-opp workflow with genuinely no context anywhere still 400s
