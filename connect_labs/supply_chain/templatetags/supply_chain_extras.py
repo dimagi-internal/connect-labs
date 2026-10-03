@@ -979,17 +979,23 @@ def bold_after_arrow(text):
 
 
 @register.filter
-def record_kind_lead(text):
-    """A record line under an email with its kind set apart: "<b>Outreach</b> · Sahel · Replied ...".
+def record_kind_lead(text, sender=""):
+    """A record line under an email with its kind set apart: "<b>Outreach</b> · Replied ...".
 
     Under an email's excerpt, what was recorded from it read at the same weight
     as the evidence; the record's kind in semibold marks the line as the record.
-    The rest reads as `bold_after_arrow` reads it.
+    The rest reads as `bold_after_arrow` reads it. The record's name is left out
+    when it is the sender the event is already headed by ("Email from Amadou
+    Issoufou, Sahel Nutrition Industries"): said on every line under it, it
+    repeated three times per email.
     """
     text = str(text or "")
     kind, sep, rest = text.partition(" · ")
     if not sep or len(kind) > 24:
         return bold_after_arrow(text)
+    name, named, after = rest.partition(" · ")
+    if named and name.strip() and sender and str(sender).rstrip().endswith(name.strip()):
+        rest = after
     return mark_safe(
         f'<span data-testid="record-kind" class="font-semibold">{escape(kind)}</span> · {bold_after_arrow(rest)}'
     )
