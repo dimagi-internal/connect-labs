@@ -264,9 +264,9 @@ scenes:
     ranking quotes that cannot be ranked; seen before the duty terms are settled, it shows what
     an unsettled duty question costs.
   show: Sophie opens the tender's comparison, side by side; no quote is comparable
-    yet. The import duty terms are not settled, so Harmattan's carriage-paid quote
-    waits on them, Kanem has not stated its pack, and Sahel's new quote is in euros
-    with no exchange rate recorded.
+    yet, for more than one reason. The import duty terms are not settled, so Harmattan's
+    carriage-paid quote waits on them, Kanem has not stated its pack, and Sahel's new
+    quote is in euros with no exchange rate recorded.
   url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
 - id: what-we-owe-northgate
   full_page: false
@@ -321,7 +321,7 @@ scenes:
   - kind: scroll_to
     target: "css:[data-testid=draft]:has-text('Our reply')"
   - kind: hover
-    note: the drafted reply, Northgate's questions restated, ready to copy into her mailbox
+    note: the drafted reply, Northgate's three questions restated, an answer to write under each
     say: reply
     seconds: 2.5
     target: "css:[data-testid=draft]:has-text('Our reply') [data-testid=draft-text]"
@@ -349,7 +349,7 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the comparison under the waiver -- the duty terms line, the count of comparable quotes and the Import duty row settled for the quotes we import
+    note: the canonical frame is the comparison under the waiver -- the duty terms line, one of three comparable (Harmattan), and the Import duty row settled for the quotes we import
   concept_claim: Settling the tender's import duty terms from its Terms box is one choice;
     the tender then lists the reply still owed to Northgate with a drafted email, and
     the comparison costs every quote that leaves the import to us under the terms set.
@@ -357,8 +357,10 @@ scenes:
     as a move on us it is Sophie's to-do with its email drafted, and one setting of
     the tender's terms settles how any quote that leaves the import to us is costed.
   show: Sophie settles the tender's import duty in its Terms box as the program's duty
-    waiver, opens the reply to Northgate drafted from On us, then opens the comparison,
-    which now costs the quotes we import under the waiver.
+    waiver, opens the reply to Northgate drafted from On us -- its three questions, an
+    answer to write under each -- then opens the comparison, which now costs the quotes
+    we import under the waiver; Harmattan's is comparable, Kanem's and Sahel's still
+    miss facts of their own.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: held-on-us
   full_page: false
@@ -474,19 +476,24 @@ scenes:
     seconds: 2.0
     target: "css:[data-testid=overview-row][data-kind=tender][data-tender-id='${round2_tender_id}'] [data-testid=next-move]"
   - kind: hover
+    note: the just-asked RUSF tender's row -- collecting quotes, its next move the suppliers'
+    say: Maiduguri
+    seconds: 2.0
+    target: "css:[data-testid=overview-row][data-kind=tender][data-tender-id='${rusf_tender_id}'] [data-testid=whose]"
+  - kind: hover
     note: park the cursor in the top bar's blank middle, off the table
     seconds: 0.6
     target: css:header.fixed
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the overview -- the counts of moves on her and on suppliers, and each row's stage, next move and whose it is
+    note: the canonical frame is the overview -- the counts of moves on her and on suppliers, and each row's stage, next move and whose it is, Us on tender 2 and the order, Suppliers on the RUSF tender
   concept_claim: The overview lists each tender and order in progress with its stage,
     its next move and whose move it is, and counts the moves on us against those waiting
     on suppliers.
   design_intent: The overview is where Sophie starts her day; it must already say
     where each thing stands and whose move it is.
   show: Sophie returns to the overview and reads the moves counted on her and on suppliers,
-    then each row -- the tender 1 order and tender 2 -- with its stage, its next move
-    and whose it is.
+    then each row -- tender 2, the just-asked RUSF tender and the tender 1 order -- with
+    its stage, its next move and whose it is.
   url: /supply/?program_id=${program_id}
