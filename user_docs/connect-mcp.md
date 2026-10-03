@@ -178,6 +178,37 @@ If you have not connected OCS to your Labs account yet, the pipeline will tell y
 
 ---
 
+## Drive-Backed Pipelines
+
+Workflows that read data from Google Drive have received several improvements to speed, memory use, and correctness.
+
+### Shared reads across pipelines
+
+If a workflow page has several pipelines that all point at the same Drive source (same folder or file, file pattern, null markers, username column, and date column), Labs now reads that source **once** and shares the result between them. Previously each pipeline fetched its own copy, which multiplied load time and browser memory for every extra pipeline on the page.
+
+### On-demand pipelines
+
+A pipeline source can be marked **on demand** using `workflow_add_pipeline_source(..., load="on_demand")`. When the run page opens, an on-demand pipeline does **not** download all of its rows to the browser. Instead, the report asks the server for only the rows it needs — filtered, searched, and paged on the server — so the browser receives a small result set rather than the full dataset.
+
+This is the right setting for any large pipeline where the page only ever shows a filtered slice of the data (for example, one question's answers searched by keyword). Without it, a large free-text answers pipeline can ship hundreds of thousands of rows to the browser on every page load.
+
+!!! tip "When to use on-demand loading"
+    Use `load="on_demand"` for any pipeline that is large and whose page always queries or filters before displaying results. Leave it off for pipelines that genuinely need all rows in the browser at once (for example, a small lookup table used for client-side joins).
+
+### Summary pipeline fixes
+
+Three correctness issues in entity-level summary pipelines have been fixed:
+
+| Issue | Before | Now |
+| --- | --- | --- |
+| **Entity filters not applied** | A pipeline with `filters` (for example "only Kebbi state" or "only answered_clean") silently counted every row. | Filters now restrict what the pipeline counts. |
+| **`first` / `last` with a filter ignored** | A field using `first` or `last` with a `filter_path` / `filter_value` returned the same value regardless of the filter. | Returns the correct value for the matching rows only. |
+| **Upper-case field names** | A field name with upper-case letters saved successfully but always read back as empty. | Upper-case letters in a field name are now rejected when the pipeline is saved, so the problem is caught immediately. |
+
+If you have an existing summary pipeline that uses filters or `first`/`last` with a filter, check its output — results may change now that the filters are actually applied.
+
+---
+
 ## High-Fidelity Synthetic Data (Case Timelines)
 
 When you profile an opportunity and generate synthetic data, you can request **case timelines** (`case_timelines=true`). This is the high-fidelity mode: it produces realistic, fully generated data rather than near-copies of real records.
@@ -228,46 +259,4 @@ The tool returns a `task_id` straight away. Use `synthetic_job_status(task_id)` 
 Generating, cloning, and fidelity scoring over MCP now run as **background jobs on the worker**, not inside the web request. This means one person's clone no longer slows Labs down for everyone else.
 
 - Each tool still returns its usual result: it waits for the job, up to **8 minutes**.
-- Pass `wait=false` to get a `task_id` immediately without waiting.
-- At most **2 synthetic jobs** run at the same time across the whole system, so other worker slots stay free for audits and AI reviews. Additional requests wait in the queue.
-
-!!! tip "If your job is taking a while"
-    Use `synthetic_job_status(task_id)` to check progress. If you passed `wait=false` or the 8-minute wait elapsed, the task ID is all you need to pick up the result later.
-
-### Step-by-step tools (advanced)
-
-If you need finer control, the individual profiling and generation tools are still available on the full-access address. They are labelled **ADVANCED** in the tool descriptions — most people should use `synthetic_clone_opp` instead. On the restricted address, only `synthetic_clone_opp` and its companion tools (status, fidelity, demo environments, visibility) are offered.
-
----
-
-## Editing Workflows
-
-!!! tip "Working with real program data?"
-    Launch Claude via [Safe Mode](connect-safe-mode.md) before running `/workflow-author` — it blocks data-exfiltration channels while keeping workflow edits available.
-
-Use the MCP-powered workflow skill:
-
-```
-/workflow-author
-```
-
-Then describe what you want in plain English. Claude will:
-
-1. Pull the current workflow definition from Labs
-2. Show you what it plans to change
-3. Apply the change and push it back
-4. Confirm the update was successful
-
-To verify your change: open the workflow in your browser at [labs.connect.dimagi.com](https://labs.connect.dimagi.com).
-
-### Iteration loop and deployment bar
-
-Workflow definitions are user-generated content stored in Connect prod — updating them requires no pull request and no code review. Keep a low bar for pushing changes: if something looks wrong, describe the fix and let Claude push again. To revert, tell Claude what to undo and it will push a corrected version. If you can't resolve an issue after a few iterations, ask in **#connect-labs**.
-
-The power of this loop is: describe change → Claude pushes → reload browser → verify → repeat. Get comfortable with that cadence rather than doing a lot of intermediate work to validate locally first.
-
-**Note:** changes to the MCP server itself (the Labs code that powers these tools) _do_ require a code deploy. But for all workflow edits, the MCP push is sufficient.
-
-### Template authoring (regular Claude session only)
-
-Safe Mode is for editing **live workflow instances**. If you are authoring or updating a **
+- Pass `wait=false
