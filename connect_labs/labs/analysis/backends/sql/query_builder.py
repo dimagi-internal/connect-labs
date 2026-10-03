@@ -734,6 +734,13 @@ def _aggregation_to_sql(
     # When that happens, build the sub-pipe scope here:
     #   sub_pipe = "AND sub.pipeline_id IS NULL" if pipeline_id is None
     #              else f"AND sub.pipeline_id = {pipeline_id}"
+    predicate = _per_field_filter_predicate(field_name, filter_path, filter_paths, filter_value, filter_op)
+    # first / last / list carry their own FILTER (the non-null guard), so the
+    # per-field predicate is folded INTO it rather than appended below -- Postgres
+    # allows one FILTER per aggregate. These three used to return before the
+    # per-field filter was applied at all, so `first(typology_name)` filtered on
+    # typology_id = 'T2' read the group's first name whatever its typology.
+    non_null = f"{value_expr} IS NOT NULL" + (f" AND {predicate}" if predicate else "")
     if agg == "count":
         base = f"COUNT({value_expr})"
     elif agg == "sum":
@@ -743,19 +750,18 @@ def _aggregation_to_sql(
     elif agg == "first":
         return (
             f"(ARRAY_AGG({value_expr} ORDER BY visit_date ASC NULLS LAST, visit_id ASC) "
-            f"FILTER (WHERE {value_expr} IS NOT NULL))[1]"
+            f"FILTER (WHERE {non_null}))[1]"
         )
     elif agg == "count_distinct" or agg == "count_unique":
         base = f"COUNT(DISTINCT {value_expr})"
     elif agg == "last":
         return (
             f"(ARRAY_AGG({value_expr} ORDER BY visit_date DESC NULLS LAST, visit_id DESC) "
-            f"FILTER (WHERE {value_expr} IS NOT NULL))[1]"
+            f"FILTER (WHERE {non_null}))[1]"
         )
     elif agg == "list":
         # Aggregate as array, will be converted to Python list
-        # Note: list already has its own FILTER clause, skip per-field filter
-        return f"ARRAY_AGG({value_expr}) FILTER (WHERE {value_expr} IS NOT NULL)"
+        return f"ARRAY_AGG({value_expr}) FILTER (WHERE {non_null})"
     elif agg == "min":
         base = f"MIN({value_expr})"
     elif agg == "max":
@@ -835,36 +841,47 @@ def _aggregation_to_sql(
             "count_unique, list, median, mode, mode_share, dup_share."
         )
 
-    # Apply per-field FILTER clause if filter_value is provided. The filter
-    # source is either a single path (filter_path) or a list coalesced via
-    # NULLIF (filter_paths) — the latter mirrors the field's `paths` semantics
-    # so a multi-path field can filter on the SAME coalesced value, required
-    # for v1 fidelity on metrics like EBF where the field coalesces 5 form
-    # paths and the check applies to whichever one matched.
-    #
-    # filter_op switches the comparison shape: "eq" (default) is exact
-    # equality; "contains_word" treats the value as a whitespace-tokenized
-    # list and matches when filter_value is one of the tokens.
-    if (filter_path or filter_paths) and filter_value:
-        if filter_paths:
-            filter_sql = _paths_to_coalesce_sql(filter_paths)
-        else:
-            filter_sql = _filter_path_to_sql(filter_path)
-        # TRIM the extracted value before comparison — production form data
-        # often has trailing whitespace (e.g., MBW form_name = "ANC Visit "
-        # with a trailing space). v1 always strips before comparing; without
-        # TRIM here, v3 would fail to match and miss rows entirely.
-        # contains_word does its own tokenization (string_to_array) which
-        # naturally handles whitespace; TRIM is unnecessary there.
-        if filter_op == "eq":
-            predicate = f"TRIM({filter_sql}) = '{_sql_str(filter_value)}'"
-        elif filter_op == "contains_word":
-            predicate = f"'{_sql_str(filter_value)}' = ANY(string_to_array(COALESCE({filter_sql}, ''), ' '))"
-        else:
-            raise ValueError(f"Unknown filter_op {filter_op!r} on field {field_name!r}. Valid: 'eq', 'contains_word'.")
+    if predicate:
         base = f"{base} FILTER (WHERE {predicate})"
 
     return base
+
+
+def _per_field_filter_predicate(
+    field_name: str,
+    filter_path: str = "",
+    filter_paths: list[str] | None = None,
+    filter_value: str = "",
+    filter_op: str = "eq",
+) -> str | None:
+    """The per-field FILTER predicate (filter_path / filter_value), or None when unset.
+
+    The filter source is either a single path (filter_path) or a list coalesced via
+    NULLIF (filter_paths) — the latter mirrors the field's `paths` semantics so a
+    multi-path field can filter on the SAME coalesced value, required for v1 fidelity
+    on metrics like EBF where the field coalesces 5 form paths and the check applies
+    to whichever one matched.
+
+    filter_op switches the comparison shape: "eq" (default) is exact equality;
+    "contains_word" treats the value as a whitespace-tokenized list and matches when
+    filter_value is one of the tokens.
+    """
+    if not ((filter_path or filter_paths) and filter_value):
+        return None
+    if filter_paths:
+        filter_sql = _paths_to_coalesce_sql(filter_paths)
+    else:
+        filter_sql = _filter_path_to_sql(filter_path)
+    # TRIM the extracted value before comparison — production form data often has
+    # trailing whitespace (e.g., MBW form_name = "ANC Visit " with a trailing space).
+    # v1 always strips before comparing; without TRIM here, v3 would fail to match
+    # and miss rows entirely. contains_word does its own tokenization
+    # (string_to_array) which naturally handles whitespace; TRIM is unnecessary there.
+    if filter_op == "eq":
+        return f"TRIM({filter_sql}) = '{_sql_str(filter_value)}'"
+    if filter_op == "contains_word":
+        return f"'{_sql_str(filter_value)}' = ANY(string_to_array(COALESCE({filter_sql}, ''), ' '))"
+    raise ValueError(f"Unknown filter_op {filter_op!r} on field {field_name!r}. Valid: 'eq', 'contains_word'.")
 
 
 def _build_histogram_fields(hist: HistogramComputation, opportunity_id: int) -> list[tuple[str, str]]:
@@ -1456,7 +1473,17 @@ def build_flw_aggregation_query(
         transformed_expr = _transform_to_sql(field, value_expr)
 
         if field.aggregation == "list":
-            agg_expr = f"ARRAY_AGG({transformed_expr}) FILTER (WHERE {transformed_expr} IS NOT NULL)"
+            # Same SQL as _aggregation_to_sql("list"), which also honours the
+            # per-field filter_path / filter_value.
+            agg_expr = _aggregation_to_sql(
+                "list",
+                transformed_expr,
+                field.name,
+                filter_path=field.filter_path,
+                filter_paths=field.filter_paths,
+                filter_value=field.filter_value,
+                filter_op=field.filter_op,
+            )
             select_parts.append(f"{agg_expr} as {_sql_ident(field.name)}")
         else:
             agg_expr = _aggregation_to_sql(
@@ -1663,7 +1690,17 @@ def build_entity_aggregation_query(
         transformed_expr = _transform_to_sql(field, value_expr)
 
         if field.aggregation == "list":
-            agg_expr = f"ARRAY_AGG({transformed_expr}) FILTER (WHERE {transformed_expr} IS NOT NULL)"
+            # Same SQL as _aggregation_to_sql("list"), which also honours the
+            # per-field filter_path / filter_value.
+            agg_expr = _aggregation_to_sql(
+                "list",
+                transformed_expr,
+                field.name,
+                filter_path=field.filter_path,
+                filter_paths=field.filter_paths,
+                filter_value=field.filter_value,
+                filter_op=field.filter_op,
+            )
             select_parts.append(f"{agg_expr} as {_sql_ident(field.name)}")
         else:
             agg_expr = _aggregation_to_sql(

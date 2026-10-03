@@ -50,6 +50,8 @@ import type {
   WorkflowState,
   WorkflowActionExecution,
   WorkflowActionWorker,
+  PipelineRowsQuery,
+  PipelineRowsQueryResult,
 } from '@/components/workflow/types';
 import {
   MessageCircle,
@@ -1578,9 +1580,69 @@ function WorkflowRunner({
     [initialData.actions],
   );
 
+  const queryPipelineRowsUrl = initialData.apiEndpoints?.queryPipelineRows;
   const actions = useMemo(() => {
     return {
       ...createActionHandlers(csrfToken),
+      // Server-side rows of one pipeline alias (filters/search/order/page in
+      // SQL) -- how render code reads a `load: "on_demand"` source, which the
+      // page does not stream. A cold cache answers 202 "warming" while a
+      // background task fills it; this polls until the rows are ready.
+      queryPipelineRows: async (
+        alias: string,
+        query: PipelineRowsQuery = {},
+      ): Promise<PipelineRowsQueryResult> => {
+        if (!queryPipelineRowsUrl) {
+          throw new Error('queryPipelineRows is not available on this page.');
+        }
+        const { onStatus, timeoutMs, ...body } = query;
+        const url = new URL(queryPipelineRowsUrl, window.location.origin);
+        applyScopeParams(url.searchParams);
+        const deadline = Date.now() + (timeoutMs ?? 10 * 60 * 1000);
+        for (;;) {
+          const response = await fetch(url.toString(), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': csrfToken,
+            },
+            body: JSON.stringify({ alias, ...body }),
+          });
+          let data: Record<string, unknown> = {};
+          try {
+            data = await response.json();
+          } catch {
+            throw new Error(
+              `queryPipelineRows: server error ${response.status}`,
+            );
+          }
+          if (response.status === 202 && data.status === 'warming') {
+            if (onStatus) onStatus(String(data.message || 'Loading...'));
+            if (Date.now() > deadline) {
+              throw new Error(
+                `queryPipelineRows: the ${alias} pipeline is still loading; try again shortly.`,
+              );
+            }
+            const wait = Number(data.retry_after_ms) || 3000;
+            await new Promise((r) => setTimeout(r, wait));
+            continue;
+          }
+          if (!response.ok || data.status !== 'ready') {
+            throw new Error(
+              String(
+                data.error || `queryPipelineRows: HTTP ${response.status}`,
+              ),
+            );
+          }
+          return {
+            rows: (data.rows as Record<string, unknown>[]) || [],
+            total: Number(data.total) || 0,
+            limit: Number(data.limit) || 0,
+            offset: Number(data.offset) || 0,
+          };
+        }
+      },
       runAction: (
         key: string,
         args: { workers: WorkflowActionWorker[]; [k: string]: unknown },
@@ -1599,7 +1661,7 @@ function WorkflowRunner({
         );
       },
     };
-  }, [csrfToken, workflowActions]);
+  }, [csrfToken, workflowActions, queryPipelineRowsUrl, applyScopeParams]);
 
   // useRunView: abstracts snapshot-vs-live data reads and exposes view.complete().
   //

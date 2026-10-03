@@ -14,7 +14,7 @@ import logging
 import re
 
 from connect_labs.labs.analysis.backends.sql.query_builder import generate_sql_preview
-from connect_labs.labs.analysis.config import VALID_AGGREGATIONS
+from connect_labs.labs.analysis.config import VALID_AGGREGATIONS, field_name_problem
 from connect_labs.workflow.data_access import PipelineDataAccess, serialize_pipeline_row
 
 from ..connect_token import require_connect_token
@@ -274,6 +274,9 @@ def _validate_pipeline_schema(schema: dict) -> None:
     for i, f in enumerate(fields):
         if not isinstance(f, dict):
             raise MCPToolError("INVALID_SCHEMA", f"schema.fields[{i}] must be a dict")
+        problem = field_name_problem(f.get("name"))
+        if problem:
+            raise MCPToolError("INVALID_SCHEMA", f"schema.fields[{i}]: {problem}")
         agg = f.get("aggregation")
         if agg and agg not in VALID_AGGREGATIONS:
             raise MCPToolError(
