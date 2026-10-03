@@ -161,7 +161,9 @@ class DriveClient:
         files: list[dict] = []
         while True:
             try:
-                resp = self._timed_get(f"{DRIVE_API}/files", headers=self._headers(), params=params, timeout=self._timeout)
+                resp = self._timed_get(
+                    f"{DRIVE_API}/files", headers=self._headers(), params=params, timeout=self._timeout
+                )
                 resp.raise_for_status()
             except httpx.HTTPError as e:
                 raise DriveAPIError(f"list_folder_files({folder_id}) failed: {e}") from e
