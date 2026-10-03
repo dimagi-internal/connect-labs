@@ -8,7 +8,7 @@
     "held-on-us",
     "whose-move"
   ],
-  "fetched_at": "2026-10-02T23:33:26.038106+00:00",
+  "fetched_at": "2026-10-03T04:36:11.157250+00:00",
   "name": "supply-sophie-unanswered-round",
   "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program. Round 1's 2,000 cartons, ordered from Harmattan in July, are still not in Kano, and 17 days ago she asked six suppliers to quote round 2: half have never answered, despite two reminders, and she forwards whatever does arrive to an AI that records it. Sophie opens round 2 and reads who answered and who has said nothing, how long each has been silent and when she last chased them, and that the round has not yet settled how import duties are handled. She opens the reminder drafted for Sahel, which says when Sahel was asked and last reminded, and records today's chase from the draft itself. Sahel answers with a quote; Sophie forwards it, sees Sahel's row move to replied, and opens Sahel's own email in the round's history beside what the AI recorded from it. On the comparison only Harmattan's quote can be compared on landed total: Kanem's has not stated how many sachets are in a carton, and Sahel's gives no freight figure, no duty figure and no exchange rate, while the round's duty terms are still not settled. Northgate's questions are waiting on her, and she answers the one about who imports: we import, under the program's duty waiver; please state freight to Kano. She marks that answer as the round's import duty terms, and the round's header now reads them, for every quote on the round. Importing makes the paperwork hers, and round 1 shows what that means: on the order with Harmattan, the forwarder's message says the trucks are held at the border on our import permit, so the next move is hers, not the supplier's, and Harmattan's invoice is flagged above the agreed price. Back on her overview, Sophie reads who is still silent, what each quote still lacks, and whose move each thing is.",
   "personas": {
@@ -39,8 +39,8 @@
           "verify": "Playwright: [data-testid=outreach-replied-count] reads '3 of 6 replied'"
         },
         {
-          "id": "tender-duty-terms-line",
           "description": "The tender header carries a line stating the round's import duty terms, reading not settled until a value is set.",
+          "id": "tender-duty-terms-line",
           "verify": "Playwright: [data-testid=tender-duty-terms] reads 'Import duties: not settled'"
         }
       ],
@@ -53,18 +53,18 @@
     {
       "features": [
         {
-          "id": "reminder-drafts",
           "description": "The drafts panel lists a Reminder draft for each of the three silent suppliers.",
+          "id": "reminder-drafts",
           "verify": "Playwright: #drafts contains 3 drafts labelled 'Reminder', one for Sahel Nutrition Industries"
         },
         {
-          "id": "reminder-why-line",
           "description": "Each reminder draft says when the supplier was asked and last reminded.",
+          "id": "reminder-why-line",
           "verify": "Playwright: Sahel's draft [data-testid=draft-why] contains 'no reply is recorded' and 'last reminded on'"
         },
         {
-          "id": "record-chase-on-draft",
           "description": "A reminder draft carries a Chased on date, defaulting to today, and a Record chase button that saves last_reminder_on and returns to the round with Sahel's Last chased cell marked.",
+          "id": "record-chase-on-draft",
           "verify": "Playwright: Sahel's draft shows [data-testid=chase-date] and a 'Record chase' button; after clicking it, tr[data-changed] is Sahel Nutrition Industries' row"
         }
       ],
@@ -106,8 +106,8 @@
           "verify": "Playwright: /compare/ reads '1 of 3 quotes can be compared on landed total'; Harmattan Therapeutics is under Comparable with a landed total; the Kanem Foods Ltd card shows 'Blocking: Sachets per carton not stated on the quote'; the Sahel Nutrition Industries card shows 'Quote is in EUR and no exchange rate was recorded', 'Freight excluded from the quote but no freight amount recorded' and 'Duties excluded from the quote but no duties amount recorded', and no quantity mismatch"
         },
         {
-          "id": "comparison-duty-terms-note",
           "description": "A one-line note at the top of the comparison states the round's import duty terms and what they mean for quotes that leave duty out.",
+          "id": "comparison-duty-terms-note",
           "verify": "Playwright: [data-testid=comparison-duty-terms] reads 'Import duties for this round: not settled'"
         }
       ],
@@ -120,18 +120,18 @@
     {
       "features": [
         {
-          "id": "owed-list-tender",
           "description": "The What we owe them section lists Northgate's open questions with raised day and text.",
+          "id": "owed-list-tender",
           "verify": "Playwright: #owed shows 3 rows under 'Northgate Commodities' with '3 questions', each reading how many days it has been open"
         },
         {
-          "id": "answer-sets-duty-terms",
           "description": "The Mark answered form carries a select [data-testid=answer-duty-terms] (name duty_terms), labelled 'This answer sets the round's import duty terms'; submitting with a value records the answer and sets the tender's duty terms as an attributed operation with a Revision.",
+          "id": "answer-sets-duty-terms",
           "verify": "Playwright: the resolve form shows 'This answer sets the round's import duty terms'; after choosing buyer_waiver and Save, the importer question's answer reads 'We import, under the program's duty waiver; please state freight to Kano.'"
         },
         {
-          "id": "tender-duty-terms-set",
           "description": "The tender header's duty terms line reads the terms just set, with who set them, carrying the just-changed marker.",
+          "id": "tender-duty-terms-set",
           "verify": "Playwright: [data-testid=tender-duty-terms] contains 'Import duties: we import, under the program's duty waiver' and 'by Sophie'"
         }
       ],
@@ -178,8 +178,8 @@
           "verify": "Playwright: [data-testid=standing-table] contains 'import permit'"
         },
         {
-          "id": "overview-missing-facts-waiver",
           "description": "With the round's duty terms set to the buyer's waiver, the overview's Missing facts for Sahel no longer lists the duties amount.",
+          "id": "overview-missing-facts-waiver",
           "verify": "Playwright: [data-testid=standing-table] contains 'Sahel Nutrition Industries (exchange rate, freight amount)' and not 'duties amount'"
         }
       ],
