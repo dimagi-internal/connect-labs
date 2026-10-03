@@ -370,7 +370,7 @@ def test_the_order_sections_share_one_heading_style(da, world, client_in_program
 def test_a_held_document_makes_the_orders_move_ours(da, world, client_in_program):
     _held_on_our_form_m(da, world)
     body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-    assert 'data-testid="whose">Us<' in body
+    assert 'data-testid="whose-us" data-count="1">Us 1<' in body
     assert "Provide 1 document to " in body
 
 

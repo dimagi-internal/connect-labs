@@ -74,6 +74,17 @@ def _blocked_by_terms(row) -> bool:
     return _ROUND_DUTY in (row.gaps or [])
 
 
+def gap_owner(gap: str) -> str:
+    """Whose a gap is: our tender terms and the rates we record are ours; what a quote states, the supplier's."""
+    return rules.US if gap == _ROUND_DUTY or gap.startswith("exchange rate") else rules.SUPPLIERS
+
+
+def split_gaps(gaps) -> tuple[list, list]:
+    """(ours, the supplier's), by gap_owner -- one rule for the tile and the grid."""
+    gaps = list(gaps or [])
+    return [g for g in gaps if gap_owner(g) == rules.US], [g for g in gaps if gap_owner(g) != rules.US]
+
+
 # ---- the tender's status ---------------------------------------------------
 
 
@@ -154,21 +165,22 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
                 }
         elif questions:
             row["chip"] = {"label": "Questions for us", "tone": OURS}
-            row["missing"] = [f"{_plural(len(questions), 'answer')} from us"]
+            row["missing"] = []
             reply = f"draft-reply-{sid}"
             row["action"] = {"label": "Reply", "href": f"#{reply}" if reply in draft_anchors else "#owed"}
         elif sid in silent:
             days = (today - asked).days if asked else None
-            row["chip"] = {"label": f"Silent {_plural(days, 'day')}" if days is not None else "Silent", "tone": THEIRS}
+            row["chip"] = {"label": f"Silent {days}d" if days is not None else "Silent", "tone": THEIRS}
             count = max(((reminder_counts or {}).get(o.pk, 0) for o in mine), default=0)
             if chased:
                 count = max(count, 1)
-            row["missing"] = [f"chased {_day(chased)}" + (f" ({_ordinal(count)})" if count else "")] if chased else []
+            row["missing"] = []
+            row["chased"] = (_day(chased) + (f" · {_ordinal(count)}" if count else "")) if chased else ""
             if anchor in draft_anchors:
                 row["action"] = {"label": "Remind", "href": f"#{anchor}"}
             elif mine:
                 row["action"] = {
-                    "label": "Record reply",
+                    "label": "Record a reply",
                     "href": reverse("supply_chain:procurement_outreach_reply", args=[mine[0].pk]),
                 }
         else:
@@ -176,6 +188,28 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             row["chip"] = {"label": (kind.replace("_", " ") or "replied").capitalize(), "tone": NEUTRAL}
             row["missing"] = []
         supplier_rows.append(row)
+
+    # The rail on this page: in the table's order, named by supplier (the chip carries the silence),
+    # and a reminder not yet due shows when it falls due instead of Remind.
+    from datetime import timedelta
+
+    from connect_labs.supply_chain.procurement.operations import DEFAULT_REMINDER_INTERVAL_DAYS
+
+    interval = getattr(tender, "reminder_interval_days", None) or DEFAULT_REMINDER_INTERVAL_DAYS
+    position = {sid: i for i, sid in enumerate(order)}
+    theirs.sort(key=lambda m: position.get(m.supplier_id, len(order)))
+    for m in theirs:
+        name = suppliers[m.supplier_id].name if m.supplier_id in suppliers else m.text
+        rows_for = silent.get(m.supplier_id) or []
+        asked = max((o.sent_on for o in rows_for if o.sent_on), default=None)
+        chased = max((o.last_reminder_on for o in rows_for if o.last_reminder_on), default=None)
+        m.text = name
+        m.chip = f"Silent {(today - asked).days}d" if asked else "Silent"
+        if f"draft-supplier-{m.supplier_id}" not in draft_anchors and chased:
+            m.due = f"next due {_day(chased + timedelta(days=interval))}"
+    for m in ours:
+        if m.rule == rules.RULE_DEADLINE:
+            m.text = "Decide: extend, close or award"
 
     # Tiles.
     with_questions = sum(1 for sid in invited if owed_by_org.get(getattr(suppliers[sid], "org_id", None)))
@@ -186,7 +220,10 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
     ]
     chased_silent = sum(1 for rows in silent.values() if any(o.last_reminder_on for o in rows))
     blocked_terms = sum(1 for c in compared for row in c.blocked if _blocked_by_terms(row))
-    blocked_other = sum(1 for c in compared for row in c.blocked if not _blocked_by_terms(row))
+    split = [split_gaps(row.gaps) for c in compared for row in c.blocked]
+    waiting_us = sum(1 for ours_g, _ in split if ours_g)
+    supplier_facts = sum(len(theirs_g) for _, theirs_g in split)
+    supplier_count = sum(1 for _, theirs_g in split if theirs_g)
     oldest = min((m.since for m in ours if m.since), default=None)
     tiles = [
         {
@@ -215,21 +252,17 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         {
             "label": "Comparable quotes",
             "value": f"{comparable} / {quoted}",
-            "sub": (
-                "blocked by our duty terms"
-                if blocked_terms and not blocked_other
-                else " · ".join(
-                    p
-                    for p in (
-                        f"{blocked_terms} on our duty terms" if blocked_terms else "",
-                        (
-                            (f"{blocked_other} missing facts" if blocked_other > 1 else "1 missing a fact")
-                            if blocked_other
-                            else ""
-                        ),
-                    )
-                    if p
+            "sub": " · ".join(
+                p
+                for p in (
+                    f"{waiting_us} waiting on us" if waiting_us else "",
+                    (
+                        f"{_plural(supplier_facts, 'fact')} missing from {_plural(supplier_count, 'supplier')}"
+                        if supplier_facts
+                        else ""
+                    ),
                 )
+                if p
             ),
             "tone": "",
         },
@@ -393,6 +426,9 @@ def related_order(tender, today, *, own_org_id=None) -> dict | None:
         "supplier": contract.supplier.name,
         "url": reverse("supply_chain:order_detail", args=[contract.pk]),
         "stage": row.stage if row is not None else "",
+        "stage_parts": [
+            p.strip() for p in (row.stage if row is not None else "").replace(" · ", ", ").split(",") if p.strip()
+        ],
         "ours": ours,
     }
 
@@ -400,7 +436,9 @@ def related_order(tender, today, *, own_org_id=None) -> dict | None:
 # ---- the comparison grid ---------------------------------------------------
 
 
-def comparison_grid(tender, comparison: dict, quotes_by_id: dict, *, ai_quotes=(), awarded=(), draft_anchors=()):
+def comparison_grid(
+    tender, comparison: dict, quotes_by_id: dict, *, ai_quotes=(), awarded=(), draft_anchors=(), waiver_on_file=True
+):
     """{"quotes": [...columns], "rows": [...facts]} from a tender_compare snapshot and the quotes themselves."""
     from connect_labs.supply_chain.procurement.services.pricing import buyer_imports
     from connect_labs.supply_chain.records import freight_and_duties_for_incoterm
@@ -416,34 +454,59 @@ def comparison_grid(tender, comparison: dict, quotes_by_id: dict, *, ai_quotes=(
         src = AI if row["quote_id"] in ai_quotes else PERSON
         base, pack = row.get("base_unit") or "", row.get("pack_unit") or ""
         pack_gap = f"per {unit_noun(pack)}" if pack else "per pack"
-        supplier_gaps = [g for g in gaps if g != _ROUND_DUTY]
-        # The quote's status, and one action.
+        our_gaps, supplier_gaps = split_gaps(gaps)
+        quote_url = reverse("supply_chain:procurement_quote_detail", args=[row["quote_id"]])
+        anchor = f"draft-supplier-{row.get('supplier_id')}"
+        # The quote's status chips (one per party owing a fact), and one action per open gap, ours first.
+        chips, actions = [], []
         if row["quote_id"] in awarded:
-            chip, action = {"label": "Awarded", "tone": PRIMARY}, None
+            chips.append({"label": "Awarded", "tone": PRIMARY})
         elif row.get("is_comparable"):
-            chip = {"label": "Comparable", "tone": PRIMARY}
-            action = {"label": "Award", "href": f"#award-{row['quote_id']}", "award": True}
-        elif gaps and not supplier_gaps:
-            chip = {"label": "Waiting on our duty terms", "tone": OURS}
-            action = {"label": "Settle duty terms", "href": "#duty-terms"}
+            chips.append({"label": "Comparable", "tone": PRIMARY})
+            actions.append({"label": "Award", "href": f"#award-{row['quote_id']}", "award": True, "owner": ""})
         else:
-            chip = {"label": f"Missing {_plural(len(supplier_gaps), 'fact')}", "tone": THEIRS}
-            anchor = f"draft-supplier-{row.get('supplier_id')}"
-            action = {
-                "label": f"Ask for {supplier_gaps[0]}" if supplier_gaps else "Open quote",
-                "href": (
-                    f"{tender_url}#{anchor}"
-                    if anchor in draft_anchors
-                    else reverse("supply_chain:procurement_quote_detail", args=[row["quote_id"]])
-                ),
-            }
+            if our_gaps:
+                chips.append(
+                    {
+                        "label": (
+                            "Waiting on our duty terms"
+                            if our_gaps == [_ROUND_DUTY]
+                            else f"Waiting on us · {_plural(len(our_gaps), 'fact')}"
+                        ),
+                        "tone": OURS,
+                    }
+                )
+            if supplier_gaps:
+                chips.append({"label": f"Missing {_plural(len(supplier_gaps), 'fact')}", "tone": THEIRS})
+            for g in our_gaps:
+                actions.append(
+                    {"label": "Settle duty terms", "href": "#duty-terms", "owner": rules.US}
+                    if g == _ROUND_DUTY
+                    else {"label": f"Record {g}", "href": quote_url, "owner": rules.US}
+                )
+            for g in supplier_gaps:
+                actions.append(
+                    {
+                        "label": f"Ask for {g}",
+                        "href": f"{tender_url}#{anchor}" if anchor in draft_anchors else quote_url,
+                        "owner": rules.SUPPLIERS,
+                    }
+                )
+        if not chips:
+            chips.append({"label": "Not comparable", "tone": NEUTRAL})
+        waiver_pending = tender.duty_terms == "buyer_waiver" and not waiver_on_file and buyer_imports(quote)
+        if waiver_pending and row.get("is_comparable"):
+            chips.append({"label": "waiver document not on file", "tone": OURS})
         columns.append(
             {
                 "quote_id": row["quote_id"],
                 "name": row.get("supplier_name"),
                 "item": row.get("item_name") or "",
-                "chip": chip,
-                "action": action,
+                "chip": chips[0],
+                "chips": chips,
+                "actions": actions,
+                "action": actions[0] if actions else None,
+                "blocked_by_terms": _ROUND_DUTY in gaps,
                 "href": reverse("supply_chain:procurement_quote_detail", args=[row["quote_id"]]),
                 "comparable": bool(row.get("is_comparable")),
             }
@@ -451,9 +514,9 @@ def comparison_grid(tender, comparison: dict, quotes_by_id: dict, *, ai_quotes=(
 
         why = {b.get("label"): b.get("fact") for b in row.get("blockers") or [] if isinstance(b, dict)}
 
-        def gap(words="not stated", label=None):
+        def gap(words="not stated", label=None, owner=rules.SUPPLIERS):
             reason = why.get(label) if label else next((f for k, f in why.items() if k and words and k in words), "")
-            return {"v": words, "gap": True, "src": src, "why": reason or ""}
+            return {"v": words, "gap": True, "src": src, "why": reason or "", "owner": owner}
 
         def fact(value, source=src):
             return {"v": value, "gap": False, "src": source}
@@ -478,7 +541,9 @@ def comparison_grid(tender, comparison: dict, quotes_by_id: dict, *, ai_quotes=(
         if quote.delivery_mode == "pickup":
             cells["imports"].append(fact("Us (we collect)", CALC))
         elif quote.incoterm or quote.duties_basis in ("included", "excluded"):
-            cells["imports"].append(fact("Us" if buyer_imports(quote) else "Supplier", CALC))
+            term_code = ((quote.incoterm or "").split() or [""])[0].upper()
+            who = "Us" if buyer_imports(quote) else "Supplier"
+            cells["imports"].append(fact(f"{who} · {term_code}" if term_code else who, CALC))
         else:
             cells["imports"].append(gap("not known"))
         freight_basis = quote.freight_basis
@@ -501,7 +566,10 @@ def comparison_grid(tender, comparison: dict, quotes_by_id: dict, *, ai_quotes=(
             cells["freight"].append(fact(f"{quote.as_quoted_currency} {money_digits(quote.freight_amount)} added"))
         else:
             cells["freight"].append(blank())
-        cells["duty"].append(_duty_cell(tender, quote, gaps, src))
+        duty = _duty_cell(tender, quote, gaps, src)
+        if duty.get("v") == "waived (our import)" and not waiver_on_file:
+            duty["pending"] = "document not on file"
+        cells["duty"].append(duty)
         if (quote.as_quoted_currency or "USD") == "USD":
             cells["fx"].append(blank())
         elif quote.fx_rate_to_usd is not None:
@@ -509,9 +577,22 @@ def comparison_grid(tender, comparison: dict, quotes_by_id: dict, *, ai_quotes=(
                 fact(f"1 {quote.as_quoted_currency} = {quote.fx_rate_to_usd.normalize():f} USD", PERSON)
             )
         else:
-            cells["fx"].append(gap("not recorded", label="exchange rate"))
+            cells["fx"].append(gap("not recorded", label="exchange rate", owner=rules.US))
         landed = (row.get("figures") or {}).get("usd_per_pack_normalized") or {}
-        if isinstance(landed, dict) and landed.get("amount") not in (None, "") and not landed.get("unconfirmed"):
+        if not row.get("is_comparable") and row["quote_id"] not in awarded:
+            # Not comparable: no figure, only what blocks it, each with whose it is.
+            cells["landed"].append(
+                {
+                    "v": "—",
+                    "gap": False,
+                    "mute": True,
+                    "src": "",
+                    "blocked": [
+                        {"label": "duty terms" if g == _ROUND_DUTY else g, "owner": gap_owner(g)} for g in gaps
+                    ],
+                }
+            )
+        elif isinstance(landed, dict) and landed.get("amount") not in (None, "") and not landed.get("unconfirmed"):
             cells["landed"].append(fact(f"{landed.get('currency') or 'USD'} {money_digits(landed['amount'])}", CALC))
         else:
             cells["landed"].append(blank())
@@ -519,7 +600,14 @@ def comparison_grid(tender, comparison: dict, quotes_by_id: dict, *, ai_quotes=(
         if not spec:
             cells["spec"].append(blank())
         elif spec.get("outcome") == "pass":
-            cells["spec"].append(fact(spec.get("summary") or "meets", CALC))
+            met = spec.get("met") or []
+            cells["spec"].append(
+                fact(
+                    (f"Meets {'; '.join(met)}" if met else spec.get("summary") or "meets")
+                    + (f" ({len(met)} of {spec.get('requirement_count') or len(met)} met)" if len(met) > 1 else ""),
+                    CALC,
+                )
+            )
         else:
             cells["spec"].append(
                 {
@@ -527,10 +615,12 @@ def comparison_grid(tender, comparison: dict, quotes_by_id: dict, *, ai_quotes=(
                     "gap": True,
                     "src": CALC,
                     "why": "; ".join(spec.get("failures") or []),
+                    "owner": rules.SUPPLIERS,
                 }
             )
     pack_label = f"{unit_noun(rows[0].get('pack_unit') or 'pack')}" if rows else "pack"
     facts = [
+        ("landed", f"Landed per {pack_label}", "calculated"),
         ("price", "Quoted price", "as quoted"),
         ("pack", "Pack", "as quoted"),
         ("term", "Delivery term", "as quoted"),
@@ -539,7 +629,6 @@ def comparison_grid(tender, comparison: dict, quotes_by_id: dict, *, ai_quotes=(
         ("duty", "Import duty", "tender terms"),
         ("fx", "Exchange rate", "recorded by us"),
         ("spec", "Specification", "checked"),
-        ("landed", f"Landed per {pack_label}", "calculated"),
     ]
     # Each cell names its quote, so a page (or a recorder) can find one quote's fact.
     for key, *_ in facts:
@@ -580,7 +669,7 @@ def _duty_cell(tender, quote, gaps, src) -> dict:
 
     terms = tender.duty_terms or ""
     if _ROUND_DUTY in gaps:
-        return {"v": "our terms: not settled", "gap": True, "src": CALC}
+        return {"v": "our terms: not settled", "gap": True, "src": CALC, "owner": rules.US}
     if not buyer_imports(quote):
         if quote.duties_basis == "included" or (quote.incoterm or "").upper().startswith("DDP"):
             return {"v": "in price (supplier)", "gap": False, "src": src}
@@ -590,16 +679,16 @@ def _duty_cell(tender, quote, gaps, src) -> dict:
                 "gap": False,
                 "src": src,
             }
-        return {"v": "not stated", "gap": True, "src": src}
+        return {"v": "not stated", "gap": True, "src": src, "owner": rules.SUPPLIERS}
     if terms == "buyer_waiver":
         return {"v": "waived (our import)", "gap": False, "src": CALC}
     if terms == "buyer_pays":
         if tender.duty_estimate_percent is None:
-            return {"v": "our estimate: not recorded", "gap": True, "src": CALC}
+            return {"v": "our estimate: not recorded", "gap": True, "src": CALC, "owner": rules.US}
         from decimal import Decimal
 
         percent = Decimal(str(tender.duty_estimate_percent)).normalize()
         return {"v": f"our estimate {percent:f}%", "gap": False, "src": CALC}
     if any(g.startswith("duties") for g in gaps):
-        return {"v": "not stated", "gap": True, "src": src}
+        return {"v": "not stated", "gap": True, "src": src, "owner": rules.SUPPLIERS}
     return {"v": "—", "gap": False, "mute": True, "src": ""}

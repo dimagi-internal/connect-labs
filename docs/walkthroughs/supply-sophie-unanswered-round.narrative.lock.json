@@ -29,9 +29,9 @@
           "verify": "Playwright: [data-testid=stage-bar] li[aria-current=step] reads 'Collecting quotes' and 'deadline passed'"
         },
         {
-          "description": "The Suppliers table gives each supplier's state, and On suppliers lists each silent supplier with when it was asked and last chased.",
+          "description": "The Suppliers table gives each supplier's state, what its quote is missing and when it was last chased, and On suppliers lists each silent supplier in the table's order, with when it was asked and last chased.",
           "id": "outreach-last-chased-column",
-          "verify": "Playwright: Sahel Nutrition Industries' [data-testid=supplier-state] reads 'Silent 17 days' and [data-testid=on-suppliers] contains 'Sahel Nutrition Industries' and 'chased'"
+          "verify": "Playwright: Sahel Nutrition Industries' [data-testid=supplier-state] reads 'Silent 17d' and [data-testid=on-suppliers] contains 'Sahel Nutrition Industries' and 'chased'"
         },
         {
           "description": "The Answered tile counts replies of all asked.",
@@ -112,7 +112,7 @@
         }
       ],
       "id": "whats-still-missing",
-      "narrative": "Sophie opens the comparison, every quote side by side, and none can be compared yet, for more than one reason. The tender's import duty terms are not settled, and Harmattan quotes carriage paid to Kano, which leaves the import to us, so its duty is ours to cost and its column waits on our terms. Each quote's other gaps are marked where they fall: Kanem has not stated its pack, and Sahel's new quote is in euros, with no exchange rate recorded yet. Settling the terms would free only the quotes that leave the import to us; Kanem's pack and Sahel's rate are still owed.",
+      "narrative": "Sophie opens the comparison, every quote side by side, and none can be compared yet, for more than one reason. The tender's import duty terms are not settled, and Harmattan quotes carriage paid to Kano, which leaves the import to us, so its duty is ours to cost and its column waits on our terms. Each quote's other gaps are marked where they fall: Kanem has not stated its pack, and Sahel's new quote is in euros, with no exchange rate recorded yet. Settling the terms would free only the quotes that leave the import to us; Kanem's pack and Sahel's rate are still owed. A quote that cannot be compared shows no landed figure, only a dash and its open gaps, each marked as ours or the supplier's.",
       "persona": "sophie",
       "provenance": "S4",
       "title": "No quote can be compared yet: duty terms unsettled, facts missing"
@@ -136,7 +136,7 @@
         }
       ],
       "id": "what-we-owe-northgate",
-      "narrative": "Back on the tender, Sophie settles import duty in its Terms box: we import, under the program's duty waiver, and the box reads the waiver, just recorded. Northgate's three questions are still on her under On us, and Reply opens an email drafted with the three questions, an answer to write under each. She opens the comparison again: the duty line reads the waiver, the Import duty row is settled for the quotes we import, and Harmattan's quote is now comparable, one of three; Kanem's and Sahel's still wait on their missing facts.",
+      "narrative": "Back on the tender, Sophie settles import duty in its Terms box: we import, under the program's duty waiver, and the box reads the waiver, just recorded. Northgate's three questions are still on her under On us, and Reply opens an email drafted with the three questions, an answer to write under each. She opens the comparison again: the duty line reads the waiver, the Import duty row is settled for the quotes we import, and Harmattan's quote is now comparable, one of three, its duty counted as waived while the waiver document is not yet on file; Kanem's and Sahel's still wait on their missing facts.",
       "persona": "sophie",
       "provenance": "S5",
       "title": "She settles the tender's duty terms and replies to Northgate"
@@ -175,16 +175,16 @@
         {
           "description": "The order's row reads its stage and its next move, ours: the documents owed to the forwarder.",
           "id": "overview-waiting-on-us",
-          "verify": "Playwright: the order's [data-testid=next-move] contains 'Provide 2 documents to Crescent Freight & Clearing' and its [data-testid=whose] reads 'Us'"
+          "verify": "Playwright: the order's [data-testid=next-move] contains 'Provide 2 documents to Crescent Freight & Clearing' and its [data-testid=whose] contains 'Us'"
         },
         {
           "description": "Each tender's row reads its stage on the six steps, its next move and whose it is: tender 2's move is ours, and the just-asked RUSF tender's, with no replies yet, is the suppliers'.",
           "id": "overview-missing-facts-waiver",
-          "verify": "Playwright: tender 2's [data-testid=row-stage] contains 'Collecting quotes' and its [data-testid=whose] reads 'Us'; the RUSF tender's [data-testid=row-stage] contains 'Collecting quotes' and its [data-testid=whose] reads 'Suppliers'"
+          "verify": "Playwright: tender 2's [data-testid=row-stage] contains 'Collecting quotes' and its [data-testid=whose] contains 'Us'; the RUSF tender's [data-testid=row-stage] contains 'Collecting quotes' and its [data-testid=whose] contains 'Suppliers'"
         }
       ],
       "id": "whose-move",
-      "narrative": "Back on her overview, Sophie reads the moves counted on her against those waiting on suppliers, then each row: tender 2 still collecting quotes, its next move hers; a RUSF tender for Maiduguri she asked three suppliers about two days ago, still collecting quotes, its next move theirs; and the tender 1 order at customs, its next move hers.",
+      "narrative": "Back on her overview, Sophie reads the moves counted on us against those waiting on suppliers, each row carrying its own count of each, so the totals add up: tender 2 still collecting quotes, its next move hers; a RUSF tender for Maiduguri she asked three suppliers about two days ago, still collecting quotes, its next move theirs; and the tender 1 order at customs, its next move hers.",
       "persona": "sophie",
       "provenance": "S7",
       "title": "Whose move each procurement is, ours or the suppliers'"

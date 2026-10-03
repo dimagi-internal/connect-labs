@@ -518,7 +518,7 @@ class TestHomePage:
         assert reverse("supply_chain:order_detail", args=[contract["id"]]) in table
         assert "0 of 1 answered" in table
         assert "Northwind Foods: reply (silent " in table
-        assert "in transit" in table
+        assert "In transit" in table
         assert "Kano Health Partners" in table
         assert "data-ai" in table and "AI assistant" in table
 

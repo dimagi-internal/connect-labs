@@ -30,6 +30,7 @@ from connect_labs.supply_chain.procurement.services.compliance import (
     PASS,
     check_compliance,
     requirement_label,
+    requirement_line,
 )
 from connect_labs.supply_chain.procurement.services.pricing import (
     COMPARABILITY_FIELDS,
@@ -355,6 +356,8 @@ class ComparisonRow:
                 if r.outcome == "not_stated"
             ],
             "failures": failures,
+            # Each requirement met, named with its figure, for a cell that says which.
+            "met": [requirement_line(r.requirement) for r in self.compliance if r.outcome == PASS],
             "stated_on_quote": stated_on_quote,
             "stated_values": stated_values,
             "confirmed_by_item": confirmed_by_item,

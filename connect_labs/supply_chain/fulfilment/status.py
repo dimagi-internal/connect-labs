@@ -39,7 +39,8 @@ def _day(value) -> str:
             value = date.fromisoformat(value[:10])
         except ValueError:
             return value
-    return f"{value.day} {value.strftime('%b')}"
+    # A non-breaking space, so a stage note never wraps between the day and its month.
+    return f"{value.day}\u00a0{value.strftime('%b')}"
 
 
 def _money(cell) -> str:
@@ -116,11 +117,7 @@ def order_status(
             if last_receipt
             else ("in full" if received_full else "—")
         ),
-        (
-            "invoice above agreed"
-            if invoice_above and not paid_all
-            else ("paid" if paid_all and priced else "nothing to pay" if not priced else "—")
-        ),
+        _paid_note(match, priced, paid_all, invoice_above, contract),
     ]
     names = ["Awarded", "Ordered", "Dispatched", transit_name, "Received", "Paid"]
     stages = [{"name": n, "note": note, "state": s} for n, note, s in zip(names, notes, _stage_states(index))]
@@ -149,7 +146,9 @@ def order_status(
             "label": "Billed vs agreed",
             "value": f"{currency} {money_digits(total['billed'])}".strip(),
             "sub": f"+{currency} {money_digits(total['difference'])} above {money_digits(total['agreed'])} agreed",
-            "tone": OURS,
+            # Neutral ground: whose move it is rides on the chip, so the tile does not read as an On us item.
+            "tone": "",
+            "chips": [{"label": "invoice check", "tone": OURS}],
         }
     else:
         billed = _amount(match.get("billed_amount")) or 0
@@ -168,24 +167,45 @@ def order_status(
             "tone": "",
         }
     else:
+        paid_pct = _paid_percent(match, invoice_above, contract)
         paid_tile = {
             "label": "Paid",
             "value": _money(match.get("paid_amount")) if _amount(match.get("paid_amount")) else "—",
             "sub": (
                 f"safe to pay now {_money(match.get('payable_now'))}"
                 if _amount(match.get("payable_now"))
-                else "nothing safe to pay yet" if not paid_all else "settled"
+                else "settled" if paid_all else f"{paid_pct}% of agreed" if paid_pct is not None else ""
             ),
             "tone": "",
+            # The invoice check, as a chip on the money it holds back -- not on the stage bar.
+            "chips": (
+                [{"label": "hold: invoice above agreed", "tone": OURS}] if invoice_above and not paid_all else []
+            ),
         }
 
     late = (contract_late or {}).get("facts") or {}
     if late:
+        due = date.fromisoformat(late["expected_on"]) if late.get("expected_on") else None
+        # Whose days they are: the supplier's, to its dispatch (all of them while nothing
+        # is dispatched); a hold on us, since the goods sit waiting on our documents.
+        dispatch_days = [
+            date.fromisoformat(str(s["dispatched_on"])[:10]) for s in dispatched if s.get("dispatched_on")
+        ]
+        chips = []
+        if due is not None:
+            if dispatch_days:
+                supplier_days = max(0, (min(dispatch_days) - due).days)
+            else:
+                supplier_days = int(late.get("days_late") or 0)
+            chips.append({"label": f"supplier {supplier_days} d", "tone": THEIRS})
+        if held_on_us:
+            chips.append({"label": "held on us", "tone": OURS})
         late_tile = {
             "label": "Days late",
             "value": str(late.get("days_late", "")),
-            "sub": f"due {day_text(date.fromisoformat(late['expected_on']))}" if late.get("expected_on") else "",
-            "tone": OURS if held_on_us else "",
+            "sub": f"due {day_text(due)}" if due else "",
+            "tone": "",
+            "chips": chips,
         }
     else:
         late_tile = {
@@ -202,6 +222,9 @@ def order_status(
         late_tile,
     ]
 
+    for tile in tiles:
+        tile.setdefault("chips", [])
+
     chip = None
     if header_status:
         tone = header_status.get("tone")
@@ -214,3 +237,35 @@ def order_status(
             ),
         }
     return {"chip": chip, "stages": stages, "tiles": tiles}
+
+
+def _agreed_total(match, invoice_above, contract):
+    above = (invoice_above or {}).get("facts") or {}
+    total = next((line for line in above.get("above") or [] if line.get("field") == "total"), None)
+    if total is not None and total.get("agreed") not in (None, ""):
+        return float(total["agreed"])
+    try:
+        return float(contract.get("unit_price")) * float(contract.get("quantity"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _paid_percent(match, invoice_above, contract):
+    paid, agreed = _amount((match or {}).get("paid_amount")), _agreed_total(match, invoice_above, contract)
+    if not paid or not agreed:
+        return None
+    return round(100 * paid / agreed)
+
+
+def _paid_note(match, priced, paid_all, invoice_above, contract) -> str:
+    """The Paid step's facts: payments only ("advance USD 53,400 · 50%"); the invoice check is a chip on the tiles."""
+    if not priced:
+        return "nothing to pay"
+    if paid_all:
+        return "paid"
+    paid = _amount((match or {}).get("paid_amount"))
+    if not paid:
+        return "—"
+    pct = _paid_percent(match, invoice_above, contract)
+    words = "advance " if (match or {}).get("advance_state") else ""
+    return f"{words}{_money(match.get('paid_amount'))}" + (f" · {pct}%" if pct is not None else "")

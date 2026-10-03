@@ -67,7 +67,7 @@ out on every render and never stored.
       <li class="stage--{{ s.state }}" data-stage-state="{{ s.state }}"{% if s.state == "now" %} aria-current="step"{% endif %}>
         <div class="stage-seg stage-seg--{{ s.state }}"></div>
         <div class="stage-name">{{ s.name }}</div>
-        <div class="stage-note">{% if s.note != "—" %}{% include "supply_chain/_src.html" with src="calc" %}{% endif %}{{ s.note }}</div>
+        <div class="stage-note">{{ s.note }}</div>
       </li>
       {% endfor %}
     </ol>
@@ -78,6 +78,7 @@ out on every render and never stored.
         <div class="stat-tile-label">{{ t.label }}</div>
         <div class="stat-tile-value">{{ t.value }}</div>
         <div class="text-xs text-gray-600">{{ t.sub|default:"&nbsp;" }}</div>
+        {% if t.chips %}<div class="mt-1 flex flex-wrap gap-1" data-testid="tile-chips">{% for c in t.chips %}<span class="status-chip status-chip--{{ c.tone }}">{{ c.label }}</span>{% endfor %}</div>{% endif %}
       </div>
       {% endfor %}
     </div>
@@ -91,7 +92,7 @@ out on every render and never stored.
       {% if award %}<dt class="text-gray-600">Award</dt><dd class="text-gray-900"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award.id %}">Against the award to {{ award.supplier_name|default:"the supplier" }}</a>, decided {{ award.decided_on|day|default:"undated" }}{% if award.decided_by %} by {{ award.decided_by }}{% endif %}</dd>{% endif %}
       {% if contract.covers_shortfall_of_id %}<dt class="text-gray-600">Why this order</dt><dd class="text-gray-900">Covers the shortfall on <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.covers_shortfall_of_id %}">{% if covers.reference %}{{ covers.reference }}{% else %}order {{ contract.covers_shortfall_of_id }}{% endif %}</a></dd>{% endif %}
       {% if contract.consideration == "in_kind" or contract.consideration == "bundled" %}<dt class="text-gray-600">Payment</dt><dd class="text-gray-900">{% if contract.consideration == "in_kind" %}In kind — donated{% else %}Bundled in setup fee <span class="text-gray-600">· bought out of {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"the buyer"|possessive }} setup fee</span>{% endif %}</dd>{% endif %}
-      {% if contract.source %}<dt class="text-gray-600">Recorded by</dt><dd class="text-gray-900">{% told_by_for contract orgs tellers %}</dd>{% endif %}
+      {% if contract.source %}<dt class="text-gray-600">Recorded by</dt><dd class="text-gray-900" data-testid="order-recorded-by">{% told_by_for contract orgs tellers as told %}{% comment %}"we recorded it" named nobody: the person who wrote the order down, and the day, from its history.{% endcomment %}{% with first=timeline|last %}{% if told == "we recorded it" and first and first.actor %}{{ first.actor|ai_words }}, {{ first.when|day }}{% else %}{{ told }}{% endif %}{% endwith %}</dd>{% endif %}
     </dl>
     {% if award_approvals %}
       <ul class="text-sm text-gray-600" data-testid="award-approvals">
@@ -108,10 +109,21 @@ out on every render and never stored.
     {% endif %}
   </section>
 
+  {% if moves_theirs %}
   <div class="grid gap-4 md:grid-cols-2">
     {% include "supply_chain/_moves.html" with moves=moves_ours whose="ours" heading="On us" testid="on-us" count_testid="on-us-count" %}
     {% include "supply_chain/_moves.html" with moves=moves_theirs whose="theirs" heading="On the supplier or forwarder" testid="on-supplier" %}
   </div>
+  {% else %}
+  {% comment %}Nothing on the supplier or forwarder: one compact row, so On us takes the width.{% endcomment %}
+  <div class="flex flex-col gap-2">
+    {% include "supply_chain/_moves.html" with moves=moves_ours whose="ours" heading="On us" testid="on-us" count_testid="on-us-count" %}
+    <div class="border-brand-border-light flex items-baseline gap-3 rounded-lg border bg-white px-5 py-2.5 text-sm" data-testid="on-supplier" aria-label="On the supplier or forwarder">
+      <span class="font-semibold text-brand-deep-purple">On the supplier or forwarder</span>
+      <span class="status-chip status-chip--neutral tabular-nums">0 · Nothing</span>
+    </div>
+  </div>
+  {% endif %}
 
   {% comment %}The records, folded: each opens on its own, and a link to one of its anchors opens it.{% endcomment %}
 
