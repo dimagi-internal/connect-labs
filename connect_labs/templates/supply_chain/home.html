@@ -181,9 +181,9 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
   </span>
 </h2>
 
-{% include "supply_chain/_phase.html" with phase="Source" accent="border-brand-indigo" stages=summary.source|source_stages %}
-{% include "supply_chain/_phase.html" with phase="Order" accent="border-indigo-400" stages=summary.order|order_stages %}
-{% include "supply_chain/_phase.html" with phase="Deliver" accent="border-teal-500" stages=summary.deliver|deliver_stages %}
+{% include "supply_chain/_phase.html" with phase="Source" accent="#3843d0" stages=summary.source|source_stages %}
+{% include "supply_chain/_phase.html" with phase="Order" accent="#818cf8" stages=summary.order|order_stages %}
+{% include "supply_chain/_phase.html" with phase="Deliver" accent="#14b8a6" stages=summary.deliver|deliver_stages %}
 
 {% comment %}
 The raw checks feed used to be rendered here in full: three columns of

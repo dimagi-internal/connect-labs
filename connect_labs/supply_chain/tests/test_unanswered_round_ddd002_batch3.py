@@ -57,7 +57,7 @@ class TestTheReminderDraft:
         assert Outreach.objects.get(pk=outreach_id).last_reminder_on == datetime.date(2026, 10, 2)
 
 
-def test_a_quote_s_void_is_set_apart_from_correct():
+def test_a_quote_s_void_is_a_link_like_correct():
     html = render_to_string(
         "supply_chain/_timeline_line.html",
         {
@@ -68,8 +68,9 @@ def test_a_quote_s_void_is_set_apart_from_correct():
     )
     fixes = re.search(r'data-testid="quote-fixes"[^>]*>(.*?)</div>', html, re.S).group(1)
     assert 'href="/c/" class="text-brand-indigo' in fixes
-    # Since DDD 003 batch 8: neutral at rest, red only on hover, still set apart from Correct.
-    assert 'data-testid="quote-void" class="font-normal text-gray-600 hover:text-red-700' in fixes
+    # Since the unanswered-round batch 1 judge: sibling controls styled alike (grey Void
+    # beside a blue Correct read as disabled).
+    assert 'data-testid="quote-void" class="text-brand-indigo hover:underline"' in fixes
 
 
 @pytest.mark.django_db

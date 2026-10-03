@@ -60,7 +60,7 @@ class TestTheComparisonUnderTheWaiver:
 
     def test_the_needs_info_section_carries_the_round_terms_and_the_missing_waiver(self, da, world, client_in_program):
         _answer_with_waiver(da, world)
-        _quote(da, world, pack_spec_source="not_stated", duties_basis="included")
+        _quote(da, world, pack_spec_source="not_stated", duties_basis="included", incoterm="CPT Kano")
         body = _comparison(client_in_program, world)
         if 'data-testid="needs-info"' not in body:
             pytest.skip("the quote is comparable in this world; nothing to card")

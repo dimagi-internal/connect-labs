@@ -81,7 +81,11 @@ class TestASilentRound:
             data={"responded": True, "response_kind": "needs_info", "responded_on": "2026-07-09"},
         )
         replied = _row(_tender_page(client_in_program, world["tender"]["id"]), outreach_id)
-        assert "Record another reply" in replied and 'data-testid="no-reply"' not in replied
+        assert (
+            "Record a reply" in replied
+            and "Record another reply" not in replied
+            and 'data-testid="no-reply"' not in replied
+        )
 
     def test_a_chase_does_not_restart_the_silence(self, da, world, client_in_program):
         # A reminder chases the same request; the silence still counts from the ask, as the overview does.

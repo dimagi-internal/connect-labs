@@ -213,9 +213,10 @@ class TestTheChainSaysItsScope:
         body = _home(home_client)
         chain = body[body.index("The chain") : body.index("Tenders</h2>")]
         # Broken down tender by tender, newest first, so it reads back to each round's comparison.
-        assert "Tender Two: 1 of 1 comparable" in _text(chain)
-        assert "1 of 1 comparable" in _text(chain).split("Tender Two: 1 of 1 comparable", 1)[1]
-        assert "live across 2 tenders" in _text(chain)
+        assert "Tender Two: 1 of 1 · " in _text(chain)
+        assert "1 of 1 quotes comparable" in _text(chain).split("Tender Two: 1 of 1", 1)[1]
+        # And the quotations, one count per tender, newest first.
+        assert "live: 1 on Tender Two · 1 on " in _text(chain)
 
 
 # ---- 6. the program is not named twice -------------------------------------

@@ -35,8 +35,11 @@ from connect_labs.supply_chain.procurement.services.pricing import (
     COMPARABILITY_FIELDS,
     FIGURE_FIELDS,
     FIGURE_LABELS,
+    _pack_spec,
+    buyer_imports,
     compute_figures,
     figure_nouns,
+    round_duty_applies,
 )
 from connect_labs.supply_chain.procurement.services.questions import (
     DUTY_RESTATE_KEY,
@@ -698,7 +701,7 @@ def pack_requirement_figure(commodity) -> str:
     return ""
 
 
-def per_pack_note(figures, base_unit, pack_unit) -> str:
+def per_pack_note(figures, base_unit, pack_unit, *, quoted_per_pack: str = "") -> str:
     """What a price stated per base unit comes to per pack, said after it.
 
     "= USD 43.50 per carton" when the pack is known; "(per carton once sachets
@@ -714,10 +717,32 @@ def per_pack_note(figures, base_unit, pack_unit) -> str:
     if any(key_for_reason(reason) == "pack_spec" for reason in reasons):
         return f"(per {pack} once {pack_words(base_unit, pack_unit)} is known)"
     if any("exchange rate" in (reason or "").lower() for reason in reasons):
+        if quoted_per_pack:
+            # The pack is stated, so the per-pack price in the quote's own
+            # currency is known now; only its conversion waits on the rate.
+            return f"= {quoted_per_pack}; in USD once an exchange rate is recorded"
         return f"(per {pack} once an exchange rate is recorded)"
     # No per-pack figure, so nothing was converted and nothing fed the ranking:
     # saying it did contradicted the blocker on the same card.
     return ""
+
+
+def quoted_per_pack_words(quote, item, row) -> str:
+    """ "EUR 46.50 per carton (150 sachets)": a per-base-unit price times the stated pack, in the quote's currency.
+
+    "" unless the pack is stated (on the quote or by a confirmed trade item) --
+    the catalogue's pack is never used, as in pricing._pack_spec.
+    """
+    if quote.as_quoted_amount is None or quote.as_quoted_unit != "per_base_unit":
+        return ""
+    pack = _pack_spec(quote, item)
+    if not isinstance(pack, int) or pack <= 0:
+        return ""
+    amount = Decimal(quote.as_quoted_amount) * pack
+    return (
+        f"{quote.as_quoted_currency or 'USD'} {money_digits(amount)} per {unit_noun(row.pack_unit)} "
+        f"({pack} {unit_noun(row.base_unit, pack)})"
+    )
 
 
 def as_quoted_words(quote, base_unit="", pack_unit="") -> str:
@@ -791,6 +816,10 @@ def round_duty_words(quote, tender) -> str:
         # the duty is our cost to settle, not a figure the supplier owes --
         # and not one a figure the supplier wrote can settle either.
         return "ours to cost (round terms not settled)"
+    if terms in ("buyer_waiver", "buyer_pays") and not buyer_imports(quote):
+        # The supplier imports (DDP): its own duty figure stands, said on the
+        # delivery line as the quote's word -- the round's waiver cannot reach it.
+        return ""
     if terms == "buyer_waiver":
         line = "waived (our import)"
     elif terms == "buyer_pays" and getattr(tender, "duty_estimate_percent", None) is not None:
@@ -859,7 +888,9 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
     currency = quote.as_quoted_currency or "USD"
     from_term = dict(zip(("freight", "duties"), freight_and_duties_for_incoterm(quote.incoterm), strict=True))
     terms = getattr(tender, "duty_terms", "") or ""
-    duty_is_ours = terms in ("buyer_waiver", "buyer_pays")
+    # Only a quote that leaves the import to us is costed by the round's terms;
+    # a DDP quote keeps its own duty figure under any of them.
+    duty_is_ours = round_duty_applies(quote, tender)
     legs = [] if duty_is_ours else [("duties", quote.duties_basis, quote.duties_amount)]
     if not pickup:
         legs.insert(0, ("freight", quote.freight_basis, quote.freight_amount))
@@ -889,7 +920,7 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
     # Duty the round's terms make ours, said as such: the figure is the
     # tender's, not the supplier's. A card that gives the terms their own line
     # (`round_duty_words`) leaves them out here.
-    if not round_duty:
+    if not round_duty or not duty_is_ours:
         pass
     elif terms == "buyer_waiver":
         parts.append("duty waived (our import)")
@@ -897,6 +928,22 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
         parts.append(f"our duty estimate {tender.duty_estimate_percent.normalize():f}% added")
     text = " · ".join(parts)
     return f"{text}, per {' and '.join(sources)}" if text and sources else text
+
+
+def _short_destination(text: str, tender) -> str:
+    """The card's delivery line without the round's own address repeated on every card.
+
+    A round with one delivery place: a card whose quote goes there names the place
+    and its city ("to Northern Nutrition Depot, Kano"), not the full address with
+    its country on every card. A quote for anywhere else keeps its address.
+    """
+    places = getattr(tender, "delivery_points", None) or []
+    if len(places) != 1:
+        return text
+    point = places[0] or {}
+    full = destination_phrase(places)
+    short = ", ".join(part for part in (point.get("name"), point.get("city")) if part)
+    return text.replace(f"to {full}", f"to {short}") if full and short else text
 
 
 def compare_tender(
@@ -960,9 +1007,11 @@ def compare_tender(
         )
         row.as_quoted = as_quoted_words(quote, row.base_unit, row.pack_unit)
         if quote.as_quoted_amount is not None and quote.as_quoted_unit == "per_base_unit" and row.pack_unit:
-            row.as_quoted_note = per_pack_note(figures, row.base_unit, row.pack_unit)
+            row.as_quoted_note = per_pack_note(
+                figures, row.base_unit, row.pack_unit, quoted_per_pack=quoted_per_pack_words(quote, item, row)
+            )
         row.landed_basis = landed_basis_words(quote, tender)
-        row.delivery_basis = landed_basis_words(quote, tender, round_duty=False)
+        row.delivery_basis = _short_destination(landed_basis_words(quote, tender, round_duty=False), tender)
         row.duty_line = round_duty_words(quote, tender)
         row.duty_consequence = round_duty_consequence(quote, tender)
         if needs_duty_restated(quote, tender):

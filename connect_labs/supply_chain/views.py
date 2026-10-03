@@ -701,14 +701,16 @@ def _mark_invoices(invoices, invoice_above):
 
     facts = (invoice_above or {}).get("facts") or {}
     currency = facts.get("currency") or ""
+    # Reading order: the unit price, then freight, then the Total they add up to.
+    order = {"unit_price": 0, "freight": 1, "total": 2}
+    lines = sorted(facts.get("above") or [], key=lambda line: order.get(line.get("field"), 1))
     for invoice in invoices:
         marks = []
-        for line in facts.get("above") or []:
+        for line in lines:
             if line.get("field") == "total":
                 if len(invoices) == 1:
-                    # "USD 3,550.00" beside an "above agreed" tag.
-                    marks.insert(
-                        0,
+                    # "USD 3,550.00" beside an "above agreed" tag, as the last row.
+                    marks.append(
                         {
                             "text": f"{currency} {money_digits(line['difference'])}",
                             "tag": True,
