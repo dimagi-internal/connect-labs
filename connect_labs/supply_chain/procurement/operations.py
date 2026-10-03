@@ -370,7 +370,12 @@ def _replies(access, tender, day, sender):
     """
     by_org = {}
     for commitment in access.list_commitments(tender_id=tender.pk, open_only=False):
-        if commitment.kind == "question" and (commitment.resolved_on is None or commitment.resolved_on == day):
+        # An answer already marked sent has gone; it is owed no reply from here.
+        if (
+            commitment.kind == "question"
+            and commitment.reply_sent_on is None
+            and (commitment.resolved_on is None or commitment.resolved_on == day)
+        ):
             by_org.setdefault(commitment.owed_to_org_id, []).append(commitment)
     suppliers = {s.org_id: s for s in access.list_suppliers()}
     drafts = []
@@ -417,6 +422,8 @@ def _replies(access, tender, day, sender):
                     else f"Every question from {name} answered today: the answers are written in, ready to send."
                 ),
                 "commitment_ids": [q.pk for q in questions],
+                # The answers written in, which the reply carries once sent (commitment_reply_sent).
+                "answered_ids": [q.pk for q in questions if q.resolved_on is not None],
             }
         )
     return drafts
@@ -1042,16 +1049,72 @@ def commitment_record(access, data):
     name="commitment_resolve",
     summary=(
         "Mark a question answered or a promise kept, with what was said or done and the day (today if "
-        "omitted). The row stays on record."
+        "omitted). The row stays on record. When the answer settles how the round's import duties are "
+        "handled, pass duty_terms (see tender_set_duty_terms) and the tender's terms are set too."
     ),
     input_schema=obj(
-        {"commitment_id": ID, "resolution": {"type": "string", "minLength": 1}, "resolved_on": _DATE},
+        {
+            "commitment_id": ID,
+            "resolution": {"type": "string", "minLength": 1},
+            "resolved_on": _DATE,
+            "duty_terms": {"enum": list(records.DUTY_TERMS)},
+        },
         required=("commitment_id", "resolution"),
     ),
     is_write=True,
 )
-def commitment_resolve(access, commitment_id, resolution, resolved_on=None):
-    return record(access.resolve_commitment(commitment_id, resolution, resolved_on=resolved_on))
+def commitment_resolve(access, commitment_id, resolution, resolved_on=None, duty_terms=None):
+    resolved = access.resolve_commitment(commitment_id, resolution, resolved_on=resolved_on)
+    out = record(resolved)
+    # An answer that settles how the round's import duties are handled ("We
+    # import, under the program's duty waiver") sets them on the tender in the
+    # same call, so the comparison reads what was just told the supplier.
+    if duty_terms:
+        if not resolved.tender_id:
+            raise ValueError("duty_terms belong to a tender; this commitment is about an order")
+        tender = access.set_tender_duty_terms(resolved.tender_id, duty_terms)
+        out["tender_duty_terms"] = tender.duty_terms
+    return out
+
+
+@register_operation(
+    name="tender_set_duty_terms",
+    summary=(
+        "Set how import duties are handled for a tender's round: buyer_waiver (we import under the "
+        "program's duty waiver -- duty counts as zero and no supplier is asked for it), buyer_pays (we "
+        "import and pay; a landed total needs duty_estimate_percent, our estimate as a percentage of the "
+        "goods), supplier_ddp (the supplier delivers duty paid, as each quote states), or '' (not "
+        "settled -- quotes are costed as they state duty). Idempotent."
+    ),
+    input_schema=obj(
+        {
+            "tender_id": ID,
+            "duty_terms": {"enum": list(records.DUTY_TERMS)},
+            "duty_estimate_percent": {"type": ["number", "string", "null"]},
+            "set_on": _DATE,
+        },
+        required=("tender_id", "duty_terms"),
+    ),
+    is_write=True,
+)
+def tender_set_duty_terms(access, tender_id, duty_terms, duty_estimate_percent=None, set_on=None):
+    return record(access.set_tender_duty_terms(tender_id, duty_terms, duty_estimate_percent, on=set_on))
+
+
+@register_operation(
+    name="commitment_reply_sent",
+    summary=(
+        "Record that the reply carrying these answered questions went out (sent_on, today if omitted). "
+        "Until then an answer written into a reply draft reads as drafted, not answered. Idempotent."
+    ),
+    input_schema=obj(
+        {"commitment_ids": {"type": "array", "items": ID, "minItems": 1}, "sent_on": _DATE},
+        required=("commitment_ids",),
+    ),
+    is_write=True,
+)
+def commitment_reply_sent(access, commitment_ids, sent_on=None):
+    return [record(c) for c in access.mark_reply_sent(commitment_ids, sent_on=sent_on)]
 
 
 @register_operation(

@@ -23,6 +23,11 @@
         {% if tender.invited_org_ids %}({{ tender.invited_org_ids|length }} invited){% endif %}
       </p>
     {% endif %}
+    {% comment %}How the round's import duties are handled: settled once (often in answer to a
+    supplier's "who imports?"), and every quote is costed by it.{% endcomment %}
+    <p data-testid="tender-duty-terms" class="text-sm text-gray-600 mt-1{% if duty_terms_changed %} font-semibold text-gray-900{% endif %}"{% if duty_terms_changed %} data-changed{% endif %}>
+      Import duties: {{ tender.duty_terms|duty_terms_words }}{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} (our estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}% of the goods){% else %} (no estimate recorded yet){% endif %}{% endif %}{% if tender.duty_terms and tender.duty_terms_set_on %} <span class="font-normal text-gray-600">· set {{ tender.duty_terms_set_on|day }}{% if duty_terms_set_by %} by {{ duty_terms_set_by }}{% endif %}</span>{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}
+    </p>
     <p class="text-sm text-gray-600 mt-1">
       Where the goods go:
       {% for p in tender.delivery_points %}{% firstof p.name p.city %}{% if p.name and p.city %}, {{ p.city }}{% endif %}{% if not forloop.last %}; {% endif %}{% empty %}no delivery place{% endfor %}{% if tender.pickup_accepted %} — or we collect from the supplier{% endif %}{% if tender.incoterm_requested %} · asked on {{ tender.incoterm_requested }} terms{% endif %}
@@ -291,6 +296,15 @@ next action on anyone (design doc section 22).
             <i class="fa-regular fa-copy mr-1"></i> Copy
           </button>
         </div>
+        {% if d.kind == "reply" and d.answered_ids %}
+          {% comment %}Once the reply is sent from Sophie's own mailbox, one button says so: the
+          answers it carries stop reading "Answer drafted" and read "Answered".{% endcomment %}
+          <form method="post" action="{% url 'supply_chain:procurement_reply_sent' tender.id %}" class="mt-3" data-testid="reply-sent-form">
+            {% csrf_token %}
+            {% for pk in d.answered_ids %}<input type="hidden" name="commitment_id" value="{{ pk }}">{% endfor %}
+            <button type="submit" class="px-3 py-1.5 text-sm border border-gray-300 text-brand-indigo hover:bg-gray-50 rounded-md">Mark this reply sent</button>
+          </form>
+        {% endif %}
         {% if d.kind == "reminder" and d.outreach_id %}
           {% comment %}The day the reminder went, here: the date and one button, so sending
           the reminder and saying so are one stop rather than a trip to a form. The day

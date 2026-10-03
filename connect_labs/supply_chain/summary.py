@@ -17,6 +17,7 @@ that is a problem depends on when they were sent and what the programme
 expects, which is a client's call.
 """
 
+from connect_labs.supply_chain import standing
 from connect_labs.supply_chain.models import (
     Award,
     Contract,
@@ -74,6 +75,7 @@ def _source(access, commodity=None):
             provisional = provisional or comparison.provisional
 
     awards = Award.objects.filter(tender__program_id=program_id)
+    awaiting = standing.awaiting_reply(program_id)
     return {
         "demand": {
             "tenders": tenders.count(),
@@ -82,7 +84,10 @@ def _source(access, commodity=None):
         },
         "rfq_issued": {
             "invitations": invitations.count(),
-            "awaiting_reply": invitations.filter(responded=False).count(),
+            # The silent suppliers the overview's table lists (standing.awaiting_reply): on rounds still
+            # being chased, not every unanswered invitation ever sent.
+            "awaiting_reply": awaiting["suppliers"],
+            "awaiting_tenders": awaiting["tenders"],
             "tenders": invitations.values("tender_id").distinct().count(),
         },
         "quotations": {"live": quotes.count(), "tenders": quotes.values("tender_id").distinct().count()},

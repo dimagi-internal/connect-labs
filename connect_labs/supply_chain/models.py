@@ -528,6 +528,17 @@ class Tender(TimestampedModel):
     # owning organisation manages -- in addition to anyone the program already
     # invited through its outreach log.
     invited_orgs = models.ManyToManyField("labs.LabsOrg", blank=True, related_name="tenders_invited_to")
+    # How import duties are handled for the round (records.DUTY_TERMS): not
+    # settled until somebody decides -- usually while answering a supplier's
+    # "who imports?" question. A round's terms decide whether a quote that
+    # leaves duty out is blocked on it, and who is asked.
+    duty_terms = models.CharField(
+        max_length=16, blank=True, default="", db_default="", choices=_choices(records.DUTY_TERMS)
+    )
+    # When we import and pay: our own estimate of the duty, as a percentage
+    # of the goods' value. Without it a buyer-pays round cannot land a total.
+    duty_estimate_percent = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    duty_terms_set_on = models.DateField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -1044,6 +1055,9 @@ class Commitment(SourcedModel):
     due_on = models.DateField(null=True, blank=True)
     resolved_on = models.DateField(null=True, blank=True)
     resolution = models.TextField(blank=True, default="")
+    # The day the answer actually went out to them. An answer written into a
+    # reply draft is drafted, not answered, until that reply is marked sent.
+    reply_sent_on = models.DateField(null=True, blank=True)
 
     class Meta:
         ordering = ["raised_on", "pk"]

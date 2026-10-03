@@ -884,3 +884,21 @@ def answered_by(commitment_ids, *, program_id) -> dict:
     )
     lookup = Lookup()
     return {int(r.object_id): actor_label(r.call, lookup) for r in revisions}
+
+
+def duty_terms_set_by(tender_id, *, program_id) -> str:
+    """Who last set a tender's import-duty terms, as the timeline names them; "" when nobody on record."""
+    from connect_labs.supply_chain.models import Tender
+
+    revision = (
+        Revision.objects.filter(
+            _type_q(Tender),
+            object_id=str(tender_id),
+            program_id=program_id,
+            changes__has_key="duty_terms",
+        )
+        .select_related("call__actor")
+        .order_by("-recorded_at", "-id")
+        .first()
+    )
+    return actor_label(revision.call, Lookup()) if revision is not None else ""

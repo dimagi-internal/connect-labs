@@ -70,8 +70,12 @@ class TenderForm(ScopedForm):
             "slug",
             "brief",
             "hue",
+            "duty_terms",
+            "duty_estimate_percent",
         ]
         widgets = {
+            "duty_terms": forms.Select(attrs={**SELECT, "data-testid": "tender-duty-terms-field"}),
+            "duty_estimate_percent": forms.NumberInput(attrs={**INPUT, "min": 0, "step": "0.01"}),
             "visibility": forms.Select(attrs=SELECT),
             "label": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. Tender 1 — RUTF, 500 cartons")}),
             "response_deadline": forms.DateInput(attrs=DATE),
@@ -97,6 +101,8 @@ class TenderForm(ScopedForm):
             "slug": _("Its own address"),
             "brief": _("Brief for suppliers"),
             "hue": _("Colour"),
+            "duty_terms": _("Import duties"),
+            "duty_estimate_percent": _("Our duty estimate (% of the goods)"),
         }
         help_texts = {
             "shelf_life_months_minimum": _("Sea freight and clearance routinely eat four months of it."),
@@ -104,6 +110,10 @@ class TenderForm(ScopedForm):
             "owner_org": _("An organisation publishing this as its own tender. Its people can then run the listing."),
             "slug": _("Gives the tender a shareable address, /supply/market/t/<this>/. Letters, numbers and hyphens."),
             "brief": _("A few paragraphs suppliers read above the products."),
+            "duty_terms": _(
+                "Who imports and who pays the duty, for every quote on this round. Under the program's waiver "
+                "duty counts as zero; when we pay, our estimate below is added to each landed total."
+            ),
             "pickup_accepted": _(
                 "Suppliers may then offer a price for us to collect. Its delivered cost stays unconfirmed "
                 "until you enter what our own transport will cost."
@@ -127,6 +137,7 @@ class TenderForm(ScopedForm):
                 css_class="grid md:grid-cols-2 gap-x-6",
             ),
             Field("pickup_accepted"),
+            Row(Column("duty_terms"), Column("duty_estimate_percent"), css_class="grid md:grid-cols-2 gap-x-6"),
             Field("notes_to_supplier"),
             Field("visibility"),
             Fieldset(
@@ -138,6 +149,12 @@ class TenderForm(ScopedForm):
             ),
         )
         self.fields["owner_org"].queryset = LabsOrg.objects.order_by("name")
+        self.fields["duty_terms"].choices = [
+            ("", _("Not settled")),
+            ("buyer_waiver", _("We import, under the program's duty waiver")),
+            ("buyer_pays", _("We import and pay the duty")),
+            ("supplier_ddp", _("The supplier delivers duty paid")),
+        ]
         self.fields["owner_org"].required = False
         self.fields["owner_org"].empty_label = _("No one — a program tender")
         set_choices(self, "hue", [("", _("By product")), *records.LISTING_HUES], required=False)
@@ -535,6 +552,24 @@ class CommitmentResolveForm(forms.Form):
         widget=forms.Textarea(attrs=TEXTAREA),
     )
     resolved_on = forms.DateField(label=_("On"), initial=date.today, widget=forms.DateInput(attrs=DATE))
+    # A supplier's "who imports?" is answered once for the whole round: the
+    # answer sets the tender's duty terms, which every quote is costed by.
+    # Removed by the view for a commitment about an order, which has no round.
+    duty_terms = forms.ChoiceField(
+        label=_("This answer sets the round's import duty terms"),
+        required=False,
+        choices=[
+            ("", _("No -- leave them as they are")),
+            ("buyer_waiver", _("We import, under the program's duty waiver")),
+            ("buyer_pays", _("We import and pay the duty")),
+            ("supplier_ddp", _("The supplier delivers duty paid")),
+        ],
+        widget=forms.Select(attrs={**SELECT, "data-testid": "answer-duty-terms"}),
+        help_text=_(
+            "Set only when this answer settles who imports and who pays the duty. Every quote on the round "
+            "is then costed that way: under the waiver duty counts as zero and no supplier is asked for it."
+        ),
+    )
 
     def __init__(self, *args, access=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -543,7 +578,10 @@ class CommitmentResolveForm(forms.Form):
         self.helper.disable_csrf = True
 
     def payload(self) -> dict:
-        return to_payload(self.cleaned_data)
+        data = to_payload(self.cleaned_data)
+        if not data.get("duty_terms"):
+            data.pop("duty_terms", None)
+        return data
 
 
 class ApprovalDecisionForm(ScopedForm):

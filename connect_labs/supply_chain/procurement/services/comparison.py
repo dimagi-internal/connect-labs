@@ -102,6 +102,7 @@ _GAP_WORDS = {
     "amount": "price",
     "tender_configuration": "tender line",
     "as_quoted_unit": "price unit",
+    "duty_estimate": "our duty estimate",
 }
 
 
@@ -734,7 +735,9 @@ def landed_basis_words(quote, tender) -> str:
         parts.append(where[:1].upper() + where[1:])
     currency = quote.as_quoted_currency or "USD"
     from_term = dict(zip(("freight", "duties"), freight_and_duties_for_incoterm(quote.incoterm), strict=True))
-    legs = [("duties", quote.duties_basis, quote.duties_amount)]
+    terms = getattr(tender, "duty_terms", "") or ""
+    duty_is_ours = terms in ("buyer_waiver", "buyer_pays")
+    legs = [] if duty_is_ours else [("duties", quote.duties_basis, quote.duties_amount)]
     if not pickup:
         legs.insert(0, ("freight", quote.freight_basis, quote.freight_amount))
     for label, basis, amount in legs:
@@ -751,6 +754,12 @@ def landed_basis_words(quote, tender) -> str:
             sources.append(source)
     if pickup and getattr(quote, "buyer_transport_amount", None) is not None:
         parts.append(f"our transport {money_digits(quote.buyer_transport_amount)} {currency} added")
+    # Duty the round's terms make ours, said as such: the figure is the
+    # tender's, not the supplier's.
+    if terms == "buyer_waiver":
+        parts.append("duty waived (our import)")
+    elif terms == "buyer_pays" and getattr(tender, "duty_estimate_percent", None) is not None:
+        parts.append(f"our duty estimate {tender.duty_estimate_percent.normalize():f}% added")
     text = " · ".join(parts)
     return f"{text}, per {' and '.join(sources)}" if text and sources else text
 

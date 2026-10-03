@@ -429,3 +429,18 @@ def freight_and_duties_for_incoterm(incoterm) -> tuple[str | None, str | None]:
         return (None, None)
     code = text.split()[0].upper().strip(".,")
     return INCOTERM_RESPONSIBILITY.get(code, (None, None))
+
+
+# How import duties are handled for a procurement round: who imports, and who
+# pays the duty. "" is "not settled", the default -- a round that has not
+# decided cannot have duty costed for it either way. Under the program's duty
+# waiver (we import, duty-free) the duty is zero and nobody is asked for it;
+# when we import and pay, the duty is our cost to estimate, never a supplier's
+# question; delivered duty paid is the supplier's, as each quote states it.
+DUTY_TERMS = ("", "buyer_waiver", "buyer_pays", "supplier_ddp")
+DUTY_TERMS_LABELS = {
+    "": "not settled",
+    "buyer_waiver": "we import, under the program's duty waiver",
+    "buyer_pays": "we import and pay the duty",
+    "supplier_ddp": "the supplier delivers duty paid",
+}

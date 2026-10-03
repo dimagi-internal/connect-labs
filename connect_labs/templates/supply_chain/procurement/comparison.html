@@ -20,6 +20,11 @@
   </ul>
 {% else %}
 <h1 class="text-xl font-semibold text-gray-900 mb-1">Comparison — {{ commodity_name }}{% if tender.label %} <span class="font-normal text-gray-600">· {{ tender.label }}</span>{% endif %}</h1>
+{% comment %}The round's duty terms, once, above every quote they cost: whether a quote that leaves
+duty out is missing a figure depends on who imports.{% endcomment %}
+<p data-testid="comparison-duty-terms" class="text-sm text-gray-700 mb-1">
+  Import duties for this round: {{ tender.duty_terms|duty_terms_words }}{% if tender.duty_terms == "buyer_waiver" %} -- duty counts as zero on every quote, and no supplier is asked for it.{% elif tender.duty_terms == "buyer_pays" %} -- {% if tender.duty_estimate_percent %}our estimate of {{ tender.duty_estimate_percent|floatformat:"-2" }}% of the goods is added to each landed total.{% else %}no landed total until our duty estimate is recorded on the tender.{% endif %}{% elif tender.duty_terms == "supplier_ddp" %} -- each quote's own duty figure is used.{% else %} -- each quote is costed by the duty it states, and one that leaves duty out cannot be ranked.{% endif %}
+</p>
 {% if not supply_as_of %}
   <p class="text-sm mb-4">
     <a data-testid="drafts-link" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#drafts"

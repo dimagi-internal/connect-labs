@@ -319,7 +319,9 @@ class TestEveryWriteOperationHasAScreen:
     # Reached through the sourcing screens' own flow rather than a dedicated
     # form: recording a quote and awarding a tender are `quote_entry.html` and
     # the comparison page, which predate this work.
-    ALREADY_HAD_SCREENS = {"quote_record", "award_create"}
+    # The round's duty terms are set through the answer form (commitment_resolve)
+    # and the tender's edit page (tender_update), which both call its setter.
+    ALREADY_HAD_SCREENS = {"quote_record", "award_create", "tender_set_duty_terms"}
 
     def test_no_write_operation_is_left_without_one(self):
         from django.urls import get_resolver
