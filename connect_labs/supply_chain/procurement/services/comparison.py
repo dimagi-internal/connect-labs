@@ -109,7 +109,7 @@ _GAP_WORDS = {
     "tender_configuration": "tender line",
     "as_quoted_unit": "price unit",
     "duty_estimate": "our duty estimate",
-    "duty_terms": "round duty terms",
+    "duty_terms": "tender duty terms",
 }
 
 
@@ -196,14 +196,14 @@ class ComparisonRow:
     # What the landed figures assume, and whose word it is: "Delivered to
     # Kano · freight included · duties included, per quote".
     landed_basis: str = ""
-    # The same, less the round's own duty terms, for a card that gives those
+    # The same, less the tender's own duty terms, for a card that gives those
     # terms a line of their own (`duty_line`): "Ex works Niamey — delivery to
     # Kano requested · freight included, per quote".
     delivery_basis: str = ""
-    # The duty the round's terms make ours, as its own line, with what the quote
+    # The duty the tender's terms make ours, as its own line, with what the quote
     # itself said beside it: "Duty waived (our import) · the quote also stated zero".
     duty_line: str = ""
-    # What a quote's own duty word means under the round's terms, when it means
+    # What a quote's own duty word means under the tender's terms, when it means
     # something to act on: "the price may carry duty we will not pay ...".
     duty_consequence: str = ""
     # The quantity the quote's landed total is for: "2,000 cartons".
@@ -286,7 +286,7 @@ class ComparisonRow:
             question = next((q for q in self.questions if q.key == DUTY_RESTATE_KEY), None)
             out.append(
                 {
-                    "fact": "Price states duty included, which we do not pay under the round's terms",
+                    "fact": "Price states duty included, which we do not pay under the tender's terms",
                     "question": question.as_dict() if question is not None else None,
                     "label": DUTY_RESTATE_LABEL,
                     "spec": "",
@@ -805,20 +805,20 @@ def _origin_handover_words(quote, where: str) -> str:
 
 
 def round_duty_words(quote, tender) -> str:
-    """The duty the round's terms make ours, read after the card's "Duty:" label: "waived (our import)".
+    """The duty the tender's terms make ours, read after the card's "Duty:" label: "waived (our import)".
 
     A quote that says duty is included says so after it, because that can change
-    the price. "" when the round's terms leave duty to each quote.
+    the price. "" when the tender's terms leave duty to each quote.
     """
     terms = getattr(tender, "duty_terms", "") or ""
     if not terms and import_is_ours(quote):
-        # The Incoterm makes the import ours and the round has not said how:
+        # The Incoterm makes the import ours and the tender has not said how:
         # the duty is our cost to settle, not a figure the supplier owes --
         # and not one a figure the supplier wrote can settle either.
-        return "ours to cost (round terms not settled)"
+        return "ours to cost (tender terms not settled)"
     if terms in ("buyer_waiver", "buyer_pays") and not buyer_imports(quote):
         # The supplier imports (DDP): its own duty figure stands, said on the
-        # delivery line as the quote's word -- the round's waiver cannot reach it.
+        # delivery line as the quote's word -- the tender's waiver cannot reach it.
         return ""
     if terms == "buyer_waiver":
         line = "waived (our import)"
@@ -828,7 +828,7 @@ def round_duty_words(quote, tender) -> str:
         return ""
     basis = getattr(quote, "duties_basis", "")
     # A figure the supplier wrote for duty is not repeated here: under a
-    # buyer-import term it is information at most, and the round's terms are
+    # buyer-import term it is information at most, and the tender's terms are
     # the basis. Only "included" is said, because it can change the price.
     if basis == "included":
         line += " · the quote states duty included"
@@ -839,7 +839,7 @@ def import_is_ours(quote) -> bool:
     """Whether the quote's Incoterm puts the import on us (EXW, FCA, CPT, DAP ...), duty not said included.
 
     Whatever duty figure the supplier wrote: under these terms the duty is the
-    buyer's cost, set by the round's duty terms (`pricing._extras` reads it the
+    buyer's cost, set by the tender's duty terms (`pricing._extras` reads it the
     same way), so a stated figure is information, never the basis.
     """
     implied = freight_and_duties_for_incoterm(getattr(quote, "incoterm", ""))[1]
@@ -850,7 +850,7 @@ def import_is_ours(quote) -> bool:
 
 
 def round_duty_consequence(quote, tender) -> str:
-    """What the quote's own duty word means under the round's terms, and the move it leaves.
+    """What the quote's own duty word means under the tender's terms, and the move it leaves.
 
     Under the waiver a quote that says duty is included may price in a duty we
     will not pay: said with the question that settles it, rather than leaving the
@@ -888,7 +888,7 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
     currency = quote.as_quoted_currency or "USD"
     from_term = dict(zip(("freight", "duties"), freight_and_duties_for_incoterm(quote.incoterm), strict=True))
     terms = getattr(tender, "duty_terms", "") or ""
-    # Only a quote that leaves the import to us is costed by the round's terms;
+    # Only a quote that leaves the import to us is costed by the tender's terms;
     # a DDP quote keeps its own duty figure under any of them.
     duty_is_ours = round_duty_applies(quote, tender)
     legs = [] if duty_is_ours else [("duties", quote.duties_basis, quote.duties_amount)]
@@ -901,7 +901,7 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
         if basis == "included":
             parts.append(f"{label} included")
         elif label == "duties" and basis == "excluded" and import_is_ours(quote):
-            # A buyer-import term: the duty is ours, set by the round's terms and
+            # A buyer-import term: the duty is ours, set by the tender's terms and
             # said on the card's own "Duty:" line -- never costed from, or
             # restated as, the supplier's figure.
             continue
@@ -917,7 +917,7 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
             sources.append(source)
     if pickup and getattr(quote, "buyer_transport_amount", None) is not None:
         parts.append(f"our transport {money_digits(quote.buyer_transport_amount)} {currency} added")
-    # Duty the round's terms make ours, said as such: the figure is the
+    # Duty the tender's terms make ours, said as such: the figure is the
     # tender's, not the supplier's. A card that gives the terms their own line
     # (`round_duty_words`) leaves them out here.
     if not round_duty or not duty_is_ours:
@@ -934,7 +934,7 @@ def _with_incoterm(text: str, quote) -> str:
     """ "CPT Kano · delivered to ...": the term the supplier quoted, ahead of a delivered line.
 
     A delivered line alone hid the Incoterm that decides who imports, so a card held
-    on the round's duty terms did not say why; an origin handover ("Ex works
+    on the tender's duty terms did not say why; an origin handover ("Ex works
     Niamey") already names its term.
     """
     incoterm = str(getattr(quote, "incoterm", "") or "").strip()
@@ -944,9 +944,9 @@ def _with_incoterm(text: str, quote) -> str:
 
 
 def _short_destination(text: str, tender) -> str:
-    """The card's delivery line without the round's own address repeated on every card.
+    """The card's delivery line without the tender's own address repeated on every card.
 
-    A round with one delivery place: a card whose quote goes there names the place
+    A tender with one delivery place: a card whose quote goes there names the place
     and its city ("to Northern Nutrition Depot, Kano"), not the full address with
     its country on every card. A quote for anywhere else keeps its address.
     """

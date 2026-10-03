@@ -85,21 +85,21 @@ class MissingFact:
 # three of the rows below are `audience="internal"` rather than omitted:
 # the fact they name is real, it just is not the supplier's to give.
 _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
-    # First, so no supplier row's fragment claims it: on a round where we
+    # First, so no supplier row's fragment claims it: on a tender where we
     # import and pay, duty is our own estimate to record, not their question.
     (
         "no duty estimate",
         "duty_estimate",
-        "This round's import duty is ours to pay: record our duty estimate (a percentage of the goods) "
+        "This tender's import duty is ours to pay: record our duty estimate (a percentage of the goods) "
         "on the tender -- a landed total cannot be computed until then.",
         INTERNAL,
     ),
     # Before "duties": under an Incoterm that makes the import ours, duty is the
-    # round's cost to settle, never a supplier's question.
+    # tender's cost to settle, never a supplier's question.
     (
-        "round's duty terms are not settled",
+        "tender's duty terms are not settled",
         "duty_terms",
-        "Settle the round's import duty terms -- who imports, and whether duty is waived or ours to pay. "
+        "Settle the tender's import duty terms -- who imports, and whether duty is waived or ours to pay. "
         "Import is ours under this quote's Incoterm, so the supplier is not asked.",
         INTERNAL,
     ),
@@ -402,10 +402,10 @@ DUTY_RESTATE_QUESTION = (
 
 
 def needs_duty_restated(quote, tender) -> bool:
-    """Whether the round's terms make duty ours while the quote says its price includes it.
+    """Whether the tender's terms make duty ours while the quote says its price includes it.
 
     Never for a quote whose Incoterm makes the supplier import (DDP): its duty is
-    the supplier's to pay, so "included" is simply true, and the round's waiver
+    the supplier's to pay, so "included" is simply true, and the tender's waiver
     does not reach it.
     """
     terms = getattr(tender, "duty_terms", "") or ""
@@ -541,7 +541,7 @@ def initial_request_facts(
         ("freight_basis", _QUESTION_BY_KEY["freight_basis"]),
         ("duties_basis", _QUESTION_BY_KEY["duties_basis"]),
     ):
-        # A round whose duty is ours (under the waiver, or paid by us) does
+        # A tender whose duty is ours (under the waiver, or paid by us) does
         # not ask a supplier about it.
         if key == "duties_basis" and getattr(tender, "duty_terms", "") in ("buyer_waiver", "buyer_pays"):
             continue
