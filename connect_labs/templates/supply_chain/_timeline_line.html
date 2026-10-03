@@ -51,9 +51,10 @@
   {% if entry.correct_url or entry.void_url %}
     <div data-testid="quote-fixes" class="shrink-0 text-sm font-medium whitespace-nowrap space-x-3">
       {% if entry.correct_url %}<a href="{{ entry.correct_url }}" class="text-brand-indigo hover:underline">Correct</a>{% endif %}
-      {% comment %}Void is a sibling of Correct and styled as one: grey text beside a blue
-      link read as a disabled control. It asks for a reason before anything is voided.{% endcomment %}
-      {% if entry.void_url %}<a href="{{ entry.void_url }}" data-testid="quote-void" class="text-brand-indigo hover:underline">Void</a>{% endif %}
+      {% comment %}Void is destructive, so it sits apart from Correct, past a rule, in the error
+      text colour (not grey, which read as a disabled control). It asks for a reason before
+      anything is voided.{% endcomment %}
+      {% if entry.void_url %}<a href="{{ entry.void_url }}" data-testid="quote-void" class="text-message-error-text border-l border-gray-200 pl-3 hover:underline">Void</a>{% endif %}
     </div>
   {% elif entry.fix_status %}
     <div data-testid="quote-fixes" class="shrink-0 text-xs whitespace-nowrap text-gray-600">{% if entry.fix_status == "voided" %}voided{% else %}since corrected{% endif %}</div>

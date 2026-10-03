@@ -972,8 +972,11 @@ class OrderDetailView(OperationBase):
         from datetime import date
 
         from connect_labs.supply_chain import moves as rules
-        from connect_labs.supply_chain.fulfilment.status import order_status
+        from connect_labs.supply_chain.fulfilment.status import held_since, order_status
+        from connect_labs.supply_chain.records import latest_moving_shipment
 
+        today = getattr(self.request, "supply_as_of", None) or date.today()
+        moving = latest_moving_shipment([s for s in context["shipments"] if s.get("status") != "delivered"])
         context["status"] = order_status(
             contract,
             award=context["award"],
@@ -985,8 +988,9 @@ class OrderDetailView(OperationBase):
             contract_late=context["contract_late"],
             held_on_us=context["held_on_us"],
             header_status=context["order_status"],
+            held_since=held_since(moving) if context["held_on_us"] else None,
+            today=today,
         )
-        today = getattr(self.request, "supply_as_of", None) or date.today()
         access = _access(self.request)
         record = access.get_contract(contract_id) if access.program_id else None
         context["moves_ours"], context["moves_theirs"] = rules.contract_moves(record, today) if record else ([], [])

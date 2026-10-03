@@ -63,8 +63,16 @@ class TestMoveCounts:
         assert expected >= 1
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
         count = _text(re.search(r'data-testid="standing-our-moves">(.*?)</div>', body, re.S).group(1))
-        assert count.startswith(f"{expected} move")
-        assert count.endswith("on you")
+        assert count.startswith(f"{expected} on us")
+        assert "on you" not in count
+
+    def test_each_rows_whose_chips_sum_to_the_heading(self, da, world, client_in_program):
+        _held_on_our_form_m(da, world)
+        totals = move_counts(standing_rows(PROGRAM, TODAY))
+        body = client_in_program.get(reverse("supply_chain:home")).content.decode()
+        ours = sum(int(n) for n in re.findall(r'data-testid="whose-us" data-count="(\d+)"', body))
+        theirs = sum(int(n) for n in re.findall(r'data-testid="whose-suppliers" data-count="(\d+)"', body))
+        assert (ours, theirs) == (totals["ours"], totals["theirs"])
 
 
 class TestMoneyStaysOnOneLine:
