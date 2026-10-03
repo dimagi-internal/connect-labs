@@ -170,7 +170,7 @@ class TestWhatWeOweReads:
         _question(da, world, "Who is the importer of record?")
         _answer_as_sophie(da, answered["id"], "One warehouse in Kano.")
         body = _tender_page(web, world["tender"]["id"])
-        assert _text(re.search(r'<h2 id="owed".*?</h2>', body, re.S).group(0)) == "What we owe them — 1 open"
+        assert _text(re.search(r'<summary id="owed".*?</summary>', body, re.S).group(0)) == "What we owe 1 open"
         open_list = re.search(
             r'<div [^>]*data-testid="owed">.*?</div>\s*</div>\s*(?=<details|<div class="mb)', body, re.S
         )
@@ -203,13 +203,10 @@ class TestTheComparison:
         op(da, "quote_record", data=_comparable(world))
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         body = client_in_program.get(url).content.decode()
-        table = re.search(r'<table data-testid="ranked-table" class="([^"]*)">(.*?)</table>', body, re.S)
-        # One offer is a result, not a ranking (DDD 003 batch 4); since batch 5 its card spans
-        # the content width; since DDD 003 batch 7 it is only as wide as its figures.
-        assert "w-full" not in table.group(1).split()
-        assert 'data-testid="single-result"' in body
-        assert "<th>#</th>" not in table.group(2) and 'data-testid="ranked-by-marker"' not in table.group(2)
-        assert 'data-testid="ranked-by-fallback"' not in body
+        # One offer is one column of facts with its status, and no rank.
+        assert body.count('data-testid="grid-quote"') == 1
+        assert 'data-testid="grid-status">Comparable<' in body
+        assert 'data-testid="ranked-table"' not in body
 
     def test_award_anyway_names_who_is_still_missing_what(self):
         comparison = {
@@ -259,17 +256,12 @@ class TestTheComparison:
             },
         )
         body = client_in_program.get(url).content.decode()
-        # Since batch 4 the award opens from its button, which carries the words.
-        button = re.search(r'<summary data-testid="award-open" data-anyway[^>]*>(.*?)</summary>', body, re.S)
-        assert button is not None
-        label = html.unescape(
-            _text(re.search(r'data-testid="award-label"[^>]*>(.*?)</span>', button.group(1)).group(1))
-        )
-        # Since the 003 run's batch 6 the label alone says it: the "see Needs info" link
-        # under it repeated the panel above the table.
-        assert 'data-testid="award-caveat"' not in button.group(1)
-        assert label.startswith("Award Kanem ") and label.endswith(" anyway (1 quote still incomplete)")
-        assert 'title="Northgate Rehearsal Commodities has not stated ' in button.group(0)
+        # The award opens from its fold, whose summary says the others are not comparable yet.
+        button = re.search(r'<summary data-testid="award-open"[^>]*>(.*?)</summary>', body, re.S)
+        assert button is not None and "data-anyway" in button.group(1)
+        label = " ".join(html.unescape(_text(button.group(1))).split())
+        assert label.startswith("Award Kanem ") and label.endswith("· 1 other quote not comparable yet")
+        assert 'title="Northgate Rehearsal Commodities has not stated ' in button.group(1)
 
     def test_an_empty_trailing_column_is_dropped_but_not_one_between_figures(self):
         rows = [{"figures": {"a": {"amount": "1"}, "b": {"amount": None}, "c": {"amount": "2"}, "d": {}}}]
@@ -372,14 +364,14 @@ def test_the_order_sections_share_one_heading_style(da, world, client_in_program
     assert len({frozenset(s) for s in styles.values()}) == 1, styles
 
 
-# ---- 8. the overview: a single waiting-on string leads in bold too
+# ---- 8. the overview: a document we owe makes the order's move ours
 
 
-def test_a_single_waiting_on_leads_with_its_party_in_bold(da, world, client_in_program):
+def test_a_held_document_makes_the_orders_move_ours(da, world, client_in_program):
     _held_on_our_form_m(da, world)
     body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-    cells = re.findall(r'data-testid="waiting-on"[^>]*>(.*?)</span>', body, re.S)
-    assert any(cell.startswith("<strong>Us</strong>: ") for cell in cells), cells
+    assert 'data-testid="whose">Us<' in body
+    assert "Provide 1 document to " in body
 
 
 # ---- 9. the tender page header

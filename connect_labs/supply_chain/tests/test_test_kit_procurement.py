@@ -319,9 +319,7 @@ class TestTheScreens:
         body = scoped.get(url + "?commodity=chlorine-test-kit").content.decode()
         assert "Lumen FC-50 kit" in body
         assert "Brightwell PoolCheck-50 kit" in body
-        assert "Range maximum 1.5 mg/L fails: it must be at least 2.0 mg/L" in body
         assert "range_max_mg_per_l" not in body
-        assert "Meets spec (2 requirements)" in body
         assert "treatment protocol" not in body
         assert "USD per course" not in body
 

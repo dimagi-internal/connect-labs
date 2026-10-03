@@ -13,7 +13,8 @@ from django.urls import reverse
 
 from connect_labs.supply_chain.fulfilment.services.holds import holds_on_us
 from connect_labs.supply_chain.models import Contract
-from connect_labs.supply_chain.standing import WAITING_ON_US, Flag, Row, our_moves, standing_rows
+from connect_labs.supply_chain.moves import SUPPLIERS, US, Move
+from connect_labs.supply_chain.standing import Row, move_counts, standing_rows
 from connect_labs.supply_chain.tests import test_tracking_reality as reality
 from connect_labs.supply_chain.tests.test_tracking_reality import PROGRAM, TODAY, _held_on_our_form_m
 
@@ -26,38 +27,44 @@ def _text(html):
     return " ".join(re.sub(r"<[^>]+>", " ", html).split())
 
 
-def _row(waiting_on="", waiting_lines=()):
+def _row(ours=(), theirs=()):
     return Row(
         kind="order",
         title="t",
         url="/",
+        stage_index=5,
         stage="s",
-        waiting_on=waiting_on,
         last_change_at=None,
         last_change_by="",
         last_change_is_ai=False,
-        waiting_lines=waiting_lines,
+        ours=list(ours),
+        theirs=list(theirs),
     )
 
 
-class TestOurMoves:
-    def test_counts_every_item_under_an_us_line(self):
-        us = Flag("us: a; b; c", heading=WAITING_ON_US.capitalize(), lines=[("a", ""), ("b", ""), ("c", "")])
-        silent = Flag("No reply: x", heading="No reply", lines=[("x", "")])
-        rows = [_row("us: a; b; c", (us, silent)), _row("us: provide the import permit; provide the PAAR")]
-        assert our_moves(rows) == 5
+def _move(whose, text):
+    return Move(whose, "owed" if whose == US else "no reply", text)
 
-    def test_a_row_waiting_on_someone_else_counts_nothing(self):
-        assert our_moves([_row("arrival (ETA 3 Oct)"), _row("—")]) == 0
 
-    def test_the_overview_heading_carries_the_count_its_lines_give(self, da, world, client_in_program):
+class TestMoveCounts:
+    def test_counts_every_move_on_each_side(self):
+        rows = [
+            _row([_move(US, "a"), _move(US, "b")], [_move(SUPPLIERS, "x")]),
+            _row([_move(US, "c")]),
+        ]
+        assert move_counts(rows) == {"ours": 3, "theirs": 1}
+
+    def test_a_row_with_no_moves_counts_nothing(self):
+        assert move_counts([_row(), _row()]) == {"ours": 0, "theirs": 0}
+
+    def test_the_overview_heading_carries_the_count_its_rows_give(self, da, world, client_in_program):
         _held_on_our_form_m(da, world)
-        expected = our_moves(standing_rows(PROGRAM, TODAY))
+        expected = move_counts(standing_rows(PROGRAM, TODAY))["ours"]
         assert expected >= 1
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-        count = _text(re.search(r'data-testid="standing-our-moves">(.*?)</span>', body, re.S).group(1))
+        count = _text(re.search(r'data-testid="standing-our-moves">(.*?)</div>', body, re.S).group(1))
         assert count.startswith(f"{expected} move")
-        assert count.endswith("ours, listed under Us")
+        assert count.endswith("on you")
 
 
 class TestMoneyStaysOnOneLine:

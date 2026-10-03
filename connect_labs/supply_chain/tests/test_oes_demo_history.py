@@ -252,9 +252,8 @@ class TestRoundOneIsPaid:
         assert Decimal(str(payment.amount)) == Decimal(str(invoice["amount"]))
         assert str(payment.paid_on) == _DATES["paid_on"]
 
-        row = _row(standing_rows(RUTF, timezone.localdate()), contract["reference"])
-        assert row.stage == "delivered and paid"
-        assert row.waiting_on == "—"
+        # Delivered, paid and nothing owed: no longer an active order, so off the overview.
+        assert not [r for r in standing_rows(RUTF, timezone.localdate()) if r.title.startswith(contract["reference"])]
 
     def test_the_payment_is_recorded_by_sophie_on_the_web_on_the_day_it_was_paid(self, seeded):
         _, result = seeded
@@ -275,8 +274,8 @@ class TestRoundOneIsPaid:
 
         assert not Payment.objects.filter(invoice_id=invoice["id"]).exists()
         row = _row(standing_rows(RUTF, timezone.localdate()), result["round_one"]["contract"]["reference"])
-        assert row.stage == "invoiced"
-        assert row.waiting_on == "payment"
+        assert row.stage.endswith("· invoiced")
+        assert row.next_move is None or row.next_move.rule != "no reply"
         assert "paid_on" in capsys.readouterr().out
 
     def test_seeding_again_does_not_pay_twice(self, seeded):

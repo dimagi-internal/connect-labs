@@ -62,24 +62,17 @@ class TestAnAnswerGoesIntoTheReply:
         anchor = re.search(r'href="#(draft-reply-[^"]+)"', note).group(1)
         assert "Added to your draft reply to Northgate Rehearsal Commodities" in note
         assert f'id="{anchor}"' in body
-        assert re.search(r'data-testid="drafts-breakdown"[^>]*>\([^)]*1 reply to Northgate', body)
+        assert re.search(r'data-testid="drafts-breakdown"[^>]*>[^<]*1 reply to Northgate', body)
         # Only on the row just saved.
         assert 'data-testid="owed-in-draft"' not in _tender_page(client_in_program, world["tender"]["id"])
 
 
 @pytest.mark.django_db
-def test_a_restricted_tender_does_not_repeat_who_was_asked(da, world, client_in_program):
+def test_a_restricted_tender_says_so_once_in_its_summary(da, world, client_in_program):
     from connect_labs.supply_chain.models import Tender
 
     Tender.objects.filter(pk=world["tender"]["id"]).update(visibility="private")
     body = _tender_page(client_in_program, world["tender"]["id"])
-    # The marketplace panel shows only when it holds something (DDD 003 batch 4).
-    if 'data-testid="invited-suppliers"' not in body:
-        assert "Only the suppliers you invite see it" in body
-        return
-    start = body.index('data-testid="invited-suppliers"')
-    panel = body[start : body.index("</ul>", start)]
-    # Said once each: who can see it in the header's Visibility line, who was asked in Outreach
-    # (unanswered round, run 003 batch 1).
-    assert "only the suppliers below" not in panel and 'data-testid="invited-asked"' not in panel
-    assert "Only the suppliers you invite see it" in body
+    summary = re.search(r'data-testid="tender-summary".*?</div>', body, re.S).group(0)
+    assert "restricted to" in summary
+    assert "only the suppliers below" not in body

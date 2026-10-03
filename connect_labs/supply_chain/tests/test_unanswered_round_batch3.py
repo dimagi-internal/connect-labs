@@ -12,7 +12,7 @@ import re
 
 from django.urls import reverse
 
-from connect_labs.supply_chain.standing import INVOICE_ABOVE_FLAG, standing_rows
+from connect_labs.supply_chain.standing import standing_rows
 from connect_labs.supply_chain.tests import test_tracking_reality as reality
 from connect_labs.supply_chain.tests.test_tracking_reality import (
     PROGRAM,
@@ -44,14 +44,15 @@ def _row(body, outreach_id):
 
 
 class TestASilentRound:
-    def test_draft_reminders_leads_and_compare_steps_back(self, da, world, client_in_program):
+    def test_a_silent_supplier_is_on_suppliers_with_a_remind_action(self, da, world, client_in_program):
         body = _tender_page(client_in_program, world["tender"]["id"])
-        lead = re.search(r'<a data-testid="draft-reminders" href="#drafts"[^>]*class="([^"]*)"', body, re.S)
-        assert lead is not None and "bg-brand-indigo" in lead.group(1)
+        assert 'data-testid="draft-reminders"' not in body
+        theirs = body.split('data-testid="on-suppliers"', 1)[1].split("</section>", 1)[0]
+        assert 'data-rule="no reply"' in theirs
         compare = re.search(r'<a data-testid="compare-quotes"[^>]*class="([^"]*)"', body, re.S).group(1)
-        assert "bg-brand-indigo" not in compare and "border" in compare
+        assert "sc-btn" in compare.split()
 
-    def test_once_everyone_has_replied_compare_leads_again(self, da, world, client_in_program):
+    def test_once_everyone_has_replied_nothing_is_on_suppliers(self, da, world, client_in_program):
         op(
             da,
             "outreach_update",
@@ -59,9 +60,8 @@ class TestASilentRound:
             data={"responded": True, "response_kind": "quote", "responded_on": "2026-07-09"},
         )
         body = _tender_page(client_in_program, world["tender"]["id"])
-        assert 'data-testid="draft-reminders"' not in body
-        compare = re.search(r'<a data-testid="compare-quotes"[^>]*class="([^"]*)"', body, re.S).group(1)
-        assert "bg-brand-indigo" in compare
+        theirs = body.split('data-testid="on-suppliers"', 1)[1].split("</section>", 1)[0]
+        assert 'data-rule="no reply"' not in theirs
 
     def test_a_silent_row_says_how_long_and_a_replied_row_offers_another_reply(self, da, world, client_in_program):
         outreach_id = world["outreach"]["id"]
@@ -184,7 +184,7 @@ class TestTheComparison:
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         return client.get(url).content.decode()
 
-    def test_the_banner_states_what_is_missing_and_the_button_says_it(self, da, world, client_in_program):
+    def test_the_grid_shows_the_gap_and_the_award_says_what_is_not_comparable(self, da, world, client_in_program):
         op(da, "quote_record", data=_comparable(world))
         op(
             da,
@@ -196,15 +196,17 @@ class TestTheComparison:
             },
         )
         body = self._page(client_in_program, world)
-        banner = _text(re.search(r'<div data-testid="comparison-banner"[^>]*>(.*?)</div>', body, re.S).group(1))
-        assert banner.startswith("1 of 2 quotes can be compared on ")
-        assert "Northgate Rehearsal Commodities sachets per carton" in banner
+        assert 'data-testid="comparable-count">1 of 2 comparable<' in body
+        grid = re.search(r'<table [^>]*data-testid="comparison-grid".*?</table>', body, re.S).group(0)
+        assert "Missing 1 fact" in grid
+        pack = re.search(r'<tr data-fact="pack".*?</tr>', grid, re.S).group(0)
+        assert "not stated" in pack
         for word in ("PROVISIONAL", "provisional", "beat"):
-            assert word not in banner
-        button = _text(
-            re.search(r'<summary data-testid="award-open" data-anyway[^>]*>(.*?)</summary>', body, re.S).group(1)
+            assert word not in grid
+        button = " ".join(
+            _text(re.search(r'<summary data-testid="award-open"[^>]*>(.*?)</summary>', body, re.S).group(1)).split()
         )
-        assert button.startswith("Award Kanem ") and button.endswith(" anyway (1 quote still incomplete)")
+        assert button.startswith("Award Kanem ") and button.endswith("· 1 other quote not comparable yet")
 
     def test_decided_on_is_empty_until_an_award_is_started(self, da, world, client_in_program):
         op(da, "quote_record", data=_comparable(world))
@@ -296,9 +298,11 @@ class TestTheOverview:
     def test_an_open_tender_past_its_deadline_says_so_in_its_stage(self, da, world):
         op(da, "tender_update", tender_id=world["tender"]["id"], data={"response_deadline": "2026-09-29"})
         row = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 10, 2)) if r.kind == "tender")
-        assert row.stage == "open, deadline passed 29 Sep"
+        assert row.stage.endswith("deadline passed 3 days")
+        assert [m.rule for m in row.ours if m.rule == "deadline"] == ["deadline"]
         before = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 9, 28)) if r.kind == "tender")
-        assert before.stage == "open"
+        assert "deadline passed" not in before.stage
+        assert not [m for m in before.ours if m.rule == "deadline"]
 
     def test_an_order_billed_above_agreed_is_flagged(self, da, world):
         contract = _contract(da, world)
@@ -317,7 +321,9 @@ class TestTheOverview:
             },
         )
         row = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 10, 2)) if r.kind == "order")
-        assert INVOICE_ABOVE_FLAG in row.stale
+        assert [(m.rule, m.text) for m in row.ours if m.rule == "invoice check"] == [
+            ("invoice check", "Review invoice INV-REH-1")
+        ]
 
     def test_an_order_billed_at_the_agreed_price_is_not(self, da, world):
         contract = _contract(da, world)
@@ -336,4 +342,4 @@ class TestTheOverview:
             },
         )
         row = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 10, 2)) if r.kind == "order")
-        assert INVOICE_ABOVE_FLAG not in row.stale
+        assert not [m for m in row.ours if m.rule == "invoice check"]

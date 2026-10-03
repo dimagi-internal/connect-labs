@@ -351,8 +351,11 @@ class TestWhoseMoveItIs:
     def test_the_overview_says_waiting_on_us_not_arrival(self, da, world):
         contract, _ = _held_on_our_form_m(da, world)
         row = next(r for r in standing_rows(PROGRAM, TODAY) if r.contract_id == contract["id"])
-        assert row.waiting_on == "us: provide the import permit"
-        assert any("held on us: import permit" in flag for flag in row.stale)
+        # Rule (a): the held document is ours to provide, and the row's next move says so.
+        assert row.whose == "us"
+        assert row.next_move.rule == "owed"
+        assert row.next_move.text.startswith("Provide 1 document to ")
+        assert "import permit" in row.next_move.detail
 
     def test_the_lateness_check_is_ours_to_answer_and_says_why(self, da, world):
         contract, _ = _held_on_our_form_m(da, world)
@@ -488,7 +491,9 @@ class TestWhatWeOwe:
     def test_the_overview_says_we_owe_answers_first(self, da, world):
         self._questions(da, world)
         row = next(r for r in standing_rows(PROGRAM, TODAY) if r.tender_id == world["tender"]["id"])
-        assert row.waiting_on.startswith("us: answers to Northgate Rehearsal Commodities (2 questions since 11 Jul)")
+        assert row.whose == "us"
+        assert row.next_move.text == "Reply to Northgate Rehearsal Commodities (2 questions)"
+        assert row.next_move.detail == "open since 11 Jul"
 
     def test_the_drafts_include_our_reply_listing_the_questions(self, da, world):
         self._questions(da, world)
@@ -504,7 +509,7 @@ class TestWhatWeOwe:
             op(da, "commitment_resolve", channel="web", commitment_id=commitment["id"], resolution="One warehouse.")
         assert op(da, "commitment_list", tender_id=world["tender"]["id"], open_only=True) == []
         row = next(r for r in standing_rows(PROGRAM, TODAY) if r.tender_id == world["tender"]["id"])
-        assert "Northgate" not in row.waiting_on
+        assert not any("Northgate" in m.text for m in row.ours)
         assert not run_checks(da, kinds=["commitment_open"])
 
 

@@ -69,27 +69,26 @@ class TestSettingTheTerms:
         with pytest.raises(jsonschema.ValidationError):
             _set(da, world, "free")
 
-    def test_the_answer_form_records_the_answer_and_sets_the_terms(self, da, world, web):  # noqa: F811
-        asked = _question(da, world)
+    def test_the_terms_box_sets_them_and_marks_the_line_new(self, da, world, web):  # noqa: F811
+        url = reverse("supply_chain:procurement_tender_detail", args=[world["tender"]["id"]])
         response = web.post(
-            reverse("supply_chain:commitment_resolve", args=[asked["id"]]),
-            {
-                "resolution": "We import, under the program's duty waiver; please state freight to Kano.",
-                "resolved_on": "2026-10-02",
-                "duty_terms": "buyer_waiver",
-            },
+            reverse("supply_chain:procurement_tender_duty_terms", args=[world["tender"]["id"]]),
+            {"duty_terms": "buyer_waiver", "next": f"{url}#duty-terms"},
         )
         assert response.status_code == 302 and "duty_terms=changed" in response["Location"]
-        assert Commitment.objects.get(pk=asked["id"]).resolution.startswith("We import")
+        assert response["Location"].endswith("#duty-terms")
         assert Tender.objects.get(pk=world["tender"]["id"]).duty_terms == "buyer_waiver"
 
-    def test_the_answer_form_offers_the_select_with_no_default(self, da, world, web):  # noqa: F811
+    def test_the_answer_form_no_longer_sets_the_terms(self, da, world, web):  # noqa: F811
         asked = _question(da, world)
         body = web.get(reverse("supply_chain:commitment_resolve", args=[asked["id"]])).content.decode()
-        assert 'data-testid="answer-duty-terms"' in body and 'name="duty_terms"' in body
-        assert "This answer sets the round&#x27;s import duty terms" in body or (
-            "This answer sets the round's import duty terms" in body
+        assert 'data-testid="answer-duty-terms"' not in body and 'name="duty_terms"' not in body
+        web.post(
+            reverse("supply_chain:commitment_resolve", args=[asked["id"]]),
+            {"resolution": "We import.", "resolved_on": "2026-10-02", "duty_terms": "buyer_waiver"},
         )
+        assert Commitment.objects.get(pk=asked["id"]).resolution == "We import."
+        assert Tender.objects.get(pk=world["tender"]["id"]).duty_terms == ""
 
     def test_an_answer_without_terms_leaves_them_unsettled(self, da, world, web):  # noqa: F811
         asked = _question(da, world)
@@ -109,14 +108,15 @@ class TestSettingTheTerms:
 class TestTheTenderPageLine:
     def test_not_settled_then_the_waiver_marked_new(self, da, world, client_in_program):
         body = _tender_page(client_in_program, world["tender"]["id"])
-        line = re.search(r'data-testid="tender-duty-terms"[^>]*>(.*?)</dd>', body, re.S).group(1)
-        assert " ".join(re.sub(r"<[^>]+>", "", line).split()).startswith("Import duties: not settled")
+        pattern = r'data-testid="tender-duty-terms"[^>]*>(.*?)<span class="sc-muted">Deadline'
+        line = re.search(pattern, body, re.S).group(1)
+        assert " ".join(re.sub(r"<[^>]+>", "", line).split()).startswith("Not settled")
         _set(da, world, "buyer_waiver")
         body = _tender_page(client_in_program, world["tender"]["id"], "?duty_terms=changed")
-        line = re.search(r'data-testid="tender-duty-terms"[^>]*>(.*?)</dd>', body, re.S).group(1)
+        line = re.search(pattern, body, re.S).group(1)
         text = html.unescape(" ".join(re.sub(r"<[^>]+>", " ", line).split()))
-        assert text.startswith("Import duties: we import, under the program's duty waiver")
-        assert "· set " in text and 'data-testid="changed-chip"' in line
+        assert text.startswith("We import, under the program's duty waiver")
+        assert " set " in text and 'data-testid="changed-chip"' in line
 
 
 @pytest.mark.django_db
@@ -163,7 +163,7 @@ class TestComparisonByTerms:
         _set(da, world, "buyer_waiver")
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         body = client_in_program.get(url).content.decode()
-        note = re.search(r'data-testid="comparison-duty-terms"[^>]*>(.*?)</p>', body, re.S).group(1)
+        note = re.search(r'data-testid="comparison-duty-terms"[^>]*>(.*?)</summary>', body, re.S).group(1)
         assert "under the program's duty waiver" in note.replace("&#x27;", "'")
 
 

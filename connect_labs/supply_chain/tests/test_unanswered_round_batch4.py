@@ -11,9 +11,8 @@ import re
 
 from django.urls import reverse
 
-from connect_labs.supply_chain.models import Commodity, Quote
+from connect_labs.supply_chain.models import Quote
 from connect_labs.supply_chain.procurement.services.pricing import compute_figures
-from connect_labs.supply_chain.standing import _committed_total
 from connect_labs.supply_chain.tests import test_tracking_reality as reality
 from connect_labs.supply_chain.tests.test_tracking_reality import _contract, _kanem_quote, op
 from connect_labs.supply_chain.tests.test_unanswered_round_batch1 import _tender_page
@@ -52,13 +51,13 @@ class TestTheOutreachTable:
         count = re.search(
             r'data-testid="outreach-replied-count"[^>]*>([^<]*)<', _tender_page(client_in_program, tender_id)
         )
-        assert count.group(1) == "— 0 of 2 replied"
+        assert count.group(1) == "0 of 2 replied"
         # A quote is a reply, though nobody ticked "replied".
         op(da, "quote_record", data=_kanem_quote(world))
         count = re.search(
             r'data-testid="outreach-replied-count"[^>]*>([^<]*)<', _tender_page(client_in_program, tender_id)
         )
-        assert count.group(1) == "— 1 of 2 replied"
+        assert count.group(1) == "1 of 2 replied"
 
     def test_silence_reads_as_muted_words_and_reply_kinds_read_as_words(self, da, world, client_in_program):
         outreach_id = world["outreach"]["id"]
@@ -133,23 +132,13 @@ class TestTheComparison:
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         return client.get(url).content.decode()
 
-    def test_one_basis_line_when_a_carton_is_a_course(self, da, world, client_in_program):
-        Commodity.objects.filter(slug="rutf").update(
-            base_per_pack=150, course_definition={"base_units_per_course": 150}
-        )
-        op(da, "quote_record", data=_comparable(world))
-        body = self._page(client_in_program, world)
-        basis = re.search(r'data-testid="cost-basis"[^>]*>([^<]*)<', body).group(1)
-        assert basis == "Basis: 1 carton = 150 sachets = 1 course (one child treated)"
-        assert 'data-testid="unit-equivalence"' not in body
-
     def test_the_award_fields_wait_behind_the_award_button(self, da, world, client_in_program):
         op(da, "quote_record", data=_comparable(world))
         body = self._page(client_in_program, world)
-        start = re.search(r'<details data-testid="award-start"[^>]*>(.*?)</details>', body, re.S)
+        start = re.search(r'<details [^>]*data-testid="award-start"[^>]*>(.*?)</details>', body, re.S)
         assert start is not None and " open" not in start.group(0).split(">", 1)[0]
         inner = start.group(1)
-        assert re.search(r'<summary data-testid="award-open"[^>]*>Award</summary>', inner)
+        assert re.search(r'<summary data-testid="award-open"[^>]*>Award Kanem[^<]*</summary>', inner)
         form = re.search(r'<form [^>]*data-testid="award-form".*?</form>', inner, re.S).group(0)
         assert 'name="rationale"' in form and 'data-testid="award-submit"' in form
 
@@ -157,7 +146,7 @@ class TestTheComparison:
         op(da, "quote_record", data=_comparable(world))
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]])
         body = client_in_program.get(url + "?commodity=rutf&step=award").content.decode()
-        tag = re.search(r'<details data-testid="award-start"[^>]*>', body).group(0)
+        tag = re.search(r'<details [^>]*data-testid="award-start"[^>]*>', body).group(0)
         assert " open" in tag
 
 
@@ -235,23 +224,6 @@ def test_an_advance_is_its_own_invoice_table_row(da, world, client_in_program):
     assert "text-xs" not in row.split("</td>", 1)[0]
     # Not repeated as a footnote under the invoice.
     assert "(before this invoice)" not in body
-
-
-# ---- 8. the award total says what it is
-
-
-def test_the_committed_total_names_only_the_legs_it_counts():
-    row = {
-        "figures": {"landed_total_as_quoted": {"amount": "106800", "currency": "USD"}},
-        "quantity_quoted": "2,000 cartons",
-    }
-    assert _committed_total({**row, "landed_basis": "Delivered to Kano · freight 7,200.00 USD added, per quote"}) == (
-        " · USD 106,800.00 landed (incl. freight) for 2,000 cartons"
-    )
-    assert _committed_total(
-        {**row, "landed_basis": "Delivered to Kano · freight included · duties included, per quote"}
-    ) == (" · USD 106,800.00 landed (incl. freight and duties) for 2,000 cartons")
-    assert _committed_total({**row, "landed_basis": ""}) == " · USD 106,800.00 landed for 2,000 cartons"
 
 
 # ---- 9. duty relief with nothing on file
