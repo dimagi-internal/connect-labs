@@ -581,6 +581,10 @@ CONNECT_OAUTH_CLIENT_SECRET = env("CONNECT_OAUTH_CLIENT_SECRET", default="")
 LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = env("LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID", default="")
 # LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID is the Drive folder ID for stock images.
 LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID = env("LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID", default="")
+# Drive folders a workflow pipeline may read (data_source.type "gdrive"). A source's
+# file or folder must sit somewhere under one of these; data a workflow should see is
+# copied there. Empty = Drive pipeline sources are off. See gdrive_fetcher.py.
+LABS_WORKFLOW_GDRIVE_ROOT_IDS = env.list("LABS_WORKFLOW_GDRIVE_ROOT_IDS", default=[])
 
 # Labs admin allowlist — LOCAL DEV ONLY fallback for Connect test accounts that
 # have no email address configured (e.g. username='matt', email='').
