@@ -3,14 +3,14 @@
     "half-the-round-is-silent",
     "sophie-chases-sahel",
     "sahel-finally-answers",
-    "what-we-owe-northgate",
     "whats-still-missing",
+    "what-we-owe-northgate",
     "held-on-us",
     "whose-move"
   ],
   "fetched_at": "2026-10-02T23:33:26.038106+00:00",
   "name": "supply-sophie-unanswered-round",
-  "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program, and 17 days ago she asked six suppliers to quote round 2: half have never answered, despite two reminders, and she forwards whatever does arrive to an AI that records it. Sophie opens the round and reads who answered and who has said nothing, how long each has been silent and when she last chased them. She reads the reminder drafted for Sahel and records the chase from the draft, and Sahel's row on the round is marked with the day she chased. Sahel finally answers with a quote; Sophie forwards it, and the round's history shows Sahel's email, who sent it and what the AI recorded from it, with the email itself behind a Source email toggle. She finds Northgate's questions waiting on her and answers who will import: we import, under the program's duty waiver, and please state freight to Kano. She opens the comparison and reads what each answer still lacks: only Harmattan's quote can be compared on landed total, Kanem's has not stated how many sachets are in a carton, and Sahel's new quote gives no freight figure, no duty figure and no exchange rate, so its landed cost can't be worked out yet. On the round 1 order with Harmattan, she reads the forwarder's message that the trucks are held at the border on our import permit, finds the advance she paid before any invoice existed, and sees the invoice flagged as above the agreed price. Back on her overview, Sophie reads who is still silent and whose move each thing is.",
+  "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program. Round 1's 2,000 cartons, ordered from Harmattan in July, are still not in Kano, and 17 days ago she asked six suppliers to quote round 2: half have never answered, despite two reminders, and she forwards whatever does arrive to an AI that records it. Sophie opens round 2 and reads who answered and who has said nothing, how long each has been silent and when she last chased them, and that the round has not yet settled how import duties are handled. She opens the reminder drafted for Sahel, which says when Sahel was asked and last reminded, and records today's chase from the draft itself. Sahel answers with a quote; Sophie forwards it, sees Sahel's row move to replied, and opens Sahel's own email in the round's history beside what the AI recorded from it. On the comparison only Harmattan's quote can be compared on landed total: Kanem's has not stated how many sachets are in a carton, and Sahel's gives no freight figure, no duty figure and no exchange rate, while the round's duty terms are still not settled. Northgate's questions are waiting on her, and she answers the one about who imports: we import, under the program's duty waiver; please state freight to Kano. She marks that answer as the round's import duty terms, and the round's header now reads them, for every quote on the round. Importing makes the paperwork hers, and round 1 shows what that means: on the order with Harmattan, the forwarder's message says the trucks are held at the border on our import permit, so the next move is hers, not the supplier's, and Harmattan's invoice is flagged above the agreed price. Back on her overview, Sophie reads who is still silent, what each quote still lacks, and whose move each thing is.",
   "personas": {
     "sophie": {
       "color": "#0F766E",
@@ -37,10 +37,15 @@
           "description": "The Outreach heading counts replies of all asked.",
           "id": "outreach-replied-count",
           "verify": "Playwright: [data-testid=outreach-replied-count] reads '3 of 6 replied'"
+        },
+        {
+          "id": "tender-duty-terms-line",
+          "description": "The tender header carries a line stating the round's import duty terms, reading not settled until a value is set.",
+          "verify": "Playwright: [data-testid=tender-duty-terms] reads 'Import duties: not settled'"
         }
       ],
       "id": "half-the-round-is-silent",
-      "narrative": "Sophie asked six suppliers to quote round 2 and only three of the six have replied, though she chased the others twice. She opens the round and reads who answered and who is silent, how long each has been silent, and when she last chased them, and she wants the record to keep telling her the truth: what the answers left out, and whose move it is.",
+      "narrative": "Round 1's cartons are still not in Kano, and Sophie asked six suppliers to quote round 2; only three of the six have replied, though she chased the others twice. She opens the round and reads who answered and who is silent, how long each has been silent and when she last chased them, and that the round has not settled how import duties are handled. She wants the record to keep telling her the truth: what the answers left out, and whose move it is.",
       "persona": "sophie",
       "provenance": "S1",
       "title": "Half the round never answered"
@@ -48,21 +53,26 @@
     {
       "features": [
         {
-          "description": "The drafts panel lists a Reminder draft for each of the three silent suppliers.",
           "id": "reminder-drafts",
+          "description": "The drafts panel lists a Reminder draft for each of the three silent suppliers.",
           "verify": "Playwright: #drafts contains 3 drafts labelled 'Reminder', one for Sahel Nutrition Industries"
         },
         {
-          "description": "The outreach reply form's Last chased on field saves last_reminder_on and returns to the tender.",
-          "id": "record-chased-day",
-          "verify": "Playwright: after saving today's date, the Sahel row's Last chased cell shows today"
+          "id": "reminder-why-line",
+          "description": "Each reminder draft says when the supplier was asked and last reminded.",
+          "verify": "Playwright: Sahel's draft [data-testid=draft-why] contains 'no reply is recorded' and 'last reminded on'"
+        },
+        {
+          "id": "record-chase-on-draft",
+          "description": "A reminder draft carries a Chased on date, defaulting to today, and a Record chase button that saves last_reminder_on and returns to the round with Sahel's Last chased cell marked.",
+          "verify": "Playwright: Sahel's draft shows [data-testid=chase-date] and a 'Record chase' button; after clicking it, tr[data-changed] is Sahel Nutrition Industries' row"
         }
       ],
       "id": "sophie-chases-sahel",
-      "narrative": "Sophie reads the reminder drafted for Sahel, which quotes when she last wrote, and records the chase from the draft itself; back on the round, Sahel's row is marked with the day she chased and the reminder count, so the round keeps the day.",
+      "narrative": "Sophie opens the round's draft emails and reads the reminder drafted for Sahel: it says when Sahel was asked and when she last reminded them, and under the message the Chased on field already holds today's date beside Record chase, so the chase she sends is recorded from the draft itself.",
       "persona": "sophie",
       "provenance": "S2",
-      "title": "She chases Sahel from the drafted reminder"
+      "title": "She chases Sahel from a drafted reminder"
     },
     {
       "features": [
@@ -83,29 +93,10 @@
         }
       ],
       "id": "sahel-finally-answers",
-      "narrative": "Sahel answers the reminder with a quote and Sophie forwards it to the AI. The round's history shows Sahel's email, who sent it and what the AI recorded from it; the email's own excerpt sits behind its Source email toggle, so she can check the record against what Sahel wrote.",
+      "narrative": "Sahel answers the reminder with a quote and Sophie forwards it to the AI; Sahel's row on the round moves to replied. In the round's history, turned to replies only, she opens Sahel's own email: who sent it, the excerpt of what Sahel wrote, and below it what the AI recorded from it, so she can check the record against Sahel's words.",
       "persona": "sophie",
       "provenance": "S3",
-      "title": "Sahel finally answers, and the record moves"
-    },
-    {
-      "features": [
-        {
-          "description": "The What we owe them section lists Northgate's open questions with raised day and text.",
-          "id": "owed-list-tender",
-          "verify": "Playwright: #owed shows 3 rows under 'Northgate Commodities · asked 18 Sep 2026 · 3 questions', each reading how many days it has been open"
-        },
-        {
-          "description": "Mark answered opens the commitment resolve form; submitting records the answer and resolved day.",
-          "id": "commitment-resolve-web",
-          "verify": "Playwright: after submit, the importer question carries an 'Answered' chip and its answer line reads 'Answered <day> by Sophie: We import, under the program's duty waiver; please state freight to Kano.'"
-        }
-      ],
-      "id": "what-we-owe-northgate",
-      "narrative": "Sophie reads Northgate's three questions, recorded as answers she owes, and answers the one about who will import on the spot: we import, under the program's duty waiver, and please state freight to Kano.",
-      "persona": "sophie",
-      "provenance": "S4",
-      "title": "Northgate is waiting on her, and she answers"
+      "title": "Sahel finally answers, and she opens the email"
     },
     {
       "features": [
@@ -116,10 +107,34 @@
         }
       ],
       "id": "whats-still-missing",
-      "narrative": "Sophie opens the comparison and reads what each answer still lacks: only Harmattan's quote can be compared on landed total, Kanem's has not stated how many sachets are in a carton, and Sahel's new quote gives no freight figure, no duty figure and no exchange rate, so its landed cost can't be worked out yet.",
+      "narrative": "Sophie opens the comparison and reads what each answer still lacks: only Harmattan's quote can be compared on landed total, Kanem's has not stated how many sachets are in a carton, and Sahel's new quote gives no freight figure, no duty figure and no exchange rate, while the round's duty terms are not settled, so its landed cost can't be worked out yet.",
+      "persona": "sophie",
+      "provenance": "S4",
+      "title": "An answer is not yet a quote she can compare"
+    },
+    {
+      "features": [
+        {
+          "id": "owed-list-tender",
+          "description": "The What we owe them section lists Northgate's open questions with raised day and text.",
+          "verify": "Playwright: #owed shows 3 rows under 'Northgate Commodities' with '3 questions', each reading how many days it has been open"
+        },
+        {
+          "id": "answer-sets-duty-terms",
+          "description": "The Mark answered form carries a select [data-testid=answer-duty-terms] (name duty_terms), labelled 'This answer sets the round's import duty terms'; submitting with a value records the answer and sets the tender's duty terms as an attributed operation with a Revision.",
+          "verify": "Playwright: the resolve form shows 'This answer sets the round's import duty terms'; after choosing buyer_waiver and Save, the importer question's answer reads 'We import, under the program's duty waiver; please state freight to Kano.'"
+        },
+        {
+          "id": "tender-duty-terms-set",
+          "description": "The tender header's duty terms line reads the terms just set, with who set them, carrying the just-changed marker.",
+          "verify": "Playwright: [data-testid=tender-duty-terms] contains 'Import duties: we import, under the program's duty waiver' and 'by Sophie'"
+        }
+      ],
+      "id": "what-we-owe-northgate",
+      "narrative": "Back on the round, Sophie reads Northgate's open questions, recorded as answers she owes, and answers the one about who imports for her reply to Northgate: we import, under the program's duty waiver; please state freight to Kano. She marks that answer as setting the round's import duty terms, and the round's header now reads that we import under the program's duty waiver, set by Sophie, for every quote on the round.",
       "persona": "sophie",
       "provenance": "S5",
-      "title": "An answer is not yet a quote she can use"
+      "title": "One answer to Northgate settles the round's duties"
     },
     {
       "features": [
@@ -134,21 +149,16 @@
           "verify": "Playwright: order #history shows 'from Crescent Freight & Clearing'"
         },
         {
-          "description": "The order's invoice table shows the advance paid before any invoice as its own Advance paid row, with the day paid, the amount, and the invoice that later applied it.",
-          "id": "advance-on-order",
-          "verify": "Playwright: [data-testid=advance-row] contains 'Advance paid', 'USD 53,400.00' and 'applied to INV-HT-26-0912'"
-        },
-        {
           "description": "Order page banner lists each invoice line above the contract with billed vs agreed.",
           "id": "invoice-above-banner",
           "verify": "Playwright: [data-testid=invoice-above-contract] contains '51.20' and '49.80'"
         }
       ],
       "id": "held-on-us",
-      "narrative": "On the round 1 order with Harmattan, Sophie reads in the order's history the message from Crescent Freight & Clearing that the trucks are held at the border on our import permit, so the next move is hers; she finds the advance she paid at the award, before any invoice existed, as its own row in the invoices, and Harmattan's invoice flagged as above the agreed price.",
+      "narrative": "Importing makes the paperwork hers, and round 1 shows what that means. On the order with Harmattan, the order says it is waiting on us for the import permit, and the forwarder's message in its history says the trucks are held at the border until it is lodged, so the next move is hers, not the supplier's; and Harmattan's invoice is flagged above the agreed price, billed against agreed.",
       "persona": "sophie",
       "provenance": "S6",
-      "title": "Round 1's order: waiting on us, paid early, billed high"
+      "title": "Round 1's order: held on our permit, billed high"
     },
     {
       "features": [
@@ -161,15 +171,20 @@
           "description": "Overview row for the round 1 order reads 'Us: import permit'.",
           "id": "overview-waiting-on-us",
           "verify": "Playwright: [data-testid=standing-table] contains 'import permit'"
+        },
+        {
+          "id": "overview-missing-facts-waiver",
+          "description": "With the round's duty terms set to the buyer's waiver, the overview's Missing facts for Sahel no longer lists the duties amount.",
+          "verify": "Playwright: [data-testid=standing-table] contains 'Sahel Nutrition Industries (exchange rate, freight amount)' and not 'duties amount'"
         }
       ],
       "id": "whose-move",
-      "narrative": "Back on her overview, Sophie reads who is still silent and whose move each thing is: round 2 waiting on two suppliers who have not replied and on her answers to Northgate, the order waiting on her permit.",
+      "narrative": "Back on her overview, Sophie reads who is still silent, what each quote still lacks and whose move each thing is: round 2 waiting on two suppliers who have not replied and on her remaining answers to Northgate, Sahel's quote on its exchange rate and freight, and the round 1 order on her import permit.",
       "persona": "sophie",
       "provenance": "S7",
       "title": "Who is silent, and whose move each thing is"
     }
   ],
   "slug": "supply-sophie-unanswered-round",
-  "version": 10
+  "version": 11
 }
