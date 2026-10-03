@@ -57,11 +57,11 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
         <col data-col="waiting" style="width: 38%">
         <col data-col="last-change" style="width: 16%">
         {% else %}
-        <col data-col="title" style="width: 16%">
-        <col data-col="stage" style="width: 17%">
-        <col data-col="waiting" style="width: 31%">
+        <col data-col="title" style="width: 15%">
+        <col data-col="stage" style="width: 15%">
+        <col data-col="waiting" style="width: 41%">
         <col data-col="last-change" style="width: 11%">
-        <col data-col="flags" style="width: 25%">
+        <col data-col="flags" style="width: 18%">
         {% endif %}
       </colgroup>
       <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
@@ -94,8 +94,10 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
               quote is missing a fact.{% endcomment %}
               {% comment %}One owner a line. A "No reply" line stacks its suppliers, one a line, each
               with the day we asked it and the day we last chased it.{% endcomment %}
+              {% comment %}The round's own count ("4 of 6 replied") leads the cell, at body size:
+              as a grey caption under the lists it was the cell's smallest text.{% endcomment %}
+              {% if row.waiting_detail %}<span data-testid="waiting-detail" class="block font-medium text-gray-900 mb-1">{{ row.waiting_detail }}</span>{% endif %}
               {% if row.waiting_lines %}{% for line in row.waiting_lines %}{% include "supply_chain/_waiting_line.html" with line=line testid="waiting-line" %}{% endfor %}{% else %}{% include "supply_chain/_waiting_line.html" with line=row.waiting_on testid="waiting-on" %}{% endif %}
-              {% if row.waiting_detail %}<span data-testid="waiting-detail" class="block text-xs text-gray-600">{{ row.waiting_detail }}</span>{% endif %}
             </td>
             <td class="px-4 py-2.5">
               {% if row.last_change_at %}

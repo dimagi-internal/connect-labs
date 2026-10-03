@@ -810,13 +810,20 @@ The section stays only if one was somehow recorded, so it is not hidden.
               <span class="text-message-warning-text text-xs">not given</span>
             {% endif %}
           </td>
-          <td class="px-4 py-2 text-gray-700">{{ invoice.status|humanise }}</td>
+          <td class="px-4 py-2 text-gray-700">{% if invoice.status == "queried" %}<span data-testid="invoice-disputed">disputed</span>{% if invoice.note %}<div data-testid="invoice-dispute-note" class="text-xs text-gray-600 max-w-xs">{{ invoice.note|linebreaksbr }}</div>{% endif %}{% else %}{{ invoice.status|humanise }}{% endif %}</td>
           <td class="px-4 py-2 text-sm text-gray-700">{% told_by_for invoice orgs tellers %}</td>
           <td class="px-4 py-2 text-right whitespace-nowrap">
             {% if not supply_as_of %}
             {% if invoice.status != "paid" %}
               <a href="{% url 'supply_chain:payment_record' invoice.id %}"
                  class="text-brand-indigo hover:underline">Pay</a>
+              <span class="mx-1 text-gray-300">·</span>
+            {% endif %}
+            {% comment %}An invoice billed above what was agreed gets the move it asks for, beside
+            Pay: Pay alone was the only next step a flag offered.{% endcomment %}
+            {% if invoice.above_agreed and invoice.status != "paid" and invoice.status != "queried" %}
+              <a data-testid="invoice-dispute" href="{% url 'supply_chain:invoice_dispute' invoice.id %}"
+                 class="text-brand-indigo font-medium hover:underline">Dispute</a>
               <span class="mx-1 text-gray-300">·</span>
             {% endif %}
             <a href="{% url 'supply_chain:invoice_edit' invoice.id %}"
@@ -833,7 +840,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
           <tr data-testid="{% if mark.tag %}invoice-above-agreed-row{% else %}invoice-against-agreed{% endif %}" class="bg-gray-50/60 text-sm">
             <td class="px-4 py-1.5 pl-8 text-gray-900">{{ mark.label }}</td>
             <td class="px-4 py-1.5"></td>
-            <td class="px-4 py-1.5 text-right tabular-nums text-gray-900"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}>{% if mark.billed %}<div>{{ mark.currency }} {{ mark.billed }} billed</div><div class="text-gray-600">{{ mark.agreed }} agreed</div>{% if mark.difference %}<div data-testid="invoice-difference" class="font-medium text-gray-900">+{{ mark.currency }} {{ mark.difference }}</div>{% endif %}{% else %}+{{ mark.text }}{% endif %}</td>
+            <td class="px-4 py-1.5 text-right tabular-nums text-gray-900"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}>{% if mark.billed %}<div>{{ mark.currency }} {{ mark.billed }} billed</div><div class="text-gray-600">{{ mark.currency }} {{ mark.agreed }} agreed</div>{% if mark.difference %}<div data-testid="invoice-difference" class="font-medium text-gray-900">+{{ mark.currency }} {{ mark.difference }}</div>{% endif %}{% else %}+{{ mark.text }}{% endif %}</td>
             <td class="px-4 py-1.5"></td>
             <td class="px-4 py-1.5"><span data-testid="above-agreed-tag" class="inline-flex items-center whitespace-nowrap rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></td>
             <td class="px-4 py-1.5" colspan="2"></td>

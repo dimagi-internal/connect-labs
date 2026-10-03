@@ -468,6 +468,35 @@ def invoice_update(access, invoice_id, data):
 
 
 @register_operation(
+    name="invoice_dispute",
+    summary=(
+        "Dispute an invoice with the supplier -- typically one billed above the agreed price. The invoice "
+        "is marked queried and the reason is kept on it, dated, so the order shows it is disputed and "
+        "why, and the history shows who disputed it. Nothing is sent to the supplier from here."
+    ),
+    input_schema=obj(
+        {"invoice_id": ID, "reason": {"type": "string", "minLength": 1}, "disputed_on": _DATE},
+        required=("invoice_id", "reason"),
+    ),
+    is_write=True,
+)
+def invoice_dispute(access, invoice_id, reason, disputed_on=None):
+    from datetime import date
+
+    from connect_labs.supply_chain.values import day_text
+
+    invoice = access.get_invoice(invoice_id)
+    if invoice is None:
+        raise ValueError(f"invoice {invoice_id} not found")
+    if invoice.status == "paid":
+        raise ValueError("this invoice is paid in full; a dispute now is a claim on the supplier, not a query")
+    day = date.fromisoformat(disputed_on) if disputed_on else date.today()
+    line = f"Disputed {day_text(day)}: {reason.strip()}"
+    note = f"{invoice.note}\n{line}" if (invoice.note or "").strip() else line
+    return record(access.update_invoice(invoice_id, {"status": "queried", "note": note}))
+
+
+@register_operation(
     name="payment_record",
     summary=(
         "Record a payment: against an invoice (invoice_id), or against the order before any invoice "

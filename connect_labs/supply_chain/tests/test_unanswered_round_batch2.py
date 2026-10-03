@@ -266,7 +266,7 @@ class TestTheComparison:
             _text(re.search(r'data-testid="award-caveat"[^>]*>(.*?)</a>', button.group(1)).group(1))
         )
         # Since the 002 run's batch 3 the caveat is helper text under the action, not in it.
-        assert label.startswith("Award Kanem ") and label.endswith(" now")
+        assert label.startswith("Award Kanem ") and label.endswith(" anyway (1 quote still incomplete)")
         assert caveat == "1 other quote can't be compared yet: see Needs info"
         assert 'title="Northgate Rehearsal Commodities has not stated ' in button.group(0)
 

@@ -273,7 +273,7 @@ class TestOrderInvoices:
         marker = re.search(r'<tr data-testid="invoice-above-agreed-row".*?</tr>', body, re.S).group(0)
         assert (
             re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", marker)).strip()
-            == "Total USD 110,350.00 billed 106,800.00 agreed +USD 3,550.00 above agreed"
+            == "Total USD 110,350.00 billed USD 106,800.00 agreed +USD 3,550.00 above agreed"
         )
         assert 'data-testid="above-agreed-tag"' in marker
 

@@ -902,3 +902,40 @@ def duty_terms_set_by(tender_id, *, program_id) -> str:
         .first()
     )
     return actor_label(revision.call, Lookup()) if revision is not None else ""
+
+
+def duty_terms_answer(tender_id, *, program_id) -> dict | None:
+    """The answered question that last set a tender's import-duty terms, when an answer did.
+
+    {"commitment_id", "owed_to", "on"}: read off the call that changed
+    `duty_terms` -- an answer to a supplier's question (commitment_resolve)
+    changes the question in the same call. None when the terms were set some
+    other way (the tender's own form), or never.
+    """
+    from connect_labs.supply_chain.models import Commitment, Tender
+
+    revision = (
+        Revision.objects.filter(
+            _type_q(Tender),
+            object_id=str(tender_id),
+            program_id=program_id,
+            changes__has_key="duty_terms",
+        )
+        .order_by("-recorded_at", "-id")
+        .first()
+    )
+    if revision is None or revision.call_id is None:
+        return None
+    sibling = Revision.objects.filter(_type_q(Commitment), call_id=revision.call_id).order_by("id").first()
+    if sibling is None:
+        return None
+    commitment = (
+        Commitment.objects.filter(pk=sibling.object_id, program_id=program_id).select_related("owed_to_org").first()
+    )
+    if commitment is None:
+        return None
+    return {
+        "commitment_id": commitment.pk,
+        "owed_to": commitment.owed_to_org.name if commitment.owed_to_org_id else "",
+        "on": commitment.resolved_on or revision.recorded_at.date(),
+    }

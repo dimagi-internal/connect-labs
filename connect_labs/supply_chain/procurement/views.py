@@ -22,7 +22,7 @@ client of its own API.
 """
 
 import re
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import jsonschema
@@ -60,8 +60,9 @@ from connect_labs.supply_chain.procurement.forms import (
     TenderLineFormSet,
     TenderPlaceFormSet,
 )
+from connect_labs.supply_chain.procurement.operations import DEFAULT_REMINDER_INTERVAL_DAYS
 from connect_labs.supply_chain.procurement.services.comparison import RANKING_RULE
-from connect_labs.supply_chain.values import quantity_phrase, unit_noun
+from connect_labs.supply_chain.values import day_text, quantity_phrase, unit_noun
 from connect_labs.supply_chain.views import mark_changed, owed_context
 
 
@@ -69,6 +70,33 @@ def _ordinal(n: int) -> str:
     """1st, 2nd, 3rd, 4th ... 11th, 12th, 13th ... 21st."""
     suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
     return f"{n}{suffix}"
+
+
+def _parse_day(value):
+    return value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
+
+
+def _reminder_facts(row, interval_days, as_of=None) -> list:
+    """A reminder draft's facts as a labelled row: asked, last reminded, which reminder this is, how often.
+
+    The same facts as the draft's why sentence, set out so they read as facts
+    about the round rather than as more of the card's body copy.
+    """
+    if not row:
+        return []
+    today = as_of or date.today()
+    facts = []
+    if row.get("sent_on"):
+        asked = _parse_day(row["sent_on"])
+        facts.append({"label": "Asked", "value": f"{day_text(asked)} ({(today - asked).days} days ago)"})
+    count = row.get("reminder_count") or 0
+    if row.get("last_reminder_on"):
+        last = _parse_day(row["last_reminder_on"])
+        facts.append({"label": "Last reminded", "value": f"{day_text(last)} · {_ordinal(count)} reminder"})
+    facts.append({"label": "This would be", "value": f"the {_ordinal(count + 1)} reminder"})
+    if interval_days:
+        facts.append({"label": "Due every", "value": f"{interval_days} day{'s' if interval_days != 1 else ''}"})
+    return facts
 
 
 def _deadline_passed(tender, as_of=None):
@@ -230,6 +258,11 @@ class TenderDetailView(_Base):
                 count = max(count, 1)
             o["reminder_count"] = count
             o["reminder_text"] = f"{_ordinal(count)} reminder" if count else ""
+            # When the next reminder falls due, said beside a chase just recorded.
+            if o.get("last_reminder_on"):
+                o["next_due"] = _parse_day(o["last_reminder_on"]) + timedelta(
+                    days=tender.get("reminder_interval_days") or DEFAULT_REMINDER_INTERVAL_DAYS
+                )
             # Silent since the latest ask -- the invitation or the last chase --
             # not since the invitation: a chase restarts the wait.
             o["silent_days"] = None if o.get("responded") else _days_since_ask(o, as_of)
@@ -263,8 +296,12 @@ class TenderDetailView(_Base):
         # "Draft email to <supplier>" opens the panel at that supplier's.
         anchored = set()
         in_reply = {}
+        by_outreach = {o.get("id"): o for o in outreach}
+        interval_days = (context["drafts"] or {}).get("reminder_interval_days")
         for i, d in enumerate((context["drafts"] or {}).get("drafts") or []):
             d["rows"] = _message_rows(d.get("text") or "")
+            if d["kind"] == "reminder":
+                d["facts"] = _reminder_facts(by_outreach.get(d.get("outreach_id")), interval_days, as_of)
             if d.get("supplier_id") is not None and d["kind"] != "reply" and d["supplier_id"] not in anchored:
                 anchored.add(d["supplier_id"])
                 d["anchor"] = f"draft-supplier-{d['supplier_id']}"
@@ -274,6 +311,13 @@ class TenderDetailView(_Base):
                 d["anchor"] = f"draft-reply-{d.get('supplier_id') or i}"
                 for commitment_id in d.get("commitment_ids") or []:
                     in_reply[commitment_id] = {"anchor": d["anchor"], "to": d["supplier_name"]}
+        reminder_anchor = {
+            d["supplier_id"]: d["anchor"]
+            for d in (context["drafts"] or {}).get("drafts") or []
+            if d["kind"] == "reminder" and d.get("anchor")
+        }
+        for o in context["outreach"]:
+            o["draft_anchor"] = reminder_anchor.get(o.get("supplier_id"))
         for c in context.get("owed") or []:
             c["in_draft"] = in_reply.get(c.get("id"))
             # Written into a reply that has not gone yet: drafted, not answered.
@@ -906,6 +950,22 @@ class ComparisonView(_Base):
         context["single_offer"] = len((comparison or {}).get("comparable") or []) == 1
         context["award_anyway"] = award_anyway(comparison)
         context["award_anyway_detail"] = award_anyway_detail(comparison)
+        context["award_incomplete_count"] = len(
+            [row for row in (comparison or {}).get("blocked") or [] if row.get("blockers")]
+        )
+        # Where the round's duty terms came from, when an answer to a supplier set them:
+        # the comparison then carries the answer-to-terms link itself.
+        if tender.get("duty_terms"):
+            from connect_labs.supply_chain.history.timeline import duty_terms_answer
+
+            context["duty_terms_answer"] = duty_terms_answer(tender_id, program_id=_access(self.request).program_id)
+        if tender.get("duty_terms") == "buyer_waiver":
+            from connect_labs.supply_chain.models import Document
+
+            # The zero duty every quote is costed at rests on the waiver: say whether a copy is on file.
+            context["waiver_on_file"] = Document.objects.filter(
+                tender_id=tender_id, program_id=_access(self.request).program_id, kind="duty_exemption"
+            ).exists()
         # Arriving by a link to the award step (?step=award) opens the folded award fields:
         # the link already said "award", so a second click to reveal them is friction.
         context["award_step"] = self.request.GET.get("step") == "award"

@@ -289,6 +289,11 @@ urlpatterns = [
     path("shipments/<int:shipment_id>/charges/new/", stock_views.ChargeRecordView.as_view(), name="charge_record"),
     path("invoices/<int:invoice_id>/edit/", fulfilment_views.InvoiceUpdateView.as_view(), name="invoice_edit"),
     path(
+        "invoices/<int:invoice_id>/dispute/",
+        fulfilment_views.InvoiceDisputeView.as_view(),
+        name="invoice_dispute",
+    ),
+    path(
         "invoices/<int:invoice_id>/payments/new/",
         fulfilment_views.PaymentRecordView.as_view(),
         name="payment_record",
