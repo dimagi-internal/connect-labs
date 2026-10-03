@@ -16,8 +16,9 @@ them out on a past date.
     {% comment %}Off by default. On, it hides every line no email stands behind -- invitations
     sent, chases, our own edits -- so what suppliers and forwarders told us leads. Client-side:
     nothing is refetched, and a day left with nothing in it hides its heading too.{% endcomment %}
-    <label class="inline-flex items-center gap-2 text-sm text-gray-700">
-      <input type="checkbox" data-testid="history-replies-only" class="rounded border-gray-300"
+    {% comment %}Set as the outlined pill the page's other controls are, its box inside it.{% endcomment %}
+    <label class="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 has-[:checked]:border-brand-indigo has-[:checked]:text-brand-indigo">
+      <input type="checkbox" data-testid="history-replies-only" class="rounded border-gray-300 text-brand-indigo"
              onchange="(function (box) {
                var list = box.closest('[data-timeline]').querySelector('[data-timeline-list]');
                list.querySelectorAll('[data-no-source]').forEach(function (li) { li.hidden = box.checked; });
@@ -44,7 +45,7 @@ them out on a past date.
           history reads the same way as the panels above it.{% endcomment %}
           {% ifchanged event.when|date:"Y-m-d" %}
           <li data-testid="timeline-day" class="pt-3 pb-0.5 border-t border-gray-200 first:border-t-0 first:pt-1">
-            <time class="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-gray-900 tabular-nums"
+            <time class="whitespace-nowrap text-sm font-bold uppercase tracking-wide text-gray-900 tabular-nums"
                   datetime="{{ event.when|date:'Y-m-d' }}">{{ event.when|date:"j M Y" }}</time>
           </li>
           {% endifchanged %}
@@ -79,7 +80,7 @@ them out on a past date.
             nested rails read as three nested things.{% endcomment %}
             <ol data-testid="email-event-records" class="mt-1">
               {% for entry in event.members %}
-                {% include "supply_chain/_timeline_line.html" with entry=entry in_event=True %}
+                {% include "supply_chain/_timeline_line.html" with entry=entry in_event=True event_sender=event.sender %}
               {% endfor %}
             </ol>
           </li>

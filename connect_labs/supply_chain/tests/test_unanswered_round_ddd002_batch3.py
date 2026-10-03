@@ -60,7 +60,11 @@ class TestTheReminderDraft:
 def test_a_quote_s_void_is_set_apart_from_correct():
     html = render_to_string(
         "supply_chain/_timeline_line.html",
-        {"entry": {"line": "Quote recorded", "correct_url": "/c/", "void_url": "/v/"}, "in_event": True},
+        {
+            "entry": {"line": "Quote recorded", "correct_url": "/c/", "void_url": "/v/"},
+            "in_event": True,
+            "event_sender": "",
+        },
     )
     fixes = re.search(r'data-testid="quote-fixes"[^>]*>(.*?)</div>', html, re.S).group(1)
     assert 'href="/c/" class="text-brand-indigo' in fixes

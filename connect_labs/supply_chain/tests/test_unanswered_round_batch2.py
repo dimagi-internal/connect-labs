@@ -204,9 +204,9 @@ class TestTheComparison:
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         body = client_in_program.get(url).content.decode()
         table = re.search(r'<table data-testid="ranked-table" class="([^"]*)">(.*?)</table>', body, re.S)
-        # Since DDD 003 batch 4: one offer is a result, not a ranking -- a compact card as
-        # wide as its figures, not a full-width table that is mostly empty space.
-        assert "w-auto" in table.group(1).split()
+        # One offer is a result, not a ranking (DDD 003 batch 4); since batch 5 its card spans
+        # the content width, as the banner above it and the Needs info cards below it do.
+        assert "w-full" in table.group(1).split()
         assert 'data-testid="single-result"' in body
         assert "<th>#</th>" not in table.group(2) and 'data-testid="ranked-by-marker"' not in table.group(2)
         assert 'data-testid="ranked-by-fallback"' not in body

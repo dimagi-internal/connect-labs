@@ -264,7 +264,7 @@ scenes:
     seconds: 2.0
     target: testid:comparison-duty-terms
   - kind: scroll_to
-    note: the Needs info heading to the top, its Round terms line (set from her answer to Northgate) right under it and Sahel's card below -- cause and effect in one frame
+    note: the Needs info heading to the top (the section is at least a screen tall, so the scroll is not clamped at the page foot), the Round terms line right under it and Sahel's card below, its duty line citing her answer to Northgate -- cause and effect in one frame
     target: css:#needs-info
   - kind: hover
     note: the card's own Duty line -- waived because we import, the round's terms set from her answer to Northgate
@@ -272,9 +272,9 @@ scenes:
     seconds: 2.0
     target: css:[data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=card-duty]
   - kind: hover
-    note: park the cursor in the Needs info heading's blank right (empty page space), off its words, the Round terms line and Sahel's card
+    note: park the cursor in the fixed top bar's blank middle (empty space, x about 750, y about 32), off the Needs info heading, the Round terms line and every card; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
-    target: css:h2:has([data-testid=needs-info-title])
+    target: css:header.fixed
   - kind: hold
     seconds: 2.0
   - kind: snapshot

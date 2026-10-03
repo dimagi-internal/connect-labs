@@ -391,6 +391,15 @@ def _tender_rows(program_id, today, until):
         awards.setdefault(award.tender_id, award)
     provisional = {tid: a for tid, a in awards.items() if a.provisional}
     owed = _owed_by_tender(program_id, tender_ids)
+    # Open rounds costed at zero duty under the waiver with no copy of it on the
+    # tender: attaching it is ours to do, so the round's owner list says so.
+    from connect_labs.supply_chain.models import Document
+
+    waiver_on_file = set(
+        Document.objects.filter(program_id=program_id, tender_id__in=tender_ids, kind="duty_exemption").values_list(
+            "tender_id", flat=True
+        )
+    )
 
     rows = []
     for tender in tenders:
@@ -410,6 +419,12 @@ def _tender_rows(program_id, today, until):
             # A round still open past its deadline is a decision only we can make:
             # the stage says the deadline passed, so the owner list says whose it is.
             ours_items.append(("extend or close the round", f"deadline passed {_day(tender.response_deadline)}"))
+        if (
+            tender.status == "open"
+            and getattr(tender, "duty_terms", "") == "buyer_waiver"
+            and tender.pk not in waiver_on_file
+        ):
+            ours_items.append(("attach the duty waiver document", "none on file"))
         if ours_items:
             # What we owe comes first: it is the one thing on the row only we can move.
             # A labelled list like "No reply" and "Missing facts" beside it, so the

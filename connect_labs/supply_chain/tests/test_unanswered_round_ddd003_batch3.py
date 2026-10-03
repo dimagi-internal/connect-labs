@@ -56,7 +56,10 @@ class TestTheDutyLine:
         if 'data-testid="card-duty"' in body:
             line = _text(re.search(r'data-testid="card-duty".*?</p>', body, re.S).group(0))
             assert "Duty waived (our import)" in line
-            assert "from your answer to" in line and "3 Oct" in line
+            assert "from your answer to" in line
+            # Since DDD 003 batch 5 the day is said once, on the Round terms line above the cards.
+            terms = _text(re.search(r'data-testid="needs-info-duty-terms".*?</p>', body, re.S).group(0))
+            assert "set 3 Oct" in terms
 
 
 def test_an_origin_incoterm_is_a_handover_not_a_delivery():
