@@ -22,8 +22,10 @@
 <h1 class="text-xl font-semibold text-gray-900 mb-1">Comparison — {{ commodity_name }}{% if tender.label %} <span class="font-normal text-gray-600">· {{ tender.label }}</span>{% endif %}</h1>
 {% comment %}The round's duty terms, once, above every quote they cost: whether a quote that leaves
 duty out is missing a figure depends on who imports.{% endcomment %}
-<p data-testid="comparison-duty-terms" class="text-sm text-gray-700 mb-1">
-  Import duties for this round: {{ tender.duty_terms|duty_terms_words }}{% if tender.duty_terms == "buyer_waiver" %} — duty counts as zero on every quote, and no supplier is asked for it <span data-testid="waiver-evidence" class="text-gray-600">(waiver document: {% if waiver_on_file %}on file{% else %}none on file yet{% endif %})</span>.{% elif tender.duty_terms == "buyer_pays" %} — {% if tender.duty_estimate_percent %}our estimate of {{ tender.duty_estimate_percent|floatformat:"-2" }}% of the goods is added to each landed total.{% else %}no landed total until our duty estimate is recorded on the tender.{% endif %}{% elif tender.duty_terms == "supplier_ddp" %} — each quote's own duty figure is used.{% else %} — each quote is costed by the duty it states, and one that leaves duty out cannot be ranked.{% endif %}
+{% comment %}A labelled status line, the setting in the page's own weight and the costing rule after it
+in muted body text: as one run of grey body copy it read like the "Draft emails" line under it.{% endcomment %}
+<p data-testid="comparison-duty-terms" class="text-sm text-gray-600 mb-1">
+  <span class="font-semibold text-gray-900">Import duties for this round:</span> <span data-testid="duty-terms-value" class="font-semibold text-gray-900">{{ tender.duty_terms|duty_terms_words }}</span>{% if tender.duty_terms == "buyer_waiver" %} — duty counts as zero on every quote, and no supplier is asked for it <span data-testid="waiver-evidence" class="text-gray-600">(waiver document: {% if waiver_on_file %}on file{% else %}none on file yet{% endif %})</span>.{% elif tender.duty_terms == "buyer_pays" %} — {% if tender.duty_estimate_percent %}our estimate of {{ tender.duty_estimate_percent|floatformat:"-2" }}% of the goods is added to each landed total.{% else %}no landed total until our duty estimate is recorded on the tender.{% endif %}{% elif tender.duty_terms == "supplier_ddp" %} — each quote's own duty figure is used.{% else %} — each quote is costed by the duty it states, and one that leaves duty out cannot be ranked.{% endif %}
   {% if duty_terms_answer %}<a data-testid="duty-terms-source" class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}?changed=commitment-{{ duty_terms_answer.commitment_id }}#owed">Set from your answer to {{ duty_terms_answer.owed_to }}'s question, {{ duty_terms_answer.on|date:"j M" }}.</a>{% endif %}
 </p>
 {% if not supply_as_of %}
@@ -42,7 +44,8 @@ duty out is missing a figure depends on who imports.{% endcomment %}
   who has not stated what. No ranking words -- "provisional", "could still beat it" --
   a statement of the gap reads the same whether one quote is ranked or none is.
   {% endcomment %}
-  <div data-testid="comparison-banner" class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-sm text-amber-900">
+  {% comment %}A count, not an alarm: a calm neutral panel. The amber fill read as a warning.{% endcomment %}
+  <div data-testid="comparison-banner" class="bg-white border border-gray-200 rounded-lg p-4 mb-4 text-sm text-gray-900">
     <strong>{{ comparison.comparable_count }} of {{ comparison.total_count }} quote{{ comparison.total_count|pluralize }} can be compared{% if compared_on and comparison.comparable %} on {{ compared_on }}{% endif %}.</strong>
     {% if missing_items %}
       <span class="block mt-1">Not yet stated or recorded:</span>
@@ -265,7 +268,7 @@ duty out is missing a figure depends on who imports.{% endcomment %}
                   as before, and opens again on a refused award.{% endcomment %}
                   <details data-testid="award-start" class="min-w-0"{% if award_error or award_step %} open{% endif %}>
                     <summary data-testid="award-open"{% if award_anyway %} data-anyway title="{{ award_anyway_detail }}"{% endif %}
-                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden {% if award_anyway %}block{% else %}inline-block px-4 py-1.5 text-sm rounded-md bg-brand-indigo hover:bg-brand-deep-purple text-white{% endif %}">{% if award_anyway %}<span data-testid="award-label" class="inline-block rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-50">Award {{ row.supplier_name }} anyway ({{ award_incomplete_count }} quote{{ award_incomplete_count|pluralize }} still incomplete)</span><a data-testid="award-caveat" href="#needs-info" class="block mt-1 text-sm text-brand-indigo hover:underline">{{ award_anyway|capfirst }}: see Needs info</a>{% else %}Award{% endif %}</summary>
+                             class="cursor-pointer list-none [&::-webkit-details-marker]:hidden {% if award_anyway %}block{% else %}inline-block px-4 py-1.5 text-sm rounded-md bg-brand-indigo hover:bg-brand-deep-purple text-white{% endif %}">{% if award_anyway %}<span data-testid="award-label" class="inline-block rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-50">Award {{ row.supplier_name }} anyway ({{ award_incomplete_count }} quote{{ award_incomplete_count|pluralize }} still incomplete)</span>{% else %}Award{% endif %}</summary>
                   <form method="post" action="" data-testid="award-form" class="mt-2 flex flex-wrap items-end gap-2 min-w-0">
                     {% csrf_token %}
                     <input type="hidden" name="quote_id" value="{{ row.quote_id }}">

@@ -76,4 +76,4 @@ class TestTheOrderPage:
         invoice_row = re.search(r"<tr>\s*<td[^>]*>INV-REH-1</td>.*?</tr>", body, re.S).group(0)
         assert "above agreed" not in invoice_row
         # One size and weight down the Told by column.
-        assert '<td class="px-4 py-2 text-sm text-gray-700">the supplier told us</td>' in invoice_row
+        assert '<td class="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">the supplier told us</td>' in invoice_row
