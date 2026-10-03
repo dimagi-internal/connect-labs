@@ -52,8 +52,7 @@ class this build has not seen ships purged.
       <dt class="text-[11px] text-gray-600">Buyer</dt>
       <dd class="text-gray-900">
         {% if contract.consideration == "in_kind" %}Donated to{% else %}Bought by{% endif %}
-        <b>{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record|buyer_label }}</b>
-        <span class="text-gray-600">— buyer of record: {{ contract.buyer_of_record|buyer_label }}</span>
+        <b>{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:contract.buyer_of_record|buyer_label }}</b><span class="text-gray-600">, buyer of record{% if contract.buyer_of_record != "programme_org" %} ({{ contract.buyer_of_record|buyer_label }}){% endif %}</span>
       </dd>
     </div>
     <div>
@@ -122,7 +121,7 @@ class this build has not seen ships purged.
         {% for approval in award_approvals %}
           <li>
             {{ approval.approver.name|default:"—" }} ({{ approval.role|words|capfirst }})
-            {% if approval.status == "approved" %}approved {{ approval.decided_on|day|default:"undated" }}{% elif approval.status == "declined" %}declined {{ approval.decided_on|day|default:"undated" }}{% else %}asked {{ approval.requested_on|day }}, not yet answered{% endif %}{% if approval.status != "requested" and approval.answered_by_approver %}, through {{ approval.approver.name }}'s own link{% endif %}
+            {% if approval.status == "approved" %}approved {{ approval.decided_on|day|default:"undated" }}{% elif approval.status == "declined" %}declined {{ approval.decided_on|day|default:"undated" }}{% else %}asked {{ approval.requested_on|day }}, not yet answered{% endif %}{% if approval.status != "requested" and approval.answered_by_approver %}, through {{ approval.approver.name|possessive }} own link{% endif %}
             {% comment %}The letter the answer rests on, openable from the order it released.{% endcomment %}
             {% for document in approval.documents %}
               — <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:document_open' document.id %}" target="_blank" rel="noopener noreferrer">{{ document.title|default:document.filename|default:"signed confirmation" }}</a>
@@ -507,7 +506,7 @@ partner's name (the IPTSc render).
       {% comment %}"Not purchased" beside "Bought by …" and "Bundled in setup fee" was the
       same order read two ways: a bundled order WAS bought, just not billed on its own.{% endcomment %}
       {% if contract.consideration == "bundled" %}
-        Bought out of {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"the buyer" }}'s setup fee — nothing is billed or paid against this order on its own.
+        Bought out of {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"the buyer"|possessive }} setup fee — nothing is billed or paid against this order on its own.
       {% elif contract.consideration != "priced" %}
         Donated: nothing is billed or paid against this order.
       {% elif match.payment_terms == "advance" %}
@@ -862,7 +861,9 @@ The section stays only if one was somehow recorded, so it is not hidden.
                     {% else %}
                     <td class="px-4 py-1 tabular-nums text-gray-900 whitespace-nowrap text-right" colspan="3"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}>+{{ mark.text }}</td>
                     {% endif %}
-                    <td class="px-4 py-1"><span data-testid="above-agreed-tag" class="inline-flex items-center whitespace-nowrap rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></td>
+                    {% comment %}The Total row is flagged only when it stands alone: under rows that each
+                    carry the tag, a third tag on their sum repeats them.{% endcomment %}
+                    <td class="px-4 py-1">{% if not mark.tag or invoice.above_agreed|length == 1 %}<span data-testid="above-agreed-tag" class="inline-flex items-center whitespace-nowrap rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span>{% endif %}</td>
                   </tr>
                 {% endfor %}
                 </tbody>

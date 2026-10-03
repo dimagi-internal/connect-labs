@@ -95,8 +95,6 @@ scenes:
   - kind: hold
     note: the drafted reminder, open, with today's date ready to record
     seconds: 2.5
-  - kind: snapshot
-    note: the canonical frame is Sahel's whole drafted reminder card, its facts row, and Chased on reading today beside Record chase -- the only chase control in frame
   - kind: click
     must_succeed: true
     note: record the day she chased Sahel, from the draft itself; the round lands on Sahel's row, which scene 3 opens on
@@ -105,13 +103,22 @@ scenes:
   - kind: wait_for
     must_succeed: true
     target: css:tr[data-changed]
+  - kind: scroll_to
+    note: centre Sahel's Outreach row, highlighted as just changed, with the table's headings above it
+    target: css:tr[data-changed]
   - kind: hover
-    note: park the cursor on the Draft reminders button above the table, clear of "3 of 6 replied" and Sahel's row
+    note: the payoff of the chase -- Sahel's Last chased cell reads today, the 3rd reminder, and when the next falls due
+    say: recorded
+    seconds: 2.0
+    target: css:tr[data-changed] td:has-text('3rd reminder')
+  - kind: hover
+    note: park the cursor on the Draft reminders button above the table, clear of Sahel's row
     seconds: 0.6
     target: testid:draft-reminders
   - kind: hold
-    note: the chase recorded -- Sahel's Last chased reads today, the 3rd reminder, and when the next falls due
-    seconds: 2.0
+    seconds: 1.5
+  - kind: snapshot
+    note: the canonical frame is the Outreach table with Sahel's row highlighted -- Last chased reading today, the 3rd reminder, and when the next falls due -- the chase recorded from the draft
   concept_claim: The round drafts a reminder for each silent supplier that says when
     they were asked and last reminded, with a Chased on field holding today's date
     and a Record chase button on the draft itself.
@@ -119,7 +126,8 @@ scenes:
     the reminder and records the chase from the same card, so the day is kept.
   show: Sophie opens the round's draft emails and reads the reminder drafted for
     Sahel, its line on when Sahel was asked and last reminded, and the Chased on field
-    beside Record chase.
+    beside Record chase; recording the chase returns her to the Outreach table, Sahel's
+    row highlighted with its 3rd reminder.
   url: /supply/procurement/tenders/${round2_tender_id}/?program_id=${program_id}
 - id: sahel-finally-answers
   actions:
@@ -193,7 +201,7 @@ scenes:
     seconds: 2.5
     target: "css:[data-testid=needs-info] [data-quote-id]:has-text('Sahel Nutrition Industries') [data-testid=blocking]:has-text('Import duty')"
   - kind: scroll
-    note: settle the page with the round's duty-terms line just under the top bar, so the duty terms, the missing-facts summary, Harmattan's comparable row and Sahel's whole card (its Duty line and its round-owned duty blocker) share one frame -- the frame scene 5 returns to
+    note: settle the page with the round's duty-terms line just under the top bar, so the duty terms, the banner with its missing-facts summary and the Needs info cards share one frame -- the frame scene 5 returns to
     value: '302'
   - kind: hover
     note: park the cursor on the Needs info heading's blank right, off the table and the cards; it is in view, so hovering cannot scroll the page
@@ -202,17 +210,18 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the round's duty terms (not settled), Harmattan under Comparable (its landed total marked duty basis stated by supplier), the Needs info heading, and Sahel's whole card -- Duty ours to cost (round terms not settled), blocked on exchange rate, freight amount and the round's own duty terms
-  concept_claim: The comparison states the round's import duty terms and names the
-    missing facts on each quote that cannot be compared, including a reply that has
-    only just arrived, without ranking across them or guessing a figure.
+    note: the canonical frame is the round's duty terms (not settled), the banner saying none of the three quotes can be compared and that the round's own duty terms come first, and the Needs info cards -- Harmattan's and Sahel's Duty lines both reading ours to cost (round terms not settled), Kanem's pack size and Sahel's exchange rate and freight still owed
+  concept_claim: The comparison states the round's import duty terms, holds every quote
+    whose Incoterm leaves the import to us until those terms are settled, whatever duty
+    figure its supplier wrote, and names the missing facts on each quote, without ranking
+    across them or guessing a figure.
   design_intent: The comparison earns its place by saying what is missing, not by
     ranking quotes that cannot be ranked; seen before the duty answer, it shows what
     an unsettled duty question costs.
-  show: Sophie opens the round's comparison, reads that its import duty terms are
-    not settled, Harmattan's one comparable quote costed on the zero duty it stated,
-    and Sahel's card blocked on its exchange rate and freight amount, and on the round's
-    own duty terms, which under ex works are ours to settle, not Sahel's to state.
+  show: Sophie opens the round's comparison and reads that none of the three quotes
+    can be compared yet; the round's own import duty terms come first, because Harmattan's
+    carriage-paid and Sahel's ex-works quotes both leave the import to us, and each card
+    names what its supplier still owes -- Kanem's pack size, Sahel's freight and exchange rate.
   url: /supply/procurement/tenders/${round2_tender_id}/compare/?program_id=${program_id}
 - id: what-we-owe-northgate
   actions:
@@ -280,7 +289,7 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame matches scene 4's -- the round's duty terms (the waiver, set from her answer to Northgate), Harmattan under Comparable, the Needs info heading, and Sahel's whole card under the waiver, its Duty line reading waived (our import) with its round terms from her answer to Northgate, and only the exchange rate and freight left blocking it
+    note: the canonical frame matches scene 4's -- the round's duty terms (the waiver, set from her answer to Northgate), Harmattan now under Comparable with its duty waived, the Needs info heading, and Sahel's whole card under the waiver, its Duty line reading waived (our import) with its round terms from her answer to Northgate, and only the exchange rate and freight left blocking it
   concept_claim: Answering a supplier's question about who imports can set the round's
     import duty terms, and the round's comparison then states those terms and costs
     a quote that leaves duty out under them, so duty is no longer among what blocks
@@ -296,6 +305,14 @@ scenes:
   actions:
   - kind: wait_for
     target: testid:waiting-on-us
+  - kind: scroll
+    note: open framed on the order header -- its PO number, Harmattan, at customs, and the Waiting on us banner -- before moving down to the invoice
+    value: top
+  - kind: hover
+    note: the order's own name, its PO number and status line
+    say: order
+    seconds: 2.0
+    target: css:main h1
   - kind: hover
     say: permit
     seconds: 2.0
@@ -337,7 +354,8 @@ scenes:
     and flags an invoice above the agreed price with billed against agreed.
   design_intent: The screens must blame the right party; a shipment held on our paperwork
     is our move, and being the importer is what makes it ours.
-  show: Sophie opens the round 1 order, reads the Waiting on us banner, opens the
+  show: Sophie opens the round 1 order, framed on its header -- its PO number, the
+    goods at customs and the Waiting on us banner -- opens the
     forwarder's email in the order's history, and reads the invoice flagged above
     the agreed price.
   url: /supply/orders/${contract_id}/?program_id=${program_id}
@@ -365,12 +383,17 @@ scenes:
   - kind: hold
     say: invoice
     seconds: 1.5
+  - kind: scroll_to
+    note: the close takes in the chain's count strip below the standing table, so the final frame has its own numeric shape
+    target: css:h2:has-text('The chain')
   - kind: hover
-    note: park the cursor on the table's caption, off the table and the View as of control
+    note: park the cursor on the chain heading, off the table and the count cards
     seconds: 0.6
-    target: text:Where everything stands
+    target: css:h2:has-text('The chain')
   - kind: hold
     seconds: 1.5
+  - kind: snapshot
+    note: the canonical frame is the standing table's rows and the chain's count strip below it
   concept_claim: The overview names each supplier who has not replied with the day
     we asked them, lists the facts each quote still lacks, which under the round's
     waiver no longer include a duty figure, and says when the next move is ours, for
@@ -378,6 +401,7 @@ scenes:
   design_intent: The overview is where Sophie starts her day; it must already say
     who is silent, what is missing and whose move it is.
   show: Sophie returns to the overview and reads the Waiting on column for round 2,
-    Sahel's quote short only its exchange rate and freight, and the round 1 order
-    waiting on us for the import permit and the invoice dispute.
+    Sahel's quote short only its exchange rate and freight, the waiver document ours
+    to attach, and the round 1 order waiting on us for the import permit and the invoice
+    dispute, with the chain's counts below.
   url: /supply/?program_id=${program_id}

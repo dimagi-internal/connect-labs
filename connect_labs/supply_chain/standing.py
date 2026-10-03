@@ -415,7 +415,6 @@ def _tender_rows(program_id, today, until):
             today,
             award,
             provisional=tender.pk in provisional,
-            waiver_on_file=tender.pk in waiver_on_file,
         )
         ours_items = list(owed.get(tender.pk, []))
         deadline_passed = tender.status == "open" and tender.response_deadline and tender.response_deadline < today
@@ -503,7 +502,7 @@ def _owed_by_tender(program_id, tender_ids) -> dict:
     return out
 
 
-def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, provisional=False, waiver_on_file=True):
+def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, provisional=False):
     """(waiting on, a second line under it, flags, waiting-on lines, silent count) for one tender.
 
     While any live quote is kept out of the comparison -- before an award, or
@@ -617,19 +616,9 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
     if blocked_names or (still_open and silent):
         if silent:
             lines.append(silent_line(f"No reply: {_names([suppliers[sid].name for sid in silent])}"))
-        if blocked_names and getattr(tender, "duty_terms", "") == "buyer_waiver":
-            # Duty left off the list because the round's waiver settled it, said so: a
-            # missing "duties amount" otherwise read as forgotten rather than resolved.
-            waived = _quotes_leaving_duty_out(live)
-            # While the waiver document is not on file the cover is conditional, and said so.
-            covered = (
-                "duty covered by the waiver"
-                if waiver_on_file
-                else "duty covered by the waiver once its document is on file"
-            )
-            blocked_names = [
-                (name, f"{gaps} · {covered}" if gaps and name in waived else gaps) for name, gaps in blocked_names
-            ]
+        # Missing facts lists only what is missing. Duty under the round's waiver is
+        # not (it is settled by the round), and the waiver document it rests on is
+        # our move, listed under Us -- said here too, it was the same fact twice.
         if blocked_names:
             lines.append(
                 Flag(
@@ -862,20 +851,6 @@ def _with_ours(waiting_on, held_words, item):
     if held_words or waiting_on in ("", "—"):
         return ours, ()
     return "; ".join((ours, waiting_on)), (ours, waiting_on)
-
-
-def _quotes_leaving_duty_out(quotes) -> set:
-    """Names of the suppliers whose live quote leaves duty out, by its own basis or its Incoterm."""
-    from connect_labs.supply_chain.records import freight_and_duties_for_incoterm
-
-    names = set()
-    for quote in quotes:
-        basis = quote.duties_basis
-        if basis not in ("included", "excluded"):
-            basis = freight_and_duties_for_incoterm(quote.incoterm)[1]
-        if basis == "excluded":
-            names.add(quote.supplier.name)
-    return names
 
 
 def _invoice_above_amount(contract, today):

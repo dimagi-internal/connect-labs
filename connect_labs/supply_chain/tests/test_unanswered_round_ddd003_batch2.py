@@ -125,8 +125,9 @@ class TestTheComparison:
         quote = _quote(da, world, duties_basis="excluded", duties_amount="0.00")
         words = landed_basis_words(quote, quote.tender)
         assert "0.00 USD added" not in words
-        # Since DDD 003 batch 7 in the history's words too: excluded from the price, 0.00 stated.
-        assert "duty excluded from the price, stated as 0.00" in words
+        # Since DDD 004: never "excluded from the price, stated as 0.00", which read as a
+        # contradiction; under a buyer-import term the figure is not restated at all.
+        assert "excluded from the price" not in words
         assert "on the quote" not in words
 
     def test_terms_set_by_an_answer_say_so_and_the_award_says_the_round_is_incomplete(
@@ -145,7 +146,7 @@ class TestTheComparison:
         url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
         body = client_in_program.get(url).content.decode()
         note = _text(re.search(r'data-testid="comparison-duty-terms".*?</p>', body, re.S).group(0))
-        assert "Set from your answer to" in note and "question, 3 Oct" in note
+        assert "Set 3 Oct from your answer to a question from" in note
         assert "waiver document: none on file yet" in note
         assert Commitment.objects.filter(resolved_on__isnull=False).exists()
         if 'data-testid="award-label"' in body:

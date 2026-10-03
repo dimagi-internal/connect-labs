@@ -83,9 +83,10 @@ def test_seeded_round_reads_the_same_age_whatever_the_day(replay):
 
 
 @pytest.mark.django_db
-def test_harmattan_round_2_quotes_as_round_1_settled_it_and_stays_comparable(replay):
-    """Round 2's leading quote must not contradict "we import": CPT Kano, duty stated nil under
-    the waiver (as on PFI-0457), so it is costed while the round's own duty terms are unsettled."""
+def test_harmattan_round_2_waits_on_the_round_like_every_buyer_import_quote(replay):
+    """Round 2's leading quote must not contradict "we import": CPT Kano, duty stated nil (as on
+    PFI-0457). Under CPT the import is ours, so it waits on the round's own duty terms exactly as
+    Sahel's EXW quote does, and counts zero once the waiver is set."""
     from decimal import Decimal
 
     from connect_labs.supply_chain.history.models import OperationCall
@@ -105,5 +106,10 @@ def test_harmattan_round_2_quotes_as_round_1_settled_it_and_stays_comparable(rep
         OperationCall.objects.filter(operation="quote_record", source_ref__contains="PFI0611").get().source_excerpt
     )
     assert "DDP" not in excerpt and "nil under your waiver" in excerpt
-    assert _extras(quote, tender) == Money(Decimal("0"))
+    from connect_labs.supply_chain.procurement.services.pricing import ROUND_DUTY_TERMS_REASON, Unconfirmed
+
+    extras = _extras(quote, tender)
+    assert isinstance(extras, Unconfirmed) and list(extras.reasons) == [ROUND_DUTY_TERMS_REASON]
     assert basis_gaps(quote) == []
+    tender.duty_terms = "buyer_waiver"
+    assert _extras(quote, tender) == Money(Decimal("0"))

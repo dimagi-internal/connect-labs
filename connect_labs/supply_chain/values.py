@@ -331,3 +331,14 @@ def quantity_phrase(count, unit: str) -> str:
     inconsistent.
     """
     return f"{quantity_digits(count)} {unit_noun(unit, count)}".strip()
+
+
+def possessive(name) -> str:
+    """ "Harmattan Therapeutics's" read wrong on every page: a name ending in s takes a bare apostrophe.
+
+    "Northgate Commodities'" and "Sahel Foods'", but "Kanem Nutrition's".
+    """
+    text = str(name or "").strip()
+    if not text:
+        return ""
+    return f"{text}'" if text[-1] in "sS" else f"{text}'s"
