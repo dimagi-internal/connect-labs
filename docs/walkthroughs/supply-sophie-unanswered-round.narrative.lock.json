@@ -8,7 +8,7 @@
     "held-on-us",
     "whose-move"
   ],
-  "fetched_at": "2026-10-03T09:37:06.644955+00:00",
+  "fetched_at": "2026-10-03T10:42:19.436524+00:00",
   "name": "supply-sophie-unanswered-round",
   "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program. 17 days ago she asked six suppliers to quote round 2: half have never answered, despite two reminders, and she forwards whatever does arrive to an AI that records it. Sophie opens round 2 and reads who answered and who has said nothing, how long each has been silent and when she last chased them, and that the round has not yet settled how import duties are handled. She opens the reminder drafted for Sahel, which says when Sahel was asked and last reminded, and records today's chase from the draft itself. Sahel answers with a quote; Sophie forwards it, and in the round's history, turned to replies only, Sahel's email comes first: she opens it beside what the AI recorded from it, the reply dated the day it came in. On the comparison none of the three quotes can be compared yet, and the round's own decision comes first: Harmattan's carriage-paid and Sahel's ex-works terms both make the import ours, so their duty waits on the round's unsettled duty terms, whatever figure a supplier wrote; Kanem's has not stated how many sachets are in a carton, and Sahel's gives no exchange rate and no freight figure. Northgate's questions are waiting on her, and she answers the one about who imports: we import, under the program's duty waiver. She marks that answer as the round's import duty terms and opens the comparison again: duty now reads waived on every quote that leaves the import to us, Harmattan's can be compared on landed total, and Sahel's reads duty waived, the round's terms set from her answer to Northgate. Importing makes the paperwork hers, and round 1 shows what that means: its 2,000 cartons are still not in Kano, and on the order with Harmattan, the forwarder's message says the trucks are held at the border on our import permit, so the order reads as waiting on us, and Harmattan's invoice is flagged above the agreed price, billed against agreed. Back on her overview, Sophie reads who is still silent, Sahel's quote now short only its exchange rate and freight, its duty covered by the waiver, and whose move each thing is, the round 1 order waiting on her to provide the import permit and to dispute Harmattan's invoice above the agreed price.",
   "personas": {
@@ -101,13 +101,13 @@
     {
       "features": [
         {
-          "id": "comparison-missing-per-supplier",
           "description": "The comparison page compares no quote on landed total while the round's duty terms are unsettled, says the round's own duty terms come first, and names what each supplier still owes: sachets per carton on Kanem's; the exchange rate and the freight amount on Sahel's.",
+          "id": "comparison-missing-per-supplier",
           "verify": "Playwright: /compare/ reads '0 of 3 quotes can be compared' and [data-testid=duty-terms-first] reads 'First, the round's own decision: 2 quotes leave the import to us'; the Kanem Foods Ltd card shows 'Blocking: Sachets per carton not stated on the quote'; the Sahel Nutrition Industries card shows 'Quote is in EUR and no exchange rate was recorded' and 'Freight excluded from the quote but no freight amount recorded', and no quantity mismatch"
         },
         {
-          "id": "comparison-duty-terms-note",
           "description": "A status chip at the top of the comparison states the round's import duty terms; while they are not settled, every quote whose Incoterm leaves the import to us carries the same Duty line and the same round-owned blocker, whatever duty figure its supplier stated.",
+          "id": "comparison-duty-terms-note",
           "verify": "Playwright: [data-testid=comparison-duty-terms] reads 'Import duties for this round: not settled'; Harmattan Therapeutics' and Sahel Nutrition Industries' [data-testid=card-duty] both read 'Duty: ours to cost (round terms not settled)', each card lists 'Import duty is ours to cost and the round's duty terms are not settled' with 'Ours to do: settle the round's duty terms (not asked of the supplier)', and no page text reads 'excluded from the price, stated as'"
         }
       ],
@@ -191,5 +191,5 @@
     }
   ],
   "slug": "supply-sophie-unanswered-round",
-  "version": 19
+  "version": 20
 }
