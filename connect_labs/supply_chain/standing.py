@@ -595,6 +595,14 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
     if blocked_names or (still_open and silent):
         if silent:
             lines.append(silent_line(f"No reply: {_names([suppliers[sid].name for sid in silent])}"))
+        if blocked_names and getattr(tender, "duty_terms", "") == "buyer_waiver":
+            # Duty left off the list because the round's waiver settled it, said so: a
+            # missing "duties amount" otherwise read as forgotten rather than resolved.
+            waived = _quotes_leaving_duty_out(live)
+            blocked_names = [
+                (name, f"{gaps} · duty covered by the waiver" if gaps and name in waived else gaps)
+                for name, gaps in blocked_names
+            ]
         if blocked_names:
             lines.append(
                 Flag(
@@ -767,12 +775,15 @@ def _order_rows(program_id, today, until, own_org_id):
             holds=holds.get(contract.pk, []),
         )
         waiting_lines = ()
-        if contract.pk in invoiced and _invoice_above(contract, today):
+        above = _invoice_above_amount(contract, today) if contract.pk in invoiced else None
+        if above is not None:
             stale = [*stale, Flag(INVOICE_ABOVE_FLAG, INVOICE_ABOVE_RULE)]
             # A flag the row raises has an owner on the row: disputing an
             # overbilled invoice is ours, beside whatever else we owe.
             waiting_on, waiting_lines = _with_ours(
-                waiting_on, [h.words for h in holds.get(contract.pk, [])], INVOICE_DISPUTE
+                waiting_on,
+                [h.words for h in holds.get(contract.pk, [])],
+                f"{INVOICE_DISPUTE} ({above} above)" if above else INVOICE_DISPUTE,
             )
         title = contract.reference or f"Order {contract.pk}"
         rows.append(
@@ -797,6 +808,14 @@ def _order_rows(program_id, today, until, own_org_id):
     return rows
 
 
+_OWED_VERBS = ("provide ", "obtain ", "send ", "dispute ", "pay ", "extend ", "answer ")
+
+
+def _owed_action(words) -> str:
+    """What we owe, as the action it is: "provide the import permit", not "import permit"."""
+    return words if not words or words.startswith(_OWED_VERBS) else f"provide the {words}"
+
+
 def _with_ours(waiting_on, held_words, item):
     """An order's waiting-on with `item` added to what we owe: (waiting_on, waiting_lines).
 
@@ -804,7 +823,7 @@ def _with_ours(waiting_on, held_words, item):
     waits on from someone else (an arrival, a dispatch) stays its own line, so
     our list never seems to own it.
     """
-    ours_items = [(w, "") for w in held_words] + [(item, "")]
+    ours_items = [(_owed_action(w), "") for w in held_words] + [(item, "")]
     ours = Flag(
         f"{WAITING_ON_US}: " + "; ".join(w for w, _ in ours_items),
         heading=WAITING_ON_US.capitalize(),
@@ -813,6 +832,44 @@ def _with_ours(waiting_on, held_words, item):
     if held_words or waiting_on in ("", "—"):
         return ours, ()
     return "; ".join((ours, waiting_on)), (ours, waiting_on)
+
+
+def _quotes_leaving_duty_out(quotes) -> set:
+    """Names of the suppliers whose live quote leaves duty out, by its own basis or its Incoterm."""
+    from connect_labs.supply_chain.records import freight_and_duties_for_incoterm
+
+    names = set()
+    for quote in quotes:
+        basis = quote.duties_basis
+        if basis not in ("included", "excluded"):
+            basis = freight_and_duties_for_incoterm(quote.incoterm)[1]
+        if basis == "excluded":
+            names.add(quote.supplier.name)
+    return names
+
+
+def _invoice_above_amount(contract, today):
+    """How far the invoice runs above the contract, "USD 3,550.00".
+
+    "" when it is above but the excess has no total; None when it is not above.
+
+    The check itself, not a copy (`_invoice_above_contract`), so the overview
+    and the order page cannot disagree on the figure.
+    """
+    if contract.consideration != "priced":
+        return None
+    from connect_labs.supply_chain.checks import _invoice_above_contract
+    from connect_labs.supply_chain.fulfilment.services.landed import landed_total
+    from connect_labs.supply_chain.values import money_digits
+
+    found = _invoice_above_contract(contract, landed_total(contract), today)
+    if found is None:
+        return None
+    facts = getattr(found, "facts", None) or (found.get("facts") if isinstance(found, dict) else None) or {}
+    total = next((line for line in facts.get("above") or [] if line.get("field") == "total"), None)
+    if total is None or total.get("difference") is None:
+        return ""
+    return f"{facts.get('currency') or ''} {money_digits(total['difference'])}".strip()
 
 
 def _invoice_above(contract, today) -> bool:
@@ -882,7 +939,7 @@ def _order_state(
     if holds:
         # Our move, not the supplier's: name what we owe before anything else
         # (docs/superpowers/specs/2026-10-02-supply-tracking-reality.md, ruling 5).
-        waiting_on = f"{WAITING_ON_US}: {'; '.join(h.words for h in holds)}"
+        waiting_on = f"{WAITING_ON_US}: {'; '.join(_owed_action(h.words) for h in holds)}"
     elif in_transit:
         etas = sorted(s.expected_on for s in in_transit if s.expected_on is not None)
         waiting_on = f"arrival (ETA {_day(etas[0])})" if etas else "arrival"

@@ -133,7 +133,8 @@ class TestTheTenderPage:
             data={"response_deadline": three_days_ago.isoformat()},
         )
         body = _tender_page(client_in_program, world["tender"]["id"])
-        passed = re.search(r'data-testid="deadline-passed">([^<]*)<', body).group(1)
+        passed = re.search(r'data-testid="deadline-passed">(.*?)</dd>', body, re.S).group(1)
+        passed = " ".join(re.sub(r"<[^>]+>", "", passed).split())
         assert passed.startswith("Open — deadline passed ") and passed.endswith("(3 days ago)")
 
     def test_a_deadline_still_ahead_reads_as_before(self, da, world, client_in_program):
@@ -272,7 +273,7 @@ class TestOrderInvoices:
         marker = re.search(r'<tr data-testid="invoice-above-agreed-row".*?</tr>', body, re.S).group(0)
         assert (
             re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", marker)).strip()
-            == "Total · +USD 3,550.00 USD 110,350.00 billed 106,800.00 agreed above agreed"
+            == "Total USD 110,350.00 billed 106,800.00 agreed +USD 3,550.00 above agreed"
         )
         assert 'data-testid="above-agreed-tag"' in marker
 

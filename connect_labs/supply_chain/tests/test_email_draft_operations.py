@@ -156,7 +156,7 @@ def test_request_render_returns_a_subject_and_a_signed_text(da, round_):
         supplier_id=round_["suppliers"]["silent"]["id"],
         commodity_slug="rutf",
     )
-    assert result["subject"] == "Quotation request: 2,000 cartons of RUTF, delivered Kano — Kano round"
+    assert result["subject"] == "Quotation request: 2,000 cartons of RUTF, delivered Kano"
     assert result["text"].startswith("Dear Ada Bello,")
     assert result["to"] == "ada@harmattan.example.invalid"
     # Nobody is signed in on a SYSTEM caller, so the gap is left visible.
@@ -166,12 +166,12 @@ def test_request_render_returns_a_subject_and_a_signed_text(da, round_):
 def test_followup_render_names_the_quote(da, round_):
     result = op(da, "followup_render", quote_id=round_["open_quote"]["id"])
     assert "your quotation of 10 Sep 2026, USD 50.00 per carton" in result["text"]
-    assert result["subject"] == "Follow-up on your quotation of 10 Sep 2026 — Kano round"
+    assert result["subject"] == "Follow-up on your quotation of 10 Sep 2026 — 2,000 cartons of RUTF, delivered Kano"
 
 
 def test_reminder_render_names_the_request_date(da, round_):
     result = op(da, "reminder_render", outreach_id=round_["rows"]["silent"]["id"], today=TODAY.isoformat())
-    assert result["subject"] == "Reminder: quotation request of 9 Sep 2026 — Kano round"
+    assert result["subject"] == "Reminder: quotation request of 9 Sep 2026 — 2,000 cartons of RUTF, delivered Kano"
     assert "On 9 Sep 2026 we asked for a quotation for 2,000 cartons of RUTF" in result["text"]
     assert result["outreach_id"] == round_["rows"]["silent"]["id"]
 

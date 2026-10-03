@@ -153,9 +153,9 @@ class this build has not seen ships purged.
   {% comment %}Body text in the page's own dark grey on the warning fill: the warning text
   colour on it fell short of 4.5:1.{% endcomment %}
   <div data-testid="waiting-on-us" class="rounded-lg border border-message-warning-border/50 bg-message-warning px-4 py-3 mb-3 text-sm text-gray-900">
-    <strong>Waiting on us:</strong>
+    <strong>Waiting on us</strong><span data-testid="waiting-on-us-help" tabindex="0" role="img" aria-label="Whose move: the next step is a document or action we owe, not something the supplier has to do" title="Whose move: the next step is a document or action we owe, not something the supplier has to do" class="ml-0.5 cursor-help text-gray-600"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span><strong>:</strong>
     {% for hold in held_on_us %}{{ hold.what }}{% if hold.name %} ({{ hold.name }}){% endif %}{% if hold.owed_to %} for {{ hold.owed_to }}{% endif %}{% if hold.since %} (since {{ hold.since|day }}){% endif %}{% if not forloop.last %}; {% endif %}{% endfor %}.
-    {% if contract_late %}The order is {{ contract_late.facts.days_late }} day{{ contract_late.facts.days_late|pluralize }} past its promised lead time, but the next move is ours, not the supplier's.{% endif %}
+    {% if contract_late %}The order is {{ contract_late.facts.days_late }} day{{ contract_late.facts.days_late|pluralize }} past its promised lead time.{% endif %}
   </div>
 {% endif %}
 {% if contract_late and not held_on_us %}
@@ -174,7 +174,6 @@ class this build has not seen ships purged.
       {% elif line.field == "freight_amount" %}{{ line.invoice }} bills freight of {{ invoice_above.facts.currency }} {{ line.billed|money }} against {{ line.agreed|money }} agreed.
       {% else %}Billed {{ invoice_above.facts.currency }} {{ line.billed|money }} in all against {{ line.agreed|money }} agreed for goods and freight: {{ line.difference|money }} more.{% endif %}
     {% endfor %}
-    Only the supplier can explain it.
   </div>
 {% endif %}
 
@@ -832,9 +831,9 @@ The section stays only if one was somehow recorded, so it is not hidden.
         the figures belong to.{% endcomment %}
         {% for mark in invoice.above_agreed %}
           <tr data-testid="{% if mark.tag %}invoice-above-agreed-row{% else %}invoice-against-agreed{% endif %}" class="bg-gray-50/60 text-sm">
-            <td class="px-4 py-1.5 pl-8 text-gray-900">{{ mark.label }}{% if mark.tag %} <span class="text-gray-600">· +{{ mark.currency }} {{ mark.difference }}</span>{% endif %}</td>
+            <td class="px-4 py-1.5 pl-8 text-gray-900">{{ mark.label }}</td>
             <td class="px-4 py-1.5"></td>
-            <td class="px-4 py-1.5 text-right tabular-nums text-gray-900"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}>{% if mark.billed %}<div>{{ mark.currency }} {{ mark.billed }} billed</div><div class="text-gray-600">{{ mark.agreed }} agreed</div>{% else %}+{{ mark.text }}{% endif %}</td>
+            <td class="px-4 py-1.5 text-right tabular-nums text-gray-900"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}>{% if mark.billed %}<div>{{ mark.currency }} {{ mark.billed }} billed</div><div class="text-gray-600">{{ mark.agreed }} agreed</div>{% if mark.difference %}<div data-testid="invoice-difference" class="font-medium text-gray-900">+{{ mark.currency }} {{ mark.difference }}</div>{% endif %}{% else %}+{{ mark.text }}{% endif %}</td>
             <td class="px-4 py-1.5"></td>
             <td class="px-4 py-1.5"><span data-testid="above-agreed-tag" class="inline-flex items-center whitespace-nowrap rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></td>
             <td class="px-4 py-1.5" colspan="2"></td>
