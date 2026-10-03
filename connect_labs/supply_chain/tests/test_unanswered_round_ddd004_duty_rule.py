@@ -61,7 +61,7 @@ def test_unsettled_terms_hold_every_buyer_import_quote_whatever_it_states(incote
     assert isinstance(extras, Unconfirmed)
     assert list(extras.reasons) == [ROUND_DUTY_TERMS_REASON]
     assert import_is_ours(quote)
-    assert round_duty_words(quote, _round("")) == "ours to cost (round terms not settled)"
+    assert round_duty_words(quote, _round("")) == "ours to cost (tender terms not settled)"
 
 
 @pytest.mark.parametrize("incoterm", BUYER_IMPORT)

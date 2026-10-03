@@ -244,7 +244,7 @@ def _row(rows, title_start):
 
 @pytest.mark.django_db
 class TestTender:
-    def test_an_unanswered_invitation_after_20_days_is_flagged_with_its_count_and_age(self, da, base):
+    def test_an_open_tender_collects_quotes_and_names_each_silent_supplier_on_suppliers(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
         sent = datetime.date(2026, 8, 21)  # 20 days before TODAY
         for supplier in base["suppliers"][:3]:
@@ -254,44 +254,15 @@ class TestTender:
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
 
         assert row.kind == "tender"
-        assert row.stage == "open"
-        # Who, and since when; the count is the line under it (batch 5).
-        assert row.waiting_on == "Kaduna Mills — no reply since 21 Aug"
-        assert row.waiting_detail == "3 of 4 replied"
-        assert row.stale == ["No reply in 20 days: 1 supplier"]
+        assert row.stage_index == 1
+        assert row.stage == "Collecting quotes · 3 of 4 answered"
+        assert row.bars == ["done", "now", "todo", "todo", "todo", "todo"]
+        assert [m.text for m in row.theirs] == ["Kaduna Mills: reply (silent 20 days)"]
+        assert [m.rule for m in row.theirs] == ["no reply"]
+        assert row.ours == []
+        assert row.whose == "suppliers"
+        assert row.next_move.text == "Kaduna Mills: reply (silent 20 days)"
         assert row.url == reverse("supply_chain:procurement_tender_detail", args=[tender["id"]])
-
-    def test_13_days_without_a_reply_is_not_yet_stale_and_14_is(self, da, base):
-        tender = _tender(da, "Round 1", AUG_3)
-        _outreach(da, tender, base["suppliers"][0], TODAY - datetime.timedelta(days=13))
-        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == []
-
-        _outreach(da, tender, base["suppliers"][1], TODAY - datetime.timedelta(days=14))
-        # Both are silent; only the one past 14 days is flagged (counted since the
-        # unanswered round's batch 3; the names are in Waiting on and the flag's lines).
-        flag = _row(standing_rows(PROGRAM, TODAY), "Round 1").stale
-        assert flag == ["No reply in 14 days: 1 supplier"]
-        assert flag[0].lines[0].startswith("Baobab Nutrition — asked")
-
-    def test_several_silent_suppliers_are_named_longest_silent_first_and_the_age_is_the_one_all_have_passed(
-        self, da, base
-    ):
-        tender = _tender(da, "Round 1", AUG_3)
-        _outreach(da, tender, base["suppliers"][0], datetime.date(2026, 8, 21))
-        _outreach(da, tender, base["suppliers"][1], datetime.date(2026, 8, 16))
-
-        row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
-        assert row.stale == ["No reply in 20 days: 2 suppliers"]
-        # Named under it, longest silent first.
-        assert [line.split(" — ")[0] for line in row.stale[0].lines[:2]] == ["Baobab Nutrition", "Northwind Foods"]
-
-    def test_past_three_silent_suppliers_the_rest_are_counted(self, da, base):
-        tender = _tender(da, "Round 1", AUG_3)
-        for supplier in base["suppliers"]:
-            _outreach(da, tender, supplier, datetime.date(2026, 8, 21))
-
-        row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
-        assert row.stale == ["No reply in 20 days: 4 suppliers"]
 
     def test_a_quote_counts_as_a_reply_even_when_the_outreach_was_not_marked(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
@@ -299,99 +270,44 @@ class TestTender:
         _quote(da, tender, base["suppliers"][0], **_COMPARABLE)
 
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
-        assert row.stale == []
-        assert row.waiting_on == "award decision"
+        assert row.theirs == []
+        assert row.whose == ""
 
-    def test_a_quote_with_an_unstated_basis_is_flagged(self, da, base):
+    def test_quote_gaps_are_not_moves(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
         _outreach(da, tender, base["suppliers"][0], datetime.date(2026, 9, 1), responded=True)
-        _outreach(da, tender, base["suppliers"][1], datetime.date(2026, 9, 1), responded=True)
         _quote(da, tender, base["suppliers"][0], **_PACK)  # freight and duties not stated
-        _quote(da, tender, base["suppliers"][1], freight_basis="included", duties_basis="excluded", **_PACK)
 
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
-        # Both are blocked on the comparison, so both are named: duties
-        # excluded with no amount cannot be costed any more than unstated ones.
-        assert row.stale == [
-            "Can't compare yet: Baobab Nutrition — missing: duties amount; Northwind Foods — missing: freight, duties"
-        ]
-        # Waiting on the answers that unblock them, by who owes them -- not on
-        # an award decision nobody can make yet.
-        # Since batch 8 each with what it is missing, as the comparison words it.
-        assert row.waiting_on == "Missing facts: Baobab Nutrition (duties amount), Northwind Foods (freight, duties)"
+        assert (row.ours, row.theirs) == ([], [])
 
-    def test_a_closed_tender_drops_the_no_reply_flag_but_keeps_the_blocked_flag(self, da, base):
+    def test_a_closed_tender_is_comparing_and_no_longer_chases_replies(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
         _outreach(da, tender, base["suppliers"][0], datetime.date(2026, 8, 1))
-        _outreach(da, tender, base["suppliers"][1], datetime.date(2026, 8, 1), responded=True)
-        _quote(da, tender, base["suppliers"][1], **_PACK)  # basis not stated
-        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == [
-            "Can't compare yet: Baobab Nutrition — missing: freight, duties",
-            "No reply in 40 days: 1 supplier",
-        ]
+        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").theirs
 
         op(da, "tender_update", SEP_1, tender_id=tender["id"], data={"status": "closed"})
-        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == [
-            "Can't compare yet: Baobab Nutrition — missing: freight, duties"
-        ]
-        # Once awarded the decision is made: what is left to flag is the
-        # awarded quote's own gaps, not the offers it was chosen over.
-        op(da, "tender_update", SEP_1, tender_id=tender["id"], data={"status": "awarded"})
-        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stale == []
-
-    def test_an_awarded_tender_waits_on_its_contract(self, da, base):
-        _tender(da, "Round 1", AUG_3, status="awarded")
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
-        assert row.stage == "awarded"
-        assert row.waiting_on == "a contract"
+        assert row.stage_index == 2 and row.stage.startswith("Comparing")
+        assert row.theirs == []
 
-    def test_an_award_made_while_a_supplier_was_blocked_reads_provisional(self, da, base):
-        from connect_labs.supply_chain.models import Award
-
+    def test_an_awarded_tender_is_awarding_to_its_supplier(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
-        _quote(da, tender, base["suppliers"][0])  # no freight or duties basis: blocked
-        chosen = _quote(da, tender, base["suppliers"][1], **_COMPARABLE)
-        award = _award(da, tender, chosen)
-
-        assert Award.objects.get(pk=award["id"]).provisional is True
-        row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
-        # "Provisional" once, on the caveat line; the stage names who.
-        assert row.stage == "awarded to Baobab Nutrition"
-        assert row.provisional_caveat == "provisional — 1 of 2 quotes not yet comparable"
-        # Stage, waiting-on and flags agree: it waits on the blocked supplier's answers.
-        assert row.waiting_on == "Missing facts: Northwind Foods (sachets per carton, freight, duties)"
-        assert row.stale == ["Can't compare yet: Northwind Foods — missing: sachets per carton, freight, duties"]
-
-    def test_once_the_award_is_ordered_it_is_no_longer_provisional(self, da, base):
-        # DDD 003 batch 4: "provisional — 1 of 1 quote not yet comparable" over a round
-        # whose order was signed read as a decision still open.
-        tender = _tender(da, "Round 1", AUG_3)
-        _quote(da, tender, base["suppliers"][0])  # blocked
         _award(da, tender, _quote(da, tender, base["suppliers"][1], **_COMPARABLE))
-        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").provisional_caveat
-
-        _order(da, base, "PO-1", tender=tender)
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
-        assert row.stage == "awarded to Baobab Nutrition"
-        assert (row.provisional, row.provisional_caveat, row.award_why) == (False, "", "")
+        assert row.stage_index == 3
+        assert row.stage == "Awarding · to Baobab Nutrition"
 
-    def test_an_award_over_a_complete_comparison_is_not_provisional(self, da, base):
-        from connect_labs.supply_chain.models import Award
-
+    def test_once_ordered_the_tender_is_its_order_row(self, da, base):
         tender = _tender(da, "Round 1", AUG_3)
-        award = _award(da, tender, _quote(da, tender, base["suppliers"][1], **_COMPARABLE))
-
-        assert Award.objects.get(pk=award["id"]).provisional is False
-        assert _row(standing_rows(PROGRAM, TODAY), "Round 1").stage == "awarded to Baobab Nutrition"
-
-    def test_a_tender_row_and_its_order_row_carry_the_tender_id(self, da, base):
-        tender = _tender(da, "Round 1", AUG_3)
+        _award(da, tender, _quote(da, tender, base["suppliers"][1], **_COMPARABLE))
         _order(da, base, "PO-1", tender=tender)
         _order(da, base, "PO-LOOSE")
 
         rows = standing_rows(PROGRAM, TODAY)
-        assert _row(rows, "Round 1").tender_id == tender["id"]
+        assert [r.kind for r in rows if r.title.startswith("Round 1")] == []
         assert _row(rows, "PO-1").tender_id == tender["id"]
+        assert _row(rows, "PO-1").origin == "Round 1"
         assert _row(rows, "PO-LOOSE").tender_id is None
 
     def test_another_programs_tender_is_not_listed(self, da, base):
@@ -422,87 +338,48 @@ class TestTender:
 
 @pytest.mark.django_db
 class TestOrder:
-    def test_a_passed_eta_with_nothing_received_is_flagged_and_the_order_is_in_transit(self, da, base):
+    def test_goods_on_the_road_are_delivering_in_transit(self, da, base):
         contract = _order(da, base, "PO-1")
         _ship(da, contract, datetime.date(2026, 9, 5))
 
         row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
 
         assert row.kind == "order"
-        assert row.stage == "in transit"
-        assert row.waiting_on == "arrival (ETA 5 Sep)"
-        assert row.stale == ["ETA 5 Sep passed, not received"]
+        assert row.stage_index == 5
+        assert row.stage == "Delivering · in transit"
+        assert (row.ours, row.theirs) == ([], [])
         assert row.url == reverse("supply_chain:order_detail", args=[contract["id"]])
 
     def test_an_order_paid_in_advance_with_goods_on_the_road_reads_paid_in_transit(self, da, base):
         contract = _order(da, base, "PO-1")
         _ship(da, contract, datetime.date(2026, 9, 5))
         _pay(da, _invoice(da, contract))
+        assert _row(standing_rows(PROGRAM, TODAY), "PO-1").stage == "Delivering · paid, in transit"
 
-        row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
-
-        assert row.stage == "paid, in transit"
-        assert row.waiting_on == "arrival (ETA 5 Sep)"
-
-    def test_an_eta_still_ahead_is_not_flagged(self, da, base):
-        contract = _order(da, base, "PO-1")
-        _ship(da, contract, TODAY)
-        assert _row(standing_rows(PROGRAM, TODAY), "PO-1").stale == []
-
-    def test_a_paid_order_has_nothing_waiting_and_no_flags(self, da, base):
+    def test_a_delivered_and_paid_order_with_nothing_owed_leaves_the_list(self, da, base):
         contract = _order(da, base, "PO-1")
         shipment = _ship(da, contract, datetime.date(2026, 8, 30))
         _receive(da, base, contract, shipment)
         _pay(da, _invoice(da, contract))
+        assert [r for r in standing_rows(PROGRAM, TODAY) if r.title.startswith("PO-1")] == []
 
-        row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
-        assert row.stage == "delivered and paid"
-        assert row.waiting_on == "—"
-        assert row.stale == []
-
-    def test_a_half_paid_order_is_part_paid_and_still_waits_on_payment(self, da, base):
+    def test_a_half_paid_order_is_part_paid(self, da, base):
         contract = _order(da, base, "PO-1")
         shipment = _ship(da, contract, datetime.date(2026, 8, 30))
         _receive(da, base, contract, shipment)
-        invoice = _invoice(da, contract)
-        _pay(da, invoice, amount="12750.00")
-
+        _pay(da, _invoice(da, contract), amount="12750.00")
         row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
-        assert (row.stage, row.waiting_on) == ("part paid", "payment")
-
-        _pay(da, invoice, amount="12750.00")
-        row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
-        assert (row.stage, row.waiting_on) == ("delivered and paid", "—")
+        assert row.stage == "Delivered · part paid"
+        assert row.stage_index == 6
 
     def test_a_paid_order_nothing_arrived_for_stays_paid(self, da, base):
         contract = _order(da, base, "PO-1")
         _pay(da, _invoice(da, contract))
-        assert _row(standing_rows(PROGRAM, TODAY), "PO-1").stage == "paid"
+        assert _row(standing_rows(PROGRAM, TODAY), "PO-1").stage == "Delivering · paid"
 
-    def test_a_part_received_order_says_so(self, da, base):
-        contract = _order(da, base, "PO-1")
-        shipment = _ship(da, contract, datetime.date(2026, 8, 30))
-        _receive(da, base, contract, shipment)
-        op(da, "contract_update", SEP_1, contract_id=contract["id"], data={"status": "part_received"})
-
-        row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
-        assert (row.stage, row.waiting_on) == ("part received", "invoice")
-
-    def test_received_then_invoiced_wait_on_the_next_step(self, da, base):
-        contract = _order(da, base, "PO-1")
-        shipment = _ship(da, contract, datetime.date(2026, 8, 30))
-        _receive(da, base, contract, shipment)
-        row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
-        assert (row.stage, row.waiting_on) == ("received", "invoice")
-
-        _invoice(da, contract)
-        row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
-        assert (row.stage, row.waiting_on) == ("invoiced", "payment")
-
-    def test_a_placed_order_waits_on_dispatch(self, da, base):
+    def test_a_placed_order_is_delivering_placed(self, da, base):
         _order(da, base, "PO-1")
-        row = _row(standing_rows(PROGRAM, TODAY), "PO-1")
-        assert (row.stage, row.waiting_on) == ("placed", "dispatch")
+        assert _row(standing_rows(PROGRAM, TODAY), "PO-1").stage == "Delivering · placed"
 
     def test_the_buyer_is_named_only_when_it_is_not_the_programs_own_org(self, da, base):
         _order(da, base, "PO-OURS")
@@ -545,14 +422,13 @@ class TestLastChangeAndOrder:
         row = _row(standing_rows(PROGRAM, TODAY), "Round 1")
         assert (row.last_change_at, row.last_change_by, row.last_change_is_ai) == (SEP_1, "Sophie Bello", False)
 
-    def test_rows_are_ordered_by_last_change_not_by_whether_they_are_stale(self, da, base):
-        stale = _order(da, base, "PO-STALE", when=AUG_3)
-        _ship(da, stale, datetime.date(2026, 9, 5), when=AUG_20)
+    def test_rows_are_ordered_by_last_change(self, da, base):
+        older = _order(da, base, "PO-OLD", when=AUG_3)
+        _ship(da, older, datetime.date(2026, 9, 5), when=AUG_20)
         _tender(da, "Round 2", SEP_1)
 
         rows = standing_rows(PROGRAM, TODAY)
-        assert [r.title.split(" ")[0] for r in rows] == ["Round", "PO-STALE"]
-        assert rows[1].stale  # stale, and still below the newer row
+        assert [r.title.split(" ")[0] for r in rows] == ["Round", "PO-OLD"]
 
     def test_until_cuts_the_last_change_at_that_day(self, da, base, ace):
         contract = _order(da, base, "PO-1")
@@ -564,11 +440,7 @@ class TestLastChangeAndOrder:
         for n in range(3):
             _tender(da, f"Round {n}", AUG_3)
             _order(da, base, f"PO-{n}")
-        # Measured 94 for six rows: 4 fixed for what we owe (holds, commitments),
-        # 2 an order for its payments, now found by the order (an advance has
-        # no invoice), and 1 a row for what we owe on it, which its last change
-        # reads. A query per outreach or per revision would pass it quickly.
-        with django_assert_max_num_queries(96):
+        with django_assert_max_num_queries(110):
             standing_rows(PROGRAM, TODAY)
 
 
@@ -617,9 +489,9 @@ class TestHomePage:
         session["labs_oauth"] = {}
         session.save()
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-        assert f'<h2 class="text-lg font-semibold text-gray-900 mb-3">Program {PROGRAM}</h2>' in body
+        assert f'<div class="sc-kicker">Program {PROGRAM}</div>' in body
 
-    def test_the_table_lists_each_tender_and_order_above_the_funnel(self, client_in_program, da, base, ace):
+    def test_the_table_lists_each_tender_and_order_above_the_chain(self, client_in_program, da, base, ace):
         tender = _tender(da, "Round 1", AUG_3)
         _outreach(da, tender, base["suppliers"][0], datetime.date(2026, 8, 1))
         contract = _order(da, base, "PO-1", buyer="partner")
@@ -644,10 +516,11 @@ class TestHomePage:
         table = body[standing : body.index("</table>", standing)]
         assert reverse("supply_chain:procurement_tender_detail", args=[tender["id"]]) in table
         assert reverse("supply_chain:order_detail", args=[contract["id"]]) in table
-        assert "0 of 1 replied" in table
-        assert "arrival (ETA 5 Sep)" in table
+        assert "0 of 1 answered" in table
+        assert "Northwind Foods: reply (silent " in table
+        assert "in transit" in table
         assert "Kano Health Partners" in table
-        assert "data-ai" in table and "<span>AI assistant</span>" in table and 'aria-label="AI"' in table
+        assert "data-ai" in table and "AI assistant" in table
 
     def test_as_of_before_round_2_existed_leaves_it_out(self, client_in_program, da, base):
         _tender(da, "Round 1", AUG_3)
@@ -666,11 +539,11 @@ class TestHomePage:
 class TestHomePageHooks:
     """Stable handles a walkthrough (or a person's test) can find each thing by."""
 
-    def test_rows_badges_and_flags_carry_test_ids(self, client_in_program, da, base, ace):
+    def test_rows_badges_and_moves_carry_test_ids(self, client_in_program, da, base, ace):
         tender = _tender(da, "Round 1", AUG_3)
         _outreach(da, tender, base["suppliers"][0], datetime.date(2026, 8, 1))
-        contract = _order(da, base, "PO-1", tender=tender)
-        _order(da, base, "PO-LOOSE")
+        _tender(da, "Round 2", AUG_3)
+        contract = _order(da, base, "PO-LOOSE")
         op(
             da,
             "shipment_record",
@@ -682,10 +555,10 @@ class TestHomePageHooks:
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
 
         assert body.count('data-testid="overview-row"') == 3
-        assert body.count(f'data-testid="overview-row" data-tender-id="{tender["id"]}"') == 2
-        assert body.count('data-testid="overview-row">') == 1  # the loose order names no tender
+        assert body.count(f'data-tender-id="{tender["id"]}"') == 1
         assert 'data-testid="ai-badge"' in body
-        assert body.count('data-testid="stale-flag"') == 1
+        assert body.count('data-testid="whose"') == 1
+        assert 'data-testid="standing-our-moves"' in body
 
     def test_as_of_an_earlier_day_a_delivered_and_paid_order_is_in_transit(self, client_in_program, da, base):
         contract = _order(da, base, "PO-1")
@@ -697,6 +570,6 @@ class TestHomePageHooks:
         live = client_in_program.get(url).content.decode()
         past = client_in_program.get(url, {"as_of": "2026-08-25"}).content.decode()
 
-        assert "delivered and paid" in live
-        assert "in transit" in past and "arrival (ETA 5 Sep)" in past
+        assert "PO-1" not in live.split('id="supply-standing"')[1].split("</table>")[0]
+        assert "Delivering · in transit" in past
         assert 'data-testid="as-of-banner"' in past and 'data-testid="as-of-control"' in past

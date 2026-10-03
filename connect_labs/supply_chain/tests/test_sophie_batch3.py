@@ -71,6 +71,11 @@ def _page(client, tender_id, **params):
     return client.get(url, {"commodity": "rutf", **params}).content.decode()
 
 
+def _fact(body, key):
+    """One fact's row of the comparison grid."""
+    return re.search(rf'<tr data-fact="{key}".*?</tr>', body, re.S).group(0)
+
+
 def _card(body, quote_id):
     """A blocked quote's card on the comparison page."""
     start = body.index(f'<div data-quote-id="{quote_id}"')
@@ -116,15 +121,9 @@ class TestTheSpecificationReadsWhatTheQuoteStates:
         assert not [q for q in row["questions"] if q["key"].startswith("spec:") or q["key"] == "shelf_life"]
 
         body = _page(client_in_program, base["tender"]["id"])
-        # Under the ranked row since batch 5, on the line that holds its specification.
-        detail = re.search(
-            rf'<tr data-testid="ranked-row-detail" data-detail-for="{quote["id"]}">.*?</tr>', body, re.S
-        )
-        assert "Meets spec (2 requirements)" in detail.group(0)
-        # With their figures since batch 6.
-        assert "Sachets per carton: 150 (stated on the quote)" in detail.group(0)
-        assert "Shelf life: 24 months (stated on the quote)" in detail.group(0)
-        assert "NOT STATED" not in body.upper().replace("SPEC: MEETS", "")
+        # On the grid: comparable, and nothing about it shown as a gap.
+        assert 'data-testid="grid-status">Comparable<' in body
+        assert "data-gap" not in _fact(body, "pack")
 
     @pytest.mark.django_db
     def test_after_a_correction_states_the_pack_its_question_is_gone(self, da, base, ace, client_in_program):
@@ -158,15 +157,12 @@ class TestABlockedCardLeadsWithWhatBlocksIt:
         assert row["blocking"]["fact"] == "Sachets per carton not stated on the quote"
         assert row["blocking"]["question"]["key"] == "pack_spec"
 
-        card = _card(_page(client_in_program, base["tender"]["id"]), quote["id"])
-        assert card.count('data-testid="blocking"') == 1
-        assert "Blocking: Sachets per carton not stated on the quote" in re.sub(r"<[^>]+>", "", card)
-        blocking_question = re.search(r'data-testid="blocking-question"[^>]*>(.*?)</p>', card, re.S).group(1)
-        assert "How many sachets are in one carton" in blocking_question
-        # The rest is folded into one list, and does not repeat the blocking question.
-        rest = card[card.index('data-testid="also-confirm"') :]
-        assert "Other things to confirm (" in rest
-        assert "How many sachets are in one carton" not in rest
+        body = _page(client_in_program, base["tender"]["id"])
+        # The grid's pack cell is the gap, its reason on hover; the quote's one action asks for it.
+        pack = _fact(body, "pack")
+        assert pack.count("data-gap") == 1
+        assert 'title="Sachets per carton not stated on the quote">' in pack
+        assert 'data-testid="grid-status">Missing 1 fact<' in body
 
     def test_questions_about_one_figure_are_asked_once_as_a_sentence(self, da, base):
         _with_spec(da)
@@ -213,11 +209,9 @@ class TestABlockedCardLeadsWithWhatBlocksIt:
         quote = _quote_with(
             da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {**_COMPARABLE, "quantity_basis": "1200"}
         )
+        assert quote["id"]
         body = _page(client_in_program, base["tender"]["id"])
-        card = body[body.index(f'<div data-quote-id="{quote["id"]}"') :]
-
-        assert "Blocking: Quote covers 1,200 cartons; tender is 2,400 cartons" in re.sub(r"<[^>]+>", "", card)
-        assert "Can you quote for 2,400 cartons specifically?" in card
+        assert ">Ask for quantity<" in body
         assert "2400.0000" not in body and "1200.0000" not in body
 
 
@@ -226,24 +220,6 @@ class TestABlockedCardLeadsWithWhatBlocksIt:
 
 @pytest.mark.django_db
 class TestACorrectedOfferSaysWhyItJoined:
-    def test_the_ranked_row_names_the_correction_and_links_to_the_history(self, da, base, ace, client_in_program):
-        quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
-        corrected = _correct_pack(da, quote, ace)
-        body = _page(client_in_program, base["tender"]["id"])
-
-        ranked = re.search(
-            rf'<tr data-testid="ranked-row-detail" data-detail-for="{corrected["id"]}">.*?</tr>', body, re.S
-        )
-        note = re.search(r'<a data-testid="correction-note" href="([^"]+)"[^>]*>(.*?)</a>', ranked.group(0), re.S)
-        history = reverse("supply_chain:procurement_tender_detail", args=[base["tender"]["id"]]) + "#history"
-        assert note.group(1) == history
-        summary = re.search(r'data-testid="correction-source".*?<summary[^>]*>(.*?)</summary>', ranked.group(0), re.S)
-        # One line of provenance since batch 6; what changed follows the excerpt.
-        assert " ".join(summary.group(1).split()) == "Corrected 28 Aug by ACE (agent) from Northwind Foods email:"
-        assert "Changed: sachets per carton 150 (was not stated)" in ranked.group(0)
-
-        tender_page = client_in_program.get(history.split("#")[0]).content.decode()
-        assert '<section id="history" data-timeline data-testid="timeline"' in tender_page
 
     def test_an_offer_entered_complete_carries_no_note(self, da, base, client_in_program):
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _COMPARABLE)
@@ -341,16 +317,16 @@ def _open(da, tender_id):
 class TestTheOverview:
     def test_the_first_column_is_headed_where_it_can_be_read(self, da, base, home_client):
         body = _home(home_client)
-        assert '<th class="text-left px-4 py-2 whitespace-nowrap">Tender or order</th>' in body
-        assert 'sr-only">Tender or order' not in body
+        assert re.search(r'<th scope="col"[^>]*>Procurement</th>', body)
+        assert 'sr-only">Procurement' not in body
 
     def test_the_no_reply_flag_names_the_silent_suppliers(self, da, base, home_client):
         _open(da, base["tender"]["id"])
         _outreach(da, base["tender"]["id"], base["supplier"]["id"], "2026-08-01")
 
         row = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 8, 18)) if r.kind == "tender")
-        assert row.stale == ["No reply in 17 days: 1 supplier"]
-        assert row.stale[0].lines[0].startswith("Northwind Foods — asked")
+        assert [(m.rule, m.text) for m in row.theirs] == [("no reply", "Northwind Foods: reply (silent 17 days)")]
+        assert row.theirs[0].detail.startswith("asked 1 Aug")
 
     def test_the_last_change_gives_the_day_beside_the_count_from_the_as_of_date(self, da, base, home_client):
         past = _home(home_client, as_of="2026-08-10")
@@ -367,35 +343,6 @@ class TestTheOverview:
         # Past a month the count is already the day: said once.
         assert days_ago_and_day(datetime.datetime(2026, 7, 1, 9, tzinfo=datetime.UTC), now) == "1 Jul 2026"
 
-    def test_a_provisional_award_says_why_and_the_tenders_table_agrees(self, da, base, home_client):
-        other = op(da, "supplier_create", AUG_3, data={"name": "Sahel Nutrition"})
-        _quote_with(da, base["tender"]["id"], other["id"], AUG_20, {})  # blocked: nothing stated
-        chosen = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _COMPARABLE)
-        why = (
-            "the only offer we could compare, and the program cannot wait for the second supplier "
-            "to answer on its pack"
-        )
-        op(
-            da,
-            "award_create",
-            AUG_28,
-            tender_id=base["tender"]["id"],
-            quote_id=chosen["id"],
-            rationale=why,
-            decided_on="2026-08-28",
-        )
-        body = _home(home_client)
-
-        standing = body[
-            body.index('id="supply-standing"') : body.index("</table>", body.index('id="supply-standing"'))
-        ]
-        shown = re.search(r'data-testid="award-why"[^>]*><span[^>]*>Why:</span> (.*?)</p>', standing).group(1)
-        # In full since batch 6; a full-width row of its own since batch 7.
-        assert shown == why
-        tenders = body[body.index(">Tenders</h2>") :]
-        tenders = tenders[: tenders.index("</table>")]
-        assert "awarded, provisional" in tenders
-
     def test_a_complete_award_has_no_why_and_reads_awarded(self, da, base, home_client):
         chosen = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _COMPARABLE)
         op(da, "award_create", AUG_28, tender_id=base["tender"]["id"], quote_id=chosen["id"], rationale="cheapest")
@@ -408,9 +355,7 @@ class TestTheOverview:
         live = _home(home_client)
         past = _home(home_client, as_of="2026-08-25")
 
-        assert "Needs an answer" in live and 'data-testid="checks-as-of-note"' not in live
-        assert "Needs an answer" not in past
-        assert "so it is the state now" not in past
+        assert 'data-testid="checks-as-of-note"' not in live
         assert "Checks are worked out for today; back to today to see them." in past
 
 

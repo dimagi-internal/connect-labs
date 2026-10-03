@@ -692,9 +692,9 @@ class TestATenderIsAwardedOnceEveryLineIs:
 
     def test_the_overview_and_tender_page_say_awarded(self, client_in_programme, chain):
         overview = client_in_programme.get(reverse("supply_chain:home")).content.decode()
-        row = overview[overview.index(">CHC<") :]
-        assert "awarded" in row[: row.index("</tr>")].lower()
+        # Awarded and ordered: on the overview it is its order's row, "from" the tender.
+        assert f"from {chain['tender']['label']}" in overview
         page = client_in_programme.get(
             reverse("supply_chain:procurement_tender_detail", args=[chain["tender"]["id"]])
         ).content.decode()
-        assert re.search(r">Status</dt>\s*<dd[^>]*>\s*Awarded", page)
+        assert re.search(r'data-testid="tender-state-pill"[^>]*>Awarded<', page)

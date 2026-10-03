@@ -23,9 +23,8 @@ from connect_labs.supply_chain.models import Commodity
 from connect_labs.supply_chain.templatetags.supply_chain_extras import bold_after_arrow, money_text
 from connect_labs.supply_chain.tests import test_sophie_batch6 as batch6
 from connect_labs.supply_chain.tests import test_sophie_judged_batch6 as judged6
-from connect_labs.supply_chain.tests import test_sophie_judged_batch7 as judged7
 from connect_labs.supply_chain.tests.test_history_timeline import AUG_20, AUG_28, _quote_with, op
-from connect_labs.supply_chain.tests.test_sophie_batch3 import _ALL_BUT_PACK, _home, _page, _with_spec
+from connect_labs.supply_chain.tests.test_sophie_batch3 import _home
 
 registered_synthetic = batch6.registered_synthetic
 da = batch6.da
@@ -49,68 +48,10 @@ def _bare(html):
 # ---- 1. the can't-compare flag is the same chip as the others ---------------
 
 
-@pytest.mark.django_db
-class TestTheCantCompareChip:
-    def test_boxed_like_the_other_flags_and_still_opens(self, da, base, home_client):
-        tender_id = base["tender"]["id"]
-        _quote_with(da, tender_id, base["supplier"]["id"], AUG_20, {**_DELIVERED, "freight_basis": "not_specified"})
-        _quote_with(
-            da,
-            tender_id,
-            batch6._supplier(da, "Sahel Nutrition")["id"],
-            AUG_20,
-            {**_DELIVERED, "duties_basis": "excluded"},
-        )
-        standing = batch6._standing(_home(home_client))
-        flag = re.search(r'<details data-testid="stale-flag"[^>]*>\s*<summary class="([^"]*)"', standing)
-        classes = set(flag.group(1).split())
-        assert {"rounded", "border", "border-amber-200", "bg-amber-50"} <= classes
-        # Still folds open on the per-supplier lines.
-        details = re.search(r'<details data-testid="stale-flag".*?</details>', standing, re.S).group(0)
-        # Folds open on the rule; who is missing what is the Waiting on cell's, beside it.
-        assert len(re.findall(r'data-testid="flag-line"', details)) == 1
-
-
 # ---- 2. waiting on names what each blocked supplier is missing -------------
 
 
-@pytest.mark.django_db
-class TestMissingFactsSayWhich:
-    def test_each_supplier_with_its_missing_facts(self, da, base, home_client):
-        tender_id = base["tender"]["id"]
-        _quote_with(da, tender_id, base["supplier"]["id"], AUG_20, {**_DELIVERED, "freight_basis": "not_specified"})
-        _quote_with(
-            da,
-            tender_id,
-            batch6._supplier(da, "Sahel Nutrition")["id"],
-            AUG_20,
-            {**_DELIVERED, "duties_basis": "excluded"},
-        )
-        row = judged7._tender_row()
-        assert row.waiting_on == "Missing facts: Northwind Foods (freight), Sahel Nutrition (duties amount)"
-        # The same words as the flag's per-supplier lines, from the same comparison.
-        assert row.stale[0].lines == ("Northwind Foods — missing: freight", "Sahel Nutrition — missing: duties amount")
-
-
 # ---- 3. the provisional stage: short caveat, price with what it commits ----
-
-
-@pytest.mark.django_db
-class TestTheProvisionalStage:
-    def test_the_caveat_does_not_repeat_waiting_on(self, da, base, home_client):
-        judged7._provisional(da, base)
-        row = judged7._tender_row()
-        assert row.provisional_caveat == "provisional — 1 of 2 quotes not yet comparable"
-        assert "replied" not in row.provisional_caveat
-        # Waiting-on still names the silent supplier.
-        assert row.waiting_lines[0] == "No reply: Plateau Mills"
-
-    def test_the_award_line_carries_the_committed_total(self, da, base, home_client):
-        judged7._provisional(da, base)
-        standing = batch6._standing(_home(home_client))
-        # Since batch 9 a clause a line under the stage, with no leading "·".
-        lines = re.findall(r'data-testid="award-price-line"[^>]*>(.*?)</span>', standing)
-        assert lines == ["USD 42.50 per carton", "USD 25,500.00 landed (incl. freight and duties) for 600 cartons"]
 
 
 # ---- 4. the AI marker is a glyph, so "AI" is not said twice ----------------
@@ -138,27 +79,17 @@ class TestTheAgentBadge:
         assert _bare(pill) == "AI assistant"  # since DDD 003 batch 7
         assert re.search(r'<i data-testid="ai-glyph" [^>]*role="img" aria-label="AI"', pill)
 
-    def test_the_comparison_card_badge(self, da, base, ace, client_in_program):
-        quote = _ace_quote(da, base, ace)
-        card = batch6._card(_page(client_in_program, base["tender"]["id"]), quote["id"])
-        badge = re.search(r'<span data-ai data-testid="ai-badge"[^>]*>(.*?)</span></span>', card, re.S).group(1)
-        assert _bare(badge) == "AI assistant" and 'aria-label="AI"' in badge
-
     def test_the_overview_badge_says_what_was_recorded_on_hover(self, da, base, ace, home_client):
         _ace_quote(da, base, ace)
         standing = batch6._standing(_home(home_client))
-        badge = re.search(
-            r'<span data-ai data-testid="ai-badge" title="([^"]*)"[^>]*>(.*?)</span></span>', standing, re.S
-        )
-        assert _bare(badge.group(2)) == "AI assistant" and 'aria-label="AI"' in badge.group(2)
+        badge = re.search(r'data-ai data-testid="ai-badge" title="([^"]*)">(<span[^>]*></span>[^<]*)</span>', standing)
+        assert _bare(badge.group(2)) == "AI assistant" and 'data-src="ai"' in badge.group(2)
         assert badge.group(1) == "ACE recorded Quote · Northwind Foods from a forwarded email"
 
     def test_a_person_via_ai_gets_no_second_marker(self, da, base, sophie, home_client):
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {}, channel="mcp", actor=sophie)
         standing = batch6._standing(_home(home_client))
-        badge = re.search(
-            r'<span data-ai data-testid="ai-badge" title="([^"]*)"[^>]*>(.*?)</span></span>', standing, re.S
-        )
+        badge = re.search(r'data-ai data-testid="ai-badge" title="([^"]*)">(<span[^>]*></span>[^<]*)</span>', standing)
         assert _bare(badge.group(2)).startswith("via AI")
         assert "ai-glyph" not in badge.group(2)
         assert "via an AI assistant recorded Quote · Northwind Foods" in badge.group(1)
@@ -239,50 +170,11 @@ class TestTheListing:
 # ---- 9. a blocked card: the per-carton figure; the pack requirement a line --
 
 
-@pytest.mark.django_db
-class TestABlockedCard:
-    def test_a_per_sachet_price_says_its_per_carton_figure(self, da, base, client_in_program):
-        quote = _quote_with(
-            da,
-            base["tender"]["id"],
-            base["supplier"]["id"],
-            AUG_20,
-            {
-                **_DELIVERED,
-                "freight_basis": "not_specified",
-                "as_quoted_amount": "0.29",
-                "as_quoted_unit": "per_base_unit",
-            },
-        )
-        card = batch6._card(_page(client_in_program, base["tender"]["id"]), quote["id"])
-        price = _text(re.search(r'<p data-testid="as-quoted"[^>]*>(.*?)</p>', card, re.S).group(1))
-        assert price == "Quoted USD 0.29 per sachet = USD 43.50 per carton"
-
-    def test_the_pack_requirement_is_a_grey_line_not_a_chip(self, da, base, client_in_program):
-        _with_spec(da)
-        quote = _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, _ALL_BUT_PACK)
-        card = batch6._card(_page(client_in_program, base["tender"]["id"]), quote["id"])
-        line = re.search(r'<p data-testid="blocker-spec-line" class="([^"]*)">(.*?)</p>', card)
-        assert line.group(2) == "Sachets per carton: not stated (tender requires 150)"
-        assert {"text-xs", "text-gray-600"} <= set(line.group(1).split())
-        assert 'data-testid="spec-chip"' not in card
-
-
 # ---- 10. the ranked table reads a per-sachet price to three places ---------
 
 
 @pytest.mark.django_db
 class TestTheRankedTable:
-    def test_usd_per_sachet_to_three_places(self, da, base, client_in_program):
-        quote = _quote_with(
-            da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {**_DELIVERED, "as_quoted_amount": "41.00"}
-        )
-        body = _page(client_in_program, base["tender"]["id"])
-        row = re.search(
-            rf'<tr data-testid="ranked-row" data-quote-id="{quote["id"]}"[^>]*>(.*?)</tr>', body, re.S
-        ).group(1)
-        assert "USD 0.273" in row and "0.2733" not in row
-        assert "USD 41.00" in row
 
     def test_the_cap_only_shortens(self):
         assert money_text({"amount": "0.27333", "currency": "USD"}, 3) == "USD 0.273"
