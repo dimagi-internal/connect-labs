@@ -125,11 +125,13 @@ duty out is missing a figure depends on who imports.{% endcomment %}
   region. With them underneath, the table is only as wide as its figures.
   {% endcomment %}
   <div class="table-container flex flex-col gap-2 mb-1">
-    <div class="w-full overflow-x-auto">
+    {% comment %}One comparable offer is a result, not a ranking: a compact card as wide as
+    its figures, not a full-width table that is mostly empty space.{% endcomment %}
+    <div data-testid="{% if single_offer %}single-result{% else %}ranked-wrap{% endif %}" class="{% if single_offer %}w-fit max-w-full bg-white border border-gray-200 rounded-lg shadow-sm{% else %}w-full{% endif %} overflow-x-auto">
       {% comment %}Full width, as the Needs-info cards below it are. With one offer there is
       no ranking to number or to say what it is by, so neither the "#" column nor the
       "Ranked by" marker is shown.{% endcomment %}
-      <table data-testid="ranked-table" class="base-table w-full">
+      <table data-testid="ranked-table" class="base-table {% if single_offer %}w-auto{% else %}w-full{% endif %}">
         <thead>
           <tr>
             {% if not single_offer %}<th>#</th>{% endif %}<th>Supplier</th>
@@ -362,6 +364,11 @@ duty out is missing a figure depends on who imports.{% endcomment %}
   <h2 class="text-lg font-semibold text-gray-900 mt-6 mb-2">
     <span data-testid="needs-info-title">Needs info — {{ comparison.blocked|length }} supplier{{ comparison.blocked|pluralize }}</span>
   </h2>
+  {% comment %}The round's duty terms again, compact, right above the cards they cost: the
+  cause (the answer that set them) and its effect on each card share one screen.{% endcomment %}
+  {% if tender.duty_terms %}
+  <p data-testid="needs-info-duty-terms" class="-mt-1 mb-2 text-sm text-gray-700"><span class="font-medium text-gray-900">Round terms:</span> {{ tender.duty_terms|duty_terms_words }}{% if duty_terms_answer %}, <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}?changed=commitment-{{ duty_terms_answer.commitment_id }}#owed">set from your answer to {{ duty_terms_answer.owed_to }}, {{ duty_terms_answer.on|date:"j M" }}</a>{% endif %}</p>
+  {% endif %}
   {% for row in comparison.blocked %}
     {% comment %}Tight: three of these fit below the page header at 900px.{% endcomment %}
     <div data-quote-id="{{ row.quote_id }}" class="bg-white rounded-lg shadow-sm border border-gray-200 px-4 py-2.5 mb-2">
@@ -382,7 +389,8 @@ duty out is missing a figure depends on who imports.{% endcomment %}
       the answer that set the terms, so the card carries its own cause.{% endcomment %}
       {% if row.landed_basis %}<div data-testid="card-landed-basis" class="mb-1">
         {% if row.delivery_basis %}<p data-testid="card-delivery-basis" class="text-xs text-gray-700">{{ row.delivery_basis|capfirst }}</p>{% endif %}
-        {% if row.duty_line %}<p data-testid="card-duty" class="text-sm text-gray-900"><span class="font-medium">{{ row.duty_line }}</span>{% if duty_terms_answer %} <span class="text-gray-700">— the round's terms, </span><a data-testid="card-duty-source" class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}?changed=commitment-{{ duty_terms_answer.commitment_id }}#owed">set {{ duty_terms_answer.on|date:"j M" }} from your answer to {{ duty_terms_answer.owed_to }}</a>{% endif %}</p>{% endif %}
+        {% if row.duty_line %}<p data-testid="card-duty" class="text-sm text-gray-900"><span class="font-medium">{{ row.duty_line }}</span>{% if duty_terms_answer %} <span class="text-gray-700">— the round's terms, </span><a data-testid="card-duty-source" class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}?changed=commitment-{{ duty_terms_answer.commitment_id }}#owed">set {{ duty_terms_answer.on|date:"j M" }} from your answer to {{ duty_terms_answer.owed_to }}</a>{% endif %}{% if tender.duty_terms == "buyer_waiver" and not waiver_on_file %} <a data-testid="card-waiver-missing" class="text-gray-700 underline hover:text-brand-indigo" href="{% url 'supply_chain:tender_document_attach' tender_id %}?kind=duty_exemption">(waiver document not on file)</a>{% endif %}</p>{% endif %}
+        {% if row.duty_consequence %}<p data-testid="card-duty-consequence" class="text-sm text-message-warning-text">{{ row.duty_consequence }}</p>{% endif %}
       </div>{% endif %}
       {% comment %}
       Each gap and the question that clears it on one row of a compact two-column

@@ -196,6 +196,9 @@ class ComparisonRow:
     # The duty the round's terms make ours, as its own line, with what the quote
     # itself said beside it: "Duty waived (our import) · the quote also stated zero".
     duty_line: str = ""
+    # What a quote's own duty word means under the round's terms, when it means
+    # something to act on: "the price may carry duty we will not pay ...".
+    duty_consequence: str = ""
     # The quantity the quote's landed total is for: "2,000 cartons".
     quantity_quoted: str = ""
 
@@ -417,6 +420,7 @@ class Comparison:
                 "landed_basis": row.landed_basis,
                 "delivery_basis": row.delivery_basis,
                 "duty_line": row.duty_line,
+                "duty_consequence": row.duty_consequence,
                 "gaps": row.gaps,
                 "base_unit": row.base_unit,
                 "pack_unit": row.pack_unit,
@@ -776,6 +780,22 @@ def round_duty_words(quote, tender) -> str:
     return line
 
 
+def round_duty_consequence(quote, tender) -> str:
+    """What the quote's own duty word means under the round's terms, and the move it leaves.
+
+    Under the waiver a quote that says duty is included may price in a duty we
+    will not pay: said with the question that settles it, rather than leaving the
+    buyer to work it out. "" when there is nothing to act on.
+    """
+    terms = getattr(tender, "duty_terms", "") or ""
+    if terms in ("buyer_waiver", "buyer_pays") and getattr(quote, "duties_basis", "") == "included":
+        return (
+            "Its price may include duty we will not pay ourselves: ask the supplier to "
+            "restate the price without duty before it is compared."
+        )
+    return ""
+
+
 def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
     """What a quote's landed figures rest on: where it is delivered, and how freight and duties were counted.
 
@@ -811,7 +831,8 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
         elif basis == "excluded" and amount is not None and not amount and label == "duties":
             # A zero said on the quote, said as the quote's word -- not "0.00 added",
             # which read as a figure we had guessed.
-            parts.append("duty stated as zero on the quote")
+            # "on the quote" is not said here: the line closes "per quote" already.
+            parts.append("duty stated as zero")
         elif basis == "excluded" and amount is not None:
             parts.append(f"{label} {money_digits(amount)} {currency} added")
         else:
@@ -898,6 +919,7 @@ def compare_tender(
         row.landed_basis = landed_basis_words(quote, tender)
         row.delivery_basis = landed_basis_words(quote, tender, round_duty=False)
         row.duty_line = round_duty_words(quote, tender)
+        row.duty_consequence = round_duty_consequence(quote, tender)
         if quote.quantity_basis is not None and quote.quantity_basis_unit:
             row.quantity_quoted = quantity_phrase(quote.quantity_basis, quote.quantity_basis_unit)
         if not course_applies:

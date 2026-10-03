@@ -307,7 +307,7 @@ def _tender_page(client, tender_id):
 
 
 def _invited_panel(body):
-    start = body.index(">Invited suppliers</h2>")
+    start = body.index('data-testid="invited-suppliers"')
     return body[start : body.index("</ul>", start)]
 
 

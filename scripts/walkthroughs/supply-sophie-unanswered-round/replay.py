@@ -56,7 +56,13 @@ PROTECTED = {10610, 10671, 10672, 10673}
 SOPHIE_USERNAME = "demo-sophie"
 BUYER_SLUG = "dimagi"
 
-KANO = {"key": "kano", "name": "Partner warehouse", "city": "Kano", "country": "NG"}
+KANO = {
+    "key": "kano",
+    "name": "Northern Nutrition Depot, 14 Zoo Road",
+    "city": "Kano",
+    "country": "NG",
+    "country_name": "Nigeria",
+}
 
 SUPPLIERS = [
     # key, name, country, city, type, contact, email

@@ -117,7 +117,15 @@ def _quantity_text(commodity: Commodity, tender: Tender) -> str:
 
 
 def _product(commodity: Commodity) -> str:
-    return commodity.name or commodity.slug
+    """The product as it reads inside a sentence: "2,000 cartons of ready-to-use
+    therapeutic food", not "of Ready-to-use therapeutic food" -- a capital
+    mid-sentence read as an unfilled template slot. An acronym ("RUTF", "ORS")
+    keeps its capitals."""
+    name = commodity.name or commodity.slug
+    first = name.split(" ", 1)[0]
+    if len(first) > 1 and first[0].isupper() and first[1:2].islower():
+        return name[0].lower() + name[1:]
+    return name
 
 
 def _where(tender: Tender) -> str:
@@ -311,14 +319,26 @@ def render_reminder(
     if last_reminder_on:
         lines += ["", f"We last wrote about this on {day_text(last_reminder_on)}."]
     lines += _reply_by(tender, today)
-    lines += [
-        "",
-        "In case our first message did not reach you, these are the questions we asked:",
-        "",
-        _numbered(initial_request_facts(commodity, tender)),
-        "",
-        "If you are not able to quote this time, a short reply saying so would help us plan.",
-    ]
+    if last_reminder_on:
+        # A second or later reminder: the questions went out with the request and again
+        # with the first reminder, so they are referred to rather than listed a third time.
+        # Re-listing them made a chase longer than the request it chased.
+        lines += [
+            "",
+            f"The questions we need answered are in our request of {asked}, and again in that reminder; "
+            "a price per unit, delivered as asked, with your lead time is enough to start.",
+            "",
+            "If you are not able to quote this time, a short reply saying so would help us plan.",
+        ]
+    else:
+        lines += [
+            "",
+            "In case our first message did not reach you, these are the questions we asked:",
+            "",
+            _numbered(initial_request_facts(commodity, tender)),
+            "",
+            "If you are not able to quote this time, a short reply saying so would help us plan.",
+        ]
     lines += _sign_off(sender)
     return Draft(
         subject=f"Reminder: quotation request of {asked}{_about(tender, commodity)}",
