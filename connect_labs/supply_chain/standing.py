@@ -56,10 +56,29 @@ class Row:
     origin: str = ""
     contract_id: int | None = None
     tender_id: int | None = None
+    # The order page's own step name ("At customs — held"); blank for a tender.
+    step_label: str = ""
+    # Quote facts still absent on a tender: [(fact, number of quotes)], from the comparison's gaps.
+    missing: list = field(default_factory=list)
 
     @property
     def bars(self) -> list[str]:
         return stage_bars(self.stage_index)
+
+    @property
+    def label(self) -> str:
+        return self.step_label or self.stage
+
+    @property
+    def silent_names(self) -> list[str]:
+        """The suppliers the no-reply rule lists on this row, by name."""
+        return [m.text.split(": reply")[0] for m in self.theirs if m.rule == rules.RULE_NO_REPLY]
+
+    @property
+    def other_count(self) -> int:
+        """The moves on the party whose move is NOT the row's next one."""
+        whose = self.whose
+        return len(self.theirs) if whose == rules.US else len(self.ours) if whose == rules.SUPPLIERS else 0
 
     @property
     def next_move(self):
@@ -233,7 +252,7 @@ def _tender_rows(program_id, today, until):
     outreach, quotes, owed, awards = {}, {}, {}, {}
     for o in Outreach.objects.filter(tender_id__in=ids).select_related("supplier__org"):
         outreach.setdefault(o.tender_id, []).append(o)
-    for q in Quote.objects.filter(tender_id__in=ids):
+    for q in Quote.objects.filter(tender_id__in=ids).select_related("supplier__org", "commodity", "item"):
         quotes.setdefault(q.tender_id, []).append(q)
     for c in Commitment.objects.filter(
         program_id=program_id, tender_id__in=ids, resolved_on__isnull=True
@@ -279,10 +298,26 @@ def _tender_rows(program_id, today, until):
                 sub=sub,
                 ours=ours,
                 theirs=theirs,
+                missing=_missing_facts(tender, quotes.get(tender.pk, [])),
                 **_last_change(tender_scope_revisions(tender.pk, program_id=program_id, until=until, orders=False)),
             )
         )
     return rows
+
+
+def _missing_facts(tender, quotes) -> list:
+    """[(fact, quotes lacking it)]: the gaps the comparison marks, counted per fact across the tender's quotes."""
+    if not any(q.is_live for q in quotes):
+        return []
+    from connect_labs.supply_chain.procurement.status import _ROUND_DUTY, comparisons
+
+    counts = {}
+    for comparison in comparisons(tender, quotes):
+        for row in comparison.blocked:
+            for gap in row.gaps or []:
+                fact = "our duty terms" if gap == _ROUND_DUTY else gap
+                counts[fact] = counts.get(fact, 0) + 1
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
 
 
 # ---- orders --------------------------------------------------------------
@@ -379,6 +414,14 @@ def _order_rows(program_id, today, until, own_org_id, *, only=None, keep_done=Fa
                 ours=ours,
                 theirs=theirs,
                 tender_id=contract.tender_id,
+                step_label=_order_step(
+                    contract,
+                    shipments.get(contract.pk, []),
+                    received_shipments,
+                    contract.pk in received_contracts,
+                    contract.pk in paid,
+                    held=bool(holds.get(contract.pk)),
+                ),
                 origin=origin,
                 contract_id=contract.pk,
                 buyer=buyer,
@@ -386,6 +429,28 @@ def _order_rows(program_id, today, until, own_org_id, *, only=None, keep_done=Fa
             )
         )
     return rows
+
+
+def _order_step(contract, shipments, received_shipments, received, paid, *, held=False) -> str:
+    """The order page's own step name for where the order is: "At customs — held", "Received", "Paid"."""
+    if contract.status in ("cancelled", "draft"):
+        return _words(contract.status).capitalize()
+    full = received and contract.status != "part_received"
+    moving = [s for s in shipments if s.pk not in received_shipments and s.status not in ("lost", "delivered")]
+    in_transit = [s for s in moving if _dispatched(s)]
+    if in_transit and not full:
+        latest = records.latest_moving_shipment(in_transit)
+        name = "In transit"
+        if latest is not None and latest.status in ("at_customs", "cleared", "lost"):
+            name = latest.status.replace("_", " ").capitalize()
+        return name + (" — held" if held else "")
+    if full:
+        return "Paid" if paid else "Received"
+    if received:
+        return "Received, part"
+    if any(_dispatched(s) for s in shipments):
+        return "Dispatched"
+    return "Ordered"
 
 
 def _dispatched(shipment) -> bool:

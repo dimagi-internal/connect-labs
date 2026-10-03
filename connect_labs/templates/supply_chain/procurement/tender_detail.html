@@ -70,37 +70,47 @@ is folded away, each fold with its count.
   </section>
 
   <div class="flex flex-wrap items-start gap-5">
-    <section class="card_bg border-brand-border-light flex min-w-0 flex-[999_1_560px] flex-col gap-3 border" aria-labelledby="suppliers-h">
+    <div class="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
+    <section class="card_bg border-brand-border-light flex min-w-0 flex-col gap-3 border" aria-labelledby="suppliers-h">
       <div class="flex flex-wrap items-baseline justify-between gap-3">
         <h2 id="suppliers-h" class="card_title">Suppliers</h2>
         <span class="text-sm text-gray-600" data-testid="outreach-replied-count">{{ outreach_replied }} of {{ outreach_asked }} replied</span>
       </div>
       <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="Suppliers, scrolls sideways">
         <table class="w-full min-w-[620px] text-sm" data-testid="supplier-table">
-          <thead class="border-b border-gray-200 text-left text-xs text-gray-600"><tr><th scope="col" class="py-2 pr-3 font-medium">Supplier</th><th scope="col" class="px-3 py-2 font-medium">State</th><th scope="col" class="px-3 py-2 font-medium">Quote</th><th scope="col" class="px-3 py-2 font-medium">Still missing</th><th scope="col" class="py-2 pl-3"><span class="sr-only">Action</span></th></tr></thead>
+          <thead class="border-b border-gray-200 text-left text-xs text-gray-600"><tr><th scope="col" class="py-2 pr-3 font-medium">Supplier</th><th scope="col" class="px-3 py-2 font-medium">State</th><th scope="col" class="px-3 py-2 font-medium">Quote</th><th scope="col" class="px-3 py-2 font-medium">Missing from quote</th><th scope="col" class="px-3 py-2 font-medium">Last chased</th><th scope="col" class="py-2 pl-3"><span class="sr-only">Action</span></th></tr></thead>
           <tbody class="divide-y divide-gray-100">
             {% for r in status.suppliers %}
             <tr data-testid="supplier-row" data-supplier-id="{{ r.supplier_id }}" class="align-top">
-              <td class="py-3 pr-3 font-medium"><a class="text-gray-900 hover:underline" href="{{ r.href }}">{{ r.name }}</a></td>
+              <td class="whitespace-nowrap py-3 pr-3 font-medium"><a class="text-gray-900 hover:underline" href="{{ r.href }}">{{ r.name }}</a></td>
               <td class="px-3 py-3"><span class="status-chip status-chip--{{ r.chip.tone }}" data-testid="supplier-state">{{ r.chip.label }}</span></td>
-              <td class="whitespace-nowrap px-3 py-3">{% if r.quote %}{% include "supply_chain/_src.html" with src=r.quote_src %}{{ r.quote }}{% if r.quote_src == "ai" %}<span class="src-ai-tag">AI</span>{% endif %}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
-              <td class="whitespace-nowrap px-3 py-3 text-gray-600" data-testid="supplier-missing">{% for m in r.missing %}{% if r.chip.label == "Quote" or r.chip.label == "Quote, late" %}<span class="text-message-warning-text font-medium">{{ m }}</span>{% else %}{{ m }}{% endif %}{% if not forloop.last %} · {% endif %}{% empty %}<span class="text-gray-600">—</span>{% endfor %}</td>
+              <td class="px-3 py-3">{% if r.quote %}{% include "supply_chain/_src.html" with src=r.quote_src %}{{ r.quote }}{% if r.quote_src == "ai" %}<span class="src-ai-tag">AI</span>{% endif %}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+              <td class="whitespace-nowrap px-3 py-3 text-gray-600" data-testid="supplier-missing">{% for m in r.missing %}<span class="text-message-warning-text font-medium">{{ m }}</span>{% if not forloop.last %} · {% endif %}{% empty %}<span class="text-gray-600">—</span>{% endfor %}</td>
+              <td class="whitespace-nowrap px-3 py-3 text-gray-600 tabular-nums" data-testid="supplier-chased">{{ r.chased|default:"—" }}</td>
               <td class="whitespace-nowrap py-3 pl-3 text-right">{% if r.action and not supply_as_of %}<a class="text-brand-indigo font-medium hover:underline" data-testid="supplier-action" href="{{ r.action.href }}"{% if r.action.href|slice:":7" == "#draft-" %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ r.action.href|slice:"1:" }}');"{% endif %}>{{ r.action.label }}</a>{% endif %}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="5" class="py-3 text-gray-600">Nobody asked yet.</td></tr>
+            <tr><td colspan="6" class="py-3 text-gray-600">Nobody asked yet.</td></tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
     </section>
-
-    <aside class="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
-      {% include "supply_chain/_moves.html" with moves=status.ours whose="ours" heading="On us" testid="on-us" count_testid="on-us-count" %}
-      {% include "supply_chain/_moves.html" with moves=status.theirs whose="theirs" heading="On suppliers" testid="on-suppliers" %}
       <section class="card_bg border-brand-border-light flex flex-col gap-2.5 border" id="duty-terms" data-testid="tender-terms" aria-labelledby="terms-h">
+        <div class="flex flex-wrap items-center justify-between gap-3">
         <h2 id="terms-h" class="card_title">Terms</h2>
-        <div class="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3.5 gap-y-2 text-sm">
+        {% if not supply_as_of %}
+        <details class="relative" data-testid="duty-terms-settle">
+          <summary class="button button-sm outline-style list-none [&::-webkit-details-marker]:hidden" role="button" data-testid="duty-terms-open">{% if tender.duty_terms %}Change{% else %}Settle{% endif %} import duty</summary>
+          <form method="post" action="{% url 'supply_chain:procurement_tender_duty_terms' tender.id %}" class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 shadow-sm">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.path }}#duty-terms">
+            {% include "supply_chain/procurement/_duty_terms_fields.html" %}
+          </form>
+        </details>
+        {% endif %}
+              </div>
+        <div class="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3.5 gap-y-2 text-sm sm:grid-cols-[max-content_minmax(0,1.6fr)_max-content_minmax(0,1fr)_max-content_minmax(0,1fr)]">
           <span class="text-gray-600">Import duty</span>
           <span data-testid="tender-duty-terms"{% if duty_terms_changed %} data-changed{% endif %}>
             {% if not tender.duty_terms %}<span class="status-chip status-chip--ours">Not settled</span>{% else %}{% include "supply_chain/_src.html" with src=status.terms.duty_src %}{{ tender.duty_terms|duty_terms_words|capfirst }}{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} · estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}%{% else %} · <span class="text-message-warning-text font-medium">estimate not recorded</span>{% endif %}{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% if tender.duty_terms_set_on %}<span class="block text-xs text-gray-600">set {{ tender.duty_terms_set_on|day }}{% if status.terms.duty_set_by %} · {{ status.terms.duty_set_by }}{% endif %}</span>{% endif %}{% endif %}
@@ -111,17 +121,12 @@ is folded away, each fold with its count.
           <span class="text-gray-600">Asked</span>
           <span>{% if status.terms.asked %}{{ status.terms.asked|day }}{% else %}<span class="text-gray-600">—</span>{% endif %}</span>
         </div>
-        {% if not supply_as_of %}
-        <details class="relative" data-testid="duty-terms-settle">
-          <summary class="button button-sm outline-style list-none [&::-webkit-details-marker]:hidden" role="button" data-testid="duty-terms-open">{% if tender.duty_terms %}Change{% else %}Settle{% endif %} import duty</summary>
-          <form method="post" action="{% url 'supply_chain:procurement_tender_duty_terms' tender.id %}" class="border-brand-border-light absolute left-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 shadow-sm">
-            {% csrf_token %}
-            <input type="hidden" name="next" value="{{ request.path }}#duty-terms">
-            {% include "supply_chain/procurement/_duty_terms_fields.html" %}
-          </form>
-        </details>
-        {% endif %}
-      </section>
+</section>
+    </div>
+
+    <aside class="flex min-w-0 flex-[1_1_320px] flex-col gap-4">
+      {% include "supply_chain/_moves.html" with moves=status.ours whose="ours" heading="On us" testid="on-us" count_testid="on-us-count" %}
+      {% include "supply_chain/_moves.html" with moves=status.theirs whose="theirs" heading="On suppliers" testid="on-suppliers" %}
     </aside>
   </div>
 
@@ -130,7 +135,7 @@ is folded away, each fold with its count.
   <section class="border-brand-border-light flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white px-6 py-4" data-testid="related-order">
     <div class="flex min-w-0 flex-col gap-1">
       <div class="text-sm text-gray-600">Earlier: <a class="text-brand-indigo hover:underline" href="{{ o.tender_url }}">{{ o.tender_label }}</a> → order {{ o.reference }} · {{ o.supplier }}</div>
-      <div class="font-medium text-gray-900">{{ o.stage }}{% if o.ours %} · on us: {% for m in o.ours %}{{ m.text }}{% if not forloop.last %}; {% endif %}{% endfor %}{% endif %}</div>
+      <div class="flex flex-wrap items-center gap-1.5 text-sm" data-testid="related-order-chips">{% for part in o.stage_parts %}<span class="status-chip status-chip--neutral">{{ part }}</span>{% endfor %}{% if o.ours %}<span class="status-chip status-chip--ours" title="{% for m in o.ours %}{{ m.text }}{% if not forloop.last %}; {% endif %}{% endfor %}">on us · {{ o.ours|length }}</span>{% endif %}</div>
     </div>
     <a href="{{ o.url }}" class="button button-sm outline-style" data-testid="related-order-open">Open order</a>
   </section>
@@ -214,7 +219,7 @@ is folded away, each fold with its count.
         <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap" data-testid="response-kind">{% if o.responded %}{% if o.response_kind == "needs_info" %}Questions for us{% else %}{{ o.response_kind|humanise|capfirst|default:"—" }}{% endif %}{% else %}—{% endif %}</td>
           {% comment %}The actions sit at the start of their cell, under the Actions heading: right-aligned,
           the heading stood over the menu alone and the links floated under no heading.{% endcomment %}
-          <td class="px-4 py-2 text-sm whitespace-nowrap text-left">
+          <td class="py-2 pl-4 pr-6 text-sm whitespace-nowrap text-left">
             {% if not supply_as_of %}
             {% comment %}Two fixed slots -- the drafted reminder, then the reply -- so the column
             aligns whether or not a row has a reminder due.{% endcomment %}

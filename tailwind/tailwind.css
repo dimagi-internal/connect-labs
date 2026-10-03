@@ -528,7 +528,7 @@
   }
 
   .src-mark--ai {
-    @apply bg-brand-cornflower-blue;
+    @apply bg-brand-cornflower-blue rounded-full;
   }
 
   .src-mark--calc {

@@ -196,7 +196,7 @@ class TestTheComparison:
             },
         )
         body = self._page(client_in_program, world)
-        assert 'data-testid="comparable-count">1 of 2 comparable<' in body
+        assert re.search(r'data-testid="comparable-count"[^>]*>1 of 2 comparable<', body)
         grid = re.search(r'<table [^>]*data-testid="comparison-grid".*?</table>', body, re.S).group(0)
         assert "Missing 1 fact" in grid
         pack = re.search(r'<tr data-fact="pack".*?</tr>', grid, re.S).group(0)

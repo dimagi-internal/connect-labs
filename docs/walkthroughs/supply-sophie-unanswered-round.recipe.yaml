@@ -40,14 +40,14 @@ scenes:
     say: silent
     seconds: 1.8
     target: css:[data-testid=tile]:has-text('Silent')
+  - kind: scroll
+    note: frame the stage bar and tiles at the top, the Suppliers table below them and the Terms card under it, On us and On suppliers beside
+    value: '360'
   - kind: hover
-    note: the tender's Terms box, its import duty not settled -- the line scene 5 changes
+    note: the tender's Terms box, under the Suppliers table, its import duty not settled -- the line scene 5 changes
     say: duty
     seconds: 1.8
     target: testid:tender-duty-terms
-  - kind: scroll_to
-    note: the Suppliers table, every row in view, with On us and On suppliers beside it
-    target: testid:supplier-table
   - kind: hover
     note: Sahel's row, its state chip counting the days it has been silent
     say: Sahel
@@ -59,8 +59,8 @@ scenes:
     seconds: 1.8
     target: testid:on-suppliers
   - kind: scroll
-    note: settle with the Suppliers card just under the top bar -- every supplier's row, On us and On suppliers beside it
-    value: '590'
+    note: settle on the same frame -- stage bar, tiles, the Suppliers table and the Terms card, On us and On suppliers beside
+    value: '360'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the page content; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
@@ -68,7 +68,7 @@ scenes:
   - kind: hold
     seconds: 1.5
   - kind: snapshot
-    note: the canonical frame is the Suppliers table with each supplier's state, and On us and On suppliers beside it
+    note: the canonical frame is the stage bar and the Answered / Silent tiles, the Suppliers table with each supplier's state and last chase, the Terms card with import duty not settled, and On us and On suppliers beside
   - kind: click
     note: Sahel's row's own Remind link opens the tender's draft emails at Sahel's drafted reminder, so scene 2 starts (and its before-frame is taken) on the open draft
     target: css:[data-testid=supplier-row][data-supplier-id='${sahel_supplier_id}'] [data-testid=supplier-action]
@@ -123,6 +123,8 @@ scenes:
   - kind: hold
     note: the drafted reminder, open, with today's date ready to record
     seconds: 2.5
+  - kind: snapshot
+    note: the canonical frame is Sahel's drafted reminder, open -- when Sahel was asked and last reminded, the message, and Chased on holding today beside Record chase
   - kind: click
     must_succeed: true
     note: record the day she chased Sahel, from the draft itself; the tender lands on its Invitations, Sahel's row marked
@@ -145,8 +147,6 @@ scenes:
     target: css:header.fixed
   - kind: hold
     seconds: 1.5
-  - kind: snapshot
-    note: the canonical frame is the Invitations table with Sahel's row marked -- Last chased reading today, the 3rd reminder, and when the next falls due -- the chase recorded from the draft
   concept_claim: The tender drafts a reminder for each silent supplier that says when
     they were asked and last reminded, with a Chased on field holding today's date
     and a Record chase button on the draft itself.
@@ -247,8 +247,8 @@ scenes:
     seconds: 2.0
     target: css:tr[data-fact=fx] th
   - kind: scroll
-    note: settle with the comparison's title just under the top bar, the duty terms line and the grid down to the exchange rate row in frame
-    value: '250'
+    note: settle with the comparison's title just under the top bar -- the count chip, the duty terms line, each quote's landed cell (a dash and its gaps where not comparable) and the facts below
+    value: '200'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the grid; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
@@ -342,6 +342,9 @@ scenes:
     say: waived
     seconds: 2.0
     target: css:tr[data-fact=duty] th
+  - kind: scroll
+    note: frame the change -- the count chip (1 of 3 comparable), the duty terms line with the waiver, each quote's landed cell and action, and the rows down to Import duty
+    value: '200'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the grid
     seconds: 0.6
@@ -425,9 +428,6 @@ scenes:
   - kind: hold
     note: the forwarder's email, centred and read
     seconds: 2.0
-  - kind: scroll
-    note: settle with the order's header just under the top bar, its tiles and the On us list below it
-    value: '300'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off every heading, figure and action
     seconds: 0.6
@@ -435,7 +435,7 @@ scenes:
   - kind: hold
     seconds: 1.5
   - kind: snapshot
-    note: the canonical frame is the order's status view -- PO number, Harmattan, the at-customs chip, the stage bar, the tiles and the On us list
+    note: the canonical frame is the forwarder's email opened in the order's history -- the shipment held at the border on our import documents
   concept_claim: The order's status view says it is held at customs waiting on us,
     lists under On us the documents we owe the forwarder and the invoice billed above
     the agreed price, and keeps the forwarder's email in the order's history.

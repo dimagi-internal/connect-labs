@@ -1076,15 +1076,9 @@ class ComparisonView(_Base):
                 ai_quotes=set(context["ai_quotes"]),
                 awarded=context["awarded_quote_ids"],
                 draft_anchors=draft_anchors(drafts),
+                waiver_on_file=context.get("waiver_on_file", True),
             )
-            context["grid_blocked_by_terms"] = [
-                q["name"] for q in context["grid"]["quotes"] if q["chip"]["label"] == "Waiting on our duty terms"
-            ] + [
-                row.get("supplier_name")
-                for row in comparison.get("blocked") or []
-                if "tender duty terms" in (row.get("gaps") or [])
-                and any(g != "tender duty terms" for g in row.get("gaps") or [])
-            ]
+            context["grid_blocked_by_terms"] = [q["name"] for q in context["grid"]["quotes"] if q["blocked_by_terms"]]
         return context
 
     def post(self, request, tender_id, *args, **kwargs):
