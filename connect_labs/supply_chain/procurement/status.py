@@ -341,7 +341,18 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         "related_order": related_order(tender, today, own_org_id=own_org_id),
         "comparable": comparable,
         "quoted": quoted,
+        "primary": _primary_action(tender, ours, comparable),
     }
+
+
+def _primary_action(tender, ours, comparable) -> str:
+    """The header's filled button follows the stage: "open" for a draft, "decide" while
+    the tender is ours to decide (deadline passed) with nothing yet comparable, else "compare"."""
+    if tender.status == "draft":
+        return "open"
+    if comparable == 0 and any(m.rule == rules.RULE_DEADLINE for m in ours):
+        return "decide"
+    return "compare"
 
 
 def _quote_summary(quote, row) -> str:
@@ -478,12 +489,11 @@ def comparison_grid(
                 )
             if supplier_gaps:
                 chips.append({"label": f"Missing {_plural(len(supplier_gaps), 'fact')}", "tone": THEIRS})
+            # The tender's duty terms are settled once, on the duty terms line above the grid:
+            # no column repeats that action.
             for g in our_gaps:
-                actions.append(
-                    {"label": "Settle duty terms", "href": "#duty-terms", "owner": rules.US}
-                    if g == _ROUND_DUTY
-                    else {"label": f"Record {g}", "href": quote_url, "owner": rules.US}
-                )
+                if g != _ROUND_DUTY:
+                    actions.append({"label": f"Record {g}", "href": quote_url, "owner": rules.US})
             for g in supplier_gaps:
                 actions.append(
                     {
@@ -494,9 +504,6 @@ def comparison_grid(
                 )
         if not chips:
             chips.append({"label": "Not comparable", "tone": NEUTRAL})
-        waiver_pending = tender.duty_terms == "buyer_waiver" and not waiver_on_file and buyer_imports(quote)
-        if waiver_pending and row.get("is_comparable"):
-            chips.append({"label": "waiver document not on file", "tone": OURS})
         columns.append(
             {
                 "quote_id": row["quote_id"],
@@ -529,7 +536,7 @@ def comparison_grid(
         )
         pack_label = next((g for g in gaps if g.endswith(pack_gap)), None)
         if pack_label:
-            cells["pack"].append(gap(label=pack_label))
+            cells["pack"].append(gap(f"{pack_label}: not stated", label=pack_label))
         elif quote.base_per_pack_stated:
             grams = (
                 f" × {quote.base_unit_grams_stated} g" if quote.base_unit_grams_stated else f" {unit_noun(base, 2)}"
@@ -567,8 +574,6 @@ def comparison_grid(
         else:
             cells["freight"].append(blank())
         duty = _duty_cell(tender, quote, gaps, src)
-        if duty.get("v") == "waived (our import)" and not waiver_on_file:
-            duty["pending"] = "document not on file"
         cells["duty"].append(duty)
         if (quote.as_quoted_currency or "USD") == "USD":
             cells["fx"].append(blank())
@@ -587,9 +592,7 @@ def comparison_grid(
                     "gap": False,
                     "mute": True,
                     "src": "",
-                    "blocked": [
-                        {"label": "duty terms" if g == _ROUND_DUTY else g, "owner": gap_owner(g)} for g in gaps
-                    ],
+                    "blocked": [{"label": g, "owner": gap_owner(g)} for g in gaps if g != _ROUND_DUTY],
                 }
             )
         elif isinstance(landed, dict) and landed.get("amount") not in (None, "") and not landed.get("unconfirmed"):

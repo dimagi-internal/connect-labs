@@ -58,7 +58,7 @@
   {% if grid and grid.quotes %}
   <section class="border-brand-border-light overflow-hidden rounded-lg border bg-white" aria-label="Quotes side by side">
     <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="Comparison, scrolls sideways">
-      <table class="w-full text-sm {% if grid.quotes|length > 3 %}min-w-[1080px]{% elif grid.quotes|length == 3 %}min-w-[860px]{% else %}min-w-[640px]{% endif %}" data-testid="comparison-grid">
+      <table class="w-full table-fixed text-sm {% if grid.quotes|length > 3 %}min-w-[1080px]{% elif grid.quotes|length == 3 %}min-w-[860px]{% else %}min-w-[640px]{% endif %}" data-testid="comparison-grid">
         <thead class="border-b border-gray-200">
           <tr>
             <th scope="col" class="w-52 px-5 py-4 text-left align-top font-normal"><span class="sr-only">Fact</span>{% include "supply_chain/_src_legend.html" %}</th>
@@ -83,9 +83,9 @@
           </tr>
           {% if r.total and not supply_as_of %}
           <tr data-testid="grid-actions">
-            <td class="px-5 py-3"></td>
+            <th scope="row" class="px-5 py-3 text-left align-top text-sm font-normal text-gray-600">Next step<div class="text-xs font-normal text-gray-600">per quote</div></th>
             {% for q in grid.quotes %}
-            <td class="border-l border-gray-100 px-4 py-3 align-top"><div class="flex flex-col items-start gap-1.5">{% for a in q.actions %}<a class="button button-sm outline-style" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}"{% if a.award %} onclick="var d=document.getElementById('award-{{ q.quote_id }}'); if (d) { d.open = true; d.scrollIntoView({block: 'center'}); return false; }"{% endif %}>{{ a.label }}</a>{% endfor %}</div></td>
+            <td class="border-l border-gray-100 px-4 py-3 align-top"><div class="flex flex-col items-start gap-1.5">{% for a in q.actions %}<a class="button button-sm {% if a.award %}primary-dark{% else %}outline-style{% endif %}" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}"{% if a.award %} onclick="var d=document.getElementById('award-{{ q.quote_id }}'); if (d) { d.open = true; d.scrollIntoView({block: 'center'}); return false; }"{% endif %}>{{ a.label }}</a>{% endfor %}</div></td>
             {% endfor %}
           </tr>
           {% endif %}

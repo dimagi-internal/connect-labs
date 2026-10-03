@@ -121,10 +121,8 @@ scenes:
     seconds: 0.6
     target: css:header.fixed
   - kind: hold
-    note: the drafted reminder, open, with today's date ready to record
+    note: the drafted reminder, open, with today's date ready to record -- the scene's before-frame
     seconds: 2.5
-  - kind: snapshot
-    note: the canonical frame is Sahel's drafted reminder, open -- when Sahel was asked and last reminded, the message, and Chased on holding today beside Record chase
   - kind: click
     must_succeed: true
     note: record the day she chased Sahel, from the draft itself; the tender lands on its Invitations, Sahel's row marked
@@ -147,6 +145,8 @@ scenes:
     target: css:header.fixed
   - kind: hold
     seconds: 1.5
+  - kind: snapshot
+    note: the canonical frame is the recorded chase -- Sahel's Invitations row marked just changed, its Last chased cell today, the 3rd reminder, and when the next falls due
   concept_claim: The tender drafts a reminder for each silent supplier that says when
     they were asked and last reminded, with a Chased on field holding today's date
     and a Record chase button on the draft itself.
@@ -247,8 +247,8 @@ scenes:
     seconds: 2.0
     target: css:tr[data-fact=fx] th
   - kind: scroll
-    note: settle with the comparison's title just under the top bar -- the count chip, the duty terms line, each quote's landed cell (a dash and its gaps where not comparable) and the facts below
-    value: '200'
+    note: settle with the duty terms line just under the top bar -- each quote's landed cell (a dash and its gaps where not comparable), its next step, and the facts down to the Exchange rate row whole
+    value: '270'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the grid; the bar is fixed, so hovering cannot scroll the page
     seconds: 0.6
@@ -256,7 +256,7 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: snapshot
-    note: the canonical frame is the comparison's duty terms (not settled), the count of comparable quotes, and the grid with each quote's state, its gaps marked, and the Import duty row waiting on our terms
+    note: the canonical frame is the count of comparable quotes, the duty terms (not settled), and the grid with each quote's state, its gaps marked, and the Import duty row waiting on our terms
   concept_claim: The comparison states the tender's import duty terms, holds every quote
     whose Incoterm leaves the import to us until those terms are settled, and marks
     each fact a quote has not stated, without ranking quotes that cannot be compared.
@@ -343,7 +343,7 @@ scenes:
     seconds: 2.0
     target: css:tr[data-fact=duty] th
   - kind: scroll
-    note: frame the change -- the count chip (1 of 3 comparable), the duty terms line with the waiver, each quote's landed cell and action, and the rows down to Import duty
+    note: frame the change -- the count chip (1 of 3 comparable), the duty terms line with the waiver, Harmattan's landed figure and Award, and the rows down to Import duty and Exchange rate
     value: '200'
   - kind: hover
     note: park the cursor in the top bar's blank middle, off the grid
