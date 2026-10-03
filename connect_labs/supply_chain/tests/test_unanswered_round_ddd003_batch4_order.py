@@ -37,7 +37,9 @@ class TestTheOverviewAgreesWithTheOrderPage:
     def test_the_order_row_says_held_at_customs_on_us(self, da, world):
         _held_on_our_form_m(da, world)
         row = next(r for r in standing_rows(reality.PROGRAM, reality.TODAY) if r.kind == "order")
-        assert "at customs — held, waiting on us" in row.stage
+        # The stage is the fact; Waiting on says the move is ours, so the stage does not repeat it.
+        assert row.stage.endswith("at customs, held")
+        assert "waiting on us" not in row.stage
         assert "in transit" not in row.stage
 
     def test_the_chain_s_dispatched_tile_says_so_too(self, da, world, client_in_program):

@@ -57,11 +57,11 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
         <col data-col="waiting" style="width: 38%">
         <col data-col="last-change" style="width: 16%">
         {% else %}
-        <col data-col="title" style="width: 15%">
-        <col data-col="stage" style="width: 15%">
-        <col data-col="waiting" style="width: 41%">
+        <col data-col="title" style="width: 19%">
+        <col data-col="stage" style="width: 13%">
+        <col data-col="waiting" style="width: 35%">
         <col data-col="last-change" style="width: 11%">
-        <col data-col="flags" style="width: 18%">
+        <col data-col="flags" style="width: 22%">
         {% endif %}
       </colgroup>
       <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
@@ -79,6 +79,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
             <td class="px-4 py-2.5">
               <span class="block text-xs text-gray-600">{% if row.kind == "tender" %}Tender{% else %}Order{% endif %}</span>
               <a class="font-medium text-brand-indigo hover:underline" href="{{ row.url }}">{{ row.title }}</a>
+              {% if row.kind == "order" and row.origin %}<span data-testid="order-origin" class="block text-xs text-gray-600">from {{ row.origin }}</span>{% endif %}
               {% if row.buyer %}<span class="block text-xs text-gray-600">bought by {{ row.buyer }}</span>{% endif %}
             </td>
             <td class="px-4 py-2.5">
@@ -113,7 +114,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
                 {% endif %}
                 {% if row.last_change_is_ai %}
                   {% comment %}Who told us, beside the AI glyph; on hover, what was recorded and from what.{% endcomment %}
-                  <span data-ai data-testid="ai-badge" title="{{ row.last_change_title }}" class="mt-0.5 inline-flex cursor-help items-center gap-1 whitespace-nowrap rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs font-medium">{% include "supply_chain/_ai_glyph.html" with actor=row.last_change_badge %}<span>{{ row.last_change_badge }}</span></span>
+                  <span data-ai data-testid="ai-badge" title="{{ row.last_change_title }}" class="mt-0.5 inline-flex cursor-help items-center gap-1 whitespace-nowrap rounded-full bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 px-2 py-0.5 text-xs font-medium">{% include "supply_chain/_ai_glyph.html" with actor=row.last_change_badge %}<span>{{ row.last_change_badge|ai_words }}</span></span>
                 {% else %}
                   <span class="mt-0.5 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ row.last_change_by }}</span>
                 {% endif %}
@@ -133,7 +134,7 @@ plain /supply/ paths: under as-of, base.html's script carries as_of onto them.
                 {% comment %}The same boxed amber chip as every other flag, with a chevron that
                 says it opens.{% endcomment %}
                 <details data-testid="stale-flag" title="{{ flag.rule }}" class="group mb-1 text-xs text-amber-900">
-                  <summary class="flex w-fit cursor-pointer list-none items-start gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 hover:bg-amber-100 [&::-webkit-details-marker]:hidden"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span data-testid="flag-heading">{{ flag.heading }}</span><i class="fa-solid fa-chevron-right mt-0.5 text-[9px] text-amber-700 transition-transform group-open:rotate-90" aria-hidden="true"></i></summary>
+                  <summary class="flex w-fit cursor-pointer list-none items-start gap-1.5 whitespace-nowrap rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 hover:bg-amber-100 [&::-webkit-details-marker]:hidden"><i class="fa-solid fa-flag mt-0.5 text-[10px] text-amber-600" aria-hidden="true"></i><span data-testid="flag-heading">{{ flag.heading }}</span><i class="fa-solid fa-chevron-right mt-0.5 text-[9px] text-amber-700 transition-transform group-open:rotate-90" aria-hidden="true"></i></summary>
                   <span class="block pl-5 pt-0.5">{% for line in flag.folded|default:flag.lines %}<span data-testid="flag-line" class="block">{{ line }}</span>{% endfor %}</span>
                 </details>
                 {% else %}

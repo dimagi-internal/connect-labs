@@ -32,7 +32,10 @@ class TestTheDutyLine:
         quote = _quote(da, world, duties_basis="excluded", duties_amount="0.00")
         _set(da, world, "buyer_waiver")
         quote.tender.refresh_from_db()
-        assert round_duty_words(quote, quote.tender) == "Duty waived (our import) · the quote also stated zero"
+        assert (
+            round_duty_words(quote, quote.tender)
+            == "waived (our import) · the quote stated 0.00 (excluded from the price)"
+        )
         assert "duty waived" not in landed_basis_words(quote, quote.tender, round_duty=False)
         assert "duty waived (our import)" in landed_basis_words(quote, quote.tender)
 
@@ -55,11 +58,14 @@ class TestTheDutyLine:
         body = client_in_program.get(url).content.decode()
         if 'data-testid="card-duty"' in body:
             line = _text(re.search(r'data-testid="card-duty".*?</p>', body, re.S).group(0))
-            assert "Duty waived (our import)" in line
-            assert "from your answer to" in line
-            # Since DDD 003 batch 5 the day is said once, on the Round terms line above the cards.
-            terms = _text(re.search(r'data-testid="needs-info-duty-terms".*?</p>', body, re.S).group(0))
-            assert "set 3 Oct" in terms
+            assert "Duty: waived (our import)" in line
+            # Since DDD 003 batch 7 the answer is cited on a provenance line of its own.
+            source = _text(re.search(r'data-testid="card-duty-provenance".*?</p>', body, re.S).group(0))
+            assert "from your answer to" in source
+            # Since DDD 003 batch 8 the terms are stated once, at the top of the comparison
+            # (the Round terms line above the cards repeated them), and the day is on the card.
+            assert 'data-testid="needs-info-duty-terms"' not in body
+            assert "3 Oct" in source
 
 
 def test_an_origin_incoterm_is_a_handover_not_a_delivery():

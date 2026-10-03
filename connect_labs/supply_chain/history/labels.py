@@ -343,7 +343,25 @@ def _quote_price(values, lookup) -> str:
             row = lookup.row(model, values.get(key))
             unit = unit or (getattr(row, field, "") if row is not None else "")
     per = f"per {unit_noun(unit)}" if unit else (words(basis) if basis else "")
-    return " ".join(part for part in (price, per, _quote_terms(values)) if part)
+    return " ".join(part for part in (price, per, _quote_terms(values), _asked_terms(values, lookup)) if part)
+
+
+def _asked_terms(values, lookup) -> str:
+    """ "— you asked CPT Kano", when the quote's Incoterm departs from the one the round asked on.
+
+    A price on EXW Niamey read beside the round's CPT Kano without saying so,
+    and the difference is what leaves the freight to be found.
+    """
+    from connect_labs.supply_chain.models import Tender
+
+    quoted = (values.get("incoterm") or "").strip()
+    tender = lookup.row(Tender, values.get("tender_id")) if values.get("tender_id") else None
+    asked = (getattr(tender, "incoterm_requested", "") or "").strip()
+    if not quoted or not asked:
+        return ""
+    if quoted.split()[0].upper().strip(".,") == asked.split()[0].upper().strip(".,"):
+        return ""
+    return f"— you asked {asked}"
 
 
 def quote_commercial_terms(values) -> str:
@@ -383,6 +401,12 @@ def _quote_terms(values) -> str:
     if not incoterm:
         return "(basis not specified)" if freight == "not_specified" else f"(freight {freight})"
     duties = values.get("duties_basis") or "not_specified"
+    amount = values.get("duties_amount")
+    if duties == "excluded" and amount not in (None, "") and not Decimal(str(amount)):
+        # A zero the supplier wrote, said as the comparison says it: "duty
+        # excluded" alone read as a duty left out, beside a comparison that
+        # costs the same quote at zero.
+        duties = f"excluded from the price, stated as {money_digits(amount)}"
     if freight != "not_specified" and freight == duties:
         basis = f"freight and duty {freight}"
     else:

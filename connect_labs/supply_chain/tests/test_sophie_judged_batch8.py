@@ -135,14 +135,14 @@ class TestTheAgentBadge:
         body = batch6._order_page(client_in_program, order["contract"]["id"])
         badge = re.search(r'<span data-testid="actor-badge" data-ai .*?</span></span></span>', body, re.S).group(0)
         pill = re.search(r'<span data-testid="actor-pill"[^>]*>(.*?)</span></span>', badge, re.S).group(1)
-        assert _bare(pill) == "ACE (agent)"
+        assert _bare(pill) == "AI assistant"  # since DDD 003 batch 7
         assert re.search(r'<i data-testid="ai-glyph" [^>]*role="img" aria-label="AI"', pill)
 
     def test_the_comparison_card_badge(self, da, base, ace, client_in_program):
         quote = _ace_quote(da, base, ace)
         card = batch6._card(_page(client_in_program, base["tender"]["id"]), quote["id"])
         badge = re.search(r'<span data-ai data-testid="ai-badge"[^>]*>(.*?)</span></span>', card, re.S).group(1)
-        assert _bare(badge) == "ACE (agent)" and 'aria-label="AI"' in badge
+        assert _bare(badge) == "AI assistant" and 'aria-label="AI"' in badge
 
     def test_the_overview_badge_says_what_was_recorded_on_hover(self, da, base, ace, home_client):
         _ace_quote(da, base, ace)
@@ -150,7 +150,7 @@ class TestTheAgentBadge:
         badge = re.search(
             r'<span data-ai data-testid="ai-badge" title="([^"]*)"[^>]*>(.*?)</span></span>', standing, re.S
         )
-        assert _bare(badge.group(2)) == "ACE (agent)" and 'aria-label="AI"' in badge.group(2)
+        assert _bare(badge.group(2)) == "AI assistant" and 'aria-label="AI"' in badge.group(2)
         assert badge.group(1) == "ACE recorded Quote · Northwind Foods from a forwarded email"
 
     def test_a_person_via_ai_gets_no_second_marker(self, da, base, sophie, home_client):

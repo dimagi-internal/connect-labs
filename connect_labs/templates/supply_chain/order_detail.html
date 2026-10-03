@@ -783,7 +783,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
           <td class="px-4 py-2 text-gray-700 whitespace-nowrap">{{ payment.paid_on|day }}</td>
           <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">{{ payment.currency }} {{ payment.amount|money }}</td>
           <td class="px-4 py-2 text-right text-gray-600">—</td>
-          <td class="px-4 py-2 text-gray-700">applied to <span class="whitespace-nowrap">{{ invoice.reference|default:invoice.id }}</span>{% if payment.method %} · by {{ payment.method|words }}{% endif %}</td>
+          <td class="px-4 py-2 text-gray-700 whitespace-nowrap">applied to <span class="whitespace-nowrap">{{ invoice.reference|default:invoice.id }}</span>{% if payment.method %} · by {{ payment.method|words }}{% endif %}</td>
           <td class="px-4 py-2 text-sm whitespace-nowrap">{% if payment.confirmed_by_payee_on %}<span class="text-gray-700">confirmed by the payee {{ payment.confirmed_by_payee_on|day }}</span>{% else %}<span class="text-gray-700">not confirmed by the payee</span>{% endif %}</td>
           <td class="px-4 py-2 text-right whitespace-nowrap">
             {% if not payment.confirmed_by_payee_on and not supply_as_of %}
@@ -823,7 +823,7 @@ The section stays only if one was somehow recorded, so it is not hidden.
             Pay: Pay alone was the only next step a flag offered.{% endcomment %}
             {% if invoice.above_agreed and invoice.status != "paid" and invoice.status != "queried" %}
               <a data-testid="invoice-dispute" href="{% url 'supply_chain:invoice_dispute' invoice.id %}"
-                 class="text-brand-indigo font-medium hover:underline">Dispute</a>
+                 class="text-brand-indigo hover:underline">Dispute</a>
               <span class="mx-1 text-gray-300">·</span>
             {% endif %}
             <a href="{% url 'supply_chain:invoice_edit' invoice.id %}"
@@ -832,35 +832,44 @@ The section stays only if one was somehow recorded, so it is not hidden.
           </td>
         </tr>
         {% comment %}What the invoice_above_contract check found -- the total, then the unit price
-        and freight it bills -- each a row of the table under the invoice, on the invoice's own
-        grid: billed under AMOUNT, agreed under QUANTITY BILLED, the difference under STATUS and
-        the "above agreed" tag under TOLD BY, under a small header row of their own. A grid of
-        its own inside a spanned cell put the billed total at a second x-position beside the
-        invoice's amount.{% endcomment %}
+        and freight it bills -- as a small table of its own, indented under the invoice, with its
+        own columns (Line · Billed · Agreed · Difference · flag). Borrowing the invoice's grid put
+        AGREED under QUANTITY BILLED and the flag under TOLD BY. The first cell of each row is the
+        indent, so the line's name reads as the second.{% endcomment %}
         {% if invoice.above_agreed %}
-          <tr data-testid="invoice-variance-head" class="bg-gray-50/60 text-xs uppercase tracking-wide text-gray-600">
-            <td class="px-4 pt-2 pb-0.5 pl-8 whitespace-nowrap">Against agreed</td>
-            <td class="px-4 pt-2 pb-0.5"></td>
-            <td class="px-4 pt-2 pb-0.5 text-right">Billed</td>
-            <td class="px-4 pt-2 pb-0.5 text-right">Agreed</td>
-            <td class="px-4 pt-2 pb-0.5">Difference</td>
-            <td class="px-4 pt-2 pb-0.5" colspan="2"></td>
+          <tr data-testid="invoice-variance" class="bg-gray-50/60">
+            <td colspan="7" class="px-4 pt-1 pb-2">
+              <table data-testid="invoice-variance-table" class="text-sm">
+                <thead data-testid="invoice-variance-head" class="text-xs uppercase tracking-wide text-gray-600">
+                  <tr>
+                    <th class="w-4"><span class="sr-only">Against agreed</span></th>
+                    <th class="text-left pr-6 pb-0.5 font-medium">Against agreed</th>
+                    <th class="text-right px-4 pb-0.5 font-medium">Billed</th>
+                    <th class="text-right px-4 pb-0.5 font-medium">Agreed</th>
+                    <th class="text-right px-4 pb-0.5 font-medium">Difference</th>
+                    <th class="px-4 pb-0.5"><span class="sr-only">Flag</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                {% for mark in invoice.above_agreed %}
+                  <tr data-testid="{% if mark.tag %}invoice-above-agreed-row{% else %}invoice-against-agreed{% endif %}">
+                    <td class="w-4"></td>
+                    <td class="pr-6 py-1 text-gray-900 whitespace-nowrap">{{ mark.label }}</td>
+                    {% if mark.billed %}
+                    <td class="px-4 py-1 text-right tabular-nums text-gray-900 whitespace-nowrap"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}><span data-testid="invoice-billed">{{ mark.currency }} {{ mark.billed }}</span></td>
+                    <td class="px-4 py-1 text-right tabular-nums text-gray-700 whitespace-nowrap"><span data-testid="invoice-agreed">{{ mark.currency }} {{ mark.agreed }}</span></td>
+                    <td class="px-4 py-1 text-right tabular-nums font-medium text-gray-900 whitespace-nowrap"><span data-testid="invoice-difference">{% if mark.difference %}+{{ mark.currency }} {{ mark.difference }}{% endif %}</span></td>
+                    {% else %}
+                    <td class="px-4 py-1 tabular-nums text-gray-900 whitespace-nowrap text-right" colspan="3"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}>+{{ mark.text }}</td>
+                    {% endif %}
+                    <td class="px-4 py-1"><span data-testid="above-agreed-tag" class="inline-flex items-center whitespace-nowrap rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </td>
           </tr>
         {% endif %}
-        {% for mark in invoice.above_agreed %}
-          <tr data-testid="{% if mark.tag %}invoice-above-agreed-row{% else %}invoice-against-agreed{% endif %}" class="bg-gray-50/60 text-sm">
-            <td class="px-4 py-1.5 pl-8 text-gray-900 whitespace-nowrap">{{ mark.label }}</td>
-            <td class="px-4 py-1.5"></td>
-            {% if mark.billed %}
-            <td class="px-4 py-1.5 text-right tabular-nums text-gray-900 whitespace-nowrap"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}><span data-testid="invoice-billed">{{ mark.currency }} {{ mark.billed }}</span></td>
-            <td class="px-4 py-1.5 text-right tabular-nums text-gray-700 whitespace-nowrap"><span data-testid="invoice-agreed">{{ mark.currency }} {{ mark.agreed }}</span></td>
-            <td class="px-4 py-1.5 tabular-nums font-medium text-gray-900 whitespace-nowrap"><span data-testid="invoice-difference">{% if mark.difference %}+{{ mark.currency }} {{ mark.difference }}{% endif %}</span></td>
-            {% else %}
-            <td class="px-4 py-1.5 tabular-nums text-gray-900 whitespace-nowrap text-right" colspan="3"{% if mark.tag %} data-testid="invoice-above-agreed"{% endif %}>+{{ mark.text }}</td>
-            {% endif %}
-            <td class="px-4 py-1.5" colspan="2"><span data-testid="above-agreed-tag" class="inline-flex items-center whitespace-nowrap rounded-full border border-message-warning-border/50 bg-message-warning px-1.5 py-0.5 text-xs font-medium text-message-warning-text">above agreed</span></td>
-          </tr>
-        {% endfor %}
         {% for payment in invoice.payments %}{% if not payment.advance %}
           {% comment %}
           Each settlement under its invoice, with the payee's side of it: "we

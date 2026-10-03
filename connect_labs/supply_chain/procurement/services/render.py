@@ -121,7 +121,13 @@ def _product(commodity: Commodity) -> str:
     therapeutic food", not "of Ready-to-use therapeutic food" -- a capital
     mid-sentence read as an unfilled template slot. An acronym ("RUTF", "ORS")
     keeps its capitals."""
-    name = commodity.name or commodity.slug
+    return in_sentence(commodity.name or commodity.slug)
+
+
+def in_sentence(name: str) -> str:
+    """A product name as it reads mid-sentence: "Ready-to-use therapeutic food" →
+    "ready-to-use therapeutic food"; an acronym ("RUTF", "ORS") keeps its capitals."""
+    name = str(name or "")
     first = name.split(" ", 1)[0]
     if len(first) > 1 and first[0].isupper() and first[1:2].islower():
         return name[0].lower() + name[1:]
@@ -138,6 +144,33 @@ def _where(tender: Tender) -> str:
     if tender.pickup_accepted:
         where += ", or for us to collect from you"
     return where
+
+
+def _enough_to_start(tender: Tender) -> str:
+    """What a silent supplier can send first: "a price per unit delivered to Kano on CPT
+    terms and your lead time are enough". Falls back to "as asked" when the request
+    named no place or term."""
+    places = tender.delivery_points or []
+    incoterm = tender.incoterm_requested
+    if places:
+        towns = list(dict.fromkeys(p.get("city") or p.get("name") or "" for p in places if isinstance(p, dict)))
+        towns = [t for t in towns if t]
+        delivered = f"delivered to {' or '.join(towns)}" if towns else "delivered as asked"
+        delivered += f" on {incoterm} terms" if incoterm else ""
+    else:
+        delivered = "for us to collect"
+    return f"a price per unit {delivered} and your lead time are enough"
+
+
+_ORDINAL_WORDS = {2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "sixth", 7: "seventh", 8: "eighth"}
+
+
+def _ordinal_word(n: int) -> str:
+    """second, third ... and "9th" past the words."""
+    if n in _ORDINAL_WORDS:
+        return _ORDINAL_WORDS[n]
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
 
 
 def _where_short(tender: Tender) -> str:
@@ -299,6 +332,7 @@ def render_reminder(
     *,
     sent_on: date,
     last_reminder_on: date | None = None,
+    reminders_sent: int | None = None,
     sender: Sender | None = None,
     today: date | None = None,
 ) -> Draft:
@@ -317,7 +351,17 @@ def render_reminder(
         "an offer from you.",
     ]
     if last_reminder_on:
-        lines += ["", f"We last wrote about this on {day_text(last_reminder_on)}."]
+        # Which chase this is, said in the message: a third reminder that read as a
+        # first undersold how long the supplier has been silent. Only when the count
+        # is known -- a guessed ordinal would be a false statement to the supplier.
+        number = (reminders_sent or 0) + 1
+        which = f"This is our {_ordinal_word(number)} reminder; " if reminders_sent else ""
+        last = (
+            f"we last wrote on {day_text(last_reminder_on)}."
+            if which
+            else (f"We last wrote about this on {day_text(last_reminder_on)}.")
+        )
+        lines += ["", which + last]
     lines += _reply_by(tender, today)
     if last_reminder_on:
         # A second or later reminder: the questions went out with the request and again
@@ -325,8 +369,7 @@ def render_reminder(
         # Re-listing them made a chase longer than the request it chased.
         lines += [
             "",
-            f"The questions we need answered are in our request of {asked}, and again in that reminder; "
-            "a price per unit, delivered as asked, with your lead time is enough to start.",
+            f"To start, {_enough_to_start(tender)}; the full questions are in our request of {asked}.",
             "",
             "If you are not able to quote this time, a short reply saying so would help us plan.",
         ]

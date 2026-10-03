@@ -8,9 +8,9 @@
     "held-on-us",
     "whose-move"
   ],
-  "fetched_at": "2026-10-03T07:57:22.881160+00:00",
+  "fetched_at": "2026-10-03T09:37:06.644955+00:00",
   "name": "supply-sophie-unanswered-round",
-  "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program. 17 days ago she asked six suppliers to quote round 2: half have never answered, despite two reminders, and she forwards whatever does arrive to an AI that records it. Sophie opens round 2 and reads who answered and who has said nothing, how long each has been silent and when she last chased them, and that the round has not yet settled how import duties are handled. She opens the reminder drafted for Sahel, which says when Sahel was asked and last reminded, and records today's chase from the draft itself. Sahel answers with a quote; Sophie forwards it, and in the round's history, turned to replies only, Sahel's email comes first: she opens it beside what the AI recorded from it, the reply dated the day it came in. On the comparison only Harmattan's quote can be compared on landed total: Kanem's has not stated how many sachets are in a carton, and Sahel's gives no freight figure, no duty figure and no exchange rate, while the round's duty terms are still not settled. Northgate's questions are waiting on her, and she answers the one about who imports: we import, under the program's duty waiver. She marks that answer as the round's import duty terms and opens the comparison again: Sahel's quote, which leaves duty out, now reads duty waived, the round's terms set from her answer to Northgate. Importing makes the paperwork hers, and round 1 shows what that means: its 2,000 cartons are still not in Kano, and on the order with Harmattan, the forwarder's message says the trucks are held at the border on our import permit, so the order reads as waiting on us, and Harmattan's invoice is flagged above the agreed price, billed against agreed. Back on her overview, Sophie reads who is still silent, Sahel's quote now short only its exchange rate and freight, its duty covered by the waiver, and whose move each thing is, the round 1 order waiting on her to provide the import permit and to dispute Harmattan's invoice above the agreed price.",
+  "narrative": "Sophie runs RUTF procurement for the Connect-RUTF program. 17 days ago she asked six suppliers to quote round 2: half have never answered, despite two reminders, and she forwards whatever does arrive to an AI that records it. Sophie opens round 2 and reads who answered and who has said nothing, how long each has been silent and when she last chased them, and that the round has not yet settled how import duties are handled. She opens the reminder drafted for Sahel, which says when Sahel was asked and last reminded, and records today's chase from the draft itself. Sahel answers with a quote; Sophie forwards it, and in the round's history, turned to replies only, Sahel's email comes first: she opens it beside what the AI recorded from it, the reply dated the day it came in. On the comparison the round's duty terms are still not settled, so only Harmattan's quote can be compared on landed total, costed on the zero duty its own quote states: Kanem's has not stated how many sachets are in a carton, and Sahel's gives no exchange rate and no freight figure, and its ex-works terms make the import ours, so its duty waits on the round's own terms, never on Sahel. Northgate's questions are waiting on her, and she answers the one about who imports: we import, under the program's duty waiver. She marks that answer as the round's import duty terms and opens the comparison again: Sahel's quote, which leaves duty out, now reads duty waived, the round's terms set from her answer to Northgate. Importing makes the paperwork hers, and round 1 shows what that means: its 2,000 cartons are still not in Kano, and on the order with Harmattan, the forwarder's message says the trucks are held at the border on our import permit, so the order reads as waiting on us, and Harmattan's invoice is flagged above the agreed price, billed against agreed. Back on her overview, Sophie reads who is still silent, Sahel's quote now short only its exchange rate and freight, its duty covered by the waiver, and whose move each thing is, the round 1 order waiting on her to provide the import permit and to dispute Harmattan's invoice above the agreed price.",
   "personas": {
     "sophie": {
       "color": "#0F766E",
@@ -101,18 +101,18 @@
     {
       "features": [
         {
-          "description": "The comparison page compares Harmattan's quote on landed total and names what blocks the others: sachets per carton on Kanem's; the exchange rate, the freight amount and the duties amount on Sahel's.",
+          "description": "The comparison page compares Harmattan's quote on landed total and names what blocks the others: sachets per carton on Kanem's; the exchange rate and the freight amount on Sahel's, and the round's own unsettled duty terms, ours to settle and never asked of Sahel.",
           "id": "comparison-missing-per-supplier",
-          "verify": "Playwright: /compare/ reads '1 of 3 quotes can be compared on landed total'; Harmattan Therapeutics is under Comparable with a landed total; the Kanem Foods Ltd card shows 'Blocking: Sachets per carton not stated on the quote'; the Sahel Nutrition Industries card shows 'Quote is in EUR and no exchange rate was recorded', 'Freight excluded from the quote but no freight amount recorded' and 'Duties excluded from the quote but no duties amount recorded', and no quantity mismatch"
+          "verify": "Playwright: /compare/ reads '1 of 3 quotes can be compared on landed total'; Harmattan Therapeutics is under Comparable with a landed total; the Kanem Foods Ltd card shows 'Blocking: Sachets per carton not stated on the quote'; the Sahel Nutrition Industries card shows 'Quote is in EUR and no exchange rate was recorded', 'Freight excluded from the quote but no freight amount recorded' and 'Import duty is ours to cost and the round's duty terms are not settled' with 'Ours to do: settle the round's duty terms (not asked of the supplier)', and no quantity mismatch"
         },
         {
-          "description": "A one-line note at the top of the comparison states the round's import duty terms and what they mean for quotes that leave duty out.",
+          "description": "A status chip at the top of the comparison states the round's import duty terms, with what they mean for a quote that leaves the import to us; while the terms are not settled, a comparable quote's landed total says its duty basis is the supplier's own figure.",
           "id": "comparison-duty-terms-note",
-          "verify": "Playwright: [data-testid=comparison-duty-terms] reads 'Import duties for this round: not settled'"
+          "verify": "Playwright: [data-testid=comparison-duty-terms] reads 'Import duties for this round: not settled'; Harmattan's landed total shows [data-testid=landed-duty-basis] 'duty basis: stated by supplier (round terms not settled)'; Sahel's [data-testid=card-duty] reads 'Duty: ours to cost (round terms not settled)'"
         }
       ],
       "id": "whats-still-missing",
-      "narrative": "Sophie opens the comparison and reads what each answer still lacks: only Harmattan's quote can be compared on landed total, Kanem's has not stated how many sachets are in a carton, and Sahel's new quote gives no freight figure, no duty figure and no exchange rate, while the round's duty terms are not settled, so its landed cost can't be worked out yet.",
+      "narrative": "Sophie opens the comparison: the round's import duty terms are still not settled, so only Harmattan's quote can be compared on landed total, costed on the zero duty its own quote states. Kanem's has not stated how many sachets are in a carton, and Sahel's new quote gives no exchange rate and no freight figure. Sahel quotes ex works, so the import is ours: its duty is ours to cost and waits on the round's unsettled terms, not on a question to Sahel, and its landed cost can't be worked out yet.",
       "persona": "sophie",
       "provenance": "S4",
       "title": "An answer is not yet a quote she can compare"
@@ -130,13 +130,13 @@
           "verify": "Playwright: the resolve form shows 'This answer sets the round's import duty terms'; after choosing buyer_waiver and Save, the importer question's answer reads 'We import, under the program's duty waiver; please state freight to Kano.'"
         },
         {
-          "description": "After the answer sets the round's duty terms, the comparison's duty terms note reads the waiver, and a blocked quote that leaves duty out has its own Duty line reading duty waived (our import) and citing the answer that set the terms, with duty no longer among its blockers.",
+          "description": "After the answer sets the round's duty terms, the comparison's duty terms note reads the waiver, and a blocked quote that leaves duty out has its own Duty line reading waived (our import), with a line citing the answer that set the round's terms, and duty no longer among its blockers.",
           "id": "comparison-costs-under-waiver",
-          "verify": "Playwright: [data-testid=comparison-duty-terms] contains 'we import, under the program's duty waiver'; Sahel Nutrition Industries' Needs info card [data-testid=card-duty] contains 'Duty waived (our import)' and 'from your answer to Northgate Commodities', and its blockers do not include 'Duties excluded from the quote but no duties amount recorded'"
+          "verify": "Playwright: [data-testid=comparison-duty-terms] contains 'we import, under the program's duty waiver'; Sahel Nutrition Industries' Needs info card [data-testid=card-duty] contains 'Duty: waived (our import)' and its [data-testid=card-duty-provenance] contains 'from your answer to Northgate Commodities', and its blockers do not include 'Import duty is ours to cost'"
         }
       ],
       "id": "what-we-owe-northgate",
-      "narrative": "Back on the round, Sophie answers Northgate's question about who imports, for her reply to Northgate: we import, under the program's duty waiver. She marks that answer as setting the round's import duty terms, then opens the round's comparison again: Sahel's quote, which leaves duty out, now reads duty waived (our import), the round's terms set from her answer to Northgate, and duty is no longer among what blocks it.",
+      "narrative": "Back on the round, Sophie answers Northgate's question about who imports, for her reply to Northgate: we import, under the program's duty waiver. She marks that answer as setting the round's import duty terms, then opens the round's comparison again: Sahel's quote, which leaves duty out, now reads duty waived (our import), the round's terms set from her answer to Northgate, and the round's duty terms are gone from what blocks it.",
       "persona": "sophie",
       "provenance": "S5",
       "title": "One answer to Northgate settles how duty is costed"
@@ -191,5 +191,5 @@
     }
   ],
   "slug": "supply-sophie-unanswered-round",
-  "version": 17
+  "version": 19
 }

@@ -64,13 +64,14 @@ class TestTheComparisonUnderTheWaiver:
         body = _comparison(client_in_program, world)
         if 'data-testid="needs-info"' not in body:
             pytest.skip("the quote is comparable in this world; nothing to card")
-        terms = _text(re.search(r'data-testid="needs-info-duty-terms".*?</p>', body, re.S).group(0))
-        # Since batch 5 the answer is cited on each card's duty line; the terms line keeps the day.
-        assert "Round terms:" in terms and "set 3 Oct" in terms
+        # Since batch 8 the round's terms are stated once, in the comparison's header, with
+        # the way to change them; the cards carry the answer that set them.
+        terms = _text(re.search(r'data-testid="comparison-duty-terms".*?</p>', body, re.S).group(0))
+        assert "under the program's duty waiver" in terms and "Change" in terms
         assert 'data-testid="card-waiver-missing"' in body
         attach = reverse("supply_chain:tender_document_attach", args=[world["tender"]["id"]])
         assert attach in body
-        assert "restate the price without duty" in body
+        assert "restate the price without import duty" in body
 
 
 @pytest.mark.django_db

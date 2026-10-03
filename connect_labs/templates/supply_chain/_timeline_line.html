@@ -26,7 +26,7 @@
       name to read an email was found by nobody.
       {% endcomment %}
       {% if not in_event %}
-      <span data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}"><span data-testid="actor-pill" class="inline-flex items-center gap-1">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span>{{ entry.actor }}</span></span></span>
+      <span data-testid="actor-badge" {% if entry.is_ai %}data-ai {% endif %}class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-sm {% if entry.is_ai %}bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200{% else %}bg-gray-100 text-gray-900 ring-1 ring-inset ring-gray-300{% endif %}"><span data-testid="actor-pill" class="inline-flex items-center gap-1">{% if entry.is_ai %}{% include "supply_chain/_ai_glyph.html" with actor=entry.actor %}{% endif %}<span{% with name=entry.actor|ai_agent_name %}{% if name %} title="Agent: {{ name }}"{% endif %}{% endwith %}>{{ entry.actor|ai_words }}</span></span></span>
       {% if entry.excerpt %}
         {% comment %}One label, open or shut ("Source email"); the caret turns to say which --
         the details' own open state, no script. Two labels for one control read as two
@@ -37,7 +37,7 @@
           {% comment %}Where the quote came from, as the call recorded it -- the kind its
           reference implies, who recorded it and when. A replay of the same evidence
           was answered from this write, not written again.{% endcomment %}
-          <p data-testid="source-heading" class="mt-1.5 text-sm text-gray-900">{{ entry.source_kind|default:"Source" }}{% if entry.sender %} from {{ entry.sender }}{% endif %}, recorded by {{ entry.actor }} on {{ entry.recorded_on|date:"j M Y" }}{% if entry.replayed_at %} · forwarded again {{ entry.replayed_at|date:"j M Y" }} — recorded once{% endif %}</p>
+          <p data-testid="source-heading" class="mt-1.5 text-sm text-gray-900"{% if entry.actor|slice:"-8:" == " (agent)" %} title="Recorded by {{ entry.actor }}"{% endif %}>{{ entry.source_kind|default:"Source" }}{% if entry.sender %} from {{ entry.sender }}{% endif %}, recorded by {% if entry.actor|slice:"-8:" == " (agent)" %}the AI assistant{% else %}{{ entry.actor }}{% endif %} on {{ entry.recorded_on|date:"j M Y" }}{% if entry.replayed_at %} · forwarded again {{ entry.replayed_at|date:"j M Y" }} — recorded once{% endif %}</p>
           {% comment %}The words the change rested on, at reading size and full contrast:
           this is the evidence, not a footnote.{% endcomment %}
           <blockquote data-testid="source-excerpt" class="mt-1 w-full rounded-r border-l-4 border-gray-300 bg-gray-50 py-2 pl-3 pr-3 text-sm leading-relaxed text-gray-900 whitespace-pre-line">{{ entry.excerpt }}</blockquote>
@@ -53,7 +53,7 @@
       {% if entry.correct_url %}<a href="{{ entry.correct_url }}" class="text-brand-indigo hover:underline">Correct</a>{% endif %}
       {% comment %}Void stops a quote counting: set apart from Correct in the destructive red,
       at regular weight, so it is not read as one more navigation link.{% endcomment %}
-      {% if entry.void_url %}<a href="{{ entry.void_url }}" data-testid="quote-void" class="font-normal text-red-700 hover:underline">Void</a>{% endif %}
+      {% if entry.void_url %}<a href="{{ entry.void_url }}" data-testid="quote-void" class="font-normal text-gray-600 hover:text-red-700 hover:underline">Void</a>{% endif %}
     </div>
   {% elif entry.fix_status %}
     <div data-testid="quote-fixes" class="shrink-0 text-xs whitespace-nowrap text-gray-600">{% if entry.fix_status == "voided" %}voided{% else %}since corrected{% endif %}</div>

@@ -172,15 +172,19 @@ def _revisions(scope, program_id, until):
     return revisions.select_related("call__actor", "content_type").order_by("-recorded_at", "-id")
 
 
-def tender_scope_revisions(tender_id, *, program_id, until=None):
+def tender_scope_revisions(tender_id, *, program_id, until=None, orders=True):
     """Revisions of a tender, its outreach, quotes, invitations, awards, approvals and their documents,
     and of the order(s) placed from it with everything under them (design doc §4.3).
 
     `program_id` is required: every query names its program as well as the
     tender, so a revision from any other program cannot appear. One query
     over the union, so a revision in both scopes is listed once.
+
+    `orders=False` leaves out the order(s) placed from it: the overview's tender
+    row reads its last change from the round alone, since the order has a row
+    of its own and a shipment email is not a change to the round.
     """
-    return _revisions(_tender_scope(tender_id, program_id), program_id, until)
+    return _revisions(_tender_scope(tender_id, program_id, orders=orders), program_id, until)
 
 
 def contract_scope_revisions(contract_id, *, program_id, until=None):
@@ -189,7 +193,7 @@ def contract_scope_revisions(contract_id, *, program_id, until=None):
     return _revisions(_contract_scope({int(contract_id)}, program_id), program_id, until)
 
 
-def _tender_scope(tender_id, program_id):
+def _tender_scope(tender_id, program_id, orders=True):
     from connect_labs.supply_chain.models import (
         Award,
         AwardApproval,
@@ -217,7 +221,7 @@ def _tender_scope(tender_id, program_id):
     )
     # The order the tender led to is part of its story: the award, then the
     # contract, dispatch, the ETA slip, receipt and payment.
-    contracts = _child_ids(Contract, {"tender_id": tender, "award_id": awards}, program_id)
+    contracts = _child_ids(Contract, {"tender_id": tender, "award_id": awards}, program_id) if orders else set()
     return [
         (Tender, tender),
         (Outreach, outreach),
@@ -676,17 +680,22 @@ def _mark_holds(built):
             continue
         old, new = revision.changes["required_documents"]
         before = {d.get("kind") for d in (old or []) if isinstance(d, dict)}
+        owed, imported = [], False
         for document in new or []:
             if not isinstance(document, dict) or document.get("kind") in before:
                 continue
             what = (document.get("kind") or "").replace("_", " ")
             if what in waiting:
-                # The record's own name for it, when it carries one ("Form M").
+                # The record's own name for it, when it carries one ("Form M"). Every
+                # document the line asked of us is named: an email that asks the
+                # consignee for two owes two.
                 local = str(document.get("name") or "").strip()
-                entry.hold = f"Waiting on us: {what}" + (f" ({local})" if local else "")
-                if "import" in what:
-                    entry.hold_reason = "we are the consignee: the program imports these goods"
-                break
+                owed.append(what + (f" ({local})" if local else ""))
+                imported = imported or "import" in what or "customs" in what
+        if owed:
+            entry.hold = "Waiting on us: " + " and ".join(owed)
+            if imported:
+                entry.hold_reason = "we are the consignee: the program imports these goods"
 
 
 @dataclass

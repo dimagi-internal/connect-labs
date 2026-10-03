@@ -212,7 +212,9 @@ class TestTheChainSaysItsScope:
             _quote_with(da, tender_id, base["supplier"]["id"], AUG_20, _DELIVERED)
         body = _home(home_client)
         chain = body[body.index("The chain") : body.index("Tenders</h2>")]
-        assert "comparable across 2 tenders" in _text(chain)
+        # Broken down tender by tender, newest first, so it reads back to each round's comparison.
+        assert "Tender Two: 1 of 1 comparable" in _text(chain)
+        assert "1 of 1 comparable" in _text(chain).split("Tender Two: 1 of 1 comparable", 1)[1]
         assert "live across 2 tenders" in _text(chain)
 
 
@@ -339,8 +341,8 @@ class TestQuestionsFromTheKnownState:
 
 
 def _card(body, quote_id):
-    start = body.index(f'<div data-quote-id="{quote_id}"')
-    after = body.find("<div data-quote-id=", start + 1)
+    start = body.index(f'data-quote-id="{quote_id}"')
+    after = body.find("data-quote-id=", start + 1)
     return body[start : after if after != -1 else len(body)]
 
 
@@ -388,15 +390,16 @@ class TestABlockedCard:
         )
         # Since the unanswered round's batch 3: what is missing, by whom, and nothing else.
         assert banner == (
-            "0 of 3 quotes can be compared. Not yet stated or recorded: Lakeside Foods: sachets per carton "
-            "Sahel Nutrition: duties amount Northwind Foods: freight"
+            "0 of 3 quotes can be compared. Not yet stated or recorded Lakeside Foods sachets per carton Draft email "
+            "Sahel Nutrition duties amount Draft email Northwind Foods freight Draft email"
         )
 
     def test_a_quote_missing_two_facts_is_not_said_to_miss_one(self, da, base, client_in_program):
         _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {})
         body = _page(client_in_program, base["tender"]["id"])
-        sentence = re.search(r'data-testid="not-stated">([^<]*)<', body).group(1)
-        assert sentence.startswith("Northwind Foods: ") and sentence.count(",") >= 1
+        sentence = _text(re.search(r'data-testid="not-stated"[^>]*>(.*?)</li>', body, re.S).group(1))
+        # Since DDD 003 batch 7 each line is the supplier (a link to its card), its facts, and a draft email link.
+        assert sentence.startswith("Northwind Foods ") and sentence.count(",") >= 1
 
 
 @pytest.mark.django_db

@@ -106,6 +106,7 @@ _GAP_WORDS = {
     "tender_configuration": "tender line",
     "as_quoted_unit": "price unit",
     "duty_estimate": "our duty estimate",
+    "duty_terms": "round duty terms",
 }
 
 
@@ -779,25 +780,38 @@ def _origin_handover_words(quote, where: str) -> str:
 
 
 def round_duty_words(quote, tender) -> str:
-    """The duty the round's terms make ours, as its own line: "Duty waived (our import)".
+    """The duty the round's terms make ours, read after the card's "Duty:" label: "waived (our import)".
 
     What the quote itself said of duty follows, so the round's term never hides
     the supplier's word: "· the quote also stated zero". "" when the round's
     terms leave duty to each quote.
     """
     terms = getattr(tender, "duty_terms", "") or ""
+    if not terms and _import_is_ours_unstated(quote):
+        # The Incoterm makes the import ours and the round has not said how:
+        # the duty is our cost to settle, not a figure the supplier owes.
+        return "ours to cost (round terms not settled)"
     if terms == "buyer_waiver":
-        line = "Duty waived (our import)"
+        line = "waived (our import)"
     elif terms == "buyer_pays" and getattr(tender, "duty_estimate_percent", None) is not None:
-        line = f"Duty: our estimate of {tender.duty_estimate_percent.normalize():f}% added (our import)"
+        line = f"our estimate of {tender.duty_estimate_percent.normalize():f}% added (our import)"
     else:
         return ""
     basis, amount = getattr(quote, "duties_basis", ""), getattr(quote, "duties_amount", None)
     if basis == "excluded" and amount is not None and not amount:
-        line += " · the quote also stated zero"
+        line += f" · the quote stated {money_digits(amount)} (excluded from the price)"
     elif basis == "included":
         line += " · the quote states duty included"
     return line
+
+
+def _import_is_ours_unstated(quote) -> bool:
+    """Whether the quote's Incoterm puts the import on us and the quote states no duty amount."""
+    implied = freight_and_duties_for_incoterm(getattr(quote, "incoterm", ""))[1]
+    basis = getattr(quote, "duties_basis", "")
+    if basis not in ("included", "excluded"):
+        basis = implied
+    return implied == "excluded" and basis == "excluded" and getattr(quote, "duties_amount", None) is None
 
 
 def round_duty_consequence(quote, tender) -> str:
@@ -853,7 +867,7 @@ def landed_basis_words(quote, tender, *, round_duty: bool = True) -> str:
             # A zero said on the quote, said as the quote's word -- not "0.00 added",
             # which read as a figure we had guessed.
             # "on the quote" is not said here: the line closes "per quote" already.
-            parts.append("duty stated as zero")
+            parts.append(f"duty excluded from the price, stated as {money_digits(amount)}")
         elif basis == "excluded" and amount is not None:
             parts.append(f"{label} {money_digits(amount)} {currency} added")
         else:

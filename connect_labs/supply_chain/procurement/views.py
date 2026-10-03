@@ -924,8 +924,18 @@ class ComparisonView(_Base):
         context["not_stated"] = [
             sentence for sentence in (not_stated(row) for row in (comparison or {}).get("blocked") or []) if sentence
         ]
+        # Each bullet also carries where to act on it: the supplier's Needs info
+        # card and, when it is the supplier's to answer, its drafted email.
         context["missing_items"] = [
-            item for item in (missing_item(row) for row in (comparison or {}).get("blocked") or []) if item
+            {
+                "text": item,
+                "supplier_name": row.get("supplier_name") or "A supplier",
+                "facts": item.partition(": ")[2],
+                "quote_id": row.get("quote_id"),
+                "supplier_id": row.get("supplier_id"),
+            }
+            for row in (comparison or {}).get("blocked") or []
+            if (item := missing_item(row))
         ]
         context["ranking_rule"] = RANKING_RULE
         if comparison and context["table_columns"]:
