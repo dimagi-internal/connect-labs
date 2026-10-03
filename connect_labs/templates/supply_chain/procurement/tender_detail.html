@@ -3,136 +3,178 @@
 
 {% block supply_content %}
 {% if tender %}
-<div class="flex flex-wrap items-start justify-between gap-3 mb-4">
-  <div>
-    <h1 class="text-xl font-semibold text-gray-900">{{ tender.label }}</h1>
-    {% comment %}The round's facts as a label/value block, so a state -- past its deadline,
-    duties not settled -- reads as a state, not as one more line of body text. Calm grey
-    chips for the states; each defines itself on hover. No alarm colour: these are facts.{% endcomment %}
-    <dl data-testid="tender-facts" class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
-      <dt class="text-gray-600">Status</dt>
-      <dd class="text-gray-900">
-      {% if deadline_passed %}
-        {% comment %}An open tender whose deadline is behind it says so: "response deadline
-        29 Sep 2026" on 2 Oct read as a date still to come.{% endcomment %}
-        <span data-testid="deadline-passed">Open — <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-900 ring-1 ring-inset ring-gray-300" title="The response deadline was {{ deadline_passed.day|day }}; the round is still open, so late replies are still recorded">deadline passed</span> {{ deadline_passed.day|day }} ({{ deadline_passed.days }} day{{ deadline_passed.days|pluralize }} ago)</span>
-      {% else %}
-        {{ tender.status|title }} — response deadline {{ tender.response_deadline|day|default:"not set" }}
-      {% endif %}
-      </dd>
-      {% if buys %}
-      {% comment %}What the round buys, beside its status: a one-line card of its own
-      interrupted the page between the Outreach table and what we owe.{% endcomment %}
-      <dt class="text-gray-600">Buys</dt>
-      <dd data-testid="tender-buys" class="text-gray-900">{% for line in buys %}<span class="tabular-nums">{{ line.quantity|qty:line.unit }}</span> of {{ line.name|in_sentence }}{% if line.contents %} <span class="text-gray-600">— one unit holds {{ line.contents }}</span>{% endif %}{% if not forloop.last %}; {% endif %}{% endfor %}</dd>
-      {% endif %}
-      {% comment %}How the round's import duties are handled: settled once (often in answer to a
-      supplier's "who imports?"), and every quote is costed by it.{% endcomment %}
-      <dt class="text-gray-600">Import duties</dt>
-      <dd data-testid="tender-duty-terms" class="{% if duty_terms_changed %}font-semibold text-gray-900{% else %}text-gray-900{% endif %}"{% if duty_terms_changed %} data-changed{% endif %}>
-        <span class="sr-only">Import duties: </span>{% if not tender.duty_terms %}<span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-900 ring-1 ring-inset ring-gray-300" title="Nobody has yet said who imports and who pays the duty, so a quote that leaves duty out cannot be costed">{{ tender.duty_terms|duty_terms_words }}</span>{% else %}{{ tender.duty_terms|duty_terms_words }}{% endif %}{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} (our estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}% of the goods){% else %} (no estimate recorded yet){% endif %}{% endif %}{% if tender.duty_terms and tender.duty_terms_set_on %} <span class="font-normal text-gray-600">· set {{ tender.duty_terms_set_on|day }}{% if duty_terms_set_by %} by {{ duty_terms_set_by }}{% endif %}</span>{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}
-        {% if tender.duty_terms == "buyer_waiver" %}
-          {% comment %}The zero the waiver puts on every quote rests on the waiver itself:
-          whether a copy of it is on file is said beside the terms.{% endcomment %}
-          <span data-testid="waiver-evidence" class="block font-normal text-gray-600">Waiver document: {% if waiver_on_file %}on file{% else %}none on file{% endif %}</span>
-        {% endif %}
-        {% if tender.duty_terms and tender.lines %}
-          {% comment %}What the terms are for, one click away: the comparison costs any quote
-          that leaves duty out by them.{% endcomment %}
-          <a data-testid="duty-terms-consequence" href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ tender.lines.0.commodity_slug }}"
-             class="block font-normal text-brand-indigo hover:underline">Quotes that leave duty out are costed on these terms — compare</a>
-        {% endif %}
-      </dd>
-      <dt class="text-gray-600">Where the goods go</dt>
-      <dd class="text-gray-900">
-        {% for p in tender.delivery_points %}{% firstof p.name p.city %}{% if p.name and p.city %}, {{ p.city }}{% endif %}{% if not forloop.last %}; {% endif %}{% empty %}no delivery place{% endfor %}{% if tender.pickup_accepted %} — or we collect from the supplier{% endif %}{% if tender.incoterm_requested %} <span class="text-gray-600">· asked on {{ tender.incoterm_requested }} terms</span>{% endif %}
-      </dd>
-      <dt class="text-gray-600">Visibility</dt>
-      <dd class="text-gray-900">
-      {% if tender.status == "awarded" or tender.status == "closed" %}
-        {% comment %}Who could bid no longer matters once replies are closed: "Open to
-        all suppliers" on an awarded tender read as still taking bids.{% endcomment %}
-        <span data-testid="tender-state-pill" class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-900 ring-1 ring-inset ring-gray-300">{% if tender.status == "awarded" %}Closed — awarded{% else %}Closed{% endif %}</span>
-        No longer taking bids.
-      {% elif tender.visibility == "private" %}
-        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-900 ring-1 ring-inset ring-gray-300">Restricted</span> Only the suppliers you invite see it on the supplier marketplace.
-      {% else %}
-        <span class="inline-flex items-center rounded-full bg-message-info px-2 py-0.5 text-xs font-medium text-message-info-text ring-1 ring-inset ring-message-info-border">Open to all suppliers</span>
-        {% if tender.status == "open" %}Listed on the <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender' tender.id %}">supplier marketplace</a>: any registered supplier can bid.{% elif tender.status == "draft" %}Listed on the supplier marketplace while it is open.{% endif %}
-      {% endif %}
-      </dd>
-      {% if tender.slug %}
-      <dt class="text-gray-600">Listing</dt>
-      <dd class="text-gray-900">
-        {% if tender.owner_org_id %}For {{ owner_name }}: {% endif %}
-        <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender_listing' tender.slug %}">/supply/market/t/{{ tender.slug }}/</a>
-        · <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender_manage' tender.slug %}">manage the listing and who is invited</a>
-        {% if tender.invited_org_ids %}({{ tender.invited_org_ids|length }} invited){% endif %}
-      </dd>
-      {% endif %}
-    </dl>
-  </div>
-  <div class="flex flex-wrap items-center gap-2">
-    {% comment %}Every secondary action wears one treatment (indigo text, grey outline);
-    only the lead action is filled, so the header reads as one set of controls.{% endcomment %}
-    {% comment %}The listing every supplier sees, one click from the program's own page
-    (owner-only, so it leaks nothing). Only while it is listed: the market shows open tenders.{% endcomment %}
-    {% if tender.status == "open" and tender.visibility != "private" %}
-    <a data-testid="market-listing-link" href="{% url 'supply_chain:market_tender' tender.id %}"
-       class="px-3 py-1.5 text-sm border border-gray-300 text-brand-indigo hover:bg-gray-50 rounded-md">Public market listing</a>
-    {% endif %}
-    {% comment %}While someone asked has not replied on an open round, chasing them is the
-    first move: "Draft reminders" leads and comparing what came in steps back.{% endcomment %}
-    {% if any_silent and drafts %}
-    <a data-testid="draft-reminders" href="#drafts"
-       onclick="var d=document.getElementById('drafts'); if (d) { d.open = true; d.scrollIntoView({block: 'start'}); return false; }"
-       class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Draft reminders</a>
-    {% endif %}
-    {% for line in tender.lines %}
-    <a data-testid="compare-quotes" href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}"
-       class="px-3 py-1.5 text-sm {% if any_silent and drafts %}border border-gray-300 text-brand-indigo hover:bg-gray-50{% else %}bg-brand-indigo hover:bg-brand-deep-purple text-white{% endif %} rounded-md">
-      {% comment %}"Compare quotes"; with more than one product, which one.{% endcomment %}
-      Compare quotes{% if tender.lines|length > 1 %}: {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}{% endif %}
-    </a>
-    {% endfor %}
-    {% if not supply_as_of %}
-    <a href="{% url 'supply_chain:procurement_tender_edit' tender.id %}"
-       class="px-3 py-1.5 text-sm border border-gray-300 text-brand-indigo hover:bg-gray-50 rounded-md">Edit</a>
-    {% comment %}
-    Opening and closing change something, so they are POSTs behind a button
-    rather than links: a link that mutates is one crawler or one prefetch away
-    from doing it unasked.
-    {% endcomment %}
-    {% if tender.status == "draft" %}
-      <form method="post" action="{% url 'supply_chain:procurement_tender_open' tender.id %}" class="inline">
-        {% csrf_token %}
-        <button type="submit"
-                class="px-3 py-1.5 text-sm rounded-md bg-message-success text-message-success-text border border-message-success-border/50 hover:brightness-95">
-          Open for quotes
-        </button>
-      </form>
-    {% elif tender.status == "open" %}
-      <form method="post" action="{% url 'supply_chain:procurement_tender_close' tender.id %}" class="inline">
-        {% csrf_token %}
-        <button type="submit"
-                class="px-3 py-1.5 text-sm border border-gray-300 text-brand-indigo hover:bg-gray-50 rounded-md">
-          Close the round
-        </button>
-      </form>
-    {% endif %}
-    {% endif %}{# not supply_as_of #}
-  </div>
-</div>
-
 {% comment %}
-Who replied and who is silent, first: it is what a round is chased on, so it
-sits above who is invited and what the tender buys.
+The tender's status view (procurement/status.py): what it buys and on what terms,
+where it is on the six steps, four counts, one row per supplier, and the moves --
+On us and On suppliers come from moves.py and nothing else. The detail below it
+is folded away, each fold with its count.
 {% endcomment %}
-<div class="flex items-center justify-between mb-2">
-  <h2 id="outreach" class="text-lg font-semibold text-gray-900 scroll-mt-20">Outreach{% if outreach_asked %} <span data-testid="outreach-replied-count" class="font-normal text-gray-600">— {{ outreach_replied }} of {{ outreach_asked }} replied</span>{% endif %}</h2>
+<div class="sc" data-testid="tender-status">
+  <div class="sc-row sc-between">
+    <nav class="sc-crumbs" aria-label="Breadcrumb"><a href="{% url 'supply_chain:home' %}">Procurements</a><span aria-hidden="true">›</span><span>{{ tender.label }}</span></nav>
+    {% include "supply_chain/_src_legend.html" %}
+  </div>
+
+  <section class="sc-card sc-hero" aria-labelledby="tender-title">
+    <div class="sc-row sc-between" style="align-items:flex-start;gap:16px">
+      <div class="sc-stack" style="min-width:0">
+        <div class="sc-kicker">Tender · {{ tender.label }}</div>
+        <h1 id="tender-title" class="sc-h1" data-testid="tender-title">{{ status.header.title|default:tender.label }}</h1>
+        <div class="sc-muted" style="font-size:15px" data-testid="tender-summary">
+          {% if status.header.where %}{{ status.header.where }} · {% endif %}{% if status.header.incoterm %}{{ status.header.incoterm }} · {% endif %}{{ status.header.visibility }}
+          <span class="sc-chip sc-chip--{% if tender.status == 'open' %}blue{% else %}grey{% endif %}" data-testid="tender-state-pill" style="margin-left:6px">{{ tender.status|capfirst }}</span>
+        </div>
+      </div>
+      <div class="sc-row" style="gap:10px">
+        {% for line in tender.lines %}
+        <a data-testid="compare-quotes" class="sc-btn" href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}">Compare quotes{% if tender.lines|length > 1 %}: {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}{% endif %}</a>
+        {% endfor %}
+        {% if not supply_as_of %}
+        <details class="sc-menu" id="decide" data-testid="decide-menu">
+          <summary class="sc-btn-2" role="button">{% if tender.status == "draft" %}Open or edit{% else %}Extend or close{% endif %}</summary>
+          <div class="sc-menu-panel">
+            {% if tender.status == "draft" %}
+              <form method="post" action="{% url 'supply_chain:procurement_tender_open' tender.id %}">{% csrf_token %}<button type="submit" class="sc-btn sc-btn-sm">Open for quotes</button></form>
+            {% endif %}
+            <a href="{% url 'supply_chain:procurement_tender_edit' tender.id %}">Extend the deadline or edit the tender</a>
+            {% if tender.status == "open" %}
+              <form method="post" action="{% url 'supply_chain:procurement_tender_close' tender.id %}">{% csrf_token %}<button type="submit" class="sc-btn-2 sc-btn-sm">Close the tender</button></form>
+            {% endif %}
+            {% if tender.lines %}<a href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ tender.lines.0.commodity_slug }}&amp;step=award">Award from the comparison</a>{% endif %}
+            {% if tender.status == "open" and tender.visibility != "private" %}<a data-testid="market-listing-link" href="{% url 'supply_chain:market_tender' tender.id %}">Public market listing</a>{% endif %}
+          </div>
+        </details>
+        {% endif %}
+      </div>
+    </div>
+
+    <ol class="sc-stages" data-testid="stage-bar" aria-label="Stage" style="list-style:none;margin:0;padding:0">
+      {% for s in status.stages %}
+      <li class="sc-stage sc-stage--{{ s.state }}" data-stage-state="{{ s.state }}"{% if s.state == "now" %} aria-current="step"{% endif %}>
+        <div class="sc-bar sc-bar--{{ s.state }}"></div>
+        <div class="sc-stage-name">{{ s.name }}</div>
+        <div class="sc-stage-note">{% if s.note != "—" %}{% include "supply_chain/_src.html" with src="calc" %}{% endif %}{{ s.note }}</div>
+      </li>
+      {% endfor %}
+    </ol>
+
+    <div class="sc-tiles" data-testid="status-tiles">
+      {% for t in status.tiles %}
+      <div class="sc-tile{% if t.tone == 'amber' %} sc-tile--amber{% endif %}" data-testid="tile">
+        <div class="sc-small sc-muted">{{ t.label }}</div>
+        <div class="num sc-tile-value">{{ t.value }}</div>
+        <div class="sc-small sc-muted">{{ t.sub|default:"&nbsp;" }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="sc-cols">
+    <section class="sc-card sc-main" aria-labelledby="suppliers-h">
+      <div class="sc-row sc-between">
+        <h2 id="suppliers-h" class="sc-h2">Suppliers</h2>
+        <span class="sc-small sc-muted" data-testid="outreach-replied-count">{{ outreach_replied }} of {{ outreach_asked }} replied</span>
+      </div>
+      <div class="sc-scroll" tabindex="0" role="region" aria-label="Suppliers, scrolls sideways">
+        <table class="sc-table" data-testid="supplier-table" style="min-width:620px">
+          <thead><tr><th scope="col">Supplier</th><th scope="col">State</th><th scope="col">Quote</th><th scope="col">Still missing</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+          <tbody>
+            {% for r in status.suppliers %}
+            <tr data-testid="supplier-row" data-supplier-id="{{ r.supplier_id }}">
+              <td style="font-weight:500"><a href="{{ r.href }}" style="color:var(--ink)">{{ r.name }}</a></td>
+              <td><span class="sc-chip sc-chip--{{ r.chip.tone }}" data-testid="supplier-state">{{ r.chip.label }}</span></td>
+              <td class="sc-small" style="white-space:nowrap">{% if r.quote %}{% include "supply_chain/_src.html" with src=r.quote_src %}{{ r.quote }}{% if r.quote_src == "ai" %}<span class="sc-ai-tag">AI</span>{% endif %}{% else %}<span class="sc-blank">—</span>{% endif %}</td>
+              <td class="sc-muted" data-testid="supplier-missing" style="white-space:nowrap">{% for m in r.missing %}{% if r.chip.label == "Quote" or r.chip.label == "Quote, late" %}<span class="sc-gap">{{ m }}</span>{% else %}{{ m }}{% endif %}{% if not forloop.last %} · {% endif %}{% empty %}<span class="sc-blank">—</span>{% endfor %}</td>
+              <td style="text-align:right;white-space:nowrap">{% if r.action and not supply_as_of %}<a data-testid="supplier-action" href="{{ r.action.href }}"{% if r.action.href|slice:":7" == "#draft-" %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ r.action.href|slice:"1:" }}');"{% endif %}>{{ r.action.label }}</a>{% endif %}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="sc-muted">Nobody asked yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <aside class="sc-side">
+      <section class="sc-card" data-testid="on-us" aria-labelledby="on-us-h" style="gap:12px">
+        <div class="sc-row sc-between"><h2 id="on-us-h" class="sc-h2">On us</h2><span class="num sc-count" style="color:var(--amber)" data-testid="on-us-count">{{ status.ours|length }}</span></div>
+        {% for m in status.ours %}
+        <div class="sc-move sc-move--us" data-testid="move" data-rule="{{ m.rule }}">
+          <div class="sc-stack" style="gap:2px"><span class="sc-move-what">{{ m.text }}</span><span class="sc-small sc-muted"><span class="sc-rule" title="{{ m.rule_title }}">{{ m.rule }}</span>{{ m.detail }}</span></div>
+          {% if not supply_as_of %}<a class="sc-move-cta" href="{{ m.href }}"{% if "#draft-" in m.href %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ m.href|cut:request.path|slice:"1:" }}');"{% endif %}>{{ m.cta }}</a>{% endif %}
+        </div>
+        {% empty %}
+        <p class="sc-small sc-muted" style="margin:0">Nothing.</p>
+        {% endfor %}
+      </section>
+      <section class="sc-card" data-testid="on-suppliers" aria-labelledby="on-them-h" style="gap:12px">
+        <div class="sc-row sc-between"><h2 id="on-them-h" class="sc-h2">On suppliers</h2><span class="num sc-count" style="color:var(--slate)">{{ status.theirs|length }}</span></div>
+        {% for m in status.theirs %}
+        <div class="sc-move sc-move--them" data-testid="move" data-rule="{{ m.rule }}">
+          <div class="sc-stack" style="gap:2px"><span class="sc-move-what">{{ m.text }}</span><span class="sc-small sc-muted"><span class="sc-rule" title="{{ m.rule_title }}">{{ m.rule }}</span>{{ m.detail }}</span></div>
+          {% if not supply_as_of %}<a class="sc-move-cta" href="{{ m.href }}"{% if "#draft-" in m.href %} onclick="return window.openDraft &amp;&amp; window.openDraft('{{ m.href|cut:request.path|slice:"1:" }}');"{% endif %}>{{ m.cta }}</a>{% endif %}
+        </div>
+        {% empty %}
+        <p class="sc-small sc-muted" style="margin:0">Nothing.</p>
+        {% endfor %}
+      </section>
+      <section class="sc-card" id="duty-terms" data-testid="tender-terms" aria-labelledby="terms-h" style="gap:10px">
+        <h2 id="terms-h" class="sc-h2">Terms</h2>
+        <div class="sc-terms">
+          <span class="sc-muted">Import duty</span>
+          <span data-testid="tender-duty-terms"{% if duty_terms_changed %} data-changed{% endif %}>
+            {% if not tender.duty_terms %}<span class="sc-chip sc-chip--amber">Not settled</span>{% else %}{% include "supply_chain/_src.html" with src=status.terms.duty_src %}{{ tender.duty_terms|duty_terms_words|capfirst }}{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} · estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}%{% else %} · <span class="sc-gap">estimate not recorded</span>{% endif %}{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% if tender.duty_terms_set_on %}<span class="sc-small sc-muted" style="display:block">set {{ tender.duty_terms_set_on|day }}{% if status.terms.duty_set_by %} · {{ status.terms.duty_set_by }}{% endif %}</span>{% endif %}{% endif %}
+            {% if tender.duty_terms == "buyer_waiver" %}<span data-testid="waiver-evidence" class="sc-small sc-muted" style="display:block">waiver document: {% if waiver_on_file %}on file{% else %}none on file{% endif %}</span>{% endif %}
+          </span>
+          <span class="sc-muted">Deadline</span>
+          <span>{% if tender.response_deadline %}{{ tender.response_deadline|day }}{% if deadline_passed %} · <span data-testid="deadline-passed" class="sc-gap">{{ deadline_passed.days }} day{{ deadline_passed.days|pluralize }} past</span>{% endif %}{% else %}<span class="sc-blank">not set</span>{% endif %}</span>
+          <span class="sc-muted">Asked</span>
+          <span>{% if status.terms.asked %}{{ status.terms.asked|day }}{% else %}<span class="sc-blank">—</span>{% endif %}</span>
+        </div>
+        {% if not supply_as_of %}
+        <details class="sc-menu" data-testid="duty-terms-settle"{% if not tender.duty_terms %} {% endif %}>
+          <summary class="sc-btn-2 sc-btn-sm" role="button">{% if tender.duty_terms %}Change{% else %}Settle{% endif %} import duty</summary>
+          <form method="post" action="{% url 'supply_chain:procurement_tender_duty_terms' tender.id %}" class="sc-menu-panel" style="left:0;right:auto">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.path }}#duty-terms">
+            <label class="sc-stack" style="gap:4px"><span class="sc-small sc-muted">Import duty</span>
+              <select name="duty_terms" data-testid="duty-terms-select">
+                <option value=""{% if not tender.duty_terms %} selected{% endif %}>Not settled</option>
+                <option value="buyer_waiver"{% if tender.duty_terms == "buyer_waiver" %} selected{% endif %}>We import, under the program's duty waiver</option>
+                <option value="buyer_pays"{% if tender.duty_terms == "buyer_pays" %} selected{% endif %}>We import and pay the duty</option>
+                <option value="supplier_ddp"{% if tender.duty_terms == "supplier_ddp" %} selected{% endif %}>The supplier delivers duty paid</option>
+              </select>
+            </label>
+            <label class="sc-stack" style="gap:4px"><span class="sc-small sc-muted">Our duty estimate, % of goods (if we pay)</span><input type="number" step="0.01" min="0" name="duty_estimate_percent" value="{{ tender.duty_estimate_percent|default_if_none:'' }}"></label>
+            <button type="submit" class="sc-btn sc-btn-sm" data-testid="duty-terms-save">Save</button>
+          </form>
+        </details>
+        {% endif %}
+      </section>
+    </aside>
+  </div>
+
+  {% if status.related_order %}
+  {% with o=status.related_order %}
+  <section class="sc-card" data-testid="related-order" style="flex-direction:row;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;padding:16px 22px">
+    <div class="sc-stack" style="gap:4px;min-width:0">
+      <div class="sc-small sc-muted">Earlier: <a href="{{ o.tender_url }}">{{ o.tender_label }}</a> → order {{ o.reference }} · {{ o.supplier }}</div>
+      <div style="font-weight:500">{{ o.stage }}{% if o.ours %} · on us: {% for m in o.ours %}{{ m.text }}{% if not forloop.last %}; {% endif %}{% endfor %}{% endif %}</div>
+    </div>
+    <a href="{{ o.url }}" style="font-weight:600">Open order</a>
+  </section>
+  {% endwith %}
+  {% endif %}
+
+  {% comment %}The detail, folded: each section opens on its own, and a link to one of its anchors opens it.{% endcomment %}
+
+  <details class="sc-fold" id="outreach-fold" data-testid="fold-invitations">
+    <summary id="outreach">Invitations <span class="num sc-muted">{{ outreach_asked }}</span> <span class="sc-muted">{{ outreach_replied }} replied</span></summary>
+    <div class="sc-fold-body">
+      <div class="flex items-center justify-end">
   {% if not supply_as_of %}
   {% comment %}One way in for asking a supplier: an invitation sent by email (recorded here)
-  or, while the round takes bids, one sent through the supplier marketplace. A separate
+  or, while the tender takes bids, one sent through the supplier marketplace. A separate
   "Invited suppliers" card with its own invite control was a second path.{% endcomment %}
   {% if invitable_orgs and not tender_is_over %}
   <details data-testid="invite-menu" class="relative text-sm">
@@ -158,8 +200,8 @@ sits above who is invited and what the tender buys.
      class="text-sm text-brand-indigo hover:underline">+ Record an invitation</a>
   {% endif %}
   {% endif %}
-</div>
-<div class="bg-white rounded-lg shadow-sm overflow-hidden mb-8">
+      </div>
+<div class="bg-white rounded-lg overflow-hidden">
   {% comment %}
   A scroll container is not focusable by default, so a keyboard-only user
   cannot reach the columns it hides -- which re-creates the
@@ -190,7 +232,7 @@ sits above who is invited and what the tender buys.
           <a href="{% url 'supply_chain:supplier_detail' o.supplier_id %}"
              class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:o.supplier_id|default:"Supplier" }}</a>
           {% comment %}A reply that was questions leaves the move with us: said on the
-          supplier's own row, so the round reads whose turn it is.{% endcomment %}
+          supplier's own row, so the tender reads whose turn it is.{% endcomment %}
           {% if o.waiting_on_us %}<div data-testid="waiting-on-us-row" class="text-sm font-medium whitespace-nowrap text-amber-800">{{ o.waiting_on_us }}</div>{% endif %}
         </td>
         <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">{{ o.sent_on|day|default:"—" }}</td>
@@ -235,12 +277,10 @@ sits above who is invited and what the tender buys.
   </div>
 </div>
 
-{% comment %}Shown only when it has something to hold: an invitation, an invite control,
-or nobody asked at all. An empty card read as a blank section.{% endcomment %}
 {% if invited_orgs or not asked_names %}
-<h2 class="text-lg font-semibold text-gray-900 mb-2">Invited on the marketplace</h2>
-<div data-testid="invited-suppliers" class="bg-white border border-brand-border-light rounded-lg p-4 mb-8">
-  {% comment %}Who can see the round is said once, in the header's Visibility line, and who
+<h3 class="text-sm font-semibold text-gray-900">Invited on the marketplace</h3>
+<div data-testid="invited-suppliers" class="text-sm">
+  {% comment %}Who can see the tender is said once, in the header's Visibility line, and who
   was asked once, in Outreach above: this panel holds only marketplace invitations and the
   control that adds one.{% endcomment %}
   <ul class="mt-2 text-sm">
@@ -265,41 +305,34 @@ or nobody asked at all. An empty card read as a blank section.{% endcomment %}
 {% endif %}
 
 
-{% comment %}
-What we owe on this round: a supplier's questions to us, and our promises.
-Open ones read as "waiting on us" on the overview (ruling 7 of the
-2026-10-02 tracking-reality spec).
-{% endcomment %}
-<div class="flex items-center justify-between mb-2">
-  <h2 id="owed" class="text-lg font-semibold text-gray-900 scroll-mt-20">What we owe them{% if owed %} <span data-testid="owed-open-count" class="font-normal text-gray-600">— {{ owed_open_count }} open</span>{% endif %}</h2>
-  {% if not supply_as_of %}
-  <a href="{% url 'supply_chain:tender_commitment_record' tender.id %}"
-     class="text-sm text-brand-indigo hover:underline">+ Record a question or a promise</a>
-  {% endif %}
-</div>
-{% include "supply_chain/_owed.html" with resolve_label="Mark answered" empty_text="Nothing owed on this tender." %}
+    </div>
+  </details>
+
+  <details class="sc-fold" id="owed-fold" data-testid="fold-owed"{% if owed_answered_expanded or request.GET.changed|slice:":11" == "commitment-" %} open{% endif %}>
+    <summary id="owed">What we owe <span class="num sc-muted" data-testid="owed-open-count">{{ owed_open_count|default:0 }}</span> <span class="sc-muted">open</span></summary>
+    <div class="sc-fold-body">
+      {% if not supply_as_of %}<a href="{% url 'supply_chain:tender_commitment_record' tender.id %}" class="text-sm">+ Record a question or a promise</a>{% endif %}
+      {% include "supply_chain/_owed.html" with resolve_label="Mark answered" empty_text="Nothing owed on this tender." %}
+    </div>
+  </details>
 
 {% if drafts %}
 {% comment %}
-The emails due on this round today, drafted for Sophie to copy into her own
-mailbox: nothing is sent from here. Folded shut, and in the order a round runs
+The emails due on this tender today, drafted for Sophie to copy into her own
+mailbox: nothing is sent from here. Folded shut, and in the order a tender runs
 rather than by urgency -- the product drafts when asked; it does not press a
 next action on anyone (design doc section 22).
 {% endcomment %}
-<details id="drafts" class="bg-white rounded-lg shadow-sm mb-8 scroll-mt-20">
-  <summary class="px-4 py-3 cursor-pointer text-sm font-semibold text-gray-900">
-    Draft emails — {{ drafts.drafts|length }}{% if drafts_breakdown %} <span data-testid="drafts-breakdown" class="font-normal text-gray-900">({{ drafts_breakdown }})</span>{% endif %}
-    <span class="font-normal text-gray-600">· to copy into your own mailbox; nothing is sent from here</span>
-  </summary>
-  <div class="px-4 pb-4">
-    <p class="text-xs text-gray-600">{{ drafts.reminder_interval_note }}{% if drafts.note %} {{ drafts.note }}{% endif %}</p>
+<details id="drafts" class="sc-fold">
+  <summary>Draft emails <span class="num sc-muted">{{ drafts.drafts|length }}</span>{% if drafts_breakdown %} <span data-testid="drafts-breakdown" class="sc-muted">{{ drafts_breakdown }}</span>{% endif %}</summary>
+  <div class="sc-fold-body">
     {% for d in drafts.drafts %}
       {% comment %}Each draft is its own card headed by who it goes to, so one draft's
       Copy and Record chase cannot be read as a neighbour's.{% endcomment %}
       <div data-testid="draft"{% if d.anchor %} id="{{ d.anchor }}"{% endif %} data-supplier-id="{{ d.supplier_id }}" class="border border-gray-200 rounded-lg p-4 mt-3 scroll-mt-20">
         <p class="text-lg">
           <span class="font-semibold text-gray-900">{{ d.supplier_name }}</span>
-          <span class="text-base text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our answers{% elif d.kind == "clarification" %}Clarification to every invited supplier{% else %}Follow-up{% endif %}</span>
+          <span class="text-base text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our reply{% elif d.kind == "clarification" %}Duty terms clarification{% else %}Follow-up{% endif %}</span>
         </p>
         {% if d.facts %}
           {% comment %}A reminder's facts as a labelled row, set apart from the card's body
@@ -356,7 +389,6 @@ next action on anyone (design doc section 22).
           <form method="post" action="{% url 'supply_chain:procurement_outreach_chase' d.outreach_id %}"
                 class="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-2" data-testid="chase-form">
             {% csrf_token %}
-            <p data-testid="chase-help" class="basis-full text-sm text-gray-600">After you send it, record the chase: the next reminder falls due {{ drafts.reminder_interval_days }} day{{ drafts.reminder_interval_days|pluralize }} after this date.</p>
             <label for="chase-date-{{ forloop.counter }}" class="text-sm text-gray-700">Chased on</label>
             <input id="chase-date-{{ forloop.counter }}" data-testid="chase-date" type="text" name="last_reminder_on"
                    value="{% now 'j M Y' %}" placeholder="e.g. {% now 'j M Y' %}" required autocomplete="off"
@@ -365,12 +397,12 @@ next action on anyone (design doc section 22).
                     class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Record chase</button>
           </form>
         {% endif %}
-        {% if d.kind == "reply" and d.answered_ids %}
+        {% if d.kind == "reply" and d.commitment_ids %}
           {% comment %}Once the reply is sent from Sophie's own mailbox, one button says so: the
           answers it carries stop reading "Answer drafted" and read "Answered".{% endcomment %}
           <form method="post" action="{% url 'supply_chain:procurement_reply_sent' tender.id %}" class="mt-3" data-testid="reply-sent-form">
             {% csrf_token %}
-            {% for pk in d.answered_ids %}<input type="hidden" name="commitment_id" value="{{ pk }}">{% endfor %}
+            {% for pk in d.commitment_ids %}<input type="hidden" name="commitment_id" value="{{ pk }}">{% endfor %}
             <button type="submit" class="px-3 py-1.5 text-sm border border-gray-300 text-brand-indigo hover:bg-gray-50 rounded-md">Mark this reply sent</button>
           </form>
         {% endif %}
@@ -430,7 +462,10 @@ next action on anyone (design doc section 22).
 </script>
 {% endif %}
 
-<h2 id="quotes" class="text-lg font-semibold text-gray-900 mb-2 scroll-mt-20">Quotes</h2>
+
+  <details class="sc-fold" id="quotes-fold" data-testid="fold-quotes">
+    <summary id="quotes">Quotes <span class="num sc-muted">{{ counts.quotes }}</span></summary>
+    <div class="sc-fold-body">
 <div class="bg-white rounded-lg shadow-sm overflow-hidden">
   {% comment %}
   A scroll container is not focusable by default, so a keyboard-only user
@@ -499,7 +534,62 @@ next action on anyone (design doc section 22).
   </table>
   </div>
 </div>
-{% include "supply_chain/_timeline.html" %}
+    </div>
+  </details>
+
+  <details class="sc-fold" id="history-fold" data-testid="fold-history">
+    <summary>History <span class="sc-muted">newest first</span></summary>
+    <div class="sc-fold-body">
+      {% include "supply_chain/_timeline.html" with history_heading_class="sr-only" %}
+    </div>
+  </details>
+
+  <details class="sc-fold" id="tender-details-fold" data-testid="fold-details">
+    <summary>Tender details</summary>
+    <div class="sc-fold-body">
+    <dl data-testid="tender-facts" class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+      {% if buys %}
+      {% comment %}What the tender buys, beside its status: a one-line card of its own
+      interrupted the page between the Outreach table and what we owe.{% endcomment %}
+      <dt class="text-gray-600">Buys</dt>
+      <dd data-testid="tender-buys" class="text-gray-900">{% for line in buys %}<span class="tabular-nums">{{ line.quantity|qty:line.unit }}</span> of {{ line.name|in_sentence }}{% if line.contents %} <span class="text-gray-600">— one unit holds {{ line.contents }}</span>{% endif %}{% if not forloop.last %}; {% endif %}{% endfor %}</dd>
+      {% endif %}
+      <dt class="text-gray-600">Where the goods go</dt>
+      <dd class="text-gray-900">
+        {% for p in tender.delivery_points %}{% firstof p.name p.city %}{% if p.name and p.city %}, {{ p.city }}{% endif %}{% if not forloop.last %}; {% endif %}{% empty %}no delivery place{% endfor %}{% if tender.pickup_accepted %} — or we collect from the supplier{% endif %}{% if tender.incoterm_requested %} <span class="text-gray-600">· asked on {{ tender.incoterm_requested }} terms</span>{% endif %}
+      </dd>
+      <dt class="text-gray-600">Visibility</dt>
+      <dd class="text-gray-900">{{ status.header.visibility|capfirst }}</dd>
+      {% if tender.slug %}
+      <dt class="text-gray-600">Listing</dt>
+      <dd class="text-gray-900">
+        {% if tender.owner_org_id %}For {{ owner_name }}: {% endif %}
+        <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender_listing' tender.slug %}">/supply/market/t/{{ tender.slug }}/</a>
+        · <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:market_tender_manage' tender.slug %}">manage the listing and who is invited</a>
+        {% if tender.invited_org_ids %}({{ tender.invited_org_ids|length }} invited){% endif %}
+      </dd>
+      {% endif %}
+    </dl>
+    </div>
+  </details>
+</div>
+<script>
+  // A link to anything inside a fold (#history, #owed, #outreach, #quotes ...) opens the fold first.
+  (function () {
+    function openTo() {
+      var hash = window.location.hash;
+      if (!hash || hash.length < 2) return;
+      var target = document.getElementById(hash.slice(1));
+      if (!target) return;
+      var fold = target.closest("details.sc-fold");
+      if (fold && !fold.open) { fold.open = true; }
+      if (target.tagName === "SUMMARY" && target.parentNode.tagName === "DETAILS") { target.parentNode.open = true; }
+      target.scrollIntoView({block: "start"});
+    }
+    openTo();
+    window.addEventListener("hashchange", openTo);
+  })();
+</script>
 {% else %}
 <p class="text-gray-600">Tender not found.</p>
 {% endif %}

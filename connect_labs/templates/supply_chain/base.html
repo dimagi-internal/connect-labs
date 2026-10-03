@@ -12,6 +12,11 @@ resolution would let it replace this whole block, nav included, rather than
 slot into it.
 {% endcomment %}
 
+{% block css %}
+{{ block.super }}
+{% include "supply_chain/_clean_styles.html" %}
+{% endblock %}
+
 {% block content %}
 {% comment %}Headings, and anything a link can point at (#outreach, #owed, #history, an
 order's #fulfilment / #cost / #match / #where-now, a draft's anchor), clear the
