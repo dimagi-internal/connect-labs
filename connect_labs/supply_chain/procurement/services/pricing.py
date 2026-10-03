@@ -165,7 +165,14 @@ def _base_unit_grams(quote: Quote, item: Item | None) -> int | Derived:
     return unconfirmed("unit weight not stated on the quote (grams per base unit)")
 
 
-def _extras(quote: Quote) -> Derived:
+def _duty_terms(quote: Quote, tender=None) -> str:
+    """The round's import-duty terms (records.DUTY_TERMS), "" when not settled or unknown."""
+    if tender is None:
+        tender = getattr(quote, "tender", None) if getattr(quote, "tender_id", None) else None
+    return getattr(tender, "duty_terms", "") or ""
+
+
+def _extras(quote: Quote, tender=None) -> Derived:
     """Freight plus duties to add to a lot total, or why that is unknowable.
 
     The quote's own flags speak first, and its Incoterm speaks when they are
@@ -213,11 +220,20 @@ def _extras(quote: Quote) -> Derived:
 
     from_term = dict(zip(("freight", "duties"), records.freight_and_duties_for_incoterm(quote.incoterm), strict=True))
 
+    # The round's duty terms speak before the quote does when they make duty
+    # ours: under the program's waiver we import duty-free, so a quote that
+    # leaves duty out is not missing anything, and duty counts as zero. When
+    # we import and pay, the duty is our own cost, added in compute_figures
+    # from the tender's estimate -- never a supplier's question. Unsettled or
+    # delivered-duty-paid rounds read the quote as before.
+    terms = _duty_terms(quote, tender)
+    duty_is_ours = terms in ("buyer_waiver", "buyer_pays")
+
     # A collected bid has no supplier freight: the buyer moves the goods, so
     # the freight is the buyer's own transport cost, entered on the quote.
     # Until it is, the total is unconfirmed -- a collected bid must never rank
     # as the cheapest merely because nobody has priced the trip.
-    legs = [("duties", quote.duties_basis, quote.duties_amount)]
+    legs = [] if duty_is_ours else [("duties", quote.duties_basis, quote.duties_amount)]
     if getattr(quote, "delivery_mode", "delivered") == "pickup":
         transport = getattr(quote, "buyer_transport_amount", None)
         if transport is None:
@@ -259,9 +275,31 @@ def _extras(quote: Quote) -> Derived:
             continue
         reasons.append(f"{label} basis not specified on the quote")
 
+    if (
+        terms == "buyer_pays"
+        and getattr(tender or getattr(quote, "tender", None), "duty_estimate_percent", None) is None
+    ):
+        reasons.append("import duty is ours to pay and no duty estimate is recorded on the tender")
+
     if reasons:
         return unconfirmed(*reasons)
     return Money(total)
+
+
+def _our_duty(quote: Quote, tender, subtotal: Decimal) -> Decimal:
+    """Duty we pay ourselves on a buyer-pays round: the tender's estimate on the goods. Zero otherwise.
+
+    A quote that already includes duty (its basis, or a DDP term) is not
+    charged again: the seller has covered it.
+    """
+    if _duty_terms(quote, tender) != "buyer_pays":
+        return Decimal("0")
+    implied = records.freight_and_duties_for_incoterm(quote.incoterm)[1]
+    basis = quote.duties_basis if quote.duties_basis in ("included", "excluded") else implied
+    if basis == "included":
+        return Decimal("0")
+    rate = getattr(tender, "duty_estimate_percent", None)
+    return subtotal * Decimal(rate) / Decimal("100") if rate is not None else Decimal("0")
 
 
 def basis_gaps(quote: Quote) -> list[str]:
@@ -272,7 +310,7 @@ def basis_gaps(quote: Quote) -> list[str]:
     same `_extras` every delivered figure is derived through, so the overview's
     count is the comparison's blocker and not a second rule beside it.
     """
-    extras = _extras(quote)
+    extras = _extras(quote, getattr(quote, "tender", None) if getattr(quote, "tender_id", None) else None)
     if not isinstance(extras, Unconfirmed):
         return []
     gaps = []
@@ -422,7 +460,7 @@ def compute_figures(
     """
     usd = _usd_amount(quote)
     pack_spec = _pack_spec(quote, item)
-    extras = _extras(quote)
+    extras = _extras(quote, tender)
     course = _course_size(commodity, item, pack_spec)
 
     # --- per base unit and per pack -------------------------------------
@@ -485,7 +523,7 @@ def compute_figures(
         landed_as_quoted: Derived = landed_blocked
     else:
         subtotal = _lot_subtotal(quote, commodity, usd, per_base_unit, units_quoted)
-        landed_as_quoted = Money(subtotal + extras.amount)
+        landed_as_quoted = Money(subtotal + extras.amount + _our_duty(quote, tender, subtotal))
 
     landed_for_tender: Derived
     tender_quantity = tender.quantity_for(commodity.slug)

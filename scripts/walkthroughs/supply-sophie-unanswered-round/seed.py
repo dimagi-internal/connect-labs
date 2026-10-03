@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import base64
 import calendar
+import datetime as dt
 import json
 import os
 import re
@@ -49,6 +50,7 @@ import sys
 import time
 import zlib
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from _lib import local_seed  # noqa: E402
@@ -356,12 +358,33 @@ class Mcp:
         return result
 
 
+# The app's TIME_ZONE (config/settings/base.py). The remote hook runs on this
+# machine without Django, so it reads the same zone by name.
+APP_TIME_ZONE = "UTC"
+
+
+def story_today() -> dt.date:
+    """The render day, computed exactly as replay.story_today computes it: today in the app's zone.
+
+    Never `date.today()`: that is this machine's calendar, which is a day off
+    the app's for hours around midnight, and dated Sahel's reply before
+    Sophie's chase.
+    """
+    try:
+        from django.conf import settings
+    except ImportError:  # the remote hook may run with no Django at all
+        settings = None
+    if settings is not None and settings.configured:
+        from django.utils import timezone
+
+        return timezone.localdate()
+    return dt.datetime.now(ZoneInfo(APP_TIME_ZONE)).date()
+
+
 def sahel_replies() -> None:
     """The reply arrives after Sophie's chase; the AI records it as it would any forwarded email."""
-    import datetime as dt
-
     out = json.loads(OUTPUTS.read_text())
-    today = dt.date.today().isoformat()
+    today = story_today().isoformat()
     mcp = Mcp()
     source = dict(SAHEL_REPLY)
     mcp.call(
@@ -372,7 +395,7 @@ def sahel_replies() -> None:
             **SAHEL_QUOTE,
             "tender_id": out["round2_tender_id"],
             "supplier_id": out["sahel_supplier_id"],
-            "validity_until": (dt.date.today() + dt.timedelta(days=30)).isoformat(),
+            "validity_until": (story_today() + dt.timedelta(days=30)).isoformat(),
             "received_on": today,
         },
     )
@@ -413,7 +436,6 @@ def sahel_local(*, base_url: str, outputs: str | None = None) -> dict:
     The local build has no labs MCP token, so the reply goes through the same
     operations in-process, attributed exactly as the MCP adapter attributes it.
     """
-    import datetime as dt
     import importlib.util
 
     from connect_labs.labs import demo_sessions
@@ -424,7 +446,7 @@ def sahel_local(*, base_url: str, outputs: str | None = None) -> dict:
     spec.loader.exec_module(replay)
     path = Path(outputs or OUTPUTS)
     out = json.loads(path.read_text())
-    today = dt.date.today()
+    today = replay.story_today()
     world = replay.World(out["program_id"], replay.personas())
     source = dict(SAHEL_REPLY)
     world.email(

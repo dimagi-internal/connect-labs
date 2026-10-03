@@ -317,6 +317,53 @@ def _last_change(revisions):
 # ---- tenders -------------------------------------------------------------
 
 
+def _replied_ids(outreach, quotes) -> set:
+    """The invited suppliers that answered: a reply logged, or a live quote from them."""
+    invited = {o.supplier_id for o in outreach}
+    replied = {o.supplier_id for o in outreach if o.responded} | {q.supplier_id for q in quotes if q.is_live}
+    return replied & invited
+
+
+def _chasing(tender, contracted, provisional) -> bool:
+    """Replies are still being chased: the round is open, or provisionally awarded and not yet ordered."""
+    return tender.status == "open" or (provisional and not contracted and tender.status == "awarded")
+
+
+def awaiting_reply(program_id) -> dict:
+    """{"suppliers": n, "tenders": m}: the silent suppliers the overview's table lists, counted.
+
+    Exactly the rule `_tender_state` names them by -- invited, no reply and no
+    live quote, on a round still being chased -- so the funnel's "N awaiting a
+    reply" and the "No reply" lines beside it cannot disagree. Counting every
+    unanswered invitation ever sent (closed rounds, awarded ones) read "6
+    awaiting a reply" over a table naming three.
+    """
+    from connect_labs.supply_chain.models import Award, Outreach, Quote, Tender
+
+    tenders = {t.pk: t for t in Tender.objects.filter(program_id=program_id, status__in=("open", "awarded"))}
+    if not tenders:
+        return {"suppliers": 0, "tenders": 0}
+    outreach, quotes = {}, {}
+    for o in Outreach.objects.filter(tender_id__in=tenders):
+        outreach.setdefault(o.tender_id, []).append(o)
+    for q in Quote.objects.filter(tender_id__in=tenders):
+        quotes.setdefault(q.tender_id, []).append(q)
+    contracted = set(Tender.objects.filter(pk__in=tenders, contracts__isnull=False).values_list("pk", flat=True))
+    newest = {}
+    for award in Award.objects.filter(tender_id__in=tenders):
+        newest.setdefault(award.tender_id, award)
+    suppliers = rounds = 0
+    for pk, tender in tenders.items():
+        provisional = pk in newest and newest[pk].provisional
+        if not _chasing(tender, pk in contracted, provisional):
+            continue
+        silent = {o.supplier_id for o in outreach.get(pk, [])} - _replied_ids(outreach.get(pk, []), quotes.get(pk, []))
+        if silent:
+            suppliers += len(silent)
+            rounds += 1
+    return {"suppliers": suppliers, "tenders": rounds}
+
+
 def _tender_rows(program_id, today, until):
     from connect_labs.supply_chain.models import Award, Outreach, Quote, Tender
 
@@ -451,11 +498,10 @@ def _tender_state(tender, outreach, quotes, contracted, today, award=None, *, pr
     """
     live = [q for q in quotes if q.is_live]
     invited = {o.supplier_id for o in outreach}
-    replied = {o.supplier_id for o in outreach if o.responded} | {q.supplier_id for q in live}
-    replied &= invited
+    replied = _replied_ids(outreach, quotes)
     suppliers = {o.supplier_id: o.supplier for o in outreach}
     still_open = provisional and not contracted and tender.status == "awarded"
-    chasing = tender.status == "open" or still_open
+    chasing = _chasing(tender, contracted, provisional)
     silent = sorted(invited - replied, key=lambda sid: suppliers[sid].name) if chasing else []
 
     stale = []
